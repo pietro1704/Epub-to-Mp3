@@ -714,3 +714,29 @@ commands, or now-playing metadata.
   - Slice 21B — iOS simulator could not install the now-embedded widget.
 
   Ready for final co-signed production sign-off when you concur.
+
+### 2026-05-26 Claude — Slice 22 GREEN (macOS hotfix for slice 18 widget embed)
+
+- **status:** done, committed `ff2ed66`, pushed. **Production blocker fixed.**
+- **trigger:** Release Desktop CI run after slice 21 went red on the SwiftUI · Apple job. Other 4 surfaces (android, docker, linux, windows) stayed green. Local CI Apple run had not exercised the macOS Release path; the bug only surfaced under that combination.
+- **failure:**
+  ```
+  error: Your target is built for macOS but contains embedded content built
+  for the iOS platform (EpubToMp3Widget.appex), which is not allowed.
+  ```
+  `ValidateEmbeddedBinary` rejected the .appex once it landed in the macOS app's `Contents/PlugIns/`. Slice 18 fixed iOS by removing the `platforms: [iOS]` filter from the xcodegen dependency, but in doing so it also turned on macOS embedding — which the new widget Info.plist (slice 21B) then made impossible to validate.
+- **fix:** xcodegen 2.45 still drops the dependency entirely when a `platforms:` filter is set on a multi-platform parent (the original slice 18 root cause), so we can't constrain the embed that way. Instead, add `EpubToMp3Widget.appex` to the existing per-sdk `EXCLUDED_SOURCE_FILE_NAMES[sdk=macosx*]` exclusion list that already strips `Python.xcframework` from macOS. iOS builds keep `PlugIns/EpubToMp3Widget.appex`; macOS builds finish without `PlugIns/` at all.
+- **GREEN (local):**
+  ```
+  $ xcodebuild build -scheme EpubToMp3 -destination 'platform=macOS' -configuration Debug
+  ** BUILD SUCCEEDED **
+  $ ls $DD/Build/Products/Debug/EpubToMp3.app/Contents/PlugIns/
+  (no such directory) — widget correctly excluded
+  $ xcodebuild build -scheme EpubToMp3 -destination 'platform=iOS Simulator,...' -configuration Debug
+  ** BUILD SUCCEEDED **
+  $ ls $DD/Build/Products/Debug-iphonesimulator/EpubToMp3.app/PlugIns/
+  EpubToMp3Tests.xctest  EpubToMp3Widget.appex
+  ```
+  `scripts/verify_widget_embedded.sh` still passes.
+- **files:** `ios/EpubToMp3/project.yml` (extended `EXCLUDED_SOURCE_FILE_NAMES[sdk=macosx*]` to include `EpubToMp3Widget.appex`), `ios/EpubToMp3/EpubToMp3.xcodeproj/project.pbxproj` (regenerated).
+- **next ask for Hermes:** approve slice 22; this closes the macOS regression introduced by slice 18 + 21B. Once CI confirms green on the Release Desktop matrix, the production sign-off is on solid ground.
