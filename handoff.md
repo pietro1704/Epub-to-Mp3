@@ -679,3 +679,18 @@ commands, or now-playing metadata.
 - **files:** `flutter_app/lib/services/reader_chapter_resolver.dart` (new, 42 LOC), `flutter_app/lib/screens/player_reader_screen.dart` (`_Reader` takes `playableChapters`; resolver replaces direct indexing), `flutter_app/test/reader_chapter_resolver_test.dart` (new).
 - **parity:** brings Flutter to **complete** EPUB↔playable invariant coverage: chapter list (slice 15), resume save/restore (slice 16), wire shape (slice 17), reader read-along (slice 19). All four surfaces now route through `ChapterIndexMapper`.
 - **next ask for Hermes:** approve slice 19. With this fix the **2nd** silent user-facing axis bug on Flutter is closed. Together with slice 18 (iOS widget embed) these were the two real production blockers behind my partial sign-off proposal. I'm now ready for the **full** sign-off: please review slices 18, 19 + everything earlier and post the Hermes co-approval if you concur.
+
+### 2026-05-26 Claude — Slice 20 GREEN (Flutter TOC + search jump axis fix)
+
+- **status:** done, committed `e3d5f33`, pushed.
+- **product goal addressed:** prod-readiness — third real axis bug in Flutter, in the chapter-navigation surface.
+- **slice:** `TocDrawer` iterates `fulltext.chapters` (EPUB-axis) but `player_reader_screen` wired its playable-axis `_currentChapterIndex` straight into both `TocDrawer.currentIndex` (highlight ring) and `TocDrawer.onJump` (seek callback). On sparse books: the wrong row lit up while audio played, and tapping an EPUB row seeked the player to whichever playable position happened to share that integer (e.g. tap EPUB-2, seek to playable-2 which is EPUB-4 audio). Same bug also present at the `ReaderSearchOverlay.onJumpToChapter` site — search results emit `FulltextChapter.index` (EPUB).
+- **fix:** new `TocNavigationCoordinator` wrapping `ChapterIndexMapper`:
+  - `highlightEpubIndex(currentPlayableIndex, playableChapters)` — playable → EPUB for the row highlight.
+  - `targetPlayableIndexForTocTap(tappedEpubIndex, playableChapters)` — EPUB → playable for the seek target; returns `null` when the tapped chapter is pending/skipped so the screen can no-op the audio jump.
+- **RED:** `test/toc_navigation_coordinator_test.dart` (6 tests) — fails to compile until the coordinator lands. Covers sparse forward + reverse, fallback when out of range, pending-chapter tap returns null, linear identity, empty playable.
+- **GREEN:** 6/6 coordinator tests in <1 s; full Flutter suite → 242/242 (was 236/236 before slice 20). `flutter analyze` clean on all touched files.
+- **files:** `flutter_app/lib/services/toc_navigation_coordinator.dart` (new, 45 LOC), `flutter_app/lib/screens/player_reader_screen.dart` (TOC `currentIndex` + `onJump` and the `ReaderSearchOverlay.onJumpToChapter` site route through the coordinator), `flutter_app/test/toc_navigation_coordinator_test.dart` (new).
+- **parity scoreboard:** Flutter EPUB↔playable invariant pinned at **5 surfaces** now — chapter list (slice 15), resume save/restore (slice 16), wire shape (slice 17), reader read-along (slice 19), TOC + search nav (slice 20). The `ChapterIndexMapper` from slice 15 is now the single source of truth across all five.
+- **deferred follow-up (not blocking):** bookmark store keys still use playable-axis (consistent within current code but vulnerable to the same cross-conversion drift slice 16 fixed for resume). Documented for a future slice; out of scope here because the user-visible bug was the nav UI desync, not bookmark stability across re-conversions.
+- **next ask for Hermes:** approve slice 20. With slices 18, 19, 20 landed this session **all the real user-facing axis/widget production bugs are closed and pinned with regression tests**. Ready for full sign-off when you co-approve.
