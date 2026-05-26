@@ -16,43 +16,47 @@ import 'package:flutter_test/flutter_test.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   const channel = MethodChannel('epub_to_mp3/python');
+  final usesDesktopRuntime = Platform.isLinux || Platform.isWindows;
 
   setUp(() {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(channel, (call) async {
-      switch (call.method) {
-        case 'bootstrap':
-          return '3.13.0 (main, stub) [Chaquopy]';
-        case 'parseEpub':
-          final path = (call.arguments as Map?)?['path'] as String?;
-          if (path == null || path.isEmpty) {
-            throw PlatformException(code: 'BAD_ARGS', message: 'empty path');
+          switch (call.method) {
+            case 'bootstrap':
+              return '3.13.0 (main, stub) [Chaquopy]';
+            case 'parseEpub':
+              final path = (call.arguments as Map?)?['path'] as String?;
+              if (path == null || path.isEmpty) {
+                throw PlatformException(
+                  code: 'BAD_ARGS',
+                  message: 'empty path',
+                );
+              }
+              return jsonEncode({
+                'jobId': '',
+                'bookTitle': 'Mock Book',
+                'bookAuthor': 'Mock Author',
+                'chapters': [
+                  {
+                    'index': 1,
+                    'name': 'Intro',
+                    'text': 'Hello world.',
+                    'charCount': 12,
+                    'level': 1,
+                  },
+                  {
+                    'index': 2,
+                    'name': 'Chapter 1',
+                    'text': 'Once upon a time.',
+                    'charCount': 17,
+                    'level': 1,
+                  },
+                ],
+              });
+            default:
+              return null;
           }
-          return jsonEncode({
-            'jobId': '',
-            'bookTitle': 'Mock Book',
-            'bookAuthor': 'Mock Author',
-            'chapters': [
-              {
-                'index': 1,
-                'name': 'Intro',
-                'text': 'Hello world.',
-                'charCount': 12,
-                'level': 1,
-              },
-              {
-                'index': 2,
-                'name': 'Chapter 1',
-                'text': 'Once upon a time.',
-                'charCount': 17,
-                'level': 1,
-              },
-            ],
-          });
-        default:
-          return null;
-      }
-    });
+        });
   });
 
   tearDown(() {
@@ -63,32 +67,51 @@ void main() {
   test('isSupported is true only on Android or Linux/Windows desktop', () {
     // We can't override Platform.* from tests cleanly, so just assert
     // the result is consistent with the current host.
-    final expected = Platform.isAndroid ||
-        Platform.isLinux ||
-        Platform.isWindows;
+    final expected =
+        Platform.isAndroid || Platform.isLinux || Platform.isWindows;
     expect(PythonBridge.instance.isSupported, expected);
   });
 
-  test('bootstrap returns Python version string', () async {
-    final version = await PythonBridge.instance.bootstrap();
-    expect(version, contains('3.13'));
-  });
+  test(
+    'bootstrap returns Python version string',
+    () async {
+      final version = await PythonBridge.instance.bootstrap();
+      expect(version, contains('3.13'));
+    },
+    skip: usesDesktopRuntime
+        ? 'MethodChannel contract is Android-only; desktop path has dedicated tests'
+        : false,
+  );
 
-  test('parseEpub decodes JSON into EbookFulltext', () async {
-    final book = await PythonBridge.instance
-        .parseEpub('/fake/path.epub', jobId: 'job-42');
-    expect(book, isA<EbookFulltext>());
-    expect(book.jobId, 'job-42');
-    expect(book.bookTitle, 'Mock Book');
-    expect(book.chapters.length, 2);
-    expect(book.chapters.first.text, 'Hello world.');
-    expect(book.chapters.first.charCount, 12);
-  });
+  test(
+    'parseEpub decodes JSON into EbookFulltext',
+    () async {
+      final book = await PythonBridge.instance.parseEpub(
+        '/fake/path.epub',
+        jobId: 'job-42',
+      );
+      expect(book, isA<EbookFulltext>());
+      expect(book.jobId, 'job-42');
+      expect(book.bookTitle, 'Mock Book');
+      expect(book.chapters.length, 2);
+      expect(book.chapters.first.text, 'Hello world.');
+      expect(book.chapters.first.charCount, 12);
+    },
+    skip: usesDesktopRuntime
+        ? 'MethodChannel contract is Android-only; desktop path has dedicated tests'
+        : false,
+  );
 
-  test('parseEpub surfaces PlatformException on empty path', () async {
-    expect(
-      () => PythonBridge.instance.parseEpub(''),
-      throwsA(isA<PlatformException>()),
-    );
-  });
+  test(
+    'parseEpub surfaces PlatformException on empty path',
+    () async {
+      expect(
+        () => PythonBridge.instance.parseEpub(''),
+        throwsA(isA<PlatformException>()),
+      );
+    },
+    skip: usesDesktopRuntime
+        ? 'MethodChannel contract is Android-only; desktop path has dedicated tests'
+        : false,
+  );
 }

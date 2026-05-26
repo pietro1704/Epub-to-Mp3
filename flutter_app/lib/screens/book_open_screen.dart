@@ -199,20 +199,22 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen> {
     library.update(book);
 
     _sseSubscription?.cancel();
-    _sseSubscription = api.jobStream(jobId).listen(
-      _handleSnapshot,
-      onError: (Object e) {
-        if (!mounted) return;
-        setState(() {
-          _isConverting = false;
-          _conversionError = e.toString();
-        });
-      },
-      onDone: () {
-        if (!mounted) return;
-        setState(() => _isConverting = false);
-      },
-    );
+    _sseSubscription = api
+        .jobStream(jobId)
+        .listen(
+          _handleSnapshot,
+          onError: (Object e) {
+            if (!mounted) return;
+            setState(() {
+              _isConverting = false;
+              _conversionError = e.toString();
+            });
+          },
+          onDone: () {
+            if (!mounted) return;
+            setState(() => _isConverting = false);
+          },
+        );
   }
 
   void _handleSnapshot(JobSnapshot snapshot) {
@@ -227,15 +229,13 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen> {
       _playableChapters.addAll(newChapters);
       _playableChapters.sort((a, b) => a.index.compareTo(b.index));
 
-      final player =
-          ref.read(globalAudioPlayerProvider) as AudioPlayerService;
+      final player = ref.read(globalAudioPlayerProvider);
       _setCoverOnPlayer(player);
       player.setQueue(List.of(_playableChapters));
       // No auto-play. Loading the queue is intentional, but playback
       // only starts when the user taps Play (UI / lock screen /
       // media notification). Mirrors iOS no-autoplay parity.
-      if (newChapters.length == _playableChapters.length &&
-          !player.raw.playing) {
+      if (newChapters.length == _playableChapters.length && !player.isPlaying) {
         _restoreResumePosition(player);
         _startResumeListener(player);
       }
@@ -298,8 +298,7 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen> {
       final lang = await bridge.detectLanguage(sample);
       final voice = _defaultVoices[lang] ?? _defaultVoices['pt']!;
 
-      final player =
-          ref.read(globalAudioPlayerProvider) as AudioPlayerService;
+      final player = ref.read(globalAudioPlayerProvider);
       _setCoverOnPlayer(player);
 
       for (var i = 0; i < ft.chapters.length; i++) {
@@ -334,7 +333,7 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen> {
 
           await player.setQueue(List.of(_playableChapters));
           // No auto-play on first segment — wait for explicit user gesture.
-          if (_playableChapters.length == 1 && !player.raw.playing) {
+          if (_playableChapters.length == 1 && !player.isPlaying) {
             await _restoreResumePosition(player);
             _startResumeListener(player);
           }
@@ -355,7 +354,7 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen> {
     }
   }
 
-  void _setCoverOnPlayer(AudioPlayerService player) {
+  void _setCoverOnPlayer(AudioPlayerInterface player) {
     final library = ref.read(libraryStoreProvider);
     final idx = library.books.indexWhere((b) => b.id == widget.bookId);
     if (idx < 0) return;
@@ -367,15 +366,16 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen> {
     }
   }
 
-  void _startResumeListener(AudioPlayerService player) {
+  void _startResumeListener(AudioPlayerInterface player) {
     _positionSub?.cancel();
     _resumeSaveTimer?.cancel();
     _resumeSaveTimer = Timer.periodic(const Duration(seconds: 5), (_) {
       if (!mounted) return;
       final resume = ref.read(resumeStoreProvider);
-      final playerIdx = player.raw.currentIndex ?? 0;
+      final playerIdx = player.currentIndexValue ?? 0;
       final router = ResumePositionRouter(
-          playableChapters: List.of(_playableChapters));
+        playableChapters: List.of(_playableChapters),
+      );
       final epubIdx = router.saveValueForPlayerIndex(playerIdx);
       if (epubIdx == null) return;
       final pos = player.positionSeconds;
@@ -383,7 +383,7 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen> {
     });
   }
 
-  Future<void> _restoreResumePosition(AudioPlayerService player) async {
+  Future<void> _restoreResumePosition(AudioPlayerInterface player) async {
     final resume = ref.read(resumeStoreProvider);
     final saved = resume.loadBookPosition(widget.bookId);
     if (saved == null) return;
@@ -392,7 +392,8 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen> {
     final targetPos = saved.seconds;
 
     final router = ResumePositionRouter(
-        playableChapters: List.of(_playableChapters));
+      playableChapters: List.of(_playableChapters),
+    );
     final queueIdx = router.queueIndexForSavedValue(targetChapter);
     if (queueIdx != null) {
       await player.seek(
@@ -446,9 +447,9 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen> {
     final t = AppLocalizations.of(context)!;
     final library = ref.watch(libraryStoreProvider);
     final book = library.books.cast().firstWhere(
-          (b) => b.id == widget.bookId,
-          orElse: () => null,
-        );
+      (b) => b.id == widget.bookId,
+      orElse: () => null,
+    );
     final bookTitle = book?.resolvedTitle ?? '';
 
     switch (_phase) {
@@ -474,12 +475,16 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(Icons.error_outline,
-                    size: 48,
-                    color: Theme.of(context).colorScheme.error),
+                Icon(
+                  Icons.error_outline,
+                  size: 48,
+                  color: Theme.of(context).colorScheme.error,
+                ),
                 const SizedBox(height: 16),
-                Text(t.parsingFailed,
-                    style: Theme.of(context).textTheme.titleMedium),
+                Text(
+                  t.parsingFailed,
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
                 if (_errorMessage != null) ...[
                   const SizedBox(height: 8),
                   Padding(
@@ -507,7 +512,7 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen> {
             ? _decodeCover(book!.coverBase64!)
             : null;
         final player = (_isConverting || _playableChapters.isNotEmpty)
-            ? ref.read(globalAudioPlayerProvider) as AudioPlayerService
+            ? ref.read(globalAudioPlayerProvider)
             : null;
         return Scaffold(
           appBar: AppBar(

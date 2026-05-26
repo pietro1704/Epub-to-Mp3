@@ -8,7 +8,9 @@ import '../models/job_snapshot.dart';
 abstract class AudioPlayerInterface {
   Stream<Duration> get position;
   Stream<bool> get playing;
+  bool get isPlaying;
   Stream<int?> get currentIndex;
+  int? get currentIndexValue;
   String? get activeSentenceId;
   Stream<String?> get activeSentenceStream;
   double get speed;
@@ -50,7 +52,11 @@ class AudioPlayerService implements AudioPlayerInterface {
   @override
   Stream<bool> get playing => _player.playingStream;
   @override
+  bool get isPlaying => _player.playing;
+  @override
   Stream<int?> get currentIndex => _player.currentIndexStream;
+  @override
+  int? get currentIndexValue => _player.currentIndex;
   AudioPlayer get raw => _player;
 
   bool _isSegmentMode = false;
@@ -282,7 +288,11 @@ class FakeAudioPlayerService implements AudioPlayerInterface {
   @override
   Stream<bool> get playing => _playingController.stream;
   @override
+  bool get isPlaying => _playing;
+  @override
   Stream<int?> get currentIndex => _indexController.stream;
+  @override
+  int? get currentIndexValue => null;
   @override
   Stream<String?> get activeSentenceStream => _sentenceController.stream;
   @override

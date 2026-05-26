@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_app/l10n/app_localizations.dart';
 import 'package:flutter_app/models/book_entity.dart';
@@ -68,10 +70,8 @@ Widget _wrap(
     overrides: [
       sharedPrefsProvider.overrideWithValue(prefs),
       localFulltextCacheProvider.overrideWithValue(cache),
-      if (apiClient != null)
-        apiClientProvider.overrideWithValue(apiClient),
-      if (player != null)
-        globalAudioPlayerProvider.overrideWithValue(player),
+      if (apiClient != null) apiClientProvider.overrideWithValue(apiClient),
+      if (player != null) globalAudioPlayerProvider.overrideWithValue(player),
     ],
     child: MaterialApp(
       localizationsDelegates: AppLocalizations.localizationsDelegates,
@@ -164,13 +164,15 @@ void main() {
       final fakeApi = _FakeApiClient();
       final fakePlayer = FakeAudioPlayerService();
 
-      await t.pumpWidget(_wrap(
-        prefs,
-        'play-book',
-        cache: cache,
-        apiClient: fakeApi,
-        player: fakePlayer,
-      ));
+      await t.pumpWidget(
+        _wrap(
+          prefs,
+          'play-book',
+          cache: cache,
+          apiClient: fakeApi,
+          player: fakePlayer,
+        ),
+      );
       await t.pump();
       await t.pump();
 
@@ -178,8 +180,7 @@ void main() {
       expect(find.byIcon(Icons.play_circle_filled), findsOneWidget);
     });
 
-    testWidgets('conversion falls back to local when backend fails',
-        (t) async {
+    testWidgets('conversion falls back to local when backend fails', (t) async {
       final book = BookEntity(
         id: 'fallback-book',
         title: 'Fallback Book',
@@ -206,13 +207,15 @@ void main() {
       final fakeApi = _FakeApiClient();
       final fakePlayer = FakeAudioPlayerService();
 
-      await t.pumpWidget(_wrap(
-        prefs,
-        'fallback-book',
-        cache: cache,
-        apiClient: fakeApi,
-        player: fakePlayer,
-      ));
+      await t.pumpWidget(
+        _wrap(
+          prefs,
+          'fallback-book',
+          cache: cache,
+          apiClient: fakeApi,
+          player: fakePlayer,
+        ),
+      );
       await t.pump();
       await t.pump();
 
@@ -222,9 +225,15 @@ void main() {
       await t.pump();
       await t.pump();
 
-      // Backend throws → PythonBridge not supported on macOS test host →
-      // error banner appears in the bottom bar with a warning icon.
-      expect(find.byIcon(Icons.warning_amber_rounded), findsOneWidget);
+      if (Platform.isLinux || Platform.isWindows) {
+        // Desktop hosts route into the local PythonBridge fallback instead
+        // of the unsupported-platform error branch.
+        expect(find.byIcon(Icons.warning_amber_rounded), findsNothing);
+      } else {
+        // Mobile/iOS test hosts without local Python fallback surface an
+        // error banner in the bottom bar.
+        expect(find.byIcon(Icons.warning_amber_rounded), findsOneWidget);
+      }
     });
   });
 }

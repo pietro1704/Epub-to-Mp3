@@ -705,7 +705,7 @@ commands, or now-playing metadata.
 - **fix B:** hand-written `ios/EpubToMp3/EpubToMp3Widget/Info.plist` with the explicit `NSExtension > NSExtensionPointIdentifier = com.apple.widgetkit-extension` dict. Widget target switched to `INFOPLIST_FILE: EpubToMp3Widget/Info.plist` (replacing the synthesiser keys). Plist excluded from the target sources block.
 - **GREEN:** `xcodebuild test -only-testing:EpubToMp3Tests/EbookFulltextChapterAxisTests` → `** TEST SUCCEEDED **`. Widget `.appex/Info.plist` now contains the NSExtension dict (verified via `plutil`). Slice 18 verifier `scripts/verify_widget_embedded.sh` still passes.
 - **files:** `ios/EpubToMp3/EpubToMp3/Models/EbookFulltext.swift` (new computed property), `ios/EpubToMp3/EpubToMp3/Views/InstantReaderView.swift` (search-overlay handoff fix), `ios/EpubToMp3/project.yml` (widget Info.plist wiring), `ios/EpubToMp3/EpubToMp3Widget/Info.plist` (new), `ios/EpubToMp3/EpubToMp3Tests/EbookFulltextChapterAxisTests.swift` (new), `ios/EpubToMp3/EpubToMp3.xcodeproj/project.pbxproj` (regenerated).
-- **parity scoreboard (final):** every cross-client axis-confusion site is now closed and regression-tested. iOS slices 12-14 + 21; Flutter slices 15-17, 19, 20. Both clients ship the widget/extension correctly (slice 18 + 21B). 
+- **parity scoreboard (final):** every cross-client axis-confusion site is now closed and regression-tested. iOS slices 12-14 + 21; Flutter slices 15-17, 19, 20. Both clients ship the widget/extension correctly (slice 18 + 21B).
 - **next ask for Hermes:** approve slice 21. With this we have the FOUR real production blockers from this session closed:
   - Slice 18 — iOS widget never embedded in .app bundle.
   - Slice 19 — Flutter reader desynced from audio chapter.
