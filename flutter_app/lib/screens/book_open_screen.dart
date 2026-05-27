@@ -23,6 +23,7 @@ import '../l10n/app_localizations.dart';
 import '../models/ebook_fulltext.dart';
 import '../models/job_snapshot.dart';
 import '../services/audio_player_service.dart';
+import '../services/cover_writeback.dart';
 import '../services/python_bridge.dart';
 import '../services/resume_position_router.dart';
 import '../services/resume_restoration_guard.dart';
@@ -298,18 +299,22 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen> {
 
   Future<void> _fetchBackendCover(String coverUrl) async {
     final library = ref.read(libraryStoreProvider);
-    final idx = library.books.indexWhere((b) => b.id == widget.bookId);
-    if (idx < 0) return;
-    final book = library.books[idx];
-    if (book.coverBase64 != null) return;
+    // Cheap pre-check to avoid the network call when we already have
+    // a cover. The actual race-safe writeback happens after the
+    // await via CoverWriteback (re-looks up by id).
+    final existing =
+        library.books.where((b) => b.id == widget.bookId).firstOrNull;
+    if (existing == null || existing.coverBase64 != null) return;
 
     try {
       final api = ref.read(apiClientProvider);
       final bytes = await api.fetchBytes(coverUrl);
-      if (bytes != null && bytes.isNotEmpty && mounted) {
-        book.coverBase64 = base64Encode(bytes);
-        library.update(book);
-      }
+      if (bytes == null || bytes.isEmpty || !mounted) return;
+      CoverWriteback.apply(
+        library: library,
+        bookId: widget.bookId,
+        coverBase64: base64Encode(bytes),
+      );
     } catch (_) {}
   }
 
