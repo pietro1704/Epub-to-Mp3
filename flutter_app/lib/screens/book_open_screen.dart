@@ -25,6 +25,7 @@ import '../models/job_snapshot.dart';
 import '../services/audio_player_service.dart';
 import '../services/python_bridge.dart';
 import '../services/resume_position_router.dart';
+import '../services/resume_restoration_guard.dart';
 import '../state/providers.dart';
 import '../views/instant_reader_view.dart';
 import 'library_screen.dart';
@@ -50,6 +51,7 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen> {
   int _chaptersConverted = 0;
   int _chaptersTotal = 0;
   final List<ChapterProgress> _playableChapters = [];
+  ResumeRestorationGuard _resumeGuard = ResumeRestorationGuard();
   StreamSubscription<JobSnapshot>? _sseSubscription;
   StreamSubscription<Duration>? _positionSub;
   Timer? _resumeSaveTimer;
@@ -164,6 +166,9 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen> {
       _chaptersConverted = 0;
       _chaptersTotal = ft.chapters.length;
       _playableChapters.clear();
+      // Reset the latched guard so the resume restoration retries for
+      // the new conversion run.
+      _resumeGuard = ResumeRestorationGuard();
     });
 
     ref.read(currentlyPlayingBookIdProvider.notifier).state = widget.bookId;
@@ -235,9 +240,15 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen> {
       // No auto-play. Loading the queue is intentional, but playback
       // only starts when the user taps Play (UI / lock screen /
       // media notification). Mirrors iOS no-autoplay parity.
-      if (newChapters.length == _playableChapters.length && !player.isPlaying) {
+      // Slice 32: retry the resume restore on every batch until the
+      // saved chapter actually lands in the queue. The guard latches
+      // after the first successful seek so we never jump backwards
+      // if more chapters arrive after the user pressed play.
+      if (!player.isPlaying) {
         _restoreResumePosition(player);
-        _startResumeListener(player);
+        if (newChapters.length == _playableChapters.length) {
+          _startResumeListener(player);
+        }
       }
     }
 
@@ -384,23 +395,27 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen> {
   }
 
   Future<void> _restoreResumePosition(AudioPlayerInterface player) async {
+    if (_resumeGuard.hasRestored) return;
     final resume = ref.read(resumeStoreProvider);
     final saved = resume.loadBookPosition(widget.bookId);
-    if (saved == null) return;
-
-    final targetChapter = saved.chapter;
-    final targetPos = saved.seconds;
+    if (saved == null) {
+      return;
+    }
 
     final router = ResumePositionRouter(
       playableChapters: List.of(_playableChapters),
     );
-    final queueIdx = router.queueIndexForSavedValue(targetChapter);
-    if (queueIdx != null) {
-      await player.seek(
-        Duration(milliseconds: (targetPos * 1000).round()),
-        index: queueIdx,
-      );
-    }
+    // The guard latches: returns the queue index exactly once, when
+    // the saved chapter has finally landed in the playable queue.
+    // Subsequent calls (later SSE batches) return null so we never
+    // jump the player backwards if the user already pressed play.
+    final queueIdx =
+        _resumeGuard.targetForSavedValue(saved.chapter, router);
+    if (queueIdx == null) return;
+    await player.seek(
+      Duration(milliseconds: (saved.seconds * 1000).round()),
+      index: queueIdx,
+    );
   }
 
   void _markBookOffline() {
@@ -424,6 +439,7 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen> {
     _chaptersConverted = 0;
     _chaptersTotal = 0;
     _playableChapters.clear();
+    _resumeGuard = ResumeRestorationGuard();
   }
 
   String? _buildStatusBanner(AppLocalizations t) {
