@@ -940,3 +940,18 @@ Release Desktop run 26432885034:
 - **GREEN:** 2/2 lookup tests; full Flutter suite → 267/267 (was 265/265, +2). `flutter analyze` clean.
 - **scope note:** I also re-audited the other 4 `library.books.indexWhere/firstWhere` sites in the same file. They all already use `indexWhere` + `if (idx < 0) return;` pattern (defensive), so no additional changes needed.
 - **next investigation:** audit `book_open_screen._fetchBackendCover` for the same drop-and-go pattern — it does `await api.fetchBytes(url)` and then writes to `library.books[idx]` after the await. If the book was removed during the fetch, the writeback against a stale index could mutate the wrong book.
+
+### 2026-05-27 Claude — Slice 34 GREEN (race-safe cover writeback)
+
+- **status:** done, committed `cd36437`, pushed.
+- **bug:** `book_open_screen._fetchBackendCover` captured the `BookEntity` reference **before** awaiting `api.fetchBytes(coverUrl)`. If the library was mutated during the in-flight HTTP request:
+  - **Book removed:** `library.update(staleBook)` no-op'd (cover lost, user re-fetches every restart).
+  - **Book re-imported with same id + new metadata** (e.g. user renamed the file, re-imported with updated title): the captured stale reference (with the cover newly set) overwrote the live entity → title/filePath/displayFilename silently reverted.
+- **fix:** new `CoverWriteback.apply(library, bookId, coverBase64)` re-looks up by id post-await and:
+  - Returns false (no-op) if book is gone.
+  - Returns false (no-op) if live book already has a cover from a concurrent path.
+  - Otherwise mutates ONLY `coverBase64` on the live entity. Other metadata fields survive.
+- **RED:** `test/cover_writeback_test.dart` (4 tests) — including the explicit race test that asserts re-imported metadata survives the writeback.
+- **GREEN:** 4/4 writeback tests; full Flutter suite → 271/271 (was 267/267, +4). `flutter analyze` clean.
+- **adjacent audit:** `_setCoverOnPlayer` uses the same pattern but **without** any await between lookup and use, so it stays safe. No other capture-before-await sites in `book_open_screen.dart`.
+- **next investigation:** audit `book_open_screen._startConversion`'s SSE error handler — when `_sseSubscription.onError` fires, it sets `_isConverting = false` but does not cancel/null the subscription. If the backend later emits more events (e.g. recovery after transient failure), the listener is still attached and could push stale chapters into a UI that thinks it's idle.
