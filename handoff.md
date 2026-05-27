@@ -965,3 +965,16 @@ Release Desktop run 26432885034:
 - **GREEN:** 3/3 cleanup tests; full Flutter suite → 274/274 (was 271/271, +3). `flutter analyze` clean.
 - **defense in depth on book_open_screen:** slice 32 (resume retry), 33 (null-safe lookup), 34 (race-safe cover), 35 (SSE cleanup) all land on the same screen but on independent concerns. None of the four bugs would have surfaced on the happy path; each is a real regression waiting for a specific user action sequence.
 - **next investigation:** audit `_loadCachedCover` — uses `try { decode } catch (_) {}` swallowing all errors silently; if base64 is corrupt the user sees no cover and there's no log line to diagnose. Lower severity (no crash, no data loss) but worth a slice that surfaces the error via a structured log.
+
+### 2026-05-27 Claude — Slice 36 GREEN (didUpdateWidget race in book_open_screen._load)
+
+- **status:** done, committed `197812e`, pushed.
+- **bug:** classic stale-async-on-StatefulWidget race. `didUpdateWidget` triggers `_load()` whenever `widget.bookId` changes, but nothing cancels an already-running `_load`. Sequence:
+  1. Open Book X → `_load()` starts the slow `bridge.parseEpub`.
+  2. User navigates to Book Y → `didUpdateWidget` fires `_load()` for Y. Cache hit fast-paths to `_fulltext = Y, _phase = ready`.
+  3. The X parse completes and `setState(_fulltext = X_data)` lands **after** the Y view was shown — user sees X content on Y screen.
+- **fix:** new `AsyncLoadGuard` hands out a monotonic generation token at the top of `_load`. After every `await` the code checks `_loadGuard.isCurrent(gen)` before touching `setState`. A newer `didUpdateWidget → _load` invalidates the old token so the stale continuation no-ops at the next await boundary. Also captures `widget.bookId` into a local at function entry and uses that for the rest of the call so the new `widget.bookId` value (after the swap) doesn't leak into the in-flight parse.
+- **RED:** `test/async_load_guard_test.dart` (4 tests) — covers single-gen current, newer invalidates older, repeated checks stay current until a new start, equal-key restart still produces distinct token (so a Retry tap doesn't collide with the failed Future's setState).
+- **GREEN:** 4/4 guard tests; full Flutter suite → 278/278 (was 274/274, +4). `flutter analyze` clean.
+- **adjacent audit (clean):** the `_startConversion` async path inside `book_open_screen` only mutates state from within `_handleSnapshot` (gated by `mounted`) or after explicit user actions, so it doesn't need the guard.
+- **next investigation:** scan iOS for the same axis-of-bugs. `InstantReaderView` has `onAppear` async paths that read `fulltext.jobId` post-await; if the user pops back and the view re-mounts during the I/O the same stale-continuation effect could land.
