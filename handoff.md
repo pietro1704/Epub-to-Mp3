@@ -955,3 +955,13 @@ Release Desktop run 26432885034:
 - **GREEN:** 4/4 writeback tests; full Flutter suite → 271/271 (was 267/267, +4). `flutter analyze` clean.
 - **adjacent audit:** `_setCoverOnPlayer` uses the same pattern but **without** any await between lookup and use, so it stays safe. No other capture-before-await sites in `book_open_screen.dart`.
 - **next investigation:** audit `book_open_screen._startConversion`'s SSE error handler — when `_sseSubscription.onError` fires, it sets `_isConverting = false` but does not cancel/null the subscription. If the backend later emits more events (e.g. recovery after transient failure), the listener is still attached and could push stale chapters into a UI that thinks it's idle.
+
+### 2026-05-27 Claude — Slice 35 GREEN (SSE subscription cleanup on error/done)
+
+- **status:** done, committed `98d9359`, pushed.
+- **bug:** `book_open_screen._startConversion`'s SSE wiring only cancelled `_sseSubscription` on a *terminal* snapshot inside `_handleSnapshot`. The `onError` and `onDone` callbacks set the UI back to a non-converting state but **left the subscription attached**. Any later event from the EventSource client (transient disconnect that the client recovers from but reports as an error first, backend resuming an older job, etc.) still landed in `_handleSnapshot` and silently wrote chapters into the player queue + `_playableChapters` while the UI was rendering the failed state.
+- **fix:** new `SseSubscriptionLifecycle.listen<T>` wraps `Stream.listen` so `onError`/`onDone` cancel BEFORE forwarding their callback. Wired `_startConversion` through it and null out `_sseSubscription` in both callbacks so `dispose()` doesn't double-cancel.
+- **RED:** `test/sse_subscription_cleanup_test.dart` (3 tests) — covers (a) post-error data is dropped, (b) onDone cancels and forwards, (c) caller can still cancel explicitly.
+- **GREEN:** 3/3 cleanup tests; full Flutter suite → 274/274 (was 271/271, +3). `flutter analyze` clean.
+- **defense in depth on book_open_screen:** slice 32 (resume retry), 33 (null-safe lookup), 34 (race-safe cover), 35 (SSE cleanup) all land on the same screen but on independent concerns. None of the four bugs would have surfaced on the happy path; each is a real regression waiting for a specific user action sequence.
+- **next investigation:** audit `_loadCachedCover` — uses `try { decode } catch (_) {}` swallowing all errors silently; if base64 is corrupt the user sees no cover and there's no log line to diagnose. Lower severity (no crash, no data loss) but worth a slice that surfaces the error via a structured log.
