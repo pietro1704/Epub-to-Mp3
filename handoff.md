@@ -978,3 +978,17 @@ Release Desktop run 26432885034:
 - **GREEN:** 4/4 guard tests; full Flutter suite → 278/278 (was 274/274, +4). `flutter analyze` clean.
 - **adjacent audit (clean):** the `_startConversion` async path inside `book_open_screen` only mutates state from within `_handleSnapshot` (gated by `mounted`) or after explicit user actions, so it doesn't need the guard.
 - **next investigation:** scan iOS for the same axis-of-bugs. `InstantReaderView` has `onAppear` async paths that read `fulltext.jobId` post-await; if the user pops back and the view re-mounts during the I/O the same stale-continuation effect could land.
+
+### 2026-05-27 Claude — Slice 37 NO-OP AUDIT (iOS InstantReaderView + Flutter cache/library stores)
+
+- **status:** no actionable bug found. Recording per user directive (no cosmetic changes).
+- **scope audited:**
+  - `ios/EpubToMp3/EpubToMp3/Views/InstantReaderView.swift` async paths: `positionTask` and `sentenceTask` already cancel-then-recreate via the same `ObjectIdentifier(activePlayer)` guard, and each `for await` loop checks `Task.isCancelled` after every yield. No analog of the Flutter slice 36 race exists — iOS already handles it.
+  - `flutter_app/lib/services/python_bridge.dart` — `_decodeFulltext` null-handles raw inputs; stdin path-passing avoids shell-quoting hazards.
+  - `flutter_app/lib/services/local_fulltext_cache.dart` — bookId is regex-sanitised before composing the file path; saves use atomic tmp+rename; reads and evicts swallow errors as best-effort. No path-traversal or corruption hazard.
+  - `flutter_app/lib/services/library_store.dart::importBook` — between `await contentHash(path)` and the in-memory mutation block all code is synchronous, so Dart's single-isolate guarantees rule out concurrent-mutation hazards.
+- **evidence:** all four surfaces re-read carefully; the patterns that bit `book_open_screen` (slices 32–36) are absent or already guarded. CI master green (last run on `175ed9a`).
+- **next recommended targets (none blocker-grade; surface in order of expected value):**
+  1. iOS `PlayerReaderView.installPositionLoop` parity: it spawns its own `Task` for the position stream. Verify the same cancel-on-replace guard applies when the user re-mounts the view with a different snapshot.
+  2. Backend `python_app/server.py::process_conversion` — long-running async path with multiple yields. Audit whether a job's `outputDir` rename mid-conversion would orphan the chapter writeback (similar to Flutter slice 34 pattern, just server-side).
+  3. Flutter `BookmarkStore.save` after `library.remove(bookId)` — current behaviour orphans bookmarks but does not surface them. Could either prune them on remove or filter in queries — UX call, not a bug per se.
