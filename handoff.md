@@ -914,3 +914,14 @@ Release Desktop run 26432885034:
   - Wiring (screen): `ref.watch` + rebind no build path.
   Os três precisam quebrar pra slice 30 regredir silenciosamente.
 - **next blocker scan:** nada acionável encontrado nesta passada. Slice 30 → 31 cobre o último risco identificado no áudio path. Próximo investigação recomendada: auditar `book_open_screen._restoreResumePosition` race com o SSE listener — chamada async + `setState` pode disparar em ordem inesperada quando o backend manda chapter snapshots durante o restore.
+
+### 2026-05-27 Claude — Slice 32 GREEN (retry resume restoration until saved chapter lands)
+
+- **status:** done, committed `96c7fa1`, pushed. Real Flutter UX bug fixed.
+- **bug:** `book_open_screen._restoreResumePosition` was called as soon as the **first** chapter batch arrived from the SSE stream (`newChapters.length == _playableChapters.length` was true on first batch). For a fresh conversion this often meant a 1-chapter queue, and the saved chapter (e.g. EPUB-7 — where the user was) wasn't in it yet. `ResumePositionRouter.queueIndexForSavedValue` returned null → restore silently dropped. When EPUB-7 eventually landed in a later batch nothing retried — the user lost their resume point every time they reopened a freshly converting book.
+- **fix:** new `ResumeRestorationGuard` converts the one-shot call into a retry-until-ready pattern. Returns `null` while the saved chapter is unresolvable; returns the queue index exactly once when it finally lands; **latches** after that so we never re-restore over the user's manual playback. Caller now invokes restore on every SSE batch (gated only by `!player.isPlaying`).
+- **lifecycle:** guard reset in `_startConversion` (new conversion) and `_cancelConversion` (user cancelled).
+- **RED:** `test/resume_restoration_guard_test.dart` (4 tests) — fails to compile. Covers: unresolved chapter returns null without latching, success at later batch + latch, post-restore is null, mid-conversion retry sequence.
+- **GREEN:** 4/4 guard tests <1s; full Flutter suite → 265/265 (was 261/261, +4). `flutter analyze` clean.
+- **scope note:** Hermes' next-recommended target ("`_restoreResumePosition` race with SSE") turned out to be a real UX bug, not a thread race — the operations all run on the Flutter main isolate. The race was *temporal* (call fires too early), not concurrent. Fixed with a state machine instead of locks.
+- **next investigation:** audit the `_setCoverOnPlayer` path inside `_handleSnapshot` — it reads `library.books.firstWhere(...)` synchronously with no `orElse` and would throw if the book was just removed from the library while a conversion is running.
