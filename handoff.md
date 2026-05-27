@@ -898,3 +898,19 @@ Release Desktop run 26432885034:
 - **GREEN:** 7/7 coordinator tests (was 5/5), full Flutter suite 258/258 (was 256/256, +2). `flutter analyze` clean across all 3 touched files.
 - **files:** `flutter_app/lib/services/sentence_sync_coordinator.dart` (`final` engine → mutable, +`rebindIfEngineChanged`), `flutter_app/lib/screens/player_reader_screen.dart` (`ref.watch` + rebind in build), `flutter_app/lib/views/instant_reader_view.dart` (`ref.watch` + rebind + re-attach stream subscription, + missing `SyncEngine` import), `flutter_app/test/sentence_sync_coordinator_test.dart` (+2 tests).
 - **next blocker scan:** nothing else surfaced in this audit pass. Production state remains: 1810 Python pass, 258 Flutter pass, 0 open CodeQL alerts, audit clean. Recommended next investigation: widget test of `PlayerReaderScreen` driving a Fake audio service through a settings change, to pin slice 30 at the integration boundary.
+
+### 2026-05-27 Claude — Slice 31 GREEN (pin syncEngineProvider rebuild contract)
+
+- **status:** done, committed `793abbc`, pushed.
+- **purpose:** ancorar a precondição que slice 30 assume — que `syncEngineProvider` hands out a new `SyncEngine` whenever `settings.*` muda. Unit tests do slice 30 cobrem o coordinator side; faltava o lado provider.
+- **slice:** new `flutter_app/test/sync_engine_rebind_integration_test.dart` (3 tests, real `ProviderContainer`):
+  1. `setWpm` → família re-emite novo `SyncEngine` (com novo `wpm`).
+  2. Família é keyed por `jobId` — instâncias distintas pra jobs distintos.
+  3. Configuração não relacionada (`setReaderAutoScroll`) **também** rebuilds o engine (documenta a "over-invalidation" — qualquer mudança em `settingsProvider` invalida `syncEngineProvider` porque o `ref.watch` é amplo). Pinado pra que uma otimização futura que narrow o watch seja decisão deliberada.
+- **GREEN:** 3/3 in <1s; full Flutter suite → 261/261 (was 258/258, +3).
+- **defense in depth para slice 30:**
+  - Unit (coord): `rebindIfEngineChanged` swaps engine + clears memo, identity-aware.
+  - Integration (provider): `syncEngineProvider` realmente hands out novo engine quando settings mudam.
+  - Wiring (screen): `ref.watch` + rebind no build path.
+  Os três precisam quebrar pra slice 30 regredir silenciosamente.
+- **next blocker scan:** nada acionável encontrado nesta passada. Slice 30 → 31 cobre o último risco identificado no áudio path. Próximo investigação recomendada: auditar `book_open_screen._restoreResumePosition` race com o SSE listener — chamada async + `setState` pode disparar em ordem inesperada quando o backend manda chapter snapshots durante o restore.
