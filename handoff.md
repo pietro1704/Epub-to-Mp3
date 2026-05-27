@@ -883,3 +883,18 @@ Release Desktop run 26432885034:
   3. Widget target points at its own Info.plist with the `NSExtension` dictionary (slice 21B).
 - **GREEN:** `pytest test_widget_embed_config.py -v` → 3/3 in 0.20s.
 - **defense in depth:** the same invariants are now guarded at three layers — shell preflight on local mise tasks, pytest on every CI push, and the actual xcodebuild on Release Desktop runs. A regression now fails fast on the fastest layer.
+
+### 2026-05-27 Claude — Slice 30 GREEN (rebind sentence sync on settings change)
+
+- **status:** done, committed `c158260`, pushed. Real Flutter bug fixed.
+- **risk hunt:** Hermes asked for the next concrete bug in the codebase. Audit target was the slice 24/25 SyncEngine wiring — the only flow on Flutter that landed without widget-test coverage.
+- **bug:** `syncEngineProvider` is `Provider.family<SyncEngine, String>` that watches `settingsProvider`. Every settings change (wpm slider, audio engine toggle, reader theme) disposes the current engine and creates a new one. Pre-slice-30 `SentenceSyncCoordinator` cached the engine in a `final` field forever — `updatePosition()` then wrote into a disposed `StreamController` while `currentSentenceProvider` listened to the new engine. **Sentence highlight silently froze for the rest of the session.**
+- **reproducer:** user opens a book in the player_reader path, plays audio for 30 s with highlight working, slides wpm in settings → highlight stops updating until the screen is fully unmounted. No error, no log line.
+- **fix:** new `SentenceSyncCoordinator.rebindIfEngineChanged(newEngine)`:
+  - same instance → no-op
+  - different instance → swap the held `_engine`, clear `_lastFulltext` + `_lastPlayableIndex` so the next `loadIfChanged` actually runs against the fresh engine.
+- **wiring:** both `PlayerReaderScreen._build` and `_InstantReaderViewState.build` now `ref.watch` `syncEngineProvider`, call `rebindIfEngineChanged` on every build, then proceed with `loadIfChanged`. InstantReaderView additionally re-attaches its `currentSentence` `StreamSubscription` via the new `_attachSentenceStream(engine)` helper so `_liveSentenceId` follows the new engine's stream.
+- **RED:** 2 new tests in `sentence_sync_coordinator_test.dart` — fails to compile until `rebindIfEngineChanged` exists. Covers (a) engine swap clears memo + reloads on next loadIfChanged, (b) identical engine is a no-op (memo preserved).
+- **GREEN:** 7/7 coordinator tests (was 5/5), full Flutter suite 258/258 (was 256/256, +2). `flutter analyze` clean across all 3 touched files.
+- **files:** `flutter_app/lib/services/sentence_sync_coordinator.dart` (`final` engine → mutable, +`rebindIfEngineChanged`), `flutter_app/lib/screens/player_reader_screen.dart` (`ref.watch` + rebind in build), `flutter_app/lib/views/instant_reader_view.dart` (`ref.watch` + rebind + re-attach stream subscription, + missing `SyncEngine` import), `flutter_app/test/sentence_sync_coordinator_test.dart` (+2 tests).
+- **next blocker scan:** nothing else surfaced in this audit pass. Production state remains: 1810 Python pass, 258 Flutter pass, 0 open CodeQL alerts, audit clean. Recommended next investigation: widget test of `PlayerReaderScreen` driving a Fake audio service through a settings change, to pin slice 30 at the integration boundary.
