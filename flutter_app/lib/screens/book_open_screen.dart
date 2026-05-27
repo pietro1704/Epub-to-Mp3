@@ -115,7 +115,20 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen> {
 
     try {
       final library = ref.read(libraryStoreProvider);
-      final book = library.books.firstWhere((b) => b.id == widget.bookId);
+      // Null-safe lookup: the user can remove the book from the library
+      // (or the library can fail to load it) between BookOpenScreen
+      // mounting and this async path running. firstWhere without
+      // orElse would throw StateError and crash the parse flow.
+      final book =
+          library.books.where((b) => b.id == widget.bookId).firstOrNull;
+      if (book == null) {
+        if (!mounted) return;
+        setState(() {
+          _errorMessage = 'Book is no longer in the library';
+          _phase = _Phase.error;
+        });
+        return;
+      }
       final filePath = book.filePath;
       final fulltext = await bridge.parseEpub(filePath, jobId: widget.bookId);
       await cache.save(fulltext, widget.bookId);
@@ -196,7 +209,14 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen> {
   Future<void> _startBackendConversion() async {
     final api = ref.read(apiClientProvider);
     final library = ref.read(libraryStoreProvider);
-    final book = library.books.firstWhere((b) => b.id == widget.bookId);
+    // Null-safe lookup mirrors the _load() guard. Same race: the
+    // book can disappear from the library between the user tapping
+    // play and this method running.
+    final book =
+        library.books.where((b) => b.id == widget.bookId).firstOrNull;
+    if (book == null) {
+      throw StateError('Book is no longer in the library');
+    }
 
     final jobId = await api.uploadAndConvert(book.filePath);
 
