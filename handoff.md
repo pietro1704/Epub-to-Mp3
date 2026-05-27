@@ -925,3 +925,18 @@ Release Desktop run 26432885034:
 - **GREEN:** 4/4 guard tests <1s; full Flutter suite → 265/265 (was 261/261, +4). `flutter analyze` clean.
 - **scope note:** Hermes' next-recommended target ("`_restoreResumePosition` race with SSE") turned out to be a real UX bug, not a thread race — the operations all run on the Flutter main isolate. The race was *temporal* (call fires too early), not concurrent. Fixed with a state machine instead of locks.
 - **next investigation:** audit the `_setCoverOnPlayer` path inside `_handleSnapshot` — it reads `library.books.firstWhere(...)` synchronously with no `orElse` and would throw if the book was just removed from the library while a conversion is running.
+
+### 2026-05-27 Claude — Slice 33 GREEN (null-safe library lookups in book_open_screen)
+
+- **status:** done, committed `eb6206c`, pushed. Real Flutter crash fixed.
+- **bug:** two `firstWhere((b) => b.id == widget.bookId)` calls in `book_open_screen.dart` without `orElse`:
+  - L118 inside `_load` (parse path, runs `await bridge.parseEpub(...)` after lookup).
+  - L199 inside `_startBackendConversion` (upload path).
+  Both crash with `StateError("No element")` if the user removes the book from the library between `BookOpenScreen` mounting and the async path running. Crash is unhandled in `_startBackendConversion`; in `_load` it lands in the generic `catch (e)` but never had a dedicated state for "book gone".
+- **fix:** both call sites switch to `.where(...).firstOrNull` and check for null explicitly:
+  - `_load`: surfaces a clean "Book is no longer in the library" error state via `_Phase.error`.
+  - `_startBackendConversion`: throws a typed `StateError` so the existing catch at L348 turns it into `_conversionError` instead of crashing the isolate.
+- **RED:** `test/library_lookup_safety_test.dart` (2 tests) — the first explicitly asserts that the unsafe form (`firstWhere`) throws StateError, documenting why slice 33 exists. Second confirms the null-safe form returns the book when present.
+- **GREEN:** 2/2 lookup tests; full Flutter suite → 267/267 (was 265/265, +2). `flutter analyze` clean.
+- **scope note:** I also re-audited the other 4 `library.books.indexWhere/firstWhere` sites in the same file. They all already use `indexWhere` + `if (idx < 0) return;` pattern (defensive), so no additional changes needed.
+- **next investigation:** audit `book_open_screen._fetchBackendCover` for the same drop-and-go pattern — it does `await api.fetchBytes(url)` and then writes to `library.books[idx]` after the await. If the book was removed during the fetch, the writeback against a stale index could mutate the wrong book.
