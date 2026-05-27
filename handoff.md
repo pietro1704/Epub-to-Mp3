@@ -1038,3 +1038,26 @@ Release Desktop run 26432885034:
   1. Extend the atomic-write pattern to `_save_stream_index` and `_save_cover_cache` in `server.py` — same one-liner per call site.
   2. Flutter `BookmarkStore.save` after `library.remove(bookId)` — orphaned bookmarks. UX call, not a bug.
   3. iOS `PlayerReaderView.snapshot` defence-in-depth `compatOnChange(of: snapshot.jobId)` re-bootstrap.
+
+### 2026-05-27 Claude — Slice 40 GREEN (server.py non-atomic stream-index / cover-cache writes → silent state loss on SIGTERM)
+
+- **status:** follow-up to slice 39 — the two remaining raw `write_text` JSON persistence call sites in `server.py` are now atomic.
+- **scope:** `_save_stream_index` (per-job streaming manifest at `<output>/<job>/streams/index.json`) and `_save_cover_cache` (cover-thumbnail index at `<output>/.cover_cache/index.json`). Both were flagged in the slice 39 adjacent-audit as same-class bugs with smaller blast radius; this slice closes the gap.
+- **bug:** identical shape to slice 39. `Path.write_text(json.dumps(...))` straight on the target path opens-truncates-writes-closes; a SIGTERM/ENOMEM/disk-full landing mid-call leaves the target file with partial JSON. `_load_stream_index` then catches the `JSONDecodeError` and silently returns `{"chapters": {}}` — every stream chunk previously recorded for the job vanishes (web player loses per-chapter scrubbing inside the chapter). `_load_cover_cache` returns `{}` — every cached cover thumbnail has to be re-extracted from the source EPUB on next launch. `_save_stream_index` fires once per chunk in `_chunk_callback` (so hundreds of times per chapter) — the corruption window is wide.
+- **fix:** new module-level `_atomic_write_text(path, data, encoding="utf-8")` helper in `server.py` (right above `_save_stream_index`) using the slice 39 pattern: PID-suffixed tmp file → `flush` + `fsync` → `os.replace` → except-arm `tmp.unlink(missing_ok=True)`. Both call sites switch from `path.write_text(...)` to `_atomic_write_text(path, ...)`. `_save_cover_cache` keeps its outer try/except swallow (cover thumbnails are best-effort by design) but now the swallowed failure can never publish a partial cover index.
+- **why a shared helper here and not in slice 39:** `JobManager.save_job` keeps the pattern inlined because it also adds `_saved_at` metadata and updates `self._memory_cache` only after the swap — the helper would have leaked those concerns. The two server.py sites are pure `write_text(json.dumps(...))` calls with no per-site state, so the helper is genuinely one-liner-per-call and worth the extraction. The helper is intentionally local to `server.py` (not promoted to a shared util) so the dual-path contract stays explicit: each surface owns its persistence.
+- **RED:** `python_app/tests/test_server_atomic_persistence.py` (7 tests):
+  - `test_save_stream_index_writes_valid_json` — baseline (passes pre+post).
+  - `test_save_stream_index_preserves_previous_on_replace_failure` — fault-inject `os.replace`, assert previous bytes intact. Pre-fix: no `RuntimeError` is raised at all because the old path never calls `os.replace`. **FAIL.**
+  - `test_save_stream_index_first_write_no_partial_target` — same fault, no baseline. Pre-fix: no raise. **FAIL.**
+  - `test_save_stream_index_cleans_up_tmp_on_failure` — pre-fix this passes vacuously (no tmp ever created), but it locks in the cleanup contract for the new code.
+  - `test_save_cover_cache_writes_valid_json` — baseline.
+  - `test_save_cover_cache_no_partial_on_write_fault` — pre-fix the swallowed exception path leaves the new content on disk anyway because no atomic swap exists; assertion that target still equals baseline **FAILS**.
+  - `test_save_cover_cache_cleans_up_tmp_on_failure` — locks cleanup contract.
+  - Pre-fix: 4 fail / 3 pass. Post-fix: 7/7 green.
+- **GREEN:** `mise exec -- pytest python_app/tests/ -q` → **1821 passed, 2 skipped** (Coqui GPU, unchanged from baseline). Exactly +7 vs slice 39 (the new file). Persistence-adjacent suites (test_job_manager_atomic, test_server_conversion, test_job_log_endpoint, test_download_range, test_resume_state_cache, test_resume_state_hash, test_ios_entrypoints_streaming) re-ran clean (100/100).
+- **dual-path note:** `converter.py` has no analogue of these two sites — streaming manifest + cover cache are server-only surfaces. The CLI's persistence layer (`CacheManager`, telemetry append) is already line-buffered append-only or uses `JobManager` (slice 39 atomic). No mirror is needed for this slice.
+- **next recommended targets:**
+  1. Flutter `BookmarkStore.save` after `library.remove(bookId)` — orphaned bookmarks. UX call, not a bug.
+  2. iOS `PlayerReaderView.snapshot` defence-in-depth `compatOnChange(of: snapshot.jobId)` re-bootstrap.
+  3. Promote `_atomic_write_text` to a shared util once a third site needs it (DRY only when the pattern actually repeats outside dual-path boundaries).

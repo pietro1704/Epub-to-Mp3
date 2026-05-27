@@ -627,10 +627,43 @@ def _load_stream_index(job_id: str) -> dict:
     return payload
 
 
+def _atomic_write_text(path: Path, data: str, encoding: str = "utf-8") -> None:
+    """Write `data` to `path` via a sibling tmp file + `os.replace`.
+
+    A direct `Path.write_text` (or `open(path, "w")`) is non-atomic: a
+    SIGTERM, ENOMEM or disk-full landing mid-write leaves the target
+    file half-written, so the next reader sees a JSON parse error and
+    treats persisted state as lost. `os.replace` is atomic on POSIX and
+    atomic-since-3.3 on Windows: either the new bytes are fully in
+    place, or the previous bytes (or non-existence) are still there.
+    fsync the fd before the rename so the bytes are durable on disk
+    before the swap is published; PID-suffixed tmp filename keeps
+    concurrent writers from clobbering each other's in-flight stream.
+    On any failure the tmp file is unlinked so the parent directory
+    never accumulates `*.tmp` orphans.
+    """
+    tmp_path = path.with_suffix(path.suffix + f".{os.getpid()}.tmp")
+    try:
+        with open(tmp_path, "w", encoding=encoding) as handle:
+            handle.write(data)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(tmp_path, path)
+    except Exception:
+        try:
+            tmp_path.unlink(missing_ok=True)
+        except OSError:
+            pass
+        raise
+
+
 def _save_stream_index(job_id: str, payload: dict) -> None:
     index_path = _stream_index_path(job_id, ensure=True)
     payload.setdefault("chapters", {})
-    index_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    _atomic_write_text(
+        index_path,
+        json.dumps(payload, ensure_ascii=False, indent=2),
+    )
 
 
 def _load_cover_cache() -> Dict[str, dict]:
@@ -642,7 +675,7 @@ def _load_cover_cache() -> Dict[str, dict]:
 
 def _save_cover_cache(index: Dict[str, dict]) -> None:
     try:
-        cover_index_path.write_text(json.dumps(index))
+        _atomic_write_text(cover_index_path, json.dumps(index))
     except Exception:
         pass
 
