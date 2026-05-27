@@ -12,12 +12,28 @@ import 'sync_engine.dart';
 /// reader silently shipped without highlight sync. iOS has driven
 /// this from `InstantReaderView.installPositionLoop` since v0.3.x.
 class SentenceSyncCoordinator {
-  SentenceSyncCoordinator(this.engine);
+  SentenceSyncCoordinator(SyncEngine engine) : _engine = engine;
 
-  final SyncEngine engine;
+  SyncEngine _engine;
+  SyncEngine get engine => _engine;
 
   EbookFulltext? _lastFulltext;
   int _lastPlayableIndex = -1;
+
+  /// Re-point the coordinator at a fresh `SyncEngine` instance and
+  /// clear the load memo. `syncEngineProvider` rebuilds the engine
+  /// whenever its watched dependencies (e.g. `settings.wpm`) change;
+  /// without this rebind the cached coordinator kept driving the
+  /// disposed engine while `currentSentenceProvider` listened to the
+  /// new one — sentence highlight silently stopped updating.
+  ///
+  /// No-op when `newEngine` is the same instance as the current one.
+  void rebindIfEngineChanged(SyncEngine newEngine) {
+    if (identical(_engine, newEngine)) return;
+    _engine = newEngine;
+    _lastFulltext = null;
+    _lastPlayableIndex = -1;
+  }
 
   /// Re-load the engine when either the fulltext payload or the
   /// playable cursor changes. Idempotent on identical inputs.
@@ -39,13 +55,13 @@ class SentenceSyncCoordinator {
     _lastFulltext = fulltext;
     _lastPlayableIndex = playableIndex;
     final duration = _durationForChapter(playableChapters, chapter.index);
-    engine.load(chapter, duration);
+    _engine.load(chapter, duration);
   }
 
   /// Forward an audio position tick (seconds) to the engine. Returns
   /// the resolved sentence id, if any.
   String? updatePosition(double positionSeconds) =>
-      engine.update(positionSeconds);
+      _engine.update(positionSeconds);
 
   double _durationForChapter(
       List<ChapterProgress> playableChapters, int epubIndex) {

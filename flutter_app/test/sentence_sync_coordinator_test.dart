@@ -124,5 +124,67 @@ void main() {
       );
       expect(engine.spans, isEmpty);
     });
+
+    test(
+        'rebindIfEngineChanged forwards subsequent updates to the new engine '
+        'and re-loads on the next loadIfChanged call', () {
+      // Slice 30 regression: syncEngineProvider rebuilds the engine
+      // whenever settings.wpm (or anything else it watches) changes.
+      // Before this fix, the cached coordinator kept driving the
+      // disposed engine while currentSentenceProvider listened to the
+      // new one — sentence highlight silently stopped updating.
+      final engineA = SyncEngine();
+      final coordinator = SentenceSyncCoordinator(engineA);
+
+      coordinator.loadIfChanged(
+        fulltext: fulltext,
+        playableChapters: sparsePlayable,
+        playableIndex: 0,
+      );
+      expect(engineA.spans, isNotEmpty);
+
+      // Settings change → provider hands us a fresh engine instance.
+      final engineB = SyncEngine();
+      coordinator.rebindIfEngineChanged(engineB);
+      expect(identical(coordinator.engine, engineB), isTrue);
+
+      // Even with identical inputs the next load must run because the
+      // new engine has no spans yet. The memo must reset on rebind.
+      coordinator.loadIfChanged(
+        fulltext: fulltext,
+        playableChapters: sparsePlayable,
+        playableIndex: 0,
+      );
+      expect(engineB.spans, isNotEmpty,
+          reason: 'rebind must clear the memo so the new engine loads');
+
+      // Position updates now flow into the new engine, not the disposed one.
+      coordinator.updatePosition(0.5);
+      // Smoke check: the new engine handled the position without crash.
+      // Old engine's controller is closed; we cannot assert state on it.
+    });
+
+    test('rebindIfEngineChanged is a no-op when the engine identity is the same',
+        () {
+      final engine = SyncEngine();
+      final coordinator = SentenceSyncCoordinator(engine);
+
+      coordinator.loadIfChanged(
+        fulltext: fulltext,
+        playableChapters: sparsePlayable,
+        playableIndex: 0,
+      );
+      final spans = engine.spans;
+
+      // Pass the same engine — memo must be preserved.
+      coordinator.rebindIfEngineChanged(engine);
+      coordinator.loadIfChanged(
+        fulltext: fulltext,
+        playableChapters: sparsePlayable,
+        playableIndex: 0,
+      );
+      expect(engine.spans, same(spans),
+          reason: 'identical engine must keep the load skipped');
+    });
   });
 }

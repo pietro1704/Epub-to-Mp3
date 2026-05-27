@@ -72,6 +72,10 @@ class _PlayerReaderScreenState extends ConsumerState<PlayerReaderScreen> {
     // ReaderView's active-sentence underline tracks the audio. Slice
     // 24 closes the silent feature gap vs iOS where this loop has
     // been live since v0.3.x.
+    // First-time init only. The build() pass above is the source of
+    // truth for engine identity: it ref.watches the provider and
+    // re-binds the coordinator when settings change. Here we just
+    // need the position subscription wired up.
     _sentenceSync ??=
         SentenceSyncCoordinator(ref.read(syncEngineProvider(widget.jobId)));
     _positionSub = player.position.listen((pos) {
@@ -263,11 +267,15 @@ class _PlayerReaderScreenState extends ConsumerState<PlayerReaderScreen> {
 
     // Re-prime the sentence-sync engine whenever the EPUB text or the
     // playable cursor changes. `loadIfChanged` is idempotent on
-    // identical inputs, so calling it from build is safe.
+    // identical inputs, so calling it from build is safe. Watching
+    // syncEngineProvider (not ref.read) is what catches a settings
+    // change that rebuilds the engine — the coordinator then rebinds
+    // and reloads instead of writing into a disposed stream.
     final ft = fulltext.valueOrNull;
     if (ft != null) {
-      _sentenceSync ??=
-          SentenceSyncCoordinator(ref.read(syncEngineProvider(widget.jobId)));
+      final engine = ref.watch(syncEngineProvider(widget.jobId));
+      _sentenceSync ??= SentenceSyncCoordinator(engine);
+      _sentenceSync!.rebindIfEngineChanged(engine);
       _sentenceSync!.loadIfChanged(
         fulltext: ft,
         playableChapters: snapshot?.playableChapters ?? const [],

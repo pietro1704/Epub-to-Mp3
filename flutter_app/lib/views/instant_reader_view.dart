@@ -8,6 +8,7 @@ import '../l10n/app_localizations.dart';
 import '../models/ebook_fulltext.dart';
 import '../services/audio_player_service.dart';
 import '../services/sentence_sync_coordinator.dart';
+import '../services/sync_engine.dart';
 import '../state/providers.dart';
 import 'full_player_sheet.dart';
 import 'reader_settings_sheet.dart';
@@ -75,13 +76,21 @@ class _InstantReaderViewState extends ConsumerState<InstantReaderView> {
     final player = widget.player;
     final id = widget.bookId;
     if (player == null || id == null) return;
+    // Initial coordinator + position subscription. The build() pass
+    // below ref.watches `syncEngineProvider(id)` and rebinds the
+    // coordinator + re-attaches the sentence stream whenever the
+    // engine instance changes (e.g. settings.wpm edited mid-playback).
     final engine = ref.read(syncEngineProvider(id));
-    final coordinator = SentenceSyncCoordinator(engine);
-    _sentenceSync = coordinator;
+    _sentenceSync = SentenceSyncCoordinator(engine);
     _positionSub = player.position.listen((pos) {
       if (!mounted) return;
-      coordinator.updatePosition(pos.inMilliseconds / 1000.0);
+      _sentenceSync?.updatePosition(pos.inMilliseconds / 1000.0);
     });
+    _attachSentenceStream(engine);
+  }
+
+  void _attachSentenceStream(SyncEngine engine) {
+    _sentenceSub?.cancel();
     _sentenceSub = engine.currentSentence.listen((id) {
       if (!mounted) return;
       if (id != _liveSentenceId) {
@@ -215,8 +224,22 @@ class _InstantReaderViewState extends ConsumerState<InstantReaderView> {
     final chapter = _resolveChapter(_currentChapterIndex);
     // Slice 25: re-prime the sentence-sync engine for the resolved
     // chapter whenever it changes. loadIfChanged is idempotent on
-    // identical inputs so calling it from build is safe.
+    // identical inputs so calling it from build is safe. Slice 30:
+    // also watch `syncEngineProvider` here so the coordinator
+    // rebinds + the sentence stream is re-attached whenever the
+    // provider hands us a fresh engine instance (e.g. settings.wpm
+    // changed mid-playback). Without the rebind the cached
+    // coordinator wrote to a disposed engine and the highlight
+    // silently froze.
     if (_sentenceSync != null && chapter != null) {
+      final id = widget.bookId;
+      if (id != null) {
+        final engine = ref.watch(syncEngineProvider(id));
+        if (!identical(engine, _sentenceSync!.engine)) {
+          _sentenceSync!.rebindIfEngineChanged(engine);
+          _attachSentenceStream(engine);
+        }
+      }
       _sentenceSync!.loadIfChanged(
         fulltext: widget.fulltext,
         playableChapters: widget.player?.chapters ?? const [],
