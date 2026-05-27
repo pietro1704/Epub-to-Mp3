@@ -22,6 +22,7 @@ import 'package:path_provider/path_provider.dart';
 import '../l10n/app_localizations.dart';
 import '../models/ebook_fulltext.dart';
 import '../models/job_snapshot.dart';
+import '../services/async_load_guard.dart';
 import '../services/audio_player_service.dart';
 import '../services/cover_writeback.dart';
 import '../services/python_bridge.dart';
@@ -54,6 +55,7 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen> {
   int _chaptersTotal = 0;
   final List<ChapterProgress> _playableChapters = [];
   ResumeRestorationGuard _resumeGuard = ResumeRestorationGuard();
+  final AsyncLoadGuard _loadGuard = AsyncLoadGuard();
   StreamSubscription<JobSnapshot>? _sseSubscription;
   StreamSubscription<Duration>? _positionSub;
   Timer? _resumeSaveTimer;
@@ -82,6 +84,13 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen> {
   }
 
   Future<void> _load() async {
+    // didUpdateWidget can fire a new _load while a previous one is
+    // still awaiting cache.read / bridge.parseEpub. Tag each load
+    // with a generation token so the stale continuation skips its
+    // setState and does not flash the previous book's content onto
+    // the newly-mounted bookId.
+    final gen = _loadGuard.start();
+    final loadingForBookId = widget.bookId;
     setState(() {
       _phase = _Phase.resolving;
       _fulltext = null;
@@ -91,9 +100,9 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen> {
     final cache = ref.read(localFulltextCacheProvider);
 
     // 1) Try cached fulltext.
-    final cached = await cache.read(widget.bookId);
+    final cached = await cache.read(loadingForBookId);
+    if (!mounted || !_loadGuard.isCurrent(gen)) return;
     if (cached != null) {
-      if (!mounted) return;
       setState(() {
         _fulltext = cached;
         _phase = _Phase.ready;
@@ -107,7 +116,7 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen> {
     if (!bridge.isSupported) {
       // On platforms where Python is not available, show the text from
       // cache only. If there's no cache we show an informative error.
-      if (!mounted) return;
+      if (!mounted || !_loadGuard.isCurrent(gen)) return;
       setState(() {
         _errorMessage = 'EPUB parsing is not available on this platform';
         _phase = _Phase.error;
@@ -121,10 +130,11 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen> {
       // (or the library can fail to load it) between BookOpenScreen
       // mounting and this async path running. firstWhere without
       // orElse would throw StateError and crash the parse flow.
-      final book =
-          library.books.where((b) => b.id == widget.bookId).firstOrNull;
+      final book = library.books
+          .where((b) => b.id == loadingForBookId)
+          .firstOrNull;
       if (book == null) {
-        if (!mounted) return;
+        if (!mounted || !_loadGuard.isCurrent(gen)) return;
         setState(() {
           _errorMessage = 'Book is no longer in the library';
           _phase = _Phase.error;
@@ -132,16 +142,18 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen> {
         return;
       }
       final filePath = book.filePath;
-      final fulltext = await bridge.parseEpub(filePath, jobId: widget.bookId);
-      await cache.save(fulltext, widget.bookId);
-      if (!mounted) return;
+      final fulltext =
+          await bridge.parseEpub(filePath, jobId: loadingForBookId);
+      if (!mounted || !_loadGuard.isCurrent(gen)) return;
+      await cache.save(fulltext, loadingForBookId);
+      if (!mounted || !_loadGuard.isCurrent(gen)) return;
       setState(() {
         _fulltext = fulltext;
         _phase = _Phase.ready;
       });
       _markBookOpened();
     } catch (e) {
-      if (!mounted) return;
+      if (!mounted || !_loadGuard.isCurrent(gen)) return;
       setState(() {
         _errorMessage = e.toString();
         _phase = _Phase.error;
