@@ -1061,3 +1061,22 @@ Release Desktop run 26432885034:
   1. Flutter `BookmarkStore.save` after `library.remove(bookId)` — orphaned bookmarks. UX call, not a bug.
   2. iOS `PlayerReaderView.snapshot` defence-in-depth `compatOnChange(of: snapshot.jobId)` re-bootstrap.
   3. Promote `_atomic_write_text` to a shared util once a third site needs it (DRY only when the pattern actually repeats outside dual-path boundaries).
+
+
+### 2026-05-27 Hermes — Slice 41 GREEN (local iOS Simulator panic guard for Intel 8 GiB Mac)
+
+- **status:** emergency hardening after the local Mac rebooted with `AppleEmbeddedPCIeUpLinkMgmt::_linkInterruptAction` link-timeout panic. The machine is `MacBookPro15,2`, Intel, 8 GiB RAM. Recent CoreSimulator / iOS 18+ / iOS 26.x runtime work is no longer considered safe locally.
+- **diagnosis:** after reboot, `xcrun simctl list` / CoreSimulator activity spawned `simdiskimaged` plus `update_dyld_sim_shared_cache` against recent iOS 18.x runtimes. The root-owned dyld cache updater used hundreds of percent CPU and large memory until it completed; without sudo it could not be killed. This matches the user's report that recent simulators plus low resources caused panics.
+- **fixes:**
+  - `mise run ios:build` now runs `scripts/guard_ios_simulator_resources.py` immediately after `xcodegen generate`; on Intel Macs with <12 GiB RAM it exits 2 before any simulator destination lookup/build unless `IOS_ALLOW_LOW_RESOURCE_SIMULATOR=1` is explicitly set.
+  - `scripts/select_ios_simulator.py` now refuses live CoreSimulator queries on low-resource Intel Macs unless explicitly overridden, and by default filters out iOS runtime majors >17. Opt-ins are explicit: `IOS_ALLOW_LOW_RESOURCE_SIMULATOR=1`, `IOS_ALLOW_RECENT_SIMULATOR=1`, or `IOS_MAX_SIMULATOR_MAJOR=<major>`.
+  - `CLAUDE.md` now has a dedicated **Local iOS Simulator Safety** section telling Claude Code / future agents not to run local iOS Simulator builds/tests or boot recent simulators on this Mac; use GitHub Actions / Release Desktop instead.
+- **tests:**
+  - `python_app/tests/test_select_ios_simulator.py` adds coverage for skipping recent runtimes even when booted, explicit opt-in for recent runtimes, and refusal to query live CoreSimulator on a low-resource Intel Mac.
+  - `python_app/tests/test_guard_ios_simulator_resources.py` covers refusal on Intel 8 GiB, override behavior, and safe pass-through on Apple Silicon or larger Intel machines.
+- **verification:**
+  - `mise exec -- pytest python_app/tests/test_select_ios_simulator.py python_app/tests/test_guard_ios_simulator_resources.py -q` → 14 passed.
+  - `mise exec -- ruff check scripts/guard_ios_simulator_resources.py scripts/select_ios_simulator.py python_app/tests/test_select_ios_simulator.py python_app/tests/test_guard_ios_simulator_resources.py` → clean.
+  - Live guard checks on this Mac: both `python3 scripts/select_ios_simulator.py` and `python3 scripts/guard_ios_simulator_resources.py` exit 2 before doing unsafe simulator work.
+- **Claude notice:** Claude Code was also explicitly notified via print mode and acknowledged: no local iOS Simulator builds/tests or CoreSimulator boot on this Intel 8 GiB Mac; use GitHub Actions / Release Desktop.
+- **next recommended targets:** resume the pre-panic app hardening queue from slice 40 once CI for this safety slice is green: Flutter `BookmarkStore` orphan pruning, then optional iOS `PlayerReaderView.snapshot` defense-in-depth. Keep iOS simulator validation on CI only.

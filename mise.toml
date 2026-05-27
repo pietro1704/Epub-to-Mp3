@@ -360,6 +360,11 @@ if ! command -v xcodegen >/dev/null 2>&1; then
 fi
 xcodegen generate
 
+# Local low-resource Intel Macs have kernel-panicked under recent iOS
+# Simulator/CoreSimulator load. Refuse local simulator builds by default on
+# those machines; CI and explicitly opted-in developers can override.
+python3 ../../scripts/guard_ios_simulator_resources.py
+
 # Slice 18 preflight: confirm the widget extension is wired into the
 # app bundle. xcodegen has silently dropped this dependency in the past,
 # producing a release .app with no PlugIns/EpubToMp3Widget.appex and

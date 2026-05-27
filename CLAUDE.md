@@ -531,6 +531,16 @@ These features exist specifically to improve the audiobook listening experience:
 
 ---
 
+## Local iOS Simulator Safety
+
+This user's local Mac is a MacBookPro15,2 Intel 2018 with 8 GiB RAM. Recent iOS Simulator/CoreSimulator workloads (especially iOS 26.x) have triggered kernel panics (`AppleEmbeddedPCIeUpLinkMgmt::_linkInterruptAction` link timeout). Do **not** run local iOS Simulator builds/tests or boot recent simulators on this Mac by default.
+
+Rules:
+- Prefer GitHub Actions / Release Desktop for iOS artifacts and simulator validation.
+- Local `mise run ios:build` is guarded and must fail fast on Intel Macs with <12 GiB RAM unless `IOS_ALLOW_LOW_RESOURCE_SIMULATOR=1` is explicitly set.
+- `scripts/select_ios_simulator.py` must not choose iOS >17 by default; opt in only with `IOS_ALLOW_RECENT_SIMULATOR=1` or `IOS_MAX_SIMULATOR_MAJOR=<major>`.
+- Local macOS builds (`mise run mac:build`) are OK; avoid booting Simulator.app/CoreSimulator unless the user explicitly accepts the risk.
+
 ## Tooling Policy
 
 **Always use `mise` for all toolchain management and task execution — never install or invoke tools natively.**
