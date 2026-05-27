@@ -992,3 +992,27 @@ Release Desktop run 26432885034:
   1. iOS `PlayerReaderView.installPositionLoop` parity: it spawns its own `Task` for the position stream. Verify the same cancel-on-replace guard applies when the user re-mounts the view with a different snapshot.
   2. Backend `python_app/server.py::process_conversion` — long-running async path with multiple yields. Audit whether a job's `outputDir` rename mid-conversion would orphan the chapter writeback (similar to Flutter slice 34 pattern, just server-side).
   3. Flutter `BookmarkStore.save` after `library.remove(bookId)` — current behaviour orphans bookmarks but does not surface them. Could either prune them on remove or filter in queries — UX call, not a bug per se.
+
+### 2026-05-27 Claude — Slice 38 NO-OP AUDIT (iOS PlayerReaderView async lifecycle)
+
+- **status:** no actionable bug found. Recording per user directive (no cosmetic changes).
+- **scope:** `ios/EpubToMp3/EpubToMp3/Views/PlayerReaderView.swift` — every `Task { … }` spawn, the `bootstrap()` / `teardown()` lifecycle, all 4 parent call sites, and the AsyncStream contract on `AudioPlayer.position` / `currentChapter`.
+- **tasks audited (6 spawn sites):**
+  - `positionTask` (l. 617) — `bootstrap()` does `positionTask?.cancel()` before reassigning; loop checks `Task.isCancelled` after each yield; teardown nils it.
+  - `sentenceTask` (l. 631) — same cancel-then-recreate pattern; reads `sync.currentSentence`; teardown nils it.
+  - `streamTask` (l. 665) — guarded by `streamingJobId` short-circuit so re-invoking `bootstrap()` for the same job doesn't double-subscribe; explicit `CancellationError` + `URLError(.cancelled)` catches so dismissing the reader doesn't surface a phantom error banner; teardown sets task = nil **and** clears `streamingJobId`.
+  - `coverFetchTask` (l. 709) — outer `coverFetchJobId` guard plus inner `guard player?.snapshot?.jobId == targetJobId` race-check inside the MainActor hop; teardown nils both.
+  - `downloadTask` (l. 553) — captures `jobId = snapshot.jobId` by value before launching; immune to subsequent prop mutation; teardown cancels.
+  - `fulltextTask` (l. 738) — cancel-then-recreate via `triggerFulltextLoad()`; only place that mutates `fulltext`/`fulltextError`; teardown nils.
+- **lifecycle guard:** `bootstrap()` is invoked only from `.onAppear`. There is no `onChange(of: snapshot)` modifier in this view, so a parent that swapped the snapshot prop on a stayed-mounted view would NOT re-init the player. That would be the Flutter slice 36 / 34 analog. **But:** all four parent call sites force a fresh view identity on snapshot change:
+  - `NowPlayingView` (l. 80): `.id("nowplaying-\(book.id)-\(currentChapterIndex)")` — every book/chapter change recreates the view → onDisappear → teardown → onAppear → bootstrap.
+  - `SplitViewRoot.libraryBookDetail` (l. 275): `.id("\(book.id)-\(chapterIndex)")` — same pattern.
+  - `MainReaderView` (l. 86): inside `.sheet(isPresented:)` — SwiftUI rebuilds the sheet content fresh on each present cycle; the sheet blocks parent interaction so the book can't switch under it.
+  - `JobDetailView` (l. 186): inside `.compatFullScreenCover(isPresented:)` — `viewModel.jobId` is fixed for the cover's lifetime; the snapshot it produces always carries the same `jobId`.
+- **AsyncStream invariant:** `AudioPlayer.position` and `.currentChapter` are factory properties — every read yields a fresh `AsyncStream` with a unique UUID added to `positionContinuations` / `chapterContinuations`. `onTermination` removes the entry on consumer cancellation. `teardownPlayer()` does NOT drain the continuations (only `deinit` does), but jobs share the same continuation so a snapshot switch via `play(snapshot:)` continues feeding into the same subscriber — which is the intended behavior because `play.snapshot.jobId == self.snapshot.jobId` is invariant for the view's lifetime (forced by the parent `.id()`).
+- **evidence:** searched for `bootstrap()` callers (1: `.onAppear`), all `Task {` spawns (6, all covered), all `scenePhase`/`compatOnChange` modifiers on this view (0), and all parent call sites that pass a snapshot. No path exposes a stale-continuation race like slices 34 (cover writeback) or 36 (didUpdateWidget→_load).
+- **deviation from slice 37's recommended #1 wording:** Hermes flagged `installPositionLoop` — the actual symbol is `bootstrap()` and `positionTask`. Same idea, different name; audited the real surface.
+- **next recommended targets (unchanged from slice 37, plus one new):**
+  1. Backend `python_app/server.py::process_conversion` — long-running async path with multiple yields. Audit whether a job's `outputDir` rename mid-conversion would orphan the chapter writeback (similar to Flutter slice 34 pattern, just server-side).
+  2. Flutter `BookmarkStore.save` after `library.remove(bookId)` — orphaned bookmarks. UX call, not a bug.
+  3. iOS `PlayerReaderView.snapshot` could be defended in depth by also listening to `compatOnChange(of: snapshot.jobId)` and re-invoking `bootstrap()` on mismatch. **Currently not needed** because no parent passes a mutating snapshot, but the guard would be cheap and would prevent regressions if a future caller forgot `.id()`. Flagging as a defense-in-depth improvement (not a bug), pending Hermes triage.
