@@ -27,6 +27,7 @@ import '../services/cover_writeback.dart';
 import '../services/python_bridge.dart';
 import '../services/resume_position_router.dart';
 import '../services/resume_restoration_guard.dart';
+import '../services/sse_subscription_lifecycle.dart';
 import '../state/providers.dart';
 import '../views/instant_reader_view.dart';
 import 'library_screen.dart';
@@ -225,22 +226,23 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen> {
     library.update(book);
 
     _sseSubscription?.cancel();
-    _sseSubscription = api
-        .jobStream(jobId)
-        .listen(
-          _handleSnapshot,
-          onError: (Object e) {
-            if (!mounted) return;
-            setState(() {
-              _isConverting = false;
-              _conversionError = e.toString();
-            });
-          },
-          onDone: () {
-            if (!mounted) return;
-            setState(() => _isConverting = false);
-          },
-        );
+    _sseSubscription = SseSubscriptionLifecycle.listen(
+      api.jobStream(jobId),
+      onData: _handleSnapshot,
+      onError: (Object e) {
+        _sseSubscription = null;
+        if (!mounted) return;
+        setState(() {
+          _isConverting = false;
+          _conversionError = e.toString();
+        });
+      },
+      onDone: () {
+        _sseSubscription = null;
+        if (!mounted) return;
+        setState(() => _isConverting = false);
+      },
+    );
   }
 
   void _handleSnapshot(JobSnapshot snapshot) {
