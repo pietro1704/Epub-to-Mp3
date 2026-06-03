@@ -112,6 +112,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
           FilledButton(
             onPressed: () {
               store.remove(book.id);
+              ref.read(bookmarkStoreProvider).removeAll(book.id);
               Navigator.pop(context);
             },
             child: Text(t.remove),

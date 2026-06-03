@@ -136,6 +136,49 @@ void main() {
     expect(restored.isHighlight, true);
   });
 
+  test('pruneOrphans drops bookmarks whose book is no longer in library', () {
+    store.addBookmark(bookId: 'live-1', chapterIndex: 0, chapterTitle: 'A');
+    store.addBookmark(bookId: 'live-1', chapterIndex: 1, chapterTitle: 'B');
+    store.addBookmark(bookId: 'deleted-1', chapterIndex: 0, chapterTitle: 'C');
+    store.addBookmark(bookId: 'deleted-2', chapterIndex: 0, chapterTitle: 'D');
+    expect(store.bookmarks.length, 4);
+
+    var notified = 0;
+    store.addListener(() => notified++);
+
+    final removed = store.pruneOrphans(['live-1']);
+
+    expect(removed, 2);
+    expect(store.bookmarks.length, 2);
+    expect(store.bookmarks.every((b) => b.bookId == 'live-1'), true);
+    expect(notified, 1);
+  });
+
+  test('pruneOrphans with all-valid ids is a no-op and does not notify', () {
+    store.addBookmark(bookId: 'b1', chapterIndex: 0, chapterTitle: 'A');
+    store.addBookmark(bookId: 'b2', chapterIndex: 0, chapterTitle: 'B');
+
+    var notified = 0;
+    store.addListener(() => notified++);
+
+    final removed = store.pruneOrphans(['b1', 'b2', 'b3-unused']);
+    expect(removed, 0);
+    expect(store.bookmarks.length, 2);
+    expect(notified, 0);
+  });
+
+  test('pruneOrphans persists across reload', () async {
+    store.addBookmark(bookId: 'live-1', chapterIndex: 0, chapterTitle: 'A');
+    store.addBookmark(bookId: 'gone-1', chapterIndex: 0, chapterTitle: 'B');
+
+    store.pruneOrphans(['live-1']);
+
+    final prefs = await SharedPreferences.getInstance();
+    final store2 = BookmarkStore(prefs: prefs, storageKey: 'bookmarks.test');
+    expect(store2.bookmarks.length, 1);
+    expect(store2.bookmarks.first.bookId, 'live-1');
+  });
+
   test('bookmarksForChapter orders by startChar', () {
     store.addBookmark(
       bookId: 'b1',

@@ -113,6 +113,25 @@ class BookmarkStore extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Drop bookmarks whose [Bookmark.bookId] is not in [validBookIds].
+  /// Returns the number of orphans pruned. Safe to call repeatedly.
+  ///
+  /// Without this, deleting a book from the library leaves its
+  /// bookmarks in SharedPreferences forever — they accumulate, bloat
+  /// storage, and (if a re-imported file ever yields the same SHA-256
+  /// bookId) reappear as zombie entries.
+  int pruneOrphans(Iterable<String> validBookIds) {
+    final keep = validBookIds.toSet();
+    final before = _bookmarks.length;
+    _bookmarks.removeWhere((b) => !keep.contains(b.bookId));
+    final removed = before - _bookmarks.length;
+    if (removed > 0) {
+      _persist();
+      notifyListeners();
+    }
+    return removed;
+  }
+
   // ---------- Persistence ------------------------------------------------
 
   void _load() {

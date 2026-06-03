@@ -1080,3 +1080,19 @@ Release Desktop run 26432885034:
   - Live guard checks on this Mac: both `python3 scripts/select_ios_simulator.py` and `python3 scripts/guard_ios_simulator_resources.py` exit 2 before doing unsafe simulator work.
 - **Claude notice:** Claude Code was also explicitly notified via print mode and acknowledged: no local iOS Simulator builds/tests or CoreSimulator boot on this Intel 8 GiB Mac; use GitHub Actions / Release Desktop.
 - **next recommended targets:** resume the pre-panic app hardening queue from slice 40 once CI for this safety slice is green: Flutter `BookmarkStore` orphan pruning, then optional iOS `PlayerReaderView.snapshot` defense-in-depth. Keep iOS simulator validation on CI only.
+
+### 2026-06-03 Claude — Slice 42 GREEN (Flutter BookmarkStore orphan pruning)
+
+- **status:** done locally, full Flutter suite green (281/281), ready to commit & push.
+- **bug:** `LibraryStore.remove(bookId)` (called from `library_screen._confirmRemove`) deletes the book entry but never tells `BookmarkStore` to drop bookmarks/highlights that reference it. They stay in `SharedPreferences` under `bookmarks.v1` forever, bloating storage and — because book IDs are SHA-256 of file content — reappearing as zombie entries if the user re-imports the exact same EPUB later.
+- **scope:** TDD slice as recommended by Hermes slice 41.
+- **fixes:**
+  - `BookmarkStore.pruneOrphans(Iterable<String> validBookIds)` (returns count, only `_persist()`+`notifyListeners()` when something was actually dropped).
+  - Cascade in `library_screen._confirmRemove`: after `store.remove(book.id)`, also `ref.read(bookmarkStoreProvider).removeAll(book.id)` so new deletions don't create orphans.
+  - One-shot post-frame prune in `main.dart` `EpubToMp3App.build` (`addPostFrameCallback`) so historical orphans (from pre-cascade builds, or manual prefs edits) are cleaned at app start without blocking the first frame.
+- **tests:** `flutter_app/test/bookmark_store_test.dart` +3 cases — prune drops orphans + notifies, all-valid no-op stays silent, prune persists across reload.
+- **verification:**
+  - `cd flutter_app && mise exec -- flutter test test/bookmark_store_test.dart` → 10/10 passed.
+  - `cd flutter_app && mise exec -- flutter test` → 281/281 passed (the one pre-existing unused-import warning in `sync_engine_rebind_integration_test.dart` is unchanged from before this slice).
+  - `cd flutter_app && mise exec -- flutter analyze` → 1 warning unchanged from before, 0 errors.
+- **next recommended targets:** iOS `PlayerReaderView.snapshot` defense-in-depth (Hermes' next item from slice 41), then continue mirror parity sweep (`flutter-mirror` agent) once CI is green.
