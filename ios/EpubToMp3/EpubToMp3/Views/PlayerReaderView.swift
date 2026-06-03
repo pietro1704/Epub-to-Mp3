@@ -210,6 +210,22 @@ struct PlayerReaderView: View {
             bootstrap()
         }
         .onDisappear(perform: teardown)
+        // Defense-in-depth: every current parent forces a fresh view
+        // identity on snapshot change via `.id(...)`, so `onAppear`
+        // re-fires and `bootstrap()` runs against the new jobId.
+        // A future caller that forgets the `.id(...)` would leave this
+        // view mounted while `snapshot.jobId` mutates underneath us —
+        // `positionTask` / `sentenceTask` would keep reading the OLD
+        // player's streams, `streamingJobId` / `coverFetchJobId` would
+        // stick to the previous job, and the UI would silently desync.
+        // Tearing down and re-bootstrapping on jobId change keeps the
+        // invariant local to this view instead of trusting every call
+        // site to remember the identity key.
+        .compatOnChange(of: snapshot.jobId) { _ in
+            guard !isSwiftUIPreview else { return }
+            teardown()
+            bootstrap()
+        }
     }
 
     // MARK: Panes

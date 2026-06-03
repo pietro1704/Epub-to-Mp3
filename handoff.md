@@ -1096,3 +1096,24 @@ Release Desktop run 26432885034:
   - `cd flutter_app && mise exec -- flutter test` → 281/281 passed (the one pre-existing unused-import warning in `sync_engine_rebind_integration_test.dart` is unchanged from before this slice).
   - `cd flutter_app && mise exec -- flutter analyze` → 1 warning unchanged from before, 0 errors.
 - **next recommended targets:** iOS `PlayerReaderView.snapshot` defense-in-depth (Hermes' next item from slice 41), then continue mirror parity sweep (`flutter-mirror` agent) once CI is green.
+
+### 2026-06-03 Claude — Slice 43 GREEN (PlayerReaderView snapshot/jobId defense-in-depth)
+
+- **status:** done locally, narrow file-content regression test green, ready to commit & push.
+- **scope:** `ios/EpubToMp3/EpubToMp3/Views/PlayerReaderView.swift` body modifier chain — adds a defensive `compatOnChange(of: snapshot.jobId)` that calls `teardown()` then `bootstrap()` if a future parent passes a mutating snapshot without forcing a fresh `.id(...)`. Today every call site (NowPlayingView, SplitViewRoot.libraryBookDetail, MainReaderView sheet, JobDetailView cover) already keys on the book/job id so this code path is dormant, but the in-view guard prevents regressions if any future caller forgets the identity key — matching Hermes' slice 38 "defense-in-depth improvement" recommendation.
+- **why teardown-before-bootstrap (not the other way around):** `bootstrap()` short-circuits same-jobId SSE resubscription via the `streamingJobId` guard, but `positionTask` / `sentenceTask` re-create unconditionally. Spawning new tasks before cancelling the old ones would double-subscribe to the previous player's position/sentence AsyncStreams for one frame. Tearing down first cancels all six tasks (`positionTask`, `sentenceTask`, `fulltextTask`, `streamTask`, `coverFetchTask`, `downloadTask`) and clears `streamingJobId` / `coverFetchJobId` so the new `bootstrap()` runs against a clean slate.
+- **why guarded on `isSwiftUIPreview`:** matches the existing `onAppear` guard. `bootstrap()` opens an SSE connection and starts AVPlayer work — neither is appropriate inside an Xcode preview canvas.
+- **tests (file-content, non-simulator — required on Intel 8 GiB Mac per slice 41 safety policy):** `python_app/tests/test_player_reader_snapshot_guard.py` +4 cases:
+  - `test_view_has_jobid_change_guard` — modifier presence.
+  - `test_jobid_change_guard_calls_teardown_then_bootstrap` — ordering invariant via brace-balanced closure extraction (a naive `[^}]*?` regex stops at the inner `guard ... return }`).
+  - `test_jobid_guard_skips_swiftui_preview` — preview short-circuit.
+  - `test_bootstrap_and_teardown_symbols_still_exist` — fail-loud if `bootstrap()` / `teardown()` are renamed without updating the guard.
+- **verification:**
+  - `mise exec -- pytest python_app/tests/test_player_reader_snapshot_guard.py -v` → 4/4 passed.
+  - `mise exec -- pytest python_app/tests/test_ios_entrypoints.py python_app/tests/test_ios_bootstrap_embed.py python_app/tests/test_ios_vendor_drift.py python_app/tests/test_player_reader_snapshot_guard.py -q` → 42/42 passed (no collateral regressions in the iOS-surface tests).
+  - `mise exec -- ruff check python_app/tests/test_player_reader_snapshot_guard.py` → clean.
+  - **No local iOS Simulator build** per slice 41 safety rule — Apple-side validation deferred to GitHub Actions / Release Desktop CI.
+- **next recommended targets:**
+  1. Flutter `PlayerView` / equivalent parity audit for the same snapshot/jobId mid-mount mutation risk (`flutter-mirror` agent territory).
+  2. Backend: extend slice-40 atomic-write helper to any new persistence sites added since (sweep `Path.write_text(json.dumps(`).
+  3. Resume the production-readiness sweep tail (`project_ios_prod_readiness_sweep`) once CI for slice 43 is green.
