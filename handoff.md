@@ -1160,3 +1160,19 @@ Release Desktop run 26432885034:
 - **next recommended targets:**
   1. Same sweep on iOS-only stores still keyed by bookId/jobId that `LibraryStore.remove(id:)` ignores: `LocalFulltextCache`, `FulltextStore`, `AudiobookCacheEviction` (active-job guard already handles the "currently playing" case), `WidgetDataSync.recentBooks`, `ResumeStore` (keyed by jobId — needs the `BookEntity.lastJobId` reverse lookup).
   2. Resume the production-readiness sweep tail (`project_ios_prod_readiness_sweep`) once CI for slice 45 is green.
+
+### 2026-06-03 Claude — Slice 46 GREEN (PlayerReaderView chapter-lookup hardening + dedupe)
+
+- **status:** done locally, `xcrun swiftc -parse` clean on all three touched files, ready to commit & push. Independent of Hermes' slice 43 (snapshot/jobId teardown guard) — same view, orthogonal hazard.
+- **bug class:** asymmetric defensive coding between sister views. `PlayerReaderView.chapter(in:fulltext:at:)` only guarded the upper bound (`zeroBasedIndex < fulltext.chapters.count`), while `InstantReaderView.resolveChapter(at:)` already required `index >= 0`. The PlayerReaderView path is reachable from `playingEpubZeroBasedIndex ?? player.currentChapterIndex`; the same view emits `-1` as a sentinel at line 187 (`epubIndex(forPlayableIndex:) ?? -1`) when handing an EPUB index to the bookmark sheet. The `-1` path doesn't flow into `chapter(at:)` today, but the asymmetry is exactly what slice 41's defense-in-depth recommendation calls out — fix once at the helper layer instead of trusting every future caller to remember the convention.
+- **changes:**
+  - `Views/InstantReaderView.swift`: new `InstantReaderIndexMapper.chapter(in:atZeroBasedIndex:)` static (centralises the EPUB-1-based ↔ zero-based lookup). Refuses negative indices and empty fulltexts before any subscript.
+  - `Views/PlayerReaderView.swift`: `chapter(in:at:)` is now a one-line delegate to the mapper. `currentChapterTitle` swaps `< chapters.count` for `chapters.indices.contains(...)` so a future negative-index regression collapses to "—" instead of trapping.
+- **why the helper layer (not inline guards):** `InstantReaderView` already had its own version of this lookup (`resolveChapter(at:)`) with the correct `index >= 0` guard. Two near-duplicate implementations of the same EPUB-1-based-to-zero-based dance is exactly how the asymmetry was introduced; consolidating means the next reader surface inherits the guard automatically.
+- **tests:** `InstantReaderIndexMapperTests` +5 cases — exact one-based hit, positional fallback when an index is missing, negative-index → nil, empty fulltext → nil, out-of-range zero-based → nil. New fixture helper `fulltext(indices:)` covers all four cases without a real backend response.
+- **verification:**
+  - `xcrun swiftc -parse ios/.../InstantReaderView.swift ios/.../PlayerReaderView.swift ios/.../InstantReaderIndexMapperTests.swift` → clean.
+  - **No local iOS Simulator run** per slice 41 safety rule (Intel 8 GiB Mac). Apple-side test execution will fire on the next `release-desktop.yml` tag-push.
+- **next recommended targets:**
+  1. Continue Hermes' slice-45 follow-up sweep: the iOS-only stores still keyed by `bookId`/`jobId` that `LibraryStore.remove(id:)` ignores (`LocalFulltextCache`, `FulltextStore`, `AudiobookCacheEviction`, `WidgetDataSync.recentBooks`, `ResumeStore` via `BookEntity.lastJobId` reverse lookup).
+  2. Audit `flutter_app/lib/screens/book_open_screen.dart` chapter resolution for the same negative-index / empty-fulltext defenses (mirror agent territory).

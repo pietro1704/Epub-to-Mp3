@@ -34,6 +34,44 @@ final class InstantReaderIndexMapperTests: XCTestCase {
         )
     }
 
+    func testChapterLookupExactMatchOnOneBasedIndex() {
+        let fulltext = Self.fulltext(indices: [1, 2, 3])
+        let ch = InstantReaderIndexMapper.chapter(in: fulltext, atZeroBasedIndex: 1)
+        XCTAssertEqual(ch?.index, 2, "zero-based 1 maps to one-based 2")
+    }
+
+    func testChapterLookupFallsBackToPositionalWhenIndexMissing() {
+        // backend skipped chapter.index = 2, but the array still has
+        // 3 entries — positional fallback should land on slot 1.
+        let fulltext = Self.fulltext(indices: [1, 3, 5])
+        let ch = InstantReaderIndexMapper.chapter(in: fulltext, atZeroBasedIndex: 1)
+        XCTAssertEqual(ch?.index, 3, "no chapter.index == 2 → fall back to positional slot 1")
+    }
+
+    func testChapterLookupReturnsNilForNegativeIndex() {
+        let fulltext = Self.fulltext(indices: [1, 2, 3])
+        XCTAssertNil(
+            InstantReaderIndexMapper.chapter(in: fulltext, atZeroBasedIndex: -1),
+            "negative index must not subscript-crash even if a caller's ?? -1 fallback leaks through"
+        )
+    }
+
+    func testChapterLookupReturnsNilForEmptyFulltext() {
+        let fulltext = Self.fulltext(indices: [])
+        XCTAssertNil(
+            InstantReaderIndexMapper.chapter(in: fulltext, atZeroBasedIndex: 0),
+            "empty fulltext.chapters must yield nil rather than out-of-bounds subscript"
+        )
+    }
+
+    func testChapterLookupReturnsNilWhenIndexBeyondArray() {
+        let fulltext = Self.fulltext(indices: [1, 2])
+        XCTAssertNil(
+            InstantReaderIndexMapper.chapter(in: fulltext, atZeroBasedIndex: 5),
+            "out-of-range zero-based index must not subscript-crash"
+        )
+    }
+
     func testTocJumpCanClampMissingEpubIndexToNearestPlayableSlot() {
         let snapshot = Self.snapshot(chapters: [
             Self.playableChapter(index: 0),
@@ -67,6 +105,26 @@ final class InstantReaderIndexMapperTests: XCTestCase {
             logUrl: nil,
             error: nil,
             lastActivityAt: nil
+        )
+    }
+
+    private static func fulltext(indices: [Int]) -> EbookFulltext {
+        let chapters: [EbookFulltext.Chapter] = indices.enumerated().map { (slot, idx) in
+            EbookFulltext.Chapter(
+                index: idx,
+                name: "Chapter \(idx)",
+                text: "Body of chapter \(idx) at slot \(slot).",
+                html: nil,
+                css: nil,
+                charCount: nil,
+                segments: nil
+            )
+        }
+        return EbookFulltext(
+            jobId: "ix-mapper-test",
+            bookTitle: "Test",
+            bookAuthor: nil,
+            chapters: chapters
         )
     }
 

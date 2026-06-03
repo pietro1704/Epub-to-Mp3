@@ -16,6 +16,34 @@ enum InstantReaderIndexMapper {
         guard playable.indices.contains(playableIndex) else { return nil }
         return playable[playableIndex].index
     }
+
+    /// Resolve a fulltext chapter from a zero-based EPUB index.
+    ///
+    /// The backend numbers fulltext chapters from 1 (`chapter.index`),
+    /// while every UI cursor we hand in (`AudioPlayer.currentChapterIndex`,
+    /// reader-position channels, TOC taps after translation) is zero-based.
+    /// Lookup order:
+    ///   1. exact match on the 1-based `chapter.index`,
+    ///   2. positional fallback inside `fulltext.chapters` for the same
+    ///      zero-based slot.
+    ///
+    /// Both paths refuse negative indices and empty fulltexts so callers
+    /// can pass an unchecked `Int` (e.g. the `?? -1` fallback used in
+    /// PlayerReaderView's bookmark sheet) without risking a crash when
+    /// the snapshot shrinks or fulltext hasn't been hydrated yet.
+    static func chapter(
+        in fulltext: EbookFulltext,
+        atZeroBasedIndex zeroBasedIndex: Int
+    ) -> EbookFulltext.Chapter? {
+        guard zeroBasedIndex >= 0, !fulltext.chapters.isEmpty else { return nil }
+        let target = zeroBasedIndex + 1
+        if let exact = fulltext.chapters.first(where: { $0.index == target }) {
+            return exact
+        }
+        return zeroBasedIndex < fulltext.chapters.count
+            ? fulltext.chapters[zeroBasedIndex]
+            : nil
+    }
 }
 
 /// Reader-first surface. The text is *always* visible — even before

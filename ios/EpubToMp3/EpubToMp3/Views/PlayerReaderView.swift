@@ -817,12 +817,11 @@ struct PlayerReaderView: View {
     // MARK: Helpers
 
     /// Map the player's zero-based chapter index to the matching
-    /// fulltext entry. The backend numbers fulltext chapters from 1
-    /// while `chapterProgress` is zero-based; we offset accordingly.
+    /// fulltext entry. Delegates to `InstantReaderIndexMapper` so the
+    /// negative-index and empty-fulltext guards are unit-tested in
+    /// one place instead of duplicated here and in InstantReaderView.
     private func chapter(in fulltext: EbookFulltext, at zeroBasedIndex: Int) -> EbookFulltext.Chapter? {
-        let target = zeroBasedIndex + 1
-        return fulltext.chapters.first { $0.index == target }
-            ?? (zeroBasedIndex < fulltext.chapters.count ? fulltext.chapters[zeroBasedIndex] : nil)
+        InstantReaderIndexMapper.chapter(in: fulltext, atZeroBasedIndex: zeroBasedIndex)
     }
 
     /// Translate `AudioPlayer.currentChapterIndex` (which is an index
@@ -841,7 +840,12 @@ struct PlayerReaderView: View {
             return ch.displayTitle
         }
         let chapters = snapshot.playableChapters
-        guard player.currentChapterIndex < chapters.count else { return "—" }
+        // Defensive both-sides bounds check: the player's index is
+        // clamped on assignment, but if the snapshot shrinks (e.g. the
+        // backend wipes a job mid-session) `player.currentChapterIndex`
+        // can momentarily point past the new array, and any path that
+        // ever pushed a negative index into the player would crash here.
+        guard chapters.indices.contains(player.currentChapterIndex) else { return "—" }
         return chapters[player.currentChapterIndex].displayTitle
     }
 
