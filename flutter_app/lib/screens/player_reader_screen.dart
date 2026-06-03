@@ -51,6 +51,37 @@ class _PlayerReaderScreenState extends ConsumerState<PlayerReaderScreen> {
     });
   }
 
+  @override
+  void didUpdateWidget(covariant PlayerReaderScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Defense-in-depth mirror of iOS slice 43: tear down and re-bootstrap
+    // when a parent feeds a new jobId without recreating the State.
+    // Today all call sites push a fresh route per jobId, but keeping the
+    // lifecycle invariant local prevents stale subscriptions to the old
+    // audioPlayerProvider(family) from driving setState on the new job.
+    // Teardown must precede resubscribe so the new bootstrap does not
+    // double-subscribe for one frame.
+    if (oldWidget.jobId != widget.jobId) {
+      _tearDownPlayerSubscriptions();
+      _currentChapterIndex = 0;
+      _isPlaying = false;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        _subscribeToPlayer();
+      });
+    }
+  }
+
+  void _tearDownPlayerSubscriptions() {
+    _chapterIndexSub?.cancel();
+    _chapterIndexSub = null;
+    _playingSub?.cancel();
+    _playingSub = null;
+    _positionSub?.cancel();
+    _positionSub = null;
+    _sentenceSync = null;
+  }
+
   void _subscribeToPlayer() {
     final player = ref.read(audioPlayerProvider(widget.jobId));
 
@@ -86,9 +117,7 @@ class _PlayerReaderScreenState extends ConsumerState<PlayerReaderScreen> {
 
   @override
   void dispose() {
-    _chapterIndexSub?.cancel();
-    _playingSub?.cancel();
-    _positionSub?.cancel();
+    _tearDownPlayerSubscriptions();
     // Always restore the system chrome when leaving the reader so
     // other screens are not left in immersive mode.
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);

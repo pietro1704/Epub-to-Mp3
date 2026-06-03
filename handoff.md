@@ -1117,3 +1117,26 @@ Release Desktop run 26432885034:
   1. Flutter `PlayerView` / equivalent parity audit for the same snapshot/jobId mid-mount mutation risk (`flutter-mirror` agent territory).
   2. Backend: extend slice-40 atomic-write helper to any new persistence sites added since (sweep `Path.write_text(json.dumps(`).
   3. Resume the production-readiness sweep tail (`project_ios_prod_readiness_sweep`) once CI for slice 43 is green.
+
+### 2026-06-03 Claude — Slice 44 GREEN (Flutter PlayerReaderScreen jobId guard)
+
+- **status:** done locally, regression test green, ready to commit & push.
+- **scope:** `flutter_app/lib/screens/player_reader_screen.dart` — adds `didUpdateWidget` that tears down all three `StreamSubscription`s (`_chapterIndexSub`, `_playingSub`, `_positionSub`) and the `SentenceSyncCoordinator` then re-bootstraps via a post-frame callback when `widget.jobId` mutates. Also resets local UI cursor (`_currentChapterIndex`, `_isPlaying`). Single `_tearDownPlayerSubscriptions()` helper shared by `didUpdateWidget` and `dispose()` so the cleanup path stays single-sourced.
+- **why this slice:** Flutter mirror of iOS slice 43. Today the only call site (`jobs_list_screen.dart` push) creates a fresh route per jobId so the path is dormant, but `audioPlayerProvider` is a Riverpod family — if a future router rebuilds the screen with a new jobId on the same `State`, the existing subscriptions would keep driving `setState` from the previous job's player. `BookOpenScreen` already implements the same pattern (didUpdateWidget on `bookId` change + AsyncLoadGuard); this brings `PlayerReaderScreen` to parity.
+- **why teardown-before-resubscribe:** identical reasoning to iOS slice 43. The new bootstrap would otherwise double-subscribe for one frame to the new player while the old subs still react to the old one.
+- **why post-frame on resubscribe:** matches `initState` — `ref.read(audioPlayerProvider(widget.jobId))` is safer after the rebuild settles, and it matches the same deferral pattern used at mount.
+- **tests:** `flutter_app/test/player_reader_jobid_guard_test.dart` (+5 cases, content-based — same shortcut iOS slice 43 took because exercising the real rebuild needs ~8 provider overrides and the invariant is structural):
+  - declares `didUpdateWidget covariant override`
+  - teardown helper exists and releases + nulls all four lifecycle handles
+  - `didUpdateWidget` tears down before resubscribing (balanced-brace extraction)
+  - only `oldWidget.jobId != widget.jobId` triggers teardown
+  - `dispose()` delegates to the same teardown helper (no drift between paths)
+- **verification:**
+  - `cd flutter_app && mise exec -- flutter test test/player_reader_jobid_guard_test.dart` → 5/5 passed.
+  - `cd flutter_app && mise exec -- flutter test` → 286/286 passed (5 new + 281 prior).
+  - `cd flutter_app && mise exec -- flutter analyze` → 1 pre-existing warning unchanged (`sync_engine_rebind_integration_test.dart` unused import), 0 errors.
+  - **No emulator/device builds** per local-safety policy (Intel 8 GiB Mac).
+- **next recommended targets:**
+  1. Backend: extend slice-40 atomic-write helper to any new persistence sites added since (sweep `Path.write_text(json.dumps(`).
+  2. `FullPlayerSheet` accepts `player` directly via constructor and has no `didUpdateWidget` — modal lifetime usually makes this moot, but worth a follow-up audit if any non-modal call site is added.
+  3. Resume the production-readiness sweep tail (`project_ios_prod_readiness_sweep`) once CI for slice 44 is green.
