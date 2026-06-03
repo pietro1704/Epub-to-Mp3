@@ -63,4 +63,29 @@ enum LocalFulltextCache {
         guard let url = fileURL(bookId: bookId) else { return }
         try? FileManager.default.removeItem(at: url)
     }
+
+    /// Drop any cached fulltext whose stem is not in `validBookIds`.
+    /// Returns the number of files removed. Silent no-op when the
+    /// directory is missing or already clean. Mirrors
+    /// `BookmarkStore.pruneOrphans(validBookIds:)` so re-importing the
+    /// same EPUB (book ids are SHA-256 of file content) can't resurrect
+    /// stale reader text from a previous install.
+    @discardableResult
+    static func pruneOrphans(validBookIds: Set<String>) -> Int {
+        guard let dir = directory else { return 0 }
+        let entries = (try? FileManager.default.contentsOfDirectory(
+            at: dir,
+            includingPropertiesForKeys: nil,
+            options: [.skipsHiddenFiles]
+        )) ?? []
+        var removed = 0
+        for url in entries where url.pathExtension == "json" {
+            let bookId = url.deletingPathExtension().lastPathComponent
+            guard !validBookIds.contains(bookId) else { continue }
+            if (try? FileManager.default.removeItem(at: url)) != nil {
+                removed += 1
+            }
+        }
+        return removed
+    }
 }

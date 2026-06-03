@@ -50,6 +50,12 @@ struct EpubToMp3App: App {
                     // installs that already removed a book before the
                     // cascade landed still drop the dangling entries.
                     pruneOrphanBookmarks()
+                    // Slice 47: same one-shot for the on-disk EPUB
+                    // fulltext cache. Re-importing the same file would
+                    // otherwise resurrect stale reader text from a
+                    // pre-cascade install (bookId is SHA-256 of file
+                    // bytes).
+                    pruneOrphanFulltextCache()
                 }
                 .task(priority: .utility) {
                     guard !Self.isRunningUnderXCTest() else { return }
@@ -203,6 +209,14 @@ struct EpubToMp3App: App {
     private func pruneOrphanBookmarks() {
         let valid = Set(library.books.map(\.id))
         _ = bookmarkStore.pruneOrphans(validBookIds: valid)
+    }
+
+    /// Drop any on-disk fulltext payload whose bookId no longer maps to
+    /// a live library entry. Silent no-op when the cache is already
+    /// clean.
+    private func pruneOrphanFulltextCache() {
+        let valid = Set(library.books.map(\.id))
+        _ = LocalFulltextCache.pruneOrphans(validBookIds: valid)
     }
 
     static func isRunningUnderXCTest(

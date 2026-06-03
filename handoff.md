@@ -1176,3 +1176,20 @@ Release Desktop run 26432885034:
 - **next recommended targets:**
   1. Continue Hermes' slice-45 follow-up sweep: the iOS-only stores still keyed by `bookId`/`jobId` that `LibraryStore.remove(id:)` ignores (`LocalFulltextCache`, `FulltextStore`, `AudiobookCacheEviction`, `WidgetDataSync.recentBooks`, `ResumeStore` via `BookEntity.lastJobId` reverse lookup).
   2. Audit `flutter_app/lib/screens/book_open_screen.dart` chapter resolution for the same negative-index / empty-fulltext defenses (mirror agent territory).
+
+### 2026-06-03 Hermes/Claude — Slice 47 GREEN (iOS LocalFulltextCache cascade on library removal)
+
+- **status:** completed by Hermes after Claude Code hit `--max-turns 20` with correct side effects but before tests/commit. Hermes finished the regression guard, verification, and will push/monitor CI.
+- **scope:** iOS delete cascade for `LocalFulltextCache`, the bookId-keyed on-disk fulltext cache under Caches/fulltext. This is the first follow-up from slice 45's remaining store sweep.
+- **bug:** deleting a book removed the library row and bookmarks, but left `<bookId>.json` in `LocalFulltextCache`. Because bookId is the SHA-256 of EPUB bytes, re-importing the same file could reuse stale locally parsed fulltext from before the removal.
+- **changes:**
+  - `Services/LocalFulltextCache.swift`: added `evict(bookId:)` call coverage at removal sites and `pruneOrphans(validBookIds:) -> Int` for launch cleanup of historical orphan files.
+  - `Views/LibraryView.swift` and `Views/LibrarySidebar.swift`: call `LocalFulltextCache.evict(bookId: book.id)` before `library.remove(id: book.id)`, preserving the slice-45 `BookmarkStore.removeAll(for:)` cascade.
+  - `EpubToMp3App.swift`: app-start one-shot `pruneOrphanFulltextCache()` behind the existing XCTest guard, immediately after bookmark orphan pruning.
+  - `python_app/tests/test_library_remove_fulltext_cache_cascade.py`: +5 non-simulator source guards pinning the eviction API, orphan prune API, both delete call sites/order, and launch prune under the XCTest guard.
+- **verification:**
+  - `mise exec -- pytest python_app/tests/test_library_remove_fulltext_cache_cascade.py -q` → 5 passed.
+  - `mise exec -- ruff check python_app/tests/test_library_remove_fulltext_cache_cascade.py` → clean.
+  - `xcrun swiftc -parse ios/EpubToMp3/EpubToMp3/Services/LocalFulltextCache.swift ios/EpubToMp3/EpubToMp3/Views/LibraryView.swift ios/EpubToMp3/EpubToMp3/Views/LibrarySidebar.swift ios/EpubToMp3/EpubToMp3/EpubToMp3App.swift` → clean.
+  - No local iOS Simulator/CoreSimulator/device build per slice 41 safety rule.
+- **next recommended targets:** continue the same iOS removal cascade sweep with `FulltextStore`/jobId caches, then `AudiobookCacheEviction`, `WidgetDataSync.recentBooks`, and `ResumeStore` via `BookEntity.lastJobId` reverse lookup.
