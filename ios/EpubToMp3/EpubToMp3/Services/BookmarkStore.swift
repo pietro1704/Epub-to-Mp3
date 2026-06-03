@@ -85,6 +85,26 @@ final class BookmarkStore: ObservableObject {
         persist()
     }
 
+    /// Drop every bookmark whose `bookId` is not in `validBookIds`.
+    /// Returns the number of orphan entries removed. No-op (and does not
+    /// re-persist or notify) when the in-memory set is already clean —
+    /// keeps `@Published` updates and disk writes silent on the common
+    /// "nothing to prune" path.
+    ///
+    /// Mirrors the Flutter slice-42 fix: book IDs are SHA-256 of file
+    /// content, so an orphan bookmark could resurrect itself if the user
+    /// re-imports the same EPUB later.
+    @discardableResult
+    func pruneOrphans(validBookIds: Set<String>) -> Int {
+        let before = bookmarks.count
+        let kept = bookmarks.filter { validBookIds.contains($0.bookId) }
+        let removed = before - kept.count
+        guard removed > 0 else { return 0 }
+        bookmarks = kept
+        persist()
+        return removed
+    }
+
     func hasBookmark(bookId: String, chapterIndex: Int) -> Bool {
         bookmarks.contains { $0.bookId == bookId && $0.chapterIndex == chapterIndex && !$0.isHighlight }
     }

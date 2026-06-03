@@ -1140,3 +1140,23 @@ Release Desktop run 26432885034:
   1. Backend: extend slice-40 atomic-write helper to any new persistence sites added since (sweep `Path.write_text(json.dumps(`).
   2. `FullPlayerSheet` accepts `player` directly via constructor and has no `didUpdateWidget` — modal lifetime usually makes this moot, but worth a follow-up audit if any non-modal call site is added.
   3. Resume the production-readiness sweep tail (`project_ios_prod_readiness_sweep`) once CI for slice 44 is green.
+
+### 2026-06-03 Claude — Slice 45 GREEN (iOS LibraryStore.remove → BookmarkStore orphan cascade)
+
+- **status:** done locally, regression tests green, ready to commit & push.
+- **scope:** iOS twin of Flutter slice 42. `LibraryStore.remove(id:)` deleted the library entry but never told `BookmarkStore` to drop bookmarks/highlights for that bookId. They persisted under `bookmarks.v1` forever — bloating UserDefaults, and because book IDs are SHA-256 of file content, reappearing as zombie entries the moment the user re-imported the same EPUB.
+- **changes:**
+  - `Services/BookmarkStore.swift`: new `pruneOrphans(validBookIds:) -> Int` (silent no-op when nothing to drop — no spurious `persist()` so the corrupt-data safety net stays intact).
+  - `Views/LibraryView.swift` + `Views/LibrarySidebar.swift`: cascade `bookmarkStore.removeAll(for: book.id)` BEFORE `library.remove(id: book.id)` at both call sites; both views pick up `@EnvironmentObject private var bookmarkStore: BookmarkStore` (already injected by `EpubToMp3App`).
+  - `EpubToMp3App.swift`: one-shot `pruneOrphanBookmarks()` inside the existing launch `.task`, behind the same `isRunningUnderXCTest` guard the cache eviction uses. Mirrors Flutter slice 42's `main.dart` post-frame prune so historical orphans from pre-cascade builds are cleaned at app start.
+- **tests:**
+  - `EpubToMp3Tests/BookmarkStoreTests.swift`: +3 cases — drop-on-prune, no-op identity (asserts on-disk bytes unchanged), survive-reload.
+  - `python_app/tests/test_library_remove_bookmark_cascade.py`: +4 file-content guards that run without CoreSimulator (per slice 41 policy). Pin the `pruneOrphans` signature + the silent-no-op early return, the two call-site cascades with `bookmarkStore.removeAll` preceding `library.remove`, and the launch-task hook sitting behind the XCTest guard.
+- **why file-content guards over XCTest only:** local Mac is the Intel 8 GiB rig — XCTestBundle runs are gated to GitHub Actions. The Python pins fire in `pytest` so a future SwiftUI refactor that silently drops the cascade fails CI before the iOS test bundle even compiles.
+- **verification:**
+  - `.venv/bin/python -m pytest python_app/tests/test_library_remove_bookmark_cascade.py -v` → 4/4 passed.
+  - `.venv/bin/python -m ruff check python_app/tests/test_library_remove_bookmark_cascade.py` → clean.
+  - No simulator/device builds (slice 41 policy).
+- **next recommended targets:**
+  1. Same sweep on iOS-only stores still keyed by bookId/jobId that `LibraryStore.remove(id:)` ignores: `LocalFulltextCache`, `FulltextStore`, `AudiobookCacheEviction` (active-job guard already handles the "currently playing" case), `WidgetDataSync.recentBooks`, `ResumeStore` (keyed by jobId — needs the `BookEntity.lastJobId` reverse lookup).
+  2. Resume the production-readiness sweep tail (`project_ios_prod_readiness_sweep`) once CI for slice 45 is green.

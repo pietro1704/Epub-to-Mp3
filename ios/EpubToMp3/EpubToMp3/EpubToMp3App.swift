@@ -45,6 +45,11 @@ struct EpubToMp3App: App {
                     guard !Self.isRunningUnderXCTest() else { return }
                     // Run LRU+TTL eviction on every app launch (background priority).
                     runCacheEviction()
+                    // One-shot prune of orphan bookmarks from pre-cascade
+                    // builds. Mirrors the Flutter slice-42 fix so existing
+                    // installs that already removed a book before the
+                    // cascade landed still drop the dangling entries.
+                    pruneOrphanBookmarks()
                 }
                 .task(priority: .utility) {
                     guard !Self.isRunningUnderXCTest() else { return }
@@ -190,6 +195,14 @@ struct EpubToMp3App: App {
                 activeJobIds: activeIds
             )
         }
+    }
+
+    /// Walk the live library and ask BookmarkStore to drop any entry
+    /// whose `bookId` no longer maps to a book. Silent no-op when the
+    /// store is already clean.
+    private func pruneOrphanBookmarks() {
+        let valid = Set(library.books.map(\.id))
+        _ = bookmarkStore.pruneOrphans(validBookIds: valid)
     }
 
     static func isRunningUnderXCTest(

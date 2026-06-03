@@ -12,6 +12,7 @@ import UniformTypeIdentifiers
 /// compact phone layout.
 struct LibrarySidebar: View {
     @EnvironmentObject private var library: LibraryStore
+    @EnvironmentObject private var bookmarkStore: BookmarkStore
     @Binding var selectedBookID: String?
 
     @State private var sortMode: LibraryView.SortMode = .lastOpened
@@ -69,6 +70,7 @@ struct LibrarySidebar: View {
                                     if selectedBookID == book.id {
                                         selectedBookID = nil
                                     }
+                                    bookmarkStore.removeAll(for: book.id)
                                     library.remove(id: book.id)
                                 } label: {
                                     Label(L10n.string("common.remove"), systemImage: "trash")

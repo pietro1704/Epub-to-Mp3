@@ -16,6 +16,7 @@ struct LibraryView: View {
 
     @EnvironmentObject private var library: LibraryStore
     @EnvironmentObject private var settings: AppSettings
+    @EnvironmentObject private var bookmarkStore: BookmarkStore
     @State private var showingPicker = false
     @State private var importError: String?
     @State private var openingBook: BookEntity?
@@ -192,6 +193,7 @@ struct LibraryView: View {
                 bookForTagEditor = book
             }
             Button(L10n.string("library.removeFromLibrary"), role: .destructive) {
+                bookmarkStore.removeAll(for: book.id)
                 library.remove(id: book.id)
                 bookPendingRemoval = nil
             }
