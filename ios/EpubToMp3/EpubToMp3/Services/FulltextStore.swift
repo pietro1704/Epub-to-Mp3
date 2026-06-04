@@ -13,6 +13,9 @@ import Foundation
 ///     reusing the layout established by `DownloadManager`.
 final class FulltextStore: @unchecked Sendable {
 
+    private static let evictionLock = NSLock()
+    private static var evictedJobIds: Set<String> = []
+
     enum FulltextError: LocalizedError, Equatable {
         case offlineUnavailable          // No disk copy and no network success.
         case gone                         // 404 — job gone.
@@ -50,13 +53,59 @@ final class FulltextStore: @unchecked Sendable {
     }
 
     static func loadFromDisk(jobId: String) -> EbookFulltext? {
+        guard !isEvicted(jobId: jobId) else { return nil }
         guard let data = try? Data(contentsOf: fulltextURL(for: jobId)) else { return nil }
         return try? JSONDecoder().decode(EbookFulltext.self, from: data)
     }
 
     static func saveToDisk(_ payload: EbookFulltext) throws {
+        clearEvicted(jobId: payload.jobId)
         let data = try JSONEncoder().encode(payload)
         try data.write(to: fulltextURL(for: payload.jobId), options: .atomic)
+    }
+
+    /// Mark ``jobId`` as evicted so in-flight store instances stop
+    /// replaying stale `lastValue` payloads after the book leaves the
+    /// library. A later successful save for the same job clears the
+    /// tombstone.
+    private static func markEvicted(jobId: String) {
+        evictionLock.lock()
+        evictedJobIds.insert(jobId)
+        evictionLock.unlock()
+    }
+
+    private static func clearEvicted(jobId: String) {
+        evictionLock.lock()
+        evictedJobIds.remove(jobId)
+        evictionLock.unlock()
+    }
+
+    private static func isEvicted(jobId: String) -> Bool {
+        evictionLock.lock()
+        let result = evictedJobIds.contains(jobId)
+        evictionLock.unlock()
+        return result
+    }
+
+    /// Remove the on-disk and in-memory fulltext cache for ``jobId``.
+    /// Used by the library delete cascade (slice 48) so a removed book
+    /// does not leave its parsed reader text behind on disk.
+    /// Missing files are treated as success.
+    @discardableResult
+    static func evict(jobId: String) -> Bool {
+        markEvicted(jobId: jobId)
+        let url = fulltextURL(for: jobId)
+        do {
+            try FileManager.default.removeItem(at: url)
+            return true
+        } catch CocoaError.fileNoSuchFile {
+            return true
+        } catch let error as NSError where error.domain == NSCocoaErrorDomain
+            && error.code == NSFileNoSuchFileError {
+            return true
+        } catch {
+            return false
+        }
     }
 
     // MARK: AsyncStream API
@@ -89,6 +138,7 @@ final class FulltextStore: @unchecked Sendable {
     }
 
     private func emit(_ payload: EbookFulltext) {
+        guard !Self.isEvicted(jobId: payload.jobId) else { return }
         lock.lock()
         lastValue[payload.jobId] = payload
         let conts = continuations[payload.jobId]?.values ?? [:].values

@@ -72,6 +72,9 @@ struct LibrarySidebar: View {
                                     }
                                     bookmarkStore.removeAll(for: book.id)
                                     LocalFulltextCache.evict(bookId: book.id)
+                                    if let jobId = book.lastJobId {
+                                        FulltextStore.evict(jobId: jobId)
+                                    }
                                     library.remove(id: book.id)
                                 } label: {
                                     Label(L10n.string("common.remove"), systemImage: "trash")

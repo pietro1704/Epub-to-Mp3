@@ -195,6 +195,9 @@ struct LibraryView: View {
             Button(L10n.string("library.removeFromLibrary"), role: .destructive) {
                 bookmarkStore.removeAll(for: book.id)
                 LocalFulltextCache.evict(bookId: book.id)
+                if let jobId = book.lastJobId {
+                    FulltextStore.evict(jobId: jobId)
+                }
                 library.remove(id: book.id)
                 bookPendingRemoval = nil
             }

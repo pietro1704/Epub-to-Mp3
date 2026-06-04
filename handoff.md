@@ -1193,3 +1193,19 @@ Release Desktop run 26432885034:
   - `xcrun swiftc -parse ios/EpubToMp3/EpubToMp3/Services/LocalFulltextCache.swift ios/EpubToMp3/EpubToMp3/Views/LibraryView.swift ios/EpubToMp3/EpubToMp3/Views/LibrarySidebar.swift ios/EpubToMp3/EpubToMp3/EpubToMp3App.swift` → clean.
   - No local iOS Simulator/CoreSimulator/device build per slice 41 safety rule.
 - **next recommended targets:** continue the same iOS removal cascade sweep with `FulltextStore`/jobId caches, then `AudiobookCacheEviction`, `WidgetDataSync.recentBooks`, and `ResumeStore` via `BookEntity.lastJobId` reverse lookup.
+
+### 2026-06-03 Hermes/Claude — Slice 48 GREEN (iOS FulltextStore jobId cache cascade on library removal)
+
+- **status:** completed by Hermes after Claude Code hit `--max-turns 12` with partial side effects. Hermes tightened the API, added guards, verified, committed, pushed, and monitored CI/downstream.
+- **scope:** iOS delete cascade for `FulltextStore`, the jobId-keyed reader text cache at `<Documents>/Audiobooks/<jobId>/fulltext.json`. This is the second follow-up from slice 45's remaining store sweep.
+- **bug:** deleting a library book removed the library row, bookmarks, and the bookId local parser cache, but left `FulltextStore`'s jobId fulltext file behind when `BookEntity.lastJobId` existed. That stale reader payload could survive independently of the removed book.
+- **changes:**
+  - `Services/FulltextStore.swift`: added static `evict(jobId:) -> Bool` that tombstones the jobId, removes `fulltext.json`, treats missing files as success, blocks `loadFromDisk` while tombstoned, suppresses `emit` for tombstoned jobs, and clears the tombstone on a later successful `saveToDisk`.
+  - `Views/LibraryView.swift` and `Views/LibrarySidebar.swift`: if `book.lastJobId` exists, call `FulltextStore.evict(jobId:)` before `library.remove(id: book.id)`, preserving the slice-45 `BookmarkStore` and slice-47 `LocalFulltextCache` cascades.
+  - `python_app/tests/test_library_remove_fulltext_store_cascade.py`: +4 non-simulator source guards pinning the eviction API, tombstone behavior, and both delete call sites/order.
+- **verification:**
+  - `mise exec -- pytest python_app/tests/test_library_remove_fulltext_store_cascade.py -q` → 4 passed.
+  - `mise exec -- ruff check python_app/tests/test_library_remove_fulltext_store_cascade.py` → clean.
+  - `xcrun swiftc -parse ios/EpubToMp3/EpubToMp3/Services/FulltextStore.swift ios/EpubToMp3/EpubToMp3/Views/LibraryView.swift ios/EpubToMp3/EpubToMp3/Views/LibrarySidebar.swift` → clean.
+  - No local iOS Simulator/CoreSimulator/device build per slice 41 safety rule.
+- **next recommended targets:** continue the same iOS removal cascade sweep with `AudiobookCacheEviction`, then `WidgetDataSync.recentBooks`, then `ResumeStore` via `BookEntity.lastJobId` reverse lookup.
