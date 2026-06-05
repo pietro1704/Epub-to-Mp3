@@ -34,7 +34,7 @@ transformers>=5.10.2
 # Ebook Processing
 ebooklib>=0.20
 beautifulsoup4>=4.14.3
-pypdf>=6.12.2  # CVE-2026-33699, GHSA-3crg-w4f6-42mx
+pypdf>=6.13.0  # CVE-2026-33699, GHSA-3crg-w4f6-42mx
 lxml>=6.1.1
 
 # Language Detection
