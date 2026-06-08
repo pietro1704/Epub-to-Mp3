@@ -12,7 +12,7 @@ mutagen
 psutil
 tqdm
 requests>=2.34.2,<3.0.0
-aiohttp>=3.14.0,<4.0.0
+aiohttp>=3.14.1,<4.0.0
 aiofiles>=25.1.0
 certifi>=2026.5.20
 static-ffmpeg
