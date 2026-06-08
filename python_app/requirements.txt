@@ -10,7 +10,7 @@ piper-tts>=1.4.2
 # manually when a GPU is available: pip install torch torchaudio
 # They are NOT required for Edge-TTS + Piper (the default workflow).
 numpy>=2.4.6,<3.0.0
-soundfile>=0.13.1
+soundfile>=0.14.0
 
 # Ebook processing
 beautifulsoup4>=4.14.3
