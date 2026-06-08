@@ -21,7 +21,7 @@ edge-tts>=7.2.8
 # Install manually if needed: pip install torch torchaudio
 # They conflict with setuptools>=82 (required by CVE-2024-6345 below) and are
 # not required for the default Edge-TTS + Piper workflow.
-soundfile>=0.13.1
+soundfile>=0.14.0
 pandas>=3.0.3,<4.0.0
 
 # Offline fallback (fast, small)
