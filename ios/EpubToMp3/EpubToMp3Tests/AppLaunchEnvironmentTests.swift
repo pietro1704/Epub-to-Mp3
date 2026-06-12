@@ -20,10 +20,20 @@ final class AppLaunchEnvironmentTests: XCTestCase {
         ]))
     }
 
+    func testDetectsLoadedXCTestClassWhenEnvironmentIsSanitized() {
+        XCTAssertTrue(EpubToMp3App.isRunningUnderXCTest(
+            environment: [:],
+            classLookup: { name in name == "XCTest.XCTestCase" ? XCTestCase.self : nil }
+        ))
+    }
+
     func testDoesNotDetectRegularLaunchEnvironment() {
-        XCTAssertFalse(EpubToMp3App.isRunningUnderXCTest(environment: [
-            "HOME": "/tmp",
-            "PATH": "/usr/bin"
-        ]))
+        XCTAssertFalse(EpubToMp3App.isRunningUnderXCTest(
+            environment: [
+                "HOME": "/tmp",
+                "PATH": "/usr/bin"
+            ],
+            classLookup: { _ in nil }
+        ))
     }
 }

@@ -182,13 +182,27 @@ final class LibraryStore: ObservableObject {
             )
         }
 
+        let filename = url.lastPathComponent
+        let fileType = BookFileType.detect(from: url)
+        let libraryURL: URL
+        #if os(iOS)
+        libraryURL = try Self.persistImportedFileForLibrary(
+            originalURL: url,
+            id: id,
+            fileType: fileType
+        )
+        #else
+        libraryURL = url
+        #endif
+
         // Bookmark creation must succeed on macOS — the sandbox needs
         // it to grant the app access on the next launch. On iOS the
-        // file URL is more permissive and an empty bookmark is OK
-        // (the system will reprompt next time).
+        // imported file is copied into the app sandbox first, so the
+        // bookmark points at a durable URL rather than the picker/inbox
+        // handoff URL that Files may delete after import.
         let bookmark: Data
         do {
-            bookmark = try Self.makeBookmark(for: url)
+            bookmark = try Self.makeBookmark(for: libraryURL)
         } catch {
             #if os(macOS)
             throw NSError(
@@ -203,13 +217,11 @@ final class LibraryStore: ObservableObject {
             bookmark = Data()
             #endif
         }
-        let filename = url.lastPathComponent
 
         // Route to the right metadata reader. PDFKit handles `.pdf`;
         // the in-process EPUB reader handles `.epub` (plus anything we
         // can't classify — the EPUB reader returns an empty payload
         // for non-zip inputs, so the fall-through is safe).
-        let fileType = BookFileType.detect(from: url)
         let resolvedTitle: String?
         let resolvedAuthor: String?
         let resolvedCover: Data?
@@ -217,7 +229,7 @@ final class LibraryStore: ObservableObject {
         case .pdf:
             let payload: PdfMetadataReader.Payload
             do {
-                payload = try PdfMetadataReader.readMetadata(from: url)
+                payload = try PdfMetadataReader.readMetadata(from: libraryURL)
             } catch let err as PdfMetadataReader.ReaderError {
                 throw NSError(
                     domain: "LibraryStore",
@@ -232,7 +244,7 @@ final class LibraryStore: ObservableObject {
             resolvedAuthor = payload.author
             resolvedCover = Self.downsampleCover(payload.cover)
         case .epub:
-            let payload = (try? EpubMetadataReader.readMetadata(from: url)) ?? .init()
+            let payload = (try? EpubMetadataReader.readMetadata(from: libraryURL)) ?? .init()
             resolvedTitle = payload.title
             resolvedAuthor = payload.author
             resolvedCover = Self.downsampleCover(payload.cover)
@@ -383,6 +395,45 @@ final class LibraryStore: ObservableObject {
         } catch {
             self.loadError = error.localizedDescription
         }
+    }
+
+    // MARK: - Durable import storage
+
+    static func persistImportedFileForLibrary(
+        originalURL: URL,
+        id: String,
+        fileType: BookFileType,
+        fileManager: FileManager = .default,
+        baseDirectory: URL? = nil
+    ) throws -> URL {
+        let root = try importedBooksDirectory(fileManager: fileManager, baseDirectory: baseDirectory)
+        let bookDirectory = root.appendingPathComponent(id, isDirectory: true)
+        try fileManager.createDirectory(at: bookDirectory, withIntermediateDirectories: true)
+
+        let fallbackName = "Book.\(fileType.rawValue)"
+        let fileName = originalURL.lastPathComponent.isEmpty ? fallbackName : originalURL.lastPathComponent
+        let destination = bookDirectory.appendingPathComponent(fileName, isDirectory: false)
+        if fileManager.fileExists(atPath: destination.path) {
+            try fileManager.removeItem(at: destination)
+        }
+        try fileManager.copyItem(at: originalURL, to: destination)
+        return destination
+    }
+
+    private static func importedBooksDirectory(
+        fileManager: FileManager,
+        baseDirectory: URL?
+    ) throws -> URL {
+        if let baseDirectory {
+            return baseDirectory
+        }
+        let support = try fileManager.url(
+            for: .applicationSupportDirectory,
+            in: .userDomainMask,
+            appropriateFor: nil,
+            create: true
+        )
+        return support.appendingPathComponent("ImportedBooks", isDirectory: true)
     }
 
     // MARK: - Bookmark helpers

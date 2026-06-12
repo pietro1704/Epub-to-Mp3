@@ -460,7 +460,7 @@ struct ReaderView: View {
             VStack(alignment: .leading, spacing: 0) {
                 chapterTitleHeader
                     .padding(.horizontal, margin)
-                    .padding(.top, 16)
+                    .padding(.top, chromeTopInset + 16)
                 AttributedPageView(
                     attributed: scrollingAttributedString(
                         fontSize: effectiveFontSize,
@@ -471,7 +471,7 @@ struct ReaderView: View {
                     onLinkTap: onLinkTap
                 )
                 .padding(.horizontal, margin)
-                .padding(.bottom, 16)
+                .padding(.bottom, chromeBottomInset + 16)
             }
             .frame(maxWidth: .infinity, alignment: .center)
             // Scroll mode: tap anywhere on the reading surface toggles

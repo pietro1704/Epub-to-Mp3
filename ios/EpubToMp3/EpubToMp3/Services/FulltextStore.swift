@@ -141,7 +141,7 @@ final class FulltextStore: @unchecked Sendable {
         guard !Self.isEvicted(jobId: payload.jobId) else { return }
         lock.lock()
         lastValue[payload.jobId] = payload
-        let conts = continuations[payload.jobId]?.values ?? [:].values
+        let conts = continuations[payload.jobId].map { Array($0.values) } ?? []
         lock.unlock()
         for cont in conts { cont.yield(payload) }
     }

@@ -267,6 +267,12 @@ final class AppSettings: ObservableObject {
     /// embedded runtime is enabled — regardless of `backendURL`.
     var canReadOffline: Bool { useEmbeddedRuntime }
 
+    /// Remote backend controls are intentionally inactive while the
+    /// built-in runtime is selected. The URL still stays persisted as a
+    /// fallback, but the Settings UI dims the section so users do not
+    /// think a remote server is required for on-device reading/audio.
+    var remoteBackendControlsEnabled: Bool { !useEmbeddedRuntime }
+
     /// 5-step font size scale: 0=XS, 1=S, 2=M (default), 3=L, 4=XL.
     /// Clamped in `didSet` so the rest of the app can trust 0…4.
     @Published var readerFontSize: Int = 3 {

@@ -157,6 +157,51 @@ final class ReaderChromeAutoHideTests: XCTestCase {
             "chromeBottomInset must be settable on ReaderView init")
     }
 
+    /// Regression for the reader overlap bug: content must reserve the
+    /// device safe area plus the custom top bar height. Otherwise the
+    /// first line sits under the status/nav chrome whenever the bar is
+    /// visible on an iPhone with a notch/Dynamic Island.
+    func testInstantReaderTopChromeInsetIncludesSafeAreaAndBar() {
+        let inset = InstantReaderChromeMetrics.contentTopInset(safeAreaTop: 59)
+        XCTAssertGreaterThanOrEqual(inset, 59 + InstantReaderChromeMetrics.topBarHeight)
+    }
+
+    /// Bottom content must also keep the home-indicator safe area and
+    /// bottom player/idle bar out of the text corridor.
+    func testInstantReaderBottomChromeInsetIncludesSafeAreaAndPlayerBar() {
+        let inset = InstantReaderChromeMetrics.contentBottomInset(safeAreaBottom: 34)
+        XCTAssertGreaterThanOrEqual(inset, 34 + InstantReaderChromeMetrics.bottomBarHeight)
+    }
+
+    private func instantReaderSource() throws -> String {
+        let testFile = URL(fileURLWithPath: #filePath)
+        let projectRoot = testFile
+            .deletingLastPathComponent() // EpubToMp3Tests
+            .deletingLastPathComponent() // ios/EpubToMp3
+        let sourceURL = projectRoot
+            .appendingPathComponent("EpubToMp3/Views/InstantReaderView.swift")
+        return try String(contentsOf: sourceURL)
+    }
+
+    /// The instant reader must not opt out of the container safe area at
+    /// the host level. The reported notch overlap happened because the
+    /// full reader stack used `.ignoresSafeArea(.container, edges: .all)`,
+    /// which made the GeometryReader report zero top safe-area on the
+    /// physical iPhone and let text/chrome start under the notch.
+    func testInstantReaderDoesNotIgnoreContainerSafeArea() throws {
+        let source = try instantReaderSource()
+        XCTAssertFalse(source.contains(".ignoresSafeArea(.container, edges: .all)"))
+    }
+
+    /// Keep the status bar visible even when reader chrome is hidden so
+    /// iOS preserves the notch/Dynamic Island top safe area. Hiding the
+    /// status bar collapses that inset and places text under the notch.
+    func testChromeVisibilityModifierKeepsStatusBarVisible() throws {
+        let source = try instantReaderSource()
+        XCTAssertFalse(source.contains(".statusBarHidden(!visible)"))
+        XCTAssertTrue(source.contains(".statusBarHidden(false)"))
+    }
+
     /// ChromeVisibilityModifier hides the tab bar CONSTANTLY (`.hidden`,
     /// independent of `visible`) — immersive reading like Apple Books.
     /// The key invariant is that the tab-bar visibility must NOT be

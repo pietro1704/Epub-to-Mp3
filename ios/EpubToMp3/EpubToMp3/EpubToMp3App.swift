@@ -220,11 +220,14 @@ struct EpubToMp3App: App {
     }
 
     static func isRunningUnderXCTest(
-        environment: [String: String] = ProcessInfo.processInfo.environment
+        environment: [String: String] = ProcessInfo.processInfo.environment,
+        classLookup: (String) -> AnyClass? = NSClassFromString
     ) -> Bool {
         environment["XCTestConfigurationFilePath"] != nil
             || environment["XCTestSessionIdentifier"] != nil
             || environment["XCTestBundlePath"] != nil
+            || classLookup("XCTest.XCTestCase") != nil
+            || classLookup("XCTestCase") != nil
     }
 
     #if os(macOS)

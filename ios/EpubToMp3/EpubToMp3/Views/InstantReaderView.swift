@@ -46,6 +46,25 @@ enum InstantReaderIndexMapper {
     }
 }
 
+enum InstantReaderChromeMetrics {
+    /// Custom top bar height: 44 pt controls plus 8 pt vertical padding
+    /// on each side. Divider thickness is negligible for layout.
+    static let topBarHeight: CGFloat = 60
+    /// Conservative reader bottom chrome height: cover/control row plus
+    /// vertical padding and status/slider affordance. The actual player
+    /// can be shorter, but reserving this amount keeps text out from
+    /// under the idle/player bar and avoids page reflow when audio appears.
+    static let bottomBarHeight: CGFloat = 116
+
+    static func contentTopInset(safeAreaTop: CGFloat) -> CGFloat {
+        max(0, safeAreaTop) + topBarHeight
+    }
+
+    static func contentBottomInset(safeAreaBottom: CGFloat) -> CGFloat {
+        max(0, safeAreaBottom) + bottomBarHeight
+    }
+}
+
 /// Reader-first surface. The text is *always* visible — even before
 /// any audio exists. When the backend produces chapter MP3s the
 /// player block lights up at the bottom; until then the reader looks
@@ -124,72 +143,54 @@ struct InstantReaderView: View {
 
     // MARK: - Chrome layout
     //
-    // User decision (2026-05-22): "texto nunca deve se ajustar: chrome
-    // somente cobrir ele e é isso." The chrome is a true overlay —
-    // both top toolbar and bottom player float ON TOP of the page text
-    // when visible, and disappear cleanly when hidden. The page text
-    // is laid out edge-to-edge (no reserved corridor) so hiding chrome
-    // never creates empty bands and showing it never repaginates. The
-    // ReaderView is fed `useStableBodyHeight: true` so its paginator
-    // anchors against a frozen body height instead of the live
-    // `geo.size.height` — this keeps the layout invariant across any
-    // safe-area animation iOS may run when statusBarHidden flips.
-    private static let chromeTopInset: CGFloat = 0
-    private static let chromeBottomInset: CGFloat = 0
+    // The reader content must stay inside the safe reading corridor:
+    // device top safe area + custom top bar at the top, and home
+    // indicator + bottom audio/status chrome at the bottom. We still use
+    // a ZStack so chrome can fade/slide independently, but the text is
+    // never allowed underneath the bars when they appear.
 
     var body: some View {
-        // Apple Books "fixed margin" layout:
-        //
-        // Chrome (customTopBar + playerBar) is a ZStack OVERLAY on top of
-        // the content. The content layer uses `.ignoresSafeArea(.container)`
-        // so `geo.size.height` is the full screen height regardless of
-        // chrome or tab-bar visibility.
-        //
-        // ReaderView's paginator uses a body height = screenHeight −
-        // chromeTopInset − chromeBottomInset. This value is frozen on first
-        // appear and never changes on chrome toggle → zero reflow. The host
-        // overlays land exactly over the top/bottom margins; hiding them
-        // leaves those margins empty — text never moves.
-        ZStack(alignment: .center) {
-            // Content layer: ignores the safe area so the inner
-            // `GeometryReader` (inside `paginatedContent`) always
-            // sees the FULL screen height regardless of whether the
-            // status bar / tab bar are visible. Pagination becomes
-            // invariant to chrome toggle → no text reflow.
-            content
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .ignoresSafeArea(.container, edges: .all)
+        GeometryReader { proxy in
+            let topInset = InstantReaderChromeMetrics.contentTopInset(
+                safeAreaTop: proxy.safeAreaInsets.top
+            )
+            let bottomInset = InstantReaderChromeMetrics.contentBottomInset(
+                safeAreaBottom: proxy.safeAreaInsets.bottom
+            )
 
-            // Chrome layer: respects the safe area natively so the
-            // mini player + custom top bar sit inside the inset
-            // (above the system tab bar, below the status bar).
-            // Previous `.ignoresSafeArea(.all)` on the WHOLE ZStack
-            // pushed the mini player INTO the tab bar's reserved
-            // strip — the progress slider visually merged with
-            // "Read / Library / Settings" and looked broken.
-            VStack(spacing: 0) {
-                if chromeVisible {
-                    customTopBar
-                        .transition(.move(edge: .top).combined(with: .opacity))
-                }
-                Spacer(minLength: 0)
-                if chromeVisible {
-                    VStack(spacing: 0) {
-                        Divider()
-                            .background(readerForeground.opacity(0.15))
-                        if showTransport {
-                            playerBar
-                                .padding(.vertical, 8)
-                        } else {
-                            idlePlayerBar
-                                .padding(.vertical, 8)
-                        }
+            ZStack(alignment: .center) {
+                content(topInset: topInset, bottomInset: bottomInset)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+                // Chrome layer: we render in full-screen coordinates and
+                // manually pad by the live safe-area insets so controls sit
+                // below the status bar and above the home indicator/tab area.
+                VStack(spacing: 0) {
+                    if chromeVisible {
+                        customTopBar
+                            .transition(.move(edge: .top).combined(with: .opacity))
                     }
-                    .background(readerBackground.opacity(0.96))
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                    Spacer(minLength: 0)
+                    if chromeVisible {
+                        VStack(spacing: 0) {
+                            Divider()
+                                .background(readerForeground.opacity(0.15))
+                            if showTransport {
+                                playerBar
+                                    .padding(.vertical, 8)
+                            } else {
+                                idlePlayerBar
+                                    .padding(.vertical, 8)
+                            }
+                        }
+                        .background(readerBackground.opacity(0.96))
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                    }
                 }
+                .padding(.top, proxy.safeAreaInsets.top)
+                .padding(.bottom, proxy.safeAreaInsets.bottom)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .modifier(ChromeVisibilityModifier(visible: chromeVisible))
         .compatFullScreenCover(isPresented: $showingFullPlayer) {
@@ -302,7 +303,7 @@ struct InstantReaderView: View {
     // MARK: - Content
 
     @ViewBuilder
-    private var content: some View {
+    private func content(topInset: CGFloat, bottomInset: CGFloat) -> some View {
         if let chapter = resolveChapter(at: currentChapterIndex) {
             ReaderView(
                 chapter: chapter,
@@ -318,8 +319,8 @@ struct InstantReaderView: View {
                 onLinkTap: { url in handleEpubLink(url) },
                 onJumpToPlayerPosition: jumpToPlayerPosition,
                 playerChapterLabel: divergencePlayerChapterLabel,
-                chromeTopInset: Self.chromeTopInset,
-                chromeBottomInset: Self.chromeBottomInset,
+                chromeTopInset: topInset,
+                chromeBottomInset: bottomInset,
                 useStableBodyHeight: true
             )
         } else if !fulltext.chapters.isEmpty {
@@ -337,8 +338,8 @@ struct InstantReaderView: View {
                 onLinkTap: { url in handleEpubLink(url) },
                 onJumpToPlayerPosition: jumpToPlayerPosition,
                 playerChapterLabel: divergencePlayerChapterLabel,
-                chromeTopInset: Self.chromeTopInset,
-                chromeBottomInset: Self.chromeBottomInset,
+                chromeTopInset: topInset,
+                chromeBottomInset: bottomInset,
                 useStableBodyHeight: true
             )
         } else {
@@ -1142,12 +1143,12 @@ struct ChromeVisibilityModifier: ViewModifier {
         if #available(iOS 16.0, *) {
             content
                 .navigationBarHidden(true)
-                .statusBarHidden(!visible)
+                .statusBarHidden(false)
                 .toolbar(.hidden, for: .tabBar)
         } else {
             content
                 .navigationBarHidden(true)
-                .statusBarHidden(!visible)
+                .statusBarHidden(false)
         }
         #else
         content

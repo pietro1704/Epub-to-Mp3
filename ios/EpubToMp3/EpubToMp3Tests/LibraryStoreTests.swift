@@ -155,4 +155,31 @@ final class LibraryStoreTests: XCTestCase {
         XCTAssertEqual(decoded.fileType, .pdf,
                        "legacy entries with a .pdf displayFilename should infer fileType=.pdf")
     }
+
+    func testDurableImportCopySurvivesOriginalRemoval() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("library-durable-root-\(UUID().uuidString)", isDirectory: true)
+        let sourceDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("library-picked-root-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: sourceDir, withIntermediateDirectories: true)
+        let source = sourceDir.appendingPathComponent("Picked Book.epub")
+        try Data("durable import payload".utf8).write(to: source)
+        defer {
+            try? FileManager.default.removeItem(at: root)
+            try? FileManager.default.removeItem(at: sourceDir)
+        }
+
+        let durable = try LibraryStore.persistImportedFileForLibrary(
+            originalURL: source,
+            id: "abc123",
+            fileType: .epub,
+            baseDirectory: root
+        )
+        try FileManager.default.removeItem(at: source)
+
+        XCTAssertTrue(FileManager.default.fileExists(atPath: durable.path))
+        XCTAssertEqual(try Data(contentsOf: durable), Data("durable import payload".utf8))
+        XCTAssertTrue(durable.path.hasPrefix(root.path))
+        XCTAssertEqual(durable.lastPathComponent, "Picked Book.epub")
+    }
 }

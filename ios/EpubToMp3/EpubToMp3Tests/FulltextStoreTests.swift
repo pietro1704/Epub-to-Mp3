@@ -71,6 +71,14 @@ final class FulltextStoreTests: XCTestCase {
         session = URLSession(configuration: config)
     }
 
+    override func tearDown() {
+        session.invalidateAndCancel()
+        session = nil
+        StubProtocol.queue = []
+        StubProtocol.requestCount = 0
+        super.tearDown()
+    }
+
     // MARK: - 404 / 422 permanent errors
 
     func testRefresh404ThrowsGone() async throws {

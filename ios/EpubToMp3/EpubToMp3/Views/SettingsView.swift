@@ -183,7 +183,7 @@ struct SettingsView: View {
                     #endif
                 }
             }
-            if self.settings.resolvedBaseURL == nil {
+            if self.settings.resolvedBaseURL == nil && settings.remoteBackendControlsEnabled {
                 Label(L10n.string("settings.urlNotValid"), systemImage: "exclamationmark.triangle.fill")
                     .foregroundStyle(.red)
                     .font(.footnote)
@@ -201,6 +201,8 @@ struct SettingsView: View {
                 .foregroundStyle(.secondary)
             #endif
         }
+        .disabled(!settings.remoteBackendControlsEnabled)
+        .opacity(settings.remoteBackendControlsEnabled ? 1 : 0.45)
     }
 
     @ViewBuilder

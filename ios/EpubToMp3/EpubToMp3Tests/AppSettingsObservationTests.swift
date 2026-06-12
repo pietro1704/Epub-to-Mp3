@@ -298,9 +298,18 @@ final class AppSettingsObservationTests: XCTestCase {
     func testManualBackendURLRespectedWhenSidecarDisabled() {
         let s = makeSettings()
         s.useEmbeddedSidecar = false
-        s.backendURL = "http://localhost:8000"
-        s.sidecarURL = nil
-        XCTAssertNotNil(s.resolvedBaseURL,
-                        "Manual backend URL must resolve when the sidecar toggle is off.")
+        s.backendURL = "https://example.com"
+
+        XCTAssertEqual(s.resolvedBaseURL?.absoluteString, "https://example.com")
+    }
+
+    func testRemoteBackendControlsDimWhenEmbeddedRuntimeIsEnabled() {
+        let s = makeSettings()
+
+        s.useEmbeddedRuntime = true
+        XCTAssertFalse(s.remoteBackendControlsEnabled)
+
+        s.useEmbeddedRuntime = false
+        XCTAssertTrue(s.remoteBackendControlsEnabled)
     }
 }
