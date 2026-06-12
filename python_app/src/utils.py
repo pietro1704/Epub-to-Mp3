@@ -100,22 +100,46 @@ class FileManager:
             except OSError:
                 pass
 
+    @staticmethod
+    def normalize_audio_format(audio_format: Optional[str]) -> str:
+        value = (audio_format or "mp3").strip().lower().lstrip(".")
+        return value if value in {"mp3", "m4a"} else "mp3"
+
     @classmethod
-    def build_output_filename(cls, chapter_name: str, index: int) -> str:
+    def audio_extension(cls, audio_format: Optional[str]) -> str:
+        return f".{cls.normalize_audio_format(audio_format)}"
+
+    @classmethod
+    def audio_glob(cls, audio_format: Optional[str] = None) -> str:
+        return f"*{cls.audio_extension(audio_format)}" if audio_format else "*.{mp3,m4a}"
+
+    @classmethod
+    def is_audio_file(cls, path: Path) -> bool:
+        return Path(path).suffix.lower() in {".mp3", ".m4a"}
+
+    @classmethod
+    def build_output_filename(
+        cls, chapter_name: str, index: int, audio_format: Optional[str] = "mp3"
+    ) -> str:
         raw_name = chapter_name or f"Chapter {index}"
         safe_name = cls.sanitize_filename(raw_name)
+        ext = cls.audio_extension(audio_format)
         if re.match(r"^\s*\d+(?:[.,]\d+)*\b", str(raw_name)):
-            return f"{safe_name}.mp3"
-        return f"{index:03d} - {safe_name}.mp3"
+            return f"{safe_name}{ext}"
+        return f"{index:03d} - {safe_name}{ext}"
 
     @classmethod
-    def get_output_path(cls, chapter_name: str, output_dir: Path, index: int) -> Path:
-        return Path(output_dir) / cls.build_output_filename(chapter_name, index)
+    def get_output_path(
+        cls, chapter_name: str, output_dir: Path, index: int, audio_format: Optional[str] = "mp3"
+    ) -> Path:
+        return Path(output_dir) / cls.build_output_filename(chapter_name, index, audio_format)
 
     @classmethod
-    def get_temp_output_path(cls, chapter_name: str, temp_dir: Path, index: int) -> Path:
+    def get_temp_output_path(
+        cls, chapter_name: str, temp_dir: Path, index: int, audio_format: Optional[str] = "mp3"
+    ) -> Path:
         """Get temporary output path for chapter conversion"""
-        return Path(temp_dir) / cls.build_output_filename(chapter_name, index)
+        return Path(temp_dir) / cls.build_output_filename(chapter_name, index, audio_format)
 
     @classmethod
     def build_engine_voice_suffix(
@@ -151,7 +175,9 @@ class FileManager:
 
         cls.ensure_directory(final_dir)
 
-        for temp_file in temp_dir.glob("*.mp3"):
+        for temp_file in sorted(temp_dir.iterdir()):
+            if not temp_file.is_file() or not cls.is_audio_file(temp_file):
+                continue
             final_file = final_dir / temp_file.name
             try:
                 if final_file.exists():
@@ -171,8 +197,25 @@ class AudioProcessor:
     async def convert_to_mp3(
         input_file: Path, output_file: Path, bitrate: str = "8k"
     ) -> Optional[Path]:
+        return await AudioProcessor.convert_to_audio(
+            input_file, output_file, bitrate=bitrate, audio_format="mp3"
+        )
+
+    @staticmethod
+    async def convert_to_audio(
+        input_file: Path,
+        output_file: Path,
+        bitrate: str = "8k",
+        audio_format: Optional[str] = None,
+        sample_rate: int = 16000,
+        channels: int = 1,
+    ) -> Optional[Path]:
         input_path = Path(input_file)
         output_path = Path(output_file)
+        audio_format = FileManager.normalize_audio_format(audio_format or output_path.suffix)
+        codec = "aac" if audio_format == "m4a" else "libmp3lame"
+        sample_rate_str = str(sample_rate or (22050 if audio_format == "m4a" else 16000))
+        channels_str = str(channels or 1)
 
         if not input_path.exists():
             return None
@@ -205,18 +248,16 @@ class AudioProcessor:
             "-y",
             "-i",
             str(input_path),
+            "-vn",
+            "-c:a",
+            codec,
             "-b:a",
-            bitrate,  # Bitrate constante (CBR)
-            "-minrate",
-            bitrate,  # Minimum bitrate
-            "-maxrate",
-            bitrate,  # Maximum bitrate
+            bitrate,
             "-ar",
-            "16000",  # Sample rate 16kHz (ideal para voz)
+            sample_rate_str,
             "-ac",
-            "1",  # Mono (audiobooks do not need stereo)
-            "-cutoff",
-            "8000",  # Cut frequencies above 8 kHz (sufficient for voice)
+            channels_str,
+            *( ("-movflags", "+faststart") if audio_format == "m4a" else () ),
             str(output_path),
         )
         command_fallback = (
@@ -226,13 +267,14 @@ class AudioProcessor:
             str(input_path),
             "-vn",
             "-acodec",
-            "libmp3lame",
-            "-q:a",
-            "7",
+            codec,
+            "-b:a",
+            bitrate,
             "-ar",
-            "16000",
+            sample_rate_str,
             "-ac",
-            "1",
+            channels_str,
+            *( ("-movflags", "+faststart") if audio_format == "m4a" else () ),
             str(output_path),
         )
 
@@ -269,7 +311,7 @@ class AudioProcessor:
             import tempfile
 
             tmp_in = Path(tempfile.mkstemp(prefix="tts_in_", suffix=input_path.suffix)[1])
-            tmp_out = Path(tempfile.mkstemp(prefix="tts_out_", suffix=".mp3")[1])
+            tmp_out = Path(tempfile.mkstemp(prefix="tts_out_", suffix=FileManager.audio_extension(audio_format))[1])
             try:
                 shutil.copy2(input_path, tmp_in)
                 short_primary = (
@@ -277,12 +319,15 @@ class AudioProcessor:
                     "-y",
                     "-i",
                     str(tmp_in),
+                    "-vn",
+                    "-c:a",
+                    codec,
                     "-b:a",
                     bitrate,
                     "-ar",
-                    "16000",
+                    sample_rate_str,
                     "-ac",
-                    "1",
+                    channels_str,
                     str(tmp_out),
                 )
                 short_fallback = (
@@ -292,9 +337,9 @@ class AudioProcessor:
                     str(tmp_in),
                     "-vn",
                     "-acodec",
-                    "libmp3lame",
-                    "-q:a",
-                    "7",
+                    codec,
+                    "-b:a",
+                    bitrate,
                     str(tmp_out),
                 )
                 ok = await _run_ffmpeg(short_primary)
@@ -474,3 +519,4 @@ class TimeFormatter:
 
 
 __all__ = ["FileManager", "AudioProcessor", "TextValidator", "TimeFormatter"]
+

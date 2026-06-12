@@ -109,6 +109,32 @@ bash scripts/install_piper_binary.sh
 
 echo "🌐 Installing web dependencies..."
 (cd web && mise exec -- npm install)
+
+mise run install:ocr
+"""
+
+[tasks."install:ocr"]
+description = "Install OCR runtime for scanned PDFs (Tesseract + Portuguese data + ocrmypdf)"
+run = """
+#!/bin/bash
+set -euo pipefail
+
+if command -v pacman >/dev/null 2>&1; then
+  echo "🔎 Installing native OCR packages via pacman (called from mise)..."
+  sudo pacman -S --needed --noconfirm tesseract tesseract-data-por ghostscript pngquant unpaper
+else
+  echo "⚠️  No pacman found; install native tesseract + Portuguese language data with your OS package manager."
+fi
+
+if [ ! -x ".venv/bin/python" ]; then
+  mise exec -- python -m venv .venv
+fi
+
+echo "🐍 Installing Python OCR wrapper into project venv..."
+.venv/bin/python -m pip install ocrmypdf
+
+.venv/bin/python -m ocrmypdf --version
+tesseract --list-langs | grep -E '^(por|osd)$' || true
 """
 
 [tasks.test]

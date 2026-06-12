@@ -92,7 +92,7 @@ class SimpleAudioConverter:
 
                 # Generate expected MP3 filename
                 output_filename = self.file_manager.build_output_filename(
-                    chapter.name or f"Chapter {chapter_num}", chapter_num
+                    chapter.name or f"Chapter {chapter_num}", chapter_num, getattr(config, "audio_format", "mp3")
                 )
                 output_path = output_dir / output_filename
 

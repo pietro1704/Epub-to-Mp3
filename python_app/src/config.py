@@ -11,7 +11,7 @@ from typing import Callable, Dict, Iterable, List, Optional
 from .paths import CACHE_DIR, OUTPUT_DIR
 
 SUPPORTED_FORMATS = [".epub", ".pdf"]
-AUDIO_FORMATS = ["mp3", "wav", "ogg"]
+AUDIO_FORMATS = ["mp3", "m4a"]
 
 
 @dataclass
@@ -25,6 +25,7 @@ class ConversionConfig:
     output_dir: Path = OUTPUT_DIR  # Always uses project root
     book_title: str = ""
     preserve_all_chapters: bool = True
+    audio_format: str = "mp3"
     bitrate: str = "8k"  # Maximum compression for voice (75% reduction)
     sample_rate: int = 16_000  # Sufficient for voice (Nyquist 8kHz)
     channels: int = 1  # Mono for audiobooks
@@ -110,6 +111,9 @@ class ConversionConfig:
             self.model_path = Path(self.model_path)
         if self.cache_dir is not None and not isinstance(self.cache_dir, Path):
             self.cache_dir = Path(self.cache_dir)
+        self.audio_format = (self.audio_format or "mp3").strip().lower().lstrip(".")
+        if self.audio_format not in AUDIO_FORMATS:
+            self.audio_format = "mp3"
 
     def as_dict(self) -> Dict[str, object]:
         """Return a serialisable representation useful for debugging."""
@@ -121,6 +125,7 @@ class ConversionConfig:
             "output_dir": self.output_dir,
             "book_title": self.book_title,
             "preserve_all_chapters": self.preserve_all_chapters,
+            "audio_format": self.audio_format,
             "bitrate": self.bitrate,
             "sample_rate": self.sample_rate,
             "channels": self.channels,
@@ -576,8 +581,13 @@ class AppConfig:
             preserve_all = bool(kwargs.pop("preserve_all"))
         preserve_all = True if preserve_all is None else bool(preserve_all)
 
-        bitrate = kwargs.pop("bitrate", "8k")  # 8k for maximum compression (audiobooks)
-        sample_rate = int(kwargs.pop("sample_rate", 16_000))  # 16kHz sufficient for voice
+        audio_format = str(kwargs.pop("audio_format", os.getenv("AUDIO_FORMAT", "mp3"))).lower().lstrip(".")
+        if audio_format not in AUDIO_FORMATS:
+            audio_format = "mp3"
+        default_bitrate = "64k" if audio_format == "m4a" else "8k"
+        default_sample_rate = 22_050 if audio_format == "m4a" else 16_000
+        bitrate = kwargs.pop("bitrate", default_bitrate)
+        sample_rate = int(kwargs.pop("sample_rate", default_sample_rate))
         channels = int(kwargs.pop("channels", 1))  # Mono for audiobooks
         force_reprocess = bool(kwargs.pop("force_reprocess", False))
         listen_flag = bool(kwargs.pop("listen", False))
@@ -718,6 +728,7 @@ class AppConfig:
             output_dir=output_dir,
             book_title=book_title,
             preserve_all_chapters=preserve_all,
+            audio_format=audio_format,
             bitrate=bitrate,
             sample_rate=sample_rate,
             channels=channels,

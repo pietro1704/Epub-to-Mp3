@@ -30,6 +30,7 @@ ebooklib>=0.20
 beautifulsoup4>=4.14.3
 pypdf>=6.12.1  # CVE-2026-33699, GHSA-3crg-w4f6-42mx
 lxml>=6.1.1
+ocrmypdf>=17.5.0
 
 # Language Detection
 langdetect>=1.0.9

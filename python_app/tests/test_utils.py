@@ -85,6 +85,28 @@ class TestFileManager(unittest.TestCase):
             self.assertEqual(result, nested_dir)
             self.assertTrue(nested_dir.exists())
 
+    def test_move_files_to_final_output_moves_mp3_and_m4a(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            source = root / "cache"
+            target = root / "output"
+            source.mkdir()
+            mp3 = source / "001 - Chapter.mp3"
+            m4a = source / "002 - Chapter.m4a"
+            txt = source / "notes.txt"
+            mp3.write_bytes(b"mp3")
+            m4a.write_bytes(b"m4a")
+            txt.write_text("keep", encoding="utf-8")
+
+            moved = FileManager.move_files_to_final_output(source, target)
+
+            self.assertEqual({p.name for p in moved}, {mp3.name, m4a.name})
+            self.assertTrue((target / mp3.name).exists())
+            self.assertTrue((target / m4a.name).exists())
+            self.assertFalse(mp3.exists())
+            self.assertFalse(m4a.exists())
+            self.assertTrue(txt.exists())
+
     def test_cleanup_temp_files(self):
         """Test cleaning up temporary files"""
         with tempfile.TemporaryDirectory() as temp_dir:

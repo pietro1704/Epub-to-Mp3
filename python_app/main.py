@@ -51,6 +51,7 @@ from src.language import (
     LanguageProfile,
     get_language_detector,
 )
+from src.ocr import prepare_pdf_with_ocr
 from src.paths import JOB_INPUTS_DIR, JOBS_DIR, OUTPUT_DIR, UPLOADS_DIR
 from src.text_formatting import PRESERVE_TTS_LAYOUT, TextFormattingProcessor
 from src.ui.menu import MenuInterface
@@ -434,21 +435,43 @@ class ConverterApplication:
                 print(f"❌ Unsupported format: {friendly}. Please provide an .epub or .pdf file.")
                 return 1
 
+            # Auto-OCR scanned/image-only PDFs before EbookReader tries to parse text.
+            if suffix == ".pdf":
+                ocr_result = prepare_pdf_with_ocr(
+                    input_path,
+                    cache_root=self.cache_root,
+                    language="por",
+                    force=bool(getattr(args, "force_ocr", False)),
+                    log=print if self._resolve_verbose(args) else None,
+                )
+                if ocr_result.used_ocr:
+                    print(f"✅ OCR pronto: {ocr_result.output_path}")
+                    input_path = ocr_result.output_path
+                    args.input_file = str(input_path)
+                elif ocr_result.needed_ocr and ocr_result.reason:
+                    print(f"⚠️  OCR necessário, mas indisponível/falhou: {ocr_result.reason}")
+
             # Load ebook — oversized chapters are auto-split at a threshold
             # computed from EDGE_CHUNK_CHARS × EDGE_MAX_CONCURRENCY × 2.
             reader = EbookReader(str(input_path))
 
             # Show structure only
             if args.show_structure:
+                structure_items = self._generate_structure_items(
+                    reader, filter_chapters=bool(getattr(args, "filter_chapters", False))
+                )
                 self._show_structure(
                     reader, filter_chapters=bool(getattr(args, "filter_chapters", False))
                 )
+                self._print_source_quality_diagnostic(input_path, structure_items)
                 return 0
 
             # Prepare structured chapters for conversion
             structure_items = self._generate_structure_items(
                 reader, filter_chapters=bool(getattr(args, "filter_chapters", False))
             )
+            if self._print_source_quality_diagnostic(input_path, structure_items):
+                return 1
 
             if getattr(args, "detect_language", False):
                 verbose = self._resolve_verbose(args)
@@ -1972,6 +1995,32 @@ class ConverterApplication:
             segments.append(text[start:end].strip())
 
         return segments
+
+    def _print_source_quality_diagnostic(
+        self, input_path: Path, structure_items: List[ChapterStructureItem]
+    ) -> bool:
+        total_chars = sum(
+            len((getattr(item, "text_override", None) or getattr(item.chapter, "text", "") or ""))
+            for item in structure_items
+        )
+        if structure_items and total_chars >= 200:
+            return False
+        if input_path.suffix.lower() == ".pdf":
+            print()
+            print("❌ PDF sem texto extraível suficiente para narrar.")
+            print(
+                "   Parece ser um PDF escaneado/por imagens; rode OCR antes de converter "
+                "(ex.: ocrmypdf + tesseract) ou use uma versão EPUB/PDF com texto."
+            )
+            print(f"   Capítulos detectados: {len(structure_items)} | caracteres: {total_chars}")
+        else:
+            print()
+            print("❌ Fonte parece inválida ou corrompida para conversão.")
+            print(
+                "   O arquivo tem texto narrável insuficiente; tente outra edição ou reconverta a fonte."
+            )
+            print(f"   Capítulos detectados: {len(structure_items)} | caracteres: {total_chars}")
+        return True
 
     def _apply_structure_to_reader(
         self, reader: EbookReader, structure_items: List[ChapterStructureItem]
@@ -4440,6 +4489,8 @@ class ConverterApplication:
             overrides["piper_max_procs"] = piper_max_procs
         if piper_chunk_chars is not None:
             overrides["piper_chunk_chars"] = piper_chunk_chars
+        if getattr(args, "audio_format", None):
+            overrides["audio_format"] = str(getattr(args, "audio_format"))
         if getattr(args, "bitrate", None):
             overrides["bitrate"] = str(getattr(args, "bitrate"))
         if sample_rate is not None:
@@ -4524,6 +4575,7 @@ class ConverterApplication:
     def _apply_cli_overrides(self, args: argparse.Namespace, config: ConversionConfig) -> None:
         if config is None:
             return
+        self._apply_conversion_preset(args, config)
         use_language_detection = getattr(args, "use_language_detection", None)
         if use_language_detection is not None:
             config.use_language_detection = bool(use_language_detection)
@@ -4683,6 +4735,42 @@ class ConverterApplication:
 
         if getattr(args, "multi_engine_parallel", False):
             config.extra["multi_engine_parallel"] = "1"
+
+    def _apply_conversion_preset(self, args: argparse.Namespace, config: ConversionConfig) -> None:
+        preset = str(getattr(args, "preset", "") or "").strip().lower()
+        if preset == "iphone":
+            if getattr(args, "audio_format", None) is None:
+                config.audio_format = "m4a"
+            if getattr(args, "bitrate", None) is None:
+                config.bitrate = "64k"
+            if getattr(args, "sample_rate", None) is None:
+                config.sample_rate = 22050
+            config.channels = 1
+            if getattr(args, "export_to_iphone", None) is None:
+                args.export_to_iphone = True
+        elif preset == "smallest":
+            if getattr(args, "audio_format", None) is None:
+                config.audio_format = "mp3"
+            if getattr(args, "bitrate", None) is None:
+                config.bitrate = "8k"
+            config.sample_rate = 16000
+            config.channels = 1
+        elif preset == "quality":
+            if getattr(args, "bitrate", None) is None:
+                config.bitrate = "96k" if config.audio_format == "m4a" else "64k"
+            if getattr(args, "sample_rate", None) is None:
+                config.sample_rate = 44100
+        elif preset == "offline":
+            config.engine = "piper"
+            config.extra["preset"] = "offline"
+        elif preset == "fast":
+            config.engine = "edge"
+            args.max_performance = True
+            config.extra["preset"] = "fast"
+
+        requested_format = getattr(args, "audio_format", None)
+        if requested_format:
+            config.audio_format = str(requested_format).lower().lstrip(".")
 
     def _apply_speed_profile(self, args: argparse.Namespace, config: ConversionConfig) -> None:
         profile_name = str(getattr(args, "profile", "") or "").strip().lower()
@@ -4894,6 +4982,11 @@ def _add_conversion_arguments(
         help="Print the detected book structure and exit",
     )
     parser.add_argument(
+        "--force-ocr",
+        action="store_true",
+        help="Force rebuilding the cached OCR PDF before reading a scanned PDF",
+    )
+    parser.add_argument(
         "--detect-language",
         "--show-language",
         action="store_true",
@@ -4972,12 +5065,20 @@ def _add_conversion_arguments(
         action="store_true",
         default=None,
         help=(
-            "After conversion, copy MP3s into the MP3AudioBookPlayer iCloud "
-            "Drive container so they sync to the iPhone (macOS only). The "
+            "After conversion, queue audio into the MP3AudioBookPlayer iCloud "
+            "Drive container so it syncs to the iPhone (macOS only). The "
             "files appear in 'Files > MP3AudioBookPlayer' on the device. "
             "Override the container path with IPHONE_EXPORT_DIR or enable "
             "globally with EXPORT_TO_IPHONE=1."
         ),
+    )
+    parser.add_argument(
+        "--format",
+        "--audio-format",
+        dest="audio_format",
+        choices=["mp3", "m4a"],
+        default=None,
+        help="Output audio format. Defaults to mp3; --preset iphone defaults to m4a.",
     )
     parser.add_argument(
         "--no-parallel",
@@ -5236,6 +5337,11 @@ def _add_conversion_arguments(
         dest="profile",
         choices=["speed"],
         help="Apply predefined profile (speed)",
+    )
+    parser.add_argument(
+        "--preset",
+        choices=["iphone", "smallest", "quality", "offline", "fast"],
+        help="Apply conversion preset: iphone=m4a+export, smallest=compact mp3, quality=higher bitrate, offline=Piper, fast=Edge speed",
     )
     parser.add_argument(
         "--speed-scenario",

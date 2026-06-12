@@ -17,6 +17,19 @@ class TestValidateConversionHelpers(unittest.TestCase):
         self.assertNotIn(":", normalized)
         self.assertNotIn("_", normalized)
 
+    def test_build_audio_index_and_find_helpers_accept_m4a(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            output_dir = Path(tmp)
+            audio = output_dir / "1.7 - Nota prévia.m4a"
+            audio.write_bytes(b"\x00\x00\x00\x18ftypM4A " + b"0" * 2048)
+
+            index = vc.build_mp3_index(output_dir)
+
+            self.assertIn(vc.normalize_title_key("Nota prévia"), index)
+            self.assertEqual(index[vc.normalize_title_key("Nota prévia")], audio)
+            self.assertEqual(vc.find_mp3_by_title(output_dir, "Nota prévia"), audio)
+            self.assertEqual(vc.find_mp3_file(output_dir, "1.7"), audio)
+
     def test_find_cache_dir_skips_empty_filename_candidate(self):
         """Regression for batch validation skip (2026-05-07).
 
@@ -571,7 +584,7 @@ class TestVerifyChapterNames(unittest.TestCase):
             bad = out / "1 - Chapter &amp; One.mp3"
             bad.write_bytes(b"\xff\xfb" + b"\x00" * 16)
             issues = vc.verify_chapter_names([], out)
-            self.assertTrue(any("MP3 filename" in i and "artefact" in i for i in issues))
+            self.assertTrue(any("Audio filename" in i and "artefact" in i for i in issues))
 
     def test_mp3_with_clean_filename_not_flagged(self) -> None:
         with tempfile.TemporaryDirectory() as d:

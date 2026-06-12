@@ -376,7 +376,9 @@ class _OutputFileMixin:
             chapter_name_with_label = chapter_name_clean
         else:
             chapter_name_with_label = f"{chapter_label} - {chapter_name_clean}"
-        filename = self.file_manager.build_output_filename(chapter_name_with_label, chapter_num)
+        filename = self.file_manager.build_output_filename(
+            chapter_name_with_label, chapter_num, getattr(self, "_current_audio_format", "mp3")
+        )
         return Path(directory) / filename
 
     def _normalize_title_match(self, title: str) -> str:
@@ -392,7 +394,7 @@ class _OutputFileMixin:
         dir_path = Path(directory)
         if not dir_path.exists():
             return index
-        for candidate in dir_path.glob("*.mp3"):
+        for candidate in sorted(p for p in dir_path.iterdir() if self.file_manager.is_audio_file(p)):
             match = self._NUMBERED_FILENAME_RE.match(candidate.stem)
             if not match:
                 continue
@@ -449,7 +451,7 @@ class _OutputFileMixin:
                 for idx, leftover in enumerate(candidates, start=1):
                     if not leftover.exists():
                         continue
-                    dup_name = f"{expected.stem} (dup-{idx}).mp3"
+                    dup_name = f"{expected.stem} (dup-{idx}){expected.suffix}"
                     dup_path = expected.with_name(dup_name)
                     try:
                         leftover.rename(dup_path)
@@ -526,8 +528,10 @@ class _OutputFileMixin:
 
         # Remove stale MP3s whose names don't match any expected filename
         self._remove_stale_numbered_files(output_dir, "*.mp3", expected_names)
+        self._remove_stale_numbered_files(output_dir, "*.m4a", expected_names)
         if temp_dir:
             self._remove_stale_numbered_files(temp_dir, "*.mp3", expected_names)
+            self._remove_stale_numbered_files(temp_dir, "*.m4a", expected_names)
 
         # Clean stale cache text files
         self._cleanup_stale_cache_text(chapters, config)
@@ -575,7 +579,11 @@ class _OutputFileMixin:
             return
 
         # Build candidate pool once
-        candidates = [p for p in sorted(output_dir.glob("*.mp3")) if p.name not in expected_names]
+        candidates = [
+            p
+            for p in sorted(output_dir.iterdir())
+            if self.file_manager.is_audio_file(p) and p.name not in expected_names
+        ]
         if not candidates:
             return
 
@@ -583,7 +591,7 @@ class _OutputFileMixin:
         repaired = 0
         for label, title in labels:
             safe_name = self.file_manager.sanitize_filename(f"{label} - {title}")
-            target = output_dir / f"{safe_name}.mp3"
+            target = output_dir / f"{safe_name}{self.file_manager.audio_extension(getattr(self, '_current_audio_format', 'mp3'))}"
             if target.exists():
                 continue
 
@@ -979,3 +987,4 @@ class _OutputFileMixin:
             short_seconds = max(int((file_size or 1) / 1000), 1)
 
         return f"Audio possibly truncated ({file_size} bytes ≈ {short_seconds}s, expected ≈ {expected_display}s)"
+

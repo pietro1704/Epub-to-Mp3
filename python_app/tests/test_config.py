@@ -272,6 +272,16 @@ class TestConstants(unittest.TestCase):
 
         self.assertIsInstance(AUDIO_FORMATS, list)
         self.assertIn("mp3", AUDIO_FORMATS)
+        self.assertIn("m4a", AUDIO_FORMATS)
+        self.assertNotIn("wav", AUDIO_FORMATS)
+
+    def test_m4a_config_defaults(self):
+        config = ConversionConfig(engine="edge", audio_format="m4a")
+        self.assertEqual(config.audio_format, "m4a")
+
+    def test_invalid_audio_format_falls_back_to_mp3(self):
+        config = ConversionConfig(engine="edge", audio_format="wav")
+        self.assertEqual(config.audio_format, "mp3")
 
 
 if __name__ == "__main__":

@@ -91,7 +91,7 @@ class SimpleConverter:
             print(f"\n📖 [{chapter_num}/{len(chapters)}] {chapter.name}")
 
             try:
-                output_path = FileManager.get_output_path(chapter.name, output_dir, chapter_num)
+                output_path = FileManager.get_output_path(chapter.name, output_dir, chapter_num, getattr(config, "audio_format", "mp3"))
 
                 if output_path.exists() and not config.force_reprocess:
                     converted_files.append(output_path)
@@ -222,7 +222,7 @@ class SimpleConverter:
             try:
                 print(f"🎵 [{chapter_num}/{total_chapters}] Starting: {chapter.name}")
 
-                output_path = FileManager.get_output_path(chapter.name, output_dir, chapter_num)
+                output_path = FileManager.get_output_path(chapter.name, output_dir, chapter_num, getattr(config, "audio_format", "mp3"))
 
                 if output_path.exists() and not config.force_reprocess:
                     elapsed = time.time() - start_time

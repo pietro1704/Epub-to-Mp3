@@ -20,7 +20,7 @@ import re
 import sys
 import unicodedata
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, Iterable, List, Optional, Tuple
 
 # Add project to path
 sys.path.insert(0, str(Path(__file__).parent))
@@ -389,46 +389,52 @@ def build_cache_index(text_dirs: List[Path]) -> Dict[str, Dict[str, Path]]:
     return index
 
 
-def build_mp3_index(output_dir: Path) -> Dict[str, Path]:
-    """Index MP3 files keyed by normalized title (without numeric prefix)."""
-    index: Dict[str, Path] = {}
+AUDIO_EXTENSIONS = {".mp3", ".m4a"}
+
+
+def iter_audio_files(output_dir: Path) -> Iterable[Path]:
     if not output_dir.exists():
-        return index
-    for mp3 in output_dir.glob("*.mp3"):
-        stem = _strip_numeric_prefix(mp3.stem)
+        return []
+    return sorted(
+        path for path in output_dir.iterdir() if path.is_file() and path.suffix.lower() in AUDIO_EXTENSIONS
+    )
+
+
+def build_mp3_index(output_dir: Path) -> Dict[str, Path]:
+    """Index audio files keyed by normalized title (without numeric prefix).
+
+    Kept as build_mp3_index for backwards compatibility with existing callers.
+    """
+    index: Dict[str, Path] = {}
+    for audio in iter_audio_files(output_dir):
+        stem = _strip_numeric_prefix(audio.stem)
         norm = normalize_title_key(stem)
-        index[norm] = mp3
+        index[norm] = audio
     return index
 
 
 def find_mp3_by_title(output_dir: Path, chapter_title: str) -> Path | None:
-    """Find MP3 file by matching normalized title (ignores numeric prefix)."""
-    if not output_dir.exists():
-        return None
-
+    """Find audio file by matching normalized title (ignores numeric prefix)."""
     target = normalize_title_key(_strip_numeric_prefix(chapter_title))
     best: Path | None = None
-    for mp3 in output_dir.glob("*.mp3"):
-        name_norm = normalize_title_key(_strip_numeric_prefix(mp3.stem))
+    for audio in iter_audio_files(output_dir):
+        name_norm = normalize_title_key(_strip_numeric_prefix(audio.stem))
         if target and target[:40] in name_norm:
-            best = mp3
+            best = audio
             break
     return best
 
 
-def find_mp3_file(output_dir: Path, chapter_num: int) -> Path | None:
-    """Find MP3 file for a chapter by numeric prefix (legacy)."""
+def find_mp3_file(output_dir: Path, chapter_num: int | str) -> Path | None:
+    """Find audio file for a chapter by numeric prefix (legacy name)."""
     if not output_dir.exists():
         return None
+    chapter_label = str(chapter_num)
 
-    # Try exact match first
-    for mp3 in output_dir.glob(f"{chapter_num}.*"):
-        if mp3.suffix == ".mp3":
-            return mp3
-
-    # Try fuzzy match
-    for mp3 in output_dir.glob(f"{chapter_num} - *.mp3"):
-        return mp3
+    # Try exact/fuzzy prefix match across supported audio formats.
+    for audio in iter_audio_files(output_dir):
+        if audio.stem == chapter_label or audio.stem.startswith(f"{chapter_label} - "):
+            return audio
 
     return None
 
@@ -617,9 +623,10 @@ def print_chapter_detail(
         else:
             print("  │  Result: ❌ Mismatch")
 
-    # MP3 info
+    # Audio info
     if mp3_file and mp3_file.exists():
-        mp3_size_mb = mp3_file.stat().st_size / (1024 * 1024)
+        audio_size_mb = mp3_file.stat().st_size / (1024 * 1024)
+        audio_label = mp3_file.suffix.lstrip(".").upper() or "AUDIO"
         try:
             duration = validator.get_audio_duration(mp3_file)
         except Exception:
@@ -628,12 +635,12 @@ def print_chapter_detail(
             duration_min = duration / 60
             chars_per_min = int(len(epub_norm) / duration_min) if duration_min > 0 else 0
             print(
-                f"  └─ 🎵 MP3: {mp3_size_mb:.1f} MB | {duration_min:.1f} min | ~{chars_per_min} chars/min"
+                f"  └─ 🎵 {audio_label}: {audio_size_mb:.1f} MB | {duration_min:.1f} min | ~{chars_per_min} chars/min"
             )
         else:
-            print(f"  └─ 🎵 MP3: {mp3_size_mb:.1f} MB | duration unavailable")
+            print(f"  └─ 🎵 {audio_label}: {audio_size_mb:.1f} MB | duration unavailable")
     else:
-        print("  └─ 🎵 MP3: (not found)")
+        print("  └─ 🎵 Audio: (not found)")
     print()
 
 
@@ -665,7 +672,7 @@ def hash_text(text: str) -> str:
     return hashlib.md5(normalize_text(text).encode("utf-8")).hexdigest()
 
 
-_VALID_MP3_HEADERS: tuple[bytes, ...] = (
+_VALID_AUDIO_HEADERS: tuple[bytes, ...] = (
     b"\xff\xfb",  # MPEG Audio Layer III (most common)
     b"\xff\xfa",
     b"\xff\xf3",
@@ -675,30 +682,39 @@ _VALID_MP3_HEADERS: tuple[bytes, ...] = (
 )
 
 
-def verify_mp3_integrity(output_dir: Path, min_size_bytes: int = 1024) -> List[str]:
-    """Check that every MP3 in *output_dir* has a valid header and non-trivial size.
+def _is_valid_audio_header(path: Path, header: bytes) -> bool:
+    if path.suffix.lower() == ".m4a":
+        return len(header) >= 8 and header[4:8] == b"ftyp"
+    return any(header.startswith(h) for h in _VALID_AUDIO_HEADERS)
 
+
+def verify_mp3_integrity(output_dir: Path, min_size_bytes: int = 1024) -> List[str]:
+    """Check that every audio file in *output_dir* has a valid header and non-trivial size.
+
+    Kept as verify_mp3_integrity for backwards compatibility with callers.
     Returns a list of issue strings (empty = all OK).
     """
     issues: List[str] = []
-    for mp3 in sorted(output_dir.glob("*.mp3")):
+    for audio in iter_audio_files(output_dir):
         try:
-            size = mp3.stat().st_size
+            size = audio.stat().st_size
         except OSError:
-            issues.append(f"Cannot stat MP3: {mp3.name}")
+            issues.append(f"Cannot stat audio: {audio.name}")
             continue
         if size < min_size_bytes:
-            issues.append(f"MP3 suspiciously small ({size} bytes, < {min_size_bytes}): {mp3.name}")
+            issues.append(
+                f"Audio suspiciously small ({size} bytes, < {min_size_bytes}): {audio.name}"
+            )
             continue
         try:
-            with mp3.open("rb") as fh:
-                header = fh.read(3)
+            with audio.open("rb") as fh:
+                header = fh.read(12)
         except OSError:
-            issues.append(f"Cannot read MP3: {mp3.name}")
+            issues.append(f"Cannot read audio: {audio.name}")
             continue
-        if not any(header.startswith(h) for h in _VALID_MP3_HEADERS):
+        if not _is_valid_audio_header(audio, header):
             issues.append(
-                f"MP3 has unexpected header bytes {header!r} (not an MP3/ID3 file): {mp3.name}"
+                f"Audio has unexpected header bytes {header[:4]!r}: {audio.name}"
             )
     return issues
 
@@ -742,10 +758,10 @@ def verify_chapter_names(
         if _only_number.match(cleaned):
             issues.append(f"Chapter {label!r} has no descriptive title (only a number): {name!r}")
 
-    # Check that every MP3 stem is free of HTML/entity artefacts
-    for mp3 in sorted(output_dir.glob("*.mp3")):
-        if _stem_needs_fixing(mp3.stem):
-            issues.append(f"MP3 filename contains HTML/entity artefacts: {mp3.name}")
+    # Check that every audio stem is free of HTML/entity artefacts
+    for audio in iter_audio_files(output_dir):
+        if _stem_needs_fixing(audio.stem):
+            issues.append(f"Audio filename contains HTML/entity artefacts: {audio.name}")
 
     return issues
 
@@ -760,15 +776,15 @@ def hash_file(path: Path) -> str:
 
 
 def detect_duplicate_audio_files(output_dir: Path, min_size_bytes: int = 1024) -> List[List[Path]]:
-    """Detect duplicated audio files by hashing MP3 payloads."""
+    """Detect duplicated audio files by hashing audio payloads."""
     groups: Dict[str, List[Path]] = {}
-    for mp3 in sorted(output_dir.glob("*.mp3")):
+    for audio in iter_audio_files(output_dir):
         try:
-            if mp3.stat().st_size < min_size_bytes:
+            if audio.stat().st_size < min_size_bytes:
                 continue
         except OSError:
             continue
-        groups.setdefault(hash_file(mp3), []).append(mp3)
+        groups.setdefault(hash_file(audio), []).append(audio)
     return [paths for paths in groups.values() if len(paths) > 1]
 
 
@@ -878,7 +894,7 @@ def validate_book(
             If None, uses adaptive defaults (0.40-0.50).
     """
     print("\n" + "=" * 70)
-    print("🔍 FULL EPUB → MP3 CONVERSION VALIDATION")
+    print("🔍 FULL EPUB → AUDIO CONVERSION VALIDATION")
     print("=" * 70 + "\n")
 
     # Find cache directory
@@ -899,7 +915,7 @@ def validate_book(
         # Try to find output directory
         output_base = Path("output")
         for out_dir in output_base.rglob("*"):
-            if out_dir.is_dir() and any(mp3.suffix == ".mp3" for mp3 in out_dir.glob("*")):
+            if out_dir.is_dir() and any(path.suffix.lower() in AUDIO_EXTENSIONS for path in out_dir.glob("*")):
                 output_dir = out_dir
                 break
 
@@ -959,7 +975,7 @@ def validate_book(
         )
 
     print(
-        f"{'Ch':<4} {'Status':<8} {'S/M/E':<7} {'%Text':<6} {'EPUB':<7} {'Parsed':<7} {'PreTTS':<7} {'MP3':<7} {'Issue'}"
+        f"{'Ch':<4} {'Status':<8} {'S/M/E':<7} {'%Text':<6} {'EPUB':<7} {'Parsed':<7} {'PreTTS':<7} {'Audio':<7} {'Issue'}"
     )
     print("-" * 90)
 
@@ -1144,42 +1160,42 @@ def validate_book(
                 text_hashes.setdefault(h, []).append(chapter_num)
                 chapter_text_hash[chapter_num] = h
 
-        # Find MP3 - try multiple strategies
-        mp3_file = (
+        # Find audio - try multiple strategies
+        audio_file = (
             mp3_index.get(norm_title)
             or find_mp3_by_title(output_dir, chapter_title)
             or find_mp3_file(output_dir, chapter_num)
             or find_mp3_file(output_dir, sequential_num)  # Try sequential number too
         )
 
-        if mp3_file is None:
+        if audio_file is None:
             stats["missing_mp3"] += 1
             if status == "✅":
                 status = "❌"
-            issue_desc = (issue_desc + " No MP3").strip()
-            issues.append(f"Chapter {chapter_num}: Missing MP3 file")
+            issue_desc = (issue_desc + " No audio").strip()
+            issues.append(f"Chapter {chapter_num}: Missing audio file")
         else:
-            mp3_norm_title = normalized_file_title(mp3_file)
+            audio_norm_title = normalized_file_title(audio_file)
             if expected_titles and not any(
-                titles_align(t, mp3_norm_title) for t in expected_titles
+                titles_align(t, audio_norm_title) for t in expected_titles
             ):
                 stats["text_mismatch"] += 1
                 if status == "✅":
                     status = "❌"
-                issue_desc = (issue_desc + " MP3 name mismatch").strip()
+                issue_desc = (issue_desc + " audio name mismatch").strip()
                 issues.append(
-                    f"Chapter {chapter_num} '{chapter_title}': MP3 filename '{mp3_file.name}' does not match EPUB heading"
+                    f"Chapter {chapter_num} '{chapter_title}': audio filename '{audio_file.name}' does not match EPUB heading"
                 )
-            if contains_html_markup(mp3_file.stem):
+            if contains_html_markup(audio_file.stem):
                 stats["text_mismatch"] += 1
                 if status == "✅":
                     status = "❌"
-                issue_desc = (issue_desc + " MP3 filename has HTML").strip()
+                issue_desc = (issue_desc + " audio filename has HTML").strip()
                 issues.append(
-                    f"Chapter {chapter_num}: MP3 filename contains HTML/markup: {mp3_file.name}"
+                    f"Chapter {chapter_num}: audio filename contains HTML/markup: {audio_file.name}"
                 )
 
-            # Validate MP3 duration
+            # Validate audio duration
             if "pre_tts" in text_files:
                 pretts_text = text_files["pre_tts"].read_text(encoding="utf-8")
                 pretts_len = len(normalize_text(pretts_text))
@@ -1191,7 +1207,7 @@ def validate_book(
                     if book_wpm_stats is not None:
                         median_wpm, low_bound, high_bound = book_wpm_stats
                         word_count = len(normalize_text(pretts_text).split())
-                        actual_duration = validator.get_audio_duration(mp3_file)
+                        actual_duration = validator.get_audio_duration(audio_file)
                         if word_count >= 50 and actual_duration and actual_duration > 0:
                             chapter_wpm = (word_count / actual_duration) * 60.0
                             if chapter_wpm < low_bound or chapter_wpm > high_bound:
@@ -1221,7 +1237,7 @@ def validate_book(
                             else:
                                 tolerance = 0.70 if pretts_len < 10000 else 0.60
                         legacy_result = validator.validate_duration(
-                            pretts_text, mp3_file, tolerance=tolerance
+                            pretts_text, audio_file, tolerance=tolerance
                         )
                         duration_flag = (
                             not legacy_result.is_valid,
@@ -1241,7 +1257,7 @@ def validate_book(
             try:
                 base_hash = chapter_text_hash.get(chapter_num)
                 if base_hash and len(normalize_text(epub_text)) >= 400:
-                    audio_hash = hash_file(mp3_file)
+                    audio_hash = hash_file(audio_file)
                     existing = audio_hashes.get(audio_hash)
                     if existing and existing.get("text_hash") != base_hash:
                         stats["audio_duplicate"] += 1
@@ -1281,10 +1297,10 @@ def validate_book(
             if "pre_tts" in text_files
             else 0
         )
-        mp3_size = mp3_file.stat().st_size // 1024 if mp3_file else 0
+        audio_size = audio_file.stat().st_size // 1024 if audio_file else 0
 
         print(
-            f"{chapter_num:<4} {status:<8} {imf_status:<7} {text_pct:>5.1f}% {epub_len:<7} {parsed_len:<7} {pretts_len:<7} {mp3_size:<7} {issue_desc}"
+            f"{chapter_num:<4} {status:<8} {imf_status:<7} {text_pct:>5.1f}% {epub_len:<7} {parsed_len:<7} {pretts_len:<7} {audio_size:<7} {issue_desc}"
         )
 
         # Detailed text comparison display
@@ -1294,7 +1310,7 @@ def validate_book(
             epub_text,
             _parsed_text_for_detail,
             _pretts_text_for_detail,
-            mp3_file,
+            audio_file,
             validator,
         )
 
@@ -1309,7 +1325,7 @@ def validate_book(
     print(f"⚠️  Missing cache: {stats['missing_cache']}")
     print(f"❌ EPUB ≠ Parsed: {stats['text_mismatch']}")
     print(f"⚠️  Parsed ≠ PreTTS: {stats['parsed_pretts_diff']}")
-    print(f"❌ Missing MP3: {stats['missing_mp3']}")
+    print(f"❌ Missing audio: {stats['missing_mp3']}")
     print(f"⚠️  Wrong duration: {stats['duration_mismatch']}")
     print(f"❌ Duplicate audio: {stats['audio_duplicate']}")
 

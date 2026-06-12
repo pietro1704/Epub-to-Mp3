@@ -464,6 +464,33 @@ class TestConverterApplication(unittest.TestCase):
             display_name="Capítulo 1",
         )
 
+    def test_source_quality_uses_chapter_text_for_pdf(self):
+        chapter = Chapter(index=1, name="Página 1", source_path="page_1", text="texto narrável " * 30)
+        item = ChapterStructureItem(
+            chapter=chapter,
+            index="1",
+            main_title="Página 1",
+            sub_title=None,
+            preview=None,
+            display_name="Página 1",
+        )
+
+        self.assertFalse(self.app._print_source_quality_diagnostic(Path("book.pdf"), [item]))
+
+    def test_source_quality_uses_text_override_when_present(self):
+        chapter = Chapter(index=1, name="Página 1", source_path="page_1", text="")
+        item = ChapterStructureItem(
+            chapter=chapter,
+            index="1",
+            main_title="Página 1",
+            sub_title=None,
+            preview=None,
+            display_name="Página 1",
+            text_override="texto narrável " * 30,
+        )
+
+        self.assertFalse(self.app._print_source_quality_diagnostic(Path("book.pdf"), [item]))
+
     def _sample_html(self) -> str:
         return (
             "<html><body>"

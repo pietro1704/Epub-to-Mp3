@@ -1,7 +1,8 @@
 """iPhone export via iCloud Drive container.
 
 Pins the contract for `iphone_export.export_book_to_iphone`:
-* Copies every MP3 from the source dir into ``<container>/<book>/``.
+* Queues audiobook audio from the source dir into ``<container>/<book>/``.
+* Prefers M4A for the iPhone queue, with MP3 as an explicit/fallback format.
 * Returns ``(False, reason)`` for missing dirs / empty source / no
   container, never raises into the caller.
 * Honours the ``IPHONE_EXPORT_DIR`` override and the
@@ -18,6 +19,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from python_app.src.iphone_export import (
+    _copy_for_iphone_queue,
     default_export_root,
     export_book_to_iphone,
     is_export_target_available,
@@ -71,7 +73,10 @@ class TestExportBookToIphone(unittest.TestCase):
     def test_copies_every_mp3_into_book_subfolder(self):
         for n in (1, 2, 3):
             self._make_mp3(f"{n} - Cap {n}.mp3")
-        ok, error = export_book_to_iphone(self.output_dir, "My Book", target_root=self.container)
+        with patch.dict(os.environ, {"IPHONE_EXPORT_FORMAT": "mp3"}):
+            ok, error = export_book_to_iphone(
+                self.output_dir, "My Book", target_root=self.container
+            )
         self.assertTrue(ok, error)
         self.assertIsNone(error)
         dest = self.container / "My Book"
@@ -87,15 +92,60 @@ class TestExportBookToIphone(unittest.TestCase):
         stale.write_bytes(b"old")
 
         new = self._make_mp3()
-        ok, _ = export_book_to_iphone(self.output_dir, "Book", target_root=self.container)
+        with patch.dict(os.environ, {"IPHONE_EXPORT_FORMAT": "mp3"}):
+            ok, _ = export_book_to_iphone(self.output_dir, "Book", target_root=self.container)
         self.assertTrue(ok)
         self.assertEqual((dest / new.name).read_bytes(), new.read_bytes())
+
+    def test_m4a_queue_removes_stale_mp3_duplicate(self):
+        m4a = self.output_dir / "1 - Cap.m4a"
+        m4a.write_bytes(b"m4a" + b"x" * 1000)
+        dest = self.container / "Book"
+        dest.mkdir(parents=True)
+        stale = dest / "1 - Cap.mp3"
+        stale.write_bytes(b"old")
+
+        ok, error = export_book_to_iphone(self.output_dir, "Book", target_root=self.container)
+
+        self.assertTrue(ok, error)
+        self.assertTrue((dest / "1 - Cap.m4a").exists())
+        self.assertFalse(stale.exists())
 
     def test_returns_error_when_output_dir_is_empty(self):
         ok, error = export_book_to_iphone(self.output_dir, "Empty", target_root=self.container)
         self.assertFalse(ok)
         assert error is not None
-        self.assertIn("no MP3", error)
+        self.assertIn("no audio", error)
+
+    def test_m4a_files_are_queued_by_default(self):
+        m4a = self.output_dir / "1 - Cap.m4a"
+        m4a.write_bytes(b"m4a" + b"x" * 1000)
+
+        ok, error = export_book_to_iphone(self.output_dir, "Book", target_root=self.container)
+
+        self.assertTrue(ok, error)
+        self.assertIsNone(error)
+        self.assertEqual((self.container / "Book" / m4a.name).read_bytes(), m4a.read_bytes())
+
+    def test_mp3_can_be_forced_without_m4a_transcode(self):
+        mp3 = self._make_mp3()
+
+        with patch.dict(os.environ, {"IPHONE_EXPORT_FORMAT": "mp3"}):
+            ok, error = export_book_to_iphone(self.output_dir, "Book", target_root=self.container)
+
+        self.assertTrue(ok, error)
+        self.assertTrue((self.container / "Book" / mp3.name).exists())
+
+    def test_mp3_falls_back_when_m4a_transcode_fails(self):
+        mp3 = self._make_mp3()
+        dest = self.container / "Book"
+        dest.mkdir(parents=True)
+
+        with patch("python_app.src.iphone_export._transcode_to_m4a", return_value=False):
+            exported = _copy_for_iphone_queue(mp3, dest, prefer_m4a=True)
+
+        self.assertEqual(exported, dest / mp3.name)
+        self.assertTrue((dest / mp3.name).exists())
 
     def test_returns_error_when_output_dir_is_missing(self):
         ghost = self.tmp / "ghost"

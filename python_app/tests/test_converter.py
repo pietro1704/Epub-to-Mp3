@@ -1029,6 +1029,37 @@ class TestAudioConverter(unittest.IsolatedAsyncioTestCase):
                 "Language tags in TTS input must appear in cached text",
             )
 
+    async def test_sequential_conversion_honors_m4a_audio_format(self):
+        cache_dir = Path(self.temp_dir) / ".cache" / "M4A_Test"
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        chapter = Chapter(index=1, name="M4A Chapter", source_path="ch1.html", text="Hello world")
+
+        class MockTTSEngine:
+            async def synthesize_async(self, text, output_path, formatting_segments=None):
+                output_path = Path(output_path)
+                output_path.parent.mkdir(parents=True, exist_ok=True)
+                output_path.write_bytes(b"m4a audio data" * 100)
+                return output_path
+
+        config = ConversionConfig(
+            engine="edge",
+            output_dir=str(cache_dir),
+            book_title="M4A_Test",
+            audio_format="m4a",
+            validate_audio=False,
+            validate_text=False,
+        )
+
+        result = await self.converter._convert_chapters_sequential(
+            [chapter], MockTTSEngine(), cache_dir, config
+        )
+
+        self.assertEqual(result.converted_chapters, 1)
+        self.assertEqual(len(result.output_files), 1)
+        self.assertEqual(result.output_files[0].suffix, ".m4a")
+        self.assertTrue(result.output_files[0].exists())
+        self.assertFalse(any(cache_dir.glob("*.mp3")))
+
     async def test_integration_parse_and_tts_files_created(self):
         """Integration: verify parse.txt and tts_input.txt are both created during conversion"""
         cache_dir = Path(self.temp_dir) / ".cache" / "Integration_Test"

@@ -58,6 +58,7 @@ from src.error_classifier import classify_error
 from src.hardware_detector import HardwareDetector
 from src.job_manager import JobManager
 from src.language import LanguageProfile
+from src.ocr import prepare_pdf_with_ocr
 from src.paths import (
     JOB_INPUTS_DIR,
     JOBS_DIR,
@@ -2270,6 +2271,7 @@ async def convert_ebook(
     edge_stable_mode: Optional[str] = Form(None),
     piper_max_procs: Optional[str] = Form(None),
     engine_chain_fallback: Optional[str] = Form(None),
+    audio_format: Optional[str] = Form(None),
     bitrate: Optional[str] = Form(None),
     sample_rate: Optional[str] = Form(None),
     channels: Optional[str] = Form(None),
@@ -2324,6 +2326,9 @@ async def convert_ebook(
     edge_stable_mode_flag = _parse_form_optional_bool(edge_stable_mode)
     piper_procs_override = _parse_form_int(piper_max_procs, min_value=1, max_value=12)
     engine_chain_fallback_flag = _parse_form_optional_bool(engine_chain_fallback)
+    audio_format_value = (audio_format or "mp3").strip().lower().lstrip(".")
+    if audio_format_value not in {"mp3", "m4a"}:
+        audio_format_value = "mp3"
     sample_rate_override = _parse_form_int(sample_rate, min_value=8000, max_value=96000)
     channels_override = _parse_form_int(channels, min_value=1, max_value=2)
     clear_cache_flag = _parse_form_bool(clear_cache, False)
@@ -2568,6 +2573,7 @@ async def convert_ebook(
         # iPhone export (v0.3.20): explicit opt-in per job. macOS-only;
         # job runner respects EXPORT_TO_IPHONE env as a fallback.
         "exportToIphone": (False if export_to_iphone_flag is None else bool(export_to_iphone_flag)),
+        "audioFormat": audio_format_value,
         "bitrate": bitrate,
         "sampleRate": sample_rate_override,
         "channels": channels_override,
@@ -3687,13 +3693,31 @@ async def process_conversion(job_id: str) -> None:
         if edge_network_tier:
             os.environ["EDGE_NETWORK_TIER"] = str(edge_network_tier)
 
+        # **ASYNC OPTIMIZATION**: Run blocking I/O in thread pool
+        loop = asyncio.get_event_loop()
+
         if clear_cache_flag:
             _append_event(job, "🗑️ Clearing book cache before starting...")
             _clear_job_cache(job)
+        if file_path.suffix.lower() == ".pdf":
+            _append_event(job, "🔎 Checking whether PDF needs OCR...")
+            ocr_result = await loop.run_in_executor(
+                None,
+                lambda: prepare_pdf_with_ocr(
+                    file_path,
+                    cache_root=CACHE_DIR,
+                    language="por",
+                    force=force_reprocess_flag,
+                    log=lambda message: _append_event(job, message),
+                ),
+            )
+            if ocr_result.used_ocr:
+                file_path = ocr_result.output_path
+                job["ocrFilePath"] = str(file_path)
+                _append_event(job, f"✅ OCR ready: {file_path}")
+            elif ocr_result.needed_ocr and ocr_result.reason:
+                _append_event(job, f"⚠️ OCR needed but unavailable/failed: {ocr_result.reason}")
         _append_event(job, "📖 Analyzing ebook structure...")
-
-        # **ASYNC OPTIMIZATION**: Run blocking I/O in thread pool
-        loop = asyncio.get_event_loop()
         reader = await loop.run_in_executor(None, EbookReader, str(file_path))
 
         _update_job_activity(job, stage="structure_analysis")
@@ -3944,9 +3968,10 @@ async def process_conversion(job_id: str) -> None:
             output_dir=str(output_root),
             cache_dir=str(cache_root),
             preserve_all_chapters=not filter_chapters_flag,
+            audio_format=job.get("audioFormat") or "mp3",
             # Optimized compression for web delivery (reduce file size & bandwidth)
-            bitrate=job.get("bitrate") or "8k",  # 8 kbps - good quality for voice, ~3.6 MB/hour
-            sample_rate=job.get("sampleRate") or 16_000,  # 16 kHz - sufficient for speech
+            bitrate=(job.get("bitrate") or ("64k" if (job.get("audioFormat") == "m4a") else "8k")),
+            sample_rate=(job.get("sampleRate") or (22_050 if (job.get("audioFormat") == "m4a") else 16_000)),
             channels=job.get("channels") or 1,  # Mono - audiobooks don't need stereo
             force_reprocess=bool(job.get("forceReprocess")),
             clear_cache=clear_cache_flag,
@@ -4791,7 +4816,8 @@ async def process_conversion(job_id: str) -> None:
                 _append_event(job, f"🎯 Converting chapter {idx}/{len(chapters)}: {chapter_name}")
 
                 safe_name = FileManager.sanitize_filename(chapter_name)
-                output_file = job_output_dir / f"{idx:03d} - {safe_name}.mp3"
+                audio_format = getattr(config, "audio_format", "mp3")
+                output_file = job_output_dir / f"{idx:03d} - {safe_name}.{audio_format}"
                 chapter_text = getattr(chapter_obj, "speech_text", None) or chapter_obj.text or ""
 
                 if not chapter_text or not chapter_text.strip():
@@ -5316,10 +5342,13 @@ async def process_conversion(job_id: str) -> None:
 
                             target_file = output_file
                             if needs_transcode:
-                                converted = await AudioProcessor.convert_to_mp3(
+                                converted = await AudioProcessor.convert_to_audio(
                                     tts_path,
                                     output_file,
                                     bitrate=config.bitrate,
+                                    audio_format=getattr(config, "audio_format", "mp3"),
+                                    sample_rate=getattr(config, "sample_rate", 16000),
+                                    channels=getattr(config, "channels", 1),
                                 )
                                 if not converted:
                                     with contextlib.suppress(OSError):
