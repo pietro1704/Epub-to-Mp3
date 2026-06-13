@@ -6,6 +6,8 @@ final class EpubToMp3AudioUITests: XCTestCase {
     }
 
     func testReaderPlayButtonStartsPlaybackOnDevice() throws {
+        XCUIDevice.shared.orientation = .portrait
+
         let app = XCUIApplication()
         app.launch()
 

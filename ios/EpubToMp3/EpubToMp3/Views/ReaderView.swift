@@ -116,9 +116,9 @@ struct ReaderView: View {
     // Hiding the chrome leaves the margins empty — no text reflows.
     //
     // `stableBodyHeight` is seeded on first appear and re-seeded only when
-    // the container *width* changes (= rotation). Height-only changes (tab
-    // bar toggle, status bar toggle) are intentionally ignored to preserve
-    // the "zero reflow" invariant.
+    // the container *width* changes (= rotation). Height-only changes
+    // (status-bar or safe-area animations) are intentionally ignored to
+    // preserve the "zero reflow" invariant.
     @State private var stableBodyHeight: CGFloat = 0
 
     /// `true` while the reader tracks the audio's `currentSentenceId`
@@ -633,11 +633,9 @@ struct ReaderView: View {
             .compatOnChange(of: geo.size) { newSize in
                 // Re-seed stableBodyHeight on width change (rotation) OR
                 // when the container grows TALLER than the frozen value.
-                // The grow case fires exactly once — when the tab bar is
-                // hidden on reader entry, returning ~49 pt to the
-                // container. Re-seeding then captures the final immersive
-                // height. Height SHRINKS (status-bar toggle, etc.) are
-                // ignored so a chrome toggle never repaginates.
+                // The grow case protects against one-time host safe-area
+                // changes, while height shrinks are ignored so a chrome
+                // toggle never repaginates.
                 let widthChanged = abs(newSize.width - lastContainerSize.width) > 2
                 let grewTaller = newSize.height > stableBodyHeight + 8
                 if widthChanged || grewTaller {

@@ -56,12 +56,19 @@ enum InstantReaderChromeMetrics {
     /// under the idle/player bar and avoids page reflow when audio appears.
     static let bottomBarHeight: CGFloat = 116
 
+    /// `InstantReaderView` stays inside SwiftUI's normal safe-area
+    /// container so the system keeps the status bar, home indicator and
+    /// tab bar honest. These metrics reserve only our custom chrome;
+    /// adding the live safe-area again double-counts it and pushes the
+    /// bars/text too far inward on device.
     static func contentTopInset(safeAreaTop: CGFloat) -> CGFloat {
-        max(0, safeAreaTop) + topBarHeight
+        _ = safeAreaTop
+        return topBarHeight
     }
 
     static func contentBottomInset(safeAreaBottom: CGFloat) -> CGFloat {
-        max(0, safeAreaBottom) + bottomBarHeight
+        _ = safeAreaBottom
+        return bottomBarHeight
     }
 }
 
@@ -162,9 +169,11 @@ struct InstantReaderView: View {
                 content(topInset: topInset, bottomInset: bottomInset)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-                // Chrome layer: we render in full-screen coordinates and
-                // manually pad by the live safe-area insets so controls sit
-                // below the status bar and above the home indicator/tab area.
+                // Chrome layer: the reader remains in SwiftUI's normal
+                // safe-area container. Do not pad by safeAreaInsets here:
+                // the container has already accounted for the status bar,
+                // home indicator and tab bar, and adding those values again
+                // makes the top/bottom bars float too far from the edges.
                 VStack(spacing: 0) {
                     if chromeVisible {
                         customTopBar
@@ -187,8 +196,6 @@ struct InstantReaderView: View {
                         .transition(.move(edge: .bottom).combined(with: .opacity))
                     }
                 }
-                .padding(.top, proxy.safeAreaInsets.top)
-                .padding(.bottom, proxy.safeAreaInsets.bottom)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
@@ -1117,39 +1124,20 @@ struct InstantReaderView: View {
 
 // MARK: - Chrome hide/show (Safari-like immersive reading)
 
-/// Hides the nav bar and status bar for immersive reading, and hides
-/// the root TabView's tab bar for the WHOLE reading session.
-/// Shared between `InstantReaderView` (local EPUB) and
-/// `PlayerReaderView` (server-streamed) so both readers behave
-/// identically when the user taps to dim chrome.
-///
-/// Tab bar: hidden CONSTANTLY (`.hidden`, not `visible ? … : …`).
-/// `BookOpenView` is pushed onto a NavigationStack that lives inside
-/// the root TabView, so without this the system tab bar
-/// (Read / Library / Settings) would sit at the bottom during reading —
-/// not immersive, not Apple Books. Hiding it *constantly* gives full
-/// immersion AND avoids reflow: a constant `.hidden` never returns the
-/// ~49 pt strip to the container mid-session, so `stableBodyHeight`
-/// stays frozen. (Toggling it per `visible` — the old behaviour — was
-/// what caused the chrome-toggle reflow.) The one-time growth when the
-/// bar disappears on reader entry is absorbed by the grow-only re-seed
-/// in `ReaderView.paginatedContent`.
+/// Keeps the system status bar and root tab bar visible while hiding the
+/// navigation bar that would duplicate the reader's custom top chrome.
+/// The reader remains inside SwiftUI's safe-area container; its custom
+/// bars should align with that container rather than replacing the app's
+/// global navigation chrome.
 struct ChromeVisibilityModifier: ViewModifier {
     let visible: Bool
 
     @ViewBuilder
     func body(content: Content) -> some View {
         #if os(iOS)
-        if #available(iOS 16.0, *) {
-            content
-                .navigationBarHidden(true)
-                .statusBarHidden(false)
-                .toolbar(.hidden, for: .tabBar)
-        } else {
-            content
-                .navigationBarHidden(true)
-                .statusBarHidden(false)
-        }
+        content
+            .navigationBarHidden(true)
+            .statusBarHidden(false)
         #else
         content
         #endif

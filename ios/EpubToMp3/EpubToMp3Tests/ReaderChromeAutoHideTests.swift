@@ -157,20 +157,21 @@ final class ReaderChromeAutoHideTests: XCTestCase {
             "chromeBottomInset must be settable on ReaderView init")
     }
 
-    /// Regression for the reader overlap bug: content must reserve the
-    /// device safe area plus the custom top bar height. Otherwise the
-    /// first line sits under the status/nav chrome whenever the bar is
-    /// visible on an iPhone with a notch/Dynamic Island.
-    func testInstantReaderTopChromeInsetIncludesSafeAreaAndBar() {
+    /// Regression: `InstantReaderView` is already inside SwiftUI's
+    /// safe-area container. Its custom top inset must reserve only the
+    /// custom bar; adding the live safe-area here double-counts it and
+    /// pushes the bar/text too far down on physical iPhones.
+    func testInstantReaderTopChromeInsetDoesNotDoubleCountSafeArea() {
         let inset = InstantReaderChromeMetrics.contentTopInset(safeAreaTop: 59)
-        XCTAssertGreaterThanOrEqual(inset, 59 + InstantReaderChromeMetrics.topBarHeight)
+        XCTAssertEqual(inset, InstantReaderChromeMetrics.topBarHeight)
     }
 
-    /// Bottom content must also keep the home-indicator safe area and
-    /// bottom player/idle bar out of the text corridor.
-    func testInstantReaderBottomChromeInsetIncludesSafeAreaAndPlayerBar() {
+    /// Same for the bottom: the tab bar/home-indicator safe area is owned
+    /// by the container. The reader reserves only its own bottom chrome,
+    /// otherwise the player bar floats too high above the tab bar.
+    func testInstantReaderBottomChromeInsetDoesNotDoubleCountSafeArea() {
         let inset = InstantReaderChromeMetrics.contentBottomInset(safeAreaBottom: 34)
-        XCTAssertGreaterThanOrEqual(inset, 34 + InstantReaderChromeMetrics.bottomBarHeight)
+        XCTAssertEqual(inset, InstantReaderChromeMetrics.bottomBarHeight)
     }
 
     private func instantReaderSource() throws -> String {
@@ -202,23 +203,11 @@ final class ReaderChromeAutoHideTests: XCTestCase {
         XCTAssertTrue(source.contains(".statusBarHidden(false)"))
     }
 
-    /// ChromeVisibilityModifier hides the tab bar CONSTANTLY (`.hidden`,
-    /// independent of `visible`) — immersive reading like Apple Books.
-    /// The key invariant is that the tab-bar visibility must NOT be
-    /// derived from `visible`: a per-`visible` toggle returns ~49 pt to
-    /// the container on every tap and repaginates. A constant `.hidden`
-    /// never changes mid-session, so `stableBodyHeight` stays frozen.
-    func testChromeVisibilityModifierHidesTabBarConstantly() {
-        // We can't inspect a ViewModifier's rendered output in a unit
-        // test, so this exercises the init path for both states and
-        // documents the contract. The behavioural guarantee — page count
-        // invariant to the tab-bar delta — is locked by
-        // `testPageCountInvariantToChromeToggle` above.
-        let modVisible = ChromeVisibilityModifier(visible: true)
-        let modHidden = ChromeVisibilityModifier(visible: false)
-        _ = modVisible
-        _ = modHidden
-        XCTAssertNotNil(modVisible)
-        XCTAssertNotNil(modHidden)
+    /// The reader must not hide the root app tab bar. Users still need
+    /// the global app navigation, and hiding it changes the bottom
+    /// safe-area contract that positions the reader/player chrome.
+    func testChromeVisibilityModifierDoesNotHideTabBar() throws {
+        let source = try instantReaderSource()
+        XCTAssertFalse(source.contains(".toolbar(.hidden, for: .tabBar)"))
     }
 }
