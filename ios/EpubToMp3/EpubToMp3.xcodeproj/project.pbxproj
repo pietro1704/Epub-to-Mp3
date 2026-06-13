@@ -58,6 +58,7 @@
 		2ED54414652E09DFC2A9DAB4 /* ConversionActivityAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = A37BD35E2B19C3A776BDFC84 /* ConversionActivityAttributes.swift */; };
 		2F4E36A33B2D93AA063000AA /* SnapshotConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = CBCE44DCE2EEE3913EFC9A48 /* SnapshotConfig.swift */; };
 		2F9F315442371ACA78F2F585 /* PdfMetadataReaderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 601A2F185C7E1024E0C62D38 /* PdfMetadataReaderTests.swift */; };
+		2FE4722AF9A436D818E20B4F /* EpubToMp3AudioUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5F12C3F37ED253C57DE8DDD4 /* EpubToMp3AudioUITests.swift */; };
 		33364ABD8BBD8326251ADC43 /* TocDrawer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8308684C8C91E8FE1AE0A165 /* TocDrawer.swift */; };
 		338A2C5E44917EE9C9823F75 /* testReaderLightThemeAcrossFullMatrix.Reader-Light-iPhone15Pro-landscape.png in Resources */ = {isa = PBXBuildFile; fileRef = 2B317E035842276A79DBECB8 /* testReaderLightThemeAcrossFullMatrix.Reader-Light-iPhone15Pro-landscape.png */; };
 		34F5AA0B8C1E9C901CC6426A /* PdfReaderView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 129B6616DBEC61780776327A /* PdfReaderView.swift */; };
@@ -247,6 +248,13 @@
 			remoteGlobalIDString = 1AF56003A65297ABF483D3DC;
 			remoteInfo = EpubToMp3Widget;
 		};
+		896B4D417DB48EE146A17CFB /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 0EE810F927903C1C6B15F87F /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = CD8ED7F73C55278E3E34A04F;
+			remoteInfo = EpubToMp3;
+		};
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -327,6 +335,7 @@
 		317C543F85B0CA439D949791 /* AppIntentsProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppIntentsProvider.swift; sourceTree = "<group>"; };
 		3614891F8515EC72140DBF1B /* en */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = en; path = en.lproj/Localizable.strings; sourceTree = "<group>"; };
 		38E0FC2D72FBB66CAFD1DE9A /* testReaderLightXXXL.Reader-Light-accessibility3-iPhoneSE-portrait.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "testReaderLightXXXL.Reader-Light-accessibility3-iPhoneSE-portrait.png"; sourceTree = "<group>"; };
+		3A14DFAC4FF6F7BB732B0499 /* EpubToMp3UITests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = EpubToMp3UITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		3A8B81C165CCB93BAC42E6F3 /* AppSettingsObservationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppSettingsObservationTests.swift; sourceTree = "<group>"; };
 		3ABC59DE3656F57977EC1ECF /* testInstantReaderConvertingBarPortrait.InstantReader-Converting-iPhone8.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "testInstantReaderConvertingBarPortrait.InstantReader-Converting-iPhone8.png"; sourceTree = "<group>"; };
 		3B348C028F6EE3F14BB760E0 /* AsyncTimeoutTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AsyncTimeoutTests.swift; sourceTree = "<group>"; };
@@ -363,6 +372,7 @@
 		5C8B3D8E961A1E9E73561A70 /* testReaderMarginClampedTo16ptPortrait.Reader-MarginClamp-16pt-iPhoneSE-portrait.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "testReaderMarginClampedTo16ptPortrait.Reader-MarginClamp-16pt-iPhoneSE-portrait.png"; sourceTree = "<group>"; };
 		5D014E0C957A2BE2E1985800 /* JobDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JobDetailView.swift; sourceTree = "<group>"; };
 		5D4380A40D715C649A8FC6E6 /* .gitkeep */ = {isa = PBXFileReference; path = .gitkeep; sourceTree = "<group>"; };
+		5F12C3F37ED253C57DE8DDD4 /* EpubToMp3AudioUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EpubToMp3AudioUITests.swift; sourceTree = "<group>"; };
 		601A2F185C7E1024E0C62D38 /* PdfMetadataReaderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PdfMetadataReaderTests.swift; sourceTree = "<group>"; };
 		61F20A2B9AD5F8A401D3C74D /* SessionRecord.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionRecord.swift; sourceTree = "<group>"; };
 		639160AE8F02EA3A92E490C5 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
@@ -583,6 +593,7 @@
 			children = (
 				B2D7D516495B89405E3186BC /* EpubToMp3.app */,
 				1BFB88A87205F50BD54AA141 /* EpubToMp3Tests.xctest */,
+				3A14DFAC4FF6F7BB732B0499 /* EpubToMp3UITests.xctest */,
 				5B90551067C7513E1788EFF4 /* EpubToMp3Widget.appex */,
 			);
 			name = Products;
@@ -804,6 +815,7 @@
 			children = (
 				7AF56CB19403627CD821127E /* EpubToMp3 */,
 				EEFF29D102315D2965E36E99 /* EpubToMp3Tests */,
+				FAC5BEB5D9EFB9A1ECE6E97A /* EpubToMp3UITests */,
 				6D08BC2B9C109CA1A57577C5 /* EpubToMp3Widget */,
 				EA14874EC091FA0C70F526F7 /* Vendor */,
 				6462FB90747679ED8A473F1C /* Frameworks */,
@@ -902,6 +914,14 @@
 			path = EpubToMp3Tests;
 			sourceTree = "<group>";
 		};
+		FAC5BEB5D9EFB9A1ECE6E97A /* EpubToMp3UITests */ = {
+			isa = PBXGroup;
+			children = (
+				5F12C3F37ED253C57DE8DDD4 /* EpubToMp3AudioUITests.swift */,
+			);
+			path = EpubToMp3UITests;
+			sourceTree = "<group>";
+		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
@@ -921,6 +941,24 @@
 			productName = EpubToMp3Widget;
 			productReference = 5B90551067C7513E1788EFF4 /* EpubToMp3Widget.appex */;
 			productType = "com.apple.product-type.app-extension";
+		};
+		3E1C598E4BA2A01D454C3537 /* EpubToMp3UITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 1E60014DFFE8B52704A68731 /* Build configuration list for PBXNativeTarget "EpubToMp3UITests" */;
+			buildPhases = (
+				71373F97CCF5FE408DBF2904 /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				56261E0DC4F8650150D8F3AB /* PBXTargetDependency */,
+			);
+			name = EpubToMp3UITests;
+			packageProductDependencies = (
+			);
+			productName = EpubToMp3UITests;
+			productReference = 3A14DFAC4FF6F7BB732B0499 /* EpubToMp3UITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
 		};
 		7D3059A2E88F7FFB87350B78 /* EpubToMp3Tests */ = {
 			isa = PBXNativeTarget;
@@ -981,6 +1019,11 @@
 						DevelopmentTeam = HHRZ35A37Y;
 						ProvisioningStyle = Automatic;
 					};
+					3E1C598E4BA2A01D454C3537 = {
+						DevelopmentTeam = HHRZ35A37Y;
+						ProvisioningStyle = Automatic;
+						TestTargetID = CD8ED7F73C55278E3E34A04F;
+					};
 					7D3059A2E88F7FFB87350B78 = {
 						DevelopmentTeam = HHRZ35A37Y;
 						ProvisioningStyle = Automatic;
@@ -1013,6 +1056,7 @@
 			targets = (
 				CD8ED7F73C55278E3E34A04F /* EpubToMp3 */,
 				7D3059A2E88F7FFB87350B78 /* EpubToMp3Tests */,
+				3E1C598E4BA2A01D454C3537 /* EpubToMp3UITests */,
 				1AF56003A65297ABF483D3DC /* EpubToMp3Widget */,
 			);
 		};
@@ -1224,6 +1268,14 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		71373F97CCF5FE408DBF2904 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				2FE4722AF9A436D818E20B4F /* EpubToMp3AudioUITests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		85D567D5D8E3884F106E59B7 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -1323,6 +1375,11 @@
 			isa = PBXTargetDependency;
 			target = 1AF56003A65297ABF483D3DC /* EpubToMp3Widget */;
 			targetProxy = 410A84F2C4C2D3339E95F075 /* PBXContainerItemProxy */;
+		};
+		56261E0DC4F8650150D8F3AB /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = CD8ED7F73C55278E3E34A04F /* EpubToMp3 */;
+			targetProxy = 896B4D417DB48EE146A17CFB /* PBXContainerItemProxy */;
 		};
 		6B197166F70A9FBB71B9353F /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
@@ -1605,6 +1662,28 @@
 			};
 			name = Release;
 		};
+		E87B69D4D880A2CA08C8B305 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.pietrocode.epubtomp3.uitests;
+				SDKROOT = auto;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = YES;
+				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = YES;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = EpubToMp3;
+			};
+			name = Release;
+		};
 		EA84EAD46FCD0D5C6C2BBC45 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -1711,9 +1790,43 @@
 			};
 			name = Debug;
 		};
+		FF7E019D44810BA2C41C6188 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				"CODE_SIGNING_REQUIRED[sdk=iphoneos*]" = YES;
+				"CODE_SIGN_IDENTITY[sdk=iphoneos*]" = "Apple Development";
+				"CODE_SIGN_STYLE[sdk=iphoneos*]" = Automatic;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.pietrocode.epubtomp3.uitests;
+				SDKROOT = auto;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = YES;
+				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = YES;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = EpubToMp3;
+			};
+			name = Debug;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
+		1E60014DFFE8B52704A68731 /* Build configuration list for PBXNativeTarget "EpubToMp3UITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				FF7E019D44810BA2C41C6188 /* Debug */,
+				E87B69D4D880A2CA08C8B305 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
 		1F174672C224584F05F32C30 /* Build configuration list for PBXNativeTarget "EpubToMp3Widget" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (

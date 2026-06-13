@@ -403,6 +403,28 @@ targets:
         # deployment target — no mismatch.
         INFOPLIST_FILE: ""
 
+  EpubToMp3UITests:
+    type: bundle.ui-testing
+    supportedDestinations: [iOS]
+    deploymentTarget:
+      iOS: "15.0"
+    sources:
+      - path: EpubToMp3UITests
+    dependencies:
+      - target: EpubToMp3
+    settings:
+      base:
+        SUPPORTED_PLATFORMS: "iphoneos iphonesimulator"
+        PRODUCT_BUNDLE_IDENTIFIER: com.pietrocode.epubtomp3.uitests
+        TEST_TARGET_NAME: EpubToMp3
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_FILE: ""
+      configs:
+        Debug:
+          "CODE_SIGN_IDENTITY[sdk=iphoneos*]": "Apple Development"
+          "CODE_SIGNING_REQUIRED[sdk=iphoneos*]": YES
+          "CODE_SIGN_STYLE[sdk=iphoneos*]": Automatic
+
   EpubToMp3Widget:
     type: app-extension
     # WidgetKit runs on iOS 14+. Keep the extension at the app's iOS 15
@@ -466,6 +488,7 @@ schemes:
       config: Debug
       targets:
         - EpubToMp3Tests
+        - EpubToMp3UITests
     profile:
       config: Release
     analyze:
