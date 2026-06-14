@@ -109,13 +109,13 @@ final class NowPlayingViewTests: XCTestCase {
     /// `RootTab` raw values double as `TabView` selection tokens; they
     /// must stay stable across builds so SwiftUI's animation state
     /// machine doesn't reset every time the enum is reshuffled.
-    /// As of the Music/Spotify player slice, Now Playing is no longer a
-    /// tab — the full player opens as a sheet from the MiniPlayerBar.
-    /// Reader is tab 0 (default landing), Library is 1, Settings is 2.
+    /// As of the Apple Books-style library slice, Reader is no longer a
+    /// tab — books are pushed from Library with an in-reader close X.
+    /// Library is 0, Settings is 1, Convert is 2.
     func testRootTabRawValuesAreStable() {
-        XCTAssertEqual(RootTab.reader.rawValue, 0)
-        XCTAssertEqual(RootTab.library.rawValue, 1)
-        XCTAssertEqual(RootTab.settings.rawValue, 2)
+        XCTAssertEqual(RootTab.library.rawValue, 0)
+        XCTAssertEqual(RootTab.settings.rawValue, 1)
+        XCTAssertEqual(RootTab.convert.rawValue, 2)
     }
 
     /// `SplitNavMode` should expose every destination required by the

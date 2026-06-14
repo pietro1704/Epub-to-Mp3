@@ -7,13 +7,13 @@ import SwiftUI
 /// tab layout regardless — those SDKs don't ship `NavigationSplitView`.
 ///
 /// As of the Music/Spotify-style player slice, the Now Playing tab /
-/// sidebar destination has been replaced by a **full-screen cover**
+/// sidebar destination has been replaced by an in-tree **bottom sheet**
 /// (`FullPlayerSheet`) that is presented by tapping the `MiniPlayerBar`.
-/// Uses `.fullScreenCover` so it slides up from the bottom like
-/// Spotify / Apple Music. Swipe-down dismisses it via a custom drag
-/// gesture on the player view.
+/// The sheet slides from below the screen and dismisses back below it,
+/// leaving the tab/split content alive underneath.
 struct RootView: View {
     @Environment(\.horizontalSizeClass) private var hSize
+    @EnvironmentObject private var audioWarmup: AudioEngineWarmup
 
     /// iPhone Plus models report `.regular` horizontal in landscape but
     /// still ship a phone-class navigation surface — forcing a split
@@ -28,14 +28,20 @@ struct RootView: View {
     #endif
 
     var body: some View {
-        if useSplit {
-            if #available(iOS 16, macOS 13, *) {
-                SplitViewRoot()
+        ZStack(alignment: .top) {
+            if useSplit {
+                if #available(iOS 16, macOS 13, *) {
+                    SplitViewRoot()
+                } else {
+                    TabRoot()
+                }
             } else {
                 TabRoot()
             }
-        } else {
-            TabRoot()
+
+            AudioEngineWarmupBadge(warmup: audioWarmup)
+                .padding(.top, 12)
+                .zIndex(10)
         }
     }
 }
@@ -44,22 +50,22 @@ struct RootView: View {
 /// `TabView` selection tokens so the empty-state CTAs inside individual
 /// tabs can flip to the matching tab without reaching across the view tree.
 ///
-/// Tab order (Apple Books HIG pattern — no dedicated Now Playing tab):
-///   0 reader   — default landing: full-screen EPUB reader
-///   1 library  — book catalog
-///   2 settings — preferences
+/// Tab order (Apple Books HIG pattern — library owns book pushes):
+///   0 library  — default landing: book catalog
+///   1 settings — preferences
+///   2 convert  — manual conversion workflow
 enum RootTab: Int, Hashable {
-    case reader
     case library
     case settings
+    case convert
 }
 
 /// The iPhone-compact / iOS 15 fallback layout.
 ///
 /// Tab order:
-///   0 Reader   — default landing: full-screen EPUB reader
-///   1 Library  — navigable book catalog
-///   2 Settings — preferences
+///   0 Library  — default landing: navigable book catalog
+///   1 Settings — preferences
+///   2 Convert  — manual conversion workflow
 ///
 /// `MiniPlayerBar` floats above the tab bar on every tab. Tap it to open
 /// `FullPlayerSheet` (Apple Music style — sheet, not tab navigation).
@@ -68,7 +74,8 @@ struct TabRoot: View {
     @EnvironmentObject private var library: LibraryStore
     @EnvironmentObject private var playerPresentation: PlayerPresentation
 
-    @State private var selectedTab: RootTab = .reader
+    @State private var selectedTab: RootTab = .library
+    @State private var readerChromeVisible = true
 
     @AppStorage(AudioPlayer.currentBookIDDefaultsKey)
     private var currentBookID: String?
@@ -78,7 +85,7 @@ struct TabRoot: View {
     /// True when the mini-player should be shown: a book is active in the library.
     private var showMiniPlayer: Bool {
         guard let id = currentBookID, !id.isEmpty else { return false }
-        return library.books.contains(where: { $0.id == id })
+        return library.books.contains(where: { $0.id == id }) && readerChromeVisible
     }
 
     var body: some View {
@@ -87,16 +94,15 @@ struct TabRoot: View {
                 .zIndex(0)
 
             // FullPlayerSheet is presented in-tree (not as a system
-            // .fullScreenCover) so we can run a custom transition that
-            // rises from the mini-player position instead of from the
-            // screen bottom. The user spec: "modal de player expandido
-            // deve subir a partir do player colapsado (= mini player),
-            // nao da base da tela".
+            // .fullScreenCover) so the tab content remains alive below
+            // while the player slides in from below the screen like
+            // Spotify. Dismissal uses the same path in reverse.
             if playerPresentation.showingFullPlayer {
                 FullPlayerSheet()
                     .environmentObject(player)
                     .environmentObject(library)
-                    .transition(.risesFromMiniPlayer)
+                    .environmentObject(playerPresentation)
+                    .transition(.spotifyBottomSheet)
                     .zIndex(2)
                     .ignoresSafeArea()
             }
@@ -130,16 +136,7 @@ struct TabRoot: View {
     private var tabContent: some View {
         TabView(selection: $selectedTab) {
             CompatNavigationStack {
-                MainReaderView(
-                    onOpenPlayer: { playerPresentation.showFullPlayer() },
-                    onBrowseLibrary: { selectedTab = .library }
-                )
-            }
-            .tabItem { Label(L10n.string("nav.read"), systemImage: "text.book.closed") }
-            .tag(RootTab.reader)
-
-            CompatNavigationStack {
-                LibraryView(onOpenBook: { selectedTab = .reader })
+                LibraryView()
             }
             .miniPlayerInset(visible: showMiniPlayer, onTap: { playerPresentation.showFullPlayer() })
             .tabItem { Label(L10n.string("nav.library"), systemImage: "books.vertical") }
@@ -151,6 +148,139 @@ struct TabRoot: View {
             .miniPlayerInset(visible: showMiniPlayer, onTap: { playerPresentation.showFullPlayer() })
             .tabItem { Label(L10n.string("nav.settings"), systemImage: "gearshape") }
             .tag(RootTab.settings)
+
+            CompatNavigationStack {
+                ConvertView()
+            }
+            .miniPlayerInset(visible: showMiniPlayer, onTap: { playerPresentation.showFullPlayer() })
+            .tabItem { Label(L10n.string("convert.title"), systemImage: "wand.and.stars") }
+            .tag(RootTab.convert)
+        }
+        .onPreferenceChange(ReaderChromeVisiblePreferenceKey.self) { visible in
+            readerChromeVisible = visible
+        }
+    }
+}
+
+/// Small app-wide badge shown while the embedded audio runtime starts.
+/// The warm-up is process-lifetime state, not per-book state; keeping it
+/// here prevents each reader open from racing Python bootstrap again.
+struct AudioEngineWarmupBadge: View {
+    @ObservedObject var warmup: AudioEngineWarmup
+    @State private var showingDetails = false
+    @State private var hiddenByUser = false
+
+    var body: some View {
+        Group {
+            if warmup.isVisible && !hiddenByUser {
+                HStack(spacing: 10) {
+                    ZStack {
+                        Circle()
+                            .stroke(Color.secondary.opacity(0.25), lineWidth: 3)
+                        Circle()
+                            .trim(from: 0, to: CGFloat(warmup.progress))
+                            .stroke(Color.accentColor, style: StrokeStyle(lineWidth: 3, lineCap: .round))
+                            .rotationEffect(.degrees(-90))
+                    }
+                    .frame(width: 22, height: 22)
+                    .accessibilityHidden(true)
+
+                    Text(warmup.message.isEmpty ? L10n.string("audioWarmup.starting") : warmup.message)
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(.primary)
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 10)
+                .background(.regularMaterial, in: Capsule())
+                .shadow(radius: 8, y: 4)
+                .onTapGesture { showingDetails = true }
+                .gesture(
+                    DragGesture(minimumDistance: 12)
+                        .onEnded { value in
+                            if value.translation.height < -24 {
+                                withAnimation(.easeInOut(duration: 0.2)) {
+                                    hiddenByUser = true
+                                }
+                            }
+                        }
+                )
+                .sheet(isPresented: $showingDetails) {
+                    AudioEngineWarmupDetailView(warmup: warmup)
+                }
+                .accessibilityElement(children: .combine)
+                .accessibilityAddTraits(.isButton)
+                .accessibilityLabel(Text(warmup.message.isEmpty ? L10n.string("audioWarmup.accessibilityStarting") : warmup.message))
+                .accessibilityHint(Text(L10n.string("audioWarmup.details.accessibilityHint")))
+            }
+        }
+        .compatOnChange(of: warmup.state) { state in
+            if state != .warming { hiddenByUser = false }
+        }
+    }
+}
+
+struct AudioEngineWarmupDetailView: View {
+    @ObservedObject var warmup: AudioEngineWarmup
+    @Environment(\.dismiss) private var dismiss
+
+    private var percentText: String {
+        "\(Int((warmup.progress * 100).rounded()))%"
+    }
+
+    private var stateText: String {
+        switch warmup.state {
+        case .idle: return L10n.string("audioWarmup.state.idle")
+        case .warming: return L10n.string("audioWarmup.state.loading")
+        case .ready: return L10n.string("audioWarmup.state.ready")
+        case .failed: return L10n.string("audioWarmup.state.failed")
+        }
+    }
+
+    var body: some View {
+        CompatNavigationStack {
+            VStack(alignment: .leading, spacing: 20) {
+                HStack(spacing: 16) {
+                    ZStack {
+                        Circle()
+                            .stroke(Color.secondary.opacity(0.2), lineWidth: 8)
+                        Circle()
+                            .trim(from: 0, to: CGFloat(warmup.progress))
+                            .stroke(Color.accentColor, style: StrokeStyle(lineWidth: 8, lineCap: .round))
+                            .rotationEffect(.degrees(-90))
+                        Text(percentText)
+                            .font(.headline.monospacedDigit())
+                    }
+                    .frame(width: 82, height: 82)
+
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(L10n.string("audioWarmup.details.title"))
+                            .font(.title3.weight(.semibold))
+                        Text(stateText)
+                            .font(.subheadline.weight(.medium))
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(L10n.string("audioWarmup.details.status"))
+                        .font(.headline)
+                    Text(warmup.message.isEmpty ? L10n.string("audioWarmup.starting") : warmup.message)
+                        .font(.body)
+                        .foregroundStyle(.secondary)
+                }
+
+                ProgressView(value: warmup.progress)
+                    .progressViewStyle(.linear)
+
+                Spacer(minLength: 0)
+            }
+            .padding(24)
+            .navigationTitle(L10n.string("audioWarmup.details.title"))
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button(L10n.string("common.ok")) { dismiss() }
+                }
+            }
         }
     }
 }
@@ -162,9 +292,24 @@ struct TabRoot: View {
         .environmentObject(AudioPlayer())
         .environmentObject(PlayerPresentation())
         .environmentObject(BookmarkStore())
+        .environmentObject(AudioEngineWarmup())
         #if os(macOS)
         .environmentObject(SidecarManager())
         #endif
+}
+
+struct ReaderChromeVisiblePreferenceKey: PreferenceKey {
+    static var defaultValue: Bool = true
+
+    static func reduce(value: inout Bool, nextValue: () -> Bool) {
+        value = value && nextValue()
+    }
+}
+
+extension View {
+    func readerChromeVisible(_ visible: Bool) -> some View {
+        preference(key: ReaderChromeVisiblePreferenceKey.self, value: visible)
+    }
 }
 
 // MARK: - Mini player inset modifier
@@ -175,23 +320,24 @@ private struct MiniPlayerInsetModifier: ViewModifier {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     func body(content: Content) -> some View {
-        content.safeAreaInset(edge: .bottom, spacing: 0) {
-            if visible {
-                MiniPlayerBar(onTap: onTap)
-                    .transition(
-                        reduceMotion
-                            ? .opacity
-                            : .move(edge: .bottom).combined(with: .opacity)
-                    )
-                    .accessibilityIdentifier("miniPlayer.tabBar")
+        content
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                if visible {
+                    MiniPlayerBar(onTap: onTap)
+                        .transition(
+                            reduceMotion
+                                ? .opacity
+                                : .move(edge: .bottom).combined(with: .opacity)
+                        )
+                        .accessibilityIdentifier("miniPlayer.tabBar")
+                }
             }
-        }
-        .animation(
-            reduceMotion
-                ? .easeInOut(duration: 0.2)
-                : .spring(response: 0.3, dampingFraction: 0.8),
-            value: visible
-        )
+            .animation(
+                reduceMotion
+                    ? .easeInOut(duration: 0.2)
+                    : .spring(response: 0.3, dampingFraction: 0.8),
+                value: visible
+            )
     }
 }
 
@@ -201,44 +347,15 @@ extension View {
     }
 }
 
-// MARK: - Full-player rise-from-mini-player transition
+// MARK: - Full-player Spotify bottom-sheet transition
 
-/// Visual approximation of "the modal grows out of the mini player at
-/// the bottom of the screen". The mini player sits ~64 pt tall above
-/// the home indicator; this transition uses a UNIFORM (isotropic)
-/// scale anchored to the bottom edge so the sheet emerges from that
-/// strip without horizontal squish.
-///
-/// The previous version used a non-uniform `scaleEffect(x: 0.88,
-/// y: 0.10)` which produced a "squished sliver" frame at progress=0
-/// — the cover hero and centred title block visibly stretched on
-/// real-motion runs (audit flagged this as a graphics glitch). Now
-/// the y / x scale match (uniform 0.94 → 1.0) and the upward
-/// translation provides the "rising from the bottom" intent without
-/// distortion.
-private struct RisesFromMiniModifier: ViewModifier {
-    /// 0 = collapsed at mini-player position, 1 = full screen.
-    let progress: Double
-
-    func body(content: Content) -> some View {
-        content
-            .scaleEffect(
-                0.94 + 0.06 * progress,
-                anchor: .bottom
-            )
-            .opacity(progress)
-            // 64 pt mirrors the mini-player height — the sheet starts
-            // visually peeking out from where the mini-player sat.
-            .offset(y: (1.0 - progress) * 64)
-    }
-}
-
+/// Native Spotify-style presentation: the full player lives in the same
+/// view tree as the tab/split UI, but moves from just below the screen to
+/// full screen. On dismiss it follows the exact reverse path back below
+/// the bottom edge, while the underlying content remains mounted.
 extension AnyTransition {
-    static var risesFromMiniPlayer: AnyTransition {
-        .modifier(
-            active: RisesFromMiniModifier(progress: 0.0),
-            identity: RisesFromMiniModifier(progress: 1.0)
-        )
+    static var spotifyBottomSheet: AnyTransition {
+        .move(edge: .bottom)
     }
 }
 

@@ -29,6 +29,7 @@ struct PageCurlContainer: UIViewControllerRepresentable {
     let onAdvanceChapter: (() -> Bool)?
     let onPreviousChapter: (() -> Bool)?
     let onCenterTap: (() -> Void)?
+    let chromeVisible: Bool
     /// Fires the moment a *user-initiated* page change lands — either
     /// `didFinishAnimating(completed: true)` from a curl gesture or a
     /// tap on the left/right third zone. The host clears `isFollowing`
@@ -228,6 +229,11 @@ struct PageCurlContainer: UIViewControllerRepresentable {
         // MARK: Center tap
 
         @objc func handleCenterTap(_ gesture: UITapGestureRecognizer) {
+            if parent.chromeVisible {
+                parent.onCenterTap?()
+                return
+            }
+
             guard let view = gesture.view else { return }
             let location = gesture.location(in: view)
             let width = view.bounds.width

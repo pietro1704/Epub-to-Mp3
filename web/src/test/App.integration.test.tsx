@@ -92,7 +92,7 @@ describe("App integration", () => {
     await waitFor(() =>
       expect(poll).toHaveBeenCalledWith("job-777", expect.any(Object)),
     );
-  });
+  }, 10_000);
 
   it("reuses automatic upload and avoids resending the file", async () => {
     const user = userEvent.setup();

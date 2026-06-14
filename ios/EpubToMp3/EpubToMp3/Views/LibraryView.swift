@@ -441,7 +441,7 @@ private extension View {
     func compatBookDestination(_ binding: Binding<BookEntity?>) -> some View {
         if #available(iOS 17, macOS 14, *) {
             self.navigationDestination(item: binding) { book in
-                BookOpenView(book: book)
+                BookOpenView(book: book, onClose: { binding.wrappedValue = nil })
             }
         } else {
             // Hidden NavigationLink driven by the optional binding —
@@ -457,7 +457,7 @@ private extension View {
                     ),
                     destination: {
                         if let book = binding.wrappedValue {
-                            BookOpenView(book: book)
+                            BookOpenView(book: book, onClose: { binding.wrappedValue = nil })
                         } else {
                             EmptyView()
                         }

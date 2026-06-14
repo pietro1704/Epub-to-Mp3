@@ -17,6 +17,7 @@ from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 PROJECT_YML = PROJECT_ROOT / "ios" / "EpubToMp3" / "project.yml"
+MISE_TOML = PROJECT_ROOT / "mise.toml"
 
 
 def test_project_yml_declares_widget_embed_dependency():
@@ -85,3 +86,18 @@ def test_widget_has_dedicated_info_plist():
         "widget Info.plist's NSExtensionPointIdentifier is no longer "
         "set to com.apple.widgetkit-extension"
     )
+
+
+def test_ios_build_task_does_not_recommend_local_simulator_downloads():
+    """Local iOS builds on this Mac must not steer agents toward
+    simulator/runtime downloads; use physical-device CLI or CI instead.
+    """
+    body = MISE_TOML.read_text(encoding="utf-8")
+    ios_build_start = body.index('[tasks."ios:build"]')
+    next_section = body.index("\n# ──", ios_build_start)
+    ios_build_task = body[ios_build_start:next_section]
+
+    assert "xcodebuild -downloadPlatform iOS         #" not in ios_build_task
+    assert "Fix on this Mac:\n  xcodebuild -downloadPlatform" not in ios_build_task
+    assert "ios:device:run" in ios_build_task
+    assert "No local simulator download is required" in ios_build_task

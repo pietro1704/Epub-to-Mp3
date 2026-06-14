@@ -167,6 +167,7 @@ struct ConvertView: View {
                 .disabled(viewModel.isSubmitting || viewModel.selectedFile == nil)
             }
         }
+        .padding(.bottom, MiniPlayerBar.reservedHeight)
         .navigationTitle(L10n.string("convert.title"))
         .compatConvertDestination()
         .background {

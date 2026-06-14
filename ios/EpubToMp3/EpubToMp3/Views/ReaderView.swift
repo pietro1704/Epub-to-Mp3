@@ -963,6 +963,7 @@ struct ReaderView: View {
             onAdvanceChapter: onAdvanceChapter,
             onPreviousChapter: onPreviousChapter,
             onCenterTap: onCenterTap,
+            chromeVisible: chromeVisible,
             onUserPageChange: { isFollowing = false }
         )
     }
@@ -1052,6 +1053,11 @@ struct ReaderView: View {
     /// reader's existing `advancePage` / `retreatPage` / `onCenterTap`
     /// vocabulary.
     private func handleZoneTap(_ zone: ReaderTapZone, totalPages: Int) {
+        if chromeVisible {
+            onCenterTap?()
+            return
+        }
+
         switch zone {
         case .left:   retreatPage()
         case .center: onCenterTap?()

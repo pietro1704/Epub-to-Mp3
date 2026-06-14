@@ -94,6 +94,10 @@
 "player.airplay" = "AirPlay";
 "player.chapter" = "Capítulo %d";
 "player.coverArt" = "Capa de %@";
+"player.coverTapTutorial" = "Toque na capa para ver a frase";
+"player.lyricsTapHint" = "Alterna a frase atual na capa.";
+"player.nowReading" = "Lendo agora";
+"player.lyricsWaiting" = "Aguardando a frase atual…";
 "player.generatingAudio" = "Gerando áudio";
 "player.chapters" = "Capítulos";
 "player.showChapterList" = "Mostrar lista de capítulos";
@@ -135,6 +139,21 @@
 "player.error.emptySegmentData" = "Um trecho de áudio chegou vazio. A reprodução continuará no próximo trecho.";
 "player.error.segmentWriteFailed" = "Não foi possível salvar um trecho de áudio no disco. Libere espaço e tente novamente.";
 "player.error.missingSnapshot" = "Nenhum livro carregado no player. Abra um livro primeiro.";
+
+/* Aquecimento do motor de áudio */
+"audioWarmup.starting" = "Iniciando motor de áudio…";
+"audioWarmup.loading" = "Carregando runtime de áudio…";
+"audioWarmup.ready" = "Motor de áudio pronto";
+"audioWarmup.failed" = "Falha no motor de áudio: %@";
+"audioWarmup.retry" = "Falha ao iniciar o motor de áudio. Toque em tentar novamente.";
+"audioWarmup.accessibilityStarting" = "Iniciando motor de áudio";
+"audioWarmup.details.title" = "Runtime de áudio";
+"audioWarmup.details.status" = "Status";
+"audioWarmup.details.accessibilityHint" = "Abrir progresso do runtime de áudio";
+"audioWarmup.state.idle" = "Ocioso";
+"audioWarmup.state.loading" = "Carregando";
+"audioWarmup.state.ready" = "Pronto";
+"audioWarmup.state.failed" = "Falhou";
 
 /* ChapterListSheet acessibilidade */
 "chapterList.nowPlaying" = "%@, tocando agora";

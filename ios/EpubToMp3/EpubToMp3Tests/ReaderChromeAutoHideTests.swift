@@ -174,14 +174,17 @@ final class ReaderChromeAutoHideTests: XCTestCase {
         XCTAssertEqual(inset, InstantReaderChromeMetrics.bottomBarHeight)
     }
 
-    private func instantReaderSource() throws -> String {
+    private func appSource(named relativePath: String) throws -> String {
         let testFile = URL(fileURLWithPath: #filePath)
         let projectRoot = testFile
             .deletingLastPathComponent() // EpubToMp3Tests
             .deletingLastPathComponent() // ios/EpubToMp3
-        let sourceURL = projectRoot
-            .appendingPathComponent("EpubToMp3/Views/InstantReaderView.swift")
+        let sourceURL = projectRoot.appendingPathComponent("EpubToMp3/\(relativePath)")
         return try String(contentsOf: sourceURL)
+    }
+
+    private func instantReaderSource() throws -> String {
+        try appSource(named: "Views/InstantReaderView.swift")
     }
 
     /// The instant reader must not opt out of the container safe area at
@@ -203,11 +206,96 @@ final class ReaderChromeAutoHideTests: XCTestCase {
         XCTAssertTrue(source.contains(".statusBarHidden(false)"))
     }
 
-    /// The reader must not hide the root app tab bar. Users still need
-    /// the global app navigation, and hiding it changes the bottom
-    /// safe-area contract that positions the reader/player chrome.
-    func testChromeVisibilityModifierDoesNotHideTabBar() throws {
+    /// Reading a pushed book follows Apple Books: the root TabView's tab
+    /// bar is hidden for the whole book detail, while the reader's own
+    /// top/bottom chrome remains independently toggleable.
+    func testChromeVisibilityModifierHidesTabBarForBookReader() throws {
         let source = try instantReaderSource()
-        XCTAssertFalse(source.contains(".toolbar(.hidden, for: .tabBar)"))
+        XCTAssertTrue(source.contains(".toolbar(.hidden, for: .tabBar)"))
+        XCTAssertTrue(source.contains("TabBarVisibilityController(visible: false)"),
+            "The iOS 15 fallback must hide the root UITabBar while a book is open")
+    }
+
+    func testSingleReaderTapHidesAllChromeAndMiniPlayer() throws {
+        let reader = try appSource(named: "Views/ReaderView.swift")
+        let pageCurl = try appSource(named: "Views/PageCurlContainer.swift")
+        let instantReader = try instantReaderSource()
+
+        XCTAssertTrue(reader.contains("if chromeVisible {\n            onCenterTap?()\n            return\n        }"),
+                      "When chrome is visible, any tap zone should hide chrome instead of turning a page.")
+        XCTAssertTrue(pageCurl.contains("let chromeVisible: Bool"),
+                      "Page-curl mode must know whether chrome is visible before deciding tap behavior.")
+        XCTAssertTrue(pageCurl.contains("if parent.chromeVisible {\n                parent.onCenterTap?()\n                return\n            }"),
+                      "Page-curl mode must treat any tap as focus-mode hide while chrome is visible.")
+        XCTAssertTrue(instantReader.contains(".readerChromeVisible(chromeVisible)"),
+                      "InstantReader chrome state must propagate to RootView so the mini player disappears too.")
+    }
+
+    func testPdfReaderExposesTapToToggleChromeContract() throws {
+        let pdfReader = try appSource(named: "Views/PdfReaderView.swift")
+        let bookOpen = try appSource(named: "Views/BookOpenView.swift")
+        let root = try appSource(named: "Views/RootView.swift")
+
+        XCTAssertTrue(pdfReader.contains("let onPageTap: (() -> Void)?"),
+                      "PDF reader must expose a tap callback for immersive chrome toggle.")
+        XCTAssertTrue(pdfReader.contains("UITapGestureRecognizer"),
+                      "PDFKit consumes SwiftUI taps; the PDFView itself needs a UIKit tap recognizer.")
+        XCTAssertTrue(bookOpen.contains("@State private var pdfChromeVisible = true"),
+                      "BookOpenView must own PDF chrome visibility like InstantReader owns EPUB chrome.")
+        XCTAssertTrue(bookOpen.contains("onPageTap: { withAnimation(.easeInOut(duration: 0.25)) { pdfChromeVisible.toggle() } }"),
+                      "Tapping a PDF page must toggle top/bottom chrome.")
+        XCTAssertTrue(bookOpen.contains(".readerChromeVisible(book.fileType == .pdf ? pdfChromeVisible : true)"),
+                      "PDF chrome state must bubble to RootView so the mini player hides with the bars.")
+        XCTAssertTrue(root.contains("@State private var readerChromeVisible = true"),
+                      "RootView must observe reader chrome state for mini-player visibility.")
+        XCTAssertTrue(root.contains("&& readerChromeVisible"),
+                      "MiniPlayerBar visibility must respect hidden reader chrome.")
+    }
+
+    /// The embedded Python/Edge audio engine must be warmed exactly once
+    /// at app launch, kept as a shared environment object, and surfaced
+    /// through a visible circular progress badge instead of failing later
+    /// with "engine warming up" when the first book asks for audio.
+    func testAudioEngineWarmupIsGlobalVisibleAndAwaitedByAudioBootstrap() throws {
+        let app = try appSource(named: "EpubToMp3App.swift")
+        let root = try appSource(named: "Views/RootView.swift")
+        let bookOpen = try appSource(named: "Views/BookOpenView.swift")
+
+        XCTAssertTrue(app.contains("@StateObject private var audioWarmup = AudioEngineWarmup()"))
+        XCTAssertTrue(app.contains(".environmentObject(audioWarmup)"))
+        XCTAssertTrue(app.contains("await audioWarmup.start()"))
+        XCTAssertTrue(app.contains("warmupTimeoutSeconds"),
+                      "Audio warmup must have a timeout so the global badge cannot stay stuck on Loading audio runtime forever.")
+        XCTAssertTrue(app.contains("Timed out while loading audio runtime"),
+                      "Timeouts must turn into a failed state instead of an endless warming badge.")
+        XCTAssertTrue(app.contains("setIdleTimerDisabled(true)"),
+                      "The app should prevent iPhone auto-lock while it is foregrounded, without changing the user's system Auto-Lock setting.")
+        XCTAssertTrue(app.contains("setIdleTimerDisabled(false)"),
+                      "The app must restore normal idle-lock behavior when it leaves the foreground.")
+        XCTAssertTrue(app.contains("UIApplication.shared.isIdleTimerDisabled = disabled"),
+                      "Idle timer control must use the app-scoped UIKit idle timer, not mutate device settings.")
+
+        XCTAssertTrue(root.contains("@EnvironmentObject private var audioWarmup: AudioEngineWarmup"))
+        XCTAssertTrue(root.contains("AudioEngineWarmupBadge(warmup: audioWarmup)"))
+        XCTAssertTrue(root.contains("Circle()"))
+        XCTAssertTrue(root.contains(".trim(from: 0, to: CGFloat(warmup.progress))"))
+        XCTAssertTrue(root.contains("@State private var showingDetails = false"),
+                      "Tapping the warmup badge must open a progress/details view.")
+        XCTAssertTrue(root.contains(".onTapGesture { showingDetails = true }"),
+                      "The visible Loading audio runtime badge must be tappable.")
+        XCTAssertTrue(root.contains("AudioEngineWarmupDetailView(warmup: warmup)"),
+                      "The details presentation must show current progress, state, and message.")
+        XCTAssertTrue(root.contains("@State private var hiddenByUser = false"),
+                      "The warmup badge must support a user-dismissed hidden state.")
+        XCTAssertTrue(root.contains("DragGesture(minimumDistance: 12)"),
+                      "Sliding the warmup badge upward must dismiss it without cancelling the runtime warmup.")
+        XCTAssertTrue(root.contains("value.translation.height < -24"),
+                      "Only an upward slide should hide the warmup badge.")
+        XCTAssertTrue(root.contains("hiddenByUser = true"),
+                      "The upward slide handler must set the local hidden state.")
+
+        XCTAssertTrue(bookOpen.contains("@EnvironmentObject private var audioWarmup: AudioEngineWarmup"))
+        XCTAssertTrue(bookOpen.contains("await self.audioWarmup.start()"))
+        XCTAssertTrue(bookOpen.contains("guard await self.audioWarmup.waitUntilReady() else"))
     }
 }

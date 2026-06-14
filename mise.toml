@@ -392,11 +392,15 @@ ABI-incompatible with the 26.x SDK and is therefore listed as
 "Ineligible".
 
 Fix on this Mac:
-  xcodebuild -downloadPlatform iOS         # ~6 GiB, one-time
-  # or: Xcode → Settings → Components → iOS <version> Simulator
+  mise run ios:device:run             # install/launch an existing iphoneos build on the paired iPhone
+  mise run mac:build                  # validate the Apple app without iOS simulator work
+
+No local simulator download is required for the normal Hermes loop. Do not run
+`xcodebuild -downloadPlatform ...` or open Xcode Components unless the user
+explicitly asks to install a simulator/runtime. Use CI for simulator validation.
 
 CI (release-desktop.yml) installs the runtime before building, so this
-guard only fires for local builds on developer machines without it.
+guard only fires for local simulator builds on developer machines without it.
 EOF
   exit 2
 fi
@@ -421,6 +425,41 @@ xcodebuild \\
   -destination "${DEST}" \\
   -derivedDataPath ./.build \\
   build | tail -20
+"""
+
+[tasks."ios:device:run"]
+description = "Install and launch the newest existing iphoneos EpubToMp3.app on the paired iPhone; never downloads or boots simulators"
+run = """
+#!/bin/bash
+set -euo pipefail
+cd ios/EpubToMp3
+DEVICE="${IOS_DEVICE_ID:-44B2CFBD-2193-5086-8E8D-BF7A2876C321}"
+BUNDLE_ID="com.pietrocode.epubtomp3"
+APP_PATH="${IOS_APP_PATH:-}"
+if [[ -z "$APP_PATH" ]]; then
+  APP_PATH=$(python3 - <<'PY'
+from pathlib import Path
+apps = [p for p in Path('.').glob('.build*/Build/Products/*-iphoneos/EpubToMp3.app') if p.is_dir()]
+if not apps:
+    raise SystemExit(1)
+apps.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+print(apps[0])
+PY
+  ) || {
+    echo "ios:device:run error: no existing iphoneos EpubToMp3.app found." >&2
+    echo "Build on CI/release workflow or provide IOS_APP_PATH=/path/to/EpubToMp3.app." >&2
+    echo "This task intentionally does not download simulator runtimes or boot CoreSimulator." >&2
+    exit 2
+  }
+fi
+if [[ ! -d "$APP_PATH" ]]; then
+  echo "ios:device:run error: app not found: $APP_PATH" >&2
+  exit 2
+fi
+echo "ios:device:run → device: $DEVICE"
+echo "ios:device:run → app: $APP_PATH"
+xcrun devicectl device install app --device "$DEVICE" "$APP_PATH"
+xcrun devicectl device process launch --device "$DEVICE" --terminate-existing "$BUNDLE_ID"
 """
 
 # ── Docker ───────────────────────────────────────────────────────────────────────

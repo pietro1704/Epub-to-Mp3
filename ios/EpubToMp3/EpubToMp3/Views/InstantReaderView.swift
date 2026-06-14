@@ -1,4 +1,7 @@
 import SwiftUI
+#if os(iOS)
+import UIKit
+#endif
 
 enum InstantReaderIndexMapper {
     static func playableIndex(forEpubIndex epubIndex: Int, in snapshot: JobSnapshot) -> Int? {
@@ -99,10 +102,12 @@ struct InstantReaderView: View {
     ///   (from `SentenceSpan.id`). `nil` = start from chapter's
     ///   beginning.
     var onRequestPlay: ((Int, String?) -> Void)? = nil
+    var onClose: (() -> Void)? = nil
     @ObservedObject var cacheManager: ChapterCacheManager
 
     @EnvironmentObject private var settings: AppSettings
     @EnvironmentObject private var globalPlayer: AudioPlayer
+    @EnvironmentObject private var playerPresentation: PlayerPresentation
     @EnvironmentObject private var readerCoordinator: ReaderCoordinator
     @Environment(\.horizontalSizeClass) private var hSize
 
@@ -200,9 +205,11 @@ struct InstantReaderView: View {
             }
         }
         .modifier(ChromeVisibilityModifier(visible: chromeVisible))
+        .readerChromeVisible(chromeVisible)
         .compatFullScreenCover(isPresented: $showingFullPlayer) {
             FullPlayerSheet()
                 .environmentObject(globalPlayer)
+                .environmentObject(playerPresentation)
         }
         .sheet(isPresented: $showingReaderSettings) {
             ReaderSettingsSheet()
@@ -480,6 +487,18 @@ struct InstantReaderView: View {
 
     private var customTopBar: some View {
         HStack(spacing: 16) {
+            if let onClose {
+                Button(action: onClose) {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 17, weight: .regular))
+                        .frame(minWidth: 44, minHeight: 44)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.tint)
+                .accessibilityLabel(L10n.string("player.close"))
+            }
+
             // Prefer the live job snapshot's book title (set by the
             // FastAPI SSE) — falls back to the chapter's display title
             // and finally to a generic "Reader" so the bar always has
@@ -1124,25 +1143,52 @@ struct InstantReaderView: View {
 
 // MARK: - Chrome hide/show (Safari-like immersive reading)
 
-/// Keeps the system status bar and root tab bar visible while hiding the
-/// navigation bar that would duplicate the reader's custom top chrome.
-/// The reader remains inside SwiftUI's safe-area container; its custom
-/// bars should align with that container rather than replacing the app's
-/// global navigation chrome.
+/// Hides the navigation bar and, on iOS, keeps the root tab bar in sync
+/// with the reader's immersive chrome. When the reader's own top/bottom
+/// bars are hidden, leaving TabView's bar visible creates a lone bottom
+/// strip; hide it as part of the same chrome state.
 struct ChromeVisibilityModifier: ViewModifier {
     let visible: Bool
 
     @ViewBuilder
     func body(content: Content) -> some View {
         #if os(iOS)
-        content
-            .navigationBarHidden(true)
-            .statusBarHidden(false)
+        if #available(iOS 16, *) {
+            content
+                .navigationBarHidden(true)
+                .statusBarHidden(false)
+                .toolbar(.hidden, for: .tabBar)
+        } else {
+            content
+                .navigationBarHidden(true)
+                .statusBarHidden(false)
+                .background(TabBarVisibilityController(visible: false))
+        }
         #else
         content
         #endif
     }
 }
+
+#if os(iOS)
+private struct TabBarVisibilityController: UIViewControllerRepresentable {
+    let visible: Bool
+
+    func makeUIViewController(context: Context) -> UIViewController {
+        UIViewController()
+    }
+
+    func updateUIViewController(_ viewController: UIViewController, context: Context) {
+        DispatchQueue.main.async {
+            viewController.tabBarController?.tabBar.isHidden = !visible
+        }
+    }
+
+    static func dismantleUIViewController(_ viewController: UIViewController, coordinator: ()) {
+        viewController.tabBarController?.tabBar.isHidden = false
+    }
+}
+#endif
 
 private extension JobSnapshot {
     /// Empty placeholder so the TocDrawer button can call `play(snapshot:)`

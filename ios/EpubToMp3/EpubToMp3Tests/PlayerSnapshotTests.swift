@@ -20,14 +20,15 @@ final class PlayerSnapshotTests: XCTestCase {
     /// Isolated player + library + settings stack. Snapshot tests must
     /// be reproducible — no shared singletons. `@MainActor` because
     /// `AudioPlayer` is main-actor-isolated.
-    private func makeStack() -> (player: AudioPlayer, library: LibraryStore, settings: AppSettings) {
+    private func makeStack() -> (player: AudioPlayer, library: LibraryStore, settings: AppSettings, presentation: PlayerPresentation) {
         let suite = "snapshot.player.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!
         defaults.removePersistentDomain(forName: suite)
         let settings = AppSettings(defaults: defaults)
         let player = AudioPlayer()
         let library = LibraryStore()
-        return (player, library, settings)
+        let presentation = PlayerPresentation()
+        return (player, library, settings, presentation)
     }
 
     // MARK: - MiniPlayerBar
@@ -53,6 +54,7 @@ final class PlayerSnapshotTests: XCTestCase {
             .environmentObject(stack.player)
             .environmentObject(stack.library)
             .environmentObject(stack.settings)
+            .environmentObject(stack.presentation)
         assertSnapshots(of: view, on: SnapshotDevices.iPhonesPortrait,
                         named: "FullPlayer-Empty")
     }
@@ -63,6 +65,7 @@ final class PlayerSnapshotTests: XCTestCase {
             .environmentObject(stack.player)
             .environmentObject(stack.library)
             .environmentObject(stack.settings)
+            .environmentObject(stack.presentation)
         assertDeviceSnapshot(of: view,
                              on: SnapshotDevices.iPadPro12_9Portrait,
                              named: "FullPlayer-Empty-iPad")

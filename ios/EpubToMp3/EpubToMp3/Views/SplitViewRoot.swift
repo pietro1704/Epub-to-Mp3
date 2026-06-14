@@ -121,14 +121,15 @@ struct SplitViewRoot: View {
             splitContent
                 .zIndex(0)
 
-            // In-tree overlay so the sheet rises from the mini-player
-            // strip rather than sliding in from off-screen. Matches the
-            // iPhone (TabRoot) presentation.
+            // In-tree overlay so the split/sidebar content remains mounted
+            // underneath while the full player slides in from below the
+            // screen like Spotify. Dismissal reverses the same transition.
             if playerPresentation.showingFullPlayer {
                 FullPlayerSheet()
                     .environmentObject(player)
                     .environmentObject(library)
-                    .transition(.risesFromMiniPlayer)
+                    .environmentObject(playerPresentation)
+                    .transition(.spotifyBottomSheet)
                     .zIndex(2)
                     .ignoresSafeArea()
             }

@@ -140,14 +140,94 @@ final class MainReaderViewTests: XCTestCase {
 
     // MARK: - RootTab stability
 
-    /// `RootTab` raw values are `TabView` selection tokens — they must
-    /// stay stable across builds so SwiftUI's animation state doesn't
-    /// reset. Reader is now tab 0 (the default landing).
-    func testRootTabReaderIsFirstTab() {
-        XCTAssertEqual(RootTab.reader.rawValue, 0,
-                       "Reader must be the first tab (default landing screen).")
-        XCTAssertEqual(RootTab.library.rawValue, 1)
-        XCTAssertEqual(RootTab.settings.rawValue, 2)
+    /// iPhone root follows Apple Books: Library is the landing tab and
+    /// books are pushed from the library. There is no persistent "Read"
+    /// tab item; the reader is a detail destination with its own close X.
+    func testRootTabLibraryIsFirstAndReaderIsNotATab() {
+        XCTAssertEqual(RootTab.library.rawValue, 0,
+                       "Library must be the first tab and default landing screen.")
+        XCTAssertEqual(RootTab.settings.rawValue, 1)
+        XCTAssertEqual(RootTab.convert.rawValue, 2,
+                       "Manual conversion must live in the third tab, not inside Settings.")
+    }
+
+    func testManualConversionIsThirdTabAndReaderIsPushedFromLibrary() throws {
+        let sources = try appViewSources()
+        let rootSource = sources.root
+        let settingsSource = sources.settings
+        let librarySource = sources.library
+        let bookOpenSource = sources.bookOpen
+        let instantReaderSource = sources.instantReader
+
+        XCTAssertTrue(rootSource.contains("ConvertView()"),
+                      "TabRoot must expose manual conversion directly as a tab.")
+        XCTAssertTrue(rootSource.contains(".tag(RootTab.convert)"),
+                      "Manual conversion tab must use the RootTab.convert third-tab token.")
+        XCTAssertEqual(rootSource.components(separatedBy: ".tabItem").count - 1, 3,
+                       "The iPhone TabView must expose exactly three tab bar items.")
+        XCTAssertFalse(rootSource.contains(".tabItem { Label(L10n.string(\"nav.read\")"),
+                       "Reader must not appear as a persistent tab bar item.")
+        XCTAssertFalse(rootSource.contains("MainReaderView("),
+                       "Reader must not be hosted as a root tab; library pushes books instead.")
+        XCTAssertFalse(rootSource.contains(".tag(RootTab.reader)"),
+                       "RootTab.reader must not be part of the iPhone TabView.")
+        XCTAssertLessThan(rootSource.range(of: ".tag(RootTab.settings)")!.lowerBound,
+                          rootSource.range(of: ".tag(RootTab.convert)")!.lowerBound,
+                          "Manual conversion must be the third tab after Settings.")
+        XCTAssertTrue(rootSource.contains("TabView(selection: $selectedTab)"),
+                      "The three items must live in the root iPhone TabView.")
+        XCTAssertFalse(settingsSource.contains("NavigationLink {\n                ConvertView()"),
+                       "Settings must not contain the manual conversion entry.")
+        XCTAssertTrue(librarySource.contains(".compatBookDestination($openingBook)"),
+                      "Tapping a book must push a reader destination from Library.")
+        XCTAssertTrue(librarySource.contains("BookOpenView(book: book, onClose: { binding.wrappedValue = nil })"),
+                      "The pushed reader must close back to Library by clearing the navigation binding.")
+        XCTAssertTrue(bookOpenSource.contains("let onClose: (() -> Void)?"),
+                      "BookOpenView must expose an Apple Books-style close callback.")
+        XCTAssertTrue(bookOpenSource.contains("onClose: onClose"),
+                      "BookOpenView must forward close into the EPUB reader chrome.")
+        XCTAssertTrue(instantReaderSource.contains("Image(systemName: \"xmark\")"),
+                      "The in-book EPUB top bar must show an X close button.")
+    }
+
+    func testFullPlayerUsesSpotifyBottomSheetPresentation() throws {
+        let sources = try appViewSources()
+        let rootSource = sources.root
+        let fullPlayerSource = sources.fullPlayer
+
+        XCTAssertTrue(rootSource.contains(".transition(.spotifyBottomSheet)"),
+                      "Full player must slide in/out from below the screen like Spotify, not scale from the mini player.")
+        XCTAssertFalse(rootSource.contains(".transition(.risesFromMiniPlayer)"),
+                       "The old grow-from-mini-player transition must not be used.")
+        XCTAssertTrue(fullPlayerSource.contains("@EnvironmentObject private var playerPresentation: PlayerPresentation"),
+                      "In-tree player dismissal must clear PlayerPresentation instead of relying on Environment.dismiss.")
+        XCTAssertTrue(fullPlayerSource.contains("playerPresentation.dismissFullPlayer()"),
+                      "Player dismiss gestures/buttons must animate back below the screen while preserving the underlying UI.")
+    }
+
+    func testMiniPlayerInsetKeepsTabContentAboveMiniPlayer() throws {
+        let sources = try appViewSources()
+        let rootSource = sources.root
+        let miniPlayerSource = sources.miniPlayer
+
+        XCTAssertTrue(miniPlayerSource.contains("static let reservedHeight"),
+                      "MiniPlayerBar must expose one canonical reserved height.")
+        XCTAssertTrue(rootSource.contains(".miniPlayerInset(visible: showMiniPlayer"),
+                      "Each tab's content must reserve space for MiniPlayerBar above the tab bar.")
+        XCTAssertEqual(rootSource.components(separatedBy: ".miniPlayerInset(visible: showMiniPlayer").count - 1, 3,
+                       "Every root tab must host the mini player above the tab bar.")
+        XCTAssertFalse(rootSource.contains(".padding(.bottom, visible ? MiniPlayerBar.reservedHeight : 0)"),
+                       "Do not add explicit bottom padding on top of safeAreaInset; it creates a blank white strip above the mini player.")
+        XCTAssertTrue(rootSource.contains("content\n            .safeAreaInset(edge: .bottom"),
+                      "The mini player must be inserted through safeAreaInset so content ends directly above it.")
+    }
+
+    func testConvertViewHasScrollableBottomClearanceForMiniPlayer() throws {
+        let sources = try appViewSources()
+        let convertSource = sources.convert
+
+        XCTAssertTrue(convertSource.contains(".padding(.bottom, MiniPlayerBar.reservedHeight)"),
+                      "Manual conversion Form must have scrollable bottom clearance so its last controls are not covered by the mini player.")
     }
 
     // MARK: - SplitNavMode stability
@@ -182,6 +262,31 @@ final class MainReaderViewTests: XCTestCase {
     }
 
     // MARK: - AppStorage key contract
+
+    private func appViewSources() throws -> (root: String, settings: String, fullPlayer: String, miniPlayer: String, convert: String, library: String, bookOpen: String, instantReader: String) {
+        let testFile = URL(fileURLWithPath: #filePath)
+        let projectRoot = testFile
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        return (
+            root: try String(contentsOf: projectRoot
+                .appendingPathComponent("EpubToMp3/Views/RootView.swift")),
+            settings: try String(contentsOf: projectRoot
+                .appendingPathComponent("EpubToMp3/Views/SettingsView.swift")),
+            fullPlayer: try String(contentsOf: projectRoot
+                .appendingPathComponent("EpubToMp3/Views/FullPlayerSheet.swift")),
+            miniPlayer: try String(contentsOf: projectRoot
+                .appendingPathComponent("EpubToMp3/Views/MiniPlayerBar.swift")),
+            convert: try String(contentsOf: projectRoot
+                .appendingPathComponent("EpubToMp3/Views/ConvertView.swift")),
+            library: try String(contentsOf: projectRoot
+                .appendingPathComponent("EpubToMp3/Views/LibraryView.swift")),
+            bookOpen: try String(contentsOf: projectRoot
+                .appendingPathComponent("EpubToMp3/Views/BookOpenView.swift")),
+            instantReader: try String(contentsOf: projectRoot
+                .appendingPathComponent("EpubToMp3/Views/InstantReaderView.swift"))
+        )
+    }
 
     func testCurrentlyReadingBookIDKeyIsDistinctFromPlayingKey() {
         // The two keys MUST be different — they track separate state.

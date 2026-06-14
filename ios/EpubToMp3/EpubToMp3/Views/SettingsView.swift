@@ -342,21 +342,6 @@ struct SettingsView: View {
     private var advancedSection: some View {
         Section {
             NavigationLink {
-                ConvertView()
-            } label: {
-                Label {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(L10n.string("settings.manualConversion"))
-                        Text(L10n.string("settings.manualConversionDescription"))
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
-                    }
-                } icon: {
-                    Image(systemName: "wand.and.stars")
-                        .foregroundStyle(.purple)
-                }
-            }
-            NavigationLink {
                 JobsListView()
             } label: {
                 Label {

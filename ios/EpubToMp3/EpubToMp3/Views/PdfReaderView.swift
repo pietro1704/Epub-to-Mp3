@@ -4,15 +4,21 @@ import PDFKit
 struct PdfReaderView: View {
     let document: PDFDocument
     @Binding var currentPageIndex: Int
+    let onPageTap: (() -> Void)?
 
-    init(document: PDFDocument, currentPageIndex: Binding<Int> = .constant(0)) {
+    init(
+        document: PDFDocument,
+        currentPageIndex: Binding<Int> = .constant(0),
+        onPageTap: (() -> Void)? = nil
+    ) {
         self.document = document
         self._currentPageIndex = currentPageIndex
+        self.onPageTap = onPageTap
     }
 
     var body: some View {
         #if os(iOS)
-        _PdfReaderViewIOS(document: document, currentPageIndex: $currentPageIndex)
+        _PdfReaderViewIOS(document: document, currentPageIndex: $currentPageIndex, onPageTap: onPageTap)
         #else
         _PdfReaderViewMac(document: document, currentPageIndex: $currentPageIndex)
         #endif
@@ -27,6 +33,7 @@ import UIKit
 private struct _PdfReaderViewIOS: UIViewRepresentable {
     let document: PDFDocument
     @Binding var currentPageIndex: Int
+    let onPageTap: (() -> Void)?
 
     func makeUIView(context: Context) -> PDFView {
         let view = PDFView()
@@ -37,6 +44,10 @@ private struct _PdfReaderViewIOS: UIViewRepresentable {
         view.usePageViewController(true)
         view.backgroundColor = .systemBackground
         view.delegate = context.coordinator
+        let tapRecognizer = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.pageTapped(_:)))
+        tapRecognizer.cancelsTouchesInView = false
+        tapRecognizer.delegate = context.coordinator
+        view.addGestureRecognizer(tapRecognizer)
         if let page = document.page(at: max(0, min(currentPageIndex, document.pageCount - 1))) {
             view.go(to: page)
         }
@@ -50,6 +61,7 @@ private struct _PdfReaderViewIOS: UIViewRepresentable {
     }
 
     func updateUIView(_ view: PDFView, context: Context) {
+        context.coordinator.parent = self
         if view.document !== document {
             view.document = document
         }
@@ -63,9 +75,19 @@ private struct _PdfReaderViewIOS: UIViewRepresentable {
 
     func makeCoordinator() -> Coordinator { Coordinator(parent: self) }
 
-    final class Coordinator: NSObject, PDFViewDelegate {
+    final class Coordinator: NSObject, PDFViewDelegate, UIGestureRecognizerDelegate {
         var parent: _PdfReaderViewIOS
         init(parent: _PdfReaderViewIOS) { self.parent = parent }
+
+        @objc func pageTapped(_ recognizer: UITapGestureRecognizer) {
+            guard recognizer.state == .ended else { return }
+            parent.onPageTap?()
+        }
+
+        func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer,
+                               shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer) -> Bool {
+            true
+        }
 
         @objc func pageChanged(_ notification: Notification) {
             guard let view = notification.object as? PDFView,

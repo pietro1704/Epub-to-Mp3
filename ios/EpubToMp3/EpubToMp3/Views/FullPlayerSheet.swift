@@ -2,6 +2,20 @@ import SwiftUI
 import AVFoundation
 import MediaPlayer
 
+struct FullPlayerLyricsState {
+    static let tutorialSeenKey = "fullPlayer.coverLyricsTutorialSeen"
+
+    static func currentSentenceText(
+        spans: [SentenceSpan],
+        syncSentenceId: String?,
+        activeSentenceId: String?
+    ) -> String? {
+        let preferredId = activeSentenceId ?? syncSentenceId
+        guard let preferredId else { return nil }
+        return spans.first(where: { $0.id == preferredId })?.text
+    }
+}
+
 struct ChapterListRowState: Equatable {
     let isCurrent: Bool
     let playableIndex: Int?
@@ -48,6 +62,7 @@ struct ChapterListRowState: Equatable {
 struct FullPlayerSheet: View {
     @EnvironmentObject private var player: AudioPlayer
     @EnvironmentObject private var library: LibraryStore
+    @EnvironmentObject private var playerPresentation: PlayerPresentation
 
     @AppStorage(AudioPlayer.currentBookIDDefaultsKey)
     private var currentBookID: String?
@@ -70,6 +85,13 @@ struct FullPlayerSheet: View {
     @State private var showChapterList = false
     @State private var dragOffset: CGFloat = 0
     @State private var pendingAnchor: PlayDivergenceAnchor?
+    @State private var showLyricsOverlay = false
+    @State private var fulltext: EbookFulltext?
+    @State private var lyricSync = SyncEngine()
+    @State private var lyricSpans: [SentenceSpan] = []
+    @State private var lyricSentenceId: String?
+    @AppStorage(FullPlayerLyricsState.tutorialSeenKey)
+    private var coverLyricsTutorialSeen: Bool = false
     /// Local scrubber position while the user is dragging — decouples
     /// the visible thumb from `player.positionSeconds` so dragging
     /// doesn't fire a seek per CMTime tick. Committed back to the
@@ -95,6 +117,14 @@ struct FullPlayerSheet: View {
     private var progress: Double {
         guard player.durationSeconds > 0 else { return 0 }
         return min(1, max(0, player.positionSeconds / player.durationSeconds))
+    }
+
+    private var currentLyricText: String? {
+        FullPlayerLyricsState.currentSentenceText(
+            spans: lyricSpans,
+            syncSentenceId: lyricSentenceId,
+            activeSentenceId: player.activeSentenceId
+        )
     }
 
     // MARK: Body
@@ -134,7 +164,15 @@ struct FullPlayerSheet: View {
         .background(backgroundLayer.ignoresSafeArea())
         .offset(y: max(0, dragOffset))
         .gesture(dismissDragGesture)
-        .accessibilityAction(.escape) { dismiss() }
+        .accessibilityAction(.escape) { dismissPlayer() }
+        .task(id: currentBookID) { await loadLyricsFulltext() }
+        .compatOnChange(of: player.currentChapterIndex) { _ in prepareLyricsChapter() }
+        .compatOnChange(of: player.durationSeconds) { _ in prepareLyricsChapter() }
+        .task {
+            for await position in player.position {
+                lyricSentenceId = lyricSync.update(positionSeconds: position)
+            }
+        }
     }
 
     /// iOS 15 fallback: plain scroll layout without NavigationStack.
@@ -155,7 +193,7 @@ struct FullPlayerSheet: View {
                     transportRow
                     secondaryRow
                     Spacer(minLength: 24)
-                    Button(L10n.string("player.close")) { dismiss() }
+                    Button(L10n.string("player.close")) { dismissPlayer() }
                         .buttonStyle(.bordered)
                     Spacer(minLength: 24)
                 }
@@ -165,7 +203,15 @@ struct FullPlayerSheet: View {
         }
         .background(backgroundLayer.ignoresSafeArea())
         .offset(y: max(0, dragOffset))
-        .accessibilityAction(.escape) { dismiss() }
+        .accessibilityAction(.escape) { dismissPlayer() }
+        .task(id: currentBookID) { await loadLyricsFulltext() }
+        .compatOnChange(of: player.currentChapterIndex) { _ in prepareLyricsChapter() }
+        .compatOnChange(of: player.durationSeconds) { _ in prepareLyricsChapter() }
+        .task {
+            for await position in player.position {
+                lyricSentenceId = lyricSync.update(positionSeconds: position)
+            }
+        }
     }
 
     // MARK: - Drag handle + swipe-to-dismiss
@@ -173,7 +219,7 @@ struct FullPlayerSheet: View {
     /// Visual drag indicator at the top. Tapping dismisses; dragging
     /// down past 120pt triggers dismiss with a spring animation.
     private var dragHandle: some View {
-        Button { dismiss() } label: {
+        Button { dismissPlayer() } label: {
             VStack(spacing: 6) {
                 Capsule()
                     .fill(Color.secondary.opacity(0.5))
@@ -201,7 +247,7 @@ struct FullPlayerSheet: View {
             }
             .onEnded { value in
                 if value.translation.height > 120 || value.predictedEndTranslation.height > 300 {
-                    dismiss()
+                    dismissPlayer()
                 } else {
                     withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
                         dragOffset = 0
@@ -221,6 +267,34 @@ struct FullPlayerSheet: View {
         // width; pre-iOS-17 falls back to a GeometryReader on
         // `.frame(maxWidth:)`. The 320pt hard cap protects iPad
         // landscape and macOS where the parent expands wide.
+        Group {
+            coverArtwork
+                .overlay {
+                    if showLyricsOverlay {
+                        lyricsOverlay
+                            .transition(.opacity.combined(with: .scale(scale: 0.98)))
+                    } else if !coverLyricsTutorialSeen {
+                        coverTapTutorial
+                            .transition(.opacity.combined(with: .move(edge: .bottom)))
+                    }
+                }
+        }
+        .contentShape(RoundedRectangle(cornerRadius: 16))
+        .onTapGesture {
+            withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+                coverLyricsTutorialSeen = true
+                showLyricsOverlay.toggle()
+            }
+        }
+        // Subtle scale-up on appear — matches Apple Music entry animation.
+        .scaleEffect(1.0)
+        .animation(.spring(response: 0.5, dampingFraction: 0.75), value: currentBookID)
+        .accessibilityAddTraits(.isButton)
+        .accessibilityHint(L10n.string("player.lyricsTapHint"))
+    }
+
+    @ViewBuilder
+    private var coverArtwork: some View {
         Group {
             if let book = currentBook,
                let data = book.coverPNG,
@@ -246,9 +320,51 @@ struct FullPlayerSheet: View {
                 .accessibilityHidden(true)
             }
         }
-        // Subtle scale-up on appear — matches Apple Music entry animation.
-        .scaleEffect(1.0)
-        .animation(.spring(response: 0.5, dampingFraction: 0.75), value: currentBookID)
+    }
+
+    private var lyricsOverlay: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 16)
+                .fill(.ultraThinMaterial)
+            LinearGradient(
+                colors: [Color.black.opacity(0.55), Color.black.opacity(0.25)],
+                startPoint: .bottom,
+                endPoint: .top
+            )
+            .clipShape(RoundedRectangle(cornerRadius: 16))
+
+            VStack(spacing: 14) {
+                Text(L10n.string("player.nowReading"))
+                    .font(.caption.weight(.semibold))
+                    .textCase(.uppercase)
+                    .foregroundStyle(.white.opacity(0.72))
+
+                Text(currentLyricText ?? L10n.string("player.lyricsWaiting"))
+                    .font(.title3.weight(.semibold))
+                    .lineSpacing(6)
+                    .multilineTextAlignment(.center)
+                    .foregroundStyle(.white)
+                    .minimumScaleFactor(0.72)
+            }
+            .padding(24)
+        }
+        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(currentLyricText ?? L10n.string("player.lyricsWaiting"))
+    }
+
+    private var coverTapTutorial: some View {
+        VStack {
+            Spacer()
+            Label(L10n.string("player.coverTapTutorial"), systemImage: "hand.tap")
+                .font(.footnote.weight(.semibold))
+                .foregroundStyle(.white)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 10)
+                .background(.black.opacity(0.62), in: Capsule())
+                .padding(.bottom, 14)
+        }
+        .allowsHitTesting(false)
     }
 
     // MARK: - Title block
@@ -558,6 +674,52 @@ struct FullPlayerSheet: View {
 
     // MARK: - Helpers
 
+    private func dismissPlayer() {
+        dragOffset = 0
+        playerPresentation.dismissFullPlayer()
+        dismiss()
+    }
+
+    private func loadLyricsFulltext() async {
+        guard let bookID = currentBookID, !bookID.isEmpty else {
+            fulltext = nil
+            lyricSpans = []
+            lyricSentenceId = nil
+            return
+        }
+        let cached = await Task.detached(priority: .utility) {
+            LocalFulltextCache.read(bookId: bookID)
+        }.value
+        fulltext = cached
+        prepareLyricsChapter()
+    }
+
+    private func prepareLyricsChapter() {
+        guard let chapter = currentLyricsChapter else {
+            lyricSpans = []
+            lyricSentenceId = nil
+            return
+        }
+        lyricSync.load(chapter: chapter, chapterDurationSeconds: player.durationSeconds)
+        lyricSpans = lyricSync.spans
+        lyricSentenceId = lyricSync.update(positionSeconds: player.positionSeconds)
+    }
+
+    private var currentLyricsChapter: EbookFulltext.Chapter? {
+        guard let fulltext else { return nil }
+        let epubIndex: Int
+        if let snapshot = player.snapshot,
+           let mapped = InstantReaderIndexMapper.epubIndex(
+            forPlayableIndex: player.currentChapterIndex,
+            in: snapshot
+           ) {
+            epubIndex = mapped
+        } else {
+            epubIndex = currentChapterIndex
+        }
+        return fulltext.chapters.first(where: { $0.index == epubIndex })
+    }
+
     private func formatTime(_ seconds: TimeInterval) -> String {
         guard seconds.isFinite, seconds >= 0 else { return "0:00" }
         let total = Int(seconds)
@@ -808,5 +970,6 @@ private struct RemoveButtonTraitIfDisabledModifier: ViewModifier {
     return FullPlayerSheet()
         .environmentObject(player)
         .environmentObject(lib)
+        .environmentObject(PlayerPresentation())
 }
 #endif

@@ -1,4 +1,8 @@
 import SwiftUI
+import Foundation
+#if canImport(UIKit)
+import UIKit
+#endif
 
 @main
 struct EpubToMp3App: App {
@@ -10,6 +14,7 @@ struct EpubToMp3App: App {
     /// instance — transport controls on the mini-player affect the full
     /// player and vice-versa.
     @StateObject private var player = AudioPlayer()
+    @StateObject private var audioWarmup = AudioEngineWarmup()
     /// Controls the global full-player sheet presentation. Shared so any
     /// surface (MiniPlayerBar, deep link, keyboard shortcut) can open the
     /// full-screen player without passing callbacks through the view tree.
@@ -34,6 +39,7 @@ struct EpubToMp3App: App {
                 .environmentObject(sidecar)
                 .environmentObject(library)
                 .environmentObject(player)
+                .environmentObject(audioWarmup)
                 .environmentObject(playerPresentation)
                 .environmentObject(bookmarkStore)
                 .environmentObject(readerCoordinator)
@@ -45,6 +51,7 @@ struct EpubToMp3App: App {
                     guard !Self.isRunningUnderXCTest() else { return }
                     // Run LRU+TTL eviction on every app launch (background priority).
                     runCacheEviction()
+                    setIdleTimerDisabled(true)
                     // One-shot prune of orphan bookmarks from pre-cascade
                     // builds. Mirrors the Flutter slice-42 fix so existing
                     // installs that already removed a book before the
@@ -60,23 +67,19 @@ struct EpubToMp3App: App {
                 .task(priority: .utility) {
                     guard !Self.isRunningUnderXCTest() else { return }
                     #if os(iOS) || targetEnvironment(simulator)
-                    do {
-                        try await PythonRunner.shared.callAsync {
-                            try PythonEmbed.shared.bootstrap()
-                        }
-                    } catch {
-                        NSLog("[Prewarm] Python bootstrap failed: %@", "\(error)")
-                    }
+                    await audioWarmup.start()
                     #endif
                 }
                 .compatOnChange(of: scenePhase) { phase in
                     if phase == .active {
+                        setIdleTimerDisabled(true)
                         guard !Self.isRunningUnderXCTest() else { return }
                         drainSharedInbox()
                         drainPendingIntent()
                         drainWidgetIntents()
                         WidgetDataSync.reloadAll()
                     } else if phase == .background {
+                        setIdleTimerDisabled(false)
                         // Flush the playback position to UserDefaults before
                         // the process is suspended so resume works correctly
                         // on a cold relaunch.
@@ -87,6 +90,12 @@ struct EpubToMp3App: App {
                     handleIncomingURL(url)
                 }
         }
+    }
+
+    private func setIdleTimerDisabled(_ disabled: Bool) {
+        #if os(iOS) || targetEnvironment(simulator)
+        UIApplication.shared.isIdleTimerDisabled = disabled
+        #endif
     }
 
     /// Drain the App Group inbox into the LibraryStore. Triggered on
@@ -282,4 +291,144 @@ struct EpubToMp3App: App {
     // Audio session configuration moved to AudioPlayer.ensureAudioSession()
     // to defer CoreAudio init (and its AddInstanceForFactory log) until
     // first playback.
+}
+
+@MainActor
+final class AudioEngineWarmup: ObservableObject {
+    enum State: Equatable {
+        case idle
+        case warming
+        case ready
+        case failed(String)
+    }
+
+    @Published private(set) var state: State = .idle
+    @Published private(set) var progress: Double = 0
+    @Published private(set) var message: String = ""
+
+    private var task: Task<Bool, Never>?
+    private let warmupTimeoutSeconds: UInt64 = 20
+
+    var isVisible: Bool {
+        if case .warming = state { return true }
+        return false
+    }
+
+    @discardableResult
+    func start() async -> Bool {
+        if case .ready = state { return true }
+        if let task { return await task.value }
+
+        state = .warming
+        progress = 0.08
+        message = L10n.string("audioWarmup.starting")
+
+        let newTask = Task<Bool, Never> {
+            #if os(iOS) || targetEnvironment(simulator)
+            let bootstrapTask = Task<Bool, Never> {
+                do {
+                    await MainActor.run {
+                        self.progress = 0.22
+                        self.message = L10n.string("audioWarmup.loading")
+                    }
+                    try await PythonRunner.shared.callAsync {
+                        try PythonEmbed.shared.bootstrap()
+                    }
+                    return true
+                } catch {
+                    await MainActor.run {
+                        let text = L10n.string("audioWarmup.failed", error.localizedDescription)
+                        self.progress = 0
+                        self.message = text
+                        self.state = .failed(text)
+                        self.task = nil
+                        NSLog("[Prewarm] Python bootstrap failed: %@", "\(error)")
+                    }
+                    return false
+                }
+            }
+
+            let timeoutTask = Task<Bool, Never> {
+                try? await Task.sleep(nanoseconds: self.warmupTimeoutSeconds * 1_000_000_000)
+                guard !Task.isCancelled else { return false }
+                bootstrapTask.cancel()
+                await MainActor.run {
+                    let text = "Timed out while loading audio runtime. Open a book or tap retry to try again."
+                    self.progress = 0
+                    self.message = text
+                    self.state = .failed(text)
+                    self.task = nil
+                    NSLog("[Prewarm] Python bootstrap timed out after %llu seconds", self.warmupTimeoutSeconds)
+                }
+                return false
+            }
+
+            let result = await withTaskCancellationHandler {
+                await race(first: bootstrapTask, second: timeoutTask)
+            } onCancel: {
+                bootstrapTask.cancel()
+                timeoutTask.cancel()
+            }
+
+            await MainActor.run {
+                if result {
+                    timeoutTask.cancel()
+                    self.progress = 1.0
+                    self.message = L10n.string("audioWarmup.ready")
+                    self.state = .ready
+                    self.task = nil
+                }
+            }
+            return result
+            #else
+            await MainActor.run {
+                self.progress = 1.0
+                self.message = L10n.string("audioWarmup.ready")
+                self.state = .ready
+                self.task = nil
+            }
+            return true
+            #endif
+        }
+        task = newTask
+        return await newTask.value
+    }
+
+    func waitUntilReady() async -> Bool {
+        if case .ready = state { return true }
+        return await start()
+    }
+}
+
+private actor WarmupRaceGate {
+    private var resumed = false
+    private let first: Task<Bool, Never>
+    private let second: Task<Bool, Never>
+
+    init(first: Task<Bool, Never>, second: Task<Bool, Never>) {
+        self.first = first
+        self.second = second
+    }
+
+    func finish(_ value: Bool, continuation: CheckedContinuation<Bool, Never>) {
+        guard !resumed else { return }
+        resumed = true
+        first.cancel()
+        second.cancel()
+        continuation.resume(returning: value)
+    }
+}
+
+private func race(first: Task<Bool, Never>, second: Task<Bool, Never>) async -> Bool {
+    let gate = WarmupRaceGate(first: first, second: second)
+    return await withCheckedContinuation { continuation in
+        Task {
+            let value = await first.value
+            await gate.finish(value, continuation: continuation)
+        }
+        Task {
+            let value = await second.value
+            await gate.finish(value, continuation: continuation)
+        }
+    }
 }

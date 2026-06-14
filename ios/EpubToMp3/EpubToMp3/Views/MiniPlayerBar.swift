@@ -19,6 +19,8 @@ import MediaPlayer
 /// - Dynamic Type via `.subheadline` / `.caption2`.
 /// - `@Environment(\.accessibilityReduceMotion)` respected on appear transition.
 struct MiniPlayerBar: View {
+    static let reservedHeight: CGFloat = 64
+
     @EnvironmentObject private var player: AudioPlayer
     @EnvironmentObject private var library: LibraryStore
 

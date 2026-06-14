@@ -23,6 +23,12 @@ private let playerLog = Logger(subsystem: "epub2mp3", category: "AudioPlayer")
 ///      `chapterProgress[i].downloadUrl` lands via SSE.
 struct BookOpenView: View {
     let book: BookEntity
+    let onClose: (() -> Void)?
+
+    init(book: BookEntity, onClose: (() -> Void)? = nil) {
+        self.book = book
+        self.onClose = onClose
+    }
 
     @EnvironmentObject private var library: LibraryStore
     @EnvironmentObject private var settings: AppSettings
@@ -31,6 +37,7 @@ struct BookOpenView: View {
     /// can show the spinner / conversion progress without requiring a
     /// loaded audio item.
     @EnvironmentObject private var globalPlayer: AudioPlayer
+    @EnvironmentObject private var audioWarmup: AudioEngineWarmup
 
     @State private var phase: Phase = .resolving
     @State private var fulltext: EbookFulltext?
@@ -60,6 +67,7 @@ struct BookOpenView: View {
     /// toolbar action like "Listen" without re-opening the file.
     @State private var pdfDocument: PDFDocument?
     @State private var pdfPageIndex: Int = 0
+    @State private var pdfChromeVisible = true
     @State private var registeredFontURLs: [URL] = []
     /// Manages per-chapter audio cache and prefetch.
     @State private var chapterCacheManager: ChapterCacheManager?
@@ -93,7 +101,8 @@ struct BookOpenView: View {
                 if book.fileType == .pdf, let pdf = pdfDocument {
                     PdfReaderView(
                         document: pdf,
-                        currentPageIndex: $pdfPageIndex
+                        currentPageIndex: $pdfPageIndex,
+                        onPageTap: { withAnimation(.easeInOut(duration: 0.25)) { pdfChromeVisible.toggle() } }
                     )
                 } else if let fulltext {
                     if let cacheManager = chapterCacheManager {
@@ -114,6 +123,7 @@ struct BookOpenView: View {
                             onRequestPlay: { chapterIdx, _ in
                                 startAudioBootstrap(startChapterIndex: chapterIdx, rebuildSegmentQueue: true)
                             },
+                            onClose: onClose,
                             cacheManager: cacheManager
                         )
                         .environment(\.epubFontDirectory, registeredFontURLs.first?.deletingLastPathComponent())
@@ -142,6 +152,18 @@ struct BookOpenView: View {
         }
         .navigationTitle(book.resolvedTitle)
         .compatInlineNavigationTitle()
+        .modifier(PdfChromeVisibilityModifier(visible: book.fileType == .pdf ? pdfChromeVisible : true))
+        .readerChromeVisible(book.fileType == .pdf ? pdfChromeVisible : true)
+        .toolbar {
+            ToolbarItem(placement: .cancellationAction) {
+                if let onClose, book.fileType == .pdf {
+                    Button(action: onClose) {
+                        Image(systemName: "xmark")
+                    }
+                    .accessibilityLabel(L10n.string("player.close"))
+                }
+            }
+        }
         .task { await openFlow() }
         .onDisappear {
             // If a conversion was running when the user left, end the Live
@@ -389,7 +411,25 @@ struct BookOpenView: View {
         if settings.useEmbeddedRuntime {
             playerLog.debug("[AudioBootstrap] embedded path selected (hasClient=\(self.client != nil))")
             audioBootstrapTask = Task(priority: .utility) {
-                await self.bootstrapEmbedded(chapterIndex: startChapterIndex)
+                if await self.audioWarmup.start() {
+                    guard await self.audioWarmup.waitUntilReady() else {
+                        await MainActor.run {
+                            self.statusBanner = self.audioWarmup.message.isEmpty
+                                ? L10n.string("audioWarmup.retry")
+                                : self.audioWarmup.message
+                            self.globalPlayer.isConverting = false
+                        }
+                        return
+                    }
+                    await self.bootstrapEmbedded(chapterIndex: startChapterIndex)
+                } else {
+                    await MainActor.run {
+                        self.statusBanner = self.audioWarmup.message.isEmpty
+                            ? L10n.string("audioWarmup.retry")
+                            : self.audioWarmup.message
+                        self.globalPlayer.isConverting = false
+                    }
+                }
             }
             return
         }
@@ -1287,5 +1327,47 @@ struct BookOpenView: View {
     .environmentObject(AppSettings())
     .environmentObject(LibraryStore.previewPopulated)
     .environmentObject(AudioPlayer())
+    .environmentObject(AudioEngineWarmup())
+}
+#endif
+
+private struct PdfChromeVisibilityModifier: ViewModifier {
+    let visible: Bool
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        #if os(iOS)
+        if #available(iOS 16, *) {
+            content
+                .toolbar(visible ? .visible : .hidden, for: .navigationBar)
+                .toolbar(.hidden, for: .tabBar)
+        } else {
+            content
+                .navigationBarHidden(!visible)
+                .background(BookOpenTabBarVisibilityController(visible: false))
+        }
+        #else
+        content
+        #endif
+    }
+}
+
+#if os(iOS)
+private struct BookOpenTabBarVisibilityController: UIViewControllerRepresentable {
+    let visible: Bool
+
+    func makeUIViewController(context: Context) -> UIViewController {
+        UIViewController()
+    }
+
+    func updateUIViewController(_ viewController: UIViewController, context: Context) {
+        DispatchQueue.main.async {
+            viewController.tabBarController?.tabBar.isHidden = !visible
+        }
+    }
+
+    static func dismantleUIViewController(_ viewController: UIViewController, coordinator: ()) {
+        viewController.tabBarController?.tabBar.isHidden = false
+    }
 }
 #endif

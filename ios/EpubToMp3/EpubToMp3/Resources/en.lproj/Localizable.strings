@@ -94,6 +94,10 @@
 "player.airplay" = "AirPlay";
 "player.chapter" = "Chapter %d";
 "player.coverArt" = "%@ cover art";
+"player.coverTapTutorial" = "Tap cover for lyrics";
+"player.lyricsTapHint" = "Toggles the current sentence overlay.";
+"player.nowReading" = "Now reading";
+"player.lyricsWaiting" = "Waiting for the current sentence…";
 "player.generatingAudio" = "Generating audio";
 "player.chapters" = "Chapters";
 "player.showChapterList" = "Show chapter list";
@@ -135,6 +139,21 @@
 "player.error.emptySegmentData" = "A streaming audio segment arrived empty. Playback will continue with the next segment.";
 "player.error.segmentWriteFailed" = "Couldn't save a streaming audio segment to disk. Free up some space and try again.";
 "player.error.missingSnapshot" = "The player has no book loaded. Open a book first.";
+
+/* Audio engine warm-up */
+"audioWarmup.starting" = "Starting audio engine…";
+"audioWarmup.loading" = "Loading audio runtime…";
+"audioWarmup.ready" = "Audio engine ready";
+"audioWarmup.failed" = "Audio engine failed: %@";
+"audioWarmup.retry" = "Audio engine failed to start. Tap retry.";
+"audioWarmup.accessibilityStarting" = "Starting audio engine";
+"audioWarmup.details.title" = "Audio runtime";
+"audioWarmup.details.status" = "Status";
+"audioWarmup.details.accessibilityHint" = "Open audio runtime progress";
+"audioWarmup.state.idle" = "Idle";
+"audioWarmup.state.loading" = "Loading";
+"audioWarmup.state.ready" = "Ready";
+"audioWarmup.state.failed" = "Failed";
 
 /* ChapterListSheet accessibility */
 "chapterList.nowPlaying" = "%@, now playing";
