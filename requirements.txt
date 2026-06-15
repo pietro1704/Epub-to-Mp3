@@ -79,5 +79,5 @@ python-dotenv>=1.2.2  # CVE-2026-28684
 python-multipart>=0.0.26  # CVE-2026-40347 (already pinned via direct dep above; redundant safeguard)
 
 # Testing (dev only)
-pytest>=9.0.3  # CVE-2025-71176
+pytest>=9.1.0  # CVE-2025-71176
 pytest-asyncio
