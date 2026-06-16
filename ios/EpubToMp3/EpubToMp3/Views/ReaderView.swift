@@ -1139,17 +1139,14 @@ struct ReaderView: View {
         AttributedPageView(
             attributed: slice,
             width: width,
-            onLinkTap: onLinkTap,
-            onZoneTap: enableReaderGestures ? { zone in
-                handleZoneTap(zone, totalPages: max(1, paginationCache.pages.count))
-            } : nil
-            // onSwipe intentionally omitted: the UISwipeGestureRecognizer
-            // inside AttributedPageView was removed because it fires before
-            // the finger lifts (causing an early page-turn flash) and races
-            // the SwiftUI DragGesture in slidePageContent, turning the page
-            // twice. Horizontal swipe-to-turn is handled exclusively by the
-            // DragGesture(.onEnded) overlay in slidePageContent /
-            // noAnimationPageContent.
+            onLinkTap: onLinkTap
+            // onZoneTap intentionally omitted: slidePageContent/noAnimationPageContent
+            // wrap each page with a tapZones() SwiftUI overlay that fires
+            // SpatialTapGesture for zone-based page turns. Passing onZoneTap here
+            // would install a second UITapGestureRecognizer on the UITextView,
+            // causing every tap to fire retreatPage()/advancePage() twice —
+            // the double call is what causes the visible "flash to chapter 0" bug.
+            // onSwipe also omitted: swipe is owned by the DragGesture overlay.
         )
         .frame(width: width, alignment: .topLeading)
         .frame(maxHeight: .infinity, alignment: .topLeading)
