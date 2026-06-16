@@ -178,6 +178,11 @@ struct ReaderView: View {
     private final class PaginationCache {
         var pages: [NSAttributedString] = []
         var key: String?
+        /// Last non-empty page array. In page-curl mode, this is shown
+        /// while a chapter transition re-paginates the new chapter,
+        /// preventing the PVC from receiving an empty array and briefly
+        /// revealing the background (which looks like the TOC or index).
+        var lastValidPages: [NSAttributedString] = []
     }
     @State private var paginationCache = PaginationCache()
     /// Bumped each time `renderedAttributed` is repopulated by the
@@ -591,19 +596,33 @@ struct ReaderView: View {
                 fontSize: effectiveFontSize,
                 lineSpacing: effectiveLineSpacing
             )
+            // In page-curl mode, use the last valid pages while the new
+            // chapter re-paginates. Without this, the PVC receives an
+            // empty array during the chapter transition window (after
+            // onChange clears paginationCache.pages but before the new
+            // chapter's .task populates renderedAttributed), causing a
+            // flash to the background that looks like the TOC or index.
+            let effectivePages: [NSAttributedString] = {
+                #if os(iOS)
+                if pages.isEmpty && settings.pageTurnStyle == .flip {
+                    return paginationCache.lastValidPages
+                }
+                #endif
+                return pages
+            }()
             ZStack(alignment: .bottom) {
-                if pages.isEmpty {
+                if effectivePages.isEmpty {
                     chapterTitleHeader
                         .padding(.horizontal, margin)
                         .frame(maxWidth: .infinity, alignment: .center)
                 } else {
-                    paginatedPageContent(pages: pages, containerSize: geo.size)
+                    paginatedPageContent(pages: effectivePages, containerSize: geo.size)
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                         .offset(y: -hiddenChromeTopCompaction)
 
                     if settings.readerShowPageNumbers {
-                        let pageIndex = max(0, min(pages.count - 1, currentPage))
-                        pageFooter(index: pageIndex, total: pages.count)
+                        let pageIndex = max(0, min(effectivePages.count - 1, currentPage))
+                        pageFooter(index: pageIndex, total: effectivePages.count)
                             .padding(.bottom, 8)
                             .allowsHitTesting(false)
                     }
@@ -897,6 +916,7 @@ struct ReaderView: View {
         // `key == ` check above.
         paginationCache.pages = pages
         paginationCache.key = key
+        if !pages.isEmpty { paginationCache.lastValidPages = pages }
         return pages
         #else
         return []

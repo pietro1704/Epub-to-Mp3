@@ -283,6 +283,10 @@ final class ReaderChromeAutoHideTests: XCTestCase {
                       "ReaderView must expose a way to disable inner page-turn gestures for curl mode.")
         XCTAssertFalse(pageCurl.contains("handleCenterTap"),
                        "Do not revive the old duplicate center-tap handler name/path.")
+        XCTAssertTrue(reader.contains("lastValidPages"),
+                      "ReaderView must keep the last valid page array to avoid a blank/TOC flash while the new chapter re-paginates in curl mode.")
+        XCTAssertTrue(reader.contains("settings.pageTurnStyle == .flip"),
+                      "The lastValidPages fallback must be gated on page-curl mode only, not slide/none.")
         XCTAssertTrue(instantReader.contains(".readerChromeVisible(chromeVisible)"),
                       "InstantReader chrome state must propagate to RootView so the mini player disappears too.")
     }
