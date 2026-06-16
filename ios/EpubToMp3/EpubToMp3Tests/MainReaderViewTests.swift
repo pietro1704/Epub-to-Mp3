@@ -198,24 +198,35 @@ final class MainReaderViewTests: XCTestCase {
         let attributedSource = sources.attributedPage
         let platformSource = sources.platformCompat
 
-        XCTAssertTrue(readerSource.contains("onZoneTap: enableReaderGestures ? { zone in"),
-                      "Paginated taps must be handled by the UITextView-backed page body, while curl mode can disable those inner gestures.")
-        XCTAssertTrue(readerSource.contains("handleZoneTap(zone, totalPages:"),
-                      "A tap on the reader body must route through ReaderView's tap-zone contract.")
+        // Zone-taps are handled by the SwiftUI tapZones() overlay,
+        // NOT by onZoneTap on the UITextView. Passing onZoneTap to
+        // AttributedPageView installed a second UITapGestureRecognizer
+        // on the UITextView, causing every tap to call retreatPage() or
+        // advancePage() twice — the "flash to chapter 0" double-call bug.
+        XCTAssertFalse(readerSource.contains("onZoneTap: enableReaderGestures ? { zone in"),
+                       "onZoneTap must NOT be passed to AttributedPageView in paginated mode — it causes double page-turn via two simultaneous recognizers.")
+        XCTAssertTrue(readerSource.contains(".overlay(tapZones("),
+                      "Zone-based taps must be handled by the SwiftUI tapZones() overlay, not by the UITextView's own recognizer.")
+        XCTAssertTrue(readerSource.contains("private func handleZoneTap("),
+                      "ReaderView must define handleZoneTap to dispatch zone taps to retreat/advance/chrome.")
         XCTAssertTrue(readerSource.contains("case .center: onCenterTap?()"),
                       "Center taps in paginated mode must toggle top/bottom chrome rather than turning the page and flickering.")
         XCTAssertFalse(readerSource.contains("case .center: advancePage(totalPages: totalPages)"),
                        "Center taps must not advance the page in paginated mode.")
-        XCTAssertTrue(readerSource.contains("onSwipe: enableReaderGestures ? { direction in"),
-                      "Horizontal swipes over the text body must be page-turn gestures when inner reader gestures are enabled.")
-        XCTAssertTrue(readerSource.contains("handleSwipe(direction, totalPages:"),
-                      "Swipe left/right must route to next/previous page rather than closing the book.")
-        XCTAssertTrue(attributedSource.contains("uiView.consumeAllTouches = scrollable || onZoneTap != nil || onSwipe != nil"),
-                      "The UITextView must accept non-link touches in paginated mode so its reader gestures can fire.")
+
+        // Swipe-to-turn is handled exclusively by DragGesture(.onEnded)
+        // in slidePageContent. UISwipeGestureRecognizer was removed from
+        // installReaderGestures() because it fires before the finger lifts,
+        // causing an early page-turn flash and then a second turn from DragGesture.
+        XCTAssertTrue(readerSource.contains("DragGesture(minimumDistance: 30)"),
+                      "Swipe-to-turn must use DragGesture(.onEnded) so the page only turns after the finger lifts.")
+        XCTAssertFalse(attributedSource.contains("UISwipeGestureRecognizer("),
+                       "UISwipeGestureRecognizer must not be installed in the UITextView — it fires mid-gesture and races DragGesture causing double turns.")
+        XCTAssertTrue(readerSource.contains("private func handleSwipe("),
+                      "ReaderView must define handleSwipe to map swipe directions to retreat/advance.")
+
         XCTAssertTrue(attributedSource.contains("uiView.installReaderGestures()"),
-                      "The UITextView must install tap and swipe recognizers for paginated page turns.")
-        XCTAssertTrue(attributedSource.contains("uiView.onZoneTap = onZoneTap"))
-        XCTAssertTrue(attributedSource.contains("uiView.onSwipe = onSwipe"))
+                      "The UITextView must still install the tap recognizer (for link detection).")
         XCTAssertTrue(attributedSource.contains("uiView.bounces = scrollable"),
                       "Paginated text pages must not rubber-band vertically when the user drags and releases.")
         XCTAssertTrue(attributedSource.contains("uiView.alwaysBounceVertical = scrollable"),

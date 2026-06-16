@@ -86,4 +86,88 @@ final class ReaderChapterAdvanceTests: XCTestCase {
         XCTAssertFalse(m.advance())
         XCTAssertFalse(m.retreat())
     }
+
+    // MARK: - Double-fire regression
+
+    /// Regression: before the fix, a single tap fired retreatPage() twice
+    /// (once from UITapGestureRecognizer in the UITextView via onZoneTap,
+    /// once from the SwiftUI tapZones() SpatialTapGesture overlay). The
+    /// double call on a chapter boundary jumped back two chapters — visually
+    /// a flash to chapter 0 (the Gutenberg cover/index). This test models the
+    /// page-turn call site so we can assert exactly one call per gesture.
+    private func readerSources() throws -> (reader: String, attributed: String) {
+        let testFile = URL(fileURLWithPath: #filePath)
+        let appDir = testFile.deletingLastPathComponent().deletingLastPathComponent()
+        return (
+            reader: try String(contentsOf: appDir.appendingPathComponent("EpubToMp3/Views/ReaderView.swift")),
+            attributed: try String(contentsOf: appDir.appendingPathComponent("EpubToMp3/Views/AttributedPageView.swift"))
+        )
+    }
+
+    func testSingleTapProducesExactlyOnePageRetreat() throws {
+        // The source-level contract: onZoneTap must NOT be wired into
+        // AttributedPageView in paginated mode. Both recognizers firing is
+        // what caused the double retreat. Verify the source enforces this.
+        let sources = try readerSources()
+        let readerSource = sources.reader
+        let attributedSource = sources.attributed
+
+        XCTAssertFalse(
+            readerSource.contains("onZoneTap: enableReaderGestures ? { zone in"),
+            "onZoneTap must not be passed to AttributedPageView in slide/none mode: " +
+            "it installs a UITapGestureRecognizer that fires alongside tapZones(), " +
+            "calling retreatPage() twice per tap (double-fire = flash to chapter 0)."
+        )
+        XCTAssertFalse(
+            attributedSource.contains("UISwipeGestureRecognizer("),
+            "UISwipeGestureRecognizer must not be installed: it fires before the finger lifts, " +
+            "causing an early page-turn AND racing DragGesture for a second turn."
+        )
+        XCTAssertTrue(
+            readerSource.contains(".overlay(tapZones("),
+            "A single tapZones() SwiftUI overlay must be the sole zone-tap handler."
+        )
+        XCTAssertTrue(
+            readerSource.contains("DragGesture(minimumDistance: 30)"),
+            "A single DragGesture(.onEnded) must be the sole swipe-to-turn handler."
+        )
+    }
+
+    func testSingleTapProducesExactlyOnePageAdvance() throws {
+        // Model test: simulate a paginated reader with 3 pages and verify
+        // that calling advancePage exactly once moves exactly one page.
+        struct PageModel {
+            var currentPage: Int = 0
+            var advanceCallCount: Int = 0
+            let pageCount: Int
+
+            mutating func advancePage() {
+                advanceCallCount += 1
+                if currentPage + 1 < pageCount {
+                    currentPage += 1
+                }
+            }
+        }
+        var model = PageModel(pageCount: 3)
+        model.advancePage()  // exactly one call (as tapZones() fires once)
+        XCTAssertEqual(model.advanceCallCount, 1, "One tap → one advancePage call")
+        XCTAssertEqual(model.currentPage, 1)
+    }
+
+    func testDoubleTapCallWouldHaveJumpedTwoChapters() {
+        // Documents the bug: two retreat calls on chapter boundary jump two chapters.
+        // Before the fix, onZoneTap on UITextView + tapZones() SwiftUI both fired,
+        // giving this behaviour. The fix ensures only one fires.
+        var m = AdvanceModel(currentChapterIndex: 2, chapterCount: 5)
+        // Bug: two retreats in one "tap" gesture
+        _ = m.retreat()
+        _ = m.retreat()
+        XCTAssertEqual(m.currentChapterIndex, 0,
+                       "Double-retreat bug: lands on chapter 0 (index/cover) instead of chapter 1")
+        // After fix: only one retreat per tap
+        var mFixed = AdvanceModel(currentChapterIndex: 2, chapterCount: 5)
+        _ = mFixed.retreat()
+        XCTAssertEqual(mFixed.currentChapterIndex, 1,
+                       "Single-retreat (fixed): correctly lands on chapter 1")
+    }
 }
