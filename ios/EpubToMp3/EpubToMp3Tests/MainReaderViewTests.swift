@@ -198,16 +198,16 @@ final class MainReaderViewTests: XCTestCase {
         let attributedSource = sources.attributedPage
         let platformSource = sources.platformCompat
 
-        XCTAssertTrue(readerSource.contains("onZoneTap: { zone in"),
-                      "Paginated taps must be handled by the UITextView-backed page body, not only by a SwiftUI overlay that UITextView can bypass.")
+        XCTAssertTrue(readerSource.contains("onZoneTap: enableReaderGestures ? { zone in"),
+                      "Paginated taps must be handled by the UITextView-backed page body, while curl mode can disable those inner gestures.")
         XCTAssertTrue(readerSource.contains("handleZoneTap(zone, totalPages:"),
                       "A tap on the reader body must route through ReaderView's tap-zone contract.")
         XCTAssertTrue(readerSource.contains("case .center: onCenterTap?()"),
                       "Center taps in paginated mode must toggle top/bottom chrome rather than turning the page and flickering.")
         XCTAssertFalse(readerSource.contains("case .center: advancePage(totalPages: totalPages)"),
                        "Center taps must not advance the page in paginated mode.")
-        XCTAssertTrue(readerSource.contains("onSwipe: { direction in"),
-                      "Horizontal swipes over the text body must be page-turn gestures.")
+        XCTAssertTrue(readerSource.contains("onSwipe: enableReaderGestures ? { direction in"),
+                      "Horizontal swipes over the text body must be page-turn gestures when inner reader gestures are enabled.")
         XCTAssertTrue(readerSource.contains("handleSwipe(direction, totalPages:"),
                       "Swipe left/right must route to next/previous page rather than closing the book.")
         XCTAssertTrue(attributedSource.contains("uiView.consumeAllTouches = scrollable || onZoneTap != nil || onSwipe != nil"),

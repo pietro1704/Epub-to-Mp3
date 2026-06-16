@@ -271,12 +271,18 @@ final class ReaderChromeAutoHideTests: XCTestCase {
                        "Center taps should not turn the page or cause a page-flick when dismissing chrome.")
         XCTAssertFalse(reader.contains("if chromeVisible {\n            onCenterTap?()\n            return\n        }"),
                        "Do not globally turn paginated taps into chrome toggles.")
-        XCTAssertFalse(pageCurl.contains("UITapGestureRecognizer(target: context.coordinator"),
-                       "PageCurlContainer must not install a second tap recognizer; the inner UITextView owns left/center/right taps so center does not double-toggle or advance.")
+        XCTAssertTrue(pageCurl.contains("UITapGestureRecognizer("),
+                      "PageCurlContainer must install its own tap recognizer in curl mode because the inner UITextView gestures are disabled there.")
+        XCTAssertTrue(pageCurl.contains("navigateByTap(direction:"),
+                      "Curl-mode left/right taps must drive the UIPageViewController directly instead of writing currentPage first.")
+        XCTAssertTrue(pageCurl.contains("guard !coordinator.isTransitioning else { return }"),
+                      "A second setViewControllers during an in-flight curl causes the page-1 flicker and must be blocked.")
+        XCTAssertTrue(reader.contains("pageView(pages: pages, pageIndex: i, containerSize: containerSize, enableReaderGestures: false)"),
+                      "When embedded in page-curl mode, the inner text view must not install its own tap/swipe page-turn gestures.")
+        XCTAssertTrue(reader.contains("enableReaderGestures: Bool = true"),
+                      "ReaderView must expose a way to disable inner page-turn gestures for curl mode.")
         XCTAssertFalse(pageCurl.contains("handleCenterTap"),
-                       "PageCurlContainer must not keep a parallel center-tap path.")
-        XCTAssertFalse(pageCurl.contains("// Center/right — next page"),
-                       "Page-curl center taps must not advance just like right taps.")
+                       "Do not revive the old duplicate center-tap handler name/path.")
         XCTAssertTrue(instantReader.contains(".readerChromeVisible(chromeVisible)"),
                       "InstantReader chrome state must propagate to RootView so the mini player disappears too.")
     }

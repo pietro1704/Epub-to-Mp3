@@ -952,7 +952,7 @@ struct ReaderView: View {
     private func pageCurlContent(pages: [NSAttributedString], containerSize: CGSize) -> some View {
         let pageViews: [AnyView] = pages.indices.map { i in
             AnyView(
-                pageView(pages: pages, pageIndex: i, containerSize: containerSize)
+                pageView(pages: pages, pageIndex: i, containerSize: containerSize, enableReaderGestures: false)
                     .background(themeBackground)
             )
         }
@@ -1067,7 +1067,12 @@ struct ReaderView: View {
         }
     }
 
-    private func pageView(pages: [NSAttributedString], pageIndex: Int, containerSize: CGSize) -> some View {
+    private func pageView(
+        pages: [NSAttributedString],
+        pageIndex: Int,
+        containerSize: CGSize,
+        enableReaderGestures: Bool = true
+    ) -> some View {
         let margin = effectiveReaderMargin(for: containerSize)
         // No more per-frame highlight mutation — reassigning
         // `attributedText` with a yellow-background sentence forced
@@ -1083,7 +1088,7 @@ struct ReaderView: View {
             containerSize.width - 2 * margin
         )
         return VStack(alignment: .leading, spacing: 0) {
-            pageTextBody(attributedSlice, width: effectiveColumnWidth)
+            pageTextBody(attributedSlice, width: effectiveColumnWidth, enableReaderGestures: enableReaderGestures)
             Spacer(minLength: 0)
         }
         .padding(.horizontal, margin)
@@ -1101,18 +1106,30 @@ struct ReaderView: View {
     /// code blocks — survives intact. No more mid-word cuts, no more lost
     /// list markers: the TextKit layout pass that built the slice is the
     /// same engine SwiftUI's `Text` uses to render it.
+    ///
+    /// `enableReaderGestures` must be false when this view is embedded inside
+    /// a `UIPageViewController` (page-curl mode). In curl mode the PVC owns
+    /// all swipe/tap gestures for page turns; wiring onZoneTap/onSwipe here
+    /// causes the SwiftUI binding write (`currentPage += 1`) to race the
+    /// PVC's own animation, producing the "flicker between page 1 and current"
+    /// bug: the PVC animates forward while simultaneously receiving a
+    /// setViewControllers call from the binding update.
     @ViewBuilder
-    private func pageTextBody(_ slice: NSAttributedString, width: CGFloat) -> some View {
+    private func pageTextBody(
+        _ slice: NSAttributedString,
+        width: CGFloat,
+        enableReaderGestures: Bool = true
+    ) -> some View {
         AttributedPageView(
             attributed: slice,
             width: width,
             onLinkTap: onLinkTap,
-            onZoneTap: { zone in
+            onZoneTap: enableReaderGestures ? { zone in
                 handleZoneTap(zone, totalPages: max(1, paginationCache.pages.count))
-            },
-            onSwipe: { direction in
+            } : nil,
+            onSwipe: enableReaderGestures ? { direction in
                 handleSwipe(direction, totalPages: max(1, paginationCache.pages.count))
-            }
+            } : nil
         )
         .frame(width: width, alignment: .topLeading)
         .frame(maxHeight: .infinity, alignment: .topLeading)
