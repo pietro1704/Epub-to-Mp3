@@ -284,9 +284,9 @@ final class ReaderChromeAutoHideTests: XCTestCase {
         XCTAssertFalse(pageCurl.contains("handleCenterTap"),
                        "Do not revive the old duplicate center-tap handler name/path.")
         XCTAssertTrue(reader.contains("lastValidPages"),
-                      "ReaderView must keep the last valid page array to avoid a blank/TOC flash while the new chapter re-paginates in curl mode.")
-        XCTAssertTrue(reader.contains("settings.pageTurnStyle == .flip"),
-                      "The lastValidPages fallback must be gated on page-curl mode only, not slide/none.")
+                      "ReaderView must hold the last valid page array to avoid a blank/TOC flash while the new chapter re-paginates in any paginated mode.")
+        XCTAssertTrue(reader.contains("pages.isEmpty ? paginationCache.lastValidPages : pages"),
+                      "effectivePages must fall back to lastValidPages for ALL paginated modes, not just page-curl.")
         XCTAssertTrue(instantReader.contains(".readerChromeVisible(chromeVisible)"),
                       "InstantReader chrome state must propagate to RootView so the mini player disappears too.")
     }

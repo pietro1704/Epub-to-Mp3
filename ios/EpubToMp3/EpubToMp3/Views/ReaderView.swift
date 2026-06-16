@@ -596,20 +596,16 @@ struct ReaderView: View {
                 fontSize: effectiveFontSize,
                 lineSpacing: effectiveLineSpacing
             )
-            // In page-curl mode, use the last valid pages while the new
-            // chapter re-paginates. Without this, the PVC receives an
-            // empty array during the chapter transition window (after
-            // onChange clears paginationCache.pages but before the new
-            // chapter's .task populates renderedAttributed), causing a
-            // flash to the background that looks like the TOC or index.
-            let effectivePages: [NSAttributedString] = {
-                #if os(iOS)
-                if pages.isEmpty && settings.pageTurnStyle == .flip {
-                    return paginationCache.lastValidPages
-                }
-                #endif
-                return pages
-            }()
+            // Hold the last valid page array while the new chapter re-paginates.
+            // After onChange(of: chapter.id) clears paginationCache.pages and
+            // renderedAttributed, there is a window before the .task populates
+            // the new chapter where pages is empty. Without this guard, all
+            // paginated modes (slide, none, curl) briefly show chapterTitleHeader
+            // or a blank background — visible as a flash to the TOC or index.
+            // lastValidPages is stale chapter content, but that is better than
+            // a blank frame. It is replaced the moment the new chapter renders.
+            let effectivePages: [NSAttributedString] =
+                pages.isEmpty ? paginationCache.lastValidPages : pages
             ZStack(alignment: .bottom) {
                 if effectivePages.isEmpty {
                     chapterTitleHeader
