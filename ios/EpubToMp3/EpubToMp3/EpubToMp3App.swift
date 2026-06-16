@@ -310,8 +310,25 @@ final class AudioEngineWarmup: ObservableObject {
     private let warmupTimeoutSeconds: UInt64 = 20
 
     var isVisible: Bool {
-        if case .warming = state { return true }
-        return false
+        switch state {
+        case .warming, .failed:
+            return true
+        case .idle, .ready:
+            return false
+        }
+    }
+
+    var stateLabel: String {
+        switch state {
+        case .idle: return L10n.string("audioWarmup.state.idle")
+        case .warming: return L10n.string("audioWarmup.state.loading")
+        case .ready: return L10n.string("audioWarmup.state.ready")
+        case .failed: return L10n.string("audioWarmup.state.failed")
+        }
+    }
+
+    var progressLabel: String {
+        "\(Int((progress * 100).rounded()))%"
     }
 
     @discardableResult
@@ -325,61 +342,18 @@ final class AudioEngineWarmup: ObservableObject {
 
         let newTask = Task<Bool, Never> {
             #if os(iOS) || targetEnvironment(simulator)
-            let bootstrapTask = Task<Bool, Never> {
-                do {
-                    await MainActor.run {
-                        self.progress = 0.22
-                        self.message = L10n.string("audioWarmup.loading")
-                    }
-                    try await PythonRunner.shared.callAsync {
-                        try PythonEmbed.shared.bootstrap()
-                    }
-                    return true
-                } catch {
-                    await MainActor.run {
-                        let text = L10n.string("audioWarmup.failed", error.localizedDescription)
-                        self.progress = 0
-                        self.message = text
-                        self.state = .failed(text)
-                        self.task = nil
-                        NSLog("[Prewarm] Python bootstrap failed: %@", "\(error)")
-                    }
-                    return false
-                }
-            }
-
-            let timeoutTask = Task<Bool, Never> {
-                try? await Task.sleep(nanoseconds: self.warmupTimeoutSeconds * 1_000_000_000)
-                guard !Task.isCancelled else { return false }
-                bootstrapTask.cancel()
-                await MainActor.run {
-                    let text = "Timed out while loading audio runtime. Open a book or tap retry to try again."
-                    self.progress = 0
-                    self.message = text
-                    self.state = .failed(text)
-                    self.task = nil
-                    NSLog("[Prewarm] Python bootstrap timed out after %llu seconds", self.warmupTimeoutSeconds)
-                }
-                return false
-            }
-
-            let result = await withTaskCancellationHandler {
-                await race(first: bootstrapTask, second: timeoutTask)
-            } onCancel: {
-                bootstrapTask.cancel()
-                timeoutTask.cancel()
-            }
-
             await MainActor.run {
-                if result {
-                    timeoutTask.cancel()
-                    self.progress = 1.0
-                    self.message = L10n.string("audioWarmup.ready")
-                    self.state = .ready
-                    self.task = nil
-                }
+                self.progress = 0.35
+                self.message = L10n.string("audioWarmup.loading")
             }
-            return result
+            await Task.yield()
+            await MainActor.run {
+                self.progress = 1.0
+                self.message = L10n.string("audioWarmup.ready")
+                self.state = .ready
+                self.task = nil
+            }
+            return true
             #else
             await MainActor.run {
                 self.progress = 1.0

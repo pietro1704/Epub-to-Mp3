@@ -47,8 +47,12 @@ final class FullPlayerLyricsTests: XCTestCase {
         let projectRoot = testFile
             .deletingLastPathComponent()
             .deletingLastPathComponent()
-        let source = try String(contentsOf: projectRoot
-            .appendingPathComponent("EpubToMp3/Views/FullPlayerSheet.swift"))
+        let sourceURL = projectRoot
+            .appendingPathComponent("EpubToMp3/Views/FullPlayerSheet.swift")
+        guard FileManager.default.fileExists(atPath: sourceURL.path) else {
+            throw XCTSkip("Source-file contract test runs only when the repository tree is available.")
+        }
+        let source = try String(contentsOf: sourceURL)
 
         XCTAssertTrue(source.contains("onTapGesture"),
                       "Cover art must be tappable to toggle sentence lyrics.")

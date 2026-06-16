@@ -21,6 +21,18 @@ extension View {
         #endif
     }
 
+    /// Hide the system back affordance on iOS so in-reader horizontal
+    /// swipes remain page-turn gestures and book dismissal is only the
+    /// explicit in-book X button. No-op on macOS.
+    @ViewBuilder
+    func compatReaderBackButtonHidden() -> some View {
+        #if os(iOS)
+        self.navigationBarBackButtonHidden(true)
+        #else
+        self
+        #endif
+    }
+
     /// `fullScreenCover` doesn't exist on macOS — fall back to a regular
     /// sheet, which on a Mac window is the right modal presentation
     /// anyway (full-screen covers are a phone metaphor).

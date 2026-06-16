@@ -209,6 +209,13 @@ private struct _AttributedPageRep: UIViewRepresentable {
             if onLinkTap?(url) == true { return false }
             return true
         }
+
+        func scrollViewDidScroll(_ scrollView: UIScrollView) {
+            guard !scrollView.isScrollEnabled else { return }
+            if scrollView.contentOffset != .zero {
+                scrollView.contentOffset = .zero
+            }
+        }
     }
 
     func makeUIView(context: Context) -> FixedWidthTextView {
@@ -222,6 +229,11 @@ private struct _AttributedPageRep: UIViewRepresentable {
         tv.textContainer.maximumNumberOfLines = 0
         tv.adjustsFontForContentSizeCategory = false
         tv.dataDetectorTypes = []
+        tv.showsVerticalScrollIndicator = false
+        tv.showsHorizontalScrollIndicator = false
+        tv.bounces = false
+        tv.alwaysBounceVertical = false
+        tv.alwaysBounceHorizontal = false
         tv.delegate = context.coordinator
         tv.setContentHuggingPriority(.required, for: .horizontal)
         tv.setContentCompressionResistancePriority(.required, for: .horizontal)
@@ -229,6 +241,7 @@ private struct _AttributedPageRep: UIViewRepresentable {
         if scrollable {
             tv.showsVerticalScrollIndicator = true
             tv.alwaysBounceVertical = true
+            tv.bounces = true
         }
         return tv
     }
@@ -237,7 +250,18 @@ private struct _AttributedPageRep: UIViewRepresentable {
         context.coordinator.onLinkTap = onLinkTap
         uiView.pinnedWidth = size.width
         uiView.isScrollEnabled = scrollable
-        uiView.consumeAllTouches = scrollable
+        uiView.showsVerticalScrollIndicator = scrollable
+        uiView.showsHorizontalScrollIndicator = false
+        uiView.bounces = scrollable
+        uiView.alwaysBounceVertical = scrollable
+        uiView.alwaysBounceHorizontal = false
+        if !scrollable {
+            uiView.setContentOffset(.zero, animated: false)
+        }
+        uiView.consumeAllTouches = scrollable || onZoneTap != nil || onSwipe != nil
+        uiView.onZoneTap = onZoneTap
+        uiView.onSwipe = onSwipe
+        uiView.installReaderGestures()
 
         let desiredContainer = CGSize(
             width: size.width,

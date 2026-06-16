@@ -164,6 +164,7 @@ final class ReaderChromeAutoHideTests: XCTestCase {
     func testInstantReaderTopChromeInsetDoesNotDoubleCountSafeArea() {
         let inset = InstantReaderChromeMetrics.contentTopInset(safeAreaTop: 59)
         XCTAssertEqual(inset, InstantReaderChromeMetrics.topBarHeight)
+        XCTAssertEqual(InstantReaderChromeMetrics.topBarHeight, 8)
     }
 
     /// Same for the bottom: the tab bar/home-indicator safe area is owned
@@ -172,6 +173,43 @@ final class ReaderChromeAutoHideTests: XCTestCase {
     func testInstantReaderBottomChromeInsetDoesNotDoubleCountSafeArea() {
         let inset = InstantReaderChromeMetrics.contentBottomInset(safeAreaBottom: 34)
         XCTAssertEqual(inset, InstantReaderChromeMetrics.bottomBarHeight)
+        XCTAssertEqual(InstantReaderChromeMetrics.bottomBarHeight, 8)
+    }
+
+    func testReaderPageVerticalWhitespaceIsSmallAndNotDebugPainted() throws {
+        let reader = try appSource(named: "Views/ReaderView.swift")
+        let instantReader = try appSource(named: "Views/InstantReaderView.swift")
+        XCTAssertTrue(reader.contains("private let pageVerticalPadding: CGFloat = 12"),
+                      "Paginated reader vertical padding should stay close to Apple Books instead of leaving a large empty band.")
+        XCTAssertTrue(reader.contains(".padding(.vertical, pageVerticalPadding)"))
+        XCTAssertTrue(reader.contains(".frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)"),
+                      "Paginated content must be pinned to the top of the reading corridor, not bottom-aligned with extra blank space above.")
+        XCTAssertTrue(reader.contains("hiddenChromeTopCompaction"),
+                      "Hidden chrome should compact the top reading band so the page does not leave a large empty strip above the text.")
+        XCTAssertTrue(instantReader.contains("chromeTopInset: chromeVisible ? topInset : 0"),
+                      "When chrome is hidden, the reader must not keep an empty top chrome band.")
+        XCTAssertTrue(instantReader.contains("chromeBottomInset: chromeVisible ? bottomInset : 0"),
+                      "When chrome is hidden, the reader must not keep an empty bottom chrome band.")
+        XCTAssertFalse(reader.contains("Color.red.opacity"),
+                       "Debug red padding bands must never ship in the reader; if red appears, the visible spacing is too large.")
+        XCTAssertFalse(reader.contains(".padding(.vertical, 24)"),
+                       "The old 24pt per-page vertical padding made the top/bottom areas look too large.")
+    }
+
+    func testBookReaderDoesNotPinBookTitleAtTop() throws {
+        let bookOpen = try appSource(named: "Views/BookOpenView.swift")
+        let instantReader = try instantReaderSource()
+
+        XCTAssertTrue(bookOpen.contains(".navigationTitle(\"\")"),
+                      "The pushed book reader must not show a fixed NavigationStack title above the page.")
+        XCTAssertFalse(bookOpen.contains(".navigationTitle(book.resolvedTitle)"),
+                       "Do not pin the book title in the system navigation bar while reading.")
+        XCTAssertFalse(instantReader.contains("Text(topBarTitle)"),
+                       "The in-reader top chrome should contain controls only, not a fixed book/chapter title.")
+        XCTAssertFalse(instantReader.contains("private var topBarTitle"),
+                       "Remove the unused title source so the fixed title cannot regress silently.")
+        XCTAssertTrue(instantReader.contains("Spacer(minLength: 0)"),
+                      "The top bar should use empty space between close and action buttons instead of a title label.")
     }
 
     private func appSource(named relativePath: String) throws -> String {
@@ -216,17 +254,29 @@ final class ReaderChromeAutoHideTests: XCTestCase {
             "The iOS 15 fallback must hide the root UITabBar while a book is open")
     }
 
-    func testSingleReaderTapHidesAllChromeAndMiniPlayer() throws {
+    func testReaderTapsAndDragsTurnPagesLikeBooksApps() throws {
         let reader = try appSource(named: "Views/ReaderView.swift")
         let pageCurl = try appSource(named: "Views/PageCurlContainer.swift")
         let instantReader = try instantReaderSource()
 
-        XCTAssertTrue(reader.contains("if chromeVisible {\n            onCenterTap?()\n            return\n        }"),
-                      "When chrome is visible, any tap zone should hide chrome instead of turning a page.")
-        XCTAssertTrue(pageCurl.contains("let chromeVisible: Bool"),
-                      "Page-curl mode must know whether chrome is visible before deciding tap behavior.")
-        XCTAssertTrue(pageCurl.contains("if parent.chromeVisible {\n                parent.onCenterTap?()\n                return\n            }"),
-                      "Page-curl mode must treat any tap as focus-mode hide while chrome is visible.")
+        XCTAssertTrue(reader.contains("case .left:   retreatPage()"),
+                      "Left-zone taps must go to the previous page.")
+        XCTAssertTrue(reader.contains("case .center: onCenterTap?()"),
+                      "Center taps in paginated mode must toggle reader chrome instead of turning the page.")
+        XCTAssertTrue(reader.contains("case .right:  advancePage(totalPages: totalPages)"),
+                      "Right-zone taps must go to the next page.")
+        XCTAssertTrue(reader.contains("DragGesture(minimumDistance: 30)"),
+                      "Horizontal drags must keep changing pages like Kindle / Apple Books.")
+        XCTAssertFalse(reader.contains("case .center: advancePage(totalPages: totalPages)"),
+                       "Center taps should not turn the page or cause a page-flick when dismissing chrome.")
+        XCTAssertFalse(reader.contains("if chromeVisible {\n            onCenterTap?()\n            return\n        }"),
+                       "Do not globally turn paginated taps into chrome toggles.")
+        XCTAssertFalse(pageCurl.contains("UITapGestureRecognizer(target: context.coordinator"),
+                       "PageCurlContainer must not install a second tap recognizer; the inner UITextView owns left/center/right taps so center does not double-toggle or advance.")
+        XCTAssertFalse(pageCurl.contains("handleCenterTap"),
+                       "PageCurlContainer must not keep a parallel center-tap path.")
+        XCTAssertFalse(pageCurl.contains("// Center/right — next page"),
+                       "Page-curl center taps must not advance just like right taps.")
         XCTAssertTrue(instantReader.contains(".readerChromeVisible(chromeVisible)"),
                       "InstantReader chrome state must propagate to RootView so the mini player disappears too.")
     }
@@ -244,8 +294,8 @@ final class ReaderChromeAutoHideTests: XCTestCase {
                       "BookOpenView must own PDF chrome visibility like InstantReader owns EPUB chrome.")
         XCTAssertTrue(bookOpen.contains("onPageTap: { withAnimation(.easeInOut(duration: 0.25)) { pdfChromeVisible.toggle() } }"),
                       "Tapping a PDF page must toggle top/bottom chrome.")
-        XCTAssertTrue(bookOpen.contains(".readerChromeVisible(book.fileType == .pdf ? pdfChromeVisible : true)"),
-                      "PDF chrome state must bubble to RootView so the mini player hides with the bars.")
+        XCTAssertTrue(bookOpen.contains(".readerChromeVisible(false)"),
+                      "Opening a book from Library must hide the global mini player; the in-book bottom/player bar owns reader playback chrome.")
         XCTAssertTrue(root.contains("@State private var readerChromeVisible = true"),
                       "RootView must observe reader chrome state for mini-player visibility.")
         XCTAssertTrue(root.contains("&& readerChromeVisible"),
@@ -264,10 +314,14 @@ final class ReaderChromeAutoHideTests: XCTestCase {
         XCTAssertTrue(app.contains("@StateObject private var audioWarmup = AudioEngineWarmup()"))
         XCTAssertTrue(app.contains(".environmentObject(audioWarmup)"))
         XCTAssertTrue(app.contains("await audioWarmup.start()"))
-        XCTAssertTrue(app.contains("warmupTimeoutSeconds"),
-                      "Audio warmup must have a timeout so the global badge cannot stay stuck on Loading audio runtime forever.")
-        XCTAssertTrue(app.contains("Timed out while loading audio runtime"),
-                      "Timeouts must turn into a failed state instead of an endless warming badge.")
+        XCTAssertFalse(app.contains("PythonRunner.shared.callAsync(") && app.contains("audio runtime bootstrap"),
+                       "The visible audio warmup must not block on Python bootstrap; iOS audio uses direct Edge and should never time out before synthesis starts.")
+        XCTAssertTrue(app.contains("await Task.yield()"),
+                      "The warmup badge may briefly surface state, but it must complete cooperatively instead of waiting on Python.")
+        XCTAssertTrue(app.contains("case .warming, .failed:"),
+                      "The floating warmup badge must remain visible after failure so the user can see the failed state instead of losing the status.")
+        XCTAssertTrue(app.contains("var stateLabel: String"))
+        XCTAssertTrue(app.contains("var progressLabel: String"))
         XCTAssertTrue(app.contains("setIdleTimerDisabled(true)"),
                       "The app should prevent iPhone auto-lock while it is foregrounded, without changing the user's system Auto-Lock setting.")
         XCTAssertTrue(app.contains("setIdleTimerDisabled(false)"),
@@ -277,8 +331,19 @@ final class ReaderChromeAutoHideTests: XCTestCase {
 
         XCTAssertTrue(root.contains("@EnvironmentObject private var audioWarmup: AudioEngineWarmup"))
         XCTAssertTrue(root.contains("AudioEngineWarmupBadge(warmup: audioWarmup)"))
+        XCTAssertTrue(root.contains("ZStack(alignment: .topTrailing)"),
+                      "The audio runtime status should be a floating top-trailing badge, not inline content that looks stuck in the screen body.")
+        XCTAssertTrue(root.contains(".padding(.trailing, 12)"))
         XCTAssertTrue(root.contains("Circle()"))
         XCTAssertTrue(root.contains(".trim(from: 0, to: CGFloat(warmup.progress))"))
+        XCTAssertTrue(root.contains("Text(warmup.stateLabel)"),
+                      "The floating badge must show the runtime state, not just a generic loading message.")
+        XCTAssertTrue(root.contains("Text(warmup.progressLabel)"),
+                      "The floating badge must show the numeric progress so a 22% stall is explicit.")
+        XCTAssertTrue(root.contains("RoundedRectangle(cornerRadius: 18"),
+                      "The badge should render as a floating card instead of a plain capsule.")
+        XCTAssertTrue(root.contains("warmupBadgeTint"),
+                      "The badge should visually distinguish failed state from loading state.")
         XCTAssertTrue(root.contains("@State private var showingDetails = false"),
                       "Tapping the warmup badge must open a progress/details view.")
         XCTAssertTrue(root.contains(".onTapGesture { showingDetails = true }"),
@@ -297,5 +362,8 @@ final class ReaderChromeAutoHideTests: XCTestCase {
         XCTAssertTrue(bookOpen.contains("@EnvironmentObject private var audioWarmup: AudioEngineWarmup"))
         XCTAssertTrue(bookOpen.contains("await self.audioWarmup.start()"))
         XCTAssertTrue(bookOpen.contains("guard await self.audioWarmup.waitUntilReady() else"))
+        XCTAssertTrue(bookOpen.contains("direct Edge on iOS to avoid blocking the UI on Python bootstrap"))
+        XCTAssertTrue(bookOpen.contains("iOS uses direct Edge sequentially"))
+        XCTAssertTrue(bookOpen.contains("try await Self.synthesizeDirectEdge("))
     }
 }

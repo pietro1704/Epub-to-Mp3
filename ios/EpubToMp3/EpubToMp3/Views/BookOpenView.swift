@@ -150,10 +150,14 @@ struct BookOpenView: View {
                 errorView(message: msg)
             }
         }
-        .navigationTitle(book.resolvedTitle)
+        .navigationTitle("")
+        .compatReaderBackButtonHidden()
         .compatInlineNavigationTitle()
         .modifier(PdfChromeVisibilityModifier(visible: book.fileType == .pdf ? pdfChromeVisible : true))
-        .readerChromeVisible(book.fileType == .pdf ? pdfChromeVisible : true)
+        // BookOpenView is pushed from Library and owns its own in-reader
+        // playback chrome. Keep the root mini player hidden for the whole
+        // open-book detail so immersive reader mode has no stray global UI.
+        .readerChromeVisible(false)
         .toolbar {
             ToolbarItem(placement: .cancellationAction) {
                 if let onClose, book.fileType == .pdf {
@@ -450,7 +454,7 @@ struct BookOpenView: View {
     /// when no backend is available.  Synthesises the chapter at
     /// `chapterIndex` first (fast feedback), then continues with
     /// subsequent chapters in parallel (direct Edge, macOS) or sequentially
-    /// (Python path on iOS, which is GIL-serialized).
+    /// (direct Edge on iOS to avoid blocking the UI on Python bootstrap).
     ///
     /// Each MP3 segment is pushed to `globalPlayer.enqueueSegment` on the
     /// main actor — first audio lands within ~500 ms, satisfying HIG
@@ -614,7 +618,8 @@ struct BookOpenView: View {
         let remaining = Array(workItems.dropFirst())
 
         #if os(iOS)
-        // Python path: GIL-serialized, process sequentially.
+        // iOS uses direct Edge sequentially so audio does not wait on
+        // Python bootstrap/GIL. Cache hits are still instant.
         // Cache hits are still instant.
         for work in remaining {
             if Task.isCancelled { break }
@@ -815,28 +820,15 @@ struct BookOpenView: View {
 
         do {
             #if os(iOS)
-            let resultURL = try await PythonBridge.shared.convertChapterStreaming(
+            try await Self.synthesizeDirectEdge(
                 text: text,
                 voice: voice,
-                outputDir: cacheRoot,
-                chapterIndex: arrayIndex
-            ) { [weak globalPlayer, weak watchdog] segData, chapIdx, segIdx in
-                playerLog.debug("[AudioBootstrap] segment \(segIdx) ch=\(chapIdx) bytes=\(segData.count)")
-                globalPlayer?.enqueueSegment(
-                    data: segData,
-                    chapterIndex: chapIdx,
-                    segmentIndex: segIdx
-                )
-                // Capture `watchdog` weakly too — the segment callback
-                // can keep firing well past the user closing the
-                // reader, and capturing `self` strongly here defeats
-                // the existing weak `globalPlayer` capture (the audit
-                // flagged this as a retain-cycle smell).
-                watchdog?.heartbeat()
-            }
-            // Persist under deterministic name for future cache hits.
-            try? FileManager.default.removeItem(at: cacheFile)
-            try? FileManager.default.copyItem(at: resultURL, to: cacheFile)
+                cacheRoot: cacheRoot,
+                cacheFile: cacheFile,
+                chapterIndex: arrayIndex,
+                globalPlayer: globalPlayer,
+                watchdog: watchdog
+            )
             watchdog?.heartbeat()
             playerLog.debug("[AudioBootstrap] chapter \(arrayIndex) complete")
             return .success

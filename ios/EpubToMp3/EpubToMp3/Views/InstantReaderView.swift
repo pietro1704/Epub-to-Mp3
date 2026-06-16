@@ -50,14 +50,14 @@ enum InstantReaderIndexMapper {
 }
 
 enum InstantReaderChromeMetrics {
-    /// Custom top bar height: 44 pt controls plus 8 pt vertical padding
-    /// on each side. Divider thickness is negligible for layout.
-    static let topBarHeight: CGFloat = 60
-    /// Conservative reader bottom chrome height: cover/control row plus
-    /// vertical padding and status/slider affordance. The actual player
-    /// can be shorter, but reserving this amount keeps text out from
-    /// under the idle/player bar and avoids page reflow when audio appears.
-    static let bottomBarHeight: CGFloat = 116
+    /// Apple Books-style chrome overlays the page instead of reserving
+    /// full bar height. Keep only a tiny breathing room so hidden chrome
+    /// leaves the page visually close to the top edge.
+    static let topBarHeight: CGFloat = 8
+    /// Apple Books-style bottom controls also overlay the page. A small
+    /// fixed inset avoids the home indicator/page footer feeling glued
+    /// to the text without creating a large empty band.
+    static let bottomBarHeight: CGFloat = 8
 
     /// `InstantReaderView` stays inside SwiftUI's normal safe-area
     /// container so the system keeps the status bar, home indicator and
@@ -333,8 +333,8 @@ struct InstantReaderView: View {
                 onLinkTap: { url in handleEpubLink(url) },
                 onJumpToPlayerPosition: jumpToPlayerPosition,
                 playerChapterLabel: divergencePlayerChapterLabel,
-                chromeTopInset: topInset,
-                chromeBottomInset: bottomInset,
+                chromeTopInset: chromeVisible ? topInset : 0,
+                chromeBottomInset: chromeVisible ? bottomInset : 0,
                 useStableBodyHeight: true
             )
         } else if !fulltext.chapters.isEmpty {
@@ -352,8 +352,8 @@ struct InstantReaderView: View {
                 onLinkTap: { url in handleEpubLink(url) },
                 onJumpToPlayerPosition: jumpToPlayerPosition,
                 playerChapterLabel: divergencePlayerChapterLabel,
-                chromeTopInset: topInset,
-                chromeBottomInset: bottomInset,
+                chromeTopInset: chromeVisible ? topInset : 0,
+                chromeBottomInset: chromeVisible ? bottomInset : 0,
                 useStableBodyHeight: true
             )
         } else {
@@ -476,15 +476,6 @@ struct InstantReaderView: View {
 
     // MARK: - Custom top bar (replaces NavigationStack's bar)
 
-    private var topBarTitle: String {
-        if let t = snapshot?.bookTitle, !t.isEmpty { return t }
-        let idx = currentChapterIndex
-        if idx >= 0, idx < fulltext.chapters.count {
-            return fulltext.chapters[idx].displayTitle
-        }
-        return "Reader"
-    }
-
     private var customTopBar: some View {
         HStack(spacing: 16) {
             if let onClose {
@@ -499,14 +490,7 @@ struct InstantReaderView: View {
                 .accessibilityLabel(L10n.string("player.close"))
             }
 
-            // Prefer the live job snapshot's book title (set by the
-            // FastAPI SSE) — falls back to the chapter's display title
-            // and finally to a generic "Reader" so the bar always has
-            // something to anchor on.
-            Text(topBarTitle)
-                .font(.headline)
-                .lineLimit(1)
-                .frame(maxWidth: .infinity, alignment: .leading)
+            Spacer(minLength: 0)
 
             Button {
                 showingSearch = true

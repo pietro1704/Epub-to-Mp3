@@ -31,4 +31,40 @@ final class EpubToMp3AudioUITests: XCTestCase {
             "The playback position slider should remain visible while audio is playing."
         )
     }
+
+    func testOpenBookCenterTapChromeAndCaptureSpacingOnDevice() throws {
+        XCUIDevice.shared.orientation = .portrait
+
+        let app = XCUIApplication()
+        app.launch()
+
+        let firstBook = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "library.bookTile.")).firstMatch
+        XCTAssertTrue(firstBook.waitForExistence(timeout: 20), "The library should expose at least one book tile.")
+        firstBook.tap()
+
+        let readerReady = app.buttons["Buscar no livro"].firstMatch
+        XCTAssertTrue(readerReady.waitForExistence(timeout: 20), "Opening a book should show the reader chrome.")
+
+        attachScreenshot(named: "reader-01-open-with-chrome")
+
+        tapScreenCenter(app: app)
+        sleep(1)
+        attachScreenshot(named: "reader-02-after-center-tap")
+
+        tapScreenCenter(app: app)
+        sleep(1)
+        attachScreenshot(named: "reader-03-after-second-center-tap")
+    }
+
+    private func tapScreenCenter(app: XCUIApplication) {
+        let coordinate = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+        coordinate.tap()
+    }
+
+    private func attachScreenshot(named name: String) {
+        let attachment = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+        attachment.name = name
+        attachment.lifetime = .keepAlways
+        add(attachment)
+    }
 }

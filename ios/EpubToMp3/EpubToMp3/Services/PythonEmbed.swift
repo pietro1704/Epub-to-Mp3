@@ -344,16 +344,11 @@ final class PythonEmbed: @unchecked Sendable {
     ///
     /// Architecture: Swift owns the network (URLSession +
     /// URLSessionWebSocketTask via EdgeTTSBridge); Python is kept in the
-    /// call signature for parity with the desktop pipeline but no longer
-    /// participates in synthesis. This bypasses the aiohttp -> _socket
-    /// dependency chain that iOS refuses to dlopen.
+    /// type name for historical parity, but this method deliberately does
+    /// not touch PythonKit or the embedded interpreter. That keeps the live
+    /// simulator smoke test and fallback synthesis path independent from
+    /// Python GIL/bootstrap state.
     func convertWithEdgeTTS(text: String, voice: String, outputDir: URL) async throws -> URL {
-        // Bootstrap is best-effort: even if Python isn't available we can
-        // still synthesize, since the bridge owns the network. We swallow
-        // bootstrap failures here so simulator runs without the vendored
-        // Python.xcframework still work for the synth smoke test.
-        do { try bootstrap() } catch { /* fall through — Python not used in this path */ }
-
         let outputURL = outputDir
             .appendingPathComponent("edge_\(UUID().uuidString).mp3")
 

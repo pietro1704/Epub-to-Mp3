@@ -186,8 +186,46 @@ final class MainReaderViewTests: XCTestCase {
                       "BookOpenView must expose an Apple Books-style close callback.")
         XCTAssertTrue(bookOpenSource.contains("onClose: onClose"),
                       "BookOpenView must forward close into the EPUB reader chrome.")
+        XCTAssertTrue(bookOpenSource.contains(".compatReaderBackButtonHidden()"),
+                      "Closing a pushed book must be controlled by the in-book X button, not by accidental navigation-edge swipes.")
         XCTAssertTrue(instantReaderSource.contains("Image(systemName: \"xmark\")"),
                       "The in-book EPUB top bar must show an X close button.")
+    }
+
+    func testPaginatedReaderRoutesTextViewTapsAndSwipesToPageTurns() throws {
+        let sources = try appViewSources()
+        let readerSource = sources.reader
+        let attributedSource = sources.attributedPage
+        let platformSource = sources.platformCompat
+
+        XCTAssertTrue(readerSource.contains("onZoneTap: { zone in"),
+                      "Paginated taps must be handled by the UITextView-backed page body, not only by a SwiftUI overlay that UITextView can bypass.")
+        XCTAssertTrue(readerSource.contains("handleZoneTap(zone, totalPages:"),
+                      "A tap on the reader body must route through ReaderView's tap-zone contract.")
+        XCTAssertTrue(readerSource.contains("case .center: onCenterTap?()"),
+                      "Center taps in paginated mode must toggle top/bottom chrome rather than turning the page and flickering.")
+        XCTAssertFalse(readerSource.contains("case .center: advancePage(totalPages: totalPages)"),
+                       "Center taps must not advance the page in paginated mode.")
+        XCTAssertTrue(readerSource.contains("onSwipe: { direction in"),
+                      "Horizontal swipes over the text body must be page-turn gestures.")
+        XCTAssertTrue(readerSource.contains("handleSwipe(direction, totalPages:"),
+                      "Swipe left/right must route to next/previous page rather than closing the book.")
+        XCTAssertTrue(attributedSource.contains("uiView.consumeAllTouches = scrollable || onZoneTap != nil || onSwipe != nil"),
+                      "The UITextView must accept non-link touches in paginated mode so its reader gestures can fire.")
+        XCTAssertTrue(attributedSource.contains("uiView.installReaderGestures()"),
+                      "The UITextView must install tap and swipe recognizers for paginated page turns.")
+        XCTAssertTrue(attributedSource.contains("uiView.onZoneTap = onZoneTap"))
+        XCTAssertTrue(attributedSource.contains("uiView.onSwipe = onSwipe"))
+        XCTAssertTrue(attributedSource.contains("uiView.bounces = scrollable"),
+                      "Paginated text pages must not rubber-band vertically when the user drags and releases.")
+        XCTAssertTrue(attributedSource.contains("uiView.alwaysBounceVertical = scrollable"),
+                      "Vertical bounce should be enabled only for true scroll mode, never for paginated pages.")
+        XCTAssertTrue(attributedSource.contains("uiView.setContentOffset(.zero, animated: false)"),
+                      "If UIKit briefly moves a non-scrollable page, updateUIView must snap it back to the fixed page origin.")
+        XCTAssertTrue(attributedSource.contains("func scrollViewDidScroll(_ scrollView: UIScrollView)"),
+                      "The UITextView delegate must prevent non-scrollable paginated pages from drifting vertically.")
+        XCTAssertTrue(platformSource.contains("func compatReaderBackButtonHidden()"))
+        XCTAssertTrue(platformSource.contains("self.navigationBarBackButtonHidden(true)"))
     }
 
     func testFullPlayerUsesSpotifyBottomSheetPresentation() throws {
@@ -263,7 +301,7 @@ final class MainReaderViewTests: XCTestCase {
 
     // MARK: - AppStorage key contract
 
-    private func appViewSources() throws -> (root: String, settings: String, fullPlayer: String, miniPlayer: String, convert: String, library: String, bookOpen: String, instantReader: String) {
+    private func appViewSources() throws -> (root: String, settings: String, fullPlayer: String, miniPlayer: String, convert: String, library: String, bookOpen: String, instantReader: String, reader: String, attributedPage: String, platformCompat: String) {
         let testFile = URL(fileURLWithPath: #filePath)
         let projectRoot = testFile
             .deletingLastPathComponent()
@@ -284,7 +322,13 @@ final class MainReaderViewTests: XCTestCase {
             bookOpen: try String(contentsOf: projectRoot
                 .appendingPathComponent("EpubToMp3/Views/BookOpenView.swift")),
             instantReader: try String(contentsOf: projectRoot
-                .appendingPathComponent("EpubToMp3/Views/InstantReaderView.swift"))
+                .appendingPathComponent("EpubToMp3/Views/InstantReaderView.swift")),
+            reader: try String(contentsOf: projectRoot
+                .appendingPathComponent("EpubToMp3/Views/ReaderView.swift")),
+            attributedPage: try String(contentsOf: projectRoot
+                .appendingPathComponent("EpubToMp3/Views/AttributedPageView.swift")),
+            platformCompat: try String(contentsOf: projectRoot
+                .appendingPathComponent("EpubToMp3/Views/PlatformCompat.swift"))
         )
     }
 

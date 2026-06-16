@@ -28,7 +28,7 @@ struct RootView: View {
     #endif
 
     var body: some View {
-        ZStack(alignment: .top) {
+        ZStack(alignment: .topTrailing) {
             if useSplit {
                 if #available(iOS 16, macOS 13, *) {
                     SplitViewRoot()
@@ -41,6 +41,7 @@ struct RootView: View {
 
             AudioEngineWarmupBadge(warmup: audioWarmup)
                 .padding(.top, 12)
+                .padding(.trailing, 12)
                 .zIndex(10)
         }
     }
@@ -173,26 +174,45 @@ struct AudioEngineWarmupBadge: View {
     var body: some View {
         Group {
             if warmup.isVisible && !hiddenByUser {
-                HStack(spacing: 10) {
+                HStack(alignment: .top, spacing: 10) {
                     ZStack {
                         Circle()
                             .stroke(Color.secondary.opacity(0.25), lineWidth: 3)
                         Circle()
                             .trim(from: 0, to: CGFloat(warmup.progress))
-                            .stroke(Color.accentColor, style: StrokeStyle(lineWidth: 3, lineCap: .round))
+                            .stroke(warmupBadgeTint, style: StrokeStyle(lineWidth: 3, lineCap: .round))
                             .rotationEffect(.degrees(-90))
+                        Text(warmup.progressLabel)
+                            .font(.system(size: 8, weight: .bold, design: .rounded))
+                            .monospacedDigit()
                     }
-                    .frame(width: 22, height: 22)
+                    .frame(width: 32, height: 32)
                     .accessibilityHidden(true)
 
-                    Text(warmup.message.isEmpty ? L10n.string("audioWarmup.starting") : warmup.message)
-                        .font(.caption.weight(.medium))
-                        .foregroundStyle(.primary)
+                    VStack(alignment: .leading, spacing: 3) {
+                        HStack(spacing: 6) {
+                            Text(warmup.stateLabel)
+                                .font(.caption2.weight(.semibold))
+                                .foregroundStyle(warmupBadgeTint)
+                            Text(warmup.progressLabel)
+                                .font(.caption2.monospacedDigit().weight(.semibold))
+                                .foregroundStyle(.secondary)
+                        }
+                        Text(warmup.message.isEmpty ? L10n.string("audioWarmup.starting") : warmup.message)
+                            .font(.caption.weight(.medium))
+                            .foregroundStyle(.primary)
+                            .lineLimit(2)
+                    }
                 }
                 .padding(.horizontal, 14)
                 .padding(.vertical, 10)
-                .background(.regularMaterial, in: Capsule())
-                .shadow(radius: 8, y: 4)
+                .frame(maxWidth: 280, alignment: .leading)
+                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        .stroke(warmupBadgeTint.opacity(0.25), lineWidth: 1)
+                )
+                .shadow(color: Color.black.opacity(0.18), radius: 12, y: 6)
                 .onTapGesture { showingDetails = true }
                 .gesture(
                     DragGesture(minimumDistance: 12)
@@ -216,6 +236,11 @@ struct AudioEngineWarmupBadge: View {
         .compatOnChange(of: warmup.state) { state in
             if state != .warming { hiddenByUser = false }
         }
+    }
+
+    private var warmupBadgeTint: Color {
+        if case .failed = warmup.state { return .red }
+        return .accentColor
     }
 }
 

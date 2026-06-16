@@ -29,7 +29,7 @@ struct PageCurlContainer: UIViewControllerRepresentable {
     let onAdvanceChapter: (() -> Bool)?
     let onPreviousChapter: (() -> Bool)?
     let onCenterTap: (() -> Void)?
-    let chromeVisible: Bool
+    var chromeVisible: Bool = true
     /// Fires the moment a *user-initiated* page change lands — either
     /// `didFinishAnimating(completed: true)` from a curl gesture or a
     /// tap on the left/right third zone. The host clears `isFollowing`
@@ -57,11 +57,6 @@ struct PageCurlContainer: UIViewControllerRepresentable {
         // Set initial page
         let initial = context.coordinator.hostingController(for: clampedPage)
         pvc.setViewControllers([initial], direction: .forward, animated: false)
-
-        // Add center tap gesture for toggling chrome
-        let tap = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handleCenterTap(_:)))
-        tap.delegate = context.coordinator
-        pvc.view.addGestureRecognizer(tap)
 
         return pvc
     }
@@ -224,45 +219,6 @@ struct PageCurlContainer: UIViewControllerRepresentable {
             willTransitionTo pendingViewControllers: [UIViewController]
         ) {
             // No-op — we handle transitions in didFinishAnimating
-        }
-
-        // MARK: Center tap
-
-        @objc func handleCenterTap(_ gesture: UITapGestureRecognizer) {
-            if parent.chromeVisible {
-                parent.onCenterTap?()
-                return
-            }
-
-            guard let view = gesture.view else { return }
-            let location = gesture.location(in: view)
-            let width = view.bounds.width
-            let thirdWidth = width / 3.0
-
-            if location.x < thirdWidth {
-                // Left third — previous page (user-initiated, kill follow)
-                let prev = parent.currentPage - 1
-                if prev >= 0 {
-                    parent.onUserPageChange?()
-                    parent.currentPage = prev
-                } else {
-                    parent.onUserPageChange?()
-                    _ = parent.onPreviousChapter?()
-                }
-            } else if location.x > thirdWidth * 2 {
-                // Right third — next page (user-initiated, kill follow)
-                let next = parent.currentPage + 1
-                if next < parent.pages.count {
-                    parent.onUserPageChange?()
-                    parent.currentPage = next
-                } else {
-                    parent.onUserPageChange?()
-                    _ = parent.onAdvanceChapter?()
-                }
-            } else {
-                // Center third — toggle chrome only; not a page change.
-                parent.onCenterTap?()
-            }
         }
 
         // MARK: UIGestureRecognizerDelegate

@@ -41,8 +41,8 @@ struct ReaderView: View {
     /// Fixed vertical space reserved for the host's top chrome (nav bar,
     /// custom top bar). Pagination uses a body height that already excludes
     /// this amount, so the host's chrome — rendered as an overlay — sits
-    /// above the margin without covering any text. Hiding the chrome leaves
-    /// the margin empty; no text reflows. Apple Books uses the same trick.
+    /// above the margin without covering any text. Hosts may pass 0 while
+    /// chrome is hidden so the page can reclaim that space.
     /// Default 0 for legacy call sites that don't participate in this protocol.
     var chromeTopInset: CGFloat = 0
     /// Fixed vertical space reserved for the host's bottom chrome (player
@@ -110,10 +110,9 @@ struct ReaderView: View {
     @State private var textOffsetAtCurrentPage: Int = 0
 
     // Apple Books pattern: page height is FROZEN once, then held constant
-    // regardless of chrome toggle or tab-bar visibility changes. The host
-    // reserves `chromeTopInset` + `chromeBottomInset` as fixed margins;
-    // those margins are always present whether chrome is visible or not.
-    // Hiding the chrome leaves the margins empty — no text reflows.
+    // across tab-bar visibility changes. The host may vary
+    // `chromeTopInset` + `chromeBottomInset` with chrome visibility so a
+    // hidden chrome state does not leave large empty bands.
     //
     // `stableBodyHeight` is seeded on first appear and re-seeded only when
     // the container *width* changes (= rotation). Height-only changes
@@ -191,6 +190,8 @@ struct ReaderView: View {
     @State private var renderVersion: Int = 0
 
     private enum PageDirection { case forward, backward }
+    private let pageVerticalPadding: CGFloat = 12
+    private var hiddenChromeTopCompaction: CGFloat { chromeVisible ? 0 : 72 }
 
     /// Per-chapter HTML render cache. Re-populated when `chapter.id`
     /// changes or when any settings field consumed by the renderer
@@ -550,8 +551,8 @@ struct ReaderView: View {
             let effectiveLineSpacing: Double = debouncedLineSpacing > 0 ? debouncedLineSpacing : settings.readerLineSpacing
             let effectiveColumnWidth: CGFloat = debouncedColumnWidth > 0 ? CGFloat(debouncedColumnWidth) : settings.readerColumnWidth
 
-            // Body budget. Fixed-margin: frozen height minus chrome insets
-            // — invariant to chrome toggle / tab-bar hide-show. Live-height:
+            // Body budget. Fixed-margin: frozen height minus the currently
+            // visible chrome insets. Live-height:
             // current container height minus the 76 pt footer/margin budget.
             // Footer ("n / total") reserves a fixed strip at the bottom
             // of the ZStack. The paginator must size each page slice to
@@ -562,22 +563,20 @@ struct ReaderView: View {
             // 0 and the paginator reclaims the full body height.
             let footerStripHeight: CGFloat = settings.readerShowPageNumbers ? 30 : 0
             // `pageView` wraps every paginated page in
-            // `.padding(.vertical, 24)` (48 pt total) for visual
-            // breathing room around the text rectangle. Without
-            // discounting it from `textAreaHeight`, the paginator
+            // `.padding(.vertical, pageVerticalPadding)` (24 pt total)
+            // for Apple Books-style breathing room around the text rectangle.
+            // Without discounting it from `textAreaHeight`, the paginator
             // sized slices for the FULL body corridor → TextKit then
-            // drew the slice into the corridor MINUS 48 pt → the last
+            // drew the slice into the corridor MINUS that padding → the last
             // ~1 line of text bled past the visible region (visible
             // as a half-cut "Clara" against the footer pill).
-            let pagePaddingV: CGFloat = 48
+            let pagePaddingV: CGFloat = pageVerticalPadding * 2
             let textAreaHeight: CGFloat = {
                 if usesFixedMargin {
-                    // Apple Books invariant: text NEVER reflows on chrome
-                    // toggle. Chrome is a true overlay — the body corridor
-                    // is sized once against the FROZEN `stableBodyHeight`
-                    // minus the constant chrome insets, so hiding chrome
-                    // exposes empty bands (matching the page background)
-                    // instead of repaginating.
+                    // Chrome is a true overlay when visible, but hidden
+                    // chrome must not leave large empty bands. Keep the base
+                    // body height frozen while subtracting only the current
+                    // visible chrome insets.
                     let bodyH = stableBodyHeight > 0 ? stableBodyHeight : geo.size.height
                     return max(120, bodyH - chromeTopInset - chromeBottomInset - footerStripHeight - pagePaddingV)
                 }
@@ -599,6 +598,8 @@ struct ReaderView: View {
                         .frame(maxWidth: .infinity, alignment: .center)
                 } else {
                     paginatedPageContent(pages: pages, containerSize: geo.size)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                        .offset(y: -hiddenChromeTopCompaction)
 
                     if settings.readerShowPageNumbers {
                         let pageIndex = max(0, min(pages.count - 1, currentPage))
@@ -608,10 +609,9 @@ struct ReaderView: View {
                     }
                 }
             }
-            // Shift the text area downward to sit below the top chrome
-            // margin, and inset the bottom to stay above the bottom
-            // chrome margin. This positions text inside the
-            // chrome-free corridor regardless of whether chrome is shown.
+            // Shift the text area downward only for currently visible top
+            // chrome, and inset the bottom only for currently visible bottom
+            // chrome.
             .padding(.top, chromeTopInset)
             .padding(.bottom, chromeBottomInset)
             .compatFocusable()
@@ -990,7 +990,7 @@ struct ReaderView: View {
         let columnW = min(settings.readerColumnWidth, containerSize.width - 2 * margin)
         // textOriginY = top padding only — chapterTitleHeader was dropped
         // (EPUB's own heading is the first content of page 0 now).
-        let textOriginY: CGFloat = 24
+        let textOriginY: CGFloat = pageVerticalPadding
         let linkHits = pageLinkHits(pages: pages, pageIndex: pageIndex, columnWidth: columnW)
         return pageView(pages: pages, pageIndex: pageIndex, containerSize: containerSize)
             .overlay(tapZones(
@@ -1015,7 +1015,7 @@ struct ReaderView: View {
         let totalPages = pages.count
         let margin = effectiveReaderMargin(for: containerSize)
         let columnW = min(settings.readerColumnWidth, containerSize.width - 2 * margin)
-        let textOriginY: CGFloat = 24
+        let textOriginY: CGFloat = pageVerticalPadding
         let linkHits = pageLinkHits(pages: pages, pageIndex: pageIndex, columnWidth: columnW)
         return pageView(pages: pages, pageIndex: pageIndex, containerSize: containerSize)
             .overlay(tapZones(
@@ -1053,11 +1053,6 @@ struct ReaderView: View {
     /// reader's existing `advancePage` / `retreatPage` / `onCenterTap`
     /// vocabulary.
     private func handleZoneTap(_ zone: ReaderTapZone, totalPages: Int) {
-        if chromeVisible {
-            onCenterTap?()
-            return
-        }
-
         switch zone {
         case .left:   retreatPage()
         case .center: onCenterTap?()
@@ -1092,7 +1087,7 @@ struct ReaderView: View {
             Spacer(minLength: 0)
         }
         .padding(.horizontal, margin)
-        .padding(.vertical, 24)
+        .padding(.vertical, pageVerticalPadding)
         .frame(maxWidth: max(200, effectiveColumnWidth + 2 * margin), alignment: .leading)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
         .coordinateSpace(name: "readerPage")
@@ -1111,7 +1106,13 @@ struct ReaderView: View {
         AttributedPageView(
             attributed: slice,
             width: width,
-            onLinkTap: onLinkTap
+            onLinkTap: onLinkTap,
+            onZoneTap: { zone in
+                handleZoneTap(zone, totalPages: max(1, paginationCache.pages.count))
+            },
+            onSwipe: { direction in
+                handleSwipe(direction, totalPages: max(1, paginationCache.pages.count))
+            }
         )
         .frame(width: width, alignment: .topLeading)
         .frame(maxHeight: .infinity, alignment: .topLeading)
@@ -1153,9 +1154,9 @@ struct ReaderView: View {
                 }
                 .accessibilityLabel(L10n.string("reader.previousPage"))
                 tapZone(linkHits: linkHits, originX: textOriginX, originY: textOriginY) {
-                    onCenterTap?()
+                    advancePage(totalPages: totalPages)
                 }
-                .accessibilityLabel(L10n.string("reader.toggleControls"))
+                .accessibilityLabel(L10n.string("reader.nextPage"))
                 tapZone(linkHits: linkHits, originX: textOriginX, originY: textOriginY) {
                     advancePage(totalPages: totalPages)
                 }
@@ -1168,7 +1169,7 @@ struct ReaderView: View {
                     .onTapGesture { retreatPage() }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 Color.clear.contentShape(Rectangle())
-                    .onTapGesture { onCenterTap?() }
+                    .onTapGesture { advancePage(totalPages: totalPages) }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 Color.clear.contentShape(Rectangle())
                     .onTapGesture { advancePage(totalPages: totalPages) }
