@@ -92,7 +92,13 @@ private final class FixedWidthTextView: UITextView, UIGestureRecognizerDelegate 
         return CGSize(width: pinnedWidth, height: ceil(height))
     }
 
-    /// Add the tap + swipe recognizers exactly once.
+    /// Add the tap recognizer exactly once.
+    /// Swipe gestures are intentionally NOT installed here — the SwiftUI
+    /// DragGesture in slidePageContent/noAnimationPageContent owns horizontal
+    /// swipe-to-turn. Installing UISwipeGestureRecognizer here would fire
+    /// onSwipe the moment the recognizer commits direction (before the finger
+    /// lifts), racing the DragGesture and causing a double page-turn + the
+    /// "flicker on touch" the user sees when the page jumps early.
     func installReaderGestures() {
         guard gestureRecognizers?.contains(where: { $0.name == "reader.tap" }) != true else { return }
         let tap = UITapGestureRecognizer(target: self, action: #selector(handleReaderTap(_:)))
@@ -100,18 +106,6 @@ private final class FixedWidthTextView: UITextView, UIGestureRecognizerDelegate 
         tap.cancelsTouchesInView = false
         tap.delegate = self
         addGestureRecognizer(tap)
-
-        for (selector, direction): (Selector, UISwipeGestureRecognizer.Direction) in [
-            (#selector(handleReaderSwipeLeft(_:)), .left),
-            (#selector(handleReaderSwipeRight(_:)), .right),
-        ] {
-            let swipe = UISwipeGestureRecognizer(target: self, action: selector)
-            swipe.direction = direction
-            swipe.name = "reader.swipe.\(direction == .left ? "left" : "right")"
-            swipe.cancelsTouchesInView = false
-            swipe.delegate = self
-            addGestureRecognizer(swipe)
-        }
     }
 
     @objc func handleReaderTap(_ tap: UITapGestureRecognizer) {
@@ -120,8 +114,6 @@ private final class FixedWidthTextView: UITextView, UIGestureRecognizerDelegate 
         let zone = classifyZone(x: point.x, in: bounds.width)
         onZoneTap?(zone)
     }
-    @objc func handleReaderSwipeLeft(_ swipe: UISwipeGestureRecognizer) { onSwipe?(.left) }
-    @objc func handleReaderSwipeRight(_ swipe: UISwipeGestureRecognizer) { onSwipe?(.right) }
 
     private func classifyZone(x: CGFloat, in width: CGFloat) -> ReaderTapZone {
         guard width > 0 else { return .center }

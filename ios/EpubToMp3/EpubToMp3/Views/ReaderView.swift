@@ -1142,10 +1142,14 @@ struct ReaderView: View {
             onLinkTap: onLinkTap,
             onZoneTap: enableReaderGestures ? { zone in
                 handleZoneTap(zone, totalPages: max(1, paginationCache.pages.count))
-            } : nil,
-            onSwipe: enableReaderGestures ? { direction in
-                handleSwipe(direction, totalPages: max(1, paginationCache.pages.count))
             } : nil
+            // onSwipe intentionally omitted: the UISwipeGestureRecognizer
+            // inside AttributedPageView was removed because it fires before
+            // the finger lifts (causing an early page-turn flash) and races
+            // the SwiftUI DragGesture in slidePageContent, turning the page
+            // twice. Horizontal swipe-to-turn is handled exclusively by the
+            // DragGesture(.onEnded) overlay in slidePageContent /
+            // noAnimationPageContent.
         )
         .frame(width: width, alignment: .topLeading)
         .frame(maxHeight: .infinity, alignment: .topLeading)
