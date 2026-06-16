@@ -133,6 +133,55 @@ final class ReaderChapterAdvanceTests: XCTestCase {
         )
     }
 
+    func testIsPageTurningGuardPreventsRapidDoubleTurn() throws {
+        // Regression: tapping rapidly during a slide animation fired a second
+        // page turn without animation (because advancePage had no guard).
+        // isPageTurning is set true at animation start, false after 0.25s.
+        // A second call while true must be dropped entirely.
+        let readerSource = try readerSources().reader
+        XCTAssertTrue(
+            readerSource.contains("@State private var isPageTurning: Bool = false"),
+            "ReaderView must declare isPageTurning to lock out rapid-fire taps during animation."
+        )
+        XCTAssertTrue(
+            readerSource.contains("guard !isPageTurning else { return }"),
+            "advancePage and retreatPage must guard against firing during an in-flight animation."
+        )
+        XCTAssertTrue(
+            readerSource.contains("isPageTurning = true"),
+            "The guard flag must be set at the start of a slide animation."
+        )
+        XCTAssertTrue(
+            readerSource.contains("isPageTurning = false"),
+            "The guard flag must be cleared after the animation completes."
+        )
+
+        // Model: simulate rapid tap — second call while turning must be dropped.
+        struct PageModel {
+            var currentPage = 0
+            var isPageTurning = false
+            let pageCount: Int
+
+            mutating func advancePage() {
+                guard !isPageTurning else { return }
+                if currentPage + 1 < pageCount {
+                    isPageTurning = true
+                    currentPage += 1
+                    // animation completes asynchronously; not simulated here
+                }
+            }
+        }
+        var m = PageModel(pageCount: 5)
+        m.advancePage()                    // first tap — fires, isPageTurning = true
+        XCTAssertEqual(m.currentPage, 1)
+        XCTAssertTrue(m.isPageTurning)
+        m.advancePage()                    // rapid second tap — must be dropped
+        XCTAssertEqual(m.currentPage, 1, "Second tap during animation must be ignored")
+        m.isPageTurning = false            // animation ends
+        m.advancePage()                    // now allowed
+        XCTAssertEqual(m.currentPage, 2, "Tap after animation ends must fire normally")
+    }
+
     func testSingleTapProducesExactlyOnePageAdvance() throws {
         // Model test: simulate a paginated reader with 3 pages and verify
         // that calling advancePage exactly once moves exactly one page.

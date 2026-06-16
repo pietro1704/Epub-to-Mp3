@@ -97,6 +97,10 @@ struct ReaderView: View {
     @State private var userIsScrolling: Bool = false
     @State private var lastAutoScrollAt: Date = .distantPast
     @State private var currentPage: Int = 0
+    /// True while a slide animation is in flight. Guards advancePage/retreatPage
+    /// so a rapid second tap cannot fire a no-animation turn on top of the
+    /// in-progress animation (the "flips twice, second one without animation" bug).
+    @State private var isPageTurning: Bool = false
     /// Tracks direction of the last page turn for asymmetric transition.
     @State private var pageDirection: PageDirection = .forward
     @FocusState private var paginatedFocus: Bool
@@ -323,6 +327,7 @@ struct ReaderView: View {
         .modifier(ReaderColorSchemeModifier(theme: settings.readerTheme))
         .compatOnChange(of: chapter.id) { _ in
             currentPage = 0
+            isPageTurning = false  // clear any in-flight animation lock on chapter swap
             // Nil-out the previous chapter's render so the empty-state
             // branch shows until `task` populates the new chapter —
             // avoids a one-frame flash of stale content on chapter swap.
@@ -1275,13 +1280,18 @@ struct ReaderView: View {
     /// chapter actually changes, the `onChange(of: chapter.id)` modifier
     /// resets `currentPage` to 0.
     private func advancePage(totalPages: Int) {
+        guard !isPageTurning else { return }
         // Manual navigation → stop auto-following the audio.
         isFollowing = false
         pageDirection = .forward
         if currentPage + 1 < totalPages {
             if settings.pageTurnStyle == .slide {
+                isPageTurning = true
                 withAnimation(.easeInOut(duration: 0.25)) {
                     currentPage += 1
+                }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+                    isPageTurning = false
                 }
             } else {
                 currentPage += 1
@@ -1292,12 +1302,17 @@ struct ReaderView: View {
     }
 
     private func retreatPage() {
+        guard !isPageTurning else { return }
         isFollowing = false
         pageDirection = .backward
         if currentPage > 0 {
             if settings.pageTurnStyle == .slide {
+                isPageTurning = true
                 withAnimation(.easeInOut(duration: 0.25)) {
                     currentPage -= 1
+                }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+                    isPageTurning = false
                 }
             } else {
                 currentPage -= 1
