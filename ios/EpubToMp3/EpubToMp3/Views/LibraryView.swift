@@ -114,18 +114,22 @@ struct LibraryView: View {
                         tagFilterBar
                         LazyVGrid(columns: grid, spacing: 20) {
                             ForEach(sorted) { book in
-                                BookTile(book: book) {
-                                    MainReaderView.setCurrentlyReading(bookID: book.id)
-                                    if let onOpenBook {
-                                        onOpenBook()
-                                    } else {
-                                        openingBook = book
-                                    }
-                                }
-                                .simultaneousGesture(
-                                    LongPressGesture(minimumDuration: 0.45)
-                                        .onEnded { _ in bookPendingRemoval = book }
-                                )
+                                BookTile(book: book)
+                                    .gesture(
+                                        ExclusiveGesture(
+                                            LongPressGesture(minimumDuration: 0.45)
+                                                .onEnded { _ in bookPendingRemoval = book },
+                                            TapGesture()
+                                                .onEnded {
+                                                    MainReaderView.setCurrentlyReading(bookID: book.id)
+                                                    if let onOpenBook {
+                                                        onOpenBook()
+                                                    } else {
+                                                        openingBook = book
+                                                    }
+                                                }
+                                        )
+                                    )
                             }
                         }
                     }
@@ -343,45 +347,43 @@ private struct LibraryChipStyle: ViewModifier {
 /// in the corner. Big tap target.
 struct BookTile: View {
     let book: BookEntity
-    let onTap: () -> Void
 
     var body: some View {
-        Button(action: onTap) {
-            VStack(alignment: .leading, spacing: 8) {
-                ZStack(alignment: .topTrailing) {
-                    cover
-                        .aspectRatio(2.0/3.0, contentMode: .fit)
-                        .frame(maxWidth: .infinity)
-                        .background(.tint.opacity(0.08))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 6)
-                                .stroke(.tint.opacity(0.18), lineWidth: 0.5)
-                        )
-                        .clipShape(RoundedRectangle(cornerRadius: 6))
-                        .accessibilityHidden(true)
-                    statusBadge
-                        .padding(8)
-                }
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(book.resolvedTitle)
-                        .font(.headline)
-                        .lineLimit(2)
-                        .multilineTextAlignment(.leading)
-                    if let author = book.author, !author.isEmpty {
-                        Text(author)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            // Allow 2 lines at large Dynamic Type sizes
-                            // so author name is not silently truncated.
-                            .lineLimit(2)
-                    }
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
+        VStack(alignment: .leading, spacing: 8) {
+            ZStack(alignment: .topTrailing) {
+                cover
+                    .aspectRatio(2.0/3.0, contentMode: .fit)
+                    .frame(maxWidth: .infinity)
+                    .background(.tint.opacity(0.08))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 6)
+                            .stroke(.tint.opacity(0.18), lineWidth: 0.5)
+                    )
+                    .clipShape(RoundedRectangle(cornerRadius: 6))
+                    .accessibilityHidden(true)
+                statusBadge
+                    .padding(8)
             }
+            VStack(alignment: .leading, spacing: 2) {
+                Text(book.resolvedTitle)
+                    .font(.headline)
+                    .lineLimit(2)
+                    .multilineTextAlignment(.leading)
+                if let author = book.author, !author.isEmpty {
+                    Text(author)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        // Allow 2 lines at large Dynamic Type sizes
+                        // so author name is not silently truncated.
+                        .lineLimit(2)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .buttonStyle(.plain)
+        .contentShape(Rectangle())
         .accessibilityLabel("\(book.resolvedTitle), \(book.author ?? "")")
         .accessibilityIdentifier("library.bookTile.\(book.id)")
+        .accessibilityAddTraits(.isButton)
     }
 
     @ViewBuilder
