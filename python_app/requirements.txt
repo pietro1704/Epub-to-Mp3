@@ -26,7 +26,7 @@ static-ffmpeg
 mutagen>=1.48.0
 
 # Web server
-fastapi!=0.136.3,>=0.137.2
+fastapi!=0.136.3,>=0.138.0
 uvicorn[standard]>=0.49.0
 python-multipart>=0.0.32
 
