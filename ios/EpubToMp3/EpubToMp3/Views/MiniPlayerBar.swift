@@ -226,9 +226,10 @@ struct MiniPlayerBar: View {
                     } label: {
                         Image(systemName: "ellipsis")
                             .font(.system(size: 18))
-                            .frame(minWidth: 44, minHeight: 44)
+                            .frame(width: 44, height: 44)
                             .contentShape(Rectangle())
                     }
+                    .buttonStyle(.plain)
                     .accessibilityLabel(L10n.string("player.more"))
                     .accessibilityIdentifier("miniPlayer.more")
                 }

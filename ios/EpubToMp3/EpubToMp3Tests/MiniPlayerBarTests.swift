@@ -246,5 +246,38 @@ final class MiniPlayerBarTests: XCTestCase {
             lastJobId: nil
         )
     }
+
+    // MARK: - Regression: "..." button must not open player
+
+    func testEllipsisButtonHasButtonStylePlain() throws {
+        let source = try String(
+            contentsOf: URL(fileURLWithPath: #filePath)
+                .deletingLastPathComponent()
+                .deletingLastPathComponent()
+                .appendingPathComponent("EpubToMp3/Views/MiniPlayerBar.swift")
+        )
+        // Verify the ellipsis Menu has .buttonStyle(.plain) so taps on it
+        // are fully consumed by the Menu and do not leak to the bar's expand action.
+        let ellipsisBlock = source.components(separatedBy: "ellipsis\")").last ?? ""
+        XCTAssertTrue(
+            ellipsisBlock.contains(".buttonStyle(.plain)"),
+            "The '...' Menu must have .buttonStyle(.plain) to prevent tap leakage to the expand action."
+        )
+    }
+
+    func testEllipsisMenuDoesNotHaveSimultaneousExpandGesture() throws {
+        let source = try String(
+            contentsOf: URL(fileURLWithPath: #filePath)
+                .deletingLastPathComponent()
+                .deletingLastPathComponent()
+                .appendingPathComponent("EpubToMp3/Views/MiniPlayerBar.swift")
+        )
+        // The bar expand gesture is a DragGesture — taps must not simultaneously
+        // trigger the expand action when interacting with the "..." Menu.
+        XCTAssertFalse(
+            source.contains(".simultaneousGesture") && source.contains("ellipsis"),
+            "The '...' Menu must not be wrapped in simultaneousGesture that would also fire the expand action."
+        )
+    }
 }
 #endif
