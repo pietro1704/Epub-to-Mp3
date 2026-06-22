@@ -190,6 +190,12 @@ final class ReaderChromeAutoHideTests: XCTestCase {
                       "When chrome is hidden, the reader must not keep an empty top chrome band.")
         XCTAssertTrue(instantReader.contains("chromeBottomInset: chromeVisible ? bottomInset : 0"),
                       "When chrome is hidden, the reader must not keep an empty bottom chrome band.")
+        XCTAssertFalse(instantReader.contains("@State private var showingFullPlayer = false"),
+                       "InstantReaderView must not own a private full-player presentation flag once PlayerPresentation is the global coordinator.")
+        XCTAssertFalse(instantReader.contains(".compatFullScreenCover(isPresented: $showingFullPlayer)"),
+                       "InstantReaderView must not mount its own full-screen player cover; the root container owns full-player presentation.")
+        XCTAssertTrue(instantReader.contains("playerPresentation.showFullPlayer()"),
+                      "InstantReader transport rows must open the full player through the shared PlayerPresentation coordinator.")
         XCTAssertFalse(reader.contains("Color.red.opacity"),
                        "Debug red padding bands must never ship in the reader; if red appears, the visible spacing is too large.")
         XCTAssertFalse(reader.contains(".padding(.vertical, 24)"),

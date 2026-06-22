@@ -33,16 +33,13 @@ final class MainReaderViewTests: XCTestCase {
         XCTAssertNil(defaults.string(forKey: MainReaderView.currentlyReadingBookIDKey))
     }
 
-    func testMainReaderViewConstructsWithCallbacks() {
+    func testMainReaderViewConstructsWithBrowseCallback() {
         var browseLibraryFired = false
-        var openPlayerFired = false
         _ = MainReaderView(
-            onOpenPlayer: { openPlayerFired = true },
             onBrowseLibrary: { browseLibraryFired = true }
         )
-        // Closures bind but are not called at init time.
+        // Closure binds but is not called at init time.
         XCTAssertFalse(browseLibraryFired)
-        XCTAssertFalse(openPlayerFired)
     }
 
     // MARK: - Persistence round-trip
@@ -190,6 +187,58 @@ final class MainReaderViewTests: XCTestCase {
                       "Closing a pushed book must be controlled by the in-book X button, not by accidental navigation-edge swipes.")
         XCTAssertTrue(instantReaderSource.contains("Image(systemName: \"xmark\")"),
                       "The in-book EPUB top bar must show an X close button.")
+    }
+
+    func testMainReaderShowsListenToolbarButtonOnBookSurface() throws {
+        let source = try String(
+            contentsOf: URL(fileURLWithPath: #filePath)
+                .deletingLastPathComponent()
+                .deletingLastPathComponent()
+                .appendingPathComponent("EpubToMp3/Views/MainReaderView.swift")
+        )
+
+        XCTAssertTrue(source.contains(".toolbar {"),
+                      "MainReaderView must restore a toolbar on the populated book surface.")
+        XCTAssertTrue(source.contains("ToolbarItem(placement: .compatPrimaryTrailing)"),
+                      "The listen affordance must live in the trailing reader toolbar slot.")
+        XCTAssertTrue(source.contains("listenButton"),
+                      "The populated reader surface must mount the shared listen button helper.")
+    }
+
+    func testMainReaderNoLongerOwnsFallbackPlayerSheet() throws {
+        let source = try String(
+            contentsOf: URL(fileURLWithPath: #filePath)
+                .deletingLastPathComponent()
+                .deletingLastPathComponent()
+                .appendingPathComponent("EpubToMp3/Views/MainReaderView.swift")
+        )
+
+        XCTAssertFalse(source.contains("showingPlayerOverlay"),
+                       "MainReaderView must not keep its legacy local player-sheet state.")
+        XCTAssertFalse(source.contains(".sheet(isPresented:"),
+                       "MainReaderView must delegate player presentation to the root container instead of mounting its own sheet.")
+        XCTAssertFalse(source.contains("makeStub(for:"),
+                       "MainReaderView must not synthesize a private JobSnapshot stub once root presentation owns the flow.")
+        XCTAssertFalse(source.contains("mainReader.noAudioYet"),
+                       "The local no-audio fallback sheet must be removed with the dead overlay path.")
+        XCTAssertFalse(source.contains("onOpenPlayer?()"),
+                       "MainReaderView must no longer use a callback-based player presenter hook.")
+    }
+
+    func testMainReaderUsesPlayerPresentationEnvironmentObject() throws {
+        let source = try String(
+            contentsOf: URL(fileURLWithPath: #filePath)
+                .deletingLastPathComponent()
+                .deletingLastPathComponent()
+                .appendingPathComponent("EpubToMp3/Views/MainReaderView.swift")
+        )
+
+        XCTAssertTrue(source.contains("@EnvironmentObject private var playerPresentation: PlayerPresentation"),
+                      "MainReaderView must read the shared player presentation coordinator from the environment.")
+        XCTAssertTrue(source.contains("playerPresentation.showFullPlayer()"),
+                      "The listen button must open the player through PlayerPresentation.")
+        XCTAssertFalse(source.contains("var onOpenPlayer: (() -> Void)?"),
+                       "MainReaderView must not expose the old onOpenPlayer callback once presentation is environment-driven.")
     }
 
     func testPaginatedReaderRoutesTextViewTapsAndSwipesToPageTurns() throws {

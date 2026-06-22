@@ -14,15 +14,16 @@ import SwiftUI
 ///
 /// "Listen" affordance:
 ///   - A toolbar button (headphones icon) sets `currentlyPlayingBookID` to
-///     the book currently being read, then calls `onOpenPlayer` so the host
-///     root navigates to Now Playing. This keeps the reading→listening flow
-///     one tap and avoids duplicating the audio bootstrap inside this view.
+///     the book currently being read, then opens the shared full-player
+///     flow via `PlayerPresentation`. `MainReaderView` no longer owns a
+///     fallback local sheet; presentation lives in the root container.
 struct MainReaderView: View {
 
     // MARK: - Dependencies
 
     @EnvironmentObject private var library: LibraryStore
     @EnvironmentObject private var settings: AppSettings
+    @EnvironmentObject private var playerPresentation: PlayerPresentation
 
     // MARK: - AppStorage keys
 
@@ -32,19 +33,8 @@ struct MainReaderView: View {
     @AppStorage(MainReaderView.currentlyReadingBookIDKey)
     private var currentlyReadingBookID: String?
 
-    // MARK: - Router callbacks
-
-    /// Invoked when the user taps "Listen" so the host root (TabRoot /
-    /// SplitViewRoot) can navigate to the Now Playing destination.
-    /// Optional — omit in previews / tests.
-    var onOpenPlayer: (() -> Void)?
-
     /// Invoked when the user taps "Browse Library".
     var onBrowseLibrary: (() -> Void)?
-
-    // MARK: - Private state
-
-    @State private var showingPlayerOverlay: Bool = false
 
     // MARK: - Derived
 
@@ -77,27 +67,6 @@ struct MainReaderView: View {
                 currentlyReadingBookID = nil
             }
         }
-        .background {
-            Color.clear.allowsHitTesting(false)
-                .sheet(isPresented: $showingPlayerOverlay) {
-                    if let book = currentBook,
-                       let jobId = book.lastJobId {
-                        let stub = makeStub(for: book, jobId: jobId)
-                        PlayerReaderView(
-                            snapshot: stub,
-                            backendBaseURL: settings.resolvedBaseURL
-                        )
-                        .environmentObject(settings)
-                        .environmentObject(library)
-                    } else {
-                        CompatContentUnavailableView(
-                            L10n.string("mainReader.noAudioYet"),
-                            systemImage: "headphones",
-                            description: Text(localized: "mainReader.noAudioDescription")
-                        )
-                    }
-                }
-        }
     }
 
     // MARK: - Populated reader
@@ -105,25 +74,22 @@ struct MainReaderView: View {
     @ViewBuilder
     private func populatedReader(for book: BookEntity) -> some View {
         BookOpenView(book: book)
-            // The reader has its own custom top bar (renders book
-            // title + search + AA + TOC), so we don't need
-            // navigation-title plumbing here. The "Listen" affordance
-            // was tied to the nav-bar toolbar; since we no longer use
-            // that bar, drop the listen button from this surface. The
-            // user reaches the player via the mini-player at the
-            // bottom or by tapping the cover in the library.
             .onAppear {
                 var updated = book
                 updated.lastOpenedAt = Date()
                 library.update(updated)
             }
+            .toolbar {
+                ToolbarItem(placement: .compatPrimaryTrailing) {
+                    listenButton
+                }
+            }
     }
 
     // MARK: - Toolbar "Listen" button
 
-    /// One tap opens the player. On iPhone it navigates to the Now Playing
-    /// tab (via `onOpenPlayer`). On iPad/macOS where there is no tab bar,
-    /// it presents the player as a sheet overlay.
+    /// One tap mirrors the reading book into the shared playing pointer,
+    /// then asks the global presentation coordinator to show the full player.
     @ViewBuilder
     private var listenButton: some View {
         if currentBook?.lastJobId != nil {
@@ -133,11 +99,7 @@ struct MainReaderView: View {
                 if let id = currentlyReadingBookID {
                     UserDefaults.standard.set(id, forKey: AudioPlayer.currentBookIDDefaultsKey)
                 }
-                if let cb = onOpenPlayer {
-                    cb()
-                } else {
-                    showingPlayerOverlay = true
-                }
+                playerPresentation.showFullPlayer()
             } label: {
                 Label(L10n.string("mainReader.listen"), systemImage: "headphones")
             }
@@ -171,30 +133,6 @@ struct MainReaderView: View {
         .padding(.horizontal, 24)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
-
-    // MARK: - Helpers
-
-    private func makeStub(for book: BookEntity, jobId: String) -> JobSnapshot {
-        JobSnapshot(
-            jobId: jobId,
-            state: "running",
-            bookTitle: book.resolvedTitle,
-            bookAuthor: book.author,
-            coverUrl: nil,
-            coverMimeType: nil,
-            engine: nil,
-            voice: nil,
-            language: nil,
-            progressPercent: nil,
-            chaptersTotal: nil,
-            chaptersCompleted: nil,
-            chapterProgress: nil,
-            outputs: nil,
-            logUrl: nil,
-            error: nil,
-            lastActivityAt: nil
-        )
-    }
 }
 
 // MARK: - Static helpers
@@ -226,6 +164,7 @@ extension MainReaderView {
     MainReaderView(onBrowseLibrary: {})
         .environmentObject(AppSettings())
         .environmentObject(LibraryStore.previewEmpty)
+        .environmentObject(PlayerPresentation())
 }
 
 #Preview("MainReader — populated (no audio)") {
@@ -233,9 +172,10 @@ extension MainReaderView {
     if let first = lib.books.first {
         UserDefaults.standard.set(first.id, forKey: MainReaderView.currentlyReadingBookIDKey)
     }
-    return MainReaderView(onOpenPlayer: {}, onBrowseLibrary: {})
+    return MainReaderView(onBrowseLibrary: {})
         .environmentObject(AppSettings())
         .environmentObject(lib)
+        .environmentObject(PlayerPresentation())
 }
 
 #Preview("MainReader — populated (with audio)") {
@@ -244,8 +184,9 @@ extension MainReaderView {
     if let book = lib.books.first(where: { $0.lastJobId != nil }) {
         UserDefaults.standard.set(book.id, forKey: MainReaderView.currentlyReadingBookIDKey)
     }
-    return MainReaderView(onOpenPlayer: {}, onBrowseLibrary: {})
+    return MainReaderView(onBrowseLibrary: {})
         .environmentObject(AppSettings())
         .environmentObject(lib)
+        .environmentObject(PlayerPresentation())
 }
 #endif

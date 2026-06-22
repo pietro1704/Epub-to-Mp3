@@ -136,7 +136,6 @@ struct InstantReaderView: View {
     @State private var pendingPlayAnchor: SentenceSpan?  // sentence the user tapped → "Play from here"
     @State private var showingPlayMenu = false
     @State private var showingConversionStatus = false
-    @State private var showingFullPlayer = false
     @State private var showingReaderSettings = false
     @State private var chromeVisible = true
 
@@ -206,11 +205,6 @@ struct InstantReaderView: View {
         }
         .modifier(ChromeVisibilityModifier(visible: chromeVisible))
         .readerChromeVisible(chromeVisible)
-        .compatFullScreenCover(isPresented: $showingFullPlayer) {
-            FullPlayerSheet()
-                .environmentObject(globalPlayer)
-                .environmentObject(playerPresentation)
-        }
         .sheet(isPresented: $showingReaderSettings) {
             ReaderSettingsSheet()
                 .environmentObject(settings)
@@ -612,7 +606,7 @@ struct InstantReaderView: View {
         .compatHorizontalSafeAreaPadding(20)
         .padding(.vertical, 4)
         .contentShape(Rectangle())
-        .onTapGesture { showingFullPlayer = true }
+        .onTapGesture { playerPresentation.showFullPlayer() }
     }
 
     // MARK: - Player bar
@@ -652,7 +646,7 @@ struct InstantReaderView: View {
         .compatHorizontalSafeAreaPadding(20)
         .padding(.vertical, 4)
         .contentShape(Rectangle())
-        .onTapGesture { showingFullPlayer = true }
+        .onTapGesture { playerPresentation.showFullPlayer() }
         .accessibilityIdentifier("instantReader.playerBar")
     }
 

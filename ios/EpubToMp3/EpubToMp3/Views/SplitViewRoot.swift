@@ -226,7 +226,6 @@ struct SplitViewRoot: View {
         switch navMode {
         case .reader:
             MainReaderView(
-                onOpenPlayer: { playerPresentation.showFullPlayer() },
                 onBrowseLibrary: { navMode = .library }
             )
         case .library:

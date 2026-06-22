@@ -104,6 +104,22 @@ final class NowPlayingViewTests: XCTestCase {
         XCTAssertNil(defaults.string(forKey: AudioPlayer.currentBookIDDefaultsKey))
     }
 
+    func testNowPlayingUsesJobSnapshotStubForPlayerReader() throws {
+        let source = try String(
+            contentsOf: URL(fileURLWithPath: #filePath)
+                .deletingLastPathComponent()
+                .deletingLastPathComponent()
+                .appendingPathComponent("EpubToMp3/Views/NowPlayingView.swift")
+        )
+
+        XCTAssertTrue(source.contains("private func makeSnapshot(for book: BookEntity) -> JobSnapshot?"),
+                      "NowPlayingView should centralize its PlayerReader bootstrap through one snapshot builder.")
+        XCTAssertTrue(source.contains("PlayerReaderView("),
+                      "NowPlayingView must still route the populated branch into PlayerReaderView.")
+        XCTAssertTrue(source.contains("guard let jobId = book.lastJobId else { return nil }"),
+                      "The snapshot helper must no-op for books that never finished a conversion.")
+    }
+
     // MARK: - Tab-routing contract
 
     /// `RootTab` raw values double as `TabView` selection tokens; they

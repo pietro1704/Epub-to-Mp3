@@ -47,6 +47,13 @@ settings:
     # iteration. CI lint still surfaces them; just don't fail the
     # build over them.
     SWIFT_TREAT_WARNINGS_AS_ERRORS: NO
+    # Disable asset catalog thinning for device builds. Xcode 26.3 actool
+    # unconditionally requires an iOS Simulator runtime to produce the
+    # "thinned" variant even for device-only builds, causing a build failure
+    # when the simulator runtime is not installed. Setting this to NO
+    # produces a single fat asset catalog that is valid for both device
+    # and simulator without the simulator runtime check.
+    ENABLE_ON_DEMAND_RESOURCES: NO
     GCC_TREAT_WARNINGS_AS_ERRORS: NO
     # Stricter Swift warnings worth promoting.
     SWIFT_STRICT_CONCURRENCY: minimal
