@@ -169,4 +169,26 @@ enum AudiobookCacheEviction {
             return false
         }
     }
+
+    /// Delete every downloaded audiobook folder under the audiobooks root.
+    /// Used by Settings → "Clear downloaded audio".
+    static func deleteAllAudiobooks() {
+        let root = DownloadManager.audiobooksRoot()
+        guard let items = try? FileManager.default.contentsOfDirectory(
+            at: root,
+            includingPropertiesForKeys: nil,
+            options: .skipsHiddenFiles
+        ) else { return }
+        for item in items {
+            var isDir: ObjCBool = false
+            if FileManager.default.fileExists(atPath: item.path, isDirectory: &isDir), isDir.boolValue {
+                do {
+                    try FileManager.default.removeItem(at: item)
+                    evictionLog.info("Deleted all: \(item.lastPathComponent, privacy: .public)")
+                } catch {
+                    evictionLog.error("Failed to delete \(item.lastPathComponent, privacy: .public): \(error.localizedDescription, privacy: .public)")
+                }
+            }
+        }
+    }
 }

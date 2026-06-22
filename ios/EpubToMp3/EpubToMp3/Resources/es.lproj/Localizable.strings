@@ -69,6 +69,14 @@
 "settings.recentJobsDescription" = "Historial de conversiones y progreso en tiempo real";
 "settings.telemetry" = "Telemetría";
 "settings.telemetryDescription" = "Métricas de velocidad y calidad por motor";
+"settings.clearCache" = "Borrar audio descargado";
+"settings.clearCacheDescription" = "Elimina todos los MP3 guardados localmente";
+"settings.clearCacheConfirmTitle" = "¿Borrar audio descargado?";
+"settings.clearCacheConfirmMessage" = "Todos los MP3 sin conexión serán eliminados. Se volverán a descargar al reproducir.";
+"settings.clearCacheConfirmButton" = "Eliminar todo";
+"settings.clearCacheDone" = "Audio descargado eliminado.";
+"player.clearChapterCache" = "Borrar audio descargado";
+"player.clearChapterCacheConfirm" = "¿Eliminar copia sin conexión de este audiolibro?";
 "settings.sync" = "Sincronización";
 "settings.icloudSync" = "Sincronización iCloud";
 "settings.comingSoon" = "Próximamente";

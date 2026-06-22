@@ -16,6 +16,9 @@ struct SettingsView: View {
     @EnvironmentObject private var sidecar: SidecarManager
     #endif
 
+    @State private var showClearCacheConfirm = false
+    @State private var clearCacheDone = false
+
     var body: some View {
         #if os(macOS)
         Group {
@@ -370,6 +373,37 @@ struct SettingsView: View {
                     Image(systemName: "speedometer")
                         .foregroundStyle(.orange)
                 }
+            }
+            Button(role: .destructive) {
+                showClearCacheConfirm = true
+            } label: {
+                Label {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(L10n.string("settings.clearCache"))
+                        Text(L10n.string("settings.clearCacheDescription"))
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
+                } icon: {
+                    Image(systemName: "trash")
+                        .foregroundStyle(.red)
+                }
+            }
+            .confirmationDialog(
+                L10n.string("settings.clearCacheConfirmTitle"),
+                isPresented: $showClearCacheConfirm,
+                titleVisibility: .visible
+            ) {
+                Button(L10n.string("settings.clearCacheConfirmButton"), role: .destructive) {
+                    AudiobookCacheEviction.deleteAllAudiobooks()
+                    clearCacheDone = true
+                }
+                Button(L10n.string("library.cancel"), role: .cancel) {}
+            } message: {
+                Text(L10n.string("settings.clearCacheConfirmMessage"))
+            }
+            .alert(L10n.string("settings.clearCacheDone"), isPresented: $clearCacheDone) {
+                Button(L10n.string("library.ok")) { clearCacheDone = false }
             }
         } header: {
             Text(L10n.string("settings.advanced"))

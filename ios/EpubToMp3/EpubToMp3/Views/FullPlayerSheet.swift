@@ -813,6 +813,8 @@ private struct ChapterListSheet: View {
     @ObservedObject var player: AudioPlayer
     @Environment(\.dismiss) private var dismiss
 
+    @State private var showClearCacheConfirm = false
+
     private var chapters: [JobSnapshot.Chapter] {
         player.snapshot?.chapterProgress ?? []
     }
@@ -832,6 +834,28 @@ private struct ChapterListSheet: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button(L10n.string("readerSettings.done")) { dismiss() }
+                }
+                ToolbarItem(placement: .compatPrimaryTrailing) {
+                    Button(role: .destructive) {
+                        showClearCacheConfirm = true
+                    } label: {
+                        Image(systemName: "trash")
+                    }
+                    .accessibilityLabel(L10n.string("player.clearChapterCache"))
+                    .confirmationDialog(
+                        L10n.string("player.clearChapterCache"),
+                        isPresented: $showClearCacheConfirm,
+                        titleVisibility: .visible
+                    ) {
+                        Button(L10n.string("settings.clearCacheConfirmButton"), role: .destructive) {
+                            if let jobId = player.snapshot?.jobId {
+                                AudiobookCacheEviction.deleteAudiobook(jobId: jobId)
+                            }
+                        }
+                        Button(L10n.string("library.cancel"), role: .cancel) {}
+                    } message: {
+                        Text(L10n.string("player.clearChapterCacheConfirm"))
+                    }
                 }
             }
         }
