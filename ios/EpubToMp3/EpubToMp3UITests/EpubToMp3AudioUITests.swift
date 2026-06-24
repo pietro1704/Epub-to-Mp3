@@ -89,6 +89,115 @@ final class EpubToMp3AudioUITests: XCTestCase {
         if cancelButton.exists { cancelButton.tap() }
     }
 
+    // MARK: - Page navigation (tap and swipe)
+
+    /// Tapping the right third of the reader advances one page; tapping the
+    /// left third retreats one page. The page indicator ("X / Y") is used
+    /// as ground truth. Skipped when a book with ≥2 pages is not available.
+    func testTapNavigationAdvancesAndRetreatsPage() throws {
+        XCUIDevice.shared.orientation = .portrait
+        let app = XCUIApplication()
+        app.launch()
+
+        let firstBook = app.buttons.matching(
+            NSPredicate(format: "identifier BEGINSWITH %@", "library.bookTile.")
+        ).firstMatch
+        guard firstBook.waitForExistence(timeout: 20) else {
+            throw XCTSkip("No book in library; skipping page-navigation test.")
+        }
+        firstBook.tap()
+
+        let pageIndicator = app.staticTexts["reader.pageIndicator"].firstMatch
+        guard pageIndicator.waitForExistence(timeout: 20) else {
+            throw XCTSkip("Page indicator not visible; book may be single-page.")
+        }
+
+        let initialLabel = pageIndicator.label  // e.g. "1 of 12"
+        guard initialLabel.contains("of ") else {
+            throw XCTSkip("Unexpected page indicator format: \(initialLabel)")
+        }
+        let parts = initialLabel.split(separator: " ").map(String.init)
+        guard parts.count >= 3, let totalPages = Int(parts[2]), totalPages >= 2 else {
+            throw XCTSkip("Book has fewer than 2 pages; cannot test navigation.")
+        }
+
+        // Make sure we're on page 1 (first page).
+        let initialPage = Int(parts[0]) ?? 1
+        XCTAssertEqual(initialPage, 1, "Reader should open on page 1.")
+
+        // Tap the right third (next page).
+        let frame = app.windows.firstMatch.frame
+        let rightThird = app.coordinate(
+            withNormalizedOffset: CGVector(dx: 0.83, dy: 0.5)
+        )
+        rightThird.tap()
+        sleep(1)
+
+        let afterForward = app.staticTexts["reader.pageIndicator"].firstMatch.label
+        let forwardPage = Int(afterForward.split(separator: " ").first ?? "0") ?? 0
+        XCTAssertEqual(forwardPage, 2, "Right-tap must advance to page 2, got: \(afterForward)")
+
+        // Tap the left third (previous page).
+        let leftThird = app.coordinate(
+            withNormalizedOffset: CGVector(dx: 0.17, dy: 0.5)
+        )
+        leftThird.tap()
+        sleep(1)
+
+        let afterBack = app.staticTexts["reader.pageIndicator"].firstMatch.label
+        let backPage = Int(afterBack.split(separator: " ").first ?? "0") ?? 0
+        XCTAssertEqual(backPage, 1, "Left-tap must retreat to page 1, got: \(afterBack)")
+
+        _ = frame  // suppress unused warning
+    }
+
+    /// Swiping left advances one page; swiping right retreats one page.
+    func testSwipeNavigationAdvancesAndRetreatsPage() throws {
+        XCUIDevice.shared.orientation = .portrait
+        let app = XCUIApplication()
+        app.launch()
+
+        let firstBook = app.buttons.matching(
+            NSPredicate(format: "identifier BEGINSWITH %@", "library.bookTile.")
+        ).firstMatch
+        guard firstBook.waitForExistence(timeout: 20) else {
+            throw XCTSkip("No book in library; skipping swipe-navigation test.")
+        }
+        firstBook.tap()
+
+        let pageIndicator = app.staticTexts["reader.pageIndicator"].firstMatch
+        guard pageIndicator.waitForExistence(timeout: 20) else {
+            throw XCTSkip("Page indicator not visible; book may be single-page.")
+        }
+        let initialLabel = pageIndicator.label
+        let parts = initialLabel.split(separator: " ").map(String.init)
+        guard parts.count >= 3, let totalPages = Int(parts[2]), totalPages >= 2 else {
+            throw XCTSkip("Book has fewer than 2 pages; cannot test swipe navigation.")
+        }
+
+        // Swipe left (advance page) — from right-center to left-center of screen.
+        let startRight = app.coordinate(withNormalizedOffset: CGVector(dx: 0.75, dy: 0.5))
+        let endLeft = app.coordinate(withNormalizedOffset: CGVector(dx: 0.25, dy: 0.5))
+        startRight.press(forDuration: 0, thenDragTo: endLeft)
+        sleep(1)
+
+        let afterSwipeLeft = app.staticTexts["reader.pageIndicator"].firstMatch.label
+        let page2 = Int(afterSwipeLeft.split(separator: " ").first ?? "0") ?? 0
+        XCTAssertEqual(page2, 2, "Swipe-left must advance to page 2, got: \(afterSwipeLeft)")
+
+        // Swipe right (retreat page).
+        let startLeft = app.coordinate(withNormalizedOffset: CGVector(dx: 0.25, dy: 0.5))
+        let endRight = app.coordinate(withNormalizedOffset: CGVector(dx: 0.75, dy: 0.5))
+        startLeft.press(forDuration: 0, thenDragTo: endRight)
+        sleep(1)
+
+        let afterSwipeRight = app.staticTexts["reader.pageIndicator"].firstMatch.label
+        let page1 = Int(afterSwipeRight.split(separator: " ").first ?? "0") ?? 0
+        XCTAssertEqual(page1, 1, "Swipe-right must retreat to page 1, got: \(afterSwipeRight)")
+
+        _ = totalPages  // suppress unused warning
+    }
+
     // MARK: - Play button (conditional on audio availability)
 
     /// Tapping Play must flip the button to Pause. Skipped when no

@@ -1164,6 +1164,8 @@ struct ReaderView: View {
                 Capsule()
                     .fill(themeForeground.opacity(0.1))
             )
+            .accessibilityIdentifier("reader.pageIndicator")
+            .accessibilityLabel("\(index + 1) of \(total)")
     }
 
     /// Three invisible tap zones for page turning (Apple Books style):

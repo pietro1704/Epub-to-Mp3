@@ -21,6 +21,8 @@ struct ChapterListColumn: View {
     @State private var loadError: String?
     @State private var isLoading: Bool = false
     @State private var fetchTask: Task<Void, Never>?
+    @State private var showRemoveDownloadsAlert = false
+    @State private var showClearCacheAlert = false
 
     var body: some View {
         Group {
@@ -37,10 +39,54 @@ struct ChapterListColumn: View {
         }
         .navigationTitle(book.resolvedTitle)
         .compatInlineNavigationTitle()
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Menu {
+                    Button(role: .destructive) {
+                        showRemoveDownloadsAlert = true
+                    } label: {
+                        Label(L10n.string("chapterList.removeDownloads"), systemImage: "trash")
+                    }
+                    Button(role: .destructive) {
+                        showClearCacheAlert = true
+                    } label: {
+                        Label(L10n.string("chapterList.clearTextCache"), systemImage: "xmark.bin")
+                    }
+                } label: {
+                    Image(systemName: "ellipsis.circle")
+                }
+                .accessibilityLabel(L10n.string("common.moreOptions"))
+            }
+        }
+        .alert(L10n.string("chapterList.removeDownloads"), isPresented: $showRemoveDownloadsAlert) {
+            Button(L10n.string("common.delete"), role: .destructive) {
+                if let jobId = book.lastJobId {
+                    AudiobookCacheEviction.deleteAudiobook(jobId: jobId)
+                }
+            }
+            Button(L10n.string("common.cancel"), role: .cancel) {}
+        } message: {
+            Text(localized: "chapterList.removeDownloadsMessage")
+        }
+        .alert(L10n.string("chapterList.clearTextCache"), isPresented: $showClearCacheAlert) {
+            Button(L10n.string("common.delete"), role: .destructive) {
+                clearTextCache()
+            }
+            Button(L10n.string("common.cancel"), role: .cancel) {}
+        } message: {
+            Text(localized: "chapterList.clearTextCacheMessage")
+        }
         .task(id: book.id) {
             await reload()
         }
         .onDisappear { fetchTask?.cancel() }
+    }
+
+    private func clearTextCache() {
+        let root = FileManager.default
+            .urls(for: .cachesDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("epub2mp3-tts/\(book.id)", isDirectory: true)
+        try? FileManager.default.removeItem(at: root)
     }
 
     // MARK: - Subviews

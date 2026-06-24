@@ -440,3 +440,8 @@
 "widget.nothingPlaying" = "Nada tocando";
 "widget.noAudiobook" = "Sem audiolivro";
 "widget.converting" = "Convertendo";
+"common.moreOptions" = "Mais opções";
+"chapterList.removeDownloads" = "Remover downloads";
+"chapterList.removeDownloadsMessage" = "Todos os MP3s baixados deste livro serão deletados.";
+"chapterList.clearTextCache" = "Limpar cache de texto";
+"chapterList.clearTextCacheMessage" = "O cache de texto dos capítulos deste livro será apagado.";
