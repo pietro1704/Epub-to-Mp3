@@ -718,15 +718,14 @@ struct ReaderView: View {
             .compatOnChange(of: debouncedLineSpacing) { _ in syncPageToTextOffset(in: pages) }
             .compatOnChange(of: debouncedMargin) { _ in syncPageToTextOffset(in: pages) }
             .compatOnChange(of: debouncedColumnWidth) { _ in syncPageToTextOffset(in: pages) }
-            // When the chapter finishes rendering (renderVersion bumps), consume
-            // the jumpToLastPage flag so retreating across a chapter boundary
-            // lands on the last page of the previous chapter, not page 0.
-            .compatOnChange(of: renderVersion) { _ in
-                guard jumpToLastPage else { return }
+            // Consume jumpToLastPage the moment this chapter's pages first
+            // become available. renderVersion bumps when renderedAttributed
+            // is ready, but paginationCache.pages is only populated on the
+            // subsequent body render — so we watch pages.count instead.
+            .compatOnChange(of: pages.count) { newCount in
+                guard jumpToLastPage, newCount > 0 else { return }
                 jumpToLastPage = false
-                let livePages = paginationCache.pages
-                guard !livePages.isEmpty else { return }
-                let last = livePages.count - 1
+                let last = newCount - 1
                 if currentPage != last { currentPage = last }
             }
         }
