@@ -34,7 +34,7 @@ jobs:
 
       - name: Restore rolling benchmark history cache
         id: history_restore
-        uses: actions/cache/restore@v5
+        uses: actions/cache/restore@v6
         with:
           path: .cache/telemetry/feature-ab-history.json
           key: feature-ab-history-${{ github.run_id }}
@@ -96,7 +96,7 @@ jobs:
             --max-mem-growth-mb 700
 
       - name: Save rolling benchmark history cache
-        uses: actions/cache/save@v5
+        uses: actions/cache/save@v6
         with:
           path: .cache/telemetry/feature-ab-history.json
           key: feature-ab-history-${{ github.run_id }}
