@@ -31,6 +31,7 @@ struct LibraryView: View {
     /// destructive action (remove from library) without entering the
     /// UIKit context-menu morph code path.
     @State private var bookPendingRemoval: BookEntity?
+    @State private var longPressConsumed = false
     @State private var selectedTag: String?
     @State private var bookForTagEditor: BookEntity?
     @State private var searchQuery = ""
@@ -115,21 +116,25 @@ struct LibraryView: View {
                         LazyVGrid(columns: grid, spacing: 20) {
                             ForEach(sorted) { book in
                                 BookTile(book: book)
-                                    .gesture(
-                                        ExclusiveGesture(
-                                            LongPressGesture(minimumDuration: 0.45)
-                                                .onEnded { _ in bookPendingRemoval = book },
-                                            TapGesture()
-                                                .onEnded {
-                                                    MainReaderView.setCurrentlyReading(bookID: book.id)
-                                                    if let onOpenBook {
-                                                        onOpenBook()
-                                                    } else {
-                                                        openingBook = book
-                                                    }
-                                                }
-                                        )
+                                    .highPriorityGesture(
+                                        LongPressGesture(minimumDuration: 0.45)
+                                            .onEnded { _ in
+                                                longPressConsumed = true
+                                                bookPendingRemoval = book
+                                            }
                                     )
+                                    .onTapGesture {
+                                        guard !longPressConsumed else {
+                                            longPressConsumed = false
+                                            return
+                                        }
+                                        MainReaderView.setCurrentlyReading(bookID: book.id)
+                                        if let onOpenBook {
+                                            onOpenBook()
+                                        } else {
+                                            openingBook = book
+                                        }
+                                    }
                             }
                         }
                     }

@@ -6,53 +6,59 @@ import XCTest
 /// - Tap must open the book without triggering the remove dialog.
 final class LibraryGestureTests: XCTestCase {
 
+    private func source() throws -> String {
+        try String(
+            contentsOf: URL(fileURLWithPath: #filePath)
+                .deletingLastPathComponent()
+                .deletingLastPathComponent()
+                .appendingPathComponent("EpubToMp3/Views/LibraryView.swift")
+        )
+    }
+
     // MARK: - Long-press / tap exclusivity
 
-    func testBookTileUsesExclusiveGesture() throws {
-        let source = try String(
-            contentsOf: URL(fileURLWithPath: #filePath)
-                .deletingLastPathComponent()
-                .deletingLastPathComponent()
-                .appendingPathComponent("EpubToMp3/Views/LibraryView.swift")
+    /// Long press must use .highPriorityGesture so SwiftUI cancels the
+    /// tap recogniser before it fires. The old ExclusiveGesture approach
+    /// let taps complete on touchUp while the long-press was still pending.
+    func testBookTileUsesHighPriorityGestureForLongPress() throws {
+        let src = try source()
+        XCTAssertTrue(
+            src.contains("highPriorityGesture("),
+            "BookTile must use .highPriorityGesture for LongPress so tap is suppressed."
         )
         XCTAssertTrue(
-            source.contains("ExclusiveGesture("),
-            "BookTile must use ExclusiveGesture so a long-press cancels the tap and does not open the book."
+            src.contains("LongPressGesture"),
+            "LongPressGesture must be present inside .highPriorityGesture."
         )
     }
 
-    func testLongPressIsFirstInExclusiveGesture() throws {
-        let source = try String(
-            contentsOf: URL(fileURLWithPath: #filePath)
-                .deletingLastPathComponent()
-                .deletingLastPathComponent()
-                .appendingPathComponent("EpubToMp3/Views/LibraryView.swift")
+    /// The guard flag `longPressConsumed` must be present so an
+    /// onTapGesture that fires after a long-press is a no-op.
+    func testLongPressConsumedFlagPresent() throws {
+        let src = try source()
+        XCTAssertTrue(
+            src.contains("longPressConsumed"),
+            "LibraryView must use a longPressConsumed flag to suppress tap after long-press."
         )
-        // LongPressGesture must come BEFORE TapGesture inside ExclusiveGesture
-        // so SwiftUI resolves long-press first and cancels the tap recogniser.
-        let exclusiveRange = source.range(of: "ExclusiveGesture(")!
-        let afterExclusive = String(source[exclusiveRange.upperBound...])
-        let longPressPos = afterExclusive.range(of: "LongPressGesture")?.lowerBound
-        let tapPos = afterExclusive.range(of: "TapGesture")?.lowerBound
-        XCTAssertNotNil(longPressPos, "LongPressGesture must be present in ExclusiveGesture.")
-        XCTAssertNotNil(tapPos, "TapGesture must be present in ExclusiveGesture.")
-        if let lp = longPressPos, let tp = tapPos {
-            XCTAssertTrue(lp < tp, "LongPressGesture must appear before TapGesture in ExclusiveGesture.")
-        }
     }
 
-    func testBookTileIsNotAButtonWithSimultaneousLongPress() throws {
-        let source = try String(
-            contentsOf: URL(fileURLWithPath: #filePath)
-                .deletingLastPathComponent()
-                .deletingLastPathComponent()
-                .appendingPathComponent("EpubToMp3/Views/LibraryView.swift")
-        )
-        // The old pattern (Button + .simultaneousGesture(LongPress)) caused
-        // both the open-book tap and the long-press dialog to fire together.
+    /// The old Button + .simultaneousGesture(LongPress) pattern caused
+    /// both actions to fire together — must not be re-introduced.
+    func testBookTileIsNotButtonWithSimultaneousLongPress() throws {
+        let src = try source()
         XCTAssertFalse(
-            source.contains(".simultaneousGesture(") && source.contains("LongPressGesture"),
-            "LibraryView must not use .simultaneousGesture for LongPress on book tiles — use ExclusiveGesture instead."
+            src.contains(".simultaneousGesture(") && src.contains("LongPressGesture"),
+            "LibraryView must not use .simultaneousGesture for LongPress — use .highPriorityGesture instead."
+        )
+    }
+
+    /// ExclusiveGesture was the previous (broken) implementation.
+    /// Ensure it is not re-introduced.
+    func testExclusiveGestureIsNotUsed() throws {
+        let src = try source()
+        XCTAssertFalse(
+            src.contains("ExclusiveGesture("),
+            "ExclusiveGesture allowed tap to fire during long-press. Use .highPriorityGesture instead."
         )
     }
 }
