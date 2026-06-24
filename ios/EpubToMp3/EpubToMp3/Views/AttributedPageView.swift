@@ -105,6 +105,9 @@ private final class FixedWidthTextView: UITextView, UIGestureRecognizerDelegate 
             let pan = UIPanGestureRecognizer(target: self, action: #selector(handleReaderPan(_:)))
             pan.name = "reader.pan"
             pan.delegate = self
+            // Don't cancel touches so the UITextView's built-in long-press
+            // (word selection) still fires when the user holds without moving.
+            pan.cancelsTouchesInView = false
             addGestureRecognizer(pan)
         }
     }

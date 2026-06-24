@@ -162,25 +162,25 @@ struct InstantReaderView: View {
 
     var body: some View {
         GeometryReader { proxy in
-            let topInset = InstantReaderChromeMetrics.contentTopInset(
-                safeAreaTop: proxy.safeAreaInsets.top
-            )
-            let bottomInset = InstantReaderChromeMetrics.contentBottomInset(
-                safeAreaBottom: proxy.safeAreaInsets.bottom
-            )
+            let safeTop = proxy.safeAreaInsets.top
+            let safeBottom = proxy.safeAreaInsets.bottom
+            // safeTop/Bottom added explicitly because .ignoresSafeArea()
+            // on the GeometryReader means the frame starts at screen edges.
+            let topInset = safeTop + InstantReaderChromeMetrics.contentTopInset(safeAreaTop: safeTop)
+            let bottomInset = safeBottom + InstantReaderChromeMetrics.contentBottomInset(safeAreaBottom: safeBottom)
 
             ZStack(alignment: .center) {
                 content(topInset: topInset, bottomInset: bottomInset)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-                // Chrome layer: the reader remains in SwiftUI's normal
-                // safe-area container. Do not pad by safeAreaInsets here:
-                // the container has already accounted for the status bar,
-                // home indicator and tab bar, and adding those values again
-                // makes the top/bottom bars float too far from the edges.
                 VStack(spacing: 0) {
                     if chromeVisible {
                         customTopBar
+                            // Pin the bar flush with the status bar by
+                            // adding the live safe-area top inset as padding.
+                            // The GeometryReader ignores the safe area so we
+                            // measure the real inset ourselves.
+                            .padding(.top, safeTop)
                             .transition(.move(edge: .top).combined(with: .opacity))
                     }
                     Spacer(minLength: 0)
@@ -197,12 +197,14 @@ struct InstantReaderView: View {
                             }
                         }
                         .background(readerBackground.opacity(0.96))
+                        .padding(.bottom, safeBottom)
                         .transition(.move(edge: .bottom).combined(with: .opacity))
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
+        .ignoresSafeArea()
         .modifier(ChromeVisibilityModifier(visible: chromeVisible))
         .readerChromeVisible(chromeVisible)
         .sheet(isPresented: $showingReaderSettings) {
