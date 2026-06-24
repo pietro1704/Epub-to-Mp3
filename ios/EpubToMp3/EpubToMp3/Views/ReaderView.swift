@@ -103,11 +103,10 @@ struct ReaderView: View {
     @State private var isPageTurning: Bool = false
     /// Tracks direction of the last page turn for asymmetric transition.
     @State private var pageDirection: PageDirection = .forward
-    /// When true, the next non-empty pages array snaps currentPage to the
-    /// last page instead of 0. Set by retreatPage when crossing a chapter
-    /// boundary backward so the reader lands on the last page of the
-    /// previous chapter.
-    @State private var jumpToLastPage: Bool = false
+    /// Non-nil when retreating across a chapter boundary: holds the chapter.id
+    /// we expect to land on so the last-page snap fires exactly once for that
+    /// chapter and never bleeds into subsequent navigations.
+    @State private var jumpToLastPageForChapterId: String? = nil
     @FocusState private var paginatedFocus: Bool
     /// Last known container size — used to detect orientation changes
     /// and recompute the page index so the reader stays on the same
@@ -330,11 +329,16 @@ struct ReaderView: View {
         // (follows OS). This does NOT affect the navigation bar, tab bar,
         // or any UI outside this view.
         .modifier(ReaderColorSchemeModifier(theme: settings.readerTheme))
-        .compatOnChange(of: chapter.id) { _ in
+        .compatOnChange(of: chapter.id) { newId in
             currentPage = 0
-            isPageTurning = false  // clear any in-flight animation lock on chapter swap
-            // jumpToLastPage is consumed by the renderVersion onChange; don't
-            // clear it here — it needs to survive until the new chapter renders.
+            isPageTurning = false
+            // Latch the new chapter id so the pages.count watcher knows
+            // which chapter it is waiting for. Clear any stale sentinel.
+            if jumpToLastPageForChapterId == "__pending__" {
+                jumpToLastPageForChapterId = newId
+            } else {
+                jumpToLastPageForChapterId = nil
+            }
             renderedAttributed = nil
             paginationCache.pages = []
             paginationCache.key = nil
@@ -718,13 +722,15 @@ struct ReaderView: View {
             .compatOnChange(of: debouncedLineSpacing) { _ in syncPageToTextOffset(in: pages) }
             .compatOnChange(of: debouncedMargin) { _ in syncPageToTextOffset(in: pages) }
             .compatOnChange(of: debouncedColumnWidth) { _ in syncPageToTextOffset(in: pages) }
-            // Consume jumpToLastPage the moment this chapter's pages first
-            // become available. renderVersion bumps when renderedAttributed
-            // is ready, but paginationCache.pages is only populated on the
-            // subsequent body render — so we watch pages.count instead.
+            // Consume the jump-to-last-page flag the moment this chapter's
+            // pages become available, but only if the flag is for THIS chapter
+            // (guards against stale flags from a previous retreat bleeding into
+            // forward navigation or a different chapter's first render).
             .compatOnChange(of: pages.count) { newCount in
-                guard jumpToLastPage, newCount > 0 else { return }
-                jumpToLastPage = false
+                guard let targetId = jumpToLastPageForChapterId,
+                      targetId == chapter.id,
+                      newCount > 0 else { return }
+                jumpToLastPageForChapterId = nil
                 let last = newCount - 1
                 if currentPage != last { currentPage = last }
             }
@@ -1327,9 +1333,12 @@ struct ReaderView: View {
                 currentPage -= 1
             }
         } else {
-            jumpToLastPage = true
+            // Signal that the incoming chapter should open at its last page.
+            // Use a sentinel so the flag survives across the chapter.id change
+            // without being cleared by the onChange(of: chapter.id) handler.
+            jumpToLastPageForChapterId = "__pending__"
             if onPreviousChapter?() != true {
-                jumpToLastPage = false
+                jumpToLastPageForChapterId = nil
             }
         }
     }
