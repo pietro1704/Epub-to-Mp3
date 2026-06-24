@@ -103,6 +103,11 @@ struct ReaderView: View {
     @State private var isPageTurning: Bool = false
     /// Tracks direction of the last page turn for asymmetric transition.
     @State private var pageDirection: PageDirection = .forward
+    /// When true, the next non-empty pages array snaps currentPage to the
+    /// last page instead of 0. Set by retreatPage when crossing a chapter
+    /// boundary backward so the reader lands on the last page of the
+    /// previous chapter.
+    @State private var jumpToLastPage: Bool = false
     @FocusState private var paginatedFocus: Bool
     /// Last known container size — used to detect orientation changes
     /// and recompute the page index so the reader stays on the same
@@ -328,12 +333,9 @@ struct ReaderView: View {
         .compatOnChange(of: chapter.id) { _ in
             currentPage = 0
             isPageTurning = false  // clear any in-flight animation lock on chapter swap
-            // Nil-out the previous chapter's render so the empty-state
-            // branch shows until `task` populates the new chapter —
-            // avoids a one-frame flash of stale content on chapter swap.
+            // jumpToLastPage is consumed by the renderVersion onChange; don't
+            // clear it here — it needs to survive until the new chapter renders.
             renderedAttributed = nil
-            // Pagination cache is keyed on the chapter id; clear so
-            // the next render of the new chapter rebuilds from scratch.
             paginationCache.pages = []
             paginationCache.key = nil
         }
@@ -716,6 +718,17 @@ struct ReaderView: View {
             .compatOnChange(of: debouncedLineSpacing) { _ in syncPageToTextOffset(in: pages) }
             .compatOnChange(of: debouncedMargin) { _ in syncPageToTextOffset(in: pages) }
             .compatOnChange(of: debouncedColumnWidth) { _ in syncPageToTextOffset(in: pages) }
+            // When the chapter finishes rendering (renderVersion bumps), consume
+            // the jumpToLastPage flag so retreating across a chapter boundary
+            // lands on the last page of the previous chapter, not page 0.
+            .compatOnChange(of: renderVersion) { _ in
+                guard jumpToLastPage else { return }
+                jumpToLastPage = false
+                let livePages = paginationCache.pages
+                guard !livePages.isEmpty else { return }
+                let last = livePages.count - 1
+                if currentPage != last { currentPage = last }
+            }
         }
         .compatHorizontalSafeAreaPadding(0)
         // Floating "resume follow-along" button — visible whenever the
@@ -1314,8 +1327,11 @@ struct ReaderView: View {
             } else {
                 currentPage -= 1
             }
-        } else if onPreviousChapter?() == true {
-            // Caller swapped chapter; currentPage resets via onChange.
+        } else {
+            jumpToLastPage = true
+            if onPreviousChapter?() != true {
+                jumpToLastPage = false
+            }
         }
     }
 
