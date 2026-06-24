@@ -105,9 +105,12 @@ private final class FixedWidthTextView: UITextView, UIGestureRecognizerDelegate 
             let pan = UIPanGestureRecognizer(target: self, action: #selector(handleReaderPan(_:)))
             pan.name = "reader.pan"
             pan.delegate = self
-            // Don't cancel touches so the UITextView's built-in long-press
-            // (word selection) still fires when the user holds without moving.
-            pan.cancelsTouchesInView = false
+            // Cancel touches when a horizontal swipe is recognised so the
+            // SwiftUI SpatialTapGesture overlay does not also fire and trigger
+            // a second page turn for the same gesture. Long-press (word
+            // selection) still works because the pan only recognises after
+            // the 40 px horizontal threshold is crossed.
+            pan.cancelsTouchesInView = true
             addGestureRecognizer(pan)
         }
     }

@@ -106,6 +106,10 @@ struct ReaderView: View {
     /// Timestamp of last page turn — debounces rapid taps in all turn
     /// styles, not just slide (slide uses isPageTurning, none/flip had no guard).
     @State private var lastPageTurnAt: Date = .distantPast
+    /// Minimum seconds between page turns — 500 ms covers rapid double-taps
+    /// and the SpatialTapGesture + UIPanGestureRecognizer window where both
+    /// fire for the same swipe gesture.
+    private let pageTurnDebounce: TimeInterval = 0.5
     /// Non-nil when retreating across a chapter boundary: holds the chapter.id
     /// we expect to land on so the last-page snap fires exactly once for that
     /// chapter and never bleeds into subsequent navigations.
@@ -1298,7 +1302,7 @@ struct ReaderView: View {
         // Unified turn guard: isPageTurning covers slide animations;
         // lastPageTurnAt debounces all styles (none/flip had no guard).
         guard !isPageTurning,
-              Date().timeIntervalSince(lastPageTurnAt) > 0.30 else { return }
+              Date().timeIntervalSince(lastPageTurnAt) > pageTurnDebounce else { return }
         lastPageTurnAt = Date()
         isFollowing = false
         pageDirection = .forward
@@ -1321,7 +1325,7 @@ struct ReaderView: View {
 
     private func retreatPage() {
         guard !isPageTurning,
-              Date().timeIntervalSince(lastPageTurnAt) > 0.30 else { return }
+              Date().timeIntervalSince(lastPageTurnAt) > pageTurnDebounce else { return }
         lastPageTurnAt = Date()
         isFollowing = false
         pageDirection = .backward
