@@ -162,6 +162,10 @@ struct ReaderView: View {
     /// 5-pages-in-2-seconds swipe sequence triggers one write at the
     /// end of the burst, not 10 prefs-daemon round-trips on main.
     @State private var publishRatioTask: Task<Void, Never>?
+    /// In-flight task that polls paginationCache.pages to snap to the
+    /// last page after retreating across a chapter boundary. Stored so
+    /// it can be cancelled when the user navigates again before it fires.
+    @State private var jumpToLastPageTask: Task<Void, Never>?
     /// Memoised pagination result. `Paginator.paginateAttributed`
     /// builds a full TextKit stack (`NSTextStorage` + `NSLayoutManager`
     /// + `NSTextContainer`) and walks the entire chapter — hundreds of
@@ -346,15 +350,23 @@ struct ReaderView: View {
             // chapter's pages are ready then snap to the last one.
             if jumpToLastPageForChapterId == "__pending__" {
                 jumpToLastPageForChapterId = nil
-                Task { @MainActor in
+                jumpToLastPageTask?.cancel()
+                jumpToLastPageTask = Task { @MainActor in
                     // Wait up to 3 s for the paginator to produce pages.
+                    // Poll until the full page count stabilises: two
+                    // consecutive reads must agree to avoid snapping to
+                    // a partially-built array (which would land on page 2
+                    // of a 3-page chapter instead of the last page).
+                    var prevCount = 0
                     for _ in 0..<30 {
                         try? await Task.sleep(nanoseconds: 100_000_000)
+                        if Task.isCancelled { return }
                         let p = paginationCache.pages
-                        if !p.isEmpty {
+                        if !p.isEmpty && p.count == prevCount {
                             currentPage = p.count - 1
                             return
                         }
+                        prevCount = p.count
                     }
                 }
             }
@@ -1304,6 +1316,8 @@ struct ReaderView: View {
         guard !isPageTurning,
               Date().timeIntervalSince(lastPageTurnAt) > pageTurnDebounce else { return }
         lastPageTurnAt = Date()
+        jumpToLastPageTask?.cancel()
+        jumpToLastPageTask = nil
         isFollowing = false
         pageDirection = .forward
         if currentPage + 1 < totalPages {
@@ -1327,6 +1341,8 @@ struct ReaderView: View {
         guard !isPageTurning,
               Date().timeIntervalSince(lastPageTurnAt) > pageTurnDebounce else { return }
         lastPageTurnAt = Date()
+        jumpToLastPageTask?.cancel()
+        jumpToLastPageTask = nil
         isFollowing = false
         pageDirection = .backward
         if currentPage > 0 {
