@@ -278,14 +278,8 @@ struct PageCurlContainer: UIViewControllerRepresentable {
         ) -> UIViewController? {
             guard let vc = viewController as? IndexedHostingController else { return nil }
             let prev = vc.pageIndex - 1
-            if prev >= 0 {
-                return hostingController(for: prev)
-            }
-            // At page 0: signal host to load previous chapter.
-            if parent.onPreviousChapter?() == true {
-                parent.currentPage = 0
-            }
-            return nil
+            guard prev >= 0 else { return nil }
+            return hostingController(for: prev)
         }
 
         func pageViewController(
@@ -294,14 +288,8 @@ struct PageCurlContainer: UIViewControllerRepresentable {
         ) -> UIViewController? {
             guard let vc = viewController as? IndexedHostingController else { return nil }
             let next = vc.pageIndex + 1
-            if next < parent.pages.count {
-                return hostingController(for: next)
-            }
-            // At last page: signal host to load next chapter.
-            if parent.onAdvanceChapter?() == true {
-                parent.currentPage = 0
-            }
-            return nil
+            guard next < parent.pages.count else { return nil }
+            return hostingController(for: next)
         }
 
         // MARK: Delegate
