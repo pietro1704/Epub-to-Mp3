@@ -245,7 +245,14 @@ struct InstantReaderView: View {
             if isAudioReady, !playerMounted { mountPlayerIfPossible() }
         }
         .compatOnChange(of: globalPlayer.firstSegmentReady) { ready in
-            if ready, settings.useEmbeddedRuntime { wireEmbeddedPositionObservers() }
+            if ready, settings.useEmbeddedRuntime {
+                wireEmbeddedPositionObservers()
+            } else if !ready, playerMounted {
+                // Embedded player lost its segments (e.g. segment reset on
+                // network error) — fall back to the local mounted player so
+                // the position loop doesn't track a stale globalPlayer.
+                installPositionLoop(on: player, isEmbedded: false)
+            }
         }
         .compatOnChange(of: currentChapterIndex) { newIndex in
             reloadCurrentChapter(index: newIndex)
@@ -988,6 +995,10 @@ struct InstantReaderView: View {
         guard index >= 0,
               let chapter = resolveChapter(at: index) else {
             spans = []
+            // Wipe stale per-sentence timing so divergence-dialog seek
+            // can't land on a phantom offset from the previous chapter.
+            let ap = activePlayer
+            ap.setSentenceTiming([:], forChapterIndex: ap.currentChapterIndex)
             return
         }
         currentSentenceId = nil
@@ -995,6 +1006,13 @@ struct InstantReaderView: View {
         spans = computed
         sync.load(chapter: chapter,
                   chapterDurationSeconds: playerMounted ? player.durationSeconds : 0)
+        // Inject sentence-id → start-ms map so startFromReaderPage can
+        // do sentence-precise seek (not just ratio approximation).
+        let ap = activePlayer
+        let map: [String: Int] = sync.timing.reduce(into: [:]) { acc, entry in
+            acc[entry.id] = entry.startMs
+        }
+        ap.setSentenceTiming(map, forChapterIndex: ap.currentChapterIndex)
     }
 
     /// Idempotent dim — every page turn fires the callback, but we only
