@@ -53,6 +53,12 @@ struct PageCurlContainer: UIViewControllerRepresentable {
     /// during playback). Programmatic page changes — `setViewControllers`
     /// driven by `updateUIViewController` — never call this.
     var onUserPageChange: (() -> Void)? = nil
+    /// Fires at the start of a user-initiated curl gesture (`willTransitionTo`)
+    /// so the host can suppress audio auto-follow during the animation.
+    var onWillTransition: (() -> Void)? = nil
+    /// Fires when the curl animation ends (`didFinishAnimating`), whether or
+    /// not it completed, so the host can re-enable suppression gates.
+    var onDidFinishTransition: (() -> Void)? = nil
 
     func makeCoordinator() -> Coordinator {
         Coordinator(self)
@@ -299,6 +305,7 @@ struct PageCurlContainer: UIViewControllerRepresentable {
             willTransitionTo pendingViewControllers: [UIViewController]
         ) {
             isTransitioning = true
+            parent.onWillTransition?()
         }
 
         func pageViewController(
@@ -308,6 +315,7 @@ struct PageCurlContainer: UIViewControllerRepresentable {
             transitionCompleted completed: Bool
         ) {
             isTransitioning = false
+            parent.onDidFinishTransition?()
             guard completed,
                   let vc = pageViewController.viewControllers?.first as? IndexedHostingController
             else { return }

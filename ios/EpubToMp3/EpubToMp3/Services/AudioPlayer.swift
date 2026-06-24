@@ -1372,8 +1372,15 @@ final class AudioPlayer: ObservableObject {
                     ? (snapshot.chapterProgress?.count ?? 0)
                     : snapshot.playableChapters.count
                 if !self.isSegmentMode, self.currentChapterIndex + 1 < totalChapters {
-                    self.currentChapterIndex += 1
-                    self.positionSeconds = 0
+                    // Prefer URL-based reconciliation to avoid double-advancing
+                    // when the KVO observer already incremented the index (fast
+                    // devices with buffer-ahead). Only fall back to +1 when the
+                    // KVO hasn't run yet (reconcile returns false = no change).
+                    let alreadyAdvanced = self.reconcileChapterIndexFromCurrentItem()
+                    if !alreadyAdvanced {
+                        self.currentChapterIndex += 1
+                        self.positionSeconds = 0
+                    }
                     // `auto: true` — this is the natural end-of-item
                     // auto-advance, so VoiceOver should announce the
                     // new chapter title.

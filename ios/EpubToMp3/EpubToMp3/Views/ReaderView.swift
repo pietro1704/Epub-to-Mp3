@@ -732,7 +732,7 @@ struct ReaderView: View {
             // jump to whichever page contains it — but only if the
             // user hasn't taken control via swipe / tap / arrow.
             .compatOnChange(of: currentSentenceId) { newId in
-                guard isFollowing, let newId else { return }
+                guard isFollowing, !isPageTurning, let newId else { return }
                 guard let span = spans.first(where: { $0.id == newId }) else { return }
                 guard let target = pageIndexContaining(sentence: span, in: pages) else { return }
                 if target != currentPage {
@@ -1034,7 +1034,9 @@ struct ReaderView: View {
             onPreviousChapter: onPreviousChapter,
             onCenterTap: onCenterTap,
             chromeVisible: chromeVisible,
-            onUserPageChange: { isFollowing = false }
+            onUserPageChange: { isFollowing = false },
+            onWillTransition: { isPageTurning = true },
+            onDidFinishTransition: { isPageTurning = false }
         )
     }
     #endif
@@ -1319,6 +1321,7 @@ struct ReaderView: View {
         lastPageTurnAt = Date()
         jumpToLastPageTask?.cancel()
         jumpToLastPageTask = nil
+        jumpToLastPageForChapterId = nil
         isFollowing = false
         pageDirection = .forward
         if currentPage + 1 < totalPages {
@@ -1344,6 +1347,7 @@ struct ReaderView: View {
         lastPageTurnAt = Date()
         jumpToLastPageTask?.cancel()
         jumpToLastPageTask = nil
+        jumpToLastPageForChapterId = nil
         isFollowing = false
         pageDirection = .backward
         if currentPage > 0 {
