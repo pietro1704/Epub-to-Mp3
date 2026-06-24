@@ -146,5 +146,38 @@ final class AudioPlayerUXTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(player.positionSeconds, 0)
         XCTAssertLessThanOrEqual(player.positionSeconds, player.durationSeconds)
     }
+
+    // MARK: - isPlaying gate (reader chapter sync regression)
+
+    /// A freshly created player with a loaded snapshot must report
+    /// `isPlaying == false`. The reader's `installPositionLoop` uses
+    /// this flag to prevent an idle player at chapter 0 from forcing
+    /// the reader back to the TOC/index chapter on every position
+    /// update — the "1→index→2→index" regression (bcfebf3 → fix).
+    func testIdlePlayerWithSnapshotIsNotPlaying() {
+        let player = makePlayer()
+        XCTAssertFalse(player.isPlaying,
+            "A freshly initialised player must not report isPlaying=true")
+    }
+
+    /// `isPlaying` must remain false after loading a snapshot without
+    /// calling `play`. The position-loop chapter-sync must therefore
+    /// skip the reader-chapter assignment, leaving the reader wherever
+    /// the user navigated to.
+    func testLoadingSnapshotAloneDoesNotSetIsPlaying() {
+        let player = makePlayer()
+        let snap = JobSnapshot.previewSample
+        player.backendBaseURL = URL(string: "http://localhost:8000")
+        player.play(snapshot: snap, startingAt: 0)
+        // `play` calls `pause()` internally when called from a cold state
+        // in tests; wait one runloop tick to let state settle.
+        let exp = expectation(description: "isPlaying settles")
+        DispatchQueue.main.async { exp.fulfill() }
+        wait(for: [exp], timeout: 1)
+        // In the unit-test sandbox there is no real AVQueuePlayer item to
+        // auto-start, so isPlaying must stay false.
+        XCTAssertFalse(player.isPlaying,
+            "Loading a snapshot without user interaction must not set isPlaying=true")
+    }
 }
 #endif

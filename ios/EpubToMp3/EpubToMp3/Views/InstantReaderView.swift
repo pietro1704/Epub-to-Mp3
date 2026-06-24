@@ -955,7 +955,11 @@ struct InstantReaderView: View {
                 } else {
                     _ = sync.update(positionSeconds: pos)
                 }
-                if let epubIndex = playerEpubChapterIndex(for: activePlayer),
+                // Only follow the player's chapter when it is actively
+                // playing — an idle player sitting at chapter 0 must
+                // not force the reader back to the index/TOC chapter.
+                if activePlayer.isPlaying,
+                   let epubIndex = playerEpubChapterIndex(for: activePlayer),
                    epubIndex != currentChapterIndex {
                     currentChapterIndex = epubIndex
                 }
