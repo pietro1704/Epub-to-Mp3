@@ -1028,6 +1028,7 @@ struct ReaderView: View {
         )
         .overlay(tapZones(
             totalPages: totalPages,
+            containerWidth: containerSize.width,
             linkHits: linkHits,
             textOriginX: margin,
             textOriginY: textOriginY
@@ -1048,6 +1049,7 @@ struct ReaderView: View {
         )
         .overlay(tapZones(
             totalPages: totalPages,
+            containerWidth: containerSize.width,
             linkHits: linkHits,
             textOriginX: margin,
             textOriginY: textOriginY
@@ -1175,84 +1177,69 @@ struct ReaderView: View {
             .accessibilityLabel("\(index + 1) of \(total)")
     }
 
-    /// Three invisible tap zones for page turning (Apple Books style):
-    /// left 33% = previous page, center 33% = toggle chrome, right 33% = next page.
-    /// Each handler first checks whether the tap landed on a `.link`
-    /// glyph (using the precomputed `linkHits` from TextKit); if it
-    /// did, the link takes precedence and the zone's default action is
-    /// skipped. iOS 16+ uses `SpatialTapGesture` for the tap location;
-    /// iOS 15 falls back to the zone-only behaviour.
+    /// Single invisible tap surface covering the full page area.
+    /// Classifies the tap into left / center / right zone by x-position
+    /// (each third of the page width). A single gesture prevents the
+    /// multi-zone HStack approach from firing more than once per tap —
+    /// adjacent Color.clear zones in an HStack can both recognize the
+    /// same touch when it lands near a zone boundary.
     @ViewBuilder
     private func tapZones(
         totalPages: Int,
+        containerWidth: CGFloat,
         linkHits: [(url: URL, rect: CGRect)],
         textOriginX: CGFloat,
         textOriginY: CGFloat
     ) -> some View {
         if #available(iOS 16, macOS 13, *) {
-            HStack(spacing: 0) {
-                tapZone(linkHits: linkHits, originX: textOriginX, originY: textOriginY) {
-                    retreatPage()
-                }
-                .accessibilityLabel(L10n.string("reader.previousPage"))
-                tapZone(linkHits: linkHits, originX: textOriginX, originY: textOriginY) {
-                    onCenterTap?()
-                }
-                .accessibilityLabel(L10n.string("reader.toggleControls"))
-                tapZone(linkHits: linkHits, originX: textOriginX, originY: textOriginY) {
-                    advancePage(totalPages: totalPages)
-                }
-                .accessibilityLabel(L10n.string("reader.nextPage"))
-            }
-            .frame(maxHeight: .infinity)
+            Color.clear
+                .contentShape(Rectangle())
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .gesture(
+                    SpatialTapGesture(coordinateSpace: .named("readerPage"))
+                        .onEnded { value in
+                            let pagePoint = value.location
+                            let textPoint = CGPoint(
+                                x: pagePoint.x - textOriginX,
+                                y: pagePoint.y - textOriginY
+                            )
+                            if let url = linkHits.first(where: { $0.rect.contains(textPoint) })?.url {
+                                if onLinkTap?(url) == true { return }
+                            }
+                            handleZoneTap(
+                                classifyPageZone(x: pagePoint.x, in: containerWidth),
+                                totalPages: totalPages
+                            )
+                        }
+                )
         } else {
-            HStack(spacing: 0) {
-                Color.clear.contentShape(Rectangle())
-                    .onTapGesture { retreatPage() }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                Color.clear.contentShape(Rectangle())
-                    .onTapGesture { onCenterTap?() }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                Color.clear.contentShape(Rectangle())
-                    .onTapGesture { advancePage(totalPages: totalPages) }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            GeometryReader { geo in
+                Color.clear
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        // iOS 15: no location from plain TapGesture.
+                        // Use the center of the zone — not ideal but better
+                        // than a split-zone HStack that fires twice.
+                    }
+                    .simultaneousGesture(
+                        DragGesture(minimumDistance: 0)
+                            .onEnded { value in
+                                handleZoneTap(
+                                    classifyPageZone(x: value.location.x, in: geo.size.width),
+                                    totalPages: totalPages
+                                )
+                            }
+                    )
             }
-            .frame(maxHeight: .infinity)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
 
-    /// One third of the page-area tap surface. iOS 16+
-    /// `SpatialTapGesture` reports the tap location (relative to the
-    /// `.named("readerPage")` coordinate space that wraps the page),
-    /// which the handler offsets into text-content space and queries
-    /// against `linkHits`. Link tap wins; otherwise the fallback
-    /// zone action fires.
-    @available(iOS 16, macOS 13, *)
-    @ViewBuilder
-    private func tapZone(
-        linkHits: [(url: URL, rect: CGRect)],
-        originX: CGFloat,
-        originY: CGFloat,
-        fallback: @escaping () -> Void
-    ) -> some View {
-        Color.clear
-            .contentShape(Rectangle())
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .gesture(
-                SpatialTapGesture(coordinateSpace: .named("readerPage"))
-                    .onEnded { value in
-                        let pagePoint = value.location
-                        let textPoint = CGPoint(
-                            x: pagePoint.x - originX,
-                            y: pagePoint.y - originY
-                        )
-                        if let url = linkHits.first(where: { $0.rect.contains(textPoint) })?.url {
-                            if onLinkTap?(url) == true { return }
-                        }
-                        fallback()
-                    }
-            )
-            .accessibilityAddTraits(.isButton)
+    private func classifyPageZone(x: CGFloat, in width: CGFloat) -> ReaderTapZone {
+        let third = width / 3
+        if x < third { return .left }
+        if x > width - third { return .right }
+        return .center
     }
 
     /// Compat-key dispatch — returns true when the key was consumed so
