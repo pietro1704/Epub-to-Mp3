@@ -1193,9 +1193,9 @@ struct ReaderView: View {
                 }
                 .accessibilityLabel(L10n.string("reader.previousPage"))
                 tapZone(linkHits: linkHits, originX: textOriginX, originY: textOriginY) {
-                    advancePage(totalPages: totalPages)
+                    onCenterTap?()
                 }
-                .accessibilityLabel(L10n.string("reader.nextPage"))
+                .accessibilityLabel(L10n.string("reader.toggleControls"))
                 tapZone(linkHits: linkHits, originX: textOriginX, originY: textOriginY) {
                     advancePage(totalPages: totalPages)
                 }
@@ -1208,7 +1208,7 @@ struct ReaderView: View {
                     .onTapGesture { retreatPage() }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 Color.clear.contentShape(Rectangle())
-                    .onTapGesture { advancePage(totalPages: totalPages) }
+                    .onTapGesture { onCenterTap?() }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 Color.clear.contentShape(Rectangle())
                     .onTapGesture { advancePage(totalPages: totalPages) }
