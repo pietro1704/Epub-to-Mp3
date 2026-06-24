@@ -1011,7 +1011,7 @@ struct InstantReaderView: View {
         let computed = chapter.splitSentences()
         spans = computed
         sync.load(chapter: chapter,
-                  chapterDurationSeconds: playerMounted ? player.durationSeconds : 0)
+                  chapterDurationSeconds: showTransport ? activePlayer.durationSeconds : 0)
         // Inject sentence-id → start-ms map keyed by playable-list index so
         // startFromReaderPage does sentence-precise seek (not ratio fallback).
         let map: [String: Int] = sync.timing.reduce(into: [:]) { acc, entry in

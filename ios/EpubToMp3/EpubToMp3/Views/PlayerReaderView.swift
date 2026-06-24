@@ -702,6 +702,9 @@ struct PlayerReaderView: View {
         streamTask?.cancel(); streamTask = nil; streamingJobId = nil
         coverFetchTask?.cancel(); coverFetchTask = nil; coverFetchJobId = nil
         downloadTask?.cancel(); downloadTask = nil
+        // Reset so bootstrap() on the new jobId always calls reloadCurrentChapter,
+        // even when the new book opens at the same numeric chapter index as the old one.
+        lastLoadedChapterIndex = -1
     }
 
     /// Live-stream the backend's per-chapter progress and feed each
