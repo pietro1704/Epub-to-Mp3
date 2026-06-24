@@ -670,17 +670,24 @@ struct ReaderView: View {
                 // text view relayouts briefly after every page flip, geo.size
                 // changes by a few points, and findPage(offset=0) returns 0.
                 guard widthChanged else { return }
-                if !pages.isEmpty {
-                    let target = findPage(containing: textOffsetAtCurrentPage, in: pages)
+                let livePages = paginationCache.pages.isEmpty ? pages : paginationCache.pages
+                if !livePages.isEmpty {
+                    let target = findPage(containing: textOffsetAtCurrentPage, in: livePages)
                     if target != currentPage {
                         currentPage = target
                     }
                 }
             }
             // Keep textOffsetAtCurrentPage in sync whenever the page changes.
+            // Use paginationCache.pages (reference type, always current) instead
+            // of the `pages` let-binding captured from the body render — that
+            // local array can be empty/stale when SwiftUI fires this closure
+            // during a concurrent re-render, causing cumulativeOffset to return
+            // 0 and resetting the reader to page 0 on the next syncPageToTextOffset.
             .compatOnChange(of: currentPage) { newPage in
-                textOffsetAtCurrentPage = cumulativeOffset(page: newPage, in: pages)
-                publishReadingRatio(pages: pages)
+                let livePages = paginationCache.pages.isEmpty ? pages : paginationCache.pages
+                textOffsetAtCurrentPage = cumulativeOffset(page: newPage, in: livePages)
+                publishReadingRatio(pages: livePages)
             }
             // Seed the reading-ratio channel on first appear so a play
             // tap during the very first second of reading already has
