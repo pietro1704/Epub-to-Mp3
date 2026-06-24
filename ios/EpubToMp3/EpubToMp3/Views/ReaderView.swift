@@ -697,13 +697,14 @@ struct ReaderView: View {
                 }
                 guard sizeChangedMeaningfully(from: lastContainerSize, to: newSize) else { return }
                 lastContainerSize = newSize
-                // Only re-derive currentPage when the WIDTH changed (real rotation).
-                // Height-only oscillations (safe-area, keyboard, page-turn layout
-                // jitter from UITextView relayout) must NOT touch currentPage —
-                // that is the root cause of the "flicker back to page 1" bug: the
-                // text view relayouts briefly after every page flip, geo.size
-                // changes by a few points, and findPage(offset=0) returns 0.
+                // Only re-derive currentPage when the WIDTH changed (real rotation)
+                // AND enough time has passed since the last page turn.
+                // Height-only oscillations (safe-area, keyboard, UITextView relayout
+                // after a page flip) must NOT touch currentPage — findPage would
+                // return a stale page because textOffsetAtCurrentPage hasn't been
+                // updated yet by onChange(of: currentPage).
                 guard widthChanged else { return }
+                guard Date().timeIntervalSince(lastPageTurnAt) > 1.0 else { return }
                 let livePages = paginationCache.pages.isEmpty ? pages : paginationCache.pages
                 if !livePages.isEmpty {
                     let target = findPage(containing: textOffsetAtCurrentPage, in: livePages)
