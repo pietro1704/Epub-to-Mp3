@@ -92,20 +92,21 @@ private final class FixedWidthTextView: UITextView, UIGestureRecognizerDelegate 
         return CGSize(width: pinnedWidth, height: ceil(height))
     }
 
-    /// Add the tap recognizer exactly once.
-    /// Swipe gestures are intentionally NOT installed here — the SwiftUI
-    /// DragGesture in slidePageContent/noAnimationPageContent owns horizontal
-    /// swipe-to-turn. Installing UISwipeGestureRecognizer here would fire
-    /// onSwipe the moment the recognizer commits direction (before the finger
-    /// lifts), racing the DragGesture and causing a double page-turn + the
-    /// "flicker on touch" the user sees when the page jumps early.
+    /// Install tap + pan recognizers exactly once.
     func installReaderGestures() {
-        guard gestureRecognizers?.contains(where: { $0.name == "reader.tap" }) != true else { return }
-        let tap = UITapGestureRecognizer(target: self, action: #selector(handleReaderTap(_:)))
-        tap.name = "reader.tap"
-        tap.cancelsTouchesInView = false
-        tap.delegate = self
-        addGestureRecognizer(tap)
+        if gestureRecognizers?.contains(where: { $0.name == "reader.tap" }) != true {
+            let tap = UITapGestureRecognizer(target: self, action: #selector(handleReaderTap(_:)))
+            tap.name = "reader.tap"
+            tap.cancelsTouchesInView = false
+            tap.delegate = self
+            addGestureRecognizer(tap)
+        }
+        if gestureRecognizers?.contains(where: { $0.name == "reader.pan" }) != true {
+            let pan = UIPanGestureRecognizer(target: self, action: #selector(handleReaderPan(_:)))
+            pan.name = "reader.pan"
+            pan.delegate = self
+            addGestureRecognizer(pan)
+        }
     }
 
     @objc func handleReaderTap(_ tap: UITapGestureRecognizer) {
@@ -113,6 +114,15 @@ private final class FixedWidthTextView: UITextView, UIGestureRecognizerDelegate 
         if linkURL(at: point) != nil { return }
         let zone = classifyZone(x: point.x, in: bounds.width)
         onZoneTap?(zone)
+    }
+
+    @objc func handleReaderPan(_ pan: UIPanGestureRecognizer) {
+        guard pan.state == .ended, let onSwipe else { return }
+        let v = pan.velocity(in: self)
+        let t = pan.translation(in: self)
+        // Must be predominantly horizontal and cross a minimum threshold.
+        guard abs(t.x) > 40, abs(t.x) > abs(t.y) * 1.5 else { return }
+        onSwipe(v.x < 0 ? .left : .right)
     }
 
     private func classifyZone(x: CGFloat, in width: CGFloat) -> ReaderTapZone {

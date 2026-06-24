@@ -1013,23 +1013,18 @@ struct ReaderView: View {
         // (EPUB's own heading is the first content of page 0 now).
         let textOriginY: CGFloat = pageVerticalPadding
         let linkHits = pageLinkHits(pages: pages, pageIndex: pageIndex, columnWidth: columnW)
-        return pageView(pages: pages, pageIndex: pageIndex, containerSize: containerSize)
-            .overlay(tapZones(
-                totalPages: totalPages,
-                linkHits: linkHits,
-                textOriginX: margin,
-                textOriginY: textOriginY
-            ))
-            .gesture(
-                DragGesture(minimumDistance: 30)
-                    .onEnded { value in
-                        if value.translation.width < -40 {
-                            advancePage(totalPages: pages.count)
-                        } else if value.translation.width > 40 {
-                            retreatPage()
-                        }
-                    }
-            )
+        return pageView(
+            pages: pages,
+            pageIndex: pageIndex,
+            containerSize: containerSize,
+            onSwipePage: { dir in handleSwipe(dir, totalPages: pages.count) }
+        )
+        .overlay(tapZones(
+            totalPages: totalPages,
+            linkHits: linkHits,
+            textOriginX: margin,
+            textOriginY: textOriginY
+        ))
     }
 
     private func noAnimationPageContent(pages: [NSAttributedString], pageIndex: Int, containerSize: CGSize) -> some View {
@@ -1038,23 +1033,18 @@ struct ReaderView: View {
         let columnW = min(settings.readerColumnWidth, containerSize.width - 2 * margin)
         let textOriginY: CGFloat = pageVerticalPadding
         let linkHits = pageLinkHits(pages: pages, pageIndex: pageIndex, columnWidth: columnW)
-        return pageView(pages: pages, pageIndex: pageIndex, containerSize: containerSize)
-            .overlay(tapZones(
-                totalPages: totalPages,
-                linkHits: linkHits,
-                textOriginX: margin,
-                textOriginY: textOriginY
-            ))
-            .gesture(
-                DragGesture(minimumDistance: 30)
-                    .onEnded { value in
-                        if value.translation.width < -40 {
-                            advancePage(totalPages: pages.count)
-                        } else if value.translation.width > 40 {
-                            retreatPage()
-                        }
-                    }
-            )
+        return pageView(
+            pages: pages,
+            pageIndex: pageIndex,
+            containerSize: containerSize,
+            onSwipePage: { dir in handleSwipe(dir, totalPages: pages.count) }
+        )
+        .overlay(tapZones(
+            totalPages: totalPages,
+            linkHits: linkHits,
+            textOriginX: margin,
+            textOriginY: textOriginY
+        ))
     }
 
     private func pageLinkHits(
@@ -1092,24 +1082,22 @@ struct ReaderView: View {
         pages: [NSAttributedString],
         pageIndex: Int,
         containerSize: CGSize,
-        enableReaderGestures: Bool = true
+        enableReaderGestures: Bool = true,
+        onSwipePage: ((ReaderSwipeDirection) -> Void)? = nil
     ) -> some View {
         let margin = effectiveReaderMargin(for: containerSize)
-        // No more per-frame highlight mutation — reassigning
-        // `attributedText` with a yellow-background sentence forced
-        // TextKit to relayout every glyph and the user saw words
-        // shift subtly on every audio tick. Auto-page (jumping to
-        // the page that contains the active sentence) is kept; the
-        // visible highlight will land in a follow-up that mutates
-        // `NSTextStorage` attributes in place without reassigning
-        // the text.
         let attributedSlice = pages[pageIndex]
         let effectiveColumnWidth = min(
             settings.readerColumnWidth,
             containerSize.width - 2 * margin
         )
         return VStack(alignment: .leading, spacing: 0) {
-            pageTextBody(attributedSlice, width: effectiveColumnWidth, enableReaderGestures: enableReaderGestures)
+            pageTextBody(
+                attributedSlice,
+                width: effectiveColumnWidth,
+                enableReaderGestures: enableReaderGestures,
+                onSwipePage: onSwipePage
+            )
             Spacer(minLength: 0)
         }
         .padding(.horizontal, margin)
@@ -1139,19 +1127,25 @@ struct ReaderView: View {
     private func pageTextBody(
         _ slice: NSAttributedString,
         width: CGFloat,
-        enableReaderGestures: Bool = true
+        enableReaderGestures: Bool = true,
+        totalPages: Int = 0,
+        onSwipePage: ((ReaderSwipeDirection) -> Void)? = nil
     ) -> some View {
+        // onZoneTap is intentionally NOT forwarded here — slidePageContent/
+        // noAnimationPageContent already wrap the page in a tapZones() overlay
+        // (SpatialTapGesture on iOS 16+) that handles left/center/right zones.
+        // Passing onZoneTap here would install a second UITapGestureRecognizer
+        // on the UITextView, causing every tap to fire twice.
+        //
+        // onSwipe IS forwarded (when enableReaderGestures is true) so the
+        // UIPanGestureRecognizer installed on FixedWidthTextView can detect
+        // horizontal swipes — the UITextView absorbs pan events before the
+        // SwiftUI DragGesture layer can see them.
         AttributedPageView(
             attributed: slice,
             width: width,
-            onLinkTap: onLinkTap
-            // onZoneTap intentionally omitted: slidePageContent/noAnimationPageContent
-            // wrap each page with a tapZones() SwiftUI overlay that fires
-            // SpatialTapGesture for zone-based page turns. Passing onZoneTap here
-            // would install a second UITapGestureRecognizer on the UITextView,
-            // causing every tap to fire retreatPage()/advancePage() twice —
-            // the double call is what causes the visible "flash to chapter 0" bug.
-            // onSwipe also omitted: swipe is owned by the DragGesture overlay.
+            onLinkTap: onLinkTap,
+            onSwipe: enableReaderGestures ? onSwipePage : nil
         )
         .frame(width: width, alignment: .topLeading)
         .frame(maxHeight: .infinity, alignment: .topLeading)
