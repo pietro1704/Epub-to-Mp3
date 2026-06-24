@@ -992,13 +992,19 @@ struct InstantReaderView: View {
     }
 
     private func reloadCurrentChapter(index: Int) {
+        // Translate the EPUB-zero-based `index` to playable-list space once,
+        // so both the wipe and the inject key into the same index space that
+        // startFromReaderPage uses when looking up sentenceTimingByChapter.
+        let snap = snapshot ?? JobSnapshot.empty
+        let playableIdx = InstantReaderIndexMapper
+            .playableIndex(forEpubIndex: index, in: snap)
+            ?? activePlayer.currentChapterIndex
         guard index >= 0,
               let chapter = resolveChapter(at: index) else {
             spans = []
             // Wipe stale per-sentence timing so divergence-dialog seek
             // can't land on a phantom offset from the previous chapter.
-            let ap = activePlayer
-            ap.setSentenceTiming([:], forChapterIndex: ap.currentChapterIndex)
+            activePlayer.setSentenceTiming([:], forChapterIndex: playableIdx)
             return
         }
         currentSentenceId = nil
@@ -1006,13 +1012,12 @@ struct InstantReaderView: View {
         spans = computed
         sync.load(chapter: chapter,
                   chapterDurationSeconds: playerMounted ? player.durationSeconds : 0)
-        // Inject sentence-id → start-ms map so startFromReaderPage can
-        // do sentence-precise seek (not just ratio approximation).
-        let ap = activePlayer
+        // Inject sentence-id → start-ms map keyed by playable-list index so
+        // startFromReaderPage does sentence-precise seek (not ratio fallback).
         let map: [String: Int] = sync.timing.reduce(into: [:]) { acc, entry in
             acc[entry.id] = entry.startMs
         }
-        ap.setSentenceTiming(map, forChapterIndex: ap.currentChapterIndex)
+        activePlayer.setSentenceTiming(map, forChapterIndex: playableIdx)
     }
 
     /// Idempotent dim — every page turn fires the callback, but we only

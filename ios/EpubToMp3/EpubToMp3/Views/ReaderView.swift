@@ -732,6 +732,14 @@ struct ReaderView: View {
             // jump to whichever page contains it — but only if the
             // user hasn't taken control via swipe / tap / arrow.
             .compatOnChange(of: currentSentenceId) { newId in
+                // Safety backstop: if onDidFinishTransition was somehow never
+                // delivered (e.g. a dropped UIPageViewController delegate call),
+                // isPageTurning could stay true forever. Treat any audio tick
+                // arriving more than 1.5 s after the last user turn as a signal
+                // that the animation is definitely over.
+                if isPageTurning, Date().timeIntervalSince(lastPageTurnAt) > 1.5 {
+                    isPageTurning = false
+                }
                 guard isFollowing, !isPageTurning, let newId else { return }
                 guard let span = spans.first(where: { $0.id == newId }) else { return }
                 guard let target = pageIndexContaining(sentence: span, in: pages) else { return }

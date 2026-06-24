@@ -1372,12 +1372,16 @@ final class AudioPlayer: ObservableObject {
                     ? (snapshot.chapterProgress?.count ?? 0)
                     : snapshot.playableChapters.count
                 if !self.isSegmentMode, self.currentChapterIndex + 1 < totalChapters {
-                    // Prefer URL-based reconciliation to avoid double-advancing
-                    // when the KVO observer already incremented the index (fast
-                    // devices with buffer-ahead). Only fall back to +1 when the
-                    // KVO hasn't run yet (reconcile returns false = no change).
-                    let alreadyAdvanced = self.reconcileChapterIndexFromCurrentItem()
-                    if !alreadyAdvanced {
+                    // Snapshot the index BEFORE reconciling. reconcile() returns
+                    // false in two distinct cases: (a) URL not found, and (b)
+                    // index already correct — case (b) is exactly when the KVO
+                    // observer already advanced us on a fast device. Comparing
+                    // before/after lets us distinguish the two: if the index
+                    // changed during reconcile, KVO did the work; if it's the
+                    // same AND reconcile returned false, we must +1 ourselves.
+                    let indexBefore = self.currentChapterIndex
+                    let _ = self.reconcileChapterIndexFromCurrentItem()
+                    if self.currentChapterIndex == indexBefore {
                         self.currentChapterIndex += 1
                         self.positionSeconds = 0
                     }
