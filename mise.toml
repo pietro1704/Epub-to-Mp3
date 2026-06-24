@@ -1,6 +1,5 @@
 [tools]
-# Exact Python version required for Coqui TTS (requires 3.11)
-python = { version = "3.11.11", virtualenv = ".venv" }
+python = { version = "3.12.10", virtualenv = ".venv" }
 # Node LTS for frontend (Vite 7.x requires >=20.19.0)
 node = "latest"
 npm = "latest"

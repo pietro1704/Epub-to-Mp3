@@ -12,7 +12,7 @@ RUN npm run build || (echo "Frontend build failed!" && exit 1)
 RUN ls -la dist/ && echo "Frontend build successful!"
 
 # Stage 2: Python runtime
-FROM python:3.11-slim
+FROM python:3.12-slim
 
 WORKDIR /app
 

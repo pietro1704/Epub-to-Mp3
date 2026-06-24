@@ -73,7 +73,7 @@ jobs:
       - name: Setup Node + Python
         if: steps.pr.outputs.number != ''
         uses: actions/setup-python@v6
-        with: { python-version: "3.11" }
+        with: { python-version: "3.12" }
 
       - name: Run Claude Code in headless mode
         if: steps.pr.outputs.number != ''
