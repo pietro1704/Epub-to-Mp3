@@ -62,6 +62,8 @@ struct PlayerReaderView: View {
     /// Immersive-reading toggle. Dimmed by page-turns; restored by a
     /// center-tap inside the reader pane.
     @State private var chromeVisible = true
+    /// Sentence the user tapped — drives the sentence action menu.
+    @State private var pendingSentence: SentenceSpan?
     @EnvironmentObject private var bookmarkStore: BookmarkStore
 
     @EnvironmentObject private var readerCoordinator: ReaderCoordinator
@@ -225,6 +227,47 @@ struct PlayerReaderView: View {
             guard !isSwiftUIPreview else { return }
             teardown()
             bootstrap()
+        }
+        .confirmationDialog(
+            pendingSentence?.text ?? "",
+            isPresented: Binding(
+                get: { pendingSentence != nil },
+                set: { if !$0 { pendingSentence = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            if let span = pendingSentence {
+                Button(L10n.string("reader.sentenceMenu.playFromHere")) {
+                    seekToSentence(span)
+                    pendingSentence = nil
+                }
+                let isBookmarked = bookmarkStore.hasBookmark(
+                    bookId: bookId, chapterIndex: player.currentChapterIndex
+                )
+                Button(
+                    isBookmarked
+                        ? L10n.string("reader.sentenceMenu.removeBookmark")
+                        : L10n.string("reader.sentenceMenu.addBookmark")
+                ) {
+                    if isBookmarked {
+                        if let bm = bookmarkStore
+                            .bookmarks(for: bookId, chapterIndex: player.currentChapterIndex)
+                            .first(where: { !$0.isHighlight }) {
+                            bookmarkStore.remove(id: bm.id)
+                        }
+                    } else {
+                        bookmarkStore.addBookmark(
+                            bookId: bookId,
+                            chapterIndex: player.currentChapterIndex,
+                            chapterTitle: currentChapterTitle
+                        )
+                    }
+                    pendingSentence = nil
+                }
+                Button(L10n.string("reader.sentenceMenu.cancel"), role: .cancel) {
+                    pendingSentence = nil
+                }
+            }
         }
     }
 
@@ -807,8 +850,10 @@ struct PlayerReaderView: View {
     }
 
     private func jumpToSentence(_ span: SentenceSpan) {
-        // If we have real timestamps, seek to the sentence's start.
-        // Otherwise the WPM-estimated table still gives a useful seek.
+        pendingSentence = span
+    }
+
+    private func seekToSentence(_ span: SentenceSpan) {
         guard let entry = sync.timing.first(where: { $0.id == span.id }) else { return }
         let seconds = TimeInterval(entry.startMs) / 1000.0
         player.seek(to: seconds)

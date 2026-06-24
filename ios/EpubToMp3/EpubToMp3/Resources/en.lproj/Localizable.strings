@@ -412,6 +412,10 @@
 
 /* === ReaderView === */
 "reader.seekSentenceHint" = "Double tap to seek audio to this sentence";
+"reader.sentenceMenu.playFromHere" = "Play from here";
+"reader.sentenceMenu.addBookmark" = "Add bookmark";
+"reader.sentenceMenu.removeBookmark" = "Remove bookmark";
+"reader.sentenceMenu.cancel" = "Cancel";
 
 /* === LocalEpubReaderView === */
 "localEpubReader.couldntRead" = "Couldn't read this book";

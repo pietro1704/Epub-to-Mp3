@@ -412,6 +412,10 @@
 
 /* === ReaderView === */
 "reader.seekSentenceHint" = "Toque duas vezes para levar o áudio a esta frase";
+"reader.sentenceMenu.playFromHere" = "Tocar a partir daqui";
+"reader.sentenceMenu.addBookmark" = "Adicionar marcador";
+"reader.sentenceMenu.removeBookmark" = "Remover marcador";
+"reader.sentenceMenu.cancel" = "Cancelar";
 
 /* === LocalEpubReaderView === */
 "localEpubReader.couldntRead" = "Não foi possível ler este livro";
