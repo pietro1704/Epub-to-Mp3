@@ -1128,7 +1128,7 @@ struct ChromeVisibilityModifier: ViewModifier {
         #if os(iOS)
         if #available(iOS 16, *) {
             content
-                .navigationBarHidden(true)
+                .toolbar(.hidden, for: .navigationBar)
                 .statusBarHidden(false)
                 .toolbar(.hidden, for: .tabBar)
         } else {
