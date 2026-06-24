@@ -103,6 +103,9 @@ struct ReaderView: View {
     @State private var isPageTurning: Bool = false
     /// Tracks direction of the last page turn for asymmetric transition.
     @State private var pageDirection: PageDirection = .forward
+    /// Timestamp of last page turn — debounces rapid taps in all turn
+    /// styles, not just slide (slide uses isPageTurning, none/flip had no guard).
+    @State private var lastPageTurnAt: Date = .distantPast
     /// Non-nil when retreating across a chapter boundary: holds the chapter.id
     /// we expect to land on so the last-page snap fires exactly once for that
     /// chapter and never bleeds into subsequent navigations.
@@ -329,19 +332,28 @@ struct ReaderView: View {
         // (follows OS). This does NOT affect the navigation bar, tab bar,
         // or any UI outside this view.
         .modifier(ReaderColorSchemeModifier(theme: settings.readerTheme))
-        .compatOnChange(of: chapter.id) { newId in
+        .compatOnChange(of: chapter.id) { _ in
             currentPage = 0
             isPageTurning = false
-            // Latch the new chapter id so the pages.count watcher knows
-            // which chapter it is waiting for. Clear any stale sentinel.
-            if jumpToLastPageForChapterId == "__pending__" {
-                jumpToLastPageForChapterId = newId
-            } else {
-                jumpToLastPageForChapterId = nil
-            }
             renderedAttributed = nil
             paginationCache.pages = []
             paginationCache.key = nil
+            // If retreatPage requested last-page landing, poll until the new
+            // chapter's pages are ready then snap to the last one.
+            if jumpToLastPageForChapterId == "__pending__" {
+                jumpToLastPageForChapterId = nil
+                Task { @MainActor in
+                    // Wait up to 3 s for the paginator to produce pages.
+                    for _ in 0..<30 {
+                        try? await Task.sleep(nanoseconds: 100_000_000)
+                        let p = paginationCache.pages
+                        if !p.isEmpty {
+                            currentPage = p.count - 1
+                            return
+                        }
+                    }
+                }
+            }
         }
         .task(id: renderedAttributedKey) {
             // `NSAttributedString.html` importer is main-thread-only
@@ -722,18 +734,6 @@ struct ReaderView: View {
             .compatOnChange(of: debouncedLineSpacing) { _ in syncPageToTextOffset(in: pages) }
             .compatOnChange(of: debouncedMargin) { _ in syncPageToTextOffset(in: pages) }
             .compatOnChange(of: debouncedColumnWidth) { _ in syncPageToTextOffset(in: pages) }
-            // Consume the jump-to-last-page flag the moment this chapter's
-            // pages become available, but only if the flag is for THIS chapter
-            // (guards against stale flags from a previous retreat bleeding into
-            // forward navigation or a different chapter's first render).
-            .compatOnChange(of: pages.count) { newCount in
-                guard let targetId = jumpToLastPageForChapterId,
-                      targetId == chapter.id,
-                      newCount > 0 else { return }
-                jumpToLastPageForChapterId = nil
-                let last = newCount - 1
-                if currentPage != last { currentPage = last }
-            }
         }
         .compatHorizontalSafeAreaPadding(0)
         // Floating "resume follow-along" button — visible whenever the
@@ -1295,8 +1295,11 @@ struct ReaderView: View {
     /// chapter actually changes, the `onChange(of: chapter.id)` modifier
     /// resets `currentPage` to 0.
     private func advancePage(totalPages: Int) {
-        guard !isPageTurning else { return }
-        // Manual navigation → stop auto-following the audio.
+        // Unified turn guard: isPageTurning covers slide animations;
+        // lastPageTurnAt debounces all styles (none/flip had no guard).
+        guard !isPageTurning,
+              Date().timeIntervalSince(lastPageTurnAt) > 0.30 else { return }
+        lastPageTurnAt = Date()
         isFollowing = false
         pageDirection = .forward
         if currentPage + 1 < totalPages {
@@ -1317,7 +1320,9 @@ struct ReaderView: View {
     }
 
     private func retreatPage() {
-        guard !isPageTurning else { return }
+        guard !isPageTurning,
+              Date().timeIntervalSince(lastPageTurnAt) > 0.30 else { return }
+        lastPageTurnAt = Date()
         isFollowing = false
         pageDirection = .backward
         if currentPage > 0 {
@@ -1333,9 +1338,6 @@ struct ReaderView: View {
                 currentPage -= 1
             }
         } else {
-            // Signal that the incoming chapter should open at its last page.
-            // Use a sentinel so the flag survives across the chapter.id change
-            // without being cleared by the onChange(of: chapter.id) handler.
             jumpToLastPageForChapterId = "__pending__"
             if onPreviousChapter?() != true {
                 jumpToLastPageForChapterId = nil
