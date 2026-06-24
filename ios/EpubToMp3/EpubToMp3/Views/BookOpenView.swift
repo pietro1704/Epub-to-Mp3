@@ -153,7 +153,7 @@ struct BookOpenView: View {
         .navigationTitle("")
         .compatReaderBackButtonHidden()
         .compatInlineNavigationTitle()
-        .modifier(PdfChromeVisibilityModifier(visible: book.fileType == .pdf ? pdfChromeVisible : true))
+        .modifier(PdfChromeVisibilityModifier(visible: book.fileType == .pdf ? pdfChromeVisible : false))
         // BookOpenView is pushed from Library and owns its own in-reader
         // playback chrome. Keep the root mini player hidden for the whole
         // open-book detail so immersive reader mode has no stray global UI.
