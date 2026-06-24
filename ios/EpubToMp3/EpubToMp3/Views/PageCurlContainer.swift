@@ -316,7 +316,25 @@ struct PageCurlContainer: UIViewControllerRepresentable {
             // race the next audio tick and yank the reader back to
             // the player's page.
             parent.onUserPageChange?()
-            parent.currentPage = vc.pageIndex
+            let landedPage = vc.pageIndex
+            parent.currentPage = landedPage
+
+            // Determine swipe direction from the previous VC's page index.
+            let prevIndex = (previousViewControllers.first as? IndexedHostingController)?.pageIndex
+            let swipedForward = prevIndex.map { landedPage > $0 } ?? false
+            let swipedBackward = prevIndex.map { landedPage < $0 } ?? false
+
+            if swipedForward, landedPage == parent.pages.count - 1 {
+                // User swiped forward past the last page in the chapter.
+                if parent.onAdvanceChapter?() == true {
+                    parent.currentPage = 0
+                }
+            } else if swipedBackward, landedPage == 0 {
+                // User swiped backward past the first page in the chapter.
+                if parent.onPreviousChapter?() == true {
+                    parent.currentPage = 0
+                }
+            }
         }
 
         // MARK: UIGestureRecognizerDelegate
