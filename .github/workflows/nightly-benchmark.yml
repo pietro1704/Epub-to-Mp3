@@ -34,7 +34,7 @@ jobs:
         run: mise run install
 
       - name: Restore nightly baseline cache
-        uses: actions/cache/restore@v5
+        uses: actions/cache/restore@v6
         with:
           path: .cache/telemetry/ci-speed-baseline-nightly.json
           key: nightly-benchmark-baseline-${{ github.ref_name }}-${{ github.run_id }}
@@ -82,7 +82,7 @@ jobs:
 
       - name: Save nightly baseline cache
         if: always()
-        uses: actions/cache/save@v5
+        uses: actions/cache/save@v6
         with:
           path: .cache/telemetry/ci-speed-baseline-nightly.json
           key: nightly-benchmark-baseline-${{ github.ref_name }}-${{ github.run_id }}
