@@ -94,6 +94,7 @@
 "player.pause" = "Pausa";
 "player.play" = "Reproducir";
 "player.skipForward15" = "Avanzar 15 segundos";
+"player.skipForward30" = "Avanzar 30 segundos";
 "player.nextChapter" = "Siguiente capítulo";
 "player.playbackSpeed" = "Velocidad: %@";
 "player.sleep" = "Dormir";

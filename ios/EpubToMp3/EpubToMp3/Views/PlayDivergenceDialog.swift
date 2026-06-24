@@ -25,22 +25,6 @@ struct PlayDivergenceAnchor: Equatable {
         )
     }
 
-    /// Legacy capture path kept for callers that don't have the
-    /// coordinator in scope yet. Reads UserDefaults (same keys as
-    /// before). New call sites should take the coordinator overload.
-    @MainActor
-    static func capture(readerChapterIndex: Int) -> PlayDivergenceAnchor {
-        let defaults = UserDefaults.standard
-        return PlayDivergenceAnchor(
-            readerChapterIndex: readerChapterIndex,
-            pageRatio: defaults.object(
-                forKey: AudioPlayer.readerCurrentPageRatioDefaultsKey
-            ) as? Double,
-            sentenceId: defaults.string(
-                forKey: AudioPlayer.readerCurrentSentenceIdDefaultsKey
-            )
-        )
-    }
 }
 
 /// `confirmationDialog` shown when the user taps a play button while
@@ -59,7 +43,7 @@ struct PlayDivergenceAnchor: Equatable {
 ///     switch player.playTapDecision(readerChapterIndex: readerChapterIndex) {
 ///     case .pause, .resume: player.togglePlayPause()
 ///     case .offerStartChoice:
-///         pendingAnchor = .capture(readerChapterIndex: readerChapterIndex)
+///         pendingAnchor = .capture(from: readerCoordinator)
 ///     }
 /// }
 /// ```

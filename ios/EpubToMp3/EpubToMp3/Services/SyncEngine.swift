@@ -184,7 +184,9 @@ final class SyncEngine: @unchecked Sendable {
         // tick rate is 4Hz. Binary search is overkill and would mask the
         // common forward-walk case where the next sentence is the next
         // index. Keep it linear and obvious.
-        let active = timing.first(where: { entry in
+        // Use `last` so that when two segments overlap (rare but possible with
+        // backend-supplied timing), the most specific/recent one wins.
+        let active = timing.last(where: { entry in
             positionMs >= entry.startMs && positionMs < entry.endMs
         }) ?? timing.last(where: { positionMs >= $0.startMs })
 

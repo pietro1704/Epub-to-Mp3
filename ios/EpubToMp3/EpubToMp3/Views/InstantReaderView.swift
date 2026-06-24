@@ -692,10 +692,15 @@ struct InstantReaderView: View {
             .playDivergenceDialog(player: player, anchor: $pendingAnchor)
 
             Button {
-                if currentChapterIndex + 1 < fulltext.chapters.count {
+                player.nextChapter()
+                // Derive the new reader position from the player's playable
+                // index so the two axes stay in sync even when non-playable
+                // chapters are interleaved in the EPUB.
+                if let epubIdx = playerEpubChapterIndex(for: activePlayer) {
+                    currentChapterIndex = epubIdx
+                } else if currentChapterIndex + 1 < fulltext.chapters.count {
                     currentChapterIndex += 1
                 }
-                player.nextChapter()
             } label: {
                 Image(systemName: "forward.end.fill").font(.title3)
             }
@@ -745,8 +750,14 @@ struct InstantReaderView: View {
                 }
                 Divider()
                 Button {
-                    if currentChapterIndex > 0 { currentChapterIndex -= 1 }
                     player.previousChapter()
+                    // Derive from the player's playable index so non-playable
+                    // interleaved chapters don't desync the reader.
+                    if let epubIdx = playerEpubChapterIndex(for: activePlayer) {
+                        currentChapterIndex = epubIdx
+                    } else if currentChapterIndex > 0 {
+                        currentChapterIndex -= 1
+                    }
                 } label: {
                     Label(L10n.string("player.previousChapter"), systemImage: "backward.end.fill")
                 }
@@ -755,7 +766,7 @@ struct InstantReaderView: View {
                     Label(L10n.string("player.skipBack15"), systemImage: "gobackward.15")
                 }
                 Button { player.skip(by: 30) } label: {
-                    Label(L10n.string("player.skipForward15"), systemImage: "goforward.30")
+                    Label(L10n.string("player.skipForward30"), systemImage: "goforward.30")
                 }
             } label: {
                 Image(systemName: "ellipsis.circle.fill")
