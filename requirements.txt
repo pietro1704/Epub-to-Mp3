@@ -42,7 +42,7 @@ langdetect>=1.0.9
 
 # Audio Processing
 static-ffmpeg
-mutagen>=1.48.0
+mutagen>=1.48.1
 
 # Audio Verification (speech-to-text)
 faster-whisper>=1.2.1
