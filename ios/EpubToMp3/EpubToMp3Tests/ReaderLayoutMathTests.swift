@@ -19,6 +19,33 @@ final class ReaderLayoutMathTests: XCTestCase {
             "with chrome hidden the corridor must still clear the status bar / notch")
     }
 
+    /// THE BUG: chrome hidden applies a large compaction (72 pt) to reclaim
+    /// the chrome band — but that compaction must NEVER eat the safe area. On
+    /// a 59 pt-notch phone the old formula `safeAreaTop + chromeTop + pad -
+    /// hiddenCompaction` = 59 + 0 + 12 - 72 = -1 → clamped to 0 → the first
+    /// line rendered under the clock. The safe area must remain a hard floor.
+    func testTopCorridorKeepsSafeAreaWhenChromeHiddenWithCompaction() {
+        let corridor = ReaderLayoutMath.topCorridor(
+            safeAreaTop: 59, chromeTop: 0, pad: 12, hiddenCompaction: 72
+        )
+        XCTAssertGreaterThanOrEqual(corridor, 59,
+            "compaction must only shrink the chrome reserve, never the safe area")
+    }
+
+    /// Compaction shrinks the chrome reserve but the corridor is still at
+    /// least the safe area; with chrome visible and no compaction the reserve
+    /// is fully present on top of the safe area.
+    func testTopCorridorCompactsOnlyChromeReserve() {
+        // Hidden: reserve collapses, safe area intact.
+        XCTAssertEqual(
+            ReaderLayoutMath.topCorridor(safeAreaTop: 47, chromeTop: 8, pad: 12, hiddenCompaction: 72),
+            47, accuracy: 0.001)
+        // Visible: safe area + (chrome 8 + pad 12).
+        XCTAssertEqual(
+            ReaderLayoutMath.topCorridor(safeAreaTop: 47, chromeTop: 8, pad: 12, hiddenCompaction: 0),
+            47 + 20, accuracy: 0.001)
+    }
+
     /// Chrome VISIBLE: corridor is safe area + chrome + pad.
     func testTopCorridorAddsChromeOnTopOfSafeArea() {
         let corridor = ReaderLayoutMath.topCorridor(

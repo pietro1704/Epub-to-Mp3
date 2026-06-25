@@ -17,11 +17,16 @@ enum ReaderLayoutMath {
         max(margin, (containerWidth - columnWidth) / 2)
     }
 
-    /// Top corridor: the safe-area top (status bar / notch) PLUS the host's
-    /// top chrome PLUS a breathing pad, minus any compaction applied when
-    /// chrome is hidden. Clamped at 0 so it can never push text upward.
+    /// Top corridor: the safe-area top (status bar / notch) is an INVIOLABLE
+    /// floor — text must always clear the clock / battery / notch, whether
+    /// chrome is shown or hidden. Only the chrome reserve + breathing pad may
+    /// be compacted away when chrome hides; the compaction can never eat into
+    /// the safe area. (The previous formula subtracted `hiddenCompaction`
+    /// from the WHOLE sum, so hiding chrome on a 59 pt-notch phone drove the
+    /// corridor to ~0 and the first line rendered under the status bar.)
     static func topCorridor(safeAreaTop: CGFloat, chromeTop: CGFloat, pad: CGFloat, hiddenCompaction: CGFloat) -> CGFloat {
-        max(0, safeAreaTop + chromeTop + pad - hiddenCompaction)
+        let chromeReserve = max(0, chromeTop + pad - hiddenCompaction)
+        return max(0, safeAreaTop) + chromeReserve
     }
 
     /// Bottom corridor: the safe-area bottom (home indicator) PLUS the
