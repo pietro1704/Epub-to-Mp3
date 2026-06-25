@@ -869,7 +869,19 @@ struct ReaderView: View {
         // Anchor sentence id captured *now* so the eventual write
         // reflects the page we're settling on, not whatever happens
         // to be visible 150 ms later (the user may keep swiping).
-        let anchorSentenceId = spans.first(where: { $0.startChar >= offset })?.id
+        // Find the first sentence whose text appears on the current page by
+        // probing the page's attributed string directly. This is immune to the
+        // character-space mismatch between NSAttributedString (HTML-rendered)
+        // and SentenceSpan.startChar (plain-text offset) that affects EPUBs
+        // with CSS/markup — the same approach used by pageIndexContaining().
+        let currentPageString = pages.indices.contains(currentPage)
+            ? (pages[currentPage].string as NSString)
+            : nil
+        let anchorSentenceId = spans.first(where: { span in
+            guard let pageStr = currentPageString else { return false }
+            let probe = String(span.text.trimmingCharacters(in: .whitespacesAndNewlines).prefix(40))
+            return !probe.isEmpty && pageStr.range(of: probe).location != NSNotFound
+        })?.id
 
         publishRatioTask?.cancel()
         publishRatioTask = Task { @MainActor in

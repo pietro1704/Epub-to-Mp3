@@ -934,8 +934,14 @@ final class AudioPlayer: ObservableObject {
             let chapters = snapshot.playableChapters
             guard currentChapterIndex + 1 < chapters.count else { return }
         }
+        let indexBefore = currentChapterIndex
         player.advanceToNextItem()
-        currentChapterIndex += 1
+        // Reconcile via URL first — KVO may already have advanced the index
+        // on fast devices; falling back to +1 only when nothing changed.
+        let _ = reconcileChapterIndexFromCurrentItem()
+        if currentChapterIndex == indexBefore {
+            currentChapterIndex += 1
+        }
         positionSeconds = 0
         publishCurrentChapter()
         updateNowPlayingInfo()

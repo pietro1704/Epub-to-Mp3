@@ -693,10 +693,13 @@ struct InstantReaderView: View {
 
             Button {
                 player.nextChapter()
-                // Derive the new reader position from the player's playable
-                // index so the two axes stay in sync even when non-playable
-                // chapters are interleaved in the EPUB.
-                if let epubIdx = playerEpubChapterIndex(for: activePlayer) {
+                // Derive the new reader position from the player's current
+                // chapter so the two axes stay in sync. In embedded mode
+                // globalPlayer.currentChapterIndex IS the EPUB index directly
+                // (enqueueSegment sets it); in local mode translate via mapper.
+                if embeddedAudioReady {
+                    currentChapterIndex = globalPlayer.currentChapterIndex
+                } else if let epubIdx = playerEpubChapterIndex(for: player) {
                     currentChapterIndex = epubIdx
                 } else if currentChapterIndex + 1 < fulltext.chapters.count {
                     currentChapterIndex += 1
@@ -751,9 +754,11 @@ struct InstantReaderView: View {
                 Divider()
                 Button {
                     player.previousChapter()
-                    // Derive from the player's playable index so non-playable
-                    // interleaved chapters don't desync the reader.
-                    if let epubIdx = playerEpubChapterIndex(for: activePlayer) {
+                    // Mirror the next-chapter logic: embedded uses EPUB index
+                    // directly; local uses the mapper with ±1 fallback.
+                    if embeddedAudioReady {
+                        currentChapterIndex = globalPlayer.currentChapterIndex
+                    } else if let epubIdx = playerEpubChapterIndex(for: player) {
                         currentChapterIndex = epubIdx
                     } else if currentChapterIndex > 0 {
                         currentChapterIndex -= 1
