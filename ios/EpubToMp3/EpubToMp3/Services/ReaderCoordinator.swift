@@ -118,11 +118,20 @@ final class ReaderCoordinator: ObservableObject {
         mirrorTask = nil
         let snapshot = anchor
         defaults.set(snapshot.chapterIndex, forKey: AudioPlayer.readerCurrentChapterIndexDefaultsKey)
+        // Mirror scheduleMirror's semantics: nil cursor REMOVES the key so a
+        // stale sentenceId/pageRatio from a prior chapter never survives teardown.
+        // Without this, cold-launch hydration could produce an anchor whose
+        // sentenceId belongs to a different chapter than the persisted chapterIndex,
+        // causing startFromReaderPage to sentence-seek into the wrong chapter.
         if let ratio = snapshot.pageRatio {
             defaults.set(ratio, forKey: AudioPlayer.readerCurrentPageRatioDefaultsKey)
+        } else {
+            defaults.removeObject(forKey: AudioPlayer.readerCurrentPageRatioDefaultsKey)
         }
         if let id = snapshot.sentenceId {
             defaults.set(id, forKey: AudioPlayer.readerCurrentSentenceIdDefaultsKey)
+        } else {
+            defaults.removeObject(forKey: AudioPlayer.readerCurrentSentenceIdDefaultsKey)
         }
     }
 }

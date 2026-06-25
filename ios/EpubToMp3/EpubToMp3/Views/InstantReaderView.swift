@@ -1003,19 +1003,33 @@ struct InstantReaderView: View {
     }
 
     private func reloadCurrentChapter(index: Int) {
-        // Translate the EPUB-zero-based `index` to playable-list space once,
-        // so both the wipe and the inject key into the same index space that
-        // startFromReaderPage uses when looking up sentenceTimingByChapter.
+        // Resolve the index-space the timing map must key into so both the
+        // wipe and the inject land in the SAME space `startFromReaderPage`
+        // uses when looking up `sentenceTimingByChapter`.
+        //
+        // Two regimes — never conflate them:
+        //  - Embedded runtime (`embeddedAudioReady`): `playableChapters` is
+        //    permanently empty (segments arrive via `enqueueSegment`, no
+        //    `downloadUrl`), so the playable mapper always returns nil. The
+        //    embedded player's `currentChapterIndex` IS the EPUB-zero-based
+        //    index (see AudioPlayer.enqueueSegment), and `startFromReaderPage`
+        //    keys lookups by that same EPUB index — so key by `index`.
+        //  - Local mounted player: key by the real playable-list index. When
+        //    the mapper returns nil (reader on a chapter with no playable
+        //    counterpart) skip the inject rather than clobber an unrelated
+        //    chapter's entry with `activePlayer.currentChapterIndex`.
         let snap = snapshot ?? JobSnapshot.empty
-        let playableIdx = InstantReaderIndexMapper
-            .playableIndex(forEpubIndex: index, in: snap)
-            ?? activePlayer.currentChapterIndex
+        let playableIdx: Int? = embeddedAudioReady
+            ? index
+            : InstantReaderIndexMapper.playableIndex(forEpubIndex: index, in: snap)
         guard index >= 0,
               let chapter = resolveChapter(at: index) else {
             spans = []
             // Wipe stale per-sentence timing so divergence-dialog seek
             // can't land on a phantom offset from the previous chapter.
-            activePlayer.setSentenceTiming([:], forChapterIndex: playableIdx)
+            if let playableIdx {
+                activePlayer.setSentenceTiming([:], forChapterIndex: playableIdx)
+            }
             return
         }
         currentSentenceId = nil
@@ -1023,8 +1037,10 @@ struct InstantReaderView: View {
         spans = computed
         sync.load(chapter: chapter,
                   chapterDurationSeconds: showTransport ? activePlayer.durationSeconds : 0)
-        // Inject sentence-id → start-ms map keyed by playable-list index so
-        // startFromReaderPage does sentence-precise seek (not ratio fallback).
+        // Inject sentence-id → start-ms map; skip when there is no resolvable
+        // key (local player, unplayable chapter) to avoid poisoning an unrelated
+        // chapter's timing entry.
+        guard let playableIdx else { return }
         let map: [String: Int] = sync.timing.reduce(into: [:]) { acc, entry in
             acc[entry.id] = entry.startMs
         }
