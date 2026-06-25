@@ -98,8 +98,26 @@ enum EpubHtmlRenderer {
         }
 
         let mutated = NSMutableAttributedString(attributedString: imported)
-        applyOverrides(to: mutated, settings: settings)
+        let bodyFontSize = modalBodyFontSize(in: imported)
+        applyOverrides(to: mutated, settings: settings, bodyFontSize: bodyFontSize)
         return AttributedString(mutated)
+    }
+
+    /// The most common font size across the chapter — i.e. the body text
+    /// size. Headings (`<h1>`–`<h6>`) render LARGER than this via the
+    /// importer's CSS, so a run whose size exceeds the modal size is a
+    /// heading. This is content-agnostic: it keys on the EPUB's own
+    /// declared typography, never on how long a paragraph happens to be.
+    private static func modalBodyFontSize(in attr: NSAttributedString) -> CGFloat {
+        guard attr.length > 0 else { return 0 }
+        var histogram: [CGFloat: Int] = [:]
+        attr.enumerateAttribute(.font, in: NSRange(location: 0, length: attr.length)) { value, range, _ in
+            guard let f = value as? PlatformFont else { return }
+            // Weight by character count so a long body dominates over a
+            // short heading even if there are several headings.
+            histogram[f.pointSize, default: 0] += range.length
+        }
+        return histogram.max(by: { $0.value < $1.value })?.key ?? 0
     }
 
     // MARK: Override pipeline
@@ -110,7 +128,8 @@ enum EpubHtmlRenderer {
     /// override is off.
     private static func applyOverrides(
         to attr: NSMutableAttributedString,
-        settings: AppSettings
+        settings: AppSettings,
+        bodyFontSize: CGFloat
     ) {
         let fullRange = NSRange(location: 0, length: attr.length)
         guard fullRange.length > 0 else { return }
@@ -217,14 +236,25 @@ enum EpubHtmlRenderer {
             if mutable.firstLineHeadIndent > targetSize {
                 mutable.firstLineHeadIndent = targetSize
             }
-            // User alignment ALWAYS wins over the EPUB's own
-            // alignment. Default `.justified` matches Apple Books and
-            // print typography; `.left` is the ragged-right opt-out
-            // for users who dislike wide word-spacing on narrow
-            // columns.
-            mutable.alignment = settings.readerTextAlignment == .justified
-                ? .justified
-                : .left
+            // Preserve the EPUB's INTENTIONAL centred/right alignment only
+            // for HEADINGS — detected structurally by the EPUB's OWN
+            // typography: a heading run renders larger than the chapter's
+            // modal (body) font size, exactly as the book's CSS declared.
+            // This is content-agnostic — it never keys on paragraph length
+            // or specific text — so a long centred title is kept while a
+            // body paragraph that merely inherited `text-align:center` from
+            // a wrapping container follows the user's alignment choice
+            // (fixing "o texto todo ta centralizado"). Body paragraphs at
+            // or below the body size always take the user's alignment.
+            let epubAlignment = (attrs[.paragraphStyle] as? NSParagraphStyle)?.alignment
+            let isHeadingRun = bodyFontSize > 0 && baseFont.pointSize > bodyFontSize + 0.5
+            if (epubAlignment == .center || epubAlignment == .right), isHeadingRun {
+                mutable.alignment = epubAlignment!
+            } else {
+                mutable.alignment = settings.readerTextAlignment == .justified
+                    ? .justified
+                    : .left
+            }
             attr.addAttribute(.paragraphStyle, value: mutable, range: range)
         }
     }

@@ -263,12 +263,15 @@ final class MainReaderViewTests: XCTestCase {
         XCTAssertFalse(readerSource.contains("case .center: advancePage(totalPages: totalPages)"),
                        "Center taps must not advance the page in paginated mode.")
 
-        // Swipe-to-turn is handled exclusively by DragGesture(.onEnded)
-        // in slidePageContent. UISwipeGestureRecognizer was removed from
-        // installReaderGestures() because it fires before the finger lifts,
-        // causing an early page-turn flash and then a second turn from DragGesture.
-        XCTAssertTrue(readerSource.contains("DragGesture(minimumDistance: 30)"),
-                      "Swipe-to-turn must use DragGesture(.onEnded) so the page only turns after the finger lifts.")
+        // Swipe-to-turn: page-curl (.flip) swipes are owned by the native
+        // UIPageViewController in TextKitPageView; slide/none swipes flow
+        // through the single `onSwipe` path on FixedWidthTextView. The legacy
+        // SwiftUI `DragGesture(minimumDistance: 30)` was removed so it can't
+        // race the UIKit pan (which produced the double-turn / flicker).
+        XCTAssertFalse(readerSource.contains("DragGesture(minimumDistance: 30)"),
+                       "Legacy SwiftUI swipe gesture must be gone — UIPageViewController owns curl swipes.")
+        XCTAssertTrue(readerSource.contains("onSwipe: enableReaderGestures ? onSwipePage : nil"),
+                      "Slide/none swipe-to-turn must be the single onSwipe path on FixedWidthTextView.")
         XCTAssertFalse(attributedSource.contains("UISwipeGestureRecognizer("),
                        "UISwipeGestureRecognizer must not be installed in the UITextView — it fires mid-gesture and races DragGesture causing double turns.")
         XCTAssertTrue(readerSource.contains("private func handleSwipe("),

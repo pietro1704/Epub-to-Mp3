@@ -1,0 +1,117 @@
+import Foundation
+import Combine
+
+/// Test-only instrumentation that counts transient "flicker" events in the
+/// paginated reader so a UI test can assert *zero* of them happened during a
+/// page turn / chapter switch / chrome toggle — without trying to diff
+/// screenshots frame-by-frame (which XCUITest cannot do reliably).
+///
+/// A "flicker event" is any of the visual glitches the user reported:
+///
+///  - `staleSlicePushed` — the page view controller re-pushed a DIFFERENT
+///    attributed slice into the currently-displayed page controller while no
+///    user gesture moved the index. On screen this is the text visibly
+///    changing/snapping back for a frame.
+///  - `spuriousRenavigation` — `updateUIViewController` fired a programmatic
+///    `setViewControllers` that fought an in-flight or just-completed turn
+///    (the classic "tap back, bounce forward" / flicker-to-page-0 race).
+///  - `emptyPagesShown` — the paginated body fell back to `lastValidPages`
+///    (stale chapter) or an empty array because the fresh pagination wasn't
+///    ready, briefly flashing old content / the background.
+///
+/// The probe is a no-op unless armed via the `-uiTestFlickerProbe` launch
+/// argument, so it carries zero cost in production and in normal runs.
+/// Events are recorded on the main actor (all call sites are main-thread UI
+/// code) so no locking is required.
+enum FlickerEvent: String, CaseIterable {
+    case staleSlicePushed
+    case spuriousRenavigation
+    case emptyPagesShown
+}
+
+@MainActor
+final class FlickerProbe: ObservableObject {
+    static let shared = FlickerProbe()
+
+    /// Armed only when the host app is launched by a UI test with the
+    /// `-uiTestFlickerProbe` argument. Production launches leave this false
+    /// and every `record(_:)` call returns immediately.
+    private(set) var isArmed: Bool =
+        ProcessInfo.processInfo.arguments.contains("-uiTestFlickerProbe")
+
+    @Published private(set) var counts: [FlickerEvent: Int] = [:]
+
+    private init() {}
+
+    /// Force-arm for unit tests that exercise the probe directly without a
+    /// launch argument.
+    func arm() { isArmed = true }
+
+    func record(_ event: FlickerEvent) {
+        guard isArmed else { return }
+        counts[event, default: 0] += 1
+    }
+
+    func count(_ event: FlickerEvent) -> Int { counts[event] ?? 0 }
+
+    /// Total across every event kind — the single number a UI test asserts
+    /// is 0 after a scripted interaction.
+    var total: Int { counts.values.reduce(0, +) }
+
+    func reset() { counts.removeAll() }
+
+    /// Convenience used by the UI test's hidden overlay so a snapshot of the
+    /// accessibility tree always carries the live summary.
+    nonisolated static let summaryAXId = "flicker.probe.summary"
+
+    /// Compact, parseable summary surfaced to the UI test via a hidden
+    /// accessibility element, e.g. `"stale=0 spurious=0 empty=0"`.
+    var summary: String {
+        FlickerEvent.allCases
+            .map { "\($0.shortKey)=\(count($0))" }
+            .joined(separator: " ")
+    }
+}
+
+#if canImport(SwiftUI)
+import SwiftUI
+
+/// Hidden overlay that surfaces the live flicker summary to a UI test via
+/// the accessibility tree. Rendered only when the probe is armed
+/// (`-uiTestFlickerProbe`), so it never appears in production. The label
+/// updates reactively (the probe is an `ObservableObject`), and a reset
+/// button lets the test zero the counters before each scripted interaction.
+struct FlickerProbeOverlay: View {
+    @ObservedObject private var probe = FlickerProbe.shared
+
+    var body: some View {
+        if probe.isArmed {
+            VStack(spacing: 0) {
+                Text(probe.summary)
+                    .accessibilityIdentifier(FlickerProbe.summaryAXId)
+                    .accessibilityLabel(probe.summary)
+                Button("flicker-reset") { probe.reset() }
+                    .accessibilityIdentifier("flicker.probe.reset")
+                    .buttonStyle(.plain)
+            }
+            // Keep the controls a real, hittable size in the top-leading
+            // corner (not a 1x1 sub-pixel speck that XCUITest can miss), but
+            // nearly transparent so it never disturbs the reading surface.
+            .font(.system(size: 8))
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .opacity(0.02)
+            .allowsHitTesting(true)
+        }
+    }
+}
+#endif
+
+private extension FlickerEvent {
+    var shortKey: String {
+        switch self {
+        case .staleSlicePushed:     return "stale"
+        case .spuriousRenavigation: return "spurious"
+        case .emptyPagesShown:      return "empty"
+        }
+    }
+}

@@ -196,6 +196,10 @@ struct InstantReaderView: View {
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+                // Test-only: surfaces flicker-event counters to UI tests.
+                // No-op (renders nothing) unless `-uiTestFlickerProbe` armed.
+                FlickerProbeOverlay()
             }
         }
         .modifier(ChromeVisibilityModifier(visible: chromeVisible))
@@ -331,7 +335,9 @@ struct InstantReaderView: View {
                 playerChapterLabel: divergencePlayerChapterLabel,
                 chromeTopInset: chromeVisible ? topInset : 0,
                 chromeBottomInset: chromeVisible ? bottomInset : 0,
-                useStableBodyHeight: true
+                useStableBodyHeight: true,
+                bookChapters: fulltext.chapters,
+                onScrolledToChapter: { mirrorScrolledChapter($0) }
             )
         } else if !fulltext.chapters.isEmpty {
             ReaderView(
@@ -350,7 +356,9 @@ struct InstantReaderView: View {
                 playerChapterLabel: divergencePlayerChapterLabel,
                 chromeTopInset: chromeVisible ? topInset : 0,
                 chromeBottomInset: chromeVisible ? bottomInset : 0,
-                useStableBodyHeight: true
+                useStableBodyHeight: true,
+                bookChapters: fulltext.chapters,
+                onScrolledToChapter: { mirrorScrolledChapter($0) }
             )
         } else {
             VStack(spacing: 12) {
@@ -1086,6 +1094,19 @@ struct InstantReaderView: View {
         guard currentChapterIndex > 0 else { return false }
         currentChapterIndex -= 1
         return true
+    }
+
+    /// Continuous-scroll mode: a chapter cell scrolled into view. Mirror it
+    /// into `currentChapterIndex` (only when it actually changes) so the
+    /// TOC highlight, saved position, and widget last-read all track the
+    /// scroll. The `onChange(of: currentChapterIndex)` handler does the
+    /// heavy lifting (coordinator + persistence); guarding on inequality
+    /// prevents a feedback loop with the cell's `onAppear`.
+    private func mirrorScrolledChapter(_ zeroBasedIndex: Int) {
+        guard zeroBasedIndex != currentChapterIndex,
+              zeroBasedIndex >= 0,
+              zeroBasedIndex < fulltext.chapters.count else { return }
+        currentChapterIndex = zeroBasedIndex
     }
 
     /// Drives the "Follow audio" pill. Snaps the reader's visible

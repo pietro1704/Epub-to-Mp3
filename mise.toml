@@ -461,6 +461,30 @@ xcrun devicectl device install app --device "$DEVICE" "$APP_PATH"
 xcrun devicectl device process launch --device "$DEVICE" --terminate-existing "$BUNDLE_ID"
 """
 
+[tasks."ios:device:test"]
+description = "Build-for-testing + run UITests on the paired iPhone (real device). Set IOS_TESTS=... to filter, e.g. EpubToMp3UITests/ReaderFlickerUITests"
+run = """
+#!/bin/bash
+set -euo pipefail
+cd ios/EpubToMp3
+DEVICE="${IOS_DEVICE_ID:-00008140-001128A022BA801C}"
+DD="./.build-device"
+ONLY=""
+if [[ -n "${IOS_TESTS:-}" ]]; then
+  IFS=',' read -ra T <<< "$IOS_TESTS"
+  for t in "${T[@]}"; do ONLY+=" -only-testing:$t"; done
+fi
+echo "ios:device:test → device: $DEVICE"
+if [[ "${IOS_SKIP_BUILD:-0}" != "1" ]]; then
+  xcodebuild -project EpubToMp3.xcodeproj -scheme EpubToMp3 -configuration Debug \\
+    -destination "id=$DEVICE" -derivedDataPath "$DD" build-for-testing | tail -5
+fi
+# shellcheck disable=SC2086
+xcodebuild -project EpubToMp3.xcodeproj -scheme EpubToMp3 \\
+  -destination "id=$DEVICE" -derivedDataPath "$DD" $ONLY \\
+  test-without-building 2>&1 | grep -iE "Test Suite|Test Case|passed|failed|error:|XCTAssert|skip|flicker" || true
+"""
+
 # ── Docker ───────────────────────────────────────────────────────────────────────
 
 [tasks."docker:build"]

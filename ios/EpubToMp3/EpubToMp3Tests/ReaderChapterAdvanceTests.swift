@@ -127,9 +127,20 @@ final class ReaderChapterAdvanceTests: XCTestCase {
             readerSource.contains(".overlay(tapZones("),
             "A single tapZones() SwiftUI overlay must be the sole zone-tap handler."
         )
-        XCTAssertTrue(
+        // Swipe handling moved into the native UIPageViewController for the
+        // page-curl style (TextKitPageView owns the pan), and slide/none
+        // forward swipes through `onSwipe` on the FixedWidthTextView. The
+        // old SwiftUI `DragGesture(minimumDistance: 30)` no longer lives in
+        // ReaderView — there must be exactly ONE swipe path, not a SwiftUI
+        // drag racing the UIKit pan.
+        XCTAssertFalse(
             readerSource.contains("DragGesture(minimumDistance: 30)"),
-            "A single DragGesture(.onEnded) must be the sole swipe-to-turn handler."
+            "The legacy SwiftUI swipe DragGesture must be gone — page-curl turns are " +
+            "driven by UIPageViewController; a parallel SwiftUI drag would double-fire."
+        )
+        XCTAssertTrue(
+            readerSource.contains("onSwipe: enableReaderGestures ? onSwipePage : nil"),
+            "Slide/none swipe-to-turn must be the single onSwipe path on FixedWidthTextView."
         )
     }
 
@@ -144,8 +155,13 @@ final class ReaderChapterAdvanceTests: XCTestCase {
             "ReaderView must declare isPageTurning to lock out rapid-fire taps during animation."
         )
         XCTAssertTrue(
-            readerSource.contains("guard !isPageTurning else { return }"),
-            "advancePage and retreatPage must guard against firing during an in-flight animation."
+            readerSource.contains("guard !isPageTurning,"),
+            "advancePage and retreatPage must guard against firing during an in-flight animation " +
+            "(now combined with a debounce on lastPageTurnAt)."
+        )
+        XCTAssertTrue(
+            readerSource.contains("Date().timeIntervalSince(lastPageTurnAt) > pageTurnDebounce"),
+            "The turn guard must also debounce rapid taps across all turn styles, not only slide."
         )
         XCTAssertTrue(
             readerSource.contains("isPageTurning = true"),

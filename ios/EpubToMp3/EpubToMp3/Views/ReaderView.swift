@@ -87,6 +87,19 @@ struct ReaderView: View {
     /// user knows where the audio went. Nil ⇒ generic "Acompanhar
     /// áudio" label (audio is paused, or no divergence to disclose).
     var playerChapterLabel: String? = nil
+    /// When non-nil AND the layout is `.scrolling`, the reader renders the
+    /// ENTIRE book as one continuous scroll (every chapter stacked in a
+    /// single `ScrollView`/`LazyVStack`) instead of just the current
+    /// `chapter`. The host (InstantReaderView) passes `fulltext.chapters`;
+    /// hosts that only hold the current chapter (PlayerReaderView) leave
+    /// this nil and keep the per-chapter behaviour. Tapping a chapter in
+    /// the array scrolls to it; `onJumpToChapterIndex` lets the host mirror
+    /// the active chapter into its own state for TOC / persistence.
+    var bookChapters: [EbookFulltext.Chapter]? = nil
+    /// Called when continuous scroll brings a new chapter into view, so the
+    /// host can mirror `currentChapterIndex` (TOC highlight, position
+    /// persistence). Zero-based EPUB chapter index.
+    var onScrolledToChapter: ((Int) -> Void)? = nil
 
     @EnvironmentObject private var settings: AppSettings
     @EnvironmentObject private var readerCoordinator: ReaderCoordinator
@@ -97,6 +110,13 @@ struct ReaderView: View {
     @State private var userIsScrolling: Bool = false
     @State private var lastAutoScrollAt: Date = .distantPast
     @State private var currentPage: Int = 0
+    /// Continuous-scroll mode: the chapter index the scroll itself last
+    /// reported (via `onScrolledToChapter`). When `chapter.id` changes
+    /// because the host mirrored that very scroll back into
+    /// `currentChapterIndex`, we must NOT re-issue a `scrollTo` — that
+    /// would fight the user's own scrolling. A genuine TOC / search jump
+    /// targets a DIFFERENT index, so it still scrolls.
+    @State private var lastScrolledChapterIndex: Int? = nil
     /// True while a slide animation is in flight. Guards advancePage/retreatPage
     /// so a rapid second tap cannot fire a no-animation turn on top of the
     /// in-progress animation (the "flips twice, second one without animation" bug).
@@ -134,6 +154,17 @@ struct ReaderView: View {
     // (status-bar or safe-area animations) are intentionally ignored to
     // preserve the "zero reflow" invariant.
     @State private var stableBodyHeight: CGFloat = 0
+
+    // Frozen chrome insets for pagination. The host (InstantReaderView)
+    // passes `chromeTopInset`/`chromeBottomInset` that drop to 0 when chrome
+    // hides — feeding those live values into the page-size math repaginated
+    // the chapter on every chrome toggle, so the visible page's slice changed
+    // and the text snapped (flicker). Chrome is a true overlay in fixed-margin
+    // mode, so the text corridor must stay constant regardless of chrome
+    // visibility. We freeze the first non-zero inset pair and paginate against
+    // those forever; the live insets still drive the page *position* padding.
+    @State private var frozenChromeTopInset: CGFloat = 0
+    @State private var frozenChromeBottomInset: CGFloat = 0
 
     /// `true` while the reader tracks the audio's `currentSentenceId`
     /// — auto-pages and highlights the active sentence. Flipped to
@@ -262,7 +293,9 @@ struct ReaderView: View {
         playerChapterLabel: String? = nil,
         chromeTopInset: CGFloat = 0,
         chromeBottomInset: CGFloat = 0,
-        useStableBodyHeight: Bool = false
+        useStableBodyHeight: Bool = false,
+        bookChapters: [EbookFulltext.Chapter]? = nil,
+        onScrolledToChapter: ((Int) -> Void)? = nil
     ) {
         self.chapter = chapter
         self.spans = spans
@@ -280,6 +313,8 @@ struct ReaderView: View {
         self.chromeTopInset = chromeTopInset
         self.chromeBottomInset = chromeBottomInset
         self.useStableBodyHeight = useStableBodyHeight
+        self.bookChapters = bookChapters
+        self.onScrolledToChapter = onScrolledToChapter
     }
 
     var body: some View {
@@ -317,7 +352,12 @@ struct ReaderView: View {
             // ToolbarItem, so a second magnifier here was redundant and
             // ate vertical reading area.
             switch settings.readerLayout {
-            case .scrolling: scrollingContent
+            case .scrolling:
+                if let bookChapters, bookChapters.count > 1 {
+                    continuousBookScroll(chapters: bookChapters)
+                } else {
+                    scrollingContent
+                }
             case .paginated: paginatedContent
             }
         }
@@ -560,6 +600,80 @@ struct ReaderView: View {
         #endif
     }
 
+    // MARK: Continuous full-book scroll
+
+    /// Render the WHOLE book as one continuous scroll: a single
+    /// `ScrollView`/`LazyVStack` with one cell per chapter. The
+    /// `LazyVStack` only materialises the cells near the viewport, so a
+    /// large book (e.g. Pinocchio) doesn't render every chapter up front;
+    /// each cell renders its own HTML lazily when it appears. Tapping
+    /// anywhere toggles chrome (same as single-chapter scroll mode).
+    ///
+    /// Auto-follow: when audio drives `currentSentenceId`, the sentence id
+    /// prefix encodes the chapter index (`"<index>:<n>"`), so we scroll to
+    /// that chapter's anchor while the user isn't manually scrolling.
+    @ViewBuilder
+    private func continuousBookScroll(chapters: [EbookFulltext.Chapter]) -> some View {
+        GeometryReader { geo in
+            let margin = effectiveReaderMargin(for: geo.size)
+            let columnWidth = min(settings.readerColumnWidth, geo.size.width - 2 * margin)
+            let fontSize: CGFloat = debouncedFontSize > 0 ? debouncedFontSize : settings.readerPointSize
+            let lineSpacing: Double = debouncedLineSpacing > 0 ? debouncedLineSpacing : settings.readerLineSpacing
+            ScrollViewReader { proxy in
+                ScrollView(.vertical) {
+                    LazyVStack(alignment: .center, spacing: 0) {
+                        ForEach(chapters) { ch in
+                            BookChapterCell(
+                                chapter: ch,
+                                settings: settings,
+                                fontDirectoryURL: epubFontDirectory,
+                                columnWidth: columnWidth,
+                                margin: margin,
+                                fontSize: fontSize,
+                                lineSpacing: lineSpacing,
+                                topInset: chromeTopInset,
+                                bottomInset: chromeBottomInset,
+                                onLinkTap: onLinkTap,
+                                onAppearChapter: {
+                                    lastScrolledChapterIndex = ch.zeroBasedEpubIndex
+                                    onScrolledToChapter?(ch.zeroBasedEpubIndex)
+                                }
+                            )
+                            .id(ch.zeroBasedEpubIndex)
+                        }
+                    }
+                }
+                .compatHorizontalSafeAreaPadding(0)
+                .contentShape(Rectangle())
+                .simultaneousGesture(TapGesture().onEnded { onCenterTap?() })
+                // Auto-follow: jump to the chapter the audio is narrating.
+                .compatOnChange(of: currentSentenceId) { newId in
+                    guard isFollowing, let newId,
+                          let colon = newId.firstIndex(of: ":"),
+                          let idx = Int(newId[newId.startIndex..<colon]) else { return }
+                    withAnimation(.easeInOut(duration: 0.25)) {
+                        proxy.scrollTo(max(0, idx - 1), anchor: .top)
+                    }
+                }
+                // Jump to the host's requested chapter (TOC / search /
+                // bookmark). `chapter` is the single-chapter prop the host
+                // updates. Skip when the change merely echoes the scroll's
+                // own `onScrolledToChapter` mirror (same index) — only a
+                // genuine jump to a DIFFERENT chapter scrolls.
+                .compatOnChange(of: chapter.id) { _ in
+                    let target = chapter.zeroBasedEpubIndex
+                    guard target != lastScrolledChapterIndex else { return }
+                    withAnimation(.easeInOut(duration: 0.25)) {
+                        proxy.scrollTo(target, anchor: .top)
+                    }
+                }
+                .onAppear {
+                    proxy.scrollTo(chapter.zeroBasedEpubIndex, anchor: .top)
+                }
+            }
+        }
+    }
+
     // MARK: Paginated content
 
     /// True when the host opted into the Apple Books "fixed margin"
@@ -617,12 +731,15 @@ struct ReaderView: View {
             let pagePaddingV: CGFloat = pageVerticalPadding * 2
             let textAreaHeight: CGFloat = {
                 if usesFixedMargin {
-                    // Chrome is a true overlay when visible, but hidden
-                    // chrome must not leave large empty bands. Keep the base
-                    // body height frozen while subtracting only the current
-                    // visible chrome insets.
+                    // Chrome is a true overlay. Paginate against the FROZEN
+                    // chrome insets, never the live ones — otherwise hiding
+                    // chrome (insets → 0) shrinks the corridor, repaginates,
+                    // and the visible page's slice changes mid-toggle (flicker).
+                    // The live insets still position the page via `.padding`.
                     let bodyH = stableBodyHeight > 0 ? stableBodyHeight : geo.size.height
-                    return max(120, bodyH - chromeTopInset - chromeBottomInset - footerStripHeight - pagePaddingV)
+                    let topReserve = max(frozenChromeTopInset, chromeTopInset)
+                    let bottomReserve = max(frozenChromeBottomInset, chromeBottomInset)
+                    return max(120, bodyH - topReserve - bottomReserve - footerStripHeight - pagePaddingV)
                 }
                 return max(120, geo.size.height - 76 - footerStripHeight - pagePaddingV)
             }()
@@ -645,13 +762,25 @@ struct ReaderView: View {
             // a blank frame. It is replaced the moment the new chapter renders.
             let effectivePages: [NSAttributedString] =
                 pages.isEmpty ? paginationCache.lastValidPages : pages
+            // Only a TRULY empty result is a visible flash (the
+            // chapterTitleHeader / blank frame the user sees mid chapter
+            // switch). Falling back to stale `lastValidPages` is intentional
+            // and renders real text, so it is NOT counted — the new chapter
+            // replaces it within a frame or two. Wrapped in an immediately-
+            // invoked closure so this side-effect is a `let`, legal inside
+            // the GeometryReader's @ViewBuilder body.
+            let _: Void = {
+                #if os(iOS)
+                if effectivePages.isEmpty { FlickerProbe.shared.record(.emptyPagesShown) }
+                #endif
+            }()
             ZStack(alignment: .bottom) {
                 if effectivePages.isEmpty {
                     chapterTitleHeader
                         .padding(.horizontal, margin)
                         .frame(maxWidth: .infinity, alignment: .center)
                 } else {
-                    paginatedPageContent(pages: effectivePages, containerSize: geo.size)
+                    paginatedPageContent(pages: effectivePages, containerSize: geo.size, safeArea: geo.safeAreaInsets)
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                         .offset(y: -hiddenChromeTopCompaction)
 
@@ -678,6 +807,15 @@ struct ReaderView: View {
                 // chrome / tab-bar toggles do not change it.
                 if stableBodyHeight == 0 {
                     stableBodyHeight = geo.size.height
+                }
+                // Freeze the chrome reserve the first time we see it visible,
+                // so a later chrome-hide (insets → 0) can't shrink the
+                // pagination corridor and repaginate the chapter.
+                if frozenChromeTopInset == 0, chromeTopInset > 0 {
+                    frozenChromeTopInset = chromeTopInset
+                }
+                if frozenChromeBottomInset == 0, chromeBottomInset > 0 {
+                    frozenChromeBottomInset = chromeBottomInset
                 }
                 lastContainerSize = geo.size
             }
@@ -1018,12 +1156,12 @@ struct ReaderView: View {
     /// Dispatch page rendering to the appropriate animation container
     /// based on `settings.pageTurnStyle`.
     @ViewBuilder
-    private func paginatedPageContent(pages: [NSAttributedString], containerSize: CGSize) -> some View {
+    private func paginatedPageContent(pages: [NSAttributedString], containerSize: CGSize, safeArea: EdgeInsets = EdgeInsets()) -> some View {
         let pageIndex = max(0, min(pages.count - 1, currentPage))
         switch settings.pageTurnStyle {
         #if os(iOS)
         case .flip:
-            pageCurlContent(pages: pages, containerSize: containerSize)
+            pageCurlContent(pages: pages, containerSize: containerSize, safeArea: safeArea)
         #endif
         case .slide:
             slidePageContent(pages: pages, pageIndex: pageIndex, containerSize: containerSize)
@@ -1038,22 +1176,49 @@ struct ReaderView: View {
     }
 
     #if os(iOS)
-    /// Apple Books-style page curl using UIPageViewController.
-    private func pageCurlContent(pages: [NSAttributedString], containerSize: CGSize) -> some View {
-        let pageViews: [AnyView] = pages.indices.map { i in
-            AnyView(
-                pageView(pages: pages, pageIndex: i, containerSize: containerSize, enableReaderGestures: false)
-                    .background(themeBackground)
-            )
-        }
-        return PageCurlContainer(
-            pages: pageViews,
+    /// Apple Books-style page curl backed by a native TextKit page view.
+    /// Pages are raw `NSAttributedString` slices fed straight to a
+    /// `UITextView` per page — no SwiftUI `AnyView` snapshot, no
+    /// content-identity cache. See `TextKitPageView` for why this fixes
+    /// the stale-page / flicker / chapter-skip bugs the old
+    /// `PageCurlContainer` had.
+    private func pageCurlContent(pages: [NSAttributedString], containerSize: CGSize, safeArea: EdgeInsets) -> some View {
+        let margin = effectiveReaderMargin(for: containerSize)
+        let columnWidth = min(
+            (debouncedColumnWidth > 0 ? CGFloat(debouncedColumnWidth) : settings.readerColumnWidth),
+            containerSize.width - 2 * margin
+        )
+        // Horizontal inset that brackets the (possibly narrower) column.
+        // On a phone the column already fills `width - 2*margin`, so this is
+        // just `margin`; on a wide iPad it centres the column.
+        let sideInset = ReaderLayoutMath.sideInset(containerWidth: containerSize.width, columnWidth: columnWidth, margin: margin)
+        // Vertical corridor. The UIKit page controller's safe-area guide is
+        // unreliable when hosted under SwiftUI (the host often zeroes the
+        // child controller's safe-area insets), so we DO NOT rely on it.
+        // Instead we add SwiftUI's known safe-area insets explicitly here
+        // and pin the text view to the raw view edges. This guarantees text
+        // clears the status bar (clock / battery) and home indicator on
+        // every page, not just the first.
+        let footerStripHeight: CGFloat = settings.readerShowPageNumbers ? 30 : 0
+        let topCorridor = ReaderLayoutMath.topCorridor(
+            safeAreaTop: safeArea.top, chromeTop: chromeTopInset,
+            pad: pageVerticalPadding, hiddenCompaction: hiddenChromeTopCompaction
+        )
+        let bottomCorridor = ReaderLayoutMath.bottomCorridor(
+            safeAreaBottom: safeArea.bottom, chromeBottom: chromeBottomInset,
+            footer: footerStripHeight, pad: pageVerticalPadding
+        )
+        return TextKitPageView(
+            pages: pages,
             currentPage: $currentPage,
-            contentVersion: renderVersion,
+            columnWidth: columnWidth,
+            margin: sideInset,
+            topInset: topCorridor,
+            bottomInset: bottomCorridor,
+            backgroundColor: UIColor(themeBackground),
             onAdvanceChapter: onAdvanceChapter,
             onPreviousChapter: onPreviousChapter,
             onCenterTap: onCenterTap,
-            chromeVisible: chromeVisible,
             onUserPageChange: { isFollowing = false },
             onWillTransition: { isPageTurning = true },
             onDidFinishTransition: { isPageTurning = false },

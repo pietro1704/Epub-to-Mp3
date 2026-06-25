@@ -262,7 +262,7 @@ final class ReaderChromeAutoHideTests: XCTestCase {
 
     func testReaderTapsAndDragsTurnPagesLikeBooksApps() throws {
         let reader = try appSource(named: "Views/ReaderView.swift")
-        let pageCurl = try appSource(named: "Views/PageCurlContainer.swift")
+        let pageCurl = try appSource(named: "Views/TextKitPageView.swift")
         let instantReader = try instantReaderSource()
 
         XCTAssertTrue(reader.contains("case .left:   retreatPage()"),
@@ -271,22 +271,25 @@ final class ReaderChromeAutoHideTests: XCTestCase {
                       "Center taps in paginated mode must toggle reader chrome instead of turning the page.")
         XCTAssertTrue(reader.contains("case .right:  advancePage(totalPages: totalPages)"),
                       "Right-zone taps must go to the next page.")
-        XCTAssertTrue(reader.contains("DragGesture(minimumDistance: 30)"),
-                      "Horizontal drags must keep changing pages like Kindle / Apple Books.")
+        // Page-curl swipes are owned by the native UIPageViewController; the
+        // legacy SwiftUI DragGesture was removed so it can't race the UIKit
+        // pan. Slide/none swipes flow through the single `onSwipe` path.
+        XCTAssertFalse(reader.contains("DragGesture(minimumDistance: 30)"),
+                       "Legacy SwiftUI swipe gesture must be gone — UIPageViewController owns curl swipes.")
+        XCTAssertTrue(reader.contains("onSwipe: enableReaderGestures ? onSwipePage : nil"),
+                      "Slide/none horizontal swipes must still turn pages via the single onSwipe path.")
         XCTAssertFalse(reader.contains("case .center: advancePage(totalPages: totalPages)"),
                        "Center taps should not turn the page or cause a page-flick when dismissing chrome.")
         XCTAssertFalse(reader.contains("if chromeVisible {\n            onCenterTap?()\n            return\n        }"),
                        "Do not globally turn paginated taps into chrome toggles.")
         XCTAssertTrue(pageCurl.contains("UITapGestureRecognizer("),
-                      "PageCurlContainer must install its own tap recognizer in curl mode because the inner UITextView gestures are disabled there.")
-        XCTAssertTrue(pageCurl.contains("navigateByTap(direction:"),
+                      "TextKitPageView must install its own tap recognizer on the PVC view in curl mode.")
+        XCTAssertTrue(pageCurl.contains("func navigate("),
                       "Curl-mode left/right taps must drive the UIPageViewController directly instead of writing currentPage first.")
-        XCTAssertTrue(pageCurl.contains("guard !coordinator.isTransitioning else { return }"),
-                      "A second setViewControllers during an in-flight curl causes the page-1 flicker and must be blocked.")
-        XCTAssertTrue(reader.contains("pageView(pages: pages, pageIndex: i, containerSize: containerSize, enableReaderGestures: false)"),
-                      "When embedded in page-curl mode, the inner text view must not install its own tap/swipe page-turn gestures.")
-        XCTAssertTrue(reader.contains("enableReaderGestures: Bool = true"),
-                      "ReaderView must expose a way to disable inner page-turn gestures for curl mode.")
+        XCTAssertTrue(pageCurl.contains("guard !isTransitioning"),
+                      "A second setViewControllers during an in-flight curl causes the page-0 flicker and must be blocked.")
+        XCTAssertTrue(pageCurl.contains("vc.apply("),
+                      "The native curl pages must always be re-fed their current slice from the pages array, never a cached AnyView, so a re-pagination cannot leave a stale page on screen.")
         XCTAssertFalse(pageCurl.contains("handleCenterTap"),
                        "Do not revive the old duplicate center-tap handler name/path.")
         XCTAssertTrue(reader.contains("lastValidPages"),
@@ -295,6 +298,37 @@ final class ReaderChromeAutoHideTests: XCTestCase {
                       "effectivePages must fall back to lastValidPages for ALL paginated modes, not just page-curl.")
         XCTAssertTrue(instantReader.contains(".readerChromeVisible(chromeVisible)"),
                       "InstantReader chrome state must propagate to RootView so the mini player disappears too.")
+    }
+
+    /// Source-level guards for the three flicker fixes proven on-device by
+    /// `ReaderFlickerUITests`. These keep the regressions from sneaking back
+    /// in via a refactor that doesn't run the device UI suite.
+    func testReaderHasNoFlickerOnTurnChapterOrChromeToggle() throws {
+        let reader = try appSource(named: "Views/ReaderView.swift")
+        let pageCurl = try appSource(named: "Views/TextKitPageView.swift")
+
+        // 1) The visible page must be gated on CONTENT equality, not pointer
+        //    identity — every ReaderView re-render rebuilds `pages`, so an
+        //    identity gate re-assigned attributedText on each chrome toggle
+        //    (full TextKit relayout = the text-snap flicker).
+        XCTAssertTrue(pageCurl.contains("current.isEqual(to: attributed)"),
+                      "apply(slice:) must skip re-assignment when the new slice's CONTENT equals the current one.")
+        XCTAssertFalse(pageCurl.contains("ObjectIdentifier(attributed)"),
+                       "Pointer-identity gating re-pushes a fresh-but-identical slice on every render → flicker.")
+
+        // 2) Chrome is a true overlay: pagination must use FROZEN chrome
+        //    insets, never the live ones that drop to 0 when chrome hides
+        //    (which would shrink the corridor and repaginate mid-toggle).
+        XCTAssertTrue(reader.contains("frozenChromeTopInset"),
+                      "Pagination must freeze the chrome reserve so a chrome toggle never repaginates.")
+
+        // 3) Crossing a chapter boundary must NOT write currentPage=0 against
+        //    the OLD pages (re-navigates within the current chapter = flash).
+        //    A swap latch suppresses re-navigation until the new pages land.
+        XCTAssertTrue(pageCurl.contains("isAwaitingChapterSwap"),
+                      "A chapter-swap latch must suppress programmatic re-navigation until new pages arrive.")
+        XCTAssertFalse(pageCurl.contains("if parent.onAdvanceChapter?() == true { parent.currentPage = 0 }"),
+                       "Do not reset currentPage against the old chapter's pages — let onChange(chapter.id) do it.")
     }
 
     func testPdfReaderExposesTapToToggleChromeContract() throws {

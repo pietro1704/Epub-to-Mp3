@@ -51,6 +51,115 @@ final class EpubHtmlRendererTests: XCTestCase {
         #endif
     }
 
+    /// Regression: the EPUB's intentional centred alignment on a chapter
+    /// title (Pinocchio's "Come andò che Maestro Ciliegia…") must survive
+    /// the override pipeline — the user's body alignment choice only
+    /// governs body paragraphs, not centred titles / headings.
+    func testPreservesEpubCentredTitleAlignment() {
+        let s = makeSettings()
+        s.readerTextAlignment = .justified // body would otherwise justify everything
+        let html = """
+        <h1 style="text-align:center">Capitolo I</h1>
+        <p>C'era una volta un pezzo di legno.</p>
+        """
+        guard let out = EpubHtmlRenderer.render(html: html, css: nil, settings: s) else {
+            return XCTFail("renderer returned nil")
+        }
+        let n = ns(out)
+        var titleCentered = false
+        var bodyNotCentered = false
+        n.enumerateAttribute(.paragraphStyle, in: NSRange(location: 0, length: n.length)) { value, range, _ in
+            guard let style = value as? NSParagraphStyle else { return }
+            let text = (n.string as NSString).substring(with: range)
+            if text.contains("Capitolo"), style.alignment == .center { titleCentered = true }
+            if text.contains("pezzo di legno"), style.alignment != .center { bodyNotCentered = true }
+        }
+        XCTAssertTrue(titleCentered, "EPUB-declared centred title alignment must be preserved")
+        XCTAssertTrue(bodyNotCentered, "body paragraph must follow the user's alignment, not inherit center")
+    }
+
+    /// Content-agnostic guard: a BODY paragraph that merely inherited
+    /// `text-align:center` from a wrapping container must NOT stay centred
+    /// — only true headings (larger than the body font) keep centring.
+    /// Detection keys on the EPUB's own font sizing, never on text length.
+    func testCentredBodyParagraphIsNotPreserved() {
+        let s = makeSettings()
+        s.readerTextAlignment = .left
+        // Whole body centred via a wrapper; the paragraph is body-sized.
+        let html = """
+        <div style="text-align:center">
+        <p>This is an ordinary body paragraph that happens to sit inside a centred container and should not be rendered centred.</p>
+        </div>
+        """
+        guard let out = EpubHtmlRenderer.render(html: html, css: nil, settings: s) else {
+            return XCTFail("renderer returned nil")
+        }
+        let n = ns(out)
+        var anyCentered = false
+        n.enumerateAttribute(.paragraphStyle, in: NSRange(location: 0, length: n.length)) { value, _, _ in
+            if let style = value as? NSParagraphStyle, style.alignment == .center { anyCentered = true }
+        }
+        XCTAssertFalse(anyCentered, "a body-sized paragraph must not keep inherited center alignment")
+    }
+
+    /// Real-book regression: render the ACTUAL Pinocchio chapter HTML and
+    /// assert the body paragraphs follow the user's alignment (the EPUB's
+    /// own `p { text-align: justify }`) — NOT centred. The chapter title
+    /// (`<h2>`) may be centred. The user reported "tudo centralizado";
+    /// this pins the body to non-centre so a regression can't recur, using
+    /// the book's real markup rather than a synthetic fixture.
+    func testPinocchioRealChapterBodyIsNotCentred() {
+        let s = makeSettings()
+        s.readerTextAlignment = .justified
+        guard let out = EpubHtmlRenderer.render(
+            html: PinocchioFixture.chapter3HTML,
+            css: PinocchioFixture.chapter3CSS,
+            settings: s
+        ) else { return XCTFail("renderer returned nil for real chapter") }
+        let n = ns(out)
+
+        var centredBodyChars = 0
+        var totalBodyChars = 0
+        n.enumerateAttribute(.paragraphStyle, in: NSRange(location: 0, length: n.length)) { value, range, _ in
+            let text = (n.string as NSString).substring(with: range)
+            // Body sentences from the real chapter (justify in the EPUB CSS).
+            let isBody = text.contains("pezzo di legno")
+                || text.contains("Non era un legno")
+                || text.contains("piccoli lettori")
+            guard isBody else { return }
+            totalBodyChars += range.length
+            if let style = value as? NSParagraphStyle, style.alignment == .center {
+                centredBodyChars += range.length
+            }
+        }
+        XCTAssertGreaterThan(totalBodyChars, 0, "fixture must contain recognisable body text")
+        XCTAssertEqual(centredBodyChars, 0,
+                       "real Pinocchio body paragraphs (text-align:justify) must never render centred")
+    }
+
+    /// Diagnostic: histogram of paragraph alignment across the WHOLE real
+    /// chapter, so we can see exactly what the importer + override pipeline
+    /// produce. Keeps the assertion loose (just prints) — used to pin down
+    /// the "tudo centralizado" report.
+    func testPinocchioAlignmentHistogram() {
+        let s = makeSettings()
+        s.readerTextAlignment = .justified
+        guard let out = EpubHtmlRenderer.render(
+            html: PinocchioFixture.chapter3HTML,
+            css: PinocchioFixture.chapter3CSS,
+            settings: s
+        ) else { return XCTFail("nil") }
+        let n = ns(out)
+        var counts: [Int: Int] = [:]
+        n.enumerateAttribute(.paragraphStyle, in: NSRange(location: 0, length: n.length)) { value, range, _ in
+            let a = (value as? NSParagraphStyle)?.alignment.rawValue ?? -1
+            counts[a, default: 0] += range.length
+        }
+        // alignment rawValues: left=0 right=1 center=2 justified=3 natural=4
+        print("ALIGN histogram (rawValue:chars):", counts)
+        XCTAssertFalse(counts.isEmpty)
+    }
+
     func testOverrideFontFamilyAppliesToAllRuns() {
         let s = makeSettings()
         s.readerOverrideFontFamily = true
