@@ -386,6 +386,14 @@ struct ReaderView: View {
             renderedAttributed = nil
             paginationCache.pages = []
             paginationCache.key = nil
+            // Drop the previous chapter's pages too. `lastValidPages` exists to
+            // bridge a SAME-chapter repagination (settings change) without a
+            // blank flash. On a CHAPTER swap, keeping it makes the reader
+            // briefly show the OLD chapter's first page — the "wrong
+            // interleaved page" flash the user reported. A momentary empty
+            // frame (theme background) is correct here; the new chapter's
+            // pages replace it within a frame or two.
+            paginationCache.lastValidPages = []
             // If retreatPage requested last-page landing, poll until the new
             // chapter's pages are ready then snap to the last one.
             if jumpToLastPageForChapterId == "__pending__" {

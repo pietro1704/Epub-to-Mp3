@@ -89,6 +89,9 @@ struct TextKitPageView: UIViewControllerRepresentable {
 
         let initial = context.coordinator.controller(for: clampedPage)
         pvc.setViewControllers([initial], direction: .forward, animated: false)
+        // The initial chapter is already seeded — record its token so the
+        // deferred-seed path doesn't fire a redundant re-seed on first update.
+        context.coordinator.committedChapterToken = pages.isEmpty ? nil : chapterToken
 
         // Tap recognizer on the PVC view so it fires regardless of the
         // hosted UITextView. Drives page turns directly via
@@ -122,10 +125,31 @@ struct TextKitPageView: UIViewControllerRepresentable {
         if chapterToken != oldToken {
             coordinator.isAwaitingChapterSwap = false
             coordinator.purgePool()
+            coordinator.committedChapterToken = nil
             if !pages.isEmpty {
+                // The new chapter's pages are already here — seed page `target`
+                // and mark this token as committed so a later same-token update
+                // doesn't re-seed.
                 let vc = coordinator.controller(for: target)
                 pvc.setViewControllers([vc], direction: .forward, animated: false)
+                coordinator.committedChapterToken = chapterToken
             }
+            // else: cache was cleared and the new chapter hasn't paginated yet.
+            // Do NOT seed anything — seeding here would push stale/old content
+            // (the wrong interleaved page). Wait for a later update with the
+            // fresh `pages` (handled below once the token has "settled").
+            return
+        }
+
+        // Same token as last update, but we never committed a seed for it
+        // because `pages` was empty at swap time. Now that the fresh pages have
+        // arrived, perform the deferred seed exactly once. This is the moment
+        // the new chapter's content is first shown — no stale frame preceded it.
+        if coordinator.committedChapterToken != chapterToken, !pages.isEmpty {
+            coordinator.committedChapterToken = chapterToken
+            coordinator.isAwaitingChapterSwap = false
+            let vc = coordinator.controller(for: target)
+            pvc.setViewControllers([vc], direction: .forward, animated: false)
             return
         }
 
@@ -226,6 +250,12 @@ struct TextKitPageView: UIViewControllerRepresentable {
         /// programmatically re-navigate — the only legitimate next move is
         /// the count-change re-seed when the new chapter arrives.
         var isAwaitingChapterSwap = false
+        /// The chapter token for which a page has actually been seeded into the
+        /// PVC. Lets the deferred-seed path fire exactly once when a swap
+        /// happened while the new chapter's pages weren't ready yet (cache
+        /// cleared) — without it, an empty-pages swap would never show the new
+        /// chapter, or would re-seed on every subsequent update.
+        var committedChapterToken: String?
         /// Lightweight controller shells reused by page index. The shells
         /// are reused only to avoid churning `UIViewController` objects;
         /// their TEXT is always re-pushed from `parent.pages` on vend, so

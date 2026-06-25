@@ -329,6 +329,19 @@ final class ReaderChromeAutoHideTests: XCTestCase {
                       "A chapter-swap latch must suppress programmatic re-navigation until new pages arrive.")
         XCTAssertFalse(pageCurl.contains("if parent.onAdvanceChapter?() == true { parent.currentPage = 0 }"),
                        "Do not reset currentPage against the old chapter's pages — let onChange(chapter.id) do it.")
+
+        // 4) A chapter swap is driven by a definitive token, not page count,
+        //    and the previous chapter's pages are dropped so the swap never
+        //    shows the OLD chapter's first page (the "wrong interleaved page").
+        XCTAssertTrue(pageCurl.contains("chapterToken != oldToken"),
+                      "Chapter swap must key off a chapterToken, not page count, to avoid a stuck latch.")
+        XCTAssertTrue(reader.contains("paginationCache.lastValidPages = []"),
+                      "onChange(chapter.id) must clear lastValidPages so the swap never shows the previous chapter's page.")
+        // 5) On a swap with not-yet-paginated pages, seeding is DEFERRED until
+        //    the new pages arrive (committedChapterToken), never seeded against
+        //    stale content.
+        XCTAssertTrue(pageCurl.contains("committedChapterToken"),
+                      "A chapter swap with empty pages must defer the seed until the fresh pages arrive.")
     }
 
     func testPdfReaderExposesTapToToggleChromeContract() throws {
