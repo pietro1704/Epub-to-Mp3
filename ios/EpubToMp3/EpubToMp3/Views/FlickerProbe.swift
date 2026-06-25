@@ -1,5 +1,6 @@
 import Foundation
 import Combine
+import os.log
 
 /// Test-only instrumentation that counts transient "flicker" events in the
 /// paginated reader so a UI test can assert *zero* of them happened during a
@@ -40,6 +41,10 @@ final class FlickerProbe: ObservableObject {
         ProcessInfo.processInfo.arguments.contains("-uiTestFlickerProbe")
 
     @Published private(set) var counts: [FlickerEvent: Int] = [:]
+    /// Live "chapterIndex/totalChapters" surfaced to UI tests so they can
+    /// detect a real chapter swap deterministically (instead of inferring it
+    /// from the page indicator resetting). Updated by InstantReaderView.
+    @Published var chapterInfo: String = "?/?"
 
     private init() {}
 
@@ -53,6 +58,15 @@ final class FlickerProbe: ObservableObject {
     }
 
     func count(_ event: FlickerEvent) -> Int { counts[event] ?? 0 }
+
+    /// Diagnostic logging routed to the unified log under the
+    /// `flicker` category. Only emits when armed, so production stays quiet.
+    /// Inspect on device with: `log stream --predicate 'category == "flicker"'`.
+    private let logger = Logger(subsystem: "com.pietrocode.epubtomp3", category: "flicker")
+    func log(_ message: String) {
+        guard isArmed else { return }
+        logger.debug("\(message, privacy: .public)")
+    }
 
     /// Total across every event kind — the single number a UI test asserts
     /// is 0 after a scripted interaction.
@@ -90,6 +104,9 @@ struct FlickerProbeOverlay: View {
                 Text(probe.summary)
                     .accessibilityIdentifier(FlickerProbe.summaryAXId)
                     .accessibilityLabel(probe.summary)
+                Text(probe.chapterInfo)
+                    .accessibilityIdentifier("flicker.probe.chapter")
+                    .accessibilityLabel(probe.chapterInfo)
                 Button("flicker-reset") { probe.reset() }
                     .accessibilityIdentifier("flicker.probe.reset")
                     .buttonStyle(.plain)

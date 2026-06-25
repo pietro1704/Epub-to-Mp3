@@ -30,6 +30,12 @@ import UIKit
 struct TextKitPageView: UIViewControllerRepresentable {
     /// The chapter's page slices, in order. Source of truth for content.
     var pages: [NSAttributedString]
+    /// Identity of the chapter currently being displayed (the EPUB
+    /// `chapter.id`). The DEFINITIVE signal that a chapter swap happened —
+    /// independent of page count, which can coincide between two chapters and
+    /// leave a count-based latch stuck. When this changes, the swap latch is
+    /// cleared and the displayed page is re-seeded from the fresh `pages`.
+    var chapterToken: String
     @Binding var currentPage: Int
     /// Column width / horizontal margin so the hosted text view lays out
     /// identically to how the paginator measured the slice.
@@ -100,32 +106,32 @@ struct TextKitPageView: UIViewControllerRepresentable {
     func updateUIViewController(_ pvc: UIPageViewController, context: Context) {
         let coordinator = context.coordinator
         let oldCount = coordinator.parent.pages.count
+        let oldToken = coordinator.parent.chapterToken
         coordinator.parent = self
 
         let target = clampedPage
 
-        // Page count changed (chapter switch, settings repagination). Re-seed
-        // the displayed page from the fresh array. Because the controller's
-        // text is always re-pushed from `pages[index]`, a stale slice can
-        // never survive here.
-        if pages.count != oldCount {
-            // New chapter (or repagination) arrived — the swap we were
-            // waiting for. Clear the latch and re-seed without animation.
+        // DEFINITIVE chapter-swap signal: the chapter token changed. This is
+        // independent of page count (two chapters can have the same count),
+        // so it can never leave the swap latch stuck. The pool is purged so a
+        // reused shell can't display the previous chapter's slice, the latch
+        // is cleared, and the displayed page is re-seeded from the fresh
+        // `pages` without animation. The host already reset `currentPage` to
+        // the right page (0 on advance; last page on retreat) via
+        // ReaderView.onChange(chapter.id).
+        if chapterToken != oldToken {
             coordinator.isAwaitingChapterSwap = false
-            let vc = coordinator.controller(for: target)
-            pvc.setViewControllers([vc], direction: .forward, animated: false)
+            coordinator.purgePool()
+            if !pages.isEmpty {
+                let vc = coordinator.controller(for: target)
+                pvc.setViewControllers([vc], direction: .forward, animated: false)
+            }
             return
         }
 
-        // Awaiting a chapter swap whose new page count happens to equal the
-        // old one (count-change branch above wouldn't fire). The visible
-        // controller still shows the previous chapter's last page; re-seed to
-        // the target page of the NEW content without animation and clear the
-        // latch. Done before the slice re-push below so we don't transiently
-        // show a wrong-index slice of the new chapter.
-        if coordinator.isAwaitingChapterSwap,
-           let current = pvc.viewControllers?.first as? TextKitPageController,
-           current.pageIndex != target {
+        // Page count changed within the SAME chapter (settings repagination).
+        // Re-seed the displayed page from the fresh array.
+        if pages.count != oldCount {
             coordinator.isAwaitingChapterSwap = false
             let vc = coordinator.controller(for: target)
             pvc.setViewControllers([vc], direction: .forward, animated: false)
@@ -228,6 +234,12 @@ struct TextKitPageView: UIViewControllerRepresentable {
         private var pool: [Int: TextKitPageController] = [:]
 
         init(_ parent: TextKitPageView) { self.parent = parent }
+
+        /// Drop all reused shells. Called on a chapter swap so the data
+        /// source can't vend a controller still wired to the previous
+        /// chapter's `pageIndex` (which, after the index space shrinks,
+        /// could point past the new chapter's last page).
+        func purgePool() { pool.removeAll() }
 
         /// The slice for `index`, or an empty string if out of range.
         func slice(at index: Int) -> NSAttributedString {

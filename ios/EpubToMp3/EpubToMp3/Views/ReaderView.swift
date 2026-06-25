@@ -782,7 +782,13 @@ struct ReaderView: View {
                 } else {
                     paginatedPageContent(pages: effectivePages, containerSize: geo.size, safeArea: geo.safeAreaInsets)
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-                        .offset(y: -hiddenChromeTopCompaction)
+                        // NOTE: no `-hiddenChromeTopCompaction` offset here. It
+                        // used to lift the whole page 72 pt when chrome hid,
+                        // which pushed the first line under the status bar /
+                        // notch. The corridor math (topCorridor) already keeps
+                        // the safe area inviolable AND compacts only the chrome
+                        // reserve, so the page stays clear of the clock on every
+                        // page in both chrome states.
 
                     if settings.readerShowPageNumbers {
                         let pageIndex = max(0, min(effectivePages.count - 1, currentPage))
@@ -1210,6 +1216,7 @@ struct ReaderView: View {
         )
         return TextKitPageView(
             pages: pages,
+            chapterToken: chapter.id,
             currentPage: $currentPage,
             columnWidth: columnWidth,
             margin: sideInset,

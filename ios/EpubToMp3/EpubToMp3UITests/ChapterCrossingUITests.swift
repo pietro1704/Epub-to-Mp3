@@ -1,0 +1,116 @@
+import XCTest
+
+/// Device regression for "doesn't advance past the last page of a chapter,
+/// or back from the first page". Drives forward taps and watches the page
+/// indicator ("X of Y"): a chapter boundary is crossed when the indicator
+/// resets from the last page back to page 1 (a new chapter's pagination).
+/// Symmetrically, retreating from page 1 must land on the previous chapter's
+/// last page.
+final class ChapterCrossingUITests: XCTestCase {
+    override func setUpWithError() throws { continueAfterFailure = false }
+
+    /// Reads "chapterIndex/total" exposed by the armed FlickerProbe overlay.
+    private func chapter(_ app: XCUIApplication) -> (index: Int, total: Int)? {
+        let label = app.staticTexts["flicker.probe.chapter"].firstMatch.label
+        let parts = label.split(separator: "/").map(String.init)
+        guard parts.count == 2, let i = Int(parts[0]), let t = Int(parts[1]) else { return nil }
+        return (i, t)
+    }
+
+    private func openReader() throws -> XCUIApplication {
+        XCUIDevice.shared.orientation = .portrait
+        let app = XCUIApplication()
+        app.launchArguments += ["-uiTestFlickerProbe", "-uiTestResetReaderPosition"]
+        app.launch()
+        let firstBook = app.buttons.matching(
+            NSPredicate(format: "identifier BEGINSWITH %@", "library.bookTile.")
+        ).firstMatch
+        guard firstBook.waitForExistence(timeout: 20) else {
+            throw XCTSkip("No book in library.")
+        }
+        firstBook.tap()
+        guard app.staticTexts["reader.pageIndicator"].firstMatch.waitForExistence(timeout: 20) else {
+            throw XCTSkip("No page indicator (single-page chapters).")
+        }
+        return app
+    }
+
+    /// Parses "X of Y" → (page, total). Returns nil if absent/odd format.
+    private func indicator(_ app: XCUIApplication) -> (page: Int, total: Int)? {
+        let label = app.staticTexts["reader.pageIndicator"].firstMatch.label
+        let parts = label.split(separator: " ").map(String.init)
+        guard parts.count >= 3, let p = Int(parts[0]), let t = Int(parts[2]) else { return nil }
+        return (p, t)
+    }
+
+    func testForwardCrossesChapterBoundary() throws {
+        let app = try openReader()
+        let right = app.coordinate(withNormalizedOffset: CGVector(dx: 0.85, dy: 0.5))
+
+        guard let startCh = chapter(app) else {
+            throw XCTSkip("Chapter info not available (probe not armed?).")
+        }
+        guard startCh.index + 1 < startCh.total else {
+            throw XCTSkip("Reader opened on the last chapter; nothing to advance into.")
+        }
+
+        // Page to the last page of the current chapter.
+        var guardCount = 0
+        while let cur = indicator(app), cur.page < cur.total, guardCount < 80 {
+            right.tap(); usleep(650_000); guardCount += 1
+        }
+        let beforeCross = indicator(app)
+        XCTAssertEqual(beforeCross?.page, beforeCross?.total,
+                       "Should be on the last page before crossing, now=\(String(describing: beforeCross))")
+
+        // One more forward tap must cross into the NEXT chapter — the chapter
+        // index must increment. This is the exact bug the user hit: stuck on
+        // the last page, no advance.
+        right.tap()
+        usleep(1_500_000)   // chapter swap + repagination settle
+        let afterCh = chapter(app)
+        XCTAssertEqual(afterCh?.index, startCh.index + 1,
+                       "Forward off the last page must advance to the next chapter. " +
+                       "before=\(startCh) after=\(String(describing: afterCh))")
+        // And it must land on page 1 of that new chapter.
+        let afterPage = indicator(app)
+        XCTAssertEqual(afterPage?.page, 1,
+                       "After crossing, the reader must be on page 1, got \(String(describing: afterPage)).")
+    }
+
+    func testBackwardCrossesChapterBoundary() throws {
+        let app = try openReader()
+        let right = app.coordinate(withNormalizedOffset: CGVector(dx: 0.85, dy: 0.5))
+        let left = app.coordinate(withNormalizedOffset: CGVector(dx: 0.15, dy: 0.5))
+
+        guard let startCh = chapter(app) else {
+            throw XCTSkip("Chapter info not available (probe not armed?).")
+        }
+        guard startCh.index + 1 < startCh.total else {
+            throw XCTSkip("Opened on last chapter; cannot set up a forward-then-back crossing.")
+        }
+
+        // First, advance into the next chapter so there's a previous one.
+        var guardCount = 0
+        while let cur = indicator(app), cur.page < cur.total, guardCount < 80 {
+            right.tap(); usleep(650_000); guardCount += 1
+        }
+        right.tap()              // cross forward into the next chapter
+        usleep(1_500_000)
+        guard let nextCh = chapter(app), nextCh.index == startCh.index + 1 else {
+            throw XCTSkip("Could not reach a second chapter to test backward crossing.")
+        }
+
+        // Now retreat from page 1 — must go BACK to the previous chapter
+        // (index decrements) and land on its LAST page, not stay stuck.
+        left.tap()
+        usleep(2_500_000)        // backward swap polls for the previous chapter's last page
+        let afterCh = chapter(app)
+        XCTAssertEqual(afterCh?.index, nextCh.index - 1,
+                       "Retreating from page 1 must return to the previous chapter. " +
+                       "from=\(nextCh) after=\(String(describing: afterCh))")
+        let afterPage = indicator(app)
+        XCTAssertEqual(afterPage?.page, afterPage?.total,
+                       "Backward crossing must land on the previous chapter's LAST page, got \(String(describing: afterPage)).")
+    }
+}

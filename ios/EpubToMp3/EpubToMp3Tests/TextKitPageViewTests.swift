@@ -23,12 +23,14 @@ final class TextKitPageViewTests: XCTestCase {
     private func makeView(
         pages: [NSAttributedString],
         currentPage: Binding<Int>,
+        chapterToken: String = "ch",
         onAdvanceChapter: (() -> Bool)? = nil,
         onPreviousChapter: (() -> Bool)? = nil,
         onCenterTap: (() -> Void)? = nil
     ) -> TextKitPageView {
         TextKitPageView(
             pages: pages,
+            chapterToken: chapterToken,
             currentPage: currentPage,
             columnWidth: 320,
             margin: 16,
@@ -101,6 +103,59 @@ final class TextKitPageViewTests: XCTestCase {
         // Middle pages resolve to neighbours.
         XCTAssertEqual((coord.pageViewController(pvc, viewControllerAfter: first) as? TextKitPageController)?.pageIndex, 1)
         XCTAssertEqual((coord.pageViewController(pvc, viewControllerBefore: last) as? TextKitPageController)?.pageIndex, 0)
+    }
+
+    /// Regression: advancing past the last page arms the chapter-swap latch
+    /// (instead of writing currentPage=0 against the old pages). The latch
+    /// must NOT stay stuck — a chapter token change is the definitive clear
+    /// signal. Here we assert the navigate path arms it and that `purgePool`
+    /// + clearing works, mirroring what `updateUIViewController` does on a
+    /// token change.
+    func testForwardOnLastPageArmsSwapLatchAndTokenChangeClearsIt() {
+        var binding = 1
+        var advanceCalled = false
+        let view = makeView(
+            pages: pages(["p0", "p1"]),
+            currentPage: .init(get: { binding }, set: { binding = $0 }),
+            chapterToken: "chA",
+            onAdvanceChapter: { advanceCalled = true; return true }
+        )
+        let coord = TextKitPageView.Coordinator(view)
+        let pvc = UIPageViewController(transitionStyle: .pageCurl, navigationOrientation: .horizontal)
+        // Seed the PVC on the LAST page, then tap forward.
+        pvc.setViewControllers([coord.controller(for: 1)], direction: .forward, animated: false)
+        coord.navigate(.forward, in: pvc)
+
+        XCTAssertTrue(advanceCalled, "forward past the last page must request chapter advance")
+        XCTAssertTrue(coord.isAwaitingChapterSwap, "advancing across the boundary must arm the swap latch")
+        XCTAssertEqual(binding, 1, "currentPage must NOT be reset against the old chapter's pages")
+
+        // Simulate the token-change handling: latch clears, pool purges.
+        coord.isAwaitingChapterSwap = false
+        coord.purgePool()
+        XCTAssertFalse(coord.isAwaitingChapterSwap, "a chapter token change must clear the swap latch")
+    }
+
+    /// Reverse before page 0 must also arm the latch (so the host can swap to
+    /// the previous chapter) and never bounce within the current chapter.
+    func testReverseBeforePageZeroArmsSwapLatch() {
+        var binding = 0
+        var prevCalled = false
+        var needsLastPageCalled = false
+        var view = makeView(
+            pages: pages(["p0", "p1"]),
+            currentPage: .init(get: { binding }, set: { binding = $0 }),
+            onPreviousChapter: { prevCalled = true; return true }
+        )
+        view.onPreviousChapterNeedsLastPage = { needsLastPageCalled = true }
+        let coord = TextKitPageView.Coordinator(view)
+        let pvc = UIPageViewController(transitionStyle: .pageCurl, navigationOrientation: .horizontal)
+        pvc.setViewControllers([coord.controller(for: 0)], direction: .forward, animated: false)
+        coord.navigate(.reverse, in: pvc)
+
+        XCTAssertTrue(needsLastPageCalled, "retreat before page 0 must arm last-page landing")
+        XCTAssertTrue(prevCalled, "retreat before page 0 must request previous chapter")
+        XCTAssertTrue(coord.isAwaitingChapterSwap, "retreating across the boundary must arm the swap latch")
     }
 
     /// Regression ("tap to go back, then it bounces forward"): a

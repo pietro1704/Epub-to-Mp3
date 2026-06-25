@@ -259,6 +259,7 @@ struct InstantReaderView: View {
             }
         }
         .compatOnChange(of: currentChapterIndex) { newIndex in
+            FlickerProbe.shared.chapterInfo = "\(newIndex)/\(fulltext.chapters.count)"
             reloadCurrentChapter(index: newIndex)
             settings.saveChapterIndex(newIndex, for: fulltext.jobId)
             // ReaderCoordinator is the source of truth — this single
@@ -279,7 +280,11 @@ struct InstantReaderView: View {
             cacheManager.prefetchNext(2, from: newIndex)
         }
         .onAppear {
-            let saved = settings.savedChapterIndex(for: fulltext.jobId)
+            // UI tests can force a clean opening position (first readable
+            // chapter) so chapter-crossing automation isn't blocked by a
+            // previously-saved position deep in the book.
+            let forceReset = ProcessInfo.processInfo.arguments.contains("-uiTestResetReaderPosition")
+            let saved = forceReset ? 0 : settings.savedChapterIndex(for: fulltext.jobId)
             if saved > 0 {
                 currentChapterIndex = saved
             } else if currentChapterIndex == 0 {
@@ -289,6 +294,7 @@ struct InstantReaderView: View {
             // already knows where the reader is, without waiting
             // for the first compatOnChange to fire.
             readerCoordinator.setChapter(currentChapterIndex)
+            FlickerProbe.shared.chapterInfo = "\(currentChapterIndex)/\(fulltext.chapters.count)"
             reloadCurrentChapter(index: currentChapterIndex)
             if hasAudio { mountPlayerIfPossible() }
             cacheManager.refreshCachedIndices()
