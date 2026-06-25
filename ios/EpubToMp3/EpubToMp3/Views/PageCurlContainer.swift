@@ -59,6 +59,10 @@ struct PageCurlContainer: UIViewControllerRepresentable {
     /// Fires when the curl animation ends (`didFinishAnimating`), whether or
     /// not it completed, so the host can re-enable suppression gates.
     var onDidFinishTransition: (() -> Void)? = nil
+    /// Fires just before `onPreviousChapter` is called when the user curls
+    /// backward past page 0, so the host can arm its snap-to-last-page
+    /// mechanism — matching the behaviour of slide/none mode's `retreatPage`.
+    var onPreviousChapterNeedsLastPage: (() -> Void)? = nil
 
     func makeCoordinator() -> Coordinator {
         Coordinator(self)
@@ -239,7 +243,11 @@ struct PageCurlContainer: UIViewControllerRepresentable {
                 if candidate >= 0 {
                     nextIndex = candidate
                 } else {
-                    // First page — delegate chapter retreat to host
+                    // First page — delegate chapter retreat to host.
+                    // Arm the snap-to-last-page sentinel before delegating so
+                    // the host lands on the last page of the previous chapter,
+                    // matching the slide/none mode behaviour of retreatPage().
+                    parent.onPreviousChapterNeedsLastPage?()
                     if parent.onPreviousChapter?() == true {
                         parent.currentPage = 0
                     }
@@ -339,6 +347,7 @@ struct PageCurlContainer: UIViewControllerRepresentable {
                 }
             } else if swipedBackward, landedPage == 0 {
                 // User swiped backward past the first page in the chapter.
+                parent.onPreviousChapterNeedsLastPage?()
                 if parent.onPreviousChapter?() == true {
                     parent.currentPage = 0
                 }

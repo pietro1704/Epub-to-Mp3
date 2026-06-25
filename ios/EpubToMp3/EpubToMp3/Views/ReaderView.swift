@@ -1056,7 +1056,10 @@ struct ReaderView: View {
             chromeVisible: chromeVisible,
             onUserPageChange: { isFollowing = false },
             onWillTransition: { isPageTurning = true },
-            onDidFinishTransition: { isPageTurning = false }
+            onDidFinishTransition: { isPageTurning = false },
+            onPreviousChapterNeedsLastPage: {
+                jumpToLastPageForChapterId = "__pending__"
+            }
         )
     }
     #endif
