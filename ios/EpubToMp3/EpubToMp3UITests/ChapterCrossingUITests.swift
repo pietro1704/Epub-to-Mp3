@@ -20,7 +20,10 @@ final class ChapterCrossingUITests: XCTestCase {
     private func openReader() throws -> XCUIApplication {
         XCUIDevice.shared.orientation = .portrait
         let app = XCUIApplication()
-        app.launchArguments += ["-uiTestFlickerProbe", "-uiTestResetReaderPosition"]
+        app.launchArguments += [
+            "-uiTestFlickerProbe", "-uiTestResetReaderPosition",
+            "-uiTestReaderLayout", "paginated",
+        ]
         app.launch()
         let firstBook = app.buttons.matching(
             NSPredicate(format: "identifier BEGINSWITH %@", "library.bookTile.")
@@ -112,5 +115,35 @@ final class ChapterCrossingUITests: XCTestCase {
         let afterPage = indicator(app)
         XCTAssertEqual(afterPage?.page, afterPage?.total,
                        "Backward crossing must land on the previous chapter's LAST page, got \(String(describing: afterPage)).")
+    }
+
+    /// A SWIPE (not a tap) off the last page must also cross into the next
+    /// chapter — the dedicated edge-pan recognizer handles the boundary the
+    /// UIPageViewController's own pan refuses.
+    func testForwardSwipeCrossesChapterBoundary() throws {
+        let app = try openReader()
+        let right = app.coordinate(withNormalizedOffset: CGVector(dx: 0.85, dy: 0.5))
+        guard let startCh = chapter(app), startCh.index + 1 < startCh.total else {
+            throw XCTSkip("No room to cross a chapter boundary by swipe.")
+        }
+
+        // Page to the last page of the current chapter (taps are fine here).
+        var guardCount = 0
+        while let cur = indicator(app), cur.page < cur.total, guardCount < 80 {
+            right.tap(); usleep(650_000); guardCount += 1
+        }
+        XCTAssertEqual(indicator(app)?.page, indicator(app)?.total, "should be on the last page")
+
+        // Swipe left (forward) off the last page → must cross to next chapter.
+        let from = app.coordinate(withNormalizedOffset: CGVector(dx: 0.8, dy: 0.5))
+        let to = app.coordinate(withNormalizedOffset: CGVector(dx: 0.2, dy: 0.5))
+        from.press(forDuration: 0.05, thenDragTo: to)
+        usleep(1_800_000)
+
+        XCTAssertEqual(chapter(app)?.index, startCh.index + 1,
+                       "a forward swipe off the last page must advance the chapter " +
+                       "(before=\(startCh) after=\(String(describing: chapter(app))))")
+        XCTAssertEqual(indicator(app)?.page, 1,
+                       "after a swipe crossing, the reader must be on page 1")
     }
 }

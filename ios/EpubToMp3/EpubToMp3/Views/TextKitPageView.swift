@@ -103,6 +103,20 @@ struct TextKitPageView: UIViewControllerRepresentable {
         )
         tap.delegate = context.coordinator
         pvc.view.addGestureRecognizer(tap)
+
+        // Edge-swipe recognizer for CHAPTER crossing. The page-curl PVC's own
+        // pan turns pages WITHIN a chapter, but it silently refuses to swipe
+        // past the last page / before the first (its data source returns nil
+        // at the bounds), so a swipe at the boundary does nothing. This pan
+        // runs simultaneously with the PVC's and only acts when there is no
+        // neighbouring page in the swipe direction — i.e. the user is trying
+        // to swipe OUT of the chapter — handing off to onAdvance/onPrevious.
+        let edgePan = UIPanGestureRecognizer(
+            target: context.coordinator,
+            action: #selector(Coordinator.handleEdgePan(_:))
+        )
+        edgePan.delegate = context.coordinator
+        pvc.view.addGestureRecognizer(edgePan)
         return pvc
     }
 
@@ -357,6 +371,51 @@ struct TextKitPageView: UIViewControllerRepresentable {
                 navigate(.forward, in: pvc)
             } else {
                 parent.onCenterTap?()
+            }
+        }
+
+        /// Tracks whether the current edge-pan gesture has already triggered a
+        /// chapter crossing, so a single continuous drag fires at most once.
+        private var edgePanCrossed = false
+
+        /// Horizontal edge-swipe → chapter crossing. Only fires when the user
+        /// drags far enough in a direction that has NO neighbouring page (they
+        /// are on the last page dragging left/forward, or the first page
+        /// dragging right/backward). Within-chapter turns are left entirely to
+        /// the PVC's own pan.
+        @objc func handleEdgePan(_ gesture: UIPanGestureRecognizer) {
+            guard let view = gesture.view,
+                  let pvc = view.parentViewController as? UIPageViewController,
+                  let current = pvc.viewControllers?.first as? TextKitPageController
+            else { return }
+
+            switch gesture.state {
+            case .began:
+                edgePanCrossed = false
+            case .changed:
+                guard !edgePanCrossed, !isTransitioning, !isAwaitingChapterSwap else { return }
+                let translationX = gesture.translation(in: view).x
+                // Require a deliberate horizontal drag (¼ width or 80 pt).
+                let threshold = min(view.bounds.width * 0.25, 80)
+                if translationX <= -threshold {
+                    // Dragging forward (content moves left). Only cross if there
+                    // is NO next page in this chapter — otherwise the PVC turns.
+                    let atLastPage = current.pageIndex >= parent.pages.count - 1
+                    if atLastPage {
+                        edgePanCrossed = true
+                        if parent.onAdvanceChapter?() == true { isAwaitingChapterSwap = true }
+                    }
+                } else if translationX >= threshold {
+                    // Dragging backward (content moves right).
+                    let atFirstPage = current.pageIndex <= 0
+                    if atFirstPage {
+                        edgePanCrossed = true
+                        parent.onPreviousChapterNeedsLastPage?()
+                        if parent.onPreviousChapter?() == true { isAwaitingChapterSwap = true }
+                    }
+                }
+            default:
+                break
             }
         }
 

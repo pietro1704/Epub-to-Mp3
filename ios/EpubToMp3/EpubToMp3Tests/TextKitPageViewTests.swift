@@ -217,6 +217,61 @@ final class TextKitPageViewTests: XCTestCase {
                        "no chapter swap should be armed by an in-chapter swipe to the last page")
     }
 
+    /// Edge-swipe forward on the LAST page crosses to the next chapter. The
+    /// PVC's own pan can't (no page after the last), so the dedicated edge-pan
+    /// recognizer hands off to onAdvanceChapter. A mid-chapter page must NOT
+    /// trigger it (the PVC turns the page instead).
+    func testEdgeSwipeForwardOnLastPageCrossesChapter() {
+        var binding = 1
+        var advanceCalled = false
+        let view = makeView(
+            pages: pages(["p0", "p1"]),          // last page is index 1
+            currentPage: .init(get: { binding }, set: { binding = $0 }),
+            onAdvanceChapter: { advanceCalled = true; return true }
+        )
+        let coord = TextKitPageView.Coordinator(view)
+        let pvc = UIPageViewController(transitionStyle: .pageCurl, navigationOrientation: .horizontal)
+        let host = UIView(frame: CGRect(x: 0, y: 0, width: 390, height: 800))
+        host.addSubview(pvc.view)
+        pvc.view.frame = host.bounds
+        pvc.setViewControllers([coord.controller(for: 1)], direction: .forward, animated: false)
+
+        let pan = StubPan(view: pvc.view)
+        pan.stubState = .began
+        coord.handleEdgePan(pan)
+        pan.stubState = .changed
+        pan.stubTranslation = CGPoint(x: -200, y: 0)   // strong forward drag
+        coord.handleEdgePan(pan)
+
+        XCTAssertTrue(advanceCalled, "edge-swipe forward on the last page must advance the chapter")
+        XCTAssertTrue(coord.isAwaitingChapterSwap, "crossing must arm the swap latch")
+    }
+
+    func testEdgeSwipeOnMiddlePageDoesNotCrossChapter() {
+        var binding = 1
+        var advanceCalled = false
+        let view = makeView(
+            pages: pages(["p0", "p1", "p2"]),    // index 1 is a middle page
+            currentPage: .init(get: { binding }, set: { binding = $0 }),
+            onAdvanceChapter: { advanceCalled = true; return true }
+        )
+        let coord = TextKitPageView.Coordinator(view)
+        let pvc = UIPageViewController(transitionStyle: .pageCurl, navigationOrientation: .horizontal)
+        let host = UIView(frame: CGRect(x: 0, y: 0, width: 390, height: 800))
+        host.addSubview(pvc.view)
+        pvc.view.frame = host.bounds
+        pvc.setViewControllers([coord.controller(for: 1)], direction: .forward, animated: false)
+
+        let pan = StubPan(view: pvc.view)
+        pan.stubState = .began; coord.handleEdgePan(pan)
+        pan.stubState = .changed
+        pan.stubTranslation = CGPoint(x: -200, y: 0)
+        coord.handleEdgePan(pan)
+
+        XCTAssertFalse(advanceCalled,
+                       "an edge-swipe on a middle page must let the PVC turn the page, not cross chapters")
+    }
+
     /// Out-of-range index yields an empty slice rather than crashing.
     func testSliceOutOfRangeIsEmpty() {
         var binding = 0
@@ -225,5 +280,26 @@ final class TextKitPageViewTests: XCTestCase {
         XCTAssertEqual(coord.slice(at: 5).length, 0)
         XCTAssertEqual(coord.slice(at: 0).string, "only")
     }
+}
+
+/// A `UIPanGestureRecognizer` whose `state` and `translation(in:)` can be
+/// driven from a test, so the edge-pan chapter-crossing handler can be
+/// exercised without a live touch session.
+private final class StubPan: UIPanGestureRecognizer {
+    var stubState: UIGestureRecognizer.State = .possible
+    var stubTranslation: CGPoint = .zero
+    private weak var stubView: UIView?
+
+    init(view: UIView) {
+        stubView = view
+        super.init(target: nil, action: nil)
+    }
+
+    override var state: UIGestureRecognizer.State {
+        get { stubState }
+        set { stubState = newValue }
+    }
+    override var view: UIView? { stubView }
+    override func translation(in v: UIView?) -> CGPoint { stubTranslation }
 }
 #endif
