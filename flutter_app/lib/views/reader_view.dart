@@ -267,6 +267,17 @@ class _ReaderViewState extends ConsumerState<ReaderView> {
       onTap: widget.onCenterTap,
       behavior: HitTestBehavior.translucent,
       child: Container(
+        // Paint the reader theme background behind the WHOLE scroll
+        // region — not just behind the (content-sized) scroll child.
+        // Mirrors iOS 371b204: `continuousBookScroll` got
+        // `.background(themeBackground.ignoresSafeArea())` so a chapter
+        // shorter than the viewport, or the overscroll-stretch zone on a
+        // fast fling, never exposes the white system background. Without
+        // the `width/height: infinity` the Container shrink-wraps the
+        // SingleChildScrollView and a short chapter leaves a white strip
+        // below the text.
+        width: double.infinity,
+        height: double.infinity,
         color: bg,
         child: Scrollbar(
           controller: _scrollController,
