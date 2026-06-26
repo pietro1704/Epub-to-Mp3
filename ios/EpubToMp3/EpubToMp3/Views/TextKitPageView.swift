@@ -412,22 +412,19 @@ struct TextKitPageView: UIViewControllerRepresentable {
             parent.onUserPageChange?()
             let landed = vc.pageIndex
             parent.currentPage = landed
-
-            let prevIndex = (previousViewControllers.first as? TextKitPageController)?.pageIndex
-            let forward = prevIndex.map { landed > $0 } ?? false
-            let backward = prevIndex.map { landed < $0 } ?? false
-
-            // Crossing a chapter boundary by swipe. Arm the swap latch
-            // instead of writing currentPage=0 against the OLD pages — the
-            // host swaps the chapter and ReaderView.onChange(chapter.id)
-            // resets currentPage against the NEW pages. Writing 0 here would
-            // re-navigate within the current chapter first (visible flash).
-            if forward, landed == parent.pages.count - 1 {
-                if parent.onAdvanceChapter?() == true { isAwaitingChapterSwap = true }
-            } else if backward, landed == 0 {
-                parent.onPreviousChapterNeedsLastPage?()
-                if parent.onPreviousChapter?() == true { isAwaitingChapterSwap = true }
-            }
+            // NOTE: do NOT trigger chapter advance/retreat here. A native
+            // swipe that LANDS on the last (or first) page is an ordinary
+            // in-chapter navigation — the user arrived at the edge page, they
+            // did not ask to leave the chapter. UIPageViewController already
+            // refuses to swipe PAST the last page (its data source returns nil
+            // beyond the bounds), so there is no "swiped past the end" signal
+            // to act on. Previously `landed == pages.count - 1` fired
+            // onAdvanceChapter the moment a swipe reached the last page, so on
+            // a 2-page chapter a single forward swipe to page 2 jumped to the
+            // next chapter and bounced currentPage back to 0. Chapter crossing
+            // is handled deliberately by the tap path in `navigate(_:)`, which
+            // only advances when the user taps forward while already ON the
+            // last page (candidate >= pages.count).
         }
 
         // MARK: UIGestureRecognizerDelegate

@@ -186,6 +186,37 @@ final class TextKitPageViewTests: XCTestCase {
                        "didFinishAnimating must not trigger chapter advance for a programmatic tap turn")
     }
 
+    /// Regression: a native swipe that LANDS on the last page is an ordinary
+    /// in-chapter navigation — the user arrived at the edge, they did not ask
+    /// to leave the chapter. `didFinishAnimating` must NOT advance the chapter
+    /// just because the landed page is the last one. (The old
+    /// `landed == pages.count - 1` check made a single forward swipe on a
+    /// 2-page chapter jump to the next chapter and bounce currentPage to 0.)
+    func testSwipeLandingOnLastPageDoesNotAdvanceChapter() {
+        var binding = 0
+        var advanceCalled = false
+        let view = makeView(
+            pages: pages(["p0", "p1"]),       // 2-page chapter
+            currentPage: .init(get: { binding }, set: { binding = $0 }),
+            onAdvanceChapter: { advanceCalled = true; return true }
+        )
+        let coord = TextKitPageView.Coordinator(view)
+        let pvc = UIPageViewController(transitionStyle: .pageCurl, navigationOrientation: .horizontal)
+        // Simulate a user swipe that landed on the LAST page (index 1) from
+        // page 0 — NOT a programmatic turn.
+        let last = coord.controller(for: 1)
+        pvc.setViewControllers([last], direction: .forward, animated: false)
+        coord.isProgrammaticTurn = false
+        coord.pageViewController(pvc, didFinishAnimating: true,
+                                 previousViewControllers: [coord.controller(for: 0)],
+                                 transitionCompleted: true)
+        XCTAssertEqual(binding, 1, "landing on the last page must set currentPage to that page")
+        XCTAssertFalse(advanceCalled,
+                       "arriving on the last page by swipe must NOT advance to the next chapter")
+        XCTAssertFalse(coord.isAwaitingChapterSwap,
+                       "no chapter swap should be armed by an in-chapter swipe to the last page")
+    }
+
     /// Out-of-range index yields an empty slice rather than crashing.
     func testSliceOutOfRangeIsEmpty() {
         var binding = 0

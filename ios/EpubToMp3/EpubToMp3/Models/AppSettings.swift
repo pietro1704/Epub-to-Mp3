@@ -194,6 +194,13 @@ final class AppSettings: ObservableObject {
         self.readerLayout = ReaderLayout(
             rawValue: defaults.string(forKey: "readerLayout") ?? ""
         ) ?? .scrolling
+        // UI tests can pin the reader layout regardless of persisted state,
+        // e.g. `-uiTestReaderLayout paginated` / `-uiTestReaderLayout scrolling`.
+        let args = ProcessInfo.processInfo.arguments
+        if let i = args.firstIndex(of: "-uiTestReaderLayout"), i + 1 < args.count,
+           let forced = ReaderLayout(rawValue: args[i + 1]) {
+            self.readerLayout = forced
+        }
         self.pageTurnStyle = PageTurnStyle(
             rawValue: defaults.string(forKey: "pageTurnStyle") ?? ""
         ) ?? .flip

@@ -14,7 +14,10 @@ final class SafeAreaCaptureUITests: XCTestCase {
     func testReaderRespectsSafeAreaWithChromeHidden() throws {
         XCUIDevice.shared.orientation = .portrait
         let app = XCUIApplication()
-        app.launchArguments += ["-uiTestResetReaderPosition"]
+        // Pin paginated mode: this test inspects a single page's text frame.
+        // In scroll mode the whole book is rendered, so enumerating every text
+        // element takes minutes and the run times out.
+        app.launchArguments += ["-uiTestResetReaderPosition", "-uiTestReaderLayout", "paginated"]
         app.launch()
 
         let firstBook = app.buttons.matching(

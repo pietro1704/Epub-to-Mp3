@@ -63,9 +63,16 @@ final class FlickerProbe: ObservableObject {
     /// `flicker` category. Only emits when armed, so production stays quiet.
     /// Inspect on device with: `log stream --predicate 'category == "flicker"'`.
     private let logger = Logger(subsystem: "com.pietrocode.epubtomp3", category: "flicker")
+    /// Last log line, surfaced to UI tests via the overlay so device runs can
+    /// read diagnostics without a console stream.
+    @Published private(set) var lastLog: String = ""
+    private var logHistory: [String] = []
     func log(_ message: String) {
         guard isArmed else { return }
         logger.debug("\(message, privacy: .public)")
+        logHistory.append(message)
+        if logHistory.count > 8 { logHistory.removeFirst(logHistory.count - 8) }
+        lastLog = logHistory.joined(separator: " | ")
     }
 
     /// Total across every event kind — the single number a UI test asserts
@@ -107,6 +114,9 @@ struct FlickerProbeOverlay: View {
                 Text(probe.chapterInfo)
                     .accessibilityIdentifier("flicker.probe.chapter")
                     .accessibilityLabel(probe.chapterInfo)
+                Text(probe.lastLog.isEmpty ? "—" : probe.lastLog)
+                    .accessibilityIdentifier("flicker.probe.lastlog")
+                    .accessibilityLabel(probe.lastLog)
                 Button("flicker-reset") { probe.reset() }
                     .accessibilityIdentifier("flicker.probe.reset")
                     .buttonStyle(.plain)
