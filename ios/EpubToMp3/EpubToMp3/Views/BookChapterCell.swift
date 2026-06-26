@@ -70,9 +70,14 @@ struct BookChapterCell: View {
                 .padding(.horizontal, margin)
                 .padding(.bottom, 16)
             } else {
-                // Placeholder height while the HTML renders so the lazy
-                // stack doesn't collapse to zero and snap-scroll.
-                Color.clear.frame(height: 120)
+                // Placeholder sized to the chapter's ESTIMATED rendered height
+                // while the HTML parses. A fixed 120 pt collapsed every cell to
+                // a stub, so a fast scroll showed white bands that then jumped
+                // to full height when the text landed (the "pisca branco ao
+                // rolar rápido" flicker). Reserving an estimate keeps the scroll
+                // metrics stable: the text fills the reserved space instead of
+                // shoving the rest of the book down.
+                Color.clear.frame(height: estimatedTextHeight)
             }
         }
         .frame(maxWidth: .infinity, alignment: .center)
@@ -81,10 +86,37 @@ struct BookChapterCell: View {
             // is main-thread (WebKit importer) but cheap enough per chapter;
             // gating on `renderKey` ensures one render per identity change.
             guard lastRenderKey != renderKey else { return }
+            // A RE-render of a cell that already had content (lastRenderKey
+            // non-nil) while the chapter id is unchanged is a scroll-mode
+            // flicker: the cell re-parses and the text visibly repaints.
+            #if os(iOS)
+            if lastRenderKey != nil, lastRenderKey?.hasPrefix(chapter.id + "|") == true {
+                FlickerProbe.shared.record(.staleSlicePushed)
+            }
+            #endif
             lastRenderKey = renderKey
             attributed = makeAttributed()
         }
         .onAppear { onAppearChapter?() }
+    }
+
+    /// Rough estimate of the chapter's rendered text height, used to size the
+    /// placeholder so a not-yet-rendered cell reserves the right amount of
+    /// space (no white-band flash + scroll jump). Approximates characters per
+    /// line from the column width and font size, then multiplies the line
+    /// count by an estimated line height. Clamped so a tiny chapter still gets
+    /// a sensible minimum and a huge one doesn't reserve an absurd height.
+    private var estimatedTextHeight: CGFloat {
+        let chars = CGFloat(max(chapter.charCount ?? chapter.text.count, 1))
+        // ~1.9 pt of width per character at the body size is a decent average
+        // for proportional fonts; avoid div-by-zero on a zero column.
+        let avgCharWidth = max(fontSize * 0.5, 1)
+        let charsPerLine = max(columnWidth / avgCharWidth, 1)
+        let lines = (chars / charsPerLine).rounded(.up)
+        let lineHeight = fontSize + CGFloat(lineSpacing)
+        let body = lines * lineHeight
+        // Title + paddings already added around the body in `body`.
+        return min(max(body, 120), 20_000)
     }
 
     private func makeAttributed() -> NSAttributedString {

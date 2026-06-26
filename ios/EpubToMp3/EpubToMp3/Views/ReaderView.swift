@@ -679,6 +679,10 @@ struct ReaderView: View {
                     proxy.scrollTo(chapter.zeroBasedEpubIndex, anchor: .top)
                 }
             }
+            // Paint the theme background BEHIND the scroll content so a cell
+            // that hasn't rendered yet (its placeholder is Color.clear) shows
+            // the reader background, not a white band, while fast-scrolling.
+            .background(themeBackground.ignoresSafeArea())
         }
     }
 

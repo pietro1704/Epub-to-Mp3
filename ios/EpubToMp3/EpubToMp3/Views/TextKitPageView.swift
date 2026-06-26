@@ -403,6 +403,7 @@ struct TextKitPageView: UIViewControllerRepresentable {
                     let atLastPage = current.pageIndex >= parent.pages.count - 1
                     if atLastPage {
                         edgePanCrossed = true
+                        abortPVCCurl(pvc)
                         if parent.onAdvanceChapter?() == true { isAwaitingChapterSwap = true }
                     }
                 } else if translationX >= threshold {
@@ -410,12 +411,31 @@ struct TextKitPageView: UIViewControllerRepresentable {
                     let atFirstPage = current.pageIndex <= 0
                     if atFirstPage {
                         edgePanCrossed = true
+                        abortPVCCurl(pvc)
                         parent.onPreviousChapterNeedsLastPage?()
                         if parent.onPreviousChapter?() == true { isAwaitingChapterSwap = true }
                     }
                 }
             default:
                 break
+            }
+        }
+
+        /// Abort the page-curl that the PVC's own pan started at the boundary.
+        /// When the user swipes past the last page, the PVC begins a curl that
+        /// it will REVERT (its data source has no next page) — and that
+        /// reverting curl, racing the chapter swap's instant re-seed, is the
+        /// "wrong page flashes during the turn" the user saw. Bouncing the
+        /// PVC's gesture recognizers (disable→enable) cancels the in-flight
+        /// curl cleanly so only the new chapter's page 0 is presented.
+        private func abortPVCCurl(_ pvc: UIPageViewController) {
+            // Find the PVC's OWN pan (the page-curl driver), not our edge-pan.
+            // The PVC's internal pans have no delegate set by us; our edge-pan
+            // recognizer is the one whose delegate is this coordinator.
+            for gr in pvc.view.gestureRecognizers ?? [] {
+                guard gr is UIPanGestureRecognizer, gr.delegate !== self else { continue }
+                gr.isEnabled = false
+                gr.isEnabled = true
             }
         }
 
