@@ -32,6 +32,13 @@ def _machine_model() -> str:
 
 
 def main() -> int:
+    # --device-test relaxes the hard refusal: device tests (real iPhone) do not
+    # boot CoreSimulator, so they are allowed, but still warn so the operator
+    # serializes the work and does not stack it onto another heavy job — the
+    # actual CPU CATERR / PCIe panic trigger is *concurrent* load, not the
+    # Simulator specifically.
+    device_test = "--device-test" in sys.argv
+
     if os.environ.get("IOS_ALLOW_LOW_RESOURCE_SIMULATOR") == "1":
         return 0
 
@@ -41,12 +48,23 @@ def main() -> int:
     is_intel = arch in {"x86_64", "i386"}
 
     if is_intel and memory_gib < _MIN_SAFE_MEMORY_GIB:
+        if device_test:
+            print(
+                f"ios:device:test on a constrained Mac ({model}, "
+                f"{memory_gib:.1f} GiB). Device tests are allowed (no Simulator), "
+                "but this machine kernel-panics under concurrent load "
+                "(CPU CATERR / PCIe↔T2). Run this ALONE — do not stack it on a "
+                "build, the full pytest suite, or a flutter build.",
+                file=sys.stderr,
+            )
+            return 0
         print(
             "ios:build refused: this local Mac is too resource-constrained for "
             "iOS Simulator builds.\n\n"
             f"Detected: {model}, {memory_gib:.1f} GiB RAM, arch={arch}.\n"
             "Reason: recent iOS Simulator/CoreSimulator workloads have caused "
-            "kernel panics on this Intel 8 GiB MacBook.\n\n"
+            "kernel panics on this Intel 8 GiB MacBook (CPU CATERR / PCIe↔T2 "
+            "link timeout under load).\n\n"
             "Safe alternatives:\n"
             "  - Use GitHub Release Desktop / CI for iOS artifacts.\n"
             "  - Run macOS-only local builds with `mise run mac:build`.\n"

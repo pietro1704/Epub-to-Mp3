@@ -38,6 +38,22 @@ def test_allows_explicit_override_on_low_resource_mac(monkeypatch) -> None:
     assert module.main() == 0
 
 
+def test_device_test_mode_allows_but_warns_on_low_resource_mac(monkeypatch, capsys) -> None:
+    module = _load_module()
+    monkeypatch.delenv("IOS_ALLOW_LOW_RESOURCE_SIMULATOR", raising=False)
+    monkeypatch.setattr(module.sys, "argv", ["guard", "--device-test"])
+    monkeypatch.setattr(module.platform, "machine", lambda: "x86_64")
+    monkeypatch.setattr(module, "_machine_model", lambda: "MacBookPro15,2")
+    monkeypatch.setattr(module, "_memory_gib", lambda: 8.0)
+
+    # Device tests do not boot CoreSimulator, so they are allowed (exit 0)…
+    assert module.main() == 0
+    # …but must warn to serialize the run (concurrent load is the panic trigger).
+    err = capsys.readouterr().err
+    assert "concurrent load" in err
+    assert "ALONE" in err
+
+
 def test_allows_apple_silicon_or_larger_intel(monkeypatch) -> None:
     module = _load_module()
     monkeypatch.delenv("IOS_ALLOW_LOW_RESOURCE_SIMULATOR", raising=False)

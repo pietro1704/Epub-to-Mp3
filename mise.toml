@@ -318,6 +318,9 @@ fi
 xcodegen generate
 # Slice 18 preflight: widget must be embedded in the app bundle.
 "${MISE_PROJECT_ROOT:-../..}/scripts/verify_widget_embedded.sh"
+# Hold the single-heavy-job lock around xcodebuild (CPU CATERR / PCIe panic
+# guard on constrained Intel Macs — never let it race another heavy job).
+python3 "${MISE_PROJECT_ROOT:-../..}/scripts/heavy_job_guard.py" mac:build -- \\
 xcodebuild \\
   -project EpubToMp3.xcodeproj \\
   -scheme EpubToMp3 \\
@@ -467,6 +470,8 @@ run = """
 #!/bin/bash
 set -euo pipefail
 cd ios/EpubToMp3
+# Constrained Intel Macs panic under concurrent load — serialize this and warn.
+python3 ../../scripts/guard_ios_simulator_resources.py --device-test || exit $?
 DEVICE="${IOS_DEVICE_ID:-00008140-001128A022BA801C}"
 DD="./.build-device"
 ONLY=""
@@ -475,14 +480,19 @@ if [[ -n "${IOS_TESTS:-}" ]]; then
   for t in "${T[@]}"; do ONLY+=" -only-testing:$t"; done
 fi
 echo "ios:device:test → device: $DEVICE"
-if [[ "${IOS_SKIP_BUILD:-0}" != "1" ]]; then
-  xcodebuild -project EpubToMp3.xcodeproj -scheme EpubToMp3 -configuration Debug \\
-    -destination "id=$DEVICE" -derivedDataPath "$DD" build-for-testing | tail -5
-fi
-# shellcheck disable=SC2086
-xcodebuild -project EpubToMp3.xcodeproj -scheme EpubToMp3 \\
-  -destination "id=$DEVICE" -derivedDataPath "$DD" $ONLY \\
-  test-without-building 2>&1 | grep -iE "Test Suite|Test Case|passed|failed|error:|XCTAssert|skip|flicker" || true
+run_device_tests() {
+  if [[ "${IOS_SKIP_BUILD:-0}" != "1" ]]; then
+    xcodebuild -project EpubToMp3.xcodeproj -scheme EpubToMp3 -configuration Debug \\
+      -destination "id=$DEVICE" -derivedDataPath "$DD" build-for-testing | tail -5
+  fi
+  # shellcheck disable=SC2086
+  xcodebuild -project EpubToMp3.xcodeproj -scheme EpubToMp3 \\
+    -destination "id=$DEVICE" -derivedDataPath "$DD" $ONLY \\
+    test-without-building 2>&1 | grep -iE "Test Suite|Test Case|passed|failed|error:|XCTAssert|skip|flicker" || true
+}
+export -f run_device_tests
+# Hold the single-heavy-job lock for the whole device run (PCIe panic guard).
+python3 ../../scripts/heavy_job_guard.py ios:device:test -- bash -c run_device_tests
 """
 
 # ── Docker ───────────────────────────────────────────────────────────────────────
