@@ -56,7 +56,7 @@ The following are **absolute** rules. When in doubt, **preserve disk space**.
 4. Report the blocker to the user — stop, don't download.
 
 ### Mandatory iOS flow on this Mac
-1. Check connected physical devices: `xcrun xcdevice list`.
+1. Check connected physical devices: `xcrun xcdevice list` / `xcrun devicectl list devices`.
 2. Remove unneeded CoreSimulator devices: `xcrun simctl delete unavailable` (or `all`).
 3. Generate project with `xcodegen` if needed.
 4. Build for the real iPhone:
@@ -64,6 +64,22 @@ The following are **absolute** rules. When in doubt, **preserve disk space**.
 5. Install + launch on device:
    `xcrun devicectl device install app ...` / `xcrun devicectl device process launch ...`.
 6. **Only with explicit user authorization**, consider Simulator.
+
+### Hard fact: local device build needs exactly 1 iOS runtime (verified 2026-06-26)
+On Xcode 26.3 the iPhone shows `iOS 26.x is not installed` until the iOS platform
+component exists. The ONLY CLI way to get it is `xcodebuild -downloadPlatform iOS`,
+which ALWAYS bundles a Simulator runtime (~9.7 GiB) + ~33 simulator devices — there is
+no device-support-only download. So the floor is **1 iOS runtime**, not zero.
+- DO NOT use `-downloadPlatform iOS -buildVersion <X>` (errors "not available") or
+  `-downloadAllPlatforms` (pulls tvOS/watchOS/visionOS — forbidden).
+- After the download, shrink to the minimum:
+  1. `xcrun simctl delete all` (drop all auto-created sim devices; we use the real iPhone).
+  2. `xcrun simctl runtime delete <UDID>` on every OTHER runtime so exactly 1 remains
+     (keep the newest, matching the device major).
+- `CoreSimulator.framework` in `/Library/Developer/PrivateFrameworks/` must be present
+  or `xcodebuild` aborts at plugin load even for device builds.
+- Verified working: 1 runtime (iOS 26.3.1), 0 sim devices, app signed "Apple
+  Development", installed + launched on iPhone 16e via `devicectl`.
 
 Prefer GitHub Actions / Release Desktop for iOS artifacts and simulator validation.
 See `feedback_ios_no_extra_simulators` and `feedback_mac_caterr_panic` memories +
