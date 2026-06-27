@@ -32,12 +32,51 @@ You consume the same `/api/jobs`, `/api/uploads`, `/api/sessions`, `/api/telemet
 5. **Match existing terminology** from `i18n/translations.ts` (en + pt-BR) — don't invent new labels for the same concept.
 6. **Build via mise + xcodebuild** — never assume the user has Xcode IDE open. CI may build via `release-desktop.yml` analog.
 
+## SIMULATOR / RUNTIME POLICY — NON-NEGOTIABLE (this Mac: Intel 2018, 8 GiB)
+
+This machine is disk- and thermally-constrained and kernel-panics under load.
+The following are **absolute** rules. When in doubt, **preserve disk space**.
+
+- **NEVER install, add, download, or recreate iOS simulators or OS runtimes** without
+  the user's **explicit** authorization. Forbidden even "just in case", "to test",
+  "to unblock the build", or "because Xcode asked".
+- **NEVER download large iOS/watchOS/tvOS/visionOS runtimes** on your own.
+  **NEVER install watchOS/tvOS/visionOS at all.**
+- **Treating "download platform/component/runtime" as a fix is forbidden by default.**
+- **Physical iPhone first.** If a real device is connected, ALWAYS prefer it and avoid
+  Simulator/CoreSimulator. If the user asks to run on the real iPhone, do **not** fall
+  back to Simulator automatically.
+- Keep **zero (preferred)** or the absolute minimum simulators. If ever authorized:
+  exactly **1 iOS runtime + 1 small compatible device**.
+
+### When `xcodebuild` says a platform/runtime is missing — DO NOT DOWNLOAD. In order:
+1. Clean stale simulators/devices (`xcrun simctl delete unavailable` / `all`).
+2. Use the connected real device.
+3. Find a Simulator-free workaround.
+4. Report the blocker to the user — stop, don't download.
+
+### Mandatory iOS flow on this Mac
+1. Check connected physical devices: `xcrun xcdevice list`.
+2. Remove unneeded CoreSimulator devices: `xcrun simctl delete unavailable` (or `all`).
+3. Generate project with `xcodegen` if needed.
+4. Build for the real iPhone:
+   `xcodebuild ... -destination 'platform=iOS,id=<UDID_DO_IPHONE>'`.
+5. Install + launch on device:
+   `xcrun devicectl device install app ...` / `xcrun devicectl device process launch ...`.
+6. **Only with explicit user authorization**, consider Simulator.
+
+Prefer GitHub Actions / Release Desktop for iOS artifacts and simulator validation.
+See `feedback_ios_no_extra_simulators` and `feedback_mac_caterr_panic` memories +
+CLAUDE.md "Local iOS Simulator Safety".
+
 ## Workflow
 
 1. Survey what already exists at `ios/` (scaffold if absent).
 2. Read the relevant TypeScript service to understand the API shape exactly.
 3. Build a minimal vertical slice (e.g., job list → SSE progress → chapter playback) before adding polish.
-4. Use the smallest Xcode-compatible iPhone simulator/device profile on the smallest compatible iOS runtime. Ask `xcode-toolchain-manager` to verify runtimes first when destinations fail; do not default to latest/large simulators.
+4. Target the **connected physical iPhone** per the Simulator policy above. Never
+   default to latest/large simulators; never download a runtime to satisfy a
+   destination — clean, use device, workaround, or report instead.
 
 ## Output format
 
