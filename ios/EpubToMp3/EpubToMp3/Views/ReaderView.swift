@@ -381,7 +381,17 @@ struct ReaderView: View {
         // or any UI outside this view.
         .modifier(ReaderColorSchemeModifier(theme: settings.readerTheme))
         .compatOnChange(of: chapter.id) { _ in
-            currentPage = 0
+            // Landing page for the new chapter. On a forward crossing we land
+            // on page 0; on a BACKWARD crossing (retreat) we must land on the
+            // previous chapter's LAST page. Seed `currentPage` accordingly
+            // BEFORE the new pages arrive so `TextKitPageView`'s token-change
+            // re-seed (animated:false) presents the correct page directly. The
+            // old code zeroed to 0 and then a polling task snapped to the last
+            // page afterwards — that second hop re-navigated animated, which is
+            // the wrong-page flash the user saw when crossing to the previous
+            // chapter. `Int.max` clamps to the last page the instant pages land.
+            let wantsLastPage = jumpToLastPageForChapterId == "__pending__"
+            currentPage = wantsLastPage ? Int.max : 0
             isPageTurning = false
             renderedAttributed = nil
             paginationCache.pages = []
@@ -394,9 +404,12 @@ struct ReaderView: View {
             // frame (theme background) is correct here; the new chapter's
             // pages replace it within a frame or two.
             paginationCache.lastValidPages = []
-            // If retreatPage requested last-page landing, poll until the new
-            // chapter's pages are ready then snap to the last one.
-            if jumpToLastPageForChapterId == "__pending__" {
+            // Retreat: refine the `Int.max` sentinel down to the real last
+            // index once pagination stabilises, so the binding holds a sane
+            // value for everything downstream (page-number footer, persisted
+            // position). No animated hop occurs — the seed already showed the
+            // last page; this only normalises the stored index.
+            if wantsLastPage {
                 jumpToLastPageForChapterId = nil
                 jumpToLastPageTask?.cancel()
                 jumpToLastPageTask = Task { @MainActor in
@@ -411,7 +424,7 @@ struct ReaderView: View {
                         if Task.isCancelled { return }
                         let p = paginationCache.pages
                         if !p.isEmpty && p.count == prevCount {
-                            currentPage = p.count - 1
+                            if currentPage != p.count - 1 { currentPage = p.count - 1 }
                             return
                         }
                         prevCount = p.count

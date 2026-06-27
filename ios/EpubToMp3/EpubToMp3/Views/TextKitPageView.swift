@@ -312,6 +312,15 @@ struct TextKitPageView: UIViewControllerRepresentable {
 
         func navigate(_ direction: UIPageViewController.NavigationDirection,
                       in pvc: UIPageViewController) {
+            // A chapter crossing is in flight: the host has bumped the chapter
+            // but the new `pages` haven't landed / been re-seeded yet, so the
+            // displayed controller still carries the OLD chapter's
+            // `pageIndex`. Acting on it now would (a) re-fire
+            // onAdvance/onPrevious off the stale last/first page — skipping a
+            // whole chapter on the second tap — or (b) navigate within the old
+            // index space that's about to be torn down. Ignore the turn until
+            // the swap settles (the token-change re-seed clears the latch).
+            guard !isAwaitingChapterSwap else { return }
             guard !isTransitioning,
                   let current = pvc.viewControllers?.first as? TextKitPageController
             else { return }
