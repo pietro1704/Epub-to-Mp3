@@ -673,12 +673,37 @@ class TextProcessor:
 
             return cleaned.strip()
 
+        # Build a one-time O(n) id→node index for the current document so that
+        # every subsequent fragment lookup is O(1) instead of O(n) per anchor.
+        # Without this index, a document with thousands of anchors (e.g. LOTR)
+        # causes O(n²) behaviour that appears as an indefinite hang.
+        _soup_id_index: Dict[str, any] = {
+            tag.get("id"): tag for tag in soup.find_all(id=True) if tag.get("id")
+        }
+        # Same index keyed per external document (built lazily, but only once per file).
+        _external_id_index: Dict[str, Dict[str, any]] = {}
+
         # Maps fragment id → the soup node to decompose during cleanup.
         # When the target node is a backlink anchor, its parent container is used
         # so that the full footnote block is removed (not just the anchor).
         cleanup_targets: Dict[str, any] = {}
 
-        for anchor in list(soup.find_all("a")):
+        # Safety budget: bail out early if the document has an absurd number of
+        # anchors to prevent indefinite hangs on pathological documents.
+        _MAX_ANCHORS = 20_000
+        all_anchors = soup.find_all("a")
+        if len(all_anchors) > _MAX_ANCHORS:
+            import logging as _logging
+
+            _logging.getLogger(__name__).warning(
+                "Footnote collection skipped: document has %d anchors (limit %d). "
+                "Returning document unchanged.",
+                len(all_anchors),
+                _MAX_ANCHORS,
+            )
+            return str(soup), []
+
+        for anchor in list(all_anchors):
             if anchor is None or not hasattr(anchor, "get"):
                 continue
             href = safe_get(anchor, "href", "") or safe_get(anchor, "xlink:href", "")
@@ -686,8 +711,8 @@ class TextProcessor:
             if not fragment:
                 continue
 
-            # Try to find note in current document
-            note_node = soup.find(id=fragment)
+            # O(1) lookup via pre-built id index
+            note_node = _soup_id_index.get(fragment)
 
             # If not found and href points to external file, try to load it
             if not note_node and external_file_resolver and "#" in href:
@@ -696,15 +721,27 @@ class TextProcessor:
                     try:
                         external_html = external_file_resolver(external_file)
                         if external_html:
-                            external_footnote_cache[external_file] = BeautifulSoup(
-                                external_html, "html.parser"
-                            )
+                            ext_bs = BeautifulSoup(external_html, "html.parser")
+                            external_footnote_cache[external_file] = ext_bs
+                            # Build id index for this external document once
+                            _external_id_index[external_file] = {
+                                tag.get("id"): tag
+                                for tag in ext_bs.find_all(id=True)
+                                if tag.get("id")
+                            }
                     except Exception:
                         external_footnote_cache[external_file] = None
 
                 external_soup = external_footnote_cache.get(external_file)
                 if external_soup:
-                    note_node = external_soup.find(id=fragment)
+                    # Use pre-built index when available, fall back to .find() once
+                    if external_file not in _external_id_index:
+                        _external_id_index[external_file] = {
+                            tag.get("id"): tag
+                            for tag in external_soup.find_all(id=True)
+                            if tag.get("id")
+                        }
+                    note_node = _external_id_index[external_file].get(fragment)
 
             # Determine the cleanup target before extract_note_text may decompose
             # the anchor.  When the target is a backlink anchor (contains only a
@@ -763,7 +800,7 @@ class TextProcessor:
             processed_targets.append(fragment)
 
         for fragment in set(processed_targets):
-            node = cleanup_targets.get(fragment) or soup.find(id=fragment)
+            node = cleanup_targets.get(fragment) or _soup_id_index.get(fragment)
             if node is not None:
                 try:
                     node.decompose()
