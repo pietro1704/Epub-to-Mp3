@@ -152,6 +152,41 @@ class CoverImage:
     extension: str
 
 
+# Locale-keyed footnote label phrases used by _render_footnotes /
+# _apply_footnotes_to_segments.  Add a new locale key to extend support.
+# The default in those methods falls back to "pt" if the key is missing;
+# always provide at least "en" and "pt".
+_FOOTNOTE_PHRASES: Dict[str, Dict[str, str]] = {
+    "pt": {
+        "prefix": "\n\n",
+        "template": "nota de rodapé {number}...\n{text}",
+        "suffix_text": "\nfim da nota de rodapé...",
+        "closing": "\n\n",
+        "chapter_end_template": (
+            "nota de rodapé {number}...\n{snippet} — {text}\nfim da nota de rodapé..."
+        ),
+    },
+    "en": {
+        "prefix": "\n\n",
+        "template": "footnote {number}...\n{text}",
+        "suffix_text": "\nend of footnote...",
+        "closing": "\n\n",
+        "chapter_end_template": ("footnote {number}...\n{snippet} — {text}\nend of footnote..."),
+    },
+}
+
+
+def _footnote_phrases_for_locale(cue_locale: str) -> Dict[str, str]:
+    """Return the footnote label phrases dict for *cue_locale*.
+
+    Falls back to 'en' when the locale is not explicitly mapped so that any
+    non-Portuguese book gets English labels instead of the Portuguese defaults
+    that were previously hard-coded in _render_footnotes / _apply_footnotes_to_segments.
+    """
+    root = (cue_locale or "en").split("-")[0].lower()
+    return _FOOTNOTE_PHRASES.get(root) or _FOOTNOTE_PHRASES["en"]
+
+
 class TextProcessor:
     """Utility helpers for dealing with HTML text inside EPUB files."""
 
@@ -495,6 +530,45 @@ class TextProcessor:
                 normalise_classes(safe_get(note_node, "class", [])) if note_node else []
             )
 
+            # --- Early-reject guards -----------------------------------------------
+            # 1. Navigation links: anchor text with 3+ whitespace-separated tokens
+            #    (e.g. "NOTE ON THE ILLUSTRATIONS") is a cross-reference / nav link,
+            #    not a note reference.  Only short anchors (symbol, number, "*", "†")
+            #    are valid note references.  Skip unless the anchor has an explicit
+            #    noteref role/type that overrides the heuristic.
+            has_explicit_noteref = bool(
+                role == "doc-noteref"
+                or epub_type == "noteref"
+                or "noteref" in classes
+                or "footnote" in classes
+                or "idfootnotelink" in classes
+                or "footnote" in anchor_id
+            )
+            if not has_explicit_noteref and anchor_text and len(anchor_text.split()) >= 3:
+                return False
+
+            # 2. Heading targets: when the resolved target node is a heading element
+            #    (h1–h6) it is a section/chapter anchor, not a footnote target.
+            #    Navigation TOC files use <a id="chapterId"> inside headings as jump
+            #    targets; these must never be collected as footnotes.
+            if target_tag in {"h1", "h2", "h3", "h4", "h5", "h6"}:
+                if not has_explicit_noteref:
+                    return False
+            # Also reject when the target *anchor* lives inside a heading.
+            if note_node is not None and note_node.name == "a":
+                parent_of_target = getattr(note_node, "parent", None)
+                if parent_of_target and getattr(parent_of_target, "name", "").lower() in {
+                    "h1",
+                    "h2",
+                    "h3",
+                    "h4",
+                    "h5",
+                    "h6",
+                }:
+                    if not has_explicit_noteref:
+                        return False
+            # -----------------------------------------------------------------------
+
             explicit_href_hint = bool(
                 re.search(r"(?:^|[#/_-])(foot|fn|note|rodape|rodapé)\w*", href_value)
             )
@@ -506,15 +580,7 @@ class TextProcessor:
                 or re.search(r"(foot|fn|note|rodape|rodapé)\w*", fragment_value)
             )
 
-            if (
-                "noteref" in classes
-                or "footnote" in classes
-                or role == "doc-noteref"
-                or epub_type == "noteref"
-                or "footnote" in href_value
-                or "footnote" in anchor_id
-                or "idfootnotelink" in classes
-            ):
+            if has_explicit_noteref or "footnote" in href_value:
                 return True
             if explicit_target_hint or explicit_href_hint:
                 return True
@@ -861,7 +927,25 @@ class TextProcessor:
                 intro = template.format(number=footnote["number"], text=footnote["text"])
                 suffix_part = suffix_text.format(number=footnote["number"], text=footnote["text"])
                 replacement = f"{prefix}{intro}{suffix_part}{closing}"
-                text = text.replace(marker, replacement, 1)
+                idx = text.find(marker)
+                if idx == -1:
+                    continue
+                # Guard: if the marker appears before the first newline it is
+                # embedded inside the chapter heading (e.g. <h1>Title *</h1>).
+                # Placing the note verbatim there would prefix the entire chapter
+                # body with footnote text, corrupting the MP3 title.  Instead,
+                # strip the marker from the heading and re-insert the note after
+                # the first paragraph break so the heading remains clean.
+                first_nl = text.find("\n")
+                if first_nl == -1 or idx < first_nl:
+                    # Marker is inside the chapter heading.  Placing the note
+                    # there would prefix the entire body with footnote text.
+                    # Instead, remove the marker from the heading and append the
+                    # note at the END of the chapter so the prose is read first.
+                    text_without_marker = text[:idx] + text[idx + len(marker) :]
+                    text = text_without_marker.rstrip() + replacement
+                else:
+                    text = text[:idx] + replacement + text[idx + len(marker) :]
             return text
 
         appended_entries: List[Tuple[str, str, str]] = []
@@ -1483,6 +1567,50 @@ def _toc_cache_put(file_path: str, opf_path: Optional[str], items: List[TocItem]
             pass
 
 
+# Regex patterns that identify a spine file as a pure endnote / footnote
+# container that should be excluded from the chapter list.  The patterns
+# match EPUB3 ARIA roles and epub:type values used by publishers to annotate
+# footnote-body sections (e.g. Hobbit_note_N.xhtml in HarperCollins 75th-ann.
+# edition).
+_ENDNOTE_ROLE_RE = re.compile(
+    r"""role\s*=\s*["'](?:[^"']*\s+)?doc-endnotes(?:\s+[^"']*)?\s*["']""",
+    re.IGNORECASE,
+)
+_ENDNOTE_EPUBTYPE_RE = re.compile(
+    r"""epub:type\s*=\s*["'][^"']*\bendnotes\b[^"']*["']""",
+    re.IGNORECASE,
+)
+
+# Maximum number of characters after the opening <body> tag within which an
+# endnote annotation must appear to be considered a "top-level" container.
+# Chapters that happen to include a <section epub:type="footnotes"> at the end
+# will have this marker far later in the file and are NOT classified as
+# endnote containers.
+_ENDNOTE_BODY_PROXIMITY = 200
+
+
+def _is_endnote_container(raw_html: str) -> bool:
+    """Return True when *raw_html* is a standalone endnote/footnote container.
+
+    A file is an endnote container only when the endnote ARIA role
+    (``role="doc-endnotes"``) or epub:type (``epub:type="endnotes"``) appears
+    as the **first structural child of <body>** — i.e. within
+    ``_ENDNOTE_BODY_PROXIMITY`` characters after the opening ``<body>`` tag.
+
+    Chapters that embed a small ``<section epub:type="footnotes">`` at the end
+    of their prose have the annotation hundreds of characters into the body and
+    are NOT classified as endnote containers.  Only files where the *entire*
+    content is a footnote body trigger this guard.
+    """
+    body_start = raw_html.lower().find("<body")
+    if body_start == -1:
+        return False
+    # Inspect only the narrow window immediately after <body>
+    window_end = body_start + _ENDNOTE_BODY_PROXIMITY + 50  # +50 for the tag itself
+    window = raw_html[body_start:window_end]
+    return bool(_ENDNOTE_ROLE_RE.search(window)) or bool(_ENDNOTE_EPUBTYPE_RE.search(window))
+
+
 class EpubParser:
     """Parse a single EPUB file into a :class:`Book` instance."""
 
@@ -1503,6 +1631,7 @@ class EpubParser:
         *,
         raw_html: Optional[str] = None,
         chapter_title: Optional[str] = None,
+        cue_locale: str = "en",
     ) -> str:
         """
         Prepare text for TTS submission with audible formatting cues.
@@ -1527,7 +1656,7 @@ class EpubParser:
         # Only remove inline markdown that was added by the processor
         # IMPORTANT: Do NOT remove [[lang:]] or [[fmt:]] tags
         if TextFormattingProcessor:
-            formatter = TextFormattingProcessor()
+            formatter = TextFormattingProcessor(cue_locale=cue_locale)
             try:
                 processed = formatter.to_audible_text(prepared_text, formatting_segments)
                 if processed:
@@ -1575,6 +1704,7 @@ class EpubParser:
                 base_dir,
                 toc_title_map=toc_title_map,
                 toc=toc,
+                book_language=language,
             )
 
         # Assign hierarchy levels from TOC so callers can distinguish
@@ -1650,6 +1780,7 @@ class EpubParser:
         spine_ids: Iterable[str],
         base_dir: str,
         toc: List[TocItem],
+        cue_locale: str = "en",
     ) -> List[Chapter]:
         """Extract chapters based on the TOC (Table of Contents) structure.
 
@@ -1771,12 +1902,14 @@ class EpubParser:
                     footnotes,
                     mode="inline",
                     context_words=context_words,
+                    phrases=_footnote_phrases_for_locale(cue_locale),
                 )
                 formatting_segments = TextProcessor._apply_footnotes_to_segments(
                     formatting_segments,
                     footnotes,
                     mode="inline",
                     context_words=context_words,
+                    phrases=_footnote_phrases_for_locale(cue_locale),
                 )
             else:
                 text_with_footnotes = text_with_formatting
@@ -2105,6 +2238,19 @@ class EpubParser:
             return None
         if TextProcessor.looks_like_css(raw_content):
             return None
+
+        # Skip files that are explicitly marked as footnote/endnote containers
+        # using EPUB3 ARIA roles or epub:type semantics.  These are end-note
+        # sections (e.g. Hobbit_note_N.xhtml) that publishers include in the
+        # spine for reflowable reading order but never intend to be spoken as
+        # independent chapters.  Detection is structural (role attribute), not
+        # filename-based, so it generalises across publishers.
+        if _is_endnote_container(raw_content):
+            import logging as _logging
+
+            _logging.getLogger(__name__).debug("Skipping endnote container: %s", asset_path)
+            return None
+
         chapter_dir = str(Path(asset_path).parent).replace("\\", "/") if "/" in asset_path else ""
 
         def resolve_external_file(relative_path: str) -> Optional[str]:
@@ -2135,6 +2281,7 @@ class EpubParser:
         base_dir: str,
         toc_title_map: Optional[Dict[str, str]] = None,
         toc: Optional[List[TocItem]] = None,
+        book_language: Optional[str] = None,
     ) -> List[Chapter]:
         import os as _os
         from concurrent.futures import ThreadPoolExecutor
@@ -2142,6 +2289,11 @@ class EpubParser:
         chapters: List[Chapter] = []
         index_counter = 1
         context_words = 8
+
+        # Derive the cue locale from the book's declared language so that
+        # italic/bold verbal cues ("in italics" vs "em itálico") match the
+        # language being read.  Falls back to "en" when language is unknown.
+        cue_locale = (book_language or "en").split("-")[0].lower()
 
         # When the TOC has nested items (e.g. Part > Chapter), build a
         # file-href → hierarchical index map so chapters inherit the TOC
@@ -2163,6 +2315,7 @@ class EpubParser:
         # iterate the prepared payload in spine order so the orphan_counter
         # and chapter assembly remain deterministic.
         spine_list = list(spine_ids)
+
         archive_lock = threading.Lock()
         parallel_enabled = _os.getenv("EPUB_PARSE_PARALLEL", "1").strip() != "0"
         max_workers = max(1, min(8, len(spine_list)))
@@ -2247,12 +2400,14 @@ class EpubParser:
                             footnotes,
                             mode="inline",
                             context_words=context_words,
+                            phrases=_footnote_phrases_for_locale(cue_locale),
                         )
                         sub_segments = TextProcessor._apply_footnotes_to_segments(
                             sub_segments,
                             footnotes,
                             mode="inline",
                             context_words=context_words,
+                            phrases=_footnote_phrases_for_locale(cue_locale),
                         )
                     else:
                         sub_text_fn = sub_text_fmt
@@ -2267,6 +2422,7 @@ class EpubParser:
                         sub_segments,
                         raw_html=sub_html,
                         chapter_title=speech_title,
+                        cue_locale=cue_locale,
                     )
 
                     # A CSS sub-chapter can still be very long (e.g. a long
@@ -2283,6 +2439,7 @@ class EpubParser:
                                 None,  # re-parse from fragment, not full-chapter segments
                                 raw_html=sub_html,
                                 chapter_title=speech_title,
+                                cue_locale=cue_locale,
                             )
                             chapters.append(
                                 Chapter(
@@ -2320,12 +2477,14 @@ class EpubParser:
                         footnotes,
                         mode="inline",
                         context_words=context_words,
+                        phrases=_footnote_phrases_for_locale(cue_locale),
                     )
                     formatting_segments = TextProcessor._apply_footnotes_to_segments(
                         formatting_segments,
                         footnotes,
                         mode="inline",
                         context_words=context_words,
+                        phrases=_footnote_phrases_for_locale(cue_locale),
                     )
                 else:
                     text_with_footnotes = text_with_formatting
@@ -2344,6 +2503,7 @@ class EpubParser:
                     formatting_segments,
                     raw_html=raw_content,
                     chapter_title=title,
+                    cue_locale=cue_locale,
                 )
 
                 # --- Paragraph-boundary fallback split ---
@@ -2360,6 +2520,7 @@ class EpubParser:
                             None,  # re-parse from fragment, not full-chapter segments
                             raw_html=markup_with_markers,
                             chapter_title=title,
+                            cue_locale=cue_locale,
                         )
                         chapters.append(
                             Chapter(
@@ -2389,7 +2550,21 @@ class EpubParser:
 
             index_counter += 1
 
-        return chapters
+        # Drop chapters whose text is empty (or only whitespace) after extraction.
+        # These arise from spine items that have no prose content (cover images,
+        # blank separators, map plates) and would otherwise produce silent MP3s
+        # or corrupt the chapter index.
+        nonempty: List[Chapter] = []
+        for ch in chapters:
+            if ch.text and ch.text.strip():
+                nonempty.append(ch)
+            else:
+                import logging as _logging
+
+                _logging.getLogger(__name__).debug(
+                    "Dropping empty chapter: index=%s name=%r", ch.index, ch.name
+                )
+        return nonempty
 
     def _remove_duplicate_chapters(self, chapters: List[Chapter]) -> List[Chapter]:
         """Remove chapters that have duplicate/overlapping content.
