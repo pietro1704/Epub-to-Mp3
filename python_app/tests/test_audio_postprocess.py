@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import asyncio
+import shutil
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
@@ -300,3 +301,129 @@ def test_ensure_ffmpeg_paths_swallows_download_failure(monkeypatch: pytest.Monke
     from python_app.src.audio_postprocess import _ensure_ffmpeg_paths
 
     _ensure_ffmpeg_paths()
+
+
+def test_concat_copy_truncation_is_rejected(dummy_mp3: Path) -> None:
+    """Regression (Hobbit AUTHOR'S NOTE): concat-copy silently truncates a
+    byte-concatenated multi-header MP3 down to the first stream. The padded
+    result is then seconds long instead of minutes and downstream coverage
+    validation flags it as 0.3% truncated.
+
+    The guard must detect the shrink (padded duration < source duration) and
+    return False so the caller re-runs the full decode+encode path.
+    """
+    import python_app.src.audio_postprocess as ap
+
+    # Source "reads" as 150s but concat-copy output only "reads" as 0.4s.
+    def fake_duration(path: Path):
+        # The final concat output is the joined temp file inside tmp_dir.
+        if "joined" in Path(path).name:
+            return 0.4  # truncated multi-header artefact
+        return 150.0  # original source duration
+
+    async def fake_exec(*args, **kwargs):
+        # Every ffmpeg step "succeeds" and writes a plausible-size file.
+        Path(args[-1]).write_bytes(b"\xff\xfb" + b"\x02" * 2048)
+        return _make_fake_proc(returncode=0)
+
+    with patch.object(ap, "_probe_audio_duration_seconds", side_effect=fake_duration):
+        ok, error = asyncio.run(
+            ap._pad_with_concat(
+                dummy_mp3,
+                Path(dummy_mp3.parent),
+                intro_ms=300,
+                outro_ms=500,
+                bitrate="8k",
+                sample_rate=24000,
+                channels=1,
+                subprocess_exec=fake_exec,
+            )
+        )
+
+    assert ok is False, "truncated concat-copy result must be rejected"
+    assert "truncat" in (error or "").lower()
+
+
+def test_concat_copy_accepts_full_length_result(dummy_mp3: Path) -> None:
+    """The guard must NOT reject a healthy concat-copy where duration grows."""
+    import python_app.src.audio_postprocess as ap
+
+    def fake_duration(path: Path):
+        if "joined" in Path(path).name:
+            return 150.8  # source 150s + 0.8s silence — healthy
+        return 150.0
+
+    async def fake_exec(*args, **kwargs):
+        Path(args[-1]).write_bytes(b"\xff\xfb" + b"\x02" * 2048)
+        return _make_fake_proc(returncode=0)
+
+    with patch.object(ap, "_probe_audio_duration_seconds", side_effect=fake_duration):
+        ok, error = asyncio.run(
+            ap._pad_with_concat(
+                dummy_mp3,
+                Path(dummy_mp3.parent),
+                intro_ms=300,
+                outro_ms=500,
+                bitrate="8k",
+                sample_rate=24000,
+                channels=1,
+                subprocess_exec=fake_exec,
+            )
+        )
+
+    assert ok is True, f"healthy concat-copy must be accepted, got {error}"
+    assert error is None
+
+
+@pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="ffmpeg not on PATH")
+def test_real_multiheader_mp3_padding_preserves_full_duration(tmp_path: Path) -> None:
+    """End-to-end with real ffmpeg: byte-concatenate two independent MP3
+    streams (mimicking Edge per-chunk output glued together), then pad with
+    silence. The result MUST keep the full combined duration, not collapse to
+    the first stream.
+    """
+    import subprocess
+
+    from python_app.src.audio_postprocess import _probe_audio_duration_seconds
+
+    def _make_tone(dest: Path, seconds: float) -> None:
+        subprocess.run(
+            (
+                "ffmpeg",
+                "-y",
+                "-f",
+                "lavfi",
+                "-i",
+                f"sine=frequency=440:sample_rate=24000:duration={seconds}",
+                "-b:a",
+                "48k",
+                "-ac",
+                "1",
+                str(dest),
+            ),
+            check=True,
+            capture_output=True,
+        )
+
+    part_a = tmp_path / "a.mp3"
+    part_b = tmp_path / "b.mp3"
+    _make_tone(part_a, 3.0)
+    _make_tone(part_b, 2.0)
+
+    # Byte-concatenate (multi-header) exactly like the Edge chunk merge.
+    concat = tmp_path / "chapter.mp3"
+    concat.write_bytes(part_a.read_bytes() + part_b.read_bytes())
+
+    source_dur = _probe_audio_duration_seconds(concat)
+    assert source_dur is not None and source_dur >= 4.5, f"expected ~5s source, got {source_dur}"
+
+    ok, error = asyncio.run(add_silence_padding(concat, intro_ms=300, outro_ms=500))
+    assert ok is True, f"padding failed: {error}"
+
+    padded_dur = _probe_audio_duration_seconds(concat)
+    assert padded_dur is not None
+    # Must retain the full ~5s (both streams) + ~0.8s silence, NOT collapse to
+    # ~3s (first stream only) or seconds-long garbage.
+    assert (
+        padded_dur >= source_dur
+    ), f"padding truncated the multi-header MP3: {padded_dur}s < source {source_dur}s"
