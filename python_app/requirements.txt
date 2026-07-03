@@ -58,7 +58,7 @@ psutil>=7.2.2
 faster-whisper>=1.2.1
 
 # Security pins (CVE fixes)
-pillow>=12.2.0
+pillow>=12.3.0
 werkzeug>=3.1.8
 
 # Testing
