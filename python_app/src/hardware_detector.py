@@ -358,6 +358,30 @@ class HardwareDetector:
         else:
             profile.performance_tier = "low"
 
+        # RAM is the hard ceiling for real-world throughput: a low-RAM machine
+        # (e.g. an 8 GiB Intel laptop) can score "high" on CPU/freq yet only
+        # keep ~2 GiB free, so aggressive segment/chapter concurrency thrashes
+        # memory and — on shared egress IPs — trips Edge rate-limiting. The
+        # score-based tier does not model absolute RAM, so cap the tier by
+        # total RAM regardless of CPU score. This is deliberately conservative
+        # for <=8 GiB hosts; override with a larger machine or explicit flags.
+        ram_tier_cap = None
+        if profile.ram_total_gb < 6:
+            ram_tier_cap = "low"
+        elif profile.ram_total_gb <= 8:
+            # <=8 GiB (e.g. 8 GiB Intel laptop): cap at "medium" so segment
+            # concurrency lands around 6 instead of 10-12, which on this class
+            # of machine means fewer Edge rate-limit retries (net faster) and
+            # no memory thrash.
+            ram_tier_cap = "medium"
+        elif profile.ram_total_gb <= 12:
+            # 8-12 GiB: allow "high" but never "ultra".
+            ram_tier_cap = "high"
+        if ram_tier_cap is not None:
+            _tier_rank = {"low": 0, "medium": 1, "high": 2, "ultra": 3}
+            if _tier_rank[profile.performance_tier] > _tier_rank[ram_tier_cap]:
+                profile.performance_tier = ram_tier_cap
+
         # Concurrency and memory budgets
         if profile.performance_tier == "ultra":
             target_ratio = 0.92
