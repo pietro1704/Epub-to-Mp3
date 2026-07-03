@@ -1345,6 +1345,55 @@ class TestFootnoteNotInTocRegression(unittest.TestCase):
                 "Navigation link with full chapter title must not be collected as a footnote",
             )
 
+    def test_note_equal_to_document_heading_is_discarded(self):
+        """Bug batch 3: a note whose text equals a section heading is spurious.
+
+        A "Maps" plate (image only) whose sole anchor is a note-like link
+        pointing back at the "Maps" heading would otherwise be spoken as
+        "Maps. footnote 1... Maps. end of footnote...". The heading-text guard
+        in _collect_footnotes_bs4 must drop it. Observed on the full
+        Lord of the Rings conversion (2026-07-03).
+        """
+        from bs4 import BeautifulSoup
+
+        from python_app.src.ebook_reader import TextProcessor
+
+        markup = (
+            "<html><body>"
+            '<h1 id="maps">Maps</h1>'
+            '<p>See the map<a href="#maps" epub:type="noteref">1</a>.</p>'
+            "</body></html>"
+        )
+        _, footnotes = TextProcessor._collect_footnotes_bs4(markup, BeautifulSoup)
+        for fn in footnotes:
+            self.assertNotEqual(
+                (fn.get("text", "") or "").strip().rstrip(".").lower(),
+                "maps",
+                "A note whose text equals a document heading must be discarded",
+            )
+
+    def test_real_footnote_not_discarded_by_heading_guard(self):
+        """The heading guard must not drop a legitimate note.
+
+        A real note whose text differs from every heading must survive.
+        """
+        from bs4 import BeautifulSoup
+
+        from python_app.src.ebook_reader import TextProcessor
+
+        markup = (
+            "<html><body>"
+            '<h1 id="chap">Chapter</h1>'
+            '<p>Some prose<a href="#fn1" epub:type="noteref">1</a>.</p>'
+            '<aside id="fn1" epub:type="footnote">A genuine footnote body.</aside>'
+            "</body></html>"
+        )
+        _, footnotes = TextProcessor._collect_footnotes_bs4(markup, BeautifulSoup)
+        self.assertTrue(
+            any("genuine footnote" in (fn.get("text", "") or "").lower() for fn in footnotes),
+            "A legitimate footnote must not be dropped by the heading guard",
+        )
+
 
 class TestCueLocaleFollowsBookLanguage(unittest.TestCase):
     """Regression: English books must get English verbal cues, not pt-BR ones.
