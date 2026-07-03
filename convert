@@ -36,7 +36,19 @@ fi
 # Allow Piper fallback by default (user can override to 0)
 export ENABLE_PIPER="${ENABLE_PIPER:-1}"
 
-PYTHON_CMD=("$MISE_BIN" "exec" "--" "python" "python_app/convert")
+# Invoke the venv interpreter DIRECTLY rather than `mise exec -- python`.
+# `mise exec` resolves the interpreter from the caller's shell/mise state,
+# which can point at a stale or mismatched Python (e.g. an interactive shell
+# still holding a deleted/old .venv in VIRTUAL_ENV) — that surfaced as
+# `ModuleNotFoundError: No module named 'psutil'` even though the freshly
+# provisioned .venv had the dep. Using $PYTHON_BIN (validated above) makes the
+# wrapper independent of shell state. Fall back to mise exec only if, somehow,
+# the venv python is not executable.
+if [ -x "$PYTHON_BIN" ]; then
+    PYTHON_CMD=("$PYTHON_BIN" "python_app/convert")
+else
+    PYTHON_CMD=("$MISE_BIN" "exec" "--" "python" "python_app/convert")
+fi
 
 if [ $# -eq 0 ]; then
     echo "❌ Error: No arguments provided"
