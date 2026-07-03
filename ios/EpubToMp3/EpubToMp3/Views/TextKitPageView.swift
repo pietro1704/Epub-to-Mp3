@@ -145,7 +145,10 @@ struct TextKitPageView: UIViewControllerRepresentable {
                 // and mark this token as committed so a later same-token update
                 // doesn't re-seed.
                 let vc = coordinator.controller(for: target)
-                pvc.setViewControllers([vc], direction: .forward, animated: false)
+                // Animate the crossing in the armed direction (seedCrossing
+                // consumes pendingCrossingDirection; falls back to a hard cut
+                // when none is pending or reduce-motion is on).
+                coordinator.seedCrossing(pvc, vc)
                 coordinator.committedChapterToken = chapterToken
             }
             // else: cache was cleared and the new chapter hasn't paginated yet.
@@ -163,7 +166,11 @@ struct TextKitPageView: UIViewControllerRepresentable {
             coordinator.committedChapterToken = chapterToken
             coordinator.isAwaitingChapterSwap = false
             let vc = coordinator.controller(for: target)
-            pvc.setViewControllers([vc], direction: .forward, animated: false)
+            // Deferred crossing seed: the new chapter's pages have now landed.
+            // Animate the curl from the still-displayed OLD controller (the back
+            // of the curl) to the new page — this is what removes the wrong-text
+            // flash the user saw when this was a hard `animated: false` cut.
+            coordinator.seedCrossing(pvc, vc)
             return
         }
 
@@ -264,6 +271,14 @@ struct TextKitPageView: UIViewControllerRepresentable {
         /// programmatically re-navigate — the only legitimate next move is
         /// the count-change re-seed when the new chapter arrives.
         var isAwaitingChapterSwap = false
+        /// Direction to animate the NEXT chapter-swap re-seed. Set at the exact
+        /// moment the swap latch is armed (forward past last page → `.forward`;
+        /// back before page 0 → `.reverse`), consumed EXACTLY once by
+        /// `seedCrossing` and reset to nil. nil ⇒ the re-seed is not a user
+        /// crossing (e.g. a TOC jump that happens to change chapter, or a
+        /// settings repagination) ⇒ hard-cut with `animated: false`. Keeping the
+        /// signal here avoids threading a direction through the host.
+        var pendingCrossingDirection: UIPageViewController.NavigationDirection? = nil
         /// The chapter token for which a page has actually been seeded into the
         /// PVC. Lets the deferred-seed path fire exactly once when a swap
         /// happened while the new chapter's pages weren't ready yet (cache
@@ -308,6 +323,35 @@ struct TextKitPageView: UIViewControllerRepresentable {
             return vc
         }
 
+        /// Seed the freshly-swapped chapter's page. When a crossing direction is
+        /// armed (a real chapter turn), animate a page-curl in that direction so
+        /// the crossing gets the same turn feel as an in-chapter turn — and so
+        /// the still-displayed OLD controller becomes the BACK of the curl
+        /// instead of a hard cut over stale text (that hard cut is the
+        /// "wrong-page flash" the user saw). Otherwise (nil direction, or
+        /// reduce-motion) hard-cut with `animated: false`.
+        func seedCrossing(_ pvc: UIPageViewController, _ vc: TextKitPageController) {
+            let dir = pendingCrossingDirection
+            pendingCrossingDirection = nil          // consume exactly once
+            guard let dir, !UIAccessibility.isReduceMotionEnabled else {
+                pvc.setViewControllers([vc], direction: .forward, animated: false)
+                return
+            }
+            // Programmatic animated turn. Guard the delegate the same way
+            // navigate() does: with isProgrammaticTurn set, didFinishAnimating
+            // takes its early-return branch and does NOT write currentPage or
+            // re-run the advance check — the host already owns currentPage
+            // (0 on forward, last page on backward) via
+            // ReaderView.onChange(chapter.id), so there is no second write.
+            isTransitioning = true
+            isProgrammaticTurn = true
+            pvc.setViewControllers([vc], direction: dir, animated: true) { [weak self] _ in
+                guard let self else { return }
+                self.isTransitioning = false
+                self.isProgrammaticTurn = false
+            }
+        }
+
         // MARK: Tap-to-turn
 
         func navigate(_ direction: UIPageViewController.NavigationDirection,
@@ -340,7 +384,10 @@ struct TextKitPageView: UIViewControllerRepresentable {
                     // and `ReaderView.onChange(chapter.id)` resets currentPage
                     // to 0 against the NEW pages. Arm the swap latch so a
                     // re-navigation in the meantime is suppressed.
-                    if parent.onAdvanceChapter?() == true { isAwaitingChapterSwap = true }
+                    if parent.onAdvanceChapter?() == true {
+                        pendingCrossingDirection = .forward
+                        isAwaitingChapterSwap = true
+                    }
                     return
                 }
             case .reverse:
@@ -349,7 +396,10 @@ struct TextKitPageView: UIViewControllerRepresentable {
                     nextIndex = candidate
                 } else {
                     parent.onPreviousChapterNeedsLastPage?()
-                    if parent.onPreviousChapter?() == true { isAwaitingChapterSwap = true }
+                    if parent.onPreviousChapter?() == true {
+                        pendingCrossingDirection = .reverse
+                        isAwaitingChapterSwap = true
+                    }
                     return
                 }
             @unknown default:
@@ -413,7 +463,10 @@ struct TextKitPageView: UIViewControllerRepresentable {
                     if atLastPage {
                         edgePanCrossed = true
                         abortPVCCurl(pvc)
-                        if parent.onAdvanceChapter?() == true { isAwaitingChapterSwap = true }
+                        if parent.onAdvanceChapter?() == true {
+                            pendingCrossingDirection = .forward
+                            isAwaitingChapterSwap = true
+                        }
                     }
                 } else if translationX >= threshold {
                     // Dragging backward (content moves right).
@@ -422,7 +475,10 @@ struct TextKitPageView: UIViewControllerRepresentable {
                         edgePanCrossed = true
                         abortPVCCurl(pvc)
                         parent.onPreviousChapterNeedsLastPage?()
-                        if parent.onPreviousChapter?() == true { isAwaitingChapterSwap = true }
+                        if parent.onPreviousChapter?() == true {
+                            pendingCrossingDirection = .reverse
+                            isAwaitingChapterSwap = true
+                        }
                     }
                 }
             default:

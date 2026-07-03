@@ -104,6 +104,64 @@ final class ReaderChapterAdvanceTests: XCTestCase {
         )
     }
 
+    /// Reads TextKitPageView.swift for the source-contract crossing-animation
+    /// tests. `#filePath` only resolves on the CI host/simulator, not inside a
+    /// physical-device test bundle, so those tests skip on device.
+    private func textKitPageViewSource() throws -> String {
+        let testFile = URL(fileURLWithPath: #filePath)
+        let appDir = testFile.deletingLastPathComponent().deletingLastPathComponent()
+        let url = appDir.appendingPathComponent("EpubToMp3/Views/TextKitPageView.swift")
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            throw XCTSkip("TextKitPageView.swift not reachable in this test host (physical device) — source-contract runs on the CI host/simulator.")
+        }
+        return try String(contentsOf: url, encoding: .utf8)
+    }
+
+    // MARK: - Chapter-crossing animation (source-contract)
+
+    func testCrossingReSeedAnimatesInCrossingDirection() throws {
+        let src = try textKitPageViewSource()
+        XCTAssertTrue(src.contains("func seedCrossing("),
+                      "The animated crossing re-seed helper seedCrossing must exist.")
+        XCTAssertTrue(src.contains("var pendingCrossingDirection: UIPageViewController.NavigationDirection?"),
+                      "The crossing direction side-channel must exist.")
+        // The two crossing re-seed sites (token-change with pages, deferred seed)
+        // must route through seedCrossing, NOT a bare animated:false hard cut.
+        let seedCalls = src.components(separatedBy: "coordinator.seedCrossing(pvc, vc)").count - 1
+        XCTAssertGreaterThanOrEqual(seedCalls, 2,
+                      "Both crossing re-seed sites must call seedCrossing (found \(seedCalls)).")
+    }
+
+    func testCrossingDirectionArmedAtAllFourSites() throws {
+        let src = try textKitPageViewSource()
+        let forward = src.components(separatedBy: "pendingCrossingDirection = .forward").count - 1
+        let reverse = src.components(separatedBy: "pendingCrossingDirection = .reverse").count - 1
+        // navigate + handleEdgePan each arm forward and reverse → 2 of each.
+        XCTAssertEqual(forward, 2, "Forward crossings (navigate + edge-pan) must arm .forward.")
+        XCTAssertEqual(reverse, 2, "Reverse crossings (navigate + edge-pan) must arm .reverse.")
+    }
+
+    func testCountChangeReSeedStaysUnanimated() throws {
+        let src = try textKitPageViewSource()
+        // Settings repagination (count-change, same chapter) must NOT animate.
+        XCTAssertTrue(src.contains("// Page count changed within the SAME chapter (settings repagination)."),
+                      "The count-change branch comment must remain (locates the branch).")
+        XCTAssertTrue(src.contains("pvc.setViewControllers([vc], direction: .forward, animated: false)"),
+                      "The count-change branch must still hard-cut with animated: false.")
+    }
+
+    func testCrossingReSeedRespectsReduceMotionAndGuardsProgrammaticTurn() throws {
+        let src = try textKitPageViewSource()
+        XCTAssertTrue(src.contains("UIAccessibility.isReduceMotionEnabled"),
+                      "seedCrossing must fall back to a hard cut under reduce-motion.")
+        // Double-hop guard: isProgrammaticTurn set before the animated turn and
+        // cleared in its completion handler (so didFinishAnimating early-returns).
+        XCTAssertTrue(src.contains("isProgrammaticTurn = true"),
+                      "seedCrossing must set isProgrammaticTurn before the animated turn.")
+        XCTAssertTrue(src.contains("self.isProgrammaticTurn = false"),
+                      "seedCrossing's completion must clear isProgrammaticTurn.")
+    }
+
     func testSingleTapProducesExactlyOnePageRetreat() throws {
         // The source-level contract: onZoneTap must NOT be wired into
         // AttributedPageView in paginated mode. Both recognizers firing is
