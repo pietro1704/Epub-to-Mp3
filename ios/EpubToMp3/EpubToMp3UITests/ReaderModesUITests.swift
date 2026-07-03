@@ -63,10 +63,8 @@ final class ReaderModesUITests: XCTestCase {
         app.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.5)).tap()
         sleep(1)
         let after = indicator(app)?.page ?? before
-        let lastLog = app.staticTexts["flicker.probe.lastlog"].firstMatch.label
         XCTAssertGreaterThan(after, before,
-            "right-edge tap with chrome hidden must still advance the page " +
-            "(before=\(before) after=\(after) lastLog=[\(lastLog)])")
+            "right-edge tap with chrome hidden must still advance the page (before=\(before) after=\(after))")
     }
 
     // MARK: - 2) Continuous scroll mode
