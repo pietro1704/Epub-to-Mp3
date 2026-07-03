@@ -45,6 +45,16 @@ struct PlayerReaderView: View {
     /// job tears down and rebuilds the same backend connection for
     /// no behavioural benefit.
     @State private var streamingJobId: String?
+    /// Last time the SSE stream re-triggered a fulltext load because the
+    /// text hadn't arrived yet. Debounces the auto-retry so a burst of
+    /// chapter-progress snapshots can't spam the fulltext endpoint.
+    @State private var lastFulltextAutoRetryAt: Date = .distantPast
+    /// Minimum gap between SSE-driven fulltext re-fetches. The retry ladder
+    /// inside a single refresh() spans ~23 s; if the EPUB parse is still
+    /// running when the ladder exhausts, the text stays in error until the
+    /// user taps Retry. Re-arming from the live audio stream recovers it
+    /// automatically once the parse finishes, without hammering the backend.
+    private static let fulltextAutoRetryInterval: TimeInterval = 8
     /// Currently-running cover fetch. Stored as `@State` so
     /// `onDisappear` can cancel it — otherwise a fast Book A → Book B
     /// → Book A nav can land Book B's bytes on Book A's player
@@ -731,6 +741,7 @@ struct PlayerReaderView: View {
                     if let updated = APIClient.decodeSnapshot(from: event.rawPayload) {
                         player.updateSnapshot(updated)
                         fetchCoverIfNeeded(snapshot: updated, baseURL: baseURL)
+                        retryFulltextIfStillPending(snapshot: updated)
                     }
                 }
             } catch is CancellationError {
@@ -811,6 +822,50 @@ struct PlayerReaderView: View {
                 self.isLoadingFulltext = false
             }
         }
+    }
+
+    /// Re-arm the fulltext load when a live SSE snapshot arrives but the
+    /// reader text still hasn't loaded. Covers the race where the EPUB parse
+    /// outlasts the retry ladder inside a single `refresh()`: the audio stream
+    /// keeps flowing, so each new chapter-progress event nudges the text to
+    /// try again until the parse completes — no manual Retry tap needed.
+    /// Debounced and gated on a non-terminal job so it never spams the backend
+    /// or fights an in-flight load.
+    private func retryFulltextIfStillPending(snapshot updated: JobSnapshot) {
+        let now = Date()
+        let loadInFlight = (fulltextTask?.isCancelled == false)
+        guard Self.shouldAutoRetryFulltext(
+            hasFulltext: fulltext != nil,
+            jobIsTerminal: updated.isTerminal,
+            hasBackend: backendBaseURL != nil,
+            loadInFlight: loadInFlight,
+            now: now,
+            lastRetryAt: lastFulltextAutoRetryAt,
+            minInterval: Self.fulltextAutoRetryInterval
+        ) else { return }
+        lastFulltextAutoRetryAt = now
+        isLoadingFulltext = true
+        triggerFulltextLoad()
+    }
+
+    /// Pure decision for `retryFulltextIfStillPending`, extracted so it can be
+    /// unit-tested without a live SSE stream or backend. Re-fetch only when the
+    /// text hasn't loaded, the job is still running, a backend is configured,
+    /// no load is already in flight, and the debounce window has elapsed.
+    static func shouldAutoRetryFulltext(
+        hasFulltext: Bool,
+        jobIsTerminal: Bool,
+        hasBackend: Bool,
+        loadInFlight: Bool,
+        now: Date,
+        lastRetryAt: Date,
+        minInterval: TimeInterval
+    ) -> Bool {
+        guard !hasFulltext else { return false }
+        guard !jobIsTerminal else { return false }
+        guard hasBackend else { return false }
+        guard !loadInFlight else { return false }
+        return now.timeIntervalSince(lastRetryAt) >= minInterval
     }
 
     private func reloadCurrentChapter() {

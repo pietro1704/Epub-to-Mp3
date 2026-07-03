@@ -529,8 +529,13 @@ final class AudioPlayer: ObservableObject {
     /// Live-update the snapshot. Used by `PlayerReaderView`'s SSE
     /// subscription so newly-finished chapters can be appended to the
     /// AVQueuePlayer without interrupting the chapter currently playing.
-    /// We do NOT replace existing items — that would skip back to chapter
-    /// 0 and break the playhead.
+    ///
+    /// Two kinds of change are applied:
+    ///  - **Append** newly-finished chapters at the tail (the common case).
+    ///  - **Replace** an already-queued chapter whose `downloadUrl` changed
+    ///    (a re-synthesis / retry that produced a new file at the same index).
+    ///    Only chapters strictly ahead of the one currently playing are
+    ///    swapped, so the playhead is never disturbed.
     func updateSnapshot(_ newSnapshot: JobSnapshot) {
         guard let queue = player else {
             // No player yet — defer to the caller's normal `play()` flow.
@@ -538,27 +543,85 @@ final class AudioPlayer: ObservableObject {
             return
         }
 
-        let oldCount = self.snapshot?.playableChapters.count ?? 0
+        let oldChapters = self.snapshot?.playableChapters ?? []
         let newChapters = newSnapshot.playableChapters
+        let oldCount = oldChapters.count
         self.snapshot = newSnapshot
 
-        guard newChapters.count > oldCount else {
-            updateNowPlayingInfo()
-            return
+        // Replace future chapters whose file URL changed (re-synthesis). The
+        // decision is pure so it can be unit-tested; applying it walks the
+        // live queue to find the item to swap without touching the playhead.
+        let indicesToReplace = Self.chapterIndicesNeedingURLSwap(
+            old: oldChapters,
+            new: newChapters,
+            currentlyPlayingIndex: currentChapterIndex
+        )
+        for chapterIdx in indicesToReplace {
+            replaceQueuedItem(atChapterIndex: chapterIdx, in: queue, chapters: newChapters)
         }
 
         // Append every chapter that wasn't in the queue yet. AVQueuePlayer
         // requires `canInsert(_:after:)` to be true; if Apple ever rejects
         // an item we just stop appending and surface what we have.
-        let toAppend = newChapters.suffix(newChapters.count - oldCount)
-        for chapter in toAppend {
-            guard let absolute = absoluteURL(forDownloadPath: chapter.downloadUrl) else { continue }
-            let item = AVPlayerItem(url: absolute)
-            if queue.canInsert(item, after: nil) {
-                queue.insert(item, after: nil)
+        if newChapters.count > oldCount {
+            let toAppend = newChapters.suffix(newChapters.count - oldCount)
+            for chapter in toAppend {
+                guard let absolute = absoluteURL(forDownloadPath: chapter.downloadUrl) else { continue }
+                let item = AVPlayerItem(url: absolute)
+                if queue.canInsert(item, after: nil) {
+                    queue.insert(item, after: nil)
+                }
             }
         }
         updateNowPlayingInfo()
+    }
+
+    /// Which `playableChapters` indices changed their `downloadUrl` and are
+    /// safe to swap in the queue. A chapter qualifies when it existed in the
+    /// old snapshot, its non-nil URL differs in the new snapshot, and it is
+    /// strictly ahead of the chapter currently playing (so the live item is
+    /// never yanked out from under the playhead). Pure + static for testing.
+    static func chapterIndicesNeedingURLSwap(
+        old: [JobSnapshot.Chapter],
+        new: [JobSnapshot.Chapter],
+        currentlyPlayingIndex: Int
+    ) -> [Int] {
+        var result: [Int] = []
+        let shared = min(old.count, new.count)
+        var idx = currentlyPlayingIndex + 1
+        while idx < shared {
+            let newURL = new[idx].downloadUrl
+            if let newURL, !newURL.isEmpty, newURL != old[idx].downloadUrl {
+                result.append(idx)
+            }
+            idx += 1
+        }
+        return result
+    }
+
+    /// Swap the queued AVPlayerItem for `chapterIndex` (an index into
+    /// `playableChapters`) with a fresh item built from its current URL.
+    /// The queue holds items from `currentChapterIndex` onward, so the queue
+    /// offset is `chapterIndex - currentChapterIndex`. No-ops defensively if
+    /// the offset, URL, or AVQueuePlayer insertion constraints don't line up —
+    /// the item is simply left as-is rather than risking a playhead glitch.
+    private func replaceQueuedItem(
+        atChapterIndex chapterIndex: Int,
+        in queue: AVQueuePlayer,
+        chapters: [JobSnapshot.Chapter]
+    ) {
+        let queueOffset = chapterIndex - currentChapterIndex
+        let items = queue.items()
+        guard queueOffset > 0, queueOffset < items.count else { return }
+        guard chapterIndex < chapters.count,
+              let absolute = absoluteURL(forDownloadPath: chapters[chapterIndex].downloadUrl) else { return }
+        let stale = items[queueOffset]
+        let anchor = items[queueOffset - 1]
+        let fresh = AVPlayerItem(url: absolute)
+        queue.remove(stale)
+        if queue.canInsert(fresh, after: anchor) {
+            queue.insert(fresh, after: anchor)
+        }
     }
 
     func pause() {
