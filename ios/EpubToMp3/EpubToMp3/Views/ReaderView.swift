@@ -874,9 +874,9 @@ struct ReaderView: View {
                 // updated yet by onChange(of: currentPage).
                 guard widthChanged else { return }
                 guard Date().timeIntervalSince(lastPageTurnAt) > 1.0 else { return }
-                let livePages = paginationCache.pages.isEmpty ? pages : paginationCache.pages
-                if !livePages.isEmpty {
-                    let target = findPage(containing: textOffsetAtCurrentPage, in: livePages)
+                let rotationPages = livePages(fallback: pages)
+                if !rotationPages.isEmpty {
+                    let target = findPage(containing: textOffsetAtCurrentPage, in: rotationPages)
                     if target != currentPage {
                         currentPage = target
                     }
@@ -889,9 +889,9 @@ struct ReaderView: View {
             // during a concurrent re-render, causing cumulativeOffset to return
             // 0 and resetting the reader to page 0 on the next syncPageToTextOffset.
             .compatOnChange(of: currentPage) { newPage in
-                let livePages = paginationCache.pages.isEmpty ? pages : paginationCache.pages
-                textOffsetAtCurrentPage = cumulativeOffset(page: newPage, in: livePages)
-                publishReadingRatio(pages: livePages)
+                let currentPages = livePages(fallback: pages)
+                textOffsetAtCurrentPage = cumulativeOffset(page: newPage, in: currentPages)
+                publishReadingRatio(pages: currentPages)
             }
             // Seed the reading-ratio channel on first appear so a play
             // tap during the very first second of reading already has
@@ -911,7 +911,18 @@ struct ReaderView: View {
                 }
                 guard isFollowing, !isPageTurning, let newId else { return }
                 guard let span = spans.first(where: { $0.id == newId }) else { return }
-                guard let target = pageIndexContaining(sentence: span, in: pages) else { return }
+                // Read from the live pagination cache, not the `pages` captured
+                // by the body. If `pages` is momentarily empty during a
+                // concurrent re-render, `pageIndexContaining` returns page 0 and
+                // the withAnimation below snaps the reader back to the top mid
+                // playback — the "flicker on audio auto-follow" the user saw.
+                // Suppressing the snap when the cache is momentarily empty is
+                // the fix; a stale/empty array would have collapsed the target
+                // to page 0. Not recorded on the probe — this is the expected
+                // transient during a concurrent re-render, not a visible glitch.
+                let followPages = livePages(fallback: pages)
+                guard !followPages.isEmpty else { return }
+                guard let target = pageIndexContaining(sentence: span, in: followPages) else { return }
                 if target != currentPage {
                     withAnimation(.easeInOut(duration: 0.25)) {
                         currentPage = target
@@ -924,10 +935,10 @@ struct ReaderView: View {
             // reading position survives the reflow — the `geo.size`
             // handler above only covers rotation, not a settings-driven
             // repagination.
-            .compatOnChange(of: debouncedFontSize) { _ in syncPageToTextOffset(in: pages) }
-            .compatOnChange(of: debouncedLineSpacing) { _ in syncPageToTextOffset(in: pages) }
-            .compatOnChange(of: debouncedMargin) { _ in syncPageToTextOffset(in: pages) }
-            .compatOnChange(of: debouncedColumnWidth) { _ in syncPageToTextOffset(in: pages) }
+            .compatOnChange(of: debouncedFontSize) { _ in syncPageToTextOffset(in: livePages(fallback: pages)) }
+            .compatOnChange(of: debouncedLineSpacing) { _ in syncPageToTextOffset(in: livePages(fallback: pages)) }
+            .compatOnChange(of: debouncedMargin) { _ in syncPageToTextOffset(in: livePages(fallback: pages)) }
+            .compatOnChange(of: debouncedColumnWidth) { _ in syncPageToTextOffset(in: livePages(fallback: pages)) }
         }
         .compatHorizontalSafeAreaPadding(0)
         // Floating "resume follow-along" button — visible whenever the
@@ -1006,6 +1017,19 @@ struct ReaderView: View {
     /// Filters out sub-point jitter from keyboard, status bar, etc.
     private func sizeChangedMeaningfully(from old: CGSize, to new: CGSize) -> Bool {
         abs(old.width - new.width) > 2 || abs(old.height - new.height) > 2
+    }
+
+    /// The authoritative page array to read from inside a `.compatOnChange`
+    /// closure. `paginationCache.pages` (reference type) is always current;
+    /// the `pages` value captured by the GeometryReader body can be empty or
+    /// stale when SwiftUI fires a closure during a concurrent re-render, which
+    /// collapses page lookups to index 0 and flickers the reader back to the
+    /// top. Prefer the live cache, fall back to the captured array only when
+    /// the cache is momentarily empty. Centralised so every call site uses the
+    /// same rule (the bug was each site re-deriving it by hand and one path —
+    /// auto-follow — being missed).
+    private func livePages(fallback: [NSAttributedString]) -> [NSAttributedString] {
+        paginationCache.pages.isEmpty ? fallback : paginationCache.pages
     }
 
     /// Cumulative plain-text character count up to (but not including) the

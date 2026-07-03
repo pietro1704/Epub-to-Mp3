@@ -146,4 +146,36 @@ final class ReaderFlickerUITests: XCTestCase {
 
         assertNoFlicker(app, scenario: "chrome toggle")
     }
+
+    // MARK: - Concurrent re-render (auto-follow / reflow window)
+
+    /// Interleaving page turns with chrome toggles forces the reader to
+    /// re-render the body (a fresh `pages` capture) WHILE a page-change closure
+    /// may still be running. That is the exact window in which a closure that
+    /// read the raw captured `pages` saw an empty array and snapped to page 0 —
+    /// the flicker seen on audio auto-follow, which now routes every lookup
+    /// through `livePages(fallback:)`. Zero events proves no closure collapsed
+    /// to page 0 during the concurrent re-render.
+    func testPageTurnDuringChromeToggleDoesNotFlicker() throws {
+        let app = try launchInReader()
+        guard app.staticTexts["reader.pageIndicator"].firstMatch.waitForExistence(timeout: 15) else {
+            throw XCTSkip("No page indicator (single-page chapter).")
+        }
+        XCTAssertTrue(resetProbe(app), "probe must reset to all-zero before the interaction")
+
+        let right = app.coordinate(withNormalizedOffset: CGVector(dx: 0.85, dy: 0.5))
+        let left = app.coordinate(withNormalizedOffset: CGVector(dx: 0.15, dy: 0.5))
+        let center = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+
+        // Turn, toggle chrome (forces a body re-render), turn again — repeated
+        // so a page-change closure overlaps the re-render window.
+        for i in 0..<6 {
+            (i.isMultiple(of: 2) ? right : left).tap()
+            usleep(200_000)
+            center.tap()
+            usleep(600_000)
+        }
+
+        assertNoFlicker(app, scenario: "page turn during chrome toggle")
+    }
 }
