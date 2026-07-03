@@ -432,6 +432,9 @@ run = """
 #!/bin/bash
 set -euo pipefail
 cd ios/EpubToMp3
+# Keep the generated .xcodeproj in sync with project.yml before locating the
+# built app (harmless when only launching a prebuilt .app, cheap otherwise).
+if command -v xcodegen >/dev/null 2>&1; then xcodegen generate; fi
 DEVICE="${IOS_DEVICE_ID:-44B2CFBD-2193-5086-8E8D-BF7A2876C321}"
 BUNDLE_ID="com.pietrocode.epubtomp3"
 APP_PATH="${IOS_APP_PATH:-}"
@@ -467,6 +470,15 @@ run = """
 #!/bin/bash
 set -euo pipefail
 cd ios/EpubToMp3
+# The .xcodeproj is generated (project.yml is the source of truth) and is
+# gitignored — regenerate it here so a device test never builds against a
+# stale project (e.g. a file deleted in project.yml but lingering in an old
+# .xcodeproj → "Build input file cannot be found").
+if ! command -v xcodegen >/dev/null 2>&1; then
+  echo "error: xcodegen not installed. Install via: brew install xcodegen"
+  exit 1
+fi
+xcodegen generate
 DEVICE="${IOS_DEVICE_ID:-00008140-001128A022BA801C}"
 DD="./.build-device"
 ONLY=""
