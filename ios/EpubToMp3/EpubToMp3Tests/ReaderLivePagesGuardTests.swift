@@ -16,14 +16,21 @@ import XCTest
 /// future edit can't reintroduce a raw-`pages` read on one of these paths.
 final class ReaderLivePagesGuardTests: XCTestCase {
 
+    /// This is a source-inspection guard: it reads ReaderView.swift off the
+    /// build machine via `#filePath`. That path only exists on the host/
+    /// simulator, not inside a physical-device test bundle — so on device the
+    /// source is unreachable and the check is skipped (it runs in CI on the
+    /// host, which is where the invariant is enforced). Mirrors the existing
+    /// `MainReaderViewTests` source-inspection pattern.
     private func readerSource() throws -> String {
         let projectRoot = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
             .deletingLastPathComponent()
-        return try String(
-            contentsOf: projectRoot.appendingPathComponent("EpubToMp3/Views/ReaderView.swift"),
-            encoding: .utf8
-        )
+        let url = projectRoot.appendingPathComponent("EpubToMp3/Views/ReaderView.swift")
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            throw XCTSkip("ReaderView.swift not reachable in this test host (physical device) — source-inspection guard runs on the CI host/simulator.")
+        }
+        return try String(contentsOf: url, encoding: .utf8)
     }
 
     func testLivePagesHelperExists() throws {

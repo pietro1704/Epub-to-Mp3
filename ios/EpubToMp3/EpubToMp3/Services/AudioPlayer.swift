@@ -580,8 +580,10 @@ final class AudioPlayer: ObservableObject {
     /// safe to swap in the queue. A chapter qualifies when it existed in the
     /// old snapshot, its non-nil URL differs in the new snapshot, and it is
     /// strictly ahead of the chapter currently playing (so the live item is
-    /// never yanked out from under the playhead). Pure + static for testing.
-    static func chapterIndicesNeedingURLSwap(
+    /// never yanked out from under the playhead). Pure + static + nonisolated
+    /// so it is callable from a synchronous test context (AudioPlayer is
+    /// @MainActor; this function touches no instance state).
+    nonisolated static func chapterIndicesNeedingURLSwap(
         old: [JobSnapshot.Chapter],
         new: [JobSnapshot.Chapter],
         currentlyPlayingIndex: Int

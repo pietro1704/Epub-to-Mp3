@@ -852,7 +852,9 @@ struct PlayerReaderView: View {
     /// unit-tested without a live SSE stream or backend. Re-fetch only when the
     /// text hasn't loaded, the job is still running, a backend is configured,
     /// no load is already in flight, and the debounce window has elapsed.
-    static func shouldAutoRetryFulltext(
+    /// `nonisolated` so the synchronous test can call it (the View is
+    /// @MainActor; this decision is pure and touches no view state).
+    nonisolated static func shouldAutoRetryFulltext(
         hasFulltext: Bool,
         jobIsTerminal: Bool,
         hasBackend: Bool,
