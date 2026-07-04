@@ -913,11 +913,14 @@ struct PlayerReaderView: View {
         return now.timeIntervalSince(lastRetryAt) >= minInterval
     }
 
-    private func reloadCurrentChapter() {
+    private func reloadCurrentChapter(epubIndexOverride: Int? = nil) {
         // Use the EPUB index, not the playable index — see
         // `playingEpubZeroBasedIndex`. Falls back to the playable
         // index if the snapshot was empty / out of bounds.
-        let epubIdx = playingEpubZeroBasedIndex ?? player.currentChapterIndex
+        // `epubIndexOverride` is passed by jumpTo so we don't race
+        // against AudioPlayer.currentChapterIndex not yet reflecting
+        // the new position when play(snapshot:startingAt:) returns.
+        let epubIdx = epubIndexOverride ?? playingEpubZeroBasedIndex ?? player.currentChapterIndex
         guard let fulltext, let chapter = chapter(in: fulltext, at: epubIdx) else {
             spans = []
             // Wipe any stale per-sentence timing in the player so the
@@ -949,7 +952,10 @@ struct PlayerReaderView: View {
         let target = InstantReaderIndexMapper
             .playableIndexOrClamped(forEpubIndex: epubIndex, in: snapshot)
         player.play(snapshot: snapshot, startingAt: target)
-        reloadCurrentChapter()
+        // Pass epubIndex directly — player.currentChapterIndex has not
+        // yet updated when play() returns, so reloadCurrentChapter()
+        // without an override would reload the old chapter.
+        reloadCurrentChapter(epubIndexOverride: epubIndex)
     }
 
     /// Mirror of InstantReaderView.handleEpubLink — resolves an EPUB-internal
