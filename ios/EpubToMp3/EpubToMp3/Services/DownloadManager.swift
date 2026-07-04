@@ -131,6 +131,26 @@ actor DownloadManager {
         }
     }
 
+    func enqueueSelected(snapshot: JobSnapshot, epubZeroBasedIndices: [Int], baseURL: URL?) {
+        let chapters = Self.selectedChapters(snapshot: snapshot, epubZeroBasedIndices: epubZeroBasedIndices)
+        guard !chapters.isEmpty else {
+            emit(DownloadProgress(
+                jobId: snapshot.jobId,
+                chapterIndex: 0,
+                totalChapters: 0,
+                completedChapters: 0,
+                bytesDownloaded: 0,
+                bytesExpected: 0,
+                state: .completed,
+                lastError: nil
+            ))
+            return
+        }
+        Task { [weak self] in
+            await self?.downloadSerially(snapshot: snapshot, chapters: chapters, baseURL: baseURL)
+        }
+    }
+
     /// Sequential download loop with exponential backoff.
     private func downloadSerially(
         snapshot: JobSnapshot,
@@ -276,5 +296,13 @@ actor DownloadManager {
             .trimmingCharacters(in: .whitespacesAndNewlines)
         let trimmed = cleaned.isEmpty ? "chapter" : cleaned
         return String(trimmed.prefix(120))
+    }
+
+    nonisolated static func selectedChapters(
+        snapshot: JobSnapshot,
+        epubZeroBasedIndices: [Int]
+    ) -> [JobSnapshot.Chapter] {
+        let requested = Set(epubZeroBasedIndices)
+        return snapshot.playableChapters.filter { requested.contains($0.index) }
     }
 }

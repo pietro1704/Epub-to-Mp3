@@ -337,6 +337,12 @@ final class ReaderChromeAutoHideTests: XCTestCase {
                       "Chapter swap must key off a chapterToken, not page count, to avoid a stuck latch.")
         XCTAssertTrue(reader.contains("paginationCache.lastValidPages = []"),
                       "onChange(chapter.id) must clear lastValidPages so the swap never shows the previous chapter's page.")
+        // 6) The page footer/count must not flicker to the previous chapter's
+        //    count while the new chapter paginates. Clearing `pages` on chapter
+        //    change re-exposes the old `lastValidPages` count to the footer.
+        //    Keep the current page array stable through the crossing.
+        XCTAssertFalse(reader.contains("paginationCache.pages = []"),
+                       "Do not clear paginationCache.pages on chapter change — it makes the page counter/UI flash through stale counts during chapter crossings.")
         // 5) On a swap with not-yet-paginated pages, seeding is DEFERRED until
         //    the new pages arrive (committedChapterToken), never seeded against
         //    stale content.
@@ -373,6 +379,7 @@ final class ReaderChromeAutoHideTests: XCTestCase {
         let app = try appSource(named: "EpubToMp3App.swift")
         let root = try appSource(named: "Views/RootView.swift")
         let bookOpen = try appSource(named: "Views/BookOpenView.swift")
+        let reader = try appSource(named: "Views/ReaderView.swift")
 
         XCTAssertTrue(app.contains("@StateObject private var audioWarmup = AudioEngineWarmup()"))
         XCTAssertTrue(app.contains(".environmentObject(audioWarmup)"))
@@ -423,10 +430,18 @@ final class ReaderChromeAutoHideTests: XCTestCase {
                       "The upward slide handler must set the local hidden state.")
 
         XCTAssertTrue(bookOpen.contains("@EnvironmentObject private var audioWarmup: AudioEngineWarmup"))
-        XCTAssertTrue(bookOpen.contains("await self.audioWarmup.start()"))
-        XCTAssertTrue(bookOpen.contains("guard await self.audioWarmup.waitUntilReady() else"))
+        XCTAssertTrue(bookOpen.contains("_ = await self.audioWarmup.start()"))
+        XCTAssertFalse(bookOpen.contains("guard await self.audioWarmup.waitUntilReady() else"),
+                      "Embedded listen bootstrap must not block on a non-failing warmup-in-progress state.")
         XCTAssertTrue(bookOpen.contains("direct Edge on iOS to avoid blocking the UI on Python bootstrap"))
         XCTAssertTrue(bookOpen.contains("iOS uses direct Edge sequentially"))
         XCTAssertTrue(bookOpen.contains("try await Self.synthesizeDirectEdge("))
+
+        XCTAssertTrue(reader.contains("let stablePageIndex = stablePageFooterIndex(effectivePages: effectivePages)"),
+                      "The page footer must use a stabilized index helper during chapter swaps instead of reading currentPage raw.")
+        XCTAssertTrue(reader.contains("let stablePageTotal = stablePageFooterTotal(effectivePages: effectivePages)"),
+                      "The page footer total must use a stabilized helper so the counter never flashes transient counts during chapter swaps.")
+        XCTAssertTrue(reader.contains("if settings.readerShowPageNumbers, stablePageTotal > 0"),
+                      "The page footer visibility should be driven by the stabilized total, not the raw transient pages count.")
     }
 }

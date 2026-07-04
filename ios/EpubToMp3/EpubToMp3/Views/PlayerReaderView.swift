@@ -201,7 +201,8 @@ struct PlayerReaderView: View {
                     fulltext: fulltext,
                     snapshot: snapshot,
                     currentChapterIndex: playingEpubIndex,
-                    onJump: jumpTo(chapterIndex:)
+                    onJump: jumpTo(chapterIndex:),
+                    onDownload: downloadChapter(epubIndex:)
                 )
                 .compatPresentationDetents()
             }
@@ -621,6 +622,43 @@ struct PlayerReaderView: View {
         let jobId = snapshot.jobId
         downloadTask = Task { @MainActor in
             await downloads.enqueueAll(snapshot: snapshot, baseURL: backendBaseURL)
+            for await progress in await downloads.watchProgress(jobId: jobId) {
+                if Task.isCancelled { break }
+                downloadProgressText =
+                    "\(progress.completedChapters)/\(progress.totalChapters)"
+                switch progress.state {
+                case .completed:
+                    downloadState = .done
+                    if var book = library.books.first(where: { $0.lastJobId == snapshot.jobId }) {
+                        book.cachedOffline = true
+                        library.update(book)
+                    }
+                    return
+                case .failed:
+                    downloadState = .failed
+                    return
+                case .queued, .downloading, .paused:
+                    downloadState = .downloading
+                }
+            }
+        }
+    }
+
+    private func downloadChapter(epubIndex: Int) {
+        guard backendBaseURL != nil,
+              TocDrawer.downloadableChapter(forEpubZeroBasedIndex: epubIndex, in: snapshot) != nil else {
+            return
+        }
+        downloadTask?.cancel()
+        downloadState = .downloading
+        downloadProgressText = nil
+        let jobId = snapshot.jobId
+        downloadTask = Task { @MainActor in
+            await downloads.enqueueSelected(
+                snapshot: snapshot,
+                epubZeroBasedIndices: [epubIndex],
+                baseURL: backendBaseURL
+            )
             for await progress in await downloads.watchProgress(jobId: jobId) {
                 if Task.isCancelled { break }
                 downloadProgressText =

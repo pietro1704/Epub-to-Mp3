@@ -248,6 +248,11 @@ struct InstantReaderView: View {
         .compatOnChange(of: hasAudio) { isAudioReady in
             if isAudioReady, !playerMounted { mountPlayerIfPossible() }
         }
+        .compatOnChange(of: snapshot) { updatedSnapshot in
+            guard let updatedSnapshot, playerMounted else { return }
+            player.backendBaseURL = backendBaseURL
+            player.updateSnapshot(updatedSnapshot)
+        }
         .compatOnChange(of: globalPlayer.firstSegmentReady) { ready in
             if ready, settings.useEmbeddedRuntime {
                 wireEmbeddedPositionObservers()

@@ -439,7 +439,7 @@ struct BookOpenView: View {
         }
 
         audioBootstrapTask = Task {
-            await self.waitForBackendThenBootstrap()
+            await self.waitForBackendThenBootstrap(startChapterIndex: startChapterIndex)
         }
     }
 
@@ -1014,12 +1014,12 @@ struct BookOpenView: View {
     /// whichever comes first. The Python sidecar takes ~20–30 s of
     /// cold start the very first time the app launches, so we can't
     /// just give up immediately.
-    private func waitForBackendThenBootstrap() async {
+    private func waitForBackendThenBootstrap(startChapterIndex: Int) async {
         var waited: TimeInterval = 0
         while !Task.isCancelled, waited < 120 {
             if let client = await MainActor.run(body: { self.client }) {
                 await MainActor.run { self.statusBanner = "Generating audio…" }
-                await bootstrapAudio(client: client)
+                await bootstrapAudio(client: client, startChapterIndex: startChapterIndex)
                 return
             }
             await MainActor.run {
@@ -1038,7 +1038,7 @@ struct BookOpenView: View {
         }
     }
 
-    private func bootstrapAudio(client: APIClient) async {
+    private func bootstrapAudio(client: APIClient, startChapterIndex: Int) async {
         // Reattach if we have a known job.
         if let existing = book.lastJobId {
             if let snap = try? await client.fetchJob(id: existing) {
@@ -1081,6 +1081,7 @@ struct BookOpenView: View {
         var opts = APIClient.ConvertOptions()
         opts.engine = "edge"
         opts.maxPerformance = true
+        opts.priorityChapterIndex = startChapterIndex
         do {
             let scopeStarted = fileURL.startAccessingSecurityScopedResource()
             let epubData: Data

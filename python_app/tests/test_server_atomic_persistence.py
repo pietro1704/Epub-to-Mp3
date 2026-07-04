@@ -196,3 +196,28 @@ def test_save_cover_cache_cleans_up_tmp_on_failure(
 
     leftovers = [p for p in cover_dir.iterdir() if p.name.endswith(".tmp") or ".tmp." in p.name]
     assert leftovers == [], f"unexpected tmp leftovers: {leftovers}"
+
+
+def test_persist_job_preserves_custom_priority_key(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    jobs_dir = tmp_path / ".jobs"
+    jobs_dir.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setattr(srv, "job_manager", srv.JobManager(jobs_dir))
+    monkeypatch.setattr(srv, "_recent_jobs_index", {})
+
+    job_id = "priority-persist"
+    srv.jobs[job_id] = {
+        "jobId": job_id,
+        "state": "queued",
+        "bookTitle": "Priority Book",
+        "events": [],
+        "_raw_log": [],
+        "priorityChapterIndex": 7,
+    }
+
+    srv._persist_job(job_id, force=True)
+
+    reloaded = srv.job_manager.load_job(job_id)
+    assert reloaded is not None
+    assert reloaded["priorityChapterIndex"] == 7

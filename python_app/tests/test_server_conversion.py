@@ -730,6 +730,48 @@ def test_convert_endpoint_success_flow(tmp_path, monkeypatch):
     server.jobs.pop(job_id, None)
 
 
+def test_convert_endpoint_persists_priority_chapter_index(tmp_path, monkeypatch):
+    _configure_server_paths(tmp_path, monkeypatch)
+    _make_telemetry(tmp_path, monkeypatch)
+    monkeypatch.setattr(server, "_enqueue_job", lambda job_id: True)
+
+    client = TestClient(server.app)
+    response = client.post(
+        "/api/convert",
+        files={"file": ("book.epub", FIXTURE_BOOK.read_bytes(), "application/epub+zip")},
+        data={"engine": "edge", "priority_chapter_index": "3"},
+    )
+    assert response.status_code == 200
+
+    job_id = response.json()["jobId"]
+    assert server.jobs[job_id]["priorityChapterIndex"] == 3
+
+    saved = server.job_manager.load_job(job_id)
+    assert saved is not None
+    assert saved["priorityChapterIndex"] == 3
+
+    server.jobs.pop(job_id, None)
+
+
+def test_convert_endpoint_ignores_invalid_priority_chapter_index(tmp_path, monkeypatch):
+    _configure_server_paths(tmp_path, monkeypatch)
+    _make_telemetry(tmp_path, monkeypatch)
+    monkeypatch.setattr(server, "_enqueue_job", lambda job_id: True)
+
+    client = TestClient(server.app)
+    response = client.post(
+        "/api/convert",
+        files={"file": ("book.epub", FIXTURE_BOOK.read_bytes(), "application/epub+zip")},
+        data={"engine": "edge", "priority_chapter_index": "abc"},
+    )
+    assert response.status_code == 200
+
+    job_id = response.json()["jobId"]
+    assert server.jobs[job_id].get("priorityChapterIndex") is None
+
+    server.jobs.pop(job_id, None)
+
+
 def test_convert_endpoint_failure_flow(tmp_path, monkeypatch):
     """Ensure job state is marked failed when engine raises."""
     _configure_server_paths(tmp_path, monkeypatch)
@@ -760,6 +802,90 @@ def test_convert_endpoint_failure_flow(tmp_path, monkeypatch):
     payload = job_response.json()
     assert payload["state"] == "failed"
     assert "edge boom" in payload.get("error", "")
+
+    server.jobs.pop(job_id, None)
+
+
+def test_process_conversion_prioritizes_requested_chapter_first(tmp_path, monkeypatch):
+    job_id = str(uuid4())
+
+    _configure_server_paths(tmp_path, monkeypatch)
+    _make_telemetry(tmp_path, monkeypatch)
+
+    upload_path = tmp_path / f"{job_id}_book.epub"
+    upload_path.write_bytes(FIXTURE_BOOK.read_bytes())
+
+    server.jobs[job_id] = {
+        "jobId": job_id,
+        "state": "queued",
+        "events": [],
+        "file_path": str(upload_path),
+        "engine": "edge",
+        "voice": None,
+        "chapters": None,
+        "footnote_mode": "inline",
+        "language": "pt-BR",
+        "outputs": [],
+        "priorityChapterIndex": 2,
+    }
+
+    class StubChapter:
+        def __init__(self, name: str, text: str):
+            self.name = name
+            self.text = text
+            self.speech_text = text
+            self.source_path = f"{name}.xhtml"
+            self.level = 1
+            self.raw_html = None
+            self.formatting_segments = None
+            self.footnotes = None
+
+    class StubReader:
+        def __init__(self, *args, **kwargs):
+            self.title = "Priority Book"
+            self.author = "Tester"
+            self.book = SimpleNamespace(chapters=[])
+
+        def extract_cover_image(self):
+            return None
+
+        def get_chapter_structure(self, preserve_all=False):
+            return []
+
+        def get_chapters(self):
+            return [
+                StubChapter("Chapter 1", "Text 1" * 400),
+                StubChapter("Chapter 2", "Text 2" * 400),
+                StubChapter("Chapter 3", "Text 3" * 400),
+                StubChapter("Chapter 4", "Text 4" * 400),
+            ]
+
+    conversion_order: list[str] = []
+
+    async def mock_synthesize(self, text, output_path):
+        conversion_order.append(Path(output_path).name)
+        output_path = Path(output_path)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        payload = f"ID3-{Path(output_path).stem}-{text[:32]}".encode("utf-8") + MINIMAL_MP3
+        output_path.write_bytes(payload)
+        return output_path
+
+    monkeypatch.setattr(server, "EbookReader", StubReader)
+    monkeypatch.setattr(server.AudioProcessor, "convert_to_mp3", staticmethod(_fake_convert_to_mp3))
+    monkeypatch.setattr("src.tts.edge_engine.EdgeTTSEngine.synthesize_async", mock_synthesize)
+
+    asyncio.run(server.process_conversion(job_id))
+
+    assert server.jobs[job_id]["state"] == "finished", (
+        server.jobs[job_id].get("error"),
+        server.jobs[job_id].get("events", [])[-10:],
+    )
+    assert conversion_order, "Expected at least one synthesized chapter."
+    assert conversion_order[
+        0
+    ].startswith(
+        "003 - "
+    ), "Priority chapter index 2 (EPUB zero-based) must synthesize chapter 3 first in the remote path."
 
     server.jobs.pop(job_id, None)
 

@@ -212,6 +212,7 @@ final class APIClient {
         var formattingCues: Bool = true
         var maxPerformance: Bool = false
         var uiLanguage: String = "pt"
+        var priorityChapterIndex: Int? = nil
 
         static let `default` = ConvertOptions()
     }
@@ -308,6 +309,9 @@ final class APIClient {
         if let r = options.fromChapterToChapter { appendField(name: "fromChapterToChapter", value: r) }
         appendField(name: "clear_cache", value: options.clearCache ? "1" : "0")
         appendField(name: "force_reprocess", value: options.forceReprocess ? "1" : "0")
+        if let priorityChapterIndex = options.priorityChapterIndex {
+            appendField(name: "priority_chapter_index", value: String(priorityChapterIndex))
+        }
         appendField(name: "formatting_cues", value: options.formattingCues ? "on" : "off")
         appendField(name: "max_performance", value: options.maxPerformance ? "1" : "0")
         appendField(name: "ui_language", value: options.uiLanguage)
