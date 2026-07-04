@@ -106,6 +106,30 @@ final class BookOpenViewPriorityTests: XCTestCase {
         )
     }
 
+    func testReaderViewGuardsTextOffsetAgainstEmptyPagesAndZeroOffset() throws {
+        let source = try String(
+            contentsOf: URL(fileURLWithPath: #filePath)
+                .deletingLastPathComponent()
+                .deletingLastPathComponent()
+                .appendingPathComponent("EpubToMp3/Views/ReaderView.swift"),
+            encoding: .utf8
+        )
+        // Rapid slide page turns can cause livePages() to transiently return []
+        // while UIPageViewController re-renders. Writing 0 from an empty array
+        // (or a non-zero page whose cumulativeOffset lands at 0 mid-animation)
+        // lets syncPageToTextOffset reset currentPage to 0. The guard ensures
+        // textOffsetAtCurrentPage is only updated when the page list is non-empty
+        // and the offset is coherent.
+        XCTAssertTrue(
+            source.contains("guard !currentPages.isEmpty else { return }"),
+            "compatOnChange(of: currentPage) must guard against empty livePages() to prevent textOffsetAtCurrentPage being zeroed during rapid turns."
+        )
+        XCTAssertTrue(
+            source.contains("if offset > 0 || newPage == 0"),
+            "compatOnChange(of: currentPage) must skip writing offset 0 for pages > 0 to prevent mid-animation zero from resetting the reading position."
+        )
+    }
+
     func testFullPlayerSheetTocButtonUsesTocDrawer() throws {
         let source = try sourceFile(named: "FullPlayerSheet.swift")
         XCTAssertTrue(

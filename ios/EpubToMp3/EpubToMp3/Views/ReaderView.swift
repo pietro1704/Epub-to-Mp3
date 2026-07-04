@@ -890,7 +890,19 @@ struct ReaderView: View {
             // 0 and resetting the reader to page 0 on the next syncPageToTextOffset.
             .compatOnChange(of: currentPage) { newPage in
                 let currentPages = livePages(fallback: pages)
-                textOffsetAtCurrentPage = cumulativeOffset(page: newPage, in: currentPages)
+                // Only write textOffsetAtCurrentPage when we have a non-empty
+                // page list. During rapid slide turns livePages() can transiently
+                // return [] while the UIPageViewController re-renders; writing 0
+                // from an empty array causes syncPageToTextOffset (fired by debounced
+                // settings observers) to reset currentPage to 0.
+                guard !currentPages.isEmpty else { return }
+                let offset = cumulativeOffset(page: newPage, in: currentPages)
+                // An offset of 0 is only valid for page 0. For any later page an
+                // offset of 0 means the pages array is still mis-sized mid-animation;
+                // guard against it to avoid zeroing the anchor.
+                if offset > 0 || newPage == 0 {
+                    textOffsetAtCurrentPage = offset
+                }
                 publishReadingRatio(pages: currentPages)
             }
             // Seed the reading-ratio channel on first appear so a play
