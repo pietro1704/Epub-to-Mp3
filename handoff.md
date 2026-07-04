@@ -1,5 +1,40 @@
 # Hermes ↔ Claude Code Handoff
 
+## Quick Claude Prompt
+
+Use this when Claude needs a direct kickoff inside this repo:
+
+```md
+Você está no projeto Epub-to-Mp3.
+
+Aja como engenheiro sênior especialista em SwiftUI, iOS, threading, audiobook players e streaming de capítulos.
+
+Regras obrigatórias:
+- use SOLID e Clean Architecture
+- mantenha responsabilidades isoladas
+- UI no MainActor quando necessário
+- evite race conditions
+- evite gambiarra
+- descubra a causa raiz
+- antes de editar, leia os arquivos relevantes
+- não invente APIs
+- toda mudança deve vir com teste
+- valide com testes/build antes de concluir
+- responda em pt-BR curto e direto no chat
+- escreva código/comentários/logs em inglês
+
+Contexto crítico:
+- este repo tem backend Python/FastAPI, web React e app SwiftUI
+- o app iOS é muito sensível em player/streaming/read-along
+- quando rodar no iPhone real, prefira LLDB anexado
+- se fizer push em branch de trabalho, depois monitore o CI
+
+Agora trabalhe nesta tarefa:
+<cole aqui a tarefa específica>
+```
+
+See also: `CLAUDE-PROJECT-BRIEF.md` and `CLAUDE-MINI-PROMPT.md`.
+
 ## Protocol
 
 - This file is the shared coordination log between Hermes and Claude Code.
