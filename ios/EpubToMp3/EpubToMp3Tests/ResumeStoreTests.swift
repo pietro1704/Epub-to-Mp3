@@ -65,4 +65,33 @@ final class DownloadManagerHelperTests: XCTestCase {
         let url = DownloadManager.resolve(path: "/api/outputs/j/x.mp3", base: base)
         XCTAssertEqual(url?.absoluteString, "http://localhost:8000/api/outputs/j/x.mp3")
     }
+
+    func testChapterSelectionBuildsSingleChapterManifest() {
+        let snapshot = JobSnapshot(
+            jobId: "job-single",
+            state: "running",
+            bookTitle: "Book",
+            bookAuthor: nil,
+            coverUrl: nil,
+            coverMimeType: nil,
+            engine: nil,
+            voice: nil,
+            language: nil,
+            progressPercent: nil,
+            chaptersTotal: 3,
+            chaptersCompleted: 1,
+            chapterProgress: [
+                JobSnapshot.Chapter(index: 0, name: "Ch 1", status: "completed", downloadUrl: "http://example.invalid/0.mp3", chars: nil, charsProcessed: nil, progressRatio: 1, durationSeconds: nil, startedAt: nil, completedAt: nil),
+                JobSnapshot.Chapter(index: 2, name: "Ch 3", status: "completed", downloadUrl: "http://example.invalid/2.mp3", chars: nil, charsProcessed: nil, progressRatio: 1, durationSeconds: nil, startedAt: nil, completedAt: nil),
+            ],
+            outputs: nil,
+            logUrl: nil,
+            error: nil,
+            lastActivityAt: nil
+        )
+
+        let selected = DownloadManager.selectedChapters(snapshot: snapshot, epubZeroBasedIndices: [2])
+        XCTAssertEqual(selected.map(\.index), [2],
+                       "Single-chapter download selection must key off EPUB zero-based indices, not playable-list positions.")
+    }
 }

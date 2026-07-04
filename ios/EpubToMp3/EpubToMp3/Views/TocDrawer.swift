@@ -16,19 +16,22 @@ struct TocDrawer: View {
     /// reading cursor wins so the marker still tracks the user.
     let readingChapterIndex: Int?
     let onJump: (Int) -> Void
+    let onDownload: ((Int) -> Void)?
 
     init(
         fulltext: EbookFulltext?,
         snapshot: JobSnapshot,
         currentChapterIndex: Int,
         readingChapterIndex: Int? = nil,
-        onJump: @escaping (Int) -> Void
+        onJump: @escaping (Int) -> Void,
+        onDownload: ((Int) -> Void)? = nil
     ) {
         self.fulltext = fulltext
         self.snapshot = snapshot
         self.currentChapterIndex = currentChapterIndex
         self.readingChapterIndex = readingChapterIndex
         self.onJump = onJump
+        self.onDownload = onDownload
     }
 
     @Environment(\.dismiss) private var dismiss
@@ -80,62 +83,83 @@ struct TocDrawer: View {
         isCurrent: Bool,
         audioReady: Bool
     ) -> some View {
-        Button {
-            onJump(index)
-            dismiss()
-        } label: {
-            HStack(spacing: 12) {
-                ZStack {
-                    Circle()
-                        .stroke(.secondary, lineWidth: 1)
-                        .frame(width: 28, height: 28)
-                    Text("\(index + 1)")
-                        .font(.caption.monospacedDigit())
-                }
-                .accessibilityHidden(true)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(title)
-                        .font(.body)
-                        .lineLimit(2)
-                    HStack(spacing: 8) {
-                        if let charCount {
-                            Text(L10n.string("toc.charsCount", charCount))
-                                .font(.caption2)
-                                .foregroundStyle(.secondary)
-                                .accessibilityHidden(true)
-                        }
-                        if !audioReady {
-                            Label(L10n.string("toc.textOnly"), systemImage: "doc.text")
-                                .font(.caption2)
-                                .foregroundStyle(.secondary)
+        HStack(spacing: 12) {
+            Button {
+                onJump(index)
+                dismiss()
+            } label: {
+                HStack(spacing: 12) {
+                    ZStack {
+                        Circle()
+                            .stroke(.secondary, lineWidth: 1)
+                            .frame(width: 28, height: 28)
+                        Text("\(index + 1)")
+                            .font(.caption.monospacedDigit())
+                    }
+                    .accessibilityHidden(true)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(title)
+                            .font(.body)
+                            .lineLimit(2)
+                        HStack(spacing: 8) {
+                            if let charCount {
+                                Text(L10n.string("toc.charsCount", charCount))
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                                    .accessibilityHidden(true)
+                            }
+                            if !audioReady {
+                                Label(L10n.string("toc.textOnly"), systemImage: "doc.text")
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                            }
                         }
                     }
+                    Spacer()
+                    if isCurrent {
+                        let audioActive = currentChapterIndex >= 0
+                        let onAudio = audioActive && currentChapterIndex == index
+                        Image(systemName: onAudio
+                              ? "speaker.wave.2.fill"
+                              : "book.fill")
+                            .foregroundStyle(.tint)
+                            .accessibilityLabel(onAudio
+                                                ? L10n.string("toc.currentlyPlaying")
+                                                : L10n.string("toc.currentlyReading"))
+                    }
                 }
-                Spacer()
-                if isCurrent {
-                    // Speaker icon when audio is mounted and matches
-                    // this row; reading-cursor icon when no audio is
-                    // mounted yet — same accent so visual weight is
-                    // identical.
-                    let audioActive = currentChapterIndex >= 0
-                    let onAudio = audioActive && currentChapterIndex == index
-                    Image(systemName: onAudio
-                          ? "speaker.wave.2.fill"
-                          : "book.fill")
-                        .foregroundStyle(.tint)
-                        .accessibilityLabel(onAudio
-                                            ? L10n.string("toc.currentlyPlaying")
-                                            : L10n.string("toc.currentlyReading"))
-                }
+                .contentShape(Rectangle())
             }
-            .contentShape(Rectangle())
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("toc.chapter.\(index)")
+
+            if let onDownload {
+                Menu {
+                    Button {
+                        onDownload(index)
+                    } label: {
+                        Label(L10n.string("player.downloadAll"), systemImage: "arrow.down.circle")
+                    }
+                    .disabled(!audioReady)
+                } label: {
+                    Image(systemName: "ellipsis.circle")
+                        .foregroundStyle(.secondary)
+                }
+                .accessibilityIdentifier("toc.chapter.menu.\(index)")
+            }
         }
-        .buttonStyle(.plain)
-        .accessibilityIdentifier("toc.chapter.\(index)")
     }
 
     private func audioReady(forZeroBasedIndex idx: Int) -> Bool {
-        snapshot.playableChapters.contains { $0.index == idx && $0.downloadUrl != nil }
+        Self.isDownloadAvailable(forEpubZeroBasedIndex: idx, in: snapshot)
+    }
+
+    static func downloadableChapter(forEpubZeroBasedIndex idx: Int, in snapshot: JobSnapshot) -> JobSnapshot.Chapter? {
+        snapshot.playableChapters.first { $0.index == idx && $0.downloadUrl != nil }
+    }
+
+    static func isDownloadAvailable(forEpubZeroBasedIndex idx: Int, in snapshot: JobSnapshot) -> Bool {
+        downloadableChapter(forEpubZeroBasedIndex: idx, in: snapshot) != nil
     }
 
     /// A chapter is "current" when:

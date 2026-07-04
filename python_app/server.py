@@ -2325,6 +2325,7 @@ async def convert_ebook(
     narrator_voice: Optional[str] = Form(None),
     character_voice: Optional[str] = Form(None),
     export_to_iphone: Optional[str] = Form(None),
+    priority_chapter_index: Optional[str] = Form(None),
 ) -> dict[str, str]:
     enable_character_voices_flag = _parse_form_optional_bool(enable_character_voices)
     narrator_voice_value = (narrator_voice or "").strip() or None
@@ -2361,6 +2362,7 @@ async def convert_ebook(
     channels_override = _parse_form_int(channels, min_value=1, max_value=2)
     clear_cache_flag = _parse_form_bool(clear_cache, False)
     force_reprocess_flag = _parse_form_bool(force_reprocess, False)
+    priority_chapter_index_value = _parse_form_int(priority_chapter_index, min_value=0)
     filter_chapters_flag = _parse_form_bool(filter_chapters, False)
     verbose_flag = _parse_form_optional_bool(verbose)
     use_language_detection_flag = _parse_form_optional_bool(use_language_detection)
@@ -2563,6 +2565,7 @@ async def convert_ebook(
         "footnote_mode": footnote_mode,
         "language": language,
         "priority": priority,
+        "priorityChapterIndex": priority_chapter_index_value,
         "formattingCues": speak_cues,
         "uiLanguage": ui_lang,
         "outputs": [],
@@ -5891,6 +5894,14 @@ async def process_conversion(job_id: str) -> None:
             for idx, chapter in enumerate(chapters, 1)
             if idx not in completed_indices
         ]
+        priority_chapter_index = job.get("priorityChapterIndex")
+        if isinstance(priority_chapter_index, int) and priority_chapter_index >= 0:
+            priority_one_based = priority_chapter_index + 1
+            if any(idx == priority_one_based for idx, _ in pending_chapters):
+                pivot = next(
+                    i for i, (idx, _) in enumerate(pending_chapters) if idx == priority_one_based
+                )
+                pending_chapters = pending_chapters[pivot:] + pending_chapters[:pivot]
 
         # Compute multi-engine slot affinity for the first pass.
         # Affinity maps each physical slot to an engine so Edge and a local engine

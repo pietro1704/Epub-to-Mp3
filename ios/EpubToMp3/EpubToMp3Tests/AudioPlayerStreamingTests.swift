@@ -165,6 +165,52 @@ final class AudioPlayerStreamingTests: XCTestCase {
             "(it is a session-level latch, not a mode indicator)")
     }
 
+    // MARK: - SSE snapshot streaming
+
+    func testUpdateSnapshotBuildsQueueWhenFirstPlayableChapterArrives() {
+        let player = AudioPlayer(backendBaseURL: URL(string: "https://example.com")!)
+        let pending = snapshot(chapters: [chapter(index: 0, url: nil)], state: "running")
+        let playable = snapshot(chapters: [chapter(index: 0, url: "/audio/ch0.mp3")], state: "running")
+
+        player.play(snapshot: pending, startingAt: 0)
+        XCTAssertFalse(player.isPlaying)
+
+        player.updateSnapshot(playable)
+        player.resume()
+
+        XCTAssertTrue(player.isPlaying,
+            "The first playable SSE snapshot must create an AVQueuePlayer so a normal Play tap can start audio without reopening the reader.")
+    }
+
+    func testResumeBeforeFirstPlayableChapterAutoplaysWhenSnapshotArrives() {
+        let player = AudioPlayer(backendBaseURL: URL(string: "https://example.com")!)
+        let pending = snapshot(chapters: [chapter(index: 2, url: nil)], state: "running")
+        let playable = snapshot(chapters: [chapter(index: 2, url: "/audio/ch2.mp3")], state: "running")
+
+        player.play(snapshot: pending, startingAt: 2)
+        player.resume()
+        XCTAssertFalse(player.isPlaying,
+            "No player exists yet, but resume() should remember the user's intent to play.")
+
+        player.updateSnapshot(playable)
+
+        XCTAssertTrue(player.isPlaying,
+            "If the user tapped Play while waiting for streaming audio, the first playable chapter should start as soon as the queue is built.")
+    }
+
+    func testChaptersToAppendUsesChapterIdentityForPriorityWraparound() {
+        let old = [chapter(index: 10, url: "/audio/ch10.mp3"),
+                   chapter(index: 11, url: "/audio/ch11.mp3")]
+        let new = [chapter(index: 0, url: "/audio/ch0.mp3"),
+                   chapter(index: 10, url: "/audio/ch10.mp3"),
+                   chapter(index: 11, url: "/audio/ch11.mp3")]
+
+        let appended = AudioPlayer.chaptersToAppend(old: old, new: new)
+
+        XCTAssertEqual(appended.map(\.index), [0],
+            "Priority streaming can wrap to earlier EPUB indices; append decisions must diff by chapter identity instead of suffix(count).")
+    }
+
     // MARK: - AsyncStream multi-consumer (TSan-compatible)
 
     /// Subscribes two consumers to `position` in parallel, enqueues a segment
@@ -224,6 +270,43 @@ final class AudioPlayerStreamingTests: XCTestCase {
         let (ch1, ch2) = await (first, second)
         XCTAssertNil(ch1, "Consumer 1 should see nil chapter before any snapshot is set")
         XCTAssertNil(ch2, "Consumer 2 should see nil chapter before any snapshot is set")
+    }
+
+    private func chapter(index: Int, url: String?) -> JobSnapshot.Chapter {
+        JobSnapshot.Chapter(
+            index: index,
+            name: "Chapter \(index + 1)",
+            status: url == nil ? "converting" : "completed",
+            downloadUrl: url,
+            chars: 100,
+            charsProcessed: url == nil ? 10 : 100,
+            progressRatio: url == nil ? 0.1 : 1.0,
+            durationSeconds: nil,
+            startedAt: nil,
+            completedAt: nil
+        )
+    }
+
+    private func snapshot(chapters: [JobSnapshot.Chapter], state: String) -> JobSnapshot {
+        JobSnapshot(
+            jobId: "streaming-snapshot-job",
+            state: state,
+            bookTitle: "Streaming Book",
+            bookAuthor: nil,
+            coverUrl: nil,
+            coverMimeType: nil,
+            engine: nil,
+            voice: nil,
+            language: nil,
+            progressPercent: nil,
+            chaptersTotal: chapters.count,
+            chaptersCompleted: chapters.filter { $0.downloadUrl != nil }.count,
+            chapterProgress: chapters,
+            outputs: nil,
+            logUrl: nil,
+            error: nil,
+            lastActivityAt: nil
+        )
     }
 }
 

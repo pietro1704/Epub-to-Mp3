@@ -86,6 +86,20 @@ final class InstantReaderIndexMapperTests: XCTestCase {
         )
     }
 
+    func testSparsePlayableChapterStillResolvesByItsOriginalEpubIndex() {
+        let snapshot = Self.snapshot(chapters: [
+            Self.playableChapter(index: 0),
+            Self.pendingChapter(index: 1),
+            Self.playableChapter(index: 3),
+        ])
+
+        XCTAssertEqual(
+            InstantReaderIndexMapper.playableIndex(forEpubIndex: 3, in: snapshot),
+            1,
+            "EPUB chapter 3 must map to the second playable slot even when chapter 1 is still pending."
+        )
+    }
+
     private static func snapshot(chapters: [JobSnapshot.Chapter]) -> JobSnapshot {
         JobSnapshot(
             jobId: "instant-reader-index-map",

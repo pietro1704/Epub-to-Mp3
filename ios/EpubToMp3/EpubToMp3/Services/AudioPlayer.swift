@@ -305,6 +305,18 @@ final class AudioPlayer: ObservableObject {
     /// AVPlayerItemDidPlayToEndTime firings.
     private var segmentSentenceIds: [String] = []
     private var segmentPlayedCount: Int = 0
+    /// Requested playable-list index from the last `play(snapshot:)`
+    /// call that arrived before any MP3 URL existed. When the first
+    /// playable snapshot lands via SSE, `updateSnapshot` uses this to
+    /// build the queue at the same requested starting point instead of
+    /// defaulting back to chapter 0.
+    private var pendingSnapshotStartIndex: Int?
+    /// Queue-order chapter list backing the currently-mounted AVQueuePlayer.
+    /// `JobSnapshot.playableChapters` is sorted by EPUB index, which is right
+    /// for library/TOC display but wrong for on-demand streaming when the
+    /// backend starts at chapter N and later wraps to 0. This list preserves
+    /// the actual append order of the live queue.
+    private var playbackChapters: [JobSnapshot.Chapter] = []
 
     private static let maxQueueAhead = 5
     /// Deferred-segments backlog with eviction + empty-streak
@@ -471,15 +483,22 @@ final class AudioPlayer: ObservableObject {
         segmentSentenceIds = []
         segmentPlayedCount = 0
         activeSentenceId = nil
+        playbackChapters = []
         self.snapshot = snapshot
 
         let chapters = snapshot.playableChapters
+        let requestedStartIndex = max(0, chapterIndex)
         let safeIndex = max(0, min(chapterIndex, chapters.count - 1))
         guard !chapters.isEmpty else {
             audioLog.warning("[load] no playable chapters — player not started")
-            lastError = .noPlayableChapters
+            pendingSnapshotStartIndex = requestedStartIndex
+            if snapshot.isTerminal {
+                lastError = .noPlayableChapters
+            }
             return
         }
+        pendingSnapshotStartIndex = nil
+        playbackChapters = chapters
 
         // Build the queue starting AT `safeIndex` rather than building
         // the full list and walking `advanceToNextItem()` to skip
@@ -512,10 +531,12 @@ final class AudioPlayer: ObservableObject {
         queue.rate = 0
         isPlaying = false
         // If the previous snapshot was already playing (e.g. user jumped to a
-        // new chapter while listening), preserve that intent.
-        if wasPlaying {
+        // new chapter while listening), or the user tapped Play while waiting
+        // for the first streamed MP3 URL, preserve that intent.
+        if wasPlaying || pendingAutoPlay {
             queue.rate = rate.rawValue
             isPlaying = true
+            pendingAutoPlay = false
         }
         // Re-register for remote-control events so the lock-screen play
         // button works even when we never auto-started. Idempotent.
@@ -538,42 +559,68 @@ final class AudioPlayer: ObservableObject {
     ///    swapped, so the playhead is never disturbed.
     func updateSnapshot(_ newSnapshot: JobSnapshot) {
         guard let queue = player else {
-            // No player yet — defer to the caller's normal `play()` flow.
+            // No player yet. If this is the first SSE snapshot that
+            // carries playable MP3s, build the queue now; otherwise the
+            // reader stays stuck in "converting" until the user exits and
+            // reopens. Playback still does not auto-start unless a prior
+            // user intent armed `pendingAutoPlay`.
             self.snapshot = newSnapshot
+            if !newSnapshot.playableChapters.isEmpty {
+                let startIndex = pendingSnapshotStartIndex ?? currentChapterIndex
+                play(snapshot: newSnapshot, startingAt: startIndex)
+            }
             return
         }
 
-        let oldChapters = self.snapshot?.playableChapters ?? []
+        let oldChapters = playbackChapters.isEmpty ? (self.snapshot?.playableChapters ?? []) : playbackChapters
         let newChapters = newSnapshot.playableChapters
-        let oldCount = oldChapters.count
         self.snapshot = newSnapshot
 
         // Replace future chapters whose file URL changed (re-synthesis). The
         // decision is pure so it can be unit-tested; applying it walks the
         // live queue to find the item to swap without touching the playhead.
-        let indicesToReplace = Self.chapterIndicesNeedingURLSwap(
-            old: oldChapters,
-            new: newChapters,
-            currentlyPlayingIndex: currentChapterIndex
-        )
-        for chapterIdx in indicesToReplace {
-            replaceQueuedItem(atChapterIndex: chapterIdx, in: queue, chapters: newChapters)
+        let canSafelySwapByPosition = oldChapters.indices.allSatisfy { idx in
+            idx < newChapters.count && oldChapters[idx].index == newChapters[idx].index
+        }
+        if canSafelySwapByPosition {
+            let indicesToReplace = Self.chapterIndicesNeedingURLSwap(
+                old: oldChapters,
+                new: newChapters,
+                currentlyPlayingIndex: currentChapterIndex
+            )
+            for chapterIdx in indicesToReplace {
+                replaceQueuedItem(atChapterIndex: chapterIdx, in: queue, chapters: newChapters)
+            }
         }
 
-        // Append every chapter that wasn't in the queue yet. AVQueuePlayer
-        // requires `canInsert(_:after:)` to be true; if Apple ever rejects
-        // an item we just stop appending and surface what we have.
-        if newChapters.count > oldCount {
-            let toAppend = newChapters.suffix(newChapters.count - oldCount)
-            for chapter in toAppend {
-                guard let absolute = absoluteURL(forDownloadPath: chapter.downloadUrl) else { continue }
-                let item = AVPlayerItem(url: absolute)
-                if queue.canInsert(item, after: nil) {
-                    queue.insert(item, after: nil)
-                }
+        // Append every chapter whose EPUB index was not already queued.
+        // Count-based suffix appends break when on-demand streaming starts
+        // in the middle of a book and later wraps to earlier EPUB indices:
+        // sorted playableChapters become [0, 10, 11] after [10, 11], so
+        // `suffix(1)` would duplicate 11 and drop 0. Identity-based diffing
+        // preserves the live queue while accepting out-of-order arrivals.
+        let chaptersToAppend = Self.chaptersToAppend(old: oldChapters, new: newChapters)
+        for chapter in chaptersToAppend {
+            guard let absolute = absoluteURL(forDownloadPath: chapter.downloadUrl) else { continue }
+            let item = AVPlayerItem(url: absolute)
+            if queue.canInsert(item, after: nil) {
+                queue.insert(item, after: nil)
+                playbackChapters.append(chapter)
             }
         }
         updateNowPlayingInfo()
+    }
+
+    /// Chapters present in `new` but absent from `old`, keyed by the EPUB-side
+    /// chapter index. Pure helper for streaming updates where completion order
+    /// can differ from EPUB order because the backend prioritises the chapter
+    /// the user is reading first, then wraps around.
+    nonisolated static func chaptersToAppend(
+        old: [JobSnapshot.Chapter],
+        new: [JobSnapshot.Chapter]
+    ) -> [JobSnapshot.Chapter] {
+        let existing = Set(old.map(\.index))
+        return new.filter { !existing.contains($0.index) }
     }
 
     /// Which `playableChapters` indices changed their `downloadUrl` and are
@@ -651,7 +698,10 @@ final class AudioPlayer: ObservableObject {
             isPlaying = true
             return
         }
-        guard let player else { return }
+        guard let player else {
+            pendingAutoPlay = true
+            return
+        }
         // Activate the audio session lazily, only when the user actually
         // starts playback (Play button, lock-screen control, widget toggle).
         // This is what claims the audio focus from Spotify / Apple Music /
@@ -996,7 +1046,7 @@ final class AudioPlayer: ObservableObject {
             return
         }
         if let snapshot {
-            let chapters = snapshot.playableChapters
+            let chapters = playbackChapters.isEmpty ? snapshot.playableChapters : playbackChapters
             guard currentChapterIndex + 1 < chapters.count else { return }
         }
         let indexBefore = currentChapterIndex
@@ -1441,7 +1491,7 @@ final class AudioPlayer: ObservableObject {
                 guard let snapshot = self.snapshot else { return }
                 let totalChapters = self.isSegmentMode
                     ? (snapshot.chapterProgress?.count ?? 0)
-                    : snapshot.playableChapters.count
+                    : (self.playbackChapters.isEmpty ? snapshot.playableChapters.count : self.playbackChapters.count)
                 if !self.isSegmentMode, self.currentChapterIndex + 1 < totalChapters {
                     // Snapshot the index BEFORE reconciling. reconcile() returns
                     // false in two distinct cases: (a) URL not found, and (b)
@@ -1583,7 +1633,7 @@ final class AudioPlayer: ObservableObject {
             let urlAsset = item.asset as? AVURLAsset,
             let snapshot
         else { return false }
-        let chapters = snapshot.playableChapters
+        let chapters = playbackChapters.isEmpty ? snapshot.playableChapters : playbackChapters
         guard let idx = chapters.firstIndex(where: { chapter in
             guard let absolute = absoluteURL(forDownloadPath: chapter.downloadUrl) else { return false }
             return absolute == urlAsset.url
@@ -1698,7 +1748,8 @@ final class AudioPlayer: ObservableObject {
         // and we cross-reference back into `chapterProgress` by EPUB
         // index to surface any extra metadata the playable subset
         // dropped (rare; same struct today).
-        guard let chapters = snapshot?.playableChapters,
+        let chapters = playbackChapters.isEmpty ? (snapshot?.playableChapters ?? []) : playbackChapters
+        guard !chapters.isEmpty,
               chapters.indices.contains(currentChapterIndex) else { return nil }
         let playing = chapters[currentChapterIndex]
         if let progress = snapshot?.chapterProgress,

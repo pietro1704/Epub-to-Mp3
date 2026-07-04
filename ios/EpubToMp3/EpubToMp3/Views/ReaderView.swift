@@ -394,7 +394,6 @@ struct ReaderView: View {
             currentPage = wantsLastPage ? Int.max : 0
             isPageTurning = false
             renderedAttributed = nil
-            paginationCache.pages = []
             paginationCache.key = nil
             // Drop the previous chapter's pages too. `lastValidPages` exists to
             // bridge a SAME-chapter repagination (settings change) without a
@@ -815,9 +814,10 @@ struct ReaderView: View {
                         // reserve, so the page stays clear of the clock on every
                         // page in both chrome states.
 
-                    if settings.readerShowPageNumbers {
-                        let pageIndex = max(0, min(effectivePages.count - 1, currentPage))
-                        pageFooter(index: pageIndex, total: effectivePages.count)
+                    let stablePageIndex = stablePageFooterIndex(effectivePages: effectivePages)
+                    let stablePageTotal = stablePageFooterTotal(effectivePages: effectivePages)
+                    if settings.readerShowPageNumbers, stablePageTotal > 0 {
+                        pageFooter(index: stablePageIndex, total: stablePageTotal)
                             .padding(.bottom, 8)
                             .allowsHitTesting(false)
                     }
@@ -1030,6 +1030,22 @@ struct ReaderView: View {
     /// auto-follow — being missed).
     private func livePages(fallback: [NSAttributedString]) -> [NSAttributedString] {
         paginationCache.pages.isEmpty ? fallback : paginationCache.pages
+    }
+
+    private func stablePageFooterIndex(effectivePages: [NSAttributedString]) -> Int {
+        let total = stablePageFooterTotal(effectivePages: effectivePages)
+        guard total > 0 else { return 0 }
+        return max(0, min(total - 1, currentPage))
+    }
+
+    private func stablePageFooterTotal(effectivePages: [NSAttributedString]) -> Int {
+        if !paginationCache.pages.isEmpty {
+            return paginationCache.pages.count
+        }
+        if !effectivePages.isEmpty {
+            return effectivePages.count
+        }
+        return paginationCache.lastValidPages.count
     }
 
     /// Cumulative plain-text character count up to (but not including) the
