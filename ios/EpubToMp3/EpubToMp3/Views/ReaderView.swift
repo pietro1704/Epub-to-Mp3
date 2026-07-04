@@ -1323,6 +1323,12 @@ struct ReaderView: View {
         // textOriginY = top padding only — chapterTitleHeader was dropped
         // (EPUB's own heading is the first content of page 0 now).
         let textOriginY: CGFloat = pageVerticalPadding
+        // The text block is centred inside the full-width container frame,
+        // so its left edge is (containerWidth - columnW) / 2, not just
+        // `margin`. When readerColumnWidth < containerWidth - 2*margin the
+        // two values diverge and link hit-rects shift left of their visual
+        // position, causing taps to miss links entirely.
+        let textOriginX: CGFloat = (containerSize.width - columnW) / 2
         let linkHits = pageLinkHits(pages: pages, pageIndex: pageIndex, columnWidth: columnW)
         return pageView(
             pages: pages,
@@ -1334,7 +1340,7 @@ struct ReaderView: View {
             totalPages: totalPages,
             containerWidth: containerSize.width,
             linkHits: linkHits,
-            textOriginX: margin,
+            textOriginX: textOriginX,
             textOriginY: textOriginY
         ))
     }
@@ -1344,6 +1350,7 @@ struct ReaderView: View {
         let margin = effectiveReaderMargin(for: containerSize)
         let columnW = min(settings.readerColumnWidth, containerSize.width - 2 * margin)
         let textOriginY: CGFloat = pageVerticalPadding
+        let textOriginX: CGFloat = (containerSize.width - columnW) / 2
         let linkHits = pageLinkHits(pages: pages, pageIndex: pageIndex, columnWidth: columnW)
         return pageView(
             pages: pages,
@@ -1355,7 +1362,7 @@ struct ReaderView: View {
             totalPages: totalPages,
             containerWidth: containerSize.width,
             linkHits: linkHits,
-            textOriginX: margin,
+            textOriginX: textOriginX,
             textOriginY: textOriginY
         ))
     }

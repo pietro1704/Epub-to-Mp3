@@ -74,6 +74,38 @@ final class BookOpenViewPriorityTests: XCTestCase {
         }
     }
 
+    func testPlayerReaderViewPassesOnLinkTapToReaderView() throws {
+        let source = try String(
+            contentsOf: URL(fileURLWithPath: #filePath)
+                .deletingLastPathComponent()
+                .deletingLastPathComponent()
+                .appendingPathComponent("EpubToMp3/Views/PlayerReaderView.swift"),
+            encoding: .utf8
+        )
+        XCTAssertTrue(
+            source.contains("onLinkTap:"),
+            "PlayerReaderView must wire onLinkTap into ReaderView so link taps don't fall through to page-turn gesture."
+        )
+        XCTAssertTrue(
+            source.contains("handleEpubLink"),
+            "PlayerReaderView must implement handleEpubLink to navigate EPUB-internal hrefs."
+        )
+    }
+
+    func testReaderViewLinkHitOriginUsesColumnCentredX() throws {
+        let source = try String(
+            contentsOf: URL(fileURLWithPath: #filePath)
+                .deletingLastPathComponent()
+                .deletingLastPathComponent()
+                .appendingPathComponent("EpubToMp3/Views/ReaderView.swift"),
+            encoding: .utf8
+        )
+        XCTAssertTrue(
+            source.contains("containerSize.width - columnW") || source.contains("(containerSize.width - columnW) / 2"),
+            "textOriginX must derive from the centred column position, not just margin, so link hit-rects match visual layout."
+        )
+    }
+
     func testFullPlayerSheetTocButtonUsesTocDrawer() throws {
         let source = try sourceFile(named: "FullPlayerSheet.swift")
         XCTAssertTrue(

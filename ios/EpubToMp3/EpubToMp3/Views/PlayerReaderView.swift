@@ -360,7 +360,8 @@ struct PlayerReaderView: View {
                 onRestoreChrome: {
                     guard !chromeVisible else { return }
                     withAnimation(.easeInOut(duration: 0.25)) { chromeVisible = true }
-                }
+                },
+                onLinkTap: { url in handleEpubLink(url) }
             )
         } else if let err = fulltextError {
             VStack(spacing: 12) {
@@ -949,6 +950,34 @@ struct PlayerReaderView: View {
             .playableIndexOrClamped(forEpubIndex: epubIndex, in: snapshot)
         player.play(snapshot: snapshot, startingAt: target)
         reloadCurrentChapter()
+    }
+
+    /// Mirror of InstantReaderView.handleEpubLink — resolves an EPUB-internal
+    /// href to a chapter and navigates there via jumpTo. External URLs
+    /// (http/https/mailto) are left for iOS to open.
+    private func handleEpubLink(_ url: URL) -> Bool {
+        if let scheme = url.scheme?.lowercased(),
+           scheme == "http" || scheme == "https" || scheme == "mailto" {
+            return false
+        }
+        guard let ft = fulltext else { return false }
+        let base = url.lastPathComponent
+            .replacingOccurrences(of: ".xhtml", with: "")
+            .replacingOccurrences(of: ".html", with: "")
+            .replacingOccurrences(of: "_", with: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+        let fragment = (url.fragment ?? "").lowercased()
+        let needle = base.isEmpty ? fragment : base
+        guard !needle.isEmpty else { return false }
+        if let match = ft.chapters.first(where: { chapter in
+            let name = (chapter.name ?? "").lowercased()
+            return !name.isEmpty && (name.contains(needle) || needle.contains(name))
+        }) {
+            jumpTo(chapterIndex: max(0, match.index - 1))
+            return true
+        }
+        return false
     }
 
     private func jumpToSentence(_ span: SentenceSpan) {
