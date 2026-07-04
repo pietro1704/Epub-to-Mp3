@@ -29,8 +29,8 @@ struct PlayDivergenceAnchor: Equatable {
 
 /// `confirmationDialog` shown when the user taps a play button while
 /// the reader is on a different chapter than the audio. Surfaces the
-/// canonical three-option chooser (current page / where stopped /
-/// beginning) and routes the choice back to `AudioPlayer`'s shared
+/// canonical chooser (current page / where stopped) and routes the
+/// choice back to `AudioPlayer`'s shared
 /// helpers so every play surface behaves identically.
 ///
 /// Usage:
@@ -75,9 +75,6 @@ struct PlayDivergenceDialog: ViewModifier {
             }
             Button(L10n.string("player.divergence.fromWhereStopped")) {
                 player.resume()
-            }
-            Button(L10n.string("player.divergence.fromBeginning")) {
-                player.startFromBeginning()
             }
             Button(L10n.string("common.cancel"), role: .cancel) {}
         } message: {

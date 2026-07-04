@@ -9,6 +9,7 @@ struct PlayerView: View {
 
     @EnvironmentObject private var readerCoordinator: ReaderCoordinator
     private var readerChapterIndex: Int { readerCoordinator.anchor.chapterIndex }
+    private var readerPageRatio: Double? { readerCoordinator.anchor.pageRatio }
     @State private var pendingAnchor: PlayDivergenceAnchor?
     @State private var scrubberDragValue: TimeInterval?
     @Environment(\.dismiss) private var dismiss
@@ -137,7 +138,10 @@ struct PlayerView: View {
     }
 
     private func handlePlayTap() {
-        switch player.playTapDecision(readerChapterIndex: readerChapterIndex) {
+        switch player.playTapDecision(
+            readerChapterIndex: readerChapterIndex,
+            readerPageRatio: readerPageRatio
+        ) {
         case .pause, .resume:
             player.togglePlayPause()
         case .offerStartChoice:

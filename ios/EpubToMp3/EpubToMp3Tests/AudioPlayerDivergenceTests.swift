@@ -147,6 +147,36 @@ final class AudioPlayerDivergenceTests: XCTestCase {
         )
     }
 
+    /// Same chapter but reader visibly ahead/behind the paused audio must
+    /// still offer the chooser so the user can decide between page and resume.
+    func testDecisionWithSameChapterButDifferentPageOffersDialog() {
+        let player = makePlayer()
+        player.testHook_setSnapshot(snapshotWithChapters(5))
+        player.testHook_setCurrentChapterIndex(2)
+        player.testHook_setDurationSeconds(100)
+        player.seek(to: 10)
+
+        XCTAssertEqual(
+            player.playTapDecision(readerChapterIndex: 2, readerPageRatio: 0.7),
+            .offerStartChoice
+        )
+    }
+
+    /// Tiny ratio jitter should not trigger the floater when the reader is
+    /// effectively on the same page the audio left off.
+    func testDecisionWithSameChapterAndNearbyPageResumes() {
+        let player = makePlayer()
+        player.testHook_setSnapshot(snapshotWithChapters(5))
+        player.testHook_setCurrentChapterIndex(2)
+        player.testHook_setDurationSeconds(100)
+        player.seek(to: 52)
+
+        XCTAssertEqual(
+            player.playTapDecision(readerChapterIndex: 2, readerPageRatio: 0.55),
+            .resume
+        )
+    }
+
     /// Regression: in the embedded-runtime path, chapters arrive via
     /// `enqueueSegment` and the snapshot carries no `downloadUrl`s,
     /// so `playableChapters` is permanently empty. Pre-fix,

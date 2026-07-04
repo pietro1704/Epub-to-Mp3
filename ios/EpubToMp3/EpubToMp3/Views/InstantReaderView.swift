@@ -696,7 +696,10 @@ struct InstantReaderView: View {
     private func transportControls(player: AudioPlayer) -> some View {
         HStack(spacing: 24) {
             Button {
-                switch player.playTapDecision(readerChapterIndex: currentChapterIndex) {
+                switch player.playTapDecision(
+                    readerChapterIndex: currentChapterIndex,
+                    readerPageRatio: readerCoordinator.anchor.pageRatio
+                ) {
                 case .pause, .resume:
                     player.togglePlayPause()
                 case .offerStartChoice:

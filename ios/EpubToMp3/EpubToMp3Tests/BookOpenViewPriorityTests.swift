@@ -57,6 +57,23 @@ final class BookOpenViewPriorityTests: XCTestCase {
         )
     }
 
+    func testPlayButtonsCompareReaderPageRatioBeforeResuming() throws {
+        let sources = [
+            try sourceFile(named: "MiniPlayerBar.swift"),
+            try sourceFile(named: "FullPlayerSheet.swift"),
+            try sourceFile(named: "PlayerReaderView.swift"),
+            try sourceFile(named: "InstantReaderView.swift"),
+            try sourceFile(named: "PlayerView.swift"),
+        ]
+
+        for source in sources {
+            XCTAssertTrue(
+                source.contains("readerPageRatio:"),
+                "Every play surface must pass the reader page ratio into AudioPlayer so same-chapter divergence still shows the chooser."
+            )
+        }
+    }
+
     private func sourceFile(named name: String) throws -> String {
         let testFile = URL(fileURLWithPath: #filePath)
         let projectRoot = testFile

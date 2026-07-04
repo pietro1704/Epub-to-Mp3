@@ -78,6 +78,7 @@ struct PlayerReaderView: View {
 
     @EnvironmentObject private var readerCoordinator: ReaderCoordinator
     private var readerChapterIndex: Int { readerCoordinator.anchor.chapterIndex }
+    private var readerPageRatio: Double? { readerCoordinator.anchor.pageRatio }
     @State private var pendingAnchor: PlayDivergenceAnchor?
     /// See `FullPlayerSheet.scrubberDragValue` — decouples the slider
     /// thumb from `player.positionSeconds` while a drag is in flight
@@ -454,7 +455,10 @@ struct PlayerReaderView: View {
     }
 
     private func handlePlayTap() {
-        switch player.playTapDecision(readerChapterIndex: readerChapterIndex) {
+        switch player.playTapDecision(
+            readerChapterIndex: readerChapterIndex,
+            readerPageRatio: readerPageRatio
+        ) {
         case .pause, .resume:
             player.togglePlayPause()
         case .offerStartChoice:

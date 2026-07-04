@@ -36,6 +36,7 @@ struct MiniPlayerBar: View {
 
     @EnvironmentObject private var readerCoordinator: ReaderCoordinator
     private var readerChapterIndex: Int { readerCoordinator.anchor.chapterIndex }
+    private var readerPageRatio: Double? { readerCoordinator.anchor.pageRatio }
 
     @State private var pendingAnchor: PlayDivergenceAnchor?
 
@@ -278,7 +279,10 @@ struct MiniPlayerBar: View {
     // every play-button surface in the app shares one implementation.
 
     private func handlePlayTap() {
-        switch player.playTapDecision(readerChapterIndex: readerChapterIndex) {
+        switch player.playTapDecision(
+            readerChapterIndex: readerChapterIndex,
+            readerPageRatio: readerPageRatio
+        ) {
         case .pause, .resume:
             player.togglePlayPause()
         case .offerStartChoice:

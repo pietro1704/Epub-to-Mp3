@@ -72,6 +72,7 @@ struct FullPlayerSheet: View {
 
     @EnvironmentObject private var readerCoordinator: ReaderCoordinator
     private var readerChapterIndex: Int { readerCoordinator.anchor.chapterIndex }
+    private var readerPageRatio: Double? { readerCoordinator.anchor.pageRatio }
 
     /// `.tertiary` foreground on `.thinMaterial` over album-art
     /// backdrop drops below WCAG AA in dark mode. When the user has
@@ -734,7 +735,10 @@ struct FullPlayerSheet: View {
     // decision logic and `.playDivergenceDialog` for the dialog UI.
 
     private func handlePlayTap() {
-        switch player.playTapDecision(readerChapterIndex: readerChapterIndex) {
+        switch player.playTapDecision(
+            readerChapterIndex: readerChapterIndex,
+            readerPageRatio: readerPageRatio
+        ) {
         case .pause, .resume:
             player.togglePlayPause()
         case .offerStartChoice:

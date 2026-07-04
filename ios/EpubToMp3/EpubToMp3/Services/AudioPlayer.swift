@@ -809,7 +809,7 @@ final class AudioPlayer: ObservableObject {
     // player, full player, in-line buttons in the reader — uses the
     // same divergence detection / start-options behaviour. Adding a new
     // play button anywhere in the app should only require wiring
-    // `playTapDecision(readerChapterIndex:)` + `startFromReaderPage(_:)`
+    // `playTapDecision(readerChapterIndex:readerPageRatio:)` + `startFromReaderPage(_:)`
     // + `startFromBeginning()` — never duplicate the conditional logic.)
 
     /// What an in-app play-button tap should do, given the chapter the
@@ -822,13 +822,16 @@ final class AudioPlayer: ObservableObject {
         case pause
         /// No divergence (or no snapshot yet) — straight resume.
         case resume
-        /// Reader sits on a different chapter than the audio. The UI
-        /// surface should show a 3-option confirmation dialog
-        /// (current page / where stopped / beginning).
+        /// Reader sits on a different chapter/page than the audio. The UI
+        /// surface should show the start-position chooser
+        /// (current page / where stopped).
         case offerStartChoice
     }
 
-    func playTapDecision(readerChapterIndex: Int) -> PlayTapDecision {
+    func playTapDecision(
+        readerChapterIndex: Int,
+        readerPageRatio: Double? = nil
+    ) -> PlayTapDecision {
         if isPlaying { return .pause }
         guard let snapshot else { return .resume }
         // Embedded-runtime path: chapters are fed through `enqueueSegment`
@@ -857,7 +860,28 @@ final class AudioPlayer: ObservableObject {
         // of a silent no-op.
         let reader = playableIndex(forEpubZeroBased: readerChapterIndex, in: snapshot)
         guard let reader else { return .offerStartChoice }
-        return reader != currentChapterIndex ? .offerStartChoice : .resume
+        if reader != currentChapterIndex { return .offerStartChoice }
+        if isReaderPageDivergent(readerPageRatio) { return .offerStartChoice }
+        return .resume
+    }
+
+    /// Same-chapter divergence: the reader can be on chapter N while the
+    /// paused player is also on chapter N, but at a different page. In that
+    /// case a play tap must still ask whether to resume the audio's saved
+    /// point or jump to the visible page. The ratio is page/scroll position
+    /// within the current reader chapter.
+    private func isReaderPageDivergent(_ readerPageRatio: Double?) -> Bool {
+        guard !isSegmentMode,
+              let readerPageRatio,
+              readerPageRatio.isFinite,
+              durationSeconds > 0,
+              positionSeconds.isFinite else { return false }
+        let reader = max(0, min(1, readerPageRatio))
+        let player = max(0, min(1, positionSeconds / durationSeconds))
+        // Roughly one Apple Books page in a 20-page chapter. This avoids a
+        // modal for tiny scrubber/reporting jitter but catches real visible
+        // page differences.
+        return abs(reader - player) >= 0.05
     }
 
     /// Convert an EPUB zero-based chapter index (what the reader views
