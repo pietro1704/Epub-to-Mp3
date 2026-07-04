@@ -76,19 +76,38 @@ final class SpeechFallbackPlayer: NSObject, ObservableObject {
 
     @Published private(set) var state: State = .idle
 
-    private let synthesizer: SpeechSynthesizing
+    // Deferred to first use: AVSpeechSynthesizer init loads the TTS
+    // system library and blocks the MainActor for 200-800 ms if done
+    // at app launch. Injected via factory so tests can provide a fake
+    // without triggering the real load.
+    private var _synthesizer: SpeechSynthesizing?
+    private let synthesizerFactory: () -> SpeechSynthesizing
+    private var synthesizer: SpeechSynthesizing {
+        if let s = _synthesizer { return s }
+        let s = synthesizerFactory()
+        s.delegate = self
+        _synthesizer = s
+        return s
+    }
     private let sessionConfigurator: SpeechAudioSessionConfiguring
 
     init(
-        synthesizer: SpeechSynthesizing = AVSpeechSynthesizer(),
+        synthesizer: SpeechSynthesizing? = nil,
         sessionConfigurator: SpeechAudioSessionConfiguring = SystemSpeechAudioSession()
     ) {
-        self.synthesizer = synthesizer
+        // When a concrete instance is injected (tests / previews), wrap
+        // it in a factory that returns it directly.  When nil, defer
+        // creation of the real AVSpeechSynthesizer to first use.
+        if let synthesizer {
+            self.synthesizerFactory = { synthesizer }
+            self._synthesizer = synthesizer
+        } else {
+            self.synthesizerFactory = { AVSpeechSynthesizer() }
+            self._synthesizer = nil
+        }
         self.sessionConfigurator = sessionConfigurator
         super.init()
-        // Wire the delegate AFTER super.init so `self` is available.
-        // No audio-session work here — see SystemSpeechAudioSession.
-        self.synthesizer.delegate = self
+        // Delegate is wired lazily inside the `synthesizer` accessor.
     }
 
     // MARK: Transport API
