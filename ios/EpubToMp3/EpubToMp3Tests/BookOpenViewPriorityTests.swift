@@ -74,6 +74,18 @@ final class BookOpenViewPriorityTests: XCTestCase {
         }
     }
 
+    func testFullPlayerSheetTocButtonUsesTocDrawer() throws {
+        let source = try sourceFile(named: "FullPlayerSheet.swift")
+        XCTAssertTrue(
+            source.contains("TocDrawer("),
+            "FullPlayerSheet TOC button must open TocDrawer, not ChapterListSheet."
+        )
+        XCTAssertFalse(
+            source.contains("ChapterListSheet(player:"),
+            "ChapterListSheet must not be used from FullPlayerSheet — TocDrawer is the canonical TOC UI."
+        )
+    }
+
     private func sourceFile(named name: String) throws -> String {
         let testFile = URL(fileURLWithPath: #filePath)
         let projectRoot = testFile

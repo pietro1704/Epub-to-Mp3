@@ -547,7 +547,22 @@ struct FullPlayerSheet: View {
             .buttonStyle(.plain)
             .accessibilityLabel(L10n.string("player.chapters"))
             .sheet(isPresented: $showChapterList) {
-                ChapterListSheet(player: player)
+                if let snapshot = player.snapshot {
+                    let playingEpubIndex = InstantReaderIndexMapper
+                        .epubIndex(forPlayableIndex: player.currentChapterIndex, in: snapshot) ?? -1
+                    TocDrawer(
+                        fulltext: fulltext,
+                        snapshot: snapshot,
+                        currentChapterIndex: playingEpubIndex,
+                        onJump: { epubIndex in
+                            if let playable = InstantReaderIndexMapper
+                                .playableIndex(forEpubIndex: epubIndex, in: snapshot) {
+                                player.play(snapshot: snapshot, startingAt: playable)
+                            }
+                        }
+                    )
+                    .compatPresentationDetents()
+                }
             }
 
             Spacer()
@@ -659,7 +674,22 @@ struct FullPlayerSheet: View {
         }
         .accessibilityLabel(L10n.string("player.more"))
         .sheet(isPresented: $showChapterList) {
-            ChapterListSheet(player: player)
+            if let snapshot = player.snapshot {
+                let playingEpubIndex = InstantReaderIndexMapper
+                    .epubIndex(forPlayableIndex: player.currentChapterIndex, in: snapshot) ?? -1
+                TocDrawer(
+                    fulltext: fulltext,
+                    snapshot: snapshot,
+                    currentChapterIndex: playingEpubIndex,
+                    onJump: { epubIndex in
+                        if let playable = InstantReaderIndexMapper
+                            .playableIndex(forEpubIndex: epubIndex, in: snapshot) {
+                            player.play(snapshot: snapshot, startingAt: playable)
+                        }
+                    }
+                )
+                .compatPresentationDetents()
+            }
         }
     }
 
