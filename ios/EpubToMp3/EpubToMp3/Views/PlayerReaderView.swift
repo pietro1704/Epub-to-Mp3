@@ -39,6 +39,10 @@ struct PlayerReaderView: View {
     /// "start at last page" handoff. Cleared only when that exact chapter is
     /// visible so unrelated player/index churn cannot drop the handoff early.
     @State private var pendingRetreatTargetEpubIndex: Int? = nil
+    /// EPUB chapter index the UI should render immediately after a manual
+    /// jump/retreat, before AudioPlayer's playable-index cursor has caught up.
+    /// Released once `playingEpubZeroBasedIndex` reports the same chapter.
+    @State private var displayedEpubIndexOverride: Int? = nil
     @State private var currentSentenceId: String?
 
     @State private var showingToc = false
@@ -145,6 +149,9 @@ struct PlayerReaderView: View {
         }
         .compatOnChange(of: playingEpubZeroBasedIndex) { newEpubIndex in
             guard let newEpubIndex else { return }
+            if displayedEpubIndexOverride == newEpubIndex {
+                displayedEpubIndexOverride = nil
+            }
             guard let pendingTarget = pendingRetreatTargetEpubIndex,
               newEpubIndex == pendingTarget else { return }
             readerShouldStartAtLastPage = false
@@ -323,7 +330,7 @@ struct PlayerReaderView: View {
         switch SpeechFallbackUI.offer(
             isFallbackActive: player.isUsingSpeechFallback,
             snapshot: player.snapshot ?? snapshot,
-            chapterIndex: playingEpubZeroBasedIndex ?? player.currentChapterIndex,
+            chapterIndex: displayedEpubIndex,
             fulltext: fulltext,
             languageCode: (player.snapshot ?? snapshot).language
         ) {
@@ -363,7 +370,7 @@ struct PlayerReaderView: View {
                     .foregroundStyle(.secondary)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-        } else if let fulltext, let chapter = chapter(in: fulltext, at: playingEpubZeroBasedIndex ?? player.currentChapterIndex) {
+        } else if let fulltext, let chapter = chapter(in: fulltext, at: displayedEpubIndex) {
             ReaderView(
                 chapter: chapter,
                 spans: spans,
@@ -745,7 +752,7 @@ struct PlayerReaderView: View {
         if player.snapshot?.jobId != snapshot.jobId {
             player.updateSnapshot(snapshot)
         }
-        reloadCurrentChapter(epubIndexOverride: playingEpubZeroBasedIndex)
+        reloadCurrentChapter(epubIndexOverride: displayedEpubIndexOverride ?? playingEpubZeroBasedIndex)
         triggerFulltextLoad()
         subscribeToJobStream()
 
@@ -954,7 +961,7 @@ struct PlayerReaderView: View {
         // `epubIndexOverride` is passed by jumpTo so we don't race
         // against AudioPlayer.currentChapterIndex not yet reflecting
         // the new position when play(snapshot:startingAt:) returns.
-        let epubIdx = epubIndexOverride ?? playingEpubZeroBasedIndex ?? player.currentChapterIndex
+        let epubIdx = epubIndexOverride ?? displayedEpubIndexOverride ?? playingEpubZeroBasedIndex ?? player.currentChapterIndex
         guard let fulltext, let chapter = chapter(in: fulltext, at: epubIdx) else {
             spans = []
             // Wipe any stale per-sentence timing in the player so the
@@ -1000,6 +1007,7 @@ struct PlayerReaderView: View {
         // init and seeds jumpToLastPageForChapterId = "__pending__".
         readerShouldStartAtLastPage = true
         pendingRetreatTargetEpubIndex = prev
+        displayedEpubIndexOverride = prev
         player.play(snapshot: snapshot, startingAt: playablePrev)
         reloadCurrentChapter(epubIndexOverride: prev)
         return true
@@ -1014,6 +1022,7 @@ struct PlayerReaderView: View {
         withAnimation(.easeInOut(duration: 0.25)) { chromeVisible = true }
         let target = InstantReaderIndexMapper
             .playableIndexOrClamped(forEpubIndex: epubIndex, in: snapshot)
+        displayedEpubIndexOverride = epubIndex
         player.play(snapshot: snapshot, startingAt: target)
         // Pass epubIndex directly — player.currentChapterIndex has not
         // yet updated when play() returns, so reloadCurrentChapter()
@@ -1080,8 +1089,12 @@ struct PlayerReaderView: View {
             .epubIndex(forPlayableIndex: player.currentChapterIndex, in: snapshot)
     }
 
+    private var displayedEpubIndex: Int {
+        displayedEpubIndexOverride ?? playingEpubZeroBasedIndex ?? player.currentChapterIndex
+    }
+
     private var currentChapterTitle: String {
-        if let fulltext, let ch = chapter(in: fulltext, at: playingEpubZeroBasedIndex ?? player.currentChapterIndex) {
+        if let fulltext, let ch = chapter(in: fulltext, at: displayedEpubIndex) {
             return ch.displayTitle
         }
         let chapters = snapshot.playableChapters

@@ -495,6 +495,36 @@ final class BookOpenViewPriorityTests: XCTestCase {
         )
     }
 
+    func testPlayerReaderPinsDisplayedEpubIndexAcrossManualChapterRetreat() throws {
+        let source = try sourceFile(named: "PlayerReaderView.swift")
+
+        XCTAssertTrue(
+            source.contains("@State private var displayedEpubIndexOverride: Int? = nil"),
+            "PlayerReaderView must keep a dedicated displayedEpubIndexOverride so retreat rendering does not fall back to a stale player.currentChapterIndex before the player catches up."
+        )
+        XCTAssertTrue(
+            source.contains("private var displayedEpubIndex: Int {\n        displayedEpubIndexOverride ?? playingEpubZeroBasedIndex ?? player.currentChapterIndex\n    }"),
+            "PlayerReaderView must derive all visible chapter lookups from displayedEpubIndex so explicit retreat/jump overrides win over stale playable-index reads."
+        )
+        XCTAssertTrue(
+            source.contains("displayedEpubIndexOverride = prev"),
+            "returnToPreviousChapter() must pin the displayed EPUB index immediately when retreat starts."
+        )
+        XCTAssertTrue(
+            source.contains("displayedEpubIndexOverride = epubIndex"),
+            "jumpTo(chapterIndex:) must pin the displayed EPUB index immediately so the reader renders the target chapter before playback state catches up."
+        )
+        XCTAssertTrue(
+            source.contains(".compatOnChange(of: playingEpubZeroBasedIndex) { newEpubIndex in")
+                && source.contains("displayedEpubIndexOverride = nil"),
+            "PlayerReaderView must release the displayed EPUB override only after the player reports the same EPUB chapter, otherwise retreat can snap back to the stale chapter start."
+        )
+        XCTAssertFalse(
+            source.contains("chapter(in: fulltext, at: playingEpubZeroBasedIndex ?? player.currentChapterIndex)"),
+            "Reader pane must not resolve visible chapters directly from playingEpubZeroBasedIndex ?? player.currentChapterIndex once displayedEpubIndex exists; that path reintroduces the retreat race."
+        )
+    }
+
     func testFullPlayerSheetTocButtonUsesTocDrawer() throws {
         let source = try sourceFile(named: "FullPlayerSheet.swift")
         XCTAssertTrue(
