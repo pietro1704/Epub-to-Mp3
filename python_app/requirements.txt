@@ -9,7 +9,7 @@ piper-tts>=1.4.2
 # torch and torchaudio are optional GPU-acceleration dependencies — install
 # manually when a GPU is available: pip install torch torchaudio
 # They are NOT required for Edge-TTS + Piper (the default workflow).
-numpy>=2.5.0,<3.0.0
+numpy>=2.5.1,<3.0.0
 soundfile>=0.14.0
 
 # Ebook processing
