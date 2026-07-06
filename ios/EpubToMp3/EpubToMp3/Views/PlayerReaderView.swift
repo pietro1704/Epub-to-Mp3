@@ -30,6 +30,15 @@ struct PlayerReaderView: View {
 
     @State private var sync = SyncEngine()
     @State private var spans: [SentenceSpan] = []
+    /// Set to true just before a backward chapter crossing so the
+    /// new ReaderView (created via .id change) starts at its last page.
+    /// Cleared only after the chapter cursor has changed, so the new
+    /// ReaderView init can consume the flag first.
+    @State private var readerShouldStartAtLastPage = false
+    /// EPUB chapter index currently waiting to consume the backward-crossing
+    /// "start at last page" handoff. Cleared only when that exact chapter is
+    /// visible so unrelated player/index churn cannot drop the handoff early.
+    @State private var pendingRetreatTargetEpubIndex: Int? = nil
     @State private var currentSentenceId: String?
 
     @State private var showingToc = false
@@ -101,6 +110,90 @@ struct PlayerReaderView: View {
     @State private var downloads = DownloadManager()
 
     var body: some View {
+        rootView
+        .overlay {
+            if showingSearch, let ft = fulltext {
+                ReaderSearchOverlay(
+                    chapters: ft.chapters,
+                    onJumpToChapter: { idx in jumpTo(chapterIndex: idx - 1) },
+                    isPresented: $showingSearch
+                )
+                .transition(.move(edge: .top).combined(with: .opacity))
+            }
+        }
+        .animation(.easeInOut(duration: 0.25), value: showingSearch)
+        .onAppear {
+            guard !isSwiftUIPreview else { return }
+            bootstrap()
+        }
+        .onDisappear(perform: teardown)
+        // Defense-in-depth: every current parent forces a fresh view
+        // identity on snapshot change via `.id(...)`, so `onAppear`
+        // re-fires and `bootstrap()` runs against the new jobId.
+        // A future caller that forgets the `.id(...)` would leave this
+        // view mounted while `snapshot.jobId` mutates underneath us —
+        // `positionTask` / `sentenceTask` would keep reading the OLD
+        // player's streams, `streamingJobId` / `coverFetchJobId` would
+        // stick to the previous job, and the UI would silently desync.
+        // Tearing down and re-bootstrapping on jobId change keeps the
+        // invariant local to this view instead of trusting every call
+        // site to remember the identity key.
+        .compatOnChange(of: snapshot.jobId) { _ in
+            guard !isSwiftUIPreview else { return }
+            teardown()
+            bootstrap()
+        }
+        .compatOnChange(of: playingEpubZeroBasedIndex) { newEpubIndex in
+            guard let newEpubIndex else { return }
+            guard let pendingTarget = pendingRetreatTargetEpubIndex,
+              newEpubIndex == pendingTarget else { return }
+            readerShouldStartAtLastPage = false
+            pendingRetreatTargetEpubIndex = nil
+        }
+        .confirmationDialog(
+            pendingSentence?.text ?? "",
+            isPresented: Binding(
+                get: { pendingSentence != nil },
+                set: { if !$0 { pendingSentence = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            if let span = pendingSentence {
+                Button(L10n.string("reader.sentenceMenu.playFromHere")) {
+                    seekToSentence(span)
+                    pendingSentence = nil
+                }
+                let isBookmarked = bookmarkStore.hasBookmark(
+                    bookId: bookId, chapterIndex: player.currentChapterIndex
+                )
+                Button(
+                    isBookmarked
+                        ? L10n.string("reader.sentenceMenu.removeBookmark")
+                        : L10n.string("reader.sentenceMenu.addBookmark")
+                ) {
+                    if isBookmarked {
+                        if let bm = bookmarkStore
+                            .bookmarks(for: bookId, chapterIndex: player.currentChapterIndex)
+                            .first(where: { !$0.isHighlight }) {
+                            bookmarkStore.remove(id: bm.id)
+                        }
+                    } else {
+                        bookmarkStore.addBookmark(
+                            bookId: bookId,
+                            chapterIndex: player.currentChapterIndex,
+                            chapterTitle: currentChapterTitle
+                        )
+                    }
+                    pendingSentence = nil
+                }
+                Button(L10n.string("reader.sentenceMenu.cancel"), role: .cancel) {
+                    pendingSentence = nil
+                }
+            }
+        }
+    }
+
+    private var rootView: some View {
         CompatNavigationStack {
             Group {
                 if hSize == .regular {
@@ -208,79 +301,6 @@ struct PlayerReaderView: View {
                 .compatPresentationDetents()
             }
         }
-        .overlay {
-            if showingSearch, let ft = fulltext {
-                ReaderSearchOverlay(
-                    chapters: ft.chapters,
-                    onJumpToChapter: { idx in jumpTo(chapterIndex: idx - 1) },
-                    isPresented: $showingSearch
-                )
-                .transition(.move(edge: .top).combined(with: .opacity))
-            }
-        }
-        .animation(.easeInOut(duration: 0.25), value: showingSearch)
-        .onAppear {
-            guard !isSwiftUIPreview else { return }
-            bootstrap()
-        }
-        .onDisappear(perform: teardown)
-        // Defense-in-depth: every current parent forces a fresh view
-        // identity on snapshot change via `.id(...)`, so `onAppear`
-        // re-fires and `bootstrap()` runs against the new jobId.
-        // A future caller that forgets the `.id(...)` would leave this
-        // view mounted while `snapshot.jobId` mutates underneath us —
-        // `positionTask` / `sentenceTask` would keep reading the OLD
-        // player's streams, `streamingJobId` / `coverFetchJobId` would
-        // stick to the previous job, and the UI would silently desync.
-        // Tearing down and re-bootstrapping on jobId change keeps the
-        // invariant local to this view instead of trusting every call
-        // site to remember the identity key.
-        .compatOnChange(of: snapshot.jobId) { _ in
-            guard !isSwiftUIPreview else { return }
-            teardown()
-            bootstrap()
-        }
-        .confirmationDialog(
-            pendingSentence?.text ?? "",
-            isPresented: Binding(
-                get: { pendingSentence != nil },
-                set: { if !$0 { pendingSentence = nil } }
-            ),
-            titleVisibility: .visible
-        ) {
-            if let span = pendingSentence {
-                Button(L10n.string("reader.sentenceMenu.playFromHere")) {
-                    seekToSentence(span)
-                    pendingSentence = nil
-                }
-                let isBookmarked = bookmarkStore.hasBookmark(
-                    bookId: bookId, chapterIndex: player.currentChapterIndex
-                )
-                Button(
-                    isBookmarked
-                        ? L10n.string("reader.sentenceMenu.removeBookmark")
-                        : L10n.string("reader.sentenceMenu.addBookmark")
-                ) {
-                    if isBookmarked {
-                        if let bm = bookmarkStore
-                            .bookmarks(for: bookId, chapterIndex: player.currentChapterIndex)
-                            .first(where: { !$0.isHighlight }) {
-                            bookmarkStore.remove(id: bm.id)
-                        }
-                    } else {
-                        bookmarkStore.addBookmark(
-                            bookId: bookId,
-                            chapterIndex: player.currentChapterIndex,
-                            chapterTitle: currentChapterTitle
-                        )
-                    }
-                    pendingSentence = nil
-                }
-                Button(L10n.string("reader.sentenceMenu.cancel"), role: .cancel) {
-                    pendingSentence = nil
-                }
-            }
-        }
     }
 
     // MARK: Panes
@@ -349,6 +369,8 @@ struct PlayerReaderView: View {
                 spans: spans,
                 currentSentenceId: currentSentenceId,
                 onJumpToSentence: jumpToSentence,
+                onAdvanceChapter: { advanceToNextChapter() },
+                onPreviousChapter: { returnToPreviousChapter() },
                 onCenterTap: {
                     withAnimation(.easeInOut(duration: 0.25)) { chromeVisible.toggle() }
                 },
@@ -361,8 +383,10 @@ struct PlayerReaderView: View {
                     guard !chromeVisible else { return }
                     withAnimation(.easeInOut(duration: 0.25)) { chromeVisible = true }
                 },
-                onLinkTap: { url in handleEpubLink(url) }
+                onLinkTap: { url in handleEpubLink(url) },
+                startAtLastPage: readerShouldStartAtLastPage
             )
+            .id(chapter.id)
         } else if let err = fulltextError {
             VStack(spacing: 12) {
                 Label(err, systemImage: "exclamationmark.triangle")
@@ -717,10 +741,11 @@ struct PlayerReaderView: View {
     // MARK: Bootstrap
 
     private func bootstrap() {
+        player.backendBaseURL = backendBaseURL
         if player.snapshot?.jobId != snapshot.jobId {
-            player.backendBaseURL = backendBaseURL
-            player.play(snapshot: snapshot, startingAt: initialChapterIndex)
+            player.updateSnapshot(snapshot)
         }
+        reloadCurrentChapter(epubIndexOverride: playingEpubZeroBasedIndex)
         triggerFulltextLoad()
         subscribeToJobStream()
 
@@ -731,8 +756,17 @@ struct PlayerReaderView: View {
                 if Task.isCancelled { break }
                 _ = sync.update(positionSeconds: pos)
                 // Also reload spans when the chapter index changes.
-                if player.currentChapterIndex != lastLoadedChapterIndex {
-                    reloadCurrentChapter()
+                // Snapshot the index NOW before any other async work runs —
+                // reconcileChapterIndexFromCurrentItem may update it between
+                // the check and the reload, causing a stale-index reload.
+                let detectedIndex = player.currentChapterIndex
+                if detectedIndex != lastLoadedChapterIndex,
+                   !readerShouldStartAtLastPage,
+                   let displayedEpubIndex = playingEpubZeroBasedIndex,
+                   let remappedEpubIndex = InstantReaderIndexMapper
+                        .epubIndex(forPlayableIndex: detectedIndex, in: snapshot),
+                   remappedEpubIndex == displayedEpubIndex {
+                    reloadCurrentChapter(epubIndexOverride: displayedEpubIndex)
                 }
             }
         }
@@ -940,6 +974,35 @@ struct PlayerReaderView: View {
         }
         player.setSentenceTiming(map, forChapterIndex: player.currentChapterIndex)
         lastLoadedChapterIndex = player.currentChapterIndex
+    }
+
+    /// Advance to the next playable chapter from the reader's paginated view.
+    /// Called by ReaderView.onAdvanceChapter when the user pages past the last page.
+    @discardableResult
+    private func advanceToNextChapter() -> Bool {
+        let next = player.currentChapterIndex + 1
+        guard next < snapshot.playableChapters.count else { return false }
+        player.play(snapshot: snapshot, startingAt: next)
+        reloadCurrentChapter(epubIndexOverride: InstantReaderIndexMapper.epubIndex(forPlayableIndex: next, in: snapshot))
+        return true
+    }
+
+    /// Return to the previous playable chapter from the reader's paginated view.
+    /// Called by ReaderView.onPreviousChapter when the user pages before the first page.
+    @discardableResult
+    private func returnToPreviousChapter() -> Bool {
+        let currentEpubIndex = playingEpubZeroBasedIndex ?? player.currentChapterIndex
+        guard currentEpubIndex > 0 else { return false }
+        let prev = max(0, currentEpubIndex - 1)
+        let playablePrev = InstantReaderIndexMapper.playableIndexOrClamped(forEpubIndex: prev, in: snapshot)
+        // Arm the last-page flag BEFORE changing the chapter so the
+        // new ReaderView (born via .id recreation) reads it from its
+        // init and seeds jumpToLastPageForChapterId = "__pending__".
+        readerShouldStartAtLastPage = true
+        pendingRetreatTargetEpubIndex = prev
+        player.play(snapshot: snapshot, startingAt: playablePrev)
+        reloadCurrentChapter(epubIndexOverride: prev)
+        return true
     }
 
     /// `chapterIndex` here is the EPUB zero-based index emitted by
