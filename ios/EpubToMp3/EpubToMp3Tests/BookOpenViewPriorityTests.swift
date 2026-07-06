@@ -204,19 +204,25 @@ final class BookOpenViewPriorityTests: XCTestCase {
                 .appendingPathComponent("EpubToMp3/Views/ReaderView.swift"),
             encoding: .utf8
         )
-        // Rapid slide page turns can cause livePages() to transiently return []
-        // while UIPageViewController re-renders. Writing 0 from an empty array
-        // (or a non-zero page whose cumulativeOffset lands at 0 mid-animation)
-        // lets syncPageToTextOffset reset currentPage to 0. The guard ensures
-        // textOffsetAtCurrentPage is only updated when the page list is non-empty
-        // and the offset is coherent.
+        // The guard moved from the derived `currentPages` array to the source of
+        // truth (`paginationCache.pages`). That's stronger: if the live cache is
+        // empty we bail before writing any offset, even when `livePages(fallback:)`
+        // would hand us a fallback array from a stale render path.
         XCTAssertTrue(
-            source.contains("guard !currentPages.isEmpty else { return }"),
-            "compatOnChange(of: currentPage) must guard against empty livePages() to prevent textOffsetAtCurrentPage being zeroed during rapid turns."
+            source.contains("guard !paginationCache.pages.isEmpty else { return }"),
+            "compatOnChange(of: currentPage) must guard against an empty live pagination cache to prevent textOffsetAtCurrentPage being zeroed during rapid turns."
         )
         XCTAssertTrue(
+            source.contains("textOffsetAtCurrentPage = cumulativeOffset(page: newPage, in: currentPages)"),
+            "Once the live pagination cache is confirmed non-empty, ReaderView should derive textOffsetAtCurrentPage from the current live pages in one step."
+        )
+        XCTAssertFalse(
+            source.contains("guard !currentPages.isEmpty else { return }"),
+            "The old currentPages.isEmpty guard is stale once the live cache becomes the source of truth."
+        )
+        XCTAssertFalse(
             source.contains("if offset > 0 || newPage == 0"),
-            "compatOnChange(of: currentPage) must skip writing offset 0 for pages > 0 to prevent mid-animation zero from resetting the reading position."
+            "The old zero-offset heuristic should be gone once the fix guards directly on the live pagination cache instead of trying to infer emptiness from cumulativeOffset."
         )
     }
 
