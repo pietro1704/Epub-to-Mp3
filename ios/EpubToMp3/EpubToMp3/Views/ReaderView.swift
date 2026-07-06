@@ -110,6 +110,11 @@ struct ReaderView: View {
     @State private var userIsScrolling: Bool = false
     @State private var lastAutoScrollAt: Date = .distantPast
     @State private var currentPage: Int = 0
+    /// The chapter.id that was current when currentPage was last set.
+    /// Used to suppress the footer when a new chapter arrives but onChange
+    /// hasn't yet reset currentPage — preventing the "77/6" flash caused
+    /// by body() receiving new chapter before onChange fires.
+    @State private var currentPageChapterId: String = ""
     /// Continuous-scroll mode: the chapter index the scroll itself last
     /// reported (via `onScrolledToChapter`). When `chapter.id` changes
     /// because the host mirrored that very scroll back into
@@ -197,6 +202,11 @@ struct ReaderView: View {
     /// last page after retreating across a chapter boundary. Stored so
     /// it can be cancelled when the user navigates again before it fires.
     @State private var jumpToLastPageTask: Task<Void, Never>?
+    @State private var pageTurnResetTask: Task<Void, Never>?
+    /// Page index to display from lastValidPages during a chapter transition.
+    /// Always 0 for forward crossings so the freeze-frame shows page 0 of the
+    /// departing chapter (neutral), not its final page (confusing "77/77" flash).
+    @State private var chapterTransitionDisplayPage: Int = 0
     /// Memoised pagination result. `Paginator.paginateAttributed`
     /// builds a full TextKit stack (`NSTextStorage` + `NSLayoutManager`
     /// + `NSTextContainer`) and walks the entire chapter — hundreds of
@@ -295,7 +305,8 @@ struct ReaderView: View {
         chromeBottomInset: CGFloat = 0,
         useStableBodyHeight: Bool = false,
         bookChapters: [EbookFulltext.Chapter]? = nil,
-        onScrolledToChapter: ((Int) -> Void)? = nil
+        onScrolledToChapter: ((Int) -> Void)? = nil,
+        startAtLastPage: Bool = false
     ) {
         self.chapter = chapter
         self.spans = spans
@@ -315,6 +326,20 @@ struct ReaderView: View {
         self.useStableBodyHeight = useStableBodyHeight
         self.bookChapters = bookChapters
         self.onScrolledToChapter = onScrolledToChapter
+        // Seed the last-page jump immediately so the very first render
+        // of this ReaderView (after a backward chapter crossing) lands
+        // on the last page instead of page 0. The @State is initialised
+        // here (before any body evaluation) so it is not subject to the
+        // race that occurs when the parent sets an external flag and the
+        // SwiftUI render cycle zeroes @State on .id-based recreation.
+        if startAtLastPage {
+            _jumpToLastPageForChapterId = State(initialValue: "__pending__")
+            // Pre-seed currentPage to Int.max so TextKitPageView.makeUIViewController
+            // uses clampedPage = pages.count - 1 the moment pages arrive, without
+            // any navigation animation. The jumpToLastPageTask in onAppear will then
+            // normalise Int.max → pages.count - 1 silently (same visual page, no hop).
+            _currentPage = State(initialValue: Int.max)
+        }
     }
 
     var body: some View {
@@ -392,17 +417,33 @@ struct ReaderView: View {
             // chapter. `Int.max` clamps to the last page the instant pages land.
             let wantsLastPage = jumpToLastPageForChapterId == "__pending__"
             currentPage = wantsLastPage ? Int.max : 0
+            // Invalidate the chapter-id tag so the footer is suppressed until
+            // compatOnChange(of: currentPage) stamps it with the new chapter.id.
+            // This closes the gap between body() receiving new chapter and this
+            // onChange resetting currentPage — the true cause of the "77/77" flash.
+            currentPageChapterId = ""
+            // Always freeze the transition frame at page 0 for forward crossings
+            // (neutral freeze — first page of departing chapter). For backward
+            // crossings we still show page 0 as a generic freeze; the real last
+            // page of the new chapter is revealed once pagination completes via
+            // the jumpToLastPageTask. This avoids the "77/77" flash that appeared
+            // when lastValidPages was kept at the departing chapter's last page.
+            chapterTransitionDisplayPage = 0
             isPageTurning = false
             renderedAttributed = nil
+            // Clear both key AND pages so livePages() returns [] immediately on
+            // the next body eval — preventing the departing chapter's 77 pages
+            // from being used as effectivePages for even one frame with the old
+            // currentPage=77, which was the "77/77" flash before usingStalePages
+            // kicked in. lastValidPages keeps the freeze-frame content.
             paginationCache.key = nil
-            // Drop the previous chapter's pages too. `lastValidPages` exists to
-            // bridge a SAME-chapter repagination (settings change) without a
-            // blank flash. On a CHAPTER swap, keeping it makes the reader
-            // briefly show the OLD chapter's first page — the "wrong
-            // interleaved page" flash the user reported. A momentary empty
-            // frame (theme background) is correct here; the new chapter's
-            // pages replace it within a frame or two.
-            paginationCache.lastValidPages = []
+            paginationCache.pages = []
+            // Intentionally keep lastValidPages alive so effectivePages has real
+            // content (page 0 of the departing chapter) during the render gap of
+            // the new chapter. It is replaced the moment the new chapter's pages
+            // arrive in attributedPages(). A blank frame (theme background) is
+            // NOT preferable — the departing page-0 freeze is visually neutral
+            // and correctly replaced within a frame or two.
             // Retreat: refine the `Int.max` sentinel down to the real last
             // index once pagination stabilises, so the binding holds a sane
             // value for everything downstream (page-number footer, persisted
@@ -423,7 +464,7 @@ struct ReaderView: View {
                         if Task.isCancelled { return }
                         let p = paginationCache.pages
                         if !p.isEmpty && p.count == prevCount {
-                            if currentPage != p.count - 1 { currentPage = p.count - 1 }
+                            if currentPage == Int.max { currentPage = p.count - 1 }
                             return
                         }
                         prevCount = p.count
@@ -448,6 +489,31 @@ struct ReaderView: View {
             debouncedLineSpacing = settings.readerLineSpacing
             debouncedMargin = settings.readerMargin
             debouncedColumnWidth = settings.readerColumnWidth
+            // When .id(chapter.id) recreates the view for a backward crossing,
+            // onChange(of: chapter.id) never fires. The init already seeded
+            // currentPage = Int.max (clamped to last page by TextKitPageView).
+            // Poll until pages stabilise, then normalise the sentinel so
+            // downstream (footer, position persistence) sees a real index.
+            // Only write if still Int.max — avoids re-navigating if the user
+            // already turned a page while the task was running.
+            if jumpToLastPageForChapterId == "__pending__" {
+                jumpToLastPageForChapterId = nil
+                jumpToLastPageTask?.cancel()
+                jumpToLastPageTask = Task { @MainActor in
+                    var prevCount = 0
+                    for _ in 0..<30 {
+                        try? await Task.sleep(nanoseconds: 100_000_000)
+                        if Task.isCancelled { return }
+                        let p = paginationCache.pages
+                        if !p.isEmpty && p.count == prevCount {
+                            // Only normalise the sentinel; never navigate forward.
+                            if currentPage == Int.max { currentPage = p.count - 1 }
+                            return
+                        }
+                        prevCount = p.count
+                    }
+                }
+            }
         }
         .compatOnChange(of: settings.readerFontSize) { _ in
             let v = settings.readerPointSize
@@ -492,6 +558,8 @@ struct ReaderView: View {
             marginDebounceTask?.cancel()
             columnWidthDebounceTask?.cancel()
             publishRatioTask?.cancel()
+            jumpToLastPageTask?.cancel()
+            pageTurnResetTask?.cancel()
         }
     }
 
@@ -781,9 +849,10 @@ struct ReaderView: View {
             // renderedAttributed, there is a window before the .task populates
             // the new chapter where pages is empty. Without this guard, all
             // paginated modes (slide, none, curl) briefly show chapterTitleHeader
-            // or a blank background — visible as a flash to the TOC or index.
-            // lastValidPages is stale chapter content, but that is better than
-            // a blank frame. It is replaced the moment the new chapter renders.
+            // or a blank background — visible as a flash.
+            // lastValidPages is stale chapter content (departing chapter page 0)
+            // and is replaced the moment the new chapter renders.
+            let usingStalePages = pages.isEmpty && !paginationCache.lastValidPages.isEmpty
             let effectivePages: [NSAttributedString] =
                 pages.isEmpty ? paginationCache.lastValidPages : pages
             // Only a TRULY empty result is a visible flash (the
@@ -804,7 +873,8 @@ struct ReaderView: View {
                         .padding(.horizontal, margin)
                         .frame(maxWidth: .infinity, alignment: .center)
                 } else {
-                    paginatedPageContent(pages: effectivePages, containerSize: geo.size, safeArea: geo.safeAreaInsets)
+                    paginatedPageContent(pages: effectivePages, containerSize: geo.size, safeArea: geo.safeAreaInsets,
+                                         pageOverride: usingStalePages ? chapterTransitionDisplayPage : nil)
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                         // NOTE: no `-hiddenChromeTopCompaction` offset here. It
                         // used to lift the whole page 72 pt when chrome hid,
@@ -814,12 +884,22 @@ struct ReaderView: View {
                         // reserve, so the page stays clear of the clock on every
                         // page in both chrome states.
 
-                    let stablePageIndex = stablePageFooterIndex(effectivePages: effectivePages)
-                    let stablePageTotal = stablePageFooterTotal(effectivePages: effectivePages)
-                    if settings.readerShowPageNumbers, stablePageTotal > 0 {
-                        pageFooter(index: stablePageIndex, total: stablePageTotal)
-                            .padding(.bottom, 8)
-                            .allowsHitTesting(false)
+                    // Suppress the page footer whenever the chapter.id has changed
+                    // but onChange hasn't yet reset currentPage. This is the true
+                    // root cause of the "77/77 → 1/6" flicker: SwiftUI delivers
+                    // the new chapter prop to body() BEFORE compatOnChange fires,
+                    // so there is always at least one frame where chapter=NEW but
+                    // currentPage=OLD(77). currentPageChapterId tracks which chapter
+                    // currentPage belongs to; a mismatch means we're in that gap.
+                    let footerChapterReady = currentPageChapterId == chapter.id && !usingStalePages
+                    if footerChapterReady {
+                        let stablePageIndex = stablePageFooterIndex(effectivePages: effectivePages)
+                        let stablePageTotal = stablePageFooterTotal(effectivePages: effectivePages)
+                        if settings.readerShowPageNumbers, stablePageTotal > 0 {
+                            pageFooter(index: stablePageIndex, total: stablePageTotal)
+                                .padding(.bottom, 8)
+                                .allowsHitTesting(false)
+                        }
                     }
                 }
             }
@@ -849,6 +929,15 @@ struct ReaderView: View {
                     frozenChromeBottomInset = chromeBottomInset
                 }
                 lastContainerSize = geo.size
+                // When the view is recreated via .id(chapter.id) at the call site,
+                // @State resets to its initial value — currentPageChapterId = "".
+                // If the user is on page 0 and stays there, compatOnChange(of: currentPage)
+                // never fires (no delta), so currentPageChapterId stays "" and the footer
+                // guard (currentPageChapterId == chapter.id) is permanently false.
+                // Seed it here on appear so the footer shows on page 0 from the start.
+                if currentPageChapterId != chapter.id {
+                    currentPageChapterId = chapter.id
+                }
             }
             .compatOnKeyPressArrowsAndPaging { key in
                 handleCompatKey(key, totalPages: pages.count)
@@ -890,19 +979,18 @@ struct ReaderView: View {
             // 0 and resetting the reader to page 0 on the next syncPageToTextOffset.
             .compatOnChange(of: currentPage) { newPage in
                 let currentPages = livePages(fallback: pages)
-                // Only write textOffsetAtCurrentPage when we have a non-empty
-                // page list. During rapid slide turns livePages() can transiently
-                // return [] while the UIPageViewController re-renders; writing 0
-                // from an empty array causes syncPageToTextOffset (fired by debounced
-                // settings observers) to reset currentPage to 0.
-                guard !currentPages.isEmpty else { return }
-                let offset = cumulativeOffset(page: newPage, in: currentPages)
-                // An offset of 0 is only valid for page 0. For any later page an
-                // offset of 0 means the pages array is still mis-sized mid-animation;
-                // guard against it to avoid zeroing the anchor.
-                if offset > 0 || newPage == 0 {
-                    textOffsetAtCurrentPage = offset
-                }
+                // Only write textOffsetAtCurrentPage when livePages() returned
+                // a non-empty array. During rapid slide turns the paginator can
+                // transiently return [] while UIPageViewController re-renders;
+                // writing 0 from an empty array causes syncPageToTextOffset
+                // (fired by debounced settings observers) to reset currentPage to 0.
+                // We check isEmpty on the LIVE cache directly — if paginationCache
+                // had real pages, livePages returns them regardless of `pages`.
+                guard !paginationCache.pages.isEmpty else { return }
+                textOffsetAtCurrentPage = cumulativeOffset(page: newPage, in: currentPages)
+                // Track which chapter this currentPage belongs to so the footer
+                // can detect the gap between new-chapter body() and onChange().
+                currentPageChapterId = chapter.id
                 publishReadingRatio(pages: currentPages)
             }
             // Seed the reading-ratio channel on first appear so a play
@@ -1044,10 +1132,10 @@ struct ReaderView: View {
         paginationCache.pages.isEmpty ? fallback : paginationCache.pages
     }
 
-    private func stablePageFooterIndex(effectivePages: [NSAttributedString]) -> Int {
+    private func stablePageFooterIndex(effectivePages: [NSAttributedString], pageOverride: Int? = nil) -> Int {
         let total = stablePageFooterTotal(effectivePages: effectivePages)
         guard total > 0 else { return 0 }
-        return max(0, min(total - 1, currentPage))
+        return max(0, min(total - 1, pageOverride ?? currentPage))
     }
 
     private func stablePageFooterTotal(effectivePages: [NSAttributedString]) -> Int {
@@ -1207,7 +1295,14 @@ struct ReaderView: View {
         // `key == ` check above.
         paginationCache.pages = pages
         paginationCache.key = key
-        if !pages.isEmpty { paginationCache.lastValidPages = pages }
+        if !pages.isEmpty {
+            paginationCache.lastValidPages = pages
+            // New chapter's pages have arrived — the transition freeze-frame
+            // window is over. Reset the display-page override so subsequent
+            // transient empty states (e.g. rapid settings changes) don't
+            // re-pin the footer to page 0 incorrectly.
+            chapterTransitionDisplayPage = 0
+        }
         return pages
         #else
         return []
@@ -1239,8 +1334,8 @@ struct ReaderView: View {
     /// Dispatch page rendering to the appropriate animation container
     /// based on `settings.pageTurnStyle`.
     @ViewBuilder
-    private func paginatedPageContent(pages: [NSAttributedString], containerSize: CGSize, safeArea: EdgeInsets = EdgeInsets()) -> some View {
-        let pageIndex = max(0, min(pages.count - 1, currentPage))
+    private func paginatedPageContent(pages: [NSAttributedString], containerSize: CGSize, safeArea: EdgeInsets = EdgeInsets(), pageOverride: Int? = nil) -> some View {
+        let pageIndex = max(0, min(pages.count - 1, pageOverride ?? currentPage))
         switch settings.pageTurnStyle {
         #if os(iOS)
         case .flip:
@@ -1303,6 +1398,7 @@ struct ReaderView: View {
             onAdvanceChapter: onAdvanceChapter,
             onPreviousChapter: onPreviousChapter,
             onCenterTap: onCenterTap,
+            onLinkTap: onLinkTap,
             onUserPageChange: { isFollowing = false },
             onWillTransition: { isPageTurning = true },
             onDidFinishTransition: { isPageTurning = false },
@@ -1609,7 +1705,10 @@ struct ReaderView: View {
                 withAnimation(.easeInOut(duration: 0.25)) {
                     currentPage += 1
                 }
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+                pageTurnResetTask?.cancel()
+                pageTurnResetTask = Task { @MainActor in
+                    try? await Task.sleep(nanoseconds: 250_000_000)
+                    guard !Task.isCancelled else { return }
                     isPageTurning = false
                 }
             } else {
@@ -1635,7 +1734,10 @@ struct ReaderView: View {
                 withAnimation(.easeInOut(duration: 0.25)) {
                     currentPage -= 1
                 }
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+                pageTurnResetTask?.cancel()
+                pageTurnResetTask = Task { @MainActor in
+                    try? await Task.sleep(nanoseconds: 250_000_000)
+                    guard !Task.isCancelled else { return }
                     isPageTurning = false
                 }
             } else {

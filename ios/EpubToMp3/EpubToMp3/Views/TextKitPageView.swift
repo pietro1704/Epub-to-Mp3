@@ -62,6 +62,10 @@ struct TextKitPageView: UIViewControllerRepresentable {
     let onPreviousChapter: (() -> Bool)?
     /// Center-third tap (chrome toggle).
     var onCenterTap: (() -> Void)?
+    /// Called when the user taps a link inside the page-curl text view.
+    /// Return true when the reader handled the URL and UIKit should suppress
+    /// its default external-open behaviour.
+    var onLinkTap: ((URL) -> Bool)? = nil
     /// Fires the moment a user-initiated page turn lands, so the host can
     /// clear audio auto-follow (otherwise the next audio tick yanks the
     /// reader back to the player's page).
@@ -166,11 +170,21 @@ struct TextKitPageView: UIViewControllerRepresentable {
             coordinator.committedChapterToken = chapterToken
             coordinator.isAwaitingChapterSwap = false
             let vc = coordinator.controller(for: target)
-            // Deferred crossing seed: the new chapter's pages have now landed.
-            // Animate the curl from the still-displayed OLD controller (the back
-            // of the curl) to the new page — this is what removes the wrong-text
-            // flash the user saw when this was a hard `animated: false` cut.
-            coordinator.seedCrossing(pvc, vc)
+            // Backward crossing (startAtLastPage): currentPage == Int.max means
+            // makeUIViewController already seeded page 0 (pages were empty at that
+            // point). The chapter-curl animation already happened via the swipe
+            // gesture; we just need a hard cut to the last page with no additional
+            // animation. seedCrossing would animate forward (or reverse) visibly
+            // from page 0 → last — that is the "forced forward hop" the user sees.
+            if currentPage == Int.max {
+                pvc.setViewControllers([vc], direction: .forward, animated: false)
+            } else {
+                // Deferred crossing seed: the new chapter's pages have now landed.
+                // Animate the curl from the still-displayed OLD controller (the back
+                // of the curl) to the new page — this is what removes the wrong-text
+                // flash the user saw when this was a hard `animated: false` cut.
+                coordinator.seedCrossing(pvc, vc)
+            }
             return
         }
 
@@ -309,10 +323,12 @@ struct TextKitPageView: UIViewControllerRepresentable {
         func controller(for index: Int) -> TextKitPageController {
             let vc = pool[index] ?? {
                 let c = TextKitPageController(pageIndex: index)
+                c.onLinkTap = parent.onLinkTap
                 pool[index] = c
                 return c
             }()
             vc.pageIndex = index
+            vc.onLinkTap = parent.onLinkTap
             vc.apply(
                 slice: slice(at: index),
                 margin: parent.margin,
@@ -581,8 +597,9 @@ struct TextKitPageView: UIViewControllerRepresentable {
 /// A page controller that owns a single `UITextView` and renders one
 /// `NSAttributedString` slice. Carries its `pageIndex` so the page view
 /// controller's data source can identify which page is on screen.
-final class TextKitPageController: UIViewController {
+final class TextKitPageController: UIViewController, UITextViewDelegate {
     var pageIndex: Int
+    var onLinkTap: ((URL) -> Bool)?
 
     private let textView: UITextView = {
         let tv = UITextView()
@@ -630,6 +647,7 @@ final class TextKitPageController: UIViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = .clear
+        textView.delegate = self
         textView.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(textView)
         // Pin to the RAW view edges. The vertical `topInset` / `bottomInset`
@@ -676,6 +694,17 @@ final class TextKitPageController: UIViewController {
         }
         textView.attributedText = attributed
         assignedSlice = attributed
+        return true
+    }
+
+    func textView(_ textView: UITextView,
+                  shouldInteractWith url: URL,
+                  in range: NSRange,
+                  interaction: UITextItemInteraction) -> Bool {
+        guard interaction == .invokeDefaultAction else { return false }
+        if onLinkTap?(url) == true {
+            return false
+        }
         return true
     }
 }

@@ -525,6 +525,50 @@ final class BookOpenViewPriorityTests: XCTestCase {
         )
     }
 
+    func testTextKitPageViewDeferredSeedSkipsAnimationForIntMaxCurrentPage() throws {
+        let source = try String(
+            contentsOf: URL(fileURLWithPath: #filePath)
+                .deletingLastPathComponent()
+                .deletingLastPathComponent()
+                .appendingPathComponent("EpubToMp3/Views/TextKitPageView.swift"),
+            encoding: .utf8
+        )
+
+        XCTAssertTrue(
+            source.contains("if currentPage == Int.max {")
+                && source.contains("pvc.setViewControllers([vc], direction: .forward, animated: false)")
+                && source.contains("coordinator.seedCrossing(pvc, vc)"),
+            "TextKitPageView deferred seed must hard-cut when currentPage == Int.max; otherwise the backward retreat briefly shows page 1 before hopping to the last page."
+        )
+    }
+
+    func testReaderViewSeedsAndGuardsFooterAcrossChapterSwapGap() throws {
+        let source = try String(
+            contentsOf: URL(fileURLWithPath: #filePath)
+                .deletingLastPathComponent()
+                .deletingLastPathComponent()
+                .appendingPathComponent("EpubToMp3/Views/ReaderView.swift"),
+            encoding: .utf8
+        )
+
+        XCTAssertTrue(
+            source.contains("@State private var currentPageChapterId: String = \"\""),
+            "ReaderView must track which chapter currentPage belongs to so stale footer values are suppressed during chapter swaps."
+        )
+        XCTAssertTrue(
+            source.contains("currentPageChapterId = \"\""),
+            "ReaderView must invalidate currentPageChapterId on chapter.id change before the new footer is computed."
+        )
+        XCTAssertTrue(
+            source.contains("let footerChapterReady = currentPageChapterId == chapter.id && !usingStalePages"),
+            "ReaderView must hide the footer during the chapter-swap gap instead of rendering the old page number against the new chapter."
+        )
+        XCTAssertTrue(
+            source.contains("if currentPageChapterId != chapter.id {\n                    currentPageChapterId = chapter.id\n                }"),
+            "ReaderView must seed currentPageChapterId on appear so page-0 landings still show a footer after .id-based recreation."
+        )
+    }
+
     func testFullPlayerSheetTocButtonUsesTocDrawer() throws {
         let source = try sourceFile(named: "FullPlayerSheet.swift")
         XCTAssertTrue(
