@@ -456,8 +456,8 @@ final class BookOpenViewPriorityTests: XCTestCase {
             "bootstrap() must not blindly replay initialChapterIndex once a live player snapshot exists; that can overwrite a just-completed retreat and jump back to the chapter start."
         )
         XCTAssertTrue(
-            source.contains("reloadCurrentChapter(epubIndexOverride: playingEpubZeroBasedIndex)"),
-            "bootstrap() should prefer reloading the currently displayed EPUB chapter instead of restarting playback at the original chapter."
+            source.contains("reloadCurrentChapter(epubIndexOverride: displayedEpubIndexOverride ?? playingEpubZeroBasedIndex)"),
+            "bootstrap() should prefer reloading the displayed EPUB chapter override first, then the player's reported EPUB chapter, instead of restarting playback at the original chapter."
         )
     }
 
