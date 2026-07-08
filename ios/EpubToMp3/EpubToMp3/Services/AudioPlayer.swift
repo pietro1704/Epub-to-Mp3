@@ -458,6 +458,32 @@ final class AudioPlayer: ObservableObject {
         )
     }
 
+    /// Pure index-resolution logic behind `reconcileChapterIndexFromCurrentItem()`.
+    /// Extracted so it's unit-testable without a real `AVPlayerItem`/`AVQueuePlayer`.
+    ///
+    /// Some books produce two "chapters" (e.g. a cover-image placeholder and a
+    /// near-empty title page) whose `downloadUrl`s resolve to the exact same
+    /// cached/near-silent MP3. `AVQueuePlayer` (with `actionAtItemEnd = .advance`)
+    /// only ever moves forward through its items — it never rewinds. Resolving
+    /// a duplicate URL with a plain "first match from index 0" always snaps
+    /// back to the earlier chapter, which ping-pongs the lock-screen /
+    /// Now Playing title between the two every time KVO fires. Searching
+    /// forward from `currentIndex` (wrapping only if nothing at/after it
+    /// matches) keeps resolution monotonic with the queue's forward-only
+    /// advance and eliminates the oscillation.
+    ///
+    /// Returns `nil` when no chapter's resolved URL matches `currentItemURL`
+    /// (mirrors the "not found" case of the instance method).
+    nonisolated static func resolveChapterIndex(
+        currentIndex: Int,
+        chapterURLs: [URL?],
+        currentItemURL: URL
+    ) -> Int? {
+        guard chapterURLs.indices.contains(currentIndex) else { return nil }
+        let searchOrder = Array(chapterURLs.indices[currentIndex...]) + Array(chapterURLs.indices[..<currentIndex])
+        return searchOrder.first { i in chapterURLs[i] == currentItemURL }
+    }
+
     /// Build the AVQueuePlayer for `snapshot` starting at `chapterIndex`, but
     /// **do not** start playback. Audio only begins after an explicit user
     /// action: tapping the Play button, the lock-screen play control, or the
@@ -1743,10 +1769,12 @@ final class AudioPlayer: ObservableObject {
             let snapshot
         else { return false }
         let chapters = playbackChapters.isEmpty ? snapshot.playableChapters : playbackChapters
-        guard let idx = chapters.firstIndex(where: { chapter in
-            guard let absolute = absoluteURL(forDownloadPath: chapter.downloadUrl) else { return false }
-            return absolute == urlAsset.url
-        }) else { return false }
+        let chapterURLs = chapters.map { absoluteURL(forDownloadPath: $0.downloadUrl) }
+        guard let idx = Self.resolveChapterIndex(
+            currentIndex: currentChapterIndex,
+            chapterURLs: chapterURLs,
+            currentItemURL: urlAsset.url
+        ) else { return false }
         guard idx != currentChapterIndex else { return false }
         currentChapterIndex = idx
         positionSeconds = 0
