@@ -152,8 +152,14 @@ struct TextKitPageView: UIViewControllerRepresentable {
                 // Animate the crossing in the armed direction (seedCrossing
                 // consumes pendingCrossingDirection; falls back to a hard cut
                 // when none is pending or reduce-motion is on).
-                coordinator.seedCrossing(pvc, vc)
-                coordinator.committedChapterToken = chapterToken
+                // Only commit the token if the seed actually happened — when a
+                // transition is in flight seedCrossing returns false (calling
+                // setViewControllers mid-pan crashes), leaving the token
+                // uncommitted so the deferred-seed branch retries once the
+                // transition settles.
+                if coordinator.seedCrossing(pvc, vc) {
+                    coordinator.committedChapterToken = chapterToken
+                }
             }
             // else: cache was cleared and the new chapter hasn't paginated yet.
             // Do NOT seed anything — seeding here would push stale/old content
@@ -167,6 +173,12 @@ struct TextKitPageView: UIViewControllerRepresentable {
         // arrived, perform the deferred seed exactly once. This is the moment
         // the new chapter's content is first shown — no stale frame preceded it.
         if coordinator.committedChapterToken != chapterToken, !pages.isEmpty {
+            // Never re-seed the queue while a pan / programmatic turn is live —
+            // `setViewControllers` on a PVC mid-transition raises
+            // NSInvalidArgumentException. Leave the token uncommitted so this
+            // branch retries on the update SwiftUI fires after the transition
+            // completes (the completion handlers below request one).
+            guard !coordinator.isTransitioning else { return }
             coordinator.committedChapterToken = chapterToken
             coordinator.isAwaitingChapterSwap = false
             let vc = coordinator.controller(for: target)
@@ -191,6 +203,10 @@ struct TextKitPageView: UIViewControllerRepresentable {
         // Page count changed within the SAME chapter (settings repagination).
         // Re-seed the displayed page from the fresh array.
         if pages.count != oldCount {
+            // Same crash guard: don't re-seed mid-transition. A repagination
+            // that lands during a user pan re-runs on the next update once the
+            // turn settles.
+            guard !coordinator.isTransitioning else { return }
             coordinator.isAwaitingChapterSwap = false
             let vc = coordinator.controller(for: target)
             pvc.setViewControllers([vc], direction: .forward, animated: false)
@@ -346,12 +362,23 @@ struct TextKitPageView: UIViewControllerRepresentable {
         /// instead of a hard cut over stale text (that hard cut is the
         /// "wrong-page flash" the user saw). Otherwise (nil direction, or
         /// reduce-motion) hard-cut with `animated: false`.
-        func seedCrossing(_ pvc: UIPageViewController, _ vc: TextKitPageController) {
+        /// Seed the freshly-swapped chapter page. Returns `false` (a no-op)
+        /// when a transition is already in flight — calling
+        /// `setViewControllers` while the PVC is mid-pan (or mid programmatic
+        /// turn) raises `NSInvalidArgumentException` inside
+        /// `_validatedViewControllersForTransitionWithViewControllers` and
+        /// aborts the process (observed SIGABRT from `_handlePanGesture`).
+        /// The caller must NOT mark the token committed on a `false` return
+        /// so the deferred-seed path re-fires on a later update once the
+        /// transition has settled.
+        @discardableResult
+        func seedCrossing(_ pvc: UIPageViewController, _ vc: TextKitPageController) -> Bool {
+            guard !isTransitioning else { return false }
             let dir = pendingCrossingDirection
             pendingCrossingDirection = nil          // consume exactly once
             guard let dir, !UIAccessibility.isReduceMotionEnabled else {
                 pvc.setViewControllers([vc], direction: .forward, animated: false)
-                return
+                return true
             }
             // Programmatic animated turn. Guard the delegate the same way
             // navigate() does: with isProgrammaticTurn set, didFinishAnimating
@@ -366,6 +393,7 @@ struct TextKitPageView: UIViewControllerRepresentable {
                 self.isTransitioning = false
                 self.isProgrammaticTurn = false
             }
+            return true
         }
 
         // MARK: Tap-to-turn

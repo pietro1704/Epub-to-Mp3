@@ -272,6 +272,57 @@ final class TextKitPageViewTests: XCTestCase {
                        "an edge-swipe on a middle page must let the PVC turn the page, not cross chapters")
     }
 
+    /// Regression (SIGABRT `NSInvalidArgumentException` from
+    /// `_validatedViewControllersForTransitionWithViewControllers`):
+    /// `seedCrossing` MUST NOT call `setViewControllers` while a transition
+    /// is already in flight — doing so mid-pan crashes the process. It must
+    /// return `false` and leave the displayed controller untouched, so the
+    /// caller keeps the chapter token UNcommitted and retries after the turn.
+    func testSeedCrossingNoOpsDuringActiveTransition() {
+        var binding = 0
+        let view = makeView(pages: pages(["p0", "p1"]),
+                            currentPage: .init(get: { binding }, set: { binding = $0 }))
+        let coord = TextKitPageView.Coordinator(view)
+        let pvc = UIPageViewController(transitionStyle: .pageCurl, navigationOrientation: .horizontal)
+        let seeded = coord.controller(for: 0)
+        pvc.setViewControllers([seeded], direction: .forward, animated: false)
+
+        // A pan / turn is live.
+        coord.isTransitioning = true
+        let didSeed = coord.seedCrossing(pvc, coord.controller(for: 1))
+
+        XCTAssertFalse(didSeed, "seedCrossing must be a no-op while a transition is in flight")
+        XCTAssertTrue((pvc.viewControllers?.first as? TextKitPageController) === seeded,
+                      "the displayed controller must be unchanged — no mid-transition setViewControllers")
+        // pendingCrossingDirection must be preserved (not consumed) so the
+        // deferred retry animates in the originally-armed direction.
+        coord.pendingCrossingDirection = .forward
+        coord.isTransitioning = true
+        _ = coord.seedCrossing(pvc, coord.controller(for: 1))
+        XCTAssertEqual(coord.pendingCrossingDirection, .forward,
+                       "a blocked seed must not consume the armed crossing direction")
+    }
+
+    /// Once the transition clears, the same `seedCrossing` call succeeds and
+    /// swaps the displayed controller — proving the deferral is a delay, not
+    /// a permanent drop of the chapter swap.
+    func testSeedCrossingSucceedsAfterTransitionClears() {
+        var binding = 0
+        let view = makeView(pages: pages(["p0", "p1"]),
+                            currentPage: .init(get: { binding }, set: { binding = $0 }))
+        let coord = TextKitPageView.Coordinator(view)
+        let pvc = UIPageViewController(transitionStyle: .pageCurl, navigationOrientation: .horizontal)
+        pvc.setViewControllers([coord.controller(for: 0)], direction: .forward, animated: false)
+
+        coord.isTransitioning = false            // turn finished
+        let target = coord.controller(for: 1)
+        let didSeed = coord.seedCrossing(pvc, target)   // nil direction ⇒ hard cut
+
+        XCTAssertTrue(didSeed, "a seed with no active transition must succeed")
+        XCTAssertTrue((pvc.viewControllers?.first as? TextKitPageController) === target,
+                      "the displayed controller must now be the freshly-seeded page")
+    }
+
     /// Out-of-range index yields an empty slice rather than crashing.
     func testSliceOutOfRangeIsEmpty() {
         var binding = 0
