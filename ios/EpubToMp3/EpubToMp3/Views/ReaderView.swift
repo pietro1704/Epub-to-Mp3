@@ -379,7 +379,7 @@ struct ReaderView: View {
             switch settings.readerLayout {
             case .scrolling:
                 if let bookChapters, bookChapters.count > 1 {
-                    continuousBookScroll(chapters: bookChapters)
+                    singleChapterScroll(chapters: bookChapters)
                 } else {
                     scrollingContent
                 }
@@ -688,81 +688,177 @@ struct ReaderView: View {
         #endif
     }
 
-    // MARK: Continuous full-book scroll
+    // MARK: Single-chapter scroll (book-aware)
 
-    /// Render the WHOLE book as one continuous scroll: a single
-    /// `ScrollView`/`LazyVStack` with one cell per chapter. The
-    /// `LazyVStack` only materialises the cells near the viewport, so a
-    /// large book (e.g. Pinocchio) doesn't render every chapter up front;
-    /// each cell renders its own HTML lazily when it appears. Tapping
-    /// anywhere toggles chrome (same as single-chapter scroll mode).
+    /// Scroll mode used to render the ENTIRE book as one continuous
+    /// `ScrollView`/`LazyVStack` (one cell per chapter). Even though the
+    /// `LazyVStack` only materialised cells near the viewport, the
+    /// `ForEach` still iterated over every chapter in the book and kept
+    /// their identity alive in the hierarchy — on large books this was
+    /// perceived as slow/heavy (reported 2026-07-08). Scroll mode now
+    /// shows exactly ONE chapter at a time — free scroll *within* that
+    /// chapter (`scrollingContent`, unchanged), and an EXPLICIT action
+    /// (edge tap or the prev/next footer buttons) to cross a chapter
+    /// boundary, mirroring the tap-to-turn interaction paginated mode
+    /// already uses but without paginating the text itself.
     ///
-    /// Auto-follow: when audio drives `currentSentenceId`, the sentence id
-    /// prefix encodes the chapter index (`"<index>:<n>"`), so we scroll to
-    /// that chapter's anchor while the user isn't manually scrolling.
+    /// Paginated mode (`paginatedContent` / `TextKitPageView`) is
+    /// UNTOUCHED — this function only affects `.scrolling` layout.
+    ///
+    /// Buffering: before rendering, this pre-populates
+    /// `BookChapterRenderCache` for the previous/next chapter in the
+    /// background so `advanceChapter`/`retreatChapter` (and audio
+    /// auto-advance) never show a re-parse flicker — the neighbour's
+    /// `NSAttributedString` is usually already cached by the time the
+    /// user gets there.
     @ViewBuilder
-    private func continuousBookScroll(chapters: [EbookFulltext.Chapter]) -> some View {
+    private func singleChapterScroll(chapters: [EbookFulltext.Chapter]) -> some View {
         GeometryReader { geo in
             let margin = effectiveReaderMargin(for: geo.size)
             let columnWidth = min(settings.readerColumnWidth, geo.size.width - 2 * margin)
             let fontSize: CGFloat = debouncedFontSize > 0 ? debouncedFontSize : settings.readerPointSize
             let lineSpacing: Double = debouncedLineSpacing > 0 ? debouncedLineSpacing : settings.readerLineSpacing
-            ScrollViewReader { proxy in
-                ScrollView(.vertical) {
-                    LazyVStack(alignment: .center, spacing: 0) {
-                        ForEach(chapters) { ch in
-                            BookChapterCell(
-                                chapter: ch,
-                                settings: settings,
-                                fontDirectoryURL: epubFontDirectory,
-                                columnWidth: columnWidth,
-                                margin: margin,
-                                fontSize: fontSize,
-                                lineSpacing: lineSpacing,
-                                topInset: chromeTopInset,
-                                bottomInset: chromeBottomInset,
-                                onLinkTap: onLinkTap,
-                                onAppearChapter: {
-                                    lastScrolledChapterIndex = ch.zeroBasedEpubIndex
-                                    onScrolledToChapter?(ch.zeroBasedEpubIndex)
-                                }
-                            )
-                            .id(ch.zeroBasedEpubIndex)
-                        }
-                    }
+            ZStack(alignment: .bottom) {
+                scrollingContent
+                    .id(chapter.id)
+                // Apple Books-style edge tap zones: left third retreats,
+                // right third advances, center toggles chrome — same
+                // partition paginated mode uses, so switching between
+                // scrolling/paginated doesn't retrain the user's muscle
+                // memory. `scrollingContent`'s own tap gesture already
+                // covers the full surface for chrome-toggle; these zones
+                // sit ABOVE it and only claim the outer thirds.
+                HStack(spacing: 0) {
+                    Color.clear
+                        .contentShape(Rectangle())
+                        .onTapGesture { retreatChapter(chapters: chapters) }
+                    Color.clear
+                        .frame(width: geo.size.width / 3)
+                        .allowsHitTesting(false)
+                    Color.clear
+                        .contentShape(Rectangle())
+                        .onTapGesture { advanceChapter(chapters: chapters) }
                 }
-                .compatHorizontalSafeAreaPadding(0)
-                .contentShape(Rectangle())
-                .simultaneousGesture(TapGesture().onEnded { onCenterTap?() })
-                // Auto-follow: jump to the chapter the audio is narrating.
-                .compatOnChange(of: currentSentenceId) { newId in
-                    guard isFollowing, let newId,
-                          let colon = newId.firstIndex(of: ":"),
-                          let idx = Int(newId[newId.startIndex..<colon]) else { return }
-                    withAnimation(.easeInOut(duration: 0.25)) {
-                        proxy.scrollTo(max(0, idx - 1), anchor: .top)
-                    }
-                }
-                // Jump to the host's requested chapter (TOC / search /
-                // bookmark). `chapter` is the single-chapter prop the host
-                // updates. Skip when the change merely echoes the scroll's
-                // own `onScrolledToChapter` mirror (same index) — only a
-                // genuine jump to a DIFFERENT chapter scrolls.
-                .compatOnChange(of: chapter.id) { _ in
-                    let target = chapter.zeroBasedEpubIndex
-                    guard target != lastScrolledChapterIndex else { return }
-                    withAnimation(.easeInOut(duration: 0.25)) {
-                        proxy.scrollTo(target, anchor: .top)
-                    }
-                }
-                .onAppear {
-                    proxy.scrollTo(chapter.zeroBasedEpubIndex, anchor: .top)
-                }
+                chapterNavFooter(chapters: chapters)
+                    .padding(.bottom, chromeBottomInset + 6)
             }
-            // Paint the theme background BEHIND the scroll content so a cell
-            // that hasn't rendered yet (its placeholder is Color.clear) shows
-            // the reader background, not a white band, while fast-scrolling.
-            .background(themeBackground.ignoresSafeArea())
+            .compatOnChange(of: chapter.id) { _ in
+                prefetchNeighbours(chapters: chapters, columnWidth: columnWidth, margin: margin, fontSize: fontSize, lineSpacing: lineSpacing)
+            }
+            .onAppear {
+                lastScrolledChapterIndex = chapter.zeroBasedEpubIndex
+                prefetchNeighbours(chapters: chapters, columnWidth: columnWidth, margin: margin, fontSize: fontSize, lineSpacing: lineSpacing)
+            }
+            // Auto-follow: audio advanced to a different chapter — cross
+            // the boundary explicitly (this is scroll mode, not a
+            // continuous multi-chapter list, so "jump to sentence" now
+            // means "switch chapter", same mechanic as paginated mode's
+            // `onAdvanceChapter`/`onPreviousChapter` callbacks).
+            .compatOnChange(of: currentSentenceId) { newId in
+                guard isFollowing, let newId,
+                      let colon = newId.firstIndex(of: ":"),
+                      let idx = Int(newId[newId.startIndex..<colon]) else { return }
+                let target = max(0, idx - 1)
+                guard target != chapter.zeroBasedEpubIndex else { return }
+                if target > chapter.zeroBasedEpubIndex {
+                    _ = onAdvanceChapter?()
+                } else {
+                    _ = onPreviousChapter?()
+                }
+                lastScrolledChapterIndex = target
+                onScrolledToChapter?(target)
+            }
+        }
+    }
+
+    /// Explicit "next chapter" action for scroll mode — same contract as
+    /// `onAdvanceChapter` in paginated mode (host swaps `chapter`/`spans`).
+    private func advanceChapter(chapters: [EbookFulltext.Chapter]) {
+        guard onAdvanceChapter?() == true else { return }
+        let next = min(chapter.zeroBasedEpubIndex + 1, chapters.count - 1)
+        lastScrolledChapterIndex = next
+        onScrolledToChapter?(next)
+    }
+
+    /// Explicit "previous chapter" action for scroll mode.
+    private func retreatChapter(chapters: [EbookFulltext.Chapter]) {
+        guard onPreviousChapter?() == true else { return }
+        let prev = max(chapter.zeroBasedEpubIndex - 1, 0)
+        lastScrolledChapterIndex = prev
+        onScrolledToChapter?(prev)
+    }
+
+    /// Small floating footer offering explicit chapter-to-chapter
+    /// navigation, mirroring the "toque na lateral ou botão de próximo
+    /// capítulo" request — the edge-tap zones above are the fast path,
+    /// this is the discoverable one for users who don't know the zones
+    /// exist yet (same rationale as paginated mode's page footer).
+    private func chapterNavFooter(chapters: [EbookFulltext.Chapter]) -> some View {
+        let idx = chapter.zeroBasedEpubIndex
+        return HStack {
+            Button {
+                retreatChapter(chapters: chapters)
+            } label: {
+                Image(systemName: "chevron.left")
+            }
+            .disabled(idx <= 0)
+            Spacer()
+            Text("\(idx + 1) / \(chapters.count)")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Spacer()
+            Button {
+                advanceChapter(chapters: chapters)
+            } label: {
+                Image(systemName: "chevron.right")
+            }
+            .disabled(idx >= chapters.count - 1)
+        }
+        .padding(.horizontal, 24)
+        .padding(.vertical, 8)
+        .background(.ultraThinMaterial, in: Capsule())
+        .padding(.horizontal, 40)
+        .opacity(chromeVisible ? 1 : 0)
+        .allowsHitTesting(chromeVisible)
+    }
+
+    /// Pre-populates `BookChapterRenderCache` for the chapter before and
+    /// after the current one, off the interaction path, so
+    /// `advanceChapter`/`retreatChapter` (and audio auto-advance) paint
+    /// the neighbour instantly instead of parsing its HTML on arrival.
+    /// Uses the same `renderKey` shape `BookChapterCell` computes so a
+    /// prefetched entry is a guaranteed hit when the cell renders it.
+    private func prefetchNeighbours(
+        chapters: [EbookFulltext.Chapter],
+        columnWidth: CGFloat,
+        margin: CGFloat,
+        fontSize: CGFloat,
+        lineSpacing: Double
+    ) {
+        let idx = chapter.zeroBasedEpubIndex
+        let neighbourIndices = [idx - 1, idx + 1].filter { chapters.indices.contains($0) }
+        guard !neighbourIndices.isEmpty else { return }
+        let capturedSettings = settings
+        let fontDir = epubFontDirectory
+        // `EpubHtmlRenderer.render` is main-thread-only (WebKit importer),
+        // so this can't be `Task.detached` off the main actor — instead we
+        // yield first so the current chapter's own render/layout pass
+        // finishes and paints before we spend main-thread time on
+        // neighbours the user isn't looking at yet.
+        Task { @MainActor in
+            for i in neighbourIndices {
+                await Task.yield()
+                let ch = chapters[i]
+                let key = BookChapterCell.renderKey(
+                    chapter: ch, settings: capturedSettings, fontSize: fontSize, lineSpacing: lineSpacing
+                )
+                if BookChapterRenderCache.value(for: key) != nil { continue }
+                let rendered = BookChapterCell.renderAttributed(
+                    chapter: ch, settings: capturedSettings, fontDirectoryURL: fontDir,
+                    fontSize: fontSize, lineSpacing: lineSpacing
+                )
+                BookChapterRenderCache.store(rendered, for: key)
+            }
         }
     }
 

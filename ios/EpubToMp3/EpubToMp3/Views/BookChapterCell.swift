@@ -71,6 +71,19 @@ struct BookChapterCell: View {
     /// Re-render whenever the chapter id or any setting the renderer reads
     /// changes — same identity contract as `ReaderView.renderedAttributedKey`.
     private var renderKey: String {
+        Self.renderKey(chapter: chapter, settings: settings, fontSize: fontSize, lineSpacing: lineSpacing)
+    }
+
+    /// Static form of `renderKey` so callers that don't hold a live
+    /// `BookChapterCell` (e.g. `ReaderView`'s neighbour-chapter prefetch)
+    /// can compute the exact same cache key and guarantee a hit when the
+    /// cell eventually renders that chapter.
+    static func renderKey(
+        chapter: EbookFulltext.Chapter,
+        settings: AppSettings,
+        fontSize: CGFloat,
+        lineSpacing: Double
+    ) -> String {
         [
             chapter.id,
             settings.readerFontFamily.rawValue,
@@ -176,6 +189,24 @@ struct BookChapterCell: View {
     }
 
     private func makeAttributed() -> NSAttributedString {
+        Self.renderAttributed(
+            chapter: chapter, settings: settings, fontDirectoryURL: fontDirectoryURL,
+            fontSize: fontSize, lineSpacing: lineSpacing
+        )
+    }
+
+    /// Static form of the render pipeline so callers without a live cell
+    /// (the neighbour-chapter prefetch in `ReaderView`) can produce the
+    /// exact same `NSAttributedString` a `BookChapterCell` would, keyed
+    /// under the same `renderKey`, ahead of the cell ever appearing.
+    @MainActor
+    static func renderAttributed(
+        chapter: EbookFulltext.Chapter,
+        settings: AppSettings,
+        fontDirectoryURL: URL?,
+        fontSize: CGFloat,
+        lineSpacing: Double
+    ) -> NSAttributedString {
         #if canImport(UIKit) || canImport(AppKit)
         if let html = chapter.html, !html.isEmpty,
            let rendered = EpubHtmlRenderer.render(
