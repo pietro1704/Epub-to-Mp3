@@ -288,6 +288,7 @@ final class AudioPlayer: ObservableObject {
     /// title and duration — even when the OS advances the item before our
     /// `AVPlayerItemDidPlayToEndTime` handler runs.
     nonisolated(unsafe) private var currentItemObserver: NSKeyValueObservation?
+    private var itemObservationCancellables = Set<AnyCancellable>()
     private var lastResumePersist: Date = .distantPast
     /// Throttle for `MPNowPlayingInfoCenter` updates — we update at most
     /// once per second so the lock-screen scrubber stays fresh without
@@ -433,6 +434,30 @@ final class AudioPlayer: ObservableObject {
         updateNowPlayingInfo()
     }
 
+    nonisolated static func validatedDurationSeconds(
+        _ seconds: TimeInterval,
+        isReadyToPlay: Bool
+    ) -> TimeInterval? {
+        guard isReadyToPlay, seconds.isFinite, seconds > 0 else { return nil }
+        return seconds
+    }
+
+    nonisolated static func resumeMarkerToPersistBeforeTeardown(
+        jobId: String?,
+        chapterIndex: Int,
+        positionSeconds: TimeInterval
+    ) -> ResumeMarker? {
+        guard let jobId,
+              positionSeconds.isFinite,
+              positionSeconds > 1.0 else { return nil }
+        return ResumeMarker(
+            jobId: jobId,
+            chapterIndex: chapterIndex,
+            positionSeconds: positionSeconds,
+            updatedAt: .distantPast
+        )
+    }
+
     /// Build the AVQueuePlayer for `snapshot` starting at `chapterIndex`, but
     /// **do not** start playback. Audio only begins after an explicit user
     /// action: tapping the Play button, the lock-screen play control, or the
@@ -477,7 +502,21 @@ final class AudioPlayer: ObservableObject {
             return
         }
         let wasPlaying = isPlaying
+        if let marker = Self.resumeMarkerToPersistBeforeTeardown(
+            jobId: self.snapshot?.jobId,
+            chapterIndex: currentChapterIndex,
+            positionSeconds: positionSeconds
+        ) {
+            resumeStore.save(
+                jobId: marker.jobId,
+                chapterIndex: marker.chapterIndex,
+                position: marker.positionSeconds
+            )
+        }
         teardownPlayer()
+        // Reset index immediately after teardown so subscribers never see
+        // the old chapter index in the window before the new one is set below.
+        currentChapterIndex = max(0, min(chapterIndex, snapshot.playableChapters.count - 1))
         isSegmentMode = false
         segmentCumulativeBase = 0
         segmentSentenceIds = []
@@ -1451,6 +1490,9 @@ final class AudioPlayer: ObservableObject {
 
     private func attachObservers() {
         guard let player else { return }
+        if let item = player.currentItem {
+            bindDurationObservers(to: item)
+        }
         let interval = CMTime(seconds: 0.25, preferredTimescale: 600)
         timeObserverToken = player.addPeriodicTimeObserver(forInterval: interval, queue: .main) { [weak self] time in
             Task { @MainActor in
@@ -1459,9 +1501,9 @@ final class AudioPlayer: ObservableObject {
                 self.positionSeconds = self.isSegmentMode
                     ? self.segmentCumulativeBase + rawTime
                     : rawTime
-                if let item = player.currentItem {
-                    let dur = item.duration.seconds
-                    self.durationSeconds = dur.isFinite ? dur : 0
+                if let item = player.currentItem,
+                   let dur = Self.validatedDurationSeconds(item.duration.seconds, isReadyToPlay: true) {
+                    self.durationSeconds = dur
                 }
                 // Item C — fire a queued proportional seek the first
                 // tick after AVPlayer publishes duration. Without this
@@ -1495,10 +1537,13 @@ final class AudioPlayer: ObservableObject {
                 // trigger this handler with their own items. Filter to
                 // items currently owned by OUR queue so we never advance
                 // chapters on an unrelated item-end.
-                guard
-                    let finished = notification.object as? AVPlayerItem,
-                    self.player?.items().contains(finished) == true
-                else { return }
+                guard let finished = notification.object as? AVPlayerItem else { return }
+                // items() is empty after the last item ends — the finished item
+                // is already dequeued. Accept that case too so the last chapter's
+                // end is handled and isPlaying is set to false correctly.
+                let ownedByUs = self.player?.items().contains(finished) == true
+                    || (self.player != nil && self.player?.items().isEmpty == true)
+                guard ownedByUs else { return }
 
                 if self.isSegmentMode {
                     let dur = finished.duration.seconds
@@ -1560,6 +1605,11 @@ final class AudioPlayer: ObservableObject {
             Task { @MainActor in
                 guard let self else { return }
                 self.pendingProportionalSeek = nil
+                if let item = self.player?.currentItem {
+                    self.bindDurationObservers(to: item)
+                } else {
+                    self.itemObservationCancellables.removeAll()
+                }
                 let didReconcile = self.reconcileChapterIndexFromCurrentItem()
                 // Only announce when the queue actually moved us to
                 // a new chapter — KVO fires on buffer-ahead promotion
@@ -1577,6 +1627,7 @@ final class AudioPlayer: ObservableObject {
         endObserver = nil
         currentItemObserver?.invalidate()
         currentItemObserver = nil
+        itemObservationCancellables.removeAll()
         player?.pause()
         player = nil
         // Remove segment temp files from the previous session. Best-effort:
@@ -1639,6 +1690,40 @@ final class AudioPlayer: ObservableObject {
             Task { @MainActor in self?.setRate(rate) }
             return .success
         }
+    }
+
+    private func bindDurationObservers(to item: AVPlayerItem) {
+        itemObservationCancellables.removeAll()
+
+        item.publisher(for: \.status)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self, weak item] status in
+                guard let self, let item else { return }
+                if let duration = Self.validatedDurationSeconds(
+                    item.duration.seconds,
+                    isReadyToPlay: status == .readyToPlay
+                ) {
+                    self.durationSeconds = duration
+                    self.applyPendingProportionalSeek()
+                    self.updateNowPlayingInfo()
+                }
+            }
+            .store(in: &itemObservationCancellables)
+
+        item.publisher(for: \.duration)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self, weak item] duration in
+                guard let self, let item else { return }
+                if let validated = Self.validatedDurationSeconds(
+                    duration.seconds,
+                    isReadyToPlay: item.status == .readyToPlay
+                ) {
+                    self.durationSeconds = validated
+                    self.applyPendingProportionalSeek()
+                    self.updateNowPlayingInfo()
+                }
+            }
+            .store(in: &itemObservationCancellables)
     }
 
     /// Map `AVQueuePlayer.currentItem` back to the index of the chapter whose
