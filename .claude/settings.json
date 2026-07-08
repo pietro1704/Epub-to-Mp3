@@ -77,6 +77,13 @@
             "type": "command",
             "command": "/Users/pietropugliesi/Developer/Epub-to-Mp3/.claude/hooks/flutter_mirror_after_swift.sh",
             "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "cd /Users/pietropugliesi/Developer/Epub-to-Mp3 && pytest -q || true",
+            "timeout": 120,
+            "async": true,
+            "statusMessage": "Running pytest after edit..."
           }
         ]
       }
