@@ -66,6 +66,15 @@ struct TextKitPageView: UIViewControllerRepresentable {
     /// Return true when the reader handled the URL and UIKit should suppress
     /// its default external-open behaviour.
     var onLinkTap: ((URL) -> Bool)? = nil
+    /// Sentence spans for the chapter currently displayed. Used to resolve a
+    /// long-press's TextKit `characterIndex` to the `SentenceSpan` it falls
+    /// inside, mirroring the scroll-mode tap-to-play feature (`ReaderView`'s
+    /// `sentenceRow`). Empty when unavailable — the long-press then no-ops.
+    var spans: [SentenceSpan] = []
+    /// Called when the user long-presses a sentence on a page-curl page.
+    /// Mirrors scroll mode's `onJumpToSentence`, which shows the "Tocar
+    /// daqui" confirmation dialog.
+    var onJumpToSentence: ((SentenceSpan) -> Void)? = nil
     /// Fires the moment a user-initiated page turn lands, so the host can
     /// clear audio auto-follow (otherwise the next audio tick yanks the
     /// reader back to the player's page).
@@ -340,11 +349,15 @@ struct TextKitPageView: UIViewControllerRepresentable {
             let vc = pool[index] ?? {
                 let c = TextKitPageController(pageIndex: index)
                 c.onLinkTap = parent.onLinkTap
+                c.spans = parent.spans
+                c.onJumpToSentence = parent.onJumpToSentence
                 pool[index] = c
                 return c
             }()
             vc.pageIndex = index
             vc.onLinkTap = parent.onLinkTap
+            vc.spans = parent.spans
+            vc.onJumpToSentence = parent.onJumpToSentence
             vc.apply(
                 slice: slice(at: index),
                 margin: parent.margin,
@@ -628,6 +641,12 @@ struct TextKitPageView: UIViewControllerRepresentable {
 final class TextKitPageController: UIViewController, UITextViewDelegate {
     var pageIndex: Int
     var onLinkTap: ((URL) -> Bool)?
+    /// Sentence spans for the chapter, used to resolve a long-press's
+    /// character index to the sentence it falls inside.
+    var spans: [SentenceSpan] = []
+    /// Fires with the resolved sentence on a long-press. Mirrors scroll
+    /// mode's tap-to-play ("Tocar daqui") flow.
+    var onJumpToSentence: ((SentenceSpan) -> Void)?
 
     private let textView: UITextView = {
         let tv = UITextView()
@@ -690,6 +709,73 @@ final class TextKitPageController: UIViewController, UITextViewDelegate {
         topConstraint = textView.topAnchor.constraint(equalTo: view.topAnchor, constant: 0)
         bottomConstraint = textView.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: 0)
         NSLayoutConstraint.activate([leadingConstraint, trailingConstraint, topConstraint, bottomConstraint])
+
+        // Long-press → resolve the pressed character to a `SentenceSpan` and
+        // fire the same "Tocar daqui" flow scroll mode already has via
+        // per-sentence `.onTapGesture`. A simple TAP is reserved for page
+        // turn / chrome toggle (handled by the PVC-level tap recognizer in
+        // `TextKitPageView.Coordinator`, which sits on `pvc.view` — a
+        // DIFFERENT view than this text view — so it doesn't compete here).
+        // `require(toFail:)` against the text view's own long-press-to-select
+        // recognizer lets native text selection win when the user holds
+        // longer / drags for a selection handle, while still letting our
+        // handler fire first for a plain long-press-and-release. Preserves
+        // link taps, which go through `shouldInteractWith url:` (a distinct,
+        // higher-priority interaction) unaffected by this addition.
+        let longPress = UILongPressGestureRecognizer(target: self, action: #selector(handleLongPress(_:)))
+        longPress.minimumPressDuration = 0.4
+        textView.addGestureRecognizer(longPress)
+        for existing in textView.gestureRecognizers ?? [] {
+            guard existing !== longPress, existing is UILongPressGestureRecognizer else { continue }
+            longPress.require(toFail: existing)
+        }
+    }
+
+    /// Resolve `location` (in the text view's coordinate space) to a
+    /// character index via TextKit, then find the `SentenceSpan` whose text
+    /// contains a snippet of the rendered text around that index. Mirrors
+    /// `ReaderView.pageIndexContaining(sentence:in:)`'s prefix-probe strategy
+    /// (character offsets don't line up 1:1 between `SentenceSpan.startChar`,
+    /// a plain-text offset, and the HTML-rendered `NSAttributedString` used
+    /// here — probing by substring is what tolerates that mismatch).
+    func sentenceSpan(at location: CGPoint) -> SentenceSpan? {
+        guard !spans.isEmpty, textView.attributedText.length > 0 else { return nil }
+        let layoutManager = textView.layoutManager
+        let textContainer = textView.textContainer
+        let glyphIndex = layoutManager.glyphIndex(for: location, in: textContainer)
+        guard glyphIndex < layoutManager.numberOfGlyphs else { return nil }
+        let boundingRect = layoutManager.boundingRect(
+            forGlyphRange: NSRange(location: glyphIndex, length: 1), in: textContainer
+        )
+        // Reject presses that land outside any glyph's bounding box (e.g. in
+        // trailing whitespace below the last line) — `glyphIndex(for:in:)`
+        // clamps to the nearest glyph even far off-screen.
+        guard boundingRect.insetBy(dx: -20, dy: -20).contains(location) else { return nil }
+        let characterIndex = layoutManager.characterIndexForGlyph(at: glyphIndex)
+        let fullText = textView.attributedText.string as NSString
+        guard characterIndex < fullText.length else { return nil }
+
+        // Snippet of rendered text straddling the press point, used as the
+        // probe needle against each span's own text.
+        let snippetStart = max(0, characterIndex - 20)
+        let snippetLength = min(40, fullText.length - snippetStart)
+        guard snippetLength > 0 else { return nil }
+        let snippet = fullText.substring(with: NSRange(location: snippetStart, length: snippetLength))
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !snippet.isEmpty else { return nil }
+        // Use a short, punctuation-tolerant probe (first ~15 chars of the
+        // snippet) so minor whitespace/markup differences between the span's
+        // plain text and the rendered HTML don't defeat the match.
+        let probe = String(snippet.prefix(15))
+        guard !probe.isEmpty else { return nil }
+        return spans.first { $0.text.range(of: probe) != nil }
+    }
+
+    @objc private func handleLongPress(_ gesture: UILongPressGestureRecognizer) {
+        guard gesture.state == .began else { return }
+        let location = gesture.location(in: textView)
+        guard let span = sentenceSpan(at: location) else { return }
+        onJumpToSentence?(span)
     }
 
     /// Push a slice plus layout corridor into the hosted text view.

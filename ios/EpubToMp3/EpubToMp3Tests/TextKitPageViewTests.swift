@@ -331,6 +331,68 @@ final class TextKitPageViewTests: XCTestCase {
         XCTAssertEqual(coord.slice(at: 5).length, 0)
         XCTAssertEqual(coord.slice(at: 0).string, "only")
     }
+
+    // MARK: - Long-press sentence resolution (Bug 7/8: page-curl mode lacked
+    // scroll mode's tap-to-play). `sentenceSpan(at:)` resolves a press point
+    // to a `SentenceSpan` via TextKit's `characterIndex` + a substring probe
+    // against each span's own text — mirroring
+    // `ReaderView.pageIndexContaining(sentence:in:)`'s tolerance for the
+    // offset mismatch between plain-text `SentenceSpan.startChar` and the
+    // HTML-rendered `NSAttributedString` actually laid out on screen.
+
+    private func makeController(text: String, spans: [SentenceSpan]) -> TextKitPageController {
+        let controller = TextKitPageController(pageIndex: 0)
+        controller.spans = spans
+        controller.loadViewIfNeeded()
+        controller.view.frame = CGRect(x: 0, y: 0, width: 320, height: 600)
+        let attributed = NSAttributedString(string: text, attributes: [.font: UIFont.systemFont(ofSize: 17)])
+        controller.apply(slice: attributed, margin: 16, topInset: 0, bottomInset: 0, background: .white)
+        controller.view.layoutIfNeeded()
+        return controller
+    }
+
+    /// A press over the middle of a rendered sentence resolves to the span
+    /// whose text contains that sentence — the exact lookup the long-press
+    /// handler needs to fire `onJumpToSentence`.
+    func testSentenceSpanAtLocationResolvesPressedSentence() {
+        let text = "The first sentence is here. The second sentence follows after."
+        let spans = [
+            SentenceSpan(id: "s0", text: "The first sentence is here.", startChar: 0, endChar: 28),
+            SentenceSpan(id: "s1", text: "The second sentence follows after.", startChar: 29, endChar: 64),
+        ]
+        let controller = makeController(text: text, spans: spans)
+
+        // Probe every glyph position and require at least one resolves to
+        // each span — proves both sentences are reachable by press, not just
+        // the first (which a naive "first span" bug would always return).
+        var resolvedIds = Set<String>()
+        let layoutManager = controller.view.subviews.compactMap { $0 as? UITextView }.first!.layoutManager
+        let textContainer = controller.view.subviews.compactMap { $0 as? UITextView }.first!.textContainer
+        for glyphIndex in stride(from: 0, to: layoutManager.numberOfGlyphs, by: 3) {
+            let rect = layoutManager.boundingRect(forGlyphRange: NSRange(location: glyphIndex, length: 1), in: textContainer)
+            let point = CGPoint(x: rect.midX, y: rect.midY)
+            if let span = controller.sentenceSpan(at: point) {
+                resolvedIds.insert(span.id)
+            }
+        }
+        XCTAssertTrue(resolvedIds.contains("s0"), "a press over the first sentence must resolve to it")
+        XCTAssertTrue(resolvedIds.contains("s1"), "a press over the second sentence must resolve to it")
+    }
+
+    /// No spans available (chapter without a plain-text projection) — the
+    /// resolver must return nil rather than crash or guess.
+    func testSentenceSpanAtLocationReturnsNilWithoutSpans() {
+        let controller = makeController(text: "Some page text.", spans: [])
+        XCTAssertNil(controller.sentenceSpan(at: CGPoint(x: 10, y: 10)))
+    }
+
+    /// A press far outside any laid-out glyph (e.g. below the last line, in
+    /// empty page space) must not snap to an unrelated sentence.
+    func testSentenceSpanAtLocationReturnsNilFarOffText() {
+        let spans = [SentenceSpan(id: "s0", text: "Short.", startChar: 0, endChar: 6)]
+        let controller = makeController(text: "Short.", spans: spans)
+        XCTAssertNil(controller.sentenceSpan(at: CGPoint(x: 10, y: 5000)))
+    }
 }
 
 /// A `UIPanGestureRecognizer` whose `state` and `translation(in:)` can be

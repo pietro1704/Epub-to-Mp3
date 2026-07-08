@@ -1399,6 +1399,8 @@ struct ReaderView: View {
             onPreviousChapter: onPreviousChapter,
             onCenterTap: onCenterTap,
             onLinkTap: onLinkTap,
+            spans: spans,
+            onJumpToSentence: onJumpToSentence,
             onUserPageChange: { isFollowing = false },
             onWillTransition: { isPageTurning = true },
             onDidFinishTransition: { isPageTurning = false },

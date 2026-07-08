@@ -27,6 +27,32 @@ final class TextKitLinkInteractionTests: XCTestCase {
         )
     }
 
+    func testTextKitPageControllerHasLongPressSentenceResolution() throws {
+        let source = try textKitSource()
+
+        XCTAssertTrue(
+            source.contains("UILongPressGestureRecognizer(target: self, action: #selector(handleLongPress(_:)))"),
+            "TextKitPageController must add a long-press recognizer to drive the page-curl tap-to-play feature (Bug 7/8)."
+        )
+        XCTAssertTrue(
+            source.contains("longPress.require(toFail:"),
+            "The long-press recognizer must require(toFail:) the text view's native selection long-press, so holding for a selection handle still wins over sentence resolution."
+        )
+        XCTAssertTrue(
+            source.contains("func sentenceSpan(at location: CGPoint) -> SentenceSpan?"),
+            "TextKitPageController must resolve a press location to a SentenceSpan via TextKit."
+        )
+    }
+
+    func testReaderViewPassesSpansAndOnJumpToSentenceIntoTextKitPageView() throws {
+        let source = try readerViewSource()
+
+        XCTAssertTrue(
+            source.contains("spans: spans,") && source.contains("onJumpToSentence: onJumpToSentence,"),
+            "ReaderView must plumb spans + onJumpToSentence into TextKitPageView so page-curl mode gets the same 'Tocar daqui' flow as scroll mode."
+        )
+    }
+
     private func textKitSource() throws -> String {
         let testFile = URL(fileURLWithPath: #filePath)
         let projectRoot = testFile
