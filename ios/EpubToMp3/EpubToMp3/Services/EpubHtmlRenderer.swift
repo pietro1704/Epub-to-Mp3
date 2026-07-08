@@ -4,10 +4,12 @@ import SwiftUI
 import UIKit
 typealias PlatformFont = UIFont
 typealias PlatformColor = UIColor
+private typealias EpubInlineImage = UIImage
 #else
 import AppKit
 typealias PlatformFont = NSFont
 typealias PlatformColor = NSColor
+private typealias EpubInlineImage = NSImage
 #endif
 
 // MARK: - Environment key for EPUB font directory
@@ -76,14 +78,14 @@ enum EpubHtmlRenderer {
         let trimmed = html.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
 
-        let bodyContent = stripImageSources(extractBodyContent(trimmed))
+        let (placeholderBody, images) = extractDataURIImages(extractBodyContent(trimmed))
         let cleanedCSS = rewriteFontFaceURLs(css ?? "", fontDirectory: fontDirectoryURL)
 
         let doc = """
         <!DOCTYPE html>
         <html><head><meta charset="utf-8">
         <style>\(cleanedCSS)</style>
-        </head><body>\(bodyContent)</body></html>
+        </head><body>\(placeholderBody)</body></html>
         """
 
         guard let data = doc.data(using: .utf8) else { return nil }
@@ -98,6 +100,7 @@ enum EpubHtmlRenderer {
         }
 
         let mutated = NSMutableAttributedString(attributedString: imported)
+        inlineImageAttachments(images, into: mutated)
         let bodyFontSize = modalBodyFontSize(in: imported)
         applyOverrides(to: mutated, settings: settings, bodyFontSize: bodyFontSize)
         return AttributedString(mutated)
@@ -372,6 +375,57 @@ enum EpubHtmlRenderer {
             with: "$1",
             options: .regularExpression
         )
+    }
+
+    /// `NSAttributedString`'s HTML importer does not turn `<img>` tags
+    /// into `.attachment` runs — it silently drops them. To keep inline
+    /// EPUB images (already inlined as `data:` URIs by the caller) we
+    /// swap each `<img src="data:...">` for a unique text placeholder
+    /// before import, then splice a real `NSTextAttachment` back in at
+    /// the placeholder's resolved range.
+    private static func extractDataURIImages(_ html: String) -> (String, [(token: String, image: EpubInlineImage)]) {
+        var images: [(token: String, image: EpubInlineImage)] = []
+        var result = ""
+        var searchStart = html.startIndex
+        var counter = 0
+
+        while let match = html.range(
+            of: #"<img\b[^>]*\bsrc\s*=\s*"data:image/[^;"]+;base64,[^"]*"[^>]*>"#,
+            options: .regularExpression,
+            range: searchStart..<html.endIndex
+        ) {
+            result += html[searchStart..<match.lowerBound]
+            let tag = String(html[match])
+            if let base64Range = tag.range(of: #"base64,[^"]*"#, options: .regularExpression) {
+                let base64 = tag[base64Range].dropFirst("base64,".count)
+                if let bytes = Data(base64Encoded: String(base64)),
+                   let image = EpubInlineImage(data: bytes) {
+                    let token = "EPUBIMGPLACEHOLDER\(counter)EPUBIMGPLACEHOLDER"
+                    counter += 1
+                    images.append((token, image))
+                    result += token
+                } else {
+                    // Undecodable payload — drop the tag rather than leak base64 text.
+                }
+            }
+            searchStart = match.upperBound
+        }
+        result += html[searchStart..<html.endIndex]
+        return (result, images)
+    }
+
+    private static func inlineImageAttachments(
+        _ images: [(token: String, image: EpubInlineImage)],
+        into attr: NSMutableAttributedString
+    ) {
+        for (token, image) in images {
+            let plain = attr.string as NSString
+            let range = plain.range(of: token)
+            guard range.location != NSNotFound else { continue }
+            let attachment = NSTextAttachment()
+            attachment.image = image
+            attr.replaceCharacters(in: range, with: NSAttributedString(attachment: attachment))
+        }
     }
 
     /// Rewrite `@font-face src: url(...)` declarations to point at

@@ -51,6 +51,23 @@ final class EpubHtmlRendererTests: XCTestCase {
         #endif
     }
 
+    func testPreservesInlineDataURIImages() {
+        let s = makeSettings()
+        // Full valid 1x1 transparent GIF (header + image data + trailer) — a
+        // truncated header-only payload is not decodable by UIImage/NSImage.
+        let html = "<p>text</p><img src=\"data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEKAAAALAAAAAABAAEAAAICTAEAOw==\" alt=\"pixel\"/>"
+        guard let out = EpubHtmlRenderer.render(html: html, css: nil, settings: s) else {
+            return XCTFail("renderer returned nil for HTML with inline image")
+        }
+        let n = ns(out)
+        var attachmentCount = 0
+        n.enumerateAttribute(.attachment, in: NSRange(location: 0, length: n.length)) { value, _, _ in
+            if value != nil { attachmentCount += 1 }
+        }
+        XCTAssertGreaterThan(attachmentCount, 0,
+            "inline data: URI images must survive HTML sanitisation so the importer can create attachments")
+    }
+
     /// Regression: the EPUB's intentional centred alignment on a chapter
     /// title (Pinocchio's "Come andò che Maestro Ciliegia…") must survive
     /// the override pipeline — the user's body alignment choice only
