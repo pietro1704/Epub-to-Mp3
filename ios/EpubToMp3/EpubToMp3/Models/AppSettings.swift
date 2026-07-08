@@ -93,8 +93,8 @@ enum ReaderTheme: String, CaseIterable, Identifiable {
 }
 
 enum ReaderLayout: String, CaseIterable, Identifiable {
-    case scrolling
     case paginated
+    case scrolling
 
     var id: String { rawValue }
 
@@ -193,7 +193,7 @@ final class AppSettings: ObservableObject {
         ) ?? .justified
         self.readerLayout = ReaderLayout(
             rawValue: defaults.string(forKey: "readerLayout") ?? ""
-        ) ?? .scrolling
+        ) ?? .paginated
         // UI tests can pin the reader layout regardless of persisted state,
         // e.g. `-uiTestReaderLayout paginated` / `-uiTestReaderLayout scrolling`.
         let args = ProcessInfo.processInfo.arguments
@@ -322,7 +322,7 @@ final class AppSettings: ObservableObject {
         didSet { defaults.set(readerTextAlignment.rawValue, forKey: "readerTextAlignment") }
     }
 
-    @Published var readerLayout: ReaderLayout = .scrolling {
+    @Published var readerLayout: ReaderLayout = .paginated {
         didSet { defaults.set(readerLayout.rawValue, forKey: "readerLayout") }
     }
 

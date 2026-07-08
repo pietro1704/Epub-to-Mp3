@@ -235,6 +235,14 @@ final class AppSettingsObservationTests: XCTestCase {
                       "canReadOffline must mirror useEmbeddedRuntime — it gates the BookOpenView audio bootstrap copy.")
     }
 
+    func testReaderLayoutDefaultsToPaginatedForFreshInstall() {
+        let suite = UUID().uuidString
+        let defaults = UserDefaults(suiteName: suite)!
+        let s = AppSettings(defaults: defaults)
+        XCTAssertEqual(s.readerLayout, .paginated,
+                       "Fresh installs must default to paginated mode, not scrolling.")
+    }
+
     func testEmbeddedRuntimePersistsAcrossInstances() {
         let suite = UUID().uuidString
         let defaults = UserDefaults(suiteName: suite)!
