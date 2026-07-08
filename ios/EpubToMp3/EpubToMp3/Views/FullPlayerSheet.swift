@@ -171,6 +171,7 @@ struct FullPlayerSheet: View {
         .compatOnChange(of: player.durationSeconds) { _ in prepareLyricsChapter() }
         .task {
             for await position in player.position {
+                guard !Task.isCancelled else { break }
                 lyricSentenceId = lyricSync.update(positionSeconds: position)
             }
         }
@@ -210,6 +211,7 @@ struct FullPlayerSheet: View {
         .compatOnChange(of: player.durationSeconds) { _ in prepareLyricsChapter() }
         .task {
             for await position in player.position {
+                guard !Task.isCancelled else { break }
                 lyricSentenceId = lyricSync.update(positionSeconds: position)
             }
         }

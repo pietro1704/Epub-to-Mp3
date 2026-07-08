@@ -122,6 +122,11 @@ struct InstantReaderView: View {
     @State private var pendingAnchor: PlayDivergenceAnchor?
     @State private var sync = SyncEngine()
     @State private var spans: [SentenceSpan] = []
+    /// Set to true just before a backward chapter crossing so the
+    /// new ReaderView (created via .id change) starts at its last page.
+    /// Cleared only after the chapter cursor has changed, so the new
+    /// ReaderView init can consume the flag first.
+    @State private var readerShouldStartAtLastPage = false
     @State private var currentSentenceId: String?
     @State private var positionTask: Task<Void, Never>?
     @State private var sentenceTask: Task<Void, Never>?
@@ -138,6 +143,7 @@ struct InstantReaderView: View {
     @State private var showingConversionStatus = false
     @State private var showingReaderSettings = false
     @State private var chromeVisible = true
+    @State private var scrubberDragValue: TimeInterval? = nil
 
     private var embeddedAudioReady: Bool {
         settings.useEmbeddedRuntime && globalPlayer.firstSegmentReady
@@ -266,6 +272,7 @@ struct InstantReaderView: View {
         .compatOnChange(of: currentChapterIndex) { newIndex in
             FlickerProbe.shared.chapterInfo = "\(newIndex)/\(fulltext.chapters.count)"
             reloadCurrentChapter(index: newIndex)
+            readerShouldStartAtLastPage = false
             settings.saveChapterIndex(newIndex, for: fulltext.jobId)
             // ReaderCoordinator is the source of truth — this single
             // call (a) updates every play surface that derives
@@ -282,7 +289,6 @@ struct InstantReaderView: View {
                 totalChapters: fulltext.chapters.count
             )
             cacheManager.refreshCachedIndices()
-            cacheManager.prefetchNext(2, from: newIndex)
         }
         .onAppear {
             // UI tests can force a clean opening position (first readable
@@ -303,7 +309,6 @@ struct InstantReaderView: View {
             reloadCurrentChapter(index: currentChapterIndex)
             if hasAudio { mountPlayerIfPossible() }
             cacheManager.refreshCachedIndices()
-            cacheManager.prefetchNext(2, from: currentChapterIndex)
         }
         .onDisappear {
             positionTask?.cancel()
@@ -322,6 +327,24 @@ struct InstantReaderView: View {
             WidgetDataSync.flushLastRead()
             readerCoordinator.flush()
             if playerMounted { player.pause() }
+        }
+        .confirmationDialog(
+            pendingPlayAnchor?.text ?? "",
+            isPresented: Binding(
+                get: { pendingPlayAnchor != nil },
+                set: { if !$0 { pendingPlayAnchor = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            if let span = pendingPlayAnchor {
+                Button(L10n.string("reader.sentenceMenu.playFromHere")) {
+                    seekToSentence(span)
+                    pendingPlayAnchor = nil
+                }
+                Button(L10n.string("reader.sentenceMenu.cancel"), role: .cancel) {
+                    pendingPlayAnchor = nil
+                }
+            }
         }
     }
 
@@ -348,8 +371,10 @@ struct InstantReaderView: View {
                 chromeBottomInset: chromeVisible ? bottomInset : 0,
                 useStableBodyHeight: true,
                 bookChapters: fulltext.chapters,
-                onScrolledToChapter: { mirrorScrolledChapter($0) }
+                onScrolledToChapter: { mirrorScrolledChapter($0) },
+                startAtLastPage: readerShouldStartAtLastPage
             )
+            .id(chapter.id)
         } else if !fulltext.chapters.isEmpty {
             ReaderView(
                 chapter: fulltext.chapters[0],
@@ -371,6 +396,7 @@ struct InstantReaderView: View {
                 bookChapters: fulltext.chapters,
                 onScrolledToChapter: { mirrorScrolledChapter($0) }
             )
+            .id(fulltext.chapters[0].id)
         } else {
             VStack(spacing: 12) {
                 Image(systemName: "text.book.closed")
@@ -812,8 +838,8 @@ struct InstantReaderView: View {
                 .accessibilityHidden(true)
             Slider(
                 value: Binding(
-                    get: { player.positionSeconds },
-                    set: { player.seek(to: $0) }
+                    get: { scrubberDragValue ?? player.positionSeconds },
+                    set: { scrubberDragValue = $0 }
                 ),
                 in: 0...max(player.durationSeconds, 1),
                 onEditingChanged: { editing in
@@ -821,6 +847,10 @@ struct InstantReaderView: View {
                     let generator = UIImpactFeedbackGenerator(style: editing ? .light : .medium)
                     generator.impactOccurred()
                     #endif
+                    if !editing, let target = scrubberDragValue {
+                        player.seek(to: target)
+                        scrubberDragValue = nil
+                    }
                 }
             )
             .accessibilityLabel(L10n.string("instantReader.playbackPosition"))
@@ -1089,6 +1119,10 @@ struct InstantReaderView: View {
     }
 
     private func jumpToSentence(_ span: SentenceSpan) {
+        pendingPlayAnchor = span
+    }
+
+    private func seekToSentence(_ span: SentenceSpan) {
         guard let entry = sync.timing.first(where: { $0.id == span.id }) else { return }
         let seconds = TimeInterval(entry.startMs) / 1000.0
         if playerMounted { player.seek(to: seconds) }
@@ -1106,6 +1140,7 @@ struct InstantReaderView: View {
 
     private func returnToPreviousChapter() -> Bool {
         guard currentChapterIndex > 0 else { return false }
+        readerShouldStartAtLastPage = true
         currentChapterIndex -= 1
         return true
     }
