@@ -17,6 +17,42 @@ import AppKit
 /// chapter has no HTML payload. The text is drawn by `AttributedPageView`
 /// (`scrollable: false`, intrinsic height) — the same TextKit view the
 /// paginator measures against — so typography matches the paginated mode.
+/// Process-wide cache of already-parsed chapter attributed strings, keyed by
+/// the same identity string (`renderKey`) that gates a re-render. Scroll mode
+/// hosts every cell in a `LazyVStack`, so a cell that scrolls out of the
+/// viewport is DESTROYED — its `@State attributed` is lost. When the user
+/// scrolls it back, a cache-less cell blanked to its `Color.clear` placeholder
+/// and re-ran `EpubHtmlRenderer.render` (50–200 ms, main-thread WebKit
+/// importer): the chapter text visibly vanished, then repainted a frame later.
+/// That is the "flicker no modo rolagem" the user saw. With this cache a
+/// recycled cell paints the previously-parsed text synchronously in `body`,
+/// so no blank frame and no re-parse ever happen for a chapter already seen.
+///
+/// `NSCache` bounds memory automatically (evicts under pressure) and is
+/// thread-safe; all reads/writes here are on the main actor anyway.
+@MainActor
+enum BookChapterRenderCache {
+    private static let cache: NSCache<NSString, NSAttributedString> = {
+        let c = NSCache<NSString, NSAttributedString>()
+        // Cap by count so a huge book can't pin every chapter forever; the
+        // working set during a scroll is only the handful of on/near-screen
+        // cells, so 64 comfortably covers scroll-back without unbounded growth.
+        c.countLimit = 64
+        return c
+    }()
+
+    static func value(for key: String) -> NSAttributedString? {
+        cache.object(forKey: key as NSString)
+    }
+
+    static func store(_ value: NSAttributedString, for key: String) {
+        cache.setObject(value, forKey: key as NSString)
+    }
+
+    /// Test hook: clear so a regression test starts from a known-empty state.
+    static func removeAll() { cache.removeAllObjects() }
+}
+
 struct BookChapterCell: View {
     let chapter: EbookFulltext.Chapter
     let settings: AppSettings
@@ -53,14 +89,20 @@ struct BookChapterCell: View {
     @State private var lastRenderKey: String?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
+        // Prefer the live @State render, but fall back to the process cache so
+        // a cell recycled by the LazyVStack paints its previously-parsed text
+        // synchronously on the very first frame — no blank placeholder, no
+        // re-parse flicker. The cache read is keyed on the same `renderKey`
+        // that gates a re-render, so a cache hit is always identity-correct.
+        let displayed = attributed ?? BookChapterRenderCache.value(for: renderKey)
+        return VStack(alignment: .leading, spacing: 0) {
             Text(chapter.displayTitle)
                 .font(.title3.weight(.semibold))
                 .foregroundStyle(.secondary)
                 .padding(.horizontal, margin)
                 .padding(.top, 24)
                 .padding(.bottom, 8)
-            if let attributed {
+            if let attributed = displayed {
                 AttributedPageView(
                     attributed: attributed,
                     width: columnWidth,
@@ -86,6 +128,18 @@ struct BookChapterCell: View {
             // is main-thread (WebKit importer) but cheap enough per chapter;
             // gating on `renderKey` ensures one render per identity change.
             guard lastRenderKey != renderKey else { return }
+            // Cache hit: a cell recycled by the LazyVStack (or reused after a
+            // benign setting echo) already has this exact render cached. Paint
+            // it without re-parsing — this is the path that eliminates the
+            // scroll-mode flicker for chapters the user has already scrolled
+            // past once. No `.staleSlicePushed` is recorded because nothing
+            // repaints: `attributed` was already showing the cached value via
+            // the `body` fallback, so this assignment is a no-op on screen.
+            if let cached = BookChapterRenderCache.value(for: renderKey) {
+                lastRenderKey = renderKey
+                attributed = cached
+                return
+            }
             // A RE-render of a cell that already had content (lastRenderKey
             // non-nil) while the chapter id is unchanged is a scroll-mode
             // flicker: the cell re-parses and the text visibly repaints.
@@ -95,7 +149,9 @@ struct BookChapterCell: View {
             }
             #endif
             lastRenderKey = renderKey
-            attributed = makeAttributed()
+            let rendered = makeAttributed()
+            BookChapterRenderCache.store(rendered, for: renderKey)
+            attributed = rendered
         }
         .onAppear { onAppearChapter?() }
     }
