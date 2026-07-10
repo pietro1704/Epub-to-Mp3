@@ -1,5 +1,6 @@
 import Foundation
 import SwiftUI
+import ImageIO
 #if canImport(UIKit)
 import UIKit
 typealias PlatformFont = UIFont
@@ -399,7 +400,7 @@ enum EpubHtmlRenderer {
             if let base64Range = tag.range(of: #"base64,[^"]*"#, options: .regularExpression) {
                 let base64 = tag[base64Range].dropFirst("base64,".count)
                 if let bytes = Data(base64Encoded: String(base64)),
-                   let image = EpubInlineImage(data: bytes) {
+                   let image = downsampledInlineImage(from: bytes) {
                     let token = "EPUBIMGPLACEHOLDER\(counter)EPUBIMGPLACEHOLDER"
                     counter += 1
                     images.append((token, image))
@@ -412,6 +413,49 @@ enum EpubHtmlRenderer {
         }
         result += html[searchStart..<html.endIndex]
         return (result, images)
+    }
+
+    /// Largest edge (in pixels) an inline EPUB image is decoded to.
+    /// A paginated iPhone reader page is <=1290pt wide on the biggest
+    /// device; 1400px covers @2x/@3x without over-allocating. The old
+    /// path fed raw base64 bytes straight into `UIImage(data:)`, which
+    /// decompresses to the FULL source resolution — a single 3000x3000
+    /// EPUB illustration became a ~36 MB resident bitmap, and the
+    /// scroll-mode buffer renders the current chapter plus both
+    /// neighbours, so 3 image-heavy chapters could spike hundreds of MB
+    /// on the main thread the instant the reader/player mounted. On an
+    /// 8 GB device with the WidgetKit extension also being reloaded on
+    /// the play burst, that memory storm is what forced a full device
+    /// reboot (jetsam could not reclaim fast enough). Capping the decode
+    /// here keeps each attachment bounded regardless of source size.
+    private static let inlineImageMaxPixels = 1400
+
+    /// Decode EPUB inline image bytes to a bitmap whose largest edge is
+    /// at most `inlineImageMaxPixels`, using ImageIO's thumbnail path so
+    /// the full-resolution bitmap is never allocated. Falls back to the
+    /// plain decoder only when ImageIO cannot read the source (keeps
+    /// exotic formats working), and that fallback is itself size-checked
+    /// by the caller's format support — the common heavy case (large
+    /// JPEG/PNG illustrations) always takes the bounded path.
+    private static func downsampledInlineImage(from data: Data) -> EpubInlineImage? {
+        let sourceOptions = [kCGImageSourceShouldCache: false] as CFDictionary
+        guard let source = CGImageSourceCreateWithData(data as CFData, sourceOptions) else {
+            return EpubInlineImage(data: data)
+        }
+        let thumbOptions = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceShouldCacheImmediately: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceThumbnailMaxPixelSize: inlineImageMaxPixels,
+        ] as CFDictionary
+        guard let cg = CGImageSourceCreateThumbnailAtIndex(source, 0, thumbOptions) else {
+            return EpubInlineImage(data: data)
+        }
+        #if canImport(UIKit)
+        return UIImage(cgImage: cg)
+        #else
+        return NSImage(cgImage: cg, size: NSSize(width: cg.width, height: cg.height))
+        #endif
     }
 
     private static func inlineImageAttachments(

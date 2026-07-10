@@ -90,6 +90,40 @@ final class EpubToMp3AppDeepLinkTests: XCTestCase {
         )
     }
 
+    // MARK: - Device-freeze: widget must not decode full-res covers
+
+    /// Regression: WidgetKit extensions are killed by `widgetkitd` at
+    /// ~30 MB. The Now Playing provider used to pass `book.coverPNG`
+    /// straight into the entry — `UIImage(data:)` then decompressed it
+    /// to full pixel dimensions at render time. On a play burst several
+    /// widget kinds reload at once; the combined decode spiked the
+    /// extension over its jetsam limit and, together with the main app's
+    /// image-heavy chapter render, contributed to a system-wide memory
+    /// storm that forced a full device reboot. The provider must route
+    /// the cover through the ImageIO thumbnail path.
+    func testWidgetNowPlayingCoverIsDownsampled() throws {
+        let source = try widgetSource()
+        XCTAssertTrue(
+            source.contains("func downsampledWidgetCover"),
+            "widget must have an ImageIO-based cover downsampler to stay under the ~30 MB WidgetKit jetsam limit."
+        )
+        XCTAssertTrue(
+            source.contains("CGImageSourceCreateThumbnailAtIndex"),
+            "cover downsampling must use ImageIO's thumbnail path so the full-resolution bitmap is never allocated in the memory-capped widget process."
+        )
+        // The NowPlaying entry must be built from the downsampled cover,
+        // not the raw stored blob.
+        guard let providerRange = source.range(of: "private func loadNowPlaying()") else {
+            XCTFail("NowPlayingProvider.loadNowPlaying must exist")
+            return
+        }
+        let body = source[providerRange.upperBound...].prefix(1200)
+        XCTAssertTrue(
+            body.contains("downsampledWidgetCover"),
+            "loadNowPlaying must feed the entry a downsampled cover, never the raw book.coverPNG blob."
+        )
+    }
+
     // MARK: - Bug 2: observer registration must be skipped under XCTest
 
     /// `registerWidgetIntentObserver` must not register a process-wide

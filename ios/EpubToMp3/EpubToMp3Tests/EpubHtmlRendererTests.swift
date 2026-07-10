@@ -68,6 +68,62 @@ final class EpubHtmlRendererTests: XCTestCase {
             "inline data: URI images must survive HTML sanitisation so the importer can create attachments")
     }
 
+    /// Regression: a large inline EPUB image must be DOWNSAMPLED before it
+    /// is baked into the attributed string, not decoded at full resolution.
+    /// A 2000x2000 source that survived at full size decompresses to a
+    /// ~16 MB resident bitmap; the scroll-mode buffer renders the current
+    /// chapter plus both neighbours on the main thread, so image-heavy
+    /// chapters spiked hundreds of MB the instant the reader/player mounted
+    /// — enough, on an 8 GB device with WidgetKit reloading on the play
+    /// burst, to force a full device reboot. The renderer now caps every
+    /// inline attachment's largest edge.
+    func testLargeInlineImageIsDownsampled() throws {
+        let s = makeSettings()
+        let bigPNG = try Self.makeSolidPNGBase64(width: 2000, height: 2000)
+        let html = "<p>text</p><img src=\"data:image/png;base64,\(bigPNG)\" alt=\"big\"/>"
+        guard let out = EpubHtmlRenderer.render(html: html, css: nil, settings: s) else {
+            return XCTFail("renderer returned nil for HTML with large inline image")
+        }
+        let n = ns(out)
+        var maxEdge: CGFloat = 0
+        n.enumerateAttribute(.attachment, in: NSRange(location: 0, length: n.length)) { value, _, _ in
+            #if canImport(AppKit)
+            guard let att = value as? NSTextAttachment, let img = att.image else { return }
+            // NSImage.size is in points; the cgImage carries true pixels.
+            if let cg = img.cgImage(forProposedRect: nil, context: nil, hints: nil) {
+                maxEdge = max(maxEdge, CGFloat(max(cg.width, cg.height)))
+            }
+            #endif
+        }
+        #if canImport(AppKit)
+        XCTAssertGreaterThan(maxEdge, 0, "expected a decoded attachment image")
+        XCTAssertLessThanOrEqual(
+            maxEdge, 1400,
+            "inline image must be capped at 1400px; got \(maxEdge)px — full-res decode reintroduces the OOM device-freeze"
+        )
+        #endif
+    }
+
+    /// Build a base64-encoded solid-colour PNG of the given pixel size for
+    /// exercising the inline-image downsample path.
+    private static func makeSolidPNGBase64(width: Int, height: Int) throws -> String {
+        #if canImport(AppKit)
+        let img = NSImage(size: NSSize(width: width, height: height))
+        img.lockFocus()
+        NSColor.red.setFill()
+        NSRect(x: 0, y: 0, width: width, height: height).fill()
+        img.unlockFocus()
+        guard let tiff = img.tiffRepresentation,
+              let rep = NSBitmapImageRep(data: tiff),
+              let png = rep.representation(using: .png, properties: [:]) else {
+            throw XCTSkip("could not build PNG fixture")
+        }
+        return png.base64EncodedString()
+        #else
+        throw XCTSkip("PNG fixture only built on AppKit host")
+        #endif
+    }
+
     /// Regression: the EPUB's intentional centred alignment on a chapter
     /// title (Pinocchio's "Come andò che Maestro Ciliegia…") must survive
     /// the override pipeline — the user's body alignment choice only
