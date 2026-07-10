@@ -195,6 +195,53 @@ final class WidgetDataSyncTests: XCTestCase {
         )
     }
 
+    // MARK: - AudioPlayer widget-reload throttle (regression)
+
+    /// Regression for: `syncWidgetNowPlaying()` ran on every ~1Hz Now
+    /// Playing refresh during playback and always called the RELOADING
+    /// `WidgetDataSync.updateNowPlaying`, which fires three
+    /// `WidgetCenter.reloadTimelines` XPC calls to widgetkitd. Under
+    /// sustained playback this queued reload work every second; a widget
+    /// button tap (which itself triggers another `updateNowPlayingInfo()`
+    /// via `resume()`/`togglePlayPause()`) landed on top of an already
+    /// backlogged queue and presented as the app "traves e fica pesado"
+    /// when trying to start playback from the widget. The fix reloads only
+    /// when book/chapter/isPlaying actually changed; bare progress ticks
+    /// use the non-reloading `updateNowPlayingProgress`.
+    func test_widgetSyncNeedsReload_falseForUnchangedProgressTick() {
+        let state = (bookId: "book-1", chapterName: "Chapter One", isPlaying: true)
+        XCTAssertFalse(
+            AudioPlayer.widgetSyncNeedsReload(last: state, current: state),
+            "A repeated tick with the same book/chapter/isPlaying must not force a WidgetKit reload"
+        )
+    }
+
+    func test_widgetSyncNeedsReload_trueOnFirstSync() {
+        let state = (bookId: "book-1", chapterName: "Chapter One", isPlaying: true)
+        XCTAssertTrue(
+            AudioPlayer.widgetSyncNeedsReload(last: nil, current: state),
+            "The very first sync (no prior state) must always reload so the widget picks up the book"
+        )
+    }
+
+    func test_widgetSyncNeedsReload_trueOnIsPlayingChange() {
+        let last = (bookId: "book-1", chapterName: "Chapter One", isPlaying: false)
+        let current = (bookId: "book-1", chapterName: "Chapter One", isPlaying: true)
+        XCTAssertTrue(AudioPlayer.widgetSyncNeedsReload(last: last, current: current))
+    }
+
+    func test_widgetSyncNeedsReload_trueOnChapterChange() {
+        let last = (bookId: "book-1", chapterName: "Chapter One", isPlaying: true)
+        let current = (bookId: "book-1", chapterName: "Chapter Two", isPlaying: true)
+        XCTAssertTrue(AudioPlayer.widgetSyncNeedsReload(last: last, current: current))
+    }
+
+    func test_widgetSyncNeedsReload_trueOnBookChange() {
+        let last = (bookId: "book-1", chapterName: "Chapter One", isPlaying: true)
+        let current = (bookId: "book-2", chapterName: "Chapter One", isPlaying: true)
+        XCTAssertTrue(AudioPlayer.widgetSyncNeedsReload(last: last, current: current))
+    }
+
     // MARK: - App Group boundary (never UserDefaults.standard)
 
     /// Verify that keys written to the test suite are NOT visible in .standard.

@@ -295,6 +295,19 @@ final class AudioPlayer: ObservableObject {
     /// hitting the system's info center on every 250ms tick.
     private var lastNowPlayingUpdate: Date = .distantPast
     private var audioSessionConfigured = false
+    /// Last (bookId, chapterName, isPlaying) tuple pushed to the widget via
+    /// the RELOADING `WidgetDataSync.updateNowPlaying`. `syncWidgetNowPlaying()`
+    /// runs on every ~1Hz Now Playing refresh during playback, but
+    /// `WidgetCenter.reloadTimelines` is a cross-process XPC call to
+    /// `widgetkitd` — firing it every second (three kinds at once) queues up
+    /// widgetkitd work and made the widget's own play button feel like it
+    /// "trava e fica pesado" under repeated taps, because each tap's
+    /// `resume()` → `updateNowPlayingInfo()` added another reload burst on
+    /// top of an already-backlogged queue. Only the fields that actually
+    /// changed (chapter advance, play/pause) warrant a timeline reload;
+    /// bare progress ticks use `updateNowPlayingProgress` (write-only, no
+    /// `reloadTimelines` call).
+    private var lastSyncedWidgetState: (bookId: String, chapterName: String?, isPlaying: Bool)?
 
     // Segment-mode cumulative position tracking: AVQueuePlayer reports
     // per-item position, but SyncEngine needs chapter-relative time.
@@ -1821,13 +1834,41 @@ final class AudioPlayer: ObservableObject {
     /// `NowPlayingView.setCurrentlyPlaying` wrote to the widget, and only
     /// once, when a book was opened — the widget then never learned about
     /// a later pause, so it showed "pause" forever.
+    /// Pure decision helper behind `syncWidgetNowPlaying()`: does the new
+    /// (bookId, chapterName, isPlaying) tuple require a full, RELOADING
+    /// `WidgetDataSync.updateNowPlaying` call, or can this tick get away
+    /// with the reload-free `updateNowPlayingProgress`? Extracted so the
+    /// dedup logic is unit-testable without spinning up a real
+    /// `WidgetCenter`/App Group round-trip.
+    nonisolated static func widgetSyncNeedsReload(
+        last: (bookId: String, chapterName: String?, isPlaying: Bool)?,
+        current: (bookId: String, chapterName: String?, isPlaying: Bool)
+    ) -> Bool {
+        guard let last else { return true }
+        return last.bookId != current.bookId
+            || last.chapterName != current.chapterName
+            || last.isPlaying != current.isPlaying
+    }
+
     private func syncWidgetNowPlaying() {
         guard let bookId = UserDefaults.standard.string(forKey: Self.currentBookIDDefaultsKey),
               !bookId.isEmpty else { return }
         let progress = durationSeconds > 0 ? positionSeconds / durationSeconds : 0
+        let chapterName = currentChapterValue?.displayTitle
+        let state = (bookId: bookId, chapterName: chapterName, isPlaying: isPlaying)
+
+        // Only pay for a `WidgetCenter.reloadTimelines` IPC round-trip when
+        // the book, chapter, or transport state actually changed. A bare
+        // progress tick (the common case — fires every ~1s during playback)
+        // writes the new value without asking widgetkitd to rebuild.
+        guard Self.widgetSyncNeedsReload(last: lastSyncedWidgetState, current: state) else {
+            WidgetDataSync.updateNowPlayingProgress(progress)
+            return
+        }
+        lastSyncedWidgetState = state
         WidgetDataSync.updateNowPlaying(
             bookId: bookId,
-            chapterName: currentChapterValue?.displayTitle,
+            chapterName: chapterName,
             progress: progress,
             isPlaying: isPlaying
         )
