@@ -30,6 +30,7 @@ struct EpubToMp3App: App {
     init() {
         // Audio session configured lazily on first playback (AudioPlayer)
         // to avoid the CoreAudio AddInstanceForFactory log on app launch.
+        Self.registerWidgetIntentObserver()
     }
 
     var body: some Scene {
@@ -45,6 +46,11 @@ struct EpubToMp3App: App {
                 .environmentObject(readerCoordinator)
                 .preferredColorScheme(settings.readerTheme.preferredColorScheme)
                 .task {
+                    // Publish this scene's player/settings so the Darwin
+                    // notification callback (no captured context — it's a
+                    // bare C function pointer) can reach the running
+                    // instances without a full singleton refactor.
+                    Self.sharedPlayerForWidgetIntents = player
                     #if os(macOS)
                     await startSidecarIfNeeded()
                     #endif
@@ -153,6 +159,10 @@ struct EpubToMp3App: App {
                 // Also set the player state so the full-player sheet
                 // can pick up this book on foreground.
                 NowPlayingView.setCurrentlyPlaying(bookID: bookId, chapterIndex: 0)
+                // Actually navigate to the player UI — without this the
+                // widget tap only opened the app to the Library/reader
+                // landing screen and never presented the full player.
+                playerPresentation.showFullPlayer()
             }
         case "library":
             // No-op: the app opens to the library tab by default when
@@ -178,9 +188,60 @@ struct EpubToMp3App: App {
 
     /// Read and clear playback-control flags written by widget intents
     /// (App Group suite). The widget cannot call AudioPlayer directly,
-    /// so it writes boolean flags that we drain here on every foreground.
+    /// so it writes boolean flags that we drain here — both on every
+    /// foreground transition AND immediately via a Darwin notification
+    /// (see `registerWidgetIntentObserver`) so a tap on the widget's
+    /// play/pause button works even while the app is merely backgrounded.
     private func drainWidgetIntents() {
         guard let group = UserDefaults(suiteName: LibraryStore.appGroupID) else { return }
+
+        if group.bool(forKey: "widget.intent.togglePlayPause") {
+            group.removeObject(forKey: "widget.intent.togglePlayPause")
+            player.togglePlayPause()
+        }
+
+        if group.bool(forKey: "widget.intent.skipForward30") {
+            group.removeObject(forKey: "widget.intent.skipForward30")
+            player.skipForward(seconds: 30)
+        }
+    }
+
+    // MARK: - Widget intent Darwin notification bridge
+
+    /// Weak-ish static hook so the Darwin notification C callback (which
+    /// cannot capture `self`) can reach the live `AudioPlayer` instance.
+    /// Set once per scene mount in the `.task` above. `nonisolated(unsafe)`
+    /// per this project's documented pattern for statics accessed from a
+    /// non-isolated C callback — writes happen on the main actor at scene
+    /// mount, reads happen from the Darwin callback (also funneled back to
+    /// the main actor before touching the player).
+    nonisolated(unsafe) private static var sharedPlayerForWidgetIntents: AudioPlayer?
+
+    /// Register a Darwin notification observer so widget-button taps are
+    /// drained immediately, instead of waiting for a `scenePhase` change to
+    /// `.active`. The app declares the `audio` UIBackgroundMode, so it can
+    /// legitimately still be running (not suspended) while backgrounded
+    /// during playback — this observer fires in that state too.
+    private static func registerWidgetIntentObserver() {
+        guard !isRunningUnderXCTest() else { return }
+        CFNotificationCenterAddObserver(
+            CFNotificationCenterGetDarwinNotifyCenter(),
+            nil,
+            { _, _, _, _, _ in
+                Task { @MainActor in
+                    EpubToMp3App.drainWidgetIntentsStatic()
+                }
+            },
+            "com.pietrocode.epubtomp3.widgetIntent" as CFString,
+            nil,
+            .deliverImmediately
+        )
+    }
+
+    @MainActor
+    private static func drainWidgetIntentsStatic() {
+        guard let player = sharedPlayerForWidgetIntents,
+              let group = UserDefaults(suiteName: LibraryStore.appGroupID) else { return }
 
         if group.bool(forKey: "widget.intent.togglePlayPause") {
             group.removeObject(forKey: "widget.intent.togglePlayPause")

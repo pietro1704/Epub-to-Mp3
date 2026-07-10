@@ -370,9 +370,31 @@ private struct NowPlayingEntryView: View {
     }
 }
 
-// MARK: - Widget Intents (trampoline via App Group UserDefaults)
+// MARK: - Widget Intents (trampoline via App Group UserDefaults + Darwin notification)
 
-/// Play/Pause: writes a flag the main app reads on foreground.
+/// Darwin notification name posted after writing an intent flag. The main
+/// app registers a `CFNotificationCenter` observer for this on launch (see
+/// `EpubToMp3App.registerWidgetIntentObserver`) so the flag is drained
+/// immediately — including while the app is merely backgrounded (it holds
+/// the `audio` UIBackgroundMode, so it isn't suspended during playback).
+///
+/// Without this, the flag was only drained on a `scenePhase` transition to
+/// `.active`, which never fires if the app is already frontmost/backgrounded
+/// when the widget button is tapped — the widget button appeared to do
+/// nothing.
+private let widgetIntentDarwinNotification = "com.pietrocode.epubtomp3.widgetIntent" as CFString
+
+private func postWidgetIntentNotification() {
+    CFNotificationCenterPostNotification(
+        CFNotificationCenterGetDarwinNotifyCenter(),
+        CFNotificationName(widgetIntentDarwinNotification),
+        nil, nil, true
+    )
+}
+
+/// Play/Pause: writes a flag the main app reads on foreground, and pings
+/// it immediately via Darwin notification so it doesn't have to wait for
+/// a scene-phase transition.
 @available(iOS 16.0, *)
 struct TogglePlayPauseIntent: AppIntent {
     static let title: LocalizedStringResource = "Play / Pause"
@@ -381,6 +403,7 @@ struct TogglePlayPauseIntent: AppIntent {
     func perform() async throws -> some IntentResult {
         UserDefaults(suiteName: appGroupID)?
             .set(true, forKey: "widget.intent.togglePlayPause")
+        postWidgetIntentNotification()
         return .result()
     }
 }
@@ -394,6 +417,7 @@ struct SkipForward30Intent: AppIntent {
     func perform() async throws -> some IntentResult {
         UserDefaults(suiteName: appGroupID)?
             .set(true, forKey: "widget.intent.skipForward30")
+        postWidgetIntentNotification()
         return .result()
     }
 }
