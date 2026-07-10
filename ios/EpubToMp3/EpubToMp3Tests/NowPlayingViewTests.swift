@@ -104,6 +104,29 @@ final class NowPlayingViewTests: XCTestCase {
         XCTAssertNil(defaults.string(forKey: AudioPlayer.currentBookIDDefaultsKey))
     }
 
+    // MARK: - Widget "stale isPlaying" regression (bug fix)
+
+    /// Regression for: the Now Playing widget showed a pause button even
+    /// when nothing was actually playing. Root cause: `setCurrentlyPlaying`
+    /// used to write `isPlaying: bookID != nil` to the App Group — i.e. it
+    /// treated "a book is bound to the player" as "audio is playing", which
+    /// is false the moment a book is merely opened (playback only starts on
+    /// an explicit user action). Binding a book must never claim playback
+    /// is active; only `AudioPlayer.updateNowPlayingInfo()` (driven by the
+    /// real `isPlaying` flag) is allowed to assert that.
+    func testSetCurrentlyPlayingNeverClaimsIsPlayingTrue() throws {
+        let source = try String(
+            contentsOf: URL(fileURLWithPath: #filePath)
+                .deletingLastPathComponent()
+                .deletingLastPathComponent()
+                .appendingPathComponent("EpubToMp3/Views/NowPlayingView.swift")
+        )
+        XCTAssertFalse(
+            source.contains("isPlaying: bookID != nil"),
+            "setCurrentlyPlaying must not infer isPlaying from whether a book id is set — that caused the widget to show a permanently-stale pause button."
+        )
+    }
+
     func testNowPlayingUsesJobSnapshotStubForPlayerReader() throws {
         let source = try String(
             contentsOf: URL(fileURLWithPath: #filePath)

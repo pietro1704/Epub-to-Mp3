@@ -1810,6 +1810,27 @@ final class AudioPlayer: ObservableObject {
 
     private func updateNowPlayingInfo() {
         MPNowPlayingInfoCenter.default().nowPlayingInfo = makeNowPlayingInfo()
+        syncWidgetNowPlaying()
+    }
+
+    /// Push the real playback state to the App Group so the home-screen /
+    /// lock-screen widgets never show a stale play/pause affordance.
+    /// Called from every site that already calls `updateNowPlayingInfo()`
+    /// (play, pause, resume, chapter advance) — the single choke point for
+    /// "did the transport state change" in this class. Previously only
+    /// `NowPlayingView.setCurrentlyPlaying` wrote to the widget, and only
+    /// once, when a book was opened — the widget then never learned about
+    /// a later pause, so it showed "pause" forever.
+    private func syncWidgetNowPlaying() {
+        guard let bookId = UserDefaults.standard.string(forKey: Self.currentBookIDDefaultsKey),
+              !bookId.isEmpty else { return }
+        let progress = durationSeconds > 0 ? positionSeconds / durationSeconds : 0
+        WidgetDataSync.updateNowPlaying(
+            bookId: bookId,
+            chapterName: currentChapterValue?.displayTitle,
+            progress: progress,
+            isPlaying: isPlaying
+        )
     }
 
     private func makeArtwork(from data: Data) -> MPMediaItemArtwork? {

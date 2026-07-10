@@ -189,11 +189,19 @@ extension NowPlayingView {
             defaults.removeObject(forKey: AudioPlayer.currentChapterIndexDefaultsKey)
         }
         // Sync to App Group for all widget types (Now Playing + legacy).
+        // NOTE: binding a book to the player does NOT mean audio is
+        // playing — playback only starts on an explicit user action
+        // (AudioPlayer.resume()/togglePlayPause()). Writing
+        // `isPlaying: true` here caused the widget to show a stale
+        // "pause" button forever, even when nothing was actually
+        // playing. `AudioPlayer.updateNowPlayingInfo()` is the single
+        // source of truth for the real playback flag; it re-syncs
+        // right after this call on every play/pause/chapter change.
         WidgetDataSync.updateNowPlaying(
             bookId: bookID,
             chapterName: chapterName,
             progress: 0,
-            isPlaying: bookID != nil
+            isPlaying: false
         )
     }
 }

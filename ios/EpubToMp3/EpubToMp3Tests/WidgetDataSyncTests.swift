@@ -121,6 +121,80 @@ final class WidgetDataSyncTests: XCTestCase {
         XCTAssertEqual(decoded, books)
     }
 
+    // MARK: - AudioPlayer -> widget isPlaying sync (regression)
+
+    /// Regression for: the widget showed "pause" forever because only
+    /// `NowPlayingView.setCurrentlyPlaying` (fired once, on book-open)
+    /// wrote `widget.nowPlayingIsPlaying`, and it always wrote `true`.
+    /// `AudioPlayer.pause()`/`resume()` must keep the real App Group flag
+    /// in sync via `updateNowPlayingInfo() -> syncWidgetNowPlaying()`.
+    @MainActor
+    func test_audioPlayerPauseResume_syncsRealAppGroupIsPlayingFlag() {
+        let appGroupID = "group.com.pietrocode.epubtomp3"
+        guard let group = UserDefaults(suiteName: appGroupID) else {
+            XCTFail("App Group suite must be constructible even without the real entitlement in a test host")
+            return
+        }
+        let standardKey = "currentlyPlayingBookID"
+        let groupKey = "widget.nowPlayingIsPlaying"
+
+        // Save/restore so this test doesn't leak state into other tests
+        // or a real device's App Group.
+        let previousStandard = UserDefaults.standard.string(forKey: standardKey)
+        let previousGroupValue = group.object(forKey: groupKey)
+        defer {
+            if let previousStandard {
+                UserDefaults.standard.set(previousStandard, forKey: standardKey)
+            } else {
+                UserDefaults.standard.removeObject(forKey: standardKey)
+            }
+            if let previousGroupValue {
+                group.set(previousGroupValue, forKey: groupKey)
+            } else {
+                group.removeObject(forKey: groupKey)
+            }
+        }
+
+        UserDefaults.standard.set("book-sync-test", forKey: standardKey)
+
+        let json = """
+        {
+          "jobId": "widget-sync-test-job",
+          "state": "finished",
+          "bookTitle": "Foundation",
+          "bookAuthor": "Isaac Asimov",
+          "progressPercent": 100.0,
+          "chaptersTotal": 1,
+          "chaptersCompleted": 1,
+          "chapterProgress": [
+            {
+              "index": 0,
+              "name": "Prologue",
+              "status": "completed",
+              "downloadUrl": "https://example.com/ch0.mp3",
+              "progressRatio": 1.0,
+              "durationSeconds": 120.0
+            }
+          ]
+        }
+        """.data(using: .utf8)!
+        let snapshot = try! JSONDecoder().decode(JobSnapshot.self, from: json)
+
+        let player = AudioPlayer()
+        player.updateSnapshot(snapshot)
+        player.resume()
+        XCTAssertTrue(
+            group.bool(forKey: groupKey),
+            "resume() must flip the App Group isPlaying flag to true"
+        )
+
+        player.pause()
+        XCTAssertFalse(
+            group.bool(forKey: groupKey),
+            "pause() must flip the App Group isPlaying flag back to false — this is the exact bug where the widget kept showing a pause button after the user paused"
+        )
+    }
+
     // MARK: - App Group boundary (never UserDefaults.standard)
 
     /// Verify that keys written to the test suite are NOT visible in .standard.
