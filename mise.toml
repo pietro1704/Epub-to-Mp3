@@ -352,6 +352,7 @@ depends = ["vendor:python"]
 run = """
 #!/bin/bash
 set -euo pipefail
+"${MISE_PROJECT_ROOT:-.}/scripts/ios_disk_guard.sh"
 cd ios/EpubToMp3
 if ! command -v xcodegen >/dev/null 2>&1; then
   echo "error: xcodegen not installed. Install via: brew install xcodegen"
@@ -431,6 +432,7 @@ description = "Install and launch the newest existing iphoneos EpubToMp3.app on 
 run = """
 #!/bin/bash
 set -euo pipefail
+"${MISE_PROJECT_ROOT:-.}/scripts/ios_disk_guard.sh"
 cd ios/EpubToMp3
 # Keep the generated .xcodeproj in sync with project.yml before locating the
 # built app (harmless when only launching a prebuilt .app, cheap otherwise).
@@ -469,6 +471,7 @@ description = "Build-for-testing + run UITests on the paired iPhone (real device
 run = """
 #!/bin/bash
 set -euo pipefail
+"${MISE_PROJECT_ROOT:-.}/scripts/ios_disk_guard.sh"
 cd ios/EpubToMp3
 # The .xcodeproj is generated (project.yml is the source of truth) and is
 # gitignored — regenerate it here so a device test never builds against a
