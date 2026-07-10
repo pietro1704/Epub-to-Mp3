@@ -89,7 +89,7 @@ private func coverImage(from data: Data?, size: CGFloat = 28) -> some View {
     if let data, let img = PlatformImage(data: data) {
         Image(platformImage: img)
             .resizable()
-            .scaledToFill()
+            .scaledToFit()
     } else {
         Rectangle()
             .fill(
