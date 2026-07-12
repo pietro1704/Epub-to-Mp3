@@ -323,6 +323,24 @@ final class TextKitPageViewTests: XCTestCase {
                       "the displayed controller must now be the freshly-seeded page")
     }
 
+    /// `TextKitPageController.viewDidLayoutSubviews` re-syncs the hosted
+    /// text view on every real layout pass, so its TextKit glyph geometry
+    /// never goes stale relative to whatever frame the PVC installs —
+    /// including right after an animated curl settles, which is exactly
+    /// when the earlier frame-forcing approach left text invisible.
+    func testViewDidLayoutSubviewsResyncsTextViewLayout() {
+        let controller = TextKitPageController(pageIndex: 0)
+        controller.apply(
+            slice: NSAttributedString(string: "Some page text"),
+            margin: 16, topInset: 0, bottomInset: 0, background: .white
+        )
+        controller.view.frame = CGRect(x: 0, y: 0, width: 300, height: 500)
+        controller.viewDidLayoutSubviews()
+
+        XCTAssertEqual(controller.debugSliceString, "Some page text",
+                       "text must remain assigned and laid out after a real layout pass")
+    }
+
     /// Out-of-range index yields an empty slice rather than crashing.
     func testSliceOutOfRangeIsEmpty() {
         var binding = 0

@@ -100,6 +100,64 @@ final class InstantReaderIndexMapperTests: XCTestCase {
         )
     }
 
+    func testRetreatClampPrefersPlayableChapterAtOrBeforeTarget() {
+        // EPUB chapter 1 (cover/TOC, non-playable) sits between two playable
+        // chapters. Retreating past chapter 2's start resolves prev=1, which
+        // must clamp BACKWARD to chapter 0 — not forward to chapter 2, which
+        // would silently relaunch the chapter the user just left.
+        let snapshot = Self.snapshot(chapters: [
+            Self.playableChapter(index: 0),
+            Self.pendingChapter(index: 1),
+            Self.playableChapter(index: 2),
+        ])
+
+        XCTAssertEqual(
+            InstantReaderIndexMapper.playableIndexOrClamped(forEpubIndex: 1, in: snapshot, direction: .atOrBefore),
+            0,
+            "retreat must resolve a non-playable predecessor to the nearest EARLIER playable chapter, not overshoot forward"
+        )
+    }
+
+    func testRetreatClampSpillsForwardOnlyWhenNothingPlayablePrecedesTarget() {
+        let snapshot = Self.snapshot(chapters: [
+            Self.pendingChapter(index: 0),
+            Self.playableChapter(index: 1),
+        ])
+
+        XCTAssertEqual(
+            InstantReaderIndexMapper.playableIndexOrClamped(forEpubIndex: 0, in: snapshot, direction: .atOrBefore),
+            0,
+            "no playable chapter precedes epubIndex 0 — fall back to the nearest later playable slot"
+        )
+    }
+
+    /// `PlayerReaderView.returnToPreviousChapter()` composes `.atOrBefore`
+    /// with `epubIndex(forPlayableIndex:)` so the reader DISPLAY and the
+    /// AUDIO PLAYBACK always land on the same chapter. A regression let the
+    /// display use the raw non-playable predecessor while playback used the
+    /// resolved playable one — audio jumped to the correct earlier chapter
+    /// while the reader showed a different (often near-empty) chapter's
+    /// page 1, which looked like "retreat lands on the wrong page/chapter".
+    func testRetreatDisplayAndPlaybackIndicesAgreeAcrossNonPlayablePredecessor() {
+        let snapshot = Self.snapshot(chapters: [
+            Self.playableChapter(index: 0),
+            Self.pendingChapter(index: 1),
+            Self.playableChapter(index: 2),
+        ])
+
+        let prev = 1 // currentEpubIndex(2) - 1; chapter 1 is non-playable.
+        let playablePrev = InstantReaderIndexMapper.playableIndexOrClamped(
+            forEpubIndex: prev, in: snapshot, direction: .atOrBefore
+        )
+        let displayTarget = InstantReaderIndexMapper.epubIndex(forPlayableIndex: playablePrev, in: snapshot)
+
+        XCTAssertEqual(playablePrev, 0, "audio must land on the earlier playable chapter (epub index 0)")
+        XCTAssertEqual(
+            displayTarget, 0,
+            "reader display must resolve to the SAME epub index the audio landed on, not the raw non-playable predecessor (1)"
+        )
+    }
+
     private static func snapshot(chapters: [JobSnapshot.Chapter]) -> JobSnapshot {
         JobSnapshot(
             jobId: "instant-reader-index-map",

@@ -98,8 +98,15 @@ final class ReaderChapterAdvanceTests: XCTestCase {
     private func readerSources() throws -> (reader: String, attributed: String) {
         let testFile = URL(fileURLWithPath: #filePath)
         let appDir = testFile.deletingLastPathComponent().deletingLastPathComponent()
+        let readerURL = appDir.appendingPathComponent("EpubToMp3/Views/ReaderView.swift")
+        // `#filePath` only resolves on the CI host/simulator, not inside a
+        // physical-device test bundle (mirrors textKitPageViewSource()'s guard
+        // below) — skip rather than fail when the source tree isn't reachable.
+        guard FileManager.default.fileExists(atPath: readerURL.path) else {
+            throw XCTSkip("ReaderView.swift not reachable in this test host (physical device) — source-contract runs on the CI host/simulator.")
+        }
         return (
-            reader: try String(contentsOf: appDir.appendingPathComponent("EpubToMp3/Views/ReaderView.swift")),
+            reader: try String(contentsOf: readerURL),
             attributed: try String(contentsOf: appDir.appendingPathComponent("EpubToMp3/Views/AttributedPageView.swift"))
         )
     }
@@ -115,6 +122,104 @@ final class ReaderChapterAdvanceTests: XCTestCase {
             throw XCTSkip("TextKitPageView.swift not reachable in this test host (physical device) — source-contract runs on the CI host/simulator.")
         }
         return try String(contentsOf: url, encoding: .utf8)
+    }
+
+    /// Reads PlayerReaderView.swift, same skip-guard pattern as the other
+    /// source-contract helpers above.
+    private func playerReaderViewSource() throws -> String {
+        let testFile = URL(fileURLWithPath: #filePath)
+        let appDir = testFile.deletingLastPathComponent().deletingLastPathComponent()
+        let url = appDir.appendingPathComponent("EpubToMp3/Views/PlayerReaderView.swift")
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            throw XCTSkip("PlayerReaderView.swift not reachable in this test host (physical device) — source-contract runs on the CI host/simulator.")
+        }
+        return try String(contentsOf: url, encoding: .utf8)
+    }
+
+    /// Reads InstantReaderView.swift, same skip-guard pattern as the other
+    /// source-contract helpers above.
+    private func instantReaderViewSource() throws -> String {
+        let testFile = URL(fileURLWithPath: #filePath)
+        let appDir = testFile.deletingLastPathComponent().deletingLastPathComponent()
+        let url = appDir.appendingPathComponent("EpubToMp3/Views/InstantReaderView.swift")
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            throw XCTSkip("InstantReaderView.swift not reachable in this test host (physical device) — source-contract runs on the CI host/simulator.")
+        }
+        return try String(contentsOf: url, encoding: .utf8)
+    }
+
+    /// Regression: `InstantReaderView` has its OWN, separate
+    /// `returnToPreviousChapter`/`readerShouldStartAtLastPage` — a fully
+    /// independent implementation from `PlayerReaderView`'s (confirmed via
+    /// on-device flicker-debug.log: the fix in PlayerReaderView never fired
+    /// because the user was exercising InstantReaderView instead). Here the
+    /// race was even more direct: `.compatOnChange(of: currentChapterIndex)`
+    /// fires the instant `currentChapterIndex -= 1` runs inside
+    /// `returnToPreviousChapter()` — practically the very next line after
+    /// `readerShouldStartAtLastPage = true` — resetting it back to `false`
+    /// before the new ReaderView's `Int.max` seed had any chance to settle.
+    /// Same fix shape as PlayerReaderView: the reset must only happen via
+    /// `ReaderView.onLastPageLanded`.
+    func testInstantReaderRetreatFlagResetOnlyViaReaderCallbackNotChapterIndexChange() throws {
+        let src = try instantReaderViewSource()
+        XCTAssertTrue(
+            src.contains("onLastPageLanded: { readerShouldStartAtLastPage = false }"),
+            "InstantReaderView's ReaderView must reset readerShouldStartAtLastPage via onLastPageLanded, " +
+            "not reactively off currentChapterIndex changing."
+        )
+        guard let range = src.range(of: ".compatOnChange(of: currentChapterIndex)") else {
+            XCTFail("currentChapterIndex onChange handler not found")
+            return
+        }
+        let tail = src[range.upperBound...]
+        guard let closeRange = tail.range(of: "\n        }") else {
+            XCTFail("could not locate end of currentChapterIndex onChange handler")
+            return
+        }
+        let handlerBody = tail[..<closeRange.lowerBound]
+        XCTAssertFalse(
+            handlerBody.contains("readerShouldStartAtLastPage = false"),
+            "currentChapterIndex's onChange must not reset readerShouldStartAtLastPage — it fires " +
+            "near-synchronously with returnToPreviousChapter's own currentChapterIndex -= 1, " +
+            "racing the retreat's Int.max seed before it can settle."
+        )
+    }
+
+    /// Regression: on-device logging proved `readerShouldStartAtLastPage`
+    /// was being reset to `false` reactively off `playingEpubZeroBasedIndex`
+    /// (the AUDIO player's chapter index) — which settles near-instantly,
+    /// well before the reader's own `Int.max` → real-last-page seed
+    /// finishes. That premature reset re-rendered the SAME `.id()`-stable
+    /// ReaderView with `startAtLastPage: false`, which reset `currentPage`
+    /// back to 0 mid-flight — "retreat lands on page 1 instead of the last
+    /// page" even though the correct PREVIOUS chapter was already showing
+    /// (a separate, already-fixed bug). The fix: `returnToPreviousChapter`'s
+    /// flags are only cleared by `ReaderView.onLastPageLanded`, fired by the
+    /// reader itself once pagination genuinely settles — never by the audio
+    /// index catching up.
+    func testRetreatFlagsResetOnlyViaReaderCallbackNotAudioIndex() throws {
+        let src = try playerReaderViewSource()
+        XCTAssertTrue(
+            src.contains("onLastPageLanded: {"),
+            "ReaderView must be given an onLastPageLanded callback so it — not the audio index — decides when startAtLastPage's flags reset."
+        )
+        // The playingEpubZeroBasedIndex onChange handler must NOT reset
+        // readerShouldStartAtLastPage anymore — only onLastPageLanded may.
+        guard let range = src.range(of: ".compatOnChange(of: playingEpubZeroBasedIndex)") else {
+            XCTFail("playingEpubZeroBasedIndex onChange handler not found")
+            return
+        }
+        let tail = src[range.upperBound...]
+        guard let closeRange = tail.range(of: "\n        }") else {
+            XCTFail("could not locate end of playingEpubZeroBasedIndex onChange handler")
+            return
+        }
+        let handlerBody = tail[..<closeRange.lowerBound]
+        XCTAssertFalse(
+            handlerBody.contains("readerShouldStartAtLastPage = false"),
+            "playingEpubZeroBasedIndex's onChange must not reset readerShouldStartAtLastPage — " +
+            "the audio index settles before pagination does, racing a retreat's Int.max seed."
+        )
     }
 
     // MARK: - Chapter-crossing animation (source-contract)
@@ -148,6 +253,32 @@ final class ReaderChapterAdvanceTests: XCTestCase {
                       "The count-change branch comment must remain (locates the branch).")
         XCTAssertTrue(src.contains("pvc.setViewControllers([vc], direction: .forward, animated: false)"),
                       "The count-change branch must still hard-cut with animated: false.")
+    }
+
+    /// Regression: a fix attempt force-set `vc.view.frame` (and called
+    /// `layoutIfNeeded()`) in `seedCrossing` before handing the incoming
+    /// controller to `setViewControllers`, to solve a black-flash-on-crossing
+    /// bug. It fought `UIPageViewController`'s own frame ownership of the
+    /// pageCurl transition container: the manual frame got silently
+    /// overwritten post-installation with no follow-up layout pass, leaving
+    /// TextKit's glyph cache stale — text rendered only DURING the animated
+    /// curl and vanished once it settled at rest. `seedCrossing` must never
+    /// touch `vc.view.frame`; `TextKitPageController.viewDidLayoutSubviews`
+    /// (not `seedCrossing`) is the mechanism that keeps text in sync with
+    /// whatever frame the PVC actually installs.
+    func testSeedCrossingDoesNotForceIncomingControllerFrame() throws {
+        let src = try textKitPageViewSource()
+        XCTAssertFalse(
+            src.contains("vc.view.frame ="),
+            "seedCrossing must not manually assign the incoming controller's view frame — " +
+            "UIPageViewController owns pageCurl child-view framing; fighting it left text " +
+            "visible only during the animated transition and invisible at rest."
+        )
+        XCTAssertTrue(
+            src.contains("override func viewDidLayoutSubviews()"),
+            "TextKitPageController must re-sync the hosted text view on every real layout pass " +
+            "instead of pre-forcing a frame in seedCrossing."
+        )
     }
 
     func testCrossingReSeedRespectsReduceMotionAndGuardsProgrammaticTurn() throws {

@@ -149,13 +149,14 @@ struct PlayerReaderView: View {
         }
         .compatOnChange(of: playingEpubZeroBasedIndex) { newEpubIndex in
             guard let newEpubIndex else { return }
-            if displayedEpubIndexOverride == newEpubIndex {
+            // Only clear the override for a non-retreat jump (TOC / advance)
+            // here — the audio index catches up near-instantly, well before
+            // this instance may still need `startAtLastPage: true` on a
+            // retreat. Retreat's own reset happens in `onLastPageLanded`,
+            // once the reader (not the player) confirms it landed.
+            if displayedEpubIndexOverride == newEpubIndex, pendingRetreatTargetEpubIndex == nil {
                 displayedEpubIndexOverride = nil
             }
-            guard let pendingTarget = pendingRetreatTargetEpubIndex,
-              newEpubIndex == pendingTarget else { return }
-            readerShouldStartAtLastPage = false
-            pendingRetreatTargetEpubIndex = nil
         }
         .confirmationDialog(
             pendingSentence?.text ?? "",
@@ -391,6 +392,20 @@ struct PlayerReaderView: View {
                     withAnimation(.easeInOut(duration: 0.25)) { chromeVisible = true }
                 },
                 onLinkTap: { url in handleEpubLink(url) },
+                onLastPageLanded: {
+                    // Only the reader itself knows when its Int.max seed has
+                    // actually settled into a real last-page index — resetting
+                    // these flags reactively off the AUDIO player's chapter
+                    // index (which updates near-instantly, well before
+                    // pagination) re-rendered this SAME `.id()`-stable
+                    // ReaderView with `startAtLastPage: false` while the seed
+                    // was still in flight, resetting currentPage back to 0.
+                    // By the time this fires the reader has already landed on
+                    // the intended chapter, so the override has done its job.
+                    readerShouldStartAtLastPage = false
+                    pendingRetreatTargetEpubIndex = nil
+                    displayedEpubIndexOverride = nil
+                },
                 startAtLastPage: readerShouldStartAtLastPage
             )
             .id(chapter.id)
@@ -987,8 +1002,15 @@ struct PlayerReaderView: View {
     /// Called by ReaderView.onAdvanceChapter when the user pages past the last page.
     @discardableResult
     private func advanceToNextChapter() -> Bool {
+        FlickerProbe.shared.log("advanceToNextChapter CALLED currentChapterIndex=\(player.currentChapterIndex) readerShouldStartAtLastPage=\(readerShouldStartAtLastPage)")
         let next = player.currentChapterIndex + 1
         guard next < snapshot.playableChapters.count else { return false }
+        // Defensively clear a retreat's last-page flags if the user advances
+        // forward before `onLastPageLanded` fired (interrupting a retreat
+        // mid-flight) — otherwise the NEXT chapter's ReaderView would wrongly
+        // inherit `startAtLastPage: true` and seed Int.max on a forward turn.
+        readerShouldStartAtLastPage = false
+        pendingRetreatTargetEpubIndex = nil
         player.play(snapshot: snapshot, startingAt: next)
         reloadCurrentChapter(epubIndexOverride: InstantReaderIndexMapper.epubIndex(forPlayableIndex: next, in: snapshot))
         return true
@@ -1001,15 +1023,33 @@ struct PlayerReaderView: View {
         let currentEpubIndex = playingEpubZeroBasedIndex ?? player.currentChapterIndex
         guard currentEpubIndex > 0 else { return false }
         let prev = max(0, currentEpubIndex - 1)
-        let playablePrev = InstantReaderIndexMapper.playableIndexOrClamped(forEpubIndex: prev, in: snapshot)
+        let playablePrev = InstantReaderIndexMapper.playableIndexOrClamped(
+            forEpubIndex: prev,
+            in: snapshot,
+            direction: .atOrBefore
+        )
+        // Resolve the EPUB index the READER should display from the same
+        // playable index the AUDIO is about to land on — not the raw `prev`.
+        // When `prev` itself is non-playable (cover/TOC/skipped chapter),
+        // `.atOrBefore` walks `playablePrev` back to an EARLIER chapter than
+        // `prev`. Using `prev` here showed the non-playable chapter's own
+        // (often short/near-empty) fulltext instead of the chapter that's
+        // actually playing — the reader landed on "page 1 of the wrong
+        // chapter" instead of the last page of the true previous playable
+        // one. Mirrors `advanceToNextChapter`'s `epubIndex(forPlayableIndex:)`
+        // resolution (line 993) so display and playback always agree.
+        let targetEpubIndex = InstantReaderIndexMapper.epubIndex(forPlayableIndex: playablePrev, in: snapshot) ?? prev
+        FlickerProbe.shared.log(
+            "retreat currentEpub=\(currentEpubIndex) prev=\(prev) playablePrev=\(playablePrev) targetEpubIndex=\(targetEpubIndex)"
+        )
         // Arm the last-page flag BEFORE changing the chapter so the
         // new ReaderView (born via .id recreation) reads it from its
         // init and seeds jumpToLastPageForChapterId = "__pending__".
         readerShouldStartAtLastPage = true
-        pendingRetreatTargetEpubIndex = prev
-        displayedEpubIndexOverride = prev
+        pendingRetreatTargetEpubIndex = targetEpubIndex
+        displayedEpubIndexOverride = targetEpubIndex
         player.play(snapshot: snapshot, startingAt: playablePrev)
-        reloadCurrentChapter(epubIndexOverride: prev)
+        reloadCurrentChapter(epubIndexOverride: targetEpubIndex)
         return true
     }
 

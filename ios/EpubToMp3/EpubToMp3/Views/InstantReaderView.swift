@@ -8,10 +8,42 @@ enum InstantReaderIndexMapper {
         snapshot.playableChapters.firstIndex { $0.index == epubIndex }
     }
 
-    static func playableIndexOrClamped(forEpubIndex epubIndex: Int, in snapshot: JobSnapshot) -> Int {
+    /// Which way to resolve a non-playable `epubIndex` to a playable slot.
+    enum PlayableSearchDirection {
+        /// Legacy behaviour: treat `epubIndex` as a raw position in the
+        /// `playable` array. Used by TOC jump, where landing slightly
+        /// forward of the tapped chapter is the expected/tested UX.
+        case nearestPositional
+        /// Prefer the nearest playable chapter AT OR BEFORE `epubIndex`
+        /// on the EPUB axis, only spilling forward if nothing precedes
+        /// it. Required when retreating a page past a chapter start into
+        /// a non-playable predecessor (e.g. cover/TOC) — the old
+        /// `.nearestPositional` clamp could resolve that to a LATER
+        /// playable chapter, sending playback forward instead of back.
+        case atOrBefore
+    }
+
+    static func playableIndexOrClamped(
+        forEpubIndex epubIndex: Int,
+        in snapshot: JobSnapshot,
+        direction: PlayableSearchDirection = .nearestPositional
+    ) -> Int {
         let playable = snapshot.playableChapters
-        return playable.firstIndex { $0.index == epubIndex }
-            ?? max(0, min(epubIndex, playable.count - 1))
+        if let exact = playable.firstIndex(where: { $0.index == epubIndex }) {
+            return exact
+        }
+        switch direction {
+        case .nearestPositional:
+            return max(0, min(epubIndex, playable.count - 1))
+        case .atOrBefore:
+            if let priorIdx = playable.lastIndex(where: { $0.index <= epubIndex }) {
+                return priorIdx
+            }
+            if let nextIdx = playable.firstIndex(where: { $0.index > epubIndex }) {
+                return nextIdx
+            }
+            return 0
+        }
     }
 
     static func epubIndex(forPlayableIndex playableIndex: Int, in snapshot: JobSnapshot) -> Int? {
@@ -272,7 +304,18 @@ struct InstantReaderView: View {
         .compatOnChange(of: currentChapterIndex) { newIndex in
             FlickerProbe.shared.chapterInfo = "\(newIndex)/\(fulltext.chapters.count)"
             reloadCurrentChapter(index: newIndex)
-            readerShouldStartAtLastPage = false
+            // NOTE: do NOT reset readerShouldStartAtLastPage here. This
+            // handler fires the MOMENT `currentChapterIndex` changes —
+            // i.e. the very next line inside `returnToPreviousChapter()`,
+            // near-synchronously, well before the new ReaderView's
+            // `Int.max` → real-last-page seed has settled. Resetting it
+            // here raced a re-render of the SAME `.id()`-stable ReaderView
+            // with `startAtLastPage: false` while the seed was still live,
+            // resetting `currentPage` back to 0 — "retreat lands on page 1"
+            // (confirmed on-device via flicker-debug.log). The reset now
+            // happens only in `ReaderView.onLastPageLanded`, fired by the
+            // reader itself once pagination genuinely settles, and
+            // defensively at the top of `advanceToNextChapter()`.
             settings.saveChapterIndex(newIndex, for: fulltext.jobId)
             // ReaderCoordinator is the source of truth — this single
             // call (a) updates every play surface that derives
@@ -372,6 +415,7 @@ struct InstantReaderView: View {
                 useStableBodyHeight: true,
                 bookChapters: fulltext.chapters,
                 onScrolledToChapter: { mirrorScrolledChapter($0) },
+                onLastPageLanded: { readerShouldStartAtLastPage = false },
                 startAtLastPage: readerShouldStartAtLastPage
             )
             .id(chapter.id)
@@ -1134,6 +1178,11 @@ struct InstantReaderView: View {
     /// after page 1 of chapter 0 and the rest of the book is invisible.
     private func advanceToNextChapter() -> Bool {
         guard currentChapterIndex + 1 < fulltext.chapters.count else { return false }
+        // Defensively clear a retreat's last-page flag if the user advances
+        // forward before `onLastPageLanded` fired (interrupting a retreat
+        // mid-flight) — otherwise the NEXT chapter's ReaderView would wrongly
+        // inherit `startAtLastPage: true` and seed Int.max on a forward turn.
+        readerShouldStartAtLastPage = false
         currentChapterIndex += 1
         return true
     }

@@ -105,6 +105,7 @@ struct TextKitPageView: UIViewControllerRepresentable {
         // The initial chapter is already seeded — record its token so the
         // deferred-seed path doesn't fire a redundant re-seed on first update.
         context.coordinator.committedChapterToken = pages.isEmpty ? nil : chapterToken
+        FlickerProbe.shared.log("makeUIViewController chapterToken=\(chapterToken) pages.count=\(pages.count) currentPage=\(currentPage == Int.max ? "MAX" : String(currentPage)) clampedPage=\(clampedPage) committedToken=\(context.coordinator.committedChapterToken ?? "nil")")
 
         // Tap recognizer on the PVC view so it fires regardless of the
         // hosted UITextView. Drives page turns directly via
@@ -140,6 +141,7 @@ struct TextKitPageView: UIViewControllerRepresentable {
         coordinator.parent = self
 
         let target = clampedPage
+        FlickerProbe.shared.log("updateUIVC ENTRY chapterToken=\(chapterToken) oldToken=\(oldToken) pages.count=\(pages.count) oldCount=\(oldCount) currentPage=\(currentPage == Int.max ? "MAX" : String(currentPage)) target=\(target) committedToken=\(coordinator.committedChapterToken ?? "nil")")
 
         // DEFINITIVE chapter-swap signal: the chapter token changed. This is
         // independent of page count (two chapters can have the same count),
@@ -150,6 +152,7 @@ struct TextKitPageView: UIViewControllerRepresentable {
         // the right page (0 on advance; last page on retreat) via
         // ReaderView.onChange(chapter.id).
         if chapterToken != oldToken {
+            FlickerProbe.shared.log("updateUIVC BRANCH1(tokenChanged) pages.isEmpty=\(pages.isEmpty) target=\(target)")
             coordinator.isAwaitingChapterSwap = false
             coordinator.purgePool()
             coordinator.committedChapterToken = nil
@@ -182,6 +185,7 @@ struct TextKitPageView: UIViewControllerRepresentable {
         // arrived, perform the deferred seed exactly once. This is the moment
         // the new chapter's content is first shown — no stale frame preceded it.
         if coordinator.committedChapterToken != chapterToken, !pages.isEmpty {
+            FlickerProbe.shared.log("updateUIVC BRANCH2(deferredSeed) isTransitioning=\(coordinator.isTransitioning) target=\(target) currentPage=\(currentPage == Int.max ? "MAX" : String(currentPage))")
             // Never re-seed the queue while a pan / programmatic turn is live —
             // `setViewControllers` on a PVC mid-transition raises
             // NSInvalidArgumentException. Leave the token uncommitted so this
@@ -198,6 +202,7 @@ struct TextKitPageView: UIViewControllerRepresentable {
             // animation. seedCrossing would animate forward (or reverse) visibly
             // from page 0 → last — that is the "forced forward hop" the user sees.
             if currentPage == Int.max {
+                FlickerProbe.shared.log("updateUIVC BRANCH2 hard-cut to target=\(target)")
                 pvc.setViewControllers([vc], direction: .forward, animated: false)
             } else {
                 // Deferred crossing seed: the new chapter's pages have now landed.
@@ -212,6 +217,7 @@ struct TextKitPageView: UIViewControllerRepresentable {
         // Page count changed within the SAME chapter (settings repagination).
         // Re-seed the displayed page from the fresh array.
         if pages.count != oldCount {
+            FlickerProbe.shared.log("updateUIVC BRANCH3(countChanged) target=\(target) currentPage=\(currentPage == Int.max ? "MAX" : String(currentPage))")
             // Same crash guard: don't re-seed mid-transition. A repagination
             // that lands during a user pan re-runs on the next update once the
             // turn settles.
@@ -387,6 +393,21 @@ struct TextKitPageView: UIViewControllerRepresentable {
         @discardableResult
         func seedCrossing(_ pvc: UIPageViewController, _ vc: TextKitPageController) -> Bool {
             guard !isTransitioning else { return false }
+            // NOTE: do NOT force `vc.view.frame`/`layoutIfNeeded()` here.
+            // `UIPageViewController`'s pageCurl style owns child-view framing
+            // via its own internal transition container (autoresizing-mask
+            // based, predates Auto Layout containment) — a frame we assign
+            // BEFORE `setViewControllers` installs the view gets silently
+            // overwritten by the PVC's own layout pass without re-triggering
+            // `layoutIfNeeded()` on our subtree. That left TextKit's glyph
+            // layout cached against a stale, pre-install frame: text was
+            // visible only while the curl animation was live (rendering the
+            // pre-install snapshot) and disappeared the instant it settled at
+            // the PVC's real installed frame. `TextKitPageController.
+            // viewDidLayoutSubviews` (below) re-syncs the text view to
+            // whatever frame the PVC actually lands on, on every layout pass
+            // it triggers — including the post-curl one — without fighting
+            // frame ownership.
             let dir = pendingCrossingDirection
             pendingCrossingDirection = nil          // consume exactly once
             guard let dir, !UIAccessibility.isReduceMotionEnabled else {
@@ -729,6 +750,26 @@ final class TextKitPageController: UIViewController, UITextViewDelegate {
             guard existing !== longPress, existing is UILongPressGestureRecognizer else { continue }
             longPress.require(toFail: existing)
         }
+    }
+
+    /// `UIPageViewController`'s pageCurl style owns this view's frame via
+    /// its own internal (autoresizing-mask-based) transition container —
+    /// it can re-frame `view` at any point, including right after an
+    /// animated curl settles onto this controller. Auto Layout resolves
+    /// `textView`'s constraints against the new frame on its own next
+    /// pass, but that alone left the hosted `UITextView`'s internal TextKit
+    /// glyph geometry stale in practice: text rendered correctly only
+    /// while the curl animation was live, then vanished once it settled at
+    /// the PVC's real installed frame (a prior fix that force-set
+    /// `view.frame` before installation made this WORSE by fighting the
+    /// PVC's own frame ownership outright — reverted). Forcing a
+    /// synchronous re-layout of just the text view on every real layout
+    /// pass keeps it in sync with whatever frame is currently installed,
+    /// without touching `view.frame` ourselves.
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        textView.setNeedsLayout()
+        textView.layoutIfNeeded()
     }
 
     /// Resolve `location` (in the text view's coordinate space) to a

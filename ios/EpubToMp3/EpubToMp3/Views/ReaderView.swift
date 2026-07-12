@@ -100,6 +100,20 @@ struct ReaderView: View {
     /// host can mirror `currentChapterIndex` (TOC highlight, position
     /// persistence). Zero-based EPUB chapter index.
     var onScrolledToChapter: ((Int) -> Void)? = nil
+    /// Fires once, after a `startAtLastPage` retreat has actually seeded
+    /// `currentPage` to the real last-page index (Int.max normalised) — or
+    /// immediately, synchronously, if this instance never needed the
+    /// last-page seed. The host uses this (not the audio player's own
+    /// chapter-index catching up) to know when it's SAFE to clear its own
+    /// "start at last page" flag. Reacting to the audio index instead races
+    /// ahead of pagination: audio starts near-instantly, but the retreat's
+    /// `Int.max` seed can still be live when the host's flag flips back to
+    /// `false` and re-renders this SAME `.id()`-stable identity with
+    /// `startAtLastPage: false` — which was observed on-device to reset
+    /// `currentPage` back to 0 mid-flight (the "retreat lands on page 1"
+    /// bug), even though `.id()` is unchanged. Decoupling the reset from
+    /// audio timing removes that race entirely.
+    var onLastPageLanded: (() -> Void)? = nil
 
     @EnvironmentObject private var settings: AppSettings
     @EnvironmentObject private var readerCoordinator: ReaderCoordinator
@@ -306,6 +320,7 @@ struct ReaderView: View {
         useStableBodyHeight: Bool = false,
         bookChapters: [EbookFulltext.Chapter]? = nil,
         onScrolledToChapter: ((Int) -> Void)? = nil,
+        onLastPageLanded: (() -> Void)? = nil,
         startAtLastPage: Bool = false
     ) {
         self.chapter = chapter
@@ -326,6 +341,7 @@ struct ReaderView: View {
         self.useStableBodyHeight = useStableBodyHeight
         self.bookChapters = bookChapters
         self.onScrolledToChapter = onScrolledToChapter
+        self.onLastPageLanded = onLastPageLanded
         // Seed the last-page jump immediately so the very first render
         // of this ReaderView (after a backward chapter crossing) lands
         // on the last page instead of page 0. The @State is initialised
@@ -340,6 +356,7 @@ struct ReaderView: View {
             // normalise Int.max → pages.count - 1 silently (same visual page, no hop).
             _currentPage = State(initialValue: Int.max)
         }
+        FlickerProbe.shared.log("ReaderView.init chapter.id=\(chapter.id) startAtLastPage=\(startAtLastPage)")
     }
 
     var body: some View {
@@ -417,6 +434,7 @@ struct ReaderView: View {
             // chapter. `Int.max` clamps to the last page the instant pages land.
             let wantsLastPage = jumpToLastPageForChapterId == "__pending__"
             currentPage = wantsLastPage ? Int.max : 0
+            FlickerProbe.shared.log("ReaderView.onChange(chapter.id) FIRED chapter.id=\(chapter.id) wantsLastPage=\(wantsLastPage)")
             // Invalidate the chapter-id tag so the footer is suppressed until
             // compatOnChange(of: currentPage) stamps it with the new chapter.id.
             // This closes the gap between body() receiving new chapter and this
@@ -464,11 +482,16 @@ struct ReaderView: View {
                         if Task.isCancelled { return }
                         let p = paginationCache.pages
                         if !p.isEmpty && p.count == prevCount {
-                            if currentPage == Int.max { currentPage = p.count - 1 }
+                            // Force unconditionally — see the matching comment
+                            // in the .onAppear jumpToLastPageTask above for why
+                            // the `currentPage == Int.max` guard is unsafe.
+                            currentPage = p.count - 1
+                            onLastPageLanded?()
                             return
                         }
                         prevCount = p.count
                     }
+                    onLastPageLanded?()
                 }
             }
         }
@@ -496,22 +519,42 @@ struct ReaderView: View {
             // downstream (footer, position persistence) sees a real index.
             // Only write if still Int.max — avoids re-navigating if the user
             // already turned a page while the task was running.
+            FlickerProbe.shared.log("ReaderView.onAppear chapter.id=\(chapter.id) jumpFlag=\(jumpToLastPageForChapterId ?? "nil") currentPage=\(currentPage == Int.max ? "MAX" : String(currentPage))")
             if jumpToLastPageForChapterId == "__pending__" {
                 jumpToLastPageForChapterId = nil
                 jumpToLastPageTask?.cancel()
                 jumpToLastPageTask = Task { @MainActor in
                     var prevCount = 0
-                    for _ in 0..<30 {
+                    for attempt in 0..<30 {
                         try? await Task.sleep(nanoseconds: 100_000_000)
                         if Task.isCancelled { return }
                         let p = paginationCache.pages
+                        FlickerProbe.shared.log("jumpToLastPageTask poll#\(attempt) chapter.id=\(chapter.id) p.count=\(p.count) prevCount=\(prevCount) currentPage=\(currentPage == Int.max ? "MAX" : String(currentPage))")
                         if !p.isEmpty && p.count == prevCount {
-                            // Only normalise the sentinel; never navigate forward.
-                            if currentPage == Int.max { currentPage = p.count - 1 }
+                            // Force the last page unconditionally — do NOT gate
+                            // on `currentPage == Int.max`. On-device logging
+                            // (flicker-debug.log) proved `currentPage` can get
+                            // reset to 0 by an unrelated SwiftUI re-render
+                            // between this Task being armed and settling here,
+                            // even though `jumpToLastPageForChapterId ==
+                            // "__pending__"` (the actual retreat intent,
+                            // captured before spawning this Task) survived
+                            // untouched — the `== Int.max` guard was silently
+                            // no-op'ing the correction every time that
+                            // happened, reproducing "retreat lands on page 1".
+                            // Being inside this Task at all already proves the
+                            // user retreated and wants the last page; a manual
+                            // page turn during the ~100-300ms settle window is
+                            // a much rarer edge case than this main bug.
+                            currentPage = p.count - 1
+                            FlickerProbe.shared.log("jumpToLastPageTask SETTLED chapter.id=\(chapter.id) currentPage=\(currentPage) (last of \(p.count))")
+                            onLastPageLanded?()
                             return
                         }
                         prevCount = p.count
                     }
+                    FlickerProbe.shared.log("jumpToLastPageTask TIMED OUT chapter.id=\(chapter.id)")
+                    onLastPageLanded?()
                 }
             }
         }
@@ -1818,6 +1861,7 @@ struct ReaderView: View {
     }
 
     private func retreatPage() {
+        FlickerProbe.shared.log("retreatPage() CALLED chapter.id=\(chapter.id) currentPage=\(currentPage) isPageTurning=\(isPageTurning) debounceOk=\(Date().timeIntervalSince(lastPageTurnAt) > pageTurnDebounce)")
         guard !isPageTurning,
               Date().timeIntervalSince(lastPageTurnAt) > pageTurnDebounce else { return }
         lastPageTurnAt = Date()
@@ -1843,7 +1887,10 @@ struct ReaderView: View {
             }
         } else {
             jumpToLastPageForChapterId = "__pending__"
-            if onPreviousChapter?() != true {
+            FlickerProbe.shared.log("retreatPage CALLING onPreviousChapter chapter.id=\(chapter.id)")
+            let callFailedOrNil = onPreviousChapter?() != true
+            FlickerProbe.shared.log("retreatPage onPreviousChapter RETURNED handled=\(!callFailedOrNil) chapter.id=\(chapter.id)")
+            if callFailedOrNil {
                 jumpToLastPageForChapterId = nil
             }
         }
