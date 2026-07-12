@@ -46,7 +46,11 @@ final class FlickerProbe: ObservableObject {
     /// from the page indicator resetting). Updated by InstantReaderView.
     @Published var chapterInfo: String = "?/?"
 
-    private init() {}
+    private init() {
+        if isArmed, let dir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first {
+            try? FileManager.default.removeItem(at: dir.appendingPathComponent("flicker-debug.log"))
+        }
+    }
 
     /// Force-arm for unit tests that exercise the probe directly without a
     /// launch argument.
@@ -67,9 +71,38 @@ final class FlickerProbe: ObservableObject {
     /// read diagnostics without a console stream.
     @Published private(set) var lastLog: String = ""
     private var logHistory: [String] = []
+    /// Append-only debug file, far more reliable than os_log/syslog relay
+    /// under high message volume (observed on-device: the legacy syslog
+    /// relay silently drops lines during a burst of rapid page-turn/init
+    /// logging, including exactly the message needed to diagnose a race).
+    /// Pull with: `xcrun devicectl device copy from-device --domain-type
+    /// appDataContainer --domain-identifier <bundle-id> --source
+    /// Documents/flicker-debug.log --destination <local path> --device <udid>`.
+    private lazy var debugFileURL: URL? = {
+        guard let dir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else { return nil }
+        return dir.appendingPathComponent("flicker-debug.log")
+    }()
+    private func appendToDebugFile(_ line: String) {
+        guard let url = debugFileURL else { return }
+        let entry = "\(Date().timeIntervalSince1970) \(line)\n"
+        guard let data = entry.data(using: .utf8) else { return }
+        if let handle = try? FileHandle(forWritingTo: url) {
+            defer { try? handle.close() }
+            handle.seekToEndOfFile()
+            handle.write(data)
+        } else {
+            try? data.write(to: url)
+        }
+    }
+
     func log(_ message: String) {
         guard isArmed else { return }
         logger.debug("\(message, privacy: .public)")
+        // os_log(.debug) is memory-only and doesn't reach the legacy syslog
+        // relay `idevicesyslog` taps for a physical-device debug session —
+        // print() does, since it goes through the process's own stdout.
+        print("FLICKER: \(message)")
+        appendToDebugFile(message)
         logHistory.append(message)
         if logHistory.count > 8 { logHistory.removeFirst(logHistory.count - 8) }
         lastLog = logHistory.joined(separator: " | ")
