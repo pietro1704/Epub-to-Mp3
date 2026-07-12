@@ -47,7 +47,19 @@ prune_by_total_size() {
 
   echo "ios_disk_guard: $label at ${total_mb}MB > cap ${MAX_TOTAL_MB}MB, evicting oldest first"
   local oldest_first
-  oldest_first=$(for d in "${dirs[@]}"; do stat -f '%m %N' "$d"; done | sort -n | awk '{print $2}')
+  # `stat -f '%m %N'` is BSD stat (macOS, the primary target for this
+  # script); GNU stat (Linux, e.g. CI runners exercising this script via
+  # test_ios_disk_guard.py) uses `-c '%Y %n'` instead. Detect via
+  # `--version`, a GNU-coreutils-only flag BSD stat rejects — `-f '%m'`
+  # itself is NOT a reliable probe: GNU stat's `-f` mode has a DIFFERENT
+  # meaning (filesystem status, not custom format) and some versions
+  # accept an unrecognised `%m` directive without erroring, silently
+  # misdetecting as BSD.
+  if stat --version >/dev/null 2>&1; then
+    oldest_first=$(for d in "${dirs[@]}"; do stat -c '%Y %n' "$d"; done | sort -n | cut -d' ' -f2-)
+  else
+    oldest_first=$(for d in "${dirs[@]}"; do stat -f '%m %N' "$d"; done | sort -n | cut -d' ' -f2-)
+  fi
   while IFS= read -r d; do
     (( total_mb <= MAX_TOTAL_MB )) && break
     [[ -d "$d" ]] || continue
