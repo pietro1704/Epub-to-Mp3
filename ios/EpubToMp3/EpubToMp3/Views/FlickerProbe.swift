@@ -67,10 +67,26 @@ final class FlickerProbe: ObservableObject {
     /// `flicker` category. Only emits when armed, so production stays quiet.
     /// Inspect on device with: `log stream --predicate 'category == "flicker"'`.
     private let logger = Logger(subsystem: "com.pietrocode.epubtomp3", category: "flicker")
+    /// Serial queue for the blocking parts of `log` (file write + stdout).
+    /// `log` is called on every reader body eval / page-controller update — up
+    /// to ~60 Hz during a burst. Doing the FileHandle open/seek/write/close and
+    /// `print` synchronously on the main thread at that rate added enough
+    /// per-frame latency to tip a borderline reader layout into a transient
+    /// oscillation that does NOT occur in production (Stage-0 finding: the
+    /// self-sustaining burst existed only when the probe was armed). Moving the
+    /// I/O off-main removes that self-perturbation so the probe measures the
+    /// real reader timing.
+    private let ioQueue = DispatchQueue(
+        label: "com.pietrocode.epubtomp3.flickerprobe.io", qos: .utility
+    )
     /// Last log line, surfaced to UI tests via the overlay so device runs can
     /// read diagnostics without a console stream.
     @Published private(set) var lastLog: String = ""
     private var logHistory: [String] = []
+    /// Throttle for the `@Published lastLog` update. Publishing on every call
+    /// re-rendered the diagnostic overlay at ~60 Hz — another source of
+    /// self-perturbation. UI tests only need an eventually-current value.
+    private var lastLogPublishedAt: Date = .distantPast
     /// Append-only debug file, far more reliable than os_log/syslog relay
     /// under high message volume (observed on-device: the legacy syslog
     /// relay silently drops lines during a burst of rapid page-turn/init
@@ -82,10 +98,11 @@ final class FlickerProbe: ObservableObject {
         guard let dir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else { return nil }
         return dir.appendingPathComponent("flicker-debug.log")
     }()
-    private func appendToDebugFile(_ line: String) {
-        guard let url = debugFileURL else { return }
-        let entry = "\(Date().timeIntervalSince1970) \(line)\n"
-        guard let data = entry.data(using: .utf8) else { return }
+    /// `nonisolated static` so it can run off the main actor on `ioQueue`
+    /// without capturing any `@MainActor` state — only the pre-rendered line
+    /// and the file URL are passed in.
+    nonisolated private static func appendToDebugFile(url: URL?, line: String) {
+        guard let url, let data = (line + "\n").data(using: .utf8) else { return }
         if let handle = try? FileHandle(forWritingTo: url) {
             defer { try? handle.close() }
             handle.seekToEndOfFile()
@@ -97,15 +114,27 @@ final class FlickerProbe: ObservableObject {
 
     func log(_ message: String) {
         guard isArmed else { return }
-        logger.debug("\(message, privacy: .public)")
-        // os_log(.debug) is memory-only and doesn't reach the legacy syslog
-        // relay `idevicesyslog` taps for a physical-device debug session —
-        // print() does, since it goes through the process's own stdout.
-        print("FLICKER: \(message)")
-        appendToDebugFile(message)
+        logger.debug("\(message, privacy: .public)")  // os_log is non-blocking
+        // Timestamp captured HERE (call time), not at write time, so the
+        // off-main write preserves accurate timing.
+        let entry = "\(Date().timeIntervalSince1970) \(message)"
+        let url = debugFileURL
+        // File write + stdout are the only blocking ops — do them off-main,
+        // serialized so line order is preserved. print() goes through the
+        // process's own stdout, which the legacy `idevicesyslog` relay taps
+        // (os_log(.debug) alone doesn't reach it under burst).
+        ioQueue.async {
+            Self.appendToDebugFile(url: url, line: entry)
+            print("FLICKER: \(message)")
+        }
         logHistory.append(message)
         if logHistory.count > 8 { logHistory.removeFirst(logHistory.count - 8) }
-        lastLog = logHistory.joined(separator: " | ")
+        // Throttle the overlay-driving publish to ~5 Hz.
+        let now = Date()
+        if now.timeIntervalSince(lastLogPublishedAt) >= 0.2 {
+            lastLogPublishedAt = now
+            lastLog = logHistory.joined(separator: " | ")
+        }
     }
 
     /// Total across every event kind — the single number a UI test asserts
@@ -113,6 +142,15 @@ final class FlickerProbe: ObservableObject {
     var total: Int { counts.values.reduce(0, +) }
 
     func reset() { counts.removeAll() }
+
+    /// Test-only: block until any queued off-main log I/O has flushed, then
+    /// return the debug file's contents. Lets a unit test assert that
+    /// `log(_:)`'s asynchronous write actually lands on disk.
+    func debugLogContentsForTests() -> String? {
+        ioQueue.sync {}
+        guard let url = debugFileURL else { return nil }
+        return try? String(contentsOf: url, encoding: .utf8)
+    }
 
     /// Convenience used by the UI test's hidden overlay so a snapshot of the
     /// accessibility tree always carries the live summary.

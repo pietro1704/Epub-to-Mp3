@@ -33,4 +33,28 @@ final class FlickerProbeTests: XCTestCase {
         XCTAssertTrue(summary.contains("spurious=0"), summary)
         XCTAssertTrue(summary.contains("empty=1"), summary)
     }
+
+    /// `log(_:)` moved its file write off the main thread (blocking I/O at
+    /// ~60 Hz perturbed the reader timing the probe measures). The async write
+    /// must still land the message on disk.
+    func testLogWritesMessageToFileOffMain() {
+        let marker = "probe-marker-\(UUID().uuidString)"
+        FlickerProbe.shared.log(marker)
+        // Flushes the serial I/O queue before reading.
+        let contents = FlickerProbe.shared.debugLogContentsForTests()
+        XCTAssertEqual(contents?.contains(marker), true,
+            "log(_:) must persist the message to the debug file via the I/O queue")
+    }
+
+    /// A second rapid `log(_:)` must NOT republish the overlay-driving
+    /// `lastLog` (throttled to ~5 Hz) — republishing on every call re-rendered
+    /// the diagnostic overlay at ~60 Hz, another self-perturbation source.
+    func testLastLogPublishIsThrottled() {
+        FlickerProbe.shared.log("first-\(UUID().uuidString)")
+        let afterFirst = FlickerProbe.shared.lastLog
+        FlickerProbe.shared.log("second-\(UUID().uuidString)")
+        let afterSecond = FlickerProbe.shared.lastLog
+        XCTAssertEqual(afterFirst, afterSecond,
+            "a log within the throttle window must not change lastLog")
+    }
 }
