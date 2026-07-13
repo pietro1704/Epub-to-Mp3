@@ -1345,7 +1345,19 @@ final class AudioPlayer: ObservableObject {
             segmentChapterIndex = chapterIndex
             segmentSentenceIds = []
             segmentPlayedCount = 0
-            currentChapterIndex = chapterIndex
+            // Only move the user's chapter cursor to a freshly-enqueued
+            // segment while audio is actually PLAYING (the queue is
+            // consuming live synthesis, so the enqueued chapter is the one
+            // being heard). During BACKGROUND conversion — the reader open
+            // but paused — `BookOpenView.synthesizeOneChapter` streams
+            // segments for the WHOLE book in sequence; clobbering
+            // `currentChapterIndex` on each one marched the cursor 0→N
+            // across every chapter, dragging any follow-mode reader with it
+            // and re-rendering it ~60×/s. A paused player must keep its
+            // cursor where the user left it.
+            if isPlaying {
+                currentChapterIndex = chapterIndex
+            }
         }
         if let sentenceId {
             segmentSentenceIds.append(sentenceId)

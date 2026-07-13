@@ -97,6 +97,32 @@ final class AudioPlayerEnqueueSegmentTests: XCTestCase {
             "isLoading must drop to false once firstChapterReady becomes true")
     }
 
+    // MARK: - Background pre-synthesis must not march the chapter cursor
+
+    /// Regression: while PAUSED (background conversion — reader open but the
+    /// user hasn't tapped Play), `BookOpenView.synthesizeOneChapter` streams
+    /// segments for the whole book in chapter order. Each new chapter used to
+    /// clobber `currentChapterIndex`, marching the user's cursor 0→N across
+    /// every chapter. A follow-mode reader observing the player then followed
+    /// that runaway and re-rendered ~60×/s (device log: 86 ReaderView.init on
+    /// a stationary chapter). A paused player MUST keep its cursor put.
+    func testBackgroundEnqueueDoesNotMoveCursorWhilePaused() {
+        let player = AudioPlayer()
+        XCTAssertFalse(player.isPlaying)
+        XCTAssertEqual(player.currentChapterIndex, 0)
+
+        // Simulate whole-book background synthesis: segments for many
+        // chapters, out of and in order, all while paused.
+        for ch in [0, 1, 2, 5, 9, 20, 47] {
+            player.enqueueSegment(data: fakeMP3(), chapterIndex: ch, segmentIndex: 0)
+            XCTAssertFalse(player.isPlaying,
+                "enqueue must never auto-start playback")
+            XCTAssertEqual(player.currentChapterIndex, 0,
+                "a paused player must not move its chapter cursor to chapter \(ch) " +
+                "just because a background-synthesized segment was enqueued")
+        }
+    }
+
     // MARK: - No crash on empty data
 
     func testEmptySegmentDataIsGracefullyIgnored() {
