@@ -19,10 +19,10 @@ Não considerar uma etapa concluída apenas por compilação ou teste macOS quan
 
 ## Estado-base
 
-- Último commit iOS validado no iPhone: `f6706f1 fix(ios): stabilize reader chapter navigation`.
-- Correção de retorno ao capítulo anterior confirmada manualmente no iPhone.
-- Branch `master` sincronizada com `origin/master`.
-- Existem alterações locais não relacionadas à correção anterior; elas devem ser auditadas e separadas antes de qualquer novo commit.
+- Último commit iOS validado no iPhone: `58ae856 test(ios): keep chapter crossing tap outside links`.
+- Correção de retorno ao capítulo anterior confirmada no iPhone por duas automações e logs de `FlickerProbe`.
+- Correção do TOC para distinguir servidor de áudio local foi commitada em `6adba0d` e o CI passou.
+- Branch `master` sincronizada com `origin/master`; working tree limpo.
 - Destino físico preferencial: iPhone conectado por USB.
 
 ## Plano 0 — Higienizar o estado local
@@ -40,12 +40,42 @@ Não considerar uma etapa concluída apenas por compilação ou teste macOS quan
 
 **Objetivo:** eliminar inconsistências visíveis e de estado no leitor.
 
-- Auditar a fonte única do índice de capítulo (`ReaderCoordinator`, reader e player).
+### Auditoria de índices — etapa atual
+
+**Matriz obrigatória:**
+
+- `EbookFulltext.Chapter.index`: eixo 1-based recebido do backend.
+- `zeroBasedEpubIndex`: eixo 0-based do EPUB/reader.
+- `JobSnapshot.playableChapters[index]`: eixo compacto do player; capítulos pendentes podem desaparecer.
+- `ReaderCoordinator.anchor.chapterIndex`: deve sempre permanecer no eixo EPUB 0-based.
+- `ChapterCacheManager`: deve usar o mesmo eixo do reader para cache/prefetch, sem conversões duplicadas divergentes.
+
+**Achado inicial:** `InstantReaderIndexMapper.playableIndexOrClamped` usa `.nearestPositional` por padrão. Em snapshots esparsos, isso pode tratar um índice EPUB como posição compacta e tocar o capítulo errado. O caminho de recuo já usa `.atOrBefore`; os caminhos de TOC, busca e cache precisam ser auditados individualmente, não corrigidos por uma conversão global.
+
+**Arquivos prioritários:**
+
+- `ios/EpubToMp3/EpubToMp3/Views/InstantReaderView.swift`
+- `ios/EpubToMp3/EpubToMp3/Views/PlayerReaderView.swift`
+- `ios/EpubToMp3/EpubToMp3/Services/ChapterCacheManager.swift`
+- `ios/EpubToMp3/EpubToMp3/Services/ReaderCoordinator.swift`
+- `ios/EpubToMp3/EpubToMp3/Models/EbookFulltext.swift`
+- `ios/EpubToMp3/EpubToMp3Tests/InstantReaderIndexMapperTests.swift`
+
+**Próximas etapas bite-sized:**
+
+1. Enumerar cada chamada a `playableIndex`, `epubIndex`, `zeroBasedEpubIndex` e `chapter.index`; marcar o eixo de entrada/saída.
+2. Adicionar testes RED para TOC, busca, prefetch/cache e retorno usando capítulos pendentes/esparsos.
+3. Substituir apenas conversões comprovadamente erradas; manter fallback posicional somente onde a UX o exige.
+4. Rodar `InstantReaderIndexMapperTests`, testes de `AudioPlayer` e `ChapterCacheManagerTests` no host.
+5. Fazer build/install no iPhone e validar TOC, busca, avanço/recuo e áudio com capítulo pendente entre dois capítulos reproduzíveis.
+
+**Evidência esperada:** cada ação registra o mesmo capítulo em índice EPUB, título visível e capítulo audível; nenhum capítulo pendente é tocado por engano.
+
 - Validar TOC do top bar, hyperlinks, notas e seleção explícita contra audio-follow.
 - Validar crossing forward/backward, paginação final, safe area, chrome e contadores.
 - Reproduzir no iPhone os fluxos críticos após cada correção.
 
-**Critério de saída:** navegação sem flicker, sem capítulo/página incorretos e sem sobrescrita indevida da seleção do usuário.
+**Critério de saída:** navegação sem flicker, sem capítulo/página incorretos e sem sobrescrita indevida da seleção do usuário; todos os eixos de índice têm contrato explícito e testes para snapshots esparsos.
 
 ## Plano 2 — Player, fila e read-along
 
