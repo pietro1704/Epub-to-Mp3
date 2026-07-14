@@ -847,6 +847,7 @@ private extension View {
 /// Sheet presenting chapters from the current snapshot for in-player navigation.
 private struct ChapterListSheet: View {
     @ObservedObject var player: AudioPlayer
+    @EnvironmentObject private var library: LibraryStore
     @Environment(\.dismiss) private var dismiss
 
     @State private var showClearCacheConfirm = false
@@ -886,6 +887,13 @@ private struct ChapterListSheet: View {
                         Button(L10n.string("settings.clearCacheConfirmButton"), role: .destructive) {
                             if let jobId = player.snapshot?.jobId {
                                 AudiobookCacheEviction.deleteAudiobook(jobId: jobId)
+                                // The offline copy is gone — clear the
+                                // library badge for any book tied to it.
+                                for var book in library.books
+                                where book.cachedOffline && book.lastJobId == jobId {
+                                    book.cachedOffline = false
+                                    library.update(book)
+                                }
                             }
                         }
                         Button(L10n.string("library.cancel"), role: .cancel) {}

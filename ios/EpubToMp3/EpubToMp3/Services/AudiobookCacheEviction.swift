@@ -146,6 +146,25 @@ enum AudiobookCacheEviction {
         return evicted
     }
 
+    // MARK: Library reconcile
+
+    /// Book ids whose `BookEntity.cachedOffline` flag no longer matches
+    /// disk truth. Eviction (and Settings → "Clear downloaded audio")
+    /// deletes the whole `Audiobooks/<jobId>/` folder — manifest included —
+    /// without touching the library, so a silently-evicted book kept
+    /// showing as "offline ready". Callers flip `cachedOffline = false`
+    /// for every id returned here.
+    static func staleOfflineBookIds(books: [BookEntity]) -> [String] {
+        books.compactMap { book in
+            guard book.cachedOffline else { return nil }
+            guard let jobId = book.lastJobId,
+                  DownloadManager.loadManifest(for: jobId) != nil else {
+                return book.id
+            }
+            return nil
+        }
+    }
+
     // MARK: Total size
 
     /// Sum of `totalBytes` across all valid manifests (fast — no filesystem walk).

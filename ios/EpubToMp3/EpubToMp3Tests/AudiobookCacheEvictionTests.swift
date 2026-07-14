@@ -21,6 +21,81 @@ import XCTest
 
 final class AudiobookCacheEvictionTests: XCTestCase {
 
+    // MARK: - Real-root round-trips (locallyDownloadedIndices / staleOfflineBookIds)
+    //
+    // These two helpers operate on the REAL audiobooks root (test-host
+    // Documents), so we exercise them end-to-end with unique jobIds and
+    // clean up via deleteAudiobook.
+
+    private func makeBook(
+        id: String, lastJobId: String?, cachedOffline: Bool
+    ) -> BookEntity {
+        BookEntity(
+            id: id, title: id, bookmark: Data(),
+            displayFilename: "\(id).epub", addedAt: Date(),
+            lastJobId: lastJobId, cachedOffline: cachedOffline
+        )
+    }
+
+    /// Plant a manifest + selected MP3 files on the REAL audiobooks root.
+    private func plantRealAudiobook(
+        jobId: String, entries: [(index: Int, fileName: String, onDisk: Bool)]
+    ) throws {
+        let folder = DownloadManager.audiobookFolder(for: jobId)
+        var chapters: [AudiobookManifest.ChapterEntry] = []
+        for entry in entries {
+            if entry.onDisk {
+                try Data(repeating: 0xFF, count: 128)
+                    .write(to: folder.appendingPathComponent(entry.fileName))
+            }
+            chapters.append(AudiobookManifest.ChapterEntry(
+                index: entry.index, title: "ch\(entry.index)",
+                mp3FileName: entry.fileName, mp3Bytes: 128, downloadedAt: Date()
+            ))
+        }
+        try DownloadManager.saveManifest(AudiobookManifest(
+            jobId: jobId, bookTitle: jobId, chapters: chapters,
+            totalBytes: Int64(entries.count * 128), completedAt: Date()
+        ))
+    }
+
+    func testLocallyDownloadedIndicesVerifiesFilesOnDisk() throws {
+        let jobId = "test-local-\(UUID().uuidString)"
+        defer { AudiobookCacheEviction.deleteAudiobook(jobId: jobId) }
+        try plantRealAudiobook(jobId: jobId, entries: [
+            (index: 0, fileName: "a.mp3", onDisk: true),
+            (index: 2, fileName: "b.mp3", onDisk: true),
+            (index: 5, fileName: "gone.mp3", onDisk: false) // manifest says yes, disk says no
+        ])
+        XCTAssertEqual(DownloadManager.locallyDownloadedIndices(for: jobId), [0, 2])
+    }
+
+    func testLocallyDownloadedIndicesEmptyWithoutManifest() {
+        XCTAssertEqual(
+            DownloadManager.locallyDownloadedIndices(for: "test-missing-\(UUID().uuidString)"),
+            []
+        )
+    }
+
+    func testStaleOfflineBookIdsFlagsEvictedAndUnlinkedBooks() throws {
+        let liveJobId = "test-stale-\(UUID().uuidString)"
+        defer { AudiobookCacheEviction.deleteAudiobook(jobId: liveJobId) }
+        try plantRealAudiobook(jobId: liveJobId, entries: [
+            (index: 0, fileName: "a.mp3", onDisk: true)
+        ])
+
+        let books = [
+            makeBook(id: "kept", lastJobId: liveJobId, cachedOffline: true),
+            makeBook(id: "evicted", lastJobId: "test-gone-\(UUID().uuidString)", cachedOffline: true),
+            makeBook(id: "never-linked", lastJobId: nil, cachedOffline: true),
+            makeBook(id: "not-offline", lastJobId: nil, cachedOffline: false)
+        ]
+        XCTAssertEqual(
+            AudiobookCacheEviction.staleOfflineBookIds(books: books),
+            ["evicted", "never-linked"]
+        )
+    }
+
     // MARK: - Helpers
 
     /// Isolated temp folder used as the audiobooks root.

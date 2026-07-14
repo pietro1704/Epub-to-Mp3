@@ -333,6 +333,7 @@
 
 /* === TocDrawer === */
 "toc.charsCount" = "%d caracteres";
+"toc.downloaded" = "descargado";
 "toc.textOnly" = "solo texto";
 "toc.currentlyPlaying" = "Reproduciendo ahora";
 "toc.currentlyReading" = "Leyendo ahora";

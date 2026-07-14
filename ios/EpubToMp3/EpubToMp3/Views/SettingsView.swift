@@ -12,6 +12,7 @@ import SwiftUI
 /// the default inset-grouped style.
 struct SettingsView: View {
     @EnvironmentObject private var settings: AppSettings
+    @EnvironmentObject private var library: LibraryStore
     #if os(macOS)
     @EnvironmentObject private var sidecar: SidecarManager
     #endif
@@ -396,6 +397,12 @@ struct SettingsView: View {
             ) {
                 Button(L10n.string("settings.clearCacheConfirmButton"), role: .destructive) {
                     AudiobookCacheEviction.deleteAllAudiobooks()
+                    // Keep the library's offline badges truthful — the
+                    // folders (and manifests) are gone as of this tap.
+                    for var book in library.books where book.cachedOffline {
+                        book.cachedOffline = false
+                        library.update(book)
+                    }
                     clearCacheDone = true
                 }
                 Button(L10n.string("library.cancel"), role: .cancel) {}

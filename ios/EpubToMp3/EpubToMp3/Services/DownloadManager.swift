@@ -102,6 +102,23 @@ actor DownloadManager {
         return try? JSONDecoder().decode(AudiobookManifest.self, from: data)
     }
 
+    /// Chapter indices (same axis as `JobSnapshot.Chapter.index`) whose MP3
+    /// is actually present on disk for `jobId`. The manifest records what
+    /// finished downloading, but eviction or the OS can remove files without
+    /// rewriting it — so every entry is re-verified against the filesystem.
+    /// This is the source of truth for "downloaded" UI badges; a snapshot's
+    /// `downloadUrl` only means the SERVER has the chapter.
+    nonisolated static func locallyDownloadedIndices(for jobId: String) -> Set<Int> {
+        guard let manifest = loadManifest(for: jobId) else { return [] }
+        let folder = audiobookFolder(for: jobId)
+        let fm = FileManager.default
+        return Set(
+            manifest.chapters
+                .filter { fm.fileExists(atPath: folder.appendingPathComponent($0.mp3FileName).path) }
+                .map(\.index)
+        )
+    }
+
     nonisolated static func saveManifest(_ manifest: AudiobookManifest) throws {
         let data = try JSONEncoder().encode(manifest)
         try data.write(to: manifestURL(for: manifest.jobId), options: .atomic)

@@ -36,6 +36,12 @@ struct TocDrawer: View {
 
     @Environment(\.dismiss) private var dismiss
 
+    /// Chapters whose MP3 is verified present on the device (manifest +
+    /// fileExists). Distinct from `audioReady`, which only says the SERVER
+    /// synthesized the chapter — conflating the two showed "downloaded"
+    /// badges for audio that was never (or no longer) on disk.
+    @State private var locallyDownloaded: Set<Int> = []
+
     var body: some View {
         CompatNavigationStack {
             List {
@@ -47,7 +53,8 @@ struct TocDrawer: View {
                             index: zeroBased,
                             charCount: chapter.charCount,
                             isCurrent: isCurrent(zeroBasedIndex: zeroBased),
-                            audioReady: audioReady(forZeroBasedIndex: zeroBased)
+                            audioReady: audioReady(forZeroBasedIndex: zeroBased),
+                            downloaded: locallyDownloaded.contains(zeroBased)
                         )
                     }
                 } else {
@@ -60,10 +67,17 @@ struct TocDrawer: View {
                             index: chapter.index,
                             charCount: chapter.chars,
                             isCurrent: isCurrent(zeroBasedIndex: chapter.index),
-                            audioReady: chapter.downloadUrl != nil
+                            audioReady: chapter.downloadUrl != nil,
+                            downloaded: locallyDownloaded.contains(chapter.index)
                         )
                     }
                 }
+            }
+            .task {
+                let jobId = snapshot.jobId
+                locallyDownloaded = await Task.detached(priority: .utility) {
+                    DownloadManager.locallyDownloadedIndices(for: jobId)
+                }.value
             }
             .listStyle(.plain)
             .navigationTitle(L10n.string("player.chapters"))
@@ -81,7 +95,8 @@ struct TocDrawer: View {
         index: Int,
         charCount: Int?,
         isCurrent: Bool,
-        audioReady: Bool
+        audioReady: Bool,
+        downloaded: Bool
     ) -> some View {
         HStack(spacing: 12) {
             Button {
@@ -108,7 +123,11 @@ struct TocDrawer: View {
                                     .foregroundStyle(.secondary)
                                     .accessibilityHidden(true)
                             }
-                            if !audioReady {
+                            if downloaded {
+                                Label(L10n.string("toc.downloaded"), systemImage: "arrow.down.circle.fill")
+                                    .font(.caption2)
+                                    .foregroundStyle(.green)
+                            } else if !audioReady {
                                 Label(L10n.string("toc.textOnly"), systemImage: "doc.text")
                                     .font(.caption2)
                                     .foregroundStyle(.secondary)
