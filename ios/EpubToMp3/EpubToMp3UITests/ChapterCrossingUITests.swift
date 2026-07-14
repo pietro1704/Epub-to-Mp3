@@ -101,7 +101,9 @@ final class ChapterCrossingUITests: XCTestCase {
     func testBackwardCrossesChapterBoundary() throws {
         let app = try openReader()
         let right = app.coordinate(withNormalizedOffset: CGVector(dx: 0.85, dy: 0.5))
-        let left = app.coordinate(withNormalizedOffset: CGVector(dx: 0.15, dy: 0.5))
+        // Use the extreme left gutter so this chapter-boundary tap cannot
+        // accidentally land on a hyperlink in the rendered text.
+        let left = app.coordinate(withNormalizedOffset: CGVector(dx: 0.03, dy: 0.5))
 
         guard let startCh = chapter(app) else {
             throw XCTSkip("Chapter info not available (probe not armed?).")
