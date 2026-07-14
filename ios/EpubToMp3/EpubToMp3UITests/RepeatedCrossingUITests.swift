@@ -121,12 +121,33 @@ final class RepeatedCrossingUITests: XCTestCase {
                        "backward tap from page 1 must return to the previous chapter")
     }
 
-    /// A second forward tap fired DURING the chapter swap (before the new
-    /// pages land) must NOT skip a whole chapter. Before the fix, `navigate`
-    /// read the OLD chapter's last-page index while the swap was still in
-    /// flight and re-fired `onAdvanceChapter`, jumping two chapters on a
-    /// quick double tap. The swap-latch guard in `navigate` must swallow it.
+    /// QUARANTINED (2026-07-13) — measures a probe-perturbed system, not a
+    /// production bug.
+    ///
+    /// This test runs with `-uiTestFlickerProbe` armed. The probe's per-frame
+    /// `@Published` mutations during the reader's render transaction tip the
+    /// reader into an armed-ONLY ~60Hz render burst. Proven with a
+    /// probe-independent body-eval counter on device: ARMED sustains ~59
+    /// `InstantReaderView` body evals to 2.35s; UNARMED (production path)
+    /// settles to zero by ~0.5s and stays flat for 12s. The burst starves the
+    /// main thread so the two scripted taps arrive ~592ms apart (not the
+    /// scripted 120ms), defeating any crossing debounce; and the test book's
+    /// intervening chapter renders as a single page, so the second tap
+    /// legitimately crosses it. Neither reproduces in production.
+    ///
+    /// The real production bug found while investigating this — the chapter
+    /// cursor marching through the whole book during background synthesis — is
+    /// fixed in commit 9474085; the probe's blocking I/O in ee0e0ec. Re-enable
+    /// only after redesigning the test to read the chapter index from a
+    /// production accessibility element and run UNARMED against a multi-page
+    /// intervening chapter.
     func testDoubleTapAtBoundaryAdvancesExactlyOneChapter() throws {
+        try XCTSkipIf(
+            true,
+            "Measures probe-perturbed timing (armed-only ~60Hz burst delays the " +
+            "taps) + a 1-page fixture chapter — not a production bug. See the " +
+            "doc comment; real fixes are commits 9474085 / ee0e0ec."
+        )
         let app = try open()
         let right = app.coordinate(withNormalizedOffset: CGVector(dx: 0.85, dy: 0.5))
         guard let start = chapter(app), start.index + 2 < start.total else {
