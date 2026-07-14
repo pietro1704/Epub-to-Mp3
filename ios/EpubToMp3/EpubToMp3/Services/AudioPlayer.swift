@@ -497,6 +497,20 @@ final class AudioPlayer: ObservableObject {
         return searchOrder.first { i in chapterURLs[i] == currentItemURL }
     }
 
+    /// Embedded synthesis queues files as `ch<N>-seg<M>.mp3`. This is the
+    /// authoritative chapter identity while `AVQueuePlayer` advances through
+    /// streamed segments, because embedded snapshots have no download URLs.
+    nonisolated static func chapterIndexForSegmentItem(_ url: URL) -> Int? {
+        let name = url.deletingPathExtension().lastPathComponent
+        let parts = name.split(separator: "-", maxSplits: 1)
+        guard parts.count == 2,
+              parts[0].hasPrefix("ch"),
+              parts[1].hasPrefix("seg"),
+              let chapter = Int(parts[0].dropFirst(2)),
+              Int(parts[1].dropFirst(3)) != nil else { return nil }
+        return chapter
+    }
+
     /// Build the AVQueuePlayer for `snapshot` starting at `chapterIndex`, but
     /// **do not** start playback. Audio only begins after an explicit user
     /// action: tapping the Play button, the lock-screen play control, or the
@@ -1165,6 +1179,9 @@ final class AudioPlayer: ObservableObject {
     }
 
     func previousChapter() {
+        if ProcessInfo.processInfo.arguments.contains("-readerNavigationDebug") {
+            print("NAV previousChapter current=\(currentChapterIndex) position=\(positionSeconds) segmentMode=\(isSegmentMode)")
+        }
         // Segment-mode: AVQueuePlayer can't rewind across items, so
         // "previous chapter" must rebuild the queue. When the host has
         // wired `restartSegmentQueueHandler` (BookOpenView's embedded
@@ -1345,19 +1362,9 @@ final class AudioPlayer: ObservableObject {
             segmentChapterIndex = chapterIndex
             segmentSentenceIds = []
             segmentPlayedCount = 0
-            // Only move the user's chapter cursor to a freshly-enqueued
-            // segment while audio is actually PLAYING (the queue is
-            // consuming live synthesis, so the enqueued chapter is the one
-            // being heard). During BACKGROUND conversion — the reader open
-            // but paused — `BookOpenView.synthesizeOneChapter` streams
-            // segments for the WHOLE book in sequence; clobbering
-            // `currentChapterIndex` on each one marched the cursor 0→N
-            // across every chapter, dragging any follow-mode reader with it
-            // and re-rendering it ~60×/s. A paused player must keep its
-            // cursor where the user left it.
-            if isPlaying {
-                currentChapterIndex = chapterIndex
-            }
+            // Buffer-ahead synthesis can enqueue later chapters long before
+            // they are audible. The playback cursor is updated exclusively
+            // from AVQueuePlayer.currentItem in the observer below.
         }
         if let sentenceId {
             segmentSentenceIds.append(sentenceId)
@@ -1790,9 +1797,16 @@ final class AudioPlayer: ObservableObject {
         guard
             let player,
             let item = player.currentItem,
-            let urlAsset = item.asset as? AVURLAsset,
-            let snapshot
+            let urlAsset = item.asset as? AVURLAsset
         else { return false }
+        if isSegmentMode {
+            guard let idx = Self.chapterIndexForSegmentItem(urlAsset.url),
+                  idx != currentChapterIndex else { return false }
+            currentChapterIndex = idx
+            positionSeconds = 0
+            return true
+        }
+        guard let snapshot else { return false }
         let chapters = playbackChapters.isEmpty ? snapshot.playableChapters : playbackChapters
         let chapterURLs = chapters.map { absoluteURL(forDownloadPath: $0.downloadUrl) }
         guard let idx = Self.resolveChapterIndex(

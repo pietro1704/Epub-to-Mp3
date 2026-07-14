@@ -123,7 +123,20 @@ final class AudioPlayerEnqueueSegmentTests: XCTestCase {
         }
     }
 
-    // MARK: - No crash on empty data
+    /// Buffered chapters must not pull the reader/Now Playing cursor ahead of
+    /// the item AVQueuePlayer is actually playing.
+    func testBufferingAheadWhilePlayingDoesNotMoveCurrentChapter() {
+        let player = AudioPlayer()
+        player.testHook_setIsPlaying(true)
+
+        player.enqueueSegment(data: fakeMP3(), chapterIndex: 0, segmentIndex: 0)
+        player.enqueueSegment(data: fakeMP3(), chapterIndex: 1, segmentIndex: 0)
+
+        XCTAssertEqual(player.currentChapterIndex, 0,
+            "Buffer-ahead enqueue must not claim chapter 1 before its item becomes current")
+    }
+
+    // MARK: No crash on empty data
 
     func testEmptySegmentDataIsGracefullyIgnored() {
         let player = AudioPlayer()

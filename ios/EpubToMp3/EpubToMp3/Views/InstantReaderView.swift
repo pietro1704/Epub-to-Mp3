@@ -144,6 +144,10 @@ struct InstantReaderView: View {
     @Environment(\.horizontalSizeClass) private var hSize
 
     @State private var currentChapterIndex: Int = 0
+    /// A chapter explicitly selected from the TOC. While the audio queue is
+    /// still on another chapter, retain this reader selection instead of
+    /// letting the position observer immediately snap it back.
+    @State private var pinnedReaderChapterIndex: Int?
     @StateObject private var player = AudioPlayer()
     /// Tracks whether `player` has been wired with a snapshot via
     /// `mountPlayerIfPossible()`. We can't make `player` itself
@@ -418,7 +422,6 @@ struct InstantReaderView: View {
                 onLastPageLanded: { readerShouldStartAtLastPage = false },
                 startAtLastPage: readerShouldStartAtLastPage
             )
-            .id(chapter.id)
         } else if !fulltext.chapters.isEmpty {
             ReaderView(
                 chapter: fulltext.chapters[0],
@@ -962,6 +965,11 @@ struct InstantReaderView: View {
                 }) { chapter in
                     Button {
                         let target = max(0, chapter.index - 1)
+                        // A position tick from the currently-playing audio used
+                        // to overwrite this assignment before the sheet could
+                        // dismiss. Keep the selected reader chapter pinned until
+                        // audio reaches it (or the user explicitly follows audio).
+                        pinnedReaderChapterIndex = target
                         currentChapterIndex = target
                         if playerMounted {
                             let snap = snapshot ?? JobSnapshot.empty
@@ -1078,9 +1086,16 @@ struct InstantReaderView: View {
                 // playing — an idle player sitting at chapter 0 must
                 // not force the reader back to the index/TOC chapter.
                 if activePlayer.isPlaying,
-                   let epubIndex = playerEpubChapterIndex(for: activePlayer),
-                   epubIndex != currentChapterIndex {
-                    currentChapterIndex = epubIndex
+                   let epubIndex = playerEpubChapterIndex(for: activePlayer) {
+                    if let pinned = pinnedReaderChapterIndex {
+                        // A local-player TOC jump moves the queue to the same
+                        // chapter; consume the pin once that transition lands.
+                        if epubIndex == pinned {
+                            pinnedReaderChapterIndex = nil
+                        }
+                    } else if epubIndex != currentChapterIndex {
+                        currentChapterIndex = epubIndex
+                    }
                 }
             }
         }
@@ -1188,9 +1203,18 @@ struct InstantReaderView: View {
     }
 
     private func returnToPreviousChapter() -> Bool {
-        guard currentChapterIndex > 0 else { return false }
+        FlickerProbe.shared.log(
+            "InstantReader.returnToPreviousChapter ENTER current=\(currentChapterIndex) pinned=\(pinnedReaderChapterIndex.map(String.init) ?? "nil")"
+        )
+        guard currentChapterIndex > 0 else {
+            FlickerProbe.shared.log("InstantReader.returnToPreviousChapter BLOCKED firstChapter")
+            return false
+        }
         readerShouldStartAtLastPage = true
         currentChapterIndex -= 1
+        FlickerProbe.shared.log(
+            "InstantReader.returnToPreviousChapter EXIT target=\(currentChapterIndex) wantsLast=\(readerShouldStartAtLastPage)"
+        )
         return true
     }
 
@@ -1220,6 +1244,7 @@ struct InstantReaderView: View {
         guard let epubIndex = playerEpubChapterIndex(for: activePlayer),
               epubIndex != currentChapterIndex,
               fulltext.chapters.indices.contains(epubIndex) else { return }
+        pinnedReaderChapterIndex = nil
         currentChapterIndex = epubIndex
     }
 

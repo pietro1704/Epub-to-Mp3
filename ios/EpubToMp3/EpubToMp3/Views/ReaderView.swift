@@ -454,14 +454,17 @@ struct ReaderView: View {
             // from being used as effectivePages for even one frame with the old
             // currentPage=77, which was the "77/77" flash before usingStalePages
             // kicked in. lastValidPages keeps the freeze-frame content.
-            paginationCache.key = nil
             paginationCache.pages = []
-            // Intentionally keep lastValidPages alive so effectivePages has real
-            // content (page 0 of the departing chapter) during the render gap of
-            // the new chapter. It is replaced the moment the new chapter's pages
-            // arrive in attributedPages(). A blank frame (theme background) is
-            // NOT preferable — the departing page-0 freeze is visually neutral
-            // and correctly replaced within a frame or two.
+            paginationCache.key = nil
+            // ReaderView now retains its identity across chapter swaps. A
+            // forward crossing can keep currentPage at 0, so no currentPage
+            // onChange fires to stamp the chapter tag; stamp it explicitly.
+            // The footer remains hidden while usingStalePages is true.
+            currentPageChapterId = chapter.id
+            // Retain the currently visible slices only as a hold frame while
+            // the target chapter's final attributed pagination is prepared.
+            // TextKitPageView is explicitly fed `finalPages` below, never this
+            // hold array, so it cannot seed a new chapter from stale slices.
             // Retreat: refine the `Int.max` sentinel down to the real last
             // index once pagination stabilises, so the binding holds a sane
             // value for everything downstream (page-number footer, persisted
@@ -975,14 +978,22 @@ struct ReaderView: View {
                 return max(120, geo.size.height - 76 - footerStripHeight - pagePaddingV)
             }()
             let pageBodySize = CGSize(width: geo.size.width, height: textAreaHeight)
-            let pages = attributedPages(
-                pageSize: pageBodySize,
-                margin: margin,
-                columnWidth: effectiveColumnWidth,
-                headerHeight: 0,
-                fontSize: effectiveFontSize,
-                lineSpacing: effectiveLineSpacing
-            )
+            let pages: [NSAttributedString] = {
+                // Avoid the temporary plain-text pagination when returning to
+                // a previous chapter. Its page count differs from the final
+                // EPUB HTML/CSS layout and caused a visible whole-chapter jump.
+                guard !(jumpToLastPageForChapterId == "__pending__" && renderedAttributed == nil) else {
+                    return []
+                }
+                return attributedPages(
+                    pageSize: pageBodySize,
+                    margin: margin,
+                    columnWidth: effectiveColumnWidth,
+                    headerHeight: 0,
+                    fontSize: effectiveFontSize,
+                    lineSpacing: effectiveLineSpacing
+                )
+            }()
             // Hold the last valid page array while the new chapter re-paginates.
             // After onChange(of: chapter.id) clears paginationCache.pages and
             // renderedAttributed, there is a window before the .task populates
@@ -1012,7 +1023,7 @@ struct ReaderView: View {
                         .padding(.horizontal, margin)
                         .frame(maxWidth: .infinity, alignment: .center)
                 } else {
-                    paginatedPageContent(pages: effectivePages, containerSize: geo.size, safeArea: geo.safeAreaInsets,
+                    paginatedPageContent(pages: effectivePages, curlPages: pages, containerSize: geo.size, safeArea: geo.safeAreaInsets,
                                          pageOverride: usingStalePages ? chapterTransitionDisplayPage : nil)
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                         // NOTE: no `-hiddenChromeTopCompaction` offset here. It
@@ -1473,12 +1484,12 @@ struct ReaderView: View {
     /// Dispatch page rendering to the appropriate animation container
     /// based on `settings.pageTurnStyle`.
     @ViewBuilder
-    private func paginatedPageContent(pages: [NSAttributedString], containerSize: CGSize, safeArea: EdgeInsets = EdgeInsets(), pageOverride: Int? = nil) -> some View {
+    private func paginatedPageContent(pages: [NSAttributedString], curlPages: [NSAttributedString]? = nil, containerSize: CGSize, safeArea: EdgeInsets = EdgeInsets(), pageOverride: Int? = nil) -> some View {
         let pageIndex = max(0, min(pages.count - 1, pageOverride ?? currentPage))
         switch settings.pageTurnStyle {
         #if os(iOS)
         case .flip:
-            pageCurlContent(pages: pages, containerSize: containerSize, safeArea: safeArea)
+            pageCurlContent(pages: curlPages ?? pages, containerSize: containerSize, safeArea: safeArea)
         #endif
         case .slide:
             slidePageContent(pages: pages, pageIndex: pageIndex, containerSize: containerSize)

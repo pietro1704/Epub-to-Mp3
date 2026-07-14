@@ -408,7 +408,6 @@ struct PlayerReaderView: View {
                 },
                 startAtLastPage: readerShouldStartAtLastPage
             )
-            .id(chapter.id)
         } else if let err = fulltextError {
             VStack(spacing: 12) {
                 Label(err, systemImage: "exclamationmark.triangle")

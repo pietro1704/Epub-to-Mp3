@@ -153,30 +153,23 @@ struct TextKitPageView: UIViewControllerRepresentable {
         // ReaderView.onChange(chapter.id).
         if chapterToken != oldToken {
             FlickerProbe.shared.log("updateUIVC BRANCH1(tokenChanged) pages.isEmpty=\(pages.isEmpty) target=\(target)")
+            coordinator.committedChapterToken = nil
+            // Keep the already-installed old controller on screen while the
+            // new chapter is still unpaginated. It is a hold frame only: the
+            // incoming chapter is never seeded from stale slices.
+            guard !pages.isEmpty else {
+                coordinator.isAwaitingChapterSwap = true
+                return
+            }
             coordinator.isAwaitingChapterSwap = false
             coordinator.purgePool()
-            coordinator.committedChapterToken = nil
-            if !pages.isEmpty {
-                // The new chapter's pages are already here — seed page `target`
-                // and mark this token as committed so a later same-token update
-                // doesn't re-seed.
-                let vc = coordinator.controller(for: target)
-                // Animate the crossing in the armed direction (seedCrossing
-                // consumes pendingCrossingDirection; falls back to a hard cut
-                // when none is pending or reduce-motion is on).
-                // Only commit the token if the seed actually happened — when a
-                // transition is in flight seedCrossing returns false (calling
-                // setViewControllers mid-pan crashes), leaving the token
-                // uncommitted so the deferred-seed branch retries once the
-                // transition settles.
-                if coordinator.seedCrossing(pvc, vc) {
-                    coordinator.committedChapterToken = chapterToken
-                }
+            // The new chapter's final pages are already here — seed `target`
+            // and mark this token as committed so a later same-token update
+            // doesn't re-seed.
+            let vc = coordinator.controller(for: target)
+            if coordinator.seedCrossing(pvc, vc) {
+                coordinator.committedChapterToken = chapterToken
             }
-            // else: cache was cleared and the new chapter hasn't paginated yet.
-            // Do NOT seed anything — seeding here would push stale/old content
-            // (the wrong interleaved page). Wait for a later update with the
-            // fresh `pages` (handled below once the token has "settled").
             return
         }
 
@@ -194,6 +187,7 @@ struct TextKitPageView: UIViewControllerRepresentable {
             guard !coordinator.isTransitioning else { return }
             coordinator.committedChapterToken = chapterToken
             coordinator.isAwaitingChapterSwap = false
+            coordinator.purgePool()
             let vc = coordinator.controller(for: target)
             // Backward crossing (startAtLastPage): currentPage == Int.max means
             // makeUIViewController already seeded page 0 (pages were empty at that
@@ -434,6 +428,9 @@ struct TextKitPageView: UIViewControllerRepresentable {
 
         func navigate(_ direction: UIPageViewController.NavigationDirection,
                       in pvc: UIPageViewController) {
+            FlickerProbe.shared.log(
+                "TextKit.navigate direction=\(direction) awaiting=\(isAwaitingChapterSwap) transitioning=\(isTransitioning)"
+            )
             // A chapter crossing is in flight: the host has bumped the chapter
             // but the new `pages` haven't landed / been re-seeded yet, so the
             // displayed controller still carries the OLD chapter's
@@ -462,9 +459,15 @@ struct TextKitPageView: UIViewControllerRepresentable {
                     // and `ReaderView.onChange(chapter.id)` resets currentPage
                     // to 0 against the NEW pages. Arm the swap latch so a
                     // re-navigation in the meantime is suppressed.
-                    if parent.onAdvanceChapter?() == true {
-                        pendingCrossingDirection = .forward
-                        isAwaitingChapterSwap = true
+                    // Arm the latch *before* changing SwiftUI state. The host
+                    // callback can synchronously re-render and clear the latch;
+                    // setting it afterwards leaves it stuck true, so the next
+                    // backward tap is silently ignored.
+                    pendingCrossingDirection = .forward
+                    isAwaitingChapterSwap = true
+                    if parent.onAdvanceChapter?() != true {
+                        pendingCrossingDirection = nil
+                        isAwaitingChapterSwap = false
                     }
                     return
                 }
@@ -474,9 +477,11 @@ struct TextKitPageView: UIViewControllerRepresentable {
                     nextIndex = candidate
                 } else {
                     parent.onPreviousChapterNeedsLastPage?()
-                    if parent.onPreviousChapter?() == true {
-                        pendingCrossingDirection = .reverse
-                        isAwaitingChapterSwap = true
+                    pendingCrossingDirection = .reverse
+                    isAwaitingChapterSwap = true
+                    if parent.onPreviousChapter?() != true {
+                        pendingCrossingDirection = nil
+                        isAwaitingChapterSwap = false
                     }
                     return
                 }
@@ -651,6 +656,19 @@ struct TextKitPageView: UIViewControllerRepresentable {
 
         // MARK: UIGestureRecognizerDelegate
 
+        func gestureRecognizer(_ g: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
+            guard g is UITapGestureRecognizer else { return true }
+            let owner = touch.view?.parentViewController
+            let controller = (owner as? TextKitPageController)
+                ?? ((owner as? UIPageViewController)?.viewControllers?.first as? TextKitPageController)
+            guard let controller else { return true }
+            let touchesLink = controller.containsLink(at: touch.location(in: controller.view))
+            if touchesLink {
+                FlickerProbe.shared.log("TextKit.tap DEFERRED_TO_LINK page=\(controller.pageIndex)")
+            }
+            return !touchesLink
+        }
+
         func gestureRecognizer(_ g: UIGestureRecognizer,
                                shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool { true }
     }
@@ -810,6 +828,25 @@ final class TextKitPageController: UIViewController, UITextViewDelegate {
         let probe = String(snippet.prefix(15))
         guard !probe.isEmpty else { return nil }
         return spans.first { $0.text.range(of: probe) != nil }
+    }
+
+    /// Returns true only when `location` lands on a linked glyph. The page-level
+    /// recognizer declines these touches, leaving UITextView to route internal
+    /// EPUB links before a page turn or chrome toggle can consume the tap.
+    func containsLink(at location: CGPoint) -> Bool {
+        guard textView.attributedText.length > 0 else { return false }
+        let point = view.convert(location, to: textView)
+        let layoutManager = textView.layoutManager
+        let glyphIndex = layoutManager.glyphIndex(for: point, in: textView.textContainer)
+        guard glyphIndex < layoutManager.numberOfGlyphs else { return false }
+        let glyphRect = layoutManager.boundingRect(
+            forGlyphRange: NSRange(location: glyphIndex, length: 1),
+            in: textView.textContainer
+        )
+        guard glyphRect.insetBy(dx: -4, dy: -4).contains(point) else { return false }
+        let characterIndex = layoutManager.characterIndexForGlyph(at: glyphIndex)
+        guard characterIndex < textView.attributedText.length else { return false }
+        return textView.attributedText.attribute(.link, at: characterIndex, effectiveRange: nil) != nil
     }
 
     @objc private func handleLongPress(_ gesture: UILongPressGestureRecognizer) {

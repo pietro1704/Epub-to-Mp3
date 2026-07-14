@@ -23,6 +23,23 @@ final class InstantReaderPlayFromHereTests: XCTestCase {
         )
     }
 
+    func testTocSelectionIsNotImmediatelyOverriddenByAudioFollow() throws {
+        let source = try instantReaderSource()
+
+        XCTAssertTrue(
+            source.contains("@State private var pinnedReaderChapterIndex: Int?"),
+            "A TOC selection needs a temporary reader pin while audio is playing."
+        )
+        XCTAssertTrue(
+            source.contains("pinnedReaderChapterIndex = target"),
+            "Selecting a TOC chapter must pin that selected EPUB index before dismissing the sheet."
+        )
+        XCTAssertTrue(
+            source.contains("if let pinned = pinnedReaderChapterIndex"),
+            "The audio position observer must not overwrite a user-selected TOC chapter while it is pinned."
+        )
+    }
+
     private func instantReaderSource() throws -> String {
         let testFile = URL(fileURLWithPath: #filePath)
         let projectRoot = testFile

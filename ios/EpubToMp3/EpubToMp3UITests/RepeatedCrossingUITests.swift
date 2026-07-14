@@ -104,7 +104,10 @@ final class RepeatedCrossingUITests: XCTestCase {
     func testForwardThenBackwardCrossingByTap() throws {
         let app = try open()
         let right = app.coordinate(withNormalizedOffset: CGVector(dx: 0.85, dy: 0.5))
-        let left = app.coordinate(withNormalizedOffset: CGVector(dx: 0.15, dy: 0.5))
+        // Use the left gutter, not text: chapter 6's content at 15% width is
+        // a real EPUB hyperlink, which must correctly take precedence over
+        // page navigation.
+        let left = app.coordinate(withNormalizedOffset: CGVector(dx: 0.05, dy: 0.5))
 
         guard let start = chapter(app), start.index + 1 < start.total else {
             throw XCTSkip("No room to cross forward.")
@@ -174,7 +177,8 @@ final class RepeatedCrossingUITests: XCTestCase {
     func testBackwardCrossingLandsOnLastPageWithoutFlicker() throws {
         let app = try open()
         let right = app.coordinate(withNormalizedOffset: CGVector(dx: 0.85, dy: 0.5))
-        let left = app.coordinate(withNormalizedOffset: CGVector(dx: 0.15, dy: 0.5))
+        let backwardFrom = app.coordinate(withNormalizedOffset: CGVector(dx: 0.20, dy: 0.5))
+        let backwardTo = app.coordinate(withNormalizedOffset: CGVector(dx: 0.80, dy: 0.5))
         guard let start = chapter(app), start.index + 1 < start.total else {
             throw XCTSkip("No room to cross forward first.")
         }
@@ -188,10 +192,13 @@ final class RepeatedCrossingUITests: XCTestCase {
         app.buttons["flicker.probe.reset"].firstMatch.tap()
         usleep(200_000)
 
-        // Backward off page 1 → previous chapter, must land on ITS last page.
-        left.tap(); usleep(2_500_000)
+        // Drag right off page 1. A tap on the fixture's linked text must open
+        // that link, so the physical crossing regression uses the edge-pan
+        // gesture that users also use to return a chapter.
+        backwardFrom.press(forDuration: 0.05, thenDragTo: backwardTo)
+        usleep(2_500_000)
         XCTAssertEqual(chapter(app)?.index, start.index,
-                       "backward tap must return to the previous chapter")
+                       "backward edge swipe must return to the previous chapter")
         if let ind = indicator(app) {
             XCTAssertEqual(ind.page, ind.total,
                            "backward crossing must land on the previous chapter's LAST page, got \(ind)")

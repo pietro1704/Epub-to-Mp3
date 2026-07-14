@@ -214,6 +214,21 @@ final class AudioPlayerDivergenceTests: XCTestCase {
         )
     }
 
+    // MARK: Segment queue chapter reconciliation
+
+    /// Embedded playback queues files named `ch<N>-seg<M>.mp3`. The chapter
+    /// shown by the player must follow AVQueuePlayer.currentItem, not the
+    /// most recently enqueued buffer-ahead segment.
+    func testSegmentItemURLResolvesItsChapterIndex() {
+        XCTAssertEqual(
+            AudioPlayer.chapterIndexForSegmentItem(URL(fileURLWithPath: "/tmp/ch12-seg3.mp3")),
+            12
+        )
+        XCTAssertNil(
+            AudioPlayer.chapterIndexForSegmentItem(URL(fileURLWithPath: "/tmp/not-a-segment.mp3"))
+        )
+    }
+
     // MARK: JobSnapshot index translation
 
     /// `playableChapters` strips chapters with no `downloadUrl`. The

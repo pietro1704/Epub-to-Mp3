@@ -330,24 +330,35 @@ final class ReaderChromeAutoHideTests: XCTestCase {
         XCTAssertFalse(pageCurl.contains("if parent.onAdvanceChapter?() == true { parent.currentPage = 0 }"),
                        "Do not reset currentPage against the old chapter's pages — let onChange(chapter.id) do it.")
 
-        // 4) A chapter swap is driven by a definitive token, not page count,
-        //    and the previous chapter's pages are dropped so the swap never
-        //    shows the OLD chapter's first page (the "wrong interleaved page").
+        // 4) A chapter swap is driven by a definitive token. Keep the old
+        // rendered page only as a hold frame, while the incoming curl receives
+        // zero pages until final attributed pagination is ready.
         XCTAssertTrue(pageCurl.contains("chapterToken != oldToken"),
                       "Chapter swap must key off a chapterToken, not page count, to avoid a stuck latch.")
-        XCTAssertTrue(reader.contains("paginationCache.lastValidPages = []"),
-                      "onChange(chapter.id) must clear lastValidPages so the swap never shows the previous chapter's page.")
-        // 6) The page footer/count must not flicker to the previous chapter's
-        //    count while the new chapter paginates. Clearing `pages` on chapter
-        //    change re-exposes the old `lastValidPages` count to the footer.
-        //    Keep the current page array stable through the crossing.
-        XCTAssertFalse(reader.contains("paginationCache.pages = []"),
-                       "Do not clear paginationCache.pages on chapter change — it makes the page counter/UI flash through stale counts during chapter crossings.")
+        XCTAssertFalse(reader.contains("paginationCache.lastValidPages = []"),
+                       "The old rendered page is the hold frame during a backward swap; it must not be discarded.")
+        XCTAssertTrue(reader.contains("paginationCache.pages = []"),
+                      "The incoming chapter must not reuse the departing chapter's page count.")
+        XCTAssertTrue(reader.contains("curlPages: pages"),
+                      "The curl must receive final pages, never the stale hold frame.")
         // 5) On a swap with not-yet-paginated pages, seeding is DEFERRED until
         //    the new pages arrive (committedChapterToken), never seeded against
         //    stale content.
         XCTAssertTrue(pageCurl.contains("committedChapterToken"),
                       "A chapter swap with empty pages must defer the seed until the fresh pages arrive.")
+    }
+
+    func testIdleTimerIsEnabledBeforeXCTestGuard() throws {
+        let app = try appSource(named: "EpubToMp3App.swift")
+        guard let idle = app.range(of: "setIdleTimerDisabled(true)"),
+              let testGuard = app.range(of: "guard !Self.isRunningUnderXCTest() else { return }")
+        else {
+            return XCTFail("The app must contain both the idle timer policy and XCTest guard.")
+        }
+        XCTAssertLessThan(
+            idle.lowerBound, testGuard.lowerBound,
+            "The physical UI-test app must disable idle lock before any XCTest-only early return."
+        )
     }
 
     func testPdfReaderExposesTapToToggleChromeContract() throws {

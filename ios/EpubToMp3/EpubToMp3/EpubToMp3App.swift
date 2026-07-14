@@ -54,10 +54,10 @@ struct EpubToMp3App: App {
                     #if os(macOS)
                     await startSidecarIfNeeded()
                     #endif
+                    setIdleTimerDisabled(true)
                     guard !Self.isRunningUnderXCTest() else { return }
                     // Run LRU+TTL eviction on every app launch (background priority).
                     runCacheEviction()
-                    setIdleTimerDisabled(true)
                     // One-shot prune of orphan bookmarks from pre-cascade
                     // builds. Mirrors the Flutter slice-42 fix so existing
                     // installs that already removed a book before the
@@ -264,12 +264,24 @@ struct EpubToMp3App: App {
         // Collect active IDs: whatever the player is currently playing.
         var activeIds: Set<String> = []
         if let jobId = player.snapshot?.jobId { activeIds.insert(jobId) }
+        let library = self.library
         Task.detached(priority: .background) {
             AudiobookCacheEviction.runEviction(
                 budgetBytes: budgetBytes,
                 ttlSeconds: ttlSeconds,
                 activeJobIds: activeIds
             )
+            // Eviction deletes Audiobooks/<jobId>/ wholesale but knows
+            // nothing about the library — reconcile `cachedOffline` so
+            // evicted books stop advertising "offline ready".
+            await MainActor.run {
+                let stale = AudiobookCacheEviction.staleOfflineBookIds(books: library.books)
+                for id in stale {
+                    guard var book = library.books.first(where: { $0.id == id }) else { continue }
+                    book.cachedOffline = false
+                    library.update(book)
+                }
+            }
         }
     }
 

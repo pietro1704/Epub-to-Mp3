@@ -408,6 +408,20 @@ final class ReaderChapterAdvanceTests: XCTestCase {
         XCTAssertEqual(model.currentPage, 1)
     }
 
+    func testBackwardCrossingWaitsForFinalAttributedPagesBeforeSeeding() throws {
+        let testFile = URL(fileURLWithPath: #filePath)
+        let readerURL = testFile
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("EpubToMp3/Views/ReaderView.swift")
+        let source = try String(contentsOf: readerURL, encoding: .utf8)
+
+        XCTAssertTrue(
+            source.contains("jumpToLastPageForChapterId == \"__pending__\" && renderedAttributed == nil"),
+            "A backward crossing must defer pagination while only the temporary plain-text fallback exists."
+        )
+    }
+
     func testDoubleTapCallWouldHaveJumpedTwoChapters() {
         // Documents the bug: two retreat calls on chapter boundary jump two chapters.
         // Before the fix, onZoneTap on UITextView + tapZones() SwiftUI both fired,

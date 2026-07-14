@@ -53,6 +53,19 @@ final class TextKitLinkInteractionTests: XCTestCase {
         )
     }
 
+    func testPageTapRecognizerDefersToTextLinks() throws {
+        let source = try textKitSource()
+
+        XCTAssertTrue(
+            source.contains("shouldReceive touch: UITouch"),
+            "The page-turn recognizer must inspect touches before it recognizes them."
+        )
+        XCTAssertTrue(
+            source.contains("containsLink(at:"),
+            "The page-turn recognizer must reject a touch landing on a text link so link navigation wins over page turns/chrome."
+        )
+    }
+
     private func textKitSource() throws -> String {
         let testFile = URL(fileURLWithPath: #filePath)
         let projectRoot = testFile
