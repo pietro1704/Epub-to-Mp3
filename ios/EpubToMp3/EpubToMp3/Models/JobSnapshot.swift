@@ -35,7 +35,7 @@ struct JobSnapshot: Codable, Equatable, Identifiable {
 
         var displayTitle: String {
             if let name, !name.isEmpty { return name }
-            return "Chapter \(index + 1)"
+            return L10n.string("player.chapter", index + 1)
         }
 
         var isCompleted: Bool {

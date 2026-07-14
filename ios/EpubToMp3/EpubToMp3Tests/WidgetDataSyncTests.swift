@@ -24,6 +24,25 @@ final class WidgetDataSyncTests: XCTestCase {
         super.tearDown()
     }
 
+    // MARK: - Localized chapter label
+
+    func test_localizedChapterLabel_delegatesToL10n() {
+        // The widget extension bundles no Localizable.strings — the host must
+        // ship a pre-localized label through the App Group payload.
+        XCTAssertEqual(
+            WidgetDataSync.localizedChapterLabel(chapterIndex: 4, totalChapters: 18),
+            L10n.string("player.chapterOf", 5, 18)
+        )
+        XCTAssertEqual(
+            WidgetDataSync.localizedChapterLabel(chapterIndex: 4, totalChapters: nil),
+            L10n.string("player.chapter", 5)
+        )
+        XCTAssertEqual(
+            WidgetDataSync.localizedChapterLabel(chapterIndex: 0, totalChapters: 0),
+            L10n.string("player.chapter", 1)
+        )
+    }
+
     // MARK: - Now Playing round-trip
 
     func test_updateNowPlaying_writesAllKeys() {

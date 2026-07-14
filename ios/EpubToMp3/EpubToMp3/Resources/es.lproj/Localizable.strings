@@ -102,6 +102,7 @@
 "player.sleepTimerRemaining" = "Temporizador de sueño: %@ restante. Toca para cancelar.";
 "player.airplay" = "AirPlay";
 "player.chapter" = "Capítulo %d";
+"player.chapterOf" = "Capítulo %1$d de %2$d";
 "player.coverArt" = "Portada de %@";
 "player.coverTapTutorial" = "Toca la portada para ver la frase";
 "player.lyricsTapHint" = "Muestra u oculta la frase actual sobre la portada.";

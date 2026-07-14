@@ -15,6 +15,7 @@ private let nowPlayingIsPlayingKey = "widget.nowPlayingIsPlaying"
 private let lastReadBookIdKey = "widget.lastReadBookId"
 private let lastReadChapterIndexKey = "widget.lastReadChapterIndex"
 private let lastReadTotalChaptersKey = "widget.lastReadTotalChapters"
+private let lastReadChapterLabelKey = "widget.lastReadChapterLabel"
 
 // MARK: - Minimal BookEntity copy (widget runs in a separate process)
 
@@ -473,6 +474,9 @@ struct ContinueReadingEntry: TimelineEntry {
     let totalChapters: Int?
     let coverData: Data?
     let bookId: String?
+    // Pre-localized in the host app (the extension bundles no
+    // Localizable.strings); nil only for stale pre-update payloads.
+    var localizedChapterLabel: String? = nil
 
     var progressPercent: Int? {
         guard let total = totalChapters, total > 0,
@@ -481,6 +485,9 @@ struct ContinueReadingEntry: TimelineEntry {
     }
 
     var chapterLabel: String? {
+        if let localizedChapterLabel, !localizedChapterLabel.isEmpty {
+            return localizedChapterLabel
+        }
         guard let idx = chapterIndex else { return nil }
         if let total = totalChapters, total > 0 {
             return "Chapter \(idx + 1) of \(total)"
@@ -555,7 +562,8 @@ struct ContinueReadingProvider: TimelineProvider {
             chapterIndex: chapterIndex,
             totalChapters: totalChapters,
             coverData: book.coverPNG,
-            bookId: book.id
+            bookId: book.id,
+            localizedChapterLabel: defaults.string(forKey: lastReadChapterLabelKey)
         )
     }
 }

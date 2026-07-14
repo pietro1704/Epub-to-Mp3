@@ -27,6 +27,7 @@ enum WidgetDataSync {
         static let lastReadBookId = "widget.lastReadBookId"
         static let lastReadChapterIndex = "widget.lastReadChapterIndex"
         static let lastReadTotalChapters = "widget.lastReadTotalChapters"
+        static let lastReadChapterLabel = "widget.lastReadChapterLabel"
     }
 
     // MARK: - Widget kind identifiers
@@ -151,7 +152,24 @@ enum WidgetDataSync {
         if let total = snapshot.totalChapters {
             defaults.set(total, forKey: Keys.lastReadTotalChapters)
         }
+        defaults.set(
+            localizedChapterLabel(
+                chapterIndex: snapshot.chapterIndex,
+                totalChapters: snapshot.totalChapters
+            ),
+            forKey: Keys.lastReadChapterLabel
+        )
         reloadContinueReadingWidgets()
+    }
+
+    /// The widget extension bundles no `Localizable.strings` of its own, so
+    /// any user-visible label must be localized here, in the host app
+    /// process, and shipped pre-rendered through the App Group payload.
+    static func localizedChapterLabel(chapterIndex: Int, totalChapters: Int?) -> String {
+        if let total = totalChapters, total > 0 {
+            return L10n.string("player.chapterOf", chapterIndex + 1, total)
+        }
+        return L10n.string("player.chapter", chapterIndex + 1)
     }
 
     // MARK: - Library

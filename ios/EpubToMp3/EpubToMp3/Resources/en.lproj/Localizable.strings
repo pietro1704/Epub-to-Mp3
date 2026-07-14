@@ -102,6 +102,7 @@
 "player.sleepTimerRemaining" = "Sleep timer: %@ remaining. Tap to cancel.";
 "player.airplay" = "AirPlay";
 "player.chapter" = "Chapter %d";
+"player.chapterOf" = "Chapter %1$d of %2$d";
 "player.coverArt" = "%@ cover art";
 "player.coverTapTutorial" = "Tap cover for lyrics";
 "player.lyricsTapHint" = "Toggles the current sentence overlay.";

@@ -74,7 +74,7 @@ struct EbookFulltext: Codable, Equatable {
         var zeroBasedEpubIndex: Int { max(0, index - 1) }
 
         var displayTitle: String {
-            guard let name, !name.isEmpty else { return "Chapter \(index)" }
+            guard let name, !name.isEmpty else { return L10n.string("player.chapter", index) }
             return Self.cleanTitle(name)
         }
 
