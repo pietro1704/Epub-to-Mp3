@@ -443,8 +443,8 @@ final class BookOpenViewPriorityTests: XCTestCase {
             "Previous-chapter retreat must decrement the displayed EPUB chapter before mapping to playback."
         )
         XCTAssertTrue(
-            source.contains("let playablePrev = InstantReaderIndexMapper.playableIndexOrClamped(forEpubIndex: prev, in: snapshot)"),
-            "After computing the previous EPUB chapter, PlayerReaderView must map it back into the playable axis explicitly."
+            source.contains("let playablePrev = InstantReaderIndexMapper.playableIndexOrClamped(\n            forEpubIndex: prev,\n            in: snapshot,\n            direction: .atOrBefore\n        )"),
+            "After computing the previous EPUB chapter, PlayerReaderView must map it back into the playable axis explicitly with backward clamping."
         )
     }
 
@@ -487,17 +487,17 @@ final class BookOpenViewPriorityTests: XCTestCase {
             "PlayerReaderView must track the specific EPUB chapter targeted by a backward crossing so the start-at-last-page flag is cleared only after that exact chapter becomes visible."
         )
         XCTAssertTrue(
-            source.contains("pendingRetreatTargetEpubIndex = prev"),
-            "returnToPreviousChapter() must remember which EPUB chapter is waiting to consume the last-page handoff."
+            source.contains("pendingRetreatTargetEpubIndex = targetEpubIndex"),
+            "returnToPreviousChapter() must remember the resolved EPUB chapter waiting to consume the last-page handoff."
         )
         XCTAssertTrue(
-            source.contains("guard let newEpubIndex else { return }")
-                && source.contains("guard let pendingTarget = pendingRetreatTargetEpubIndex,\n              newEpubIndex == pendingTarget else { return }"),
-            "PlayerReaderView must clear readerShouldStartAtLastPage only when the displayed EPUB chapter matches the pending retreat target."
+            source.contains("guard let pendingTarget = pendingRetreatTargetEpubIndex")
+                && source.contains("chapter.zeroBasedEpubIndex == pendingTarget"),
+            "PlayerReaderView must clear the handoff only when the displayed EPUB chapter matches the pending retreat target."
         )
         XCTAssertTrue(
-            source.contains("readerShouldStartAtLastPage = false\n            pendingRetreatTargetEpubIndex = nil"),
-            "Once the target previous chapter becomes visible, PlayerReaderView must clear both the last-page flag and its pending retreat target marker."
+            source.contains("readerShouldStartAtLastPage = false\n                    pendingRetreatTargetEpubIndex = nil\n                    displayedEpubIndexOverride = nil"),
+            "Once the target previous chapter lands on its last page, PlayerReaderView must clear all retreat handoff state."
         )
     }
 
@@ -513,8 +513,8 @@ final class BookOpenViewPriorityTests: XCTestCase {
             "PlayerReaderView must derive all visible chapter lookups from displayedEpubIndex so explicit retreat/jump overrides win over stale playable-index reads."
         )
         XCTAssertTrue(
-            source.contains("displayedEpubIndexOverride = prev"),
-            "returnToPreviousChapter() must pin the displayed EPUB index immediately when retreat starts."
+            source.contains("displayedEpubIndexOverride = targetEpubIndex"),
+            "returnToPreviousChapter() must pin the resolved displayed EPUB index immediately when retreat starts."
         )
         XCTAssertTrue(
             source.contains("displayedEpubIndexOverride = epubIndex"),

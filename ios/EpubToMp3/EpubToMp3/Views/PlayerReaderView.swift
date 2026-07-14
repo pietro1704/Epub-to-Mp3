@@ -393,21 +393,15 @@ struct PlayerReaderView: View {
                 },
                 onLinkTap: { url in handleEpubLink(url) },
                 onLastPageLanded: {
-                    // Only the reader itself knows when its Int.max seed has
-                    // actually settled into a real last-page index — resetting
-                    // these flags reactively off the AUDIO player's chapter
-                    // index (which updates near-instantly, well before
-                    // pagination) re-rendered this SAME `.id()`-stable
-                    // ReaderView with `startAtLastPage: false` while the seed
-                    // was still in flight, resetting currentPage back to 0.
-                    // By the time this fires the reader has already landed on
-                    // the intended chapter, so the override has done its job.
+                    guard let pendingTarget = pendingRetreatTargetEpubIndex,
+                          chapter.zeroBasedEpubIndex == pendingTarget else { return }
                     readerShouldStartAtLastPage = false
                     pendingRetreatTargetEpubIndex = nil
                     displayedEpubIndexOverride = nil
                 },
                 startAtLastPage: readerShouldStartAtLastPage
             )
+            .id(chapter.id)
         } else if let err = fulltextError {
             VStack(spacing: 12) {
                 Label(err, systemImage: "exclamationmark.triangle")

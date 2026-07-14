@@ -56,7 +56,7 @@ final class ChapterCacheManager: ObservableObject {
     func refreshCachedIndices() {
         var cached = Set<Int>()
         for chapter in chapters {
-            let idx = chapter.index - 1  // chapters use 1-based index
+            let idx = chapter.zeroBasedEpubIndex
             let file = cacheRoot.appendingPathComponent("chapter_\(idx).mp3")
             if FileManager.default.fileExists(atPath: file.path),
                let attrs = try? FileManager.default.attributesOfItem(atPath: file.path),
@@ -70,7 +70,7 @@ final class ChapterCacheManager: ObservableObject {
     /// Prefetch the next `count` chapters after `currentIndex` that are not cached.
     func prefetchNext(_ count: Int = 2, from currentIndex: Int) {
         let uncached = chapters
-            .map { $0.index - 1 }
+            .map(\.zeroBasedEpubIndex)
             .filter { $0 > currentIndex && !cachedIndices.contains($0) && !generatingIndices.contains($0) }
             .sorted()
             .prefix(count)
@@ -83,7 +83,7 @@ final class ChapterCacheManager: ObservableObject {
     /// Synthesise all chapters that are not yet cached.
     func downloadAll() {
         let uncached = chapters
-            .map { $0.index - 1 }
+            .map(\.zeroBasedEpubIndex)
             .filter { !cachedIndices.contains($0) && !generatingIndices.contains($0) }
             .sorted()
 
@@ -106,7 +106,7 @@ final class ChapterCacheManager: ObservableObject {
     private func synthesizeChapter(at arrayIndex: Int) {
         guard activeTasks[arrayIndex] == nil else { return }
 
-        let chapter = chapters.first(where: { $0.index - 1 == arrayIndex })
+        let chapter = chapters.first(where: { $0.zeroBasedEpubIndex == arrayIndex })
         guard let chapter else { return }
 
         let text = chapter.text.trimmingCharacters(in: .whitespacesAndNewlines)

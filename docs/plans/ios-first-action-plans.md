@@ -21,8 +21,10 @@ Não considerar uma etapa concluída apenas por compilação ou teste macOS quan
 
 - Último commit iOS validado no iPhone: `58ae856 test(ios): keep chapter crossing tap outside links`.
 - Correção de retorno ao capítulo anterior confirmada no iPhone por duas automações e logs de `FlickerProbe`.
-- Correção do TOC para distinguir servidor de áudio local foi commitada em `6adba0d` e o CI passou.
-- Branch `master` sincronizada com `origin/master`; working tree limpo.
+- Nesta execução, a auditoria de índices e a correção de navegação esparsa foram validadas por 54 testes Swift focados, build físico atual e 3 automações UI no iPhone (2 passaram, 1 foi pulada por capítulo de uma página).
+- Log físico mais recente: `/tmp/plan1-flicker-debug.log`; confirmou `current=5 → target=4`, `wantsLast=true`, `startAtLastPage=true` e ausência de `stale`, `spurious` e `empty`.
+- O teste Swift físico de contratos que lê arquivos do repositório não é válido no sandbox do iPhone; ele deve permanecer no host. Os testes de índice/cache passaram no device.
+- Branch `master` está com alterações locais desta etapa; ainda não foi commitada.
 - Destino físico preferencial: iPhone conectado por USB.
 
 ## Plano 0 — Higienizar o estado local
@@ -63,11 +65,11 @@ Não considerar uma etapa concluída apenas por compilação ou teste macOS quan
 
 **Próximas etapas bite-sized:**
 
-1. Enumerar cada chamada a `playableIndex`, `epubIndex`, `zeroBasedEpubIndex` e `chapter.index`; marcar o eixo de entrada/saída.
-2. Adicionar testes RED para TOC, busca, prefetch/cache e retorno usando capítulos pendentes/esparsos.
-3. Substituir apenas conversões comprovadamente erradas; manter fallback posicional somente onde a UX o exige.
-4. Rodar `InstantReaderIndexMapperTests`, testes de `AudioPlayer` e `ChapterCacheManagerTests` no host.
-5. Fazer build/install no iPhone e validar TOC, busca, avanço/recuo e áudio com capítulo pendente entre dois capítulos reproduzíveis.
+1. ✅ Enumerar cada chamada a `playableIndex`, `epubIndex`, `zeroBasedEpubIndex` e `chapter.index`; marcar o eixo de entrada/saída.
+2. ✅ Adicionar testes RED para TOC, busca, prefetch/cache e retorno usando capítulos pendentes/esparsos.
+3. ✅ Substituir conversões comprovadamente erradas; manter fallback posicional somente onde a UX o exige.
+4. ✅ Rodar `InstantReaderIndexMapperTests`, testes de `AudioPlayer` e `ChapterCacheManagerTests` no host; repetir índices/cache no device.
+5. ⚠️ Build/install e automação física concluídos para avanço/recuo/crossing; TOC, busca e áudio com capítulo pendente ainda exigem uma sessão específica no iPhone.
 
 **Evidência esperada:** cada ação registra o mesmo capítulo em índice EPUB, título visível e capítulo audível; nenhum capítulo pendente é tocado por engano.
 

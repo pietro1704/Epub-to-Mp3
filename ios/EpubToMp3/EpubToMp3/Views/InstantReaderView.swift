@@ -52,6 +52,36 @@ enum InstantReaderIndexMapper {
         return playable[playableIndex].index
     }
 
+    static func nextEpubIndex(after epubIndex: Int, in fulltext: EbookFulltext) -> Int? {
+        nextEpubIndex(after: epubIndex, in: fulltext.chapters)
+    }
+
+    static func nextEpubIndex(
+        after epubIndex: Int, in chapters: [EbookFulltext.Chapter]
+    ) -> Int? {
+        chapters
+            .map(\.zeroBasedEpubIndex)
+            .filter { $0 > epubIndex }
+            .min()
+    }
+
+    static func previousEpubIndex(before epubIndex: Int, in fulltext: EbookFulltext) -> Int? {
+        previousEpubIndex(before: epubIndex, in: fulltext.chapters)
+    }
+
+    static func previousEpubIndex(
+        before epubIndex: Int, in chapters: [EbookFulltext.Chapter]
+    ) -> Int? {
+        chapters
+            .map(\.zeroBasedEpubIndex)
+            .filter { $0 < epubIndex }
+            .max()
+    }
+
+    static func ordinal(forEpubIndex epubIndex: Int, in chapters: [EbookFulltext.Chapter]) -> Int? {
+        chapters.firstIndex { $0.zeroBasedEpubIndex == epubIndex }.map { $0 + 1 }
+    }
+
     /// Resolve a fulltext chapter from a zero-based EPUB index.
     ///
     /// The backend numbers fulltext chapters from 1 (`chapter.index`),
@@ -796,14 +826,18 @@ struct InstantReaderView: View {
                     currentChapterIndex = globalPlayer.currentChapterIndex
                 } else if let epubIdx = playerEpubChapterIndex(for: player) {
                     currentChapterIndex = epubIdx
-                } else if currentChapterIndex + 1 < fulltext.chapters.count {
-                    currentChapterIndex += 1
+                } else if let next = InstantReaderIndexMapper.nextEpubIndex(
+                    after: currentChapterIndex, in: fulltext
+                ) {
+                    currentChapterIndex = next
                 }
             } label: {
                 Image(systemName: "forward.end.fill").font(.title3)
             }
             .buttonStyle(.plain)
-            .disabled(currentChapterIndex + 1 >= fulltext.chapters.count)
+            .disabled(InstantReaderIndexMapper.nextEpubIndex(
+                after: currentChapterIndex, in: fulltext
+            ) == nil)
             .accessibilityLabel(L10n.string("instantReader.nextChapter"))
 
             // "..." popover — speed + sleep + secondary skips. Same
@@ -855,13 +889,17 @@ struct InstantReaderView: View {
                         currentChapterIndex = globalPlayer.currentChapterIndex
                     } else if let epubIdx = playerEpubChapterIndex(for: player) {
                         currentChapterIndex = epubIdx
-                    } else if currentChapterIndex > 0 {
-                        currentChapterIndex -= 1
+                    } else if let previous = InstantReaderIndexMapper.previousEpubIndex(
+                        before: currentChapterIndex, in: fulltext
+                    ) {
+                        currentChapterIndex = previous
                     }
                 } label: {
                     Label(L10n.string("player.previousChapter"), systemImage: "backward.end.fill")
                 }
-                .disabled(currentChapterIndex == 0)
+                .disabled(InstantReaderIndexMapper.previousEpubIndex(
+                    before: currentChapterIndex, in: fulltext
+                ) == nil)
                 Button { player.skip(by: -15) } label: {
                     Label(L10n.string("player.skipBack15"), systemImage: "gobackward.15")
                 }
@@ -1192,13 +1230,15 @@ struct InstantReaderView: View {
     /// of the current chapter — without this, paginated mode dead-ends
     /// after page 1 of chapter 0 and the rest of the book is invisible.
     private func advanceToNextChapter() -> Bool {
-        guard currentChapterIndex + 1 < fulltext.chapters.count else { return false }
+        guard let next = InstantReaderIndexMapper.nextEpubIndex(
+            after: currentChapterIndex, in: fulltext
+        ) else { return false }
         // Defensively clear a retreat's last-page flag if the user advances
         // forward before `onLastPageLanded` fired (interrupting a retreat
         // mid-flight) — otherwise the NEXT chapter's ReaderView would wrongly
         // inherit `startAtLastPage: true` and seed Int.max on a forward turn.
         readerShouldStartAtLastPage = false
-        currentChapterIndex += 1
+        currentChapterIndex = next
         return true
     }
 
@@ -1206,12 +1246,14 @@ struct InstantReaderView: View {
         FlickerProbe.shared.log(
             "InstantReader.returnToPreviousChapter ENTER current=\(currentChapterIndex) pinned=\(pinnedReaderChapterIndex.map(String.init) ?? "nil")"
         )
-        guard currentChapterIndex > 0 else {
+        guard let previous = InstantReaderIndexMapper.previousEpubIndex(
+            before: currentChapterIndex, in: fulltext
+        ) else {
             FlickerProbe.shared.log("InstantReader.returnToPreviousChapter BLOCKED firstChapter")
             return false
         }
         readerShouldStartAtLastPage = true
-        currentChapterIndex -= 1
+        currentChapterIndex = previous
         FlickerProbe.shared.log(
             "InstantReader.returnToPreviousChapter EXIT target=\(currentChapterIndex) wantsLast=\(readerShouldStartAtLastPage)"
         )
@@ -1227,7 +1269,9 @@ struct InstantReaderView: View {
     private func mirrorScrolledChapter(_ zeroBasedIndex: Int) {
         guard zeroBasedIndex != currentChapterIndex,
               zeroBasedIndex >= 0,
-              zeroBasedIndex < fulltext.chapters.count else { return }
+              InstantReaderIndexMapper.chapter(
+                  in: fulltext, atZeroBasedIndex: zeroBasedIndex
+              ) != nil else { return }
         currentChapterIndex = zeroBasedIndex
     }
 
@@ -1243,7 +1287,9 @@ struct InstantReaderView: View {
         let activePlayer = embeddedAudioReady ? globalPlayer : player
         guard let epubIndex = playerEpubChapterIndex(for: activePlayer),
               epubIndex != currentChapterIndex,
-              fulltext.chapters.indices.contains(epubIndex) else { return }
+              InstantReaderIndexMapper.chapter(
+                  in: fulltext, atZeroBasedIndex: epubIndex
+              ) != nil else { return }
         pinnedReaderChapterIndex = nil
         currentChapterIndex = epubIndex
     }
@@ -1264,8 +1310,10 @@ struct InstantReaderView: View {
         guard activePlayer.snapshot != nil,
               let epubIndex = playerEpubChapterIndex(for: activePlayer),
               epubIndex != currentChapterIndex,
-              fulltext.chapters.indices.contains(epubIndex) else { return nil }
-        let title = fulltext.chapters[epubIndex].displayTitle
+              let chapter = InstantReaderIndexMapper.chapter(
+                  in: fulltext, atZeroBasedIndex: epubIndex
+              ) else { return nil }
+        let title = chapter.displayTitle
         return title.isEmpty ? nil : title
     }
 

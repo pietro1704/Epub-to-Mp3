@@ -97,6 +97,20 @@ final class ChapterCacheManagerTests: XCTestCase {
         XCTAssertEqual(mgr.status(for: 0), .cached)
     }
 
+    func testRefreshDetectsSparseBackendIndexUsingZeroBasedCacheIndex() throws {
+        let chapters = [makeChapter(index: 1), makeChapter(index: 3), makeChapter(index: 5)]
+        let (mgr, _, cacheRoot) = makeManager(chapters: chapters)
+
+        try FileManager.default.createDirectory(at: cacheRoot, withIntermediateDirectories: true)
+        try Data(repeating: 0xFF, count: 200)
+            .write(to: cacheRoot.appendingPathComponent("chapter_2.mp3"))
+
+        mgr.refreshCachedIndices()
+
+        XCTAssertEqual(mgr.cachedIndices, [2],
+                       "backend index 3 must use EPUB zero-based cache index 2")
+    }
+
     func testRefreshIgnoresTinyFiles() throws {
         let chapters = [makeChapter(index: 1)]
         let (mgr, _, cacheRoot) = makeManager(chapters: chapters)

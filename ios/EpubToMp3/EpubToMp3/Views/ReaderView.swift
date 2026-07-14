@@ -820,18 +820,20 @@ struct ReaderView: View {
     /// Explicit "next chapter" action for scroll mode — same contract as
     /// `onAdvanceChapter` in paginated mode (host swaps `chapter`/`spans`).
     private func advanceChapter(chapters: [EbookFulltext.Chapter]) {
-        guard onAdvanceChapter?() == true else { return }
-        let next = min(chapter.zeroBasedEpubIndex + 1, chapters.count - 1)
+        guard let next = InstantReaderIndexMapper.nextEpubIndex(
+            after: chapter.zeroBasedEpubIndex, in: chapters
+        ), onAdvanceChapter?() == true else { return }
         lastScrolledChapterIndex = next
         onScrolledToChapter?(next)
     }
 
     /// Explicit "previous chapter" action for scroll mode.
     private func retreatChapter(chapters: [EbookFulltext.Chapter]) {
-        guard onPreviousChapter?() == true else { return }
-        let prev = max(chapter.zeroBasedEpubIndex - 1, 0)
-        lastScrolledChapterIndex = prev
-        onScrolledToChapter?(prev)
+        guard let previous = InstantReaderIndexMapper.previousEpubIndex(
+            before: chapter.zeroBasedEpubIndex, in: chapters
+        ), onPreviousChapter?() == true else { return }
+        lastScrolledChapterIndex = previous
+        onScrolledToChapter?(previous)
     }
 
     /// Small floating footer offering explicit chapter-to-chapter
@@ -841,15 +843,16 @@ struct ReaderView: View {
     /// exist yet (same rationale as paginated mode's page footer).
     private func chapterNavFooter(chapters: [EbookFulltext.Chapter]) -> some View {
         let idx = chapter.zeroBasedEpubIndex
+        let ordinal = InstantReaderIndexMapper.ordinal(forEpubIndex: idx, in: chapters) ?? 1
         return HStack {
             Button {
                 retreatChapter(chapters: chapters)
             } label: {
                 Image(systemName: "chevron.left")
             }
-            .disabled(idx <= 0)
+            .disabled(InstantReaderIndexMapper.previousEpubIndex(before: idx, in: chapters) == nil)
             Spacer()
-            Text("\(idx + 1) / \(chapters.count)")
+            Text("\(ordinal) / \(chapters.count)")
                 .font(.caption)
                 .foregroundStyle(.secondary)
             Spacer()
@@ -858,7 +861,7 @@ struct ReaderView: View {
             } label: {
                 Image(systemName: "chevron.right")
             }
-            .disabled(idx >= chapters.count - 1)
+            .disabled(InstantReaderIndexMapper.nextEpubIndex(after: idx, in: chapters) == nil)
         }
         .padding(.horizontal, 24)
         .padding(.vertical, 8)
@@ -882,7 +885,10 @@ struct ReaderView: View {
         lineSpacing: Double
     ) {
         let idx = chapter.zeroBasedEpubIndex
-        let neighbourIndices = [idx - 1, idx + 1].filter { chapters.indices.contains($0) }
+        let neighbourIndices = [
+            InstantReaderIndexMapper.previousEpubIndex(before: idx, in: chapters),
+            InstantReaderIndexMapper.nextEpubIndex(after: idx, in: chapters),
+        ].compactMap { $0 }
         guard !neighbourIndices.isEmpty else { return }
         let capturedSettings = settings
         let fontDir = epubFontDirectory
@@ -894,7 +900,7 @@ struct ReaderView: View {
         Task { @MainActor in
             for i in neighbourIndices {
                 await Task.yield()
-                let ch = chapters[i]
+                guard let ch = chapters.first(where: { $0.zeroBasedEpubIndex == i }) else { continue }
                 let key = BookChapterCell.renderKey(
                     chapter: ch, settings: capturedSettings, fontSize: fontSize, lineSpacing: lineSpacing
                 )

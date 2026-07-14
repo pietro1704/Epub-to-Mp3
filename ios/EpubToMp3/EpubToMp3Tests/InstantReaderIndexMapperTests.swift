@@ -3,6 +3,24 @@ import XCTest
 @testable import EpubToMp3
 
 final class InstantReaderIndexMapperTests: XCTestCase {
+    func testNextAndPreviousEpubIndicesSkipSparseFulltextSlots() {
+        let fulltext = Self.fulltext(indices: [1, 3, 5])
+
+        XCTAssertEqual(InstantReaderIndexMapper.nextEpubIndex(after: 0, in: fulltext), 2)
+        XCTAssertEqual(InstantReaderIndexMapper.nextEpubIndex(after: 2, in: fulltext), 4)
+        XCTAssertNil(InstantReaderIndexMapper.nextEpubIndex(after: 4, in: fulltext))
+
+        XCTAssertNil(InstantReaderIndexMapper.previousEpubIndex(before: 0, in: fulltext))
+        XCTAssertEqual(InstantReaderIndexMapper.previousEpubIndex(before: 2, in: fulltext), 0)
+        XCTAssertEqual(InstantReaderIndexMapper.previousEpubIndex(before: 4, in: fulltext), 2)
+        XCTAssertEqual(
+            InstantReaderIndexMapper.ordinal(
+                forEpubIndex: 2, in: fulltext.chapters
+            ),
+            2
+        )
+    }
+
     func testTocJumpTranslatesEpubIndexToPlayableIndex() {
         let snapshot = Self.snapshot(chapters: [
             Self.playableChapter(index: 0),
