@@ -419,6 +419,9 @@
 "reader.sentenceMenu.addBookmark" = "Añadir marcador";
 "reader.sentenceMenu.removeBookmark" = "Eliminar marcador";
 "reader.sentenceMenu.cancel" = "Cancelar";
+"reader.selection.playSentence" = "Reproducir esta frase";
+"reader.selection.playParagraph" = "Reproducir este párrafo";
+"reader.follow" = "Seguir";
 
 /* === LocalEpubReaderView === */
 "localEpubReader.couldntRead" = "No se pudo leer este libro";

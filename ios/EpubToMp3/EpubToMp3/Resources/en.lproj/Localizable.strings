@@ -419,6 +419,9 @@
 "reader.sentenceMenu.addBookmark" = "Add bookmark";
 "reader.sentenceMenu.removeBookmark" = "Remove bookmark";
 "reader.sentenceMenu.cancel" = "Cancel";
+"reader.selection.playSentence" = "Play this sentence";
+"reader.selection.playParagraph" = "Play this paragraph";
+"reader.follow" = "Follow";
 
 /* === LocalEpubReaderView === */
 "localEpubReader.couldntRead" = "Couldn't read this book";
