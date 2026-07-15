@@ -127,11 +127,11 @@ Update Swift unit/source-contract tests and add focused XCUITests for:
 - EPUB image zoom;
 - font selector and typography settings.
 
-### 10. Validate on device
+### 10. Validate iOS on the physical device first
 
-Run focused Swift host tests, the full project test suite where applicable, build the iOS target for the physical iPhone without downloading simulator runtimes, install, launch, and exercise reader/audio flows on device. Inspect screenshots for image, font, selection/floater, highlight, and bottom/top chrome behavior.
+The iOS implementation is the first and only validation target for this feature. Do not validate or modify the macOS app during this phase. Build the iOS target for the physical iPhone without downloading simulator runtimes, install, launch, and exercise reader/audio flows on the device. Inspect screenshots for image, font, selection/floater, highlight, and bottom/top chrome behavior. Run only the iOS/device-relevant tests needed to support this validation; do not use a macOS app run as evidence of completion.
 
-**Definition of done:** tests pass, physical-device build/install/launch succeeds, and the reader/player flow is manually verified on the iPhone.
+**Definition of done for iOS:** iOS tests pass, physical-device build/install/launch succeeds, and the reader/player flow is manually verified on the iPhone. Only after this gate passes may macOS work begin.
 
 ---
 
