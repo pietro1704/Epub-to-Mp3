@@ -29,6 +29,7 @@
 - EPUB paginated and scrolling modes support inline images, scaled to screen width while preserving aspect ratio, with tap-to-zoom.
 - EPUB supports “Usar fonte do livro” plus bundled/custom fonts. Font choice preserves bold, italic, headings, and other EPUB styles.
 - EPUB exposes font family, size, line spacing, margins, and alignment controls. Repagination preserves the approximate reading position.
+- EPUB reader supports a pinch gesture to increase or decrease font size, with clamped limits and debounced repagination while preserving the approximate reading position.
 - PDF keeps its original layout and fonts; EPUB typography controls are disabled for PDF.
 
 ---
@@ -104,15 +105,16 @@ Extend reader settings with:
 - bundled fonts such as Georgia and SF;
 - registered custom fonts;
 - font size;
+- pinch-to-zoom font scaling;
 - line spacing;
 - margins;
 - alignment.
 
-Apply family changes without stripping EPUB traits: bold, italic, headings, links, lists, and other existing styles remain styled. Debounce settings updates and preserve the nearest text offset through repagination.
+Apply family changes without stripping EPUB traits: bold, italic, headings, links, lists, and other existing styles remain styled. Debounce settings updates and preserve the nearest text offset through repagination. Pinch scaling must use clamped font-size limits, avoid changing font size for PDF, and debounce repagination so a continuous pinch does not thrash layout.
 
 Render the font selector with each font name displayed in its own font. Disable these controls for PDF while leaving PDF layout unchanged.
 
-**Tests:** original-font mode, alternative/custom font mode, trait preservation, settings persistence, position preservation, PDF control disabling.
+**Tests:** original-font mode, alternative/custom font mode, trait preservation, settings persistence, pinch scaling/clamping/debounce, position preservation, PDF control disabling.
 
 ### 9. Add regression and UI coverage
 
@@ -143,5 +145,6 @@ Run focused Swift host tests, the full project test suite where applicable, buil
 - [ ] Word highlight uses real or estimated timing.
 - [ ] EPUB images render responsively and open zoomed.
 - [ ] EPUB font/style/settings controls work and preserve position.
+- [ ] Pinch gesture increases/decreases EPUB font size with clamping and debounced repagination.
 - [ ] PDF layout/font remains unchanged and EPUB controls are disabled.
 - [ ] Focused tests, full relevant tests, and physical-device validation pass.
