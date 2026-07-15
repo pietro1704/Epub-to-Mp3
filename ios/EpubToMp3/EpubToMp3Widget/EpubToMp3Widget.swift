@@ -239,6 +239,7 @@ private struct NowPlayingSmallView: View {
             ZStack(alignment: .bottomLeading) {
                 coverImage(from: entry.coverData)
                     .frame(width: geo.size.width, height: geo.size.height)
+                    .padding(8)
                     .clipped()
 
                 LinearGradient(
@@ -288,6 +289,7 @@ private struct NowPlayingMediumView: View {
             GeometryReader { geo in
                 coverImage(from: entry.coverData)
                     .frame(width: geo.size.width, height: geo.size.height)
+                    .padding(8)
                     .clipped()
             }
             .frame(maxWidth: .infinity)
@@ -439,6 +441,7 @@ private func postWidgetIntentNotification() {
 struct TogglePlayPauseIntent: AppIntent {
     static let title: LocalizedStringResource = "Play / Pause"
     static let description = IntentDescription("Toggles audio playback.")
+    static let openAppWhenRun = true
 
     func perform() async throws -> some IntentResult {
         UserDefaults(suiteName: appGroupID)?
@@ -453,6 +456,7 @@ struct TogglePlayPauseIntent: AppIntent {
 struct SkipForward30Intent: AppIntent {
     static let title: LocalizedStringResource = "Skip Forward 30s"
     static let description = IntentDescription("Skips forward 30 seconds in the audiobook.")
+    static let openAppWhenRun = true
 
     func perform() async throws -> some IntentResult {
         UserDefaults(suiteName: appGroupID)?
@@ -578,6 +582,7 @@ private struct ContinueReadingSmallView: View {
             ZStack(alignment: .bottomLeading) {
                 coverImage(from: entry.coverData)
                     .frame(width: geo.size.width, height: geo.size.height)
+                    .padding(8)
                     .clipped()
 
                 LinearGradient(
@@ -627,6 +632,7 @@ private struct ContinueReadingMediumView: View {
             GeometryReader { geo in
                 coverImage(from: entry.coverData)
                     .frame(width: geo.size.width, height: geo.size.height)
+                    .padding(8)
                     .clipped()
             }
             .frame(maxWidth: .infinity)
@@ -805,6 +811,7 @@ private struct LibraryBookCell: View {
             VStack(spacing: 4) {
                 coverImage(from: book.coverData, size: 20)
                     .frame(maxWidth: .infinity)
+                    .padding(4)
                     .aspectRatio(0.7, contentMode: .fill)
                     .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
 

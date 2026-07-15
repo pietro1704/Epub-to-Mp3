@@ -34,6 +34,15 @@ final class EpubToMp3AppDeepLinkTests: XCTestCase {
         )
     }
 
+    private func widgetBundleSource() throws -> String {
+        try String(
+            contentsOf: URL(fileURLWithPath: #filePath)
+                .deletingLastPathComponent()
+                .deletingLastPathComponent()
+                .appendingPathComponent("EpubToMp3Widget/WidgetBundle.swift")
+        )
+    }
+
     // MARK: - Bug 3: deep link must navigate to the player, not just open the app
 
     /// Regression: `epubtomp3://player?bookId=...` used to only set
@@ -86,7 +95,12 @@ final class EpubToMp3AppDeepLinkTests: XCTestCase {
         )
         XCTAssertTrue(
             source.contains("com.pietrocode.epubtomp3.widgetIntent"),
-            "Widget-side Darwin notification name must match the app-side observer."
+            "Widget-side Darwin notification name must match the one posted by the widget extension's AppIntents."
+        )
+        XCTAssertGreaterThanOrEqual(
+            source.components(separatedBy: "static let openAppWhenRun = true").count - 1,
+            2,
+            "Playback widget intents must open the host app so the App Group flag is drained even when the app is suspended."
         )
     }
 
@@ -120,8 +134,19 @@ final class EpubToMp3AppDeepLinkTests: XCTestCase {
         let body = source[providerRange.upperBound...].prefix(1200)
         XCTAssertTrue(
             body.contains("downsampledWidgetCover"),
-            "loadNowPlaying must feed the entry a downsampled cover, never the raw book.coverPNG blob."
+            "loadNowPlaying must feed the entry a downsampled cover, never the raw stored blob."
         )
+        XCTAssertGreaterThanOrEqual(
+            source.components(separatedBy: ".padding(8)").count - 1,
+            4,
+            "Now Playing and Continue Reading cover layouts must reserve visible padding around the cover."
+        )
+    }
+
+    func testWidgetBundleRegistersLockScreenWidget() throws {
+        let source = try widgetBundleSource()
+        XCTAssertTrue(source.contains("NowPlayingLockScreenWidget()"))
+        XCTAssertTrue(source.contains("iOS 16.1"))
     }
 
     // MARK: - Bug 2: observer registration must be skipped under XCTest
