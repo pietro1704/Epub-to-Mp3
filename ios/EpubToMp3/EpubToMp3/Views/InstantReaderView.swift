@@ -225,6 +225,7 @@ struct InstantReaderView: View {
     @State private var showingToc = false
     @State private var showingSearch = false
     @State private var pendingPlayAnchor: SentenceSpan?  // sentence the user tapped → "Play from here"
+    @State private var floaterSentence: SentenceSpan?
     @State private var showingPlayMenu = false
     @State private var showingConversionStatus = false
     @State private var showingReaderSettings = false
@@ -264,6 +265,31 @@ struct InstantReaderView: View {
             ZStack(alignment: .center) {
                 content(topInset: topInset, bottomInset: bottomInset)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+                ReaderSelectionActionFloater(
+                    model: ReaderSelectionActionFloaterModel(
+                        sentence: floaterSentence,
+                        paragraphFirstSentence: floaterSentence.flatMap(paragraphFirstSentence),
+                        onPlaySentence: { span in
+                            jumpToSentence(span)
+                            floaterSentence = nil
+                        },
+                        onPlayParagraph: { span in
+                            jumpToSentence(span)
+                            floaterSentence = nil
+                        }
+                    )
+                )
+                .padding(.top, topInset + 12)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                .allowsHitTesting(floaterSentence != nil)
+
+                ReaderFollowButton(
+                    isVisible: divergencePlayerChapterLabel != nil,
+                    action: jumpToPlayerPosition
+                )
+                .padding(.bottom, bottomInset + 72)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
 
                 VStack(spacing: 0) {
                     if chromeVisible {
@@ -447,6 +473,18 @@ struct InstantReaderView: View {
 
     // MARK: - Content
 
+    private func paragraphFirstSentence(_ selected: SentenceSpan) -> SentenceSpan? {
+        guard let chapter = resolveChapter(at: currentChapterIndex) else { return selected }
+        let source = chapter.text as NSString
+        let selectionStart = min(max(0, selected.startChar), source.length)
+        let prefix = source.substring(to: selectionStart) as NSString
+        let boundary = prefix.range(of: "\n\n", options: .backwards)
+        let paragraphStart = boundary.location == NSNotFound ? 0 : NSMaxRange(boundary)
+        return spans.first(where: {
+            $0.startChar >= paragraphStart && $0.startChar <= selected.startChar
+        }) ?? selected
+    }
+
     @ViewBuilder
     private func content(topInset: CGFloat, bottomInset: CGFloat) -> some View {
         if let chapter = resolveChapter(at: currentChapterIndex) {
@@ -454,7 +492,7 @@ struct InstantReaderView: View {
                 chapter: chapter,
                 spans: spans,
                 currentSentenceId: currentSentenceId,
-                onJumpToSentence: jumpToSentence,
+                onJumpToSentence: { floaterSentence = $0 },
                 onAdvanceChapter: advanceToNextChapter,
                 onPreviousChapter: returnToPreviousChapter,
                 onCenterTap: { withAnimation(.easeInOut(duration: 0.25)) { chromeVisible.toggle() } },
@@ -477,7 +515,7 @@ struct InstantReaderView: View {
                 chapter: fulltext.chapters[0],
                 spans: spans,
                 currentSentenceId: currentSentenceId,
-                onJumpToSentence: jumpToSentence,
+                onJumpToSentence: { floaterSentence = $0 },
                 onAdvanceChapter: advanceToNextChapter,
                 onPreviousChapter: returnToPreviousChapter,
                 onCenterTap: { withAnimation(.easeInOut(duration: 0.25)) { chromeVisible.toggle() } },
