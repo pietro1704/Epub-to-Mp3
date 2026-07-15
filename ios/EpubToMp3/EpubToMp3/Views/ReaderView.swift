@@ -658,7 +658,8 @@ struct ReaderView: View {
     // MARK: Scrolling content
 
     private func scrollingContent(
-        onZoneTap: ((ReaderTapZone) -> Void)? = nil
+        onZoneTap: ((ReaderTapZone) -> Void)? = nil,
+        onSwipe: ((ReaderSwipeDirection) -> Void)? = nil
     ) -> some View {
         // Scroll mode now uses the same TextKit-backed renderer as
         // paginated mode (`AttributedPageView` with `scrollable: true`).
@@ -687,7 +688,8 @@ struct ReaderView: View {
                     width: effectiveColumnWidth,
                     scrollable: true,
                     onLinkTap: onLinkTap,
-                    onZoneTap: onZoneTap ?? { zone in handleScrollZoneTap(zone) }
+                    onZoneTap: onZoneTap ?? handleScrollZoneTap,
+                    onSwipe: onSwipe
                 )
                 // Give the native UITextView a finite viewport inside the
                 // VStack. Without this explicit height, GeometryReader may
@@ -775,7 +777,7 @@ struct ReaderView: View {
             let fontSize: CGFloat = debouncedFontSize > 0 ? debouncedFontSize : settings.readerPointSize
             let lineSpacing: Double = debouncedLineSpacing > 0 ? debouncedLineSpacing : settings.readerLineSpacing
             ZStack(alignment: .bottom) {
-                scrollingContent { zone in
+                scrollingContent(onZoneTap: { zone in
                     switch zone {
                     case .left:
                         retreatChapter(chapters: chapters)
@@ -784,7 +786,14 @@ struct ReaderView: View {
                     case .right:
                         advanceChapter(chapters: chapters)
                     }
-                }
+                }, onSwipe: { direction in
+                    switch direction {
+                    case .left:
+                        advanceChapter(chapters: chapters)
+                    case .right:
+                        retreatChapter(chapters: chapters)
+                    }
+                })
                     .id(chapter.id)
                 chapterNavFooter(chapters: chapters)
                     .padding(.bottom, chromeBottomInset + 6)

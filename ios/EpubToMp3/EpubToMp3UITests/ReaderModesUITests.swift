@@ -42,6 +42,13 @@ final class ReaderModesUITests: XCTestCase {
         app.buttons["Buscar no livro"].firstMatch.exists
     }
 
+    private func chapter(_ app: XCUIApplication) -> (index: Int, total: Int)? {
+        let label = app.staticTexts["flicker.probe.chapter"].firstMatch.label
+        let parts = label.split(separator: "/").map(String.init)
+        guard parts.count == 2, let index = Int(parts[0]), let total = Int(parts[1]) else { return nil }
+        return (index, total)
+    }
+
     // MARK: - 1) Paginated, chrome hidden
 
     func testPaginatedPageTurnWorksWithChromeHidden() throws {
@@ -102,5 +109,21 @@ final class ReaderModesUITests: XCTestCase {
         let afterShot = XCUIScreen.main.screenshot().pngRepresentation.count
         // Different screenshot bytes ≈ content scrolled (weak but device-safe).
         XCTAssertNotEqual(beforeShot, afterShot, "a drag must scroll the content")
+    }
+
+    func testScrollModeHorizontalSwipeChangesChapter() throws {
+        let app = launch(layout: "scrolling")
+        try openBook(app)
+        guard let before = chapter(app), before.index + 1 < before.total else {
+            throw XCTSkip("Need a following chapter.")
+        }
+
+        let from = app.coordinate(withNormalizedOffset: CGVector(dx: 0.8, dy: 0.5))
+        let to = app.coordinate(withNormalizedOffset: CGVector(dx: 0.2, dy: 0.5))
+        from.press(forDuration: 0.05, thenDragTo: to)
+        sleep(2)
+
+        XCTAssertEqual(chapter(app)?.index, before.index + 1,
+                       "left swipe in scroll mode must advance one chapter")
     }
 }

@@ -99,10 +99,9 @@ private final class FixedWidthTextView: UITextView, UIGestureRecognizerDelegate 
         return CGSize(width: pinnedWidth, height: ceil(height))
     }
 
-    /// Install the reader tap recognizer and, for paginated mode only, the
-    /// horizontal page-turn pan. A second pan recognizer on a scrollable
-    /// UITextView can win the physical touch arbitration and leave the
-    /// native UIScrollView pan at offset zero.
+    /// Install the reader tap recognizer and optional horizontal page-turn pan.
+    /// The pan only recognizes predominantly horizontal motion, leaving the
+    /// native UIScrollView pan responsible for vertical scrolling.
     func installReaderGestures(includeSwipe: Bool) {
         if gestureRecognizers?.contains(where: { $0.name == "reader.tap" }) != true {
             let tap = UITapGestureRecognizer(target: self, action: #selector(handleReaderTap(_:)))
@@ -282,15 +281,11 @@ private struct _AttributedPageRep: UIViewRepresentable {
         uiView.alwaysBounceHorizontal = false
         if !scrollable {
             uiView.setContentOffset(.zero, animated: false)
-        } else {
-            for recognizer in uiView.gestureRecognizers ?? [] where recognizer.name == "reader.pan" {
-                uiView.removeGestureRecognizer(recognizer)
-            }
         }
         uiView.consumeAllTouches = scrollable || onZoneTap != nil || onSwipe != nil
         uiView.onZoneTap = onZoneTap
         uiView.onSwipe = onSwipe
-        uiView.installReaderGestures(includeSwipe: !scrollable && onSwipe != nil)
+        uiView.installReaderGestures(includeSwipe: onSwipe != nil)
 
         let desiredContainer = CGSize(
             width: size.width,
