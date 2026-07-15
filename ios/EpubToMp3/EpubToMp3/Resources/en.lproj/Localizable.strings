@@ -199,6 +199,7 @@
 "readerSettings.title" = "Reader";
 "readerSettings.theme" = "Theme";
 "readerSettings.font" = "Font";
+"readerSettings.font.book" = "Use book font";
 "readerSettings.family" = "Family";
 "readerSettings.size" = "Size";
 "readerSettings.decreaseFontSize" = "Decrease font size";

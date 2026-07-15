@@ -398,7 +398,7 @@ struct ReaderView: View {
                 if let bookChapters, bookChapters.count > 1 {
                     singleChapterScroll(chapters: bookChapters)
                 } else {
-                    scrollingContent
+                    scrollingContent()
                 }
             case .paginated: paginatedContent
             }
@@ -657,7 +657,9 @@ struct ReaderView: View {
 
     // MARK: Scrolling content
 
-    private var scrollingContent: some View {
+    private func scrollingContent(
+        onZoneTap: ((ReaderTapZone) -> Void)? = nil
+    ) -> some View {
         // Scroll mode now uses the same TextKit-backed renderer as
         // paginated mode (`AttributedPageView` with `scrollable: true`).
         // The previous `LazyVStack` of `sentenceRow`s discarded every
@@ -677,9 +679,6 @@ struct ReaderView: View {
             let effectiveFontSize: CGFloat = debouncedFontSize > 0 ? debouncedFontSize : settings.readerPointSize
             let effectiveLineSpacing: Double = debouncedLineSpacing > 0 ? debouncedLineSpacing : settings.readerLineSpacing
             VStack(alignment: .leading, spacing: 0) {
-                chapterTitleHeader
-                    .padding(.horizontal, margin)
-                    .padding(.top, chromeTopInset + 16)
                 AttributedPageView(
                     attributed: scrollingAttributedString(
                         fontSize: effectiveFontSize,
@@ -687,23 +686,34 @@ struct ReaderView: View {
                     ),
                     width: effectiveColumnWidth,
                     scrollable: true,
-                    onLinkTap: onLinkTap
+                    onLinkTap: onLinkTap,
+                    onZoneTap: onZoneTap ?? { zone in handleScrollZoneTap(zone) }
                 )
+                // Give the native UITextView a finite viewport inside the
+                // VStack. Without this explicit height, GeometryReader may
+                // receive its 10pt proposal and the content has no scroll
+                // corridor on a physical iPhone.
+                .frame(height: geo.size.height)
                 .padding(.horizontal, margin)
                 .padding(.bottom, chromeBottomInset + 16)
             }
             .frame(maxWidth: .infinity, alignment: .center)
-            // Scroll mode: tap anywhere on the reading surface toggles
-            // chrome (Apple Books pattern — there's no left/right/center
-            // tap-zone partition like paginated mode, so the whole
-            // surface is the toggle). Uses `simultaneousGesture` so it
-            // doesn't swallow the UITextView's own scroll gesture.
-            .contentShape(Rectangle())
-            .simultaneousGesture(
-                TapGesture().onEnded { onCenterTap?() }
-            )
         }
         .compatHorizontalSafeAreaPadding(0)
+    }
+
+    /// TextKit owns the reading surface in scroll mode. Route non-link taps
+    /// directly instead of layering a SwiftUI gesture over UITextView; the
+    /// latter can lose the first tap to UIKit's internal recognizers.
+    private func handleScrollZoneTap(_ zone: ReaderTapZone) {
+        switch zone {
+        case .left:
+            onPreviousChapter?()
+        case .center:
+            onCenterTap?()
+        case .right:
+            onAdvanceChapter?()
+        }
     }
 
     /// Build the NSAttributedString rendered in scroll mode: the
@@ -765,26 +775,17 @@ struct ReaderView: View {
             let fontSize: CGFloat = debouncedFontSize > 0 ? debouncedFontSize : settings.readerPointSize
             let lineSpacing: Double = debouncedLineSpacing > 0 ? debouncedLineSpacing : settings.readerLineSpacing
             ZStack(alignment: .bottom) {
-                scrollingContent
-                    .id(chapter.id)
-                // Apple Books-style edge tap zones: left third retreats,
-                // right third advances, center toggles chrome — same
-                // partition paginated mode uses, so switching between
-                // scrolling/paginated doesn't retrain the user's muscle
-                // memory. `scrollingContent`'s own tap gesture already
-                // covers the full surface for chrome-toggle; these zones
-                // sit ABOVE it and only claim the outer thirds.
-                HStack(spacing: 0) {
-                    Color.clear
-                        .contentShape(Rectangle())
-                        .onTapGesture { retreatChapter(chapters: chapters) }
-                    Color.clear
-                        .frame(width: geo.size.width / 3)
-                        .allowsHitTesting(false)
-                    Color.clear
-                        .contentShape(Rectangle())
-                        .onTapGesture { advanceChapter(chapters: chapters) }
+                scrollingContent { zone in
+                    switch zone {
+                    case .left:
+                        retreatChapter(chapters: chapters)
+                    case .center:
+                        onCenterTap?()
+                    case .right:
+                        advanceChapter(chapters: chapters)
+                    }
                 }
+                    .id(chapter.id)
                 chapterNavFooter(chapters: chapters)
                     .padding(.bottom, chromeBottomInset + 6)
             }
@@ -1682,7 +1683,14 @@ struct ReaderView: View {
                 attributedSlice,
                 width: effectiveColumnWidth,
                 enableReaderGestures: enableReaderGestures,
-                onSwipePage: onSwipePage
+                onSwipePage: onSwipePage,
+                onZoneTap: enableReaderGestures ? { zone in
+                    switch zone {
+                    case .left: retreatPage()
+                    case .center: onCenterTap?()
+                    case .right: advancePage(totalPages: pages.count)
+                    }
+                } : nil
             )
             Spacer(minLength: 0)
         }
@@ -1715,7 +1723,8 @@ struct ReaderView: View {
         width: CGFloat,
         enableReaderGestures: Bool = true,
         totalPages: Int = 0,
-        onSwipePage: ((ReaderSwipeDirection) -> Void)? = nil
+        onSwipePage: ((ReaderSwipeDirection) -> Void)? = nil,
+        onZoneTap: ((ReaderTapZone) -> Void)? = nil
     ) -> some View {
         // onZoneTap is intentionally NOT forwarded here — slidePageContent/
         // noAnimationPageContent already wrap the page in a tapZones() overlay
@@ -1731,6 +1740,7 @@ struct ReaderView: View {
             attributed: slice,
             width: width,
             onLinkTap: onLinkTap,
+            onZoneTap: enableReaderGestures ? onZoneTap : nil,
             onSwipe: enableReaderGestures ? onSwipePage : nil
         )
         .frame(width: width, alignment: .topLeading)

@@ -52,6 +52,26 @@ enum InstantReaderIndexMapper {
         return playable[playableIndex].index
     }
 
+    /// Resolve a reader retreat from the chapter currently displayed by the
+    /// reader, not from the audio queue cursor. Audio can advance its cursor
+    /// while the reader is still showing the selected chapter.
+    static func previousPlayableTarget(
+        beforeDisplayedEpubIndex displayedEpubIndex: Int,
+        in snapshot: JobSnapshot
+    ) -> (playableIndex: Int, epubIndex: Int)? {
+        guard displayedEpubIndex > 0 else { return nil }
+        let previousEpubIndex = displayedEpubIndex - 1
+        let playableIndex = playableIndexOrClamped(
+            forEpubIndex: previousEpubIndex,
+            in: snapshot,
+            direction: .atOrBefore
+        )
+        guard let epubIndex = epubIndex(forPlayableIndex: playableIndex, in: snapshot) else {
+            return nil
+        }
+        return (playableIndex, epubIndex)
+    }
+
     static func nextEpubIndex(after epubIndex: Int, in fulltext: EbookFulltext) -> Int? {
         nextEpubIndex(after: epubIndex, in: fulltext.chapters)
     }
@@ -1253,6 +1273,11 @@ struct InstantReaderView: View {
             FlickerProbe.shared.log("InstantReader.returnToPreviousChapter BLOCKED firstChapter")
             return false
         }
+        // Keep the reader on the manually selected previous chapter while
+        // audio continues in the current chapter. The position observer must
+        // not immediately snap the reader forward again; the follow/cooldown
+        // coordinator owns when audio may reclaim the reader.
+        pinnedReaderChapterIndex = previous
         readerShouldStartAtLastPage = true
         currentChapterIndex = previous
         FlickerProbe.shared.log(

@@ -77,6 +77,10 @@ private final class FixedWidthTextView: UITextView, UIGestureRecognizerDelegate 
     /// pipeline end-to-end); `false` = let only tap-on-link consume
     /// (scroll mode also lets UITextView's internal pan handle scroll).
     var consumeAllTouches: Bool = false
+    /// Scroll mode must be constrained by its SwiftUI parent so UITextView
+    /// can expose a content offset; reporting the full TextKit height as an
+    /// intrinsic height makes the wrapper grow to fit its content instead.
+    var usesNativeScrolling: Bool = false
     /// Called for a tap that did NOT land on a `.link` glyph. Receives
     /// the zone the tap landed in (left third, center third, right
     /// third). Used for page-turn + chrome-toggle without a SwiftUI
@@ -86,14 +90,20 @@ private final class FixedWidthTextView: UITextView, UIGestureRecognizerDelegate 
     var onSwipe: ((ReaderSwipeDirection) -> Void)?
 
     override var intrinsicContentSize: CGSize {
+        guard !usesNativeScrolling else {
+            return CGSize(width: pinnedWidth, height: UIView.noIntrinsicMetric)
+        }
         let height = sizeThatFits(
             CGSize(width: pinnedWidth, height: .greatestFiniteMagnitude)
         ).height
         return CGSize(width: pinnedWidth, height: ceil(height))
     }
 
-    /// Install tap + pan recognizers exactly once.
-    func installReaderGestures() {
+    /// Install the reader tap recognizer and, for paginated mode only, the
+    /// horizontal page-turn pan. A second pan recognizer on a scrollable
+    /// UITextView can win the physical touch arbitration and leave the
+    /// native UIScrollView pan at offset zero.
+    func installReaderGestures(includeSwipe: Bool) {
         if gestureRecognizers?.contains(where: { $0.name == "reader.tap" }) != true {
             let tap = UITapGestureRecognizer(target: self, action: #selector(handleReaderTap(_:)))
             tap.name = "reader.tap"
@@ -101,7 +111,8 @@ private final class FixedWidthTextView: UITextView, UIGestureRecognizerDelegate 
             tap.delegate = self
             addGestureRecognizer(tap)
         }
-        if gestureRecognizers?.contains(where: { $0.name == "reader.pan" }) != true {
+        if includeSwipe,
+           gestureRecognizers?.contains(where: { $0.name == "reader.pan" }) != true {
             let pan = UIPanGestureRecognizer(target: self, action: #selector(handleReaderPan(_:)))
             pan.name = "reader.pan"
             pan.delegate = self
@@ -117,7 +128,12 @@ private final class FixedWidthTextView: UITextView, UIGestureRecognizerDelegate 
 
     @objc func handleReaderTap(_ tap: UITapGestureRecognizer) {
         let point = tap.location(in: self)
-        if linkURL(at: point) != nil { return }
+        // Keep the outer navigation gutters available for page/chapter
+        // turns. A link glyph that happens to extend into the first/last
+        // few percent of the UITextView must not swallow the reader's edge
+        // tap; links in the actual text column retain precedence.
+        let isNavigationGutter = point.x < bounds.width * 0.10 || point.x > bounds.width * 0.90
+        if !isNavigationGutter, linkURL(at: point) != nil { return }
         let zone = classifyZone(x: point.x, in: bounds.width)
         onZoneTap?(zone)
     }
@@ -230,7 +246,7 @@ private struct _AttributedPageRep: UIViewRepresentable {
         let tv = FixedWidthTextView(frame: CGRect(origin: .zero, size: size))
         tv.isEditable = false
         tv.isScrollEnabled = scrollable
-        tv.isSelectable = true
+        tv.isSelectable = false
         tv.backgroundColor = .clear
         tv.textContainerInset = .zero
         tv.textContainer.lineFragmentPadding = 0
@@ -257,6 +273,7 @@ private struct _AttributedPageRep: UIViewRepresentable {
     func updateUIView(_ uiView: FixedWidthTextView, context: Context) {
         context.coordinator.onLinkTap = onLinkTap
         uiView.pinnedWidth = size.width
+        uiView.usesNativeScrolling = scrollable
         uiView.isScrollEnabled = scrollable
         uiView.showsVerticalScrollIndicator = scrollable
         uiView.showsHorizontalScrollIndicator = false
@@ -265,11 +282,15 @@ private struct _AttributedPageRep: UIViewRepresentable {
         uiView.alwaysBounceHorizontal = false
         if !scrollable {
             uiView.setContentOffset(.zero, animated: false)
+        } else {
+            for recognizer in uiView.gestureRecognizers ?? [] where recognizer.name == "reader.pan" {
+                uiView.removeGestureRecognizer(recognizer)
+            }
         }
         uiView.consumeAllTouches = scrollable || onZoneTap != nil || onSwipe != nil
         uiView.onZoneTap = onZoneTap
         uiView.onSwipe = onSwipe
-        uiView.installReaderGestures()
+        uiView.installReaderGestures(includeSwipe: !scrollable && onSwipe != nil)
 
         let desiredContainer = CGSize(
             width: size.width,
@@ -329,7 +350,7 @@ private struct _AttributedPageRep: NSViewRepresentable {
         let scroll = NSTextView.scrollableTextView()
         guard let tv = scroll.documentView as? NSTextView else { return scroll }
         tv.isEditable = false
-        tv.isSelectable = true
+        tv.isSelectable = false
         tv.drawsBackground = false
         tv.textContainer?.lineFragmentPadding = 0
         scroll.hasVerticalScroller = false

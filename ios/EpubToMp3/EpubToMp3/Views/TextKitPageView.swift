@@ -98,6 +98,7 @@ struct TextKitPageView: UIViewControllerRepresentable {
         )
         pvc.dataSource = context.coordinator
         pvc.delegate = context.coordinator
+        context.coordinator.pageViewController = pvc
         pvc.isDoubleSided = false
 
         let initial = context.coordinator.controller(for: clampedPage)
@@ -283,6 +284,7 @@ struct TextKitPageView: UIViewControllerRepresentable {
                              UIPageViewControllerDelegate,
                              UIGestureRecognizerDelegate {
         var parent: TextKitPageView
+        weak var pageViewController: UIPageViewController?
         var isTransitioning = false
         /// True while a tap-to-turn `setViewControllers` is animating. A
         /// programmatic `setViewControllers` ALSO fires the
@@ -349,6 +351,7 @@ struct TextKitPageView: UIViewControllerRepresentable {
             let vc = pool[index] ?? {
                 let c = TextKitPageController(pageIndex: index)
                 c.onLinkTap = parent.onLinkTap
+                c.onZoneTap = { [weak self] zone in self?.handlePageZoneTap(zone) }
                 c.spans = parent.spans
                 c.onJumpToSentence = parent.onJumpToSentence
                 pool[index] = c
@@ -356,6 +359,7 @@ struct TextKitPageView: UIViewControllerRepresentable {
             }()
             vc.pageIndex = index
             vc.onLinkTap = parent.onLinkTap
+            vc.onZoneTap = { [weak self] zone in self?.handlePageZoneTap(zone) }
             vc.spans = parent.spans
             vc.onJumpToSentence = parent.onJumpToSentence
             vc.apply(
@@ -422,6 +426,15 @@ struct TextKitPageView: UIViewControllerRepresentable {
                 self.isProgrammaticTurn = false
             }
             return true
+        }
+
+        private func handlePageZoneTap(_ zone: ReaderTapZone) {
+            guard let pvc = pageViewController else { return }
+            switch zone {
+            case .left: navigate(.reverse, in: pvc)
+            case .center: parent.onCenterTap?()
+            case .right: navigate(.forward, in: pvc)
+            }
         }
 
         // MARK: Tap-to-turn
@@ -677,9 +690,10 @@ struct TextKitPageView: UIViewControllerRepresentable {
 /// A page controller that owns a single `UITextView` and renders one
 /// `NSAttributedString` slice. Carries its `pageIndex` so the page view
 /// controller's data source can identify which page is on screen.
-final class TextKitPageController: UIViewController, UITextViewDelegate {
+final class TextKitPageController: UIViewController, UITextViewDelegate, UIGestureRecognizerDelegate {
     var pageIndex: Int
     var onLinkTap: ((URL) -> Bool)?
+    var onZoneTap: ((ReaderTapZone) -> Void)?
     /// Sentence spans for the chapter, used to resolve a long-press's
     /// character index to the sentence it falls inside.
     var spans: [SentenceSpan] = []
@@ -691,7 +705,7 @@ final class TextKitPageController: UIViewController, UITextViewDelegate {
         let tv = UITextView()
         tv.isEditable = false
         tv.isScrollEnabled = false
-        tv.isSelectable = true
+        tv.isSelectable = false
         tv.backgroundColor = .clear
         tv.textContainerInset = .zero
         tv.textContainer.lineFragmentPadding = 0
@@ -768,6 +782,11 @@ final class TextKitPageController: UIViewController, UITextViewDelegate {
             guard existing !== longPress, existing is UILongPressGestureRecognizer else { continue }
             longPress.require(toFail: existing)
         }
+        let tap = UITapGestureRecognizer(target: self, action: #selector(handlePageTap(_:)))
+        tap.name = "reader.page.tap"
+        tap.cancelsTouchesInView = false
+        tap.delegate = self
+        textView.addGestureRecognizer(tap)
     }
 
     /// `UIPageViewController`'s pageCurl style owns this view's frame via
@@ -788,6 +807,23 @@ final class TextKitPageController: UIViewController, UITextViewDelegate {
         super.viewDidLayoutSubviews()
         textView.setNeedsLayout()
         textView.layoutIfNeeded()
+    }
+
+    @objc private func handlePageTap(_ gesture: UITapGestureRecognizer) {
+        let point = gesture.location(in: view)
+        let isNavigationGutter = point.x < view.bounds.width * 0.10 || point.x > view.bounds.width * 0.90
+        guard isNavigationGutter || !containsLink(at: point) else { return }
+        let third = view.bounds.width / 3
+        let zone: ReaderTapZone = point.x < third ? .left : (point.x > third * 2 ? .right : .center)
+        onZoneTap?(zone)
+    }
+
+    func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer,
+                           shouldReceive touch: UITouch) -> Bool {
+        guard gestureRecognizer.name == "reader.page.tap" else { return true }
+        let point = touch.location(in: view)
+        let isNavigationGutter = point.x < view.bounds.width * 0.10 || point.x > view.bounds.width * 0.90
+        return isNavigationGutter || !containsLink(at: point)
     }
 
     /// Resolve `location` (in the text view's coordinate space) to a

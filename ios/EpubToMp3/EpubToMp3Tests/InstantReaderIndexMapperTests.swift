@@ -218,6 +218,15 @@ final class InstantReaderIndexMapperTests: XCTestCase {
         )
     }
 
+    func testPreviousPlayableTargetUsesDisplayedChapterWhenAudioCursorIsAhead() {
+        let snapshot = Self.snapshot(chapters: (0...5).map(Self.playableChapter(index:)))
+        let target = InstantReaderIndexMapper.previousPlayableTarget(
+            beforeDisplayedEpubIndex: 4, in: snapshot
+        )
+        XCTAssertEqual(target?.playableIndex, 3)
+        XCTAssertEqual(target?.epubIndex, 3)
+    }
+
     private static func playableChapter(index: Int) -> JobSnapshot.Chapter {
         JobSnapshot.Chapter(
             index: index,
