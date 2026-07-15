@@ -1,0 +1,59 @@
+import XCTest
+@testable import EpubToMp3
+
+final class ReaderAudioFollowingDomainTests: XCTestCase {
+    private let spans = [
+        SentenceSpan(id: "s1", text: "First sentence.", startChar: 0, endChar: 15),
+        SentenceSpan(id: "s2", text: "Second sentence.", startChar: 16, endChar: 32),
+        SentenceSpan(id: "s3", text: "Third sentence.", startChar: 34, endChar: 49)
+    ]
+
+    func testAnchorCanRepresentSharedReaderAndAudioPosition() {
+        let anchor = ReaderAudioPositionAnchor(chapterIndex: 2, sentenceID: "s2", pageRatio: 0.4, scrollOffset: 120)
+        XCTAssertEqual(anchor.chapterIndex, 2)
+        XCTAssertEqual(anchor.sentenceID, "s2")
+        XCTAssertTrue(anchor.isMeaningful)
+    }
+
+    func testManualMoveDivergesForExactlyFiveSecondsThenAudioWins() {
+        var state = ManualDivergenceStateMachine(cooldown: 5)
+        let start = Date(timeIntervalSince1970: 100)
+        state.manualMove(at: start)
+        XCTAssertTrue(state.isDivergent(at: start.addingTimeInterval(4.999)))
+        XCTAssertFalse(state.isDivergent(at: start.addingTimeInterval(5)))
+        XCTAssertTrue(state.shouldFollowAudio(at: start.addingTimeInterval(5)))
+    }
+
+    func testExplicitFollowEndsDivergenceImmediately() {
+        var state = ManualDivergenceStateMachine()
+        state.manualMove(at: Date(timeIntervalSince1970: 10))
+        state.followAudio()
+        XCTAssertFalse(state.isDivergent(at: Date(timeIntervalSince1970: 10.1)))
+    }
+
+    func testContinuationOffersChoicesOnlyWhenBothPositionsAreMeaningful() {
+        let reader = ReaderAudioPositionAnchor(chapterIndex: 1, sentenceID: "reader", pageRatio: nil, scrollOffset: nil)
+        let audio = ReaderAudioPositionAnchor(chapterIndex: 3, sentenceID: "audio", pageRatio: nil, scrollOffset: nil)
+        XCTAssertEqual(ContinuationChoiceResolver.resolve(reader: reader, audio: audio), .offer([.reader, .audio]))
+        XCTAssertEqual(ContinuationChoiceResolver.resolve(reader: reader, audio: nil), .start(.reader(reader)))
+        XCTAssertEqual(ContinuationChoiceResolver.resolve(reader: nil, audio: audio), .start(.audio(audio)))
+        XCTAssertEqual(ContinuationChoiceResolver.resolve(reader: nil, audio: nil), .startDefault)
+    }
+
+    func testPhraseAndParagraphTargetsResolveFromSelection() {
+        let paragraphs = [TextParagraph(id: "p1", startChar: 0, endChar: 32), TextParagraph(id: "p2", startChar: 34, endChar: 49)]
+        XCTAssertEqual(PlaybackTargetResolver.phraseTarget(for: NSRange(location: 18, length: 3), spans: spans), .sentence(spans[1]))
+        XCTAssertEqual(PlaybackTargetResolver.paragraphTarget(for: NSRange(location: 18, length: 3), spans: spans, paragraphs: paragraphs), .sentence(spans[0]))
+        XCTAssertNil(PlaybackTargetResolver.phraseTarget(for: NSRange(location: 100, length: 1), spans: spans))
+    }
+
+    func testWordTimingUsesRealTimingBeforeProportionalFallback() {
+        let sentence = spans[1]
+        let real = [WordTiming(word: "Second", start: 0.2, end: 0.6)]
+        XCTAssertEqual(WordTimingResolver.activeWord(in: sentence, elapsed: 0.3, sentenceDuration: 2, realTiming: real)?.word, "Second")
+        let estimated = WordTimingResolver.estimate(in: sentence, sentenceDuration: 2)
+        XCTAssertEqual(estimated.count, 2)
+        XCTAssertEqual(estimated.first?.word, "Second")
+        XCTAssertEqual(WordTimingResolver.activeWord(in: sentence, elapsed: 1.8, sentenceDuration: 2, realTiming: nil)?.word, "sentence.")
+    }
+}
