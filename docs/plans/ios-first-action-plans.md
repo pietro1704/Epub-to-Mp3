@@ -22,6 +22,8 @@ Não considerar uma etapa concluída apenas por compilação ou teste macOS quan
 - Último commit iOS validado no iPhone: `58ae856 test(ios): keep chapter crossing tap outside links`.
 - Correção de retorno ao capítulo anterior confirmada no iPhone por duas automações e logs de `FlickerProbe`.
 - Nesta execução, a auditoria de índices e a correção de navegação esparsa foram validadas por 54 testes Swift focados, build físico atual e 3 automações UI no iPhone (2 passaram, 1 foi pulada por capítulo de uma página).
+- TOC e busca foram adicionados à cobertura física: `testTableOfContentsOpensAndReturnsToReader` e `testInBookSearchOpensAcceptsQueryAndDismisses` passaram no iPhone.
+- Áudio com snapshot pendente foi validado no device por `testUpdateSnapshotBuildsQueueWhenFirstPlayableChapterArrives` e `testResumeBeforeFirstPlayableChapterAutoplaysWhenSnapshotArrives`; ambos passaram.
 - Log físico mais recente: `/tmp/plan1-flicker-debug.log`; confirmou `current=5 → target=4`, `wantsLast=true`, `startAtLastPage=true` e ausência de `stale`, `spurious` e `empty`.
 - O teste Swift físico de contratos que lê arquivos do repositório não é válido no sandbox do iPhone; ele deve permanecer no host. Os testes de índice/cache passaram no device.
 - Branch `master` está com alterações locais desta etapa; ainda não foi commitada.
@@ -69,7 +71,7 @@ Não considerar uma etapa concluída apenas por compilação ou teste macOS quan
 2. ✅ Adicionar testes RED para TOC, busca, prefetch/cache e retorno usando capítulos pendentes/esparsos.
 3. ✅ Substituir conversões comprovadamente erradas; manter fallback posicional somente onde a UX o exige.
 4. ✅ Rodar `InstantReaderIndexMapperTests`, testes de `AudioPlayer` e `ChapterCacheManagerTests` no host; repetir índices/cache no device.
-5. ⚠️ Build/install e automação física concluídos para avanço/recuo/crossing; TOC, busca e áudio com capítulo pendente ainda exigem uma sessão específica no iPhone.
+5. ✅ Build/install e automação física concluídos para avanço/recuo/crossing, TOC, busca e áudio com capítulo pendente entre capítulos reproduzíveis.
 
 **Evidência esperada:** cada ação registra o mesmo capítulo em índice EPUB, título visível e capítulo audível; nenhum capítulo pendente é tocado por engano.
 

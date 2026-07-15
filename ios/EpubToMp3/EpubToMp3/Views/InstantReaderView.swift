@@ -1033,6 +1033,7 @@ struct InstantReaderView: View {
                         }
                     }
                     .buttonStyle(.plain)
+                    .accessibilityIdentifier("toc.chapter.\(max(0, chapter.index - 1))")
                 }
             }
             .navigationTitle(L10n.string("player.chapters"))

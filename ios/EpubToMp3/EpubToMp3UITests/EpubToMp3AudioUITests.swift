@@ -227,7 +227,70 @@ final class EpubToMp3AudioUITests: XCTestCase {
         XCTAssertTrue(playButton.exists, "Play/Pause button must remain after tapping.")
     }
 
-    // MARK: - Helpers
+    // MARK: - TOC and in-book search
+
+    func testTableOfContentsOpensAndReturnsToReader() throws {
+        XCUIDevice.shared.orientation = .portrait
+        let app = XCUIApplication()
+        app.launch()
+
+        let firstBook = app.buttons.matching(
+            NSPredicate(format: "identifier BEGINSWITH %@", "library.bookTile.")
+        ).firstMatch
+        guard firstBook.waitForExistence(timeout: 20) else {
+            throw XCTSkip("No book in library; skipping TOC test.")
+        }
+        firstBook.tap()
+
+        let searchButton = app.buttons["Buscar no livro"].firstMatch
+        guard searchButton.waitForExistence(timeout: 20) else {
+            throw XCTSkip("Reader chrome unavailable; skipping TOC test.")
+        }
+
+        let tocButton = app.buttons["Sumário"].firstMatch
+        XCTAssertTrue(tocButton.waitForExistence(timeout: 5), "Reader must expose the TOC button.")
+        tocButton.tap()
+
+        let tocRows = app.buttons.matching(
+            NSPredicate(format: "identifier BEGINSWITH %@", "toc.chapter.")
+        )
+        XCTAssertTrue(tocRows.firstMatch.waitForExistence(timeout: 5), "TOC must expose chapter rows.")
+        tocRows.firstMatch.tap()
+
+        XCTAssertTrue(searchButton.waitForExistence(timeout: 10), "TOC jump must return to the reader.")
+    }
+
+    func testInBookSearchOpensAcceptsQueryAndDismisses() throws {
+        XCUIDevice.shared.orientation = .portrait
+        let app = XCUIApplication()
+        app.launch()
+
+        let firstBook = app.buttons.matching(
+            NSPredicate(format: "identifier BEGINSWITH %@", "library.bookTile.")
+        ).firstMatch
+        guard firstBook.waitForExistence(timeout: 20) else {
+            throw XCTSkip("No book in library; skipping search test.")
+        }
+        firstBook.tap()
+
+        let searchButton = app.buttons["Buscar no livro"].firstMatch
+        guard searchButton.waitForExistence(timeout: 20) else {
+            throw XCTSkip("Reader chrome unavailable; skipping search test.")
+        }
+        searchButton.tap()
+
+        let field = app.textFields["Buscar no livro"].firstMatch
+        XCTAssertTrue(field.waitForExistence(timeout: 5), "Search overlay must expose its text field.")
+        field.tap()
+        field.typeText("a")
+
+        let done = app.buttons["OK"].firstMatch
+        XCTAssertTrue(done.waitForExistence(timeout: 5), "Search overlay must expose its dismiss action.")
+        done.tap()
+
+        XCTAssertTrue(searchButton.waitForExistence(timeout: 10), "Dismissed search must return to the reader.")
+    }
+
 
     private func tapScreenCenter(app: XCUIApplication) {
         let coordinate = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
