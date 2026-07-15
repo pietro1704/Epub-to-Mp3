@@ -125,5 +125,13 @@ final class ReaderModesUITests: XCTestCase {
 
         XCTAssertEqual(chapter(app)?.index, before.index + 1,
                        "left swipe in scroll mode must advance one chapter")
+
+        let backFrom = app.coordinate(withNormalizedOffset: CGVector(dx: 0.2, dy: 0.5))
+        let backTo = app.coordinate(withNormalizedOffset: CGVector(dx: 0.8, dy: 0.5))
+        backFrom.press(forDuration: 0.05, thenDragTo: backTo)
+        sleep(2)
+
+        XCTAssertEqual(chapter(app)?.index, before.index,
+                       "right swipe in scroll mode must return to the previous chapter")
     }
 }
