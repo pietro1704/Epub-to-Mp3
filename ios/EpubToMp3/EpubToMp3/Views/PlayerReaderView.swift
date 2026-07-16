@@ -171,6 +171,7 @@ struct PlayerReaderView: View {
                     seekToSentence(span)
                     pendingSentence = nil
                 }
+                .accessibilityIdentifier("reader.playFromHere")
                 let isBookmarked = bookmarkStore.hasBookmark(
                     bookId: bookId, chapterIndex: player.currentChapterIndex
                 )
@@ -492,6 +493,7 @@ struct PlayerReaderView: View {
         }
         .tint(.primary)
         .frame(maxWidth: .infinity)
+        .accessibilityIdentifier("reader.divergenceDialog")
         .playDivergenceDialog(player: player, anchor: $pendingAnchor)
     }
 
@@ -1104,9 +1106,11 @@ struct PlayerReaderView: View {
     }
 
     private func seekToSentence(_ span: SentenceSpan) {
-        guard let entry = sync.timing.first(where: { $0.id == span.id }) else { return }
-        let seconds = TimeInterval(entry.startMs) / 1000.0
-        player.seek(to: seconds)
+        player.startFromReaderPage(
+            readerChapterIndex,
+            sentenceId: span.id,
+            sentenceOffsetRatio: readerPageRatio
+        )
     }
 
     // MARK: Helpers

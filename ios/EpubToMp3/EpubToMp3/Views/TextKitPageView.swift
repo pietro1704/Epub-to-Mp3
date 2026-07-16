@@ -513,6 +513,10 @@ struct TextKitPageView: UIViewControllerRepresentable {
 
         @objc func handleTap(_ gesture: UITapGestureRecognizer) {
             guard let pvc = gesture.view?.parentViewController as? UIPageViewController else { return }
+            guard !isTransitioning, !isProgrammaticTurn, !isAwaitingChapterSwap else {
+                FlickerProbe.shared.log("TextKit.tap.ignored.transition")
+                return
+            }
             if let controller = pvc.viewControllers?.first as? TextKitPageController,
                controller.containsLink(at: gesture.location(in: controller.view)) {
                 return

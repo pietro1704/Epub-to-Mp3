@@ -320,6 +320,7 @@ struct InstantReaderView: View {
                 FlickerProbeOverlay()
             }
         }
+        .accessibilityIdentifier("reader.divergenceDialog")
         .modifier(ChromeVisibilityModifier(visible: chromeVisible))
         .readerChromeVisible(chromeVisible)
         .sheet(isPresented: $showingReaderSettings) {
@@ -464,6 +465,7 @@ struct InstantReaderView: View {
                     seekToSentence(span)
                     pendingPlayAnchor = nil
                 }
+                .accessibilityIdentifier("reader.playFromHere")
                 Button(L10n.string("reader.sentenceMenu.cancel"), role: .cancel) {
                     pendingPlayAnchor = nil
                 }
@@ -1279,9 +1281,12 @@ struct InstantReaderView: View {
     }
 
     private func seekToSentence(_ span: SentenceSpan) {
-        guard let entry = sync.timing.first(where: { $0.id == span.id }) else { return }
-        let seconds = TimeInterval(entry.startMs) / 1000.0
-        if playerMounted { player.seek(to: seconds) }
+        guard playerMounted || embeddedAudioReady else { return }
+        activePlayer.startFromReaderPage(
+            currentChapterIndex,
+            sentenceId: span.id,
+            sentenceOffsetRatio: readerCoordinator.anchor.pageRatio
+        )
     }
 
     /// Returns `true` if there *is* a next chapter and we advanced.

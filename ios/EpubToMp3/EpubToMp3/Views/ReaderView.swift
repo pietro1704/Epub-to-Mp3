@@ -1818,7 +1818,10 @@ struct ReaderView: View {
         // Unified turn guard: isPageTurning covers slide animations;
         // lastPageTurnAt debounces all styles (none/flip had no guard).
         guard !isPageTurning,
-              Date().timeIntervalSince(lastPageTurnAt) > pageTurnDebounce else { return }
+              Date().timeIntervalSince(lastPageTurnAt) > pageTurnDebounce else {
+            FlickerProbe.shared.log("Reader.tap.ignored.transition direction=forward chapter.id=\(chapter.id)")
+            return
+        }
         lastPageTurnAt = Date()
         jumpToLastPageTask?.cancel()
         jumpToLastPageTask = nil
@@ -1848,7 +1851,10 @@ struct ReaderView: View {
     private func retreatPage() {
         FlickerProbe.shared.log("retreatPage() CALLED chapter.id=\(chapter.id) currentPage=\(currentPage) isPageTurning=\(isPageTurning) debounceOk=\(Date().timeIntervalSince(lastPageTurnAt) > pageTurnDebounce)")
         guard !isPageTurning,
-              Date().timeIntervalSince(lastPageTurnAt) > pageTurnDebounce else { return }
+              Date().timeIntervalSince(lastPageTurnAt) > pageTurnDebounce else {
+            FlickerProbe.shared.log("Reader.tap.ignored.transition direction=backward chapter.id=\(chapter.id)")
+            return
+        }
         lastPageTurnAt = Date()
         jumpToLastPageTask?.cancel()
         jumpToLastPageTask = nil

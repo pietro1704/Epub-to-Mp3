@@ -59,7 +59,9 @@ struct PlayDivergenceDialog: ViewModifier {
     }
 
     func body(content: Content) -> some View {
-        content.confirmationDialog(
+        content
+            .accessibilityIdentifier("reader.divergenceDialog")
+            .confirmationDialog(
             L10n.string("player.divergence.title"),
             isPresented: isPresented,
             titleVisibility: .visible
@@ -73,6 +75,7 @@ struct PlayDivergenceDialog: ViewModifier {
                     )
                 }
             }
+            .accessibilityIdentifier("reader.divergence.fromCurrentPage")
             Button(L10n.string("player.divergence.fromWhereStopped")) {
                 player.resume()
             }
