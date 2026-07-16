@@ -58,6 +58,9 @@ final class SyncEngine: @unchecked Sendable {
     private(set) var timing: [TimingEntry] = []
     private(set) var source: TimingSource = .empty
     private(set) var currentSentenceId: String?
+    /// Maps backend timing identifiers to the stable ids rendered by ReaderView.
+    /// Backend segment ids are not guaranteed to use SentenceSpan's id scheme.
+    private var readerIDsByTimingID: [String: String] = [:]
 
     // MARK: Sentence change stream
 
@@ -110,6 +113,7 @@ final class SyncEngine: @unchecked Sendable {
 
         guard !computedSpans.isEmpty else {
             timing = []
+            readerIDsByTimingID = [:]
             source = .empty
             updateCurrent(nil)
             return
@@ -117,15 +121,29 @@ final class SyncEngine: @unchecked Sendable {
 
         if let segments = chapter.segments, !segments.isEmpty,
            segments.allSatisfy({ $0.startMs != nil && $0.endMs != nil }) {
-            timing = segments.enumerated().map { idx, seg in
+            let orderedSegments = segments.enumerated().map { idx, seg in (idx, seg) }
+                .sorted { ($0.1.startMs ?? 0) < ($1.1.startMs ?? 0) }
+            timing = orderedSegments.map { idx, seg in
                 TimingEntry(
                     id: seg.id ?? "\(chapter.index):\(idx)",
                     startMs: seg.startMs ?? 0,
                     endMs: seg.endMs ?? (seg.startMs ?? 0)
                 )
-            }.sorted { $0.startMs < $1.startMs }
+            }
+            readerIDsByTimingID = orderedSegments.enumerated().reduce(into: [:]) { result, item in
+                let position = item.offset
+                let segment = item.element.1
+                let timingID = timing[position].id
+                let readerID = computedSpans.first(where: { span in
+                    let segmentText = segment.text.trimmingCharacters(in: .whitespacesAndNewlines)
+                    let spanText = span.text.trimmingCharacters(in: .whitespacesAndNewlines)
+                    return !segmentText.isEmpty && (spanText == segmentText || spanText.contains(segmentText) || segmentText.contains(spanText))
+                })?.id ?? (computedSpans.indices.contains(position) ? computedSpans[position].id : nil)
+                if let readerID { result[timingID] = readerID }
+            }
             source = .segments
         } else {
+            readerIDsByTimingID = Dictionary(uniqueKeysWithValues: computedSpans.map { ($0.id, $0.id) })
             timing = estimateTiming(
                 spans: computedSpans,
                 durationSeconds: chapterDurationSeconds
@@ -133,6 +151,13 @@ final class SyncEngine: @unchecked Sendable {
             source = .wpmEstimate
         }
         updateCurrent(nil)
+    }
+
+    /// Resolve a timing id into the id used by ReaderView's sentence spans.
+    /// Returns the original id when no translation is necessary.
+    func readerSentenceID(forTimingID timingID: String?) -> String? {
+        guard let timingID else { return nil }
+        return readerIDsByTimingID[timingID] ?? timingID
     }
 
     /// Pure helper used by `load(chapter:)` and tests. Distributes

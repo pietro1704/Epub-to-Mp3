@@ -689,7 +689,10 @@ struct ReaderView: View {
                     scrollable: true,
                     onLinkTap: onLinkTap,
                     onZoneTap: onZoneTap ?? handleScrollZoneTap,
-                    onSwipe: onSwipe
+                    onSwipe: onSwipe,
+                    onScrollPosition: { ratio, sentenceId in
+                        readerCoordinator.setPagePosition(ratio: ratio, sentenceId: sentenceId)
+                    }
                 )
                 // Give the native UITextView a finite viewport inside the
                 // VStack. Without this explicit height, GeometryReader may

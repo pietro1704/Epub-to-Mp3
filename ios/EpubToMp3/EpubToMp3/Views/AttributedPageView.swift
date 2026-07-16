@@ -43,6 +43,8 @@ struct AttributedPageView: View {
     /// scroll mode ignores it (the scroll view absorbs horizontal
     /// scrolls into its own pan).
     var onSwipe: ((ReaderSwipeDirection) -> Void)? = nil
+    /// Reports normalized vertical scroll progress and an optional sentence id.
+    var onScrollPosition: ((Double, String?) -> Void)? = nil
 
     var body: some View {
         GeometryReader { geo in
@@ -52,7 +54,8 @@ struct AttributedPageView: View {
                 scrollable: scrollable,
                 onLinkTap: onLinkTap,
                 onZoneTap: onZoneTap,
-                onSwipe: onSwipe
+                onSwipe: onSwipe,
+                onScrollPosition: onScrollPosition
             )
             .frame(width: geo.size.width, height: geo.size.height, alignment: .topLeading)
             .clipped()
@@ -215,14 +218,19 @@ private struct _AttributedPageRep: UIViewRepresentable {
     let onLinkTap: ((URL) -> Bool)?
     let onZoneTap: ((ReaderTapZone) -> Void)?
     let onSwipe: ((ReaderSwipeDirection) -> Void)?
+    let onScrollPosition: ((Double, String?) -> Void)?
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(onLinkTap: onLinkTap)
+        Coordinator(onLinkTap: onLinkTap, onScrollPosition: onScrollPosition)
     }
 
     final class Coordinator: NSObject, UITextViewDelegate {
         var onLinkTap: ((URL) -> Bool)?
-        init(onLinkTap: ((URL) -> Bool)?) { self.onLinkTap = onLinkTap }
+        var onScrollPosition: ((Double, String?) -> Void)?
+        init(onLinkTap: ((URL) -> Bool)?, onScrollPosition: ((Double, String?) -> Void)?) {
+            self.onLinkTap = onLinkTap
+            self.onScrollPosition = onScrollPosition
+        }
         func textView(
             _ textView: UITextView,
             shouldInteractWith url: URL,
@@ -234,7 +242,12 @@ private struct _AttributedPageRep: UIViewRepresentable {
         }
 
         func scrollViewDidScroll(_ scrollView: UIScrollView) {
-            guard !scrollView.isScrollEnabled else { return }
+            if scrollView.isScrollEnabled {
+                let range = max(1, scrollView.contentSize.height - scrollView.bounds.height)
+                let ratio = max(0, min(1, scrollView.contentOffset.y / range))
+                onScrollPosition?(ratio, nil)
+                return
+            }
             if scrollView.contentOffset != .zero {
                 scrollView.contentOffset = .zero
             }
@@ -271,6 +284,7 @@ private struct _AttributedPageRep: UIViewRepresentable {
 
     func updateUIView(_ uiView: FixedWidthTextView, context: Context) {
         context.coordinator.onLinkTap = onLinkTap
+        context.coordinator.onScrollPosition = onScrollPosition
         uiView.pinnedWidth = size.width
         uiView.usesNativeScrolling = scrollable
         uiView.isScrollEnabled = scrollable
@@ -323,6 +337,7 @@ struct AttributedPageView: View {
     var onLinkTap: ((URL) -> Bool)? = nil
     var onZoneTap: ((ReaderTapZone) -> Void)? = nil
     var onSwipe: ((ReaderSwipeDirection) -> Void)? = nil
+    var onScrollPosition: ((Double, String?) -> Void)? = nil
 
     var body: some View {
         GeometryReader { geo in

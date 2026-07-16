@@ -795,7 +795,7 @@ struct PlayerReaderView: View {
         sentenceTask = Task { @MainActor in
             for await id in sync.currentSentence {
                 if Task.isCancelled { break }
-                self.currentSentenceId = id
+                self.currentSentenceId = sync.readerSentenceID(forTimingID: id)
             }
         }
     }
@@ -1010,10 +1010,11 @@ struct PlayerReaderView: View {
         // Pin the reader to the chapter it just crossed into. The audio queue
         // may reconcile/synthesize ahead of the visible reader; its cursor is
         // not a safe source for the next backward tap.
-        let targetEpubIndex = InstantReaderIndexMapper.epubIndex(
+        guard let targetEpubIndex = InstantReaderIndexMapper.epubIndex(
             forPlayableIndex: next, in: snapshot
-        )
+        ) else { return false }
         displayedEpubIndexOverride = targetEpubIndex
+        readerCoordinator.setChapter(targetEpubIndex)
         player.play(snapshot: snapshot, startingAt: next)
         reloadCurrentChapter(epubIndexOverride: targetEpubIndex)
         return true
@@ -1051,6 +1052,7 @@ struct PlayerReaderView: View {
         readerShouldStartAtLastPage = true
         pendingRetreatTargetEpubIndex = targetEpubIndex
         displayedEpubIndexOverride = targetEpubIndex
+        readerCoordinator.setChapter(targetEpubIndex)
         player.play(snapshot: snapshot, startingAt: playablePrev)
         reloadCurrentChapter(epubIndexOverride: targetEpubIndex)
         return true
@@ -1066,6 +1068,7 @@ struct PlayerReaderView: View {
         let target = InstantReaderIndexMapper
             .playableIndexOrClamped(forEpubIndex: epubIndex, in: snapshot)
         displayedEpubIndexOverride = epubIndex
+        readerCoordinator.setChapter(epubIndex)
         player.play(snapshot: snapshot, startingAt: target)
         // Pass epubIndex directly — player.currentChapterIndex has not
         // yet updated when play() returns, so reloadCurrentChapter()

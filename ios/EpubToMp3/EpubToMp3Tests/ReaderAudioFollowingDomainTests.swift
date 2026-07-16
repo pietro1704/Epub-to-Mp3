@@ -1,6 +1,7 @@
 import XCTest
 @testable import EpubToMp3
 
+@MainActor
 final class ReaderAudioFollowingDomainTests: XCTestCase {
     private let spans = [
         SentenceSpan(id: "s1", text: "First sentence.", startChar: 0, endChar: 15),
@@ -55,5 +56,26 @@ final class ReaderAudioFollowingDomainTests: XCTestCase {
         XCTAssertEqual(estimated.count, 2)
         XCTAssertEqual(estimated.first?.word, "Second")
         XCTAssertEqual(WordTimingResolver.activeWord(in: sentence, elapsed: 1.8, sentenceDuration: 2, realTiming: nil)?.word, "sentence.")
+    }
+
+    func testPlayerReaderNavigationSynchronizesReaderCoordinatorChapter() throws {
+        let testFile = URL(fileURLWithPath: #filePath)
+        let projectRoot = testFile
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let source = try String(
+            contentsOf: projectRoot.appendingPathComponent("EpubToMp3/Views/PlayerReaderView.swift"),
+            encoding: .utf8
+        )
+        XCTAssertGreaterThanOrEqual(source.components(separatedBy: "readerCoordinator.setChapter(").count - 1, 3)
+    }
+
+    func testReaderCoordinatorChapterChangeClearsSentenceAnchor() {
+        let defaults = UserDefaults(suiteName: "ReaderAudioFollowingDomainTests.\(UUID().uuidString)")!
+        defaults.set("old", forKey: AudioPlayer.readerCurrentSentenceIdDefaultsKey)
+        let coordinator = ReaderCoordinator(defaults: defaults)
+        coordinator.setChapter(4)
+        XCTAssertEqual(coordinator.anchor.chapterIndex, 4)
+        XCTAssertNil(coordinator.anchor.sentenceId)
     }
 }
