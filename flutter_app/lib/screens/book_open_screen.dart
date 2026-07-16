@@ -28,6 +28,7 @@ import '../services/audio_player_service.dart';
 import '../services/cover_writeback.dart';
 import '../services/python_bridge.dart';
 import '../services/local_conversion_job.dart';
+import '../services/background_conversion_scheduler.dart';
 import '../services/resume_position_router.dart';
 import '../services/resume_restoration_guard.dart';
 import '../services/sse_subscription_lifecycle.dart';
@@ -384,6 +385,7 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen> {
       );
       final lang = await bridge.detectLanguage(sample);
       final voice = _defaultVoices[lang] ?? _defaultVoices['pt']!;
+      final scheduler = BackgroundConversionScheduler();
       final player = ref.read(globalAudioPlayerProvider);
       _setCoverOnPlayer(player);
 
@@ -403,6 +405,12 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen> {
         job = await coordinator.watchdog(job);
         for (final chapter in job.chapters.where((c) => c.status == 'failed')) {
           job = await coordinator.retryChapter(job, chapter.index);
+        }
+      }
+      for (final chapter in job.chapters.where((c) => c.status == 'running')) {
+        final path = '${outDir.path}/chapter_${chapter.index}.mp3';
+        if (await File(path).exists()) {
+          job = await coordinator.completeChapter(job, chapter.index, path);
         }
       }
       _localJob = job;
@@ -456,11 +464,30 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen> {
           continue;
         }
 
-        final result = await bridge.convertChapter(
-          text: ch.text,
-          outputPath: mp3Path,
-          voice: voice,
-        );
+        Map<String, dynamic> result;
+        if (scheduler.isSupported) {
+          final workerId = '$jobId-${ch.index}';
+          final queued = await scheduler.enqueueChapter(
+            jobId: workerId,
+            text: ch.text,
+            voice: voice,
+            outputPath: mp3Path,
+          );
+          if (!queued) throw StateError('Could not enqueue background conversion');
+          final deadline = DateTime.now().add(const Duration(minutes: 30));
+          while (!await File(mp3Path).exists() && DateTime.now().isBefore(deadline)) {
+            await Future<void>.delayed(const Duration(seconds: 1));
+          }
+          result = await File(mp3Path).exists()
+              ? <String, dynamic>{'ok': true, 'path': mp3Path}
+              : <String, dynamic>{'ok': false, 'error': 'Background conversion timed out'};
+        } else {
+          result = await bridge.convertChapter(
+            text: ch.text,
+            outputPath: mp3Path,
+            voice: voice,
+          );
+        }
         if (!mounted) return;
         if (result['ok'] != true) {
           final error =
