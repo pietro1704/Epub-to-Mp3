@@ -1177,7 +1177,7 @@ struct InstantReaderView: View {
             for await pos in activePlayer.position {
                 if Task.isCancelled { break }
                 if isEmbedded, activePlayer.activeSentenceId != nil {
-                    self.currentSentenceId = activePlayer.activeSentenceId
+                    self.currentSentenceId = sync.readerSentenceID(forTimingID: activePlayer.activeSentenceId)
                 } else {
                     _ = sync.update(positionSeconds: pos)
                 }

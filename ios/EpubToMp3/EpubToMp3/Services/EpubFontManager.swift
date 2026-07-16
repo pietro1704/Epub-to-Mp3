@@ -24,7 +24,7 @@ enum EpubFontManager {
     static func registerFonts(from epubURL: URL) -> [URL] {
         guard let entries = ZipReader.listEntries(in: epubURL) else { return [] }
 
-        let fontExtensions: Set<String> = ["otf", "ttf", "woff"]
+        let fontExtensions: Set<String> = ["otf", "ttf", "woff", "woff2"]
         let fontEntries = entries.filter { entry in
             let ext = (entry as NSString).pathExtension.lowercased()
             return fontExtensions.contains(ext)

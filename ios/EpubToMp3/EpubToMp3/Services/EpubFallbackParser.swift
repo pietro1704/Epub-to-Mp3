@@ -69,6 +69,9 @@ enum EpubFallbackParser {
             guard !text.isEmpty else { continue }
             let tocName = tocNames[href] ?? tocNames[chapterPath]
             let name: String? = tocName ?? extractTitle(from: html) ?? "Chapter \(index)"
+            let resources = Self.extractImageResources(
+                from: html, chapterPath: chapterPath, archiveURL: url
+            )
             chapters.append(EbookFulltext.Chapter(
                 index: index,
                 name: name,
@@ -76,7 +79,8 @@ enum EpubFallbackParser {
                 html: html,
                 css: combinedCSS,
                 charCount: text.count,
-                segments: nil
+                segments: nil,
+                resources: resources
             ))
             index += 1
         }
@@ -185,6 +189,44 @@ enum EpubFallbackParser {
         }
         // Numeric entities &#nnn; — defer; the named map covers ~95%.
         return result
+    }
+
+    fileprivate static func extractImageResources(
+        from html: String,
+        chapterPath: String,
+        archiveURL: URL
+    ) -> [EbookFulltext.Chapter.Resource] {
+        let pattern = try! NSRegularExpression(
+            pattern: #"(?i)<img\b[^>]*\bsrc\s*=\s*([\"'])([^\"']+)\1"#
+        )
+        let chapterDirectory = (chapterPath as NSString).deletingLastPathComponent
+        var resources: [EbookFulltext.Chapter.Resource] = []
+        for match in pattern.matches(in: html, range: NSRange(html.startIndex..., in: html)) {
+            guard let hrefRange = Range(match.range(at: 2), in: html) else { continue }
+            let href = String(html[hrefRange])
+            guard !href.lowercased().hasPrefix("data:"),
+                  !href.lowercased().hasPrefix("http:") else { continue }
+            let decoded = href.removingPercentEncoding ?? href
+            let path = URL(fileURLWithPath: chapterDirectory)
+                .appendingPathComponent(decoded)
+                .standardizedFileURL.path
+            let archivePath = path.hasPrefix("/") ? String(path.dropFirst()) : path
+            guard let data = ZipReader.extract(member: archivePath, from: archiveURL),
+                  !data.isEmpty else { continue }
+            let mediaType: String
+            switch URL(fileURLWithPath: href).pathExtension.lowercased() {
+            case "jpg", "jpeg": mediaType = "image/jpeg"
+            case "gif": mediaType = "image/gif"
+            case "webp": mediaType = "image/webp"
+            default: mediaType = "image/png"
+            }
+            resources.append(.init(
+                href: href,
+                mediaType: mediaType,
+                dataBase64: data.base64EncodedString()
+            ))
+        }
+        return resources
     }
 
     fileprivate static func extractTitle(from html: String) -> String? {

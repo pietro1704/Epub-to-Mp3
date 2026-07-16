@@ -1143,6 +1143,29 @@ class TestParseEpubToDict(unittest.TestCase):
         for chapter in payload["chapters"]:
             self.assertGreater(len(chapter["text"]), 0)
 
+    def test_extract_chapter_resources_resolves_relative_percent_encoded_image(self):
+        path = Path(tempfile.mkdtemp()) / "assets.epub"
+        chapter_html = '<html><body><img src="../images/cover%20art.png"></body></html>'
+        with zipfile.ZipFile(path, "w") as archive:
+            archive.writestr(
+                "META-INF/container.xml",
+                '<container><rootfiles><rootfile full-path="OEBPS/content.opf"/></rootfiles></container>',
+            )
+            archive.writestr(
+                "OEBPS/content.opf",
+                """<package xmlns="http://www.idpf.org/2007/opf"><manifest><item id="c" href="text/chapter.xhtml" media-type="application/xhtml+xml"/></manifest><spine><itemref idref="c"/></spine></package>""",
+            )
+            archive.writestr("OEBPS/text/chapter.xhtml", chapter_html)
+            archive.writestr("OEBPS/images/cover art.png", b"png-bytes")
+        chapter = Chapter(
+            index=1, name="Ch", source_path="text/chapter.xhtml", text="x", raw_html=chapter_html
+        )
+        resources = EbookReader(path).extract_chapter_resources(chapter)
+        self.assertEqual(len(resources), 1)
+        self.assertEqual(resources[0]["href"], "../images/cover%20art.png")
+        self.assertEqual(resources[0]["mediaType"], "image/png")
+        self.assertEqual(resources[0]["dataBase64"], "cG5nLWJ5dGVz")
+
     def test_json_roundtrip(self):
         """The dict must be JSON-serialisable — PythonBridge crosses
         the Swift boundary via json.dumps."""

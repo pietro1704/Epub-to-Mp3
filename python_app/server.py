@@ -2893,6 +2893,7 @@ def _build_fulltext_chapters_from_cache(cached: dict) -> list[dict]:
             "text": ch.get("text") or "",
             "html": ch.get("html") or _chapter_html_fallback(ch.get("text") or ""),
             "css": ch.get("css") or "",
+            "resources": ch.get("resources") or [],
             "charCount": len(ch.get("text") or ""),
         }
         for idx, ch in enumerate(cached.get("chapters") or [], 1)
@@ -2992,6 +2993,7 @@ async def get_job_fulltext(job_id: str) -> dict:
             if not chapter_html:
                 chapter_html = _chapter_html_fallback(clean_text)
             chapter_css = reader.extract_chapter_stylesheet(chapter)
+            chapter_resources = reader.extract_chapter_resources(chapter)
 
             chapters.append(
                 {
@@ -3000,6 +3002,7 @@ async def get_job_fulltext(job_id: str) -> dict:
                     "text": clean_text,
                     "html": chapter_html,
                     "css": chapter_css,
+                    "resources": chapter_resources,
                     "charCount": len(clean_text),
                 }
             )
@@ -3031,6 +3034,7 @@ async def get_job_fulltext(job_id: str) -> dict:
                             "text": chapter["text"],
                             "html": chapter["html"],
                             "css": chapter["css"],
+                            "resources": chapter["resources"],
                         }
                         for chapter in chapters
                     ],

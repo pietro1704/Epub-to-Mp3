@@ -53,6 +53,12 @@ struct EbookFulltext: Codable, Equatable {
     }
 
     struct Chapter: Codable, Equatable, Identifiable {
+        struct Resource: Codable, Equatable, Hashable {
+            let href: String
+            let mediaType: String?
+            let dataBase64: String?
+        }
+
         let index: Int
         let name: String?
         let text: String
@@ -60,6 +66,27 @@ struct EbookFulltext: Codable, Equatable {
         let css: String?
         let charCount: Int?
         let segments: [Segment]?
+        let resources: [Resource]?
+
+        init(
+            index: Int,
+            name: String?,
+            text: String,
+            html: String?,
+            css: String?,
+            charCount: Int?,
+            segments: [Segment]?,
+            resources: [Resource]? = nil
+        ) {
+            self.index = index
+            self.name = name
+            self.text = text
+            self.html = html
+            self.css = css
+            self.charCount = charCount
+            self.segments = segments
+            self.resources = resources
+        }
 
         var id: String { String(index) }
 

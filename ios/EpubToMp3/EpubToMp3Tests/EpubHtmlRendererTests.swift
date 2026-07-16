@@ -68,15 +68,25 @@ final class EpubHtmlRendererTests: XCTestCase {
             "inline data: URI images must survive HTML sanitisation so the importer can create attachments")
     }
 
-    /// Regression: a large inline EPUB image must be DOWNSAMPLED before it
-    /// is baked into the attributed string, not decoded at full resolution.
-    /// A 2000x2000 source that survived at full size decompresses to a
-    /// ~16 MB resident bitmap; the scroll-mode buffer renders the current
-    /// chapter plus both neighbours on the main thread, so image-heavy
-    /// chapters spiked hundreds of MB the instant the reader/player mounted
-    /// — enough, on an 8 GB device with WidgetKit reloading on the play
-    /// burst, to force a full device reboot. The renderer now caps every
-    /// inline attachment's largest edge.
+    func testResolvesRelativeAndPercentEncodedImageResources() {
+        let s = makeSettings()
+        let resource = EbookFulltext.Chapter.Resource(
+            href: "../images/cover%20art.png",
+            mediaType: "image/png",
+            dataBase64: "R0lGODlhAQABAIAAAAAAAP///yH5BAEKAAAALAAAAAABAAEAAAICTAEAOw=="
+        )
+        let html = "<p>text</p><img src=\"../images/cover%20art.png\"/>"
+        guard let out = EpubHtmlRenderer.render(
+            html: html, css: nil, settings: s, resources: [resource]
+        ) else { return XCTFail("renderer returned nil") }
+        let n = ns(out)
+        var attachmentCount = 0
+        n.enumerateAttribute(.attachment, in: NSRange(location: 0, length: n.length)) { value, _, _ in
+            if value != nil { attachmentCount += 1 }
+        }
+        XCTAssertEqual(attachmentCount, 1)
+    }
+
     func testLargeInlineImageIsDownsampled() throws {
         let s = makeSettings()
         let bigPNG = try Self.makeSolidPNGBase64(width: 2000, height: 2000)

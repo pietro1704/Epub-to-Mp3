@@ -53,6 +53,22 @@ final class EbookFulltextTests: XCTestCase {
         XCTAssertEqual(payload.chapters.count, 0)
     }
 
+    func testDecodesOptionalImageResourcesWithoutChangingLegacyPayloads() throws {
+        let json = """
+        {
+          "jobId": "j",
+          "chapters": [{
+            "index": 1, "name": "Ch", "text": "abc",
+            "resources": [{"href": "images/cover%20art.jpg", "mediaType": "image/jpeg", "dataBase64": "AQI="}]
+          }]
+        }
+        """.data(using: .utf8)!
+        let payload = try JSONDecoder().decode(EbookFulltext.self, from: json)
+        XCTAssertEqual(payload.chapters.first?.resources?.first?.href, "images/cover%20art.jpg")
+        XCTAssertEqual(payload.chapters.first?.resources?.first?.mediaType, "image/jpeg")
+        XCTAssertEqual(payload.chapters.first?.resources?.first?.dataBase64, "AQI=")
+    }
+
     func testSplitSentencesOnPunctuation() {
         let chapter = EbookFulltext.Chapter(
             index: 1,

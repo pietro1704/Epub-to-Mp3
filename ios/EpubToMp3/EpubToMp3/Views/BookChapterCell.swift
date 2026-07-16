@@ -211,7 +211,7 @@ struct BookChapterCell: View {
         if let html = chapter.html, !html.isEmpty,
            let rendered = EpubHtmlRenderer.render(
                 html: html, css: chapter.css, settings: settings,
-                fontDirectoryURL: fontDirectoryURL
+                fontDirectoryURL: fontDirectoryURL, resources: chapter.resources
            ) {
             return NSAttributedString(rendered)
         }

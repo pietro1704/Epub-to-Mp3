@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import base64
 import html
 import json
 import os
@@ -3066,6 +3067,50 @@ class EbookReader:
             return self._extract_pdf_cover()
 
         return None
+
+    def extract_chapter_resources(self, chapter: Chapter) -> list[dict[str, str]]:
+        """Return bounded image resources referenced by an EPUB chapter."""
+        if not self.file_path or self.file_path.suffix.lower() != ".epub":
+            return []
+        raw_html = (chapter.raw_html or "").strip()
+        source_path = (chapter.source_path or "").split("#", 1)[0].strip()
+        if not raw_html or not source_path:
+            return []
+        refs = re.findall(r"<img\\b[^>]*\\bsrc\\s*=\\s*['\"]([^'\"]+)['\"]", raw_html, re.I)
+        if not refs:
+            return []
+        try:
+            parser = EpubParser(str(self.file_path))
+            with zipfile.ZipFile(self.file_path, "r") as archive:
+                opf_dir = parser._opf_dir(parser._find_opf_path(archive))
+                chapter_asset = parser._join_path(opf_dir, source_path)
+                chapter_dir = posixpath.dirname(chapter_asset)
+                resources: list[dict[str, str]] = []
+                for href in refs[:32]:
+                    if href.lower().startswith(("data:", "http:", "https:")):
+                        continue
+                    asset_path = parser._join_path(
+                        chapter_dir, unquote(href.split("#", 1)[0].split("?", 1)[0])
+                    )
+                    try:
+                        data = archive.read(asset_path)
+                    except KeyError:
+                        continue
+                    if not data or len(data) > 12 * 1024 * 1024:
+                        continue
+                    media_type = mimetypes.guess_type(asset_path)[0] if mimetypes else None
+                    if not media_type or not media_type.startswith("image/"):
+                        continue
+                    resources.append(
+                        {
+                            "href": href,
+                            "mediaType": media_type,
+                            "dataBase64": base64.b64encode(data).decode("ascii"),
+                        }
+                    )
+                return resources
+        except Exception:
+            return []
 
     def extract_chapter_stylesheet(self, chapter: Chapter) -> str:
         """Return the concatenated CSS referenced by a chapter XHTML file."""

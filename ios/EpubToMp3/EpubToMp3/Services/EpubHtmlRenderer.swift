@@ -74,12 +74,15 @@ enum EpubHtmlRenderer {
         html: String,
         css: String?,
         settings: AppSettings,
-        fontDirectoryURL: URL? = nil
+        fontDirectoryURL: URL? = nil,
+        resources: [EbookFulltext.Chapter.Resource]? = nil
     ) -> AttributedString? {
         let trimmed = html.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
 
-        let (placeholderBody, images) = extractDataURIImages(extractBodyContent(trimmed))
+        let body = extractBodyContent(trimmed)
+        let resolvedBody = resolveResourceImageSources(body, resources: resources ?? [])
+        let (placeholderBody, images) = extractDataURIImages(resolvedBody)
         let cleanedCSS = rewriteFontFaceURLs(css ?? "", fontDirectory: fontDirectoryURL)
 
         let doc = """
@@ -376,6 +379,54 @@ enum EpubHtmlRenderer {
             with: "$1",
             options: .regularExpression
         )
+    }
+
+    /// Replace EPUB-relative image references with bounded, local data URIs.
+    /// Resource hrefs are matched after percent-decoding and removing query/
+    /// fragment suffixes; `data:` and remote URLs remain untouched.
+    private static func resolveResourceImageSources(
+        _ html: String,
+        resources: [EbookFulltext.Chapter.Resource]
+    ) -> String {
+        guard !resources.isEmpty else { return html }
+        var byHref: [String: EbookFulltext.Chapter.Resource] = [:]
+        for resource in resources {
+            byHref[normalisedResourceHref(resource.href)] = resource
+        }
+        let pattern = try! NSRegularExpression(
+            pattern: #"(?i)(<img\b[^>]*\bsrc\s*=\s*)([\"'])([^\"']+)(\2)"#
+        )
+        var result = html
+        for match in pattern.matches(in: html, range: NSRange(html.startIndex..., in: html)).reversed() {
+            guard let srcRange = Range(match.range(at: 3), in: result) else { continue }
+            let source = String(result[srcRange])
+            guard !source.lowercased().hasPrefix("data:") else { continue }
+            guard let resource = byHref[normalisedResourceHref(source)],
+                  let encoded = resource.dataBase64,
+                  let data = Data(base64Encoded: encoded),
+                  !data.isEmpty else { continue }
+            let mediaType = resource.mediaType ?? mimeType(for: source)
+            let dataURI = "data:\(mediaType);base64,\(data.base64EncodedString())"
+            result.replaceSubrange(srcRange, with: dataURI)
+        }
+        return result
+    }
+
+    private static func normalisedResourceHref(_ href: String) -> String {
+        let withoutSuffix = href.split(separator: "#", maxSplits: 1).first.map(String.init) ?? href
+        let withoutQuery = withoutSuffix.split(separator: "?", maxSplits: 1).first.map(String.init) ?? withoutSuffix
+        return (withoutQuery.removingPercentEncoding ?? withoutQuery)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+    }
+
+    private static func mimeType(for href: String) -> String {
+        switch URL(fileURLWithPath: href).pathExtension.lowercased() {
+        case "jpg", "jpeg": return "image/jpeg"
+        case "gif": return "image/gif"
+        case "webp": return "image/webp"
+        default: return "image/png"
+        }
     }
 
     /// `NSAttributedString`'s HTML importer does not turn `<img>` tags
