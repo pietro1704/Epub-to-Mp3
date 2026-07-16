@@ -68,7 +68,7 @@ class LibraryStore extends ChangeNotifier {
   /// Import a new book from a picked file path. Returns the resulting
   /// (possibly merged) [BookEntity]. Throws [LibraryStoreException]
   /// when the file is unreadable.
-  Future<BookEntity> importBook(String path) async {
+  Future<BookEntity> importBook(String path, {String? displayFilename}) async {
     final file = File(path);
     if (!await file.exists()) {
       throw LibraryStoreException(
@@ -82,7 +82,9 @@ class LibraryStore extends ChangeNotifier {
     } catch (e) {
       throw LibraryStoreException(2, 'Failed to hash $path: $e');
     }
-    final filename = file.uri.pathSegments.last;
+    final filename = displayFilename?.trim().isNotEmpty == true
+        ? displayFilename!.trim()
+        : file.uri.pathSegments.last;
     final meta = await _readMetadata(path);
 
     final existingIndex = _books.indexWhere((b) => b.id == id);

@@ -1,0 +1,17 @@
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Static shortcuts use only valid app actions. Book-specific shortcuts
+         are intentionally emitted by Flutter in a future native widget pass,
+         because a shortcut must never invent a bookId. -->
+    <shortcut
+        android:shortcutId="jobs"
+        android:enabled="true"
+        android:icon="@mipmap/ic_launcher"
+        android:shortcutShortLabel="Jobs"
+        android:shortcutLongLabel="Open conversion jobs">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetPackage="com.pietrocode.epubtomp3.flutter_app"
+            android:targetClass="com.pietrocode.epubtomp3.flutter_app.MainActivity"
+            android:data="epubtomp3://jobs" />
+    </shortcut>
+</shortcuts>

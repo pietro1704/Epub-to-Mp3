@@ -20,7 +20,16 @@ class _FakeApiClient extends ApiClient {
   _FakeApiClient() : super('http://fake');
 
   @override
-  Future<String> uploadAndConvert(String filePath) async {
+  Future<String> uploadAndConvert(
+    String filePath, {
+    int? chapterEnd,
+    int? chapterStart,
+    String engine = 'edge',
+    bool? includeCover,
+    String? language,
+    bool? normalizeAudio,
+    String? voice,
+  }) async {
     throw Exception('Backend unreachable');
   }
 

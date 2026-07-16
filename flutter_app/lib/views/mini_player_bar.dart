@@ -5,6 +5,7 @@
 // 2pt progress bar at top (orange during conversion, accent during playback).
 // Tap opens FullPlayerSheet. Hidden when nothing is playing.
 
+import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 
@@ -12,6 +13,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../services/audio_player_service.dart';
+import '../services/background_audio_handler.dart' as background_audio;
 import '../state/providers.dart';
 import 'full_player_sheet.dart';
 import '../screens/library_screen.dart';
@@ -32,6 +34,22 @@ class MiniPlayerBar extends ConsumerWidget {
     if (book == null) return const SizedBox.shrink();
 
     final player = ref.watch(globalAudioPlayerProvider);
+    final backgroundHandler = ref.watch(backgroundAudioHandlerProvider);
+    if (backgroundHandler != null) {
+      final chapterIndex = player.currentIndexValue;
+      final chapter = chapterIndex != null &&
+              chapterIndex >= 0 &&
+              chapterIndex < player.chapters.length
+          ? player.chapters[chapterIndex]
+          : null;
+      unawaited(backgroundHandler.setMetadata(background_audio.BackgroundAudioMetadata(
+        bookId: book.id,
+        bookTitle: book.resolvedTitle,
+        author: book.author,
+        chapterTitle: chapter?.displayTitle,
+        chapterIndex: chapter?.index,
+      )));
+    }
     final cs = Theme.of(context).colorScheme;
     final Uint8List? coverArt = _decodeCover(book.coverBase64);
 

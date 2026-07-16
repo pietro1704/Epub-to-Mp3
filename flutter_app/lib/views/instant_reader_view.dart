@@ -22,6 +22,7 @@ class InstantReaderView extends ConsumerStatefulWidget {
   final int initialChapterIndex;
   final String? statusBanner;
   final VoidCallback? onRequestPlay;
+  final VoidCallback? onRequestSpeechFallback;
   final AudioPlayerInterface? player;
   final String? activeSentenceId;
   final Uint8List? coverArt;
@@ -33,6 +34,7 @@ class InstantReaderView extends ConsumerStatefulWidget {
     this.initialChapterIndex = 0,
     this.statusBanner,
     this.onRequestPlay,
+    this.onRequestSpeechFallback,
     this.player,
     this.activeSentenceId,
     this.coverArt,
@@ -453,9 +455,25 @@ class _InstantReaderViewState extends ConsumerState<InstantReaderView> {
                   },
                 )
               else if (!isConverting && widget.onRequestPlay != null)
-                IconButton(
-                  icon: Icon(Icons.play_circle_filled, size: 36, color: fg),
-                  onPressed: widget.onRequestPlay,
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    IconButton(
+                      icon: Icon(Icons.play_circle_filled, size: 36, color: fg),
+                      onPressed: widget.onRequestPlay,
+                      tooltip: 'Create audio',
+                    ),
+                    if (widget.onRequestSpeechFallback != null)
+                      IconButton(
+                        icon: Icon(
+                          Icons.record_voice_over,
+                          size: 30,
+                          color: fg,
+                        ),
+                        onPressed: widget.onRequestSpeechFallback,
+                        tooltip: 'Speak offline',
+                      ),
+                  ],
                 ),
             ],
           ),

@@ -6,7 +6,9 @@ import '../models/ebook_fulltext.dart';
 import '../models/job_snapshot.dart';
 import '../models/session_record.dart';
 import '../services/api_client.dart';
+import '../services/android_speech_fallback.dart';
 import '../services/audio_player_service.dart';
+import '../services/background_audio_handler.dart';
 import '../services/bookmark_store.dart';
 import '../services/download_manager.dart';
 import '../services/fulltext_store.dart';
@@ -31,8 +33,8 @@ typedef AppSettings = MirrorAppSettings;
 /// setter call refreshes state via `_emit`.
 class SettingsNotifier extends StateNotifier<AppSettings> {
   SettingsNotifier(SharedPreferences prefs)
-      : _prefs = prefs,
-        super(MirrorAppSettings(prefs));
+    : _prefs = prefs,
+      super(MirrorAppSettings(prefs));
 
   final SharedPreferences _prefs;
 
@@ -126,8 +128,9 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
   }
 }
 
-final settingsProvider =
-    StateNotifierProvider<SettingsNotifier, AppSettings>((ref) {
+final settingsProvider = StateNotifierProvider<SettingsNotifier, AppSettings>((
+  ref,
+) {
   final prefs = ref.watch(sharedPrefsProvider);
   return SettingsNotifier(prefs);
 });
@@ -147,8 +150,7 @@ final resumeStoreProvider = Provider<ResumeStore>((ref) {
   return ResumeStore(ref.watch(sharedPrefsProvider));
 });
 
-final bookmarkStoreProvider =
-    ChangeNotifierProvider<BookmarkStore>((ref) {
+final bookmarkStoreProvider = ChangeNotifierProvider<BookmarkStore>((ref) {
   return BookmarkStore(prefs: ref.watch(sharedPrefsProvider));
 });
 
@@ -161,28 +163,36 @@ final sessionsProvider = FutureProvider<List<SessionRecord>>((ref) async {
   return api.fetchSessions(last: 50);
 });
 
-final jobSnapshotProvider =
-    FutureProvider.family<JobSnapshot, String>((ref, jobId) async {
+final jobSnapshotProvider = FutureProvider.family<JobSnapshot, String>((
+  ref,
+  jobId,
+) async {
   final api = ref.watch(apiClientProvider);
   return api.fetchJob(jobId);
 });
 
-final fulltextProvider =
-    FutureProvider.family<EbookFulltext, String>((ref, jobId) async {
+final fulltextProvider = FutureProvider.family<EbookFulltext, String>((
+  ref,
+  jobId,
+) async {
   final store = ref.watch(fulltextStoreProvider);
   return store.fetch(jobId);
 });
 
 /// Live SSE stream for a running job. Emits [JobSnapshot] on every backend
 /// event. The stream auto-disposes when the last listener goes away.
-final jobStreamProvider =
-    StreamProvider.family<JobSnapshot, String>((ref, jobId) {
+final jobStreamProvider = StreamProvider.family<JobSnapshot, String>((
+  ref,
+  jobId,
+) {
   final api = ref.watch(apiClientProvider);
   return api.jobStream(jobId);
 });
 
-final audioPlayerProvider =
-    Provider.family<AudioPlayerService, String>((ref, jobId) {
+final audioPlayerProvider = Provider.family<AudioPlayerService, String>((
+  ref,
+  jobId,
+) {
   final settings = ref.watch(settingsProvider);
   final p = AudioPlayerService(backendBase: settings.backendURL);
   ref.onDispose(p.dispose);
@@ -197,8 +207,10 @@ final syncEngineProvider = Provider.family<SyncEngine, String>((ref, jobId) {
 });
 
 /// Drives `currentSentenceId` from the player position stream.
-final currentSentenceProvider =
-    StreamProvider.family<String?, String>((ref, jobId) {
+final currentSentenceProvider = StreamProvider.family<String?, String>((
+  ref,
+  jobId,
+) {
   final engine = ref.watch(syncEngineProvider(jobId));
   return engine.currentSentence;
 });
@@ -212,9 +224,9 @@ const _currentlyReadingKey = 'currentlyReadingBookId';
 /// The book currently open in the Reader tab. Persisted across launches.
 final currentlyReadingBookIdProvider =
     StateNotifierProvider<_PersistedStringNotifier, String?>((ref) {
-  final prefs = ref.watch(sharedPrefsProvider);
-  return _PersistedStringNotifier(prefs, _currentlyReadingKey);
-});
+      final prefs = ref.watch(sharedPrefsProvider);
+      return _PersistedStringNotifier(prefs, _currentlyReadingKey);
+    });
 
 /// The book whose audio is actively playing/paused. Ephemeral (not persisted).
 final currentlyPlayingBookIdProvider = StateProvider<String?>((ref) => null);
@@ -227,6 +239,17 @@ final globalAudioPlayerProvider = Provider<AudioPlayerInterface>((ref) {
   final p = AudioPlayerService(backendBase: settings.backendURL);
   ref.onDispose(p.dispose);
   return p;
+});
+
+/// Android MediaSession adapter. Null on desktop/iOS and in host tests.
+final backgroundAudioHandlerProvider = Provider<BackgroundAudioHandler?>(
+  (ref) => null,
+);
+
+/// Android offline TTS fallback. The default adapter is a no-op on iOS,
+/// desktop, web, and host tests; tests can override this provider.
+final androidSpeechFallbackProvider = Provider<SpeechEngine>((ref) {
+  return AndroidSpeechFallback();
 });
 
 /// Shared fulltext cache singleton.
@@ -242,7 +265,7 @@ final rootTabIndexProvider = StateProvider<int>((ref) => 0);
 /// construction and writes on every `set`.
 class _PersistedStringNotifier extends StateNotifier<String?> {
   _PersistedStringNotifier(this._prefs, this._key)
-      : super(_prefs.getString(_key));
+    : super(_prefs.getString(_key));
 
   final SharedPreferences _prefs;
   final String _key;

@@ -33,6 +33,9 @@ class AppLocalizationsPt extends AppLocalizations {
   String get jobsTitle => 'Conversões';
 
   @override
+  String get convertTitle => 'Converter';
+
+  @override
   String get noJobs => 'Nenhuma conversão ainda';
 
   @override

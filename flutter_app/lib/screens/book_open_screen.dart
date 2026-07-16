@@ -12,7 +12,7 @@
 
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io' show Directory;
+import 'dart:io' show Directory, File, Platform;
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
@@ -21,17 +21,20 @@ import 'package:path_provider/path_provider.dart';
 
 import '../l10n/app_localizations.dart';
 import '../models/ebook_fulltext.dart';
+import '../models/book_entity.dart';
 import '../models/job_snapshot.dart';
 import '../services/async_load_guard.dart';
 import '../services/audio_player_service.dart';
 import '../services/cover_writeback.dart';
 import '../services/python_bridge.dart';
+import '../services/local_conversion_job.dart';
 import '../services/resume_position_router.dart';
 import '../services/resume_restoration_guard.dart';
 import '../services/sse_subscription_lifecycle.dart';
 import '../state/providers.dart';
 import '../views/instant_reader_view.dart';
 import 'library_screen.dart';
+import 'pdf_reader_screen.dart';
 
 enum _Phase { resolving, ready, error }
 
@@ -54,6 +57,7 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen> {
   int _chaptersConverted = 0;
   int _chaptersTotal = 0;
   final List<ChapterProgress> _playableChapters = [];
+  LocalConversionJob? _localJob;
   ResumeRestorationGuard _resumeGuard = ResumeRestorationGuard();
   final AsyncLoadGuard _loadGuard = AsyncLoadGuard();
   StreamSubscription<JobSnapshot>? _sseSubscription;
@@ -63,7 +67,14 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen> {
   @override
   void initState() {
     super.initState();
-    _load();
+    final book = ref
+        .read(libraryStoreProvider)
+        .books
+        .where((b) => b.id == widget.bookId)
+        .firstOrNull;
+    if (book == null || !isPdfFilePath(book.filePath)) {
+      _load();
+    }
   }
 
   @override
@@ -142,8 +153,10 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen> {
         return;
       }
       final filePath = book.filePath;
-      final fulltext =
-          await bridge.parseEpub(filePath, jobId: loadingForBookId);
+      final fulltext = await bridge.parseEpub(
+        filePath,
+        jobId: loadingForBookId,
+      );
       if (!mounted || !_loadGuard.isCurrent(gen)) return;
       await cache.save(fulltext, loadingForBookId);
       if (!mounted || !_loadGuard.isCurrent(gen)) return;
@@ -169,6 +182,27 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen> {
       book.lastOpenedAt = DateTime.now();
       library.update(book);
     }
+  }
+
+  Future<void> _speakCurrentChapterOffline() async {
+    final fulltext = _fulltext;
+    if (fulltext == null || fulltext.chapters.isEmpty) return;
+    final chapter = fulltext.chapters.firstWhere(
+      (candidate) => candidate.text.trim().isNotEmpty,
+      orElse: () => fulltext.chapters.first,
+    );
+    final engine = ref.read(androidSpeechFallbackProvider);
+    if (!await engine.isAvailable() || !mounted) return;
+    // Explicit user action only: opening a book never starts speech.
+    await engine.speak(chapter.text, locale: _offlineLocale(chapter.text));
+  }
+
+  String _offlineLocale(String text) {
+    final lower = text.toLowerCase();
+    if (RegExp(r'\b(the|and|this|that)\b').hasMatch(lower)) return 'en-US';
+    if (RegExp(r'\b(el|la|los|una|que)\b').hasMatch(lower)) return 'es-ES';
+    if (RegExp(r'\b(le|une|les|des|que)\b').hasMatch(lower)) return 'fr-FR';
+    return 'pt-BR';
   }
 
   static const _defaultVoices = <String, String>{
@@ -211,6 +245,7 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen> {
     // Fall back to on-device PythonBridge
     final bridge = PythonBridge();
     if (!bridge.isSupported) {
+      unawaited(_speakCurrentChapterOffline());
       setState(() {
         _isConverting = false;
         _conversionError = 'Backend unreachable and local Python not available';
@@ -226,8 +261,7 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen> {
     // Null-safe lookup mirrors the _load() guard. Same race: the
     // book can disappear from the library between the user tapping
     // play and this method running.
-    final book =
-        library.books.where((b) => b.id == widget.bookId).firstOrNull;
+    final book = library.books.where((b) => b.id == widget.bookId).firstOrNull;
     if (book == null) {
       throw StateError('Book is no longer in the library');
     }
@@ -316,8 +350,9 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen> {
     // Cheap pre-check to avoid the network call when we already have
     // a cover. The actual race-safe writeback happens after the
     // await via CoverWriteback (re-looks up by id).
-    final existing =
-        library.books.where((b) => b.id == widget.bookId).firstOrNull;
+    final existing = library.books
+        .where((b) => b.id == widget.bookId)
+        .firstOrNull;
     if (existing == null || existing.coverBase64 != null) return;
 
     try {
@@ -334,12 +369,14 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen> {
 
   Future<void> _startLocalConversion(PythonBridge bridge) async {
     final ft = _fulltext!;
+    final coordinator = ConversionJobCoordinator(
+      LocalConversionJobStore(ref.read(sharedPrefsProvider)),
+    );
+    final jobId = 'local-${widget.bookId}';
     try {
       final docsDir = await getApplicationDocumentsDirectory();
       final outDir = Directory('${docsDir.path}/audiobooks/${widget.bookId}');
-      if (!await outDir.exists()) {
-        await outDir.create(recursive: true);
-      }
+      if (!await outDir.exists()) await outDir.create(recursive: true);
 
       final sample = ft.chapters.first.text.substring(
         0,
@@ -347,48 +384,110 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen> {
       );
       final lang = await bridge.detectLanguage(sample);
       final voice = _defaultVoices[lang] ?? _defaultVoices['pt']!;
-
       final player = ref.read(globalAudioPlayerProvider);
       _setCoverOnPlayer(player);
 
+      final existingJob = await coordinator.store.load(widget.bookId, jobId);
+      late LocalConversionJob job;
+      if (existingJob == null ||
+          existingJob.status == LocalConversionJobStatus.cancelled) {
+        job = await coordinator.createJob(
+          bookId: widget.bookId,
+          jobId: jobId,
+          chapters: ft.chapters
+              .map((ch) => LocalConversionChapterSpec(ch.index, ch.name ?? ''))
+              .toList(),
+        );
+      } else {
+        job = existingJob;
+        job = await coordinator.watchdog(job);
+        for (final chapter in job.chapters.where((c) => c.status == 'failed')) {
+          job = await coordinator.retryChapter(job, chapter.index);
+        }
+      }
+      _localJob = job;
+
+      // Rebuild the queue from files already recorded as completed. A process
+      // death therefore resumes at the first pending chapter, not chapter 0.
+      for (final saved in job.chapters.where((c) => c.status == 'completed')) {
+        final path = saved.outputPath;
+        if (path == null || path.isEmpty || !await File(path).exists()) {
+          continue;
+        }
+        final source = ft.chapters
+            .where((c) => c.index == saved.index)
+            .firstOrNull;
+        _playableChapters.add(
+          ChapterProgress(
+            index: saved.index,
+            name: source?.name ?? saved.name,
+            status: 'completed',
+            downloadUrl: 'file://$path',
+            chars: source?.text.length,
+            progressRatio: 1.0,
+          ),
+        );
+      }
+      _playableChapters.sort((a, b) => a.index.compareTo(b.index));
+      if (_playableChapters.isNotEmpty) {
+        await player.setQueue(List.of(_playableChapters));
+      }
+
       for (var i = 0; i < ft.chapters.length; i++) {
         if (!mounted || !_isConverting) return;
-
         final ch = ft.chapters[i];
-        if (ch.text.trim().isEmpty) {
-          if (!mounted) return;
-          setState(() => _chaptersConverted = i + 1);
+        final saved = job.chapters
+            .where((c) => c.index == ch.index)
+            .firstOrNull;
+        if (saved?.status == 'completed') {
+          if (mounted) {
+            setState(() => _chaptersConverted = _playableChapters.length);
+          }
           continue;
         }
 
+        job = await coordinator.markChapterRunning(job, ch.index);
+        _localJob = job;
         final mp3Path = '${outDir.path}/chapter_${ch.index}.mp3';
+        if (ch.text.trim().isEmpty) {
+          job = await coordinator.completeChapter(job, ch.index, mp3Path);
+          _localJob = job;
+          if (mounted) setState(() => _chaptersConverted = i + 1);
+          continue;
+        }
+
         final result = await bridge.convertChapter(
           text: ch.text,
           outputPath: mp3Path,
           voice: voice,
         );
-
         if (!mounted) return;
-
-        if (result['ok'] == true) {
-          final cp = ChapterProgress(
-            index: ch.index,
-            name: ch.name,
-            status: 'completed',
-            downloadUrl: 'file://$mp3Path',
-            chars: ch.text.length,
-            progressRatio: 1.0,
-          );
-          _playableChapters.add(cp);
-
-          await player.setQueue(List.of(_playableChapters));
-          // No auto-play on first segment — wait for explicit user gesture.
-          if (_playableChapters.length == 1 && !player.isPlaying) {
-            await _restoreResumePosition(player);
-            _startResumeListener(player);
-          }
+        if (result['ok'] != true) {
+          final error =
+              result['error']?.toString() ?? 'Chapter conversion failed';
+          _localJob = await coordinator.failChapter(job, ch.index, error);
+          throw StateError(error);
         }
 
+        final cp = ChapterProgress(
+          index: ch.index,
+          name: ch.name,
+          status: 'completed',
+          downloadUrl: 'file://$mp3Path',
+          chars: ch.text.length,
+          progressRatio: 1.0,
+        );
+        if (!_playableChapters.any((c) => c.index == cp.index)) {
+          _playableChapters.add(cp);
+          _playableChapters.sort((a, b) => a.index.compareTo(b.index));
+        }
+        await player.setQueue(List.of(_playableChapters));
+        if (_playableChapters.length == 1 && !player.isPlaying) {
+          await _restoreResumePosition(player);
+          _startResumeListener(player);
+        }
+        job = await coordinator.completeChapter(job, ch.index, mp3Path);
+        _localJob = job;
         setState(() => _chaptersConverted = i + 1);
       }
 
@@ -396,6 +495,14 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen> {
       _markBookOffline();
       setState(() => _isConverting = false);
     } catch (e) {
+      if (_localJob != null &&
+          _localJob!.status == LocalConversionJobStatus.running) {
+        _localJob = await coordinator.failChapter(
+          _localJob!,
+          _localJob!.currentChapterIndex ?? 0,
+          e.toString(),
+        );
+      }
       if (!mounted) return;
       setState(() {
         _isConverting = false;
@@ -448,8 +555,7 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen> {
     // the saved chapter has finally landed in the playable queue.
     // Subsequent calls (later SSE batches) return null so we never
     // jump the player backwards if the user already pressed play.
-    final queueIdx =
-        _resumeGuard.targetForSavedValue(saved.chapter, router);
+    final queueIdx = _resumeGuard.targetForSavedValue(saved.chapter, router);
     if (queueIdx == null) return;
     await player.seek(
       Duration(milliseconds: (saved.seconds * 1000).round()),
@@ -501,11 +607,23 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen> {
   Widget build(BuildContext context) {
     final t = AppLocalizations.of(context)!;
     final library = ref.watch(libraryStoreProvider);
-    final book = library.books.cast().firstWhere(
-      (b) => b.id == widget.bookId,
-      orElse: () => null,
-    );
+    BookEntity? book;
+    for (final candidate in library.books) {
+      if (candidate.id == widget.bookId) {
+        book = candidate;
+        break;
+      }
+    }
     final bookTitle = book?.resolvedTitle ?? '';
+
+    if (book != null && isPdfFilePath(book.filePath)) {
+      return PdfReaderScreen(
+        bookId: widget.bookId,
+        title: bookTitle,
+        filePath: book.filePath,
+        prefs: ref.watch(sharedPrefsProvider),
+      );
+    }
 
     switch (_phase) {
       case _Phase.resolving:
@@ -583,6 +701,9 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen> {
             statusBanner: _buildStatusBanner(t),
             player: player,
             onRequestPlay: _startConversion,
+            onRequestSpeechFallback: Platform.isAndroid
+                ? _speakCurrentChapterOffline
+                : null,
           ),
         );
     }

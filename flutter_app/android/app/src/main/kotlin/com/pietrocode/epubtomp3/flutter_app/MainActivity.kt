@@ -1,32 +1,151 @@
 package com.pietrocode.epubtomp3.flutter_app
 
+import android.content.Intent
+import android.database.Cursor
+import android.net.Uri
+import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.provider.OpenableColumns
+import android.speech.tts.TextToSpeech
 import com.chaquo.python.Python
 import com.chaquo.python.android.AndroidPlatform
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
+import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodChannel
+import org.json.JSONArray
+import org.json.JSONObject
+import java.io.File
+import java.util.Locale
 
 /**
- * Hosts the Flutter activity and exposes a MethodChannel that bridges Dart
- * to the embedded CPython runtime (Chaquopy) running python_app.src.
- *
- * Mirrors the iOS PythonKit bridge — keep the channel name and method
- * names in sync with `flutter_app/lib/services/python_bridge.dart` and
- * the iOS `PythonBridge.swift` so both clients share the contract.
+ * Hosts Flutter, the embedded Python runtime, and Android document ingestion.
+ * Incoming content URIs are copied into app-private storage before they are
+ * exposed to Dart, because a content URI is not a durable filesystem path.
  */
 class MainActivity : FlutterActivity() {
 
     companion object {
         private const val CHANNEL = "epub_to_mp3/python"
         private const val PY_MODULE = "python_app.src.android_entrypoints"
+        private const val DOCUMENT_CHANNEL = "epub_to_mp3/incoming_documents"
+        private const val DOCUMENT_EVENTS_CHANNEL = "epub_to_mp3/incoming_documents/events"
+        private const val DEEP_LINK_EVENTS_CHANNEL = "epub_to_mp3/deep_links"
+        private const val DOCUMENT_QUEUE = "incoming_documents.v1"
+        private const val DOCUMENT_DIR = "incoming_documents"
     }
 
     private val mainHandler = Handler(Looper.getMainLooper())
+    private var documentEvents: EventChannel.EventSink? = null
+    private var deepLinkEvents: EventChannel.EventSink? = null
+    private val pendingDeepLinks = mutableListOf<String>()
+    private var offlineTts: TextToSpeech? = null
+    private var offlineTtsReady = false
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        handleIncomingIntent(intent)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleIncomingIntent(intent)
+    }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+
+        EventChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            DOCUMENT_EVENTS_CHANNEL
+        ).setStreamHandler(object : EventChannel.StreamHandler {
+            override fun onListen(arguments: Any?, events: EventChannel.EventSink?) {
+                documentEvents = events
+            }
+
+            override fun onCancel(arguments: Any?) {
+                documentEvents = null
+            }
+        })
+
+        EventChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            DEEP_LINK_EVENTS_CHANNEL
+        ).setStreamHandler(object : EventChannel.StreamHandler {
+            override fun onListen(arguments: Any?, events: EventChannel.EventSink?) {
+                deepLinkEvents = events
+                pendingDeepLinks.forEach { events?.success(it) }
+                pendingDeepLinks.clear()
+            }
+
+            override fun onCancel(arguments: Any?) {
+                deepLinkEvents = null
+            }
+        })
+
+        MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            DOCUMENT_CHANNEL
+        ).setMethodCallHandler { call, result ->
+            when (call.method) {
+                "getPendingDocuments" -> result.success(readQueue())
+                "acknowledgeDocument" -> {
+                    val path = call.argument<String>("path")
+                    if (path.isNullOrBlank()) {
+                        result.error("BAD_ARGS", "path is required", null)
+                    } else {
+                        acknowledge(path)
+                        result.success(null)
+                    }
+                }
+                else -> result.notImplemented()
+            }
+        }
+
+        offlineTts = TextToSpeech(this) { status ->
+            offlineTtsReady = status == TextToSpeech.SUCCESS
+        }
+        MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            "epub_to_mp3/android_tts"
+        ).setMethodCallHandler { call, result ->
+            val tts = offlineTts
+            when (call.method) {
+                "isAvailable" -> result.success(offlineTtsReady && tts != null)
+                "listVoices" -> {
+                    if (!offlineTtsReady || tts == null) {
+                        result.success(emptyList<Map<String, String>>())
+                    } else {
+                        result.success(tts.voices.map { voice ->
+                            mapOf("name" to voice.name, "locale" to voice.locale.toLanguageTag())
+                        })
+                    }
+                }
+                "speak" -> {
+                    val text = call.argument<String>("text")
+                    val localeTag = call.argument<String>("locale")
+                    if (!offlineTtsReady || tts == null || text.isNullOrBlank() || localeTag.isNullOrBlank()) {
+                        result.success(false)
+                    } else {
+                        val locale = Locale.forLanguageTag(localeTag)
+                        val languageStatus = tts.setLanguage(locale)
+                        if (languageStatus == TextToSpeech.LANG_MISSING_DATA ||
+                            languageStatus == TextToSpeech.LANG_NOT_SUPPORTED) {
+                            result.success(false)
+                        } else {
+                            result.success(tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, "offline-fallback"))
+                        }
+                    }
+                }
+                "pause", "stop" -> {
+                    tts?.stop()
+                    result.success(null)
+                }
+                else -> result.notImplemented()
+            }
+        }
 
         // Chaquopy needs to be started exactly once per process.
         if (!Python.isStarted()) {
@@ -48,16 +167,10 @@ class MainActivity : FlutterActivity() {
                     "parseEpub" -> {
                         val path = call.argument<String>("path")
                         if (path.isNullOrBlank()) {
-                            result.error(
-                                "BAD_ARGS",
-                                "parseEpub requires a non-empty 'path' argument",
-                                null
-                            )
+                            result.error("BAD_ARGS", "parseEpub requires a non-empty 'path' argument", null)
                             return@setMethodCallHandler
                         }
-                        val json = entrypoints
-                            .callAttr("parse_epub_to_json", path)
-                            .toString()
+                        val json = entrypoints.callAttr("parse_epub_to_json", path).toString()
                         result.success(json)
                     }
                     "convertChapter" -> {
@@ -70,38 +183,146 @@ class MainActivity : FlutterActivity() {
                         }
                         Thread {
                             try {
-                                val res = entrypoints
-                                    .callAttr("convert_chapter", text, voice, outputPath)
-                                val jsonStr = py.getBuiltins()
-                                    .callAttr("str", res)
-                                    .toString()
+                                val res = entrypoints.callAttr("convert_chapter", text, voice, outputPath)
+                                val jsonStr = py.getBuiltins().callAttr("str", res).toString()
                                     .replace("'", "\"")
                                     .replace("True", "true")
                                     .replace("False", "false")
                                 mainHandler.post { result.success(jsonStr) }
                             } catch (e: Throwable) {
-                                mainHandler.post {
-                                    result.error("PYTHON_ERROR", e.message, null)
-                                }
+                                mainHandler.post { result.error("PYTHON_ERROR", e.message, null) }
                             }
                         }.start()
                     }
                     "detectLanguage" -> {
                         val text = call.argument<String>("text") ?: ""
-                        val lang = entrypoints
-                            .callAttr("detect_language", text)
-                            .toString()
-                        result.success(lang)
+                        result.success(entrypoints.callAttr("detect_language", text).toString())
                     }
                     else -> result.notImplemented()
                 }
             } catch (e: Throwable) {
-                result.error(
-                    "PYTHON_ERROR",
-                    e.message ?: e.javaClass.simpleName,
-                    e.stackTraceToString()
-                )
+                result.error("PYTHON_ERROR", e.message ?: e.javaClass.simpleName, e.stackTraceToString())
             }
         }
+    }
+
+    override fun onDestroy() {
+        offlineTts?.stop()
+        offlineTts?.shutdown()
+        offlineTts = null
+        super.onDestroy()
+    }
+
+    private fun handleIncomingIntent(incoming: Intent?) {
+        if (incoming == null) return
+        val uri = when (incoming.action) {
+            Intent.ACTION_VIEW -> incoming.data
+            Intent.ACTION_SEND -> incoming.getParcelableExtra<Uri>(Intent.EXTRA_STREAM)
+                ?: incoming.clipData?.getItemAt(0)?.uri
+            else -> null
+        } ?: return
+
+        if (uri.scheme.equals("epubtomp3", ignoreCase = true)) {
+            forwardDeepLink(uri)
+            return
+        }
+
+        val document = copyIntoPrivateStorage(uri, incoming.type) ?: return
+        val path = document.first
+        val displayName = document.second
+        val queue = readQueueObjects()
+        if ((0 until queue.length()).none { queue.optJSONObject(it)?.optString("path") == path }) {
+            queue.put(JSONObject().apply {
+                put("path", path)
+                put("displayName", displayName)
+                put("source", uri.toString())
+            })
+            writeQueue(queue)
+        }
+        documentEvents?.success(mapOf("path" to path, "displayName" to displayName))
+    }
+
+    private fun forwardDeepLink(uri: Uri) {
+        val value = uri.toString()
+        val sink = deepLinkEvents
+        if (sink != null) {
+            sink.success(value)
+        } else {
+            pendingDeepLinks.add(value)
+        }
+    }
+
+    private fun copyIntoPrivateStorage(uri: Uri, mimeType: String?): Pair<String, String>? {
+        val sourceName = queryDisplayName(uri)
+            ?: uri.lastPathSegment?.substringAfterLast('/')
+            ?: "shared_document"
+        val lowerName = sourceName.lowercase(Locale.US)
+        val extension = when {
+            lowerName.endsWith(".pdf") -> ".pdf"
+            lowerName.endsWith(".epub") -> ".epub"
+            mimeType == "application/pdf" -> ".pdf"
+            mimeType == "application/epub+zip" -> ".epub"
+            else -> return null
+        }
+        val safeBase = sourceName.substringBeforeLast('.', sourceName)
+            .replace(Regex("[^A-Za-z0-9._-]"), "_")
+            .trim('_')
+            .ifEmpty { "shared_document" }
+        val sourceKey = Integer.toHexString(uri.toString().hashCode())
+        val displayName = if (lowerName.endsWith(extension)) sourceName else "$safeBase$extension"
+        val target = File(File(filesDir, DOCUMENT_DIR), "${safeBase}_$sourceKey$extension")
+        target.parentFile?.mkdirs()
+        return try {
+            if (uri.scheme == "file") {
+                File(uri.path ?: return null).inputStream().use { input ->
+                    target.outputStream().use { output -> input.copyTo(output) }
+                }
+            } else {
+                contentResolver.openInputStream(uri)?.use { input ->
+                    target.outputStream().use { output -> input.copyTo(output) }
+                } ?: return null
+            }
+            target.absolutePath to displayName
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    private fun queryDisplayName(uri: Uri): String? {
+        if (uri.scheme == "file") return File(uri.path ?: return null).name
+        val cursor: Cursor = contentResolver.query(
+            uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null
+        ) ?: return null
+        return cursor.use { if (it.moveToFirst()) it.getString(0) else null }
+    }
+
+    private fun readQueueObjects(): JSONArray = try {
+        JSONArray(getPreferences(MODE_PRIVATE).getString(DOCUMENT_QUEUE, "[]"))
+    } catch (_: Exception) {
+        JSONArray()
+    }
+
+    private fun readQueue(): List<Map<String, String>> {
+        val result = mutableListOf<Map<String, String>>()
+        val queue = readQueueObjects()
+        for (i in 0 until queue.length()) {
+            val item = queue.optJSONObject(i) ?: continue
+            result.add(mapOf("path" to item.optString("path"), "displayName" to item.optString("displayName")))
+        }
+        return result
+    }
+
+    private fun writeQueue(queue: JSONArray) {
+        getPreferences(MODE_PRIVATE).edit().putString(DOCUMENT_QUEUE, queue.toString()).apply()
+    }
+
+    private fun acknowledge(path: String) {
+        val old = readQueueObjects()
+        val next = JSONArray()
+        for (i in 0 until old.length()) {
+            val item = old.optJSONObject(i) ?: continue
+            if (item.optString("path") != path) next.put(item)
+        }
+        writeQueue(next)
     }
 }

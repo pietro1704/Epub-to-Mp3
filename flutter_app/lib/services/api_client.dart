@@ -61,7 +61,16 @@ class ApiClient {
   /// Upload an EPUB file and start conversion. Returns the job ID.
   ///
   /// Two-step: POST multipart `/api/uploads` then POST form `/api/convert`.
-  Future<String> uploadAndConvert(String filePath) async {
+  Future<String> uploadAndConvert(
+    String filePath, {
+    String engine = 'edge',
+    String? voice,
+    String? language,
+    int? chapterStart,
+    int? chapterEnd,
+    bool? includeCover,
+    bool? normalizeAudio,
+  }) async {
     final fileName = filePath.split('/').last;
     final uploadForm = FormData.fromMap({
       'file': await MultipartFile.fromFile(filePath, filename: fileName),
@@ -72,10 +81,19 @@ class ApiClient {
     );
     final uploadId = uploadResp.data?['uploadId'] as String;
 
-    final convertForm = FormData.fromMap({
+    final convertFields = <String, dynamic>{
       'upload_id': uploadId,
-      'engine': 'edge',
-    });
+      'engine': engine,
+    };
+    if (voice != null) convertFields['voice'] = voice;
+    if (language != null) convertFields['language'] = language;
+    if (chapterStart != null) convertFields['chapter_start'] = chapterStart;
+    if (chapterEnd != null) convertFields['chapter_end'] = chapterEnd;
+    if (includeCover != null) convertFields['include_cover'] = includeCover;
+    if (normalizeAudio != null) {
+      convertFields['normalize_audio'] = normalizeAudio;
+    }
+    final convertForm = FormData.fromMap(convertFields);
     final convertResp = await _dio.post<Map<String, dynamic>>(
       '/api/convert',
       data: convertForm,

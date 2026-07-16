@@ -70,6 +70,7 @@ chaquopy {
         pip {
             install("edge-tts")
             install("aiohttp")
+            install("pypdf")
         }
     }
     sourceSets {

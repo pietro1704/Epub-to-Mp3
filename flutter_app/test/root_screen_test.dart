@@ -24,17 +24,19 @@ Widget _wrap(SharedPreferences prefs) {
 
 void main() {
   group('RootScreen', () {
-    testWidgets('has 3 navigation destinations', (t) async {
+    testWidgets('has Reader, Library, Convert, Jobs, and Settings destinations', (t) async {
       final prefs = await _mockPrefs();
       await t.pumpWidget(_wrap(prefs));
       await t.pumpAndSettle();
 
-      expect(find.byType(NavigationDestination), findsNWidgets(3));
+      expect(find.byType(NavigationDestination), findsNWidgets(5));
       // "Reader" appears both in the nav bar label and the AppBar title,
       // so we check at least one. Same for "Library" vs library tab content.
       expect(find.text('Reader'), findsWidgets);
       expect(find.text('Library'), findsWidgets);
       expect(find.text('Settings'), findsWidgets);
+      expect(find.text('Convert'), findsWidgets);
+      expect(find.text('Jobs'), findsWidgets);
     });
 
     testWidgets('reader tab is shown by default (index 0)', (t) async {

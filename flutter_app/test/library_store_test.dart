@@ -25,6 +25,17 @@ void main() {
     expect(h, await LibraryStore.contentHash(f.path));
   });
 
+  test('importBook preserves an incoming display filename', () async {
+    final prefs = await SharedPreferences.getInstance();
+    final store = LibraryStore(prefs: prefs);
+    final f = await _tempEpub('copied_123.epub', [1, 2, 3, 4, 5]);
+    final book = await store.importBook(
+      f.path,
+      displayFilename: 'Original Book.epub',
+    );
+    expect(book.displayFilename, 'Original Book.epub');
+  });
+
   test('importBook dedupes by hash', () async {
     final prefs = await SharedPreferences.getInstance();
     final store = LibraryStore(prefs: prefs);
