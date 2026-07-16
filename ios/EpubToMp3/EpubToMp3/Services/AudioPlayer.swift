@@ -295,6 +295,8 @@ final class AudioPlayer: ObservableObject {
     /// hitting the system's info center on every 250ms tick.
     private var lastNowPlayingUpdate: Date = .distantPast
     private var audioSessionConfigured = false
+    private var audioSessionObserverTokens: [NSObjectProtocol] = []
+    private var wasPlayingBeforeInterruption = false
     /// Last (bookId, chapterName, isPlaying) tuple pushed to the widget via
     /// the RELOADING `WidgetDataSync.updateNowPlaying`. `syncWidgetNowPlaying()`
     /// runs on every ~1Hz Now Playing refresh during playback, but
@@ -341,6 +343,44 @@ final class AudioPlayer: ObservableObject {
 
     private var remoteCommandsConfigured = false
 
+    enum InterruptionRecoveryAction: Equatable {
+        case pause
+        case resume
+        case none
+    }
+
+    enum RouteChangeReason: Int, Equatable {
+        case unknown = 0
+        case newDeviceAvailable = 1
+        case oldDeviceUnavailable = 2
+        case categoryChange = 3
+    }
+
+    nonisolated static func interruptionRecoveryAction(
+        interruptionBegan: Bool,
+        shouldResume: Bool,
+        wasPlaying: Bool
+    ) -> InterruptionRecoveryAction {
+        if interruptionBegan { return wasPlaying ? .pause : .none }
+        return shouldResume && wasPlaying ? .resume : .none
+    }
+
+    nonisolated static func shouldPauseForRouteChange(reason: RouteChangeReason) -> Bool {
+        reason == .oldDeviceUnavailable
+    }
+
+    nonisolated static func shouldRecoverFromMediaServicesReset(wasPlaying: Bool) -> Bool {
+        wasPlaying
+    }
+
+    nonisolated static func audioSessionConfigurationStateAfterAttempt(succeeded: Bool) -> Bool {
+        succeeded
+    }
+
+    nonisolated static func reconciledIsPlaying(queueRate: Float, currentIsPlaying: Bool) -> Bool {
+        queueRate > 0
+    }
+
     // MARK: Speech fallback (slice 2)
 
     /// Accessibility-grade speech fallback. Used only when MP3 audio is
@@ -382,6 +422,9 @@ final class AudioPlayer: ObservableObject {
         if let token = timeObserverToken { player?.removeTimeObserver(token) }
         if let endObserver { NotificationCenter.default.removeObserver(endObserver) }
         currentItemObserver?.invalidate()
+        for token in audioSessionObserverTokens {
+            NotificationCenter.default.removeObserver(token)
+        }
         // Drain AsyncStream continuations so any subscriber that holds
         // an unbroken `for await pos in player.position` loop exits
         // cleanly. Without this, a subscriber Task could hang forever
@@ -416,7 +459,6 @@ final class AudioPlayer: ObservableObject {
 
     private func ensureAudioSession() {
         guard !audioSessionConfigured else { return }
-        audioSessionConfigured = true
         #if os(iOS)
         let session = AVAudioSession.sharedInstance()
         do {
@@ -425,20 +467,99 @@ final class AudioPlayer: ObservableObject {
                 policy: .longFormAudio,
                 options: [.allowBluetoothA2DP, .allowAirPlay]
             )
-            // Pause when headphones are unplugged / route is disconnected
-            // (e.g. AirPods removed) — prevents unexpected speaker bleed.
             if #available(iOS 17.0, *) {
                 try session.setPrefersInterruptionOnRouteDisconnect(true)
             }
             try session.setActive(true, options: [])
+            audioSessionConfigured = true
+            installAudioSessionObservers()
         } catch {
             do {
                 try session.setCategory(.playback)
                 try session.setActive(true)
-            } catch {}
+                audioSessionConfigured = true
+                installAudioSessionObservers()
+            } catch {
+                audioSessionConfigured = false
+            }
         }
         #endif
     }
+
+    private func installAudioSessionObservers() {
+        #if os(iOS)
+        guard audioSessionObserverTokens.isEmpty else { return }
+        let center = NotificationCenter.default
+        audioSessionObserverTokens.append(center.addObserver(
+            forName: AVAudioSession.interruptionNotification,
+            object: AVAudioSession.sharedInstance(),
+            queue: .main
+        ) { [weak self] note in
+            Task { @MainActor [weak self] in self?.handleInterruption(note) }
+        })
+        audioSessionObserverTokens.append(center.addObserver(
+            forName: AVAudioSession.routeChangeNotification,
+            object: AVAudioSession.sharedInstance(),
+            queue: .main
+        ) { [weak self] note in
+            Task { @MainActor [weak self] in self?.handleRouteChange(note) }
+        })
+        audioSessionObserverTokens.append(center.addObserver(
+            forName: AVAudioSession.mediaServicesWereResetNotification,
+            object: AVAudioSession.sharedInstance(),
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in self?.handleMediaServicesReset() }
+        })
+        #endif
+    }
+
+    #if os(iOS)
+    private func handleInterruption(_ note: Notification) {
+        guard let raw = (note.userInfo?[AVAudioSessionInterruptionTypeKey] as? NSNumber)?.uintValue,
+              let type = AVAudioSession.InterruptionType(rawValue: raw) else { return }
+        switch type {
+        case .began:
+            wasPlayingBeforeInterruption = isPlaying
+            if isPlaying { player?.pause(); isPlaying = false }
+        case .ended:
+            let rawOptions = (note.userInfo?[AVAudioSessionInterruptionOptionKey] as? NSNumber)?.uintValue ?? 0
+            let shouldResume = AVAudioSession.InterruptionOptions(rawValue: rawOptions).contains(.shouldResume)
+            guard shouldResume, wasPlayingBeforeInterruption else { return }
+            ensureAudioSession()
+            player?.rate = rate.rawValue
+            isPlaying = player?.rate ?? 0 > 0
+            updateNowPlayingInfo()
+            wasPlayingBeforeInterruption = false
+        @unknown default:
+            break
+        }
+    }
+
+    private func handleRouteChange(_ note: Notification) {
+        guard let raw = (note.userInfo?[AVAudioSessionRouteChangeReasonKey] as? NSNumber)?.intValue,
+              let reason = RouteChangeReason(rawValue: raw) else { return }
+        if Self.shouldPauseForRouteChange(reason: reason), isPlaying {
+            player?.pause()
+            isPlaying = false
+            updateNowPlayingInfo()
+        }
+    }
+
+    private func handleMediaServicesReset() {
+        let shouldResume = isPlaying || wasPlayingBeforeInterruption
+        audioSessionConfigured = false
+        for token in audioSessionObserverTokens {
+            NotificationCenter.default.removeObserver(token)
+        }
+        audioSessionObserverTokens.removeAll()
+        guard shouldResume else { return }
+        ensureAudioSession()
+        player?.rate = rate.rawValue
+        isPlaying = player?.rate ?? 0 > 0
+        updateNowPlayingInfo()
+    }
+    #endif
 
     // MARK: Public API
 

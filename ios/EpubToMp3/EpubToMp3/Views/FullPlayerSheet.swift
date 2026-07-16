@@ -398,6 +398,9 @@ struct FullPlayerSheet: View {
 
     private var scrubberBlock: some View {
         VStack(spacing: 6) {
+            if let snapshot = player.snapshot, snapshot.chapterProgress?.isEmpty == false {
+                segmentedBookProgress(BookChapterProgress(snapshot: snapshot))
+            }
             // The scrubber decouples its visible thumb from the
             // player while the user is dragging — `scrubberDragValue`
             // owns the local preview, and the seek only fires when
@@ -440,6 +443,40 @@ struct FullPlayerSheet: View {
             .font(.caption.monospacedDigit())
             .foregroundStyle(.secondary)
             .accessibilityHidden(true)
+        }
+    }
+
+    private func segmentedBookProgress(_ model: BookChapterProgress) -> some View {
+        GeometryReader { geometry in
+            let totalWeight = max(1, model.chapters.reduce(0) { $0 + $1.weight })
+            HStack(spacing: 1) {
+                ForEach(model.chapters) { chapter in
+                    Capsule()
+                        .fill(segmentColor(for: chapter))
+                        .overlay {
+                            if chapter.playableIndex == player.currentChapterIndex {
+                                Capsule().stroke(.primary, lineWidth: 1)
+                            }
+                        }
+                        .frame(width: max(2, geometry.size.width * chapter.weight / totalWeight))
+                        .accessibilityLabel(chapter.title)
+                        .accessibilityValue("\(Int(chapter.ratio * 100)) percent")
+                }
+            }
+            .accessibilityElement(children: .contain)
+            .accessibilityLabel("Book progress")
+            .accessibilityValue("\(Int(model.overallRatio * 100)) percent")
+        }
+        .frame(height: 6)
+        .accessibilityIdentifier("fullPlayer.bookProgress")
+    }
+
+    private func segmentColor(for chapter: BookChapterProgress.Chapter) -> Color {
+        switch chapter.state {
+        case .completed: return .accentColor
+        case .running: return .orange
+        case .failed: return .red
+        case .queued: return .secondary.opacity(0.25)
         }
     }
 

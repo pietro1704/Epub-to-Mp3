@@ -64,52 +64,65 @@ struct MiniPlayerBar: View {
         return "Chapter \(idx + 1)"
     }
 
+    private var bookProgress: BookChapterProgress? {
+        guard let snapshot = player.snapshot, snapshot.chapterProgress?.isEmpty == false else { return nil }
+        return BookChapterProgress(snapshot: snapshot)
+    }
+
+    private func segmentedBookProgress(_ model: BookChapterProgress) -> some View {
+        GeometryReader { geometry in
+            chapterProgressStack(model: model, width: geometry.size.width)
+        }
+        .frame(height: 4)
+        .accessibilityIdentifier("miniPlayer.bookProgress")
+    }
+
+    private func chapterProgressStack(model: BookChapterProgress, width: CGFloat) -> some View {
+        HStack(spacing: 1) {
+            ForEach(model.chapters) { chapter in
+                Capsule()
+                    .fill(segmentColor(for: chapter))
+                    .frame(width: chapterWidth(chapter, totalWidth: width, totalWeight: model.totalWeight))
+                    .accessibilityLabel(chapter.title)
+                    .accessibilityValue("\(Int(chapter.ratio * 100)) percent")
+            }
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Book progress")
+        .accessibilityValue("\(Int(model.overallRatio * 100)) percent")
+    }
+
+    private func chapterWidth(
+        _ chapter: BookChapterProgress.Chapter,
+        totalWidth: CGFloat,
+        totalWeight: Double
+    ) -> CGFloat {
+        max(2, totalWidth * chapter.weight / max(1, totalWeight))
+    }
+
+    private func segmentColor(for chapter: BookChapterProgress.Chapter) -> Color {
+        switch chapter.state {
+        case .completed: return .accentColor
+        case .running: return .orange
+        case .failed: return .red
+        case .queued: return .secondary.opacity(0.25)
+        }
+    }
+
     // MARK: Body
 
     var body: some View {
         if let book = currentBook {
             VStack(spacing: 0) {
-                // 2pt progress bar at top.
-                // During conversion: shows TTS progress (orange tint).
-                // During playback: shows chapter playback position.
-                GeometryReader { geo in
-                    let barProgress: Double = {
-                        if player.isConverting, let cp = player.conversionProgress {
-                            return cp
-                        }
-                        return progress
-                    }()
-                    let barColor: Color = player.isConverting ? .orange : .accentColor
+                if let bookProgress {
+                    segmentedBookProgress(bookProgress)
+                } else {
                     Rectangle()
-                        .fill(barColor)
-                        .frame(width: max(0, geo.size.width * barProgress), height: 2)
-                        .animation(.linear(duration: 0.3), value: barProgress)
-                        // Add a striped overlay during conversion when
-                        // Differentiate Without Color is on, so users
-                        // with desaturated UI can still tell the
-                        // orange-converting state apart from the
-                        // accent-playback state.
-                        .overlay(alignment: .leading) {
-                            if player.isConverting && differentiateWithoutColor {
-                                Rectangle()
-                                    .fill(.foreground)
-                                    .frame(width: max(0, geo.size.width * barProgress), height: 2)
-                                    .mask {
-                                        LinearGradient(
-                                            stops: [
-                                                .init(color: .clear, location: 0.0),
-                                                .init(color: .black, location: 0.5),
-                                                .init(color: .clear, location: 1.0),
-                                            ],
-                                            startPoint: .leading,
-                                            endPoint: .trailing
-                                        )
-                                    }
-                                    .opacity(0.4)
-                            }
-                        }
+                        .fill(player.isConverting ? .orange : .accentColor)
+                        .frame(height: 2)
+                        .scaleEffect(x: player.isConverting ? (player.conversionProgress ?? 0) : progress, y: 1, anchor: .leading)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                .frame(height: 2)
 
                 HStack(spacing: 12) {
                     // The cover + title area is the *only* surface that
