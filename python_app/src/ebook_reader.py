@@ -2855,7 +2855,7 @@ class EpubParser:
                 path = href
             else:
                 path = f"{base_dir.rstrip('/')}/{href}"
-        return unquote(path)
+        return posixpath.normpath(unquote(path))
 
     @staticmethod
     def _is_html_like(href: str) -> bool:
@@ -3076,7 +3076,7 @@ class EbookReader:
         source_path = (chapter.source_path or "").split("#", 1)[0].strip()
         if not raw_html or not source_path:
             return []
-        refs = re.findall(r"<img\\b[^>]*\\bsrc\\s*=\\s*['\"]([^'\"]+)['\"]", raw_html, re.I)
+        refs = re.findall(r"<img\b[^>]*\bsrc\s*=\s*['\"]([^'\"]+)['\"]", raw_html, re.I)
         if not refs:
             return []
         try:

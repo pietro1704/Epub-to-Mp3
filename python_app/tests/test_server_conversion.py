@@ -432,6 +432,7 @@ def test_job_fulltext_prefers_cached_chapters(tmp_path, monkeypatch):
             "text": "Cached text body.",
             "html": "<p class='chapter'>Cached text body.</p>",
             "css": ".chapter { font-style: italic; }",
+            "resources": [],
             "charCount": len("Cached text body."),
         }
     ]

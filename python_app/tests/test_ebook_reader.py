@@ -1149,7 +1149,7 @@ class TestParseEpubToDict(unittest.TestCase):
         with zipfile.ZipFile(path, "w") as archive:
             archive.writestr(
                 "META-INF/container.xml",
-                '<container><rootfiles><rootfile full-path="OEBPS/content.opf"/></rootfiles></container>',
+                '<container xmlns="urn:oasis:names:tc:opendocument:xmlns:container"><rootfiles><rootfile full-path="OEBPS/content.opf"/></rootfiles></container>',
             )
             archive.writestr(
                 "OEBPS/content.opf",
