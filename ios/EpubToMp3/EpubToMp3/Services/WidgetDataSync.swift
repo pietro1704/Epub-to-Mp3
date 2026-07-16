@@ -22,8 +22,14 @@ enum WidgetDataSync {
     private enum Keys {
         static let nowPlayingBookId = "currentlyPlayingBookId"
         static let nowPlayingChapterName = "widget.nowPlayingChapterName"
+        static let nowPlayingAuthor = "widget.nowPlayingAuthor"
         static let nowPlayingProgress = "widget.nowPlayingProgress"
         static let nowPlayingIsPlaying = "widget.nowPlayingIsPlaying"
+        static let nowPlayingPositionSeconds = "widget.nowPlayingPositionSeconds"
+        static let nowPlayingDurationSeconds = "widget.nowPlayingDurationSeconds"
+        static let nowPlayingChapterRemainingSeconds = "widget.nowPlayingChapterRemainingSeconds"
+        static let nowPlayingBookRemainingSeconds = "widget.nowPlayingBookRemainingSeconds"
+        static let nowPlayingTotalChapters = "widget.nowPlayingTotalChapters"
         static let lastReadBookId = "widget.lastReadBookId"
         static let lastReadChapterIndex = "widget.lastReadChapterIndex"
         static let lastReadTotalChapters = "widget.lastReadTotalChapters"
@@ -47,21 +53,39 @@ enum WidgetDataSync {
     static func updateNowPlaying(
         bookId: String?,
         chapterName: String? = nil,
+        author: String? = nil,
         progress: Double = 0,
-        isPlaying: Bool = false
+        isPlaying: Bool = false,
+        positionSeconds: Double = 0,
+        durationSeconds: Double = 0,
+        chapterRemainingSeconds: Double = 0,
+        bookRemainingSeconds: Double = 0,
+        totalChapters: Int? = nil
     ) {
         guard let defaults = UserDefaults(suiteName: appGroupID) else { return }
 
         if let bookId, !bookId.isEmpty {
             defaults.set(bookId, forKey: Keys.nowPlayingBookId)
             defaults.set(chapterName, forKey: Keys.nowPlayingChapterName)
+            defaults.set(author, forKey: Keys.nowPlayingAuthor)
             defaults.set(progress, forKey: Keys.nowPlayingProgress)
             defaults.set(isPlaying, forKey: Keys.nowPlayingIsPlaying)
+            defaults.set(positionSeconds, forKey: Keys.nowPlayingPositionSeconds)
+            defaults.set(durationSeconds, forKey: Keys.nowPlayingDurationSeconds)
+            defaults.set(chapterRemainingSeconds, forKey: Keys.nowPlayingChapterRemainingSeconds)
+            defaults.set(bookRemainingSeconds, forKey: Keys.nowPlayingBookRemainingSeconds)
+            if let totalChapters { defaults.set(totalChapters, forKey: Keys.nowPlayingTotalChapters) }
         } else {
             defaults.removeObject(forKey: Keys.nowPlayingBookId)
             defaults.removeObject(forKey: Keys.nowPlayingChapterName)
+            defaults.removeObject(forKey: Keys.nowPlayingAuthor)
             defaults.removeObject(forKey: Keys.nowPlayingProgress)
             defaults.removeObject(forKey: Keys.nowPlayingIsPlaying)
+            defaults.removeObject(forKey: Keys.nowPlayingPositionSeconds)
+            defaults.removeObject(forKey: Keys.nowPlayingDurationSeconds)
+            defaults.removeObject(forKey: Keys.nowPlayingChapterRemainingSeconds)
+            defaults.removeObject(forKey: Keys.nowPlayingBookRemainingSeconds)
+            defaults.removeObject(forKey: Keys.nowPlayingTotalChapters)
         }
 
         reloadNowPlayingWidgets()
@@ -83,6 +107,21 @@ enum WidgetDataSync {
         // Skip reload for progress-only updates — the widget refreshes
         // on its own timeline. Avoids excessive reload calls during
         // playback.
+    }
+
+    static func updateNowPlayingTiming(
+        positionSeconds: Double,
+        durationSeconds: Double,
+        chapterRemainingSeconds: Double,
+        bookRemainingSeconds: Double,
+        totalChapters: Int?
+    ) {
+        guard let defaults = UserDefaults(suiteName: appGroupID) else { return }
+        defaults.set(positionSeconds, forKey: Keys.nowPlayingPositionSeconds)
+        defaults.set(durationSeconds, forKey: Keys.nowPlayingDurationSeconds)
+        defaults.set(chapterRemainingSeconds, forKey: Keys.nowPlayingChapterRemainingSeconds)
+        defaults.set(bookRemainingSeconds, forKey: Keys.nowPlayingBookRemainingSeconds)
+        if let totalChapters { defaults.set(totalChapters, forKey: Keys.nowPlayingTotalChapters) }
     }
 
     // MARK: - Continue Reading

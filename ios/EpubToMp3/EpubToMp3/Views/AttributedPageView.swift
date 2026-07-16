@@ -245,7 +245,7 @@ private struct _AttributedPageRep: UIViewRepresentable {
         let tv = FixedWidthTextView(frame: CGRect(origin: .zero, size: size))
         tv.isEditable = false
         tv.isScrollEnabled = scrollable
-        tv.isSelectable = false
+        tv.isSelectable = true
         tv.backgroundColor = .clear
         tv.textContainerInset = .zero
         tv.textContainer.lineFragmentPadding = 0
@@ -345,7 +345,7 @@ private struct _AttributedPageRep: NSViewRepresentable {
         let scroll = NSTextView.scrollableTextView()
         guard let tv = scroll.documentView as? NSTextView else { return scroll }
         tv.isEditable = false
-        tv.isSelectable = false
+        tv.isSelectable = true
         tv.drawsBackground = false
         tv.textContainer?.lineFragmentPadding = 0
         scroll.hasVerticalScroller = false

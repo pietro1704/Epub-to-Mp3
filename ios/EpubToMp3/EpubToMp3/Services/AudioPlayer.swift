@@ -792,6 +792,9 @@ final class AudioPlayer: ObservableObject {
         }
         guard let player else {
             pendingAutoPlay = true
+            if let snapshot, !snapshot.playableChapters.isEmpty {
+                play(snapshot: snapshot, startingAt: currentChapterIndex)
+            }
             return
         }
         // Activate the audio session lazily, only when the user actually
@@ -1880,7 +1883,20 @@ final class AudioPlayer: ObservableObject {
         guard let bookId = UserDefaults.standard.string(forKey: Self.currentBookIDDefaultsKey),
               !bookId.isEmpty else { return }
         let progress = durationSeconds > 0 ? positionSeconds / durationSeconds : 0
+        let chapters = snapshot?.playableChapters ?? []
+        let currentIndex = max(0, min(currentChapterIndex, max(chapters.count - 1, 0)))
         let chapterName = currentChapterValue?.displayTitle
+            ?? (chapters.indices.contains(currentIndex) ? chapters[currentIndex].displayTitle : nil)
+        let totalChapters = chapters.isEmpty ? nil : chapters.count
+        let chapterRemaining = max(0, durationSeconds - positionSeconds)
+        let followingRemaining = chapters.dropFirst(min(currentIndex + 1, chapters.count))
+            .compactMap(\.durationSeconds)
+            .filter { $0.isFinite && $0 > 0 }
+            .reduce(0, +)
+        let bookRemaining = chapterRemaining + followingRemaining
+        let timing = (position: positionSeconds, duration: durationSeconds,
+                      chapterRemaining: chapterRemaining, bookRemaining: bookRemaining,
+                      totalChapters: totalChapters)
         let state = (bookId: bookId, chapterName: chapterName, isPlaying: isPlaying)
 
         // Only pay for a `WidgetCenter.reloadTimelines` IPC round-trip when
@@ -1889,14 +1905,27 @@ final class AudioPlayer: ObservableObject {
         // writes the new value without asking widgetkitd to rebuild.
         guard Self.widgetSyncNeedsReload(last: lastSyncedWidgetState, current: state) else {
             WidgetDataSync.updateNowPlayingProgress(progress)
+            WidgetDataSync.updateNowPlayingTiming(
+                positionSeconds: timing.position,
+                durationSeconds: timing.duration,
+                chapterRemainingSeconds: timing.chapterRemaining,
+                bookRemainingSeconds: timing.bookRemaining,
+                totalChapters: timing.totalChapters
+            )
             return
         }
         lastSyncedWidgetState = state
         WidgetDataSync.updateNowPlaying(
             bookId: bookId,
             chapterName: chapterName,
+            author: snapshot?.bookAuthor,
             progress: progress,
-            isPlaying: isPlaying
+            isPlaying: isPlaying,
+            positionSeconds: timing.position,
+            durationSeconds: timing.duration,
+            chapterRemainingSeconds: timing.chapterRemaining,
+            bookRemainingSeconds: timing.bookRemaining,
+            totalChapters: timing.totalChapters
         )
     }
 

@@ -108,10 +108,9 @@ struct TextKitPageView: UIViewControllerRepresentable {
         context.coordinator.committedChapterToken = pages.isEmpty ? nil : chapterToken
         FlickerProbe.shared.log("makeUIViewController chapterToken=\(chapterToken) pages.count=\(pages.count) currentPage=\(currentPage == Int.max ? "MAX" : String(currentPage)) clampedPage=\(clampedPage) committedToken=\(context.coordinator.committedChapterToken ?? "nil")")
 
-        // Tap recognizer on the PVC view so it fires regardless of the
-        // hosted UITextView. Drives page turns directly via
-        // setViewControllers — never writes `currentPage` before the
-        // animation completes, avoiding the binding-write race.
+        // The PVC owns the only page tap recognizer. Keeping tap ownership at
+        // this level avoids a second delivery from the hosted UITextView,
+        // which would toggle reader chrome twice for one physical tap.
         let tap = UITapGestureRecognizer(
             target: context.coordinator,
             action: #selector(Coordinator.handleTap(_:))
@@ -429,12 +428,9 @@ struct TextKitPageView: UIViewControllerRepresentable {
         }
 
         private func handlePageZoneTap(_ zone: ReaderTapZone) {
-            guard let pvc = pageViewController else { return }
-            switch zone {
-            case .left: navigate(.reverse, in: pvc)
-            case .center: parent.onCenterTap?()
-            case .right: navigate(.forward, in: pvc)
-            }
+            // Simple taps are chrome-only. Page curl navigation is driven by
+            // horizontal swipes or explicit controls.
+            parent.onCenterTap?()
         }
 
         // MARK: Tap-to-turn
@@ -517,16 +513,13 @@ struct TextKitPageView: UIViewControllerRepresentable {
 
         @objc func handleTap(_ gesture: UITapGestureRecognizer) {
             guard let pvc = gesture.view?.parentViewController as? UIPageViewController else { return }
-            let location = gesture.location(in: gesture.view)
-            let width = gesture.view?.bounds.width ?? 1
-            let third = width / 3.0
-            if location.x < third {
-                navigate(.reverse, in: pvc)
-            } else if location.x > third * 2 {
-                navigate(.forward, in: pvc)
-            } else {
-                parent.onCenterTap?()
+            if let controller = pvc.viewControllers?.first as? TextKitPageController,
+               controller.containsLink(at: gesture.location(in: controller.view)) {
+                return
             }
+            // Simple taps are chrome-only. Page turns and chapter crossings
+            // remain owned by horizontal swipe navigation and explicit controls.
+            parent.onCenterTap?()
         }
 
         /// Tracks whether the current edge-pan gesture has already triggered a
@@ -705,7 +698,7 @@ final class TextKitPageController: UIViewController, UITextViewDelegate, UIGestu
         let tv = UITextView()
         tv.isEditable = false
         tv.isScrollEnabled = false
-        tv.isSelectable = false
+        tv.isSelectable = true
         tv.backgroundColor = .clear
         tv.textContainerInset = .zero
         tv.textContainer.lineFragmentPadding = 0
@@ -765,10 +758,8 @@ final class TextKitPageController: UIViewController, UITextViewDelegate, UIGestu
 
         // Long-press → resolve the pressed character to a `SentenceSpan` and
         // fire the same "Tocar daqui" flow scroll mode already has via
-        // per-sentence `.onTapGesture`. A simple TAP is reserved for page
-        // turn / chrome toggle (handled by the PVC-level tap recognizer in
-        // `TextKitPageView.Coordinator`, which sits on `pvc.view` — a
-        // DIFFERENT view than this text view — so it doesn't compete here).
+        // per-sentence `.onTapGesture`. Simple TAP is owned by the PVC-level
+        // recognizer in `TextKitPageView.Coordinator`.
         // `require(toFail:)` against the text view's own long-press-to-select
         // recognizer lets native text selection win when the user holds
         // longer / drags for a selection handle, while still letting our
@@ -782,11 +773,6 @@ final class TextKitPageController: UIViewController, UITextViewDelegate, UIGestu
             guard existing !== longPress, existing is UILongPressGestureRecognizer else { continue }
             longPress.require(toFail: existing)
         }
-        let tap = UITapGestureRecognizer(target: self, action: #selector(handlePageTap(_:)))
-        tap.name = "reader.page.tap"
-        tap.cancelsTouchesInView = false
-        tap.delegate = self
-        textView.addGestureRecognizer(tap)
     }
 
     /// `UIPageViewController`'s pageCurl style owns this view's frame via

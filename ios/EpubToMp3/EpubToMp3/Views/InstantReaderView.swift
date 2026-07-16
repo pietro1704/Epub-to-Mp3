@@ -1445,12 +1445,12 @@ struct ChromeVisibilityModifier: ViewModifier {
             content
                 .toolbar(.hidden, for: .navigationBar)
                 .statusBarHidden(false)
-                .toolbar(.hidden, for: .tabBar)
+                .toolbar(visible ? .visible : .hidden, for: .tabBar)
         } else {
             content
                 .navigationBarHidden(true)
                 .statusBarHidden(false)
-                .background(TabBarVisibilityController(visible: false))
+                .background(TabBarVisibilityController(visible: visible))
         }
         #else
         content

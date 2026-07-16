@@ -31,8 +31,8 @@ final class ReaderChromeAutoHideTests: XCTestCase {
 
         XCTAssertTrue(reader.contains("onZoneTap: onZoneTap ?? handleScrollZoneTap"),
                       "scroll taps must reach TextKit so links keep precedence")
-        XCTAssertTrue(reader.contains("case .left:\n            onPreviousChapter?()"),
-                      "a non-link left tap must retreat from the current chapter")
+        XCTAssertTrue(reader.contains("onCenterTap?()"),
+                      "a non-link scroll tap must toggle reader chrome")
         XCTAssertFalse(reader.contains("simultaneousGesture(\n                TapGesture().onEnded { onCenterTap?() }"),
                          "a SwiftUI overlay must not compete with UITextView's native scroll pan")
         XCTAssertTrue(attributed.contains("uiView.installReaderGestures(includeSwipe: !scrollable && onSwipe != nil)"),
@@ -273,17 +273,17 @@ final class ReaderChromeAutoHideTests: XCTestCase {
     }
 
 
-    func testReaderTapsAndDragsTurnPagesLikeBooksApps() throws {
+    func testReaderTapsToggleChromeAndDragsTurnPages() throws {
         let reader = try appSource(named: "Views/ReaderView.swift")
         let pageCurl = try appSource(named: "Views/TextKitPageView.swift")
         let instantReader = try instantReaderSource()
 
-        XCTAssertTrue(reader.contains("case .left:   retreatPage()"),
-                      "Left-zone taps must go to the previous page.")
-        XCTAssertTrue(reader.contains("case .center: onCenterTap?()"),
-                      "Center taps in paginated mode must toggle reader chrome instead of turning the page.")
-        XCTAssertTrue(reader.contains("case .right:  advancePage(totalPages: totalPages)"),
-                      "Right-zone taps must go to the next page.")
+        XCTAssertTrue(reader.contains("onCenterTap?()"),
+                      "All non-link taps must toggle reader chrome.")
+        XCTAssertFalse(reader.contains("case .left:   retreatPage()"),
+                       "Simple left taps must not turn pages.")
+        XCTAssertFalse(reader.contains("case .right:  advancePage(totalPages: totalPages)"),
+                       "Simple right taps must not turn pages.")
         // Page-curl swipes are owned by the native UIPageViewController; the
         // legacy SwiftUI DragGesture was removed so it can't race the UIKit
         // pan. Slide/none swipes flow through the single `onSwipe` path.
@@ -293,10 +293,14 @@ final class ReaderChromeAutoHideTests: XCTestCase {
                       "Slide/none horizontal swipes must still turn pages via the single onSwipe path.")
         XCTAssertFalse(reader.contains("case .center: advancePage(totalPages: totalPages)"),
                        "Center taps should not turn the page or cause a page-flick when dismissing chrome.")
-        XCTAssertFalse(reader.contains("if chromeVisible {\n            onCenterTap?()\n            return\n        }"),
-                       "Do not globally turn paginated taps into chrome toggles.")
-        XCTAssertTrue(pageCurl.contains("UITapGestureRecognizer("),
-                      "TextKitPageView must install its own tap recognizer on the PVC view in curl mode.")
+        XCTAssertTrue(reader.contains("Simple taps toggle chrome"),
+                      "The tap contract must remain explicit and documented.")
+        XCTAssertTrue(pageCurl.contains("pvc.view.addGestureRecognizer(tap)"),
+                      "page-curl must have a single tap owner on the PVC view")
+        XCTAssertFalse(pageCurl.contains("textView.addGestureRecognizer(tap)"),
+                       "page controller must not install a second tap recognizer on its UITextView")
+        XCTAssertTrue(pageCurl.contains("parent.onCenterTap?()"),
+                      "the single page-curl tap owner must reach the chrome callback")
         XCTAssertTrue(pageCurl.contains("func navigate("),
                       "Curl-mode left/right taps must drive the UIPageViewController directly instead of writing currentPage first.")
         XCTAssertTrue(pageCurl.contains("guard !isTransitioning"),

@@ -35,6 +35,15 @@ struct LibraryView: View {
     @State private var selectedTag: String?
     @State private var bookForTagEditor: BookEntity?
     @State private var searchQuery = ""
+    @State private var isSearchVisible = true
+    @State private var lastScrollOffset: CGFloat = 0
+
+    fileprivate struct ScrollOffsetPreferenceKey: PreferenceKey {
+        static var defaultValue: CGFloat = 0
+        static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+            value = nextValue()
+        }
+    }
 
     enum SortMode: String, CaseIterable, Identifiable {
         case lastOpened
@@ -111,7 +120,19 @@ struct LibraryView: View {
                     // Section rhythm: 24pt between hero sections
                     // (search → tags → grid).
                     VStack(spacing: 24) {
+                        GeometryReader { proxy in
+                            Color.clear.preference(
+                                key: ScrollOffsetPreferenceKey.self,
+                                value: proxy.frame(in: .named("libraryScroll")).minY
+                            )
+                        }
+                        .frame(height: 0)
                         LibrarySearchBar(query: $searchQuery)
+                            .opacity(isSearchVisible ? 1 : 0)
+                            .frame(height: isSearchVisible ? nil : 0)
+                            .clipped()
+                            .accessibilityValue(isSearchVisible ? "visible" : "hidden")
+                            .animation(.easeInOut(duration: 0.2), value: isSearchVisible)
                         tagFilterBar
                         LazyVGrid(columns: grid, spacing: 20) {
                             ForEach(sorted) { book in
@@ -142,6 +163,11 @@ struct LibraryView: View {
                     .padding(.top, 8)
                     .padding(.bottom, 20)
                 }
+                .coordinateSpace(name: "libraryScroll")
+                .modifier(LibraryScrollVisibilityModifier(
+                    isVisible: $isSearchVisible,
+                    lastOffset: $lastScrollOffset
+                ))
             }
         }
         .overlay(DropTargetOverlay(isActive: isDropTargeted))
@@ -441,6 +467,46 @@ struct BookTile: View {
 }
 
 /// `.navigationDestination(item:)` requires iOS 17 / macOS 14.
+struct LibrarySearchVisibilityReducer {
+    static func nextValue(isVisible: Bool, lastOffset: CGFloat, offset: CGFloat) -> Bool {
+        let delta = offset - lastOffset
+        if delta > 8 || (offset <= 4 && delta > 0) {
+            return true
+        } else if delta < -8 {
+            return false
+        }
+        return isVisible
+    }
+}
+
+private struct LibraryScrollVisibilityModifier: ViewModifier {
+    @Binding var isVisible: Bool
+    @Binding var lastOffset: CGFloat
+
+    func body(content: Content) -> some View {
+        if #available(iOS 18.0, macOS 15.0, *) {
+            content.onScrollGeometryChange(for: CGFloat.self) { geometry in
+                geometry.contentOffset.y
+            } action: { _, offset in
+                update(offset: offset)
+            }
+        } else {
+            content.onPreferenceChange(LibraryView.ScrollOffsetPreferenceKey.self) { offset in
+                update(offset: offset)
+            }
+        }
+    }
+
+    private func update(offset: CGFloat) {
+        isVisible = LibrarySearchVisibilityReducer.nextValue(
+            isVisible: isVisible,
+            lastOffset: lastOffset,
+            offset: offset
+        )
+        lastOffset = offset
+    }
+}
+
 /// Older OSes get a value-based `NavigationLink(isActive:)` rendered
 /// invisibly behind the grid — same UX (tap a tile, push detail).
 private extension View {

@@ -230,6 +230,7 @@ struct PlayerReaderView: View {
                 }
             }
             .modifier(ChromeVisibilityModifier(visible: chromeVisible))
+            .readerChromeVisible(chromeVisible)
             .navigationTitle(snapshot.bookTitle ?? L10n.string("player.audiobookFallback"))
             .compatInlineNavigationTitle()
             .toolbar {

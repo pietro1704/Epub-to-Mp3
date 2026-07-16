@@ -10,8 +10,12 @@ private let appGroupID = "group.com.pietrocode.epubtomp3"
 private let libraryKey = "library.books.v1"
 private let nowPlayingKey = "currentlyPlayingBookId"
 private let nowPlayingChapterNameKey = "widget.nowPlayingChapterName"
+private let nowPlayingAuthorKey = "widget.nowPlayingAuthor"
 private let nowPlayingProgressKey = "widget.nowPlayingProgress"
 private let nowPlayingIsPlayingKey = "widget.nowPlayingIsPlaying"
+private let nowPlayingChapterRemainingKey = "widget.nowPlayingChapterRemainingSeconds"
+private let nowPlayingBookRemainingKey = "widget.nowPlayingBookRemainingSeconds"
+private let nowPlayingTotalChaptersKey = "widget.nowPlayingTotalChapters"
 private let lastReadBookIdKey = "widget.lastReadBookId"
 private let lastReadChapterIndexKey = "widget.lastReadChapterIndex"
 private let lastReadTotalChaptersKey = "widget.lastReadTotalChapters"
@@ -55,6 +59,16 @@ private func loadBooks() -> [WidgetBook] {
 
 private func sharedDefaults() -> UserDefaults? {
     UserDefaults(suiteName: appGroupID)
+}
+
+private func formatWidgetTime(_ seconds: Double) -> String {
+    let total = max(0, Int(seconds.rounded()))
+    let h = total / 3600
+    let m = (total % 3600) / 60
+    let s = total % 60
+    if h > 0 { return m > 0 ? "\(h)h \(m)m" : "\(h)h" }
+    if m > 0 { return "\(m)m" }
+    return "\(s)s"
 }
 
 /// Re-encode a stored cover blob to a small thumbnail via ImageIO so
@@ -155,6 +169,9 @@ struct NowPlayingEntry: TimelineEntry {
     let isPlaying: Bool
     let coverData: Data?
     let bookId: String?
+    let chapterRemainingSeconds: Double
+    let bookRemainingSeconds: Double
+    let totalChapters: Int?
 
     static var placeholder: NowPlayingEntry {
         NowPlayingEntry(
@@ -166,7 +183,10 @@ struct NowPlayingEntry: TimelineEntry {
             progress: 0.35,
             isPlaying: true,
             coverData: nil,
-            bookId: nil
+            bookId: nil,
+            chapterRemainingSeconds: 42 * 60,
+            bookRemainingSeconds: 9 * 3600,
+            totalChapters: 18
         )
     }
 
@@ -180,7 +200,10 @@ struct NowPlayingEntry: TimelineEntry {
             progress: 0,
             isPlaying: false,
             coverData: nil,
-            bookId: nil
+            bookId: nil,
+            chapterRemainingSeconds: 0,
+            bookRemainingSeconds: 0,
+            totalChapters: nil
         )
     }
 }
@@ -208,6 +231,9 @@ struct NowPlayingProvider: TimelineProvider {
         let chapterName = defaults.string(forKey: nowPlayingChapterNameKey)
         let progress = defaults.double(forKey: nowPlayingProgressKey)
         let isPlaying = defaults.bool(forKey: nowPlayingIsPlayingKey)
+        let chapterRemaining = defaults.double(forKey: nowPlayingChapterRemainingKey)
+        let bookRemaining = defaults.double(forKey: nowPlayingBookRemainingKey)
+        let totalChapters = defaults.object(forKey: nowPlayingTotalChaptersKey) as? Int
         // Only THIS book's cover survives into the entry. `loadBooks()`
         // has already decoded the whole array, but keeping a single
         // reference lets the rest (and their cover blobs) be released
@@ -218,13 +244,16 @@ struct NowPlayingProvider: TimelineProvider {
         return NowPlayingEntry(
             date: Date(),
             title: book.title,
-            author: book.author,
+            author: defaults.string(forKey: nowPlayingAuthorKey) ?? book.author,
             chapterName: chapterName,
             chapterIndex: book.lastChapterIndex,
             progress: progress,
             isPlaying: isPlaying,
             coverData: cover,
-            bookId: book.id
+            bookId: book.id,
+            chapterRemainingSeconds: chapterRemaining,
+            bookRemainingSeconds: bookRemaining,
+            totalChapters: totalChapters
         )
     }
 }
@@ -270,6 +299,19 @@ private struct NowPlayingSmallView: View {
                             .foregroundStyle(.white)
                             .lineLimit(2)
                             .minimumScaleFactor(0.8)
+                        if let chapter = entry.chapterName, !chapter.isEmpty {
+                            Text(
+                                entry.totalChapters.flatMap { total in
+                                    entry.chapterIndex.map { "\(chapter) · Cap. \($0 + 1) de \(total)" }
+                                } ?? chapter
+                            )
+                                .font(.caption2)
+                                .foregroundStyle(.white.opacity(0.75))
+                                .lineLimit(1)
+                        }
+                        Text("\(formatWidgetTime(entry.chapterRemainingSeconds)) restantes · livro \(formatWidgetTime(entry.bookRemainingSeconds))")
+                            .font(.system(size: 9, design: .rounded))
+                            .foregroundStyle(.white.opacity(0.7))
                     }
                 }
                 .padding(10)
@@ -337,6 +379,10 @@ private struct NowPlayingMediumView: View {
                             .padding(.top, 1)
                     }
                 }
+
+                Text("\(formatWidgetTime(entry.chapterRemainingSeconds)) restantes · livro \(formatWidgetTime(entry.bookRemainingSeconds))")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
 
                 Spacer(minLength: 0)
 
@@ -481,6 +527,8 @@ struct ContinueReadingEntry: TimelineEntry {
     // Pre-localized in the host app (the extension bundles no
     // Localizable.strings); nil only for stale pre-update payloads.
     var localizedChapterLabel: String? = nil
+    var chapterRemainingSeconds: Double = 0
+    var bookRemainingSeconds: Double = 0
 
     var progressPercent: Int? {
         guard let total = totalChapters, total > 0,
@@ -558,6 +606,7 @@ struct ContinueReadingProvider: TimelineProvider {
         let chapterIndex = defaults.object(forKey: lastReadChapterIndexKey) as? Int
             ?? book.lastChapterIndex
         let totalChapters = defaults.object(forKey: lastReadTotalChaptersKey) as? Int
+        let isNowPlaying = defaults.string(forKey: nowPlayingKey) == bookId
 
         return ContinueReadingEntry(
             date: Date(),
@@ -567,7 +616,9 @@ struct ContinueReadingProvider: TimelineProvider {
             totalChapters: totalChapters,
             coverData: book.coverPNG,
             bookId: book.id,
-            localizedChapterLabel: defaults.string(forKey: lastReadChapterLabelKey)
+            localizedChapterLabel: defaults.string(forKey: lastReadChapterLabelKey),
+            chapterRemainingSeconds: isNowPlaying ? defaults.double(forKey: nowPlayingChapterRemainingKey) : 0,
+            bookRemainingSeconds: isNowPlaying ? defaults.double(forKey: nowPlayingBookRemainingKey) : 0
         )
     }
 }
@@ -612,6 +663,11 @@ private struct ContinueReadingSmallView: View {
                         if let pct = entry.progressPercent {
                             Text("\(pct)%")
                                 .font(.system(size: 10, weight: .medium, design: .rounded))
+                                .foregroundStyle(.white.opacity(0.7))
+                        }
+                        if entry.chapterRemainingSeconds > 0 || entry.bookRemainingSeconds > 0 {
+                            Text("\(formatWidgetTime(entry.chapterRemainingSeconds)) restantes · livro \(formatWidgetTime(entry.bookRemainingSeconds))")
+                                .font(.system(size: 9, design: .rounded))
                                 .foregroundStyle(.white.opacity(0.7))
                         }
                     }
@@ -692,6 +748,11 @@ private struct ContinueReadingMediumView: View {
                         Text("\(pct)% complete")
                             .font(.system(size: 10, design: .rounded))
                             .foregroundStyle(.tertiary)
+                        if entry.chapterRemainingSeconds > 0 || entry.bookRemainingSeconds > 0 {
+                            Text("\(formatWidgetTime(entry.chapterRemainingSeconds)) restantes · livro \(formatWidgetTime(entry.bookRemainingSeconds))")
+                                .font(.system(size: 10, design: .rounded))
+                                .foregroundStyle(.tertiary)
+                        }
                     }
                 }
             }

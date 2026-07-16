@@ -294,27 +294,16 @@ final class ReaderChapterAdvanceTests: XCTestCase {
     }
 
     func testSingleTapProducesExactlyOnePageRetreat() throws {
-        // The source-level contract: onZoneTap must NOT be wired into
-        // AttributedPageView in paginated mode. Both recognizers firing is
-        // what caused the double retreat. Verify the source enforces this.
-        let sources = try readerSources()
-        let readerSource = sources.reader
-        let attributedSource = sources.attributed
-
+        let readerSource = try readerSources().reader
+        // A single native tap owner emits the semantic chrome event. The
+        // old overlay route would race the TextKit recognizer and is gone.
         XCTAssertFalse(
-            readerSource.contains("onZoneTap: enableReaderGestures ? { zone in"),
-            "onZoneTap must not be passed to AttributedPageView in slide/none mode: " +
-            "it installs a UITapGestureRecognizer that fires alongside tapZones(), " +
-            "calling retreatPage() twice per tap (double-fire = flash to chapter 0)."
-        )
-        XCTAssertFalse(
-            attributedSource.contains("UISwipeGestureRecognizer("),
-            "UISwipeGestureRecognizer must not be installed: it fires before the finger lifts, " +
-            "causing an early page-turn AND racing DragGesture for a second turn."
+            readerSource.contains(".overlay(tapZones("),
+            "a competing SwiftUI tap overlay must not be installed"
         )
         XCTAssertTrue(
-            readerSource.contains(".overlay(tapZones("),
-            "A single tapZones() SwiftUI overlay must be the sole zone-tap handler."
+            readerSource.contains("onCenterTap?()"),
+            "a non-link tap must toggle chrome rather than page state"
         )
         // Swipe handling moved into the native UIPageViewController for the
         // page-curl style (TextKitPageView owns the pan), and slide/none

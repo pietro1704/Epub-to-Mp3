@@ -1,0 +1,66 @@
+import XCTest
+
+final class ReaderTapRoutingTests: XCTestCase {
+    private func source(_ relativePath: String) throws -> String {
+        try String(contentsOf: URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("EpubToMp3")
+            .appendingPathComponent(relativePath))
+    }
+
+    func testPaginatedReaderUsesOneNativeTapRoute() throws {
+        let reader = try source("Views/ReaderView.swift")
+        let attributed = try source("Views/AttributedPageView.swift")
+        let pageCurl = try source("Views/TextKitPageView.swift")
+
+        XCTAssertFalse(pageCurl.contains("textView.addGestureRecognizer(tap)"),
+                       "page-curl must have one tap owner, not a second UITextView tap recognizer")
+        XCTAssertTrue(pageCurl.contains("pvc.view.addGestureRecognizer(tap)"),
+                      "the PVC tap recognizer must remain the page-curl tap owner")
+
+        XCTAssertFalse(reader.contains(".overlay(tapZones("),
+                       "paginated pages must not install a second tap recognizer overlay")
+        XCTAssertTrue(reader.contains("onZoneTap: enableReaderGestures ? onZoneTap : nil"),
+                      "page taps must reach the native TextKit view")
+        XCTAssertTrue(attributed.contains("tv.isSelectable = true"),
+                      "TextKit scroll/page surfaces must allow UIKit link interaction")
+        XCTAssertTrue(pageCurl.contains("tv.isSelectable = true"),
+                      "page-curl text surfaces must allow UIKit link interaction")
+        XCTAssertTrue(reader.contains("onCenterTap?()"),
+                      "ReaderView must route non-link taps to chrome toggle")
+    }
+
+    func testPageCurlHasExactlyOneTapOwnerAndItTogglesChromeOnce() throws {
+        let textKit = try source("Views/TextKitPageView.swift")
+        let tapRecognizerCount = textKit.components(separatedBy: "UITapGestureRecognizer(").count - 1
+
+        XCTAssertEqual(tapRecognizerCount, 1,
+                       "page-curl must have one native tap owner; duplicate PVC and UITextView recognizers toggle twice")
+        XCTAssertFalse(textKit.contains("tap.name = \"reader.page.tap\""),
+                       "the UITextView must not install a second page tap recognizer")
+        XCTAssertTrue(textKit.contains("func handleTap(_ gesture: UITapGestureRecognizer)"),
+                      "the single page-curl tap owner must be the PVC coordinator")
+        XCTAssertTrue(textKit.contains("parent.onCenterTap?()"),
+                      "a non-link physical tap must emit one semantic chrome toggle")
+    }
+
+    func testBookAwareScrollSimpleTapsDoNotNavigateChapters() throws {
+        let reader = try source("Views/ReaderView.swift")
+        XCTAssertFalse(reader.contains("case .left:\n                        retreatChapter(chapters: chapters)\n                    case .center:\n                        onCenterTap?()\n                    case .right:\n                        advanceChapter(chapters: chapters)"),
+                       "book-aware scroll taps must toggle chrome in every zone; chapter navigation belongs to swipes")
+    }
+
+    func testChromeVisibilityModifierUsesVisibleStateForSystemBars() throws {
+        let instantReader = try source("Views/InstantReaderView.swift")
+        let modifier = try XCTUnwrap(
+            instantReader.range(of: "struct ChromeVisibilityModifier")
+                .map { instantReader[$0.lowerBound...] }
+        )
+
+        XCTAssertTrue(modifier.contains(".toolbar(visible ? .visible : .hidden, for: .tabBar)"),
+                      "the tab bar must follow the same reader chrome state")
+        XCTAssertTrue(modifier.contains("TabBarVisibilityController(visible: visible)"),
+                      "the iOS 15 fallback must propagate visible instead of always hiding the tab bar")
+    }
+}

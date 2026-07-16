@@ -708,14 +708,10 @@ struct ReaderView: View {
     /// directly instead of layering a SwiftUI gesture over UITextView; the
     /// latter can lose the first tap to UIKit's internal recognizers.
     private func handleScrollZoneTap(_ zone: ReaderTapZone) {
-        switch zone {
-        case .left:
-            onPreviousChapter?()
-        case .center:
-            onCenterTap?()
-        case .right:
-            onAdvanceChapter?()
-        }
+        // A simple non-link tap is chrome-only in every zone. Chapter
+        // navigation in scroll mode is explicit (swipe/footer), never an
+        // accidental consequence of touching the reading surface.
+        onCenterTap?()
     }
 
     /// Build the NSAttributedString rendered in scroll mode: the
@@ -777,15 +773,11 @@ struct ReaderView: View {
             let fontSize: CGFloat = debouncedFontSize > 0 ? debouncedFontSize : settings.readerPointSize
             let lineSpacing: Double = debouncedLineSpacing > 0 ? debouncedLineSpacing : settings.readerLineSpacing
             ZStack(alignment: .bottom) {
-                scrollingContent(onZoneTap: { zone in
-                    switch zone {
-                    case .left:
-                        retreatChapter(chapters: chapters)
-                    case .center:
-                        onCenterTap?()
-                    case .right:
-                        advanceChapter(chapters: chapters)
-                    }
+                scrollingContent(onZoneTap: { _ in
+                    // Simple taps toggle chrome in every horizontal zone.
+                    // Chapter navigation is reserved for horizontal swipes
+                    // and the explicit footer controls.
+                    onCenterTap?()
                 }, onSwipe: { direction in
                     switch direction {
                     case .left:
@@ -1593,54 +1585,21 @@ struct ReaderView: View {
     /// (Apple Books "scroll" style) does instant flips too, so the
     /// trade-off is acceptable.
     private func slidePageContent(pages: [NSAttributedString], pageIndex: Int, containerSize: CGSize) -> some View {
-        let totalPages = pages.count
-        let margin = effectiveReaderMargin(for: containerSize)
-        let columnW = min(settings.readerColumnWidth, containerSize.width - 2 * margin)
-        // textOriginY = top padding only — chapterTitleHeader was dropped
-        // (EPUB's own heading is the first content of page 0 now).
-        let textOriginY: CGFloat = pageVerticalPadding
-        // The text block is centred inside the full-width container frame,
-        // so its left edge is (containerWidth - columnW) / 2, not just
-        // `margin`. When readerColumnWidth < containerWidth - 2*margin the
-        // two values diverge and link hit-rects shift left of their visual
-        // position, causing taps to miss links entirely.
-        let textOriginX: CGFloat = (containerSize.width - columnW) / 2
-        let linkHits = pageLinkHits(pages: pages, pageIndex: pageIndex, columnWidth: columnW)
         return pageView(
             pages: pages,
             pageIndex: pageIndex,
             containerSize: containerSize,
             onSwipePage: { dir in handleSwipe(dir, totalPages: pages.count) }
         )
-        .overlay(tapZones(
-            totalPages: totalPages,
-            containerWidth: containerSize.width,
-            linkHits: linkHits,
-            textOriginX: textOriginX,
-            textOriginY: textOriginY
-        ))
     }
 
     private func noAnimationPageContent(pages: [NSAttributedString], pageIndex: Int, containerSize: CGSize) -> some View {
-        let totalPages = pages.count
-        let margin = effectiveReaderMargin(for: containerSize)
-        let columnW = min(settings.readerColumnWidth, containerSize.width - 2 * margin)
-        let textOriginY: CGFloat = pageVerticalPadding
-        let textOriginX: CGFloat = (containerSize.width - columnW) / 2
-        let linkHits = pageLinkHits(pages: pages, pageIndex: pageIndex, columnWidth: columnW)
         return pageView(
             pages: pages,
             pageIndex: pageIndex,
             containerSize: containerSize,
             onSwipePage: { dir in handleSwipe(dir, totalPages: pages.count) }
         )
-        .overlay(tapZones(
-            totalPages: totalPages,
-            containerWidth: containerSize.width,
-            linkHits: linkHits,
-            textOriginX: textOriginX,
-            textOriginY: textOriginY
-        ))
     }
 
     private func pageLinkHits(
@@ -1660,11 +1619,9 @@ struct ReaderView: View {
     /// reader's existing `advancePage` / `retreatPage` / `onCenterTap`
     /// vocabulary.
     private func handleZoneTap(_ zone: ReaderTapZone, totalPages: Int) {
-        switch zone {
-        case .left:   retreatPage()
-        case .center: onCenterTap?()
-        case .right:  advancePage(totalPages: totalPages)
-        }
+        // Simple taps toggle chrome. Page turns use horizontal swipes or
+        // explicit navigation controls, so touching text cannot turn a page.
+        onCenterTap?()
     }
 
     private func handleSwipe(_ direction: ReaderSwipeDirection, totalPages: Int) {
@@ -1694,11 +1651,7 @@ struct ReaderView: View {
                 enableReaderGestures: enableReaderGestures,
                 onSwipePage: onSwipePage,
                 onZoneTap: enableReaderGestures ? { zone in
-                    switch zone {
-                    case .left: retreatPage()
-                    case .center: onCenterTap?()
-                    case .right: advancePage(totalPages: pages.count)
-                    }
+                    onCenterTap?()
                 } : nil
             )
             Spacer(minLength: 0)
@@ -1735,16 +1688,12 @@ struct ReaderView: View {
         onSwipePage: ((ReaderSwipeDirection) -> Void)? = nil,
         onZoneTap: ((ReaderTapZone) -> Void)? = nil
     ) -> some View {
-        // onZoneTap is intentionally NOT forwarded here — slidePageContent/
-        // noAnimationPageContent already wrap the page in a tapZones() overlay
-        // (SpatialTapGesture on iOS 16+) that handles left/center/right zones.
-        // Passing onZoneTap here would install a second UITapGestureRecognizer
-        // on the UITextView, causing every tap to fire twice.
+        // The UITextView owns the single tap route in paginated mode so
+        // center taps toggle chrome exactly once and edge taps turn exactly
+        // one page. Links are checked first by FixedWidthTextView.
         //
-        // onSwipe IS forwarded (when enableReaderGestures is true) so the
-        // UIPanGestureRecognizer installed on FixedWidthTextView can detect
-        // horizontal swipes — the UITextView absorbs pan events before the
-        // SwiftUI DragGesture layer can see them.
+        // Horizontal swipes are also forwarded to the native recognizer;
+        // scroll mode leaves the native vertical pan untouched.
         AttributedPageView(
             attributed: slice,
             width: width,

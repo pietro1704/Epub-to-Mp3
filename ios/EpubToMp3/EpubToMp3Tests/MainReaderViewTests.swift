@@ -247,21 +247,15 @@ final class MainReaderViewTests: XCTestCase {
         let attributedSource = sources.attributedPage
         let platformSource = sources.platformCompat
 
-        // Zone-taps are handled by the SwiftUI tapZones() overlay,
-        // NOT by onZoneTap on the UITextView. Passing onZoneTap to
-        // AttributedPageView installed a second UITapGestureRecognizer
-        // on the UITextView, causing every tap to call retreatPage() or
-        // advancePage() twice — the "flash to chapter 0" double-call bug.
-        XCTAssertFalse(readerSource.contains("onZoneTap: enableReaderGestures ? { zone in"),
-                       "onZoneTap must NOT be passed to AttributedPageView in paginated mode — it causes double page-turn via two simultaneous recognizers.")
-        XCTAssertTrue(readerSource.contains(".overlay(tapZones("),
-                      "Zone-based taps must be handled by the SwiftUI tapZones() overlay, not by the UITextView's own recognizer.")
-        XCTAssertTrue(readerSource.contains("private func handleZoneTap("),
-                      "ReaderView must define handleZoneTap to dispatch zone taps to retreat/advance/chrome.")
-        XCTAssertTrue(readerSource.contains("case .center: onCenterTap?()"),
-                      "Center taps in paginated mode must toggle top/bottom chrome rather than turning the page and flickering.")
+        // The page surface has one semantic tap owner. The native page-curl
+        // controller owns it; the old SwiftUI overlay and UITextView tap
+        // recognizer must not compete with it.
+        XCTAssertFalse(readerSource.contains(".overlay(tapZones("),
+                       "paginated pages must not install a competing SwiftUI tap overlay.")
+        XCTAssertTrue(readerSource.contains("onCenterTap?()"),
+                      "non-link taps must toggle top/bottom chrome.")
         XCTAssertFalse(readerSource.contains("case .center: advancePage(totalPages: totalPages)"),
-                       "Center taps must not advance the page in paginated mode.")
+                       "center taps must not advance the page.")
 
         // Swipe-to-turn: page-curl (.flip) swipes are owned by the native
         // UIPageViewController in TextKitPageView; slide/none swipes flow
@@ -277,8 +271,8 @@ final class MainReaderViewTests: XCTestCase {
         XCTAssertTrue(readerSource.contains("private func handleSwipe("),
                       "ReaderView must define handleSwipe to map swipe directions to retreat/advance.")
 
-        XCTAssertTrue(attributedSource.contains("uiView.installReaderGestures()"),
-                      "The UITextView must still install the tap recognizer (for link detection).")
+        XCTAssertTrue(attributedSource.contains("uiView.installReaderGestures(includeSwipe:"),
+                      "non-curl TextKit pages must keep their native gesture installation for links and horizontal swipes.")
         XCTAssertTrue(attributedSource.contains("uiView.bounces = scrollable"),
                       "Paginated text pages must not rubber-band vertically when the user drags and releases.")
         XCTAssertTrue(attributedSource.contains("uiView.alwaysBounceVertical = scrollable"),

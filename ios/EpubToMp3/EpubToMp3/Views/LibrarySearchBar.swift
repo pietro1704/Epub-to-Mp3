@@ -24,8 +24,8 @@ struct LibrarySearchBar: View {
         }
         .padding(10)
         .background(.quaternary, in: RoundedRectangle(cornerRadius: 10))
-        .padding(.horizontal, 20)
         .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("library.searchBar")
         .accessibilityLabel(L10n.string("library.searchPlaceholder"))
     }
 }

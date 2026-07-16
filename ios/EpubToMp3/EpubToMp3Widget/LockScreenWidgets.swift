@@ -1,5 +1,7 @@
 import WidgetKit
 import SwiftUI
+import ImageIO
+import UIKit
 
 // MARK: - Lock-screen / StandBy widgets (iOS 16+)
 // Families: .accessoryCircular, .accessoryRectangular, .accessoryInline
@@ -10,6 +12,9 @@ private let nowPlayingKey = "currentlyPlayingBookId"
 private let nowPlayingChapterNameKey = "widget.nowPlayingChapterName"
 private let nowPlayingProgressKey = "widget.nowPlayingProgress"
 private let nowPlayingIsPlayingKey = "widget.nowPlayingIsPlaying"
+private let nowPlayingChapterRemainingKey = "widget.nowPlayingChapterRemainingSeconds"
+private let nowPlayingBookRemainingKey = "widget.nowPlayingBookRemainingSeconds"
+private let nowPlayingTotalChaptersKey = "widget.nowPlayingTotalChapters"
 private let libraryKey = "library.books.v1"
 
 // MARK: - Shared lock-screen entry
@@ -21,6 +26,10 @@ struct LockScreenEntry: TimelineEntry {
     let progress: Double    // 0.0–1.0
     let isPlaying: Bool
     let bookId: String?
+    let coverData: Data?
+    let chapterRemainingSeconds: Double
+    let bookRemainingSeconds: Double
+    let totalChapters: Int?
 
     static var placeholder: LockScreenEntry {
         LockScreenEntry(
@@ -29,7 +38,11 @@ struct LockScreenEntry: TimelineEntry {
             chapterName: "The Psychohistorians",
             progress: 0.35,
             isPlaying: true,
-            bookId: nil
+            bookId: nil,
+            coverData: nil,
+            chapterRemainingSeconds: 42 * 60,
+            bookRemainingSeconds: 9 * 3600,
+            totalChapters: 18
         )
     }
 
@@ -40,7 +53,11 @@ struct LockScreenEntry: TimelineEntry {
             chapterName: nil,
             progress: 0,
             isPlaying: false,
-            bookId: nil
+            bookId: nil,
+            coverData: nil,
+            chapterRemainingSeconds: 0,
+            bookRemainingSeconds: 0,
+            totalChapters: nil
         )
     }
 }
@@ -76,7 +93,11 @@ struct LockScreenProvider: TimelineProvider {
             chapterName: defaults.string(forKey: nowPlayingChapterNameKey),
             progress: defaults.double(forKey: nowPlayingProgressKey),
             isPlaying: defaults.bool(forKey: nowPlayingIsPlayingKey),
-            bookId: bookId
+            bookId: bookId,
+            coverData: downsampledLockWidgetCover(book.coverPNG),
+            chapterRemainingSeconds: defaults.double(forKey: nowPlayingChapterRemainingKey),
+            bookRemainingSeconds: defaults.double(forKey: nowPlayingBookRemainingKey),
+            totalChapters: defaults.object(forKey: nowPlayingTotalChaptersKey) as? Int
         )
     }
 }
@@ -85,6 +106,42 @@ struct LockScreenProvider: TimelineProvider {
 private struct _LockWidgetBook: Codable {
     let id: String
     let title: String
+    let coverPNG: Data?
+}
+
+private func formatLockWidgetTime(_ seconds: Double) -> String {
+    let total = max(0, Int(seconds.rounded()))
+    let h = total / 3600
+    let m = (total % 3600) / 60
+    if h > 0 { return "\(h)h \(m)m" }
+    return "\(m)m"
+}
+
+private func downsampledLockWidgetCover(_ data: Data?) -> Data? {
+    guard let data, let source = CGImageSourceCreateWithData(data as CFData, nil) else { return data }
+    let options = [
+        kCGImageSourceCreateThumbnailFromImageAlways: true,
+        kCGImageSourceCreateThumbnailWithTransform: true,
+        kCGImageSourceThumbnailMaxPixelSize: 240,
+    ] as CFDictionary
+    guard let image = CGImageSourceCreateThumbnailAtIndex(source, 0, options),
+          let output = CFDataCreateMutable(nil, 0),
+          let destination = CGImageDestinationCreateWithData(output, "public.jpeg" as CFString, 1, nil)
+    else { return data }
+    CGImageDestinationAddImage(destination, image, nil)
+    return CGImageDestinationFinalize(destination) ? output as Data : data
+}
+
+@ViewBuilder
+private func lockCoverImage(_ data: Data?) -> some View {
+    if let data, let image = UIImage(data: data) {
+        Image(uiImage: image).resizable().scaledToFill()
+    } else {
+        Image(systemName: "book.closed.fill")
+            .resizable()
+            .scaledToFit()
+            .foregroundStyle(.secondary)
+    }
 }
 
 // MARK: - Deep-link helpers (local)
@@ -101,6 +158,9 @@ private struct CircularView: View {
 
     var body: some View {
         ZStack {
+            lockCoverImage(entry.coverData)
+                .clipShape(Circle())
+                .opacity(0.35)
             // Gauge-style progress ring
             Circle()
                 .stroke(Color.white.opacity(0.2), lineWidth: 3)
@@ -141,6 +201,11 @@ private struct RectangularView: View {
                         .foregroundStyle(.secondary)
                 }
 
+                Text("\(formatLockWidgetTime(entry.chapterRemainingSeconds)) restantes · livro \(formatLockWidgetTime(entry.bookRemainingSeconds))")
+                    .font(.caption2)
+                    .lineLimit(1)
+                    .foregroundStyle(.secondary)
+
                 // Thin progress bar
                 GeometryReader { geo in
                     ZStack(alignment: .leading) {
@@ -150,6 +215,12 @@ private struct RectangularView: View {
                     }
                 }
                 .frame(height: 2)
+            }
+            .padding(.leading, 34)
+            .overlay(alignment: .leading) {
+                lockCoverImage(entry.coverData)
+                    .frame(width: 28, height: 28)
+                    .clipShape(RoundedRectangle(cornerRadius: 5))
             }
         }
     }
@@ -164,7 +235,7 @@ private struct InlineView: View {
         if entry.title.isEmpty {
             Label("No audiobook", systemImage: "headphones")
         } else {
-            Label(entry.title, systemImage: entry.isPlaying ? "waveform" : "pause")
+            Label("\(entry.title) · \(formatLockWidgetTime(entry.chapterRemainingSeconds)) restantes", systemImage: entry.isPlaying ? "waveform" : "pause")
                 .lineLimit(1)
         }
     }
@@ -196,6 +267,18 @@ private struct NowPlayingLockScreenView: View {
     let entry: LockScreenEntry
 
     var body: some View {
+        if #available(iOS 17.0, *) {
+            content
+                .containerBackground(for: .widget) {
+                    Color.clear
+                }
+        } else {
+            content
+        }
+    }
+
+    @ViewBuilder
+    private var content: some View {
         switch family {
         case .accessoryCircular:
             CircularView(entry: entry)

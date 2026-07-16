@@ -51,6 +51,7 @@ struct EpubToMp3App: App {
                     // bare C function pointer) can reach the running
                     // instances without a full singleton refactor.
                     Self.sharedPlayerForWidgetIntents = player
+                    drainWidgetIntents()
                     #if os(macOS)
                     await startSidecarIfNeeded()
                     #endif
