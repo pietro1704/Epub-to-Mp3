@@ -316,6 +316,7 @@ final class AudioPlayer: ObservableObject {
     private var isSegmentMode = false
     private var segmentChapterIndex: Int = -1
     private var segmentCumulativeBase: TimeInterval = 0
+    private var segmentChapterDuration: TimeInterval = 0
     /// Maps segment queue position → sentence ID. When non-empty,
     /// `activeSentenceId` tracks which sentence is playing by counting
     /// AVPlayerItemDidPlayToEndTime firings.
@@ -568,6 +569,62 @@ final class AudioPlayer: ObservableObject {
         updateNowPlayingInfo()
     }
 
+    nonisolated static func segmentPosition(
+        durations: [TimeInterval],
+        segmentIndex: Int,
+        itemPosition: TimeInterval
+    ) -> TimeInterval {
+        let base = durations.prefix(max(0, segmentIndex)).reduce(0) { total, duration in
+            total + (duration.isFinite && duration > 0 ? duration : 0)
+        }
+        let position = itemPosition.isFinite ? max(0, itemPosition) : 0
+        let duration = durations.indices.contains(segmentIndex) ? durations[segmentIndex] : .infinity
+        return base + min(position, duration.isFinite && duration > 0 ? duration : position)
+    }
+
+    nonisolated static func segmentDuration(durations: [TimeInterval]) -> TimeInterval {
+        durations.filter { $0.isFinite && $0 > 0 }.reduce(0, +)
+    }
+
+    nonisolated static func segmentDuration(_ durations: [TimeInterval]) -> TimeInterval {
+        segmentDuration(durations: durations)
+    }
+
+    nonisolated static func segmentProgress(position: TimeInterval, duration: TimeInterval) -> Double {
+        guard duration.isFinite, duration > 0, position.isFinite else { return 0 }
+        return min(1, max(0, position / duration))
+    }
+
+    nonisolated static func segmentRemaining(position: TimeInterval, duration: TimeInterval) -> TimeInterval {
+        guard duration.isFinite, duration > 0 else { return 0 }
+        return max(0, duration - max(0, position.isFinite ? position : 0))
+    }
+
+    struct SegmentSeekTarget: Equatable {
+        let segmentIndex: Int
+        let offset: TimeInterval
+    }
+
+    nonisolated static func segmentSeekTarget(
+        position: TimeInterval,
+        durations: [TimeInterval]
+    ) -> SegmentSeekTarget? {
+        guard !durations.isEmpty else { return nil }
+        let target = min(segmentDuration(durations: durations), max(0, position.isFinite ? position : 0))
+        var base: TimeInterval = 0
+        for (index, duration) in durations.enumerated() where duration.isFinite && duration > 0 {
+            if target <= base + duration || index == durations.count - 1 {
+                return SegmentSeekTarget(segmentIndex: index, offset: min(duration, max(0, target - base)))
+            }
+            base += duration
+        }
+        return nil
+    }
+
+    nonisolated static func shouldDrainSegmentBacklog(queueCount: Int, maxQueueAhead: Int) -> Bool {
+        queueCount < max(1, maxQueueAhead)
+    }
+
     nonisolated static func validatedDurationSeconds(
         _ seconds: TimeInterval,
         isReadyToPlay: Bool
@@ -693,6 +750,7 @@ final class AudioPlayer: ObservableObject {
         currentChapterIndex = max(0, min(chapterIndex, snapshot.playableChapters.count - 1))
         isSegmentMode = false
         segmentCumulativeBase = 0
+        segmentChapterDuration = 0
         segmentSentenceIds = []
         segmentPlayedCount = 0
         activeSentenceId = nil
@@ -1274,6 +1332,7 @@ final class AudioPlayer: ObservableObject {
                    nextChapter != startChapter {
                     currentChapterIndex = nextChapter
                     segmentCumulativeBase = 0
+                    segmentChapterDuration = 0
                     positionSeconds = 0
                     publishCurrentChapter(auto: false)
                     updateNowPlayingInfo()
@@ -1483,6 +1542,7 @@ final class AudioPlayer: ObservableObject {
         isSegmentMode = true
         if chapterIndex != segmentChapterIndex {
             segmentCumulativeBase = 0
+            segmentChapterDuration = 0
             segmentChapterIndex = chapterIndex
             segmentSentenceIds = []
             segmentPlayedCount = 0
@@ -1685,7 +1745,16 @@ final class AudioPlayer: ObservableObject {
                     : rawTime
                 if let item = player.currentItem,
                    let dur = Self.validatedDurationSeconds(item.duration.seconds, isReadyToPlay: true) {
-                    self.durationSeconds = dur
+                    if self.isSegmentMode {
+                        let queuedDuration = player.items().reduce(0.0) { total, queued in
+                            let value = queued.duration.seconds
+                            return total + (value.isFinite && value > 0 ? value : 0)
+                        }
+                        self.segmentChapterDuration = max(self.segmentChapterDuration, self.segmentCumulativeBase + queuedDuration)
+                        self.durationSeconds = self.segmentChapterDuration
+                    } else {
+                        self.durationSeconds = dur
+                    }
                 }
                 // Item C — fire a queued proportional seek the first
                 // tick after AVPlayer publishes duration. Without this
@@ -2196,6 +2265,7 @@ final class AudioPlayer: ObservableObject {
         teardownPlayer()
         isSegmentMode = false
         segmentCumulativeBase = 0
+        segmentChapterDuration = 0
         segmentChapterIndex = -1
         segmentSentenceIds = []
         segmentPlayedCount = 0
