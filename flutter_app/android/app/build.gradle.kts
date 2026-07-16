@@ -9,6 +9,10 @@ plugins {
     id("com.chaquo.python")
 }
 
+dependencies {
+    implementation("androidx.work:work-runtime-ktx:2.9.0")
+}
+
 android {
     namespace = "com.pietrocode.epubtomp3.flutter_app"
     compileSdk = flutter.compileSdkVersion

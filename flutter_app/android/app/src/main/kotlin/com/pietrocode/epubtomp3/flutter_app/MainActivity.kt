@@ -8,6 +8,10 @@ import android.os.Handler
 import android.os.Looper
 import android.provider.OpenableColumns
 import android.speech.tts.TextToSpeech
+import androidx.work.Data
+import androidx.work.ExistingWorkPolicy
+import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.WorkManager
 import com.chaquo.python.Python
 import com.chaquo.python.android.AndroidPlatform
 import io.flutter.embedding.android.FlutterActivity
@@ -142,6 +146,44 @@ class MainActivity : FlutterActivity() {
                 "pause", "stop" -> {
                     tts?.stop()
                     result.success(null)
+                }
+                else -> result.notImplemented()
+            }
+        }
+
+        MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            "epub_to_mp3/background_conversion"
+        ).setMethodCallHandler { call, result ->
+            when (call.method) {
+                "enqueueChapter" -> {
+                    val jobId = call.argument<String>("jobId")
+                    val text = call.argument<String>("text")
+                    val voice = call.argument<String>("voice")
+                    val outputPath = call.argument<String>("outputPath")
+                    if (jobId.isNullOrBlank() || text.isNullOrBlank() || voice.isNullOrBlank() || outputPath.isNullOrBlank()) {
+                        result.error("BAD_ARGS", "jobId, text, voice and outputPath are required", null)
+                    } else {
+                        val request = OneTimeWorkRequestBuilder<BackgroundChapterWorker>()
+                            .setInputData(Data.Builder()
+                                .putString(BackgroundChapterWorker.KEY_TEXT, text)
+                                .putString(BackgroundChapterWorker.KEY_VOICE, voice)
+                                .putString(BackgroundChapterWorker.KEY_OUTPUT, outputPath)
+                                .build())
+                            .build()
+                        WorkManager.getInstance(applicationContext).enqueueUniqueWork(
+                            jobId, ExistingWorkPolicy.KEEP, request,
+                        )
+                        result.success(true)
+                    }
+                }
+                "cancel" -> {
+                    val jobId = call.argument<String>("jobId")
+                    if (jobId.isNullOrBlank()) result.error("BAD_ARGS", "jobId is required", null)
+                    else {
+                        WorkManager.getInstance(applicationContext).cancelUniqueWork(jobId)
+                        result.success(true)
+                    }
                 }
                 else -> result.notImplemented()
             }
