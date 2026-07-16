@@ -1027,11 +1027,16 @@ struct PlayerReaderView: View {
         // The audio cursor may already be ahead of the reader due to queue
         // reconciliation/background synthesis. Retreat from the displayed
         // EPUB chapter, otherwise a tap from chapter 5/page 1 can skip it.
-        let currentEpubIndex = displayedEpubIndex
-        guard let target = InstantReaderIndexMapper.previousPlayableTarget(
-            beforeDisplayedEpubIndex: currentEpubIndex, in: snapshot
+        let currentEpubIndex = playingEpubZeroBasedIndex ?? player.currentChapterIndex
+        let prev = max(0, currentEpubIndex - 1)
+        let playablePrev = InstantReaderIndexMapper.playableIndexOrClamped(
+            forEpubIndex: prev,
+            in: snapshot,
+            direction: .atOrBefore
+        )
+        guard let targetEpubIndex = InstantReaderIndexMapper.epubIndex(
+            forPlayableIndex: playablePrev, in: snapshot
         ) else { return false }
-        let playablePrev = target.playableIndex
         // Resolve the EPUB index the READER should display from the same
         // playable index the AUDIO is about to land on — not the raw `prev`.
         // When `prev` itself is non-playable (cover/TOC/skipped chapter),
@@ -1042,9 +1047,8 @@ struct PlayerReaderView: View {
         // chapter" instead of the last page of the true previous playable
         // one. Mirrors `advanceToNextChapter`'s `epubIndex(forPlayableIndex:)`
         // resolution (line 993) so display and playback always agree.
-        let targetEpubIndex = target.epubIndex
         FlickerProbe.shared.log(
-            "retreat currentEpub=\(currentEpubIndex) prev=\(currentEpubIndex - 1) playablePrev=\(playablePrev) targetEpubIndex=\(targetEpubIndex)"
+            "retreat currentEpub=\(currentEpubIndex) prev=\(prev) playablePrev=\(playablePrev) targetEpubIndex=\(targetEpubIndex)"
         )
         // Arm the last-page flag BEFORE changing the chapter so the
         // new ReaderView (born via .id recreation) reads it from its

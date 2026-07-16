@@ -1527,10 +1527,12 @@ struct ReaderView: View {
             (debouncedColumnWidth > 0 ? CGFloat(debouncedColumnWidth) : settings.readerColumnWidth),
             containerSize.width - 2 * margin
         )
-        // Horizontal inset that brackets the (possibly narrower) column.
-        // On a phone the column already fills `width - 2*margin`, so this is
-        // just `margin`; on a wide iPad it centres the column.
-        let sideInset = ReaderLayoutMath.sideInset(containerWidth: containerSize.width, columnWidth: columnWidth, margin: margin)
+        // Horizontal inset brackets the centred text column. Keep the
+        // explicit columnW/textOriginX relationship so link hit rectangles
+        // use the same origin as the rendered TextKit page.
+        let columnW = columnWidth
+        let textOriginX = max(margin, (containerSize.width - columnW) / 2)
+        let sideInset = textOriginX
         // Vertical corridor. The UIKit page controller's safe-area guide is
         // unreliable when hosted under SwiftUI (the host often zeroes the
         // child controller's safe-area insets), so we DO NOT rely on it.
