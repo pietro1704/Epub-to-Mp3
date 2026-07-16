@@ -2024,12 +2024,9 @@ final class AudioPlayer: ObservableObject {
     /// iOS simulator), so asserting through the singleton is flaky.
     func makeNowPlayingInfo() -> [String: Any] {
         var info: [String: Any] = [:]
-        let bookTitle = snapshot?.bookTitle ?? "Epub-to-Mp3"
-        let chapterTitle = currentChapterValue?.displayTitle ?? "Chapter"
-        // The system displays MPMediaItemPropertyTitle as the primary Lock Screen
-        // label. Keep the book here; chapter is secondary metadata.
-        info[MPMediaItemPropertyTitle] = bookTitle
-        info[MPMediaItemPropertyAlbumTitle] = chapterTitle
+        info[MPMediaItemPropertyTitle] = currentChapterValue?.displayTitle ?? "Chapter"
+        // "Album" maps to the book title; "Artist" maps to the author name.
+        info[MPMediaItemPropertyAlbumTitle] = snapshot?.bookTitle ?? "Epub-to-Mp3"
         info[MPMediaItemPropertyArtist] = snapshot?.bookAuthor ?? ""
         info[MPNowPlayingInfoPropertyElapsedPlaybackTime] = positionSeconds
         info[MPMediaItemPropertyPlaybackDuration] = durationSeconds > 0 ? durationSeconds : 0
@@ -2077,13 +2074,9 @@ final class AudioPlayer: ObservableObject {
     }
 
     private func syncWidgetNowPlaying() {
-        let appGroupDefaults = UserDefaults(suiteName: WidgetDataSync.appGroupID)
-        guard let bookId = appGroupDefaults?.string(forKey: "currentlyPlayingBookId")
-                ?? UserDefaults.standard.string(forKey: Self.currentBookIDDefaultsKey),
+        guard let bookId = UserDefaults.standard.string(forKey: Self.currentBookIDDefaultsKey),
               !bookId.isEmpty else { return }
-        let progress = durationSeconds > 0
-            ? min(1, max(0, positionSeconds / durationSeconds))
-            : 0
+        let progress = durationSeconds > 0 ? positionSeconds / durationSeconds : 0
         let chapters = snapshot?.playableChapters ?? []
         let currentIndex = max(0, min(currentChapterIndex, max(chapters.count - 1, 0)))
         let chapterName = currentChapterValue?.displayTitle
