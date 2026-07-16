@@ -114,15 +114,17 @@ final class AudioPlayerLockScreenTests: XCTestCase {
 
     /// After a snapshot is loaded into the player via `updateSnapshot`
     /// — the live-stream path used by `PlayerReaderView` — the Now
-    /// Playing dict must carry the correct title, album (book title),
-    /// artist, and media type.
+    /// Playing dict must carry the book as primary title, chapter as
+    /// secondary album metadata, author and media type.
     func testNowPlayingInfoPopulatedOnUpdateSnapshot() {
         let player = AudioPlayer()
         player.updateSnapshot(makeSnapshot(title: "Foundation", author: "Isaac Asimov"))
 
         let info = player.makeNowPlayingInfo()
-        XCTAssertEqual(info[MPMediaItemPropertyAlbumTitle] as? String, "Foundation",
-            "Album title should be the book title so the Control Center widget shows it")
+        XCTAssertEqual(info[MPMediaItemPropertyTitle] as? String, "Foundation",
+            "Primary Now Playing title must be the book title")
+        XCTAssertEqual(info[MPMediaItemPropertyAlbumTitle] as? String, "Prologue",
+            "Secondary Now Playing metadata must identify the chapter")
         XCTAssertEqual(info[MPMediaItemPropertyArtist] as? String, "Isaac Asimov",
             "Artist should be the book author")
         XCTAssertEqual(info[MPNowPlayingInfoPropertyMediaType] as? UInt,
@@ -179,12 +181,12 @@ final class AudioPlayerLockScreenTests: XCTestCase {
     func testStopClearsNowPlayingInfo() {
         let player = AudioPlayer()
         player.updateSnapshot(makeSnapshot(title: "Foundation"))
-        XCTAssertEqual(player.makeNowPlayingInfo()[MPMediaItemPropertyAlbumTitle] as? String,
-            "Foundation", "Album must be populated before stop()")
+        XCTAssertEqual(player.makeNowPlayingInfo()[MPMediaItemPropertyTitle] as? String,
+            "Foundation", "Title must be populated before stop()")
 
         player.stop()
         XCTAssertNil(player.snapshot, "stop() must drop the active snapshot")
-        XCTAssertEqual(player.makeNowPlayingInfo()[MPMediaItemPropertyAlbumTitle] as? String,
+        XCTAssertEqual(player.makeNowPlayingInfo()[MPMediaItemPropertyTitle] as? String,
             "Epub-to-Mp3",
             "After stop() the Now Playing dict must fall back to the placeholder, not stale metadata")
     }
@@ -194,13 +196,13 @@ final class AudioPlayerLockScreenTests: XCTestCase {
     func testNowPlayingInfoRepopulatedAfterStop() {
         let player = AudioPlayer()
         player.updateSnapshot(makeSnapshot(title: "Dune", author: "Frank Herbert"))
-        XCTAssertEqual(player.makeNowPlayingInfo()[MPMediaItemPropertyAlbumTitle] as? String, "Dune")
+        XCTAssertEqual(player.makeNowPlayingInfo()[MPMediaItemPropertyTitle] as? String, "Dune")
 
         player.stop()
         XCTAssertNil(player.snapshot)
 
         player.updateSnapshot(makeSnapshot(title: "Foundation", author: "Isaac Asimov"))
-        XCTAssertEqual(player.makeNowPlayingInfo()[MPMediaItemPropertyAlbumTitle] as? String,
+        XCTAssertEqual(player.makeNowPlayingInfo()[MPMediaItemPropertyTitle] as? String,
             "Foundation",
             "Album title must reflect the new book after stop/restart")
     }
