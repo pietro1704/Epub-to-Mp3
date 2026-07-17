@@ -365,6 +365,12 @@ final class ReaderChromeAutoHideTests: XCTestCase {
         //    stale content.
         XCTAssertTrue(pageCurl.contains("committedChapterToken"),
                       "A chapter swap with empty pages must defer the seed until the fresh pages arrive.")
+        XCTAssertTrue(reader.contains("MagnificationGesture()"),
+                      "Reader must support pinch-to-zoom for the text size.")
+        XCTAssertTrue(reader.contains("let levels: [CGFloat] = [14, 17, 20, 24, 28]"),
+                      "Pinch-to-zoom must use the persisted five-step font scale.")
+        XCTAssertTrue(reader.contains("settings.readerFontSize = clamped"),
+                      "Pinch-to-zoom must persist the selected font-size step.")
     }
 
     func testIdleTimerIsEnabledBeforeXCTestGuard() throws {

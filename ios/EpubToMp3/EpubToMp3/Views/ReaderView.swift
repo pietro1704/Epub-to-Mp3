@@ -267,6 +267,7 @@ struct ReaderView: View {
     /// hash for a 30K-char chapter) BEFORE the cache lookup happened,
     /// defeating the memo entirely. An incrementing Int is free.
     @State private var renderVersion: Int = 0
+    @State private var pinchStartPointSize: CGFloat? = nil
 
     private enum PageDirection { case forward, backward }
     private let pageVerticalPadding: CGFloat = 12
@@ -422,6 +423,15 @@ struct ReaderView: View {
         // (follows OS). This does NOT affect the navigation bar, tab bar,
         // or any UI outside this view.
         .modifier(ReaderColorSchemeModifier(theme: settings.readerTheme))
+        .simultaneousGesture(
+            MagnificationGesture()
+                .onChanged { scale in
+                    updateFontSize(forPinchScale: scale)
+                }
+                .onEnded { _ in
+                    pinchStartPointSize = nil
+                }
+        )
         .compatOnChange(of: chapter.id) { _ in
             // Landing page for the new chapter. On a forward crossing we land
             // on page 0; on a BACKWARD crossing (retreat) we must land on the
@@ -614,6 +624,23 @@ struct ReaderView: View {
     /// cache entries, plain-text-only fixtures) so the caller falls
     /// back to the existing plain-text rendering.
     @MainActor
+    private func updateFontSize(forPinchScale scale: CGFloat) {
+        guard scale.isFinite, scale > 0 else { return }
+        let base = pinchStartPointSize ?? settings.readerPointSize
+        if pinchStartPointSize == nil {
+            pinchStartPointSize = base
+        }
+        let target = base * scale
+        let levels: [CGFloat] = [14, 17, 20, 24, 28]
+        let nearest = levels.enumerated().min {
+            abs($0.element - target) < abs($1.element - target)
+        }?.offset ?? settings.readerFontSize
+        let clamped = max(0, min(levels.count - 1, nearest))
+        if settings.readerFontSize != clamped {
+            settings.readerFontSize = clamped
+        }
+    }
+
     private func renderHtmlForChapter() -> AttributedString? {
         guard let html = chapter.html, !html.isEmpty else { return nil }
         return EpubHtmlRenderer.render(
