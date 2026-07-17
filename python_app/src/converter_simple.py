@@ -89,6 +89,8 @@ class SimpleAudioConverter:
 
             for idx, chapter in enumerate(chapters, start=1):
                 chapter_num = self._chapter_number(chapter, idx)
+                chapter_label = (chapter.name or "").strip() or f"Chapter {chapter_num}"
+                self.progress.start_chapter(chapter_label, chapter_num)
 
                 # Generate expected MP3 filename
                 output_filename = self.file_manager.build_output_filename(
@@ -99,7 +101,7 @@ class SimpleAudioConverter:
                 # Simple cache check: skip if MP3 already exists
                 if output_path.exists() and not getattr(config, "force_reprocess", False):
                     if self.verbose:
-                        print(f"✅ Chapter {chapter_num} already exists: {output_path}")
+                        print(f"✅ {chapter_label} already exists: {output_path}")
                     self.progress.tick("✅ Already exists (cache)")
                     self.progress.complete_chapter("✅ Cache")
                     output_paths.append(output_path)
@@ -107,7 +109,7 @@ class SimpleAudioConverter:
                     continue
 
                 # Convert chapter
-                self.progress.tick(f"🔄 Converting chapter {chapter_num}")
+                self.progress.tick(f"🔄 Converting {chapter_label}")
 
                 try:
                     # Synthesize chapter text to MP3
@@ -120,7 +122,7 @@ class SimpleAudioConverter:
                         self.progress.complete_chapter("✅ Completo")
 
                         if self.verbose:
-                            print(f"✅ Chapter {chapter_num} converted: {output_path}")
+                            print(f"✅ {chapter_label} converted: {output_path}")
                     else:
                         self.progress.complete_chapter("❌ Validation failed")
                         if self.verbose:
