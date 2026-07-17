@@ -1731,6 +1731,51 @@ class AudioConverter(
 
         return filtered
 
+    @staticmethod
+    def _audio_files_exist(directory: Optional[Path]) -> bool:
+        """Return whether a directory contains a non-empty cached MP3."""
+        if not directory or not directory.exists():
+            return False
+        try:
+            return any(
+                path.is_file() and path.stat().st_size > 0 for path in directory.rglob("*.mp3")
+            )
+        except OSError:
+            return False
+
+    def _should_run_initial_validation(
+        self, output_dir: Optional[Path], config: ConversionConfig
+    ) -> bool:
+        """Only run the expensive initial validator for genuinely new runs."""
+        if getattr(config, "clear_cache", False):
+            return False
+        if self._audio_files_exist(output_dir):
+            return False
+        cache_dir = getattr(config, "cache_dir", None)
+        if self._current_book_path:
+            try:
+                cache_dir = self.cache_manager._get_cache_path(self._current_book_path)
+            except Exception:
+                pass
+        elif cache_dir and Path(cache_dir) == Path(resolve_cache_root()):
+            # The global cache root is not evidence for this book without a
+            # resolved source path; avoid scanning unrelated audiobooks.
+            cache_dir = None
+        return not self._audio_files_exist(Path(cache_dir) if cache_dir else None)
+
+    @staticmethod
+    def _duplicate_cleanup_enabled(config: ConversionConfig) -> bool:
+        """Read the destructive duplicate cleanup opt-in."""
+        if bool(getattr(config, "cleanup_duplicate_files", False)):
+            return True
+        extra = getattr(config, "extra", {}) or {}
+        return str(extra.get("cleanup_duplicate_files", "")).strip().lower() in {
+            "1",
+            "true",
+            "yes",
+            "on",
+        }
+
     async def convert(self, reader: EbookReader, config: ConversionConfig) -> ConversionResult:
         """Convert all chapters in ``reader`` according to ``config``."""
 
@@ -1788,21 +1833,30 @@ class AudioConverter(
                 if self.verbose:
                     print(f"Warning: could not remove cache directory: {exc}")
         else:
-            # Only validate previous output when NOT clearing cache
-            await self._auto_validate_output(output_dir, stage="initial")
+            # Cache-first reruns must reach the cache splitter before the
+            # expensive full-book validator. Final validation remains explicit.
+            if self._should_run_initial_validation(output_dir, config):
+                await self._auto_validate_output(output_dir, stage="initial")
+            elif self.verbose:
+                print(
+                    "♻️ Existing audio detected; deferring initial validation until conversion completes"
+                )
 
-        # **CLEANUP**: Remove duplicate files (dup-1, dup-2, etc.) from output and cache
-        if self.verbose:
+        # Duplicate cleanup can delete user files, so it is opt-in.
+        cleanup_duplicates = self._duplicate_cleanup_enabled(config)
+        if cleanup_duplicates and self.verbose:
             print("🧹 Scanning for duplicate files to clean up...")
 
-        # Clean output directory
-        cleanup_count = self._cleanup_duplicate_files(output_dir, verbose=self.verbose)
+        cleanup_count = 0
+        if cleanup_duplicates:
+            # Clean output directory
+            cleanup_count = self._cleanup_duplicate_files(output_dir, verbose=self.verbose)
 
-        # Clean cache directory if exists
-        if self._current_book_path and self.cache_manager.cache_dir:
-            cache_path = self.cache_manager._get_cache_path(self._current_book_path)
-            if cache_path.exists():
-                cleanup_count += self._cleanup_duplicate_files(cache_path, verbose=False)
+            # Clean cache directory if exists
+            if self._current_book_path and self.cache_manager.cache_dir:
+                cache_path = self.cache_manager._get_cache_path(self._current_book_path)
+                if cache_path.exists():
+                    cleanup_count += self._cleanup_duplicate_files(cache_path, verbose=False)
 
         if cleanup_count > 0 and not self.verbose:
             print(f"🧹 Cleaned up {cleanup_count} duplicate file(s)")
@@ -2137,11 +2191,12 @@ class AudioConverter(
             # skip it entirely, so leftover duplicates from earlier runs
             # accumulated forever (the v0.3.18 Carl conversion ended up
             # with 64 MP3s for 61 chapters because of this).
-            dedup_removed = self._dedup_chapter_outputs(output_dir)
-            if dedup_removed:
-                print(
-                    f"   🧹 Auto-dedup (cache-hit path): removed {dedup_removed} duplicate MP3(s)"
-                )
+            if self._duplicate_cleanup_enabled(config):
+                dedup_removed = self._dedup_chapter_outputs(output_dir)
+                if dedup_removed:
+                    print(
+                        f"   🧹 Auto-dedup (cache-hit path): removed {dedup_removed} duplicate MP3(s)"
+                    )
             result = ConversionResult(
                 success=True,
                 total_chapters=total_chapters,

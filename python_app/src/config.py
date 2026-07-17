@@ -53,6 +53,7 @@ class ConversionConfig:
     # book) or via `AUTO_VALIDATE_OUTPUT=0` in the environment.
     auto_validate_output: bool = True
     auto_fix_output: bool = True  # Auto-reconvert (cache clean) if validation fails
+    cleanup_duplicate_files: bool = False  # Destructive duplicate cleanup is opt-in
     validate_text: bool = True  # Validate parsed/pre-tts text during conversion
     validate_audio: bool = True  # Validate MP3 integrity/duration after synthesis
     strict_validate: bool = False  # Stop conversion when validation fails
@@ -155,6 +156,7 @@ class ConversionConfig:
         data["transcription_model"] = self.transcription_model
         data["validate_text"] = self.validate_text
         data["validate_audio"] = self.validate_audio
+        data["cleanup_duplicate_files"] = self.cleanup_duplicate_files
         data["strict_validate"] = self.strict_validate
         data["deep_validate"] = self.deep_validate
         data["validation_language"] = self.validation_language

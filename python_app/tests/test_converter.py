@@ -170,6 +170,35 @@ class TestAudioConverter(unittest.IsolatedAsyncioTestCase):
 
         shutil.rmtree(self.temp_dir, ignore_errors=True)
 
+    def test_initial_validation_is_deferred_when_output_audio_exists(self):
+        output_dir = Path(self.temp_dir)
+        (output_dir / "1 - chapter.mp3").write_bytes(b"audio")
+        config = ConversionConfig(engine="edge", output_dir=output_dir)
+
+        self.assertFalse(self.converter._should_run_initial_validation(output_dir, config))
+
+    def test_initial_validation_is_deferred_when_cached_audio_exists(self):
+        output_dir = Path(self.temp_dir)
+        cache_dir = output_dir / "cache"
+        cache_dir.mkdir()
+        (cache_dir / "1 - chapter.mp3").write_bytes(b"audio")
+        config = ConversionConfig(engine="edge", output_dir=output_dir, cache_dir=cache_dir)
+
+        self.assertFalse(self.converter._should_run_initial_validation(output_dir, config))
+
+    def test_initial_validation_remains_enabled_for_new_conversion(self):
+        output_dir = Path(self.temp_dir)
+        config = ConversionConfig(engine="edge", output_dir=output_dir)
+
+        self.assertTrue(self.converter._should_run_initial_validation(output_dir, config))
+
+    def test_duplicate_cleanup_is_opt_in(self):
+        config = ConversionConfig(engine="edge")
+
+        self.assertFalse(self.converter._duplicate_cleanup_enabled(config))
+        config.cleanup_duplicate_files = True
+        self.assertTrue(self.converter._duplicate_cleanup_enabled(config))
+
     def test_eta_baseline_persistence_roundtrip(self):
         config = ConversionConfig(
             engine="piper",
