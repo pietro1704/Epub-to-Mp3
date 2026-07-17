@@ -315,6 +315,8 @@ final class ReaderChromeAutoHideTests: XCTestCase {
                       "effectivePages must fall back to lastValidPages for ALL paginated modes, not just page-curl.")
         XCTAssertTrue(instantReader.contains(".readerChromeVisible(chromeVisible)"),
                       "InstantReader chrome state must propagate to RootView so the mini player disappears too.")
+        XCTAssertTrue(instantReader.contains("if chromeVisible && audioPlayerVisible"),
+                      "The inline mini player must be hidden together with the top chrome on a center tap.")
     }
 
     /// Source-level guards for the three flicker fixes proven on-device by

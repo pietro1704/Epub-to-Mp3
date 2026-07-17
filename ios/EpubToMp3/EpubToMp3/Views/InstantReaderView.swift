@@ -324,7 +324,7 @@ struct InstantReaderView: View {
                             .transition(.move(edge: .top).combined(with: .opacity))
                     }
                     Spacer(minLength: 0)
-                    if audioPlayerVisible {
+                    if chromeVisible && audioPlayerVisible {
                         VStack(spacing: 0) {
                             Divider()
                                 .background(readerForeground.opacity(0.15))
