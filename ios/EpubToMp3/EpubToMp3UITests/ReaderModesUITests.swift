@@ -32,7 +32,9 @@ final class ReaderModesUITests: XCTestCase {
     }
 
     private func indicator(_ app: XCUIApplication) -> (page: Int, total: Int)? {
-        let label = app.staticTexts["reader.pageIndicator"].firstMatch.label
+        let element = app.staticTexts["reader.pageIndicator"].firstMatch
+        guard element.waitForExistence(timeout: 2) else { return nil }
+        let label = element.label
         let parts = label.split(separator: " ").map(String.init)
         guard parts.count >= 3, let p = Int(parts[0]), let t = Int(parts[2]) else { return nil }
         return (p, t)
@@ -43,7 +45,9 @@ final class ReaderModesUITests: XCTestCase {
     }
 
     private func chapter(_ app: XCUIApplication) -> (index: Int, total: Int)? {
-        let label = app.staticTexts["flicker.probe.chapter"].firstMatch.label
+        let element = app.staticTexts["flicker.probe.chapter"].firstMatch
+        guard element.waitForExistence(timeout: 2) else { return nil }
+        let label = element.label
         let parts = label.split(separator: "/").map(String.init)
         guard parts.count == 2, let index = Int(parts[0]), let total = Int(parts[1]) else { return nil }
         return (index, total)
