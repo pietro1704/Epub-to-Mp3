@@ -32,6 +32,7 @@ final class EpubMetadataReaderTests: XCTestCase {
           <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
             <dc:title>Foundation</dc:title>
             <dc:creator>Isaac Asimov</dc:creator>
+            <dc:language>en</dc:language>
             <meta name="cover" content="cover-img"/>
           </metadata>
           <manifest>
@@ -42,6 +43,7 @@ final class EpubMetadataReaderTests: XCTestCase {
         let parsed = EpubMetadataReader.parseOPF(data: opf.data(using: .utf8)!)
         XCTAssertEqual(parsed.title, "Foundation")
         XCTAssertEqual(parsed.author, "Isaac Asimov")
+        XCTAssertEqual(parsed.language, "en")
         XCTAssertEqual(parsed.coverHref, "images/cover.jpg")
     }
 
