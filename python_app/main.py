@@ -2909,7 +2909,13 @@ class ConverterApplication:
 
     def _apply_language_preferences(self, config: ConversionConfig) -> None:
         profile = self.language_profile
-        fallback_lang = self.localization.language or "pt"
+        # UI language controls labels/formatting only. It must never select
+        # the narration language for an EPUB whose detection is uncertain.
+        fallback_lang = (
+            config.primary_language
+            if config.primary_language and config.primary_language not in {"auto", "unknown"}
+            else "unknown"
+        )
         if profile is None:
             profile = LanguageProfile(
                 primary=config.primary_language,

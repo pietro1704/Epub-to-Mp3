@@ -107,7 +107,9 @@ final class SpeechFallbackPlayer: NSObject, ObservableObject {
         }
         self.sessionConfigurator = sessionConfigurator
         super.init()
-        // Delegate is wired lazily inside the `synthesizer` accessor.
+        if let synthesizer = _synthesizer {
+            synthesizer.delegate = self
+        }
     }
 
     // MARK: Transport API

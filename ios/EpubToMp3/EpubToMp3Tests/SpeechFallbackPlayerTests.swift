@@ -171,15 +171,19 @@ final class SpeechFallbackPlayerTests: XCTestCase {
         player.speak(text: "Hello.", languageCode: "en-US")
         let utterance = synth.spoken[0]
         synth.simulateFinish(utterance)
-        // Delegate hops back to the main actor — wait one runloop tick.
         let exp = expectation(description: "state returns to idle")
         Task { @MainActor in
-            // Yield once so the delegate Task @MainActor block runs.
-            await Task.yield()
-            XCTAssertEqual(player.state, .idle)
+            for _ in 0..<50 {
+                if player.state == .idle {
+                    exp.fulfill()
+                    return
+                }
+                try? await Task.sleep(nanoseconds: 20_000_000)
+            }
+            XCTFail("Speech fallback did not return to idle after delegate finish")
             exp.fulfill()
         }
-        wait(for: [exp], timeout: 1.0)
+        wait(for: [exp], timeout: 2.0)
     }
 }
 #endif

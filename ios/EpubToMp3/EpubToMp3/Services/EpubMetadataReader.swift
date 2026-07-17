@@ -15,11 +15,13 @@ enum EpubMetadataReader {
     struct Payload {
         var title: String?
         var author: String?
+        var language: String?
         var cover: Data?
 
-        init(title: String? = nil, author: String? = nil, cover: Data? = nil) {
+        init(title: String? = nil, author: String? = nil, language: String? = nil, cover: Data? = nil) {
             self.title = title
             self.author = author
+            self.language = language
             self.cover = cover
         }
     }
@@ -35,7 +37,7 @@ enum EpubMetadataReader {
             return Payload()
         }
         let parsed = parseOPF(data: opfData)
-        var payload = Payload(title: parsed.title, author: parsed.author)
+        var payload = Payload(title: parsed.title, author: parsed.author, language: parsed.language)
 
         // 3. Resolve the cover image (if the OPF advertised one) and
         //    extract that ZIP member as well. Cover paths are relative
@@ -69,6 +71,7 @@ enum EpubMetadataReader {
     struct OPFMetadata {
         var title: String?
         var author: String?
+        var language: String?
         var coverHref: String?
     }
 
@@ -83,6 +86,7 @@ enum EpubMetadataReader {
         return OPFMetadata(
             title: delegate.title,
             author: delegate.author,
+            language: delegate.language,
             coverHref: delegate.coverHref
         )
     }
@@ -92,6 +96,7 @@ enum EpubMetadataReader {
 private final class OPFDelegate: NSObject, XMLParserDelegate {
     var title: String?
     var author: String?
+    var language: String?
     var coverHref: String?
 
     private var coverItemId: String?
@@ -135,6 +140,8 @@ private final class OPFDelegate: NSObject, XMLParserDelegate {
             if title == nil, !trimmed.isEmpty { title = trimmed }
         case "dc:creator", "creator":
             if author == nil, !trimmed.isEmpty { author = trimmed }
+        case "dc:language", "language":
+            if language == nil, !trimmed.isEmpty { language = trimmed }
         default: break
         }
         buffer = ""

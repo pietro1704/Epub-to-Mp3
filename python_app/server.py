@@ -3899,6 +3899,7 @@ async def process_conversion(job_id: str) -> None:
         _detection_fell_back = False
         job_language = job.get("language")
         previously_detected = job.get("detectedLanguage")
+        declared_language = getattr(reader, "language", None)
         if job_language and job_language.lower() not in ("auto", ""):
             detected_lang = job_language
             language_profile = LanguageProfile(
@@ -3908,6 +3909,15 @@ async def process_conversion(job_id: str) -> None:
                 analysed_chars=0,
             )
             _append_event(job, f"🌐 User-selected language: {detected_lang}")
+        elif declared_language and str(declared_language).lower() not in {"auto", "unknown"}:
+            detected_lang = str(declared_language)
+            language_profile = LanguageProfile(
+                primary=detected_lang,
+                languages=[detected_lang],
+                predictions=[],
+                analysed_chars=0,
+            )
+            _append_event(job, f"🌐 EPUB metadata language: {detected_lang}")
         elif (
             previously_detected
             and job.get("resumeRequested")

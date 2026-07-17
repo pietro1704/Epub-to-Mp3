@@ -1,4 +1,5 @@
 import SwiftUI
+import NaturalLanguage
 #if os(iOS)
 import UIKit
 #endif
@@ -626,13 +627,45 @@ struct InstantReaderView: View {
     /// then merely fires `onRequestPlay`, mirroring the pre-slice-4
     /// behaviour exactly.
     private func startPlayOrFallback(forChapterIndex epubIndex: Int) {
+        // Embedded Edge owns conversion and playback. Do not start the local
+        // AVSpeechSynthesizer while it warms up: the view switches to
+        // `globalPlayer` as soon as the first segment arrives, which used to
+        // leave this separate fallback speaking Portuguese after pause.
+        if settings.useEmbeddedRuntime { return }
         guard let chapter = resolveChapter(at: epubIndex) else { return }
         activePlayer.playOrFallback(
             snapshot: snapshot,
             chapterIndex: epubIndex,
             chapterText: chapter.text,
-            languageCode: snapshot?.language
+            languageCode: speechLanguageCode
         )
+    }
+
+    private var speechLanguageCode: String? {
+        if let explicit = normalizedSpeechLanguage(snapshot?.language) { return explicit }
+        let sample = fulltext.chapters
+            .map(\.text)
+            .filter { $0.count > 40 }
+            .prefix(3)
+            .joined(separator: "\n")
+        guard !sample.isEmpty else { return nil }
+        let recognizer = NLLanguageRecognizer()
+        recognizer.processString(String(sample.prefix(20_000)))
+        switch recognizer.dominantLanguage {
+        case .some(.english): return "en-US"
+        case .some(.portuguese): return "pt-BR"
+        case .some(.spanish): return "es-ES"
+        default: return nil
+        }
+    }
+
+    private func normalizedSpeechLanguage(_ value: String?) -> String? {
+        guard let value = value?.trimmingCharacters(in: .whitespacesAndNewlines), !value.isEmpty else { return nil }
+        let lower = value.lowercased()
+        if lower == "en" || lower.hasPrefix("en-") { return lower == "en" ? "en-US" : value }
+        if lower == "pt" || lower.hasPrefix("pt-") { return lower == "pt" ? "pt-BR" : value }
+        if lower == "es" || lower.hasPrefix("es-") { return lower == "es" ? "es-ES" : value }
+        return value
     }
 
     private func resolveChapter(at index: Int) -> EbookFulltext.Chapter? {
@@ -894,8 +927,18 @@ struct InstantReaderView: View {
                     readerChapterIndex: currentChapterIndex,
                     readerPageRatio: readerCoordinator.anchor.pageRatio
                 ) {
-                case .pause, .resume:
-                    player.togglePlayPause()
+                case .pause:
+                    player.pause()
+                    // A stale fallback may belong to the other player instance
+                    // (embedded mode uses globalPlayer, backend mode uses the
+                    // local player). Never leave that second transport alive.
+                    if player === globalPlayer {
+                        self.player.stop()
+                    } else {
+                        globalPlayer.pause()
+                    }
+                case .resume:
+                    player.resume()
                 case .offerStartChoice:
                     pendingAnchor = .capture(from: readerCoordinator)
                 }
@@ -1006,7 +1049,10 @@ struct InstantReaderView: View {
     }
 
     private func closeAudioPlayer() {
-        activePlayer.stop()
+        // Close is a hard ownership boundary: stop both possible player
+        // instances so a fallback cannot survive after the MP3 UI disappears.
+        player.stop()
+        globalPlayer.stop()
         playerPresentation.dismissFullPlayer()
         withAnimation(.easeInOut(duration: 0.2)) {
             audioPlayerVisible = false

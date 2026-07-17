@@ -6,7 +6,13 @@ import NaturalLanguage
 enum VoiceSelector {
 
     /// Returns the best Edge-TTS voice identifier for the given text sample.
-    static func edgeVoice(for text: String) -> String {
+    static func edgeVoice(for text: String, declaredLanguage: String? = nil) -> String {
+        if let declaredLanguage {
+            let root = declaredLanguage.lowercased().split(separator: "-").first.map(String.init)
+            if root == "en" { return "en-US-AriaNeural" }
+            if root == "pt" { return "pt-BR-FranciscaNeural" }
+            if root == "es" { return "es-MX-DaliaNeural" }
+        }
         let recognizer = NLLanguageRecognizer()
         recognizer.processString(text)
         return voiceName(for: recognizer.dominantLanguage)

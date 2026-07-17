@@ -41,6 +41,7 @@ struct BookOpenView: View {
 
     @State private var phase: Phase = .resolving
     @State private var fulltext: EbookFulltext?
+    @State private var detectedEpubLanguage: String?
     @State private var jobSnapshot: JobSnapshot?
     @State private var statusBanner: String?       // top-of-screen "Generating audio…" hint
     @State private var hasAudio: Bool = false
@@ -214,6 +215,9 @@ struct BookOpenView: View {
             return
         }
         if book.fileType == .epub {
+            if let metadata = try? EpubMetadataReader.readMetadata(from: fileURL) {
+                detectedEpubLanguage = metadata.language
+            }
             let capturedURL = fileURL
             let fonts = await Task.detached(priority: .userInitiated) {
                 let accessing = capturedURL.startAccessingSecurityScopedResource()
@@ -518,7 +522,7 @@ struct BookOpenView: View {
                 bookTitle: fulltext.bookTitle ?? book.resolvedTitle,
                 bookAuthor: fulltext.bookAuthor ?? book.author,
                 coverUrl: nil, coverMimeType: nil,
-                engine: "edge", voice: nil, language: nil,
+                engine: "edge", voice: nil, language: detectedEpubLanguage,
                 progressPercent: nil,
                 chaptersTotal: chapters.count,
                 chaptersCompleted: 0,
@@ -541,7 +545,7 @@ struct BookOpenView: View {
                 .prefix(5)
                 .map { String($0.text.prefix(2000)) }
                 .joined(separator: " ")
-            return VoiceSelector.edgeVoice(for: sample)
+            return VoiceSelector.edgeVoice(for: sample, declaredLanguage: detectedEpubLanguage)
         }()
 
         // Process from startIndex, then wrap to cover earlier chapters.
@@ -1286,7 +1290,7 @@ struct BookOpenView: View {
             .prefix(5)
             .map { String($0.text.prefix(2000)) }
             .joined(separator: " ")
-        let voice = VoiceSelector.edgeVoice(for: sample)
+        let voice = VoiceSelector.edgeVoice(for: sample, declaredLanguage: detectedEpubLanguage)
         chapterCacheManager = ChapterCacheManager(
             bookId: book.id,
             chapters: fulltext.chapters,

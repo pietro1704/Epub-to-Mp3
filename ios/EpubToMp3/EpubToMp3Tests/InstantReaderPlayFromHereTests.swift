@@ -60,6 +60,9 @@ final class InstantReaderPlayFromHereTests: XCTestCase {
         XCTAssertTrue(reader.contains("reader.reopenAudioPlayer"))
         XCTAssertTrue(reader.contains("private func closeAudioPlayer()"))
         XCTAssertTrue(reader.contains("private func reopenAudioPlayer()"))
+        XCTAssertTrue(reader.contains("if settings.useEmbeddedRuntime {"))
+        XCTAssertTrue(reader.contains("languageCode: speechLanguageCode"))
+        XCTAssertTrue(reader.contains("self.player.stop()"))
 
         let fullPlayer = try fullPlayerSource()
         XCTAssertTrue(fullPlayer.contains("fullPlayer.close"))
