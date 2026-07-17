@@ -2,11 +2,19 @@ import Foundation
 
 /// The actions exposed by the selection floater.
 enum ReaderSelectionAction: Equatable {
+    case playFromHere
+    case playChapterStart
     case sentence
     case paragraph
 
+    static let menuOrder: [ReaderSelectionAction] = [
+        .playFromHere, .playChapterStart, .sentence, .paragraph
+    ]
+
     var titleKey: String {
         switch self {
+        case .playFromHere: return "reader.selection.playFromHere"
+        case .playChapterStart: return "reader.selection.playChapterStart"
         case .sentence: return "reader.selection.playSentence"
         case .paragraph: return "reader.selection.playParagraph"
         }
@@ -61,8 +69,26 @@ struct ReaderFollowState: Equatable {
 struct ReaderSelectionActionFloaterModel {
     let sentence: SentenceSpan?
     let paragraphFirstSentence: SentenceSpan?
+    let onPlayFromHere: ((SentenceSpan) -> Void)?
+    let onPlayChapterStart: (() -> Void)?
     let onPlaySentence: (SentenceSpan) -> Void
     let onPlayParagraph: (SentenceSpan) -> Void
+
+    init(
+        sentence: SentenceSpan?,
+        paragraphFirstSentence: SentenceSpan?,
+        onPlayFromHere: ((SentenceSpan) -> Void)? = nil,
+        onPlayChapterStart: (() -> Void)? = nil,
+        onPlaySentence: @escaping (SentenceSpan) -> Void,
+        onPlayParagraph: @escaping (SentenceSpan) -> Void
+    ) {
+        self.sentence = sentence
+        self.paragraphFirstSentence = paragraphFirstSentence
+        self.onPlayFromHere = onPlayFromHere
+        self.onPlayChapterStart = onPlayChapterStart
+        self.onPlaySentence = onPlaySentence
+        self.onPlayParagraph = onPlayParagraph
+    }
 
     var isPresented: Bool {
         sentence != nil && paragraphFirstSentence != nil
@@ -70,6 +96,10 @@ struct ReaderSelectionActionFloaterModel {
 
     func perform(_ action: ReaderSelectionAction) {
         switch action {
+        case .playFromHere:
+            if let sentence { onPlayFromHere?(sentence) }
+        case .playChapterStart:
+            onPlayChapterStart?()
         case .sentence:
             if let sentence { onPlaySentence(sentence) }
         case .paragraph:

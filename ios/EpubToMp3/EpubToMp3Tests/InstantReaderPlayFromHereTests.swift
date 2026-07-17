@@ -40,7 +40,89 @@ final class InstantReaderPlayFromHereTests: XCTestCase {
         )
     }
 
+    func testSelectionActionsPutReaderPlaybackBeforeTextActions() throws {
+        let source = try interactionStateSource()
+        let fromHere = source.range(of: "case playFromHere")?.lowerBound
+        let chapterStart = source.range(of: "case playChapterStart")?.lowerBound
+        let sentence = source.range(of: "case sentence")?.lowerBound
+        let paragraph = source.range(of: "case paragraph")?.lowerBound
+        XCTAssertNotNil(fromHere)
+        XCTAssertNotNil(chapterStart)
+        XCTAssertTrue(fromHere! < chapterStart!)
+        XCTAssertTrue(chapterStart! < sentence!)
+        XCTAssertTrue(sentence! < paragraph!)
+        XCTAssertTrue(source.contains("static let menuOrder"))
+    }
+
+    func testReaderCanCloseAudioPlayerAndReopenWithLocalPlay() throws {
+        let reader = try instantReaderSource()
+        XCTAssertTrue(reader.contains("reader.closeAudioPlayer"))
+        XCTAssertTrue(reader.contains("reader.reopenAudioPlayer"))
+        XCTAssertTrue(reader.contains("private func closeAudioPlayer()"))
+        XCTAssertTrue(reader.contains("private func reopenAudioPlayer()"))
+
+        let fullPlayer = try fullPlayerSource()
+        XCTAssertTrue(fullPlayer.contains("fullPlayer.close"))
+    }
+
+    private func fullPlayerSource() throws -> String {
+        #if os(iOS)
+        throw XCTSkip("Source-contract tests run on the host, not inside the iOS app sandbox")
+        #else
+        let testFile = URL(fileURLWithPath: #filePath)
+        let projectRoot = testFile
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        return try String(
+            contentsOf: projectRoot.appendingPathComponent("EpubToMp3/Views/FullPlayerSheet.swift"),
+            encoding: .utf8
+        )
+        #endif
+    }
+
+    func testOpeningBookDoesNotStartAudioBootstrapAutomatically() throws {
+        let source = try bookOpenSource()
+        XCTAssertTrue(source.contains("ensureCacheManager()"))
+        XCTAssertFalse(
+            source.contains("startAudioBootstrap(startChapterIndex: max(0, savedChapter))"),
+            "BookOpenView must wait for an explicit Play action before conversion"
+        )
+    }
+
+    private func bookOpenSource() throws -> String {
+        #if os(iOS)
+        throw XCTSkip("Source-contract tests run on the host, not inside the iOS app sandbox")
+        #else
+        let testFile = URL(fileURLWithPath: #filePath)
+        let projectRoot = testFile
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        return try String(
+            contentsOf: projectRoot.appendingPathComponent("EpubToMp3/Views/BookOpenView.swift"),
+            encoding: .utf8
+        )
+        #endif
+    }
+
+    private func interactionStateSource() throws -> String {
+        #if os(iOS)
+        throw XCTSkip("Source-contract tests run on the host, not inside the iOS app sandbox")
+        #else
+        let testFile = URL(fileURLWithPath: #filePath)
+        let projectRoot = testFile
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        return try String(
+            contentsOf: projectRoot.appendingPathComponent("EpubToMp3/Services/ReaderInteractionState.swift"),
+            encoding: .utf8
+        )
+        #endif
+    }
+
     private func instantReaderSource() throws -> String {
+        #if os(iOS)
+        throw XCTSkip("Source-contract tests run on the host, not inside the iOS app sandbox")
+        #else
         let testFile = URL(fileURLWithPath: #filePath)
         let projectRoot = testFile
             .deletingLastPathComponent()
@@ -49,5 +131,6 @@ final class InstantReaderPlayFromHereTests: XCTestCase {
             contentsOf: projectRoot.appendingPathComponent("EpubToMp3/Views/InstantReaderView.swift"),
             encoding: .utf8
         )
+        #endif
     }
 }

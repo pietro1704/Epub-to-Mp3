@@ -114,17 +114,17 @@ final class AudioPlayerLockScreenTests: XCTestCase {
 
     /// After a snapshot is loaded into the player via `updateSnapshot`
     /// — the live-stream path used by `PlayerReaderView` — the Now
-    /// Playing dict must carry the book as primary title, chapter as
-    /// secondary album metadata, author and media type.
+    /// Playing dict must carry the current chapter as primary title, the
+    /// book as secondary album metadata, author and media type.
     func testNowPlayingInfoPopulatedOnUpdateSnapshot() {
         let player = AudioPlayer()
         player.updateSnapshot(makeSnapshot(title: "Foundation", author: "Isaac Asimov"))
 
         let info = player.makeNowPlayingInfo()
-        XCTAssertEqual(info[MPMediaItemPropertyTitle] as? String, "Foundation",
-            "Primary Now Playing title must be the book title")
-        XCTAssertEqual(info[MPMediaItemPropertyAlbumTitle] as? String, "Prologue",
-            "Secondary Now Playing metadata must identify the chapter")
+        XCTAssertEqual(info[MPMediaItemPropertyTitle] as? String, "Prologue",
+            "Primary Now Playing title must be the chapter")
+        XCTAssertEqual(info[MPMediaItemPropertyAlbumTitle] as? String, "Foundation",
+            "Secondary Now Playing metadata must identify the book")
         XCTAssertEqual(info[MPMediaItemPropertyArtist] as? String, "Isaac Asimov",
             "Artist should be the book author")
         XCTAssertEqual(info[MPNowPlayingInfoPropertyMediaType] as? UInt,
@@ -182,13 +182,13 @@ final class AudioPlayerLockScreenTests: XCTestCase {
         let player = AudioPlayer()
         player.updateSnapshot(makeSnapshot(title: "Foundation"))
         XCTAssertEqual(player.makeNowPlayingInfo()[MPMediaItemPropertyTitle] as? String,
-            "Foundation", "Title must be populated before stop()")
+            "Prologue", "Title must be populated before stop()")
 
         player.stop()
         XCTAssertNil(player.snapshot, "stop() must drop the active snapshot")
         XCTAssertEqual(player.makeNowPlayingInfo()[MPMediaItemPropertyTitle] as? String,
-            "Epub-to-Mp3",
-            "After stop() the Now Playing dict must fall back to the placeholder, not stale metadata")
+            "Chapter",
+            "After stop() the Now Playing dict must not retain stale metadata")
     }
 
     /// After a stop/restart cycle a new snapshot must repopulate the
@@ -196,14 +196,14 @@ final class AudioPlayerLockScreenTests: XCTestCase {
     func testNowPlayingInfoRepopulatedAfterStop() {
         let player = AudioPlayer()
         player.updateSnapshot(makeSnapshot(title: "Dune", author: "Frank Herbert"))
-        XCTAssertEqual(player.makeNowPlayingInfo()[MPMediaItemPropertyTitle] as? String, "Dune")
+        XCTAssertEqual(player.makeNowPlayingInfo()[MPMediaItemPropertyTitle] as? String, "Prologue")
 
         player.stop()
         XCTAssertNil(player.snapshot)
 
         player.updateSnapshot(makeSnapshot(title: "Foundation", author: "Isaac Asimov"))
         XCTAssertEqual(player.makeNowPlayingInfo()[MPMediaItemPropertyTitle] as? String,
-            "Foundation",
+            "Prologue",
             "Album title must reflect the new book after stop/restart")
     }
 
@@ -217,6 +217,20 @@ final class AudioPlayerLockScreenTests: XCTestCase {
         let rate = player.makeNowPlayingInfo()[MPNowPlayingInfoPropertyPlaybackRate] as? NSNumber
         XCTAssertEqual(rate?.doubleValue, 0.0,
             "Playback rate must be 0 when not playing so the lock-screen scrubber does not animate")
+    }
+
+    func testNowPlayingPrimaryTitleIsCurrentChapter() {
+        let player = AudioPlayer()
+        player.updateSnapshot(makeSnapshot(title: "Foundation"))
+
+        XCTAssertEqual(
+            player.makeNowPlayingInfo()[MPMediaItemPropertyTitle] as? String,
+            "Prologue",
+            "Now Playing primary title must be the current chapter, not the book")
+        XCTAssertEqual(
+            player.makeNowPlayingInfo()[MPMediaItemPropertyAlbumTitle] as? String,
+            "Foundation",
+            "Now Playing album metadata should retain the book title")
     }
 }
 #endif

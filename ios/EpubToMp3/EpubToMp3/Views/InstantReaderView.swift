@@ -230,6 +230,7 @@ struct InstantReaderView: View {
     @State private var showingConversionStatus = false
     @State private var showingReaderSettings = false
     @State private var chromeVisible = true
+    @State private var audioPlayerVisible = true
     @State private var scrubberDragValue: TimeInterval? = nil
 
     private var embeddedAudioReady: Bool {
@@ -253,6 +254,30 @@ struct InstantReaderView: View {
     // a ZStack so chrome can fade/slide independently, but the text is
     // never allowed underneath the bars when they appear.
 
+    private var selectionFloaterModel: ReaderSelectionActionFloaterModel {
+        ReaderSelectionActionFloaterModel(
+            sentence: floaterSentence,
+            paragraphFirstSentence: floaterSentence.flatMap(paragraphFirstSentence),
+            onPlayFromHere: { [self] span in
+                seekToSentence(span)
+                floaterSentence = nil
+            },
+            onPlayChapterStart: { [self] in
+                startPlayOrFallback(forChapterIndex: currentChapterIndex)
+                onRequestPlay?(currentChapterIndex, nil)
+                floaterSentence = nil
+            },
+            onPlaySentence: { [self] span in
+                jumpToSentence(span)
+                floaterSentence = nil
+            },
+            onPlayParagraph: { [self] span in
+                jumpToSentence(span)
+                floaterSentence = nil
+            }
+        )
+    }
+
     var body: some View {
         GeometryReader { proxy in
             let topInset = InstantReaderChromeMetrics.contentTopInset(
@@ -266,20 +291,7 @@ struct InstantReaderView: View {
                 content(topInset: topInset, bottomInset: bottomInset)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-                ReaderSelectionActionFloater(
-                    model: ReaderSelectionActionFloaterModel(
-                        sentence: floaterSentence,
-                        paragraphFirstSentence: floaterSentence.flatMap(paragraphFirstSentence),
-                        onPlaySentence: { span in
-                            jumpToSentence(span)
-                            floaterSentence = nil
-                        },
-                        onPlayParagraph: { span in
-                            jumpToSentence(span)
-                            floaterSentence = nil
-                        }
-                    )
-                )
+                ReaderSelectionActionFloater(model: selectionFloaterModel)
                 .padding(.top, topInset + 12)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                 .allowsHitTesting(floaterSentence != nil)
@@ -291,13 +303,28 @@ struct InstantReaderView: View {
                 .padding(.bottom, bottomInset + 72)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
 
+                if !audioPlayerVisible, chromeVisible {
+                    Button(action: reopenAudioPlayer) {
+                        Image(systemName: "play.circle.fill")
+                            .font(.system(size: 42))
+                            .symbolRenderingMode(.hierarchical)
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.tint)
+                    .accessibilityIdentifier("reader.reopenAudioPlayer")
+                    .accessibilityLabel(L10n.string("instantReader.playAudio"))
+                    .padding(.trailing, 20)
+                    .padding(.bottom, bottomInset + 20)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+                }
+
                 VStack(spacing: 0) {
                     if chromeVisible {
                         customTopBar
                             .transition(.move(edge: .top).combined(with: .opacity))
                     }
                     Spacer(minLength: 0)
-                    if chromeVisible {
+                    if audioPlayerVisible {
                         VStack(spacing: 0) {
                             Divider()
                                 .background(readerForeground.opacity(0.15))
@@ -819,10 +846,14 @@ struct InstantReaderView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
 
                 transportControls(player: ap)
-                // The transport row already exposes the unified "..." menu
-                // (speed + sleep + secondary skips). Dropping the legacy
-                // outer Menu so the bar stops rendering two ellipsis
-                // buttons next to each other.
+                Button(action: closeAudioPlayer) {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.title3)
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.secondary)
+                .accessibilityIdentifier("reader.closeAudioPlayer")
+                .accessibilityLabel(L10n.string("player.close"))
             }
 
             scrubber(player: ap)
@@ -972,6 +1003,22 @@ struct InstantReaderView: View {
             }
             .accessibilityLabel(L10n.string("player.more"))
         }
+    }
+
+    private func closeAudioPlayer() {
+        activePlayer.stop()
+        playerPresentation.dismissFullPlayer()
+        withAnimation(.easeInOut(duration: 0.2)) {
+            audioPlayerVisible = false
+        }
+    }
+
+    private func reopenAudioPlayer() {
+        withAnimation(.easeInOut(duration: 0.2)) {
+            audioPlayerVisible = true
+        }
+        startPlayOrFallback(forChapterIndex: currentChapterIndex)
+        onRequestPlay?(currentChapterIndex, nil)
     }
 
     private func scrubber(player: AudioPlayer) -> some View {

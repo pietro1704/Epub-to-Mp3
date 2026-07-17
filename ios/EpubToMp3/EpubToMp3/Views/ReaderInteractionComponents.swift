@@ -10,6 +10,8 @@ struct ReaderSelectionActionFloater: View {
         Group {
             if model.isPresented {
                 HStack(spacing: 8) {
+                    actionButton(.playFromHere)
+                    actionButton(.playChapterStart)
                     actionButton(.sentence)
                     actionButton(.paragraph)
                 }

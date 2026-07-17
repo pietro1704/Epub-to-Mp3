@@ -1544,7 +1544,7 @@ final class AudioPlayer: ObservableObject {
         // later chapter ahead of playback. The queue may contain segments
         // from several chapters, but segmentCumulativeBase belongs to the
         // audible chapter only.
-        if player == nil || chapterIndex == currentChapterIndex {
+        if player == nil || chapterIndex != segmentChapterIndex {
             segmentCumulativeBase = 0
             segmentChapterDuration = 0
             segmentChapterIndex = chapterIndex
@@ -1676,6 +1676,8 @@ final class AudioPlayer: ObservableObject {
         teardownPlayer()
         isPlaying = false
         snapshot = nil
+        playbackChapters = []
+        currentChapterIndex = 0
         MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
         #if os(iOS)
         UIApplication.shared.endReceivingRemoteControlEvents()
@@ -1751,10 +1753,23 @@ final class AudioPlayer: ObservableObject {
                    let dur = Self.validatedDurationSeconds(item.duration.seconds, isReadyToPlay: true) {
                     if self.isSegmentMode {
                         let queuedDuration = player.items().reduce(0.0) { total, queued in
+                            guard let asset = queued.asset as? AVURLAsset else { return total }
+                            let queuedChapter = Self.chapterIndexForSegmentItem(asset.url)
+                            guard queuedChapter == self.segmentChapterIndex else { return total }
                             let value = queued.duration.seconds
                             return total + (value.isFinite && value > 0 ? value : 0)
                         }
-                        self.segmentChapterDuration = max(self.segmentChapterDuration, self.segmentCumulativeBase + queuedDuration)
+                        let observed = self.segmentCumulativeBase + queuedDuration
+                        let snapshotDuration = self.snapshot?.chapterProgress?
+                            .first(where: {
+                                $0.index == self.segmentChapterIndex
+                                    || $0.index == self.segmentChapterIndex + 1
+                            })?.durationSeconds ?? 0
+                        self.segmentChapterDuration = max(
+                            self.segmentChapterDuration,
+                            observed,
+                            snapshotDuration.isFinite ? snapshotDuration : 0
+                        )
                         self.durationSeconds = self.segmentChapterDuration
                     } else {
                         self.durationSeconds = dur
@@ -2026,10 +2041,11 @@ final class AudioPlayer: ObservableObject {
         var info: [String: Any] = [:]
         let bookTitle = snapshot?.bookTitle ?? "Epub-to-Mp3"
         let chapterTitle = currentChapterValue?.displayTitle ?? "Chapter"
-        // The system displays MPMediaItemPropertyTitle as the primary Lock Screen
-        // label. Keep the book here; chapter is secondary metadata.
-        info[MPMediaItemPropertyTitle] = bookTitle
-        info[MPMediaItemPropertyAlbumTitle] = chapterTitle
+        // The chapter is the primary Now Playing label; the book remains
+        // secondary metadata so Control Center and the lock screen identify
+        // the exact text currently being read.
+        info[MPMediaItemPropertyTitle] = chapterTitle
+        info[MPMediaItemPropertyAlbumTitle] = bookTitle
         info[MPMediaItemPropertyArtist] = snapshot?.bookAuthor ?? ""
         info[MPNowPlayingInfoPropertyElapsedPlaybackTime] = positionSeconds
         info[MPMediaItemPropertyPlaybackDuration] = durationSeconds > 0 ? durationSeconds : 0

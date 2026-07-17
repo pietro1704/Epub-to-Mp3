@@ -43,6 +43,30 @@ final class AudioPlayerDurationTests: XCTestCase {
         XCTAssertTrue(AudioPlayer.shouldDrainSegmentBacklog(queueCount: 0, maxQueueAhead: 5))
     }
 
+    func testSegmentChapterDurationDoesNotResetForEverySegment() throws {
+        let source = try sourceFile(named: "AudioPlayer.swift")
+        XCTAssertTrue(source.contains("chapterIndex != segmentChapterIndex"))
+        XCTAssertTrue(source.contains("queuedChapter == self.segmentChapterIndex"))
+        XCTAssertTrue(source.contains("snapshotDuration"))
+    }
+
+    func testAudioOnlyStartsAfterExplicitPlayIntent() throws {
+        #if os(iOS)
+        throw XCTSkip("Source-contract tests run on the host, not inside the iOS app sandbox")
+        #else
+        let testFile = URL(fileURLWithPath: #filePath)
+        let projectRoot = testFile
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let source = try String(
+            contentsOf: projectRoot.appendingPathComponent("EpubToMp3/Views/BookOpenView.swift"),
+            encoding: .utf8
+        )
+        XCTAssertTrue(source.contains("ensureCacheManager()"))
+        XCTAssertFalse(source.contains("startAudioBootstrap(startChapterIndex: max(0, savedChapter))"))
+        #endif
+    }
+
     func testAudioPlayerObservesItemStatusAndDurationForEarlyScrubberDuration() throws {
         let source = try sourceFile(named: "AudioPlayer.swift")
 
@@ -57,6 +81,9 @@ final class AudioPlayerDurationTests: XCTestCase {
     }
 
     private func sourceFile(named name: String) throws -> String {
+        #if os(iOS)
+        throw XCTSkip("Source-contract tests run on the host, not inside the iOS app sandbox")
+        #else
         let testFile = URL(fileURLWithPath: #filePath)
         let projectRoot = testFile
             .deletingLastPathComponent()
@@ -65,5 +92,6 @@ final class AudioPlayerDurationTests: XCTestCase {
             contentsOf: projectRoot.appendingPathComponent("EpubToMp3/Services/\(name)"),
             encoding: .utf8
         )
+        #endif
     }
 }

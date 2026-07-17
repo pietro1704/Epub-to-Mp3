@@ -222,19 +222,31 @@ struct FullPlayerSheet: View {
     /// Visual drag indicator at the top. Tapping dismisses; dragging
     /// down past 120pt triggers dismiss with a spring animation.
     private var dragHandle: some View {
-        Button { dismissPlayer() } label: {
-            VStack(spacing: 6) {
+        HStack {
+            Spacer()
+            Button { dismissPlayer() } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 17, weight: .medium))
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("fullPlayer.close")
+            .accessibilityLabel(L10n.string("player.close"))
+        }
+        .overlay {
+            Button { dismissPlayer() } label: {
                 Capsule()
                     .fill(Color.secondary.opacity(0.5))
                     .frame(width: 36, height: 5)
+                    .frame(width: 72, height: 28)
+                    .contentShape(Rectangle())
             }
-            .frame(maxWidth: .infinity)
-            .frame(height: 28)
-            .contentShape(Rectangle())
+            .buttonStyle(.plain)
+            .accessibilityHidden(true)
         }
-        .buttonStyle(.plain)
-        .accessibilityLabel(L10n.string("player.close"))
-        .accessibilityHint(L10n.string("miniPlayer.expandHint"))
+        .frame(maxWidth: .infinity)
+        .frame(height: 44)
     }
 
     /// Drag gesture: pulling down offsets the view; releasing past the

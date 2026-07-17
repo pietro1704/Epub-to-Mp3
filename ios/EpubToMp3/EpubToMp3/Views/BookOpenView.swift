@@ -329,22 +329,18 @@ struct BookOpenView: View {
             }
         }
 
-        // 4. Create the chapter cache manager for prefetch / download-all.
+        // Audio conversion is strictly user-initiated. Opening a book only
+        // prepares text, fonts, and the local cache; the Reader's Play button
+        // or an explicit "play from here/chapter" action calls
+        // `startAudioBootstrap(...)`.
         ensureCacheManager()
-
-        // 5. Reader is on screen. Kick off audio generation in the
-        // background immediately so audio is buffered by the time the
-        // user taps play. The reader is already visible; the banner
-        // shows "Generating audio…" while synthesis runs.
         let chapterKey = self.fulltext?.jobId ?? book.id
         let savedChapter = settings.savedChapterIndex(for: chapterKey)
-        // Sync reading position to widgets.
         WidgetDataSync.updateLastRead(
             bookId: book.id,
             chapterIndex: max(0, savedChapter),
             totalChapters: fulltext?.chapters.count
         )
-        startAudioBootstrap(startChapterIndex: max(0, savedChapter))
     }
 
     /// Owns the audio bootstrap — reattach to an existing job, or
