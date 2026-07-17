@@ -219,6 +219,25 @@ final class AudioPlayerLockScreenTests: XCTestCase {
             "Playback rate must be 0 when not playing so the lock-screen scrubber does not animate")
     }
 
+    func testNowPlayingPrefersRealChapterNameOverGenericProgressName() {
+        XCTAssertEqual(
+            AudioPlayer.preferredChapterTitle(
+                primary: "Chapter 1",
+                secondary: "The Fellowship of the Ring",
+                fallback: "Chapter 1"
+            ),
+            "The Fellowship of the Ring"
+        )
+        XCTAssertEqual(
+            AudioPlayer.preferredChapterTitle(
+                primary: "Capítulo 1",
+                secondary: "Shelob's Lair",
+                fallback: "Capítulo 1"
+            ),
+            "Shelob's Lair"
+        )
+    }
+
     func testNowPlayingPrimaryTitleIsCurrentChapter() {
         let player = AudioPlayer()
         player.updateSnapshot(makeSnapshot(title: "Foundation"))

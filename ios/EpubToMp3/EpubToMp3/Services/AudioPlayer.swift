@@ -2040,7 +2040,7 @@ final class AudioPlayer: ObservableObject {
     func makeNowPlayingInfo() -> [String: Any] {
         var info: [String: Any] = [:]
         let bookTitle = snapshot?.bookTitle ?? "Epub-to-Mp3"
-        let chapterTitle = currentChapterValue?.displayTitle ?? "Chapter"
+        let chapterTitle = currentChapterTitle
         // The chapter is the primary Now Playing label; the book remains
         // secondary metadata so Control Center and the lock screen identify
         // the exact text currently being read.
@@ -2208,6 +2208,43 @@ final class AudioPlayer: ObservableObject {
     }
 
     // MARK: Helpers
+
+    private var currentChapterTitle: String {
+        let chapters = playbackChapters.isEmpty ? (snapshot?.playableChapters ?? []) : playbackChapters
+        guard chapters.indices.contains(currentChapterIndex) else { return "Chapter" }
+        let playing = chapters[currentChapterIndex]
+        let progressName = snapshot?.chapterProgress?
+            .first(where: { $0.index == playing.index })?.name
+        return Self.preferredChapterTitle(
+            primary: playing.name,
+            secondary: progressName,
+            fallback: playing.displayTitle
+        )
+    }
+
+    nonisolated static func preferredChapterTitle(
+        primary: String?,
+        secondary: String?,
+        fallback: String
+    ) -> String {
+        let candidates = [primary, secondary]
+            .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty && !isGenericChapterTitle($0) }
+        return candidates.first ?? fallback
+    }
+
+    private nonisolated static func isGenericChapterTitle(_ title: String) -> Bool {
+        let normalized = title.lowercased()
+            .replacingOccurrences(of: "á", with: "a")
+            .replacingOccurrences(of: "í", with: "i")
+        if normalized == "chapter" || normalized == "capitulo" { return true }
+        for prefix in ["chapter ", "capitulo "] {
+            if normalized.hasPrefix(prefix), Int(normalized.dropFirst(prefix.count)) != nil {
+                return true
+            }
+        }
+        return false
+    }
 
     private var currentChapterValue: JobSnapshot.Chapter? {
         // SOURCE OF TRUTH: `currentChapterIndex` lives in playable-list
