@@ -72,7 +72,7 @@ requests>=2.34.2    # CVE-2026-25645 (via huggingface-hub, transformers)
 filelock>=3.30.2    # CVE-2026-22701 (via huggingface-hub, torch)
 jaraco-context>=6.1.2  # CVE-2026-23949 (via keyring)
 setuptools>=83.0.0  # PYSEC-2022-43012, PYSEC-2025-49, CVE-2024-6345
-virtualenv>=21.6.1 # CVE-2026-22702 (via pre-commit)
+virtualenv>=21.7.0 # CVE-2026-22702 (via pre-commit)
 
 # Additional security pins surfaced by `mise run audit` (OSV)
 python-dotenv>=1.2.2  # CVE-2026-28684
