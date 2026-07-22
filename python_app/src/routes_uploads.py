@@ -21,6 +21,15 @@ router = APIRouter(prefix="/api", tags=["uploads"])
 _VALID_UPLOAD_ID_CHARS = frozenset("0123456789abcdef-")
 
 
+def _sha1_file(path: Path) -> str:
+    """Hash a local file incrementally without retaining its contents."""
+    digest = hashlib.sha1()
+    with path.open("rb") as source:
+        for chunk in iter(lambda: source.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
 def _validate_upload_id(upload_id: str) -> str:
     value = str(upload_id or "")
     if not value or any(ch.lower() not in _VALID_UPLOAD_ID_CHARS for ch in value):
@@ -231,7 +240,7 @@ async def upload_ebook_local(
     dest_path = _srv._resolve_relative_path_within_root(upload_dir, src.name, must_exist=False)
     shutil.copy2(src, dest_path)
 
-    file_hash = hashlib.sha1(src.read_bytes()).hexdigest()
+    file_hash = _sha1_file(src)
 
     book_title = src.stem
     book_author = "Unknown Author"
