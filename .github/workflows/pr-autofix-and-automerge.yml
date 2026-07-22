@@ -104,8 +104,9 @@ jobs:
           git init .
           git remote add origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
           git fetch --no-tags --depth=1 origin "$HEAD_SHA"
-          git checkout --detach FETCH_HEAD
-          git switch -c "$HEAD_REF"
+          git branch "$HEAD_REF" FETCH_HEAD
+          git symbolic-ref HEAD "refs/heads/$HEAD_REF"
+          git read-tree --reset -u FETCH_HEAD
 
       - name: Configure git
         if: steps.guard.outputs.already_attempted != 'true'
