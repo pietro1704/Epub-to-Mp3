@@ -93,13 +93,19 @@ jobs:
             echo 'already_attempted=false' >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Checkout failed PR head
+      - name: Fetch failed PR head after trust checks
         if: steps.guard.outputs.already_attempted != 'true'
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ needs.resolve-pr.outputs.head_ref }}
-          fetch-depth: 0
-          persist-credentials: true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          HEAD_SHA: ${{ needs.resolve-pr.outputs.head_sha }}
+          HEAD_REF: ${{ needs.resolve-pr.outputs.head_ref }}
+        run: |
+          set -euo pipefail
+          git init .
+          git remote add origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          git fetch --no-tags --depth=1 origin "$HEAD_SHA"
+          git checkout --detach FETCH_HEAD
+          git switch -c "$HEAD_REF"
 
       - name: Configure git
         if: steps.guard.outputs.already_attempted != 'true'
