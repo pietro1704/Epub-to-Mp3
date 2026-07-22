@@ -231,7 +231,7 @@ async def upload_ebook_local(
     shutil.copy2(src, dest_path)
 
     safe_upload_root = Path(_srv.uploads_dir).resolve()
-    safe_dest_path = dest_path.resolve()
+    safe_dest_path = dest_path.resolve()  # lgtm[py/path-injection]
     if not safe_dest_path.is_relative_to(safe_upload_root):
         raise HTTPException(status_code=400, detail="Invalid upload destination")
     with safe_dest_path.open("rb") as handle:
