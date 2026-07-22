@@ -11,7 +11,29 @@ struct ResumeMarker: Codable, Equatable {
     let jobId: String
     let chapterIndex: Int
     let positionSeconds: Double
+    let wasPlaying: Bool
     let updatedAt: Date
+
+    init(jobId: String, chapterIndex: Int, positionSeconds: Double, wasPlaying: Bool = false, updatedAt: Date) {
+        self.jobId = jobId
+        self.chapterIndex = chapterIndex
+        self.positionSeconds = positionSeconds
+        self.wasPlaying = wasPlaying
+        self.updatedAt = updatedAt
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case jobId, chapterIndex, positionSeconds, wasPlaying, updatedAt
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.jobId = try c.decode(String.self, forKey: .jobId)
+        self.chapterIndex = try c.decode(Int.self, forKey: .chapterIndex)
+        self.positionSeconds = try c.decode(Double.self, forKey: .positionSeconds)
+        self.wasPlaying = try c.decodeIfPresent(Bool.self, forKey: .wasPlaying) ?? false
+        self.updatedAt = try c.decode(Date.self, forKey: .updatedAt)
+    }
 }
 
 protocol ResumeStorage: AnyObject {
@@ -47,15 +69,28 @@ final class ResumeStore {
         "\(jobId)#\(chapterIndex)"
     }
 
+    func latestMarker(jobId: String) -> ResumeMarker? {
+        cache.values
+            .filter { $0.jobId == jobId }
+            .max { $0.updatedAt < $1.updatedAt }
+    }
+
     func marker(jobId: String, chapterIndex: Int) -> ResumeMarker? {
         cache[Self.key(jobId: jobId, chapterIndex: chapterIndex)]
     }
 
-    func save(jobId: String, chapterIndex: Int, position: TimeInterval, now: Date = Date()) {
+    func save(
+        jobId: String,
+        chapterIndex: Int,
+        position: TimeInterval,
+        wasPlaying: Bool = false,
+        now: Date = Date()
+    ) {
         let marker = ResumeMarker(
             jobId: jobId,
             chapterIndex: chapterIndex,
             positionSeconds: max(0, position),
+            wasPlaying: wasPlaying,
             updatedAt: now
         )
         cache[Self.key(jobId: jobId, chapterIndex: chapterIndex)] = marker

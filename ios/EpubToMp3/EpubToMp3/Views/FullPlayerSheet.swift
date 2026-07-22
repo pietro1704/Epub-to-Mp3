@@ -84,8 +84,9 @@ struct FullPlayerSheet: View {
     @Environment(\.dismiss) private var dismiss
 
     @State private var showChapterList = false
+    @State private var showingRatePicker = false
     @State private var dragOffset: CGFloat = 0
-    @State private var pendingAnchor: PlayDivergenceAnchor?
+
     @State private var showLyricsOverlay = false
     @State private var fulltext: EbookFulltext?
     @State private var lyricSync = SyncEngine()
@@ -107,12 +108,10 @@ struct FullPlayerSheet: View {
     }
 
     private var chapterLabel: String {
-        let idx = player.snapshot != nil ? player.currentChapterIndex : currentChapterIndex
-        guard let chapters = player.snapshot?.playableChapters,
-              idx < chapters.count else {
-            return L10n.string("player.chapter", idx + 1)
+        guard player.snapshot != nil else {
+            return L10n.string("player.chapter", currentChapterIndex + 1)
         }
-        return chapters[idx].displayTitle
+        return player.effectiveChapterTitle
     }
 
     private var progress: Double {
@@ -154,6 +153,7 @@ struct FullPlayerSheet: View {
             scrubberBlock
             Spacer(minLength: 24)
             transportRow
+            SystemVolumeSlider()
             Spacer(minLength: 16)
             secondaryRow
             Spacer(minLength: 16)
@@ -193,6 +193,7 @@ struct FullPlayerSheet: View {
                     titleBlock
                     scrubberBlock
                     transportRow
+                    SystemVolumeSlider()
                     secondaryRow
                     Spacer(minLength: 24)
                     Button(L10n.string("player.close")) { dismissPlayer() }
@@ -536,7 +537,7 @@ struct FullPlayerSheet: View {
             .buttonStyle(.plain)
             .tint(.primary)
             .accessibilityLabel(player.isPlaying ? L10n.string("player.pause") : L10n.string("player.play"))
-            .playDivergenceDialog(player: player, anchor: $pendingAnchor)
+
             Spacer()
             Button { player.skipForward(seconds: 15) } label: {
                 Image(systemName: "goforward.15")
@@ -565,19 +566,9 @@ struct FullPlayerSheet: View {
     /// aparecer todos os controles").
     private var secondaryRow: some View {
         HStack(spacing: 16) {
-            // Speed
-            Menu {
-                ForEach(PlaybackRate.allCases) { rate in
-                    Button {
-                        player.setRate(rate)
-                    } label: {
-                        if player.rate == rate {
-                            Label(rate.shortLabel, systemImage: "checkmark")
-                        } else {
-                            Text(rate.shortLabel)
-                        }
-                    }
-                }
+            // Speed — opens the shared horizontal floating picker.
+            Button {
+                showingRatePicker.toggle()
             } label: {
                 Text(player.rate.shortLabel)
                     .font(.subheadline.weight(.semibold))
@@ -585,7 +576,15 @@ struct FullPlayerSheet: View {
                     .padding(.horizontal, 10)
                     .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 10))
             }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("fullPlayer.playbackRateButton")
             .accessibilityLabel(L10n.string("player.playbackSpeed", player.rate.shortLabel))
+            .popover(isPresented: $showingRatePicker, attachmentAnchor: .point(.top), arrowEdge: .bottom) {
+                PlaybackRateFloatingPicker(player: player)
+                    .frame(minWidth: 340)
+                    .padding(.vertical, 8)
+                    .presentationCompactAdaptationIfAvailable()
+            }
 
             Spacer()
 
@@ -816,15 +815,7 @@ struct FullPlayerSheet: View {
     // decision logic and `.playDivergenceDialog` for the dialog UI.
 
     private func handlePlayTap() {
-        switch player.playTapDecision(
-            readerChapterIndex: readerChapterIndex,
-            readerPageRatio: readerPageRatio
-        ) {
-        case .pause, .resume:
-            player.togglePlayPause()
-        case .offerStartChoice:
-            pendingAnchor = .capture(from: readerCoordinator)
-        }
+        player.togglePlayPause()
     }
 }
 

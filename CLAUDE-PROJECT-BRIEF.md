@@ -1,6 +1,9 @@
 # Claude Project Brief — Epub-to-Mp3
 
-Use este arquivo como prompt/base de contexto para qualquer Claude trabalhando neste projeto.
+Use este arquivo como contrato estável de arquitetura e contexto para qualquer
+agente trabalhando neste projeto. O prompt executável curto fica em
+`CLAUDE-MINI-PROMPT.md`; a fila e as evidências ficam em
+`APP_REMAINING_WORK.md`. Não duplique nem contradiga esses arquivos.
 
 ## 1. Persona operacional esperada
 
@@ -39,7 +42,8 @@ Arquitetura/estilo obrigatório neste projeto:
 - Código, comentários, logs e docstrings em inglês.
 - Sempre que mudar código, adicionar/ajustar testes.
 - Sempre rodar validação relevante antes de dizer que terminou.
-- Em projetos pessoais do usuário, preferir fluxo com PR e auto-merge; não esperar revisão manual.
+- Commit, push, PR e auto-merge dependem de autorização explícita para a sessão;
+  nunca presumir essa autorização a partir do contexto antigo.
 - Quando rodar o app iOS no device real, preferir iPhone físico por USB.
 - Sempre que possível, ao rodar o app no iPhone real, lançar com LLDB anexado.
 
@@ -76,7 +80,10 @@ Pastas importantes:
 4. Toda modificação precisa de teste.
 5. Para Swift/iOS, prefira testes focados + build real quando a mudança tocar runtime/UI/player.
 6. Não usar Simulator por padrão neste Mac; prefira device físico.
-7. Após push, monitorar CI e corrigir se quebrar.
+7. Após push autorizado, monitorar CI e corrigir se quebrar antes de concluir.
+8. Preservar alterações locais não relacionadas; não usar reset, checkout
+   destrutivo ou limpeza ampla para “organizar” a árvore.
+9. Separar presença, registro, sincronização e usabilidade real nas evidências.
 
 ## 5. Foco técnico especial deste projeto
 
@@ -101,21 +108,22 @@ Claude deve tratar este projeto como particularmente sensível em:
 
 ## 7. Workflow de execução esperado
 
-Para bugs/features iOS:
+Para qualquer bug/feature:
 
-1. mapear símbolos e arquivos relevantes
-2. escrever/ajustar teste que capture a regra
-3. aplicar patch mínimo
-4. rodar testes focados
-5. rodar build real
-6. se necessário, instalar no iPhone real
-7. se for testar runtime real, lançar com LLDB anexado
-8. observar logs/erros/warnings reais
-9. só então concluir
+1. confirmar status, branch, ambiente, escopo e aceite
+2. classificar evidência como confirmado, reproduzido, desatualizado ou hipótese
+3. mapear símbolos, contratos e testes relevantes
+4. escrever/ajustar teste de regressão ou reprodução mínima
+5. aplicar patch mínimo
+6. rodar teste focado, suíte relevante e checks de qualidade
+7. fazer build/runtime real quando o risco exigir
+8. atualizar backlog com evidência, limitações e rollback
+9. revisar diff; só então commit/push/PR se autorizados
 
 ## 8. Prompt-base recomendado para Claude
 
-Use algo nesta linha:
+Use `CLAUDE-MINI-PROMPT.md` como base atual. Para uma tarefa concreta,
+acrescente somente a fatia abaixo:
 
 ```md
 Você está no projeto Epub-to-Mp3.
@@ -208,6 +216,8 @@ Se o iPhone estiver bloqueado, pare e peça para desbloquear; não finja que LLD
 - não dizer “deve funcionar” sem validar
 - não usar Simulator por padrão neste Mac
 - não fazer refactor amplo sem necessidade
+- não executar todos os itens do backlog como one-shot; trabalhar uma fatia por vez
+- não afirmar otimização de prompt sem baseline, critério e comparação
 - não remover testes
 - não duplicar lógica de player em várias views se existe ponto central melhor
 - não afirmar que rodou com LLDB se o attach falhou
@@ -229,4 +239,6 @@ No momento, o projeto já tem infraestrutura para:
 - anexar LLDB e observar runtime
 - capturar syslog durante testes reais
 
-Se a tarefa envolver player/reader, assuma que esse fluxo deve ser usado para validação final quando fizer sentido.
+Se a tarefa envolver player/reader, assuma que esse fluxo deve ser usado para
+validação final quando fizer sentido. O estado atual, prioridades e decisões
+pendentes são os de `APP_REMAINING_WORK.md`, sempre revalidados live.

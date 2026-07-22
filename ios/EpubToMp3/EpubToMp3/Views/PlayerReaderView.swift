@@ -80,6 +80,8 @@ struct PlayerReaderView: View {
     @State private var downloadTask: Task<Void, Never>?
     @State private var downloadState: DownloadButtonState = .idle
     @State private var downloadProgressText: String?
+    @State private var showingCancelDownloadsAlert = false
+    @State private var showingClearDownloadsAlert = false
     @State private var showingBookmarks = false
     @State private var showingSearch = false
     /// Immersive-reading toggle. Dimmed by page-turns; restored by a
@@ -92,7 +94,7 @@ struct PlayerReaderView: View {
     @EnvironmentObject private var readerCoordinator: ReaderCoordinator
     private var readerChapterIndex: Int { readerCoordinator.anchor.chapterIndex }
     private var readerPageRatio: Double? { readerCoordinator.anchor.pageRatio }
-    @State private var pendingAnchor: PlayDivergenceAnchor?
+
     /// See `FullPlayerSheet.scrubberDragValue` — decouples the slider
     /// thumb from `player.positionSeconds` while a drag is in flight
     /// so each pixel of movement doesn't post a seek to the asset
@@ -111,7 +113,7 @@ struct PlayerReaderView: View {
 
     /// Shared download manager — chapter MP3s land in
     /// `<documents>/Audiobooks/<jobId>/chapters/` and survive offline.
-    @State private var downloads = DownloadManager()
+    @State private var downloads = DownloadManager.shared
 
     var body: some View {
         rootView
@@ -124,6 +126,22 @@ struct PlayerReaderView: View {
                 )
                 .transition(.move(edge: .top).combined(with: .opacity))
             }
+        }
+        .alert(L10n.string("chapterList.cancelDownloads"), isPresented: $showingCancelDownloadsAlert) {
+            Button(L10n.string("chapterList.cancelDownloads"), role: .destructive) {
+                cancelDownloads()
+            }
+            Button(L10n.string("common.cancel"), role: .cancel) {}
+        } message: {
+            Text(localized: "chapterList.cancelDownloadsMessage")
+        }
+        .alert(L10n.string("chapterList.removeDownloads"), isPresented: $showingClearDownloadsAlert) {
+            Button(L10n.string("common.delete"), role: .destructive) {
+                clearDownloads()
+            }
+            Button(L10n.string("common.cancel"), role: .cancel) {}
+        } message: {
+            Text(localized: "chapterList.removeDownloadsMessage")
         }
         .animation(.easeInOut(duration: 0.25), value: showingSearch)
         .onAppear {
@@ -271,6 +289,20 @@ struct PlayerReaderView: View {
                         Divider()
                         bookmarkToggleMenuItem
                         downloadMenuItem
+                        if downloadState == .downloading {
+                            Button(role: .destructive) {
+                                showingCancelDownloadsAlert = true
+                            } label: {
+                                Label(L10n.string("chapterList.cancelDownloads"), systemImage: "xmark.circle")
+                            }
+                        }
+                        if downloadState == .done || !DownloadManager.locallyDownloadedIndices(for: snapshot.jobId).isEmpty {
+                            Button(role: .destructive) {
+                                showingClearDownloadsAlert = true
+                            } label: {
+                                Label(L10n.string("chapterList.removeDownloads"), systemImage: "trash")
+                            }
+                        }
                     } label: {
                         Image(systemName: "ellipsis.circle")
                     }
@@ -306,7 +338,9 @@ struct PlayerReaderView: View {
                     snapshot: snapshot,
                     currentChapterIndex: playingEpubIndex,
                     onJump: jumpTo(chapterIndex:),
-                    onDownload: downloadChapter(epubIndex:)
+                    onDownload: downloadChapter(epubIndex:),
+                    onCancelDownloads: cancelDownloads,
+                    onClearDownloads: clearDownloads
                 )
                 .compatPresentationDetents()
             }
@@ -494,19 +528,11 @@ struct PlayerReaderView: View {
         .tint(.primary)
         .frame(maxWidth: .infinity)
         .accessibilityIdentifier("reader.divergenceDialog")
-        .playDivergenceDialog(player: player, anchor: $pendingAnchor)
+
     }
 
     private func handlePlayTap() {
-        switch player.playTapDecision(
-            readerChapterIndex: readerChapterIndex,
-            readerPageRatio: readerPageRatio
-        ) {
-        case .pause, .resume:
-            player.togglePlayPause()
-        case .offerStartChoice:
-            pendingAnchor = .capture(from: readerCoordinator)
-        }
+        player.togglePlayPause()
     }
 
     /// "..." menu mirroring FullPlayerSheet — speed, sleep timer,
@@ -676,7 +702,9 @@ struct PlayerReaderView: View {
                 switch progress.state {
                 case .completed:
                     downloadState = .done
-                    if var book = library.books.first(where: { $0.lastJobId == snapshot.jobId }) {
+                    if var book = library.books.first(where: { $0.lastJobId == snapshot.jobId }),
+                       let manifest = DownloadManager.loadManifest(for: snapshot.jobId),
+                       DownloadManager.isManifestComplete(manifest, expectedChapterIndices: snapshot.playableChapters.map(\.index)) {
                         book.cachedOffline = true
                         library.update(book)
                     }
@@ -686,8 +714,30 @@ struct PlayerReaderView: View {
                     return
                 case .queued, .downloading, .paused:
                     downloadState = .downloading
+                case .cancelled:
+                    downloadState = .idle
                 }
             }
+        }
+    }
+
+    private func cancelDownloads() {
+        downloadTask?.cancel()
+        downloadTask = nil
+        Task { await downloads.cancel(jobId: snapshot.jobId) }
+        downloadState = .idle
+        downloadProgressText = nil
+    }
+
+    private func clearDownloads() {
+        downloadTask?.cancel()
+        downloadTask = nil
+        Task { await downloads.clearDownloadedBook(jobId: snapshot.jobId) }
+        downloadState = .idle
+        downloadProgressText = nil
+        if var book = library.books.first(where: { $0.lastJobId == snapshot.jobId }) {
+            book.cachedOffline = false
+            library.update(book)
         }
     }
 
@@ -713,7 +763,9 @@ struct PlayerReaderView: View {
                 switch progress.state {
                 case .completed:
                     downloadState = .done
-                    if var book = library.books.first(where: { $0.lastJobId == snapshot.jobId }) {
+                    if var book = library.books.first(where: { $0.lastJobId == snapshot.jobId }),
+                       let manifest = DownloadManager.loadManifest(for: snapshot.jobId),
+                       DownloadManager.isManifestComplete(manifest, expectedChapterIndices: snapshot.playableChapters.map(\.index)) {
                         book.cachedOffline = true
                         library.update(book)
                     }
@@ -723,6 +775,8 @@ struct PlayerReaderView: View {
                     return
                 case .queued, .downloading, .paused:
                     downloadState = .downloading
+                case .cancelled:
+                    downloadState = .idle
                 }
             }
         }
@@ -1146,17 +1200,8 @@ struct PlayerReaderView: View {
     }
 
     private var currentChapterTitle: String {
-        if let fulltext, let ch = chapter(in: fulltext, at: displayedEpubIndex) {
-            return ch.displayTitle
-        }
-        let chapters = snapshot.playableChapters
-        // Defensive both-sides bounds check: the player's index is
-        // clamped on assignment, but if the snapshot shrinks (e.g. the
-        // backend wipes a job mid-session) `player.currentChapterIndex`
-        // can momentarily point past the new array, and any path that
-        // ever pushed a negative index into the player would crash here.
-        guard chapters.indices.contains(player.currentChapterIndex) else { return "—" }
-        return chapters[player.currentChapterIndex].displayTitle
+        guard player.snapshot != nil else { return "—" }
+        return player.effectiveChapterTitle
     }
 
     private func format(seconds: TimeInterval) -> String {

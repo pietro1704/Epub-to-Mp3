@@ -115,8 +115,8 @@
 /* Play-tap divergence dialog (reader on a different chapter than the audio) */
 "player.divergence.title" = "Continue from where?";
 "player.divergence.message" = "The page you're reading isn't where the audio left off.";
-"player.divergence.fromCurrentPage" = "From current page";
-"player.divergence.fromWhereStopped" = "From where I stopped";
+"player.divergence.fromCurrentPage" = "Play from here";
+"player.divergence.fromWhereStopped" = "Continue playback";
 "player.divergence.fromBeginning" = "From the beginning";
 "common.cancel" = "Cancel";
 
@@ -409,6 +409,7 @@
 
 /* === PlayerView === */
 "player.speed" = "Speed";
+"player.systemVolume" = "System volume";
 "player.audiobookFallback" = "Audiobook";
 
 /* === ReaderSearchOverlay === */
@@ -420,6 +421,8 @@
 "reader.sentenceMenu.addBookmark" = "Add bookmark";
 "reader.sentenceMenu.removeBookmark" = "Remove bookmark";
 "reader.sentenceMenu.cancel" = "Cancel";
+"reader.selection.playFromHere" = "Play from here";
+"reader.selection.continuePlayback" = "Continue playback";
 "reader.selection.playSentence" = "Play this sentence";
 "reader.selection.playParagraph" = "Play this paragraph";
 "reader.follow" = "Follow";
@@ -450,5 +453,17 @@
 "common.moreOptions" = "More options";
 "chapterList.removeDownloads" = "Remove downloads";
 "chapterList.removeDownloadsMessage" = "All downloaded MP3s for this book will be deleted.";
+"chapterList.cancelDownloads" = "Cancel downloads";
+"chapterList.cancelDownloadsMessage" = "The current download will stop. Completed chapters will remain.";
 "chapterList.clearTextCache" = "Clear text cache";
 "chapterList.clearTextCacheMessage" = "Cached chapter text for this book will be cleared.";
+"settings.storage" = "Storage";
+"settings.storageUsage" = "Storage used";
+"settings.offlineAudio" = "Offline audiobook MP3s";
+"settings.ttsCache" = "TTS chapter cache";
+"settings.storageTotal" = "Total";
+"settings.refreshStorage" = "Refresh storage usage";
+"settings.storageFooter" = "The bar includes offline MP3s and generated TTS cache. The budget is 2 GB by default.";
+"settings.clearAllDownloads" = "Clear all book downloads";
+"settings.clearAllDownloadsConfirmTitle" = "Clear all downloads?";
+"settings.clearAllDownloadsConfirmMessage" = "All offline MP3s and generated chapter audio caches will be deleted.";

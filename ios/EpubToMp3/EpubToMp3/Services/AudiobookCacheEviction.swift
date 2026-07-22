@@ -13,6 +13,88 @@ let defaultOfflineCacheBudgetBytes: Int64 = 2 * 1_024 * 1_024 * 1_024
 /// Default 24 hours. Surfaced via `AppSettings.offlineCacheTTLSeconds`.
 let defaultOfflineCacheTTLSeconds: TimeInterval = 24 * 60 * 60
 
+/// Process-local protection for cache entries currently in use.
+/// Reference counts allow a reader and a download to protect the same job
+/// concurrently while releasing their protection independently.
+enum CacheActivityRegistry {
+    private static let lock = NSLock()
+    private static var referenceCounts: [String: Int] = [:]
+
+    static func begin(jobId: String) {
+        lock.lock()
+        defer { lock.unlock() }
+        referenceCounts[jobId, default: 0] += 1
+    }
+
+    static func end(jobId: String) {
+        lock.lock()
+        defer { lock.unlock() }
+        guard let count = referenceCounts[jobId] else { return }
+        if count <= 1 {
+            referenceCounts.removeValue(forKey: jobId)
+        } else {
+            referenceCounts[jobId] = count - 1
+        }
+    }
+
+    static func activeJobIds() -> Set<String> {
+        lock.lock()
+        defer { lock.unlock() }
+        return Set(referenceCounts.keys)
+    }
+}
+
+struct StorageUsageSnapshot: Equatable, Sendable {
+    let offlineAudioBytes: Int64
+    let ttsCacheBytes: Int64
+    let totalBytes: Int64
+    let budgetBytes: Int64
+
+    var budgetFraction: Double {
+        guard budgetBytes > 0 else { return 0 }
+        return min(1, max(0, Double(totalBytes) / Double(budgetBytes)))
+    }
+}
+
+enum StorageUsageScanner {
+    static func current(budgetBytes: Int64 = defaultOfflineCacheBudgetBytes) -> StorageUsageSnapshot {
+        let offline = directorySize(DownloadManager.audiobooksRoot())
+        let ttsRoot = FileManager.default
+            .urls(for: .cachesDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("epub2mp3-tts", isDirectory: true)
+        let tts = directorySize(ttsRoot)
+        return StorageUsageSnapshot(
+            offlineAudioBytes: offline,
+            ttsCacheBytes: tts,
+            totalBytes: offline + tts,
+            budgetBytes: budgetBytes
+        )
+    }
+
+    static func clearAllDownloads() {
+        AudiobookCacheEviction.deleteAllAudiobooks()
+        let ttsRoot = FileManager.default
+            .urls(for: .cachesDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("epub2mp3-tts", isDirectory: true)
+        try? FileManager.default.removeItem(at: ttsRoot)
+        NotificationCenter.default.post(name: ChapterCacheManager.clearAllNotification, object: nil)
+    }
+
+    private static func directorySize(_ root: URL) -> Int64 {
+        guard let enumerator = FileManager.default.enumerator(
+            at: root,
+            includingPropertiesForKeys: [.fileSizeKey, .isRegularFileKey],
+            options: [.skipsHiddenFiles]
+        ) else { return 0 }
+        return enumerator.reduce(Int64(0)) { total, item in
+            guard let url = item as? URL,
+                  let values = try? url.resourceValues(forKeys: [.fileSizeKey, .isRegularFileKey]),
+                  values.isRegularFile == true else { return total }
+            return total + Int64(values.fileSize ?? 0)
+        }
+    }
+}
+
 // MARK: - AudiobookCacheEntry
 
 /// A snapshot of a single cached audiobook's storage metadata,
@@ -114,12 +196,13 @@ enum AudiobookCacheEviction {
         ttlSeconds: TimeInterval = defaultOfflineCacheTTLSeconds,
         activeJobIds: Set<String> = []
     ) -> [String] {
+        let protectedJobIds = activeJobIds.union(CacheActivityRegistry.activeJobIds())
         var entries = scanEntries()
         var evicted: [String] = []
         let now = Date()
 
         // Phase 1: TTL — evict entries older than ttlSeconds, skipping active.
-        for entry in entries where !activeJobIds.contains(entry.jobId) {
+        for entry in entries where !protectedJobIds.contains(entry.jobId) {
             let age = now.timeIntervalSince(entry.lastAccessedAt)
             if age > ttlSeconds {
                 if deleteAudiobook(jobId: entry.jobId) {
@@ -134,7 +217,7 @@ enum AudiobookCacheEviction {
 
         // Phase 2: LRU budget — remove oldest entries until under budget.
         var totalBytes = entries.reduce(Int64(0)) { $0 + $1.totalBytes }
-        for entry in entries where !activeJobIds.contains(entry.jobId) {
+        for entry in entries where !protectedJobIds.contains(entry.jobId) {
             guard totalBytes > budgetBytes else { break }
             if deleteAudiobook(jobId: entry.jobId) {
                 totalBytes -= entry.totalBytes

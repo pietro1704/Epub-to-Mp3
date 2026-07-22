@@ -84,8 +84,8 @@ mise run flutter:build-apk          # Android (release)
 
 ## Features
 
-- **Three TTS engines**: Edge-TTS (cloud, fastest), Kokoro (local neural, EN/JA/ZH), Piper (offline ONNX, all languages)
-- **Edge-only by default**: per-chunk single-sentence fallback recovers transient failures and returns to Edge. Opt-in to the legacy multi-engine cascade via `--engine-chain-fallback` or `ENGINE_CHAIN_FALLBACK=1`.
+- **Two TTS engines**: Edge-TTS (cloud, multilingual) and Piper (offline ONNX, one model per language). `auto` is an alias for the Edge-first selection.
+- **Edge-first by default**: per-chunk single-sentence fallback recovers transient failures and returns to Edge. Opt-in to the legacy Edge → Piper cascade via `--engine-chain-fallback` or `ENGINE_CHAIN_FALLBACK=1`.
 - **Smart cache**: parsed text cached per-book — re-runs skip re-parsing
 - **Chapter structure**: preserves TOC hierarchy (NCX / EPUB3 nav), numbered `1.0 / 1.1 / 1.2`
 - **Batch conversion**: queue multiple EPUB/PDF files or entire folders
@@ -219,10 +219,9 @@ MAX_CHAPTER_CHARS=0              # Skip chapters larger than N chars (0 = disabl
                                   # Auto-warns when a chapter is >5× median size
 ```
 
-### Local Engines
+### Local Engine
 
 ```bash
-KOKORO_MAX_WORKERS=0             # 0 = auto-detect from CPU
 PIPER_MAX_PROCS=0                # 0 = auto-detect from CPU
 ```
 
@@ -247,12 +246,11 @@ mise run audit          # Scan Python dependencies for CVEs
 | Engine | Languages | Quality | Speed | Requires |
 |--------|-----------|---------|-------|----------|
 | **Edge-TTS** | All | ⭐⭐⭐ | Fastest | Internet |
-| **Kokoro** | EN, JA, ZH | ⭐⭐⭐ | Fast | `espeak-ng` |
-| **Piper** | All | ⭐⭐ | Moderate | ONNX model file |
+| **Piper** | pt, en, es, fr, de, it | ⭐⭐ | Moderate | Piper binary + ONNX model |
 
-**Default behavior (CLI + web):** Edge-only. Per-chunk failures are retried as a single sentence and synthesis returns to Edge. The chapter never cascades to Kokoro/Piper.
+**Default behavior (CLI + web):** Edge-first. Per-chunk failures are retried as a single sentence and synthesis returns to Edge. Piper is available when its binary and model are installed.
 
-**Opt-in legacy cascade:** set `ENGINE_CHAIN_FALLBACK=1` (or pass `--engine-chain-fallback` on the CLI) to restore Edge multilingual → Edge monolingual → Kokoro → Piper. Use `FALLBACK_ENGINE_OVERRIDE=piper|kokoro|coqui|none|auto` to pin or strip the offline tier.
+**Optional legacy cascade:** set `ENGINE_CHAIN_FALLBACK=1` (or pass `--engine-chain-fallback` on the CLI) to enable Edge → Piper fallback. Use `FALLBACK_ENGINE_OVERRIDE=piper|none|auto` to control that offline tier.
 
 ---
 
@@ -290,7 +288,6 @@ Epub-to-Mp3/
 │   │   ├── routes_uploads.py   # /api/uploads routes
 │   │   └── tts/
 │   │       ├── edge_engine.py
-│   │       ├── kokoro_engine.py
 │   │       └── piper_engine.py
 │   └── tests/              # 1076+ tests
 ├── web/                    # React/TypeScript frontend (Vite)

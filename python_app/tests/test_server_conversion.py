@@ -402,7 +402,7 @@ def test_job_fulltext_prefers_cached_chapters(tmp_path, monkeypatch):
                     {
                         "title": "Cached Chapter",
                         "text": "Cached text body.",
-                        "html": "<p class='chapter'>Cached text body.</p>",
+                        "html": '<p class="chapter">Cached text body.</p>',
                         "css": ".chapter { font-style: italic; }",
                     },
                 ],
@@ -430,7 +430,7 @@ def test_job_fulltext_prefers_cached_chapters(tmp_path, monkeypatch):
             "index": 1,
             "name": "Cached Chapter",
             "text": "Cached text body.",
-            "html": "<p class='chapter'>Cached text body.</p>",
+            "html": '<p class="chapter">Cached text body.</p>',
             "css": ".chapter { font-style: italic; }",
             "resources": [],
             "charCount": len("Cached text body."),
@@ -606,6 +606,11 @@ def test_edge_fallbacks_to_piper(tmp_path, monkeypatch):
     job_id = str(uuid4())
     _configure_server_paths(tmp_path, monkeypatch)
     monkeypatch.setenv("ENGINE_CHAIN_FALLBACK", "1")
+    monkeypatch.delenv("FALLBACK_ENGINE_OVERRIDE", raising=False)
+    monkeypatch.delenv("DISABLE_PIPER_FALLBACK", raising=False)
+    # This test supplies a dummy Piper engine, so do not depend on the
+    # process-level native Piper capability probe or on test collection order.
+    monkeypatch.setattr(server, "_has_piper_support", lambda: True)
 
     upload_path = tmp_path / f"{job_id}_book.epub"
     upload_path.write_bytes(FIXTURE_BOOK.read_bytes())
@@ -620,13 +625,16 @@ def test_edge_fallbacks_to_piper(tmp_path, monkeypatch):
         "chapters": None,
         "footnote_mode": "inline",
         "language": "pt-BR",
+        # Keep this regression isolated from process-level environment state:
+        # the web contract supports an explicit per-job fallback toggle.
+        "engineChainFallback": True,
         "outputs": [],
     }
 
     _make_telemetry(tmp_path, monkeypatch)
 
     creators = {
-        "edge": lambda: DummyTTSEngine("edge", fail_times=1),
+        "edge": lambda: DummyTTSEngine("edge", fail_times=1000),
         "piper": lambda: DummyTTSEngine("piper"),
     }
     dummy_factory = DummyFactory(creators, server.tts_factory.voice_provider)
@@ -1512,3 +1520,17 @@ class TestChapterBroadcastOnStatusChange:
         job["chapterProgress"][0]["status"] = "completed"
 
         assert captured[0]["status"] == "processing"
+
+
+def test_direct_convert_rejects_oversize_stream_without_partial_input(tmp_path, monkeypatch):
+    _configure_server_paths(tmp_path, monkeypatch)
+    monkeypatch.setattr(server, "MAX_UPLOAD_BYTES", 5)
+    monkeypatch.setattr(server, "MAX_UPLOAD_MB", 0)
+
+    response = TestClient(server.app).post(
+        "/api/convert",
+        files={"file": ("too-large.epub", b"x" * 10, "application/epub+zip")},
+    )
+
+    assert response.status_code == 413
+    assert list((tmp_path / ".job_inputs").iterdir()) == []

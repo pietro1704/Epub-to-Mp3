@@ -48,6 +48,32 @@ void main() {
       expect(find.text('Pick a book to read'), findsOneWidget);
     });
 
+    testWidgets('convert destination is localized in every supported locale', (t) async {
+      const expectedTitles = {
+        'en': 'Convert',
+        'es': 'Convertir',
+        'pt': 'Converter',
+      };
+
+      for (final entry in expectedTitles.entries) {
+        final prefs = await _mockPrefs();
+        await t.pumpWidget(
+          ProviderScope(
+            overrides: [sharedPrefsProvider.overrideWithValue(prefs)],
+            child: MaterialApp(
+              locale: Locale(entry.key),
+              localizationsDelegates: AppLocalizations.localizationsDelegates,
+              supportedLocales: AppLocalizations.supportedLocales,
+              home: const RootScreen(),
+            ),
+          ),
+        );
+        await t.pumpAndSettle();
+
+        expect(find.text(entry.value), findsWidgets);
+      }
+    });
+
     testWidgets('tapping Library navigates to library tab', (t) async {
       final prefs = await _mockPrefs();
       await t.pumpWidget(_wrap(prefs));

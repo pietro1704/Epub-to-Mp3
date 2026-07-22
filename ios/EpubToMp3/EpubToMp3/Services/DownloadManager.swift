@@ -1,5 +1,9 @@
 import Foundation
 
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
+
 /// Per-chapter download state for `DownloadManager`.
 struct DownloadProgress: Equatable, Sendable {
     enum State: String, Codable, Equatable, Sendable {
@@ -8,6 +12,7 @@ struct DownloadProgress: Equatable, Sendable {
         case completed
         case failed
         case paused
+        case cancelled
     }
 
     let jobId: String
@@ -46,10 +51,32 @@ struct AudiobookManifest: Codable, Equatable, Sendable {
 /// compile-time checked for data-race safety.
 actor DownloadManager {
 
+    static let shared = DownloadManager()
+
+    /// Stable identifier lets iOS reconnect to pending tasks after suspension
+    /// or a system relaunch of the app.
+    nonisolated static let backgroundSessionIdentifier = "com.pietrocode.epubtomp3.downloads"
+
+    nonisolated static func backgroundSessionConfiguration() -> URLSessionConfiguration {
+        #if os(iOS)
+        let configuration = URLSessionConfiguration.background(withIdentifier: backgroundSessionIdentifier)
+        configuration.sessionSendsLaunchEvents = true
+        configuration.isDiscretionary = false
+        configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
+        return configuration
+        #else
+        // The macOS host target cannot create an iOS background session.
+        let configuration = URLSessionConfiguration.default
+        configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
+        return configuration
+        #endif
+    }
+
     // MARK: Public progress streams
 
     private var progressContinuations: [String: [UUID: AsyncStream<DownloadProgress>.Continuation]] = [:]
     private var lastProgress: [String: DownloadProgress] = [:]
+    private var activeTasks: [String: Task<Void, Never>] = [:]
 
     func watchProgress(jobId: String) -> AsyncStream<DownloadProgress> {
         let last = lastProgress[jobId]
@@ -119,6 +146,32 @@ actor DownloadManager {
         )
     }
 
+    nonisolated static func localAudioURL(jobId: String, chapterIndex: Int) -> URL? {
+        guard let entry = loadManifest(for: jobId)?.chapters.first(where: { $0.index == chapterIndex }) else { return nil }
+        let url = audiobookFolder(for: jobId).appendingPathComponent(entry.mp3FileName)
+        guard FileManager.default.fileExists(atPath: url.path),
+              let size = try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? Int64,
+              size > 0 else { return nil }
+        return url
+    }
+
+    nonisolated static func mergeManifests(_ old: AudiobookManifest?, _ incoming: AudiobookManifest) -> AudiobookManifest {
+        guard let old else { return incoming }
+        var byIndex = Dictionary(uniqueKeysWithValues: old.chapters.map { ($0.index, $0) })
+        for entry in incoming.chapters { byIndex[entry.index] = entry }
+        let chapters = byIndex.values.sorted { $0.index < $1.index }
+        return AudiobookManifest(jobId: incoming.jobId, bookTitle: incoming.bookTitle,
+                                 chapters: chapters,
+                                 totalBytes: chapters.reduce(0) { $0 + $1.mp3Bytes },
+                                 completedAt: incoming.completedAt ?? old.completedAt)
+    }
+
+    nonisolated static func isManifestComplete(_ manifest: AudiobookManifest, expectedChapterIndices: [Int]) -> Bool {
+        let expected = Set(expectedChapterIndices)
+        guard Set(manifest.chapters.map(\.index)) == expected else { return false }
+        return manifest.chapters.allSatisfy { localAudioURL(jobId: manifest.jobId, chapterIndex: $0.index) != nil }
+    }
+
     nonisolated static func saveManifest(_ manifest: AudiobookManifest) throws {
         let data = try JSONEncoder().encode(manifest)
         try data.write(to: manifestURL(for: manifest.jobId), options: .atomic)
@@ -129,6 +182,7 @@ actor DownloadManager {
     /// Enqueue every MP3 chapter from the snapshot. Returns immediately;
     /// observe progress via `watchProgress(jobId:)`.
     func enqueueAll(snapshot: JobSnapshot, baseURL: URL?) {
+        cancel(jobId: snapshot.jobId)
         let chapters = snapshot.playableChapters
         guard !chapters.isEmpty else {
             emit(DownloadProgress(
@@ -143,12 +197,16 @@ actor DownloadManager {
             ))
             return
         }
-        Task { [weak self] in
-            await self?.downloadSerially(snapshot: snapshot, chapters: chapters, baseURL: baseURL)
+        CacheActivityRegistry.begin(jobId: snapshot.jobId)
+        let task: Task<Void, Never> = Task { [weak self] in
+            guard let self else { return }
+            await self.downloadSerially(snapshot: snapshot, chapters: chapters, baseURL: baseURL)
         }
+        activeTasks[snapshot.jobId] = task
     }
 
     func enqueueSelected(snapshot: JobSnapshot, epubZeroBasedIndices: [Int], baseURL: URL?) {
+        cancel(jobId: snapshot.jobId)
         let chapters = Self.selectedChapters(snapshot: snapshot, epubZeroBasedIndices: epubZeroBasedIndices)
         guard !chapters.isEmpty else {
             emit(DownloadProgress(
@@ -163,9 +221,48 @@ actor DownloadManager {
             ))
             return
         }
-        Task { [weak self] in
-            await self?.downloadSerially(snapshot: snapshot, chapters: chapters, baseURL: baseURL)
+        CacheActivityRegistry.begin(jobId: snapshot.jobId)
+        let task: Task<Void, Never> = Task { [weak self] in
+            guard let self else { return }
+            await self.downloadSerially(snapshot: snapshot, chapters: chapters, baseURL: baseURL)
         }
+        activeTasks[snapshot.jobId] = task
+    }
+
+    /// Cancel an active book download without deleting completed chapters.
+    func cancel(jobId: String) {
+        activeTasks[jobId]?.cancel()
+        activeTasks.removeValue(forKey: jobId)
+        let previous = lastProgress[jobId]
+        emit(DownloadProgress(
+            jobId: jobId,
+            chapterIndex: previous?.chapterIndex ?? 0,
+            totalChapters: previous?.totalChapters ?? 0,
+            completedChapters: previous?.completedChapters ?? 0,
+            bytesDownloaded: previous?.bytesDownloaded ?? 0,
+            bytesExpected: previous?.bytesExpected ?? 0,
+            state: .cancelled,
+            lastError: "Download cancelled"
+        ))
+    }
+
+    /// Cancel every active book download.
+    func cancelAll() {
+        for task in activeTasks.values {
+            task.cancel()
+        }
+        activeTasks.removeAll()
+    }
+
+    /// Cancel the active task and delete the complete offline audiobook.
+    func clearDownloadedBook(jobId: String) {
+        cancel(jobId: jobId)
+        Self.deleteAudiobook(jobId: jobId)
+    }
+
+    nonisolated static func deleteAudiobook(jobId: String) {
+        let folder = audiobooksRoot().appendingPathComponent(jobId, isDirectory: true)
+        try? FileManager.default.removeItem(at: folder)
     }
 
     /// Sequential download loop with exponential backoff.
@@ -174,12 +271,26 @@ actor DownloadManager {
         chapters: [JobSnapshot.Chapter],
         baseURL: URL?
     ) async {
+        defer { CacheActivityRegistry.end(jobId: snapshot.jobId) }
         let total = chapters.count
         var completed = 0
         var entries: [AudiobookManifest.ChapterEntry] = []
         var totalBytes: Int64 = 0
 
         for chapter in chapters {
+            if Task.isCancelled {
+                emit(DownloadProgress(
+                    jobId: snapshot.jobId,
+                    chapterIndex: chapter.index,
+                    totalChapters: total,
+                    completedChapters: completed,
+                    bytesDownloaded: totalBytes,
+                    bytesExpected: totalBytes,
+                    state: .cancelled,
+                    lastError: "Download cancelled"
+                ))
+                return
+            }
             guard let path = chapter.downloadUrl,
                   let url = Self.resolve(path: path, base: baseURL) else { continue }
 
@@ -218,6 +329,18 @@ actor DownloadManager {
                     state: .downloading,
                     lastError: nil
                 ))
+            } catch is CancellationError {
+                emit(DownloadProgress(
+                    jobId: snapshot.jobId,
+                    chapterIndex: chapter.index,
+                    totalChapters: total,
+                    completedChapters: completed,
+                    bytesDownloaded: totalBytes,
+                    bytesExpected: totalBytes,
+                    state: .cancelled,
+                    lastError: "Download cancelled"
+                ))
+                return
             } catch {
                 emit(DownloadProgress(
                     jobId: snapshot.jobId,
@@ -232,14 +355,20 @@ actor DownloadManager {
             }
         }
 
-        let manifest = AudiobookManifest(
+        let incoming = AudiobookManifest(
             jobId: snapshot.jobId,
             bookTitle: snapshot.bookTitle ?? snapshot.jobId,
             chapters: entries.sorted { $0.index < $1.index },
             totalBytes: totalBytes,
-            completedAt: completed == total ? Date() : nil
+            completedAt: nil
         )
-        try? Self.saveManifest(manifest)
+        let merged = Self.mergeManifests(Self.loadManifest(for: snapshot.jobId), incoming)
+        let expectedIndices = snapshot.playableChapters.map(\.index)
+        let complete = chapters.count == total && Self.isManifestComplete(merged, expectedChapterIndices: expectedIndices)
+        try? Self.saveManifest(AudiobookManifest(
+            jobId: merged.jobId, bookTitle: merged.bookTitle, chapters: merged.chapters,
+            totalBytes: merged.totalBytes, completedAt: complete ? Date() : nil
+        ))
 
         // After each completed download, run LRU+TTL eviction in the background.
         // Exclude the job we just downloaded so it is never immediately evicted.
@@ -268,33 +397,49 @@ actor DownloadManager {
         var lastError: Error?
 
         while attempt < maxAttempts {
+            try Task.checkCancellation()
             attempt += 1
             do {
                 return try await downloadOnce(url: url, to: destination)
             } catch {
                 lastError = error
                 let delaySeconds = min(30, pow(2.0, Double(attempt - 1)))
-                try? await Task.sleep(nanoseconds: UInt64(delaySeconds * 1_000_000_000))
+                try await Task.sleep(nanoseconds: UInt64(delaySeconds * 1_000_000_000))
             }
         }
         throw lastError ?? URLError(.cannotConnectToHost)
     }
 
     private nonisolated static func downloadOnce(url: URL, to destination: URL) async throws -> Int64 {
-        let config = URLSessionConfiguration.default
-        config.timeoutIntervalForRequest = 60
-        config.timeoutIntervalForResource = 600
-        let session = URLSession(configuration: config)
-        let (tempURL, response) = try await session.download(from: url)
+        let (tempURL, response) = try await BackgroundDownloadSession.shared.download(from: url)
         if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
             throw URLError(.badServerResponse)
         }
+        let expectedBytes = (response as? HTTPURLResponse)?.expectedContentLength ?? 0
+        return try commitDownloadedFile(from: tempURL, to: destination, expectedBytes: expectedBytes)
+    }
+
+    /// Installs only a complete staged download. A partial artifact never
+    /// replaces the user-visible MP3.
+    nonisolated static func commitDownloadedFile(
+        from stagedFile: URL,
+        to destination: URL,
+        expectedBytes: Int64
+    ) throws -> Int64 {
+        let attributes = try FileManager.default.attributesOfItem(atPath: stagedFile.path)
+        let bytes = (attributes[.size] as? Int64) ?? 0
+        guard bytes > 0, expectedBytes <= 0 || bytes == expectedBytes else {
+            throw URLError(.cannotDecodeContentData)
+        }
+        try FileManager.default.createDirectory(
+            at: destination.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
         if FileManager.default.fileExists(atPath: destination.path) {
             try FileManager.default.removeItem(at: destination)
         }
-        try FileManager.default.moveItem(at: tempURL, to: destination)
-        let attrs = try FileManager.default.attributesOfItem(atPath: destination.path)
-        return (attrs[.size] as? Int64) ?? 0
+        try FileManager.default.moveItem(at: stagedFile, to: destination)
+        return bytes
     }
 
     // MARK: Helpers (nonisolated — stateless)
@@ -314,12 +459,66 @@ actor DownloadManager {
         let trimmed = cleaned.isEmpty ? "chapter" : cleaned
         return String(trimmed.prefix(120))
     }
-
     nonisolated static func selectedChapters(
         snapshot: JobSnapshot,
         epubZeroBasedIndices: [Int]
     ) -> [JobSnapshot.Chapter] {
         let requested = Set(epubZeroBasedIndices)
         return snapshot.playableChapters.filter { requested.contains($0.index) }
+    }
+}
+
+/// Delegate bridge for URLSession background downloads. iOS owns the task
+/// while the app is suspended and relaunches the app to deliver callbacks.
+private final class BackgroundDownloadSession: NSObject, URLSessionDownloadDelegate, @unchecked Sendable {
+    static let shared = BackgroundDownloadSession()
+
+    private struct Pending {
+        let continuation: CheckedContinuation<(URL, URLResponse), Error>
+    }
+
+    private let lock = NSLock()
+    private lazy var session = URLSession(
+        configuration: DownloadManager.backgroundSessionConfiguration(),
+        delegate: self,
+        delegateQueue: nil
+    )
+    private var pending: [Int: Pending] = [:]
+
+    func download(from url: URL) async throws -> (URL, URLResponse) {
+        try await withCheckedThrowingContinuation { continuation in
+            let task = session.downloadTask(with: url)
+            lock.lock()
+            pending[task.taskIdentifier] = Pending(continuation: continuation)
+            lock.unlock()
+            task.resume()
+        }
+    }
+
+    func urlSession(
+        _ session: URLSession,
+        downloadTask: URLSessionDownloadTask,
+        didFinishDownloadingTo location: URL
+    ) {
+        lock.lock()
+        let item = pending.removeValue(forKey: downloadTask.taskIdentifier)
+        lock.unlock()
+        item?.continuation.resume(returning: (
+            location,
+            downloadTask.response ?? URLResponse(
+                url: downloadTask.originalRequest?.url ?? URL(string: "about:blank")!,
+                mimeType: nil,
+                expectedContentLength: 0,
+                textEncodingName: nil
+            )
+        ))
+    }
+
+    func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
+        guard let error else { return }
+        lock.lock()
+        let item = pending.removeValue(forKey: task.taskIdentifier)
+        lock.unlock()
+        item?.continuation.resume(throwing: error)
     }
 }

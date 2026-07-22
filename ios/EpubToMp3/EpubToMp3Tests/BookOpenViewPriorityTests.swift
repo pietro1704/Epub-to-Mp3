@@ -57,7 +57,16 @@ final class BookOpenViewPriorityTests: XCTestCase {
         )
     }
 
-    func testPlayButtonsCompareReaderPageRatioBeforeResuming() throws {
+    func testBookOpenViewForwardsSubsequentSnapshotsIntoMountedPlayer() throws {
+        let source = try sourceFile(named: "BookOpenView.swift")
+
+        XCTAssertTrue(
+            source.contains("self.globalPlayer.updateSnapshot(updated)"),
+            "BookOpenView must forward every remote SSE snapshot to the mounted player so newly completed chapters append to the live queue."
+        )
+    }
+
+    func testPlayButtonsUseTheSharedTransportAction() throws {
         let sources = [
             try sourceFile(named: "MiniPlayerBar.swift"),
             try sourceFile(named: "FullPlayerSheet.swift"),
@@ -68,8 +77,12 @@ final class BookOpenViewPriorityTests: XCTestCase {
 
         for source in sources {
             XCTAssertTrue(
-                source.contains("readerPageRatio:"),
-                "Every play surface must pass the reader page ratio into AudioPlayer so same-chapter divergence still shows the chooser."
+                source.contains("togglePlayPause()"),
+                "Every play surface must use AudioPlayer's shared togglePlayPause action."
+            )
+            XCTAssertFalse(
+                source.contains(".playDivergenceDialog("),
+                "Normal Play must not present the reader start-position chooser."
             )
         }
     }
@@ -124,6 +137,39 @@ final class BookOpenViewPriorityTests: XCTestCase {
             source.contains("private func returnToPreviousChapter()"),
             "PlayerReaderView must implement returnToPreviousChapter() calling player.play(snapshot:startingAt:)."
         )
+    }
+
+    func testInstantReaderKeepsAllStructuralChaptersInToc() throws {
+        let source = try sourceFile(named: "InstantReaderView.swift")
+
+        XCTAssertTrue(
+            source.contains("Array(fulltext.chapters.enumerated()), id: \\.offset"),
+            "The Reader TOC must include short, numeric, and image-only structural chapters."
+        )
+        XCTAssertFalse(
+            source.contains("fulltext.chapters.filter {"),
+            "The Reader TOC must not hide chapters based on extracted text length."
+        )
+        XCTAssertTrue(source.contains(".frame(minHeight: 320)"))
+        XCTAssertTrue(source.contains(".foregroundStyle(.primary)"))
+    }
+
+    func testReaderClaimsKeyboardFocusForPageTurns() throws {
+        let source = try source(named: "Views/ReaderView.swift")
+
+        XCTAssertTrue(source.contains(".focusable(true)"))
+        XCTAssertTrue(source.contains(".focused($readerHasFocus)"))
+        XCTAssertTrue(source.contains("readerHasFocus = true"))
+    }
+
+    func testReaderKeyboardSupportsEscapeBackNavigation() throws {
+        let compat = try sourceFile(named: "PlatformCompat.swift")
+        let reader = try source(named: "Views/ReaderView.swift")
+
+        XCTAssertTrue(compat.contains("case .escape: key = .escape"))
+        XCTAssertTrue(compat.contains("escape, j, k"))
+        XCTAssertTrue(reader.contains("case .escape:"))
+        XCTAssertTrue(reader.contains("onEscape?()"))
     }
 
     func testInstantReaderViewScrubberDecouplesSeekFromDrag() throws {

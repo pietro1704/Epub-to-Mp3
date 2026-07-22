@@ -21,7 +21,6 @@ except ImportError:
 
 import asyncio
 import contextlib
-import hashlib
 import html
 import json
 import logging
@@ -66,6 +65,7 @@ from src.paths import (
     SOURCE_BACKUPS_DIR,
     UPLOADS_DIR,
 )
+from src.reader_sanitizer import sanitize_reader_css, sanitize_reader_html
 from src.telemetry import TelemetryRecorder
 from src.text_formatting import TextFormattingProcessor
 from src.tts.edge_engine import reset_adaptive_settings
@@ -273,6 +273,18 @@ CLEANUP_INTERVAL_SECONDS = max(
         or _DEFAULT_CLEANUP_INTERVAL
     ),
 )
+
+
+def get_cleanup_interval_seconds() -> int:
+    """Resolve the cleanup interval at call time without reloading the module."""
+    default = 60 if os.getenv("SPACE_ID") else 300
+    raw = os.getenv("CLEANUP_INTERVAL_SECONDS", str(default)) or str(default)
+    try:
+        return max(10, int(raw))
+    except ValueError:
+        return max(10, default)
+
+
 TELEMETRY_RETENTION_HOURS = max(
     24, int(os.getenv("TELEMETRY_RETENTION_HOURS", "720") or "720")
 )  # 30 days
@@ -1833,7 +1845,7 @@ async def _periodic_job_cleanup():
     """Periodically clean up old completed jobs."""
     while True:
         try:
-            await asyncio.sleep(CLEANUP_INTERVAL_SECONDS)
+            await asyncio.sleep(get_cleanup_interval_seconds())
 
             current_time = time.time()
             jobs_to_remove = []
@@ -2486,15 +2498,16 @@ async def convert_ebook(
             Path(file.filename or "ebook.epub").name,
             must_exist=False,
         )
-        raw_payload = await file.read()
-        if MAX_UPLOAD_BYTES and len(raw_payload) > MAX_UPLOAD_BYTES:
+        from src.upload_streaming import UploadTooLarge, stream_upload_to_path
+
+        try:
+            file_hash, _ = await stream_upload_to_path(file, temp_file, max_bytes=MAX_UPLOAD_BYTES)
+        except UploadTooLarge:
+            shutil.rmtree(job_input_dir, ignore_errors=True)
             raise HTTPException(
                 status_code=413,
                 detail=f"File exceeds the {MAX_UPLOAD_MB} MB limit",
             )
-        with temp_file.open("wb") as buffer:
-            buffer.write(raw_payload)
-        file_hash = hashlib.sha1(raw_payload).hexdigest() if raw_payload else None
 
         cover_name = None
         cover_url = None
@@ -2891,8 +2904,10 @@ def _build_fulltext_chapters_from_cache(cached: dict) -> list[dict]:
             "index": idx,
             "name": ch.get("title") or f"Chapter {idx}",
             "text": ch.get("text") or "",
-            "html": ch.get("html") or _chapter_html_fallback(ch.get("text") or ""),
-            "css": ch.get("css") or "",
+            "html": sanitize_reader_html(
+                ch.get("html") or _chapter_html_fallback(ch.get("text") or "")
+            ),
+            "css": sanitize_reader_css(ch.get("css") or ""),
             "resources": ch.get("resources") or [],
             "charCount": len(ch.get("text") or ""),
         }
@@ -2989,10 +3004,10 @@ async def get_job_fulltext(job_id: str) -> dict:
         for idx, chapter in enumerate(book_chapters, 1):
             chapter_text = getattr(chapter, "speech_text", None) or chapter.text or ""
             clean_text = TextFormattingProcessor.strip_inline_markdown(chapter_text)
-            chapter_html = (getattr(chapter, "raw_html", None) or "").strip()
+            chapter_html = sanitize_reader_html((getattr(chapter, "raw_html", None) or "").strip())
             if not chapter_html:
-                chapter_html = _chapter_html_fallback(clean_text)
-            chapter_css = reader.extract_chapter_stylesheet(chapter)
+                chapter_html = sanitize_reader_html(_chapter_html_fallback(clean_text))
+            chapter_css = sanitize_reader_css(reader.extract_chapter_stylesheet(chapter))
             chapter_resources = reader.extract_chapter_resources(chapter)
 
             chapters.append(

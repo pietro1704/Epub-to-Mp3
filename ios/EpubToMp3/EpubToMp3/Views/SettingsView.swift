@@ -19,6 +19,8 @@ struct SettingsView: View {
 
     @State private var showClearCacheConfirm = false
     @State private var clearCacheDone = false
+    @State private var showClearAllDownloadsConfirm = false
+    @State private var storageUsage = StorageUsageScanner.current()
 
     var body: some View {
         #if os(macOS)
@@ -28,6 +30,7 @@ struct SettingsView: View {
                     embeddedServerSection
                     backendSection
                     readerSection
+                    storageSection
                     advancedSection
                     cloudSection
                     aboutSection
@@ -41,6 +44,7 @@ struct SettingsView: View {
                     embeddedServerSection
                     backendSection
                     readerSection
+                    storageSection
                     advancedSection
                     cloudSection
                     aboutSection
@@ -342,6 +346,86 @@ struct SettingsView: View {
         }
     }
 
+    private var storageSection: some View {
+        Section {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack {
+                    Label(L10n.string("settings.storageUsage"), systemImage: "internaldrive")
+                    Spacer()
+                    Text("\(formatBytes(storageUsage.totalBytes)) / \(formatBytes(storageUsage.budgetBytes))")
+                        .font(.footnote.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                }
+                ProgressView(value: storageUsage.budgetFraction)
+                    .tint(storageUsage.budgetFraction >= 0.9 ? .red : .accentColor)
+                    .accessibilityLabel(L10n.string("settings.storageUsage"))
+                    .accessibilityValue("\(Int(storageUsage.budgetFraction * 100))%")
+                storageRow("settings.offlineAudio", bytes: storageUsage.offlineAudioBytes)
+                storageRow("settings.ttsCache", bytes: storageUsage.ttsCacheBytes)
+                storageRow("settings.storageTotal", bytes: storageUsage.totalBytes)
+            }
+            Button {
+                refreshStorageUsage()
+            } label: {
+                Label(L10n.string("settings.refreshStorage"), systemImage: "arrow.clockwise")
+            }
+            Button(role: .destructive) {
+                showClearAllDownloadsConfirm = true
+            } label: {
+                Label(L10n.string("settings.clearAllDownloads"), systemImage: "trash")
+            }
+            .confirmationDialog(
+                L10n.string("settings.clearAllDownloadsConfirmTitle"),
+                isPresented: $showClearAllDownloadsConfirm,
+                titleVisibility: .visible
+            ) {
+                Button(L10n.string("settings.clearCacheConfirmButton"), role: .destructive) {
+                    clearAllDownloads()
+                }
+                Button(L10n.string("library.cancel"), role: .cancel) {}
+            } message: {
+                Text(L10n.string("settings.clearAllDownloadsConfirmMessage"))
+            }
+        } header: {
+            Text(L10n.string("settings.storage"))
+        } footer: {
+            Text(L10n.string("settings.storageFooter"))
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+        }
+        .onAppear { refreshStorageUsage() }
+    }
+
+    private func storageRow(_ key: String, bytes: Int64) -> some View {
+        HStack {
+            Text(L10n.string(key))
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+            Spacer()
+            Text(formatBytes(bytes))
+                .font(.footnote.monospacedDigit())
+        }
+    }
+
+    private func refreshStorageUsage() {
+        storageUsage = StorageUsageScanner.current(budgetBytes: settings.offlineCacheBudgetBytes)
+    }
+
+    private func clearAllDownloads() {
+        Task { await DownloadManager.shared.cancelAll() }
+        StorageUsageScanner.clearAllDownloads()
+        for var book in library.books where book.cachedOffline {
+            book.cachedOffline = false
+            library.update(book)
+        }
+        refreshStorageUsage()
+        clearCacheDone = true
+    }
+
+    private func formatBytes(_ bytes: Int64) -> String {
+        ByteCountFormatter.string(fromByteCount: max(0, bytes), countStyle: .file)
+    }
+
     @ViewBuilder
     private var advancedSection: some View {
         Section {
@@ -396,14 +480,7 @@ struct SettingsView: View {
                 titleVisibility: .visible
             ) {
                 Button(L10n.string("settings.clearCacheConfirmButton"), role: .destructive) {
-                    AudiobookCacheEviction.deleteAllAudiobooks()
-                    // Keep the library's offline badges truthful — the
-                    // folders (and manifests) are gone as of this tap.
-                    for var book in library.books where book.cachedOffline {
-                        book.cachedOffline = false
-                        library.update(book)
-                    }
-                    clearCacheDone = true
+                    clearAllDownloads()
                 }
                 Button(L10n.string("library.cancel"), role: .cancel) {}
             } message: {
@@ -483,6 +560,7 @@ struct SettingsView: View {
                 embeddedRuntimeSection
                 backendSection
                 readerSection
+                storageSection
                 advancedSection
                 aboutSection
             }
@@ -493,6 +571,7 @@ struct SettingsView: View {
                 embeddedRuntimeSection
                 backendSection
                 readerSection
+                storageSection
                 advancedSection
                 aboutSection
 

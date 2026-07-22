@@ -1,4 +1,8 @@
 import SwiftUI
+#if os(iOS)
+import UIKit
+import MediaPlayer
+#endif
 
 /// Modal player surfaced from `JobDetailView`. Shows the current
 /// chapter, scrubber, transport controls, and a speed selector.
@@ -10,8 +14,9 @@ struct PlayerView: View {
     @EnvironmentObject private var readerCoordinator: ReaderCoordinator
     private var readerChapterIndex: Int { readerCoordinator.anchor.chapterIndex }
     private var readerPageRatio: Double? { readerCoordinator.anchor.pageRatio }
-    @State private var pendingAnchor: PlayDivergenceAnchor?
+
     @State private var scrubberDragValue: TimeInterval?
+    @State private var showingRatePicker = false
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -70,9 +75,8 @@ struct PlayerView: View {
     }
 
     private var currentChapterLabel: String {
-        let chapters = snapshot.playableChapters
-        guard player.currentChapterIndex < chapters.count else { return "—" }
-        return chapters[player.currentChapterIndex].displayTitle
+        guard player.snapshot != nil else { return "—" }
+        return player.effectiveChapterTitle
     }
 
     private var scrubber: some View {
@@ -96,9 +100,9 @@ struct PlayerView: View {
             )
             .accessibilityLabel(L10n.string("player.playbackPosition"))
             HStack {
-                Text(format(seconds: player.positionSeconds))
+                Text(format(seconds: player.playbackPositionSeconds))
                 Spacer()
-                Text(format(seconds: player.durationSeconds))
+                Text(format(seconds: player.playbackDurationSeconds))
             }
             .font(.caption.monospacedDigit())
             .foregroundStyle(.secondary)
@@ -134,31 +138,31 @@ struct PlayerView: View {
             .accessibilityLabel(L10n.string("player.nextChapter"))
         }
         .tint(.primary)
-        .playDivergenceDialog(player: player, anchor: $pendingAnchor)
+
     }
 
     private func handlePlayTap() {
-        switch player.playTapDecision(
-            readerChapterIndex: readerChapterIndex,
-            readerPageRatio: readerPageRatio
-        ) {
-        case .pause, .resume:
-            player.togglePlayPause()
-        case .offerStartChoice:
-            pendingAnchor = .capture(from: readerCoordinator)
-        }
+        player.togglePlayPause()
     }
 
     private var speedPicker: some View {
-        Picker(L10n.string("player.speed"), selection: Binding(
-            get: { player.rate },
-            set: { player.setRate($0) }
-        )) {
-            ForEach(PlaybackRate.allCases) { rate in
-                Text(rate.label).tag(rate)
-            }
+        Button {
+            showingRatePicker.toggle()
+        } label: {
+            Text(player.rate.shortLabel)
+                .font(.subheadline.weight(.semibold).monospacedDigit())
+                .frame(minWidth: 64, minHeight: 44)
+                .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 12))
         }
-        .pickerStyle(.segmented)
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("player.playbackRateButton")
+        .accessibilityLabel(L10n.string("player.playbackSpeed", player.rate.shortLabel))
+        .popover(isPresented: $showingRatePicker, attachmentAnchor: .point(.top), arrowEdge: .bottom) {
+            PlaybackRateFloatingPicker(player: player)
+                .frame(minWidth: 340)
+                .padding(.vertical, 8)
+                .presentationCompactAdaptationIfAvailable()
+        }
     }
 
     private func format(seconds: TimeInterval) -> String {
@@ -169,6 +173,111 @@ struct PlayerView: View {
         let s = total % 60
         if h > 0 { return String(format: "%d:%02d:%02d", h, m, s) }
         return String(format: "%d:%02d", m, s)
+    }
+}
+
+/// Apple-style floating speed control. The horizontal scroll view exposes
+/// the first six rates from the reference image and lets the user swipe to
+/// reveal additional rates.
+struct PlaybackRateFloatingPicker: View {
+    @ObservedObject var player: AudioPlayer
+
+    var body: some View {
+        VStack(spacing: 8) {
+            Text(L10n.string("player.speed"))
+                .font(.headline)
+                .foregroundStyle(.secondary)
+            ScrollViewReader { proxy in
+                ScrollView(.horizontal, showsIndicators: false) {
+                    LazyHStack(spacing: 12) {
+                        ForEach(PlaybackRate.allCases) { rate in
+                            rateCell(rate)
+                        }
+                    }
+                    .padding(.horizontal, 12)
+                }
+                .frame(height: 76)
+                .onAppear { proxy.scrollTo(player.rate.id, anchor: .center) }
+                .onChange(of: player.rate) { rate in
+                    withAnimation(.easeOut(duration: 0.18)) {
+                        proxy.scrollTo(rate.id, anchor: .center)
+                    }
+                }
+            }
+            Text("Deslize para ver mais velocidades")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 12)
+        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 24))
+        .accessibilityIdentifier("player.playbackRateFloatingPicker")
+    }
+
+    private func rateCell(_ rate: PlaybackRate) -> some View {
+        let selected = player.rate == rate
+        return Button {
+            player.setRate(rate)
+        } label: {
+            Text(rate.shortLabel)
+                .font(.body.monospacedDigit())
+                .frame(width: 64, height: 64)
+                .background(Circle().fill(selected ? Color.primary.opacity(0.78) : Color.secondary.opacity(0.22)))
+                .foregroundStyle(selected ? Color.white : Color.primary)
+        }
+        .buttonStyle(.plain)
+        .id(rate.id)
+        .accessibilityLabel(selected ? "\(rate.shortLabel), selected" : rate.shortLabel)
+        .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+}
+
+/// Native system-volume control. `MPVolumeView` is the Apple-supported
+/// control for changing the device/output volume; `outputVolume` itself is
+/// read-only and must not be mirrored into a second SwiftUI slider.
+struct SystemVolumeSlider: View {
+    var body: some View {
+        #if os(iOS)
+        HStack(spacing: 10) {
+            Image(systemName: "speaker.fill")
+                .frame(width: 24, height: 24)
+                .scaledToFit()
+            SystemVolumeSliderRepresentable()
+                .frame(maxWidth: .infinity, minHeight: 34, maxHeight: 34)
+            Image(systemName: "speaker.wave.3.fill")
+                .frame(width: 24, height: 24)
+                .scaledToFit()
+        }
+        .padding(.horizontal, 20)
+        .frame(maxWidth: .infinity, minHeight: 44, alignment: .center)
+            .accessibilityLabel(L10n.string("player.systemVolume"))
+        #else
+        EmptyView()
+        #endif
+    }
+}
+
+#if os(iOS)
+private struct SystemVolumeSliderRepresentable: UIViewRepresentable {
+    func makeUIView(context: Context) -> MPVolumeView {
+        let view = MPVolumeView(frame: .zero)
+        view.showsRouteButton = false
+        view.showsVolumeSlider = true
+        return view
+    }
+
+    func updateUIView(_ uiView: MPVolumeView, context: Context) {}
+}
+#endif
+
+extension View {
+    @ViewBuilder
+    func presentationCompactAdaptationIfAvailable() -> some View {
+        if #available(iOS 16.4, macOS 13.3, *) {
+            presentationCompactAdaptation(.popover)
+        } else {
+            self
+        }
     }
 }
 

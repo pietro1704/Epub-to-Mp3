@@ -1,6 +1,7 @@
 {
   "@@locale": "pt",
   "appTitle": "Epub para MP3",
+  "convertTitle": "Converter",
   "settingsTitle": "Configurações",
   "backendUrl": "URL do servidor",
   "wpmLabel": "Palavras por minuto",

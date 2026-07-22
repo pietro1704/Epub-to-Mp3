@@ -5,6 +5,10 @@ import UIKit
 #endif
 
 enum InstantReaderIndexMapper {
+    static func shouldMountLocalPlayer(useEmbeddedRuntime: Bool) -> Bool {
+        !useEmbeddedRuntime
+    }
+
     static func playableIndex(forEpubIndex epubIndex: Int, in snapshot: JobSnapshot) -> Int? {
         snapshot.playableChapters.firstIndex { $0.index == epubIndex }
     }
@@ -195,18 +199,16 @@ struct InstantReaderView: View {
     @Environment(\.horizontalSizeClass) private var hSize
 
     @State private var currentChapterIndex: Int = 0
+    @State private var restoredPageRatio: Double? = nil
     /// A chapter explicitly selected from the TOC. While the audio queue is
     /// still on another chapter, retain this reader selection instead of
     /// letting the position observer immediately snap it back.
     @State private var pinnedReaderChapterIndex: Int?
-    @StateObject private var player = AudioPlayer()
-    /// Tracks whether `player` has been wired with a snapshot via
-    /// `mountPlayerIfPossible()`. We can't make `player` itself
-    /// optional under Combine — `@StateObject` requires a concrete
-    /// instance for `objectWillChange` subscriptions to fire — so we
-    /// gate the UI on this flag instead.
+    /// The Reader uses the same global AudioPlayer as every other playback
+    /// surface. `playerMounted` remains a UI readiness flag only; it is not
+    /// a second player lifecycle.
     @State private var playerMounted: Bool = false
-    @State private var pendingAnchor: PlayDivergenceAnchor?
+
     @State private var sync = SyncEngine()
     @State private var spans: [SentenceSpan] = []
     /// Set to true just before a backward chapter crossing so the
@@ -226,6 +228,7 @@ struct InstantReaderView: View {
     @State private var showingToc = false
     @State private var showingSearch = false
     @State private var pendingPlayAnchor: SentenceSpan?  // sentence the user tapped → "Play from here"
+    @State private var floaterWordOffset: Double?
     @State private var floaterSentence: SentenceSpan?
     @State private var showingPlayMenu = false
     @State private var showingConversionStatus = false
@@ -233,6 +236,9 @@ struct InstantReaderView: View {
     @State private var chromeVisible = true
     @State private var audioPlayerVisible = true
     @State private var scrubberDragValue: TimeInterval? = nil
+    @State private var showingRatePicker = false
+
+    private var player: AudioPlayer { globalPlayer }
 
     private var embeddedAudioReady: Bool {
         settings.useEmbeddedRuntime && globalPlayer.firstSegmentReady
@@ -240,6 +246,12 @@ struct InstantReaderView: View {
 
     private var showTransport: Bool {
         playerMounted || embeddedAudioReady
+    }
+
+    private var localPlayerAllowed: Bool {
+        InstantReaderIndexMapper.shouldMountLocalPlayer(
+            useEmbeddedRuntime: settings.useEmbeddedRuntime
+        )
     }
 
     private var activePlayer: AudioPlayer {
@@ -260,7 +272,12 @@ struct InstantReaderView: View {
             sentence: floaterSentence,
             paragraphFirstSentence: floaterSentence.flatMap(paragraphFirstSentence),
             onPlayFromHere: { [self] span in
-                seekToSentence(span)
+                seekToSentence(span, wordOffsetRatio: floaterWordOffset)
+                floaterWordOffset = nil
+                floaterSentence = nil
+            },
+            onContinuePlayback: { [self] in
+                activePlayer.resume()
                 floaterSentence = nil
             },
             onPlayChapterStart: { [self] in
@@ -296,13 +313,6 @@ struct InstantReaderView: View {
                 .padding(.top, topInset + 12)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                 .allowsHitTesting(floaterSentence != nil)
-
-                ReaderFollowButton(
-                    isVisible: divergencePlayerChapterLabel != nil,
-                    action: jumpToPlayerPosition
-                )
-                .padding(.bottom, bottomInset + 72)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
 
                 if !audioPlayerVisible, chromeVisible {
                     Button(action: reopenAudioPlayer) {
@@ -351,6 +361,8 @@ struct InstantReaderView: View {
         .accessibilityIdentifier("reader.divergenceDialog")
         .modifier(ChromeVisibilityModifier(visible: chromeVisible))
         .readerChromeVisible(chromeVisible)
+        .compatOnChange(of: chromeVisible) { _ in persistSessionState() }
+        .compatOnChange(of: audioPlayerVisible) { _ in persistSessionState() }
         .sheet(isPresented: $showingReaderSettings) {
             ReaderSettingsSheet()
                 .environmentObject(settings)
@@ -393,7 +405,9 @@ struct InstantReaderView: View {
                 }
         }
         .compatOnChange(of: hasAudio) { isAudioReady in
-            if isAudioReady, !playerMounted { mountPlayerIfPossible() }
+            if isAudioReady, localPlayerAllowed, !playerMounted {
+                mountPlayerIfPossible()
+            }
         }
         .compatOnChange(of: snapshot) { updatedSnapshot in
             guard let updatedSnapshot, playerMounted else { return }
@@ -443,15 +457,32 @@ struct InstantReaderView: View {
             cacheManager.refreshCachedIndices()
         }
         .onAppear {
-            // UI tests can force a clean opening position (first readable
-            // chapter) so chapter-crossing automation isn't blocked by a
-            // previously-saved position deep in the book.
+            // Restore the reader surface before any page/player interaction.
+            // A saved playing audio marker wins over the visual reader anchor:
+            // the reader must reopen where the audio will resume, not where
+            // the user last scrolled before leaving the app.
+            let session = ReaderSessionState.load(bookID: fulltext.jobId)
+            chromeVisible = session.chromeVisible
+            audioPlayerVisible = session.miniPlayerVisible
             let forceReset = ProcessInfo.processInfo.arguments.contains("-uiTestResetReaderPosition")
-            let saved = forceReset ? 0 : settings.savedChapterIndex(for: fulltext.jobId)
-            if saved > 0 {
-                currentChapterIndex = saved
+            let legacySaved = forceReset ? 0 : settings.savedChapterIndex(for: fulltext.jobId)
+            let restored = readerCoordinator.load(
+                for: fulltext.jobId,
+                fallbackChapterIndex: legacySaved
+            )
+            let audioMarker = forceReset ? nil : globalPlayer.persistedResumeMarker(for: fulltext.jobId)
+            let audioChapter = audioMarker?.wasPlaying == true ? audioMarker?.chapterIndex : nil
+            restoredPageRatio = forceReset || audioChapter != nil ? nil : restored.pageRatio
+            if let audioChapter {
+                currentChapterIndex = max(0, audioChapter)
+            } else if !forceReset && (restored.chapterIndex > 0 || restored.pageRatio != nil || legacySaved > 0) {
+                currentChapterIndex = restored.chapterIndex
             } else if currentChapterIndex == 0 {
                 currentChapterIndex = firstReadableChapterIndex
+            }
+            if !forceReset && audioMarker?.wasPlaying == true {
+                globalPlayer.armPersistedResume()
+                onRequestPlay?(currentChapterIndex, nil)
             }
             // Seed the coordinator so a play tap right after launch
             // already knows where the reader is, without waiting
@@ -459,8 +490,11 @@ struct InstantReaderView: View {
             readerCoordinator.setChapter(currentChapterIndex)
             FlickerProbe.shared.chapterInfo = "\(currentChapterIndex)/\(fulltext.chapters.count)"
             reloadCurrentChapter(index: currentChapterIndex)
-            if hasAudio { mountPlayerIfPossible() }
+            if hasAudio, localPlayerAllowed {
+                mountPlayerIfPossible()
+            }
             cacheManager.refreshCachedIndices()
+            persistSessionState()
         }
         .onDisappear {
             positionTask?.cancel()
@@ -479,6 +513,7 @@ struct InstantReaderView: View {
             WidgetDataSync.flushLastRead()
             readerCoordinator.flush()
             if playerMounted { player.pause() }
+            persistSessionState()
         }
         .confirmationDialog(
             pendingPlayAnchor?.text ?? "",
@@ -494,6 +529,11 @@ struct InstantReaderView: View {
                     pendingPlayAnchor = nil
                 }
                 .accessibilityIdentifier("reader.playFromHere")
+                Button(L10n.string("player.divergence.fromWhereStopped")) {
+                    activePlayer.resume()
+                    pendingPlayAnchor = nil
+                }
+                .accessibilityIdentifier("reader.continuePlayback")
                 Button(L10n.string("reader.sentenceMenu.cancel"), role: .cancel) {
                     pendingPlayAnchor = nil
                 }
@@ -523,6 +563,9 @@ struct InstantReaderView: View {
                 spans: spans,
                 currentSentenceId: currentSentenceId,
                 onJumpToSentence: { floaterSentence = $0 },
+                onJumpToSentenceOffset: { _, ratio in
+                    floaterWordOffset = ratio
+                },
                 onAdvanceChapter: advanceToNextChapter,
                 onPreviousChapter: returnToPreviousChapter,
                 onCenterTap: { withAnimation(.easeInOut(duration: 0.25)) { chromeVisible.toggle() } },
@@ -538,7 +581,9 @@ struct InstantReaderView: View {
                 bookChapters: fulltext.chapters,
                 onScrolledToChapter: { mirrorScrolledChapter($0) },
                 onLastPageLanded: { readerShouldStartAtLastPage = false },
-                startAtLastPage: readerShouldStartAtLastPage
+                onEscape: onClose,
+                startAtLastPage: readerShouldStartAtLastPage,
+                startAtPageRatio: restoredPageRatio
             )
         } else if !fulltext.chapters.isEmpty {
             ReaderView(
@@ -546,6 +591,9 @@ struct InstantReaderView: View {
                 spans: spans,
                 currentSentenceId: currentSentenceId,
                 onJumpToSentence: { floaterSentence = $0 },
+                onJumpToSentenceOffset: { _, ratio in
+                    floaterWordOffset = ratio
+                },
                 onAdvanceChapter: advanceToNextChapter,
                 onPreviousChapter: returnToPreviousChapter,
                 onCenterTap: { withAnimation(.easeInOut(duration: 0.25)) { chromeVisible.toggle() } },
@@ -559,7 +607,8 @@ struct InstantReaderView: View {
                 chromeBottomInset: chromeVisible ? bottomInset : 0,
                 useStableBodyHeight: true,
                 bookChapters: fulltext.chapters,
-                onScrolledToChapter: { mirrorScrolledChapter($0) }
+                onScrolledToChapter: { mirrorScrolledChapter($0) },
+                onEscape: onClose
             )
             .id(fulltext.chapters[0].id)
         } else {
@@ -894,6 +943,13 @@ struct InstantReaderView: View {
         .compatHorizontalSafeAreaPadding(20)
         .padding(.vertical, 4)
         .contentShape(Rectangle())
+        .overlay(alignment: .topTrailing) {
+            if showingRatePicker {
+                PlaybackRateFloatingPicker(player: ap)
+                    .padding(.horizontal, 16)
+                    .offset(y: -76)
+            }
+        }
         .onTapGesture { playerPresentation.showFullPlayer() }
         .accessibilityIdentifier("instantReader.playerBar")
     }
@@ -923,32 +979,32 @@ struct InstantReaderView: View {
     private func transportControls(player: AudioPlayer) -> some View {
         HStack(spacing: 24) {
             Button {
-                switch player.playTapDecision(
-                    readerChapterIndex: currentChapterIndex,
-                    readerPageRatio: readerCoordinator.anchor.pageRatio
-                ) {
-                case .pause:
-                    player.pause()
-                    // A stale fallback may belong to the other player instance
-                    // (embedded mode uses globalPlayer, backend mode uses the
-                    // local player). Never leave that second transport alive.
-                    if player === globalPlayer {
-                        self.player.stop()
-                    } else {
-                        globalPlayer.pause()
-                    }
-                case .resume:
-                    player.resume()
-                case .offerStartChoice:
-                    pendingAnchor = .capture(from: readerCoordinator)
+                if !player.isPlaying,
+                   !player.hasLoadedAudioQueue,
+                   !player.isUsingSpeechFallback {
+                    // Conversion may still be producing the first segment.
+                    // Ask the host to continue the buffered stream instead
+                    // of toggling an empty AVQueuePlayer.
+                    onRequestPlay?(currentChapterIndex, nil)
+                    return
                 }
+                player.togglePlayPause()
             } label: {
                 Image(systemName: player.isPlaying ? "pause.circle.fill" : "play.circle.fill")
                     .font(.system(size: 36))
             }
             .buttonStyle(.plain)
             .accessibilityLabel(player.isPlaying ? L10n.string("player.pause") : L10n.string("player.play"))
-            .playDivergenceDialog(player: player, anchor: $pendingAnchor)
+
+
+            Button {
+                showingRatePicker.toggle()
+            } label: {
+                Text(player.rate.shortLabel)
+                    .font(.caption.weight(.semibold).monospacedDigit())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(L10n.string("player.speed"))
 
             Button {
                 player.nextChapter()
@@ -1048,6 +1104,15 @@ struct InstantReaderView: View {
         }
     }
 
+    private func persistSessionState() {
+        ReaderSessionState.save(
+            bookID: fulltext.jobId,
+            chromeVisible: chromeVisible,
+            miniPlayerVisible: audioPlayerVisible,
+            fullPlayerVisible: playerPresentation.showingFullPlayer
+        )
+    }
+
     private func closeAudioPlayer() {
         // Close is a hard ownership boundary: stop both possible player
         // instances so a fallback cannot survive after the MP3 UI disappears.
@@ -1069,7 +1134,7 @@ struct InstantReaderView: View {
 
     private func scrubber(player: AudioPlayer) -> some View {
         HStack(spacing: 8) {
-            Text(format(seconds: player.positionSeconds))
+            Text(format(seconds: player.playbackPositionSeconds))
                 .font(.caption2.monospacedDigit())
                 .foregroundStyle(.secondary)
                 .frame(minWidth: 44, alignment: .trailing)
@@ -1092,7 +1157,7 @@ struct InstantReaderView: View {
                 }
             )
             .accessibilityLabel(L10n.string("instantReader.playbackPosition"))
-            Text(format(seconds: player.durationSeconds))
+            Text(format(seconds: player.playbackDurationSeconds))
                 .font(.caption2.monospacedDigit())
                 .foregroundStyle(.secondary)
                 .frame(minWidth: 44, alignment: .leading)
@@ -1151,9 +1216,10 @@ struct InstantReaderView: View {
     private var tocSheet: some View {
         CompatNavigationStack {
             List {
-                ForEach(fulltext.chapters.filter {
-                    $0.text.trimmingCharacters(in: .whitespacesAndNewlines).count >= 10
-                }) { chapter in
+                // The TOC is structural metadata, not a text-quality filter.
+                // Short/numeric chapters and image-only sections must remain
+                // navigable even when their extracted body is empty.
+                ForEach(Array(fulltext.chapters.enumerated()), id: \.offset) { _, chapter in
                     Button {
                         let target = max(0, chapter.index - 1)
                         // A position tick from the currently-playing audio used
@@ -1184,11 +1250,13 @@ struct InstantReaderView: View {
                             Spacer()
                             chapterCacheIcon(for: max(0, chapter.index - 1))
                         }
+                        .foregroundStyle(.primary)
                     }
                     .buttonStyle(.plain)
                     .accessibilityIdentifier("toc.chapter.\(max(0, chapter.index - 1))")
                 }
             }
+            .frame(minHeight: 320)
             .navigationTitle(L10n.string("player.chapters"))
             .compatInlineNavigationTitle()
             .toolbar {
@@ -1204,6 +1272,21 @@ struct InstantReaderView: View {
                     .disabled(cacheManager.cachedIndices.count == fulltext.chapters.filter {
                         $0.text.trimmingCharacters(in: .whitespacesAndNewlines).count >= 10
                     }.count)
+                }
+                ToolbarItem(placement: .compatPrimaryTrailing) {
+                    if !cacheManager.generatingIndices.isEmpty {
+                        Button(role: .destructive) {
+                            cacheManager.cancelAll()
+                        } label: {
+                            Label(L10n.string("chapterList.cancelDownloads"), systemImage: "xmark.circle")
+                        }
+                    } else if !cacheManager.cachedIndices.isEmpty {
+                        Button(role: .destructive) {
+                            cacheManager.clearAll()
+                        } label: {
+                            Label(L10n.string("chapterList.removeDownloads"), systemImage: "trash")
+                        }
+                    }
                 }
             }
         }
@@ -1237,10 +1320,12 @@ struct InstantReaderView: View {
     }
 
     private func mountPlayerIfPossible() {
+        guard InstantReaderIndexMapper.shouldMountLocalPlayer(
+            useEmbeddedRuntime: settings.useEmbeddedRuntime
+        ) else { return }
         guard let snap = snapshot, !snap.playableChapters.isEmpty else { return }
-        // Reuse the @StateObject `player` instance so `objectWillChange`
-        // subscriptions stay valid. Reconfiguring is enough — `play()`
-        // already tears down the underlying AVQueuePlayer.
+        // Reconfigure the shared global player. `play()` tears down and
+        // rebuilds the underlying AVQueuePlayer when the snapshot changes.
         player.backendBaseURL = backendBaseURL
         player.coverArtData = coverPNG     // surface to MPNowPlayingInfoCenter
         let playableIndex = InstantReaderIndexMapper
@@ -1373,12 +1458,13 @@ struct InstantReaderView: View {
         pendingPlayAnchor = span
     }
 
-    private func seekToSentence(_ span: SentenceSpan) {
+    private func seekToSentence(_ span: SentenceSpan, wordOffsetRatio: Double? = nil) {
         guard playerMounted || embeddedAudioReady else { return }
         activePlayer.startFromReaderPage(
             currentChapterIndex,
             sentenceId: span.id,
-            sentenceOffsetRatio: readerCoordinator.anchor.pageRatio
+            sentenceOffsetRatio: readerCoordinator.anchor.pageRatio,
+            sentenceWordOffsetRatio: wordOffsetRatio
         )
     }
 
@@ -1505,9 +1591,13 @@ struct InstantReaderView: View {
     }
 
     private var currentChapterTitle: String {
-        resolveChapter(at: currentChapterIndex)?.displayTitle
-            ?? fulltext.bookTitle
-            ?? "—"
+        let ap = activePlayer
+        guard ap.snapshot != nil else {
+            return resolveChapter(at: currentChapterIndex)?.displayTitle
+                ?? fulltext.bookTitle
+                ?? "—"
+        }
+        return ap.effectiveChapterTitle
     }
 
     private func positionLabel(_ p: AudioPlayer) -> String {

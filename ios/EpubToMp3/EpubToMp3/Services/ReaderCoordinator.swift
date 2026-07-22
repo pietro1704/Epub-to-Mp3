@@ -47,6 +47,7 @@ final class ReaderCoordinator: ObservableObject {
     /// `mirrorTask` so a fast swipe-burst writes once at the end.
     private let defaults: UserDefaults
     private var mirrorTask: Task<Void, Never>?
+    private var currentBookID: String?
 
     init(defaults: UserDefaults? = nil) {
         if let defaults {
@@ -65,6 +66,21 @@ final class ReaderCoordinator: ObservableObject {
         let ratio = self.defaults.object(forKey: AudioPlayer.readerCurrentPageRatioDefaultsKey) as? Double
         let sentenceId = self.defaults.string(forKey: AudioPlayer.readerCurrentSentenceIdDefaultsKey)
         anchor = ReadingAnchor(chapterIndex: chapter, pageRatio: ratio, sentenceId: sentenceId)
+    }
+
+    func load(for bookID: String, fallbackChapterIndex: Int = 0) -> ReadingAnchor {
+        currentBookID = bookID
+        let prefix = "reader.position.v1.\(bookID)"
+        let chapter = defaults.object(forKey: "\(prefix).chapter") as? Int ?? fallbackChapterIndex
+        let ratio = defaults.object(forKey: "\(prefix).ratio") as? Double
+        let sentenceId = defaults.string(forKey: "\(prefix).sentence")
+        anchor = ReadingAnchor(chapterIndex: max(0, chapter), pageRatio: ratio, sentenceId: sentenceId)
+        return anchor
+    }
+
+    private func namespacedKey(_ suffix: String) -> String? {
+        guard let currentBookID else { return nil }
+        return "reader.position.v1.\(currentBookID).\(suffix)"
     }
 
     /// Replace the entire anchor. Use for chapter changes (where
@@ -97,15 +113,20 @@ final class ReaderCoordinator: ObservableObject {
             try? await Task.sleep(nanoseconds: 150_000_000)
             guard !Task.isCancelled else { return }
             defaults.set(snapshot.chapterIndex, forKey: AudioPlayer.readerCurrentChapterIndexDefaultsKey)
+            if let key = self.namespacedKey("chapter") { defaults.set(snapshot.chapterIndex, forKey: key) }
             if let ratio = snapshot.pageRatio {
                 defaults.set(ratio, forKey: AudioPlayer.readerCurrentPageRatioDefaultsKey)
+                if let key = self.namespacedKey("ratio") { defaults.set(ratio, forKey: key) }
             } else {
                 defaults.removeObject(forKey: AudioPlayer.readerCurrentPageRatioDefaultsKey)
+                if let key = self.namespacedKey("ratio") { defaults.removeObject(forKey: key) }
             }
             if let id = snapshot.sentenceId {
                 defaults.set(id, forKey: AudioPlayer.readerCurrentSentenceIdDefaultsKey)
+                if let key = self.namespacedKey("sentence") { defaults.set(id, forKey: key) }
             } else {
                 defaults.removeObject(forKey: AudioPlayer.readerCurrentSentenceIdDefaultsKey)
+                if let key = self.namespacedKey("sentence") { defaults.removeObject(forKey: key) }
             }
         }
     }
@@ -118,6 +139,7 @@ final class ReaderCoordinator: ObservableObject {
         mirrorTask = nil
         let snapshot = anchor
         defaults.set(snapshot.chapterIndex, forKey: AudioPlayer.readerCurrentChapterIndexDefaultsKey)
+        if let key = namespacedKey("chapter") { defaults.set(snapshot.chapterIndex, forKey: key) }
         // Mirror scheduleMirror's semantics: nil cursor REMOVES the key so a
         // stale sentenceId/pageRatio from a prior chapter never survives teardown.
         // Without this, cold-launch hydration could produce an anchor whose
@@ -125,13 +147,17 @@ final class ReaderCoordinator: ObservableObject {
         // causing startFromReaderPage to sentence-seek into the wrong chapter.
         if let ratio = snapshot.pageRatio {
             defaults.set(ratio, forKey: AudioPlayer.readerCurrentPageRatioDefaultsKey)
+            if let key = namespacedKey("ratio") { defaults.set(ratio, forKey: key) }
         } else {
             defaults.removeObject(forKey: AudioPlayer.readerCurrentPageRatioDefaultsKey)
+            if let key = namespacedKey("ratio") { defaults.removeObject(forKey: key) }
         }
         if let id = snapshot.sentenceId {
             defaults.set(id, forKey: AudioPlayer.readerCurrentSentenceIdDefaultsKey)
+            if let key = namespacedKey("sentence") { defaults.set(id, forKey: key) }
         } else {
             defaults.removeObject(forKey: AudioPlayer.readerCurrentSentenceIdDefaultsKey)
+            if let key = namespacedKey("sentence") { defaults.removeObject(forKey: key) }
         }
     }
 }

@@ -101,7 +101,10 @@ export default defineConfig(({ mode }) => {
     test: {
       globals: true,
       environment: "jsdom",
-      setupFiles: "./src/test/setupTests.ts",
+      setupFiles: [
+        "./src/test/reactActEnvironment.ts",
+        "./src/test/setupTests.ts",
+      ],
       css: true,
     },
   };

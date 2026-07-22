@@ -1,7 +1,7 @@
 [tools]
 python = { version = "3.12.10", virtualenv = ".venv" }
-# Node LTS for frontend (Vite 7.x requires >=20.19.0)
-node = "latest"
+# Node LTS for frontend (Vite 8.x requires >=20.19.0)
+node = "lts"
 npm = "latest"
 # Changelog generator (conventional commits → CHANGELOG.md)
 "cargo:git-cliff" = "latest"

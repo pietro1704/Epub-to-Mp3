@@ -16,20 +16,13 @@ python-multipart>=0.0.32
 edge-tts>=7.2.8
 
 # Piper audio deps
-# torch and torchaudio are NOT listed here — they are optional GPU-acceleration
-# dependencies (used by Coqui TTS and hardware monitors when a GPU is present).
-# Install manually if needed: pip install torch torchaudio
-# They conflict with setuptools>=82 (required by CVE-2024-6345 below) and are
-# not required for the default Edge-TTS + Piper workflow.
+# torch and torchaudio are NOT listed here: they are optional GPU-monitoring
+# dependencies and are not required for the default Edge-TTS + Piper workflow.
 soundfile>=0.14.0
 pandas>=3.0.3,<4.0.0
 
 # Offline fallback (fast, small)
 piper-tts>=1.4.2
-
-# Spark-TTS dependencies (LLM-based, voice cloning)
-huggingface_hub>=1.24.0
-transformers>=5.14.1
 
 # Ebook Processing
 ebooklib>=0.20

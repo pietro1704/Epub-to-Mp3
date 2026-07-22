@@ -102,6 +102,7 @@ extension View {
                 case .space: key = .space
                 case .home: key = .home
                 case .end: key = .end
+                case .escape: key = .escape
                 default:
                     if press.characters == "k" { key = .k }
                     else if press.characters == "j" { key = .j }
@@ -119,7 +120,7 @@ extension View {
 /// OS-agnostic key enum used by the `compatOnKeyPressArrowsAndPaging`
 /// shim. Keeps call sites free of `KeyPress` (iOS 17+) imports.
 enum CompatKey {
-    case leftArrow, rightArrow, pageUp, pageDown, space, home, end, j, k
+    case leftArrow, rightArrow, pageUp, pageDown, space, home, end, escape, j, k
 }
 
 extension View {

@@ -14,6 +14,8 @@ private let cacheLog = Logger(subsystem: "epub2mp3", category: "ChapterCacheMana
 @MainActor
 final class ChapterCacheManager: ObservableObject {
 
+    static let clearAllNotification = Notification.Name("epub2mp3.clearAllChapterCaches")
+
     enum ChapterStatus: Equatable {
         case cached
         case generating
@@ -32,6 +34,7 @@ final class ChapterCacheManager: ObservableObject {
 
     /// Active prefetch/download tasks keyed by chapter index.
     private var activeTasks: [Int: Task<Void, Never>] = [:]
+    private var clearObserver: NSObjectProtocol?
 
     init(bookId: String, chapters: [EbookFulltext.Chapter], voice: String) {
         self.bookId = bookId
@@ -42,7 +45,20 @@ final class ChapterCacheManager: ObservableObject {
             .appendingPathComponent("epub2mp3-tts/\(bookId)", isDirectory: true)
         self.cacheRoot = root
         try? FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        clearObserver = NotificationCenter.default.addObserver(
+            forName: Self.clearAllNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.clearAll()
+        }
         refreshCachedIndices()
+    }
+
+    deinit {
+        if let clearObserver {
+            NotificationCenter.default.removeObserver(clearObserver)
+        }
     }
 
     /// Returns the current status of a chapter by index.
@@ -99,6 +115,14 @@ final class ChapterCacheManager: ObservableObject {
         }
         activeTasks.removeAll()
         generatingIndices.removeAll()
+    }
+
+    /// Cancel active synthesis and remove every cached chapter for this book.
+    func clearAll() {
+        cancelAll()
+        try? FileManager.default.removeItem(at: cacheRoot)
+        try? FileManager.default.createDirectory(at: cacheRoot, withIntermediateDirectories: true)
+        cachedIndices.removeAll()
     }
 
     // MARK: - Private

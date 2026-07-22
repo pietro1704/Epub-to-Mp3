@@ -43,13 +43,13 @@ final class InstantReaderPlayFromHereTests: XCTestCase {
     func testSelectionActionsPutReaderPlaybackBeforeTextActions() throws {
         let source = try interactionStateSource()
         let fromHere = source.range(of: "case playFromHere")?.lowerBound
-        let chapterStart = source.range(of: "case playChapterStart")?.lowerBound
+        let continuePlayback = source.range(of: "case continuePlayback")?.lowerBound
         let sentence = source.range(of: "case sentence")?.lowerBound
         let paragraph = source.range(of: "case paragraph")?.lowerBound
         XCTAssertNotNil(fromHere)
-        XCTAssertNotNil(chapterStart)
-        XCTAssertTrue(fromHere! < chapterStart!)
-        XCTAssertTrue(chapterStart! < sentence!)
+        XCTAssertNotNil(continuePlayback)
+        XCTAssertTrue(fromHere! < continuePlayback!)
+        XCTAssertTrue(continuePlayback! < sentence!)
         XCTAssertTrue(sentence! < paragraph!)
         XCTAssertTrue(source.contains("static let menuOrder"))
     }
@@ -62,7 +62,8 @@ final class InstantReaderPlayFromHereTests: XCTestCase {
         XCTAssertTrue(reader.contains("private func reopenAudioPlayer()"))
         XCTAssertTrue(reader.contains("if settings.useEmbeddedRuntime {"))
         XCTAssertTrue(reader.contains("languageCode: speechLanguageCode"))
-        XCTAssertTrue(reader.contains("self.player.stop()"))
+        XCTAssertFalse(reader.contains("self.player.stop()"))
+        XCTAssertTrue(reader.contains("globalPlayer.stop()"))
 
         let fullPlayer = try fullPlayerSource()
         XCTAssertTrue(fullPlayer.contains("fullPlayer.close"))

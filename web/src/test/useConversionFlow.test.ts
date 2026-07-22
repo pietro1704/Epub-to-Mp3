@@ -1,4 +1,4 @@
-import { act, renderHook } from "@testing-library/react";
+import { act, renderHook, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { useConversionFlow } from "../hooks/useConversionFlow";
 import type { ConversionClient } from "../services/ConversionService";
@@ -713,14 +713,12 @@ describe("useConversionFlow", () => {
       json: vi.fn().mockResolvedValue({ status: "healthy" }),
     });
     vi.stubGlobal("fetch", healthFetch);
-
     const reloadMock = vi.fn();
     const originalLocation = window.location;
     Object.defineProperty(window, "location", {
       configurable: true,
       value: { ...originalLocation, reload: reloadMock },
     });
-
     conversionCache.save("cached-job", "book.epub", {
       phase: "success",
       log: [],
@@ -736,7 +734,6 @@ describe("useConversionFlow", () => {
         footnoteMode: "inline",
       },
     ]);
-
     const client: ConversionClient = {
       submit: vi.fn(),
       fetch: vi.fn(),
@@ -746,29 +743,139 @@ describe("useConversionFlow", () => {
     const { result } = renderHook(() => useConversionFlow(client), {
       wrapper: createProvidersWrapper("en"),
     });
-
     await act(async () => {
       await result.current.restartBackend({ keep_cache: true });
     });
-
     expect(restartBackend).toHaveBeenCalledWith({ keep_cache: true });
     expect(conversionCache.load("cached-job")).toBeNull();
     expect(conversionCache.loadPendingBatch()).toBeNull();
     expect(result.current.cachedJobs).toEqual([]);
     expect(result.current.recentJobs).toEqual([]);
     expect(result.current.healthStatus).toBe("restarting");
-
     await act(async () => {
       await vi.advanceTimersByTimeAsync(3000);
     });
-
     expect(healthFetch).toHaveBeenCalled();
     expect(reloadMock).toHaveBeenCalledTimes(1);
-
     Object.defineProperty(window, "location", {
       configurable: true,
       value: originalLocation,
     });
+    vi.useRealTimers();
+  });
+
+  it("persists the newest snapshot rather than a stale render during SSE updates", async () => {
+    let releasePoll: (() => void) | undefined;
+    const submit = vi.fn().mockResolvedValue({ jobId: "stale-cache" });
+    const poll = vi
+      .fn()
+      .mockImplementation(
+        async (
+          _jobId: string,
+          options?: { onSnapshot?: (snapshot: JobSnapshot) => void },
+        ) => {
+          options?.onSnapshot?.({
+            jobId: "stale-cache",
+            state: "running",
+            progressPercent: 10,
+          });
+          options?.onSnapshot?.({
+            jobId: "stale-cache",
+            state: "running",
+            progressPercent: 65,
+          });
+          return new Promise<JobSnapshot>((resolve) => {
+            releasePoll = () =>
+              resolve({
+                jobId: "stale-cache",
+                state: "finished",
+                outputs: [],
+                progressPercent: 100,
+              });
+          });
+        },
+      );
+    const client: ConversionClient = {
+      submit,
+      fetch: vi.fn().mockRejectedValue(new Error("initial unavailable")),
+      poll,
+    };
+    const { result } = renderHook(() => useConversionFlow(client), {
+      wrapper: createProvidersWrapper("en"),
+    });
+
+    let submitPromise: Promise<void>;
+    await act(async () => {
+      await Promise.resolve();
+    });
+    await act(async () => {
+      submitPromise = result.current.submit(request);
+      await waitFor(() => expect(poll).toHaveBeenCalled());
+      await waitFor(() =>
+        expect(
+          conversionCache.load("stale-cache")?.state.summary?.progressPercent,
+        ).toBe(65),
+      );
+      releasePoll?.();
+      await submitPromise;
+    });
+  });
+
+  it("does not let a delayed HTTP snapshot regress SSE progress", async () => {
+    vi.useFakeTimers();
+    let releasePoll: (() => void) | undefined;
+    const submit = vi.fn().mockResolvedValue({ jobId: "delayed-http" });
+    const fetch = vi.fn().mockResolvedValue({
+      jobId: "delayed-http",
+      state: "running",
+      progressPercent: 20,
+    } satisfies JobSnapshot);
+    const poll = vi
+      .fn()
+      .mockImplementation(
+        async (
+          _jobId: string,
+          options?: { onSnapshot?: (snapshot: JobSnapshot) => void },
+        ) => {
+          options?.onSnapshot?.({
+            jobId: "delayed-http",
+            state: "running",
+            progressPercent: 80,
+          });
+          return new Promise<JobSnapshot>((resolve) => {
+            releasePoll = () =>
+              resolve({
+                jobId: "delayed-http",
+                state: "finished",
+                outputs: [],
+                progressPercent: 100,
+              });
+          });
+        },
+      );
+    const client: ConversionClient = { submit, fetch, poll };
+    const { result } = renderHook(() => useConversionFlow(client), {
+      wrapper: createProvidersWrapper("en"),
+    });
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+    await act(async () => {
+      const promise = result.current.submit(request);
+      await vi.waitFor(() => expect(poll).toHaveBeenCalled());
+      await Promise.resolve();
+      await Promise.resolve();
+      await vi.advanceTimersByTimeAsync(2500);
+      await vi.waitFor(() =>
+        expect(
+          conversionCache.load("delayed-http")?.state.summary?.progressPercent,
+        ).toBeGreaterThanOrEqual(80),
+      );
+      releasePoll?.();
+      await promise;
+    });
+    expect(fetch).toHaveBeenCalledTimes(1);
     vi.useRealTimers();
   });
 });

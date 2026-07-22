@@ -1,6 +1,7 @@
 #if canImport(AVFoundation) && canImport(MediaPlayer)
 import XCTest
 import AVFoundation
+import MediaPlayer
 @testable import EpubToMp3
 
 /// Unit tests for the UX-layer additions to `AudioPlayer`:
@@ -15,6 +16,76 @@ final class AudioPlayerUXTests: XCTestCase {
     // MARK: - Helpers
 
     private func makePlayer() -> AudioPlayer { AudioPlayer() }
+
+    func testPlayingResumeRewindsFifteenSeconds() {
+        XCTAssertEqual(
+            AudioPlayer.resumePositionForPersistedState(positionSeconds: 120, wasPlaying: true),
+            105
+        )
+    }
+
+    func testPausedResumeKeepsExactPosition() {
+        XCTAssertEqual(
+            AudioPlayer.resumePositionForPersistedState(positionSeconds: 120, wasPlaying: false),
+            120
+        )
+    }
+
+    func testEmbeddedChapterDurationUsesChapterEstimateNotOneSegment() {
+        XCTAssertEqual(
+            AudioPlayer.estimatedChapterDurationSeconds(wordCount: 400, wordsPerMinute: 200),
+            120,
+            accuracy: 0.001
+        )
+    }
+
+    func testEmbeddedChapterTitleUsesEpubChapterIndex() {
+        let title = AudioPlayer.segmentChapterTitle(
+            chapterIndex: 1,
+            chapterProgress: [
+                JobSnapshot.Chapter(
+                    index: 1, name: "A Long Expected Party", status: nil,
+                    downloadUrl: nil, chars: nil, charsProcessed: nil,
+                    progressRatio: nil, durationSeconds: nil,
+                    startedAt: nil, completedAt: nil
+                ),
+                JobSnapshot.Chapter(
+                    index: 2, name: "The Shadow of the Past", status: nil,
+                    downloadUrl: nil, chars: nil, charsProcessed: nil,
+                    progressRatio: nil, durationSeconds: nil,
+                    startedAt: nil, completedAt: nil
+                )
+            ]
+        )
+        XCTAssertEqual(title, "The Shadow of the Past")
+    }
+
+    func testSeekAtChapterEndIsRecognizedWithSmallTolerance() {
+        XCTAssertTrue(AudioPlayer.shouldAdvanceAtSeekEnd(position: 599.5, duration: 600))
+        XCTAssertFalse(AudioPlayer.shouldAdvanceAtSeekEnd(position: 590, duration: 600))
+    }
+
+    func testPlaybackEstimateScalesWithRateImmediately() {
+        XCTAssertEqual(
+            AudioPlayer.rateAdjustedDuration(seconds: 600, rate: .x150),
+            400,
+            accuracy: 0.001
+        )
+    }
+
+    func testNowPlayingUsesBookTitleAsArtistIdentity() {
+        let player = makePlayer()
+        player.updateSnapshot(JobSnapshot.previewSample)
+        let info = player.makeNowPlayingInfo()
+        XCTAssertEqual(
+            info[MPMediaItemPropertyArtist] as? String,
+            JobSnapshot.previewSample.bookTitle
+        )
+    }
+
+    func testAudioQueueIsNotReportedReadyBeforeFirstItemExists() {
+        XCTAssertFalse(makePlayer().hasLoadedAudioQueue)
+    }
 
     // MARK: - Sleep timer
 
@@ -72,21 +143,21 @@ final class AudioPlayerUXTests: XCTestCase {
 
     func testAvailableRatesContainsExpectedValues() {
         let player = makePlayer()
-        let expected: [Float] = [0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0]
+        let expected: [Float] = [0.8, 1.0, 1.3, 1.5, 1.8, 3.0]
         XCTAssertEqual(player.availableRates, expected)
     }
 
     // MARK: - cycleRate
 
     /// Starting at 1x, successive `cycleRate()` calls should advance
-    /// through the ordered list and wrap around from 2x back to 0.5x.
+    /// through the ordered list and wrap around from 3x back to 0.8x.
     func testCycleRateAdvancesThroughAllCases() {
         let player = makePlayer()
         // Default rate is 1.0.
         XCTAssertEqual(player.rate, .x100)
 
-        let expected: [PlaybackRate] = [.x125, .x150, .x175, .x200,
-                                        .x050, .x075, .x100]
+        let expected: [PlaybackRate] = [.x130, .x150, .x180, .x300,
+                                        .x080, .x100]
         for expectedRate in expected {
             player.cycleRate()
             XCTAssertEqual(player.rate, expectedRate,
@@ -94,10 +165,10 @@ final class AudioPlayerUXTests: XCTestCase {
         }
     }
 
-    /// After a full loop (7 cycles from 1.0), the rate must return to 1.0.
+    /// After a full loop (6 cycles from 1.0), the rate must return to 1.0.
     func testCycleRateWrapsAroundToStart() {
         let player = makePlayer()
-        let cycleCount = PlaybackRate.allCases.count
+        let cycleCount = player.availableRates.count
         for _ in 0..<cycleCount { player.cycleRate() }
         XCTAssertEqual(player.rate, .x100,
             "Cycling through all \(cycleCount) rates must land back at 1.0")
@@ -107,9 +178,9 @@ final class AudioPlayerUXTests: XCTestCase {
 
     func testShortLabelForCommonRates() {
         XCTAssertEqual(PlaybackRate.x100.shortLabel, "1x")
-        XCTAssertEqual(PlaybackRate.x125.shortLabel, "1.25x")
-        XCTAssertEqual(PlaybackRate.x050.shortLabel, "0.5x")
-        XCTAssertEqual(PlaybackRate.x200.shortLabel, "2x")
+        XCTAssertEqual(PlaybackRate.x130.shortLabel, "1.3x")
+        XCTAssertEqual(PlaybackRate.x080.shortLabel, "0.8x")
+        XCTAssertEqual(PlaybackRate.x300.shortLabel, "3x")
     }
 
     // MARK: - skipForward / skipBackward

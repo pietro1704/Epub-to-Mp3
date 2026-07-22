@@ -185,6 +185,14 @@ final class ChapterCacheManagerTests: XCTestCase {
         XCTAssertTrue(mgr.generatingIndices.isEmpty)
     }
 
+    func testClearAllCancelsAndRemovesCachedIndices() {
+        let (mgr, _, _) = makeManager(chapters: [makeChapter(index: 1)])
+        mgr.downloadAll()
+        mgr.clearAll()
+        XCTAssertTrue(mgr.generatingIndices.isEmpty)
+        XCTAssertTrue(mgr.cachedIndices.isEmpty)
+    }
+
     // MARK: - prefetchNext / downloadAll guard against empty text
 
     func testPrefetchNextSkipsChaptersWithTooShortText() {

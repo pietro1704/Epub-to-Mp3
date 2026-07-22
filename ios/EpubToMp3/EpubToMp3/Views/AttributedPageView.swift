@@ -45,6 +45,8 @@ struct AttributedPageView: View {
     var onSwipe: ((ReaderSwipeDirection) -> Void)? = nil
     /// Reports normalized vertical scroll progress and an optional sentence id.
     var onScrollPosition: ((Double, String?) -> Void)? = nil
+    var spans: [SentenceSpan] = []
+    var onLongPressSentence: ((SentenceSpan, Double) -> Void)? = nil
 
     var body: some View {
         GeometryReader { geo in
@@ -55,7 +57,9 @@ struct AttributedPageView: View {
                 onLinkTap: onLinkTap,
                 onZoneTap: onZoneTap,
                 onSwipe: onSwipe,
-                onScrollPosition: onScrollPosition
+                onScrollPosition: onScrollPosition,
+                spans: spans,
+                onLongPressSentence: onLongPressSentence
             )
             .frame(width: geo.size.width, height: geo.size.height, alignment: .topLeading)
             .clipped()
@@ -76,6 +80,8 @@ struct AttributedPageView: View {
 /// hiperlinks, com maior precedencia. somente se sem hiperlinks ...".
 private final class FixedWidthTextView: UITextView, UIGestureRecognizerDelegate {
     var pinnedWidth: CGFloat = 320
+    var spans: [SentenceSpan] = []
+    var onLongPressSentence: ((SentenceSpan, Double) -> Void)?
     /// `true` = consume every touch (paginated mode owns the gesture
     /// pipeline end-to-end); `false` = let only tap-on-link consume
     /// (scroll mode also lets UITextView's internal pan handle scroll).
@@ -126,6 +132,16 @@ private final class FixedWidthTextView: UITextView, UIGestureRecognizerDelegate 
             pan.cancelsTouchesInView = true
             addGestureRecognizer(pan)
         }
+        if gestureRecognizers?.contains(where: { $0.name == "reader.longPress" }) != true {
+            let longPress = UILongPressGestureRecognizer(
+                target: self,
+                action: #selector(handleReaderLongPress(_:))
+            )
+            longPress.name = "reader.longPress"
+            longPress.minimumPressDuration = 0.4
+            longPress.cancelsTouchesInView = false
+            addGestureRecognizer(longPress)
+        }
     }
 
     @objc func handleReaderTap(_ tap: UITapGestureRecognizer) {
@@ -147,6 +163,35 @@ private final class FixedWidthTextView: UITextView, UIGestureRecognizerDelegate 
         // Must be predominantly horizontal and cross a minimum threshold.
         guard abs(t.x) > 40, abs(t.x) > abs(t.y) * 1.5 else { return }
         onSwipe(v.x < 0 ? .left : .right)
+    }
+
+    @objc private func handleReaderLongPress(_ gesture: UILongPressGestureRecognizer) {
+        guard gesture.state == .began, !spans.isEmpty,
+              let attributedText else { return }
+        let point = gesture.location(in: self)
+        let inset = textContainerInset
+        let textPoint = CGPoint(x: point.x - inset.left, y: point.y - inset.top)
+        let glyph = layoutManager.glyphIndex(
+            for: textPoint,
+            in: textContainer,
+            fractionOfDistanceThroughGlyph: nil
+        )
+        guard glyph < layoutManager.numberOfGlyphs else { return }
+        let characterIndex = layoutManager.characterIndexForGlyph(at: glyph)
+        guard characterIndex < attributedText.length else { return }
+        let string = attributedText.string as NSString
+        let suffix = string.substring(from: characterIndex)
+        guard let span = spans.first(where: { span in
+            let probe = String(span.text.trimmingCharacters(in: .whitespacesAndNewlines).prefix(20))
+            return !probe.isEmpty && suffix.contains(probe)
+        }) else { return }
+        let probe = String(span.text.prefix(40))
+        let match = string.range(of: probe)
+        let offset = match.location == NSNotFound
+            ? 0
+            : max(0, characterIndex - match.location)
+        let ratio = min(1, Double(offset) / Double(max(1, span.text.count)))
+        onLongPressSentence?(span, ratio)
     }
 
     private func classifyZone(x: CGFloat, in width: CGFloat) -> ReaderTapZone {
@@ -219,6 +264,8 @@ private struct _AttributedPageRep: UIViewRepresentable {
     let onZoneTap: ((ReaderTapZone) -> Void)?
     let onSwipe: ((ReaderSwipeDirection) -> Void)?
     let onScrollPosition: ((Double, String?) -> Void)?
+    let spans: [SentenceSpan]
+    let onLongPressSentence: ((SentenceSpan, Double) -> Void)?
 
     func makeCoordinator() -> Coordinator {
         Coordinator(onLinkTap: onLinkTap, onScrollPosition: onScrollPosition)
@@ -299,6 +346,8 @@ private struct _AttributedPageRep: UIViewRepresentable {
         uiView.consumeAllTouches = scrollable || onZoneTap != nil || onSwipe != nil
         uiView.onZoneTap = onZoneTap
         uiView.onSwipe = onSwipe
+        uiView.spans = spans
+        uiView.onLongPressSentence = onLongPressSentence
         uiView.installReaderGestures(includeSwipe: onSwipe != nil)
 
         let desiredContainer = CGSize(
@@ -338,6 +387,8 @@ struct AttributedPageView: View {
     var onZoneTap: ((ReaderTapZone) -> Void)? = nil
     var onSwipe: ((ReaderSwipeDirection) -> Void)? = nil
     var onScrollPosition: ((Double, String?) -> Void)? = nil
+    var spans: [SentenceSpan] = []
+    var onLongPressSentence: ((SentenceSpan, Double) -> Void)? = nil
 
     var body: some View {
         GeometryReader { geo in

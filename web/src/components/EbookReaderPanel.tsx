@@ -3,6 +3,10 @@ import type { CSSProperties } from "react";
 import { conversionClient } from "../services/ConversionService";
 import { reportUiIssue } from "../services/uiIssueMonitor";
 import { safeScrollIntoView } from "../utils/safeScrollIntoView";
+import {
+  sanitizeReaderCss,
+  sanitizeReaderHtml,
+} from "../utils/readerSanitizer";
 import StreamingAudioPlayer from "./StreamingAudioPlayer";
 import {
   BookTextDocument,
@@ -426,8 +430,8 @@ export default function EbookReaderPanel({
     }
     const shadow = host.shadowRoot ?? host.attachShadow({ mode: "open" });
     shadow.innerHTML = `
-      <style>${READER_CONTENT_BASE_CSS}\n${renderedCss}</style>
-      <div class="reader-root">${currentPage?.html || "<p></p>"}</div>
+      <style>${READER_CONTENT_BASE_CSS}\n${sanitizeReaderCss(renderedCss)}</style>
+      <div class="reader-root">${sanitizeReaderHtml(currentPage?.html || "<p></p>")}</div>
     `;
     // Scroll the article shell into view at the top whenever page content changes.
     safeScrollIntoView(articleShellRef.current, {

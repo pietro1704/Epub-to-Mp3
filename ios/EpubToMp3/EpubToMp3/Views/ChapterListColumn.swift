@@ -61,7 +61,7 @@ struct ChapterListColumn: View {
         .alert(L10n.string("chapterList.removeDownloads"), isPresented: $showRemoveDownloadsAlert) {
             Button(L10n.string("common.delete"), role: .destructive) {
                 if let jobId = book.lastJobId {
-                    AudiobookCacheEviction.deleteAudiobook(jobId: jobId)
+                    Task { await DownloadManager.shared.clearDownloadedBook(jobId: jobId) }
                 }
             }
             Button(L10n.string("common.cancel"), role: .cancel) {}

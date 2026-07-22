@@ -73,7 +73,10 @@ struct MainReaderView: View {
 
     @ViewBuilder
     private func populatedReader(for book: BookEntity) -> some View {
-        BookOpenView(book: book)
+        BookOpenView(book: book, onClose: {
+            currentlyReadingBookID = nil
+            onBrowseLibrary?()
+        })
             .onAppear {
                 var updated = book
                 updated.lastOpenedAt = Date()

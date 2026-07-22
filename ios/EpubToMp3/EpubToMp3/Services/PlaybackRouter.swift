@@ -22,10 +22,14 @@ enum PlaybackRouter {
     static func route(
         chapter: JobSnapshot.Chapter,
         baseURL: URL?,
+        localAudioURL: URL? = nil,
         chapterText: String?,
         languageCode: String?,
         isAudioPlayable: (URL) -> Bool = { _ in true }
     ) -> PlaybackRoute {
+        if let localAudioURL, isAudioPlayable(localAudioURL) {
+            return .audio(localAudioURL)
+        }
         if let url = resolvedAudioURL(rawDownloadUrl: chapter.downloadUrl,
                                        baseURL: baseURL),
            isAudioPlayable(url) {

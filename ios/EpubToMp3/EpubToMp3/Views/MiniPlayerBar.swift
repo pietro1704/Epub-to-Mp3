@@ -38,7 +38,7 @@ struct MiniPlayerBar: View {
     private var readerChapterIndex: Int { readerCoordinator.anchor.chapterIndex }
     private var readerPageRatio: Double? { readerCoordinator.anchor.pageRatio }
 
-    @State private var pendingAnchor: PlayDivergenceAnchor?
+    @State private var showingRatePicker = false
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.accessibilityDifferentiateWithoutColor) private var differentiateWithoutColor
@@ -56,12 +56,8 @@ struct MiniPlayerBar: View {
     }
 
     private var chapterLabel: String {
-        let idx = player.snapshot != nil ? player.currentChapterIndex : currentChapterIndex
-        // Prefer the displayTitle from the live snapshot (matches FullPlayerSheet behaviour).
-        if let chapters = player.snapshot?.playableChapters, idx < chapters.count {
-            return chapters[idx].displayTitle
-        }
-        return "Chapter \(idx + 1)"
+        guard player.snapshot != nil else { return "Chapter \(currentChapterIndex + 1)" }
+        return player.effectiveChapterTitle
     }
 
     private var bookProgress: BookChapterProgress? {
@@ -197,27 +193,28 @@ struct MiniPlayerBar: View {
                     .disabled(player.isConverting && !player.firstChapterReady)
                     .accessibilityLabel(L10n.string("player.nextChapter"))
 
-                    // "..." popover — speed + sleep, the spec's "floater
-                    // pra velocidade e sleep".
+                    // Dedicated rate button opens the shared horizontal
+                    // picker. Sleep remains in the overflow menu.
+                    Button {
+                        showingRatePicker.toggle()
+                    } label: {
+                        Text(player.rate.shortLabel)
+                            .font(.caption.weight(.semibold).monospacedDigit())
+                            .frame(minWidth: 44, minHeight: 44)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(L10n.string("player.playbackSpeed", player.rate.shortLabel))
+                    .accessibilityIdentifier("miniPlayer.playbackRateButton")
+                    .popover(isPresented: $showingRatePicker, attachmentAnchor: .point(.top), arrowEdge: .bottom) {
+                        PlaybackRateFloatingPicker(player: player)
+                            .frame(minWidth: 340)
+                            .padding(.vertical, 8)
+                            .presentationCompactAdaptationIfAvailable()
+                    }
+
+                    // Overflow menu — sleep timer only.
                     Menu {
-                        Menu {
-                            ForEach(PlaybackRate.allCases) { rate in
-                                Button {
-                                    player.setRate(rate)
-                                } label: {
-                                    if player.rate == rate {
-                                        Label(rate.shortLabel, systemImage: "checkmark")
-                                    } else {
-                                        Text(rate.shortLabel)
-                                    }
-                                }
-                            }
-                        } label: {
-                            Label(
-                                L10n.string("player.playbackSpeed", player.rate.shortLabel),
-                                systemImage: "speedometer"
-                            )
-                        }
                         Menu {
                             ForEach([0, 5, 15, 30, 45, 60], id: \.self) { minutes in
                                 Button {
@@ -281,7 +278,7 @@ struct MiniPlayerBar: View {
                     ? .opacity
                     : .move(edge: .bottom).combined(with: .opacity)
             )
-            .playDivergenceDialog(player: player, anchor: $pendingAnchor)
+
         }
     }
 
@@ -292,18 +289,10 @@ struct MiniPlayerBar: View {
     // every play-button surface in the app shares one implementation.
 
     private func handlePlayTap() {
-        switch player.playTapDecision(
-            readerChapterIndex: readerChapterIndex,
-            readerPageRatio: readerPageRatio
-        ) {
-        case .pause, .resume:
-            player.togglePlayPause()
-        case .offerStartChoice:
-            // Snapshot the reader's anchor RIGHT NOW so the dialog
-            // animation (and any further user swipes during it)
-            // can't drift the captured position.
-            pendingAnchor = .capture(from: readerCoordinator)
-        }
+        // Transport controls always operate on the effective audio cursor.
+        // Reader-vs-audio divergence is an explicit Reader action, not a
+        // reason for the global mini-player Play button to show a chooser.
+        player.togglePlayPause()
     }
 
     // MARK: Cover

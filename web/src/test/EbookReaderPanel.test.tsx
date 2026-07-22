@@ -1,4 +1,4 @@
-import { screen, waitFor } from "@testing-library/react";
+import { act, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import EbookReaderPanel from "../components/EbookReaderPanel";
@@ -290,9 +290,11 @@ describe("EbookReaderPanel", () => {
     renderWithProviders(<EbookReaderPanel jobId="job-reader" />);
 
     // Advance through the first two backoff windows so the retries run.
-    await vi.advanceTimersByTimeAsync(800);
-    await vi.advanceTimersByTimeAsync(1500);
-    await vi.advanceTimersByTimeAsync(0);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(800);
+      await vi.advanceTimersByTimeAsync(1500);
+      await vi.advanceTimersByTimeAsync(0);
+    });
 
     expect(spy).toHaveBeenCalledTimes(3);
     vi.useRealTimers();

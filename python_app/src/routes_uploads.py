@@ -7,7 +7,6 @@ accessed via lazy imports inside each handler to avoid circular imports.
 
 from __future__ import annotations
 
-import hashlib
 import shutil
 import time
 import uuid
@@ -16,6 +15,7 @@ from pathlib import Path
 from fastapi import APIRouter, BackgroundTasks, File, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
+from src.upload_streaming import UploadTooLarge, hash_file_incremental, stream_upload_to_path
 
 router = APIRouter(prefix="/api", tags=["uploads"])
 _VALID_UPLOAD_ID_CHARS = frozenset("0123456789abcdef-")
@@ -106,13 +106,6 @@ async def upload_ebook(background_tasks: BackgroundTasks, file: UploadFile = Fil
     if file is None:
         raise HTTPException(status_code=400, detail="No file uploaded")
 
-    raw_payload = await file.read()
-    if _srv.MAX_UPLOAD_BYTES and len(raw_payload) > _srv.MAX_UPLOAD_BYTES:
-        raise HTTPException(
-            status_code=413,
-            detail=f"File exceeds the {_srv.MAX_UPLOAD_MB} MB limit",
-        )
-
     _srv._cleanup_pending_uploads()
     upload_id = f"{uuid.uuid4()}"
     upload_dir = _srv._resolve_relative_path_within_root(
@@ -121,8 +114,14 @@ async def upload_ebook(background_tasks: BackgroundTasks, file: UploadFile = Fil
     upload_dir.mkdir(parents=True, exist_ok=True)
     original_name = Path(file.filename or "ebook").name
     temp_path = _srv._resolve_relative_path_within_root(upload_dir, original_name, must_exist=False)
-    temp_path.write_bytes(raw_payload)
-    file_hash = hashlib.sha1(raw_payload).hexdigest() if raw_payload else None
+    try:
+        file_hash, _ = await stream_upload_to_path(file, temp_path, max_bytes=_srv.MAX_UPLOAD_BYTES)
+    except UploadTooLarge:
+        shutil.rmtree(upload_dir, ignore_errors=True)
+        raise HTTPException(
+            status_code=413,
+            detail=f"File exceeds the {_srv.MAX_UPLOAD_MB} MB limit",
+        )
 
     book_title = Path(original_name).stem
     book_author = "Unknown Author"
@@ -231,7 +230,7 @@ async def upload_ebook_local(
     dest_path = _srv._resolve_relative_path_within_root(upload_dir, src.name, must_exist=False)
     shutil.copy2(src, dest_path)
 
-    file_hash = hashlib.sha1(src.read_bytes()).hexdigest()
+    file_hash = hash_file_incremental(dest_path)
 
     book_title = src.stem
     book_author = "Unknown Author"

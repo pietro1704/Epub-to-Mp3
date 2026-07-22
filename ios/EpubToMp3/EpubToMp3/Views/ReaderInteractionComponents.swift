@@ -11,7 +11,7 @@ struct ReaderSelectionActionFloater: View {
             if model.isPresented {
                 HStack(spacing: 8) {
                     actionButton(.playFromHere)
-                    actionButton(.playChapterStart)
+                    actionButton(.continuePlayback)
                     actionButton(.sentence)
                     actionButton(.paragraph)
                 }

@@ -75,6 +75,9 @@ struct TextKitPageView: UIViewControllerRepresentable {
     /// Mirrors scroll mode's `onJumpToSentence`, which shows the "Tocar
     /// daqui" confirmation dialog.
     var onJumpToSentence: ((SentenceSpan) -> Void)? = nil
+    /// Same long-press callback with the selected character's relative
+    /// position inside the sentence, expressed as 0...1.
+    var onJumpToSentenceOffset: ((SentenceSpan, Double) -> Void)? = nil
     /// Fires the moment a user-initiated page turn lands, so the host can
     /// clear audio auto-follow (otherwise the next audio tick yanks the
     /// reader back to the player's page).
@@ -353,6 +356,7 @@ struct TextKitPageView: UIViewControllerRepresentable {
                 c.onZoneTap = { [weak self] zone in self?.handlePageZoneTap(zone) }
                 c.spans = parent.spans
                 c.onJumpToSentence = parent.onJumpToSentence
+                c.onJumpToSentenceOffset = parent.onJumpToSentenceOffset
                 pool[index] = c
                 return c
             }()
@@ -361,6 +365,7 @@ struct TextKitPageView: UIViewControllerRepresentable {
             vc.onZoneTap = { [weak self] zone in self?.handlePageZoneTap(zone) }
             vc.spans = parent.spans
             vc.onJumpToSentence = parent.onJumpToSentence
+            vc.onJumpToSentenceOffset = parent.onJumpToSentenceOffset
             vc.apply(
                 slice: slice(at: index),
                 margin: parent.margin,
@@ -697,6 +702,7 @@ final class TextKitPageController: UIViewController, UITextViewDelegate, UIGestu
     /// Fires with the resolved sentence on a long-press. Mirrors scroll
     /// mode's tap-to-play ("Tocar daqui") flow.
     var onJumpToSentence: ((SentenceSpan) -> Void)?
+    var onJumpToSentenceOffset: ((SentenceSpan, Double) -> Void)?
 
     private let textView: UITextView = {
         let tv = UITextView()
@@ -879,6 +885,18 @@ final class TextKitPageController: UIViewController, UITextViewDelegate, UIGestu
         guard gesture.state == .began else { return }
         let location = gesture.location(in: textView)
         guard let span = sentenceSpan(at: location) else { return }
+        let glyphIndex = textView.layoutManager.glyphIndex(
+            for: location, in: textView.textContainer
+        )
+        let characterIndex = textView.layoutManager.characterIndexForGlyph(at: glyphIndex)
+        let fullText = textView.attributedText.string as NSString
+        let probe = String(span.text.prefix(40))
+        let sentenceRange = fullText.range(of: probe)
+        if sentenceRange.location != NSNotFound {
+            let relative = max(0, characterIndex - sentenceRange.location)
+            let ratio = min(1, Double(relative) / Double(max(1, span.text.count)))
+            onJumpToSentenceOffset?(span, ratio)
+        }
         onJumpToSentence?(span)
     }
 

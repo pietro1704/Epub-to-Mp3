@@ -21,6 +21,19 @@ import XCTest
 
 final class AudiobookCacheEvictionTests: XCTestCase {
 
+    func testStorageUsageBudgetFractionIsClamped() {
+        XCTAssertEqual(
+            StorageUsageSnapshot(offlineAudioBytes: 3, ttsCacheBytes: 2, totalBytes: 5, budgetBytes: 10).budgetFraction,
+            0.5,
+            accuracy: 0.001
+        )
+        XCTAssertEqual(
+            StorageUsageSnapshot(offlineAudioBytes: 20, ttsCacheBytes: 0, totalBytes: 20, budgetBytes: 10).budgetFraction,
+            1.0,
+            accuracy: 0.001
+        )
+    }
+
     // MARK: - Real-root round-trips (locallyDownloadedIndices / staleOfflineBookIds)
     //
     // These two helpers operate on the REAL audiobooks root (test-host
@@ -341,6 +354,46 @@ final class AudiobookCacheEvictionTests: XCTestCase {
 
         XCTAssertFalse(evicted.contains("book1"), "Active playback job must never be evicted")
         XCTAssertTrue(evicted.contains("book2"), "Non-active expired job must be evicted")
+    }
+
+    func testRegisteredActiveJobIsNeverEvictedByProductionPass() throws {
+        let activeJobId = "active-registry-\(UUID().uuidString)"
+        let expiredJobId = "expired-registry-\(UUID().uuidString)"
+        let oldDate = Date().addingTimeInterval(-48 * 3600)
+        defer {
+            CacheActivityRegistry.end(jobId: activeJobId)
+            AudiobookCacheEviction.deleteAudiobook(jobId: activeJobId)
+            AudiobookCacheEviction.deleteAudiobook(jobId: expiredJobId)
+        }
+
+        try plantRealAudiobook(jobId: activeJobId, entries: [
+            (index: 0, fileName: "active.mp3", onDisk: true)
+        ])
+        try plantRealAudiobook(jobId: expiredJobId, entries: [
+            (index: 0, fileName: "expired.mp3", onDisk: true)
+        ])
+        let activeSidecar = DownloadManager.audiobooksRoot()
+            .appendingPathComponent(activeJobId, isDirectory: true)
+            .appendingPathComponent("last_access")
+        let expiredSidecar = DownloadManager.audiobooksRoot()
+            .appendingPathComponent(expiredJobId, isDirectory: true)
+            .appendingPathComponent("last_access")
+        let oldISO = ISO8601DateFormatter().string(from: oldDate)
+        try oldISO.write(to: activeSidecar, atomically: true, encoding: .utf8)
+        try oldISO.write(to: expiredSidecar, atomically: true, encoding: .utf8)
+
+        CacheActivityRegistry.begin(jobId: activeJobId)
+        let evicted = AudiobookCacheEviction.runEviction(
+            budgetBytes: Int64.max,
+            ttlSeconds: 24 * 3600
+        )
+
+        XCTAssertFalse(evicted.contains(activeJobId), "An actively opened/synthesised job must be protected")
+        XCTAssertTrue(evicted.contains(expiredJobId), "An inactive expired job remains an eviction candidate")
+        XCTAssertTrue(FileManager.default.fileExists(
+            atPath: DownloadManager.audiobooksRoot()
+                .appendingPathComponent(activeJobId, isDirectory: true).path
+        ))
     }
 
     func testBudgetOverrunEvictsMultiple() throws {

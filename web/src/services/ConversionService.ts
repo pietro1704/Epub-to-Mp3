@@ -11,6 +11,7 @@ export interface PollOptions {
   intervalMs?: number;
   signal?: AbortSignal;
   onSnapshot?: (snapshot: JobSnapshot) => void;
+  onStreamStatus?: (status: "connecting" | "healthy" | "fallback") => void;
 }
 
 export interface ResumableJob {
@@ -582,6 +583,7 @@ export class HttpConversionClient implements ConversionClient {
         return streamed;
       }
     }
+    options.onStreamStatus?.("fallback");
     return this.pollWithHttp(jobId, options);
   }
 
@@ -814,6 +816,7 @@ export class HttpConversionClient implements ConversionClient {
     if (signal?.aborted) {
       throw new DOMException("Aborted", "AbortError");
     }
+    options.onStreamStatus?.("connecting");
 
     const streamUrl = this.resolve(
       `/api/jobs/${encodeURIComponent(jobId)}/stream`,
@@ -887,6 +890,7 @@ export class HttpConversionClient implements ConversionClient {
           const payload = JSON.parse(event.data) as JobSnapshot;
           const snapshot = this.normalizeSnapshot(payload);
           latestSnapshot = snapshot;
+          options.onStreamStatus?.("healthy");
           options.onSnapshot?.(snapshot);
           if (this.isTerminalState(snapshot.state)) {
             finalize(snapshot);

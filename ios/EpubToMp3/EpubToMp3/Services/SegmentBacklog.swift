@@ -33,6 +33,11 @@ struct SegmentBacklog {
     var count: Int { entries.count }
     var isEmpty: Bool { entries.isEmpty }
 
+    /// Inspect the next segment without removing it. The AV queue must
+    /// accept the item before callers drain it, otherwise a transient
+    /// `canInsert` failure silently loses spoken audio.
+    func peekNext() -> Entry? { entries.first }
+
     /// Push a new segment. Returns the URL of any entry that was
     /// evicted to make room — caller should delete the file from
     /// disk so descriptors don't leak.

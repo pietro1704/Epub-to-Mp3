@@ -8,11 +8,12 @@ final class JobDetailViewModel: ObservableObject {
     @Published var isStreaming: Bool = false
     @Published var errorMessage: String?
     @Published var downloadProgressLabel: String?
+    @Published var downloadState: DownloadProgress.State = .paused
 
     private var streamTask: Task<Void, Never>?
     private var fetchTask: Task<Void, Never>?
     private var downloadTask: Task<Void, Never>?
-    let downloadManager = DownloadManager()
+    let downloadManager = DownloadManager.shared
 
     func start(client: APIClient?, jobId: String) {
         stop()
@@ -61,6 +62,7 @@ final class JobDetailViewModel: ObservableObject {
 
     func downloadAll(baseURL: URL?) {
         guard let snapshot else { return }
+        downloadState = .downloading
         downloadTask = Task { [weak self] in
             guard let self else { return }
             await self.downloadManager.enqueueAll(snapshot: snapshot, baseURL: baseURL)
@@ -68,10 +70,26 @@ final class JobDetailViewModel: ObservableObject {
                 await MainActor.run {
                     self.downloadProgressLabel =
                         "\(progress.completedChapters)/\(progress.totalChapters) — \(progress.state.rawValue)"
+                    self.downloadState = progress.state
                 }
-                if progress.state == .completed || progress.state == .failed { break }
+                if progress.state == .completed || progress.state == .failed || progress.state == .cancelled { break }
             }
         }
+    }
+
+    func cancelDownloads() {
+        guard let jobId = snapshot?.jobId else { return }
+        downloadTask?.cancel()
+        Task { await downloadManager.cancel(jobId: jobId) }
+        downloadState = .cancelled
+    }
+
+    func clearDownloads() {
+        guard let jobId = snapshot?.jobId else { return }
+        downloadTask?.cancel()
+        Task { await downloadManager.clearDownloadedBook(jobId: jobId) }
+        downloadState = .paused
+        downloadProgressLabel = nil
     }
 }
 
@@ -139,6 +157,20 @@ struct JobDetailView: View {
                         viewModel.downloadAll(baseURL: settings.resolvedBaseURL)
                     } label: {
                         Label(L10n.string("jobDetail.downloadAll"), systemImage: "arrow.down.circle")
+                    }
+                    if viewModel.downloadState == .downloading {
+                        Button(role: .destructive) {
+                            viewModel.cancelDownloads()
+                        } label: {
+                            Label(L10n.string("chapterList.cancelDownloads"), systemImage: "xmark.circle")
+                        }
+                    }
+                    if viewModel.downloadState == .completed {
+                        Button(role: .destructive) {
+                            viewModel.clearDownloads()
+                        } label: {
+                            Label(L10n.string("chapterList.removeDownloads"), systemImage: "trash")
+                        }
                     }
                     NavigationLink {
                         LogsView(jobId: jobId)

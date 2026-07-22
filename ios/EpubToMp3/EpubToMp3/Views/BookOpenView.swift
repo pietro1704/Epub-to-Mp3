@@ -170,6 +170,9 @@ struct BookOpenView: View {
             }
         }
         .task { await openFlow() }
+        .onAppear {
+            CacheActivityRegistry.begin(jobId: book.id)
+        }
         .onDisappear {
             // If a conversion was running when the user left, end the Live
             // Activity so it doesn't linger indefinitely on the lock screen.
@@ -183,6 +186,7 @@ struct BookOpenView: View {
             chapterCacheManager?.cancelAll()
             watchdog = nil
             globalPlayer.clearConversionState()
+            CacheActivityRegistry.end(jobId: book.id)
             EpubFontManager.unregisterFonts(registeredFontURLs)
             registeredFontURLs = []
         }
@@ -370,7 +374,8 @@ struct BookOpenView: View {
         // the new bootstrap's first `enqueueSegment` flips the player
         // to rate.rawValue without a second user tap.
         if rebuildSegmentQueue, settings.useEmbeddedRuntime {
-            globalPlayer.prepareSegmentRestart()
+            let resumePosition = globalPlayer.consumePersistedResumePosition(for: book.id)
+            globalPlayer.prepareSegmentRestart(resumePosition: resumePosition)
         }
         statusBanner = "Generating audio…"
         conversionStalled = false
@@ -793,6 +798,12 @@ struct BookOpenView: View {
 
         await MainActor.run {
             self.statusBanner = "Generating audio · \(chaptersDone)/\(totalChapters) ready"
+            self.globalPlayer.setSegmentChapterEstimate(
+                AudioPlayer.estimatedChapterDurationSeconds(
+                    wordCount: text.split { $0.isWhitespace }.count
+                ),
+                forChapterIndex: arrayIndex
+            )
             self.globalPlayer.conversionStatus.setCurrentChapter(
                 index: arrayIndex, name: title
             )
@@ -1148,6 +1159,11 @@ struct BookOpenView: View {
                     self.watchdog?.heartbeat()
                     if let updated = APIClient.decodeSnapshot(from: event.rawPayload) {
                         self.jobSnapshot = updated
+                        // Keep the mounted AVQueuePlayer in lockstep with the
+                        // SSE snapshot. Without this forwarding, the reader
+                        // shows newly completed chapters while the live queue
+                        // remains stuck at the chapters present at bootstrap.
+                        self.globalPlayer.updateSnapshot(updated)
                         let playable = updated.playableChapters
                         self.hasAudio = !playable.isEmpty
 

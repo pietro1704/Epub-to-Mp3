@@ -115,8 +115,8 @@
 /* Diálogo de divergência ao tocar play (leitor em capítulo diferente do áudio) */
 "player.divergence.title" = "Continuar de onde?";
 "player.divergence.message" = "A página que você está lendo não é onde o áudio parou.";
-"player.divergence.fromCurrentPage" = "Da página atual";
-"player.divergence.fromWhereStopped" = "De onde parei";
+"player.divergence.fromCurrentPage" = "Tocar daqui";
+"player.divergence.fromWhereStopped" = "Continuar reprodução";
 "player.divergence.fromBeginning" = "Do início";
 "common.cancel" = "Cancelar";
 
@@ -409,6 +409,7 @@
 
 /* === PlayerView === */
 "player.speed" = "Velocidade";
+"player.systemVolume" = "Volume do sistema";
 "player.audiobookFallback" = "Audiolivro";
 
 /* === ReaderSearchOverlay === */
@@ -420,6 +421,8 @@
 "reader.sentenceMenu.addBookmark" = "Adicionar marcador";
 "reader.sentenceMenu.removeBookmark" = "Remover marcador";
 "reader.sentenceMenu.cancel" = "Cancelar";
+"reader.selection.playFromHere" = "Tocar daqui";
+"reader.selection.continuePlayback" = "Continuar reprodução";
 "reader.selection.playSentence" = "Tocar desta frase";
 "reader.selection.playParagraph" = "Tocar deste parágrafo";
 "reader.follow" = "Acompanhar";
@@ -450,5 +453,17 @@
 "common.moreOptions" = "Mais opções";
 "chapterList.removeDownloads" = "Remover downloads";
 "chapterList.removeDownloadsMessage" = "Todos os MP3s baixados deste livro serão deletados.";
+"chapterList.cancelDownloads" = "Cancelar downloads";
+"chapterList.cancelDownloadsMessage" = "O download atual será interrompido. Os capítulos concluídos permanecerão.";
 "chapterList.clearTextCache" = "Limpar cache de texto";
 "chapterList.clearTextCacheMessage" = "O cache de texto dos capítulos deste livro será apagado.";
+"settings.storage" = "Armazenamento";
+"settings.storageUsage" = "Espaço usado";
+"settings.offlineAudio" = "MP3s offline dos audiolivros";
+"settings.ttsCache" = "Cache TTS dos capítulos";
+"settings.storageTotal" = "Total";
+"settings.refreshStorage" = "Atualizar uso de espaço";
+"settings.storageFooter" = "A barra inclui MP3s offline e cache TTS gerado. O limite padrão é 2 GB.";
+"settings.clearAllDownloads" = "Limpar todos os downloads dos livros";
+"settings.clearAllDownloadsConfirmTitle" = "Limpar todos os downloads?";
+"settings.clearAllDownloadsConfirmMessage" = "Todos os MP3s offline e caches de áudio gerados dos capítulos serão apagados.";

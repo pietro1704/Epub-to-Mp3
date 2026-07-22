@@ -12,6 +12,9 @@ class AppLocalizationsPt extends AppLocalizations {
   String get appTitle => 'Epub para MP3';
 
   @override
+  String get convertTitle => 'Converter';
+
+  @override
   String get settingsTitle => 'Configurações';
 
   @override
@@ -31,9 +34,6 @@ class AppLocalizationsPt extends AppLocalizations {
 
   @override
   String get jobsTitle => 'Conversões';
-
-  @override
-  String get convertTitle => 'Converter';
 
   @override
   String get noJobs => 'Nenhuma conversão ainda';

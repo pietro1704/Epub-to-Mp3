@@ -3121,14 +3121,19 @@ class EbookReader:
         if not raw_html or not source_path:
             return ""
 
-        hrefs = [
-            match.group(1).strip()
-            for match in re.finditer(
-                r"""<link[^>]+rel=["']stylesheet["'][^>]+href=["']([^"']+)["']""",
-                raw_html,
-                re.IGNORECASE,
+        hrefs: list[str] = []
+        for tag_match in re.finditer(r"<link\b[^>]*>", raw_html, re.IGNORECASE):
+            attributes = dict(
+                re.findall(
+                    r"([:\w-]+)\s*=\s*[\"']([^\"']*)[\"']",
+                    tag_match.group(0),
+                    re.IGNORECASE,
+                )
             )
-        ]
+            rel_tokens = attributes.get("rel", "").lower().split()
+            href = attributes.get("href", "").strip()
+            if "stylesheet" in rel_tokens and "alternate" not in rel_tokens and href:
+                hrefs.append(href)
         if not hrefs:
             return ""
 

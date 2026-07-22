@@ -17,6 +17,8 @@ struct TocDrawer: View {
     let readingChapterIndex: Int?
     let onJump: (Int) -> Void
     let onDownload: ((Int) -> Void)?
+    let onCancelDownloads: (() -> Void)?
+    let onClearDownloads: (() -> Void)?
 
     init(
         fulltext: EbookFulltext?,
@@ -24,7 +26,9 @@ struct TocDrawer: View {
         currentChapterIndex: Int,
         readingChapterIndex: Int? = nil,
         onJump: @escaping (Int) -> Void,
-        onDownload: ((Int) -> Void)? = nil
+        onDownload: ((Int) -> Void)? = nil,
+        onCancelDownloads: (() -> Void)? = nil,
+        onClearDownloads: (() -> Void)? = nil
     ) {
         self.fulltext = fulltext
         self.snapshot = snapshot
@@ -32,6 +36,8 @@ struct TocDrawer: View {
         self.readingChapterIndex = readingChapterIndex
         self.onJump = onJump
         self.onDownload = onDownload
+        self.onCancelDownloads = onCancelDownloads
+        self.onClearDownloads = onClearDownloads
     }
 
     @Environment(\.dismiss) private var dismiss
@@ -85,6 +91,25 @@ struct TocDrawer: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button(L10n.string("player.close")) { dismiss() }
+                }
+                ToolbarItem(placement: .compatPrimaryTrailing) {
+                    Menu {
+                        Button(role: .destructive) {
+                            onCancelDownloads?()
+                        } label: {
+                            Label(L10n.string("chapterList.cancelDownloads"), systemImage: "xmark.circle")
+                        }
+                        .disabled(onCancelDownloads == nil)
+                        Button(role: .destructive) {
+                            onClearDownloads?()
+                        } label: {
+                            Label(L10n.string("chapterList.removeDownloads"), systemImage: "trash")
+                        }
+                        .disabled(onClearDownloads == nil)
+                    } label: {
+                        Image(systemName: "ellipsis.circle")
+                    }
+                    .accessibilityLabel(L10n.string("common.moreOptions"))
                 }
             }
         }

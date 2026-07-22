@@ -3,17 +3,19 @@ import Foundation
 /// The actions exposed by the selection floater.
 enum ReaderSelectionAction: Equatable {
     case playFromHere
+    case continuePlayback
     case playChapterStart
     case sentence
     case paragraph
 
     static let menuOrder: [ReaderSelectionAction] = [
-        .playFromHere, .playChapterStart, .sentence, .paragraph
+        .playFromHere, .continuePlayback, .sentence, .paragraph
     ]
 
     var titleKey: String {
         switch self {
         case .playFromHere: return "reader.selection.playFromHere"
+        case .continuePlayback: return "reader.selection.continuePlayback"
         case .playChapterStart: return "reader.selection.playChapterStart"
         case .sentence: return "reader.selection.playSentence"
         case .paragraph: return "reader.selection.playParagraph"
@@ -70,6 +72,7 @@ struct ReaderSelectionActionFloaterModel {
     let sentence: SentenceSpan?
     let paragraphFirstSentence: SentenceSpan?
     let onPlayFromHere: ((SentenceSpan) -> Void)?
+    let onContinuePlayback: (() -> Void)?
     let onPlayChapterStart: (() -> Void)?
     let onPlaySentence: (SentenceSpan) -> Void
     let onPlayParagraph: (SentenceSpan) -> Void
@@ -78,6 +81,7 @@ struct ReaderSelectionActionFloaterModel {
         sentence: SentenceSpan?,
         paragraphFirstSentence: SentenceSpan?,
         onPlayFromHere: ((SentenceSpan) -> Void)? = nil,
+        onContinuePlayback: (() -> Void)? = nil,
         onPlayChapterStart: (() -> Void)? = nil,
         onPlaySentence: @escaping (SentenceSpan) -> Void,
         onPlayParagraph: @escaping (SentenceSpan) -> Void
@@ -85,6 +89,7 @@ struct ReaderSelectionActionFloaterModel {
         self.sentence = sentence
         self.paragraphFirstSentence = paragraphFirstSentence
         self.onPlayFromHere = onPlayFromHere
+        self.onContinuePlayback = onContinuePlayback
         self.onPlayChapterStart = onPlayChapterStart
         self.onPlaySentence = onPlaySentence
         self.onPlayParagraph = onPlayParagraph
@@ -98,6 +103,8 @@ struct ReaderSelectionActionFloaterModel {
         switch action {
         case .playFromHere:
             if let sentence { onPlayFromHere?(sentence) }
+        case .continuePlayback:
+            onContinuePlayback?()
         case .playChapterStart:
             onPlayChapterStart?()
         case .sentence:

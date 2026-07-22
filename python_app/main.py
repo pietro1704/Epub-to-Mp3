@@ -654,11 +654,7 @@ class ConverterApplication:
             temp_dir = self.cache_root / book_name
 
             if getattr(args, "no_cache", False):
-                # Completely clear the .cache directory
-                if self.cache_root.exists():
-                    shutil.rmtree(self.cache_root)
-                self.cache_root.mkdir(exist_ok=True)
-                print("🗑️ .cache directory cleared due to --no-cache")
+                self._clear_no_cache_target(cache_manager, input_path, reader)
 
             # Ensure the temp directory is inside .cache
             book_name = Path(args.input_file).stem
@@ -3228,6 +3224,23 @@ class ConverterApplication:
         sanitized = FileManager.sanitize_filename(base_name) or "livro"
         return resolve_cache_root() / sanitized
 
+    @staticmethod
+    def _clear_no_cache_target(cache_manager, input_path: Path, reader: EbookReader) -> bool:
+        """Clear only the selected book's cache for ``--no-cache``.
+
+        The cache root is shared by conversions, so removing it would destroy
+        resumable state for unrelated books (especially in batch mode).
+        ``CacheManager`` knows both the source-filename and metadata-title
+        cache identities and removes the matching checkpoint as well.
+        """
+        cleared = cache_manager.clear_cache(
+            input_path,
+            title=getattr(reader, "title", None),
+        )
+        if cleared:
+            print("🗑️ Cache cleared for the selected book due to --no-cache")
+        return cleared
+
     def _handle_clear_cache(self, args: Optional[argparse.Namespace] = None) -> int:
         """Clear cache/output for a specific book, or globally with confirmation."""
         from src.cache_manager import CacheManager
@@ -4859,7 +4872,7 @@ def _add_conversion_arguments(
     parser.add_argument(
         "--engine-chain-fallback",
         action="store_true",
-        help="Enable the legacy multi-engine cascade (Edge -> Piper). Default is Edge-only with per-chunk fallback. Mirrors ENGINE_CHAIN_FALLBACK=1.",
+        help="Enable the legacy Edge -> Piper cascade. Default is Edge-first with per-chunk fallback. Mirrors ENGINE_CHAIN_FALLBACK=1.",
     )
     parser.add_argument(
         "--prewarm-edge",
@@ -5016,7 +5029,7 @@ def _add_conversion_arguments(
         "--no-cache",
         dest="no_cache",
         action="store_true",
-        help="Ignore existing cache/output and regenerate everything from scratch (also clears .cache for this run)",
+        help="Ignore existing cache/output and regenerate only the selected book from scratch (use --clear-cache without a book for explicit global cleanup)",
     )
     resume_group = parser.add_mutually_exclusive_group()
     resume_group.add_argument(

@@ -81,6 +81,9 @@ struct TabRoot: View {
     @AppStorage(AudioPlayer.currentBookIDDefaultsKey)
     private var currentBookID: String?
 
+    @AppStorage(MainReaderView.currentlyReadingBookIDKey)
+    private var currentlyReadingBookID: String?
+
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     /// True when the mini-player should be shown: a book is active in the library.
@@ -91,7 +94,7 @@ struct TabRoot: View {
 
     var body: some View {
         ZStack {
-            tabContent
+            readerSurfaceOrTabs
                 .zIndex(0)
 
             // FullPlayerSheet is presented in-tree (not as a system
@@ -131,6 +134,19 @@ struct TabRoot: View {
                 message: Text(error.errorDescription ?? ""),
                 dismissButton: .default(Text(L10n.string("common.ok")))
             )
+        }
+    }
+
+    @ViewBuilder
+    private var readerSurfaceOrTabs: some View {
+        if let readingID = currentlyReadingBookID,
+           library.books.contains(where: { $0.id == readingID }) {
+            MainReaderView(onBrowseLibrary: {
+                currentlyReadingBookID = nil
+                selectedTab = .library
+            })
+        } else {
+            tabContent
         }
     }
 

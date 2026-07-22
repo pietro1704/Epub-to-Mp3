@@ -1,5 +1,23 @@
 import SwiftUI
 
+enum ReaderAudioFollowResolver {
+    static func pageIndex(
+        for span: SentenceSpan,
+        pages: [NSAttributedString]
+    ) -> Int? {
+        guard !pages.isEmpty else { return nil }
+        var offset = 0
+        for (index, page) in pages.enumerated() {
+            let end = offset + page.length
+            if span.startChar < end {
+                return index
+            }
+            offset = end
+        }
+        return pages.count - 1
+    }
+}
+
 /// Personalisable EPUB reader. Supports two layout modes:
 ///
 /// - **Scrolling** — `ScrollView` + `LazyVStack` of sentence rows. The
@@ -19,6 +37,7 @@ struct ReaderView: View {
     let spans: [SentenceSpan]
     let currentSentenceId: String?
     let onJumpToSentence: ((SentenceSpan) -> Void)?
+    let onJumpToSentenceOffset: ((SentenceSpan, Double) -> Void)?
     /// Called when the user advances past the last page of the current
     /// chapter. The caller is expected to swap `chapter`/`spans` for the
     /// next chapter; the reader resets `currentPage` to 0 via the
@@ -32,6 +51,8 @@ struct ReaderView: View {
     /// track previous-chapter page count from here, so the caller is
     /// responsible for any page positioning after the chapter swap.
     let onPreviousChapter: (() -> Bool)?
+    /// Called by Escape on macOS to leave the current reader.
+    let onEscape: (() -> Void)?
     var onCenterTap: (() -> Void)?
     /// Drives the visibility of the reader's own inline toolbar (the
     /// magnifying-glass row sitting just below the nav bar). Default is
@@ -124,6 +145,7 @@ struct ReaderView: View {
     @State private var userIsScrolling: Bool = false
     @State private var lastAutoScrollAt: Date = .distantPast
     @State private var currentPage: Int = 0
+    @State private var pendingPageRatio: Double? = nil
     /// The chapter.id that was current when currentPage was last set.
     /// Used to suppress the footer when a new chapter arrives but onChange
     /// hasn't yet reset currentPage — preventing the "77/6" flash caused
@@ -191,6 +213,7 @@ struct ReaderView: View {
     /// scrolls, so the audio doesn't yank the page out from under
     /// them. A floating "resume" button restores tracking.
     @State private var isFollowing: Bool = true
+    @State private var followAudioTask: Task<Void, Never>?
 
     // Debounced settings — updated 200ms after sliders stop moving.
     @State private var debouncedFontSize: CGFloat = 0
@@ -267,6 +290,9 @@ struct ReaderView: View {
     /// hash for a 30K-char chapter) BEFORE the cache lookup happened,
     /// defeating the memo entirely. An incrementing Int is free.
     @State private var renderVersion: Int = 0
+    /// Keyboard page-turn commands must be delivered to the reader on macOS
+    /// instead of remaining with the surrounding ScrollView/window.
+    @FocusState private var readerHasFocus: Bool
     @State private var pinchStartPointSize: CGFloat? = nil
 
     private enum PageDirection { case forward, backward }
@@ -307,6 +333,7 @@ struct ReaderView: View {
         spans: [SentenceSpan],
         currentSentenceId: String?,
         onJumpToSentence: ((SentenceSpan) -> Void)? = nil,
+        onJumpToSentenceOffset: ((SentenceSpan, Double) -> Void)? = nil,
         onAdvanceChapter: (() -> Bool)? = nil,
         onPreviousChapter: (() -> Bool)? = nil,
         onCenterTap: (() -> Void)? = nil,
@@ -322,12 +349,15 @@ struct ReaderView: View {
         bookChapters: [EbookFulltext.Chapter]? = nil,
         onScrolledToChapter: ((Int) -> Void)? = nil,
         onLastPageLanded: (() -> Void)? = nil,
-        startAtLastPage: Bool = false
+        onEscape: (() -> Void)? = nil,
+        startAtLastPage: Bool = false,
+        startAtPageRatio: Double? = nil
     ) {
         self.chapter = chapter
         self.spans = spans
         self.currentSentenceId = currentSentenceId
         self.onJumpToSentence = onJumpToSentence
+        self.onJumpToSentenceOffset = onJumpToSentenceOffset
         self.onAdvanceChapter = onAdvanceChapter
         self.onPreviousChapter = onPreviousChapter
         self.onCenterTap = onCenterTap
@@ -343,6 +373,10 @@ struct ReaderView: View {
         self.bookChapters = bookChapters
         self.onScrolledToChapter = onScrolledToChapter
         self.onLastPageLanded = onLastPageLanded
+        self.onEscape = onEscape
+        if let startAtPageRatio, startAtPageRatio.isFinite {
+            _pendingPageRatio = State(initialValue: min(1, max(0, startAtPageRatio)))
+        }
         // Seed the last-page jump immediately so the very first render
         // of this ReaderView (after a backward chapter crossing) lands
         // on the last page instead of page 0. The @State is initialised
@@ -416,6 +450,13 @@ struct ReaderView: View {
         }
         .background(themeBackground)
         .foregroundStyle(themeForeground)
+        .focusable(true)
+        .focused($readerHasFocus)
+        .onAppear {
+            #if os(macOS)
+            readerHasFocus = true
+            #endif
+        }
         // Force all SwiftUI controls within the reader (pickers, menus,
         // sheets) to inherit a color scheme that matches the reader
         // background. Dark / Black themes → .dark so system materials and
@@ -508,6 +549,9 @@ struct ReaderView: View {
                 }
             }
         }
+        .compatOnChange(of: currentSentenceId) { _ in
+            followAudioPositionIfNeeded()
+        }
         .task(id: renderedAttributedKey) {
             // `NSAttributedString.html` importer is main-thread-only
             // (WebKit-backed). Each call costs 50–500 ms for a 30 K-char
@@ -570,6 +614,21 @@ struct ReaderView: View {
                     onLastPageLanded?()
                 }
             }
+            if pendingPageRatio != nil {
+                Task { @MainActor in
+                    for _ in 0..<30 {
+                        try? await Task.sleep(nanoseconds: 100_000_000)
+                        guard !Task.isCancelled else { return }
+                        let pages = paginationCache.pages
+                        guard !pages.isEmpty else { continue }
+                        if let ratio = pendingPageRatio {
+                            currentPage = Int((ratio * Double(max(0, pages.count - 1))).rounded())
+                            pendingPageRatio = nil
+                        }
+                        return
+                    }
+                }
+            }
         }
         .compatOnChange(of: settings.readerFontSize) { _ in
             let v = settings.readerPointSize
@@ -609,6 +668,7 @@ struct ReaderView: View {
             // down so they don't write to a freed @State (no crash —
             // SwiftUI handles that — but wasteful and shows up in
             // Instruments as zombie tasks).
+            followAudioTask?.cancel()
             fontDebounceTask?.cancel()
             lineSpacingDebounceTask?.cancel()
             marginDebounceTask?.cancel()
@@ -719,6 +779,10 @@ struct ReaderView: View {
                     onSwipe: onSwipe,
                     onScrollPosition: { ratio, sentenceId in
                         readerCoordinator.setPagePosition(ratio: ratio, sentenceId: sentenceId)
+                    },
+                    spans: spans,
+                    onLongPressSentence: { span, ratio in
+                        onJumpToSentenceOffset?(span, ratio)
                     }
                 )
                 // Give the native UITextView a finite viewport inside the
@@ -760,6 +824,11 @@ struct ReaderView: View {
         let plain = spans.map(\.text).joined(separator: "\n\n")
         let para = NSMutableParagraphStyle()
         para.lineSpacing = CGFloat(lineSpacing)
+        para.paragraphSpacing = fontSize * 0.7
+        para.firstLineHeadIndent = fontSize * 1.5
+        para.alignment = settings.readerTextAlignment == .justified
+            ? .justified
+            : .left
         return NSAttributedString(
             string: plain,
             attributes: [
@@ -1280,7 +1349,9 @@ struct ReaderView: View {
                     .padding(.vertical, 8)
                     .background(.thinMaterial, in: Capsule())
                 }
-                .padding(20)
+                .padding(.horizontal, 20)
+                .padding(.top, 8)
+                .padding(.bottom, chromeBottomInset + 20)
                 .frame(minWidth: 44, minHeight: 44, alignment: .center)
                 .accessibilityIdentifier("reader.followAudio")
                 .accessibilityLabel(
@@ -1299,6 +1370,31 @@ struct ReaderView: View {
                 )
             }
         }
+    }
+
+    private func markManualReaderMove() {
+        isFollowing = false
+        followAudioTask?.cancel()
+        followAudioTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 5_000_000_000)
+            guard !Task.isCancelled else { return }
+            isFollowing = true
+            followAudioPositionIfNeeded()
+        }
+    }
+
+    private func followAudioPositionIfNeeded() {
+        guard isFollowing,
+              settings.readerLayout == .paginated,
+              let sentenceID = currentSentenceId,
+              let span = spans.first(where: { $0.id == sentenceID }) else { return }
+        let pages = paginationCache.pages
+        let target = pageIndexContaining(sentence: span, in: pages)
+            ?? ReaderAudioFollowResolver.pageIndex(for: span, pages: pages)
+        guard let target,
+              target != currentPage else { return }
+        lastAutoScrollAt = Date()
+        currentPage = target
     }
 
     /// True when the size delta is large enough to warrant repagination.
@@ -1455,6 +1551,8 @@ struct ReaderView: View {
             let font = bodyPlatformFont(size: fontSize)
             let para = NSMutableParagraphStyle()
             para.lineSpacing = CGFloat(lineSpacing)
+            para.paragraphSpacing = fontSize * 0.7
+            para.firstLineHeadIndent = fontSize * 1.5
             // Honour the same alignment choice the EPUB renderer
             // applies (default justified). Without this the
             // plain-text fallback (rendered while
@@ -1591,7 +1689,8 @@ struct ReaderView: View {
             onLinkTap: onLinkTap,
             spans: spans,
             onJumpToSentence: onJumpToSentence,
-            onUserPageChange: { isFollowing = false },
+            onJumpToSentenceOffset: onJumpToSentenceOffset,
+            onUserPageChange: { markManualReaderMove() },
             onWillTransition: { isPageTurning = true },
             onDidFinishTransition: { isPageTurning = false },
             onPreviousChapterNeedsLastPage: {
@@ -1838,6 +1937,9 @@ struct ReaderView: View {
         case .end:
             currentPage = max(0, totalPages - 1)
             return true
+        case .escape:
+            onEscape?()
+            return onEscape != nil
         }
     }
 
@@ -1858,7 +1960,7 @@ struct ReaderView: View {
         jumpToLastPageTask?.cancel()
         jumpToLastPageTask = nil
         jumpToLastPageForChapterId = nil
-        isFollowing = false
+        markManualReaderMove()
         pageDirection = .forward
         if currentPage + 1 < totalPages {
             if settings.pageTurnStyle == .slide {
@@ -1891,7 +1993,7 @@ struct ReaderView: View {
         jumpToLastPageTask?.cancel()
         jumpToLastPageTask = nil
         jumpToLastPageForChapterId = nil
-        isFollowing = false
+        markManualReaderMove()
         pageDirection = .backward
         if currentPage > 0 {
             if settings.pageTurnStyle == .slide {

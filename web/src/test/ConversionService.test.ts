@@ -10,6 +10,7 @@ class MockEventSource {
   onmessage: ((event: MessageEvent) => void) | null = null;
   onerror: (() => void) | null = null;
   closed = false;
+  private listeners = new Map<string, (event: MessageEvent) => void>();
 
   constructor(
     public readonly url: string,
@@ -18,11 +19,17 @@ class MockEventSource {
     MockEventSource.instances.push(this);
   }
 
-  addEventListener(_event: string, _handler: (event: MessageEvent) => void) {}
+  addEventListener(event: string, handler: (event: MessageEvent) => void) {
+    this.listeners.set(event, handler);
+  }
   removeEventListener(
     _event: string,
     _handler: (event: MessageEvent) => void,
   ) {}
+
+  emit(data: unknown) {
+    this.onmessage?.({ data: JSON.stringify(data) } as MessageEvent);
+  }
 
   close() {
     this.closed = true;
@@ -148,5 +155,36 @@ describe("normalizeAssetUrl", () => {
     );
     expect(result.state).toBe("finished");
     vi.useRealTimers();
+  });
+
+  test("keeps HTTP polling disabled while SSE is healthy", async () => {
+    vi.stubGlobal("EventSource", MockEventSource);
+    const fetchMock = vi
+      .spyOn(window, "fetch")
+      .mockResolvedValue(
+        new Response(
+          JSON.stringify({ jobId: "job-live", state: "finished", outputs: [] }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+      );
+    const statuses: string[] = [];
+    const client = new HttpConversionClient("");
+    const resultPromise = client.poll("job-live", {
+      onStreamStatus: (status) => statuses.push(status),
+    });
+    MockEventSource.instances[0].emit({
+      jobId: "job-live",
+      state: "running",
+      progressPercent: 40,
+    });
+    await Promise.resolve();
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(statuses).toContain("healthy");
+    MockEventSource.instances[0].emit({
+      jobId: "job-live",
+      state: "finished",
+      outputs: [],
+    });
+    await expect(resultPromise).resolves.toMatchObject({ state: "finished" });
   });
 });

@@ -23,6 +23,16 @@ final class SegmentBacklogTests: XCTestCase {
         XCTAssertNil(backlog.drainNext(), "Drain on empty must return nil")
     }
 
+    func testPeekDoesNotRemovePendingSegment() {
+        var backlog = SegmentBacklog()
+        _ = backlog.append(url: url(7), chapterIndex: 2, segmentIndex: 7)
+
+        XCTAssertEqual(backlog.peekNext()?.segmentIndex, 7)
+        XCTAssertEqual(backlog.count, 1,
+            "Inspecting a segment before AVQueuePlayer accepts it must not drop it")
+        XCTAssertEqual(backlog.drainNext()?.segmentIndex, 7)
+    }
+
     func testCapacityCapsBacklogAndEvictsOldest() {
         var backlog = SegmentBacklog()
         for i in 0..<SegmentBacklog.capacity {

@@ -11,34 +11,53 @@ import AppKit
 
 private let audioLog = Logger(subsystem: "epub2mp3", category: "AudioPlayer")
 
-/// Allowed playback rates surfaced in `PlayerView`.
-/// Anything outside this list collapses to 1.0.
+/// Playback rates surfaced by the horizontal rate picker.
 enum PlaybackRate: Float, CaseIterable, Identifiable {
-    case x050 = 0.5
-    case x075 = 0.75
+    case x080 = 0.8
     case x100 = 1.0
-    case x125 = 1.25
+    case x130 = 1.3
     case x150 = 1.5
-    case x175 = 1.75
+    case x180 = 1.8
+    case x300 = 3.0
+    case x050 = 0.5
+    case x060 = 0.6
+    case x070 = 0.7
     case x200 = 2.0
+    case x220 = 2.2
+    case x250 = 2.5
+    case x350 = 3.5
+    case x400 = 4.0
 
     var id: Float { rawValue }
 
     /// Short label shown inline on the rate button (e.g. "1x", "1.25x").
     var shortLabel: String {
         switch self {
-        case .x050: return "0.5x"
-        case .x075: return "0.75x"
+        case .x080: return "0.8x"
         case .x100: return "1x"
-        case .x125: return "1.25x"
+        case .x130: return "1.3x"
         case .x150: return "1.5x"
-        case .x175: return "1.75x"
+        case .x180: return "1.8x"
+        case .x300: return "3x"
+        case .x050: return "0.5x"
+        case .x060: return "0.6x"
+        case .x070: return "0.7x"
         case .x200: return "2x"
+        case .x220: return "2.2x"
+        case .x250: return "2.5x"
+        case .x350: return "3.5x"
+        case .x400: return "4x"
         }
     }
 
     /// Longer label used in segmented pickers / accessibility.
-    var label: String { String(format: "%.2fx", rawValue) }
+    var label: String { shortLabel }
+
+    /// The first visible row of the picker and the list used by the
+    /// compact rate-cycle button.
+    static let primaryRates: [PlaybackRate] = [
+        .x080, .x100, .x130, .x150, .x180, .x300
+    ]
 }
 
 /// Thin wrapper around `AVQueuePlayer` that turns a `JobSnapshot` into
@@ -203,7 +222,7 @@ final class AudioPlayer: ObservableObject {
     private var sleepTimerExpiresAt: Date?
 
     /// Ordered list of playback rates available in the UI.
-    let availableRates: [Float] = PlaybackRate.allCases.map(\.rawValue)
+    let availableRates: [Float] = PlaybackRate.primaryRates.map(\.rawValue)
 
     // MARK: AsyncStreams (positions + chapter changes)
 
@@ -317,6 +336,8 @@ final class AudioPlayer: ObservableObject {
     private var segmentChapterIndex: Int = -1
     private var segmentCumulativeBase: TimeInterval = 0
     private var segmentChapterDuration: TimeInterval = 0
+    private var segmentEstimatedDuration: TimeInterval = 0
+    private var segmentEstimatedChapterIndex: Int = -1
     /// Maps segment queue position → sentence ID. When non-empty,
     /// `activeSentenceId` tracks which sentence is playing by counting
     /// AVPlayerItemDidPlayToEndTime firings.
@@ -590,6 +611,37 @@ final class AudioPlayer: ObservableObject {
         segmentDuration(durations: durations)
     }
 
+    nonisolated static func estimatedChapterDurationSeconds(
+        wordCount: Int,
+        wordsPerMinute: Double = 200
+    ) -> TimeInterval {
+        guard wordCount > 0, wordsPerMinute.isFinite, wordsPerMinute > 0 else { return 0 }
+        return Double(wordCount) / wordsPerMinute * 60
+    }
+
+    nonisolated static func segmentChapterTitle(
+        chapterIndex: Int,
+        chapterProgress: [JobSnapshot.Chapter]
+    ) -> String {
+        let chapter = chapterProgress.first { $0.index == chapterIndex + 1 }
+            ?? chapterProgress.first { $0.index == chapterIndex }
+        return preferredChapterTitle(
+            primary: chapter?.name,
+            secondary: nil,
+            fallback: L10n.string("player.chapter", chapterIndex + 1)
+        )
+    }
+
+    func setSegmentChapterEstimate(_ duration: TimeInterval, forChapterIndex chapterIndex: Int) {
+        guard duration.isFinite, duration > 0 else { return }
+        segmentEstimatedDuration = duration
+        segmentEstimatedChapterIndex = chapterIndex
+        if isSegmentMode, segmentChapterIndex == chapterIndex {
+            segmentChapterDuration = max(segmentChapterDuration, duration)
+            durationSeconds = segmentChapterDuration
+        }
+    }
+
     nonisolated static func segmentProgress(position: TimeInterval, duration: TimeInterval) -> Double {
         guard duration.isFinite, duration > 0, position.isFinite else { return 0 }
         return min(1, max(0, position / duration))
@@ -779,7 +831,9 @@ final class AudioPlayer: ObservableObject {
         // approach allocates the 50 items we actually need and is O(1).
         let remaining = chapters[safeIndex...]
         let items = remaining.compactMap { chapter -> AVPlayerItem? in
-            guard let absolute = absoluteURL(forDownloadPath: chapter.downloadUrl) else { return nil }
+            guard let absolute = absoluteURL(forDownloadPath: chapter.downloadUrl,
+                                              jobId: snapshot.jobId,
+                                              chapterIndex: chapter.index) else { return nil }
             return AVPlayerItem(url: absolute)
         }
         guard !items.isEmpty else { return }
@@ -792,7 +846,8 @@ final class AudioPlayer: ObservableObject {
         attachObservers()
 
         // Restore prior position for this chapter, if any.
-        if let marker = resumeStore.marker(jobId: snapshot.jobId, chapterIndex: safeIndex),
+        let resumeMarker = resumeStore.marker(jobId: snapshot.jobId, chapterIndex: safeIndex)
+        if let marker = resumeMarker,
            marker.positionSeconds > 1.0 {
             queue.seek(to: CMTime(seconds: marker.positionSeconds, preferredTimescale: 600))
         }
@@ -804,7 +859,7 @@ final class AudioPlayer: ObservableObject {
         // If the previous snapshot was already playing (e.g. user jumped to a
         // new chapter while listening), or the user tapped Play while waiting
         // for the first streamed MP3 URL, preserve that intent.
-        if wasPlaying || pendingAutoPlay {
+        if wasPlaying || pendingAutoPlay || (resumeMarker?.wasPlaying == true) {
             queue.rate = rate.rawValue
             isPlaying = true
             pendingAutoPlay = false
@@ -872,7 +927,9 @@ final class AudioPlayer: ObservableObject {
         // preserves the live queue while accepting out-of-order arrivals.
         let chaptersToAppend = Self.chaptersToAppend(old: oldChapters, new: newChapters)
         for chapter in chaptersToAppend {
-            guard let absolute = absoluteURL(forDownloadPath: chapter.downloadUrl) else { continue }
+            guard let absolute = absoluteURL(forDownloadPath: chapter.downloadUrl,
+                                              jobId: newSnapshot.jobId,
+                                              chapterIndex: chapter.index) else { continue }
             let item = AVPlayerItem(url: absolute)
             if queue.canInsert(item, after: nil) {
                 queue.insert(item, after: nil)
@@ -934,7 +991,9 @@ final class AudioPlayer: ObservableObject {
         let items = queue.items()
         guard queueOffset > 0, queueOffset < items.count else { return }
         guard chapterIndex < chapters.count,
-              let absolute = absoluteURL(forDownloadPath: chapters[chapterIndex].downloadUrl) else { return }
+              let absolute = absoluteURL(forDownloadPath: chapters[chapterIndex].downloadUrl,
+                                          jobId: snapshot?.jobId,
+                                          chapterIndex: chapters[chapterIndex].index) else { return }
         let stale = items[queueOffset]
         let anchor = items[queueOffset - 1]
         let fresh = AVPlayerItem(url: absolute)
@@ -986,6 +1045,11 @@ final class AudioPlayer: ObservableObject {
         isPlaying = true
         updateNowPlayingInfo()
     }
+
+    /// True only after an AV queue exists. A snapshot may arrive before its
+    /// first audio segment, so snapshot presence alone is not enough to make
+    /// a Play tap audible.
+    var hasLoadedAudioQueue: Bool { player != nil }
 
     // MARK: - Speech fallback (slice 2)
 
@@ -1134,28 +1198,14 @@ final class AudioPlayer: ObservableObject {
         // of a silent no-op.
         let reader = playableIndex(forEpubZeroBased: readerChapterIndex, in: snapshot)
         guard let reader else { return .offerStartChoice }
-        if reader != currentChapterIndex { return .offerStartChoice }
-        if isReaderPageDivergent(readerPageRatio) { return .offerStartChoice }
-        return .resume
-    }
-
-    /// Same-chapter divergence: the reader can be on chapter N while the
-    /// paused player is also on chapter N, but at a different page. In that
-    /// case a play tap must still ask whether to resume the audio's saved
-    /// point or jump to the visible page. The ratio is page/scroll position
-    /// within the current reader chapter.
-    private func isReaderPageDivergent(_ readerPageRatio: Double?) -> Bool {
-        guard !isSegmentMode,
-              let readerPageRatio,
-              readerPageRatio.isFinite,
-              durationSeconds > 0,
-              positionSeconds.isFinite else { return false }
-        let reader = max(0, min(1, readerPageRatio))
-        let player = max(0, min(1, positionSeconds / durationSeconds))
-        // Roughly one Apple Books page in a 20-page chapter. This avoids a
-        // modal for tiny scrubber/reporting jitter but catches real visible
-        // page differences.
-        return abs(reader - player) >= 0.05
+        // Once the reader and audio refer to the same chapter, Play resumes
+        // that chapter directly. Page/scroll position is not a second
+        // playback target: showing the chooser here made Play unexpectedly
+        // offer "current page" versus "where stopped" even though the user
+        // was already on the active chapter. The chooser is reserved for a
+        // genuinely different chapter.
+        if reader == currentChapterIndex { return .resume }
+        return .offerStartChoice
     }
 
     /// Convert an EPUB zero-based chapter index (what the reader views
@@ -1227,7 +1277,8 @@ final class AudioPlayer: ObservableObject {
     func startFromReaderPage(
         _ readerChapterIndex: Int,
         sentenceId: String? = nil,
-        sentenceOffsetRatio: Double? = nil
+        sentenceOffsetRatio: Double? = nil,
+        sentenceWordOffsetRatio: Double? = nil
     ) {
         guard let snapshot else { resume(); return }
         // `readerChapterIndex` is EPUB-zero-based (reader space).
@@ -1242,7 +1293,15 @@ final class AudioPlayer: ObservableObject {
         if let sentenceId,
            let map = sentenceTimingByChapter[target],
            let startMs = map[sentenceId] {
-            seek(to: TimeInterval(startMs) / 1000.0)
+            let nextStartMs = map.values
+                .filter { $0 > startMs }
+                .min()
+            let adjustedStartMs = Self.sentenceStartMs(
+                startMs: startMs,
+                nextStartMs: nextStartMs,
+                offsetRatio: sentenceWordOffsetRatio ?? 0
+            )
+            seek(to: adjustedStartMs / 1000.0)
             pendingProportionalSeek = nil
             resume()
             return
@@ -1269,7 +1328,17 @@ final class AudioPlayer: ObservableObject {
         resume()
     }
 
-    /// Pending fractional-position seek waiting for `durationSeconds`
+    nonisolated static func sentenceStartMs(
+        startMs: Int,
+        nextStartMs: Int?,
+        offsetRatio: Double
+    ) -> Double {
+        let ratio = min(1, max(0, offsetRatio.isFinite ? offsetRatio : 0))
+        let endMs = max(startMs, nextStartMs ?? startMs)
+        return Double(startMs) + Double(endMs - startMs) * ratio
+    }
+
+    /// Pending fractional-position seek waiting for `durationSeconds`.
     /// to be published by the asset prepare. Tagged with the chapter
     /// index it was queued for so the time observer doesn't apply it
     /// against an unrelated chapter on auto-advance.
@@ -1307,8 +1376,29 @@ final class AudioPlayer: ObservableObject {
     func togglePlayPause() { isPlaying ? pause() : resume() }
 
     func seek(to seconds: TimeInterval) {
-        player?.seek(to: CMTime(seconds: max(0, seconds), preferredTimescale: 600))
-        positionSeconds = max(0, seconds)
+        let target = max(0, seconds)
+        if Self.shouldAdvanceAtSeekEnd(position: target, duration: durationSeconds) {
+            let chapterBefore = currentChapterIndex
+            if isSegmentMode {
+                nextChapter()
+            } else if let player {
+                player.seek(to: CMTime(seconds: player.currentItem?.duration.seconds ?? target, preferredTimescale: 600))
+                player.advanceToNextItem()
+                _ = reconcileChapterIndexFromCurrentItem()
+                if currentChapterIndex == chapterBefore {
+                    player.pause()
+                    isPlaying = false
+                }
+            }
+            if currentChapterIndex != chapterBefore {
+                positionSeconds = 0
+            }
+            broadcastPosition()
+            updateNowPlayingInfo()
+            return
+        }
+        player?.seek(to: CMTime(seconds: target, preferredTimescale: 600))
+        positionSeconds = target
         broadcastPosition()
         updateNowPlayingInfo()
     }
@@ -1430,6 +1520,31 @@ final class AudioPlayer: ObservableObject {
         updateNowPlayingInfo()
     }
 
+    nonisolated static func shouldAdvanceAtSeekEnd(
+        position: TimeInterval,
+        duration: TimeInterval,
+        tolerance: TimeInterval = 0.75
+    ) -> Bool {
+        guard position.isFinite, duration.isFinite, duration > 0 else { return false }
+        return position >= max(0, duration - tolerance)
+    }
+
+    nonisolated static func rateAdjustedDuration(
+        seconds: TimeInterval,
+        rate: PlaybackRate
+    ) -> TimeInterval {
+        guard seconds.isFinite, seconds > 0 else { return 0 }
+        return seconds / TimeInterval(rate.rawValue)
+    }
+
+    var playbackDurationSeconds: TimeInterval {
+        Self.rateAdjustedDuration(seconds: durationSeconds, rate: rate)
+    }
+
+    var playbackPositionSeconds: TimeInterval {
+        Self.rateAdjustedDuration(seconds: positionSeconds, rate: rate)
+    }
+
     /// Skip relative to the current playhead. Negative values rewind,
     /// positive fast-forward. Clamped to the current AVPlayerItem's
     /// duration.
@@ -1547,6 +1662,9 @@ final class AudioPlayer: ObservableObject {
         if player == nil || chapterIndex != segmentChapterIndex {
             segmentCumulativeBase = 0
             segmentChapterDuration = 0
+            if segmentEstimatedChapterIndex != chapterIndex {
+                segmentEstimatedDuration = 0
+            }
             segmentChapterIndex = chapterIndex
             segmentSentenceIds = []
             segmentPlayedCount = 0
@@ -1565,6 +1683,11 @@ final class AudioPlayer: ObservableObject {
             queue.actionAtItemEnd = .advance
             self.player = queue
             self.currentChapterIndex = chapterIndex
+            if let resume = pendingSegmentResumePosition, resume > 0 {
+                queue.seek(to: CMTime(seconds: resume, preferredTimescale: 600))
+                positionSeconds = resume
+                pendingSegmentResumePosition = nil
+            }
             attachObservers()
             // Only auto-start the first segment if the user had already
             // expressed intent to play (e.g. tapped Play while waiting for
@@ -1594,6 +1717,16 @@ final class AudioPlayer: ObservableObject {
                 if queue.canInsert(item, after: nil) {
                     queue.insert(item, after: nil)
                     audioLog.debug("[enqueueSegment] appended to queue, total=\(queue.items().count)")
+                } else {
+                    // A queue can transiently reject insertion while its
+                    // current item is advancing. Keep the segment pending
+                    // instead of silently dropping spoken audio.
+                    if let evicted = backlog.append(
+                        url: segFile, chapterIndex: chapterIndex, segmentIndex: segmentIndex
+                    ) {
+                        try? FileManager.default.removeItem(at: evicted)
+                    }
+                    audioLog.warning("[enqueueSegment] queue rejected insert; deferred segment \(segmentIndex)")
                 }
             } else {
                 // Append + receive the evicted URL (if any). Eviction
@@ -1618,11 +1751,16 @@ final class AudioPlayer: ObservableObject {
 
     private func drainPendingSegments() {
         guard let queue = player, !backlog.isEmpty else { return }
-        while queue.items().count < Self.maxQueueAhead, let next = backlog.drainNext() {
+        while queue.items().count < Self.maxQueueAhead, let next = backlog.peekNext() {
             let item = AVPlayerItem(url: next.url)
             if queue.canInsert(item, after: nil) {
+                _ = backlog.drainNext()
                 queue.insert(item, after: nil)
                 audioLog.debug("[drainPending] enqueued ch=\(next.chapterIndex) seg=\(next.segmentIndex), queue=\(queue.items().count) pending=\(self.backlog.count)")
+            } else {
+                // Leave the entry at the front for the next item-end/KVO
+                // opportunity. Never consume a segment before insertion.
+                break
             }
         }
     }
@@ -1715,7 +1853,7 @@ final class AudioPlayer: ObservableObject {
     /// Advance to the next rate in `PlaybackRate.allCases`, wrapping
     /// from the last entry back to the first.
     func cycleRate() {
-        let cases = PlaybackRate.allCases
+        let cases = PlaybackRate.primaryRates
         guard let idx = cases.firstIndex(of: rate) else {
             setRate(.x100)
             return
@@ -1731,7 +1869,42 @@ final class AudioPlayer: ObservableObject {
 
     /// Skip backward by `seconds` (default 15 s). Clamped to [0, duration].
     func skipBackward(seconds: Double = 15) {
-        skip(by: -seconds)
+        guard seconds > 0, positionSeconds <= seconds else {
+            skip(by: -seconds)
+            return
+        }
+        rewindToCurrentChapterStart()
+    }
+
+    private func rewindToCurrentChapterStart() {
+        guard let queue = player else { return }
+        if isSegmentMode {
+            let items = queue.items()
+            guard let firstIndex = items.firstIndex(where: { item in
+                guard let asset = item.asset as? AVURLAsset else { return false }
+                return Self.chapterIndexForSegmentItem(asset.url) == segmentChapterIndex
+            }) else {
+                skip(by: -positionSeconds)
+                return
+            }
+            let remaining = Array(items[firstIndex...])
+            queue.removeAllItems()
+            var previous: AVPlayerItem?
+            for item in remaining {
+                queue.insert(item, after: previous)
+                previous = item
+            }
+            queue.seek(to: .zero)
+            segmentCumulativeBase = 0
+            segmentPlayedCount = 0
+            positionSeconds = 0
+            queue.rate = isPlaying ? rate.rawValue : 0
+        } else {
+            queue.seek(to: .zero)
+            positionSeconds = 0
+        }
+        broadcastPosition()
+        updateNowPlayingInfo()
     }
 
     // MARK: Observers
@@ -1768,6 +1941,8 @@ final class AudioPlayer: ObservableObject {
                         self.segmentChapterDuration = max(
                             self.segmentChapterDuration,
                             observed,
+                            self.segmentEstimatedChapterIndex == self.segmentChapterIndex
+                                ? self.segmentEstimatedDuration : 0,
                             snapshotDuration.isFinite ? snapshotDuration : 0
                         )
                         self.durationSeconds = self.segmentChapterDuration
@@ -2020,7 +2195,11 @@ final class AudioPlayer: ObservableObject {
         }
         guard let snapshot else { return false }
         let chapters = playbackChapters.isEmpty ? snapshot.playableChapters : playbackChapters
-        let chapterURLs = chapters.map { absoluteURL(forDownloadPath: $0.downloadUrl) }
+        let chapterURLs = chapters.map { chapter in
+            absoluteURL(forDownloadPath: chapter.downloadUrl,
+                        jobId: snapshot.jobId,
+                        chapterIndex: chapter.index)
+        }
         guard let idx = Self.resolveChapterIndex(
             currentIndex: currentChapterIndex,
             chapterURLs: chapterURLs,
@@ -2040,13 +2219,16 @@ final class AudioPlayer: ObservableObject {
     func makeNowPlayingInfo() -> [String: Any] {
         var info: [String: Any] = [:]
         let bookTitle = snapshot?.bookTitle ?? "Epub-to-Mp3"
-        let chapterTitle = currentChapterTitle
+        let chapterTitle = effectiveChapterTitle
         // The chapter is the primary Now Playing label; the book remains
         // secondary metadata so Control Center and the lock screen identify
         // the exact text currently being read.
         info[MPMediaItemPropertyTitle] = chapterTitle
         info[MPMediaItemPropertyAlbumTitle] = bookTitle
-        info[MPMediaItemPropertyArtist] = snapshot?.bookAuthor ?? ""
+        // The system player should identify the audiobook, not expose the
+        // EPUB creator as the primary identity. The chapter remains the
+        // title and the book name is shown as the artist/author field.
+        info[MPMediaItemPropertyArtist] = bookTitle
         info[MPNowPlayingInfoPropertyElapsedPlaybackTime] = positionSeconds
         info[MPMediaItemPropertyPlaybackDuration] = durationSeconds > 0 ? durationSeconds : 0
         // Rate = 0 when paused; actual rate when playing. The system uses
@@ -2105,13 +2287,19 @@ final class AudioPlayer: ObservableObject {
         let chapterName = currentChapterValue?.displayTitle
             ?? (chapters.indices.contains(currentIndex) ? chapters[currentIndex].displayTitle : nil)
         let totalChapters = chapters.isEmpty ? nil : chapters.count
-        let chapterRemaining = max(0, durationSeconds - positionSeconds)
+        let chapterRemaining = Self.rateAdjustedDuration(
+            seconds: max(0, durationSeconds - positionSeconds), rate: rate
+        )
         let followingRemaining = chapters.dropFirst(min(currentIndex + 1, chapters.count))
             .compactMap(\.durationSeconds)
             .filter { $0.isFinite && $0 > 0 }
-            .reduce(0, +)
+            .reduce(0) { total, duration in
+                total + Self.rateAdjustedDuration(seconds: duration, rate: rate)
+            }
         let bookRemaining = chapterRemaining + followingRemaining
-        let timing = (position: positionSeconds, duration: durationSeconds,
+        let timing = (
+            position: playbackPositionSeconds,
+            duration: playbackDurationSeconds,
                       chapterRemaining: chapterRemaining, bookRemaining: bookRemaining,
                       totalChapters: totalChapters)
         let state = (bookId: bookId, chapterName: chapterName, isPlaying: isPlaying)
@@ -2209,7 +2397,15 @@ final class AudioPlayer: ObservableObject {
 
     // MARK: Helpers
 
-    private var currentChapterTitle: String {
+    /// Canonical chapter title for every playback surface: mini player,
+    /// expanded player, Now Playing, lock screen and widget.
+    var effectiveChapterTitle: String {
+        if isSegmentMode {
+            return Self.segmentChapterTitle(
+                chapterIndex: currentChapterIndex,
+                chapterProgress: snapshot?.chapterProgress ?? []
+            )
+        }
         let chapters = playbackChapters.isEmpty ? (snapshot?.playableChapters ?? []) : playbackChapters
         guard chapters.indices.contains(currentChapterIndex) else { return "Chapter" }
         let playing = chapters[currentChapterIndex]
@@ -2256,6 +2452,10 @@ final class AudioPlayer: ObservableObject {
         // and we cross-reference back into `chapterProgress` by EPUB
         // index to surface any extra metadata the playable subset
         // dropped (rare; same struct today).
+        if isSegmentMode {
+            return snapshot?.chapterProgress?.first { $0.index == currentChapterIndex + 1 }
+                ?? snapshot?.chapterProgress?.first { $0.index == currentChapterIndex }
+        }
         let chapters = playbackChapters.isEmpty ? (snapshot?.playableChapters ?? []) : playbackChapters
         guard !chapters.isEmpty,
               chapters.indices.contains(currentChapterIndex) else { return nil }
@@ -2289,15 +2489,32 @@ final class AudioPlayer: ObservableObject {
         for cont in positionContinuations.values { cont.yield(positionSeconds) }
     }
 
+    nonisolated static func resumePositionForPersistedState(
+        positionSeconds: TimeInterval,
+        wasPlaying: Bool
+    ) -> TimeInterval {
+        let position = max(0, positionSeconds)
+        return wasPlaying ? max(0, position - 15) : position
+    }
+
+    func persistedResumeMarker(for jobId: String) -> ResumeMarker? {
+        resumeStore.latestMarker(jobId: jobId)
+    }
+
     func persistResumePoint(force: Bool) {
         guard let snapshot else { return }
         let now = Date()
         if !force, now.timeIntervalSince(lastResumePersist) < 5 { return }
         lastResumePersist = now
+        let resumePosition = Self.resumePositionForPersistedState(
+            positionSeconds: positionSeconds,
+            wasPlaying: isPlaying
+        )
         resumeStore.save(
             jobId: snapshot.jobId,
             chapterIndex: currentChapterIndex,
-            position: positionSeconds,
+            position: resumePosition,
+            wasPlaying: isPlaying,
             now: now
         )
         UserDefaults.standard.set(
@@ -2309,7 +2526,11 @@ final class AudioPlayer: ObservableObject {
     /// Resolve a backend-relative download path (e.g. `/api/outputs/<jobId>/<file>.mp3`)
     /// to an absolute URL the iOS player can fetch. If `path` is already
     /// absolute (starts with `http`), use it as-is.
-    private func absoluteURL(forDownloadPath path: String?) -> URL? {
+    private func absoluteURL(forDownloadPath path: String?, jobId: String? = nil, chapterIndex: Int? = nil) -> URL? {
+        if let jobId, let chapterIndex,
+           let local = DownloadManager.localAudioURL(jobId: jobId, chapterIndex: chapterIndex) {
+            return local
+        }
         guard let path, !path.isEmpty else { return nil }
         if path.lowercased().hasPrefix("http") { return URL(string: path) }
         guard let baseURL = backendBaseURL else { return nil }
@@ -2325,7 +2546,7 @@ final class AudioPlayer: ObservableObject {
     /// Arms `pendingAutoPlay` so the very next `enqueueSegment` starts
     /// playback immediately, matching the user's "from beginning" /
     /// "previous chapter" intent.
-    func prepareSegmentRestart() {
+    func prepareSegmentRestart(resumePosition: TimeInterval? = nil) {
         teardownPlayer()
         isSegmentMode = false
         segmentCumulativeBase = 0
@@ -2335,6 +2556,7 @@ final class AudioPlayer: ObservableObject {
         segmentPlayedCount = 0
         activeSentenceId = nil
         pendingAutoPlay = true
+        pendingSegmentResumePosition = resumePosition
         positionSeconds = 0
         isPlaying = false
     }
@@ -2344,6 +2566,18 @@ final class AudioPlayer: ObservableObject {
     /// flips the queue from rate 0 → rate.rawValue automatically,
     /// without waiting for a second user tap on the transport bar.
     private var pendingAutoPlay: Bool = false
+    private var pendingSegmentResumePosition: TimeInterval?
+    private var pendingPersistedResume: Bool = false
+
+    func armPersistedResume() {
+        pendingPersistedResume = true
+    }
+
+    func consumePersistedResumePosition(for jobId: String) -> TimeInterval? {
+        guard pendingPersistedResume else { return nil }
+        pendingPersistedResume = false
+        return resumeStore.latestMarker(jobId: jobId)?.positionSeconds
+    }
 
     // MARK: - Test hooks
     //

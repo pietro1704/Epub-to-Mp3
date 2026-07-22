@@ -25,6 +25,19 @@ final class ReaderAudioFollowingDomainTests: XCTestCase {
         XCTAssertTrue(state.shouldFollowAudio(at: start.addingTimeInterval(5)))
     }
 
+    func testAudioFollowResolvesSentenceToPaginatedPage() {
+        let pages = [
+            NSAttributedString(string: String(repeating: "a", count: 20)),
+            NSAttributedString(string: String(repeating: "b", count: 20))
+        ]
+        XCTAssertEqual(
+            ReaderAudioFollowResolver.pageIndex(
+                for: spans[2], pages: pages
+            ),
+            1
+        )
+    }
+
     func testExplicitFollowEndsDivergenceImmediately() {
         var state = ManualDivergenceStateMachine()
         state.manualMove(at: Date(timeIntervalSince1970: 10))
@@ -68,6 +81,34 @@ final class ReaderAudioFollowingDomainTests: XCTestCase {
             encoding: .utf8
         )
         XCTAssertGreaterThanOrEqual(source.components(separatedBy: "readerCoordinator.setChapter(").count - 1, 3)
+    }
+
+    func testReaderCoordinatorPositionIsNamespacedByBook() {
+        let defaults = UserDefaults(suiteName: "ReaderPositionTests.\(UUID().uuidString)")!
+        let coordinator = ReaderCoordinator(defaults: defaults)
+        _ = coordinator.load(for: "book-a", fallbackChapterIndex: 0)
+        coordinator.setChapter(3)
+        coordinator.setPagePosition(ratio: 0.625, sentenceId: "a-sentence")
+        coordinator.flush()
+
+        let other = ReaderCoordinator(defaults: defaults)
+        let otherAnchor = other.load(for: "book-b", fallbackChapterIndex: 1)
+        XCTAssertEqual(otherAnchor.chapterIndex, 1)
+        XCTAssertNil(otherAnchor.pageRatio)
+
+        let restored = other.load(for: "book-a", fallbackChapterIndex: 0)
+        XCTAssertEqual(restored.chapterIndex, 3)
+        XCTAssertEqual(restored.pageRatio ?? -1, 0.625, accuracy: 0.001)
+        XCTAssertEqual(restored.sentenceId, "a-sentence")
+    }
+
+    func testResumeStorePersistsPlayingStateAndPosition() {
+        let defaults = UserDefaults(suiteName: "ResumeStoreTests.\(UUID().uuidString)")!
+        let store = ResumeStore(storage: defaults)
+        store.save(jobId: "book-a", chapterIndex: 2, position: 105, wasPlaying: true)
+        let marker = store.marker(jobId: "book-a", chapterIndex: 2)
+        XCTAssertEqual(marker?.positionSeconds, 105)
+        XCTAssertTrue(marker?.wasPlaying == true)
     }
 
     func testReaderCoordinatorChapterChangeClearsSentenceAnchor() {

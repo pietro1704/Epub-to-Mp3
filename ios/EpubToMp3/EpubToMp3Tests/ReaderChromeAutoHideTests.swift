@@ -480,4 +480,25 @@ final class ReaderChromeAutoHideTests: XCTestCase {
         XCTAssertTrue(reader.contains("if settings.readerShowPageNumbers, stablePageTotal > 0"),
                       "The page footer visibility should be driven by the stabilized total, not the raw transient pages count.")
     }
+
+    func testReaderSessionAndAudioPrecedenceArePersisted() throws {
+        let instantReader = try appSource(named: "Views/InstantReaderView.swift")
+        let root = try appSource(named: "Views/RootView.swift")
+        let presentation = try appSource(named: "Services/PlayerPresentation.swift")
+
+        XCTAssertTrue(root.contains("readerSurfaceOrTabs"),
+                      "The iPhone root must choose the restored reader before showing tabs.")
+        XCTAssertTrue(root.contains("currentlyReadingBookIDKey"),
+                      "Reader restoration must use the reading pointer, not only the audio pointer.")
+        XCTAssertTrue(instantReader.contains("ReaderSessionState.load(bookID: fulltext.jobId)"),
+                      "Reader chrome/player state must be restored per book.")
+        XCTAssertTrue(instantReader.contains("persistSessionState()"),
+                      "Reader chrome/player state must be persisted on lifecycle changes.")
+        XCTAssertTrue(instantReader.contains("audioMarker?.wasPlaying == true"),
+                      "A playing audio marker must take precedence over the visual reader anchor.")
+        XCTAssertTrue(instantReader.contains("currentChapterIndex = max(0, audioChapter)"),
+                      "The reader chapter must follow the saved audio chapter on cold launch.")
+        XCTAssertTrue(presentation.contains("persistedExpandedKey"),
+                      "Expanded player presentation must survive app termination.")
+    }
 }
