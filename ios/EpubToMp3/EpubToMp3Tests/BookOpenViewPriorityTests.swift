@@ -157,7 +157,7 @@ final class BookOpenViewPriorityTests: XCTestCase {
     func testReaderClaimsKeyboardFocusForPageTurns() throws {
         let source = try source(named: "Views/ReaderView.swift")
 
-        XCTAssertTrue(source.contains(".focusable(true)"))
+        XCTAssertTrue(source.contains(".compatFocusable()"))
         XCTAssertTrue(source.contains(".focused($readerHasFocus)"))
         XCTAssertTrue(source.contains("readerHasFocus = true"))
     }

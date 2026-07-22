@@ -450,7 +450,7 @@ struct ReaderView: View {
         }
         .background(themeBackground)
         .foregroundStyle(themeForeground)
-        .focusable(true)
+        .compatFocusable()
         .focused($readerHasFocus)
         .onAppear {
             #if os(macOS)
