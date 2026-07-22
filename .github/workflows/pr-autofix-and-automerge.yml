@@ -1,0 +1,70 @@
+name: PR Autofix Dispatcher
+
+# This workflow is intentionally code-free: workflow_run is a privileged
+# event, so it only validates metadata and dispatches the unprivileged worker.
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+
+permissions:
+  contents: read
+  actions: write
+  pull-requests: read
+
+concurrency:
+  group: pr-autofix-dispatch-${{ github.event.workflow_run.head_sha }}
+  cancel-in-progress: false
+
+jobs:
+  dispatch:
+    name: Dispatch trusted PR worker
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resolve and validate PR
+        id: resolve
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RUN_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          set -euo pipefail
+          PR_JSON=$(gh api \
+            -H 'Accept: application/vnd.github+json' \
+            "/repos/${GITHUB_REPOSITORY}/commits/${RUN_SHA}/pulls" \
+            --jq 'map(select(.base.ref == "master"))[0] // empty')
+          if [[ -z "$PR_JSON" ]]; then
+            echo 'No master-targeting PR found for this CI run.'
+            exit 0
+          fi
+          HEAD_REPO=$(jq -r '.head.repo.full_name' <<< "$PR_JSON")
+          AUTHOR=$(jq -r '.user.login' <<< "$PR_JSON")
+          HEAD_REF=$(jq -r '.head.ref' <<< "$PR_JSON")
+          HEAD_SHA=$(jq -r '.head.sha' <<< "$PR_JSON")
+          if [[ "$HEAD_REPO" != "$GITHUB_REPOSITORY" \
+                || "$AUTHOR" != "pietro1704" \
+                || ("$HEAD_REF" != hermes/* && "$HEAD_REF" != bot/*) \
+                || "$HEAD_SHA" != "$RUN_SHA" ]]; then
+            echo 'PR is outside the trusted auto-fix scope.'
+            exit 0
+          fi
+          echo "number=$(jq -r '.number' <<< "$PR_JSON")" >> "$GITHUB_OUTPUT"
+          echo "sha=$HEAD_SHA" >> "$GITHUB_OUTPUT"
+
+      - name: Dispatch repair or merge worker
+        if: steps.resolve.outputs.number != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ steps.resolve.outputs.number }}
+          HEAD_SHA: ${{ steps.resolve.outputs.sha }}
+          CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+        run: |
+          set -euo pipefail
+          MODE=merge
+          [[ "$CONCLUSION" == failure ]] && MODE=fix
+          gh workflow run pr-autofix-worker.yml \
+            --repo "$GITHUB_REPOSITORY" \
+            --ref master \
+            -f pr_number="$PR_NUMBER" \
+            -f head_sha="$HEAD_SHA" \
+            -f mode="$MODE"
