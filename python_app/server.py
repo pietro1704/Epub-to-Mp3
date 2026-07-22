@@ -263,16 +263,19 @@ _DEFAULT_TTL_HOURS = 48 if os.getenv("SPACE_ID") else 4
 COMPLETED_JOB_TTL_HOURS = float(
     os.getenv("COMPLETED_JOB_TTL_HOURS", str(_DEFAULT_TTL_HOURS)) or _DEFAULT_TTL_HOURS
 )
-# HF Spaces recycles jobs faster than local dev; default to a shorter cleanup
-# interval there so orphaned entries don't linger for the full 5-minute window.
-_DEFAULT_CLEANUP_INTERVAL = 60 if os.getenv("SPACE_ID") else 300
-CLEANUP_INTERVAL_SECONDS = max(
-    10,
-    int(
-        os.getenv("CLEANUP_INTERVAL_SECONDS", str(_DEFAULT_CLEANUP_INTERVAL))
-        or _DEFAULT_CLEANUP_INTERVAL
-    ),
-)
+
+
+def _cleanup_interval_seconds() -> int:
+    """Return the current job-cleanup interval from the runtime environment."""
+    default = 60 if os.getenv("SPACE_ID") else 300
+    try:
+        configured = int(os.getenv("CLEANUP_INTERVAL_SECONDS", str(default)) or default)
+    except ValueError:
+        configured = default
+    return max(10, configured)
+
+
+CLEANUP_INTERVAL_SECONDS = _cleanup_interval_seconds()
 TELEMETRY_RETENTION_HOURS = max(
     24, int(os.getenv("TELEMETRY_RETENTION_HOURS", "720") or "720")
 )  # 30 days
@@ -1833,7 +1836,7 @@ async def _periodic_job_cleanup():
     """Periodically clean up old completed jobs."""
     while True:
         try:
-            await asyncio.sleep(CLEANUP_INTERVAL_SECONDS)
+            await asyncio.sleep(_cleanup_interval_seconds())
 
             current_time = time.time()
             jobs_to_remove = []
