@@ -230,7 +230,7 @@ async def upload_ebook_local(
     dest_path = _srv._resolve_relative_path_within_root(upload_dir, src.name, must_exist=False)
     shutil.copy2(src, dest_path)
 
-    file_hash = hash_file_incremental(dest_path)
+    file_hash = hash_file_incremental(dest_path, allowed_root=_srv.uploads_dir)
 
     book_title = src.stem
     book_author = "Unknown Author"
