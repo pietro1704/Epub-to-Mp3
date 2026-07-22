@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import hashlib
 from pathlib import Path
-from typing import Protocol
+from typing import BinaryIO, Protocol
 
 
 class UploadTooLarge(ValueError):
@@ -62,27 +62,17 @@ async def stream_upload_to_path(
 
 
 def hash_file_incremental(
-    path: Path,
+    handle: BinaryIO,
     *,
-    allowed_root: Path | None = None,
     chunk_size: int = 1024 * 1024,
 ) -> str:
     """Return a SHA-1 digest without loading the file into memory.
 
-    Callers handling uploaded paths must provide ``allowed_root`` so the
-    canonicalized path is proven to remain inside the upload directory.
+    The caller owns path validation and opens the already-approved file.
     """
     if chunk_size <= 0:
         raise ValueError("chunk_size must be positive")
-    safe_path = Path(path).resolve(strict=True)
-    if allowed_root is not None:
-        safe_root = Path(allowed_root).resolve(strict=True)
-        try:
-            safe_path.relative_to(safe_root)
-        except ValueError as exc:
-            raise ValueError("path must remain inside allowed_root") from exc
     hasher = hashlib.sha1()
-    with safe_path.open("rb") as handle:
-        for chunk in iter(lambda: handle.read(chunk_size), b""):
-            hasher.update(chunk)
+    for chunk in iter(lambda: handle.read(chunk_size), b""):
+        hasher.update(chunk)
     return hasher.hexdigest()

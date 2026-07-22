@@ -72,7 +72,8 @@ def test_hash_file_incremental_does_not_read_entire_file(tmp_path: Path, monkeyp
         return handle
 
     monkeypatch.setattr(Path, "open", tracking_open)
-    assert hash_file_incremental(target, chunk_size=3) == hashlib.sha1(b"abcdefgh").hexdigest()
+    with target.open("rb") as handle:
+        assert hash_file_incremental(handle, chunk_size=3) == hashlib.sha1(b"abcdefgh").hexdigest()
     assert read_sizes
     assert all(size > 0 and size < len(b"abcdefgh") for size in read_sizes[:-1])
     assert read_sizes[-1] > 0  # bounded EOF probe, not an unbounded read
