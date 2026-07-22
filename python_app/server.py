@@ -21,7 +21,6 @@ except ImportError:
 
 import asyncio
 import contextlib
-import hashlib
 import html
 import json
 import logging
@@ -263,16 +262,19 @@ _DEFAULT_TTL_HOURS = 48 if os.getenv("SPACE_ID") else 4
 COMPLETED_JOB_TTL_HOURS = float(
     os.getenv("COMPLETED_JOB_TTL_HOURS", str(_DEFAULT_TTL_HOURS)) or _DEFAULT_TTL_HOURS
 )
-# HF Spaces recycles jobs faster than local dev; default to a shorter cleanup
-# interval there so orphaned entries don't linger for the full 5-minute window.
-_DEFAULT_CLEANUP_INTERVAL = 60 if os.getenv("SPACE_ID") else 300
-CLEANUP_INTERVAL_SECONDS = max(
-    10,
-    int(
-        os.getenv("CLEANUP_INTERVAL_SECONDS", str(_DEFAULT_CLEANUP_INTERVAL))
-        or _DEFAULT_CLEANUP_INTERVAL
-    ),
-)
+
+
+def _cleanup_interval_seconds() -> int:
+    """Return the current job-cleanup interval from the runtime environment."""
+    default = 60 if os.getenv("SPACE_ID") else 300
+    try:
+        configured = int(os.getenv("CLEANUP_INTERVAL_SECONDS", str(default)) or default)
+    except ValueError:
+        configured = default
+    return max(10, configured)
+
+
+CLEANUP_INTERVAL_SECONDS = _cleanup_interval_seconds()
 TELEMETRY_RETENTION_HOURS = max(
     24, int(os.getenv("TELEMETRY_RETENTION_HOURS", "720") or "720")
 )  # 30 days
@@ -1833,7 +1835,7 @@ async def _periodic_job_cleanup():
     """Periodically clean up old completed jobs."""
     while True:
         try:
-            await asyncio.sleep(CLEANUP_INTERVAL_SECONDS)
+            await asyncio.sleep(_cleanup_interval_seconds())
 
             current_time = time.time()
             jobs_to_remove = []
@@ -2486,15 +2488,12 @@ async def convert_ebook(
             Path(file.filename or "ebook.epub").name,
             must_exist=False,
         )
-        raw_payload = await file.read()
-        if MAX_UPLOAD_BYTES and len(raw_payload) > MAX_UPLOAD_BYTES:
-            raise HTTPException(
-                status_code=413,
-                detail=f"File exceeds the {MAX_UPLOAD_MB} MB limit",
-            )
-        with temp_file.open("wb") as buffer:
-            buffer.write(raw_payload)
-        file_hash = hashlib.sha1(raw_payload).hexdigest() if raw_payload else None
+        from src.routes_uploads import _stream_upload_to_path
+
+        upload_result = await _stream_upload_to_path(
+            file, temp_file, MAX_UPLOAD_BYTES, MAX_UPLOAD_MB
+        )
+        file_hash = upload_result["sha1"]
 
         cover_name = None
         cover_url = None

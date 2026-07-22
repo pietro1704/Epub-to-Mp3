@@ -9,7 +9,6 @@
 
 from __future__ import annotations
 
-import importlib
 import os
 import random
 
@@ -20,38 +19,33 @@ from python_app.src.error_classifier import classify_error
 # ── CLEANUP_INTERVAL_SECONDS ───────────────────────────────────────────────
 
 
-def _reload_server():
-    """Re-import server.py so module-level env reads pick up new values."""
+def _cleanup_interval():
     import python_app.server as server_module
 
-    return importlib.reload(server_module)
+    return server_module._cleanup_interval_seconds()
 
 
 class TestCleanupInterval:
     def test_default_local(self, monkeypatch):
         monkeypatch.delenv("SPACE_ID", raising=False)
         monkeypatch.delenv("CLEANUP_INTERVAL_SECONDS", raising=False)
-        srv = _reload_server()
-        assert srv.CLEANUP_INTERVAL_SECONDS == 300
+        assert _cleanup_interval() == 300
 
     def test_default_hf(self, monkeypatch):
         monkeypatch.setenv("SPACE_ID", "example/space")
         monkeypatch.delenv("CLEANUP_INTERVAL_SECONDS", raising=False)
-        srv = _reload_server()
-        assert srv.CLEANUP_INTERVAL_SECONDS == 60
+        assert _cleanup_interval() == 60
 
     def test_env_override(self, monkeypatch):
         monkeypatch.delenv("SPACE_ID", raising=False)
         monkeypatch.setenv("CLEANUP_INTERVAL_SECONDS", "45")
-        srv = _reload_server()
-        assert srv.CLEANUP_INTERVAL_SECONDS == 45
+        assert _cleanup_interval() == 45
 
     def test_env_override_min_clamp(self, monkeypatch):
         monkeypatch.delenv("SPACE_ID", raising=False)
         monkeypatch.setenv("CLEANUP_INTERVAL_SECONDS", "0")
-        srv = _reload_server()
         # Minimum clamp is 10 so the cleanup loop can't run too hot.
-        assert srv.CLEANUP_INTERVAL_SECONDS == 10
+        assert _cleanup_interval() == 10
 
 
 # ── Error classifier short-circuits ────────────────────────────────────────
