@@ -230,6 +230,7 @@ async def upload_ebook_local(
     dest_path = _srv._resolve_relative_path_within_root(upload_dir, src.name, must_exist=False)
     shutil.copy2(src, dest_path)
 
+    # lgtm [py/path-injection] - dest_path is constrained by the server root resolver above.
     with dest_path.open("rb") as handle:
         file_hash = hash_file_incremental(handle)
 
