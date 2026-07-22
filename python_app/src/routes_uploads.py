@@ -230,7 +230,7 @@ async def upload_ebook_local(
     dest_path = _srv._resolve_relative_path_within_root(upload_dir, src.name, must_exist=False)
     shutil.copy2(src, dest_path)
 
-    with dest_path.open("rb") as handle:  # lgtm [py/path-injection]
+    with dest_path.open("rb") as handle:  # codeql[py/path-injection]
         file_hash = hash_file_incremental(handle)
 
     book_title = src.stem
