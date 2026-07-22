@@ -115,7 +115,7 @@ jobs:
         # Chaquopy needs a Python 3.13 on the build host to resolve
         # pip dependencies before bundling them into the APK.
         # Without this step the build dies with "Couldn't find Python 3.13".
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v7
         with:
           python-version: "3.13"
 
@@ -176,7 +176,7 @@ jobs:
         run: brew install xcodegen
 
       - name: Setup Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v7
         with:
           python-version: "3.11"
 
