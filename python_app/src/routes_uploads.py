@@ -230,7 +230,11 @@ async def upload_ebook_local(
     dest_path = _srv._resolve_relative_path_within_root(upload_dir, src.name, must_exist=False)
     shutil.copy2(src, dest_path)
 
-    with dest_path.open("rb") as handle:  # codeql[py/path-injection]
+    safe_upload_root = Path(_srv.uploads_dir).resolve()
+    safe_dest_path = dest_path.resolve()
+    if not safe_dest_path.is_relative_to(safe_upload_root):
+        raise HTTPException(status_code=400, detail="Invalid upload destination")
+    with safe_dest_path.open("rb") as handle:
         file_hash = hash_file_incremental(handle)
 
     book_title = src.stem
