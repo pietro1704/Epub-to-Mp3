@@ -8,7 +8,6 @@ accessed via lazy imports inside each handler to avoid circular imports.
 from __future__ import annotations
 
 import hashlib
-import os
 import shutil
 import time
 import uuid
@@ -47,25 +46,6 @@ async def _stream_upload_to_path(
         destination.unlink(missing_ok=True)
         raise
     return {"size": total, "sha1": digest.hexdigest() if total else None}
-
-
-def _sha1_file(path: Path) -> str:
-    """Hash a local file incrementally without retaining its contents."""
-    # lgtm [py/path-injection] The caller validates this path against fixed local roots.
-    resolved = path.resolve(strict=True)
-    allowed = any(
-        os.path.commonpath((str(root), str(resolved))) == str(root)
-        for root in _allowed_local_source_roots()
-    )
-    if not allowed:
-        raise ValueError("Local source path is outside allowed roots")
-
-    digest = hashlib.sha1()
-    # lgtm [py/path-injection] `resolved` passed the fixed-root check above.
-    with resolved.open("rb") as source:
-        for chunk in iter(lambda: source.read(_UPLOAD_READ_CHUNK_BYTES), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
 
 
 def _validate_upload_id(upload_id: str) -> str:
@@ -277,7 +257,9 @@ async def upload_ebook_local(
     dest_path = _srv._resolve_relative_path_within_root(upload_dir, src.name, must_exist=False)
     shutil.copy2(src, dest_path)
 
-    file_hash = _sha1_file(src)
+    from src._server_audio_helpers import _hash_audio_file
+
+    file_hash = _hash_audio_file(dest_path)
 
     book_title = src.stem
     book_author = "Unknown Author"

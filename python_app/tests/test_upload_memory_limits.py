@@ -8,7 +8,8 @@ from pathlib import Path
 
 import pytest
 from fastapi import HTTPException
-from src.routes_uploads import _sha1_file, _stream_upload_to_path
+from src._server_audio_helpers import _hash_audio_file
+from src.routes_uploads import _stream_upload_to_path
 
 
 class _ChunkedUpload:
@@ -48,7 +49,7 @@ def test_stream_upload_rejects_at_limit_without_retaining_partial_file(tmp_path:
     assert not destination.exists()
 
 
-def test_sha1_file_reads_local_source_incrementally(tmp_path: Path, monkeypatch) -> None:
+def test_local_upload_hash_reads_incrementally(tmp_path: Path, monkeypatch) -> None:
     source = tmp_path / "local.epub"
     payload = b"local upload contents"
     source.write_bytes(payload)
@@ -58,13 +59,4 @@ def test_sha1_file_reads_local_source_incrementally(tmp_path: Path, monkeypatch)
 
     monkeypatch.setattr(Path, "read_bytes", fail_read_bytes)
 
-    assert _sha1_file(source) == hashlib.sha1(payload).hexdigest()
-
-
-def test_sha1_file_rejects_paths_outside_allowed_local_roots() -> None:
-    outside = Path("/etc/hosts")
-    if not outside.exists():
-        pytest.skip("System hosts file is unavailable")
-
-    with pytest.raises(ValueError, match="outside allowed roots"):
-        _sha1_file(outside)
+    assert _hash_audio_file(source) == hashlib.sha1(payload).hexdigest()
