@@ -21,7 +21,6 @@ except ImportError:
 
 import asyncio
 import contextlib
-import hashlib
 import html
 import json
 import logging
@@ -2489,15 +2488,12 @@ async def convert_ebook(
             Path(file.filename or "ebook.epub").name,
             must_exist=False,
         )
-        raw_payload = await file.read()
-        if MAX_UPLOAD_BYTES and len(raw_payload) > MAX_UPLOAD_BYTES:
-            raise HTTPException(
-                status_code=413,
-                detail=f"File exceeds the {MAX_UPLOAD_MB} MB limit",
-            )
-        with temp_file.open("wb") as buffer:
-            buffer.write(raw_payload)
-        file_hash = hashlib.sha1(raw_payload).hexdigest() if raw_payload else None
+        from src.routes_uploads import _stream_upload_to_path
+
+        upload_result = await _stream_upload_to_path(
+            file, temp_file, MAX_UPLOAD_BYTES, MAX_UPLOAD_MB
+        )
+        file_hash = upload_result["sha1"]
 
         cover_name = None
         cover_url = None
