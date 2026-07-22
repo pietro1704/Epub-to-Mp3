@@ -8,6 +8,7 @@ accessed via lazy imports inside each handler to avoid circular imports.
 from __future__ import annotations
 
 import hashlib
+import os
 import shutil
 import time
 import uuid
@@ -50,8 +51,16 @@ async def _stream_upload_to_path(
 
 def _sha1_file(path: Path) -> str:
     """Hash a local file incrementally without retaining its contents."""
+    resolved = path.resolve(strict=True)
+    allowed = any(
+        os.path.commonpath((str(root), str(resolved))) == str(root)
+        for root in _allowed_local_source_roots()
+    )
+    if not allowed:
+        raise ValueError("Local source path is outside allowed roots")
+
     digest = hashlib.sha1()
-    with path.open("rb") as source:
+    with resolved.open("rb") as source:
         for chunk in iter(lambda: source.read(_UPLOAD_READ_CHUNK_BYTES), b""):
             digest.update(chunk)
     return digest.hexdigest()

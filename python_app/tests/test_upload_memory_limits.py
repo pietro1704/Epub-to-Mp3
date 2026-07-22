@@ -59,3 +59,12 @@ def test_sha1_file_reads_local_source_incrementally(tmp_path: Path, monkeypatch)
     monkeypatch.setattr(Path, "read_bytes", fail_read_bytes)
 
     assert _sha1_file(source) == hashlib.sha1(payload).hexdigest()
+
+
+def test_sha1_file_rejects_paths_outside_allowed_local_roots() -> None:
+    outside = Path("/etc/hosts")
+    if not outside.exists():
+        pytest.skip("System hosts file is unavailable")
+
+    with pytest.raises(ValueError, match="outside allowed roots"):
+        _sha1_file(outside)
