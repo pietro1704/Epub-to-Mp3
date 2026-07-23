@@ -210,7 +210,7 @@ class TestEdgeTTSEngine(unittest.IsolatedAsyncioTestCase):
 
             mock_edge_tts.Communicate.side_effect = lambda text, voice: DummyCommunicate(
                 [
-                    {"type": "audio", "data": b"DATA"},
+                    {"type": "audio", "data": b"D" * 2048},
                     {"type": "WordBoundary", "data": {}},
                 ]
             )
@@ -221,7 +221,7 @@ class TestEdgeTTSEngine(unittest.IsolatedAsyncioTestCase):
             result = await engine.synthesize_async("Hello world", output_path)
 
             self.assertEqual(result, output_path)
-            self.assertEqual(output_path.read_bytes(), b"DATA")
+            self.assertEqual(output_path.read_bytes(), b"D" * 2048)
             mock_edge_tts.Communicate.assert_called_once_with("Hello world", "test-voice")
 
     async def test_synthesize_async_multilingual(self):
@@ -243,7 +243,7 @@ class TestEdgeTTSEngine(unittest.IsolatedAsyncioTestCase):
                 calls.append((text, voice))
                 return DummyCommunicate(
                     [
-                        {"type": "audio", "data": b"X"},
+                        {"type": "audio", "data": b"X" * 2048},
                     ]
                 )
 
@@ -303,7 +303,7 @@ class TestEdgeTTSEngine(unittest.IsolatedAsyncioTestCase):
                     captured.append((text, voice))
 
                 async def stream(self):
-                    yield {"type": "audio", "data": b"X"}
+                    yield {"type": "audio", "data": b"X" * 2048}
 
             mock_edge_tts.Communicate.side_effect = lambda text, voice: DummyCommunicate(
                 text, voice
@@ -340,7 +340,7 @@ class TestEdgeTTSEngine(unittest.IsolatedAsyncioTestCase):
                     calls.append((text, voice))
 
                 async def stream(self):
-                    yield {"type": "audio", "data": b"X"}
+                    yield {"type": "audio", "data": b"X" * 2048}
 
             mock_edge_tts.Communicate.side_effect = lambda text, voice: DummyCommunicate(
                 text, voice

@@ -1018,12 +1018,20 @@ class ConverterApplication:
                 # common case and the user reported that pressing `y`
                 # didn't register on their terminal. Empty input now
                 # confirms; only an explicit `n`/`no` cancels.
-                # Strip Windows-style \r and any trailing whitespace
-                # so a CR-only line (common over SSH) still confirms.
+                # Use TerminalPrompt so that CR-only lines (^M, common in
+                # tmux/SSH or after a tty.setcbreak() menu) are handled
+                # correctly — plain input() leaves CR in the buffer.
                 try:
-                    raw = input("\n🔧 Do you want to fix the issues now? [Y/n] ")
-                except (EOFError, KeyboardInterrupt):
-                    raw = ""
+                    from src.ui.prompt import TerminalPrompt as _TP
+
+                    _tp = _TP()
+                    _result = _tp._read("\n🔧 Do you want to fix the issues now? [Y/n] ")
+                    raw = _result.text if not _result.eof else ""
+                except Exception:
+                    try:
+                        raw = input("\n🔧 Do you want to fix the issues now? [Y/n] ")
+                    except (EOFError, KeyboardInterrupt):
+                        raw = ""
                 answer = (raw or "").strip().rstrip("\r").lower()
                 if answer in ("", "y", "yes", "s", "sim"):
                     return self._run_fix_mode(input_path, config)

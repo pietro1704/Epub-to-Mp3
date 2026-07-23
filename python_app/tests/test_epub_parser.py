@@ -136,7 +136,12 @@ class TestEpubParser(unittest.TestCase):
         self.assertEqual(chapter2.name, "Continuação da história com mais detalhes.")
 
     def test_parse_epub_empty_chapters(self):
-        """Test parsing EPUB with empty chapters"""
+        """Spine items with no prose text are dropped from the chapter list.
+
+        Only chapters that have non-empty text after extraction should survive.
+        Empty strings and markup-only content (e.g. <p></p>) are filtered out
+        so they don't produce silent/zero-duration MP3s.
+        """
         chapters_data = [
             ("chapter1.xhtml", ""),
             ("chapter2.xhtml", "<p></p>"),
@@ -147,12 +152,9 @@ class TestEpubParser(unittest.TestCase):
         parser = EpubParser(self.sample_epub_path)
         book = parser.parse()
 
-        self.assertEqual(len(book.chapters), 3)
-
-        # Empty chapters should get default names
-        self.assertEqual(book.chapters[0].name, "Chapter 1")
-        self.assertEqual(book.chapters[1].name, "Chapter 2")
-        self.assertEqual(book.chapters[2].name, "Valid content here.")
+        # Only the chapter with real prose survives.
+        self.assertEqual(len(book.chapters), 1)
+        self.assertEqual(book.chapters[0].name, "Valid content here.")
 
     def test_extract_cover_image(self):
         """EbookReader should expose cover bytes from the EPUB manifest."""

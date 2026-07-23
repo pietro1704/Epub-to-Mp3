@@ -19,8 +19,6 @@ final class PageTurnFlashUITests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments += [
             "-uiTestResetReaderPosition",
-            "-uiTestFlickerProbe",
-            "-uiTestDisableEdgePan",
             "-uiTestReaderLayout", "paginated",
         ]
         app.launch()
@@ -71,10 +69,9 @@ final class PageTurnFlashUITests: XCTestCase {
             usleep(60_000)
         }
         attach(app, "fwd-settled")
-        let log = app.staticTexts["flicker.probe.lastlog"].firstMatch.label
-        // During a forward turn from page 3, page 1 must never flash.
+        // During a forward turn from page 2, page 1 must never flash.
         XCTAssertFalse(pagesSeen.contains(1),
-                       "page 1 must not flash during a forward turn; saw pages \(pagesSeen.sorted()) log=[\(log)]")
+                       "page 1 must not flash during a forward turn; saw pages \(pagesSeen.sorted())")
 
         usleep(800_000)
         // Backward turn burst capture.

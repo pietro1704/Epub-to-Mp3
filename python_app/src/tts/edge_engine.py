@@ -62,6 +62,10 @@ EDGE_NETWORK_ABORT_AFTER_FAILS = max(
     1, int(os.getenv("EDGE_NETWORK_ABORT_AFTER_FAILS", "1") or "1")
 )
 EDGE_STREAM_MAX_RETRIES = max(1, int(os.getenv("EDGE_STREAM_MAX_RETRIES", "1") or "1"))
+# Minimum byte size for a synthesised chunk/segment to be considered valid.
+# Anything below this is an empty or truncated MP3 fragment that would corrupt
+# the concatenated chapter output; mirrors the >=1024 resume pre-scan threshold.
+_MIN_VALID_CHUNK_BYTES = max(1, int(os.getenv("EDGE_MIN_VALID_CHUNK_BYTES", "1024") or "1024"))
 
 # Import SSL/Certificate error types
 try:
@@ -930,6 +934,21 @@ class EdgeTTSEngine:
         use_chunk_files = bool(chunk_callback) or bool(resume_chunks_dir)
 
         def _append_chunk_file(chunk_path: Path, first: bool) -> bool:
+            # **DEFENSE-IN-DEPTH**: Never append a missing or empty/tiny chunk;
+            # a 0-byte fragment produces an undecodable MP3 that fails coverage
+            # validation. Report failure so the caller re-synthesises instead of
+            # persisting corrupt audio.
+            try:
+                if (not chunk_path.exists()) or chunk_path.stat().st_size < _MIN_VALID_CHUNK_BYTES:
+                    self.last_error = "empty_chunk_skipped"
+                    if self.verbose:
+                        size = chunk_path.stat().st_size if chunk_path.exists() else 0
+                        self._log(
+                            f"❌ Refusing to append empty/tiny chunk {chunk_path.name} ({size} bytes)"
+                        )
+                    return False
+            except OSError:
+                return False
             try:
                 mode = "wb" if first else "ab"
                 with output_path.open(mode) as outfile, chunk_path.open("rb") as infile:
@@ -1210,6 +1229,16 @@ class EdgeTTSEngine:
         if total_segments == 0 or not output_path.exists():
             self.last_error = "no_audio"
             return None
+
+        # **EMPTY-OUTPUT GUARD**: A non-zero segment count but an empty/tiny
+        # concatenated file means every appended chunk was corrupt. Fail clean
+        # instead of returning a 0s MP3 that passes as "success".
+        with suppress(OSError):
+            if output_path.stat().st_size < _MIN_VALID_CHUNK_BYTES:
+                self.partial_failure_detected = True
+                self.last_error = "empty_output_all_segments"
+                output_path.unlink(missing_ok=True)
+                return None
 
         expected_segments = total_segments + failed_segments
         self.last_segment_report = {
@@ -1628,18 +1657,35 @@ class EdgeTTSEngine:
         try:
             # **OPTIMIZED**: Buffered chunked I/O to reduce memory pressure
             CHUNK_SIZE = 1024 * 1024  # 1MB chunks
+            concatenated_segments = 0
             with output_path.open("wb") as outfile:
                 for temp_file in temp_files:
-                    if temp_file.exists():
-                        with temp_file.open("rb") as infile:
-                            while True:
-                                chunk = infile.read(CHUNK_SIZE)
-                                if not chunk:
-                                    break
-                                outfile.write(chunk)
-                        # Clean up temp file
+                    # **DEFENSE-IN-DEPTH**: Skip missing or empty/tiny fragments
+                    # so a single corrupt segment never poisons the whole MP3.
+                    try:
+                        seg_size = temp_file.stat().st_size if temp_file.exists() else 0
+                    except OSError:
+                        seg_size = 0
+                    if seg_size < _MIN_VALID_CHUNK_BYTES:
+                        if self.verbose:
+                            self._log(
+                                f"⚠️ [PARALLEL] Skipping empty/tiny segment "
+                                f"{temp_file.name} ({seg_size} bytes)"
+                            )
+                        successful_segments = max(0, successful_segments - 1)
                         with suppress(OSError):
                             temp_file.unlink()
+                        continue
+                    with temp_file.open("rb") as infile:
+                        while True:
+                            chunk = infile.read(CHUNK_SIZE)
+                            if not chunk:
+                                break
+                            outfile.write(chunk)
+                    concatenated_segments += 1
+                    # Clean up temp file
+                    with suppress(OSError):
+                        temp_file.unlink()
         except Exception as exc:
             self.last_error = f"concatenation_failed: {exc}"
             if self.verbose:
@@ -1648,6 +1694,18 @@ class EdgeTTSEngine:
             for temp_file in temp_files:
                 with suppress(OSError):
                     temp_file.unlink()
+            return None
+
+        # **EMPTY-OUTPUT GUARD**: If every segment was skipped as empty/tiny the
+        # output file is 0 bytes — fail clean instead of returning a corrupt MP3
+        # that only gets caught by late coverage validation.
+        if concatenated_segments == 0 or (
+            output_path.exists() and output_path.stat().st_size < _MIN_VALID_CHUNK_BYTES
+        ):
+            self.partial_failure_detected = True
+            self.last_error = "no_audio_generated_parallel"
+            with suppress(OSError):
+                output_path.unlink(missing_ok=True)
             return None
 
         # Update statistics
@@ -2509,6 +2567,34 @@ class EdgeTTSEngine:
             segment_duration = synthesis_end - synthesis_start
             text_chars = len(text) if text else 0
 
+            # **EMPTY-SEGMENT GUARD**: Even when the stream reported audio, the
+            # file on disk may be empty or a truncated fragment (Edge can flush a
+            # single sub-1KB frame then drop the connection). An empty/tiny chunk
+            # concatenated into the chapter output produces an undecodable MP3
+            # that later fails coverage validation as "0.3% of text". Treat it as
+            # a hard segment failure so the caller re-synthesises instead of
+            # persisting a corrupt chunk on disk.
+            if received_audio:
+                try:
+                    written_bytes = output_path.stat().st_size if output_path.exists() else 0
+                except OSError:
+                    written_bytes = 0
+                if written_bytes < _MIN_VALID_CHUNK_BYTES:
+                    received_audio = False
+                    self.last_error = "empty_audio_written"
+                    if self.verbose:
+                        self._log(
+                            f"   ⚠️ Segment reported audio but wrote only "
+                            f"{written_bytes} bytes (<{_MIN_VALID_CHUNK_BYTES}); treating as failure"
+                        )
+                    # Never leave a 0-byte/tiny chunk on disk when we own the
+                    # file (append=False). In append mode we cannot safely
+                    # truncate the caller's accumulating output, so we leave it
+                    # and rely on the caller's size guard before concatenation.
+                    if not append:
+                        with suppress(OSError):
+                            output_path.unlink(missing_ok=True)
+
             if received_audio:
                 with suppress(Exception):
                     await _record_success()
@@ -2521,7 +2607,8 @@ class EdgeTTSEngine:
                     latency=segment_duration,
                 )
             else:
-                self.last_error = "no_audio"
+                if not self.last_error:
+                    self.last_error = "no_audio"
                 # Record failed segment timing
                 self._record_segment_timing(text_chars, segment_duration, success=False)
                 # Record failure to network tuner for automatic adjustment
@@ -2530,6 +2617,17 @@ class EdgeTTSEngine:
                     latency=segment_duration,
                     error_msg="no_audio",
                 )
+                # Never leave a truncated 0-byte file behind when we own it
+                # (append=False). The 'wb' open above truncates output_path even
+                # when no audio arrives; a stray 0-byte chunk would be reused by
+                # the resume path or corrupt the concatenated chapter.
+                if not append:
+                    with suppress(OSError):
+                        if (
+                            output_path.exists()
+                            and output_path.stat().st_size < _MIN_VALID_CHUNK_BYTES
+                        ):
+                            output_path.unlink(missing_ok=True)
 
             return received_audio
 
