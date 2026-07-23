@@ -3,7 +3,7 @@
 // Unit tests for `AudiobookCacheEviction`.
 //
 // All tests run entirely on a temporary directory that replaces the real
-// Documents/Audiobooks root via `DownloadManager.audiobooksRoot()` override
+// app-owned audiobook root via the explicit `root:` eviction helpers
 // — but since `audiobooksRoot()` is a nonisolated static that calls
 // FileManager directly, we instead build synthetic on-disk fixtures inside
 // a temp folder and call the internal scan/eviction helpers through the
@@ -21,10 +21,22 @@ import XCTest
 
 final class AudiobookCacheEvictionTests: XCTestCase {
 
+    func testStorageUsageBudgetFractionIsClamped() {
+        XCTAssertEqual(
+            StorageUsageSnapshot(offlineAudioBytes: 3, ttsCacheBytes: 2, totalBytes: 5, budgetBytes: 10).budgetFraction,
+            0.5,
+            accuracy: 0.001
+        )
+        XCTAssertEqual(
+            StorageUsageSnapshot(offlineAudioBytes: 20, ttsCacheBytes: 0, totalBytes: 20, budgetBytes: 10).budgetFraction,
+            1.0,
+            accuracy: 0.001
+        )
+    }
+
     // MARK: - Real-root round-trips (locallyDownloadedIndices / staleOfflineBookIds)
     //
-    // These two helpers operate on the REAL audiobooks root (test-host
-    // Documents), so we exercise them end-to-end with unique jobIds and
+    // These two helpers operate on the app-owned audiobook root, so we exercise them end-to-end with unique jobIds and
     // clean up via deleteAudiobook.
 
     private func makeBook(
@@ -178,9 +190,9 @@ final class AudiobookCacheEvictionTests: XCTestCase {
         // building entries from `tempRoot` manually and calling `deleteAudiobook`.
         //
         // Since `AudiobookCacheEviction.scanEntries()` reads from
-        // `DownloadManager.audiobooksRoot()` (Documents/Audiobooks), we cannot
-        // redirect it without modifying production code. Instead we test the
-        // algorithm via the *structural* helpers:
+        // `DownloadManager.audiobooksRoot()`, we cannot redirect it without
+        // modifying production code. Instead we test the algorithm via the
+        // *structural* helpers:
         //   - Read manifests from tempRoot ourselves.
         //   - Apply LRU+TTL algorithm.
         //   - Call deleteAudiobook (which uses DownloadManager.audiobooksRoot).
@@ -341,6 +353,41 @@ final class AudiobookCacheEvictionTests: XCTestCase {
 
         XCTAssertFalse(evicted.contains("book1"), "Active playback job must never be evicted")
         XCTAssertTrue(evicted.contains("book2"), "Non-active expired job must be evicted")
+    }
+
+    func testRegisteredActiveJobIsNeverEvictedByProductionPass() throws {
+        let activeJobId = "active-registry-\(UUID().uuidString)"
+        let expiredJobId = "expired-registry-\(UUID().uuidString)"
+        let oldDate = Date().addingTimeInterval(-48 * 3600)
+        defer {
+            CacheActivityRegistry.end(jobId: activeJobId)
+        }
+
+        try plantAudiobook(
+            jobId: activeJobId,
+            totalBytes: 128,
+            downloadedAt: oldDate,
+            lastAccessedAt: oldDate
+        )
+        try plantAudiobook(
+            jobId: expiredJobId,
+            totalBytes: 128,
+            downloadedAt: oldDate,
+            lastAccessedAt: oldDate
+        )
+
+        CacheActivityRegistry.begin(jobId: activeJobId)
+        let evicted = AudiobookCacheEviction.runEviction(
+            root: tempRoot,
+            budgetBytes: Int64.max,
+            ttlSeconds: 24 * 3600
+        )
+
+        XCTAssertFalse(evicted.contains(activeJobId), "An actively opened/synthesised job must be protected")
+        XCTAssertTrue(evicted.contains(expiredJobId), "An inactive expired job remains an eviction candidate")
+        XCTAssertTrue(FileManager.default.fileExists(
+            atPath: tempRoot.appendingPathComponent(activeJobId, isDirectory: true).path
+        ))
     }
 
     func testBudgetOverrunEvictsMultiple() throws {

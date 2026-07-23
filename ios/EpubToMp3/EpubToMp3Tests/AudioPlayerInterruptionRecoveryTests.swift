@@ -84,7 +84,7 @@ final class AudioPlayerInterruptionRecoveryTests: XCTestCase {
             .deletingLastPathComponent()
             .deletingLastPathComponent()
         return try String(
-            contentsOf: projectRoot.appendingPathComponent("EpubToMp3/Services/\(name)"),
+            contentsOf: projectRoot.appendingPathComponent("EpubToMp3/Features/Playback/Services/\(name)"),
             encoding: .utf8
         )
     }

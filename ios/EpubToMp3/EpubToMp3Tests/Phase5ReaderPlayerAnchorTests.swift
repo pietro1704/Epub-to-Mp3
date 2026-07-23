@@ -20,15 +20,15 @@ final class Phase5ReaderPlayerAnchorTests: XCTestCase {
     }
 
     func testPlayerReaderDirectChapterNavigationPublishesCoordinatorChapter() throws {
-        let source = try source(named: "Views/PlayerReaderView.swift")
+        let source = try source(named: "Features/Reader/Views/PlayerReaderView.swift")
         XCTAssertTrue(source.contains("readerCoordinator.setChapter(targetEpubIndex)"))
         XCTAssertTrue(source.contains("readerCoordinator.setChapter(targetEpubIndex)"))
         XCTAssertTrue(source.contains("readerCoordinator.setChapter(epubIndex)"))
     }
 
     func testInstantReaderScrollPublishesRatioAndSentenceAnchor() throws {
-        let reader = try source(named: "Views/ReaderView.swift")
-        let attributed = try source(named: "Views/AttributedPageView.swift")
+        let reader = try source(named: "Features/Reader/Views/ReaderView.swift")
+        let attributed = try source(named: "Features/Reader/Views/AttributedPageView.swift")
         XCTAssertTrue(reader.contains("onScrollPosition: { ratio, sentenceId in"))
         XCTAssertTrue(reader.contains("readerCoordinator.setPagePosition(ratio: ratio, sentenceId: sentenceId)"))
         XCTAssertTrue(attributed.contains("onScrollPosition"))

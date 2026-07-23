@@ -72,7 +72,7 @@ final class TextKitLinkInteractionTests: XCTestCase {
             .deletingLastPathComponent()
             .deletingLastPathComponent()
         return try String(
-            contentsOf: projectRoot.appendingPathComponent("EpubToMp3/Views/TextKitPageView.swift"),
+            contentsOf: projectRoot.appendingPathComponent("EpubToMp3/Features/Reader/Views/TextKitPageView.swift"),
             encoding: .utf8
         )
     }
@@ -83,7 +83,7 @@ final class TextKitLinkInteractionTests: XCTestCase {
             .deletingLastPathComponent()
             .deletingLastPathComponent()
         return try String(
-            contentsOf: projectRoot.appendingPathComponent("EpubToMp3/Views/ReaderView.swift"),
+            contentsOf: projectRoot.appendingPathComponent("EpubToMp3/Features/Reader/Views/ReaderView.swift"),
             encoding: .utf8
         )
     }

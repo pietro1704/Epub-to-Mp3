@@ -465,7 +465,15 @@ function reducer(state: ConversionState, action: Action): ConversionState {
             if (!nextSummary) {
               nextSummary = {} as ConversionSummary;
             }
-            (nextSummary as ConversionSummary)[key] = value as never;
+            let mergedValue = value;
+            if (
+              (key === "progressPercent" || key === "chaptersCompleted") &&
+              typeof value === "number" &&
+              typeof nextSummary[key] === "number"
+            ) {
+              mergedValue = Math.max(nextSummary[key] as number, value);
+            }
+            (nextSummary as ConversionSummary)[key] = mergedValue as never;
           }
         }
       }
@@ -771,6 +779,7 @@ export function useConversionFlow(
   client?: ConversionClient,
 ): UseConversionFlowApi {
   const [state, dispatch] = useReducer(reducer, initialState);
+  const stateRef = useRef(state);
   const api = useMemo(() => client ?? conversionClient, [client]);
   const abortRef = useRef<AbortController | null>(null);
   const seenEventsRef = useRef<Set<string>>(new Set());
@@ -822,6 +831,10 @@ export function useConversionFlow(
   const lastSnapshotAtRef = useRef<number | null>(null);
   const healthFailureCountRef = useRef(0);
   const pollFailureCountRef = useRef(0);
+  const streamStatusRef = useRef<"connecting" | "healthy" | "fallback" | null>(
+    null,
+  );
+  const fallbackPollAbortRef = useRef<AbortController | null>(null);
   const isRestartGraceActive = useCallback(() => {
     const until = restartGraceRef.current;
     return typeof until === "number" && Date.now() < until;
@@ -876,6 +889,53 @@ export function useConversionFlow(
       : { ...baseState, pendingBatchQueue: undefined };
     conversionCache.save(jobId, fileName, cacheState);
   };
+
+  useEffect(() => {
+    stateRef.current = state;
+  }, [state]);
+
+  useEffect(() => {
+    if (state.phase === "polling" && state.jobId && fileNameRef.current) {
+      saveStateWithQueue(state.jobId, fileNameRef.current, state);
+    }
+  }, [state]);
+
+  const saveSnapshotToCache = (jobId: string, snapshot: JobSnapshot) => {
+    const currentState = stateRef.current;
+    const progressPercent =
+      typeof snapshot.progressPercent === "number"
+        ? snapshot.progressPercent
+        : typeof snapshot.progress === "number"
+          ? snapshot.progress * 100
+          : undefined;
+    const summary =
+      progressPercent === undefined
+        ? currentState.summary
+        : {
+            ...currentState.summary,
+            progressPercent: Math.max(
+              currentState.summary?.progressPercent ?? 0,
+              progressPercent,
+            ),
+          };
+    saveStateWithQueue(jobId, fileNameRef.current, {
+      ...currentState,
+      phase: "polling",
+      jobId,
+      summary,
+    });
+  };
+
+  const onStreamStatus = useCallback(
+    (status: "connecting" | "healthy" | "fallback") => {
+      streamStatusRef.current = status;
+      if (status === "healthy") {
+        fallbackPollAbortRef.current?.abort();
+        fallbackPollAbortRef.current = null;
+      }
+    },
+    [],
+  );
 
   const markApiOnline = useCallback(() => {
     restartGraceRef.current = null;
@@ -1176,9 +1236,17 @@ export function useConversionFlow(
     let timeoutId: number | undefined;
     const intervalMs = 2000;
     const staleThresholdMs = 4000;
+    let requestController: AbortController | null = null;
 
     const tick = async () => {
       if (cancelled) {
+        return;
+      }
+      if (
+        streamStatusRef.current === "connecting" ||
+        streamStatusRef.current === "healthy"
+      ) {
+        timeoutId = window.setTimeout(tick, intervalMs);
         return;
       }
       const lastSnapshotAt = lastSnapshotAtRef.current;
@@ -1187,7 +1255,9 @@ export function useConversionFlow(
         return;
       }
       try {
-        const snapshot = await api.fetch(jobId);
+        requestController = new AbortController();
+        fallbackPollAbortRef.current = requestController;
+        const snapshot = await api.fetch(jobId, requestController.signal);
         if (cancelled) {
           return;
         }
@@ -1213,6 +1283,10 @@ export function useConversionFlow(
           }
         }
       } finally {
+        if (fallbackPollAbortRef.current === requestController) {
+          fallbackPollAbortRef.current = null;
+        }
+        requestController = null;
         if (!cancelled) {
           timeoutId = window.setTimeout(tick, intervalMs);
         }
@@ -1222,6 +1296,11 @@ export function useConversionFlow(
     timeoutId = window.setTimeout(tick, intervalMs);
     return () => {
       cancelled = true;
+      requestController?.abort();
+      if (fallbackPollAbortRef.current) {
+        fallbackPollAbortRef.current.abort();
+        fallbackPollAbortRef.current = null;
+      }
       if (timeoutId) {
         window.clearTimeout(timeoutId);
       }
@@ -1561,6 +1640,7 @@ export function useConversionFlow(
 
         const finalSnapshot = await api.poll(jobId, {
           signal: controller.signal,
+          onStreamStatus,
           onSnapshot(snapshot) {
             const etaSeconds = estimateEtaSeconds(
               snapshot,
@@ -1568,11 +1648,7 @@ export function useConversionFlow(
             );
             applySnapshotMeta(snapshot, etaSeconds);
             appendSnapshotEvents(snapshot.events);
-
-            // Save to cache periodically during conversion
-            if (snapshot.state === "running" || snapshot.state === "queued") {
-              saveStateWithQueue(jobId, fileNameRef.current, state);
-            }
+            saveSnapshotToCache(jobId, snapshot);
           },
         });
 
@@ -1702,6 +1778,7 @@ export function useConversionFlow(
       clearCancelledJob,
       markApiOffline,
       markApiOnline,
+      onStreamStatus,
       resetLogAndCounters,
       state,
       t,
@@ -2212,6 +2289,7 @@ export function useConversionFlow(
       try {
         const finalSnapshot = await api.poll(actualJobId, {
           signal: controller.signal,
+          onStreamStatus,
           onSnapshot(snapshot) {
             markApiOnline();
             const etaSeconds = estimateEtaSeconds(
@@ -2220,10 +2298,7 @@ export function useConversionFlow(
             );
             applySnapshotMeta(snapshot, etaSeconds);
             appendSnapshotEvents(snapshot.events);
-
-            if (snapshot.state === "running" || snapshot.state === "queued") {
-              saveStateWithQueue(actualJobId, fileNameRef.current, state);
-            }
+            saveSnapshotToCache(actualJobId, snapshot);
           },
         });
 
@@ -2317,6 +2392,7 @@ export function useConversionFlow(
       drainQueue,
       markApiOffline,
       markApiOnline,
+      onStreamStatus,
       resetLogAndCounters,
       setCachedJobs,
       setQueuePaused,

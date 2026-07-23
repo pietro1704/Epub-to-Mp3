@@ -1166,6 +1166,36 @@ class TestParseEpubToDict(unittest.TestCase):
         self.assertEqual(resources[0]["mediaType"], "image/png")
         self.assertEqual(resources[0]["dataBase64"], "cG5nLWJ5dGVz")
 
+    def test_extract_chapter_stylesheet_accepts_any_link_attribute_order(self):
+        path = Path(tempfile.mkdtemp()) / "styles.epub"
+        chapter_html = """
+        <html><head>
+          <link href="../styles/book.css" type="text/css" rel="stylesheet">
+          <link rel="alternate stylesheet" href="../styles/ignored.css">
+        </head><body><p class="atx">Body</p></body></html>
+        """
+        with zipfile.ZipFile(path, "w") as archive:
+            archive.writestr(
+                "META-INF/container.xml",
+                '<container xmlns="urn:oasis:names:tc:opendocument:xmlns:container"><rootfiles><rootfile full-path="OEBPS/content.opf"/></rootfiles></container>',
+            )
+            archive.writestr(
+                "OEBPS/content.opf",
+                """<package xmlns="http://www.idpf.org/2007/opf"><manifest><item id="c" href="text/chapter.xhtml" media-type="application/xhtml+xml"/><item id="css" href="styles/book.css" media-type="text/css"/></manifest><spine><itemref idref="c"/></spine></package>""",
+            )
+            archive.writestr("OEBPS/text/chapter.xhtml", chapter_html)
+            archive.writestr(
+                "OEBPS/styles/book.css", ".atx { text-indent: 20pt; text-align: justify; }"
+            )
+            archive.writestr("OEBPS/styles/ignored.css", ".atx { text-indent: 0; }")
+        chapter = Chapter(
+            index=1, name="Ch", source_path="text/chapter.xhtml", text="Body", raw_html=chapter_html
+        )
+        self.assertEqual(
+            EbookReader(path).extract_chapter_stylesheet(chapter).strip(),
+            ".atx { text-indent: 20pt; text-align: justify; }",
+        )
+
     def test_json_roundtrip(self):
         """The dict must be JSON-serialisable — PythonBridge crosses
         the Swift boundary via json.dumps."""

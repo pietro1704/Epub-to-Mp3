@@ -161,6 +161,7 @@ def log_chapter_perf(
     elapsed_seconds: float = 0.0,
     char_count: int = 0,
     job_id: str = "",
+    chapter_id: str = "",
 ) -> None:
     """Record successful per-chapter completion with throughput."""
     chars_per_sec = (
@@ -176,6 +177,7 @@ def log_chapter_perf(
         char_count=int(char_count or 0),
         chars_per_second=chars_per_sec,
         job_id=job_id,
+        chapter_id=chapter_id,
     )
 
 
@@ -188,6 +190,7 @@ def log_chapter_error(
     error: str = "",
     elapsed_seconds: float = 0.0,
     job_id: str = "",
+    chapter_id: str = "",
 ) -> None:
     """Record a per-chapter failure (engine exception, fallback exhausted, etc.)."""
     log_event(
@@ -199,6 +202,7 @@ def log_chapter_error(
         error=str(error)[:500],
         elapsed_seconds=round(float(elapsed_seconds or 0.0), 2),
         job_id=job_id,
+        chapter_id=chapter_id,
     )
 
 

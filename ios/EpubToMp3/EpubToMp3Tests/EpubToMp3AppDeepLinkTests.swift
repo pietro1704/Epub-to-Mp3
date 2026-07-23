@@ -21,7 +21,7 @@ final class EpubToMp3AppDeepLinkTests: XCTestCase {
             contentsOf: URL(fileURLWithPath: #filePath)
                 .deletingLastPathComponent()
                 .deletingLastPathComponent()
-                .appendingPathComponent("EpubToMp3/EpubToMp3App.swift")
+                .appendingPathComponent("EpubToMp3/App/EpubToMp3App.swift")
         )
     }
 

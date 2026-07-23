@@ -18,7 +18,16 @@ import re
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-BRIDGE = REPO_ROOT / "ios" / "EpubToMp3" / "EpubToMp3" / "Services" / "PythonBridge.swift"
+BRIDGE = (
+    REPO_ROOT
+    / "ios"
+    / "EpubToMp3"
+    / "EpubToMp3"
+    / "Features"
+    / "Conversion"
+    / "Services"
+    / "PythonBridge.swift"
+)
 
 
 def test_bootstrap_is_called_inside_queue_async() -> None:

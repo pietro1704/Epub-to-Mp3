@@ -3,6 +3,7 @@
 Unit tests focused on the Edge TTS engine segmentation heuristics.
 """
 
+import asyncio
 import os
 import sys
 import tempfile
@@ -51,6 +52,84 @@ class TestEdgeTTSSegmentation(unittest.TestCase):
         self.assertIn("THE BOY WHO LIVED.", sanitized)
         # Order preserved
         self.assertLess(sanitized.index("Chapter 1..."), sanitized.index("THE BOY WHO LIVED..."))
+
+    def test_synthesize_segment_emits_request_lifecycle_metric(self):
+        """A successful Edge request exposes queue, stream, write and retry timing."""
+        metrics = []
+
+        async def stream_chunks():
+            yield {"type": "audio", "data": b"audio"}
+            yield {"type": "WordBoundary", "offset": 0}
+
+        communicator = Mock()
+        communicator.stream.return_value = stream_chunks()
+        self.engine = EdgeTTSEngine(
+            "test-voice", enable_parallel=False, metric_callback=metrics.append
+        )
+        self.engine._edge_tts.Communicate.return_value = communicator
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_path = Path(tmpdir) / "segment.mp3"
+            result = asyncio.run(
+                self.engine._synthesize_segment(
+                    "A short request.", "test-voice", output_path, append=False
+                )
+            )
+
+        self.assertTrue(result)
+        self.assertEqual(len(metrics), 1)
+        record = metrics[0]
+        self.assertEqual(record["event"], "edge_request")
+        self.assertEqual(record["status"], "success")
+        self.assertEqual(record["retry_count"], 0)
+        self.assertEqual(record["received_chunks"], 2)
+        self.assertGreaterEqual(record["active_requests"], 1)
+        self.assertGreaterEqual(record["queue_wait_ms"], 0.0)
+        self.assertGreaterEqual(record["request_ms"], 0.0)
+        self.assertGreaterEqual(record["write_ms"], 0.0)
+        self.assertEqual(record["validation_ms"], 0.0)
+
+    def test_synthesize_segment_metric_failure_does_not_break_synthesis(self):
+        """Telemetry callbacks are failure-safe and cannot fail audio synthesis."""
+
+        async def stream_chunks():
+            yield {"type": "audio", "data": b"audio"}
+
+        communicator = Mock()
+        communicator.stream.return_value = stream_chunks()
+        self.engine = EdgeTTSEngine(
+            "test-voice", enable_parallel=False, metric_callback=lambda _record: 1 / 0
+        )
+        self.engine._edge_tts.Communicate.return_value = communicator
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_path = Path(tmpdir) / "segment.mp3"
+            result = asyncio.run(
+                self.engine._synthesize_segment(
+                    "A short request.", "test-voice", output_path, append=False
+                )
+            )
+
+        self.assertTrue(result)
+
+    def test_segment_validation_metric_contains_elapsed_time(self):
+        metrics = []
+        self.engine = EdgeTTSEngine("test-voice", metric_callback=metrics.append)
+
+        self.engine._emit_validation_metric(segment_index=3, elapsed_ms=4.25, valid=True)
+
+        self.assertEqual(
+            metrics,
+            [
+                {
+                    "event": "edge_segment_validation",
+                    "engine": "edge",
+                    "segment_index": 3,
+                    "status": "success",
+                    "validation_ms": 4.25,
+                }
+            ],
+        )
 
     def test_sanitize_strips_mid_sentence_newlines_as_spaces(self):
         """Newlines that survived inside a sentence (edge case) become spaces, not pauses."""

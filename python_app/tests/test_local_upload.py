@@ -78,6 +78,7 @@ class TestLocalUploadEndpoint(unittest.TestCase):
         uploads_dir.mkdir()
         srv.uploads_dir = uploads_dir
         srv._pending_uploads.clear()
+        self._original_upload_limits = (srv.MAX_UPLOAD_BYTES, srv.MAX_UPLOAD_MB)
         srv.MAX_UPLOAD_BYTES = 100 * 1024 * 1024
         srv.MAX_UPLOAD_MB = 100
         # TestClient sends requests from host "testclient"; allow it in tests.
@@ -90,6 +91,8 @@ class TestLocalUploadEndpoint(unittest.TestCase):
         if hasattr(self, "_orig_hosts"):
             mod._LOCAL_ALLOWED_HOSTS.clear()
             mod._LOCAL_ALLOWED_HOSTS.update(self._orig_hosts)
+        if hasattr(self, "_original_upload_limits"):
+            srv.MAX_UPLOAD_BYTES, srv.MAX_UPLOAD_MB = self._original_upload_limits
 
     # ------------------------------------------------------------------
     # Happy path
@@ -208,6 +211,21 @@ class TestLocalUploadEndpoint(unittest.TestCase):
         resp = client.post("/api/uploads/local", json={"path": str(epub)})
         self._restore_server(srv)
         assert resp.status_code == 413
+
+    def test_web_upload_413_when_stream_exceeds_size_limit(self):
+        client, srv = _make_client()
+        self._patch_server(srv)
+        srv.MAX_UPLOAD_BYTES = 5
+        srv.MAX_UPLOAD_MB = 0
+
+        resp = client.post(
+            "/api/uploads",
+            files={"file": ("big.epub", b"x" * 10, "application/epub+zip")},
+        )
+
+        self._restore_server(srv)
+        assert resp.status_code == 413
+        assert list(srv.uploads_dir.iterdir()) == []
 
     # ------------------------------------------------------------------
     # Security: reject non-localhost callers

@@ -50,6 +50,14 @@ final class AudioPlayerDivergenceTests: XCTestCase {
 
     // MARK: playTapDecision
 
+    func testEffectiveChapterTitleUsesAudioCursor() {
+        let player = makePlayer()
+        player.testHook_setSnapshot(snapshotWithChapters(3))
+        player.testHook_setCurrentChapterIndex(1)
+
+        XCTAssertEqual(player.effectiveChapterTitle, "Chapter 2")
+    }
+
     /// With no snapshot loaded, every tap is a plain resume — no
     /// divergence detection is possible.
     func testDecisionWithoutSnapshotIsResume() {
@@ -147,9 +155,9 @@ final class AudioPlayerDivergenceTests: XCTestCase {
         )
     }
 
-    /// Same chapter but reader visibly ahead/behind the paused audio must
-    /// still offer the chooser so the user can decide between page and resume.
-    func testDecisionWithSameChapterButDifferentPageOffersDialog() {
+    /// Same chapter always resumes directly, even when the reader page and
+    /// paused audio position differ. The chooser is only for another chapter.
+    func testDecisionWithSameChapterButDifferentPageResumesDirectly() {
         let player = makePlayer()
         player.testHook_setSnapshot(snapshotWithChapters(5))
         player.testHook_setCurrentChapterIndex(2)
@@ -158,7 +166,7 @@ final class AudioPlayerDivergenceTests: XCTestCase {
 
         XCTAssertEqual(
             player.playTapDecision(readerChapterIndex: 2, readerPageRatio: 0.7),
-            .offerStartChoice
+            .resume
         )
     }
 
@@ -442,6 +450,18 @@ final class AudioPlayerDivergenceTests: XCTestCase {
             player.playTapDecision(readerChapterIndex: 1),
             .offerStartChoice,
             "Reader on unplayable EPUB 1 → falls back to playable 0 → still divergent"
+        )
+    }
+
+    func testSentenceWordOffsetAdvancesWithinSentenceTimingWindow() {
+        XCTAssertEqual(
+            AudioPlayer.sentenceStartMs(
+                startMs: 1_000,
+                nextStartMs: 3_000,
+                offsetRatio: 0.5
+            ),
+            2_000,
+            accuracy: 0.001
         )
     }
 }

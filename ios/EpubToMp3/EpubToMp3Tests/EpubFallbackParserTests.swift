@@ -177,6 +177,32 @@ final class EpubFallbackParserTests: XCTestCase {
             "Chapter name must derive from <h1>; got: \(name)")
     }
 
+    func testChapterImagesResolveRelativeToArchivePath() throws {
+        let url = try EpubFixture.createWithChapter(
+            body: "<img src=\"../images/cover.png\"/><p>Body text here.</p>"
+        )
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        let result = EpubFallbackParser.parse(url: url, bookId: "image-test")
+        let resources = try XCTUnwrap(result.chapters.first?.resources)
+        let resource = try XCTUnwrap(resources.first)
+
+        XCTAssertEqual(resources.count, 1)
+        XCTAssertEqual(resource.href, "../images/cover.png")
+        XCTAssertEqual(resource.mediaType, "image/png")
+        XCTAssertEqual(Data(base64Encoded: resource.dataBase64 ?? ""), EpubFixture.coverPNG)
+    }
+
+    func testAbsoluteFilesystemPrefixResolvesToArchiveSuffix() {
+        let candidate = "/tmp/imported-book/Users/pietro/Developer/Epub-to-Mp3/OEBPS/images/cover.png"
+        let entries = ["OEBPS/images/cover.png"]
+
+        XCTAssertEqual(
+            EpubFallbackParser.resolveArchiveMember(candidate, entries: entries),
+            "OEBPS/images/cover.png"
+        )
+    }
+
     // MARK: - Large single paragraph
 
     func testLargeSingleParagraphPreservesText() throws {

@@ -25,9 +25,9 @@ final class ReaderChromeAutoHideTests: XCTestCase {
     }
 
     func testScrollModeRoutesNonLinkTapsThroughTextKit() throws {
-        let reader = try appSource(named: "Views/ReaderView.swift")
-        let attributed = try appSource(named: "Views/AttributedPageView.swift")
-        let textKit = try appSource(named: "Views/TextKitPageView.swift")
+        let reader = try appSource(named: "Features/Reader/Views/ReaderView.swift")
+        let attributed = try appSource(named: "Features/Reader/Views/AttributedPageView.swift")
+        let textKit = try appSource(named: "Features/Reader/Views/TextKitPageView.swift")
 
         XCTAssertTrue(reader.contains("onZoneTap: onZoneTap ?? handleScrollZoneTap"),
                       "scroll taps must reach TextKit so links keep precedence")
@@ -194,8 +194,8 @@ final class ReaderChromeAutoHideTests: XCTestCase {
     }
 
     func testReaderPageVerticalWhitespaceIsSmallAndNotDebugPainted() throws {
-        let reader = try appSource(named: "Views/ReaderView.swift")
-        let instantReader = try appSource(named: "Views/InstantReaderView.swift")
+        let reader = try appSource(named: "Features/Reader/Views/ReaderView.swift")
+        let instantReader = try appSource(named: "Features/Reader/Views/InstantReaderView.swift")
         XCTAssertTrue(reader.contains("private let pageVerticalPadding: CGFloat = 12"),
                       "Paginated reader vertical padding should stay close to Apple Books instead of leaving a large empty band.")
         XCTAssertTrue(reader.contains(".padding(.vertical, pageVerticalPadding)"))
@@ -220,7 +220,7 @@ final class ReaderChromeAutoHideTests: XCTestCase {
     }
 
     func testBookReaderDoesNotPinBookTitleAtTop() throws {
-        let bookOpen = try appSource(named: "Views/BookOpenView.swift")
+        let bookOpen = try appSource(named: "Features/Reader/Views/BookOpenView.swift")
         let instantReader = try instantReaderSource()
 
         XCTAssertTrue(bookOpen.contains(".navigationTitle(\"\")"),
@@ -240,7 +240,7 @@ final class ReaderChromeAutoHideTests: XCTestCase {
     }
 
     private func instantReaderSource() throws -> String {
-        try appSource(named: "Views/InstantReaderView.swift")
+        try appSource(named: "Features/Reader/Views/InstantReaderView.swift")
     }
 
     /// The instant reader must not opt out of the container safe area at
@@ -274,8 +274,8 @@ final class ReaderChromeAutoHideTests: XCTestCase {
 
 
     func testReaderTapsToggleChromeAndDragsTurnPages() throws {
-        let reader = try appSource(named: "Views/ReaderView.swift")
-        let pageCurl = try appSource(named: "Views/TextKitPageView.swift")
+        let reader = try appSource(named: "Features/Reader/Views/ReaderView.swift")
+        let pageCurl = try appSource(named: "Features/Reader/Views/TextKitPageView.swift")
         let instantReader = try instantReaderSource()
 
         XCTAssertTrue(reader.contains("onCenterTap?()"),
@@ -323,8 +323,8 @@ final class ReaderChromeAutoHideTests: XCTestCase {
     /// `ReaderFlickerUITests`. These keep the regressions from sneaking back
     /// in via a refactor that doesn't run the device UI suite.
     func testReaderHasNoFlickerOnTurnChapterOrChromeToggle() throws {
-        let reader = try appSource(named: "Views/ReaderView.swift")
-        let pageCurl = try appSource(named: "Views/TextKitPageView.swift")
+        let reader = try appSource(named: "Features/Reader/Views/ReaderView.swift")
+        let pageCurl = try appSource(named: "Features/Reader/Views/TextKitPageView.swift")
 
         // 1) The visible page must be gated on CONTENT equality, not pointer
         //    identity — every ReaderView re-render rebuilds `pages`, so an
@@ -374,7 +374,7 @@ final class ReaderChromeAutoHideTests: XCTestCase {
     }
 
     func testIdleTimerIsEnabledBeforeXCTestGuard() throws {
-        let app = try appSource(named: "EpubToMp3App.swift")
+        let app = try appSource(named: "App/EpubToMp3App.swift")
         guard let idle = app.range(of: "setIdleTimerDisabled(true)"),
               let testGuard = app.range(of: "guard !Self.isRunningUnderXCTest() else { return }")
         else {
@@ -387,9 +387,9 @@ final class ReaderChromeAutoHideTests: XCTestCase {
     }
 
     func testPdfReaderExposesTapToToggleChromeContract() throws {
-        let pdfReader = try appSource(named: "Views/PdfReaderView.swift")
-        let bookOpen = try appSource(named: "Views/BookOpenView.swift")
-        let root = try appSource(named: "Views/RootView.swift")
+        let pdfReader = try appSource(named: "Features/Reader/Views/PdfReaderView.swift")
+        let bookOpen = try appSource(named: "Features/Reader/Views/BookOpenView.swift")
+        let root = try appSource(named: "App/RootView.swift")
 
         XCTAssertTrue(pdfReader.contains("let onPageTap: (() -> Void)?"),
                       "PDF reader must expose a tap callback for immersive chrome toggle.")
@@ -412,10 +412,10 @@ final class ReaderChromeAutoHideTests: XCTestCase {
     /// through a visible circular progress badge instead of failing later
     /// with "engine warming up" when the first book asks for audio.
     func testAudioEngineWarmupIsGlobalVisibleAndAwaitedByAudioBootstrap() throws {
-        let app = try appSource(named: "EpubToMp3App.swift")
-        let root = try appSource(named: "Views/RootView.swift")
-        let bookOpen = try appSource(named: "Views/BookOpenView.swift")
-        let reader = try appSource(named: "Views/ReaderView.swift")
+        let app = try appSource(named: "App/EpubToMp3App.swift")
+        let root = try appSource(named: "App/RootView.swift")
+        let bookOpen = try appSource(named: "Features/Reader/Views/BookOpenView.swift")
+        let reader = try appSource(named: "Features/Reader/Views/ReaderView.swift")
 
         XCTAssertTrue(app.contains("@StateObject private var audioWarmup = AudioEngineWarmup()"))
         XCTAssertTrue(app.contains(".environmentObject(audioWarmup)"))
@@ -479,5 +479,26 @@ final class ReaderChromeAutoHideTests: XCTestCase {
                       "The page footer total must use a stabilized helper so the counter never flashes transient counts during chapter swaps.")
         XCTAssertTrue(reader.contains("if settings.readerShowPageNumbers, stablePageTotal > 0"),
                       "The page footer visibility should be driven by the stabilized total, not the raw transient pages count.")
+    }
+
+    func testReaderSessionAndAudioPrecedenceArePersisted() throws {
+        let instantReader = try appSource(named: "Features/Reader/Views/InstantReaderView.swift")
+        let root = try appSource(named: "App/RootView.swift")
+        let presentation = try appSource(named: "Features/Playback/Services/PlayerPresentation.swift")
+
+        XCTAssertTrue(root.contains("readerSurfaceOrTabs"),
+                      "The iPhone root must choose the restored reader before showing tabs.")
+        XCTAssertTrue(root.contains("currentlyReadingBookIDKey"),
+                      "Reader restoration must use the reading pointer, not only the audio pointer.")
+        XCTAssertTrue(instantReader.contains("ReaderSessionState.load(bookID: fulltext.jobId)"),
+                      "Reader chrome/player state must be restored per book.")
+        XCTAssertTrue(instantReader.contains("persistSessionState()"),
+                      "Reader chrome/player state must be persisted on lifecycle changes.")
+        XCTAssertTrue(instantReader.contains("audioMarker?.wasPlaying == true"),
+                      "A playing audio marker must take precedence over the visual reader anchor.")
+        XCTAssertTrue(instantReader.contains("currentChapterIndex = max(0, audioChapter)"),
+                      "The reader chapter must follow the saved audio chapter on cold launch.")
+        XCTAssertTrue(presentation.contains("persistedExpandedKey"),
+                      "Expanded player presentation must survive app termination.")
     }
 }

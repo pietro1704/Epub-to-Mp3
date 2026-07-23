@@ -172,7 +172,7 @@ final class NowPlayingViewTests: XCTestCase {
             contentsOf: URL(fileURLWithPath: #filePath)
                 .deletingLastPathComponent()
                 .deletingLastPathComponent()
-                .appendingPathComponent("EpubToMp3/Views/NowPlayingView.swift")
+                .appendingPathComponent("EpubToMp3/Features/Playback/Views/NowPlayingView.swift")
         )
         XCTAssertFalse(
             source.contains("isPlaying: bookID != nil"),
@@ -185,7 +185,7 @@ final class NowPlayingViewTests: XCTestCase {
             contentsOf: URL(fileURLWithPath: #filePath)
                 .deletingLastPathComponent()
                 .deletingLastPathComponent()
-                .appendingPathComponent("EpubToMp3/Views/NowPlayingView.swift")
+                .appendingPathComponent("EpubToMp3/Features/Playback/Views/NowPlayingView.swift")
         )
 
         XCTAssertTrue(source.contains("private func makeSnapshot(for book: BookEntity) -> JobSnapshot?"),

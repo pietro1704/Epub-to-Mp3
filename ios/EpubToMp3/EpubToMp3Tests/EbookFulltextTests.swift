@@ -172,8 +172,8 @@ final class EbookFulltextTests: XCTestCase {
         let root = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()  // EpubToMp3Tests
             .deletingLastPathComponent()  // ios/EpubToMp3
-        for relative in ["EpubToMp3/Models/EbookFulltext.swift",
-                         "EpubToMp3/Models/JobSnapshot.swift"] {
+        for relative in ["EpubToMp3/Features/Reader/Models/EbookFulltext.swift",
+                         "EpubToMp3/Features/Conversion/Models/JobSnapshot.swift"] {
             let source = try String(contentsOf: root.appendingPathComponent(relative), encoding: .utf8)
             XCTAssertFalse(
                 source.contains("\"Chapter \\("),

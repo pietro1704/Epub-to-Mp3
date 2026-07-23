@@ -76,6 +76,22 @@ class _EdgeThrottleMixin:
             {"cap": ceiling, "pressure_streak": 0, "free_streak": 0},
         )
         cap = max(1, min(ceiling, int(budget.get("cap", ceiling) or ceiling)))
+        pressure_ram_gb = _env_float("RESOURCE_PRESSURE_RAM_GB", 0.65)
+        recovery_ram_gb = max(
+            pressure_ram_gb,
+            _env_float("RESOURCE_RECOVERY_RAM_GB", 1.4),
+        )
+        pressure_cpu_percent = _env_float("RESOURCE_PRESSURE_CPU_PERCENT", 94.0)
+        recovery_cpu_percent = _env_float("RESOURCE_RECOVERY_CPU_PERCENT", 72.0)
+        override_source = str(os.getenv("CHAPTER_PARALLEL_COUNT_SOURCE", "") or "").strip()
+        explicit_override = override_source == "explicit" or (
+            not override_source
+            and bool(
+                str(os.getenv("CHAPTER_PARALLEL_COUNT", "") or "").strip()
+                and str(os.getenv("CHAPTER_PARALLEL_COUNT", "")).strip() != "0"
+            )
+        )
+        transition_reason: Optional[str] = None
         engine_cps = self._segment_adaptive_state.get("engine_cps", {})
         if isinstance(engine_cps, dict) and engine_cps:
             averages: Dict[str, float] = {}
@@ -91,14 +107,24 @@ class _EdgeThrottleMixin:
                 ratio = max(self._resource_budget_min_share, min(1.0, averages[engine] / top))
                 perf_cap = max(1, int(round(ceiling * ratio)))
                 cap = min(cap, perf_cap)
+                if cap < current:
+                    transition_reason = "engine_share"
 
-        if snapshot.cpu_percent > 94 or snapshot.ram_gb < 0.65:
+        ram_pressure = snapshot.ram_gb < pressure_ram_gb
+        cpu_pressure = snapshot.cpu_percent > pressure_cpu_percent
+        if ram_pressure or cpu_pressure:
             budget["pressure_streak"] = int(budget.get("pressure_streak", 0) or 0) + 1
             budget["free_streak"] = 0
             if budget["pressure_streak"] >= 2:
                 cap = max(1, cap - 1)
                 budget["pressure_streak"] = 0
-        elif snapshot.cpu_percent < 72 and snapshot.ram_gb > 1.4:
+                if ram_pressure and cpu_pressure:
+                    transition_reason = "ram_available_and_cpu_saturation"
+                elif ram_pressure:
+                    transition_reason = "ram_available"
+                else:
+                    transition_reason = "cpu_saturation"
+        elif snapshot.cpu_percent < recovery_cpu_percent and snapshot.ram_gb > recovery_ram_gb:
             budget["free_streak"] = int(budget.get("free_streak", 0) or 0) + 1
             budget["pressure_streak"] = 0
             if budget["free_streak"] >= 3:
@@ -112,6 +138,7 @@ class _EdgeThrottleMixin:
                     ceiling = hard_ceiling
                 cap = min(ceiling, cap + 1)
                 budget["free_streak"] = 0
+                transition_reason = "ram_recovered_and_cpu_available"
         else:
             budget["pressure_streak"] = 0
             budget["free_streak"] = 0
@@ -129,6 +156,11 @@ class _EdgeThrottleMixin:
                     "to_parallel": cap,
                     "cpu_percent": round(float(snapshot.cpu_percent), 2),
                     "ram_gb": round(float(snapshot.ram_gb), 3),
+                    "reason": transition_reason or "engine_share",
+                    "override_bypassed_guard": explicit_override
+                    and bool(ram_pressure or cpu_pressure),
+                    "pressure_ram_threshold_gb": round(float(pressure_ram_gb), 3),
+                    "recovery_ram_threshold_gb": round(float(recovery_ram_gb), 3),
                 }
             )
             if self.verbose:
@@ -157,6 +189,9 @@ class _EdgeThrottleMixin:
                     self._segment_adaptive_state.get("pre_check_stable_streak_by_engine", {}) or {}
                 ),
                 "engine_cps": dict(self._segment_adaptive_state.get("engine_cps", {}) or {}),
+                "segment_duration_policy": dict(
+                    self._segment_adaptive_state.get("segment_duration_policy", {}) or {}
+                ),
                 "last_adjustment": float(
                     self._segment_adaptive_state.get("last_adjustment", 0.0) or 0.0
                 ),
@@ -189,6 +224,7 @@ class _EdgeThrottleMixin:
                 "pre_check_interval_by_engine",
                 "pre_check_stable_streak_by_engine",
                 "engine_cps",
+                "segment_duration_policy",
                 "last_adjustment",
             ):
                 if key in seg:

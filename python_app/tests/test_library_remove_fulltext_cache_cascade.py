@@ -18,7 +18,7 @@ def _remove_action_body(source: str, remove_call: str = "library.remove(id: book
 
 
 def test_local_fulltext_cache_exposes_single_book_eviction() -> None:
-    source = _read("Services/LocalFulltextCache.swift")
+    source = _read("Features/Offline/Services/LocalFulltextCache.swift")
 
     assert "static func evict(bookId: String)" in source
     evict_start = source.index("static func evict(bookId: String)")
@@ -29,7 +29,7 @@ def test_local_fulltext_cache_exposes_single_book_eviction() -> None:
 
 
 def test_local_fulltext_cache_exposes_orphan_prune_for_launch_cleanup() -> None:
-    source = _read("Services/LocalFulltextCache.swift")
+    source = _read("Features/Offline/Services/LocalFulltextCache.swift")
 
     assert "static func pruneOrphans(validBookIds: Set<String>) -> Int" in source
     prune_start = source.index("static func pruneOrphans(validBookIds: Set<String>) -> Int")
@@ -44,7 +44,7 @@ def test_local_fulltext_cache_exposes_orphan_prune_for_launch_cleanup() -> None:
 
 
 def test_library_view_evicts_fulltext_cache_before_removing_book() -> None:
-    source = _read("Views/LibraryView.swift")
+    source = _read("Features/Library/Views/LibraryView.swift")
     body = _remove_action_body(source)
 
     assert "bookmarkStore.removeAll(for: book.id)" in body
@@ -55,7 +55,7 @@ def test_library_view_evicts_fulltext_cache_before_removing_book() -> None:
 
 
 def test_library_sidebar_evicts_fulltext_cache_before_removing_book() -> None:
-    source = _read("Views/LibrarySidebar.swift")
+    source = _read("Features/Library/Views/LibrarySidebar.swift")
     body = _remove_action_body(source)
 
     assert "bookmarkStore.removeAll(for: book.id)" in body
@@ -66,7 +66,7 @@ def test_library_sidebar_evicts_fulltext_cache_before_removing_book() -> None:
 
 
 def test_app_launch_prunes_orphan_fulltext_cache_behind_xctest_guard() -> None:
-    source = _read("EpubToMp3App.swift")
+    source = _read("App/EpubToMp3App.swift")
 
     assert "pruneOrphanFulltextCache()" in source
     task_start = source.index(".task")

@@ -178,11 +178,45 @@ final class ChapterCacheManagerTests: XCTestCase {
 
     func testCancelAllIsIdempotent() {
         let (mgr, _, _) = makeManager(chapters: [makeChapter(index: 1)])
-
         mgr.cancelAll()
-        mgr.cancelAll()   // must not crash or throw
+        mgr.cancelAll()
 
         XCTAssertTrue(mgr.generatingIndices.isEmpty)
+    }
+
+    func testClearNotificationHopsToMainActor() async throws {
+        let chapters = [makeChapter(index: 1)]
+        let (mgr, _, cacheRoot) = makeManager(chapters: chapters)
+        try FileManager.default.createDirectory(at: cacheRoot, withIntermediateDirectories: true)
+        try Data(repeating: 0xAB, count: 300)
+            .write(to: cacheRoot.appendingPathComponent("chapter_0.mp3"))
+        mgr.refreshCachedIndices()
+        XCTAssertEqual(mgr.status(for: 0), .cached)
+
+        NotificationCenter.default.post(name: ChapterCacheManager.clearAllNotification, object: nil)
+        await Task.yield()
+
+        XCTAssertEqual(mgr.status(for: 0), .notStarted)
+    }
+
+    func testClearNotificationObserverSchedulesMainActorCleanup() throws {
+        let sourceURL = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("EpubToMp3/Features/Offline/Services/ChapterCacheManager.swift")
+        let source = try String(contentsOf: sourceURL, encoding: .utf8)
+
+        XCTAssertTrue(source.contains("guard let manager = self else { return }"))
+        XCTAssertTrue(source.contains("Task { @MainActor in"))
+        XCTAssertTrue(source.contains("manager.clearAll()"))
+    }
+
+    func testClearAllCancelsAndRemovesCachedIndices() {
+        let (mgr, _, _) = makeManager(chapters: [makeChapter(index: 1)])
+        mgr.downloadAll()
+        mgr.clearAll()
+        XCTAssertTrue(mgr.generatingIndices.isEmpty)
+        XCTAssertTrue(mgr.cachedIndices.isEmpty)
     }
 
     // MARK: - prefetchNext / downloadAll guard against empty text

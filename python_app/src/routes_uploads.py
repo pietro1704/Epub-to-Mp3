@@ -7,7 +7,6 @@ accessed via lazy imports inside each handler to avoid circular imports.
 
 from __future__ import annotations
 
-import hashlib
 import shutil
 import time
 import uuid
@@ -16,36 +15,10 @@ from pathlib import Path
 from fastapi import APIRouter, BackgroundTasks, File, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
+from src.upload_streaming import UploadTooLarge, hash_file_incremental, stream_upload_to_path
 
 router = APIRouter(prefix="/api", tags=["uploads"])
 _VALID_UPLOAD_ID_CHARS = frozenset("0123456789abcdef-")
-_UPLOAD_READ_CHUNK_BYTES = 1024 * 1024
-
-
-async def _stream_upload_to_path(
-    upload: UploadFile, destination: Path, max_bytes: int, max_mb: int | None = None
-) -> dict:
-    """Copy an upload to disk while enforcing its limit incrementally."""
-    total = 0
-    digest = hashlib.sha1()
-    try:
-        with destination.open("wb") as output:
-            while True:
-                chunk = await upload.read(_UPLOAD_READ_CHUNK_BYTES)
-                if not chunk:
-                    break
-                total += len(chunk)
-                if max_bytes and total > max_bytes:
-                    raise HTTPException(
-                        status_code=413,
-                        detail=f"File exceeds the {max_mb if max_mb is not None else max_bytes // (1024 * 1024)} MB limit",
-                    )
-                output.write(chunk)
-                digest.update(chunk)
-    except Exception:
-        destination.unlink(missing_ok=True)
-        raise
-    return {"size": total, "sha1": digest.hexdigest() if total else None}
 
 
 def _validate_upload_id(upload_id: str) -> str:
@@ -142,13 +115,13 @@ async def upload_ebook(background_tasks: BackgroundTasks, file: UploadFile = Fil
     original_name = Path(file.filename or "ebook").name
     temp_path = _srv._resolve_relative_path_within_root(upload_dir, original_name, must_exist=False)
     try:
-        upload_result = await _stream_upload_to_path(
-            file, temp_path, _srv.MAX_UPLOAD_BYTES, _srv.MAX_UPLOAD_MB
-        )
-    except HTTPException:
+        file_hash, _ = await stream_upload_to_path(file, temp_path, max_bytes=_srv.MAX_UPLOAD_BYTES)
+    except UploadTooLarge:
         shutil.rmtree(upload_dir, ignore_errors=True)
-        raise
-    file_hash = upload_result["sha1"]
+        raise HTTPException(
+            status_code=413,
+            detail=f"File exceeds the {_srv.MAX_UPLOAD_MB} MB limit",
+        )
 
     book_title = Path(original_name).stem
     book_author = "Unknown Author"
@@ -257,9 +230,12 @@ async def upload_ebook_local(
     dest_path = _srv._resolve_relative_path_within_root(upload_dir, src.name, must_exist=False)
     shutil.copy2(src, dest_path)
 
-    from src._server_audio_helpers import _hash_audio_file
-
-    file_hash = _hash_audio_file(dest_path)
+    safe_upload_root = Path(_srv.uploads_dir).resolve()
+    safe_dest_path = dest_path.resolve()  # lgtm[py/path-injection]
+    if not safe_dest_path.is_relative_to(safe_upload_root):
+        raise HTTPException(status_code=400, detail="Invalid upload destination")
+    with safe_dest_path.open("rb") as handle:
+        file_hash = hash_file_incremental(handle)
 
     book_title = src.stem
     book_author = "Unknown Author"

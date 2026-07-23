@@ -157,21 +157,27 @@ class TTSFactory:
                 and narrator_voice != character_voice
             )
 
-            return EdgeTTSEngine(
+            engine_instance = EdgeTTSEngine(
                 voice,
                 primary_language=config.primary_language,
                 language_voices=config.language_voices,
                 verbose=config.verbose,
                 max_segment_seconds=max_segment,
+                adaptive_segment_seconds=getattr(config, "edge_adaptive_segment_seconds", False),
+                adaptive_segment_max_seconds=getattr(
+                    config, "edge_adaptive_segment_max_seconds", 180
+                ),
                 chunk_char_limit=chunk_chars,
                 enable_parallel=enable_parallel,
                 formatting_cues_enabled=getattr(config, "speak_formatting_cues", True),
                 formatting_locale=getattr(config, "formatting_locale", "pt"),
                 log_callback=config.log_callback,
+                metric_callback=getattr(config, "segment_metric_sink", None),
                 enable_character_voices=enable_character_voices,
                 narrator_voice=narrator_voice,
                 character_voice=character_voice,
             )
+            return engine_instance
 
         if engine == "piper":
             piper_supported = is_piper_supported_environment()

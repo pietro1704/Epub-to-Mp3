@@ -1,7 +1,7 @@
 [tools]
 python = { version = "3.12.10", virtualenv = ".venv" }
-# Node LTS for frontend (Vite 7.x requires >=20.19.0)
-node = "latest"
+# Node LTS for frontend (Vite 8.x requires >=20.19.0)
+node = "lts"
 npm = "latest"
 # Changelog generator (conventional commits → CHANGELOG.md)
 "cargo:git-cliff" = "latest"
@@ -308,6 +308,10 @@ depends = ["vendor:python"]
 run = """
 #!/bin/bash
 set -euo pipefail
+# PyInstaller probes the host architecture through the system `arch`
+# utility. Put macOS system directories first so a user-level helper with
+# the same name cannot intercept `arch -x86_64` during isolated analysis.
+export PATH="/usr/bin:/bin:/usr/sbin:/sbin:${PATH}"
 # 1. Regenerate the Python sidecar (PyInstaller onefile).
 mise run sidecar:build
 

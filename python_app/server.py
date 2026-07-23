@@ -65,6 +65,7 @@ from src.paths import (
     SOURCE_BACKUPS_DIR,
     UPLOADS_DIR,
 )
+from src.reader_sanitizer import sanitize_reader_css, sanitize_reader_html
 from src.telemetry import TelemetryRecorder
 from src.text_formatting import TextFormattingProcessor
 from src.tts.edge_engine import reset_adaptive_settings
@@ -262,19 +263,28 @@ _DEFAULT_TTL_HOURS = 48 if os.getenv("SPACE_ID") else 4
 COMPLETED_JOB_TTL_HOURS = float(
     os.getenv("COMPLETED_JOB_TTL_HOURS", str(_DEFAULT_TTL_HOURS)) or _DEFAULT_TTL_HOURS
 )
+# HF Spaces recycles jobs faster than local dev; default to a shorter cleanup
+# interval there so orphaned entries don't linger for the full 5-minute window.
+_DEFAULT_CLEANUP_INTERVAL = 60 if os.getenv("SPACE_ID") else 300
+CLEANUP_INTERVAL_SECONDS = max(
+    10,
+    int(
+        os.getenv("CLEANUP_INTERVAL_SECONDS", str(_DEFAULT_CLEANUP_INTERVAL))
+        or _DEFAULT_CLEANUP_INTERVAL
+    ),
+)
 
 
-def _cleanup_interval_seconds() -> int:
-    """Return the current job-cleanup interval from the runtime environment."""
+def get_cleanup_interval_seconds() -> int:
+    """Resolve the cleanup interval at call time without reloading the module."""
     default = 60 if os.getenv("SPACE_ID") else 300
+    raw = os.getenv("CLEANUP_INTERVAL_SECONDS", str(default)) or str(default)
     try:
-        configured = int(os.getenv("CLEANUP_INTERVAL_SECONDS", str(default)) or default)
+        return max(10, int(raw))
     except ValueError:
-        configured = default
-    return max(10, configured)
+        return max(10, default)
 
 
-CLEANUP_INTERVAL_SECONDS = _cleanup_interval_seconds()
 TELEMETRY_RETENTION_HOURS = max(
     24, int(os.getenv("TELEMETRY_RETENTION_HOURS", "720") or "720")
 )  # 30 days
@@ -1835,7 +1845,7 @@ async def _periodic_job_cleanup():
     """Periodically clean up old completed jobs."""
     while True:
         try:
-            await asyncio.sleep(_cleanup_interval_seconds())
+            await asyncio.sleep(get_cleanup_interval_seconds())
 
             current_time = time.time()
             jobs_to_remove = []
@@ -2488,12 +2498,16 @@ async def convert_ebook(
             Path(file.filename or "ebook.epub").name,
             must_exist=False,
         )
-        from src.routes_uploads import _stream_upload_to_path
+        from src.upload_streaming import UploadTooLarge, stream_upload_to_path
 
-        upload_result = await _stream_upload_to_path(
-            file, temp_file, MAX_UPLOAD_BYTES, MAX_UPLOAD_MB
-        )
-        file_hash = upload_result["sha1"]
+        try:
+            file_hash, _ = await stream_upload_to_path(file, temp_file, max_bytes=MAX_UPLOAD_BYTES)
+        except UploadTooLarge:
+            shutil.rmtree(job_input_dir, ignore_errors=True)
+            raise HTTPException(
+                status_code=413,
+                detail=f"File exceeds the {MAX_UPLOAD_MB} MB limit",
+            )
 
         cover_name = None
         cover_url = None
@@ -2890,8 +2904,10 @@ def _build_fulltext_chapters_from_cache(cached: dict) -> list[dict]:
             "index": idx,
             "name": ch.get("title") or f"Chapter {idx}",
             "text": ch.get("text") or "",
-            "html": ch.get("html") or _chapter_html_fallback(ch.get("text") or ""),
-            "css": ch.get("css") or "",
+            "html": sanitize_reader_html(
+                ch.get("html") or _chapter_html_fallback(ch.get("text") or "")
+            ),
+            "css": sanitize_reader_css(ch.get("css") or ""),
             "resources": ch.get("resources") or [],
             "charCount": len(ch.get("text") or ""),
         }
@@ -2988,10 +3004,10 @@ async def get_job_fulltext(job_id: str) -> dict:
         for idx, chapter in enumerate(book_chapters, 1):
             chapter_text = getattr(chapter, "speech_text", None) or chapter.text or ""
             clean_text = TextFormattingProcessor.strip_inline_markdown(chapter_text)
-            chapter_html = (getattr(chapter, "raw_html", None) or "").strip()
+            chapter_html = sanitize_reader_html((getattr(chapter, "raw_html", None) or "").strip())
             if not chapter_html:
-                chapter_html = _chapter_html_fallback(clean_text)
-            chapter_css = reader.extract_chapter_stylesheet(chapter)
+                chapter_html = sanitize_reader_html(_chapter_html_fallback(clean_text))
+            chapter_css = sanitize_reader_css(reader.extract_chapter_stylesheet(chapter))
             chapter_resources = reader.extract_chapter_resources(chapter)
 
             chapters.append(

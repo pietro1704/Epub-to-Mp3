@@ -1,0 +1,60 @@
+import Foundation
+import XCTest
+@testable import EpubToMp3
+
+final class DownloadManagerBackgroundTests: XCTestCase {
+    func testBackgroundConfigurationUsesStableIdentifierAndDiscretionaryOff() {
+        let configuration = DownloadManager.backgroundSessionConfiguration()
+
+        XCTAssertEqual(configuration.requestCachePolicy, .reloadIgnoringLocalCacheData)
+#if os(iOS)
+        XCTAssertEqual(configuration.identifier, DownloadManager.backgroundSessionIdentifier)
+        XCTAssertFalse(configuration.isDiscretionary)
+        XCTAssertTrue(configuration.sessionSendsLaunchEvents)
+#else
+        // Host tests run on macOS, where URLSession background sessions are
+        // unavailable; the iOS-specific assertions are covered by the build.
+        XCTAssertNil(configuration.identifier)
+#endif
+    }
+
+    func testInterruptedPartialArtifactIsNotInstalledAsCompleteFile() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("download-manager-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let destination = root.appendingPathComponent("chapter.mp3")
+        let partial = root.appendingPathComponent("chapter.mp3.partial")
+        try Data("partial".utf8).write(to: partial)
+
+        XCTAssertThrowsError(try DownloadManager.commitDownloadedFile(
+            from: partial,
+            to: destination,
+            expectedBytes: 100
+        ))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: destination.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: partial.path))
+    }
+
+    func testCompleteArtifactIsAtomicallyMovedToDestination() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("download-manager-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let destination = root.appendingPathComponent("chapter.mp3")
+        let staged = root.appendingPathComponent("chapter.mp3.partial")
+        try Data(repeating: 0x01, count: 8).write(to: staged)
+
+        let bytes = try DownloadManager.commitDownloadedFile(
+            from: staged,
+            to: destination,
+            expectedBytes: 8
+        )
+
+        XCTAssertEqual(bytes, 8)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: destination.path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: staged.path))
+    }
+}

@@ -71,6 +71,24 @@ class TestConversionConfig(unittest.TestCase):
         # Processing defaults
         self.assertFalse(config.force_reprocess)
 
+    def test_adaptive_segment_policy_is_opt_in_and_env_configurable(self):
+        config = ConversionConfig(engine="edge")
+        self.assertFalse(config.edge_adaptive_segment_seconds)
+        self.assertEqual(config.edge_adaptive_segment_max_seconds, 180)
+
+        with patch.dict(
+            os.environ,
+            {
+                "EDGE_ADAPTIVE_SEGMENT_SECONDS": "1",
+                "EDGE_ADAPTIVE_SEGMENT_MAX_SECONDS": "150",
+            },
+        ):
+            configured = AppConfig().create_conversion_config("edge")
+
+        self.assertTrue(configured.edge_adaptive_segment_seconds)
+        self.assertEqual(configured.edge_adaptive_segment_max_seconds, 150)
+        self.assertTrue(configured.as_dict()["edge_adaptive_segment_seconds"])
+
 
 class TestAppConfig(unittest.TestCase):
     """Test cases for AppConfig class"""

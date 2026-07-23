@@ -159,4 +159,32 @@ final class PlaybackRouterTests: XCTestCase {
         }
         XCTAssertEqual(url.absoluteString, "https://cdn.example.com/ch01.mp3")
     }
+
+    func test_route_prefersValidatedLocalAudioOverRemote() {
+        let local = URL(fileURLWithPath: "/documents/Audiobooks/job/chapters/ch1.mp3")
+        let ch = chapter(downloadUrl: "https://cdn.example.com/ch01.mp3")
+        let route = PlaybackRouter.route(
+            chapter: ch,
+            baseURL: nil,
+            localAudioURL: local,
+            chapterText: nil,
+            languageCode: nil,
+            isAudioPlayable: { url in url.isFileURL }
+        )
+        XCTAssertEqual(route, .audio(local))
+    }
+
+    func test_route_fallsBackToRemoteWhenLocalAudioIsNotPlayable() {
+        let local = URL(fileURLWithPath: "/documents/Audiobooks/job/chapters/missing.mp3")
+        let ch = chapter(downloadUrl: "https://cdn.example.com/ch01.mp3")
+        let route = PlaybackRouter.route(
+            chapter: ch,
+            baseURL: nil,
+            localAudioURL: local,
+            chapterText: nil,
+            languageCode: nil,
+            isAudioPlayable: { !$0.isFileURL }
+        )
+        XCTAssertEqual(route, .audio(URL(string: "https://cdn.example.com/ch01.mp3")!))
+    }
 }

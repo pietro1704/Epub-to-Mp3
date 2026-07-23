@@ -122,6 +122,19 @@ final class AudioPlayerStreamingTests: XCTestCase {
             "Streaming segments must never auto-start playback")
     }
 
+    func testSegmentQueueDoesNotDropWhenInsertionIsTemporarilyRejected() throws {
+        let source = try String(
+            contentsOf: URL(fileURLWithPath: #filePath)
+                .deletingLastPathComponent()
+                .deletingLastPathComponent()
+                .appendingPathComponent("EpubToMp3/Features/Playback/Services/AudioPlayer.swift"),
+            encoding: .utf8
+        )
+        XCTAssertTrue(source.contains("queue rejected insert; deferred segment"))
+        XCTAssertTrue(source.contains("let next = backlog.peekNext()"))
+        XCTAssertTrue(source.contains("_ = backlog.drainNext()"))
+    }
+
     // MARK: - clearConversionState resets firstSegmentReady
 
     func testClearConversionStateResetsFirstSegmentReady() {

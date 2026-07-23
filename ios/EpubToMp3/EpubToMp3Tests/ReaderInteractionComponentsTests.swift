@@ -30,6 +30,21 @@ final class ReaderInteractionComponentsTests: XCTestCase {
         XCTAssertEqual(receivedSpans, [sentence, paragraph])
     }
 
+    func testSelectionActionFloaterRoutesContinuePlayback() {
+        var continued = false
+        let model = ReaderSelectionActionFloaterModel(
+            sentence: SentenceSpan(id: "1:0", text: "Sentence.", startChar: 0, endChar: 9),
+            paragraphFirstSentence: SentenceSpan(id: "1:0", text: "Sentence.", startChar: 0, endChar: 9),
+            onContinuePlayback: { continued = true },
+            onPlaySentence: { _ in },
+            onPlayParagraph: { _ in }
+        )
+
+        model.perform(.continuePlayback)
+
+        XCTAssertTrue(continued)
+    }
+
     func testSelectionActionFloaterRequiresBothTargetsToBePresented() {
         let sentence = SentenceSpan(id: "1:0", text: "Sentence.", startChar: 0, endChar: 9)
         let model = ReaderSelectionActionFloaterModel(

@@ -299,7 +299,7 @@ final class MiniPlayerBarTests: XCTestCase {
             contentsOf: URL(fileURLWithPath: #filePath)
                 .deletingLastPathComponent()
                 .deletingLastPathComponent()
-                .appendingPathComponent("EpubToMp3/Views/MiniPlayerBar.swift")
+                .appendingPathComponent("EpubToMp3/Features/Playback/Views/MiniPlayerBar.swift")
         )
         // Verify the ellipsis Menu has .buttonStyle(.plain) so taps on it
         // are fully consumed by the Menu and do not leak to the bar's expand action.
@@ -315,7 +315,7 @@ final class MiniPlayerBarTests: XCTestCase {
             contentsOf: URL(fileURLWithPath: #filePath)
                 .deletingLastPathComponent()
                 .deletingLastPathComponent()
-                .appendingPathComponent("EpubToMp3/Views/MiniPlayerBar.swift")
+                .appendingPathComponent("EpubToMp3/Features/Playback/Views/MiniPlayerBar.swift")
         )
         // The bar expand gesture is a DragGesture — taps must not simultaneously
         // trigger the expand action when interacting with the "..." Menu.

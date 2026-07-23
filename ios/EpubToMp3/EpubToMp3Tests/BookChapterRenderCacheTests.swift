@@ -72,18 +72,24 @@ final class BookChapterRenderCacheTests: XCTestCase {
             charCount: 9, segments: nil
         )
         let staticKey = BookChapterCell.renderKey(
-            chapter: chapter, settings: settings, fontSize: 18, lineSpacing: 1.5
+            chapter: chapter, settings: settings, fontSize: 18, lineSpacing: 1.5,
+            namespace: "book-a"
         )
         let cell = BookChapterCell(
-            chapter: chapter, settings: settings, fontDirectoryURL: nil,
-            columnWidth: 300, margin: 16, fontSize: 18, lineSpacing: 1.5
+            chapter: chapter, renderNamespace: "book-a", settings: settings,
+            fontDirectoryURL: nil, columnWidth: 300, margin: 16,
+            fontSize: 18, lineSpacing: 1.5
         )
-        // The cell's renderKey is private; storing under the static key and
-        // asserting the cell (via its own .task) hits the cache is the
-        // black-box equivalent without exposing the private property.
+        XCTAssertEqual(cell.renderKey, staticKey)
         BookChapterRenderCache.store(NSAttributedString(string: "prefetched"), for: staticKey)
         XCTAssertEqual(BookChapterRenderCache.value(for: staticKey)?.string, "prefetched")
-        _ = cell // silence unused-variable warning; construction alone must not crash
+
+        let otherBook = BookChapterCell(
+            chapter: chapter, renderNamespace: "book-b", settings: settings,
+            fontDirectoryURL: nil, columnWidth: 300, margin: 16,
+            fontSize: 18, lineSpacing: 1.5
+        )
+        XCTAssertNotEqual(cell.renderKey, otherBook.renderKey)
     }
 
     /// The static `renderAttributed` helper must produce usable plain-text

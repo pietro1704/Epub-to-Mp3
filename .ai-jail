@@ -1,0 +1,9 @@
+# ai-jail sandbox configuration
+# https://github.com/akitaonrails/ai-jail
+# Edit freely. Regenerate with: ai-jail --clean --init
+
+command = [
+    "sh",
+    "-lc",
+    'touch "$HOME/Library/Developer/Xcode/DerivedData/.hermes-ai-jail-probe"; s1=$?; mkdir "$HOME/Library/Developer/CoreSimulator/.hermes-ai-jail-probe"; s2=$?; printf "derived_data_touch_status=%s core_simulator_mkdir_status=%s\\n" "$s1" "$s2"; exit 0',
+]

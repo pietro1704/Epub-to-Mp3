@@ -190,3 +190,4 @@ ios/EpubToMp3/Vendor/python-stdlib/
 # ios/EpubToMp3/scripts/fetch-piper-models.sh, ~80 MB total
 ios/EpubToMp3/Vendor/piper-models/
 .claude/mirror-queue.txt
+.worktrees/

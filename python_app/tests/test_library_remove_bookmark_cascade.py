@@ -20,10 +20,10 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 IOS_ROOT = REPO_ROOT / "ios" / "EpubToMp3" / "EpubToMp3"
-STORE = IOS_ROOT / "Services" / "BookmarkStore.swift"
-APP = IOS_ROOT / "EpubToMp3App.swift"
-LIBRARY_VIEW = IOS_ROOT / "Views" / "LibraryView.swift"
-SIDEBAR = IOS_ROOT / "Views" / "LibrarySidebar.swift"
+STORE = IOS_ROOT / "Features" / "Library" / "Services" / "BookmarkStore.swift"
+APP = IOS_ROOT / "App" / "EpubToMp3App.swift"
+LIBRARY_VIEW = IOS_ROOT / "Features" / "Library" / "Views" / "LibraryView.swift"
+SIDEBAR = IOS_ROOT / "Features" / "Library" / "Views" / "LibrarySidebar.swift"
 
 
 def _read(path: Path) -> str:

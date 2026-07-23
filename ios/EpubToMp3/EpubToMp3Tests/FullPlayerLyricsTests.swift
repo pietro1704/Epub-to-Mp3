@@ -48,7 +48,7 @@ final class FullPlayerLyricsTests: XCTestCase {
             .deletingLastPathComponent()
             .deletingLastPathComponent()
         let sourceURL = projectRoot
-            .appendingPathComponent("EpubToMp3/Views/FullPlayerSheet.swift")
+            .appendingPathComponent("EpubToMp3/Features/Playback/Views/FullPlayerSheet.swift")
         guard FileManager.default.fileExists(atPath: sourceURL.path) else {
             throw XCTSkip("Source-file contract test runs only when the repository tree is available.")
         }

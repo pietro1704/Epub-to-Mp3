@@ -718,7 +718,7 @@ export const translations: Record<Locale, Translations> = {
         "Envie o arquivo, escolha a voz preferida e deixe o serviço Python narrar a história para você ouvir onde quiser.",
       highlights: [
         {
-          title: "Edge → XTTS → Piper",
+          title: "Edge → Piper",
           description:
             "Escolhemos automaticamente o motor mais estável para manter qualidade e velocidade.",
         },
@@ -1553,7 +1553,7 @@ export const translations: Record<Locale, Translations> = {
         "Upload the file, pick a voice you like, and let the Python service narrate the story so you can listen anywhere.",
       highlights: [
         {
-          title: "Edge → XTTS → Piper",
+          title: "Edge → Piper",
           description:
             "Automatically picks the most reliable engine to keep quality and speed high.",
         },

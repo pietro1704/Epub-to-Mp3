@@ -148,6 +148,111 @@ final class MainReaderViewTests: XCTestCase {
                        "Manual conversion must live in the third tab, not inside Settings.")
     }
 
+    func testReaderSessionStateRoundTripsPerBook() {
+        let suite = "reader-session-\\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        ReaderSessionState.save(
+            bookID: "book-1",
+            chromeVisible: false,
+            miniPlayerVisible: false,
+            fullPlayerVisible: true,
+            defaults: defaults
+        )
+
+        XCTAssertEqual(
+            ReaderSessionState.load(bookID: "book-1", defaults: defaults),
+            ReaderSessionState(chromeVisible: false, miniPlayerVisible: false, fullPlayerVisible: true)
+        )
+        XCTAssertEqual(
+            ReaderSessionState.load(bookID: "book-2", defaults: defaults),
+            .default
+        )
+    }
+
+    func testPlayerPresentationRestoresExpandedStateFromDefaults() {
+        let suite = "player-presentation-\\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        defaults.set(true, forKey: PlayerPresentation.persistedExpandedKey)
+        let presentation = PlayerPresentation(defaults: defaults)
+        XCTAssertTrue(presentation.showingFullPlayer)
+
+        presentation.dismissFullPlayer()
+        XCTAssertFalse(defaults.bool(forKey: PlayerPresentation.persistedExpandedKey))
+        presentation.showFullPlayer()
+        XCTAssertTrue(defaults.bool(forKey: PlayerPresentation.persistedExpandedKey))
+    }
+
+    func testEmbeddedReaderDoesNotMountLegacyLocalPlayer() {
+        XCTAssertFalse(
+            InstantReaderIndexMapper.shouldMountLocalPlayer(useEmbeddedRuntime: true)
+        )
+        XCTAssertTrue(
+            InstantReaderIndexMapper.shouldMountLocalPlayer(useEmbeddedRuntime: false)
+        )
+    }
+
+    func testInstantReaderUsesGlobalAudioPlayerOnly() throws {
+        let source = try appViewSources().instantReader
+        XCTAssertTrue(source.contains("@EnvironmentObject private var globalPlayer: AudioPlayer"))
+        XCTAssertFalse(source.contains("@StateObject private var player = AudioPlayer()"))
+        XCTAssertTrue(source.contains("private var player: AudioPlayer { globalPlayer }"))
+    }
+
+    func testPlayerUsesFloatingRatePickerContract() throws {
+        let testFile = URL(fileURLWithPath: #filePath)
+        let projectRoot = testFile
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let source = try String(
+            contentsOf: projectRoot.appendingPathComponent("EpubToMp3/Features/Playback/Views/PlayerView.swift"),
+            encoding: .utf8
+        )
+        XCTAssertTrue(source.contains("PlaybackRateFloatingPicker"))
+        XCTAssertTrue(source.contains("ScrollView(.horizontal"))
+        XCTAssertTrue(source.contains("playbackRateButton"))
+        XCTAssertTrue(source.contains("player.setRate"))
+        XCTAssertTrue(source.contains("MPVolumeView"))
+        XCTAssertTrue(source.contains("SystemVolumeSlider"))
+
+        let fullPlayerSource = try String(
+            contentsOf: projectRoot.appendingPathComponent("EpubToMp3/Features/Playback/Views/FullPlayerSheet.swift"),
+            encoding: .utf8
+        )
+        XCTAssertTrue(fullPlayerSource.contains("SystemVolumeSlider()"))
+        XCTAssertTrue(fullPlayerSource.contains("fullPlayer.playbackRateButton"))
+
+        let miniPlayerSource = try String(
+            contentsOf: projectRoot.appendingPathComponent("EpubToMp3/Features/Playback/Views/MiniPlayerBar.swift"),
+            encoding: .utf8
+        )
+        XCTAssertTrue(miniPlayerSource.contains("miniPlayer.playbackRateButton"))
+        XCTAssertTrue(miniPlayerSource.contains("PlaybackRateFloatingPicker"))
+
+        let instantReaderSource = try String(
+            contentsOf: projectRoot.appendingPathComponent("EpubToMp3/Features/Reader/Views/InstantReaderView.swift"),
+            encoding: .utf8
+        )
+        XCTAssertFalse(instantReaderSource.contains("ReaderFollowButton("))
+        XCTAssertTrue(instantReaderSource.contains("hasLoadedAudioQueue"))
+    }
+
+    func testRootReaderRestoresReaderInsteadOfLibraryWhenReadingBookExists() throws {
+        let sources = try appViewSources()
+        let source = sources.root
+        XCTAssertTrue(source.contains("MainReaderView("),
+                      "The iPhone root must mount MainReaderView as the restored landing surface.")
+        XCTAssertTrue(source.contains("currentlyReadingBookIDKey"),
+                      "The iPhone root must use the persisted reader book, not only the playing book.")
+        XCTAssertTrue(sources.instantReader.contains("ReaderSessionState.load(bookID: fulltext.jobId)"),
+                      "Reader chrome/player state must be restored per book.")
+        XCTAssertTrue(sources.instantReader.contains("audioMarker?.wasPlaying == true"),
+                      "A playing audio marker must take precedence over the visual reader anchor.")
+    }
+
     func testManualConversionIsThirdTabAndReaderIsPushedFromLibrary() throws {
         let sources = try appViewSources()
         let rootSource = sources.root
@@ -164,10 +269,10 @@ final class MainReaderViewTests: XCTestCase {
                        "The iPhone TabView must expose exactly three tab bar items.")
         XCTAssertFalse(rootSource.contains(".tabItem { Label(L10n.string(\"nav.read\")"),
                        "Reader must not appear as a persistent tab bar item.")
-        XCTAssertFalse(rootSource.contains("MainReaderView("),
-                       "Reader must not be hosted as a root tab; library pushes books instead.")
+        XCTAssertTrue(rootSource.contains("MainReaderView("),
+                      "The iPhone root must restore the reader surface when a reading book exists.")
         XCTAssertFalse(rootSource.contains(".tag(RootTab.reader)"),
-                       "RootTab.reader must not be part of the iPhone TabView.")
+                       "Reader must be restored as the root surface, not as a persistent tab item.")
         XCTAssertLessThan(rootSource.range(of: ".tag(RootTab.settings)")!.lowerBound,
                           rootSource.range(of: ".tag(RootTab.convert)")!.lowerBound,
                           "Manual conversion must be the third tab after Settings.")
@@ -194,7 +299,7 @@ final class MainReaderViewTests: XCTestCase {
             contentsOf: URL(fileURLWithPath: #filePath)
                 .deletingLastPathComponent()
                 .deletingLastPathComponent()
-                .appendingPathComponent("EpubToMp3/Views/MainReaderView.swift")
+                .appendingPathComponent("EpubToMp3/Features/Reader/Views/MainReaderView.swift")
         )
 
         XCTAssertTrue(source.contains(".toolbar {"),
@@ -210,7 +315,7 @@ final class MainReaderViewTests: XCTestCase {
             contentsOf: URL(fileURLWithPath: #filePath)
                 .deletingLastPathComponent()
                 .deletingLastPathComponent()
-                .appendingPathComponent("EpubToMp3/Views/MainReaderView.swift")
+                .appendingPathComponent("EpubToMp3/Features/Reader/Views/MainReaderView.swift")
         )
 
         XCTAssertFalse(source.contains("showingPlayerOverlay"),
@@ -230,7 +335,7 @@ final class MainReaderViewTests: XCTestCase {
             contentsOf: URL(fileURLWithPath: #filePath)
                 .deletingLastPathComponent()
                 .deletingLastPathComponent()
-                .appendingPathComponent("EpubToMp3/Views/MainReaderView.swift")
+                .appendingPathComponent("EpubToMp3/Features/Reader/Views/MainReaderView.swift")
         )
 
         XCTAssertTrue(source.contains("@EnvironmentObject private var playerPresentation: PlayerPresentation"),
@@ -365,27 +470,27 @@ final class MainReaderViewTests: XCTestCase {
             .deletingLastPathComponent()
         return (
             root: try String(contentsOf: projectRoot
-                .appendingPathComponent("EpubToMp3/Views/RootView.swift")),
+                .appendingPathComponent("EpubToMp3/App/RootView.swift")),
             settings: try String(contentsOf: projectRoot
-                .appendingPathComponent("EpubToMp3/Views/SettingsView.swift")),
+                .appendingPathComponent("EpubToMp3/Features/Settings/Views/SettingsView.swift")),
             fullPlayer: try String(contentsOf: projectRoot
-                .appendingPathComponent("EpubToMp3/Views/FullPlayerSheet.swift")),
+                .appendingPathComponent("EpubToMp3/Features/Playback/Views/FullPlayerSheet.swift")),
             miniPlayer: try String(contentsOf: projectRoot
-                .appendingPathComponent("EpubToMp3/Views/MiniPlayerBar.swift")),
+                .appendingPathComponent("EpubToMp3/Features/Playback/Views/MiniPlayerBar.swift")),
             convert: try String(contentsOf: projectRoot
-                .appendingPathComponent("EpubToMp3/Views/ConvertView.swift")),
+                .appendingPathComponent("EpubToMp3/Features/Conversion/Views/ConvertView.swift")),
             library: try String(contentsOf: projectRoot
-                .appendingPathComponent("EpubToMp3/Views/LibraryView.swift")),
+                .appendingPathComponent("EpubToMp3/Features/Library/Views/LibraryView.swift")),
             bookOpen: try String(contentsOf: projectRoot
-                .appendingPathComponent("EpubToMp3/Views/BookOpenView.swift")),
+                .appendingPathComponent("EpubToMp3/Features/Reader/Views/BookOpenView.swift")),
             instantReader: try String(contentsOf: projectRoot
-                .appendingPathComponent("EpubToMp3/Views/InstantReaderView.swift")),
+                .appendingPathComponent("EpubToMp3/Features/Reader/Views/InstantReaderView.swift")),
             reader: try String(contentsOf: projectRoot
-                .appendingPathComponent("EpubToMp3/Views/ReaderView.swift")),
+                .appendingPathComponent("EpubToMp3/Features/Reader/Views/ReaderView.swift")),
             attributedPage: try String(contentsOf: projectRoot
-                .appendingPathComponent("EpubToMp3/Views/AttributedPageView.swift")),
+                .appendingPathComponent("EpubToMp3/Features/Reader/Views/AttributedPageView.swift")),
             platformCompat: try String(contentsOf: projectRoot
-                .appendingPathComponent("EpubToMp3/Views/PlatformCompat.swift"))
+                .appendingPathComponent("EpubToMp3/App/PlatformCompat.swift"))
         )
     }
 
@@ -396,5 +501,26 @@ final class MainReaderViewTests: XCTestCase {
             AudioPlayer.currentBookIDDefaultsKey,
             "Reading and playing must be tracked by separate UserDefaults keys."
         )
+    }
+
+    func testSettingsExposeStorageUsageAndGlobalDownloadClear() throws {
+        let sources = try appViewSources()
+        XCTAssertTrue(sources.settings.contains("storageSection"))
+        XCTAssertTrue(sources.settings.contains("ProgressView(value: storageUsage.budgetFraction)"))
+        XCTAssertTrue(sources.settings.contains("clearAllDownloads()"))
+        XCTAssertTrue(sources.settings.contains("settings.clearAllDownloads"))
+    }
+
+    func testSystemVolumeIconsUseEqualCenteredFrames() throws {
+        let testFile = URL(fileURLWithPath: #filePath)
+        let source = try String(
+            contentsOf: testFile
+                .deletingLastPathComponent()
+                .deletingLastPathComponent()
+                .appendingPathComponent("EpubToMp3/Features/Playback/Views/PlayerView.swift"),
+            encoding: .utf8
+        )
+        XCTAssertTrue(source.contains(".frame(width: 24, height: 24)"))
+        XCTAssertTrue(source.contains(".frame(maxWidth: .infinity, minHeight: 44, alignment: .center)"))
     }
 }

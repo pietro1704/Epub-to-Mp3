@@ -2,7 +2,7 @@ import XCTest
 
 final class BookOpenViewPriorityTests: XCTestCase {
     func testBookOpenViewThreadsStartChapterIndexIntoRemoteBootstrapHelpers() throws {
-        let source = try sourceFile(named: "BookOpenView.swift")
+        let source = try sourceFile(named: "Features/Reader/Views/BookOpenView.swift")
 
         XCTAssertTrue(
             source.contains("await self.waitForBackendThenBootstrap(startChapterIndex: startChapterIndex)"),
@@ -23,7 +23,7 @@ final class BookOpenViewPriorityTests: XCTestCase {
     }
 
     func testBookOpenViewSubmitsPriorityChapterIndexToConvertOptions() throws {
-        let source = try sourceFile(named: "BookOpenView.swift")
+        let source = try sourceFile(named: "Features/Reader/Views/BookOpenView.swift")
 
         XCTAssertTrue(
             source.contains("opts.priorityChapterIndex = startChapterIndex"),
@@ -45,7 +45,7 @@ final class BookOpenViewPriorityTests: XCTestCase {
     }
 
     func testInstantReaderForwardsSubsequentSnapshotsIntoMountedPlayer() throws {
-        let source = try sourceFile(named: "InstantReaderView.swift")
+        let source = try sourceFile(named: "Features/Reader/Views/InstantReaderView.swift")
 
         XCTAssertTrue(
             source.contains(".compatOnChange(of: snapshot) { updatedSnapshot in"),
@@ -57,19 +57,32 @@ final class BookOpenViewPriorityTests: XCTestCase {
         )
     }
 
-    func testPlayButtonsCompareReaderPageRatioBeforeResuming() throws {
+    func testBookOpenViewForwardsSubsequentSnapshotsIntoMountedPlayer() throws {
+        let source = try sourceFile(named: "Features/Reader/Views/BookOpenView.swift")
+
+        XCTAssertTrue(
+            source.contains("self.globalPlayer.updateSnapshot(updated)"),
+            "BookOpenView must forward every remote SSE snapshot to the mounted player so newly completed chapters append to the live queue."
+        )
+    }
+
+    func testPlayButtonsUseTheSharedTransportAction() throws {
         let sources = [
-            try sourceFile(named: "MiniPlayerBar.swift"),
-            try sourceFile(named: "FullPlayerSheet.swift"),
-            try sourceFile(named: "PlayerReaderView.swift"),
-            try sourceFile(named: "InstantReaderView.swift"),
-            try sourceFile(named: "PlayerView.swift"),
+            try sourceFile(named: "Features/Playback/Views/MiniPlayerBar.swift"),
+            try sourceFile(named: "Features/Playback/Views/FullPlayerSheet.swift"),
+            try sourceFile(named: "Features/Reader/Views/PlayerReaderView.swift"),
+            try sourceFile(named: "Features/Reader/Views/InstantReaderView.swift"),
+            try sourceFile(named: "Features/Playback/Views/PlayerView.swift"),
         ]
 
         for source in sources {
             XCTAssertTrue(
-                source.contains("readerPageRatio:"),
-                "Every play surface must pass the reader page ratio into AudioPlayer so same-chapter divergence still shows the chooser."
+                source.contains("togglePlayPause()"),
+                "Every play surface must use AudioPlayer's shared togglePlayPause action."
+            )
+            XCTAssertFalse(
+                source.contains(".playDivergenceDialog("),
+                "Normal Play must not present the reader start-position chooser."
             )
         }
     }
@@ -79,7 +92,7 @@ final class BookOpenViewPriorityTests: XCTestCase {
             contentsOf: URL(fileURLWithPath: #filePath)
                 .deletingLastPathComponent()
                 .deletingLastPathComponent()
-                .appendingPathComponent("EpubToMp3/Views/PlayerReaderView.swift"),
+                .appendingPathComponent("EpubToMp3/Features/Reader/Views/PlayerReaderView.swift"),
             encoding: .utf8
         )
         XCTAssertTrue(
@@ -97,7 +110,7 @@ final class BookOpenViewPriorityTests: XCTestCase {
             contentsOf: URL(fileURLWithPath: #filePath)
                 .deletingLastPathComponent()
                 .deletingLastPathComponent()
-                .appendingPathComponent("EpubToMp3/Views/ReaderView.swift"),
+                .appendingPathComponent("EpubToMp3/Features/Reader/Views/ReaderView.swift"),
             encoding: .utf8
         )
         XCTAssertTrue(
@@ -107,7 +120,7 @@ final class BookOpenViewPriorityTests: XCTestCase {
     }
 
     func testPlayerReaderViewPassesChapterNavigationClosuresToReaderView() throws {
-        let source = try sourceFile(named: "PlayerReaderView.swift")
+        let source = try sourceFile(named: "Features/Reader/Views/PlayerReaderView.swift")
         XCTAssertTrue(
             source.contains("onAdvanceChapter: { advanceToNextChapter() }"),
             "PlayerReaderView must pass onAdvanceChapter so the user can page past the last page to the next chapter."
@@ -126,8 +139,41 @@ final class BookOpenViewPriorityTests: XCTestCase {
         )
     }
 
+    func testInstantReaderKeepsAllStructuralChaptersInToc() throws {
+        let source = try sourceFile(named: "Features/Reader/Views/InstantReaderView.swift")
+
+        XCTAssertTrue(
+            source.contains("Array(fulltext.chapters.enumerated()), id: \\.offset"),
+            "The Reader TOC must include short, numeric, and image-only structural chapters."
+        )
+        XCTAssertFalse(
+            source.contains("fulltext.chapters.filter {"),
+            "The Reader TOC must not hide chapters based on extracted text length."
+        )
+        XCTAssertTrue(source.contains(".frame(minHeight: 320)"))
+        XCTAssertTrue(source.contains(".foregroundStyle(.primary)"))
+    }
+
+    func testReaderClaimsKeyboardFocusForPageTurns() throws {
+        let source = try source(named: "Features/Reader/Views/ReaderView.swift")
+
+        XCTAssertTrue(source.contains(".compatFocusable()"))
+        XCTAssertTrue(source.contains(".focused($readerHasFocus)"))
+        XCTAssertTrue(source.contains("readerHasFocus = true"))
+    }
+
+    func testReaderKeyboardSupportsEscapeBackNavigation() throws {
+        let compat = try sourceFile(named: "App/PlatformCompat.swift")
+        let reader = try source(named: "Features/Reader/Views/ReaderView.swift")
+
+        XCTAssertTrue(compat.contains("case .escape: key = .escape"))
+        XCTAssertTrue(compat.contains("escape, j, k"))
+        XCTAssertTrue(reader.contains("case .escape:"))
+        XCTAssertTrue(reader.contains("onEscape?()"))
+    }
+
     func testInstantReaderViewScrubberDecouplesSeekFromDrag() throws {
-        let source = try sourceFile(named: "InstantReaderView.swift")
+        let source = try sourceFile(named: "Features/Reader/Views/InstantReaderView.swift")
         XCTAssertTrue(
             source.contains("scrubberDragValue"),
             "InstantReaderView scrubber must buffer drag position in scrubberDragValue and only seek on onEditingChanged(false)."
@@ -143,7 +189,7 @@ final class BookOpenViewPriorityTests: XCTestCase {
             contentsOf: URL(fileURLWithPath: #filePath)
                 .deletingLastPathComponent()
                 .deletingLastPathComponent()
-                .appendingPathComponent("EpubToMp3/Views/ReaderView.swift"),
+                .appendingPathComponent("EpubToMp3/Features/Reader/Views/ReaderView.swift"),
             encoding: .utf8
         )
         XCTAssertTrue(
@@ -161,7 +207,7 @@ final class BookOpenViewPriorityTests: XCTestCase {
     }
 
     func testFullPlayerSheetGuardsTaskCancellationInPositionLoop() throws {
-        let source = try sourceFile(named: "FullPlayerSheet.swift")
+        let source = try sourceFile(named: "Features/Playback/Views/FullPlayerSheet.swift")
         XCTAssertTrue(
             source.contains("guard !Task.isCancelled else { break }"),
             "FullPlayerSheet .task position loop must guard Task.isCancelled to stop processing after sheet dismiss."
@@ -173,7 +219,7 @@ final class BookOpenViewPriorityTests: XCTestCase {
             contentsOf: URL(fileURLWithPath: #filePath)
                 .deletingLastPathComponent()
                 .deletingLastPathComponent()
-                .appendingPathComponent("EpubToMp3/Views/ReaderView.swift"),
+                .appendingPathComponent("EpubToMp3/Features/Reader/Views/ReaderView.swift"),
             encoding: .utf8
         )
         // During a chapter crossing the departing chapter's lastValidPages must
@@ -201,7 +247,7 @@ final class BookOpenViewPriorityTests: XCTestCase {
             contentsOf: URL(fileURLWithPath: #filePath)
                 .deletingLastPathComponent()
                 .deletingLastPathComponent()
-                .appendingPathComponent("EpubToMp3/Views/ReaderView.swift"),
+                .appendingPathComponent("EpubToMp3/Features/Reader/Views/ReaderView.swift"),
             encoding: .utf8
         )
         // The guard moved from the derived `currentPages` array to the source of
@@ -404,8 +450,8 @@ final class BookOpenViewPriorityTests: XCTestCase {
         // always at least one frame with chapter=NEW + currentPage=OLD — the "77/77"
         // flash. .id(chapter.id) forces a full teardown+recreate, eliminating the
         // stale-state frame entirely.
-        let playerSource = try sourceFile(named: "PlayerReaderView.swift")
-        let instantSource = try sourceFile(named: "InstantReaderView.swift")
+        let playerSource = try sourceFile(named: "Features/Reader/Views/PlayerReaderView.swift")
+        let instantSource = try sourceFile(named: "Features/Reader/Views/InstantReaderView.swift")
 
         XCTAssertTrue(
             playerSource.contains(".id(chapter.id)"),
@@ -418,8 +464,8 @@ final class BookOpenViewPriorityTests: XCTestCase {
     }
 
     func testReaderHostViewsDoNotResetStartAtLastPageInOnAppear() throws {
-        let playerSource = try sourceFile(named: "PlayerReaderView.swift")
-        let instantSource = try sourceFile(named: "InstantReaderView.swift")
+        let playerSource = try sourceFile(named: "Features/Reader/Views/PlayerReaderView.swift")
+        let instantSource = try sourceFile(named: "Features/Reader/Views/InstantReaderView.swift")
 
         XCTAssertFalse(
             playerSource.contains(".onAppear { readerShouldStartAtLastPage = false }"),
@@ -432,7 +478,7 @@ final class BookOpenViewPriorityTests: XCTestCase {
     }
 
     func testPlayerReaderPreviousChapterRetreatUsesDisplayedEpubIndexNotPlayerPlayableIndex() throws {
-        let source = try sourceFile(named: "PlayerReaderView.swift")
+        let source = try sourceFile(named: "Features/Reader/Views/PlayerReaderView.swift")
 
         XCTAssertTrue(
             source.contains("let currentEpubIndex = playingEpubZeroBasedIndex ?? player.currentChapterIndex"),
@@ -449,7 +495,7 @@ final class BookOpenViewPriorityTests: XCTestCase {
     }
 
     func testPlayerReaderBootstrapDoesNotReplayInitialChapterOverExistingSnapshot() throws {
-        let source = try sourceFile(named: "PlayerReaderView.swift")
+        let source = try sourceFile(named: "Features/Reader/Views/PlayerReaderView.swift")
 
         XCTAssertFalse(
             source.contains("player.play(snapshot: snapshot, startingAt: initialChapterIndex)"),
@@ -462,7 +508,7 @@ final class BookOpenViewPriorityTests: XCTestCase {
     }
 
     func testPlayerReaderPositionLoopDoesNotOverwriteManualRetreatWithPlayableFallback() throws {
-        let source = try sourceFile(named: "PlayerReaderView.swift")
+        let source = try sourceFile(named: "Features/Reader/Views/PlayerReaderView.swift")
 
         XCTAssertFalse(
             source.contains("let epubOverride = InstantReaderIndexMapper\n                        .epubIndex(forPlayableIndex: detectedIndex, in: snapshot)\n                    reloadCurrentChapter(epubIndexOverride: epubOverride)"),
@@ -471,7 +517,7 @@ final class BookOpenViewPriorityTests: XCTestCase {
     }
 
     func testPlayerReaderLastPageFlagDoesNotResetFromGenericChapterIndexChange() throws {
-        let source = try sourceFile(named: "PlayerReaderView.swift")
+        let source = try sourceFile(named: "Features/Reader/Views/PlayerReaderView.swift")
 
         XCTAssertFalse(
             source.contains(".compatOnChange(of: playingEpubZeroBasedIndex ?? player.currentChapterIndex) { _ in\n            readerShouldStartAtLastPage = false\n        }"),
@@ -480,7 +526,7 @@ final class BookOpenViewPriorityTests: XCTestCase {
     }
 
     func testPlayerReaderClearsLastPageFlagOnlyAfterRetreatTargetAppears() throws {
-        let source = try sourceFile(named: "PlayerReaderView.swift")
+        let source = try sourceFile(named: "Features/Reader/Views/PlayerReaderView.swift")
 
         XCTAssertTrue(
             source.contains("@State private var pendingRetreatTargetEpubIndex: Int? = nil"),
@@ -502,7 +548,7 @@ final class BookOpenViewPriorityTests: XCTestCase {
     }
 
     func testPlayerReaderPinsDisplayedEpubIndexAcrossManualChapterRetreat() throws {
-        let source = try sourceFile(named: "PlayerReaderView.swift")
+        let source = try sourceFile(named: "Features/Reader/Views/PlayerReaderView.swift")
 
         XCTAssertTrue(
             source.contains("@State private var displayedEpubIndexOverride: Int? = nil"),
@@ -536,7 +582,7 @@ final class BookOpenViewPriorityTests: XCTestCase {
             contentsOf: URL(fileURLWithPath: #filePath)
                 .deletingLastPathComponent()
                 .deletingLastPathComponent()
-                .appendingPathComponent("EpubToMp3/Views/TextKitPageView.swift"),
+                .appendingPathComponent("EpubToMp3/Features/Reader/Views/TextKitPageView.swift"),
             encoding: .utf8
         )
 
@@ -553,7 +599,7 @@ final class BookOpenViewPriorityTests: XCTestCase {
             contentsOf: URL(fileURLWithPath: #filePath)
                 .deletingLastPathComponent()
                 .deletingLastPathComponent()
-                .appendingPathComponent("EpubToMp3/Views/ReaderView.swift"),
+                .appendingPathComponent("EpubToMp3/Features/Reader/Views/ReaderView.swift"),
             encoding: .utf8
         )
 
@@ -576,7 +622,7 @@ final class BookOpenViewPriorityTests: XCTestCase {
     }
 
     func testFullPlayerSheetTocButtonUsesTocDrawer() throws {
-        let source = try sourceFile(named: "FullPlayerSheet.swift")
+        let source = try sourceFile(named: "Features/Playback/Views/FullPlayerSheet.swift")
         XCTAssertTrue(
             source.contains("TocDrawer("),
             "FullPlayerSheet TOC button must open TocDrawer, not ChapterListSheet."
@@ -587,13 +633,24 @@ final class BookOpenViewPriorityTests: XCTestCase {
         )
     }
 
+    private func source(named path: String) throws -> String {
+        let testFile = URL(fileURLWithPath: #filePath)
+        let projectRoot = testFile
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        return try String(
+            contentsOf: projectRoot.appendingPathComponent("EpubToMp3").appendingPathComponent(path),
+            encoding: .utf8
+        )
+    }
+
     private func sourceFile(named name: String) throws -> String {
         let testFile = URL(fileURLWithPath: #filePath)
         let projectRoot = testFile
             .deletingLastPathComponent()
             .deletingLastPathComponent()
         return try String(
-            contentsOf: projectRoot.appendingPathComponent("EpubToMp3/Views/\(name)"),
+            contentsOf: projectRoot.appendingPathComponent("EpubToMp3/\(name)"),
             encoding: .utf8
         )
     }
@@ -604,7 +661,7 @@ final class BookOpenViewPriorityTests: XCTestCase {
             .deletingLastPathComponent()
             .deletingLastPathComponent()
         return try String(
-            contentsOf: projectRoot.appendingPathComponent("EpubToMp3/Services/APIClient.swift"),
+            contentsOf: projectRoot.appendingPathComponent("EpubToMp3/Features/Conversion/Services/APIClient.swift"),
             encoding: .utf8
         )
     }

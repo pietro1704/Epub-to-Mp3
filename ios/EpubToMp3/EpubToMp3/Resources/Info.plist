@@ -8,11 +8,6 @@
 		     a private LAN IP — bypass ATS for loopback/.local only. -->
 		<key>NSAllowsLocalNetworking</key>
 		<true/>
-		<!-- Reader WebView renders EPUB chapter HTML extracted from the
-		     archive: data: / file:// URIs plus inline images. WKWebView
-		     enforces ATS otherwise, breaking the in-app reader. -->
-		<key>NSAllowsArbitraryLoadsInWebContent</key>
-		<true/>
 	</dict>
 	<!-- Custom launch storyboard. Build setting
 	     INFOPLIST_KEY_UILaunchStoryboardName already injects this, but we

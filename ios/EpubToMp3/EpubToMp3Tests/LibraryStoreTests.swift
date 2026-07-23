@@ -182,4 +182,31 @@ final class LibraryStoreTests: XCTestCase {
         XCTAssertTrue(durable.path.hasPrefix(root.path))
         XCTAssertEqual(durable.lastPathComponent, "Picked Book.epub")
     }
+
+    #if os(macOS)
+    func testMacOSImportUsesAnAppOwnedCopyForFutureAccess() throws {
+        let (store, defaults, suite) = ephemeralStore()
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        let source = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mac-library-import-\(UUID().uuidString).epub")
+        let payload = Data("macOS durable library payload".utf8)
+        try payload.write(to: source)
+        defer { try? FileManager.default.removeItem(at: source) }
+
+        let book = try store.importBook(from: source)
+        let resolved = try store.openBookFile(id: book.id).standardizedFileURL
+        let applicationSupport = FileManager.default
+            .urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .standardizedFileURL
+            .path
+
+        XCTAssertTrue(
+            resolved.path.hasPrefix(applicationSupport + "/EpubToMp3/ImportedBooks/"),
+            "macOS library access must resolve to an app-owned copy instead of the picked Documents/external URL"
+        )
+        XCTAssertNotEqual(resolved, source.standardizedFileURL)
+        XCTAssertEqual(try Data(contentsOf: resolved), payload)
+    }
+    #endif
 }

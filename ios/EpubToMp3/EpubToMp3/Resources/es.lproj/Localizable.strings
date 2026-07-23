@@ -409,6 +409,7 @@
 
 /* === PlayerView === */
 "player.speed" = "Velocidad";
+"player.systemVolume" = "Volumen del sistema";
 "player.audiobookFallback" = "Audiolibro";
 
 /* === ReaderSearchOverlay === */
@@ -420,6 +421,9 @@
 "reader.sentenceMenu.addBookmark" = "Añadir marcador";
 "reader.sentenceMenu.removeBookmark" = "Eliminar marcador";
 "reader.sentenceMenu.cancel" = "Cancelar";
+/* === Reader selection === */
+"reader.selection.playFromHere" = "Reproducir desde aquí";
+"reader.selection.continuePlayback" = "Continuar reproducción";
 "reader.selection.playSentence" = "Reproducir esta frase";
 "reader.selection.playParagraph" = "Reproducir este párrafo";
 "reader.follow" = "Seguir";
@@ -450,5 +454,17 @@
 "common.moreOptions" = "Más opciones";
 "chapterList.removeDownloads" = "Eliminar descargas";
 "chapterList.removeDownloadsMessage" = "Todos los MP3 descargados de este libro serán eliminados.";
+"chapterList.cancelDownloads" = "Cancelar descargas";
+"chapterList.cancelDownloadsMessage" = "La descarga actual se detendrá. Los capítulos terminados permanecerán.";
 "chapterList.clearTextCache" = "Limpiar caché de texto";
 "chapterList.clearTextCacheMessage" = "El caché de texto de los capítulos de este libro será borrado.";
+"settings.storage" = "Almacenamiento";
+"settings.storageUsage" = "Espacio usado";
+"settings.offlineAudio" = "MP3 offline de audiolibros";
+"settings.ttsCache" = "Caché TTS de capítulos";
+"settings.storageTotal" = "Total";
+"settings.refreshStorage" = "Actualizar uso de almacenamiento";
+"settings.storageFooter" = "La barra incluye MP3 offline y caché TTS generado. El límite predeterminado es 2 GB.";
+"settings.clearAllDownloads" = "Eliminar todas las descargas de libros";
+"settings.clearAllDownloadsConfirmTitle" = "¿Eliminar todas las descargas?";
+"settings.clearAllDownloadsConfirmMessage" = "Se eliminarán todos los MP3 offline y cachés de audio generados de los capítulos.";

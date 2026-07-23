@@ -26,7 +26,7 @@ final class ReaderLivePagesGuardTests: XCTestCase {
         let projectRoot = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
             .deletingLastPathComponent()
-        let url = projectRoot.appendingPathComponent("EpubToMp3/Views/ReaderView.swift")
+        let url = projectRoot.appendingPathComponent("EpubToMp3/Features/Reader/Views/ReaderView.swift")
         guard FileManager.default.fileExists(atPath: url.path) else {
             throw XCTSkip("ReaderView.swift not reachable in this test host (physical device) — source-inspection guard runs on the CI host/simulator.")
         }
@@ -55,8 +55,11 @@ final class ReaderLivePagesGuardTests: XCTestCase {
             source.contains("let followPages = livePages(fallback: pages)"),
             "Audio auto-follow must read from livePages(fallback:), not the raw captured pages array."
         )
+        let followStart = try XCTUnwrap(source.range(of: "let followPages = livePages(fallback: pages)")?.lowerBound)
+        let followEnd = try XCTUnwrap(source.range(of: "// A font / spacing / margin / column-width change", range: followStart..<source.endIndex)?.lowerBound)
+        let followBlock = String(source[followStart..<followEnd])
         XCTAssertFalse(
-            source.contains("pageIndexContaining(sentence: span, in: pages)"),
+            followBlock.contains("pageIndexContaining(sentence: span, in: pages)"),
             "Auto-follow must not pass the raw captured `pages` to pageIndexContaining — use the live cache."
         )
     }

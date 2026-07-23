@@ -20,7 +20,7 @@ final class InstantReaderAudioPrefetchTests: XCTestCase {
             .deletingLastPathComponent()
             .deletingLastPathComponent()
         return try String(
-            contentsOf: projectRoot.appendingPathComponent("EpubToMp3/Views/InstantReaderView.swift"),
+            contentsOf: projectRoot.appendingPathComponent("EpubToMp3/Features/Reader/Views/InstantReaderView.swift"),
             encoding: .utf8
         )
     }

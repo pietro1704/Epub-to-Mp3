@@ -19,33 +19,35 @@ from python_app.src.error_classifier import classify_error
 # ── CLEANUP_INTERVAL_SECONDS ───────────────────────────────────────────────
 
 
-def _cleanup_interval():
-    import python_app.server as server_module
-
-    return server_module._cleanup_interval_seconds()
-
-
 class TestCleanupInterval:
     def test_default_local(self, monkeypatch):
         monkeypatch.delenv("SPACE_ID", raising=False)
         monkeypatch.delenv("CLEANUP_INTERVAL_SECONDS", raising=False)
-        assert _cleanup_interval() == 300
+        from python_app import server
+
+        assert server.get_cleanup_interval_seconds() == 300
 
     def test_default_hf(self, monkeypatch):
         monkeypatch.setenv("SPACE_ID", "example/space")
         monkeypatch.delenv("CLEANUP_INTERVAL_SECONDS", raising=False)
-        assert _cleanup_interval() == 60
+        from python_app import server
+
+        assert server.get_cleanup_interval_seconds() == 60
 
     def test_env_override(self, monkeypatch):
         monkeypatch.delenv("SPACE_ID", raising=False)
         monkeypatch.setenv("CLEANUP_INTERVAL_SECONDS", "45")
-        assert _cleanup_interval() == 45
+        from python_app import server
+
+        assert server.get_cleanup_interval_seconds() == 45
 
     def test_env_override_min_clamp(self, monkeypatch):
         monkeypatch.delenv("SPACE_ID", raising=False)
         monkeypatch.setenv("CLEANUP_INTERVAL_SECONDS", "0")
+        from python_app import server
+
         # Minimum clamp is 10 so the cleanup loop can't run too hot.
-        assert _cleanup_interval() == 10
+        assert server.get_cleanup_interval_seconds() == 10
 
 
 # ── Error classifier short-circuits ────────────────────────────────────────

@@ -59,7 +59,7 @@ final class AudioPlayerDurationTests: XCTestCase {
             .deletingLastPathComponent()
             .deletingLastPathComponent()
         let source = try String(
-            contentsOf: projectRoot.appendingPathComponent("EpubToMp3/Views/BookOpenView.swift"),
+            contentsOf: projectRoot.appendingPathComponent("EpubToMp3/Features/Reader/Views/BookOpenView.swift"),
             encoding: .utf8
         )
         XCTAssertTrue(source.contains("ensureCacheManager()"))
@@ -89,7 +89,7 @@ final class AudioPlayerDurationTests: XCTestCase {
             .deletingLastPathComponent()
             .deletingLastPathComponent()
         return try String(
-            contentsOf: projectRoot.appendingPathComponent("EpubToMp3/Services/\(name)"),
+            contentsOf: projectRoot.appendingPathComponent("EpubToMp3/Features/Playback/Services/\(name)"),
             encoding: .utf8
         )
         #endif

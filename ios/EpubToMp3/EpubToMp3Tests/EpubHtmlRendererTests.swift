@@ -161,6 +161,39 @@ final class EpubHtmlRendererTests: XCTestCase {
         XCTAssertTrue(bodyNotCentered, "body paragraph must follow the user's alignment, not inherit center")
     }
 
+    func testPreservesLordOfTheRingsParagraphIndentClasses() {
+        let s = makeSettings()
+        let html = """
+        <p class="atx">The Shadow of the Past body paragraph.</p>
+        <p class="atxq">A quoted paragraph.</p>
+        <p class="atx-new">A newly separated paragraph.</p>
+        <p class="p1">Front matter paragraph.</p>
+        """
+        let css = """
+        .atx { text-indent: 20pt; margin-top: 0; margin-bottom: 0; }
+        .atxq { text-indent: -20pt; margin-top: 0; margin-bottom: 0; }
+        .atx-new { text-indent: 10pt; margin-top: 0; margin-bottom: 0; }
+        .p1 { text-indent: 0; margin-top: 1em; margin-bottom: 1em; }
+        """
+        guard let out = EpubHtmlRenderer.render(html: html, css: css, settings: s) else {
+            return XCTFail("renderer returned nil")
+        }
+        let n = ns(out)
+        var indents: [String: CGFloat] = [:]
+        n.enumerateAttribute(.paragraphStyle, in: NSRange(location: 0, length: n.length)) { value, range, _ in
+            guard let style = value as? NSParagraphStyle else { return }
+            let text = (n.string as NSString).substring(with: range)
+            if text.contains("Shadow") { indents["atx"] = style.firstLineHeadIndent }
+            if text.contains("quoted") { indents["atxq"] = style.firstLineHeadIndent }
+            if text.contains("newly") { indents["atx-new"] = style.firstLineHeadIndent }
+            if text.contains("Front") { indents["p1"] = style.firstLineHeadIndent }
+        }
+        XCTAssertEqual(indents["atx"] ?? .nan, CGFloat(20), accuracy: CGFloat(0.5))
+        XCTAssertEqual(indents["atxq"] ?? .nan, CGFloat(-20), accuracy: CGFloat(0.5))
+        XCTAssertEqual(indents["atx-new"] ?? .nan, CGFloat(10), accuracy: CGFloat(0.5))
+        XCTAssertEqual(indents["p1"] ?? .nan, CGFloat(0), accuracy: CGFloat(0.5))
+    }
+
     /// Content-agnostic guard: a BODY paragraph that merely inherited
     /// `text-align:center` from a wrapping container must NOT stay centred
     /// — only true headings (larger than the body font) keep centring.
