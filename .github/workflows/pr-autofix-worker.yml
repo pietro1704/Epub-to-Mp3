@@ -93,7 +93,7 @@ jobs:
 
       - name: Checkout trusted PR head
         if: steps.guard.outputs.already_attempted != 'true'
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           ref: ${{ needs.validate.outputs.head_sha }}
           fetch-depth: 0
