@@ -414,6 +414,11 @@ struct InstantReaderView: View {
             player.backendBaseURL = backendBaseURL
             player.updateSnapshot(updatedSnapshot)
         }
+        .compatOnChange(of: snapshot) { updatedSnapshot in
+            guard let updatedSnapshot, playerMounted else { return }
+            player.backendBaseURL = backendBaseURL
+            player.updateSnapshot(updatedSnapshot)
+        }
         .compatOnChange(of: globalPlayer.firstSegmentReady) { ready in
             if ready, settings.useEmbeddedRuntime {
                 wireEmbeddedPositionObservers()
