@@ -101,22 +101,22 @@ final class MiniPlayerBarTests: XCTestCase {
 
     /// Standard case: progress == position / duration.
     func testProgressNormalCase() {
-        XCTAssertEqual(computeProgress(position: 30, duration: 120), 0.25, accuracy: 0.001)
+        XCTAssertEqual(PlaybackPresentationState.progress(position: 30, duration: 120), 0.25, accuracy: 0.001)
     }
 
     /// Duration == 0 → progress must be 0 (no division by zero).
     func testProgressZeroWhenDurationIsZero() {
-        XCTAssertEqual(computeProgress(position: 10, duration: 0), 0.0)
+        XCTAssertEqual(PlaybackPresentationState.progress(position: 10, duration: 0), 0.0)
     }
 
     /// Position exceeds duration → progress clamps to 1.0.
     func testProgressClampedToOne() {
-        XCTAssertEqual(computeProgress(position: 200, duration: 120), 1.0, accuracy: 0.001)
+        XCTAssertEqual(PlaybackPresentationState.progress(position: 200, duration: 120), 1.0, accuracy: 0.001)
     }
 
     /// Negative position (shouldn't happen in practice) → progress clamps to 0.
     func testProgressClampedToZeroForNegativePosition() {
-        XCTAssertEqual(computeProgress(position: -5, duration: 120), 0.0, accuracy: 0.001)
+        XCTAssertEqual(PlaybackPresentationState.progress(position: -5, duration: 120), 0.0, accuracy: 0.001)
     }
 
     // MARK: - onTap closure contract
@@ -212,7 +212,57 @@ final class MiniPlayerBarTests: XCTestCase {
         XCTAssertFalse(coord.showingFullPlayer)
     }
 
+    // MARK: - Shared playback presentation
+
+    func testChapterLabelUsesLivePlayableTitle() {
+        let snapshot = JobSnapshot(
+            jobId: "job",
+            state: "finished",
+            bookTitle: "Book",
+            bookAuthor: nil,
+            coverUrl: nil,
+            coverMimeType: nil,
+            engine: nil,
+            voice: nil,
+            language: nil,
+            progressPercent: 100,
+            chaptersTotal: 1,
+            chaptersCompleted: 1,
+            chapterProgress: [
+                .init(
+                    index: 4,
+                    name: "Part Two",
+                    status: "completed",
+                    downloadUrl: "https://example.invalid/chapter.mp3",
+                    chars: nil,
+                    charsProcessed: nil,
+                    progressRatio: 1,
+                    durationSeconds: nil,
+                    startedAt: nil,
+                    completedAt: nil
+                )
+            ],
+            outputs: nil,
+            logUrl: nil,
+            error: nil,
+            lastActivityAt: nil
+        )
+
+        XCTAssertEqual(
+            PlaybackPresentationState.chapterLabel(snapshot: snapshot, currentChapterIndex: 0),
+            "Part Two"
+        )
+    }
+
+    func testChapterLabelFallsBackToLocalizedChapterNumber() {
+        XCTAssertEqual(
+            PlaybackPresentationState.chapterLabel(snapshot: nil, currentChapterIndex: 2),
+            L10n.string("player.chapter", 3)
+        )
+    }
+
     // MARK: - Helpers
+
 
     /// Replicates the `showMiniPlayer` guard shared by `TabRoot` and `SplitViewRoot`.
     private func miniPlayerShouldShow(
@@ -223,11 +273,6 @@ final class MiniPlayerBarTests: XCTestCase {
         return knownBookIDs.contains(id)
     }
 
-    /// Replicates the `progress` computed property in `MiniPlayerBar`.
-    private func computeProgress(position: Double, duration: Double) -> Double {
-        guard duration > 0 else { return 0 }
-        return min(1, max(0, position / duration))
-    }
 
     /// Minimal `BookEntity` for testing. Non-nil bookmark Data satisfies
     /// the non-optional `bookmark` field without touching real disk I/O.

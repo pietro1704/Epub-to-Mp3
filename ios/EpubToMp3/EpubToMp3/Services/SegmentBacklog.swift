@@ -13,6 +13,7 @@ struct SegmentBacklog {
         let url: URL
         let chapterIndex: Int
         let segmentIndex: Int
+        let sentenceId: String?
     }
 
     /// Per the audit: 50 entries × 100-500 KB temp files = bounded
@@ -36,12 +37,24 @@ struct SegmentBacklog {
     /// Push a new segment. Returns the URL of any entry that was
     /// evicted to make room — caller should delete the file from
     /// disk so descriptors don't leak.
-    mutating func append(url: URL, chapterIndex: Int, segmentIndex: Int) -> URL? {
+    mutating func append(
+        url: URL,
+        chapterIndex: Int,
+        segmentIndex: Int,
+        sentenceId: String? = nil
+    ) -> URL? {
         var evicted: URL?
         if entries.count >= Self.capacity {
             evicted = entries.removeFirst().url
         }
-        entries.append(Entry(url: url, chapterIndex: chapterIndex, segmentIndex: segmentIndex))
+        entries.append(
+            Entry(
+                url: url,
+                chapterIndex: chapterIndex,
+                segmentIndex: segmentIndex,
+                sentenceId: sentenceId
+            )
+        )
         return evicted
     }
 

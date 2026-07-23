@@ -74,6 +74,7 @@ struct TabRoot: View {
     @EnvironmentObject private var player: AudioPlayer
     @EnvironmentObject private var library: LibraryStore
     @EnvironmentObject private var playerPresentation: PlayerPresentation
+    @EnvironmentObject private var readerCoordinator: ReaderCoordinator
 
     @State private var selectedTab: RootTab = .library
     @State private var readerChromeVisible = true
@@ -103,6 +104,7 @@ struct TabRoot: View {
                     .environmentObject(player)
                     .environmentObject(library)
                     .environmentObject(playerPresentation)
+                    .environmentObject(readerCoordinator)
                     .transition(.spotifyBottomSheet)
                     .zIndex(2)
                     .ignoresSafeArea()
@@ -316,6 +318,7 @@ struct AudioEngineWarmupDetailView: View {
         .environmentObject(LibraryStore())
         .environmentObject(AudioPlayer())
         .environmentObject(PlayerPresentation())
+        .environmentObject(ReaderCoordinator())
         .environmentObject(BookmarkStore())
         .environmentObject(AudioEngineWarmup())
         #if os(macOS)
@@ -390,6 +393,7 @@ extension AnyTransition {
         .environmentObject(LibraryStore())
         .environmentObject(AudioPlayer())
         .environmentObject(PlayerPresentation())
+        .environmentObject(ReaderCoordinator())
         .environmentObject(BookmarkStore())
         #if os(macOS)
         .environmentObject(SidecarManager())

@@ -54,7 +54,7 @@ final class FullPlayerLyricsTests: XCTestCase {
         }
         let source = try String(contentsOf: sourceURL)
 
-        XCTAssertTrue(source.contains("onTapGesture"),
+        XCTAssertTrue(source.contains("Button {"),
                       "Cover art must be tappable to toggle sentence lyrics.")
         XCTAssertTrue(source.contains("showLyricsOverlay"),
                       "Full player must carry lyrics overlay state.")

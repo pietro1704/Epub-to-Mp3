@@ -77,4 +77,16 @@ final class SegmentBacklogTests: XCTestCase {
         XCTAssertTrue(backlog.isEmpty)
         XCTAssertEqual(backlog.emptyStreak, 0)
     }
+
+    func testDrainPreservesSentenceID() {
+        var backlog = SegmentBacklog()
+        _ = backlog.append(
+            url: url(3),
+            chapterIndex: 1,
+            segmentIndex: 3,
+            sentenceId: "chapter-1-sentence-3"
+        )
+
+        XCTAssertEqual(backlog.drainNext()?.sentenceId, "chapter-1-sentence-3")
+    }
 }

@@ -447,36 +447,3 @@ final class AudioEngineWarmup: ObservableObject {
         return await start()
     }
 }
-
-private actor WarmupRaceGate {
-    private var resumed = false
-    private let first: Task<Bool, Never>
-    private let second: Task<Bool, Never>
-
-    init(first: Task<Bool, Never>, second: Task<Bool, Never>) {
-        self.first = first
-        self.second = second
-    }
-
-    func finish(_ value: Bool, continuation: CheckedContinuation<Bool, Never>) {
-        guard !resumed else { return }
-        resumed = true
-        first.cancel()
-        second.cancel()
-        continuation.resume(returning: value)
-    }
-}
-
-private func race(first: Task<Bool, Never>, second: Task<Bool, Never>) async -> Bool {
-    let gate = WarmupRaceGate(first: first, second: second)
-    return await withCheckedContinuation { continuation in
-        Task {
-            let value = await first.value
-            await gate.finish(value, continuation: continuation)
-        }
-        Task {
-            let value = await second.value
-            await gate.finish(value, continuation: continuation)
-        }
-    }
-}

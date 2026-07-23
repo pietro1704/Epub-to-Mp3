@@ -16,6 +16,30 @@ enum ReaderTapZone { case left, center, right }
 /// Swipe direction reported by the in-view pan recognizer.
 enum ReaderSwipeDirection { case left, right }
 
+/// Pure range lookup shared by scrolling and paginated TextKit readers.
+enum ReaderTextHighlight {
+    static func range(
+        for sentenceId: String?,
+        spans: [SentenceSpan],
+        in attributed: NSAttributedString
+    ) -> NSRange? {
+        guard let sentenceId,
+              let span = spans.first(where: { $0.id == sentenceId }) else { return nil }
+        let text = attributed.string as NSString
+        let target = span.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !target.isEmpty else { return nil }
+        let start = min(max(0, span.startChar), text.length)
+        let preferred = text.range(
+            of: target,
+            options: [],
+            range: NSRange(location: start, length: text.length - start)
+        )
+        if preferred.location != NSNotFound { return preferred }
+        let anywhere = text.range(of: target)
+        return anywhere.location == NSNotFound ? nil : anywhere
+    }
+}
+
 /// Renders a single paginated page (`NSAttributedString` slice) using the
 /// same TextKit stack that `Paginator.paginateAttributed` used to compute
 /// the page boundary. This guarantees pixel-perfect alignment between
@@ -32,6 +56,7 @@ enum ReaderSwipeDirection { case left, right }
 struct AttributedPageView: View {
     let attributed: NSAttributedString
     let width: CGFloat
+    var highlightRange: NSRange? = nil
     var scrollable: Bool = false
     var onLinkTap: ((URL) -> Bool)? = nil
     /// Non-link tap in one of the three horizontal zones. Paginated
@@ -52,6 +77,7 @@ struct AttributedPageView: View {
                 attributed: attributed,
                 size: geo.size,
                 scrollable: scrollable,
+                highlightRange: highlightRange,
                 onLinkTap: onLinkTap,
                 onZoneTap: onZoneTap,
                 onSwipe: onSwipe,
@@ -167,6 +193,7 @@ private final class FixedWidthTextView: UITextView, UIGestureRecognizerDelegate 
     /// instance from its memo cache when the layout key matches, so an
     /// identity comparison is a true "did the page text change" check.
     var assignedAttributedIdentity: ObjectIdentifier?
+    var assignedHighlightRange: NSRange?
     /// Last width pushed into the text container. Avoids re-setting the
     /// container size when nothing changed (same cause as above).
     var assignedContainerSize: CGSize = .zero
@@ -215,6 +242,7 @@ private struct _AttributedPageRep: UIViewRepresentable {
     let attributed: NSAttributedString
     let size: CGSize
     let scrollable: Bool
+    let highlightRange: NSRange?
     let onLinkTap: ((URL) -> Bool)?
     let onZoneTap: ((ReaderTapZone) -> Void)?
     let onSwipe: ((ReaderSwipeDirection) -> Void)?
@@ -318,9 +346,21 @@ private struct _AttributedPageRep: UIViewRepresentable {
         // referent and skips the TextKit relayout that was visible as a
         // 1-frame flicker.
         let newIdentity = ObjectIdentifier(attributed)
-        if uiView.assignedAttributedIdentity != newIdentity {
-            uiView.attributedText = attributed
+        if uiView.assignedAttributedIdentity != newIdentity
+            || uiView.assignedHighlightRange != highlightRange {
+            let rendered = NSMutableAttributedString(attributedString: attributed)
+            if let highlightRange,
+               highlightRange.location >= 0,
+               highlightRange.location + highlightRange.length <= rendered.length {
+                rendered.addAttribute(
+                    .backgroundColor,
+                    value: UIColor.systemYellow.withAlphaComponent(0.45),
+                    range: highlightRange
+                )
+            }
+            uiView.attributedText = rendered
             uiView.assignedAttributedIdentity = newIdentity
+            uiView.assignedHighlightRange = highlightRange
             uiView.invalidateIntrinsicContentSize()
         }
     }
@@ -329,6 +369,7 @@ private struct _AttributedPageRep: UIViewRepresentable {
 struct AttributedPageView: View {
     let attributed: NSAttributedString
     let width: CGFloat
+    var highlightRange: NSRange? = nil
     var scrollable: Bool = false
     // API parity with the UIKit variant — accepted but ignored on
     // macOS, where NSTextView routes link/click handling through its
@@ -344,7 +385,8 @@ struct AttributedPageView: View {
             _AttributedPageRep(
                 attributed: attributed,
                 size: CGSize(width: max(80, width), height: geo.size.height),
-                scrollable: scrollable
+                scrollable: scrollable,
+                highlightRange: highlightRange
             )
             .frame(width: max(80, width), height: geo.size.height, alignment: .topLeading)
         }
@@ -355,6 +397,7 @@ private struct _AttributedPageRep: NSViewRepresentable {
     let attributed: NSAttributedString
     let size: CGSize
     let scrollable: Bool
+    let highlightRange: NSRange?
 
     func makeNSView(context: Context) -> NSScrollView {
         let scroll = NSTextView.scrollableTextView()

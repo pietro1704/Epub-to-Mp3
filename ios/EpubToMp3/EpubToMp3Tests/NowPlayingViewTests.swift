@@ -1,5 +1,6 @@
 import XCTest
 import SwiftUI
+import MediaPlayer
 @testable import EpubToMp3
 
 /// Smoke + persistence tests for `NowPlayingView`. The view branches on
@@ -7,6 +8,7 @@ import SwiftUI
 /// branch via `UserDefaults` round-trips rather than rendering the
 /// SwiftUI tree (calling `.body` on `@AppStorage`-driven views in a
 /// unit-test host trips SwiftUI's "no live environment" trap).
+@MainActor
 final class NowPlayingViewTests: XCTestCase {
 
     // Use an isolated UserDefaults suite per test to avoid bleed between
@@ -102,6 +104,57 @@ final class NowPlayingViewTests: XCTestCase {
             defaults: defaults
         )
         XCTAssertNil(defaults.string(forKey: AudioPlayer.currentBookIDDefaultsKey))
+    }
+
+    func testNowPlayingChapterTitleStripsGenericChapterPrefix() {
+        XCTAssertEqual(
+            AudioPlayer.preferredChapterTitle(
+                primary: "Chapter 2: The Shadow of the Past",
+                secondary: "Chapter 2",
+                fallback: "Chapter"
+            ),
+            "The Shadow of the Past"
+        )
+    }
+
+    func testNowPlayingMetadataUsesChapterAsTitleAndBookAsAlbum() {
+        let chapter = JobSnapshot.Chapter(
+            index: 11,
+            name: "Chapter 2: The Shadow of the Past",
+            status: "completed",
+            downloadUrl: "chapter-2.mp3",
+            chars: nil,
+            charsProcessed: nil,
+            progressRatio: 1,
+            durationSeconds: 120,
+            startedAt: nil,
+            completedAt: nil
+        )
+        let snapshot = JobSnapshot(
+            jobId: "job",
+            state: "finished",
+            bookTitle: "The Lord of the Rings",
+            bookAuthor: nil,
+            coverUrl: nil,
+            coverMimeType: nil,
+            engine: nil,
+            voice: nil,
+            language: "en",
+            progressPercent: 100,
+            chaptersTotal: 12,
+            chaptersCompleted: 12,
+            chapterProgress: [chapter],
+            outputs: nil,
+            logUrl: nil,
+            error: nil,
+            lastActivityAt: nil
+        )
+        let player = AudioPlayer()
+        player.setSnapshot(snapshot)
+        let info = player.makeNowPlayingInfo()
+
+        XCTAssertEqual(info[MPMediaItemPropertyTitle] as? String, "The Shadow of the Past")
+        XCTAssertEqual(info[MPMediaItemPropertyAlbumTitle] as? String, "The Lord of the Rings")
     }
 
     // MARK: - Widget "stale isPlaying" regression (bug fix)

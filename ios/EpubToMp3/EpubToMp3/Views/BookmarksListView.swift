@@ -36,9 +36,13 @@ struct BookmarksListView: View {
             } else {
                 List {
                     ForEach(filtered) { bm in
-                        BookmarkRow(bookmark: bm)
-                            .contentShape(Rectangle())
-                            .onTapGesture { onJumpToChapter?(bm.chapterIndex) }
+                        Button {
+                            onJumpToChapter?(bm.chapterIndex)
+                        } label: {
+                            BookmarkRow(bookmark: bm)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
                             .swipeActions(edge: .trailing, allowsFullSwipe: true) {
                                 Button(role: .destructive) {
                                     bookmarkStore.remove(id: bm.id)
@@ -153,24 +157,27 @@ struct NoteEditorSheet: View {
                     Section(L10n.string("bookmarks.color")) {
                         HStack(spacing: 12) {
                             ForEach(HighlightColor.allCases) { c in
-                                Circle()
-                                    .fill(c.swiftUIColor)
-                                    .frame(width: 32, height: 32)
-                                    .overlay {
-                                        if c == bookmark.color {
-                                            Image(systemName: "checkmark")
-                                                .font(.caption.bold())
-                                                .foregroundStyle(.white)
-                                                .accessibilityHidden(true)
-                                        }
-                                    }
-                                    .onTapGesture {
+                                Button {
                                         bookmarkStore.updateColor(id: bookmark.id, color: c)
-                                    }
-                                    .accessibilityLabel(c == bookmark.color
-                                        ? L10n.string("bookmarks.colorSelected", c.rawValue)
-                                        : L10n.string("bookmarks.colorOption", c.rawValue))
-                                    .accessibilityAddTraits(c == bookmark.color ? [.isButton, .isSelected] : .isButton)
+                                } label: {
+                                    Circle()
+                                        .fill(c.swiftUIColor)
+                                        .frame(width: 32, height: 32)
+                                        .overlay {
+                                            if c == bookmark.color {
+                                                Image(systemName: "checkmark")
+                                                    .font(.caption.bold())
+                                                    .foregroundStyle(.white)
+                                                    .accessibilityHidden(true)
+                                            }
+                                        }
+                                }
+                                .frame(width: 44, height: 44)
+                                .buttonStyle(.plain)
+                                .accessibilityLabel(c == bookmark.color
+                                    ? L10n.string("bookmarks.colorSelected", c.rawValue)
+                                    : L10n.string("bookmarks.colorOption", c.rawValue))
+                                .accessibilityAddTraits(c == bookmark.color ? .isSelected : [])
                             }
                         }
                     }

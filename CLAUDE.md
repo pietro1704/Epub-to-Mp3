@@ -54,6 +54,22 @@ CLI and web-local automatically share cache because both use `PROJECT_ROOT` as `
 
 ---
 
+## Build Artifact Hygiene
+
+- Build directories are temporary working artifacts, not project storage.
+- Remove unused build directories after verification; do not accumulate `build/`,
+  `.build/`, `DerivedData/`, `dist/`, or equivalent generated build trees.
+- Prefer keeping at most one active build cache when it materially improves
+  iteration speed. Remove that cache when it is stale, old, or no longer used.
+- Before deleting anything, verify it is not an active process workspace, a
+  required source directory, a tracked file, or a release/output artifact.
+- Preserve the project's intentional persistent data (`.cache/`, `output/`,
+  models, and user inputs) unless the task explicitly authorizes cleanup.
+- After a build/test cycle, report what temporary artifacts were retained or
+  removed and verify the workspace is clean enough for the next task.
+
+---
+
 ## #1 Priority: Speed
 
 **Speed is the most critical requirement.** Every design decision must optimize for maximum throughput:

@@ -148,6 +148,10 @@ abstract class AppLocalizations {
   /// **'Jobs'**
   String get jobsTitle;
 
+  /// No description provided for @convertTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Convert'**
   String get convertTitle;
 
   /// No description provided for @noJobs.

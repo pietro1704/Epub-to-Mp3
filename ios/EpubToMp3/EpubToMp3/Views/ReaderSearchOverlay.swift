@@ -45,19 +45,21 @@ struct ReaderSearchOverlay: View {
                     .frame(maxWidth: .infinity)
             } else {
                 List(results) { result in
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(result.chapterTitle)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                        Text(result.snippet)
-                            .font(.body)
-                            .lineLimit(3)
-                    }
-                    .contentShape(Rectangle())
-                    .onTapGesture {
+                    Button {
                         onJumpToChapter?(result.chapterIndex)
                         isPresented = false
+                    } label: {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(result.chapterTitle)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            Text(result.snippet)
+                                .font(.body)
+                                .lineLimit(3)
+                        }
+                        .contentShape(Rectangle())
                     }
+                    .buttonStyle(.plain)
                 }
                 .listStyle(.plain)
             }

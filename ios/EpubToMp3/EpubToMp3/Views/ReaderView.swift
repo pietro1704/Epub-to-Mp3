@@ -706,13 +706,19 @@ struct ReaderView: View {
             )
             let effectiveFontSize: CGFloat = debouncedFontSize > 0 ? debouncedFontSize : settings.readerPointSize
             let effectiveLineSpacing: Double = debouncedLineSpacing > 0 ? debouncedLineSpacing : settings.readerLineSpacing
+            let attributed = scrollingAttributedString(
+                fontSize: effectiveFontSize,
+                lineSpacing: effectiveLineSpacing
+            )
             VStack(alignment: .leading, spacing: 0) {
                 AttributedPageView(
-                    attributed: scrollingAttributedString(
-                        fontSize: effectiveFontSize,
-                        lineSpacing: effectiveLineSpacing
-                    ),
+                    attributed: attributed,
                     width: effectiveColumnWidth,
+                    highlightRange: ReaderTextHighlight.range(
+                        for: currentSentenceId,
+                        spans: spans,
+                        in: attributed
+                    ),
                     scrollable: true,
                     onLinkTap: onLinkTap,
                     onZoneTap: onZoneTap ?? handleScrollZoneTap,
@@ -1729,6 +1735,11 @@ struct ReaderView: View {
         AttributedPageView(
             attributed: slice,
             width: width,
+            highlightRange: ReaderTextHighlight.range(
+                for: currentSentenceId,
+                spans: spans,
+                in: slice
+            ),
             onLinkTap: onLinkTap,
             onZoneTap: enableReaderGestures ? onZoneTap : nil,
             onSwipe: enableReaderGestures ? onSwipePage : nil
