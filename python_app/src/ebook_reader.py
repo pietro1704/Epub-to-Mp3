@@ -502,7 +502,6 @@ class TextProcessor:
         def looks_like_noteref(anchor, target_text: str, note_node=None) -> bool:
             if anchor is None or not hasattr(anchor, "get"):
                 return False
-            anchor_text = (anchor.get_text(" ", strip=True) or "").strip()
             role = (safe_get(anchor, "role", "") or "").lower()
             epub_type = ""
             for attr_name in ("epub:type", "epub:type", "epub-type", "type"):
@@ -531,6 +530,19 @@ class TextProcessor:
             target_classes = (
                 normalise_classes(safe_get(note_node, "class", [])) if note_node else []
             )
+
+            if (
+                role == "doc-noteref"
+                or epub_type == "noteref"
+                or "noteref" in classes
+                or "footnote" in classes
+                or "idfootnotelink" in classes
+                or "footnote" in anchor_id
+                or "footnote" in href_value
+            ):
+                return True
+
+            anchor_text = (anchor.get_text(" ", strip=True) or "").strip()
 
             # --- Early-reject guards -----------------------------------------------
             # 1. Navigation links: anchor text with 3+ whitespace-separated tokens
@@ -582,8 +594,6 @@ class TextProcessor:
                 or re.search(r"(foot|fn|note|rodape|rodapé)\w*", fragment_value)
             )
 
-            if has_explicit_noteref or "footnote" in href_value:
-                return True
             if explicit_target_hint or explicit_href_hint:
                 return True
             if anchor_text:
@@ -629,6 +639,13 @@ class TextProcessor:
                 )
                 if not anchor_text or is_numeric_label:
                     node = node.parent
+            # Fast-path: plain-text nodes are the common case and do not need a
+            # descendant walk. This keeps large noteref-heavy documents under the
+            # benchmark threshold without changing the fallback path for notes
+            # that contain backlinks or embedded markup.
+            if node is not None and getattr(node, "string", None) is not None:
+                raw = str(node.string)
+                return TextProcessor.normalise_whitespace(raw)
             for backlink in node.find_all("a"):
                 if backlink is None or not hasattr(backlink, "get"):
                     continue
@@ -679,9 +696,7 @@ class TextProcessor:
         # every subsequent fragment lookup is O(1) instead of O(n) per anchor.
         # Without this index, a document with thousands of anchors (e.g. LOTR)
         # causes O(n²) behaviour that appears as an indefinite hang.
-        _soup_id_index: Dict[str, any] = {
-            tag.get("id"): tag for tag in soup.find_all(id=True) if tag.get("id")
-        }
+        _soup_id_index: Dict[str, any] = {}
         # Same index keyed per external document (built lazily, but only once per file).
         _external_id_index: Dict[str, Dict[str, any]] = {}
 
@@ -691,12 +706,22 @@ class TextProcessor:
         # only text is the title "Maps", or "NOTE ON THE ILLUSTRATIONS"),
         # which would otherwise be spoken as "Maps. footnote 1... Maps. end
         # of footnote...". Built once; used to reject such notes below.
-        _heading_texts: set = {
-            key
-            for h in soup.find_all(["h1", "h2", "h3", "h4", "h5", "h6"])
-            for key in ((h.get_text(" ", strip=True) or "").rstrip(".!?;:").casefold(),)
-            if key
-        }
+        _heading_texts: set = set()
+
+        all_anchors: List[any] = []
+        for node in soup.descendants:
+            if not hasattr(node, "get"):
+                continue
+            node_name = (getattr(node, "name", "") or "").lower()
+            if node_name == "a":
+                all_anchors.append(node)
+            node_id = node.get("id")
+            if node_id:
+                _soup_id_index[str(node_id)] = node
+            if node_name in {"h1", "h2", "h3", "h4", "h5", "h6"}:
+                key = (node.get_text(" ", strip=True) or "").rstrip(".!?;:").casefold()
+                if key:
+                    _heading_texts.add(key)
 
         # Maps fragment id → the soup node to decompose during cleanup.
         # When the target node is a backlink anchor, its parent container is used
@@ -706,7 +731,6 @@ class TextProcessor:
         # Safety budget: bail out early if the document has an absurd number of
         # anchors to prevent indefinite hangs on pathological documents.
         _MAX_ANCHORS = 20_000
-        all_anchors = soup.find_all("a")
         if len(all_anchors) > _MAX_ANCHORS:
             import logging as _logging
 

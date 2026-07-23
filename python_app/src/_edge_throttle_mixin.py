@@ -84,12 +84,9 @@ class _EdgeThrottleMixin:
         pressure_cpu_percent = _env_float("RESOURCE_PRESSURE_CPU_PERCENT", 94.0)
         recovery_cpu_percent = _env_float("RESOURCE_RECOVERY_CPU_PERCENT", 72.0)
         override_source = str(os.getenv("CHAPTER_PARALLEL_COUNT_SOURCE", "") or "").strip()
+        requested_parallel = str(os.getenv("CHAPTER_PARALLEL_COUNT", "") or "").strip()
         explicit_override = override_source == "explicit" or (
-            not override_source
-            and bool(
-                str(os.getenv("CHAPTER_PARALLEL_COUNT", "") or "").strip()
-                and str(os.getenv("CHAPTER_PARALLEL_COUNT", "")).strip() != "0"
-            )
+            not override_source and bool(requested_parallel and requested_parallel != "0")
         )
         transition_reason: Optional[str] = None
         engine_cps = self._segment_adaptive_state.get("engine_cps", {})

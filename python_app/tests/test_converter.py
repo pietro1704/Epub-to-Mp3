@@ -593,10 +593,15 @@ class TestAudioConverter(unittest.IsolatedAsyncioTestCase):
         self.converter._append_runtime_metric = Mock()
         pressure = ResourceSnapshot(cpu_percent=10.0, ram_gb=0.5)
 
-        for _ in range(2):
-            self.converter._apply_engine_resource_budget(
-                engine_label="edge", snapshot=pressure, engine_pool=None
-            )
+        with patch.dict(
+            os.environ,
+            {"CHAPTER_PARALLEL_COUNT": "7", "CHAPTER_PARALLEL_COUNT_SOURCE": "detected"},
+            clear=False,
+        ):
+            for _ in range(2):
+                self.converter._apply_engine_resource_budget(
+                    engine_label="edge", snapshot=pressure, engine_pool=None
+                )
 
         events = [call.args[0] for call in self.converter._append_runtime_metric.call_args_list]
         self.assertEqual(len(events), 1)
@@ -611,7 +616,11 @@ class TestAudioConverter(unittest.IsolatedAsyncioTestCase):
         self.converter._append_runtime_metric = Mock()
         pressure = ResourceSnapshot(cpu_percent=10.0, ram_gb=0.5)
 
-        with patch.dict(os.environ, {"CHAPTER_PARALLEL_COUNT": "7"}, clear=False):
+        with patch.dict(
+            os.environ,
+            {"CHAPTER_PARALLEL_COUNT": "7", "CHAPTER_PARALLEL_COUNT_SOURCE": "explicit"},
+            clear=False,
+        ):
             for _ in range(2):
                 self.converter._apply_engine_resource_budget(
                     engine_label="edge", snapshot=pressure, engine_pool=None

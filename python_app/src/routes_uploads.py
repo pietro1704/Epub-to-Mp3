@@ -21,6 +21,20 @@ router = APIRouter(prefix="/api", tags=["uploads"])
 _VALID_UPLOAD_ID_CHARS = frozenset("0123456789abcdef-")
 
 
+async def _stream_upload_to_path(
+    upload: UploadFile, destination: Path, max_bytes: int, max_mb: int | None = None
+) -> dict:
+    """Compatibility wrapper for bounded upload streaming."""
+    try:
+        file_hash, total = await stream_upload_to_path(upload, destination, max_bytes=max_bytes)
+    except UploadTooLarge:
+        raise HTTPException(
+            status_code=413,
+            detail=f"File exceeds the {max_mb if max_mb is not None else max_bytes // (1024 * 1024)} MB limit",
+        )
+    return {"size": total, "sha1": file_hash}
+
+
 def _validate_upload_id(upload_id: str) -> str:
     value = str(upload_id or "")
     if not value or any(ch.lower() not in _VALID_UPLOAD_ID_CHARS for ch in value):

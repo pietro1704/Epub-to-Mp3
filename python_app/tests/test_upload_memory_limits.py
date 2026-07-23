@@ -10,6 +10,7 @@ import pytest
 from fastapi import HTTPException
 from src._server_audio_helpers import _hash_audio_file
 from src.routes_uploads import _stream_upload_to_path
+from src.upload_streaming import stream_upload_to_path
 
 
 class _ChunkedUpload:
@@ -47,6 +48,19 @@ def test_stream_upload_rejects_at_limit_without_retaining_partial_file(tmp_path:
 
     assert error.value.status_code == 413
     assert not destination.exists()
+
+
+def test_stream_upload_wrapper_matches_shared_helper(tmp_path: Path) -> None:
+    upload_a = _ChunkedUpload([b"same", b"-payload"])
+    upload_b = _ChunkedUpload([b"same", b"-payload"])
+    dest_a = tmp_path / "routes.epub"
+    dest_b = tmp_path / "shared.epub"
+
+    routes_result = asyncio.run(_stream_upload_to_path(upload_a, dest_a, max_bytes=100))
+    shared_result = asyncio.run(stream_upload_to_path(upload_b, dest_b, max_bytes=100))
+
+    assert routes_result == {"size": shared_result[1], "sha1": shared_result[0]}
+    assert dest_a.read_bytes() == dest_b.read_bytes() == b"same-payload"
 
 
 def test_local_upload_hash_reads_incrementally(tmp_path: Path, monkeypatch) -> None:

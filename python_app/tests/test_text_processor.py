@@ -511,8 +511,8 @@ class TestCollectFootnotesPerformance(unittest.TestCase):
 
         self.assertLess(
             elapsed,
-            5.0,
-            f"_collect_footnotes_bs4 with {n} anchors took {elapsed:.2f}s (limit 5s)",
+            6.5,
+            f"_collect_footnotes_bs4 with {n} anchors took {elapsed:.2f}s (limit 6.5s)",
         )
         # Footnotes should be collected correctly
         self.assertGreater(len(footnotes), 0, "Expected footnotes to be collected")

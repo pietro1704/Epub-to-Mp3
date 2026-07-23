@@ -58,7 +58,7 @@ class TestEdgeTTSSegmentation(unittest.TestCase):
         metrics = []
 
         async def stream_chunks():
-            yield {"type": "audio", "data": b"audio"}
+            yield {"type": "audio", "data": b"audio" * 400}
             yield {"type": "WordBoundary", "offset": 0}
 
         communicator = Mock()
@@ -93,7 +93,7 @@ class TestEdgeTTSSegmentation(unittest.TestCase):
         """Telemetry callbacks are failure-safe and cannot fail audio synthesis."""
 
         async def stream_chunks():
-            yield {"type": "audio", "data": b"audio"}
+            yield {"type": "audio", "data": b"audio" * 400}
 
         communicator = Mock()
         communicator.stream.return_value = stream_chunks()
