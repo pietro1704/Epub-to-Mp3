@@ -59,12 +59,15 @@ class ConversionConfig:
     strict_validate: bool = False  # Stop conversion when validation fails
     deep_validate: bool = False  # Run expensive deep validation after conversion
     log_callback: Optional[Callable[[str], None]] = None  # Callback for verbose logging
+    segment_metric_sink: Optional[Callable[[Dict[str, object]], None]] = None
     edge_auto_offline_seconds: int = 0  # disabled: Edge handles large chapters via chunking
     edge_auto_offline_chars: int = 0  # disabled: Edge handles large chapters via chunking
     # Performance-optimized settings (Jan 2026):
     # Aggressive throughput target: 200+ chars/s with higher concurrency/segment sizes.
     edge_chunk_chars: int = 12000  # Aggressive default for max throughput
     edge_max_segment_seconds: int = 85
+    edge_adaptive_segment_seconds: bool = False  # Opt-in chapter-boundary segment policy
+    edge_adaptive_segment_max_seconds: int = 180  # Hard cap used only by the opt-in policy
     edge_aggressive_mode: bool = False
     edge_auto_tune: Optional[bool] = None
     edge_enable_parallel: bool = True
@@ -140,6 +143,8 @@ class ConversionConfig:
             "edge_auto_offline_chars": self.edge_auto_offline_chars,
             "edge_chunk_chars": self.edge_chunk_chars,
             "edge_max_segment_seconds": self.edge_max_segment_seconds,
+            "edge_adaptive_segment_seconds": self.edge_adaptive_segment_seconds,
+            "edge_adaptive_segment_max_seconds": self.edge_adaptive_segment_max_seconds,
             "edge_auto_tune": self.edge_auto_tune,
             "edge_enable_parallel": self.edge_enable_parallel,
             "edge_max_concurrency": self.edge_max_concurrency,
@@ -650,6 +655,17 @@ class AppConfig:
                 os.getenv("EDGE_MAX_SEGMENT_SECONDS"), ConversionConfig.edge_max_segment_seconds
             ),
         )
+        edge_adaptive_segment_seconds = kwargs.pop(
+            "edge_adaptive_segment_seconds",
+            os.getenv("EDGE_ADAPTIVE_SEGMENT_SECONDS", "0").lower() in ("true", "1", "yes", "on"),
+        )
+        edge_adaptive_segment_max_seconds = kwargs.pop(
+            "edge_adaptive_segment_max_seconds",
+            _safe_int(
+                os.getenv("EDGE_ADAPTIVE_SEGMENT_MAX_SECONDS"),
+                ConversionConfig.edge_adaptive_segment_max_seconds,
+            ),
+        )
         edge_enable_parallel = kwargs.pop(
             "edge_enable_parallel",
             os.getenv("EDGE_ENABLE_PARALLEL", "true").lower() in ("true", "1", "yes"),
@@ -740,6 +756,8 @@ class AppConfig:
             edge_auto_offline_chars=edge_auto_offline_chars,
             edge_chunk_chars=edge_chunk_chars,
             edge_max_segment_seconds=edge_max_segment_seconds,
+            edge_adaptive_segment_seconds=edge_adaptive_segment_seconds,
+            edge_adaptive_segment_max_seconds=edge_adaptive_segment_max_seconds,
             edge_auto_tune=edge_auto_tune,
             edge_enable_parallel=edge_enable_parallel,
             edge_max_concurrency=edge_max_concurrency,

@@ -88,6 +88,28 @@ class _CacheMixin:
                 pass
         return (self._speech_text(chapter) or ""), pre_tts_path, False
 
+    def _prepare_chapter_payload(
+        self,
+        chapter: Chapter,
+        index: int,
+        output_dir: Optional[Path],
+        config: Optional[ConversionConfig],
+        *,
+        cleanup_existing: bool = False,
+    ) -> tuple[str, Optional[Path], bool]:
+        """Prepare one chapter exactly once and return its explicit payload handoff."""
+        payload = self._resolve_pre_tts_payload(chapter, index, output_dir, config)
+        if payload[2]:
+            return payload
+        generate_all_text_files = getattr(self, "_generate_all_text_files")
+        generate_all_text_files(
+            [chapter],
+            output_dir,
+            config,
+            cleanup_existing=cleanup_existing,
+        )
+        return self._resolve_pre_tts_payload(chapter, index, output_dir, config)
+
     def _prepare_truncation_retry_payload(
         self,
         chapter: Chapter,

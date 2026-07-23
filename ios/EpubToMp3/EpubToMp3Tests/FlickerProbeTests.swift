@@ -7,6 +7,7 @@ final class FlickerProbeTests: XCTestCase {
         super.setUp()
         FlickerProbe.shared.arm()
         FlickerProbe.shared.reset()
+        FlickerProbe.shared.useTemporaryDebugFileForTests()
     }
 
     func testRecordsWhenArmed() {

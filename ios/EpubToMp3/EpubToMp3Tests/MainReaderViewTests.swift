@@ -208,7 +208,7 @@ final class MainReaderViewTests: XCTestCase {
             .deletingLastPathComponent()
             .deletingLastPathComponent()
         let source = try String(
-            contentsOf: projectRoot.appendingPathComponent("EpubToMp3/Views/PlayerView.swift"),
+            contentsOf: projectRoot.appendingPathComponent("EpubToMp3/Features/Playback/Views/PlayerView.swift"),
             encoding: .utf8
         )
         XCTAssertTrue(source.contains("PlaybackRateFloatingPicker"))
@@ -219,21 +219,21 @@ final class MainReaderViewTests: XCTestCase {
         XCTAssertTrue(source.contains("SystemVolumeSlider"))
 
         let fullPlayerSource = try String(
-            contentsOf: projectRoot.appendingPathComponent("EpubToMp3/Views/FullPlayerSheet.swift"),
+            contentsOf: projectRoot.appendingPathComponent("EpubToMp3/Features/Playback/Views/FullPlayerSheet.swift"),
             encoding: .utf8
         )
         XCTAssertTrue(fullPlayerSource.contains("SystemVolumeSlider()"))
         XCTAssertTrue(fullPlayerSource.contains("fullPlayer.playbackRateButton"))
 
         let miniPlayerSource = try String(
-            contentsOf: projectRoot.appendingPathComponent("EpubToMp3/Views/MiniPlayerBar.swift"),
+            contentsOf: projectRoot.appendingPathComponent("EpubToMp3/Features/Playback/Views/MiniPlayerBar.swift"),
             encoding: .utf8
         )
         XCTAssertTrue(miniPlayerSource.contains("miniPlayer.playbackRateButton"))
         XCTAssertTrue(miniPlayerSource.contains("PlaybackRateFloatingPicker"))
 
         let instantReaderSource = try String(
-            contentsOf: projectRoot.appendingPathComponent("EpubToMp3/Views/InstantReaderView.swift"),
+            contentsOf: projectRoot.appendingPathComponent("EpubToMp3/Features/Reader/Views/InstantReaderView.swift"),
             encoding: .utf8
         )
         XCTAssertFalse(instantReaderSource.contains("ReaderFollowButton("))
@@ -299,7 +299,7 @@ final class MainReaderViewTests: XCTestCase {
             contentsOf: URL(fileURLWithPath: #filePath)
                 .deletingLastPathComponent()
                 .deletingLastPathComponent()
-                .appendingPathComponent("EpubToMp3/Views/MainReaderView.swift")
+                .appendingPathComponent("EpubToMp3/Features/Reader/Views/MainReaderView.swift")
         )
 
         XCTAssertTrue(source.contains(".toolbar {"),
@@ -315,7 +315,7 @@ final class MainReaderViewTests: XCTestCase {
             contentsOf: URL(fileURLWithPath: #filePath)
                 .deletingLastPathComponent()
                 .deletingLastPathComponent()
-                .appendingPathComponent("EpubToMp3/Views/MainReaderView.swift")
+                .appendingPathComponent("EpubToMp3/Features/Reader/Views/MainReaderView.swift")
         )
 
         XCTAssertFalse(source.contains("showingPlayerOverlay"),
@@ -335,7 +335,7 @@ final class MainReaderViewTests: XCTestCase {
             contentsOf: URL(fileURLWithPath: #filePath)
                 .deletingLastPathComponent()
                 .deletingLastPathComponent()
-                .appendingPathComponent("EpubToMp3/Views/MainReaderView.swift")
+                .appendingPathComponent("EpubToMp3/Features/Reader/Views/MainReaderView.swift")
         )
 
         XCTAssertTrue(source.contains("@EnvironmentObject private var playerPresentation: PlayerPresentation"),
@@ -470,27 +470,27 @@ final class MainReaderViewTests: XCTestCase {
             .deletingLastPathComponent()
         return (
             root: try String(contentsOf: projectRoot
-                .appendingPathComponent("EpubToMp3/Views/RootView.swift")),
+                .appendingPathComponent("EpubToMp3/App/RootView.swift")),
             settings: try String(contentsOf: projectRoot
-                .appendingPathComponent("EpubToMp3/Views/SettingsView.swift")),
+                .appendingPathComponent("EpubToMp3/Features/Settings/Views/SettingsView.swift")),
             fullPlayer: try String(contentsOf: projectRoot
-                .appendingPathComponent("EpubToMp3/Views/FullPlayerSheet.swift")),
+                .appendingPathComponent("EpubToMp3/Features/Playback/Views/FullPlayerSheet.swift")),
             miniPlayer: try String(contentsOf: projectRoot
-                .appendingPathComponent("EpubToMp3/Views/MiniPlayerBar.swift")),
+                .appendingPathComponent("EpubToMp3/Features/Playback/Views/MiniPlayerBar.swift")),
             convert: try String(contentsOf: projectRoot
-                .appendingPathComponent("EpubToMp3/Views/ConvertView.swift")),
+                .appendingPathComponent("EpubToMp3/Features/Conversion/Views/ConvertView.swift")),
             library: try String(contentsOf: projectRoot
-                .appendingPathComponent("EpubToMp3/Views/LibraryView.swift")),
+                .appendingPathComponent("EpubToMp3/Features/Library/Views/LibraryView.swift")),
             bookOpen: try String(contentsOf: projectRoot
-                .appendingPathComponent("EpubToMp3/Views/BookOpenView.swift")),
+                .appendingPathComponent("EpubToMp3/Features/Reader/Views/BookOpenView.swift")),
             instantReader: try String(contentsOf: projectRoot
-                .appendingPathComponent("EpubToMp3/Views/InstantReaderView.swift")),
+                .appendingPathComponent("EpubToMp3/Features/Reader/Views/InstantReaderView.swift")),
             reader: try String(contentsOf: projectRoot
-                .appendingPathComponent("EpubToMp3/Views/ReaderView.swift")),
+                .appendingPathComponent("EpubToMp3/Features/Reader/Views/ReaderView.swift")),
             attributedPage: try String(contentsOf: projectRoot
-                .appendingPathComponent("EpubToMp3/Views/AttributedPageView.swift")),
+                .appendingPathComponent("EpubToMp3/Features/Reader/Views/AttributedPageView.swift")),
             platformCompat: try String(contentsOf: projectRoot
-                .appendingPathComponent("EpubToMp3/Views/PlatformCompat.swift"))
+                .appendingPathComponent("EpubToMp3/App/PlatformCompat.swift"))
         )
     }
 
@@ -517,7 +517,7 @@ final class MainReaderViewTests: XCTestCase {
             contentsOf: testFile
                 .deletingLastPathComponent()
                 .deletingLastPathComponent()
-                .appendingPathComponent("EpubToMp3/Views/PlayerView.swift"),
+                .appendingPathComponent("EpubToMp3/Features/Playback/Views/PlayerView.swift"),
             encoding: .utf8
         )
         XCTAssertTrue(source.contains(".frame(width: 24, height: 24)"))

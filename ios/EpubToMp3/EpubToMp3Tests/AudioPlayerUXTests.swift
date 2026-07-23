@@ -73,13 +73,13 @@ final class AudioPlayerUXTests: XCTestCase {
         )
     }
 
-    func testNowPlayingUsesBookTitleAsArtistIdentity() {
+    func testNowPlayingUsesBookAuthorAsArtistIdentity() {
         let player = makePlayer()
         player.updateSnapshot(JobSnapshot.previewSample)
         let info = player.makeNowPlayingInfo()
         XCTAssertEqual(
             info[MPMediaItemPropertyArtist] as? String,
-            JobSnapshot.previewSample.bookTitle
+            JobSnapshot.previewSample.bookAuthor
         )
     }
 

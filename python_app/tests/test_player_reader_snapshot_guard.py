@@ -20,7 +20,16 @@ from __future__ import annotations
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-VIEW = REPO_ROOT / "ios" / "EpubToMp3" / "EpubToMp3" / "Views" / "PlayerReaderView.swift"
+VIEW = (
+    REPO_ROOT
+    / "ios"
+    / "EpubToMp3"
+    / "EpubToMp3"
+    / "Features"
+    / "Reader"
+    / "Views"
+    / "PlayerReaderView.swift"
+)
 
 
 def _body() -> str:

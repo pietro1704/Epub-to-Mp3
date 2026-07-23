@@ -18,7 +18,7 @@ def _remove_action_body(source: str, remove_call: str = "library.remove(id: book
 
 
 def test_fulltext_store_exposes_jobid_eviction_api() -> None:
-    source = _read("Services/FulltextStore.swift")
+    source = _read("Features/Offline/Services/FulltextStore.swift")
 
     assert "static func evict(jobId: String) -> Bool" in source
     evict_start = source.index("static func evict(jobId: String) -> Bool")
@@ -31,18 +31,18 @@ def test_fulltext_store_exposes_jobid_eviction_api() -> None:
 
 
 def test_fulltext_store_tombstone_blocks_stale_disk_and_memory_replay() -> None:
-    source = _read("Services/FulltextStore.swift")
+    source = _read("Features/Offline/Services/FulltextStore.swift")
 
     assert "private static var evictedJobIds: Set<String> = []" in source
     assert "private static func markEvicted(jobId: String)" in source
     assert "private static func clearEvicted(jobId: String)" in source
     assert "private static func isEvicted(jobId: String) -> Bool" in source
 
-    load_start = source.index("static func loadFromDisk(jobId: String)")
+    load_start = source.index("static func loadFromDisk(jobId: String, root: URL? = nil)")
     load_body = source[load_start : source.index("\n    }", load_start) + 7]
     assert "guard !isEvicted(jobId: jobId) else { return nil }" in load_body
 
-    save_start = source.index("static func saveToDisk(_ payload: EbookFulltext) throws")
+    save_start = source.index("static func saveToDisk(_ payload: EbookFulltext, root: URL? = nil)")
     save_body = source[save_start : source.index("\n    }", save_start) + 7]
     assert "clearEvicted(jobId: payload.jobId)" in save_body
 
@@ -52,7 +52,7 @@ def test_fulltext_store_tombstone_blocks_stale_disk_and_memory_replay() -> None:
 
 
 def test_library_view_evicts_fulltext_store_before_removing_book() -> None:
-    source = _read("Views/LibraryView.swift")
+    source = _read("Features/Library/Views/LibraryView.swift")
     body = _remove_action_body(source)
 
     assert "if let jobId = book.lastJobId" in body
@@ -66,7 +66,7 @@ def test_library_view_evicts_fulltext_store_before_removing_book() -> None:
 
 
 def test_library_sidebar_evicts_fulltext_store_before_removing_book() -> None:
-    source = _read("Views/LibrarySidebar.swift")
+    source = _read("Features/Library/Views/LibrarySidebar.swift")
     body = _remove_action_body(source)
 
     assert "if let jobId = book.lastJobId" in body

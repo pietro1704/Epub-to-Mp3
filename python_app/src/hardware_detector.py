@@ -574,6 +574,15 @@ class HardwareDetector:
             except ValueError:
                 return default
 
+        def _env_float(name: str, default: float) -> float:
+            raw = os.getenv(name)
+            if raw is None or raw.strip() == "":
+                return default
+            try:
+                return float(raw)
+            except ValueError:
+                return default
+
         def _set_env_max(name: str, minimum: int) -> None:
             current = os.getenv(name)
             try:
@@ -586,6 +595,18 @@ class HardwareDetector:
 
         edge_concurrency = profile.recommended_concurrency
         chapter_parallel = profile.recommended_chapter_parallel
+        requested_edge_concurrency = os.getenv("EDGE_MAX_CONCURRENCY")
+        explicit_edge_override = bool(
+            requested_edge_concurrency
+            and requested_edge_concurrency.strip()
+            and requested_edge_concurrency.strip() != "0"
+        )
+        requested_chapter_parallel = os.getenv("CHAPTER_PARALLEL_COUNT")
+        explicit_chapter_override = bool(
+            requested_chapter_parallel
+            and requested_chapter_parallel.strip()
+            and requested_chapter_parallel.strip() != "0"
+        )
 
         if turbo_mode:
             # **PERFORMANCE**: Increase to use maximum available CPU/RAM
@@ -598,6 +619,17 @@ class HardwareDetector:
             else:
                 edge_concurrency = max(edge_concurrency, 8)  # Increased from 5 to 8
                 chapter_parallel = max(chapter_parallel, 4)  # Increased from 2 to 4
+
+        if explicit_chapter_override:
+            chapter_parallel = max(1, _env_int("CHAPTER_PARALLEL_COUNT", chapter_parallel))
+
+        # Keep chapter-level pressure protection separate from Edge request concurrency.
+        # An explicit operator value remains authoritative and is reported downstream.
+        pressure_ram_gb = _env_float("RESOURCE_PRESSURE_RAM_GB", 0.65)
+        if not explicit_chapter_override and (
+            profile.ram_total_gb <= 8.5 or profile.ram_available_gb <= pressure_ram_gb
+        ):
+            chapter_parallel = min(chapter_parallel, 2)
 
         network_tier = (profile.network_speed_estimate or "fast").strip().lower()
         edge_profile = dict(
@@ -637,7 +669,13 @@ class HardwareDetector:
                 edge_concurrency = max(edge_concurrency, min(turbo_min_concurrency, cap))
 
         os.environ["EDGE_MAX_CONCURRENCY"] = str(edge_concurrency)
+        os.environ["EDGE_MAX_CONCURRENCY_SOURCE"] = (
+            "explicit" if explicit_edge_override else "detected"
+        )
         os.environ["CHAPTER_PARALLEL_COUNT"] = str(chapter_parallel)
+        os.environ["CHAPTER_PARALLEL_COUNT_SOURCE"] = (
+            "explicit" if explicit_chapter_override else "detected"
+        )
         os.environ["EDGE_FORCE_SEQUENTIAL"] = "true" if profile.force_sequential else "false"
         os.environ["EDGE_CHUNK_CHARS"] = str(edge_profile.get("chunk_chars", 20000))
         os.environ["EDGE_MAX_SEGMENT_SECONDS"] = str(edge_profile.get("max_segment_seconds", 75))

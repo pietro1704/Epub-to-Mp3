@@ -150,7 +150,10 @@ final class SharedContainerImporterTests: XCTestCase {
         // crashing when `containerURL(forSecurityApplicationGroupIdentifier:)`
         // returns nil — that's the safety net used by `pendingFiles`.
         let bogus = "group.does.not.exist.\(UUID().uuidString)"
-        let url = SharedContainerImporter.inboxURL(groupID: bogus)
+        let url = SharedContainerImporter.inboxURL(
+            groupID: bogus,
+            containerURLProvider: { _, _ in nil }
+        )
         // On a properly provisioned device this might still resolve;
         // we just assert no crash + tolerate either outcome.
         if let url {

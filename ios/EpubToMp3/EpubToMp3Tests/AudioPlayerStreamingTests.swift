@@ -127,7 +127,7 @@ final class AudioPlayerStreamingTests: XCTestCase {
             contentsOf: URL(fileURLWithPath: #filePath)
                 .deletingLastPathComponent()
                 .deletingLastPathComponent()
-                .appendingPathComponent("EpubToMp3/Services/AudioPlayer.swift"),
+                .appendingPathComponent("EpubToMp3/Features/Playback/Services/AudioPlayer.swift"),
             encoding: .utf8
         )
         XCTAssertTrue(source.contains("queue rejected insert; deferred segment"))

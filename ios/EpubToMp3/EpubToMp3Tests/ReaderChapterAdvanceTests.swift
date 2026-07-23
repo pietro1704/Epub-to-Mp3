@@ -98,7 +98,7 @@ final class ReaderChapterAdvanceTests: XCTestCase {
     private func readerSources() throws -> (reader: String, attributed: String) {
         let testFile = URL(fileURLWithPath: #filePath)
         let appDir = testFile.deletingLastPathComponent().deletingLastPathComponent()
-        let readerURL = appDir.appendingPathComponent("EpubToMp3/Views/ReaderView.swift")
+        let readerURL = appDir.appendingPathComponent("EpubToMp3/Features/Reader/Views/ReaderView.swift")
         // `#filePath` only resolves on the CI host/simulator, not inside a
         // physical-device test bundle (mirrors textKitPageViewSource()'s guard
         // below) — skip rather than fail when the source tree isn't reachable.
@@ -107,7 +107,7 @@ final class ReaderChapterAdvanceTests: XCTestCase {
         }
         return (
             reader: try String(contentsOf: readerURL),
-            attributed: try String(contentsOf: appDir.appendingPathComponent("EpubToMp3/Views/AttributedPageView.swift"))
+            attributed: try String(contentsOf: appDir.appendingPathComponent("EpubToMp3/Features/Reader/Views/AttributedPageView.swift"))
         )
     }
 
@@ -117,7 +117,7 @@ final class ReaderChapterAdvanceTests: XCTestCase {
     private func textKitPageViewSource() throws -> String {
         let testFile = URL(fileURLWithPath: #filePath)
         let appDir = testFile.deletingLastPathComponent().deletingLastPathComponent()
-        let url = appDir.appendingPathComponent("EpubToMp3/Views/TextKitPageView.swift")
+        let url = appDir.appendingPathComponent("EpubToMp3/Features/Reader/Views/TextKitPageView.swift")
         guard FileManager.default.fileExists(atPath: url.path) else {
             throw XCTSkip("TextKitPageView.swift not reachable in this test host (physical device) — source-contract runs on the CI host/simulator.")
         }
@@ -129,7 +129,7 @@ final class ReaderChapterAdvanceTests: XCTestCase {
     private func playerReaderViewSource() throws -> String {
         let testFile = URL(fileURLWithPath: #filePath)
         let appDir = testFile.deletingLastPathComponent().deletingLastPathComponent()
-        let url = appDir.appendingPathComponent("EpubToMp3/Views/PlayerReaderView.swift")
+        let url = appDir.appendingPathComponent("EpubToMp3/Features/Reader/Views/PlayerReaderView.swift")
         guard FileManager.default.fileExists(atPath: url.path) else {
             throw XCTSkip("PlayerReaderView.swift not reachable in this test host (physical device) — source-contract runs on the CI host/simulator.")
         }
@@ -141,7 +141,7 @@ final class ReaderChapterAdvanceTests: XCTestCase {
     private func instantReaderViewSource() throws -> String {
         let testFile = URL(fileURLWithPath: #filePath)
         let appDir = testFile.deletingLastPathComponent().deletingLastPathComponent()
-        let url = appDir.appendingPathComponent("EpubToMp3/Views/InstantReaderView.swift")
+        let url = appDir.appendingPathComponent("EpubToMp3/Features/Reader/Views/InstantReaderView.swift")
         guard FileManager.default.fileExists(atPath: url.path) else {
             throw XCTSkip("InstantReaderView.swift not reachable in this test host (physical device) — source-contract runs on the CI host/simulator.")
         }
@@ -402,7 +402,7 @@ final class ReaderChapterAdvanceTests: XCTestCase {
         let readerURL = testFile
             .deletingLastPathComponent()
             .deletingLastPathComponent()
-            .appendingPathComponent("EpubToMp3/Views/ReaderView.swift")
+            .appendingPathComponent("EpubToMp3/Features/Reader/Views/ReaderView.swift")
         let source = try String(contentsOf: readerURL, encoding: .utf8)
 
         XCTAssertTrue(

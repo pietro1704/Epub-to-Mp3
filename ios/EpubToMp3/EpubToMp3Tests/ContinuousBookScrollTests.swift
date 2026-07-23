@@ -18,14 +18,14 @@ final class ContinuousBookScrollTests: XCTestCase {
     private func readerSource() throws -> String {
         let url = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent().deletingLastPathComponent()
-            .appendingPathComponent("EpubToMp3/Views/ReaderView.swift")
+            .appendingPathComponent("EpubToMp3/Features/Reader/Views/ReaderView.swift")
         return try String(contentsOf: url, encoding: .utf8)
     }
 
     private func instantReaderSource() throws -> String {
         let url = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent().deletingLastPathComponent()
-            .appendingPathComponent("EpubToMp3/Views/InstantReaderView.swift")
+            .appendingPathComponent("EpubToMp3/Features/Reader/Views/InstantReaderView.swift")
         return try String(contentsOf: url, encoding: .utf8)
     }
 

@@ -22,7 +22,16 @@ import re
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-BOOK_OPEN = REPO_ROOT / "ios" / "EpubToMp3" / "EpubToMp3" / "Views" / "BookOpenView.swift"
+BOOK_OPEN = (
+    REPO_ROOT
+    / "ios"
+    / "EpubToMp3"
+    / "EpubToMp3"
+    / "Features"
+    / "Reader"
+    / "Views"
+    / "BookOpenView.swift"
+)
 
 
 def _enclosing_block(text: str, needle: str) -> str:
@@ -88,7 +97,16 @@ def test_currently_reading_book_id_written_from_library_tap() -> None:
     the encapsulated ``MainReaderView.setCurrentlyReading(bookID:)`` call,
     which is the preferred pattern introduced in the library-tap refactor.
     """
-    library_view = REPO_ROOT / "ios" / "EpubToMp3" / "EpubToMp3" / "Views" / "LibraryView.swift"
+    library_view = (
+        REPO_ROOT
+        / "ios"
+        / "EpubToMp3"
+        / "EpubToMp3"
+        / "Features"
+        / "Library"
+        / "Views"
+        / "LibraryView.swift"
+    )
     body = library_view.read_text(encoding="utf-8")
     assert "currentlyReadingBookIDKey" in body or "setCurrentlyReading(" in body, (
         "LibraryView must either write directly to "

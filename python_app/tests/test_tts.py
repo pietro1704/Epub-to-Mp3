@@ -28,7 +28,12 @@ class TestTTSFactory(unittest.TestCase):
 
     def test_create_edge_engine(self):
         """Test creating Edge TTS engine"""
-        config = ConversionConfig(engine="edge", voice="pt-BR-FranciscaNeural")
+        sink = object()
+        config = ConversionConfig(
+            engine="edge",
+            voice="pt-BR-FranciscaNeural",
+            segment_metric_sink=sink,
+        )
 
         with patch("src.tts.edge_engine.EdgeTTSEngine") as mock_engine:
             engine = self.factory.create_engine(config)
@@ -41,6 +46,7 @@ class TestTTSFactory(unittest.TestCase):
             self.assertEqual(kwargs.get("verbose"), False)
             self.assertEqual(kwargs.get("max_segment_seconds"), config.edge_max_segment_seconds)
             self.assertEqual(kwargs.get("chunk_char_limit"), config.edge_chunk_chars)
+            self.assertIs(kwargs.get("metric_callback"), sink)
 
     def test_create_piper_engine(self):
         """Test creating Piper TTS engine"""

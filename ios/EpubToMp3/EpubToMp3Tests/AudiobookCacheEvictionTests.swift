@@ -3,7 +3,7 @@
 // Unit tests for `AudiobookCacheEviction`.
 //
 // All tests run entirely on a temporary directory that replaces the real
-// Documents/Audiobooks root via `DownloadManager.audiobooksRoot()` override
+// app-owned audiobook root via the explicit `root:` eviction helpers
 // — but since `audiobooksRoot()` is a nonisolated static that calls
 // FileManager directly, we instead build synthetic on-disk fixtures inside
 // a temp folder and call the internal scan/eviction helpers through the
@@ -36,8 +36,7 @@ final class AudiobookCacheEvictionTests: XCTestCase {
 
     // MARK: - Real-root round-trips (locallyDownloadedIndices / staleOfflineBookIds)
     //
-    // These two helpers operate on the REAL audiobooks root (test-host
-    // Documents), so we exercise them end-to-end with unique jobIds and
+    // These two helpers operate on the app-owned audiobook root, so we exercise them end-to-end with unique jobIds and
     // clean up via deleteAudiobook.
 
     private func makeBook(
@@ -191,9 +190,9 @@ final class AudiobookCacheEvictionTests: XCTestCase {
         // building entries from `tempRoot` manually and calling `deleteAudiobook`.
         //
         // Since `AudiobookCacheEviction.scanEntries()` reads from
-        // `DownloadManager.audiobooksRoot()` (Documents/Audiobooks), we cannot
-        // redirect it without modifying production code. Instead we test the
-        // algorithm via the *structural* helpers:
+        // `DownloadManager.audiobooksRoot()`, we cannot redirect it without
+        // modifying production code. Instead we test the algorithm via the
+        // *structural* helpers:
         //   - Read manifests from tempRoot ourselves.
         //   - Apply LRU+TTL algorithm.
         //   - Call deleteAudiobook (which uses DownloadManager.audiobooksRoot).
@@ -362,28 +361,24 @@ final class AudiobookCacheEvictionTests: XCTestCase {
         let oldDate = Date().addingTimeInterval(-48 * 3600)
         defer {
             CacheActivityRegistry.end(jobId: activeJobId)
-            AudiobookCacheEviction.deleteAudiobook(jobId: activeJobId)
-            AudiobookCacheEviction.deleteAudiobook(jobId: expiredJobId)
         }
 
-        try plantRealAudiobook(jobId: activeJobId, entries: [
-            (index: 0, fileName: "active.mp3", onDisk: true)
-        ])
-        try plantRealAudiobook(jobId: expiredJobId, entries: [
-            (index: 0, fileName: "expired.mp3", onDisk: true)
-        ])
-        let activeSidecar = DownloadManager.audiobooksRoot()
-            .appendingPathComponent(activeJobId, isDirectory: true)
-            .appendingPathComponent("last_access")
-        let expiredSidecar = DownloadManager.audiobooksRoot()
-            .appendingPathComponent(expiredJobId, isDirectory: true)
-            .appendingPathComponent("last_access")
-        let oldISO = ISO8601DateFormatter().string(from: oldDate)
-        try oldISO.write(to: activeSidecar, atomically: true, encoding: .utf8)
-        try oldISO.write(to: expiredSidecar, atomically: true, encoding: .utf8)
+        try plantAudiobook(
+            jobId: activeJobId,
+            totalBytes: 128,
+            downloadedAt: oldDate,
+            lastAccessedAt: oldDate
+        )
+        try plantAudiobook(
+            jobId: expiredJobId,
+            totalBytes: 128,
+            downloadedAt: oldDate,
+            lastAccessedAt: oldDate
+        )
 
         CacheActivityRegistry.begin(jobId: activeJobId)
         let evicted = AudiobookCacheEviction.runEviction(
+            root: tempRoot,
             budgetBytes: Int64.max,
             ttlSeconds: 24 * 3600
         )
@@ -391,8 +386,7 @@ final class AudiobookCacheEvictionTests: XCTestCase {
         XCTAssertFalse(evicted.contains(activeJobId), "An actively opened/synthesised job must be protected")
         XCTAssertTrue(evicted.contains(expiredJobId), "An inactive expired job remains an eviction candidate")
         XCTAssertTrue(FileManager.default.fileExists(
-            atPath: DownloadManager.audiobooksRoot()
-                .appendingPathComponent(activeJobId, isDirectory: true).path
+            atPath: tempRoot.appendingPathComponent(activeJobId, isDirectory: true).path
         ))
     }
 

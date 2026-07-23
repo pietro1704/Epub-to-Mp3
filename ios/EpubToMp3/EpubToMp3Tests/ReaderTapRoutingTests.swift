@@ -10,9 +10,9 @@ final class ReaderTapRoutingTests: XCTestCase {
     }
 
     func testPaginatedReaderUsesOneNativeTapRoute() throws {
-        let reader = try source("Views/ReaderView.swift")
-        let attributed = try source("Views/AttributedPageView.swift")
-        let pageCurl = try source("Views/TextKitPageView.swift")
+        let reader = try source("Features/Reader/Views/ReaderView.swift")
+        let attributed = try source("Features/Reader/Views/AttributedPageView.swift")
+        let pageCurl = try source("Features/Reader/Views/TextKitPageView.swift")
 
         XCTAssertFalse(pageCurl.contains("textView.addGestureRecognizer(tap)"),
                        "page-curl must have one tap owner, not a second UITextView tap recognizer")
@@ -32,7 +32,7 @@ final class ReaderTapRoutingTests: XCTestCase {
     }
 
     func testPageCurlHasExactlyOneTapOwnerAndItTogglesChromeOnce() throws {
-        let textKit = try source("Views/TextKitPageView.swift")
+        let textKit = try source("Features/Reader/Views/TextKitPageView.swift")
         let tapRecognizerCount = textKit.components(separatedBy: "UITapGestureRecognizer(").count - 1
 
         XCTAssertEqual(tapRecognizerCount, 1,
@@ -46,15 +46,15 @@ final class ReaderTapRoutingTests: XCTestCase {
     }
 
     func testBookAwareScrollSimpleTapsDoNotNavigateChapters() throws {
-        let reader = try source("Views/ReaderView.swift")
+        let reader = try source("Features/Reader/Views/ReaderView.swift")
         XCTAssertFalse(reader.contains("case .left:\n                        retreatChapter(chapters: chapters)\n                    case .center:\n                        onCenterTap?()\n                    case .right:\n                        advanceChapter(chapters: chapters)"),
                        "book-aware scroll taps must toggle chrome in every zone; chapter navigation belongs to swipes")
     }
 
     func testReaderActionsHaveStableAccessibilityContractsInBothHosts() throws {
-        let dialog = try source("Views/PlayDivergenceDialog.swift")
-        let instantReader = try source("Views/InstantReaderView.swift")
-        let playerReader = try source("Views/PlayerReaderView.swift")
+        let dialog = try source("Features/Playback/Views/PlayDivergenceDialog.swift")
+        let instantReader = try source("Features/Reader/Views/InstantReaderView.swift")
+        let playerReader = try source("Features/Reader/Views/PlayerReaderView.swift")
 
         XCTAssertTrue(dialog.contains("accessibilityIdentifier(\"reader.divergenceDialog\")"),
                       "the divergence chooser needs a stable accessibility identifier")
@@ -71,8 +71,8 @@ final class ReaderTapRoutingTests: XCTestCase {
     }
 
     func testPlayFromHereRoutesThroughReaderAnchorInBothHosts() throws {
-        let instantReader = try source("Views/InstantReaderView.swift")
-        let playerReader = try source("Views/PlayerReaderView.swift")
+        let instantReader = try source("Features/Reader/Views/InstantReaderView.swift")
+        let playerReader = try source("Features/Reader/Views/PlayerReaderView.swift")
 
         XCTAssertTrue(instantReader.contains("startFromReaderPage("),
                       "InstantReaderView must route Tocar daqui through the reader anchor API")
@@ -81,8 +81,8 @@ final class ReaderTapRoutingTests: XCTestCase {
     }
 
     func testTapTransitionDebounceIsDiagnosable() throws {
-        let reader = try source("Views/ReaderView.swift")
-        let pageCurl = try source("Views/TextKitPageView.swift")
+        let reader = try source("Features/Reader/Views/ReaderView.swift")
+        let pageCurl = try source("Features/Reader/Views/TextKitPageView.swift")
 
         XCTAssertTrue(reader.contains("FlickerProbe.shared.log(\"Reader.tap.ignored.transition"),
                       "ReaderView must log taps ignored during a page transition")
@@ -91,8 +91,8 @@ final class ReaderTapRoutingTests: XCTestCase {
     }
 
     func testChromeAndSelectionOverlaysDoNotOwnTextSurfaceTouches() throws {
-        let reader = try source("Views/ReaderView.swift")
-        let instantReader = try source("Views/InstantReaderView.swift")
+        let reader = try source("Features/Reader/Views/ReaderView.swift")
+        let instantReader = try source("Features/Reader/Views/InstantReaderView.swift")
 
         XCTAssertTrue(reader.contains(".allowsHitTesting(false)"),
                       "non-action reader overlays must not block the text surface")
@@ -101,7 +101,7 @@ final class ReaderTapRoutingTests: XCTestCase {
     }
 
     func testChromeVisibilityModifierUsesVisibleStateForSystemBars() throws {
-        let instantReader = try source("Views/InstantReaderView.swift")
+        let instantReader = try source("Features/Reader/Views/InstantReaderView.swift")
         let modifier = try XCTUnwrap(
             instantReader.range(of: "struct ChromeVisibilityModifier")
                 .map { instantReader[$0.lowerBound...] }

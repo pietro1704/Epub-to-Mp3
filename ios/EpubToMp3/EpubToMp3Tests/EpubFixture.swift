@@ -109,7 +109,7 @@ enum EpubFixture {
           <manifest>
             <item id="cover-img" href="cover.png" media-type="image/png" \
         properties="cover-image"/>
-            <item id="ch1" href="chapter1.xhtml" \
+            <item id="ch1" href="text/chapter1.xhtml" \
         media-type="application/xhtml+xml"/>
           </manifest>
           <spine>
@@ -122,8 +122,8 @@ enum EpubFixture {
             .stored("mimetype", Data("application/epub+zip".utf8)),
             .deflated("META-INF/container.xml", containerXML),
             .deflated("OEBPS/content.opf", withSpineOPF),
-            .deflated("OEBPS/chapter1.xhtml", chapterXHTML),
-            .stored("OEBPS/cover.png", coverPNG),
+            .deflated("OEBPS/text/chapter1.xhtml", chapterXHTML),
+            .stored("OEBPS/images/cover.png", coverPNG),
         ])
         try archive.write(to: url)
         return url

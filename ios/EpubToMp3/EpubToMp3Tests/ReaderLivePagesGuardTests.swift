@@ -26,7 +26,7 @@ final class ReaderLivePagesGuardTests: XCTestCase {
         let projectRoot = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
             .deletingLastPathComponent()
-        let url = projectRoot.appendingPathComponent("EpubToMp3/Views/ReaderView.swift")
+        let url = projectRoot.appendingPathComponent("EpubToMp3/Features/Reader/Views/ReaderView.swift")
         guard FileManager.default.fileExists(atPath: url.path) else {
             throw XCTSkip("ReaderView.swift not reachable in this test host (physical device) — source-inspection guard runs on the CI host/simulator.")
         }

@@ -66,7 +66,7 @@ final class ShareViewController: UIViewController {
                         from: provider,
                         typeIdentifier: typeID
                     )
-                    _ = try SharedContainerImporter.dropIntoInbox(
+                    _ = try SharedContainerInbox.dropIntoInbox(
                         source: materialized
                     )
                     imported += 1

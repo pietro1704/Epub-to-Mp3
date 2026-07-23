@@ -77,7 +77,7 @@ final class ReaderAudioFollowingDomainTests: XCTestCase {
             .deletingLastPathComponent()
             .deletingLastPathComponent()
         let source = try String(
-            contentsOf: projectRoot.appendingPathComponent("EpubToMp3/Views/PlayerReaderView.swift"),
+            contentsOf: projectRoot.appendingPathComponent("EpubToMp3/Features/Reader/Views/PlayerReaderView.swift"),
             encoding: .utf8
         )
         XCTAssertGreaterThanOrEqual(source.components(separatedBy: "readerCoordinator.setChapter(").count - 1, 3)

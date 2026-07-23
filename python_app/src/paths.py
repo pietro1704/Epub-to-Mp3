@@ -167,7 +167,7 @@ def _resolve_output_dir() -> Path:
     override = _as_path(os.getenv("OUTPUT_DIR"))
     if override:
         return override
-    if SPACE_ID or is_frozen_bundle():
+    if SPACE_ID or is_frozen_bundle() or _persistent_override is not None:
         return PERSISTENT_ROOT / "output"
     return PROJECT_ROOT / "output"
 
@@ -176,7 +176,7 @@ def _resolve_cache_dir() -> Path:
     override = _as_path(os.getenv("CACHE_DIR"))
     if override:
         return override
-    if SPACE_ID or is_frozen_bundle():
+    if SPACE_ID or is_frozen_bundle() or _persistent_override is not None:
         return PERSISTENT_ROOT / ".cache"
     return PROJECT_ROOT / ".cache"
 

@@ -11,7 +11,7 @@ final class LibraryGestureTests: XCTestCase {
             contentsOf: URL(fileURLWithPath: #filePath)
                 .deletingLastPathComponent()
                 .deletingLastPathComponent()
-                .appendingPathComponent("EpubToMp3/Views/LibraryView.swift")
+                .appendingPathComponent("EpubToMp3/Features/Library/Views/LibraryView.swift")
         )
     }
 

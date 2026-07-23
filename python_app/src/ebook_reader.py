@@ -127,6 +127,7 @@ class Chapter:
     footnotes: Optional[List[Dict[str, str]]] = None
     _progress_index: Optional[int] = None
     _deferred_safe_pass: bool = False
+    stable_id: Optional[str] = None
 
 
 @dataclass(slots=True)

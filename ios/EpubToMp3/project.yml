@@ -42,11 +42,9 @@ settings:
     ENABLE_TESTABILITY: YES
     # Strip nothing in Debug — speeds linker; Release strips debug.
     STRIP_INSTALLED_PRODUCT: NO
-    # Treat warnings as warnings (not errors). User pivoted: too many
-    # SwiftUI/iOS 17 deprecations during the embed work were blocking
-    # iteration. CI lint still surfaces them; just don't fail the
-    # build over them.
-    SWIFT_TREAT_WARNINGS_AS_ERRORS: NO
+    # Warnings are errors. This keeps deprecations, concurrency diagnostics,
+    # and unsafe API usage from accumulating behind a green build.
+    SWIFT_TREAT_WARNINGS_AS_ERRORS: YES
     # Disable asset catalog thinning for device builds. Xcode 26.3 actool
     # unconditionally requires an iOS Simulator runtime to produce the
     # "thinned" variant even for device-only builds, causing a build failure
@@ -54,7 +52,7 @@ settings:
     # produces a single fat asset catalog that is valid for both device
     # and simulator without the simulator runtime check.
     ENABLE_ON_DEMAND_RESOURCES: NO
-    GCC_TREAT_WARNINGS_AS_ERRORS: NO
+    GCC_TREAT_WARNINGS_AS_ERRORS: YES
     # Stricter Swift warnings worth promoting.
     SWIFT_STRICT_CONCURRENCY: minimal
     # Custom launch storyboard (was UILaunchScreen_Generation=YES auto).
@@ -252,6 +250,11 @@ targets:
       - target: EpubToMp3Widget
         embed: true
         codeSign: true
+      # Share Extension — embedded only for iOS. Keep it out of the
+      # macOS app bundle; the extension target has no macOS destination.
+      - target: EpubToMp3ShareExtension
+        embed: true
+        codeSign: true
     settings:
       base:
         SUPPORTED_PLATFORMS: "iphoneos iphonesimulator macosx"
@@ -268,7 +271,7 @@ targets:
         # Release build fails ValidateEmbeddedBinary with "Your target
         # is built for macOS but contains embedded content built for
         # the iOS platform".
-        "EXCLUDED_SOURCE_FILE_NAMES[sdk=macosx*]": "Python.xcframework EpubToMp3Widget.appex"
+        "EXCLUDED_SOURCE_FILE_NAMES[sdk=macosx*]": "Python.xcframework EpubToMp3Widget.appex EpubToMp3ShareExtension.appex"
         # Both run-script phases on this target (the pre-build bootstrap
         # and the post-build sidecar embed) write into directories that
         # the sandbox cannot pre-declare (e.g. download caches under
@@ -432,6 +435,40 @@ targets:
           "CODE_SIGNING_REQUIRED[sdk=iphoneos*]": YES
           "CODE_SIGN_STYLE[sdk=iphoneos*]": Automatic
 
+  EpubToMp3ShareExtension:
+    type: app-extension
+    supportedDestinations: [iOS]
+    deploymentTarget:
+      iOS: "15.0"
+    sources:
+      - path: EpubToMp3ShareExtension
+        excludes:
+          - "Info.plist"
+          - "ShareExtension.entitlements"
+      # Foundation-only inbox contract shared with the main app target.
+      - path: EpubToMp3/Shared/Integrations/SharedContainerInbox.swift
+    dependencies: []
+    settings:
+      base:
+        SUPPORTED_PLATFORMS: "iphoneos iphonesimulator"
+        IPHONEOS_DEPLOYMENT_TARGET: "15.0"
+        PRODUCT_BUNDLE_IDENTIFIER: com.pietrocode.epubtomp3.share
+        INFOPLIST_FILE: EpubToMp3ShareExtension/Info.plist
+        CODE_SIGN_ENTITLEMENTS: EpubToMp3ShareExtension/ShareExtension.entitlements
+        TARGETED_DEVICE_FAMILY: "1,2"
+        SWIFT_VERSION: "5.9"
+        APPLICATION_EXTENSION_API_ONLY: YES
+        ENABLE_USER_SCRIPT_SANDBOXING: YES
+      configs:
+        Debug:
+          "CODE_SIGN_IDENTITY[sdk=iphoneos*]": "Apple Development"
+          "CODE_SIGNING_REQUIRED[sdk=iphoneos*]": YES
+          "CODE_SIGN_STYLE[sdk=iphoneos*]": Automatic
+        Release:
+          CODE_SIGN_STYLE: Automatic
+          SWIFT_COMPILATION_MODE: wholemodule
+          SWIFT_OPTIMIZATION_LEVEL: "-O"
+
   EpubToMp3Widget:
     type: app-extension
     # WidgetKit runs on iOS 14+. Keep the extension at the app's iOS 15
@@ -448,7 +485,7 @@ targets:
           - "Info.plist"
       # Shared with the main app target. Same Codable shape on both ends —
       # ActivityKit serialises by name + Codable, not nominal cross-module.
-      - path: EpubToMp3/Models/ConversionActivityAttributes.swift
+      - path: EpubToMp3/Shared/Integrations/ConversionActivityAttributes.swift
     dependencies: []
     settings:
       base:

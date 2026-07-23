@@ -1,0 +1,363 @@
+import SwiftUI
+import AVFoundation
+import MediaPlayer
+
+/// Persistent mini-player bar matching the Apple Podcasts / Apple Books HIG
+/// pattern. Shown at the bottom of every surface that is NOT the Now Playing
+/// full-screen view. Hidden when nothing is playing (`currentBookID == nil`).
+///
+/// Layout (64 pt height):
+///   [cover 44×44] [title / chapter]  [play/pause] [skip +15s]
+///   ─── 2pt progress bar (accentColor) across the top ──────────
+///
+/// Tap anywhere → `onTap()` → caller navigates to Now Playing.
+///
+/// HIG compliance:
+/// - `.thinMaterial` background (same as Apple Books mini-player).
+/// - All interactive targets ≥44×44 pt.
+/// - Combined accessibility label + hint on the container.
+/// - Dynamic Type via `.subheadline` / `.caption2`.
+/// - `@Environment(\.accessibilityReduceMotion)` respected on appear transition.
+struct MiniPlayerBar: View {
+    static let reservedHeight: CGFloat = 64
+
+    @EnvironmentObject private var player: AudioPlayer
+    @EnvironmentObject private var playbackClock: PlaybackClock
+    @EnvironmentObject private var library: LibraryStore
+
+    /// Called when the user taps the bar — the hosting view should navigate
+    /// to the Now Playing full-screen destination.
+    var onTap: () -> Void
+
+    @AppStorage(AudioPlayer.currentBookIDDefaultsKey)
+    private var currentBookID: String?
+
+    @AppStorage(AudioPlayer.currentChapterIndexDefaultsKey)
+    private var currentChapterIndex: Int = 0
+
+    @EnvironmentObject private var readerCoordinator: ReaderCoordinator
+    private var readerChapterIndex: Int { readerCoordinator.anchor.chapterIndex }
+    private var readerPageRatio: Double? { readerCoordinator.anchor.pageRatio }
+
+    @State private var showingRatePicker = false
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.accessibilityDifferentiateWithoutColor) private var differentiateWithoutColor
+
+    // MARK: Derived state
+
+    private var currentBook: BookEntity? {
+        guard let id = currentBookID, !id.isEmpty else { return nil }
+        return library.books.first { $0.id == id }
+    }
+
+    private var progress: Double {
+        guard playbackClock.durationSeconds > 0 else { return 0 }
+        return min(1, max(0, playbackClock.positionSeconds / playbackClock.durationSeconds))
+    }
+
+    private var chapterLabel: String {
+        guard player.snapshot != nil else { return "Chapter \(currentChapterIndex + 1)" }
+        return player.effectiveChapterTitle
+    }
+
+    private var bookProgress: BookChapterProgress? {
+        guard let snapshot = player.snapshot, snapshot.chapterProgress?.isEmpty == false else { return nil }
+        return BookChapterProgress(snapshot: snapshot)
+    }
+
+    private func segmentedBookProgress(_ model: BookChapterProgress) -> some View {
+        GeometryReader { geometry in
+            chapterProgressStack(model: model, width: geometry.size.width)
+        }
+        .frame(height: 4)
+        .accessibilityIdentifier("miniPlayer.bookProgress")
+    }
+
+    private func chapterProgressStack(model: BookChapterProgress, width: CGFloat) -> some View {
+        HStack(spacing: 1) {
+            ForEach(model.chapters) { chapter in
+                Capsule()
+                    .fill(segmentColor(for: chapter))
+                    .frame(width: chapterWidth(chapter, totalWidth: width, totalWeight: model.totalWeight))
+                    .accessibilityLabel(chapter.title)
+                    .accessibilityValue("\(Int(chapter.ratio * 100)) percent")
+            }
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Book progress")
+        .accessibilityValue("\(Int(model.overallRatio * 100)) percent")
+    }
+
+    private func chapterWidth(
+        _ chapter: BookChapterProgress.Chapter,
+        totalWidth: CGFloat,
+        totalWeight: Double
+    ) -> CGFloat {
+        max(2, totalWidth * chapter.weight / max(1, totalWeight))
+    }
+
+    private func segmentColor(for chapter: BookChapterProgress.Chapter) -> Color {
+        switch chapter.state {
+        case .completed: return .accentColor
+        case .running: return .orange
+        case .failed: return .red
+        case .queued: return .secondary.opacity(0.25)
+        }
+    }
+
+    // MARK: Body
+
+    var body: some View {
+        if let book = currentBook {
+            VStack(spacing: 0) {
+                if let bookProgress {
+                    segmentedBookProgress(bookProgress)
+                } else {
+                    Rectangle()
+                        .fill(player.isConverting ? .orange : .accentColor)
+                        .frame(height: 2)
+                        .scaleEffect(x: player.isConverting ? (player.conversionProgress ?? 0) : progress, y: 1, anchor: .leading)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+
+                HStack(spacing: 12) {
+                    // The cover + title area is the *only* surface that
+                    // expands the player on tap. Buttons below have their
+                    // own gesture targets and stay independent.
+                    Button {
+                        onTap()
+                    } label: {
+                        HStack(spacing: 12) {
+                            coverView(for: book)
+                                .frame(width: 44, height: 44)
+                                .clipShape(RoundedRectangle(cornerRadius: 6))
+
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(book.resolvedTitle)
+                                    .font(.subheadline.weight(.medium))
+                                    .lineLimit(1)
+                                    .foregroundStyle(.primary)
+                                Text(chapterLabel)
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                            }
+                            Spacer(minLength: 0)
+                        }
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    // VoiceOver was synthesising the label from the
+                    // child `Text`s alone — "Book Title. Chapter 3"
+                    // — which sounds identical to tapping the book
+                    // in the library. Explicit label disambiguates
+                    // the gesture: it EXPANDS the player.
+                    .accessibilityLabel(
+                        L10n.string("miniPlayer.expandPlayer", book.resolvedTitle, chapterLabel)
+                    )
+                    .accessibilityHint(L10n.string("miniPlayer.expandHint"))
+
+                    // Inline transport: play/pause + next chapter. Tap on
+                    // the *bar* (anywhere outside these buttons) expands
+                    // to the full player — SwiftUI's gesture dispatch
+                    // gives the buttons priority over the bar's
+                    // `onTapGesture`, so play/pause never accidentally
+                    // expands the sheet.
+                    ZStack {
+                        ProgressView()
+                            .opacity(player.isConverting && !player.firstChapterReady ? 1 : 0)
+                            .accessibilityLabel(L10n.string("player.generatingAudio"))
+                            .accessibilityIdentifier("miniPlayer.loadingSpinner")
+                        Button {
+                            handlePlayTap()
+                        } label: {
+                            Image(systemName: player.isPlaying ? "pause.fill" : "play.fill")
+                                .font(.system(size: 22))
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .opacity(player.isConverting && !player.firstChapterReady ? 0 : 1)
+                        .accessibilityLabel(player.isPlaying ? L10n.string("player.pause") : L10n.string("player.play"))
+                        .accessibilityIdentifier("miniPlayer.playPause")
+                    }
+                    .frame(width: 44, height: 44)
+
+                    Button {
+                        player.nextChapter()
+                    } label: {
+                        Image(systemName: "forward.end.fill")
+                            .font(.system(size: 18))
+                            .frame(minWidth: 44, minHeight: 44)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(player.isConverting && !player.firstChapterReady)
+                    .accessibilityLabel(L10n.string("player.nextChapter"))
+
+                    // Dedicated rate button opens the shared horizontal
+                    // picker. Sleep remains in the overflow menu.
+                    Button {
+                        showingRatePicker.toggle()
+                    } label: {
+                        Text(player.rate.shortLabel)
+                            .font(.caption.weight(.semibold).monospacedDigit())
+                            .frame(minWidth: 44, minHeight: 44)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(L10n.string("player.playbackSpeed", player.rate.shortLabel))
+                    .accessibilityIdentifier("miniPlayer.playbackRateButton")
+                    .popover(isPresented: $showingRatePicker, attachmentAnchor: .point(.top), arrowEdge: .bottom) {
+                        PlaybackRateFloatingPicker(player: player)
+                            .frame(minWidth: 340)
+                            .padding(.vertical, 8)
+                            .presentationCompactAdaptationIfAvailable()
+                    }
+
+                    // Overflow menu — sleep timer only.
+                    Menu {
+                        Menu {
+                            ForEach([0, 5, 15, 30, 45, 60], id: \.self) { minutes in
+                                Button {
+                                    if minutes == 0 {
+                                        player.setSleepTimer(seconds: 0)
+                                    } else {
+                                        player.startSleepTimer(minutes: minutes)
+                                    }
+                                } label: {
+                                    if minutes == 0 {
+                                        Label(L10n.string("player.sleepTimerOption.off"), systemImage: "xmark")
+                                    } else {
+                                        Text(L10n.string("player.sleepTimerOption.\(minutes)"))
+                                    }
+                                }
+                            }
+                        } label: {
+                            Label(L10n.string("player.sleepTimer"), systemImage: "moon.zzz")
+                        }
+                    } label: {
+                        Image(systemName: "ellipsis")
+                            .font(.system(size: 18))
+                            .frame(width: 44, height: 44)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(L10n.string("player.more"))
+                    .accessibilityIdentifier("miniPlayer.more")
+                }
+                // 12pt internal spacing on top of any safe-area lateral
+                // inset so the cover and transport controls never sit
+                // under the notch / Dynamic Island in landscape.
+                .compatHorizontalSafeAreaPadding(12)
+                .frame(minHeight: 62)
+            }
+            .frame(minHeight: 64)
+            .background(.thinMaterial)
+            // Pull-up: an upward drag of ≥20pt anywhere on the bar
+            // expands. The dedicated cover/title button (above) handles
+            // tap-to-expand without intercepting taps on the buttons
+            // (play/pause, next, "..."), which was the previous bug.
+            .gesture(
+                DragGesture(minimumDistance: 12)
+                    .onEnded { value in
+                        if value.translation.height < -20
+                            || value.predictedEndTranslation.height < -60 {
+                            onTap()
+                        }
+                    }
+            )
+            // Keep child accessibility behaviour intact — `.combine` was
+            // making SwiftUI route every tap inside the bar to the
+            // bar-level accessibility element (which triggered the
+            // `expand` action), so play/pause / next / "..." were all
+            // expanding the sheet. `.contain` keeps each button focusable
+            // separately.
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("miniPlayer.bar")
+            .transition(
+                reduceMotion
+                    ? .opacity
+                    : .move(edge: .bottom).combined(with: .opacity)
+            )
+
+        }
+    }
+
+    // MARK: Play / divergence routing
+    //
+    // Delegates the decision logic and the start-options dialog to
+    // `AudioPlayer` + the `.playDivergenceDialog` view modifier so
+    // every play-button surface in the app shares one implementation.
+
+    private func handlePlayTap() {
+        // Transport controls always operate on the effective audio cursor.
+        // Reader-vs-audio divergence is an explicit Reader action, not a
+        // reason for the global mini-player Play button to show a chooser.
+        player.togglePlayPause()
+    }
+
+    // MARK: Cover
+
+    @ViewBuilder
+    private func coverView(for book: BookEntity) -> some View {
+        if let data = book.coverPNG, let img = platformImage(from: data) {
+            img.resizable().aspectRatio(contentMode: .fit)
+        } else {
+            ZStack {
+                RoundedRectangle(cornerRadius: 6)
+                    .fill(Color.accentColor.opacity(0.15))
+                Image(systemName: "book.closed")
+                    .font(.system(size: 20, weight: .light))
+                    .foregroundStyle(.tint)
+            }
+        }
+    }
+
+}
+
+#if DEBUG
+private struct MiniPlayerPreviewPlaying: View {
+    private let lib = LibraryStore.previewPopulated
+    private let player = AudioPlayer()
+    init() {
+        if let first = lib.books.first {
+            UserDefaults.standard.set(first.id, forKey: AudioPlayer.currentBookIDDefaultsKey)
+        }
+    }
+    var body: some View {
+        VStack {
+            Spacer()
+            MiniPlayerBar(onTap: {})
+                .environmentObject(player)
+                .environmentObject(player.playbackClock)
+                .environmentObject(lib)
+        }
+        .background(Color.secondary.opacity(0.1))
+    }
+}
+
+private struct MiniPlayerPreviewHidden: View {
+    private let lib = LibraryStore.previewPopulated
+    private let player = AudioPlayer()
+    init() {
+        UserDefaults.standard.removeObject(forKey: AudioPlayer.currentBookIDDefaultsKey)
+    }
+    var body: some View {
+        VStack {
+            Spacer()
+            MiniPlayerBar(onTap: {})
+                .environmentObject(player)
+                .environmentObject(player.playbackClock)
+                .environmentObject(lib)
+            Text("(no bar above — nothing playing)")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .padding()
+        }
+        .background(Color.secondary.opacity(0.1))
+    }
+}
+
+#Preview("MiniPlayerBar — playing") { MiniPlayerPreviewPlaying() }
+#Preview("MiniPlayerBar — hidden")  { MiniPlayerPreviewHidden() }
+#endif

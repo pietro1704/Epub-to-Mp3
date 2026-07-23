@@ -78,7 +78,7 @@ final class InstantReaderPlayFromHereTests: XCTestCase {
             .deletingLastPathComponent()
             .deletingLastPathComponent()
         return try String(
-            contentsOf: projectRoot.appendingPathComponent("EpubToMp3/Views/FullPlayerSheet.swift"),
+            contentsOf: projectRoot.appendingPathComponent("EpubToMp3/Features/Playback/Views/FullPlayerSheet.swift"),
             encoding: .utf8
         )
         #endif
@@ -102,7 +102,7 @@ final class InstantReaderPlayFromHereTests: XCTestCase {
             .deletingLastPathComponent()
             .deletingLastPathComponent()
         return try String(
-            contentsOf: projectRoot.appendingPathComponent("EpubToMp3/Views/BookOpenView.swift"),
+            contentsOf: projectRoot.appendingPathComponent("EpubToMp3/Features/Reader/Views/BookOpenView.swift"),
             encoding: .utf8
         )
         #endif
@@ -117,7 +117,7 @@ final class InstantReaderPlayFromHereTests: XCTestCase {
             .deletingLastPathComponent()
             .deletingLastPathComponent()
         return try String(
-            contentsOf: projectRoot.appendingPathComponent("EpubToMp3/Services/ReaderInteractionState.swift"),
+            contentsOf: projectRoot.appendingPathComponent("EpubToMp3/Features/Reader/Services/ReaderInteractionState.swift"),
             encoding: .utf8
         )
         #endif
@@ -132,7 +132,7 @@ final class InstantReaderPlayFromHereTests: XCTestCase {
             .deletingLastPathComponent()
             .deletingLastPathComponent()
         return try String(
-            contentsOf: projectRoot.appendingPathComponent("EpubToMp3/Views/InstantReaderView.swift"),
+            contentsOf: projectRoot.appendingPathComponent("EpubToMp3/Features/Reader/Views/InstantReaderView.swift"),
             encoding: .utf8
         )
         #endif
