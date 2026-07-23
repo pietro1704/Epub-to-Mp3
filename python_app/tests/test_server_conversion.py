@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import unittest
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -616,6 +617,7 @@ def test_edge_fallbacks_to_piper(tmp_path, monkeypatch):
         "events": [],
         "file_path": str(upload_path),
         "engine": "edge",
+        "engineChainFallback": True,
         "voice": None,
         "chapters": None,
         "footnote_mode": "inline",
@@ -624,6 +626,12 @@ def test_edge_fallbacks_to_piper(tmp_path, monkeypatch):
     }
 
     _make_telemetry(tmp_path, monkeypatch)
+    monkeypatch.setattr(server, "_has_piper_support", lambda: True)
+    monkeypatch.setattr(
+        server,
+        "_build_engine_chain",
+        lambda config: [config, replace(config, engine="piper", voice=None, model_path=None)],
+    )
 
     creators = {
         "edge": lambda: DummyTTSEngine("edge", fail_times=1),

@@ -19,6 +19,33 @@ from pydantic import BaseModel
 
 router = APIRouter(prefix="/api", tags=["uploads"])
 _VALID_UPLOAD_ID_CHARS = frozenset("0123456789abcdef-")
+_UPLOAD_READ_CHUNK_BYTES = 1024 * 1024
+
+
+async def _stream_upload_to_path(
+    upload: UploadFile, destination: Path, max_bytes: int, max_mb: int | None = None
+) -> dict:
+    """Copy an upload to disk while enforcing its limit incrementally."""
+    total = 0
+    digest = hashlib.sha1()
+    try:
+        with destination.open("wb") as output:
+            while True:
+                chunk = await upload.read(_UPLOAD_READ_CHUNK_BYTES)
+                if not chunk:
+                    break
+                total += len(chunk)
+                if max_bytes and total > max_bytes:
+                    raise HTTPException(
+                        status_code=413,
+                        detail=f"File exceeds the {max_mb if max_mb is not None else max_bytes // (1024 * 1024)} MB limit",
+                    )
+                output.write(chunk)
+                digest.update(chunk)
+    except Exception:
+        destination.unlink(missing_ok=True)
+        raise
+    return {"size": total, "sha1": digest.hexdigest() if total else None}
 
 
 def _validate_upload_id(upload_id: str) -> str:
@@ -106,13 +133,6 @@ async def upload_ebook(background_tasks: BackgroundTasks, file: UploadFile = Fil
     if file is None:
         raise HTTPException(status_code=400, detail="No file uploaded")
 
-    raw_payload = await file.read()
-    if _srv.MAX_UPLOAD_BYTES and len(raw_payload) > _srv.MAX_UPLOAD_BYTES:
-        raise HTTPException(
-            status_code=413,
-            detail=f"File exceeds the {_srv.MAX_UPLOAD_MB} MB limit",
-        )
-
     _srv._cleanup_pending_uploads()
     upload_id = f"{uuid.uuid4()}"
     upload_dir = _srv._resolve_relative_path_within_root(
@@ -121,8 +141,14 @@ async def upload_ebook(background_tasks: BackgroundTasks, file: UploadFile = Fil
     upload_dir.mkdir(parents=True, exist_ok=True)
     original_name = Path(file.filename or "ebook").name
     temp_path = _srv._resolve_relative_path_within_root(upload_dir, original_name, must_exist=False)
-    temp_path.write_bytes(raw_payload)
-    file_hash = hashlib.sha1(raw_payload).hexdigest() if raw_payload else None
+    try:
+        upload_result = await _stream_upload_to_path(
+            file, temp_path, _srv.MAX_UPLOAD_BYTES, _srv.MAX_UPLOAD_MB
+        )
+    except HTTPException:
+        shutil.rmtree(upload_dir, ignore_errors=True)
+        raise
+    file_hash = upload_result["sha1"]
 
     book_title = Path(original_name).stem
     book_author = "Unknown Author"
@@ -231,7 +257,9 @@ async def upload_ebook_local(
     dest_path = _srv._resolve_relative_path_within_root(upload_dir, src.name, must_exist=False)
     shutil.copy2(src, dest_path)
 
-    file_hash = hashlib.sha1(src.read_bytes()).hexdigest()
+    from src._server_audio_helpers import _hash_audio_file
+
+    file_hash = _hash_audio_file(dest_path)
 
     book_title = src.stem
     book_author = "Unknown Author"
