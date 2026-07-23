@@ -38,7 +38,7 @@ struct ChapterListRowState: Equatable {
     }
 }
 
-/// Full-screen audiobook player presented via `.fullScreenCover`.
+/// In-tree bottom-sheet audiobook player.
 /// Mirrors the Apple Music / Spotify full-player pattern:
 ///
 ///   ┌─────────────────────┐
@@ -56,9 +56,8 @@ struct ChapterListRowState: Equatable {
 ///   │  speed  sleep  AirPlay │
 ///   └─────────────────────┘
 ///
-/// Presentation: `.fullScreenCover(isPresented:)` — slides up from the
-/// bottom, exactly like Spotify / Apple Music. Dismissed by swiping
-/// down (custom drag gesture) or tapping the chevron handle.
+/// The root view owns presentation so the mini player, reader and full
+/// player share the same environment objects and playback state.
 struct FullPlayerSheet: View {
     @EnvironmentObject private var player: AudioPlayer
     @EnvironmentObject private var library: LibraryStore
@@ -66,9 +65,6 @@ struct FullPlayerSheet: View {
 
     @AppStorage(AudioPlayer.currentBookIDDefaultsKey)
     private var currentBookID: String?
-
-    @AppStorage(AudioPlayer.currentChapterIndexDefaultsKey)
-    private var currentChapterIndex: Int = 0
 
     @EnvironmentObject private var readerCoordinator: ReaderCoordinator
     private var readerChapterIndex: Int { readerCoordinator.anchor.chapterIndex }
@@ -107,17 +103,17 @@ struct FullPlayerSheet: View {
     }
 
     private var chapterLabel: String {
-        let idx = player.snapshot != nil ? player.currentChapterIndex : currentChapterIndex
-        guard let chapters = player.snapshot?.playableChapters,
-              idx < chapters.count else {
-            return L10n.string("player.chapter", idx + 1)
-        }
-        return chapters[idx].displayTitle
+        PlaybackPresentationState.chapterLabel(
+            snapshot: player.snapshot,
+            currentChapterIndex: player.currentChapterIndex
+        )
     }
 
     private var progress: Double {
-        guard player.durationSeconds > 0 else { return 0 }
-        return min(1, max(0, player.positionSeconds / player.durationSeconds))
+        PlaybackPresentationState.progress(
+            position: player.positionSeconds,
+            duration: player.durationSeconds
+        )
     }
 
     private var currentLyricText: String? {
@@ -282,29 +278,30 @@ struct FullPlayerSheet: View {
         // width; pre-iOS-17 falls back to a GeometryReader on
         // `.frame(maxWidth:)`. The 320pt hard cap protects iPad
         // landscape and macOS where the parent expands wide.
-        Group {
-            coverArtwork
-                .overlay {
-                    if showLyricsOverlay {
-                        lyricsOverlay
-                            .transition(.opacity.combined(with: .scale(scale: 0.98)))
-                    } else if !coverLyricsTutorialSeen {
-                        coverTapTutorial
-                            .transition(.opacity.combined(with: .move(edge: .bottom)))
-                    }
-                }
-        }
-        .contentShape(RoundedRectangle(cornerRadius: 16))
-        .onTapGesture {
+        Button {
             withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
                 coverLyricsTutorialSeen = true
                 showLyricsOverlay.toggle()
             }
+        } label: {
+            Group {
+                coverArtwork
+                    .overlay {
+                        if showLyricsOverlay {
+                            lyricsOverlay
+                                .transition(.opacity.combined(with: .scale(scale: 0.98)))
+                        } else if !coverLyricsTutorialSeen {
+                            coverTapTutorial
+                                .transition(.opacity.combined(with: .move(edge: .bottom)))
+                        }
+                    }
+            }
         }
+        .contentShape(RoundedRectangle(cornerRadius: 16))
         // Subtle scale-up on appear — matches Apple Music entry animation.
         .scaleEffect(1.0)
         .animation(.spring(response: 0.5, dampingFraction: 0.75), value: currentBookID)
-        .accessibilityAddTraits(.isButton)
+        .accessibilityLabel(L10n.string("player.coverArt", currentBook?.resolvedTitle ?? ""))
         .accessibilityHint(L10n.string("player.lyricsTapHint"))
     }
 
@@ -581,7 +578,7 @@ struct FullPlayerSheet: View {
             } label: {
                 Text(player.rate.shortLabel)
                     .font(.subheadline.weight(.semibold))
-                    .frame(minWidth: 56, minHeight: 36)
+                    .frame(minWidth: 56, minHeight: 44)
                     .padding(.horizontal, 10)
                     .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 10))
             }
@@ -653,96 +650,6 @@ struct FullPlayerSheet: View {
         }
     }
 
-    /// "..." popover menu — single overflow target for speed, sleep,
-    /// chapter list, previous chapter / skip-back, AirPlay. HIG keeps
-    /// the primary control surface uncluttered; secondary controls go
-    /// in `Menu`.
-    private var playerMoreMenu: some View {
-        Menu {
-            // Playback speed submenu
-            Menu {
-                ForEach(PlaybackRate.allCases) { rate in
-                    Button {
-                        player.setRate(rate)
-                    } label: {
-                        if player.rate == rate {
-                            Label(rate.shortLabel, systemImage: "checkmark")
-                        } else {
-                            Text(rate.shortLabel)
-                        }
-                    }
-                }
-            } label: {
-                Label(
-                    L10n.string("player.playbackSpeed", player.rate.shortLabel),
-                    systemImage: "speedometer"
-                )
-            }
-
-            // Sleep timer submenu
-            Menu {
-                ForEach([0, 5, 15, 30, 45, 60], id: \.self) { minutes in
-                    Button {
-                        if minutes == 0 {
-                            player.setSleepTimer(seconds: 0)
-                        } else {
-                            player.startSleepTimer(minutes: minutes)
-                        }
-                    } label: {
-                        if minutes == 0 {
-                            Label(L10n.string("player.sleepTimerOption.off"), systemImage: "xmark")
-                        } else {
-                            Text(L10n.string("player.sleepTimerOption.\(minutes)"))
-                        }
-                    }
-                }
-            } label: {
-                Label(L10n.string("player.sleepTimer"), systemImage: "moon.zzz")
-            }
-
-            Divider()
-
-            Button { player.previousChapter() } label: {
-                Label(L10n.string("player.previousChapter"), systemImage: "backward.end.fill")
-            }
-            Button { player.skipBackward(seconds: 15) } label: {
-                Label(L10n.string("player.skipBack15"), systemImage: "gobackward.15")
-            }
-            Button { player.skipForward(seconds: 15) } label: {
-                Label(L10n.string("player.skipForward15"), systemImage: "goforward.15")
-            }
-
-            Divider()
-
-            Button { showChapterList = true } label: {
-                Label(L10n.string("player.chapters"), systemImage: "list.bullet")
-            }
-        } label: {
-            Image(systemName: "ellipsis.circle.fill")
-                .font(.system(size: 32))
-                .frame(width: 48, height: 48)
-                .contentShape(Rectangle())
-        }
-        .accessibilityLabel(L10n.string("player.more"))
-        .sheet(isPresented: $showChapterList) {
-            if let snapshot = player.snapshot {
-                let playingEpubIndex = InstantReaderIndexMapper
-                    .epubIndex(forPlayableIndex: player.currentChapterIndex, in: snapshot) ?? -1
-                TocDrawer(
-                    fulltext: fulltext,
-                    snapshot: snapshot,
-                    currentChapterIndex: playingEpubIndex,
-                    onJump: { epubIndex in
-                        if let playable = InstantReaderIndexMapper
-                            .playableIndex(forEpubIndex: epubIndex, in: snapshot) {
-                            player.play(snapshot: snapshot, startingAt: playable)
-                        }
-                    }
-                )
-                .compatPresentationDetents()
-            }
-        }
-    }
 
     // MARK: - Background
 
@@ -797,7 +704,7 @@ struct FullPlayerSheet: View {
            ) {
             epubIndex = mapped
         } else {
-            epubIndex = currentChapterIndex
+            epubIndex = player.currentChapterIndex
         }
         return fulltext.chapters.first(where: { $0.index == epubIndex })
     }
@@ -825,55 +732,6 @@ struct FullPlayerSheet: View {
         case .offerStartChoice:
             pendingAnchor = .capture(from: readerCoordinator)
         }
-    }
-}
-
-// MARK: - Sleep timer button
-
-/// Inline sleep-timer affordance: tap to cycle through presets, shows
-/// remaining time when active (Apple Podcasts pattern).
-private struct SleepTimerButton: View {
-    @EnvironmentObject private var player: AudioPlayer
-
-    private let presets: [TimeInterval] = [0, 15*60, 30*60, 45*60, 60*60]
-
-    var body: some View {
-        Button {
-            cycleTimer()
-        } label: {
-            Label {
-                if player.sleepTimerRemaining > 0 {
-                    Text(formatRemaining(player.sleepTimerRemaining))
-                        .monospacedDigit()
-                } else {
-                    Text(L10n.string("player.sleep"))
-                }
-            } icon: {
-                Image(systemName: "moon.zzz")
-            }
-            .font(.subheadline.weight(.semibold))
-            .frame(minWidth: 70, minHeight: 44)
-            .padding(.horizontal, 10)
-            .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 10))
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel(
-            player.sleepTimerRemaining > 0
-                ? L10n.string("player.sleepTimerRemaining", formatRemaining(player.sleepTimerRemaining))
-                : L10n.string("player.sleepTimerOff")
-        )
-    }
-
-    private func cycleTimer() {
-        let current = player.sleepTimerRemaining
-        let next = presets.first { $0 > current } ?? 0
-        player.setSleepTimer(seconds: next)
-    }
-
-    private func formatRemaining(_ secs: TimeInterval) -> String {
-        let m = Int(secs) / 60
-        let s = Int(secs) % 60
-        return String(format: "%d:%02d", m, s)
     }
 }
 
@@ -1088,5 +946,6 @@ private struct RemoveButtonTraitIfDisabledModifier: ViewModifier {
         .environmentObject(player)
         .environmentObject(lib)
         .environmentObject(PlayerPresentation())
+        .environmentObject(ReaderCoordinator())
 }
 #endif

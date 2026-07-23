@@ -31,9 +31,6 @@ struct MiniPlayerBar: View {
     @AppStorage(AudioPlayer.currentBookIDDefaultsKey)
     private var currentBookID: String?
 
-    @AppStorage(AudioPlayer.currentChapterIndexDefaultsKey)
-    private var currentChapterIndex: Int = 0
-
     @EnvironmentObject private var readerCoordinator: ReaderCoordinator
     private var readerChapterIndex: Int { readerCoordinator.anchor.chapterIndex }
     private var readerPageRatio: Double? { readerCoordinator.anchor.pageRatio }
@@ -51,17 +48,17 @@ struct MiniPlayerBar: View {
     }
 
     private var progress: Double {
-        guard player.durationSeconds > 0 else { return 0 }
-        return min(1, max(0, player.positionSeconds / player.durationSeconds))
+        PlaybackPresentationState.progress(
+            position: player.positionSeconds,
+            duration: player.durationSeconds
+        )
     }
 
     private var chapterLabel: String {
-        let idx = player.snapshot != nil ? player.currentChapterIndex : currentChapterIndex
-        // Prefer the displayTitle from the live snapshot (matches FullPlayerSheet behaviour).
-        if let chapters = player.snapshot?.playableChapters, idx < chapters.count {
-            return chapters[idx].displayTitle
-        }
-        return "Chapter \(idx + 1)"
+        PlaybackPresentationState.chapterLabel(
+            snapshot: player.snapshot,
+            currentChapterIndex: player.currentChapterIndex
+        )
     }
 
     private var bookProgress: BookChapterProgress? {
@@ -340,6 +337,7 @@ private struct MiniPlayerPreviewPlaying: View {
             MiniPlayerBar(onTap: {})
                 .environmentObject(player)
                 .environmentObject(lib)
+                .environmentObject(ReaderCoordinator())
         }
         .background(Color.secondary.opacity(0.1))
     }
@@ -357,6 +355,7 @@ private struct MiniPlayerPreviewHidden: View {
             MiniPlayerBar(onTap: {})
                 .environmentObject(player)
                 .environmentObject(lib)
+                .environmentObject(ReaderCoordinator())
             Text("(no bar above — nothing playing)")
                 .font(.caption)
                 .foregroundStyle(.secondary)

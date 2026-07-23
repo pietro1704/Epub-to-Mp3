@@ -60,6 +60,15 @@ open EpubToMp3.xcodeproj
 The `mise run sidecar:build` task builds the embedded Python server
 that the macOS build copies inside the `.app`'s Resources.
 
+#### Build artifact hygiene
+
+Build directories are temporary. After a build or test, remove unused or stale
+generated trees such as `build/`, `.build/`, `DerivedData/`, and equivalent
+temporary output. Prefer keeping at most one active build cache for faster
+iteration, and delete it when it becomes old or unused. Do not remove the
+project's intentional persistent data (`.cache/`, `output/`, models, or user
+inputs), and verify that a directory is not active or tracked before deleting it.
+
 #### iOS companion features
 
 | Feature | Detail |

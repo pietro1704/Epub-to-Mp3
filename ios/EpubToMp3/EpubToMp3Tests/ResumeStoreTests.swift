@@ -43,6 +43,32 @@ final class ResumeStoreTests: XCTestCase {
     }
 }
 
+@MainActor
+final class AudioPlayerPlaybackPersistenceTests: XCTestCase {
+    func testRateDefaultsToNormalWhenNoSavedValueExists() {
+        let suite = "AudioPlayerPlaybackPersistenceTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        let player = AudioPlayer(defaults: defaults)
+
+        XCTAssertEqual(player.rate, .x100)
+    }
+
+    func testRatePersistsAcrossPlayerReinstantiation() {
+        let suite = "AudioPlayerPlaybackPersistenceTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        let firstPlayer = AudioPlayer(defaults: defaults)
+        firstPlayer.setRate(.x125)
+
+        let secondPlayer = AudioPlayer(defaults: defaults)
+
+        XCTAssertEqual(secondPlayer.rate, .x125)
+    }
+}
+
 final class DownloadManagerHelperTests: XCTestCase {
     func testSanitizedFileNameStripsInvalidChars() {
         let cleaned = DownloadManager.sanitizedFileName("Chapter 1: Hello/World?")

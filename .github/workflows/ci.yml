@@ -129,3 +129,31 @@ jobs:
       - name: Run web build
         working-directory: web
         run: mise exec -- npm run build
+
+  flutter:
+    name: Flutter
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        run: |
+          git init .
+          git remote add origin "https://github.com/${GITHUB_REPOSITORY}.git"
+          git fetch --no-tags --depth=1 origin "${GITHUB_SHA}"
+          git checkout --force FETCH_HEAD
+
+      - name: Install mise
+        run: |
+          curl https://mise.run | sh
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          "$HOME/.local/bin/mise" install
+
+      - name: Run Flutter tests
+        working-directory: flutter_app
+        run: mise exec -- flutter test
+
+      - name: Run Flutter analyzer
+        working-directory: flutter_app
+        run: mise exec -- flutter analyze

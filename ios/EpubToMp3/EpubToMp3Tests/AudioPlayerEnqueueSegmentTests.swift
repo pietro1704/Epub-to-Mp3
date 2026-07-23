@@ -136,6 +136,92 @@ final class AudioPlayerEnqueueSegmentTests: XCTestCase {
             "Buffer-ahead enqueue must not claim chapter 1 before its item becomes current")
     }
 
+    /// Future chapter segments may be buffered while chapter 0 is audible,
+    /// but they must not replace the active chapter's sentence timing state
+    /// before AVQueuePlayer advances to that chapter.
+    func testBufferingAheadPreservesActiveSegmentTimingChapter() {
+        let player = AudioPlayer()
+        player.enqueueSegment(data: fakeMP3(), chapterIndex: 0, segmentIndex: 0, sentenceId: "ch0-s0")
+        player.enqueueSegment(data: fakeMP3(), chapterIndex: 1, segmentIndex: 0, sentenceId: "ch1-s0")
+
+        XCTAssertEqual(player.testHook_segmentChapterIndex(), 0)
+        XCTAssertEqual(player.testHook_activeSegmentSentenceCount(), 1)
+    }
+
+    func testSegmentsWithoutSentenceIDsPreserveTimingAlignment() {
+        let player = AudioPlayer()
+        player.enqueueSegment(data: fakeMP3(), chapterIndex: 0, segmentIndex: 0)
+        player.enqueueSegment(data: fakeMP3(), chapterIndex: 0, segmentIndex: 1, sentenceId: "ch0-s1")
+
+        XCTAssertEqual(
+            player.testHook_activeSegmentSentenceCount(),
+            2,
+            "Every queued segment must occupy a timing slot, even when it has no sentence ID"
+        )
+    }
+
+    func testActivatingNewChapterDiscardsPlayedChapterSentenceMetadata() {
+        let player = AudioPlayer()
+        player.enqueueSegment(data: fakeMP3(), chapterIndex: 0, segmentIndex: 0, sentenceId: "ch0-s0")
+        player.enqueueSegment(data: fakeMP3(), chapterIndex: 1, segmentIndex: 0, sentenceId: "ch1-s0")
+
+        player.testHook_activateSegmentChapter(1)
+
+        XCTAssertEqual(player.testHook_bufferedSegmentChapterCount(), 1)
+        XCTAssertEqual(player.activeSentenceId, "ch1-s0")
+    }
+
+    func testDelayedCompletionFromPreviousChapterDoesNotAdvanceNewChapterCursor() {
+        let player = AudioPlayer()
+        player.enqueueSegment(data: fakeMP3(), chapterIndex: 0, segmentIndex: 0, sentenceId: "ch0-s0")
+        player.enqueueSegment(data: fakeMP3(), chapterIndex: 1, segmentIndex: 0, sentenceId: "ch1-s0")
+        player.enqueueSegment(data: fakeMP3(), chapterIndex: 1, segmentIndex: 1, sentenceId: "ch1-s1")
+
+        player.testHook_activateSegmentChapter(1)
+        player.testHook_completeSegmentTiming(chapterIndex: 0)
+
+        XCTAssertEqual(player.activeSentenceId, "ch1-s0")
+        XCTAssertEqual(player.testHook_activeSegmentSentenceCount(), 2)
+    }
+
+    func testOwnedSegmentItemRequiresSameInstanceAndCanBeRemovedWhenSkipped() {
+        let player = AudioPlayer()
+        let owned = AVPlayerItem(url: URL(fileURLWithPath: "/tmp/owned-segment.mp3"))
+        let unrelated = AVPlayerItem(url: URL(fileURLWithPath: "/tmp/unrelated-segment.mp3"))
+
+        player.testHook_registerOwnedSegmentItem(owned)
+
+        XCTAssertTrue(player.testHook_isOwnedSegmentItem(owned))
+        XCTAssertFalse(player.testHook_isOwnedSegmentItem(unrelated))
+
+        player.testHook_removeOwnedSegmentItem(owned)
+
+        XCTAssertFalse(player.testHook_isOwnedSegmentItem(owned))
+    }
+
+    func testTeardownClearsDeferredSegmentsBeforeDeletingSessionDirectory() {
+        let player = AudioPlayer()
+
+        for segmentIndex in 0...5 {
+            player.enqueueSegment(
+                data: fakeMP3(),
+                chapterIndex: 0,
+                segmentIndex: segmentIndex,
+                sentenceId: "s\(segmentIndex)"
+            )
+        }
+
+        XCTAssertGreaterThan(player.testHook_backlogCount(), 0)
+
+        player.testHook_teardownPlayer()
+
+        XCTAssertEqual(
+            player.testHook_backlogCount(),
+            0,
+            "A new playback session must not inherit deferred files from the previous queue"
+        )
+    }
+
     // MARK: No crash on empty data
 
     func testEmptySegmentDataIsGracefullyIgnored() {

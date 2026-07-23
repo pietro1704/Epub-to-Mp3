@@ -289,9 +289,12 @@ run = """
 #!/bin/bash
 set -euo pipefail
 source .venv/bin/activate
-pip install pyinstaller -q
-pip install -r requirements-desktop.txt -q
-pyinstaller desktop.spec --noconfirm --clean
+export PATH="/usr/bin:/bin:${PATH}"
+if ! .venv/bin/python -c 'import PyInstaller' >/dev/null 2>&1; then
+  .venv/bin/python -m pip install pyinstaller -q
+fi
+.venv/bin/python -m pip install -r requirements-desktop.txt -q
+.venv/bin/python -m PyInstaller desktop.spec --noconfirm
 echo "Sidecar ready: dist/epub-to-mp3-server"
 """
 
@@ -324,7 +327,6 @@ xcodebuild \\
   -configuration Release \\
   -destination 'platform=macOS' \\
   -derivedDataPath ./.build \\
-  SYMROOT=$(pwd)/.build \\
   build | tail -20
 
 APP_OUT=".build/Release/EpubToMp3.app"
@@ -483,7 +485,7 @@ if ! command -v xcodegen >/dev/null 2>&1; then
 fi
 xcodegen generate
 DEVICE="${IOS_DEVICE_ID:-00008140-001128A022BA801C}"
-DD="./.build-device"
+DD="./.build"
 ONLY=""
 if [[ -n "${IOS_TESTS:-}" ]]; then
   IFS=',' read -ra T <<< "$IOS_TESTS"

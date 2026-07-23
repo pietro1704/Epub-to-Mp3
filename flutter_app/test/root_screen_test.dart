@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_app/l10n/app_localizations.dart';
+import 'package:flutter_app/l10n/app_localizations_en.dart';
+import 'package:flutter_app/l10n/app_localizations_es.dart';
+import 'package:flutter_app/l10n/app_localizations_pt.dart';
 import 'package:flutter_app/screens/root_screen.dart';
 import 'package:flutter_app/state/providers.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -24,6 +27,12 @@ Widget _wrap(SharedPreferences prefs) {
 
 void main() {
   group('RootScreen', () {
+    test('provides a localized label for the Convert destination in every locale', () {
+      expect(AppLocalizationsEn().convertTitle, 'Convert');
+      expect(AppLocalizationsPt().convertTitle, 'Converter');
+      expect(AppLocalizationsEs().convertTitle, 'Convertir');
+    });
+
     testWidgets('has Reader, Library, Convert, Jobs, and Settings destinations', (t) async {
       final prefs = await _mockPrefs();
       await t.pumpWidget(_wrap(prefs));

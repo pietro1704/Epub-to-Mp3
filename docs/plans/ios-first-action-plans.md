@@ -28,6 +28,13 @@ Não considerar uma etapa concluída apenas por compilação ou teste macOS quan
 - O teste Swift físico de contratos que lê arquivos do repositório não é válido no sandbox do iPhone; ele deve permanecer no host. Os testes de índice/cache passaram no device.
 - Branch `master` está com alterações locais desta etapa; ainda não foi commitada.
 - Destino físico preferencial: iPhone conectado por USB.
+- Bloqueio operacional encontrado em 2026-07-22: o iPhone foi detectado e desbloqueado, mas o artefato mais recente (`ios/EpubToMp3/.build-nosim-noassets/Build/Products/Debug-iphoneos/EpubToMp3.app`) não possui assinatura (`No code signature found`).
+- A assinatura local também não está alinhada ao projeto: `project.yml` declara o Team ID `HHRZ35A37Y`, enquanto o Mac só possui o certificado `Apple Development: Pietro Pugliesi` do Team ID `RHXBMZN968`; não há provisioning profiles locais.
+- Um build físico normal ainda aparece inelegível porque o Xcode local não tem a plataforma/destino iOS 26.2 instalado. Não baixar runtime nem usar Simulator neste Mac sem autorização explícita.
+- Próximo passo bloqueado: confirmar se é autorizado usar o Team ID do certificado local (`RHXBMZN968`) e `-allowProvisioningUpdates` para o Xcode tentar criar/baixar os perfis de desenvolvimento do bundle `com.pietrocode.epubtomp3` e do widget, ou fornecer um artefato já assinado/perfis compatíveis.
+- Após a autorização, o build direto para `iphoneos` confirmou que a chave privada do certificado existe, mas o Xcode retorna `No Account for Team "RHXBMZN968"` e não consegue gerar profiles. O artefato não foi criado; o projeto temporariamente alterado para contornar o asset catalog foi restaurado.
+- Ação necessária do operador: adicionar no Xcode uma conta Apple que pertença ao Team ID `RHXBMZN968` (ou fornecer profiles de desenvolvimento válidos para `com.pietrocode.epubtomp3` e `com.pietrocode.epubtomp3.widget`), depois repetir o build físico.
+- Execução física concluída em 2026-07-22 após a conta ser adicionada: build `iphoneos` assinado com Team ID real `HHRZ35A37Y`, provisioning automático para app/widget, assinatura verificada com `codesign`, instalação confirmada pelo `devicectl` e lançamento confirmado para `com.pietrocode.epubtomp3`. O app foi deixado aberto no iPhone para validação manual.
 
 ## Plano 0 — Higienizar o estado local
 
@@ -89,6 +96,49 @@ Não considerar uma etapa concluída apenas por compilação ou teste macOS quan
 - Confirmar que o capítulo corrente representa o item audível, não áudio apenas enfileirado.
 - Testar divergência reader ↔ player no mesmo capítulo e entre capítulos.
 - Validar streaming, queue append, retomada, stop e fallback sem desmontar fila viva.
+
+### Regressão do capítulo 2 — timing sobrescrito por pre-buffer
+
+**Sintoma reportado:** no capítulo 2, a leitura chegava a “untimely end” e
+saltava para “some people were rather shocked”, omitindo o trecho entre
+“the blame was mostly laid on gandalf. 'if only ...” e “as hobbits say”.
+
+**Causa confirmada no código:** `AudioPlayer.enqueueSegment` recebia segmentos
+de capítulos futuros enquanto o capítulo atual ainda estava audível. O código
+usava o capítulo do segmento recém-enfileirado para sobrescrever
+`segmentChapterIndex`, zerar `segmentCumulativeBase` e substituir
+`segmentSentenceIds`. O `SyncEngine`, alimentado pela posição do player,
+passava então a consultar o timing do capítulo futuro antes de o
+`AVQueuePlayer.currentItem` avançar. O áudio da fila não era necessariamente
+perdido; o cursor/read-along saltava por uma faixa inteira de conteúdo.
+
+**Correção aplicada:**
+
+- manter sentence IDs agrupados por capítulo;
+- não trocar o capítulo ativo ao enfileirar áudio futuro;
+- trocar/resetar o estado de timing somente quando o novo capítulo se torna o
+  `currentItem` audível;
+- preservar o capítulo e a contagem de frases ativas durante pre-buffer;
+- manter mini player e player expandido usando `AudioPlayer.currentChapterIndex`
+  como SOT, removendo o fallback paralelo em `UserDefaults`;
+- injetar o `ReaderCoordinator` no player expandido para o mesmo roteamento de
+  play/divergência usado pelo mini player.
+
+**Regressão:**
+`AudioPlayerEnqueueSegmentTests.testBufferingAheadPreservesActiveSegmentTimingChapter`
+confirma que segmentos do capítulo seguinte não substituem o timing ativo.
+Suite focada executada no host macOS: 9 testes, 0 falhas.
+
+**Bloqueio de validação física:** build/test host inicialmente tentou compilar
+asset catalog para `iphoneos` sem runtime de Simulator instalado e falhou antes
+dos testes. O teste host foi repetido com remoção temporária e reversível da
+referência de `Assets.xcassets` no `project.pbxproj`; o projeto foi restaurado
+imediatamente após a execução. A instalação física do novo artefato ainda é
+necessária para confirmar o capítulo 2 no iPhone. A tentativa de build físico
+posterior também foi bloqueada porque o Xcode marca o iPhone como inelegível
+sem a plataforma iOS 26.2 e o build genérico retorna `No Account for Team
+HHRZ35A37`/profiles ausentes. Nenhuma plataforma foi baixada e nenhuma conta,
+perfil ou configuração de assinatura foi alterada.
 
 **Critério de saída:** cursor, áudio audível, página e ações da UI permanecem coerentes em cold start e durante streaming.
 
