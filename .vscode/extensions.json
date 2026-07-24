@@ -1,0 +1,9 @@
+{
+  "recommendations": [
+    "sweetpad.sweetpad",
+    "vadimcn.vscode-lldb",
+    "github.vscode-github-actions",
+    "redhat.vscode-yaml",
+    "timonwong.shellcheck"
+  ]
+}

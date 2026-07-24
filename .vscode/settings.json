@@ -1,0 +1,9 @@
+{
+  // Keep VS Code using the same Python interpreter managed by mise
+  "python.defaultInterpreterPath": "${workspaceFolder}/.venv/bin/python",
+  "python.terminal.activateEnvironment": true,
+  "files.associations": {
+    "*.swift": "swift"
+  },
+  "editor.formatOnSave": true
+}
