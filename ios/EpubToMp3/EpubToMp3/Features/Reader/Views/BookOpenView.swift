@@ -1310,6 +1310,7 @@ struct BookOpenContentView: View {
             phase = .error("Re-import failed: \(error.localizedDescription)")
         }
     }
+    #endif
 
     private func retryOpenFlow() {
         Task { await openFlow() }
