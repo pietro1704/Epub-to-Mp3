@@ -164,38 +164,15 @@ final class PlaybackBindingStoreTests: XCTestCase {
             encoding: .utf8
         )
         let bookOpenSource = try String(
-            contentsOf: projectRoot.appendingPathComponent("EpubToMp3/Features/Reader/Views/BookOpenView.swift"),
+            contentsOf: projectRoot.appendingPathComponent("EpubToMp3/Features/Reader/Views/BookOpenScreenController.swift"),
             encoding: .utf8
         )
 
         XCTAssertTrue(appSource.contains("PlaybackBindingStore.setCurrentlyPlaying"))
-        XCTAssertTrue(bookOpenSource.contains("PlaybackBindingStore.setCurrentlyPlaying"))
+        XCTAssertTrue(bookOpenSource.contains("ReaderSessionState.setCurrentlyReading"))
         XCTAssertFalse(FileManager.default.fileExists(
             atPath: projectRoot.appendingPathComponent("EpubToMp3/Features/Playback/Views/NowPlayingView.swift").path
         ))
     }
 
-    func testRootTabRawValuesAreStable() {
-        XCTAssertEqual(RootTab.library.rawValue, 0)
-        XCTAssertEqual(RootTab.settings.rawValue, 1)
-        XCTAssertEqual(RootTab.convert.rawValue, 2)
-    }
-
-    func testSplitNavModeDoesNotIncludeNowPlaying() {
-        XCTAssertEqual(SplitNavMode.allCases.first, .reader)
-        XCTAssertFalse(
-            SplitNavMode.allCases.contains(where: { $0.rawValue == "nowPlaying" }),
-            "nowPlaying must not be a sidebar destination — it is a sheet now."
-        )
-        XCTAssertTrue(SplitNavMode.allCases.contains(.library))
-        XCTAssertTrue(SplitNavMode.allCases.contains(.settings))
-    }
-
-    func testSplitNavModeProvidesSFSymbolForEveryDestination() {
-        for mode in SplitNavMode.allCases {
-            XCTAssertFalse(mode.systemImage.isEmpty,
-                           "Sidebar would render a missing icon for \(mode).")
-            XCTAssertFalse(mode.label.isEmpty)
-        }
-    }
 }

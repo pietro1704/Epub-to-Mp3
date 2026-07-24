@@ -33,11 +33,11 @@ final class ProjectTargetConfigurationTests: XCTestCase {
         XCTAssertTrue(info.contains("EpubToMp3ShareExtension.ShareViewController"))
     }
 
-    func testBookOpenViewUsesPythonParserWithoutSwiftFallback() throws {
+    func testNativeBookReaderUsesPythonParserWithoutSwiftFallback() throws {
         let sourceURL = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
             .deletingLastPathComponent()
-            .appendingPathComponent("EpubToMp3/Features/Reader/Views/BookOpenView.swift")
+            .appendingPathComponent("EpubToMp3/Features/Reader/Views/BookOpenScreenController.swift")
         let source = try String(contentsOf: sourceURL, encoding: .utf8)
 
         XCTAssertTrue(source.contains("PythonBridge.shared.parseEpub"))

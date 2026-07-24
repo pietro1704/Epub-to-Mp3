@@ -3,8 +3,8 @@ import Foundation
 /// Live status of the in-progress TTS conversion for a single book session.
 ///
 /// Owned by `AudioPlayer` and written from both the embedded-TTS path
-/// (`BookOpenView.bootstrapEmbedded`) and the backend-SSE path
-/// (`BookOpenView.subscribeToStream`). `InstantReaderView` observes it
+/// (the embedded reader bootstrap) and the backend-SSE path. The native
+/// reader observes it
 /// via `ConversionStatusSheet`.
 ///
 /// Thread-safety: all mutating methods are `@MainActor` — same isolation

@@ -1,7 +1,7 @@
 import Foundation
 
 /// Foundation-only App Group inbox bridge shared by the main app and the
-/// Share Extension. Keep UI, LibraryStore, and SwiftUI out of this file so
+/// Share Extension. Keep UI and LibraryStore out of this file so
 /// the extension can compile it as an independent target.
 enum SharedContainerInbox {
     static let appGroupID = "group.com.pietrocode.epubtomp3"

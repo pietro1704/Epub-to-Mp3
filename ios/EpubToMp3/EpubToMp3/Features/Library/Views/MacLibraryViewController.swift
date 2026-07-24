@@ -4,7 +4,7 @@ import Combine
 import UniformTypeIdentifiers
 
 /// AppKit library surface for macOS. This is intentionally independent of
-/// LibraryView so the desktop grid does not pay the SwiftUI diffing and
+/// legacy declarative library so the desktop grid does not pay diffing and
 /// hosting costs of the mobile renderer.
 @MainActor
 final class MacLibraryViewController: NSViewController, NSSearchFieldDelegate,

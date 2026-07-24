@@ -6,11 +6,8 @@ import UniformTypeIdentifiers
 @MainActor
 final class BookOpenScreenController: UIViewController, UITableViewDataSource, UITableViewDelegate, UIDocumentPickerDelegate {
     private var book: BookEntity
-    private var onClose: (() -> Void)?
     private let library: LibraryStore
     private let settings: AppSettings
-    private let player: AudioPlayer
-    private let audioWarmup: AudioEngineWarmup
     private let chapterTable = UITableView(frame: .zero, style: .plain)
     private let titleLabel = UILabel()
     private let textView = UITextView()
@@ -21,13 +18,10 @@ final class BookOpenScreenController: UIViewController, UITableViewDataSource, U
 
     private static let reimportTypes: [UTType] = [.epub, .pdf]
 
-    init(book: BookEntity, onClose: (() -> Void)?, library: LibraryStore, settings: AppSettings, player: AudioPlayer, audioWarmup: AudioEngineWarmup) {
+    init(book: BookEntity, library: LibraryStore, settings: AppSettings) {
         self.book = book
-        self.onClose = onClose
         self.library = library
         self.settings = settings
-        self.player = player
-        self.audioWarmup = audioWarmup
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -41,9 +35,8 @@ final class BookOpenScreenController: UIViewController, UITableViewDataSource, U
         loadBook()
     }
 
-    func update(book: BookEntity, onClose: (() -> Void)?, library: LibraryStore, settings: AppSettings, player: AudioPlayer, audioWarmup: AudioEngineWarmup) {
+    func update(book: BookEntity) {
         self.book = book
-        self.onClose = onClose
         loadBook()
     }
 
@@ -75,10 +68,6 @@ final class BookOpenScreenController: UIViewController, UITableViewDataSource, U
         textView.textContainerInset = UIEdgeInsets(top: 20, left: 20, bottom: 32, right: 20)
         chapterTable.dataSource = self
         chapterTable.delegate = self
-        let close = UIBarButtonItem(barButtonSystemItem: .close, target: self, action: #selector(closeReader))
-        let repick = UIBarButtonItem(title: L10n.string("bookOpen.repick"), style: .plain, target: self, action: #selector(repickBook))
-        navigationItem.leftBarButtonItem = close
-        navigationItem.rightBarButtonItem = repick
         let scroll = UIScrollView()
         scroll.addSubview(textView)
         textView.translatesAutoresizingMaskIntoConstraints = false
@@ -153,8 +142,7 @@ final class BookOpenScreenController: UIViewController, UITableViewDataSource, U
         statusLabel.text = L10n.string("reader.pdf")
     }
 
-    @objc private func closeReader() { onClose?() }
-    @objc private func repickBook() {
+    func presentDocumentPicker() {
         let picker = UIDocumentPickerViewController(forOpeningContentTypes: Self.reimportTypes, asCopy: false)
         picker.delegate = self
         present(picker, animated: true)
@@ -164,7 +152,7 @@ final class BookOpenScreenController: UIViewController, UITableViewDataSource, U
         guard let url = urls.first else { return }
         do {
             book = try library.importBook(from: url)
-            MainReaderView.setCurrentlyReading(bookID: book.id)
+            ReaderSessionState.setCurrentlyReading(bookID: book.id)
             loadBook()
         } catch {
             let alert = UIAlertController(title: L10n.string("bookOpen.error"), message: error.localizedDescription, preferredStyle: .alert)

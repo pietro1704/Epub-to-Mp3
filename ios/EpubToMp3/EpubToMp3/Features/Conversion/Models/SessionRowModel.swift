@@ -34,7 +34,7 @@ struct SessionRowModel: Equatable {
     }
 
     /// Secondary line combining engine / chapter count / timestamp, the
-    /// same fields the SwiftUI `SessionRow` lays out in its trailing `HStack`.
+    /// same fields the native session row lays out in its trailing stack.
     var detailText: String {
         [engineText, chaptersText, timestampText].compactMap { $0 }.joined(separator: " · ")
     }

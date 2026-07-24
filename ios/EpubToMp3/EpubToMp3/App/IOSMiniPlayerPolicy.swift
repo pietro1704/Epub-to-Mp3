@@ -1,15 +1,7 @@
 import Foundation
 
-/// Shared navigation tokens kept independent from any UI framework.
-/// UIKit and AppKit controllers own the actual navigation hierarchy.
-enum RootTab: Int, Hashable {
-    case library
-    case settings
-    case convert
-}
-
-enum RootView {
-    static func shouldShowMiniPlayer(
+enum IOSMiniPlayerPolicy {
+    static func shouldShow(
         currentBookID: String?,
         currentlyReadingBookID: String?,
         availableBookIDs: Set<String>

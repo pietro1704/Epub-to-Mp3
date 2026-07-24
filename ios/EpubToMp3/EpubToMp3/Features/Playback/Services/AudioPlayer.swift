@@ -117,7 +117,7 @@ final class AudioPlayer: ObservableObject {
 
     /// Derived from `snapshot`, recomputed only when `snapshot` is reassigned
     /// (once per SSE/poll update), not on every read. The segmented playback
-    /// progress bars (`MiniPlayerBar`, `FullPlayerSheet`) poll this from a
+    /// progress bars in the native player poll this from a
     /// `CADisplayLink` at up to 30 fps — reconstructing `BookChapterProgress`
     /// (sort + map + two reduce over every chapter) on each of those ticks
     /// would burn main-thread time on a large book for no reason, since the
@@ -161,11 +161,11 @@ final class AudioPlayer: ObservableObject {
     /// displays the toast / banner. Views observe via @Published.
     @Published var lastError: PlayerError?
 
-    /// Errors the player can surface back to a SwiftUI view. Kept
+    /// Errors the player can surface back to a native controller. Kept
     /// minimal — anything more granular belongs in a category-specific
     /// error type owned by the calling site.
     ///
-    /// `Identifiable` so the SwiftUI `.alert(item:)` API can detect a
+    /// `Identifiable` so controllers can identify a
     /// new error fired DURING the previous alert's dismiss animation —
     /// the `isPresented:` variant would silently drop it. Using the
     /// raw value as id means setting `lastError = .x` twice in a row
@@ -209,7 +209,7 @@ final class AudioPlayer: ObservableObject {
     private var fadeOutTask: Task<Void, Never>?
 
     /// `true` while a TTS conversion job is actively running for the
-    /// currently-open book. Set by `BookOpenView` / `InstantReaderView`
+    /// currently-open book. Set by the native reader
     /// when they submit or reattach to a conversion job and cleared
     /// when the job reaches a terminal state. Does NOT imply the
     /// player has a loaded audio item — use `firstChapterReady` for that.
@@ -217,7 +217,7 @@ final class AudioPlayer: ObservableObject {
 
     /// 0.0–1.0 fraction of chapters whose audio is ready, or `nil`
     /// when total chapter count is unknown. Drives the conversion
-    /// progress indicator in `MiniPlayerBar` and `InstantReaderView`.
+    /// progress indicator in the native player and reader.
     @Published var conversionProgress: Double? = nil
 
     /// Becomes `true` as soon as the first chapter MP3 is available
@@ -236,8 +236,8 @@ final class AudioPlayer: ObservableObject {
     @Published private(set) var firstSegmentReady: Bool = false
 
     /// `true` while the player is buffering / waiting for the current
-    /// chapter's audio to become ready. Used by `MiniPlayerBar` and
-    /// `FullPlayerSheet` to show a spinner in place of play/pause.
+    /// chapter's audio to become ready. Used by native player controllers
+    /// to show a spinner in place of play/pause.
     /// Derived from `isConverting` + `firstChapterReady` so it costs
     /// no extra KVO wiring.
     var isLoading: Bool { isConverting && !firstChapterReady }
@@ -915,7 +915,7 @@ final class AudioPlayer: ObservableObject {
         updateNowPlayingInfo()
     }
 
-    /// Live-update the snapshot. Used by `PlayerReaderView`'s SSE
+    /// Live-update the snapshot. Used by the native reader's SSE
     /// subscription so newly-finished chapters can be appended to the
     /// AVQueuePlayer without interrupting the chapter currently playing.
     ///
@@ -1161,7 +1161,7 @@ final class AudioPlayer: ObservableObject {
     ///    no UI flicker.
     ///
     /// `chapterIndex` is the EPUB-zero-based index (same space the reader
-    /// publishes into UserDefaults / ReaderCoordinator). Translation to
+    /// publishes into UserDefaults). Translation to
     /// the playable-list index used by `play(snapshot:startingAt:)` is
     /// done here so call sites never need both numbers.
     @discardableResult
@@ -1276,7 +1276,7 @@ final class AudioPlayer: ObservableObject {
     }
 
     /// Per-chapter sentence-id → audio-ms timing maps. Populated by the
-    /// `SentenceSyncEngine` host (PlayerReaderView) when it loads a
+    /// `SentenceSyncEngine` host when the native reader loads a
     /// chapter. Lookup is cheap and only used by `startFromReaderPage`
     /// when a precise sentence-anchored seek is preferred over the
     /// char-uniform ratio approximation. Capped at the most-recent ~8
@@ -1499,7 +1499,7 @@ final class AudioPlayer: ObservableObject {
         }
         // Segment-mode: AVQueuePlayer can't rewind across items, so
         // "previous chapter" must rebuild the queue. When the host has
-        // wired `restartSegmentQueueHandler` (BookOpenView's embedded
+        // wired `restartSegmentQueueHandler` (the reader's embedded
         // path), delegate to it. Otherwise fall back to seek-to-0 of
         // the current item so the tap is at least visible.
         if isSegmentMode {
@@ -1531,7 +1531,7 @@ final class AudioPlayer: ObservableObject {
 
     /// Parse the chapter index out of an AVQueuePlayer's current item
     /// URL. `enqueueSegment` writes segments as `ch<N>-seg<M>.mp3` and
-    /// `BookOpenView.synthesizeOneChapter` writes whole-chapter cache
+    /// The native reader's chapter synthesis writes whole-chapter cache
     /// files as `chapter_<N>.mp3` (used when a segment-callback path
     /// promotes the entire chapter into the queue). Returns nil for
     /// URLs that don't match either layout.
@@ -1550,7 +1550,7 @@ final class AudioPlayer: ObservableObject {
     }
 
     /// Host-supplied callback that rebuilds the segment queue starting
-    /// at the requested chapter. Wired by `BookOpenView` so
+    /// at the requested chapter. Wired by the native reader so
     /// `previousChapter()` and "From beginning" can leave segment mode
     /// and re-enter via the cache. Optional: when nil, segment-mode
     /// rewinds fall back to seek-to-0 of the current item.
@@ -1784,7 +1784,7 @@ final class AudioPlayer: ObservableObject {
 
         if !firstSegmentReady {
             firstSegmentReady = true
-            // Also raise firstChapterReady so MiniPlayerBar shows play/pause.
+            // Also raise firstChapterReady so the mini-player shows play/pause.
             firstChapterReady = true
         }
         conversionStatus.record(.chunkComplete,
@@ -1807,7 +1807,7 @@ final class AudioPlayer: ObservableObject {
         }
     }
 
-    /// Called by `BookOpenView` / `InstantReaderView` when the first
+    /// Called by the native reader when the first
     /// playable chapter MP3 lands. Sets `firstChapterReady = true` and
     /// clears `isConverting` only if the snapshot is already terminal
     /// (all chapters done). Idempotent — safe to call multiple times.
@@ -1817,14 +1817,14 @@ final class AudioPlayer: ObservableObject {
     }
 
     /// Record a conversion error in the status log. Called by
-    /// `BookOpenView` when a chapter synthesis fails so the user can
+    /// the native reader when a chapter synthesis fails so the user can
     /// see the error in `ConversionStatusSheet` and tap Retry.
     func recordConversionError(_ message: String) {
         conversionStatus.record(.error, message)
     }
 
     /// Live conversion event log. Populated by `enqueueSegment`,
-    /// `markFirstChapterReady`, and error paths in `BookOpenView`.
+    /// `markFirstChapterReady`, and error paths in the native reader.
     /// Observed by `ConversionStatusSheet` so the user can inspect
     /// segment-level progress without leaving the reader.
     let conversionStatus = ConversionStatus()

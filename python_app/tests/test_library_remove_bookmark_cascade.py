@@ -22,8 +22,8 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 IOS_ROOT = REPO_ROOT / "ios" / "EpubToMp3" / "EpubToMp3"
 STORE = IOS_ROOT / "Features" / "Library" / "Services" / "BookmarkStore.swift"
 APP = IOS_ROOT / "App" / "EpubToMp3App.swift"
-LIBRARY_VIEW = IOS_ROOT / "Features" / "Library" / "Views" / "LibraryView.swift"
-SIDEBAR = IOS_ROOT / "Features" / "Library" / "Views" / "LibrarySidebar.swift"
+LIBRARY_VIEW = IOS_ROOT / "Features" / "Library" / "Views" / "LibraryScreenController.swift"
+SIDEBAR = IOS_ROOT / "Features" / "Library" / "Views" / "MacLibraryViewController.swift"
 
 
 def _read(path: Path) -> str:
@@ -45,33 +45,33 @@ def test_bookmark_store_exposes_prune_orphans() -> None:
     ), "pruneOrphans must early-return on the no-op path"
 
 
-def test_library_view_cascades_bookmark_removal() -> None:
+def test_ios_library_controller_cascades_bookmark_removal() -> None:
     body = _read(LIBRARY_VIEW)
     assert (
-        "@EnvironmentObject private var bookmarkStore: BookmarkStore" in body
-    ), "LibraryView must hold a reference to BookmarkStore for the cascade"
+        "bookmarkStore: BookmarkStore" in body
+    ), "LibraryScreenController must hold a reference to BookmarkStore for the cascade"
     # The cascade has to fire BEFORE `library.remove` — otherwise the
     # bookmark drop sees the stale library set if a future prune ever
     # reads it. Pin the textual order.
     remove_idx = body.find("library.remove(id: book.id)")
     cascade_idx = body.find("bookmarkStore.removeAll(for: book.id)")
-    assert remove_idx != -1, "LibraryView no longer calls library.remove(id:)"
-    assert cascade_idx != -1, "LibraryView is missing the bookmark cascade"
+    assert remove_idx != -1, "LibraryScreenController no longer calls library.remove(id:)"
+    assert cascade_idx != -1, "LibraryScreenController is missing the bookmark cascade"
     assert cascade_idx < remove_idx, (
         "bookmarkStore.removeAll must precede library.remove so the cascade "
         "owns the failure surface"
     )
 
 
-def test_library_sidebar_cascades_bookmark_removal() -> None:
+def test_mac_library_controller_cascades_bookmark_removal() -> None:
     body = _read(SIDEBAR)
     assert (
-        "@EnvironmentObject private var bookmarkStore: BookmarkStore" in body
-    ), "LibrarySidebar must hold a reference to BookmarkStore for the cascade"
-    remove_idx = body.find("library.remove(id: book.id)")
-    cascade_idx = body.find("bookmarkStore.removeAll(for: book.id)")
-    assert remove_idx != -1, "LibrarySidebar no longer calls library.remove(id:)"
-    assert cascade_idx != -1, "LibrarySidebar is missing the bookmark cascade"
+        "bookmarkStore: BookmarkStore" in body
+    ), "MacLibraryViewController must hold a reference to BookmarkStore for the cascade"
+    remove_idx = body.find("library.remove(id: id)")
+    cascade_idx = body.find("bookmarkStore.removeAll(for: id)")
+    assert remove_idx != -1, "MacLibraryViewController no longer calls library.remove(id:)"
+    assert cascade_idx != -1, "MacLibraryViewController is missing the bookmark cascade"
     assert (
         cascade_idx < remove_idx
     ), "bookmarkStore.removeAll must precede library.remove in the swipe action"
@@ -81,7 +81,7 @@ def test_app_runs_one_shot_orphan_prune_on_launch() -> None:
     body = _read(APP)
     assert "pruneOrphanBookmarks()" in body, "EpubToMp3App must call the one-shot prune on launch"
     assert (
-        "bookmarkStore.pruneOrphans(validBookIds: valid)" in body
+        "bookmarkStore.pruneOrphans(validBookIds: Set(library.books.map(\\.id)))" in body
     ), "pruneOrphanBookmarks must delegate to BookmarkStore.pruneOrphans"
     # The launch task already skips under XCTest; the prune must sit
     # AFTER that guard so the unit-test bundle never mutates real

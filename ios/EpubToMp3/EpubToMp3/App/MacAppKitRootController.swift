@@ -26,6 +26,8 @@ final class MacAppKitRootController: NSSplitViewController, NSTableViewDataSourc
 
     private let settings: AppSettings
     private let library: LibraryStore
+    private let bookmarkStore: BookmarkStore
+    private let sidecar: SidecarManager
     private let player: AudioPlayer
     private let playerPresentation: PlayerPresentation
     private let sidebar = NSTableView()
@@ -38,11 +40,15 @@ final class MacAppKitRootController: NSSplitViewController, NSTableViewDataSourc
         settings: AppSettings,
         library: LibraryStore,
         player: AudioPlayer,
+        bookmarkStore: BookmarkStore,
+        sidecar: SidecarManager,
         playerPresentation: PlayerPresentation = PlayerPresentation()
     ) {
         self.settings = settings
         self.library = library
         self.player = player
+        self.bookmarkStore = bookmarkStore
+        self.sidecar = sidecar
         self.playerPresentation = playerPresentation
         self.playerBar = MacPlayerBarViewController(player: player, onShowFullPlayer: { [weak playerPresentation] in
             playerPresentation?.showFullPlayer()
@@ -126,9 +132,9 @@ final class MacAppKitRootController: NSSplitViewController, NSTableViewDataSourc
         let controller: NSViewController
         switch destination {
         case .reader: controller = MacReaderViewController(library: library, settings: settings, player: player)
-        case .library: controller = MacLibraryViewController(library: library, settings: settings)
+        case .library: controller = MacLibraryViewController(library: library, bookmarkStore: bookmarkStore)
         case .jobs: controller = MacJobsListViewController(settings: settings)
-        case .settings: controller = MacSettingsViewController(settings: settings, library: library)
+        case .settings: controller = MacSettingsViewController(settings: settings, library: library, sidecar: sidecar)
         }
         detail.removeChildControllers()
         detail.addChild(controller)

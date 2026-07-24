@@ -13,7 +13,7 @@ private typealias EpubInlineImage = NSImage
 #endif
 
 /// Renders a chapter's raw HTML body + per-chapter CSS into an
-/// AttributedString suitable for SwiftUI `Text(_:)`, then layers the
+/// AttributedString suitable for UIKit/AppKit text views, then layers the
 /// user's reader overrides on top.
 ///
 /// The first pass uses Cocoa's `NSAttributedString(data:options:...)`
@@ -40,12 +40,12 @@ private typealias EpubInlineImage = NSImage
 ///   Custom fonts fall back to the platform default for that family.
 /// - Inline `style="background-color: …"` survives but block-level
 ///   `background-color` on `<body>` / `<html>` is dropped (the
-///   importer treats those as page-level chrome which SwiftUI's
-///   `Text` can't render anyway).
+///   importer treats those as page-level chrome which native text views
+///   cannot render anyway).
 @MainActor
 enum EpubHtmlRenderer {
 
-    /// Convert a chapter's raw HTML + CSS into a SwiftUI-renderable
+    /// Convert a chapter's raw HTML + CSS into a native-renderable
     /// `AttributedString`, applying any overrides from `settings`.
     ///
     /// Returns `nil` when:
@@ -432,8 +432,7 @@ enum EpubHtmlRenderer {
     // MARK: Colour resolution
     //
     // We mirror `ReaderView.themeBackground` / `themeForeground` here
-    // so the renderer doesn't need to import SwiftUI's `Color`
-    // (AttributedString stores platform colours, not SwiftUI's).
+    // so the renderer stays independent of the UI framework.
 
     private static func resolvedForeground(for settings: AppSettings) -> PlatformColor {
         switch settings.readerTheme {

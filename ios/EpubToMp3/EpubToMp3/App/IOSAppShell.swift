@@ -35,25 +35,19 @@ final class IOSAppShellController: UITabBarController {
     private let player: AudioPlayer
     private let playerPresentation: PlayerPresentation
     private let bookmarkStore: BookmarkStore
-    private let readerCoordinator: ReaderCoordinator
-    private let audioWarmup: AudioEngineWarmup
 
     init(
         settings: AppSettings,
         library: LibraryStore,
         player: AudioPlayer,
         playerPresentation: PlayerPresentation,
-        bookmarkStore: BookmarkStore,
-        readerCoordinator: ReaderCoordinator,
-        audioWarmup: AudioEngineWarmup
+        bookmarkStore: BookmarkStore
     ) {
         self.settings = settings
         self.library = library
         self.player = player
         self.playerPresentation = playerPresentation
         self.bookmarkStore = bookmarkStore
-        self.readerCoordinator = readerCoordinator
-        self.audioWarmup = audioWarmup
         super.init(nibName: nil, bundle: nil)
         viewControllers = IOSAppShellTab.allCases.map(makeNavigationController(for:))
     }

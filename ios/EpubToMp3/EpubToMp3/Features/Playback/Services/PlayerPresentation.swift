@@ -3,7 +3,7 @@ import Foundation
 /// Controls the global full-player sheet presentation state.
 /// A single shared instance is injected into the environment by
 /// `EpubToMp3App` via `@StateObject`. Every surface that can open
-/// the full-player (MiniPlayerBar, keyboard shortcut, deep link) reads
+/// the full-player (native mini-player, keyboard shortcut, deep link) reads
 /// this object instead of passing callbacks through the view tree.
 ///
 /// Usage:

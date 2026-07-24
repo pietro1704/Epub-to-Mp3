@@ -1,7 +1,7 @@
 // ConversionWatchdog.swift
 //
 // Heart-beat based stall detector for long-running conversions
-// (`BookOpenView.bootstrapEmbedded` + SSE subscription path).
+// (the embedded reader bootstrap and SSE subscription path).
 //
 // Why a watchdog (not just timeouts):
 //   - The audio bootstrap is *expected* to take minutes — a single
@@ -25,7 +25,7 @@
 //   wd.heartbeat()   // call on every visible progress event
 //   wd.stop()        // when the job reaches a terminal state
 //
-// Concurrency: all mutation is funnelled through `@MainActor` so SwiftUI
+// Concurrency: all mutation is funnelled through `@MainActor` so native UI
 // state writes from `onStall` / `onGaveUp` are safe by construction.
 
 import Foundation

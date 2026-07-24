@@ -2,7 +2,7 @@ import Foundation
 import NaturalLanguage
 
 /// Pure-function voice selection based on NLLanguageRecognizer.
-/// Extracted from `BookOpenView` to enable unit testing.
+/// Extracted from the native reader to enable unit testing.
 enum VoiceSelector {
 
     /// Returns the best Edge-TTS voice identifier for the given text sample.

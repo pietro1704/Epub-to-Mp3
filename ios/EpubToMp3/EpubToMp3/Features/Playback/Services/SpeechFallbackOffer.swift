@@ -57,7 +57,7 @@ enum SpeechFallbackUI {
     /// Resolve chapter text from `EbookFulltext`. The backend numbers
     /// fulltext chapters starting at **1** (`server.py::get_job_fulltext`),
     /// while `JobSnapshot.Chapter.index` is **0**-based. We match the
-    /// same fallback strategy as `PlayerReaderView.chapter(in:at:)`:
+    /// same fallback strategy as the native reader chapter resolver:
     /// try 1-based mapping first, then fall back to positional indexing.
     private static func chapterText(in fulltext: EbookFulltext?, chapterIndex: Int) -> String? {
         guard let fulltext else { return nil }

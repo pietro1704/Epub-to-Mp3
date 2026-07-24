@@ -5,13 +5,10 @@ import UIKit
 @MainActor
 final class IOSRootContainerController: UIViewController {
     private let settings: AppSettings
-    private let sidecar: SidecarManager
     private let library: LibraryStore
     private let player: AudioPlayer
-    private let audioWarmup: AudioEngineWarmup
     private let playerPresentation: PlayerPresentation
     private let bookmarkStore: BookmarkStore
-    private let readerCoordinator: ReaderCoordinator
 
     private let shellController: IOSAppShellController
     private let readerController: MainReaderScreenController
@@ -23,39 +20,30 @@ final class IOSRootContainerController: UIViewController {
 
     init(
         settings: AppSettings,
-        sidecar: SidecarManager,
         library: LibraryStore,
         player: AudioPlayer,
-        audioWarmup: AudioEngineWarmup,
         playerPresentation: PlayerPresentation,
-        bookmarkStore: BookmarkStore,
-        readerCoordinator: ReaderCoordinator
+        bookmarkStore: BookmarkStore
     ) {
         self.settings = settings
-        self.sidecar = sidecar
         self.library = library
         self.player = player
-        self.audioWarmup = audioWarmup
         self.playerPresentation = playerPresentation
         self.bookmarkStore = bookmarkStore
-        self.readerCoordinator = readerCoordinator
         self.shellController = IOSAppShellController(
             settings: settings,
             library: library,
             player: player,
             playerPresentation: playerPresentation,
-            bookmarkStore: bookmarkStore,
-            readerCoordinator: readerCoordinator,
-            audioWarmup: audioWarmup
+            bookmarkStore: bookmarkStore
         )
         self.readerController = MainReaderScreenController(
             library: library,
             settings: settings,
             player: player,
-            audioWarmup: audioWarmup,
             playerPresentation: playerPresentation,
             onBrowseLibrary: {
-                MainReaderView.setCurrentlyReading(bookID: nil)
+                ReaderSessionState.setCurrentlyReading(bookID: nil)
             }
         )
         self.miniPlayerController = MiniPlayerContainerController(
@@ -129,7 +117,7 @@ final class IOSRootContainerController: UIViewController {
             library: library,
             settings: settings,
             onBrowseLibrary: {
-                MainReaderView.setCurrentlyReading(bookID: nil)
+                ReaderSessionState.setCurrentlyReading(bookID: nil)
             }
         )
         miniPlayerController.update(
@@ -155,10 +143,10 @@ final class IOSRootContainerController: UIViewController {
 
     func refreshOverlayState() {
         let currentBookID = UserDefaults.standard.string(forKey: AudioPlayer.currentBookIDDefaultsKey)
-        let currentlyReadingBookID = UserDefaults.standard.string(forKey: MainReaderView.currentlyReadingBookIDKey)
+        let currentlyReadingBookID = UserDefaults.standard.string(forKey: ReaderSessionState.currentlyReadingBookIDKey)
         let availableBookIDs = Set(library.books.map(\.id))
         let readerActive = currentlyReadingBookID.flatMap { id in availableBookIDs.contains(id) ? id : nil } != nil
-        let showMini = RootView.shouldShowMiniPlayer(
+        let showMini = IOSMiniPlayerPolicy.shouldShow(
             currentBookID: currentBookID,
             currentlyReadingBookID: currentlyReadingBookID,
             availableBookIDs: availableBookIDs

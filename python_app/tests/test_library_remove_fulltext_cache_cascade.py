@@ -10,7 +10,7 @@ def _read(relative: str) -> str:
 
 def _remove_action_body(source: str, remove_call: str = "library.remove(id: book.id)") -> str:
     remove_index = source.index(remove_call)
-    start = source.rfind("Button", 0, remove_index)
+    start = source.rfind("private func remove", 0, remove_index)
     if start == -1:
         start = source.rfind("contextMenu", 0, remove_index)
     assert start != -1
@@ -43,8 +43,8 @@ def test_local_fulltext_cache_exposes_orphan_prune_for_launch_cleanup() -> None:
     assert "return removed" in prune_body
 
 
-def test_library_view_evicts_fulltext_cache_before_removing_book() -> None:
-    source = _read("Features/Library/Views/LibraryView.swift")
+def test_ios_library_controller_evicts_fulltext_cache_before_removing_book() -> None:
+    source = _read("Features/Library/Views/LibraryScreenController.swift")
     body = _remove_action_body(source)
 
     assert "bookmarkStore.removeAll(for: book.id)" in body
@@ -54,30 +54,33 @@ def test_library_view_evicts_fulltext_cache_before_removing_book() -> None:
     )
 
 
-def test_library_sidebar_evicts_fulltext_cache_before_removing_book() -> None:
-    source = _read("Features/Library/Views/LibrarySidebar.swift")
-    body = _remove_action_body(source)
+def test_mac_library_controller_evicts_fulltext_cache_before_removing_book() -> None:
+    source = _read("Features/Library/Views/MacLibraryViewController.swift")
+    body = _remove_action_body(source, "library.remove(id: id)")
 
-    assert "bookmarkStore.removeAll(for: book.id)" in body
-    assert "LocalFulltextCache.evict(bookId: book.id)" in body
-    assert body.index("LocalFulltextCache.evict(bookId: book.id)") < body.index(
-        "library.remove(id: book.id)"
-    )
+    assert "bookmarkStore.removeAll(for: id)" in body
+    assert "LocalFulltextCache.evict(bookId: id)" in body
+    assert body.index("LocalFulltextCache.evict(bookId: id)") < body.index("library.remove(id: id)")
 
 
 def test_app_launch_prunes_orphan_fulltext_cache_behind_xctest_guard() -> None:
     source = _read("App/EpubToMp3App.swift")
 
     assert "pruneOrphanFulltextCache()" in source
-    task_start = source.index(".task")
-    task_body = source[task_start : source.index(".task(priority", task_start)]
+    runtime_start = source.index("private func activateRuntime()")
+    runtime_body = source[
+        runtime_start : source.index("\n    private func deactivateRuntime", runtime_start)
+    ]
 
-    assert "guard !Self.isRunningUnderXCTest() else { return }" in task_body
-    assert "pruneOrphanBookmarks()" in task_body
-    assert "pruneOrphanFulltextCache()" in task_body
+    assert "guard !Self.isRunningUnderXCTest() else { return }" in runtime_body
+    assert "pruneOrphanBookmarks()" in runtime_body
+    assert "pruneOrphanFulltextCache()" in runtime_body
 
     helper_start = source.index("private func pruneOrphanFulltextCache()")
     helper_body = source[helper_start : source.index("\n    }", helper_start) + 7]
 
     assert "Set(library.books.map(\\.id))" in helper_body
-    assert "LocalFulltextCache.pruneOrphans(validBookIds: valid)" in helper_body
+    assert (
+        "LocalFulltextCache.pruneOrphans(validBookIds: Set(library.books.map(\\.id)))"
+        in helper_body
+    )

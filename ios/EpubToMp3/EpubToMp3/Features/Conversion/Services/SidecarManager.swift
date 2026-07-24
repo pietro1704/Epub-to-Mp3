@@ -9,7 +9,7 @@ import AppKit
 /// build of `python_app.desktop_main`). Mirrors what the Tauri shell did
 /// in Rust: pick a free port, launch the binary with
 /// `EPUB_TO_MP3_PORT=<port>`, poll `/api/health` until it answers, then
-/// publish the URL so the rest of the SwiftUI app can hit it via
+/// publish the URL so the rest of the native app can hit it via
 /// `APIClient`.
 ///
 /// Lifetime is tied to the running NSApplication on macOS: the manager
@@ -221,7 +221,7 @@ final class SidecarManager: ObservableObject {
     /// so the spontaneous-death restart path doesn't fire.
     ///
     /// Async variant uses cooperative `Task.sleep` polling, so calling
-    /// this from a SwiftUI lifecycle hook (or any main-actor context)
+    /// this from a native lifecycle hook (or any main-actor context)
     /// no longer blocks the UI while we wait for the child to die.
     @MainActor
     func stop() async {

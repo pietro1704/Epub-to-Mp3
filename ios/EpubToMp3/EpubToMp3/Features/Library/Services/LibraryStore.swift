@@ -303,7 +303,7 @@ final class LibraryStore: ObservableObject {
     /// or an iOS import where bookmark creation failed). Without this
     /// guard, `URL(resolvingBookmarkData: Data())` raises
     /// `fatalError` inside libswiftCore — which is exactly what was
-    /// crashing the SwiftUI preview canvas.
+    /// crashing the native UI preview.
     func openBookFile(id: String) throws -> URL {
         guard let i = books.firstIndex(where: { $0.id == id }) else {
             throw NSError(domain: "LibraryStore", code: 404,

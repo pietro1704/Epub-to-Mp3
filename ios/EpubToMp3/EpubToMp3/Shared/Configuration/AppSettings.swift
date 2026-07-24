@@ -2,7 +2,7 @@ import Foundation
 import Combine
 import os.log
 
-/// Reader appearance choices surfaced in `ReaderView`'s toolbar.
+/// Reader appearance choices surfaced in the native reader toolbar.
 enum ReaderFontFamily: String, CaseIterable, Identifiable {
     case serif
     case sans
@@ -115,11 +115,9 @@ enum ReaderTextAlignment: String, CaseIterable, Identifiable {
 /// any reachable server hosting the Python backend.
 ///
 /// Why direct UserDefaults instead of @AppStorage:
-/// `@AppStorage` is a `DynamicProperty` that only emits change events when
-/// the wrapper is read from inside a SwiftUI `View`. Stashing it inside an
-/// `ObservableObject` (even via a non-`@Published` stored property) means
-/// the surrounding View never gets notified that a stored value changed —
-/// so toolbar pickers in `ReaderView` looked like they did nothing.
+/// `@AppStorage` is a `DynamicProperty` tied to a declarative view tree.
+/// Storing preferences directly keeps native controllers and Combine
+/// observers on the same persistence channel.
 /// Plain `@Published` stored properties + `didSet { UserDefaults... }`
 /// gives both Combine publishing and persistence on the same channel.
 final class AppSettings: ObservableObject {
@@ -544,7 +542,7 @@ final class AppSettings: ObservableObject {
 
     /// Point size for an arbitrary font-size step (0...4), independent of
     /// the currently selected one — used by size pickers that need to
-    /// preview every step's resolved size (e.g. `ReaderSettingsScreenController`).
+    /// preview every step's resolved size (e.g. the native reader settings screen).
     static func pointSize(for step: Int) -> CGFloat {
         switch step {
         case 0: return 14

@@ -7,7 +7,7 @@ import ActivityKit
 /// Writes enriched metadata to the shared App Group UserDefaults so
 /// WidgetKit extensions can render Now Playing, Continue Reading, and
 /// Library widgets without IPC. Call sites: `PlaybackBindingStore`,
-/// `BookOpenView`, `MainReaderView`, `AudioPlayer`.
+/// `BookOpenScreenController`, `MainReaderScreenController`, `AudioPlayer`.
 ///
 /// All keys are prefixed `widget.` to avoid collisions with the main
 /// app's UserDefaults layout. The `library.books.v1` key is shared

@@ -5,7 +5,7 @@ import Foundation
 /// relaunches without dragging in CoreData/SwiftData for what is
 /// fundamentally a tiny dictionary.
 ///
-/// This type intentionally has no AVFoundation / SwiftUI imports — that
+/// This type intentionally has no AVFoundation or UI framework imports — that
 /// keeps it covered by the headless `swift build` + XCTest suite.
 struct ResumeMarker: Codable, Equatable {
     let jobId: String

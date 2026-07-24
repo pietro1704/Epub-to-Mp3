@@ -37,7 +37,7 @@ final class MacReaderViewController: NSSplitViewController, NSTableViewDataSourc
     }
 
     func setBook(_ bookID: String?) {
-        UserDefaults.standard.set(bookID, forKey: MainReaderView.currentlyReadingBookIDKey)
+        UserDefaults.standard.set(bookID, forKey: ReaderSessionState.currentlyReadingBookIDKey)
         loadCurrentBook()
     }
 
@@ -115,7 +115,7 @@ final class MacReaderViewController: NSSplitViewController, NSTableViewDataSourc
 
     private func loadCurrentBook() {
         guard isViewLoaded else { return }
-        let id = UserDefaults.standard.string(forKey: MainReaderView.currentlyReadingBookIDKey)
+        let id = UserDefaults.standard.string(forKey: ReaderSessionState.currentlyReadingBookIDKey)
         guard let book = library.books.first(where: { $0.id == id }) else {
             fulltext = nil
             textView.string = ""

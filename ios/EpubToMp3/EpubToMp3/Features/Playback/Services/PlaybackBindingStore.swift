@@ -2,7 +2,7 @@ import Foundation
 
 /// Persists the lightweight playback pointer used by the app shell,
 /// widgets, and deep links to rehydrate the active audiobook without
-/// keeping an unused SwiftUI landing view alive just for this helper.
+/// keeping an unused landing view alive just for this helper.
 enum PlaybackBindingStore {
 
     /// Persist the current (bookID, chapterIndex) pair. Binding a book

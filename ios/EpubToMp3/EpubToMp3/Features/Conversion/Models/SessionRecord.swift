@@ -19,7 +19,7 @@ struct SessionRecord: Codable, Identifiable, Hashable {
     let outcome: String?
     let mode: String?
 
-    /// Stable identifier for SwiftUI lists. The session log doesn't ship an
+    /// Stable identifier for native lists. The session log doesn't ship an
     /// explicit id for CLI-only rows; prefer the backend job id when present
     /// and fall back to the timestamp + title combo for history-only entries.
     var id: String { jobId?.isEmpty == false ? jobId! : "\(timestamp)|\(bookTitle)" }

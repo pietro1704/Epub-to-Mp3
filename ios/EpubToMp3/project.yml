@@ -74,11 +74,10 @@ settings:
     INFOPLIST_KEY_NSHumanReadableCopyright: "© 2026 Pietro Pugliesi"
     INFOPLIST_KEY_LSApplicationCategoryType: "public.app-category.productivity"
     # Intel Macs with discrete + integrated GPU: tell macOS we don't
-    # need the dGPU. The integrated Intel renders SwiftUI without
-    # spinning fans up. NS_KEY_CONTENT below.
+    # need the dGPU for this native AppKit renderer.
     INFOPLIST_KEY_NSSupportsAutomaticGraphicsSwitching: YES
     TARGETED_DEVICE_FAMILY: "1,2"
-    ENABLE_PREVIEWS: YES
+    ENABLE_PREVIEWS: NO
     # Xcode 26 recommended-settings (auto-applied via "Perform Changes"
     # dialog). Promoted here so xcodegen regeneration doesn't undo them.
     # - Dead-code stripping: smaller binaries.
@@ -176,14 +175,6 @@ packages:
   PythonKit:
     url: https://github.com/pvieito/PythonKit.git
     from: "0.4.0"
-  # swift-snapshot-testing — pointfree's view-snapshot harness. Used by
-  # the regression suite under EpubToMp3Tests/Snapshots/. Pinned to the
-  # 1.17 line which still supports iOS 13 / macOS 10.15 deployment
-  # (the app targets iOS 15 / macOS 12). Renders SwiftUI to UIKit/AppKit
-  # hosting and writes/compares PNGs on disk.
-  SnapshotTesting:
-    url: https://github.com/pointfreeco/swift-snapshot-testing.git
-    from: "1.17.0"
 
 targets:
   EpubToMp3:
@@ -204,51 +195,6 @@ targets:
           # root and xcodegen recursed it, bundling MEMORY.md as an app
           # Resource. Agent memory belongs at ios/EpubToMp3/.claude/.
           - ".claude"
-          # The shipping app is UIKit/AppKit. These former SwiftUI screens
-          # are excluded from the application target; native controllers
-          # with the same responsibilities remain in the feature folders.
-          - "App/PlatformCompat.swift"
-          - "Shared/UI/EmptyContentView.swift"
-          - "Shared/UI/IOSTabBarVisibilityBridge.swift"
-          - "Shared/Diagnostics/FlickerProbe.swift"
-          - "Features/Conversion/Views/ConvertView.swift"
-          - "Features/Conversion/Views/ConversionStatusSheet.swift"
-          - "Features/Conversion/Views/JobDetailView.swift"
-          - "Features/Conversion/Views/JobsListCollectionView.swift"
-          - "Features/Conversion/Views/JobsListView.swift"
-          - "Features/Library/Views/BookmarksListView.swift"
-          - "Features/Library/Views/LibraryDropHandler.swift"
-          - "Features/Library/Views/LibrarySearchBar.swift"
-          - "Features/Library/Views/LibrarySidebar.swift"
-          - "Features/Library/Views/LibraryView.swift"
-          - "Features/Playback/Views/AirPlayPickerView.swift"
-          - "Features/Playback/Views/FullPlayerSheet.swift"
-          - "Features/Playback/Views/MiniPlayerBar.swift"
-          - "Features/Playback/Views/PlaybackControlsSupport.swift"
-          - "Features/Playback/Views/PlaybackProgressBarView.swift"
-          - "Features/Playback/Views/PlayDivergenceDialog.swift"
-          - "Features/Reader/Services/EpubReaderRenderingSettings.swift"
-          - "Features/Reader/Views/AttributedPageView.swift"
-          - "Features/Reader/Views/BookChapterCell.swift"
-          - "Features/Reader/Views/BookOpenView.swift"
-          - "Features/Reader/Views/ChapterListColumn.swift"
-          - "Features/Reader/Views/InstantReaderScrubber.swift"
-          - "Features/Reader/Views/InstantReaderScreenController.swift"
-          - "Features/Reader/Views/InstantReaderView.swift"
-          - "Features/Reader/Views/LocalEpubReaderView.swift"
-          - "Features/Reader/Views/PdfReaderView.swift"
-          - "Features/Reader/Views/PlayerReaderScrubber.swift"
-          - "Features/Reader/Views/PlayerReaderView.swift"
-          - "Features/Reader/Views/ReaderInteractionComponents.swift"
-          - "Features/Reader/Views/ReaderSearchOverlay.swift"
-          - "Features/Reader/Views/ReaderSettingsSheet.swift"
-          - "Features/Reader/Views/ReaderView.swift"
-          - "Features/Reader/Views/TextKitPageView.swift"
-          - "Features/Reader/Views/TocDrawer.swift"
-          - "Features/Settings/Views/LogsView.swift"
-          - "Features/Settings/Views/SettingsView.swift"
-          - "Features/Settings/Views/TagEditorSheet.swift"
-          - "Features/Settings/Views/TelemetryView.swift"
           # Vendor/ is referenced explicitly below as folder-refs (opaque).
           # Without this exclude, xcodegen recurses into it from the parent
           # `path: EpubToMp3` and adds every .py as an individual resource,
@@ -344,8 +290,7 @@ targets:
           "CODE_SIGNING_ALLOWED[sdk=iphoneos*]": YES
           "CODE_SIGN_STYLE[sdk=iphoneos*]": Automatic
           # On a 2018 Intel Mac the discrete Radeon Pro draws the
-          # window even in Debug; force dGPU so SwiftUI render is
-          # smooth. (No effect on Apple Silicon — they have one GPU.)
+          # native AppKit window without software-rendering stalls.
           ENABLE_HARDENED_RUNTIME: NO
         Release:
           CODE_SIGN_ENTITLEMENTS: EpubToMp3/Resources/EpubToMp3.entitlements
@@ -434,31 +379,8 @@ targets:
           # the corresponding AudioPlayer implementation lands; until
           # then it blocks the whole test target from compiling.
           - "AudioPlayerEnqueueSegmentTests.swift"
-          # The SwiftUI rendering tree was removed from the shipping target.
-          # These snapshot/source-contract tests targeted that deleted tree;
-          # native UIKit/AppKit contracts live in AppKitMigrationTests and
-          # the controller-specific suites instead.
-          - "BookOpenViewPriorityTests.swift"
-          - "DynamicTypeSnapshotTests.swift"
-          - "InstantReaderSnapshotTests.swift"
-          - "LibraryDragDropTests.swift"
-          - "LibraryGestureTests.swift"
-          - "LibrarySnapshotTests.swift"
-          - "MainReaderViewTests.swift"
-          - "MiniPlayerBarTests.swift"
-          - "PlatformCompatTests.swift"
-          - "PlayerReaderToolbarSnapshotTests.swift"
-          - "PlayerSnapshotTests.swift"
-          - "ReaderChapterAdvanceTests.swift"
-          - "ReaderChromeAutoHideTests.swift"
-          - "ReaderSnapshotTests.swift"
-          - "ReaderStateDuringUpdateGuardTests.swift"
-          - "SplitViewRootTests.swift"
-          - "TextKitPageViewTests.swift"
     dependencies:
       - target: EpubToMp3
-      - package: SnapshotTesting
-        product: SnapshotTesting
     settings:
       base:
         SUPPORTED_PLATFORMS: "iphoneos iphonesimulator macosx"
@@ -584,8 +506,8 @@ targets:
         CODE_SIGN_ENTITLEMENTS: EpubToMp3Widget/Resources/EpubToMp3Widget.entitlements
         TARGETED_DEVICE_FAMILY: "1,2"
         SWIFT_VERSION: "5.9"
-        # Widget extensions must not import UIKit directly — WidgetKit
-        # provides the rendering surface; SwiftUI handles layout.
+        # Widget extensions must not import UIKit directly. WidgetKit and
+        # SwiftUI provide the only rendering surface for this target.
         ENABLE_USER_SCRIPT_SANDBOXING: YES
       configs:
         Debug:

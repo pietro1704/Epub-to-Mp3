@@ -133,7 +133,9 @@ final class TocScreenController: UITableViewController {
                     zeroBasedIndex: zeroBased,
                     charCount: chapter.charCount,
                     isCurrent: isCurrent(zeroBasedIndex: zeroBased),
-                    audioReady: TocDrawer.isDownloadAvailable(forEpubZeroBasedIndex: zeroBased, in: snapshot),
+                    audioReady: snapshot.playableChapters.contains {
+                        $0.index == zeroBased && $0.downloadUrl != nil
+                    },
                     downloaded: locallyDownloaded.contains(zeroBased)
                 )
             }

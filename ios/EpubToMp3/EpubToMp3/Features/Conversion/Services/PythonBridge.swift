@@ -45,7 +45,7 @@ import PythonKit
 /// Synchronisation gate around in-process Python calls. PythonKit
 /// surfaces CPython through a single interpreter, which is not
 /// thread-safe; we serialise calls on a dedicated dispatch queue so
-/// concurrent SwiftUI `Task`s don't race on the GIL boundary.
+/// concurrent tasks don't race on the GIL boundary.
 final class PythonBridge: @unchecked Sendable {
     static let shared = PythonBridge()
 
@@ -72,7 +72,7 @@ final class PythonBridge: @unchecked Sendable {
     /// Parses an EPUB on disk via `python_app.src.ebook_reader.parse_epub_to_dict`,
     /// the same function the macOS sidecar exposes through
     /// `GET /api/jobs/{id}/fulltext`. Returns an `EbookFulltext` already
-    /// decoded into the model the SwiftUI reader expects — same wire
+/// decoded into the model the native reader expects — same wire
     /// shape, same code path, no Swift-side parser to maintain.
     ///
     /// - Parameters:
@@ -604,7 +604,7 @@ final class PythonBridge: @unchecked Sendable {
     }
 
     /// Result returned by ``convertEpub(...)``. ``outputs`` is decoded
-    /// straight to URLs for the SwiftUI player; ``errors`` is plain
+/// straight to URLs for the native player; ``errors`` is plain
     /// strings so the UI can render without further parsing.
     struct ConvertResult: Sendable {
         let bookTitle: String

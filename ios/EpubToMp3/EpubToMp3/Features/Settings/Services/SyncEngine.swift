@@ -19,7 +19,7 @@ import Foundation
 ///     `AudioPlayer.position`).
 ///   - Re-emit only when the sentence actually changes.
 ///
-/// `SyncEngine` is **pure logic** — no AVFoundation, no SwiftUI. It is
+/// `SyncEngine` is **pure logic** — no AVFoundation or UI framework. It is
 /// driven by the parent view binding `AudioPlayer.position` to
 /// `update(position:)`. This keeps it testable on any platform.
 final class SyncEngine: @unchecked Sendable {

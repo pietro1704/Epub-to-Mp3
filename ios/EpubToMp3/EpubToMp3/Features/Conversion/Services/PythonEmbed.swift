@@ -1,7 +1,7 @@
 // PythonEmbed.swift
 //
 // Spike (branch feat/ios-python-embed): proves that Edge-TTS can run
-// in-process inside the SwiftUI iOS app, replacing the PyInstaller
+// in-process inside the UIKit iOS app, replacing the PyInstaller
 // sidecar (which uses Process() — forbidden on iOS).
 //
 // macOS still uses the sidecar path (SidecarManager.swift). This file

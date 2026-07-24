@@ -187,7 +187,7 @@ final class ChapterCacheManager: ObservableObject {
         activeTasks[arrayIndex] = task
     }
 
-    /// Synthesize via direct Edge WebSocket — same logic as BookOpenView.
+    /// Synthesize via direct Edge WebSocket, matching the reader playback path.
     private nonisolated static func synthesizeDirectEdgeRaw(
         text: String, voice: String, chapterIndex: Int
     ) async throws -> Data {

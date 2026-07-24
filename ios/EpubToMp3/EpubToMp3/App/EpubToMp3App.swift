@@ -26,7 +26,6 @@ final class EpubToMp3App: NSObject, PlatformApplicationDelegate {
     let audioWarmup = AudioEngineWarmup()
     let playerPresentation = PlayerPresentation()
     let bookmarkStore = BookmarkStore()
-    let readerCoordinator = ReaderCoordinator()
 
     nonisolated(unsafe) private static var sharedPlayerForWidgetIntents: AudioPlayer?
 
@@ -44,6 +43,8 @@ final class EpubToMp3App: NSObject, PlatformApplicationDelegate {
             settings: settings,
             library: library,
             player: player,
+            bookmarkStore: bookmarkStore,
+            sidecar: sidecar,
             playerPresentation: playerPresentation
         )
         rootController = root
@@ -89,13 +90,10 @@ final class EpubToMp3App: NSObject, PlatformApplicationDelegate {
     ) -> Bool {
         let root = IOSRootContainerController(
             settings: settings,
-            sidecar: sidecar,
             library: library,
             player: player,
-            audioWarmup: audioWarmup,
             playerPresentation: playerPresentation,
-            bookmarkStore: bookmarkStore,
-            readerCoordinator: readerCoordinator
+            bookmarkStore: bookmarkStore
         )
         let window = UIWindow(frame: UIScreen.main.bounds)
         window.rootViewController = root
@@ -173,14 +171,14 @@ final class EpubToMp3App: NSObject, PlatformApplicationDelegate {
     private func handleIncomingURL(_ url: URL) {
         if url.isFileURL {
             if let book = try? library.importBook(from: url) {
-                UserDefaults.standard.set(book.id, forKey: MainReaderView.currentlyReadingBookIDKey)
+                UserDefaults.standard.set(book.id, forKey: ReaderSessionState.currentlyReadingBookIDKey)
             }
             return
         }
         guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
               let bookID = components.queryItems?.first(where: { $0.name == "bookId" })?.value,
               library.books.contains(where: { $0.id == bookID }) else { return }
-        UserDefaults.standard.set(bookID, forKey: MainReaderView.currentlyReadingBookIDKey)
+        UserDefaults.standard.set(bookID, forKey: ReaderSessionState.currentlyReadingBookIDKey)
         if components.host == "player" {
             PlaybackBindingStore.setCurrentlyPlaying(bookID: bookID, chapterIndex: 0)
             playerPresentation.showFullPlayer()
@@ -195,7 +193,7 @@ final class EpubToMp3App: NSObject, PlatformApplicationDelegate {
 
     private func openBookById(_ bookID: String) {
         guard library.books.contains(where: { $0.id == bookID }) else { return }
-        MainReaderView.setCurrentlyReading(bookID: bookID)
+        ReaderSessionState.setCurrentlyReading(bookID: bookID)
     }
 
     private func drainWidgetIntents() {

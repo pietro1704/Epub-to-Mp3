@@ -1,19 +1,18 @@
 import Foundation
 
-/// Pure layout metrics for the library grid, shared by the SwiftUI and
-/// UIKit renderers. Kept UIKit-free so it is unit-testable off-device.
+/// Pure layout metrics for the native library grid. Kept UIKit-free so it
+/// is unit-testable off-device.
 ///
-/// Mirrors the SwiftUI grid: adaptive tiles between `minTileWidth` and
-/// `maxTileWidth` with `spacing` gutters and `sectionInset` on each edge.
+/// Packs adaptive tiles between `minTileWidth` and `maxTileWidth` with
+/// `spacing` gutters and `sectionInset` on each edge.
 struct LibraryGridLayoutMetrics: Equatable {
     var minTileWidth: CGFloat = 160
     var maxTileWidth: CGFloat = 220
     var spacing: CGFloat = 20
     var sectionInset: CGFloat = 20
 
-    /// Number of columns that fit in `availableWidth`, matching
-    /// `GridItem(.adaptive(minimum:maximum:))` semantics: pack as many
-    /// `minTileWidth` tiles (plus gutters) as fit, at least one.
+    /// Number of columns that fit in `availableWidth`, packing as many
+    /// minimum-width tiles (plus gutters) as fit, at least one.
     func columnCount(forWidth availableWidth: CGFloat) -> Int {
         let usable = availableWidth - 2 * sectionInset
         guard usable > 0 else { return 1 }

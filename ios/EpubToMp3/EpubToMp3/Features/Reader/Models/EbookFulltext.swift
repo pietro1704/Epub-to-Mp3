@@ -25,7 +25,7 @@ import Foundation
 /// `segments[]`. The actual server payload uses **`index` + `name`** (no
 /// stable string id, no per-sentence segment table). We map them here:
 ///
-/// - `id` is computed as `String(index)` for SwiftUI list identity.
+        /// - `id` is computed as `String(index)` for native list identity.
 /// - `title` is the `name` field.
 /// - `segments` is **not present in the response today** — `SyncEngine`
 ///   falls back to WPM estimation. Decoding `segments` is wired up so
@@ -92,9 +92,9 @@ struct EbookFulltext: Codable, Equatable {
 
         /// Convert the backend's 1-based chapter index into the
         /// 0-based EPUB axis that `InstantReaderIndexMapper`,
-        /// `ReaderCoordinator`, `WidgetDataSync`, and
+        /// `WidgetDataSync`, and
         /// `cacheManager` all expect. Pre-slice-21 the search
-        /// overlay handoff in `InstantReaderView` skipped this
+        /// overlay handoff in the native reader skipped this
         /// conversion, so jumping to a search result wrote a
         /// 1-based value into a 0-based field and the player /
         /// widget / saved cursor all drifted by one chapter.

@@ -7,22 +7,25 @@ final class MainReaderScreenController: UIViewController {
     private var library: LibraryStore
     private var settings: AppSettings
     private let player: AudioPlayer
-    private let audioWarmup: AudioEngineWarmup
     private let playerPresentation: PlayerPresentation
     private var onBrowseLibrary: (() -> Void)?
 
     private var cancellables: Set<AnyCancellable> = []
-    private var hostedController: BookOpenScreenController?
-    private var hostedBookID: String?
+    private var readerController: BookOpenScreenController?
+    private var readerBookID: String?
 
     private let emptyStateStack = UIStackView()
     private let emptyTitleLabel = UILabel()
     private let emptyDescriptionLabel = UILabel()
     private let browseButton = UIButton(type: .system)
     private let listenButton = UIButton(type: .system)
+    private let readerToolbar = UIStackView()
+    private let readerTitleLabel = UILabel()
+    private let closeReaderButton = UIButton(type: .system)
+    private let repickBookButton = UIButton(type: .system)
 
     private var currentBook: BookEntity? {
-        guard let id = UserDefaults.standard.string(forKey: MainReaderView.currentlyReadingBookIDKey),
+        guard let id = UserDefaults.standard.string(forKey: ReaderSessionState.currentlyReadingBookIDKey),
               !id.isEmpty else { return nil }
         return library.books.first(where: { $0.id == id })
     }
@@ -31,14 +34,12 @@ final class MainReaderScreenController: UIViewController {
         library: LibraryStore,
         settings: AppSettings,
         player: AudioPlayer,
-        audioWarmup: AudioEngineWarmup,
         playerPresentation: PlayerPresentation,
         onBrowseLibrary: (() -> Void)?
     ) {
         self.library = library
         self.settings = settings
         self.player = player
-        self.audioWarmup = audioWarmup
         self.playerPresentation = playerPresentation
         self.onBrowseLibrary = onBrowseLibrary
         super.init(nibName: nil, bundle: nil)
@@ -52,6 +53,7 @@ final class MainReaderScreenController: UIViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = .systemBackground
+        configureReaderToolbar()
         configureEmptyState()
         configureListenButton()
         bind()
@@ -128,6 +130,7 @@ final class MainReaderScreenController: UIViewController {
             emptyStateStack.trailingAnchor.constraint(equalTo: view.layoutMarginsGuide.trailingAnchor),
             emptyStateStack.centerYAnchor.constraint(equalTo: view.centerYAnchor),
         ])
+
     }
 
     private func configureListenButton() {
@@ -141,9 +144,51 @@ final class MainReaderScreenController: UIViewController {
         listenButton.addTarget(self, action: #selector(listenTapped), for: .touchUpInside)
         view.addSubview(listenButton)
         NSLayoutConstraint.activate([
-            listenButton.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 8),
+            listenButton.topAnchor.constraint(equalTo: readerToolbar.bottomAnchor, constant: 8),
             listenButton.trailingAnchor.constraint(equalTo: view.layoutMarginsGuide.trailingAnchor),
             listenButton.heightAnchor.constraint(greaterThanOrEqualToConstant: 44),
+        ])
+    }
+
+    private func configureReaderToolbar() {
+        readerToolbar.axis = .horizontal
+        readerToolbar.alignment = .center
+        readerToolbar.spacing = 8
+        readerToolbar.isLayoutMarginsRelativeArrangement = true
+        readerToolbar.directionalLayoutMargins = NSDirectionalEdgeInsets(top: 4, leading: 12, bottom: 4, trailing: 12)
+        readerToolbar.translatesAutoresizingMaskIntoConstraints = false
+
+        var closeConfiguration = UIButton.Configuration.plain()
+        closeConfiguration.image = UIImage(systemName: "xmark")
+        closeConfiguration.contentInsets = .zero
+        closeReaderButton.configuration = closeConfiguration
+        closeReaderButton.accessibilityLabel = L10n.string("player.close")
+        closeReaderButton.accessibilityIdentifier = "reader.close"
+        closeReaderButton.addTarget(self, action: #selector(closeReaderTapped), for: .touchUpInside)
+
+        readerTitleLabel.font = .preferredFont(forTextStyle: .headline)
+        readerTitleLabel.textAlignment = .center
+        readerTitleLabel.lineBreakMode = .byTruncatingMiddle
+        readerTitleLabel.setContentHuggingPriority(.defaultLow, for: .horizontal)
+
+        var repickConfiguration = UIButton.Configuration.plain()
+        repickConfiguration.title = L10n.string("bookOpen.repick")
+        repickConfiguration.contentInsets = .zero
+        repickBookButton.configuration = repickConfiguration
+        repickBookButton.accessibilityIdentifier = "reader.repick"
+        repickBookButton.addTarget(self, action: #selector(repickBookTapped), for: .touchUpInside)
+
+        readerToolbar.addArrangedSubview(closeReaderButton)
+        readerToolbar.addArrangedSubview(readerTitleLabel)
+        readerToolbar.addArrangedSubview(repickBookButton)
+        view.addSubview(readerToolbar)
+        NSLayoutConstraint.activate([
+            readerToolbar.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            readerToolbar.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            readerToolbar.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
+            readerToolbar.heightAnchor.constraint(greaterThanOrEqualToConstant: 52),
+            closeReaderButton.widthAnchor.constraint(equalToConstant: 44),
+            repickBookButton.heightAnchor.constraint(greaterThanOrEqualToConstant: 44),
         ])
     }
 
@@ -157,72 +202,72 @@ final class MainReaderScreenController: UIViewController {
     }
 
     private func showEmptyState() {
-        removeHostedControllerIfNeeded()
+        removeReaderControllerIfNeeded()
         emptyStateStack.isHidden = false
         listenButton.isHidden = true
+        readerToolbar.isHidden = true
     }
 
     private func showBook(_ book: BookEntity) {
         emptyStateStack.isHidden = true
-        if let hostedController, hostedBookID == book.id {
-            hostedController.update(
-                book: book,
-                onClose: { [weak self] in
-                    MainReaderView.setCurrentlyReading(bookID: nil)
-                    self?.onBrowseLibrary?()
-                },
-                library: library,
-                settings: settings,
-                player: player,
-                audioWarmup: audioWarmup
+        readerToolbar.isHidden = false
+        readerTitleLabel.text = book.resolvedTitle
+        if let readerController, readerBookID == book.id {
+            readerController.update(
+                book: book
             )
             return
         }
 
-        removeHostedControllerIfNeeded()
+        removeReaderControllerIfNeeded()
 
-        let host = BookOpenScreenController(
+        let reader = BookOpenScreenController(
             book: book,
-            onClose: { [weak self] in
-                MainReaderView.setCurrentlyReading(bookID: nil)
-                self?.onBrowseLibrary?()
-            },
             library: library,
-            settings: settings,
-            player: player,
-            audioWarmup: audioWarmup
+            settings: settings
         )
-        addChild(host)
-        host.view.translatesAutoresizingMaskIntoConstraints = false
-        view.insertSubview(host.view, belowSubview: listenButton)
+        addChild(reader)
+        reader.view.translatesAutoresizingMaskIntoConstraints = false
+        view.insertSubview(reader.view, belowSubview: listenButton)
         NSLayoutConstraint.activate([
-            host.view.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            host.view.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            host.view.topAnchor.constraint(equalTo: view.topAnchor),
-            host.view.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            reader.view.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            reader.view.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            reader.view.topAnchor.constraint(equalTo: readerToolbar.bottomAnchor),
+            reader.view.bottomAnchor.constraint(equalTo: view.bottomAnchor),
         ])
-        host.didMove(toParent: self)
-        hostedController = host
-        hostedBookID = book.id
+        reader.didMove(toParent: self)
+        readerController = reader
+        readerBookID = book.id
 
         var updated = book
         updated.lastOpenedAt = Date()
         library.update(updated)
     }
 
-    private func removeHostedControllerIfNeeded() {
-        guard let hostedController else { return }
-        hostedController.willMove(toParent: nil)
-        hostedController.view.removeFromSuperview()
-        hostedController.removeFromParent()
-        self.hostedController = nil
-        self.hostedBookID = nil
+    private func removeReaderControllerIfNeeded() {
+        guard let readerController else { return }
+        readerController.willMove(toParent: nil)
+        readerController.view.removeFromSuperview()
+        readerController.removeFromParent()
+        self.readerController = nil
+        self.readerBookID = nil
     }
 
     private func autoClearMissingBookIfNeeded() {
-        guard let id = UserDefaults.standard.string(forKey: MainReaderView.currentlyReadingBookIDKey),
+        guard let id = UserDefaults.standard.string(forKey: ReaderSessionState.currentlyReadingBookIDKey),
               !library.books.contains(where: { $0.id == id }) else { return }
-        MainReaderView.setCurrentlyReading(bookID: nil)
+        ReaderSessionState.setCurrentlyReading(bookID: nil)
+    }
+
+    @objc
+    private func closeReaderTapped() {
+        ReaderSessionState.setCurrentlyReading(bookID: nil)
+        onBrowseLibrary?()
+    }
+
+    @objc
+    private func repickBookTapped() {
+        readerController?.presentDocumentPicker()
     }
 
     @objc

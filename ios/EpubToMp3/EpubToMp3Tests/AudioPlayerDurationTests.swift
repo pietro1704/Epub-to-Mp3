@@ -50,48 +50,24 @@ final class AudioPlayerDurationTests: XCTestCase {
         XCTAssertTrue(source.contains("snapshotDuration"))
     }
 
-    func testAudioOnlyStartsAfterExplicitPlayIntent() throws {
-        #if os(iOS)
-        throw XCTSkip("Source-contract tests run on the host, not inside the iOS app sandbox")
-        #else
-        let testFile = URL(fileURLWithPath: #filePath)
-        let projectRoot = testFile
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-        let source = try String(
-            contentsOf: projectRoot.appendingPathComponent("EpubToMp3/Features/Reader/Views/BookOpenView.swift"),
-            encoding: .utf8
-        )
-        XCTAssertTrue(source.contains("ensureCacheManager()"))
-        XCTAssertFalse(source.contains("startAudioBootstrap(startChapterIndex: max(0, savedChapter))"))
-        #endif
-    }
-
     func testAudioPlayerObservesItemStatusAndDurationForEarlyScrubberDuration() throws {
         let source = try sourceFile(named: "AudioPlayer.swift")
 
-        XCTAssertTrue(
-            source.contains("publisher(for: \\.status)"),
-            "AudioPlayer must observe AVPlayerItem.status so durationSeconds updates as soon as the item becomes ready instead of waiting for the 250ms timer."
-        )
-        XCTAssertTrue(
-            source.contains("publisher(for: \\.duration)"),
-            "AudioPlayer must observe AVPlayerItem.duration so later duration changes refresh the scrubber immediately."
-        )
+        XCTAssertTrue(source.contains("publisher(for: \\.status)"))
+        XCTAssertTrue(source.contains("publisher(for: \\.duration)"))
     }
 
     private func sourceFile(named name: String) throws -> String {
-        #if os(iOS)
+#if os(iOS)
         throw XCTSkip("Source-contract tests run on the host, not inside the iOS app sandbox")
-        #else
-        let testFile = URL(fileURLWithPath: #filePath)
-        let projectRoot = testFile
+#else
+        let projectRoot = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
             .deletingLastPathComponent()
         return try String(
             contentsOf: projectRoot.appendingPathComponent("EpubToMp3/Features/Playback/Services/\(name)"),
             encoding: .utf8
         )
-        #endif
+#endif
     }
 }

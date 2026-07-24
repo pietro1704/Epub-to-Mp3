@@ -69,38 +69,28 @@ final class AppKitMigrationTests: XCTestCase {
             .deletingLastPathComponent()
             .deletingLastPathComponent()
         let app = try String(contentsOf: root.appendingPathComponent("EpubToMp3/App/EpubToMp3App.swift"), encoding: .utf8)
-        let rootView = try String(contentsOf: root.appendingPathComponent("EpubToMp3/App/RootView.swift"), encoding: .utf8)
-        let split = try String(contentsOf: root.appendingPathComponent("EpubToMp3/App/SplitViewRoot.swift"), encoding: .utf8)
-        let mainReader = try String(contentsOf: root.appendingPathComponent("EpubToMp3/Features/Reader/Views/MainReaderView.swift"), encoding: .utf8)
         let bookOpen = try String(contentsOf: root.appendingPathComponent("EpubToMp3/Features/Reader/Views/BookOpenScreenController.swift"), encoding: .utf8)
 
-        XCTAssertFalse(app.contains("RootView()"))
-        XCTAssertFalse(rootView.contains("import SwiftUI"))
-        XCTAssertFalse(split.contains("import SwiftUI"))
-        XCTAssertFalse(mainReader.contains("import SwiftUI"))
+        XCTAssertTrue(app.contains("MacAppKitRootController"))
         XCTAssertFalse(bookOpen.contains("UIHostingController"))
         XCTAssertFalse(bookOpen.contains("UIViewControllerRepresentable"))
     }
 
-    func testProjectExcludesLegacySwiftUIScreensFromShippingTarget() throws {
+    func testLegacySwiftUIScreensAreRemovedFromTheAppleAppSourceTree() throws {
         let root = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
             .deletingLastPathComponent()
-        let spec = try String(
-            contentsOf: root.appendingPathComponent("project.yml"),
-            encoding: .utf8
-        )
         for path in [
-            "Features/Library/Views/LibraryView.swift",
-            "Features/Conversion/Views/JobsListView.swift",
-            "Features/Playback/Views/FullPlayerSheet.swift",
-            "Features/Reader/Views/InstantReaderView.swift",
-            "Features/Reader/Views/ReaderView.swift",
-            "Features/Settings/Views/SettingsView.swift"
+            "EpubToMp3/Features/Library/Views/LibraryView.swift",
+            "EpubToMp3/Features/Conversion/Views/JobsListView.swift",
+            "EpubToMp3/Features/Playback/Views/FullPlayerSheet.swift",
+            "EpubToMp3/Features/Reader/Views/InstantReaderView.swift",
+            "EpubToMp3/Features/Reader/Views/ReaderView.swift",
+            "EpubToMp3/Features/Settings/Views/SettingsView.swift",
+            "EpubToMp3/Features/Reader/Views/InstantReaderScreenController.swift"
         ] {
-            XCTAssertTrue(spec.contains("\"\(path)\""), "Legacy SwiftUI UI must stay out of the app target: \(path)")
+            XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent(path).path),
+                           "Legacy SwiftUI source must be removed: \(path)")
         }
-        XCTAssertTrue(spec.contains("App/MacAppKitRootController.swift"))
-        XCTAssertTrue(spec.contains("Features/Reader/Views/BookOpenScreenController.swift"))
     }
 }

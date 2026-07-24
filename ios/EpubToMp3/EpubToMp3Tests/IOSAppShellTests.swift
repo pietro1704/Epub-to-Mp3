@@ -5,9 +5,9 @@ import XCTest
 import UIKit
 #endif
 
-final class RootViewMiniPlayerTests: XCTestCase {
+final class IOSMiniPlayerPolicyTests: XCTestCase {
     func testMiniPlayerShowsWhenPlayableBookExistsOutsideReader() {
-        let visible = RootView.shouldShowMiniPlayer(
+        let visible = IOSMiniPlayerPolicy.shouldShow(
             currentBookID: "book-1",
             currentlyReadingBookID: nil,
             availableBookIDs: ["book-1", "book-2"]
@@ -17,7 +17,7 @@ final class RootViewMiniPlayerTests: XCTestCase {
     }
 
     func testMiniPlayerHidesWhenReaderOwnsCurrentBook() {
-        let visible = RootView.shouldShowMiniPlayer(
+        let visible = IOSMiniPlayerPolicy.shouldShow(
             currentBookID: "book-1",
             currentlyReadingBookID: "book-1",
             availableBookIDs: ["book-1", "book-2"]
@@ -27,7 +27,7 @@ final class RootViewMiniPlayerTests: XCTestCase {
     }
 
     func testMiniPlayerHidesWhenCurrentBookIsMissingFromLibrary() {
-        let visible = RootView.shouldShowMiniPlayer(
+        let visible = IOSMiniPlayerPolicy.shouldShow(
             currentBookID: "book-1",
             currentlyReadingBookID: nil,
             availableBookIDs: ["book-2"]
@@ -68,9 +68,7 @@ final class IOSAppShellTests: XCTestCase {
             library: LibraryStore(),
             player: AudioPlayer(),
             playerPresentation: PlayerPresentation(),
-            bookmarkStore: BookmarkStore(),
-            readerCoordinator: ReaderCoordinator(),
-            audioWarmup: AudioEngineWarmup()
+            bookmarkStore: BookmarkStore()
         )
 
         let navigationControllers = controller.viewControllers as? [UINavigationController]
@@ -87,9 +85,7 @@ final class IOSAppShellTests: XCTestCase {
             library: LibraryStore(),
             player: AudioPlayer(),
             playerPresentation: PlayerPresentation(),
-            bookmarkStore: BookmarkStore(),
-            readerCoordinator: ReaderCoordinator(),
-            audioWarmup: AudioEngineWarmup()
+            bookmarkStore: BookmarkStore()
         )
 
         let navigationControllers = controller.viewControllers as? [UINavigationController]

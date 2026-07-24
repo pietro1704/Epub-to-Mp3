@@ -5,7 +5,7 @@
 // `python_app.src.android_entrypoints.parse_epub_to_json` through a
 // short-lived `python3` subprocess. Both end up returning the exact
 // same `EbookFulltext` shape (table-of-contents + chapter text), so
-// the rest of the app (ReaderView, TocDrawer) doesn't care which
+// the rest of the app's native reader does not care which
 // platform produced it.
 //
 // Why subprocess instead of embedding via PythonKit: macOS already

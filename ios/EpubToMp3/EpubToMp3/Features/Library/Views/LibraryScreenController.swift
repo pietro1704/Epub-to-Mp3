@@ -93,7 +93,7 @@ final class LibraryScreenController: UIViewController, UIDocumentPickerDelegate,
     private func configureGrid() {
         addChild(gridController)
         gridController.onOpen = { [weak self] book in
-            MainReaderView.setCurrentlyReading(bookID: book.id)
+            ReaderSessionState.setCurrentlyReading(bookID: book.id)
             self?.library.update(Self.touchLastOpened(book))
             self?.onOpenBook?()
         }
