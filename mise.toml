@@ -510,6 +510,43 @@ xcrun devicectl device install app --device "$DEVICE" "$APP_PATH"
 xcrun devicectl device process launch --device "$DEVICE" --terminate-existing "$BUNDLE_ID"
 """
 
+[tasks."ios:device:build"]
+description = "Build the native iOS app for a connected physical device without using CoreSimulator"
+depends = ["vendor:python"]
+run = """
+#!/bin/bash
+set -euo pipefail
+"${MISE_PROJECT_ROOT:-.}/scripts/ios_disk_guard.sh"
+cd ios/EpubToMp3
+if ! command -v xcodegen >/dev/null 2>&1; then
+  echo "ios:device:build error: xcodegen is required. Install it through mise or the project toolchain." >&2
+  exit 1
+fi
+DEVICE="${IOS_DEVICE_ID:-}"
+if [[ -z "$DEVICE" ]]; then
+  echo "ios:device:build error: set IOS_DEVICE_ID to the connected iPhone UDID." >&2
+  echo "Find it with: xcrun devicectl list devices" >&2
+  exit 2
+fi
+xcodegen generate
+"${MISE_PROJECT_ROOT:-../..}/scripts/verify_widget_embedded.sh"
+BUILD_LOG="${TMPDIR:-/tmp}/epub-to-mp3-ios-device-build.log"
+if ! xcodebuild \\
+       -project EpubToMp3.xcodeproj \\
+       -scheme EpubToMp3 \\
+       -configuration Debug \\
+       -destination "id=$DEVICE" \\
+       -derivedDataPath ./.build-device \\
+       -showBuildTimingSummary \\
+       build >"${BUILD_LOG}" 2>&1; then
+  echo "** DEVICE BUILD FAILED **"
+  echo "Build log: ${BUILD_LOG}"
+  grep -nE "error:|fatal error:|BUILD FAILED|SwiftCompile|SwiftEmitModule" "${BUILD_LOG}" | tail -200 || true
+  exit 65
+fi
+tail -20 "${BUILD_LOG}"
+"""
+
 [tasks."ios:simulator:run"]
 description = "Install and launch an existing iphonesimulator EpubToMp3.app; never builds or downloads runtimes"
 run = """
