@@ -82,7 +82,7 @@ final class EpubToMp3App: NSObject, PlatformApplicationDelegate {
         }
     }
 #else
-    private var window: UIWindow?
+    var window: UIWindow?
 
     func application(
         _ application: UIApplication,

@@ -44,6 +44,56 @@ final class ProjectTargetConfigurationTests: XCTestCase {
         XCTAssertFalse(source.contains("EpubFallbackParser.parse"))
     }
 
+    func testNativeConversionControllersHaveTheirSupportingTypes() throws {
+        let root = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let detail = try String(
+            contentsOf: root.appendingPathComponent(
+                "EpubToMp3/Features/Conversion/Views/JobDetailScreenController.swift"
+            ), encoding: .utf8
+        )
+        let jobs = try String(
+            contentsOf: root.appendingPathComponent(
+                "EpubToMp3/Features/Conversion/Views/JobsListScreenController.swift"
+            ), encoding: .utf8
+        )
+        let model = try String(
+            contentsOf: root.appendingPathComponent(
+                "EpubToMp3/Features/Conversion/Services/JobDetailViewModel.swift"
+            ), encoding: .utf8
+        )
+        let list = try String(
+            contentsOf: root.appendingPathComponent(
+                "EpubToMp3/Features/Conversion/Views/JobsListController.swift"
+            ), encoding: .utf8
+        )
+
+        XCTAssertTrue(detail.contains("JobDetailViewModel()"))
+        XCTAssertTrue(model.contains("final class JobDetailViewModel"))
+        XCTAssertTrue(jobs.contains("JobsListController()"))
+        XCTAssertTrue(list.contains("final class JobsListController"))
+    }
+
+    func testReaderSessionStateHasOneNativeDefinition() throws {
+        let root = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let state = try String(
+            contentsOf: root.appendingPathComponent(
+                "EpubToMp3/Features/Reader/Services/ReaderSessionState.swift"
+            ), encoding: .utf8
+        )
+        let presentation = try String(
+            contentsOf: root.appendingPathComponent(
+                "EpubToMp3/Features/Playback/Services/PlayerPresentation.swift"
+            ), encoding: .utf8
+        )
+
+        XCTAssertEqual(state.components(separatedBy: "enum ReaderSessionState").count, 2)
+        XCTAssertFalse(presentation.contains("struct ReaderSessionState"))
+    }
+
     func testWarningsAreBuildErrorsForSwiftAndClang() throws {
         let projectURL = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
