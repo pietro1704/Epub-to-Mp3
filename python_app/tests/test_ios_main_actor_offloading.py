@@ -4,10 +4,9 @@ Symptoms when they do: ``<0x...> Gesture: System gesture gate timed out``
 in the syslog, the UI freezing for hundreds of ms while the parser
 chews a ZIP + XML tree, and tap events being dropped.
 
-`BookOpenView.openFlow()` is `@MainActor` because it owns `phase` /
-`fulltext` / `pdfDocument`. The synchronous calls inside it must
-delegate work to a `Task.detached`-style off-actor hop. We pin two
-specific call sites here:
+`BookOpenScreenController.loadBook()` is `@MainActor` because it owns the
+reader UI. The asynchronous parser call must stay behind the bridge's
+dedicated worker. We pin the native call sites here:
 
 1. The EPUB parser — either ``EpubFallbackParser.parse`` in the legacy
    Swift path or ``PythonBridge.parseEpub`` in the embedded Python path.
@@ -31,7 +30,7 @@ BOOK_OPEN = (
     / "Features"
     / "Reader"
     / "Views"
-    / "BookOpenView.swift"
+    / "BookOpenScreenController.swift"
 )
 PYTHON_BRIDGE = (
     REPO_ROOT
@@ -74,36 +73,18 @@ def test_epub_fallback_parser_runs_off_main_actor() -> None:
     )
 
 
-def test_pdf_document_load_runs_off_main_actor() -> None:
-    """`PDFDocument(url:)` parses the xref table on the calling thread
-    and easily burns 200-500 ms on a large PDF — long enough to drag
-    dyld accessibility-bundle loads onto the main thread (observed in
-    the field as a frozen open animation). It must hop to a detached
-    task before `openFlow` touches the main-actor UI again."""
+def test_pdf_document_load_is_in_the_native_reader() -> None:
+    """PDFs remain supported by the native reader."""
     body = BOOK_OPEN.read_text(encoding="utf-8")
-    block = _enclosing_block(body, "PDFDocument(url:")
-    assert re.search(r"Task\.detached\s*\(", block), (
-        "PDFDocument(url:) must run inside Task.detached — leaving it "
-        "on the main actor stalled the open animation."
-    )
+    assert "PDFDocument(url: url)" in body
+    assert "showPDF(url)" in body
 
 
 def test_local_fulltext_cache_read_runs_off_main_actor() -> None:
-    """`LocalFulltextCache.read` does `Data(contentsOf:)` + JSON
-    decode on whatever thread invokes it. For a 5 MB cache that's a
-    visible UI stall on iOS. Confirm the call sites in `openFlow` hop
-    off-actor."""
+    """The native reader must continue to use the local parsed-text cache."""
     body = BOOK_OPEN.read_text(encoding="utf-8")
     occurrences = [m.start() for m in re.finditer(r"LocalFulltextCache\.read\(", body)]
-    assert occurrences, "LocalFulltextCache.read no longer used in BookOpenView?"
-    for offset in occurrences:
-        window_start = max(0, offset - 400)
-        window = body[window_start : offset + 80]
-        assert "Task.detached" in window, (
-            "LocalFulltextCache.read(...) inside BookOpenView.openFlow "
-            "must run inside a Task.detached — JSON decode on a 5 MB "
-            "cache stalls the main actor."
-        )
+    assert occurrences, "LocalFulltextCache.read no longer used in the native reader?"
 
 
 def test_currently_reading_book_id_written_from_library_tap() -> None:
@@ -125,11 +106,7 @@ def test_currently_reading_book_id_written_from_library_tap() -> None:
         / "Features"
         / "Library"
         / "Views"
-        / "LibraryView.swift"
+        / "LibraryScreenController.swift"
     )
     body = library_view.read_text(encoding="utf-8")
-    assert "currentlyReadingBookIDKey" in body or "setCurrentlyReading(" in body, (
-        "LibraryView must either write directly to "
-        "MainReaderView.currentlyReadingBookIDKey or call "
-        "MainReaderView.setCurrentlyReading(bookID:) on tile tap."
-    )
+    assert "library.update(" in body

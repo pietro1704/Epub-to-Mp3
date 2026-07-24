@@ -51,9 +51,10 @@ def test_fulltext_store_tombstone_blocks_stale_disk_and_memory_replay() -> None:
     assert "guard !Self.isEvicted(jobId: payload.jobId) else { return }" in emit_body
 
 
-def test_library_view_evicts_fulltext_store_before_removing_book() -> None:
-    source = _read("Features/Library/Views/LibraryView.swift")
-    body = _remove_action_body(source)
+def test_library_controller_evicts_fulltext_store_before_removing_book() -> None:
+    source = _read("Features/Library/Views/LibraryScreenController.swift")
+    remove_start = source.index("private func remove(book:")
+    body = source[remove_start : source.index("\n    }", remove_start) + 6]
 
     assert "if let jobId = book.lastJobId" in body
     assert "FulltextStore.evict(jobId: jobId)" in body
@@ -65,15 +66,13 @@ def test_library_view_evicts_fulltext_store_before_removing_book() -> None:
     )
 
 
-def test_library_sidebar_evicts_fulltext_store_before_removing_book() -> None:
-    source = _read("Features/Library/Views/LibrarySidebar.swift")
-    body = _remove_action_body(source)
+def test_mac_library_controller_evicts_fulltext_store_before_removing_book() -> None:
+    source = _read("Features/Library/Views/MacLibraryViewController.swift")
+    remove_start = source.index("private func removeSelectedBook")
+    body = source[remove_start : source.index("\n    }", remove_start) + 6]
 
-    assert "if let jobId = book.lastJobId" in body
-    assert "FulltextStore.evict(jobId: jobId)" in body
-    assert body.index("FulltextStore.evict(jobId: jobId)") < body.index(
-        "library.remove(id: book.id)"
-    )
-    assert body.index("LocalFulltextCache.evict(bookId: book.id)") < body.index(
-        "FulltextStore.evict(jobId: jobId)"
+    assert "FulltextStore.evict(jobId: jobID)" in body
+    assert body.index("FulltextStore.evict(jobId: jobID)") < body.index("library.remove(id: id)")
+    assert body.index("LocalFulltextCache.evict(bookId: id)") < body.index(
+        "FulltextStore.evict(jobId: jobID)"
     )
