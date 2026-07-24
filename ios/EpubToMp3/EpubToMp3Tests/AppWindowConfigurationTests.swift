@@ -13,10 +13,17 @@ final class AppWindowConfigurationTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(size.height, 700)
     }
 
-    func testMacOSWindowBootstrapRetriesAfterSwiftUISceneCreation() {
-        let delays = EpubToMp3WindowConfiguration.macOSWindowConfigurationAttemptDelays
-        XCTAssertGreaterThanOrEqual(delays.count, 6)
-        XCTAssertGreaterThanOrEqual(delays.last ?? 0, 2)
+    func testMacOSNativeDelegateOwnsTheWindow() throws {
+        let source = try String(
+            contentsOf: URL(fileURLWithPath: #filePath)
+                .deletingLastPathComponent()
+                .deletingLastPathComponent()
+                .appendingPathComponent("EpubToMp3/App/EpubToMp3App.swift"),
+            encoding: .utf8
+        )
+        XCTAssertTrue(source.contains("NSApplicationDelegate"))
+        XCTAssertTrue(source.contains("contentViewController = root"))
+        XCTAssertFalse(source.contains("WindowGroup"))
     }
     #endif
 }

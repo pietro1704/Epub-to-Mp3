@@ -1,18 +1,5 @@
 #if os(iOS)
-import SwiftUI
 import UIKit
-
-struct ReaderSettingsScreenHost: UIViewControllerRepresentable {
-    @EnvironmentObject private var settings: AppSettings
-
-    func makeUIViewController(context: Context) -> UINavigationController {
-        UINavigationController(rootViewController: ReaderSettingsScreenController(settings: settings))
-    }
-
-    func updateUIViewController(_ controller: UINavigationController, context: Context) {
-        (controller.viewControllers.first as? ReaderSettingsScreenController)?.refresh()
-    }
-}
 
 @MainActor
 final class ReaderSettingsScreenController: UITableViewController {

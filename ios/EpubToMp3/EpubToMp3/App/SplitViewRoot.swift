@@ -1,17 +1,6 @@
-import SwiftUI
+import Foundation
 
-/// Two-column root used on iPad regular-width and macOS. Layout:
-///
-///   Nav sidebar | Detail (full-width content for current mode)
-///
-/// This surface is desktop-only now. Mobile platforms route through
-/// the UIKit root container instead of this SwiftUI split shell.
-
-/// Top-level destinations exposed in the split-view sidebar.
-///
-/// Order mirrors Apple Books sidebar: Reader first (default), then
-/// Library, Conversions, Settings. Now Playing is intentionally absent —
-/// the full player surfaces via `FullPlayerSheet` from the `MiniPlayerBar`.
+/// Destinations used by the native macOS sidebar.
 enum SplitNavMode: String, Hashable, CaseIterable, Identifiable {
     case reader
     case library
@@ -22,18 +11,18 @@ enum SplitNavMode: String, Hashable, CaseIterable, Identifiable {
 
     var label: String {
         switch self {
-        case .reader:   return L10n.string("nav.read")
-        case .library:  return L10n.string("nav.library")
-        case .jobs:     return L10n.string("nav.conversions")
+        case .reader: return L10n.string("nav.read")
+        case .library: return L10n.string("nav.library")
+        case .jobs: return L10n.string("nav.conversions")
         case .settings: return L10n.string("nav.settings")
         }
     }
 
     var systemImage: String {
         switch self {
-        case .reader:   return "text.book.closed"
-        case .library:  return "books.vertical"
-        case .jobs:     return "arrow.triangle.2.circlepath"
+        case .reader: return "text.book.closed"
+        case .library: return "books.vertical"
+        case .jobs: return "arrow.triangle.2.circlepath"
         case .settings: return "gearshape"
         }
     }
@@ -47,331 +36,15 @@ enum SplitViewSidebarMiniPlayerPolicy {
     ) -> Bool {
         guard hasPlayableBook else { return false }
         switch navMode {
-        case .reader:
-            return false
-        case .library:
-            return !isShowingPlayerReaderDetail
-        case .jobs, .settings:
-            return true
+        case .reader: return false
+        case .library: return !isShowingPlayerReaderDetail
+        case .jobs, .settings: return true
         }
     }
 }
 
-#if !os(iOS)
-@available(macOS 13, *)
-struct SplitViewRoot: View {
-    @EnvironmentObject private var library: LibraryStore
-    @EnvironmentObject private var settings: AppSettings
-    @EnvironmentObject private var player: AudioPlayer
-    @EnvironmentObject private var playerPresentation: PlayerPresentation
-
-    @State private var columnVisibility: NavigationSplitViewVisibility = SplitViewRoot.defaultColumnVisibility
-    /// Default to `.reader` — the landing screen.
-    @State private var navMode: SplitNavMode = .reader
-    @State private var selectedBookID: String?
-    @State private var selectedChapterIndex: Int?
-
-    @AppStorage(AudioPlayer.currentBookIDDefaultsKey)
-    private var currentBookID: String?
-
-    /// True when the mini-player footer should appear in the sidebar.
-    ///
-    /// Suppressed whenever the detail column already shows a reader
-    /// that carries its own player transport (reader mode, or a
-    /// `PlayerReaderDetail` in library mode) — otherwise two
-    /// mini-players stack on screen (see the "duplicate mini-player"
-    /// bug). Mirrors iPhone `TabRoot`, where the reader tab gets no
-    /// `.miniPlayerInset`.
-    private var showMiniPlayer: Bool {
-        SplitViewSidebarMiniPlayerPolicy.shouldShow(
-            navMode: navMode,
-            hasPlayableBook: hasPlayableBook,
-            isShowingPlayerReaderDetail: isShowingPlayerReaderDetail
-        )
-    }
-
-    /// A book is loaded in the player AND still present in the library.
-    private var hasPlayableBook: Bool {
-        guard let id = currentBookID, !id.isEmpty else { return false }
-        return library.books.contains(where: { $0.id == id })
-    }
-
-    /// True when library mode has drilled into a `PlayerReaderDetail`
-    /// (a job snapshot exists and a chapter is selected).
-    private var isShowingPlayerReaderDetail: Bool {
-        guard let book = selectedBook else { return false }
-        return jobSnapshot(for: book) != nil && selectedChapterIndex != nil
-    }
-
-    /// Currently-selected book, resolved through the library store.
-    private var selectedBook: BookEntity? {
-        guard let id = selectedBookID else { return nil }
-        return library.books.first(where: { $0.id == id })
-    }
-
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-    var body: some View {
-        ZStack {
-            splitContent
-                .zIndex(0)
-
-            // In-tree overlay so the split/sidebar content remains mounted
-            // underneath while the full player slides in from below the
-            // screen like Spotify. Dismissal reverses the same transition.
-            if playerPresentation.showingFullPlayer {
-                FullPlayerSheet()
-                    .environmentObject(player)
-                    .environmentObject(library)
-                    .environmentObject(playerPresentation)
-                    .transition(.spotifyBottomSheet)
-                    .zIndex(2)
-                    .ignoresSafeArea()
-            }
-        }
-        .animation(
-            reduceMotion
-                ? .easeInOut(duration: 0.25)
-                : .spring(response: 0.45, dampingFraction: 0.86),
-            value: playerPresentation.showingFullPlayer
-        )
-        // Mirror TabRoot's player-error alert so iPad / macOS users
-        // (useSplit == true) get the same toast surface as iPhone.
-        // `.alert(item:)` so a new error during dismiss animation
-        // re-presents instead of being dropped — same rationale.
-        .alert(item: Binding(
-            get: { player.lastError },
-            set: { player.lastError = $0 }
-        )) { error in
-            Alert(
-                title: Text(L10n.string("player.error.title")),
-                message: Text(error.errorDescription ?? ""),
-                dismissButton: .default(Text(L10n.string("common.ok")))
-            )
-        }
-    }
-
-    private var splitContent: some View {
-        NavigationSplitView(columnVisibility: $columnVisibility) {
-            navSidebar
-                .navigationSplitViewColumnWidth(min: 200, ideal: 220, max: 280)
-                .accessibilityIdentifier("split.sidebar")
-        } detail: {
-            contentForMode
-                .accessibilityIdentifier("split.detail")
-        }
-        .navigationSplitViewStyle(.balanced)
-        .compatOnChange(of: selectedBookID) { _ in
-            selectedChapterIndex = nil
-            if let bookID = selectedBookID {
-                MainReaderView.setCurrentlyReading(bookID: bookID)
-            }
-        }
-    }
-
-    // MARK: - Sidebar
-
-    private var navSidebar: some View {
-        List(selection: Binding<SplitNavMode?>(
-            get: { navMode },
-            set: { if let v = $0 { navMode = v } }
-        )) {
-            ForEach(SplitNavMode.allCases) { mode in
-                Label(mode.label, systemImage: mode.systemImage)
-                    .tag(Optional(mode))
-            }
-        }
-        .listStyle(.sidebar)
-        .navigationTitle(Text(verbatim: "Epub-to-Mp3"))
-        .accessibilityIdentifier("split.navList")
-        // HIG sidebar footer: mini-player docked at the bottom of the
-        // sidebar (Sonos / Apple TV / Apple Music pattern). Tap opens
-        // the full player sheet. Visible on every sidebar destination
-        // so the player bar looks identical regardless of current mode.
-        .safeAreaInset(edge: .bottom, spacing: 0) {
-            if showMiniPlayer {
-                MiniPlayerBar(onTap: { playerPresentation.showFullPlayer() })
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
-                    .accessibilityIdentifier("miniPlayer.sidebar")
-            }
-        }
-        .animation(.spring(response: 0.3, dampingFraction: 0.8), value: showMiniPlayer)
-    }
-
-    // MARK: - Detail (single column)
-
-    @ViewBuilder
-    private var contentForMode: some View {
-        switch navMode {
-        case .reader:
-            MainReaderView(
-                onBrowseLibrary: { navMode = .library }
-            )
-        case .library:
-            libraryContent
-        case .jobs:
-            JobsListView()
-        case .settings:
-            SettingsView()
-        }
-    }
-
-    @ViewBuilder
-    private var libraryContent: some View {
-        // System-rendered back button via NavigationStack. The stack
-        // observes `selectedBookID` — pushing/popping a book detail
-        // updates the path and SwiftUI draws the standard chevron+title
-        // back chrome that matches Apple Books / Music.
-        NavigationStack(
-            path: Binding<[String]>(
-                get: { selectedBookID.map { [$0] } ?? [] },
-                set: { stack in
-                    selectedBookID = stack.last
-                    if stack.isEmpty { selectedChapterIndex = nil }
-                }
-            )
-        ) {
-            LibrarySidebar(selectedBookID: $selectedBookID)
-                .navigationDestination(for: String.self) { bookID in
-                    if let book = library.books.first(where: { $0.id == bookID }) {
-                        libraryBookDetail(book: book)
-                    }
-                }
-        }
-    }
-
-    @ViewBuilder
-    private func libraryBookDetail(book: BookEntity) -> some View {
-        Group {
-            if let snapshot = jobSnapshot(for: book), let chapterIndex = selectedChapterIndex {
-                PlayerReaderDetail(
-                    snapshot: snapshot,
-                    startingChapterIndex: chapterIndex,
-                    backendBaseURL: settings.resolvedBaseURL,
-                    onPreviousChapter: { advanceChapter(by: -1, in: snapshot) },
-                    onNextChapter: { advanceChapter(by: +1, in: snapshot) }
-                )
-                .id("\(book.id)-\(chapterIndex)")
-            } else {
-                ChapterListColumn(
-                    book: book,
-                    selectedChapterIndex: $selectedChapterIndex
-                )
-            }
-        }
-        .navigationTitle(book.title)
-        .compatInlineNavigationTitle()
-        .toolbar {
-            ToolbarItem(placement: .primaryAction) {
-                Button {
-                    MainReaderView.setCurrentlyReading(bookID: book.id)
-                    navMode = .reader
-                } label: {
-                    Label(L10n.string("library.openInReader"), systemImage: "book.fill")
-                }
-            }
-        }
-    }
-
-    // MARK: - Adaptive column visibility
-
-    fileprivate static var defaultColumnVisibility: NavigationSplitViewVisibility {
-        return .all
-    }
-
-
-    // MARK: - Helpers
-
-    private func jobSnapshot(for book: BookEntity) -> JobSnapshot? {
-        #if DEBUG
-        if isSwiftUIPreview {
-            return book.lastJobId != nil ? JobSnapshot.previewSample : nil
-        }
-        #endif
-        guard let jobId = book.lastJobId else { return nil }
-        return JobSnapshot(
-            jobId: jobId,
-            state: "running",
-            bookTitle: book.resolvedTitle,
-            bookAuthor: book.author,
-            coverUrl: nil,
-            coverMimeType: nil,
-            engine: nil,
-            voice: nil,
-            language: nil,
-            progressPercent: nil,
-            chaptersTotal: nil,
-            chaptersCompleted: nil,
-            chapterProgress: nil,
-            outputs: nil,
-            logUrl: nil,
-            error: nil,
-            lastActivityAt: nil
-        )
-    }
-
-    private func advanceChapter(by delta: Int, in snapshot: JobSnapshot) {
-        let chapters = snapshot.playableChapters
-        guard !chapters.isEmpty else { return }
-        let current = selectedChapterIndex ?? chapters.first?.index ?? 0
-        let positions = chapters.map { $0.index }
-        guard let cursor = positions.firstIndex(of: current) else {
-            selectedChapterIndex = chapters.first?.index
-            return
-        }
-        let next = max(0, min(positions.count - 1, cursor + delta))
-        selectedChapterIndex = positions[next]
-    }
+/// Compatibility token for old source-level callers. Native AppKit owns the
+/// real split view in `MacAppKitRootController`.
+struct SplitViewRoot {
+    init() {}
 }
-
-/// Thin wrapper around `PlayerReaderView` that adds keyboard shortcuts.
-@available(iOS 16, macOS 13, *)
-private struct PlayerReaderDetail: View {
-    let snapshot: JobSnapshot
-    let startingChapterIndex: Int
-    let backendBaseURL: URL?
-    let onPreviousChapter: () -> Void
-    let onNextChapter: () -> Void
-
-    var body: some View {
-        PlayerReaderView(
-            snapshot: snapshot,
-            backendBaseURL: backendBaseURL
-        )
-        .compatOnKeyPressArrowsAndPaging { key in
-            switch key {
-            case .leftArrow, .pageUp:
-                onPreviousChapter()
-                return true
-            case .rightArrow, .pageDown:
-                onNextChapter()
-                return true
-            default:
-                return false
-            }
-        }
-    }
-}
-#endif
-
-#if DEBUG
-#if !os(iOS)
-@available(macOS 13, *)
-#Preview("SplitViewRoot — populated") {
-    SplitViewRoot()
-        .environmentObject(AppSettings())
-        .environmentObject(LibraryStore.previewPopulated)
-        .environmentObject(AudioPlayer())
-        .environmentObject(PlayerPresentation())
-}
-
-@available(macOS 13, *)
-#Preview("SplitViewRoot — empty") {
-    SplitViewRoot()
-        .environmentObject(AppSettings())
-        .environmentObject(LibraryStore.previewEmpty)
-        .environmentObject(AudioPlayer())
-        .environmentObject(PlayerPresentation())
-}
-#endif
-#endif

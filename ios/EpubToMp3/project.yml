@@ -204,6 +204,51 @@ targets:
           # root and xcodegen recursed it, bundling MEMORY.md as an app
           # Resource. Agent memory belongs at ios/EpubToMp3/.claude/.
           - ".claude"
+          # The shipping app is UIKit/AppKit. These former SwiftUI screens
+          # are excluded from the application target; native controllers
+          # with the same responsibilities remain in the feature folders.
+          - "App/PlatformCompat.swift"
+          - "Shared/UI/EmptyContentView.swift"
+          - "Shared/UI/IOSTabBarVisibilityBridge.swift"
+          - "Shared/Diagnostics/FlickerProbe.swift"
+          - "Features/Conversion/Views/ConvertView.swift"
+          - "Features/Conversion/Views/ConversionStatusSheet.swift"
+          - "Features/Conversion/Views/JobDetailView.swift"
+          - "Features/Conversion/Views/JobsListCollectionView.swift"
+          - "Features/Conversion/Views/JobsListView.swift"
+          - "Features/Library/Views/BookmarksListView.swift"
+          - "Features/Library/Views/LibraryDropHandler.swift"
+          - "Features/Library/Views/LibrarySearchBar.swift"
+          - "Features/Library/Views/LibrarySidebar.swift"
+          - "Features/Library/Views/LibraryView.swift"
+          - "Features/Playback/Views/AirPlayPickerView.swift"
+          - "Features/Playback/Views/FullPlayerSheet.swift"
+          - "Features/Playback/Views/MiniPlayerBar.swift"
+          - "Features/Playback/Views/PlaybackControlsSupport.swift"
+          - "Features/Playback/Views/PlaybackProgressBarView.swift"
+          - "Features/Playback/Views/PlayDivergenceDialog.swift"
+          - "Features/Reader/Services/EpubReaderRenderingSettings.swift"
+          - "Features/Reader/Views/AttributedPageView.swift"
+          - "Features/Reader/Views/BookChapterCell.swift"
+          - "Features/Reader/Views/BookOpenView.swift"
+          - "Features/Reader/Views/ChapterListColumn.swift"
+          - "Features/Reader/Views/InstantReaderScrubber.swift"
+          - "Features/Reader/Views/InstantReaderScreenController.swift"
+          - "Features/Reader/Views/InstantReaderView.swift"
+          - "Features/Reader/Views/LocalEpubReaderView.swift"
+          - "Features/Reader/Views/PdfReaderView.swift"
+          - "Features/Reader/Views/PlayerReaderScrubber.swift"
+          - "Features/Reader/Views/PlayerReaderView.swift"
+          - "Features/Reader/Views/ReaderInteractionComponents.swift"
+          - "Features/Reader/Views/ReaderSearchOverlay.swift"
+          - "Features/Reader/Views/ReaderSettingsSheet.swift"
+          - "Features/Reader/Views/ReaderView.swift"
+          - "Features/Reader/Views/TextKitPageView.swift"
+          - "Features/Reader/Views/TocDrawer.swift"
+          - "Features/Settings/Views/LogsView.swift"
+          - "Features/Settings/Views/SettingsView.swift"
+          - "Features/Settings/Views/TagEditorSheet.swift"
+          - "Features/Settings/Views/TelemetryView.swift"
           # Vendor/ is referenced explicitly below as folder-refs (opaque).
           # Without this exclude, xcodegen recurses into it from the parent
           # `path: EpubToMp3` and adds every .py as an individual resource,
@@ -389,6 +434,27 @@ targets:
           # the corresponding AudioPlayer implementation lands; until
           # then it blocks the whole test target from compiling.
           - "AudioPlayerEnqueueSegmentTests.swift"
+          # The SwiftUI rendering tree was removed from the shipping target.
+          # These snapshot/source-contract tests targeted that deleted tree;
+          # native UIKit/AppKit contracts live in AppKitMigrationTests and
+          # the controller-specific suites instead.
+          - "BookOpenViewPriorityTests.swift"
+          - "DynamicTypeSnapshotTests.swift"
+          - "InstantReaderSnapshotTests.swift"
+          - "LibraryDragDropTests.swift"
+          - "LibraryGestureTests.swift"
+          - "LibrarySnapshotTests.swift"
+          - "MainReaderViewTests.swift"
+          - "MiniPlayerBarTests.swift"
+          - "PlatformCompatTests.swift"
+          - "PlayerReaderToolbarSnapshotTests.swift"
+          - "PlayerSnapshotTests.swift"
+          - "ReaderChapterAdvanceTests.swift"
+          - "ReaderChromeAutoHideTests.swift"
+          - "ReaderSnapshotTests.swift"
+          - "ReaderStateDuringUpdateGuardTests.swift"
+          - "SplitViewRootTests.swift"
+          - "TextKitPageViewTests.swift"
     dependencies:
       - target: EpubToMp3
       - package: SnapshotTesting

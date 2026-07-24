@@ -51,13 +51,13 @@ final class EpubToMp3AppDeepLinkTests: XCTestCase {
     /// instead of the player sheet.
     func testPlayerDeepLinkCallsShowFullPlayer() throws {
         let source = try appSource()
-        guard let caseRange = source.range(of: "case \"player\":") else {
-            XCTFail("handleDeepLink must still have a \"player\" case")
+        guard let caseRange = source.range(of: "components.host == \"player\"") else {
+            XCTFail("handleIncomingURL must still have a player deep-link branch")
             return
         }
-        // Look at the case body only (up to the next `case` or the closing brace).
+        // Look at the player branch body only.
         let afterCase = source[caseRange.upperBound...]
-        let nextCaseRange = afterCase.range(of: "case \"library\":")
+        let nextCaseRange = afterCase.range(of: "}\n")
         let body = nextCaseRange != nil ? afterCase[..<nextCaseRange!.lowerBound] : afterCase
 
         XCTAssertTrue(

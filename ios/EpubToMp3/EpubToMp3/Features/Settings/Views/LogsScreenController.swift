@@ -1,6 +1,5 @@
 #if os(iOS)
 import Combine
-import SwiftUI
 import UIKit
 
 @MainActor

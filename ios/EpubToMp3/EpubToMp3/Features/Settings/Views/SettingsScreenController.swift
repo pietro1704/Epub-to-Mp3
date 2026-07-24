@@ -3,6 +3,13 @@ import UIKit
 
 @MainActor
 final class SettingsScreenController: UITableViewController {
+    private static var platformMinimumLabel: String {
+        let info = Bundle.main.infoDictionary
+        if let version = info?["MinimumOSVersion"] as? String, !version.isEmpty {
+            return "iOS \(version)+"
+        }
+        return "iOS 15.0+"
+    }
     private enum Section: Int, CaseIterable {
         case runtime
         case backend
@@ -292,7 +299,7 @@ final class SettingsScreenController: UITableViewController {
             cell.selectionStyle = .none
         case 1:
             content.text = L10n.string("settings.platform")
-            content.secondaryText = SettingsView.platformMinimumLabel
+            content.secondaryText = Self.platformMinimumLabel
             cell.selectionStyle = .none
         default:
             content.text = L10n.string("settings.projectOnGithub")

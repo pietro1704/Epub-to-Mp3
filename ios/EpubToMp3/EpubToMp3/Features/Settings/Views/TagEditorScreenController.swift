@@ -1,23 +1,6 @@
 #if os(iOS)
 import Combine
-import SwiftUI
 import UIKit
-
-struct TagEditorScreenHost: UIViewControllerRepresentable {
-    let book: BookEntity
-
-    @EnvironmentObject private var library: LibraryStore
-
-    func makeUIViewController(context: Context) -> UINavigationController {
-        UINavigationController(
-            rootViewController: TagEditorScreenController(book: book, library: library)
-        )
-    }
-
-    func updateUIViewController(_ controller: UINavigationController, context: Context) {
-        (controller.viewControllers.first as? TagEditorScreenController)?.update(book: book)
-    }
-}
 
 @MainActor
 final class TagEditorScreenController: UITableViewController, UITextFieldDelegate {

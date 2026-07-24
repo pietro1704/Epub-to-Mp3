@@ -1,5 +1,5 @@
 import Foundation
-import SwiftUI
+import Combine
 import os.log
 
 /// Reader appearance choices surfaced in `ReaderView`'s toolbar.
@@ -44,52 +44,19 @@ enum ReaderTheme: String, CaseIterable, Identifiable {
         }
     }
 
-    var preferredColorScheme: ColorScheme? {
+    var preferredColorScheme: ReaderColorScheme? {
         switch self {
-        case .auto:                    return nil
-        case .dark, .black:            return .dark
+        case .auto: return nil
+        case .dark, .black: return .dark
         case .light, .sepia, .parchment, .paper: return .light
-        case .custom:                  return nil
+        case .custom: return nil
         }
     }
+}
 
-    /// Background colour. Pass `customBg` (r,g,b) only for `.custom` theme.
-    func background(customBg: (Double, Double, Double)? = nil) -> Color {
-        switch self {
-        case .auto, .light: return .platformSystemBackground
-        case .sepia:        return Color(red: 0xF8/255.0, green: 0xF0/255.0, blue: 0xE0/255.0)
-        case .parchment:    return Color(red: 0xF4/255.0, green: 0xEC/255.0, blue: 0xD8/255.0)
-        case .paper:        return Color(red: 0xE8/255.0, green: 0xE2/255.0, blue: 0xD5/255.0)
-        case .dark:         return Color(red: 0x1C/255.0, green: 0x1C/255.0, blue: 0x1E/255.0)
-        case .black:        return .black
-        case .custom:
-            if let bg = customBg { return Color(red: bg.0, green: bg.1, blue: bg.2) }
-            return .platformSystemBackground
-        }
-    }
-
-    /// Foreground (text) colour. Pass `customFg` (r,g,b) only for `.custom` theme.
-    func foreground(customFg: (Double, Double, Double)? = nil) -> Color {
-        switch self {
-        case .auto, .light: return .primary
-        case .sepia:        return Color(red: 0x5B/255.0, green: 0x46/255.0, blue: 0x36/255.0)
-        case .parchment:    return Color(red: 0x3D/255.0, green: 0x2F/255.0, blue: 0x1F/255.0)
-        case .paper:        return Color(red: 0x2A/255.0, green: 0x25/255.0, blue: 0x20/255.0)
-        case .dark:         return Color(red: 0xE8/255.0, green: 0xE8/255.0, blue: 0xE8/255.0)
-        case .black:        return Color(red: 0xE0/255.0, green: 0xE0/255.0, blue: 0xE0/255.0)
-        case .custom:
-            if let fg = customFg { return Color(red: fg.0, green: fg.1, blue: fg.2) }
-            return .primary
-        }
-    }
-
-    /// Accent colour for links/highlights (WCAG ≥ 3:1 on all themes).
-    var accent: Color {
-        switch self {
-        case .auto, .light, .sepia, .parchment, .paper, .custom: return .accentColor
-        case .dark, .black: return Color(red: 0x5A/255.0, green: 0xC8/255.0, blue: 0xFA/255.0)
-        }
-    }
+enum ReaderColorScheme: Equatable {
+    case light
+    case dark
 }
 
 enum ReaderLayout: String, CaseIterable, Identifiable {

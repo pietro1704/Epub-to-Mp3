@@ -1,5 +1,4 @@
 import Foundation
-import SwiftUI
 import ImageIO
 #if canImport(UIKit)
 import UIKit
@@ -12,22 +11,6 @@ typealias PlatformFont = NSFont
 typealias PlatformColor = NSColor
 private typealias EpubInlineImage = NSImage
 #endif
-
-// MARK: - Environment key for EPUB font directory
-
-/// The temp directory where `EpubFontManager` extracted the EPUB's
-/// embedded font files. Set by `BookOpenView` after registration;
-/// consumed by `ReaderView` when invoking `EpubHtmlRenderer.render`.
-private struct EpubFontDirectoryKey: EnvironmentKey {
-    static let defaultValue: URL? = nil
-}
-
-extension EnvironmentValues {
-    var epubFontDirectory: URL? {
-        get { self[EpubFontDirectoryKey.self] }
-        set { self[EpubFontDirectoryKey.self] = newValue }
-    }
-}
 
 /// Renders a chapter's raw HTML body + per-chapter CSS into an
 /// AttributedString suitable for SwiftUI `Text(_:)`, then layers the

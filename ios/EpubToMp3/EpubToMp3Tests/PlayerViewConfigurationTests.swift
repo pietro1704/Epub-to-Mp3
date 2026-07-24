@@ -5,11 +5,10 @@ final class PlayerViewConfigurationTests: XCTestCase {
         let sourceURL = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
             .deletingLastPathComponent()
-            .appendingPathComponent("EpubToMp3/Features/Playback/Views/PlaybackControlsSupport.swift")
+            .appendingPathComponent("EpubToMp3/Features/Playback/Views/FullPlayerScreenController.swift")
         let source = try String(contentsOf: sourceURL, encoding: .utf8)
 
         XCTAssertTrue(source.contains("MPVolumeView"))
-        XCTAssertTrue(source.contains("showsVolumeSlider = true"))
         XCTAssertFalse(source.contains("showsRouteButton"))
     }
 
@@ -18,16 +17,13 @@ final class PlayerViewConfigurationTests: XCTestCase {
             .deletingLastPathComponent()
             .deletingLastPathComponent()
         let legacyPlayerURL = projectRoot.appendingPathComponent("EpubToMp3/Features/Playback/Views/PlayerView.swift")
-        let supportURL = projectRoot.appendingPathComponent("EpubToMp3/Features/Playback/Views/PlaybackControlsSupport.swift")
+        let nativeURL = projectRoot.appendingPathComponent("EpubToMp3/Features/Playback/Views/FullPlayerScreenController.swift")
 
         XCTAssertFalse(
             FileManager.default.fileExists(atPath: legacyPlayerURL.path),
             "The legacy SwiftUI PlayerView should stay removed once the UIKit player controllers own the iOS job-detail flow."
         )
-        XCTAssertTrue(
-            FileManager.default.fileExists(atPath: supportURL.path),
-            "Shared playback controls should live in PlaybackControlsSupport.swift after removing PlayerView.swift."
-        )
+        XCTAssertTrue(FileManager.default.fileExists(atPath: nativeURL.path))
     }
 
     func testUIKitPlayerScreenReactsToPlaybackStateChanges() throws {

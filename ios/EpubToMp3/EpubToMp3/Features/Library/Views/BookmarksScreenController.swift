@@ -1,31 +1,6 @@
 #if os(iOS)
 import Combine
-import SwiftUI
 import UIKit
-
-struct BookmarksScreenHost: UIViewControllerRepresentable {
-    let bookId: String
-    var onJumpToChapter: ((Int) -> Void)?
-
-    @EnvironmentObject private var bookmarkStore: BookmarkStore
-
-    func makeUIViewController(context: Context) -> UINavigationController {
-        UINavigationController(
-            rootViewController: BookmarksScreenController(
-                bookId: bookId,
-                bookmarkStore: bookmarkStore,
-                onJumpToChapter: onJumpToChapter
-            )
-        )
-    }
-
-    func updateUIViewController(_ controller: UINavigationController, context: Context) {
-        (controller.viewControllers.first as? BookmarksScreenController)?.update(
-            bookId: bookId,
-            onJumpToChapter: onJumpToChapter
-        )
-    }
-}
 
 @MainActor
 final class BookmarksScreenController: UITableViewController {

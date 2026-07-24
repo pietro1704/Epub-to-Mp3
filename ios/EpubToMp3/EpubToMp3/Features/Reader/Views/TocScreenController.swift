@@ -1,48 +1,5 @@
 #if os(iOS)
-import SwiftUI
 import UIKit
-
-struct TocScreenHost: UIViewControllerRepresentable {
-    let fulltext: EbookFulltext?
-    let snapshot: JobSnapshot
-    let currentChapterIndex: Int
-    let readingChapterIndex: Int?
-    let onJump: (Int) -> Void
-    let onDownload: ((Int) -> Void)?
-    let onDownloadAll: (() -> Void)?
-    let onCancelDownloads: (() -> Void)?
-    let onClearDownloads: (() -> Void)?
-
-    func makeUIViewController(context: Context) -> UINavigationController {
-        UINavigationController(
-            rootViewController: TocScreenController(
-                fulltext: fulltext,
-                snapshot: snapshot,
-                currentChapterIndex: currentChapterIndex,
-                readingChapterIndex: readingChapterIndex,
-                onJump: onJump,
-                onDownload: onDownload,
-                onDownloadAll: onDownloadAll,
-                onCancelDownloads: onCancelDownloads,
-                onClearDownloads: onClearDownloads
-            )
-        )
-    }
-
-    func updateUIViewController(_ controller: UINavigationController, context: Context) {
-        (controller.viewControllers.first as? TocScreenController)?.update(
-            fulltext: fulltext,
-            snapshot: snapshot,
-            currentChapterIndex: currentChapterIndex,
-            readingChapterIndex: readingChapterIndex,
-            onJump: onJump,
-            onDownload: onDownload,
-            onDownloadAll: onDownloadAll,
-            onCancelDownloads: onCancelDownloads,
-            onClearDownloads: onClearDownloads
-        )
-    }
-}
 
 @MainActor
 final class TocScreenController: UITableViewController {

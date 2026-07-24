@@ -1,26 +1,5 @@
 #if os(iOS)
-import SwiftUI
 import UIKit
-
-struct ReaderSearchScreenHost: UIViewControllerRepresentable {
-    let chapters: [EbookFulltext.Chapter]
-    var onJumpToChapter: ((Int) -> Void)?
-    @Binding var isPresented: Bool
-
-    func makeUIViewController(context: Context) -> UINavigationController {
-        let controller = ReaderSearchScreenController(
-            chapters: chapters,
-            onJumpToChapter: onJumpToChapter,
-            onDismiss: { isPresented = false }
-        )
-        return UINavigationController(rootViewController: controller)
-    }
-
-    func updateUIViewController(_ controller: UINavigationController, context: Context) {
-        guard let root = controller.viewControllers.first as? ReaderSearchScreenController else { return }
-        root.update(chapters: chapters, onJumpToChapter: onJumpToChapter, onDismiss: { isPresented = false })
-    }
-}
 
 @MainActor
 final class ReaderSearchScreenController: UITableViewController, UISearchResultsUpdating {

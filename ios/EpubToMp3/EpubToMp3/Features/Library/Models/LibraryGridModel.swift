@@ -9,7 +9,7 @@ import Foundation
 /// without a device build. The UIKit view layer stays a thin mapping from
 /// `arrangedBooks()` onto `NSDiffableDataSourceSnapshot`.
 ///
-/// The logic mirrors the former inline `LibraryView.sorted` exactly:
+/// Sorting and filtering are shared by the UIKit and AppKit library views:
 /// optional tag filter → case-insensitive search over title/author/tags →
 /// sort by the selected mode.
 struct LibraryGridModel: Equatable {

@@ -1,30 +1,6 @@
 #if os(iOS)
 import Combine
-import SwiftUI
 import UIKit
-
-struct ConversionStatusScreenHost: UIViewControllerRepresentable {
-    @ObservedObject var status: ConversionStatus
-    let bookTitle: String
-    let onCancel: () -> Void
-    let onRetry: () -> Void
-
-    func makeUIViewController(context: Context) -> UINavigationController {
-        UINavigationController(
-            rootViewController: ConversionStatusScreenController(
-                status: status,
-                bookTitle: bookTitle,
-                onCancel: onCancel,
-                onRetry: onRetry
-            )
-        )
-    }
-
-    func updateUIViewController(_ controller: UINavigationController, context: Context) {
-        (controller.viewControllers.first as? ConversionStatusScreenController)?
-            .update(status: status, bookTitle: bookTitle, onCancel: onCancel, onRetry: onRetry)
-    }
-}
 
 @MainActor
 final class ConversionStatusScreenController: UITableViewController {
