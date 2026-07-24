@@ -118,3 +118,16 @@ def test_simulator_run_task_requires_an_existing_app_and_never_builds():
     assert "xcodebuild" not in task
     assert "xcodegen" not in task
     assert "-downloadPlatform" not in task
+
+
+def test_install_task_upgrades_pip_before_security_pins():
+    """Fresh environments must not retain a vulnerable bootstrap pip."""
+    body = MISE_TOML.read_text(encoding="utf-8")
+    install_start = body.index("[tasks.install]")
+    test_start = body.index("\n[tasks.test]", install_start)
+    task = body[install_start:test_start]
+
+    upgrade = ".venv/bin/python -m pip install --upgrade pip"
+    requirements = ".venv/bin/python -m pip install -r requirements.txt"
+    assert upgrade in task
+    assert task.index(upgrade) < task.index(requirements)
