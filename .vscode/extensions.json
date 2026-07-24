@@ -1,9 +1,17 @@
 {
   "recommendations": [
+    "vscodevim.vim",
+    "eamodio.gitlens",
+    "github.vscode-pull-request-github",
     "sweetpad.sweetpad",
     "vadimcn.vscode-lldb",
     "github.vscode-github-actions",
     "redhat.vscode-yaml",
-    "timonwong.shellcheck"
+    "timonwong.shellcheck",
+    "alefragnani.project-manager",
+    "christian-kohler.path-intellisense",
+    "davidanson.vscode-markdownlint",
+    "ms-vscode-remote.remote-ssh",
+    "ms-vscode-remote.remote-containers"
   ]
 }
