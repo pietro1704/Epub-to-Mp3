@@ -186,6 +186,9 @@ packages:
   PythonKit:
     url: https://github.com/pvieito/PythonKit.git
     from: "0.4.0"
+  InjectionNext:
+    url: https://github.com/johnno1962/InjectionNext.git
+    from: "2.0.1"
 
 targets:
   EpubToMp3:
@@ -239,6 +242,9 @@ targets:
         embed: true
         codeSign: true
       - package: PythonKit
+      # Debug-only code injection for macOS, Simulator, and opted-in devices.
+      # The package itself excludes injection code from non-Debug builds.
+      - package: InjectionNext
       # Widget extension — embedded in the main app bundle so iOS can
       # offer it in the widget gallery. iOS-only: the widget target's
       # own `supportedDestinations: [iOS]` keeps it out of the macOS
@@ -288,6 +294,9 @@ targets:
         ENABLE_USER_SCRIPT_SANDBOXING: NO
       configs:
         Debug:
+          # Required by InjectionNext to interpose function bodies after a
+          # source save. Keep these flags out of Release artifacts.
+          OTHER_LDFLAGS: "$(inherited) -Xlinker -interposable"
           # Unsigned local Debug builds can't activate the App Sandbox,
           # so we ship a sandbox-disabled entitlement file. Without
           # this, every `bookmarkData(.withSecurityScope)` fails and
