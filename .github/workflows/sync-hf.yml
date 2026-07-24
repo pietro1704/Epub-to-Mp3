@@ -20,16 +20,48 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      should_sync: ${{ steps.paths.outputs.should_sync }}
+    steps:
+      - name: Checkout validated revision
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 2
+          lfs: false
+          ref: ${{ github.event.workflow_run.head_sha || github.ref }}
+
+      - name: Detect Space-relevant changes
+        id: paths
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            echo "should_sync=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          base=$(git rev-parse HEAD^)
+          changed=$(git diff --name-only "$base" HEAD)
+          if grep -Eq '^(python_app/|web/|hf_app\.py$|Dockerfile$|requirements\.txt$|paths\.py$)' <<< "$changed"; then
+            echo "should_sync=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "should_sync=false" >> "$GITHUB_OUTPUT"
+          fi
+
   sync:
+    needs: changes
     runs-on: ubuntu-latest
     # Run automatically on successful CI for master; allow manual override
     if: >
-      (github.event_name == 'workflow_run' &&
+      ((github.event_name == 'workflow_run' &&
        github.event.workflow_run.conclusion == 'success' &&
        github.event.workflow_run.event == 'push' &&
        github.event.workflow_run.head_branch == 'master' &&
        github.event.workflow_run.head_repository.full_name == github.repository) ||
-      github.event_name == 'workflow_dispatch'
+      github.event_name == 'workflow_dispatch') &&
+      needs.changes.outputs.should_sync == 'true'
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
@@ -115,5 +147,3 @@ jobs:
           done
           echo "::error::HF Space health check failed after $MAX_RETRIES attempts"
           exit 1
-
-
