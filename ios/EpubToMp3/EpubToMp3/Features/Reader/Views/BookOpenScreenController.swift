@@ -45,7 +45,7 @@ final class BookOpenScreenController: UIViewController, UITableViewDataSource, U
     func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
         let cell = tableView.dequeueReusableCell(withIdentifier: "chapter") ?? UITableViewCell(style: .default, reuseIdentifier: "chapter")
         var content = cell.defaultContentConfiguration()
-        content.text = fulltext?.chapters[indexPath.row].title
+        content.text = fulltext?.chapters[indexPath.row].displayTitle
         content.secondaryText = L10n.string("reader.chapter", indexPath.row + 1)
         cell.contentConfiguration = content
         return cell
@@ -105,8 +105,13 @@ final class BookOpenScreenController: UIViewController, UITableViewDataSource, U
                     return
                 }
                 let cached = LocalFulltextCache.read(bookId: book.id)
-                let payload = cached ?? try await PythonBridge.shared.parseEpub(at: url, bookId: book.id)
-                if cached == nil { LocalFulltextCache.save(payload, bookId: book.id) }
+                let payload: EbookFulltext
+                if let cached {
+                    payload = cached
+                } else {
+                    payload = try await PythonBridge.shared.parseEpub(at: url, bookId: book.id)
+                    LocalFulltextCache.save(payload, bookId: book.id)
+                }
                 fulltext = payload
                 chapterTable.reloadData()
                 statusLabel.text = "\(payload.chapters.count)"
@@ -120,7 +125,7 @@ final class BookOpenScreenController: UIViewController, UITableViewDataSource, U
 
     private func showChapter(_ index: Int) {
         guard let chapter = fulltext?.chapters[safe: index] else { return }
-        titleLabel.text = chapter.title
+        titleLabel.text = chapter.displayTitle
         textView.text = chapter.text
         textView.font = .systemFont(ofSize: settings.readerPointSize)
         UserDefaults.standard.set(index, forKey: AudioPlayer.readerCurrentChapterIndexDefaultsKey)
