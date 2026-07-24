@@ -59,8 +59,8 @@ def main() -> int:
             )
             return 0
         print(
-            "ios:build refused: this local Mac is too resource-constrained for "
-            "iOS Simulator builds.\n\n"
+            "ios:simulator refused: this local Mac is too resource-constrained for "
+            "iOS Simulator work.\n\n"
             f"Detected: {model}, {memory_gib:.1f} GiB RAM, arch={arch}.\n"
             "Reason: recent iOS Simulator/CoreSimulator workloads have caused "
             "kernel panics on this Intel 8 GiB MacBook (CPU CATERR / PCIe↔T2 "
@@ -68,6 +68,7 @@ def main() -> int:
             "Safe alternatives:\n"
             "  - Use GitHub Release Desktop / CI for iOS artifacts.\n"
             "  - Run macOS-only local builds with `mise run mac:build`.\n"
+            "  - Use a physical iPhone with `mise run ios:device:run`.\n"
             "  - If you deliberately accept the risk on a better machine, set "
             "IOS_ALLOW_LOW_RESOURCE_SIMULATOR=1.\n",
             file=sys.stderr,

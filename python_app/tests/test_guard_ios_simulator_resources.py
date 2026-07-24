@@ -26,7 +26,10 @@ def test_refuses_intel_8gb_mac_by_default(monkeypatch, capsys) -> None:
     monkeypatch.setattr(module, "_memory_gib", lambda: 8.0)
 
     assert module.main() == 2
-    assert "too resource-constrained" in capsys.readouterr().err
+    error = capsys.readouterr().err
+    assert "ios:simulator refused" in error
+    assert "too resource-constrained" in error
+    assert "ios:device:run" in error
 
 
 def test_allows_explicit_override_on_low_resource_mac(monkeypatch) -> None:
