@@ -1,49 +1,130 @@
 import SwiftUI
 
-/// Top-level container. Branches on horizontal size class so iPad
-/// landscape, iPad portrait wide, and macOS get a true multi-column
-/// `NavigationSplitView`, while iPhone (compact) keeps the historical
-/// `TabView` layout. Pre-iOS-16 / pre-macOS-13 fall through to the
-/// tab layout regardless — those SDKs don't ship `NavigationSplitView`.
-///
-/// As of the Music/Spotify-style player slice, the Now Playing tab /
-/// sidebar destination has been replaced by an in-tree **bottom sheet**
-/// (`FullPlayerSheet`) that is presented by tapping the `MiniPlayerBar`.
-/// The sheet slides from below the screen and dismisses back below it,
-/// leaving the tab/split content alive underneath.
+/// Top-level container. iOS/iPadOS now use a UIKit tab shell for the
+/// main app chrome, while macOS keeps the existing SwiftUI split/tab
+/// branch because UIKit is unavailable there. The reader/player layers
+/// still sit above the shell so opening a book or the full player does
+/// not tear down the underlying navigation hierarchy.
 struct RootView: View {
-    @Environment(\.horizontalSizeClass) private var hSize
     @EnvironmentObject private var audioWarmup: AudioEngineWarmup
+    @EnvironmentObject private var player: AudioPlayer
+    @EnvironmentObject private var library: LibraryStore
+    @EnvironmentObject private var playerPresentation: PlayerPresentation
+    @EnvironmentObject private var readerCoordinator: ReaderCoordinator
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    /// iPhone Plus models report `.regular` horizontal in landscape but
-    /// still ship a phone-class navigation surface — forcing a split
-    /// view there breaks the toolbar. Combine size class with idiom on
-    /// iOS so only true iPads (or macOS/Catalyst) get the split layout.
-    #if os(iOS)
-    private var useSplit: Bool {
-        hSize == .regular && UIDevice.current.userInterfaceIdiom == .pad
-    }
-    #else
+    @AppStorage(AudioPlayer.currentBookIDDefaultsKey)
+    private var currentBookID: String?
+
+    @AppStorage(MainReaderView.currentlyReadingBookIDKey)
+    private var currentlyReadingBookID: String?
+
+    #if !os(iOS)
+    @Environment(\.horizontalSizeClass) private var hSize
+
     private var useSplit: Bool { hSize == .regular }
     #endif
 
+    private var isReaderActive: Bool {
+        guard let readingID = currentlyReadingBookID, !readingID.isEmpty else { return false }
+        return library.books.contains(where: { $0.id == readingID })
+    }
+
+    private var showMiniPlayer: Bool {
+        Self.shouldShowMiniPlayer(
+            currentBookID: currentBookID,
+            currentlyReadingBookID: currentlyReadingBookID,
+            availableBookIDs: Set(library.books.map(\.id))
+        )
+    }
+
+    static func shouldShowMiniPlayer(
+        currentBookID: String?,
+        currentlyReadingBookID: String?,
+        availableBookIDs: Set<String>
+    ) -> Bool {
+        guard let currentBookID, !currentBookID.isEmpty else { return false }
+        guard availableBookIDs.contains(currentBookID) else { return false }
+        guard let currentlyReadingBookID, !currentlyReadingBookID.isEmpty else { return true }
+        return currentBookID != currentlyReadingBookID
+    }
+
     var body: some View {
-        ZStack(alignment: .topTrailing) {
-            if useSplit {
-                if #available(iOS 16, macOS 13, *) {
-                    SplitViewRoot()
-                } else {
-                    TabRoot()
-                }
-            } else {
-                TabRoot()
+        ZStack {
+            shellContent
+                .zIndex(0)
+
+            if isReaderActive {
+                MainReaderView(onBrowseLibrary: {
+                    currentlyReadingBookID = nil
+                })
+                .zIndex(1)
             }
 
+            if showMiniPlayer {
+                VStack {
+                    Spacer()
+                    MiniPlayerBar(onTap: { playerPresentation.showFullPlayer() })
+                        .accessibilityIdentifier("miniPlayer.rootShell")
+                }
+                .transition(
+                    reduceMotion
+                        ? .opacity
+                        : .move(edge: .bottom).combined(with: .opacity)
+                )
+                .zIndex(2)
+            }
+
+            if playerPresentation.showingFullPlayer {
+                FullPlayerSheet()
+                    .environmentObject(player)
+                    .environmentObject(library)
+                    .environmentObject(playerPresentation)
+                    .environmentObject(readerCoordinator)
+                    .transition(.spotifyBottomSheet)
+                    .zIndex(3)
+                    .ignoresSafeArea()
+            }
+        }
+        .overlay(alignment: .topTrailing) {
             AudioEngineWarmupBadge(warmup: audioWarmup)
                 .padding(.top, 12)
                 .padding(.trailing, 12)
                 .zIndex(10)
         }
+        .animation(
+            reduceMotion
+                ? .easeInOut(duration: 0.25)
+                : .spring(response: 0.45, dampingFraction: 0.86),
+            value: playerPresentation.showingFullPlayer
+        )
+        .alert(item: Binding(
+            get: { player.lastError },
+            set: { player.lastError = $0 }
+        )) { error in
+            Alert(
+                title: Text(L10n.string("player.error.title")),
+                message: Text(error.errorDescription ?? ""),
+                dismissButton: .default(Text(L10n.string("common.ok")))
+            )
+        }
+    }
+
+    @ViewBuilder
+    private var shellContent: some View {
+        #if os(iOS)
+        IOSAppShell()
+        #else
+        if useSplit {
+            if #available(iOS 16, macOS 13, *) {
+                SplitViewRoot()
+            } else {
+                TabRoot()
+            }
+        } else {
+            TabRoot()
+        }
+        #endif
     }
 }
 

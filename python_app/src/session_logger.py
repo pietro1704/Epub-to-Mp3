@@ -26,6 +26,7 @@ from __future__ import annotations
 import json
 import os
 import pathlib
+import sys
 import tempfile
 import threading
 from datetime import datetime, timezone
@@ -35,8 +36,22 @@ from .paths import LOGS_DIR
 
 _LOCK = threading.Lock()
 
+
+def _is_test_process() -> bool:
+    """Best-effort pytest detection for log isolation.
+
+    `PYTEST_CURRENT_TEST` is only guaranteed while an individual test is
+    executing. Some imports happen earlier during collection, and those
+    paths were still writing into the real `.logs/` tree. Treat the wider
+    pytest process as test mode too.
+    """
+    return bool(
+        os.getenv("PYTEST_CURRENT_TEST") or os.getenv("PYTEST_VERSION") or "pytest" in sys.modules
+    )
+
+
 # During pytest, write to a temp file so tests never pollute the real log.
-if os.getenv("PYTEST_CURRENT_TEST"):
+if _is_test_process():
     _LOG_FILE = pathlib.Path(tempfile.gettempdir()) / "epub_to_mp3_test_sessions.jsonl"
     _EVENTS_FILE = pathlib.Path(tempfile.gettempdir()) / "epub_to_mp3_test_events.jsonl"
 else:

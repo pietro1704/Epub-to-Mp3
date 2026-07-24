@@ -203,6 +203,21 @@ class TestChapterDetails:
 
 
 class TestDetectMode:
+    def test_is_test_process_when_pytest_module_loaded(self, monkeypatch):
+        from python_app.src import session_logger as sl
+
+        monkeypatch.delenv("PYTEST_CURRENT_TEST", raising=False)
+        monkeypatch.delenv("PYTEST_VERSION", raising=False)
+        monkeypatch.setitem(sl.sys.modules, "pytest", object())
+        assert sl._is_test_process() is True
+
+    def test_is_test_process_when_pytest_version_env_set(self, monkeypatch):
+        from python_app.src import session_logger as sl
+
+        monkeypatch.delenv("PYTEST_CURRENT_TEST", raising=False)
+        monkeypatch.setenv("PYTEST_VERSION", "9.1.1")
+        assert sl._is_test_process() is True
+
     def test_cli_when_no_env(self, monkeypatch):
         from python_app.src import session_logger as sl
 

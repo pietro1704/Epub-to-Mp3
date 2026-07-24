@@ -702,6 +702,66 @@ class TestAudioConverter(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(int(opt.get("adaptive_state_restores", 0)), 1)
         self.assertEqual(payload["runtime_profile"]["limits"]["chapter_parallel_effective"], 2)
 
+    def test_runtime_metric_dedupes_repeated_budget_caps(self):
+        metrics_path = Path(self.temp_dir) / "_runtime_metrics.jsonl"
+        self.converter._last_output_dir = Path(self.temp_dir)
+        self.converter._append_runtime_metric(
+            {
+                "event": "resource_budget_cap",
+                "engine": "edge",
+                "from_parallel": 4,
+                "to_parallel": 3,
+                "reason": "ram_available",
+                "ts": 100.0,
+            }
+        )
+        self.converter._append_runtime_metric(
+            {
+                "event": "resource_budget_cap",
+                "engine": "edge",
+                "from_parallel": 4,
+                "to_parallel": 3,
+                "reason": "ram_available",
+                "ts": 104.0,
+            }
+        )
+        self.converter._append_runtime_metric(
+            {
+                "event": "resource_budget_cap",
+                "engine": "edge",
+                "from_parallel": 4,
+                "to_parallel": 3,
+                "reason": "ram_available",
+                "ts": 120.0,
+            }
+        )
+        lines = metrics_path.read_text(encoding="utf-8").splitlines()
+        self.assertEqual(len(lines), 2)
+
+    def test_runtime_metric_keeps_distinct_thermal_caps(self):
+        metrics_path = Path(self.temp_dir) / "_runtime_metrics.jsonl"
+        self.converter._last_output_dir = Path(self.temp_dir)
+        self.converter._append_runtime_metric(
+            {
+                "event": "thermal_guard_cap",
+                "mode": "normal",
+                "from_parallel": 9,
+                "to_parallel": 8,
+                "ts": 200.0,
+            }
+        )
+        self.converter._append_runtime_metric(
+            {
+                "event": "thermal_guard_cap",
+                "mode": "critical",
+                "from_parallel": 8,
+                "to_parallel": 4,
+                "ts": 201.0,
+            }
+        )
+        lines = metrics_path.read_text(encoding="utf-8").splitlines()
+        self.assertEqual(len(lines), 2)
+
     def test_effective_runtime_profile_records_applied_limits_and_cap_reasons(self):
         self.converter.hardware_profile = SimpleNamespace(
             cpu_count=8,

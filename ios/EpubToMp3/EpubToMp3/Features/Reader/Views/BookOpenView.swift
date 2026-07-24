@@ -305,22 +305,6 @@ struct BookOpenView: View {
                 }
             }
             #endif
-            if parsed == nil || (parsed?.chapters.isEmpty ?? true) {
-                let capturedURL = fileURL
-                let capturedBookId = book.id
-                let fallback: EbookFulltext = await Task.detached(
-                    priority: .userInitiated
-                ) {
-                    let innerAccess = capturedURL.startAccessingSecurityScopedResource()
-                    defer { if innerAccess { capturedURL.stopAccessingSecurityScopedResource() } }
-                    return EpubFallbackParser.parse(
-                        url: capturedURL, bookId: capturedBookId
-                    )
-                }.value
-                if !fallback.chapters.isEmpty {
-                    parsed = fallback
-                }
-            }
 
             if accessing { fileURL.stopAccessingSecurityScopedResource() }
 

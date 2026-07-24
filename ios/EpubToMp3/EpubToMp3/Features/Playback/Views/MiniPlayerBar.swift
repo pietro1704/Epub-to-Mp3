@@ -111,6 +111,27 @@ struct MiniPlayerBar: View {
     var body: some View {
         if let book = currentBook {
             VStack(spacing: 0) {
+                #if canImport(UIKit)
+                if bookProgress != nil {
+                    SegmentedPlaybackProgressBar(
+                        bookProgressProvider: { [player] in
+                            guard let snapshot = player.snapshot,
+                                  snapshot.chapterProgress?.isEmpty == false else { return nil }
+                            return BookChapterProgress(snapshot: snapshot)
+                        },
+                        currentPlayableIndexProvider: { [player] in player.currentChapterIndex }
+                    )
+                    .frame(height: 4)
+                } else {
+                    PlaybackProgressBar(
+                        positionProvider: { [playbackClock] in playbackClock.positionSeconds },
+                        durationProvider: { [playbackClock] in playbackClock.durationSeconds },
+                        isConvertingProvider: { [player] in player.isConverting },
+                        conversionProgressProvider: { [player] in player.conversionProgress }
+                    )
+                    .frame(height: 2)
+                }
+                #else
                 if let bookProgress {
                     segmentedBookProgress(bookProgress)
                 } else {
@@ -120,6 +141,7 @@ struct MiniPlayerBar: View {
                         .scaleEffect(x: player.isConverting ? (player.conversionProgress ?? 0) : progress, y: 1, anchor: .leading)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
+                #endif
 
                 HStack(spacing: 12) {
                     // The cover + title area is the *only* surface that

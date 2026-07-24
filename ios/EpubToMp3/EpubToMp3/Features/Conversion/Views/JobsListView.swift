@@ -26,6 +26,12 @@ struct JobsListView: View {
     @EnvironmentObject private var settings: AppSettings
     @StateObject private var viewModel = JobsListViewModel()
 
+    /// Selected row, driven by the UIKit collection view's tap callback on
+    /// iOS/iPadOS (`JobsListCollectionView`); pushes via
+    /// `compatSessionDestination` below. Unused on AppKit, which keeps the
+    /// `NavigationLink(value:)`-driven SwiftUI `List`.
+    @State private var selectedSession: SessionRecord?
+
     private var client: APIClient? {
         settings.resolvedBaseURL.map(APIClient.init(baseURL:))
     }
@@ -43,6 +49,12 @@ struct JobsListView: View {
                                              systemImage: "tray",
                                              description: Text(localized: "jobs.noConversionsDescription"))
             } else {
+                #if canImport(UIKit)
+                JobsListCollectionView(
+                    sessions: viewModel.sessions,
+                    onSelect: { selectedSession = $0 }
+                )
+                #else
                 List(viewModel.sessions) { session in
                     // `NavigationLink(value:)` requires the `.navigationDestination`
                     // value-based router (iOS 16+). On iOS 15 we fall back to
@@ -59,10 +71,12 @@ struct JobsListView: View {
                         }
                     }
                 }
+                #endif
             }
         }
         .navigationTitle(L10n.string("jobs.title"))
         .compatJobsDestination()
+        .compatSessionDestination(selectedSession: $selectedSession)
         .toolbar {
             ToolbarItem(placement: .compatPrimaryTrailing) {
                 Button {
@@ -167,6 +181,37 @@ private extension View {
         } else {
             self
         }
+    }
+
+    /// Programmatic push for `JobsListCollectionView`'s tap callback
+    /// (iOS/iPadOS only — the UIKit list has no `NavigationLink(value:)` to
+    /// drive `.navigationDestination(for:)`). No-op on AppKit, where the
+    /// SwiftUI `List` + `compatJobsDestination()` above already handles it.
+    @ViewBuilder
+    func compatSessionDestination(selectedSession: Binding<SessionRecord?>) -> some View {
+        #if canImport(UIKit)
+        if #available(iOS 16, macOS 13, *) {
+            self.navigationDestination(isPresented: Binding(
+                get: { selectedSession.wrappedValue != nil },
+                set: { if !$0 { selectedSession.wrappedValue = nil } }
+            )) {
+                JobDetailView(jobId: selectedSession.wrappedValue?.bookTitle ?? "")
+            }
+        } else {
+            self.background {
+                NavigationLink(
+                    destination: JobDetailView(jobId: selectedSession.wrappedValue?.bookTitle ?? ""),
+                    isActive: Binding(
+                        get: { selectedSession.wrappedValue != nil },
+                        set: { if !$0 { selectedSession.wrappedValue = nil } }
+                    )
+                ) { EmptyView() }
+                .hidden()
+            }
+        }
+        #else
+        self
+        #endif
     }
 }
 

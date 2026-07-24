@@ -5,7 +5,7 @@ import Foundation
 /// `~/Library/Caches/<bundle>/fulltext/<bookId>.json`. Sized to free
 /// itself when the OS asks: contents under `Caches/` are evictable.
 ///
-/// The first time the user opens a book, `LocalEpubParser` hands a
+/// The first time the user opens a book, `PythonBridge.parseEpub`
 /// freshly-extracted `EbookFulltext` to `save(...)`. Every subsequent
 /// open hits `read(bookId:)` (sub-millisecond JSON load) and the
 /// reader paints in one frame.

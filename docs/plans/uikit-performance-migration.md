@@ -97,13 +97,45 @@ The model tests are the CI gate; the UIKit layer is device-verified.
 
 ## Rollback
 
-Each slice keeps the SwiftUI implementation behind a compile flag
-(`USE_UIKIT_<surface>`, default on once device-verified) for one release
-so a perf/behavior regression is a one-line revert, not a re-migration.
+Flags removed once a slice ships. `LibraryCollectionView` is now the
+unconditional default on `canImport(UIKit)` (no `USE_UIKIT_LIBRARY_GRID`
+env flag) — a regression reverts via `git revert` on the slice's commit,
+not a runtime toggle.
 
 ## Slice status
 
 - [x] Plan
-- [~] Slice 1: Library grid — `LibraryGridModel` + tests landed; UIKit
-      collection view layer next.
-- [ ] Slice 2+: per list above.
+- [x] Slice 1: Library grid — `LibraryGridModel` + `LibraryGridLayoutMetrics`
+      unit-tested; `LibraryCollectionView` is the default renderer on iOS/
+      iPadOS (AppKit keeps `LazyVGrid`, no `NSCollectionView` port yet).
+- [x] Slice 2: Chapter list — `ChapterListRowModel` unit-tested;
+      `ChapterListCollectionView` (list config + diffable data source) is
+      the default renderer on iOS/iPadOS in `ChapterListColumn` (AppKit
+      keeps the SwiftUI `List`). `BookChapterCell` (continuous-scroll
+      chapter *content*, not a list of titles — already TextKit-backed via
+      `AttributedPageView`) is intentionally out of scope: it's a rendering
+      component, not a list-perf problem, and touching it risks the
+      documented `FlickerProbe` regressions.
+- [x] Slice 3: Jobs list — `SessionRowModel` unit-tested;
+      `JobsListCollectionView` is the default renderer on iOS/iPadOS in
+      `JobsListView`, pushing to `JobDetailView` via a
+      `navigationDestination(isPresented:)` bridge (AppKit keeps
+      `NavigationLink(value:)` + the SwiftUI `List`).
+- [x] Phase 2 (progress bars): `PlaybackProgressLayout` unit-tested;
+      `PlaybackProgressBar`/`SegmentedPlaybackProgressBar`
+      (`CADisplayLink`-driven `CALayer` bars) are the default renderers on
+      iOS/iPadOS in `MiniPlayerBar` + `FullPlayerSheet.scrubberBlock`
+      (AppKit keeps the SwiftUI `GeometryReader`/`Capsule` bars). The
+      per-sentence *lyric text* swap in `FullPlayerSheet` is driven by
+      `player.position` (an `AsyncStream`, not a per-frame `@Published`
+      tick) and is out of scope for this slice.
+- [ ] Phase 3: Shell to UIKit (`SplitViewRoot`/`RootView`, sheets).
+- [ ] Phase 4: Hot-path native code — only if Instruments justifies.
+
+## Device verification still pending
+
+Slices 2, 3 and the Phase 2 progress bars above were written compile-correct
+by inspection per the hard constraint at the top of this doc — this
+sandbox cannot run `xcodebuild`. Each needs on-device confirmation
+(Instruments: no dropped frames on the chapter list, jobs list, and
+player scrub/expand interactions) before being trusted as a clean win.

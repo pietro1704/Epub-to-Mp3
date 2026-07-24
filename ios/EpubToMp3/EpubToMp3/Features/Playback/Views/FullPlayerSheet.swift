@@ -412,9 +412,24 @@ struct FullPlayerSheet: View {
 
     private var scrubberBlock: some View {
         VStack(spacing: 6) {
+            #if canImport(UIKit)
+            if let snapshot = player.snapshot, snapshot.chapterProgress?.isEmpty == false {
+                SegmentedPlaybackProgressBar(
+                    bookProgressProvider: { [player] in
+                        guard let snapshot = player.snapshot,
+                              snapshot.chapterProgress?.isEmpty == false else { return nil }
+                        return BookChapterProgress(snapshot: snapshot)
+                    },
+                    currentPlayableIndexProvider: { [player] in player.currentChapterIndex }
+                )
+                .frame(height: 6)
+                .accessibilityIdentifier("fullPlayer.bookProgress")
+            }
+            #else
             if let snapshot = player.snapshot, snapshot.chapterProgress?.isEmpty == false {
                 segmentedBookProgress(BookChapterProgress(snapshot: snapshot))
             }
+            #endif
             // The scrubber decouples its visible thumb from the
             // player while the user is dragging — `scrubberDragValue`
             // owns the local preview, and the seek only fires when

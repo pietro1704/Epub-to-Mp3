@@ -29,7 +29,19 @@ final class ProjectTargetConfigurationTests: XCTestCase {
         let info = try String(contentsOf: infoURL, encoding: .utf8)
 
         XCTAssertTrue(info.contains("com.apple.share-services"))
+        XCTAssertFalse(info.contains("NSExtensionMainStoryboard"))
         XCTAssertTrue(info.contains("EpubToMp3ShareExtension.ShareViewController"))
+    }
+
+    func testBookOpenViewUsesPythonParserWithoutSwiftFallback() throws {
+        let sourceURL = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("EpubToMp3/Features/Reader/Views/BookOpenView.swift")
+        let source = try String(contentsOf: sourceURL, encoding: .utf8)
+
+        XCTAssertTrue(source.contains("PythonBridge.shared.parseEpub"))
+        XCTAssertFalse(source.contains("EpubFallbackParser.parse"))
     }
 
     func testWarningsAreBuildErrorsForSwiftAndClang() throws {

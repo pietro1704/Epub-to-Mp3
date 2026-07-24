@@ -83,8 +83,9 @@ final class PythonEmbed: @unchecked Sendable {
     private(set) var ebookReader: PythonObject?
 
     /// `true` once bootstrap completed AND `ebook_reader` imported
-    /// successfully. When `false`, callers should skip PythonBridge
-    /// and go straight to EpubFallbackParser.
+    /// successfully. When `false`, callers should surface a parse
+    /// error or keep the cached fulltext instead of switching to a
+    /// separate Swift parser.
     var isParserAvailable: Bool { ebookReader != nil }
 
     private init() {}
@@ -147,10 +148,9 @@ final class PythonEmbed: @unchecked Sendable {
     /// source-file decode allocated against an unfamiliar thread's
     /// allocator state.
     ///
-    /// Failures here are swallowed deliberately: each module has its
-    /// own fallback (``EpubFallbackParser`` for the reader, the direct
-    /// ``EdgeTTSBridge`` for synth), so a bundle missing one of these
-    /// should degrade rather than crash at app launch.
+    /// Failures here are swallowed deliberately: the reader and TTS
+    /// paths degrade independently, but the canonical EPUB parser is
+    /// still the Python module imported above.
     private func preloadHotModules() {
         if iosEntrypoints == nil {
             do {

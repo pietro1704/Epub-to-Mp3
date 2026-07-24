@@ -79,15 +79,6 @@ struct LibraryView: View {
 
     private var sorted: [BookEntity] { gridModel.arrangedBooks() }
 
-    #if canImport(UIKit)
-    /// Opt-in switch to the UIKit `UICollectionView` grid (Phase 1, slice 1
-    /// of the migration). Default off so the shipping build path is
-    /// unchanged until the UIKit path is device-verified; flip via the
-    /// `USE_UIKIT_LIBRARY_GRID=1` environment flag.
-    private static let useUIKitGrid =
-        ProcessInfo.processInfo.environment["USE_UIKIT_LIBRARY_GRID"] == "1"
-    #endif
-
     private static let acceptedTypes: [UTType] = {
         // EPUB + PDF — same picker / drop surface. The Library tile
         // shows a per-book glyph so the user can tell them apart at
@@ -113,9 +104,8 @@ struct LibraryView: View {
         [GridItem(.adaptive(minimum: 160, maximum: 220), spacing: 20)]
     }
 
-    /// The original SwiftUI `LazyVGrid` grid. Retained as the default
-    /// renderer (and the only one on AppKit) while the UIKit
-    /// `LibraryCollectionView` is device-verified behind `useUIKitGrid`.
+    /// The SwiftUI `LazyVGrid` grid. AppKit has no `LibraryCollectionView`
+    /// counterpart, so this remains the only renderer on macOS.
     @ViewBuilder
     private var legacyGrid: some View {
         LazyVGrid(columns: grid, spacing: 20) {
@@ -168,23 +158,19 @@ struct LibraryView: View {
                             .animation(.easeInOut(duration: 0.2), value: isSearchVisible)
                         tagFilterBar
                         #if canImport(UIKit)
-                        if Self.useUIKitGrid {
-                            LibraryCollectionView(
-                                model: gridModel,
-                                onOpen: { book in
-                                    MainReaderView.setCurrentlyReading(bookID: book.id)
-                                    if let onOpenBook {
-                                        onOpenBook()
-                                    } else {
-                                        openingBook = book
-                                    }
-                                },
-                                onRemove: { book in bookPendingRemoval = book }
-                            )
-                            .frame(minHeight: 480)
-                        } else {
-                            legacyGrid
-                        }
+                        LibraryCollectionView(
+                            model: gridModel,
+                            onOpen: { book in
+                                MainReaderView.setCurrentlyReading(bookID: book.id)
+                                if let onOpenBook {
+                                    onOpenBook()
+                                } else {
+                                    openingBook = book
+                                }
+                            },
+                            onRemove: { book in bookPendingRemoval = book }
+                        )
+                        .frame(minHeight: 480)
                         #else
                         legacyGrid
                         #endif

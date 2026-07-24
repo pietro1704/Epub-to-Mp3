@@ -71,7 +71,7 @@ final class PythonBridgeTimeoutTests: XCTestCase {
     /// Errors raised by the work itself must propagate unchanged.
     /// Particularly important here because `BookOpenView.openFlow`
     /// has separate `catch is TimeoutError` and `catch` branches —
-    /// confusing the two would break the EpubFallbackParser bail-out.
+    /// confusing the two would misclassify a real parse failure.
     func testWrappedErrorPropagates() async {
         struct ParseFailed: Error, Equatable {}
         do {

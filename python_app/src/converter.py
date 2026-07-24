@@ -318,6 +318,7 @@ class AudioConverter(
         self._current_book_path: Optional[Path] = None
         self._active_config: Optional[ConversionConfig] = None
         self._runtime_run_id = ""
+        self._runtime_metric_dedupe: Dict[str, Dict[str, Any]] = {}
         # Persistent chapter checkpoint — survives process restarts
         self._checkpoint_done_set: set[int] = set()
         self._checkpoint_total: int = 0
@@ -729,6 +730,8 @@ class AudioConverter(
         event.setdefault("ts", time.time())
         if self._runtime_run_id:
             event.setdefault("run_id", self._runtime_run_id)
+        if self._should_skip_runtime_metric(event):
+            return
         try:
             self._rotate_runtime_metrics_if_needed(path)
             with path.open("a", encoding="utf-8") as handle:
@@ -736,6 +739,28 @@ class AudioConverter(
         except Exception:
             if self.verbose:
                 print("⚠️ Failed to persist runtime metric")
+
+    def _should_skip_runtime_metric(self, event: Dict[str, Any]) -> bool:
+        """Drop high-frequency cap chatter that carries no new information."""
+        name = str(event.get("event") or "")
+        if name not in {"resource_budget_cap", "thermal_guard_cap"}:
+            return False
+
+        dedupe_fields = {
+            "event": name,
+            "engine": event.get("engine"),
+            "mode": event.get("mode"),
+            "from_parallel": event.get("from_parallel"),
+            "to_parallel": event.get("to_parallel"),
+            "reason": event.get("reason"),
+        }
+        now = float(event.get("ts") or time.time())
+        key = json.dumps(dedupe_fields, sort_keys=True, ensure_ascii=False, default=str)
+        previous = self._runtime_metric_dedupe.get(key)
+        self._runtime_metric_dedupe[key] = {"ts": now}
+        if previous is None:
+            return False
+        return (now - float(previous.get("ts") or 0.0)) < 15.0
 
     def _segment_metrics_path(self, output_dir: Optional[Path] = None) -> Optional[Path]:
         target_dir = output_dir or self._last_output_dir
