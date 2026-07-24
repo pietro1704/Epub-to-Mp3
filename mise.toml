@@ -1,5 +1,5 @@
 [tools]
-python = { version = "3.12.10", virtualenv = ".venv" }
+python = "3.12.10"
 # Node LTS for frontend (Vite 8.x requires >=20.19.0)
 node = "lts"
 npm = "latest"
@@ -14,6 +14,10 @@ cocoapods = "1.16.2"
 # requires JAVA_HOME to be set; mise handles that when java is in [tools].
 java = "21.0.2"
 android-sdk = "11.0"
+
+[env]
+# Keep the project virtualenv managed by mise without the deprecated tool option.
+_.python.venv = { path = ".venv", create = true }
 
 [tasks.dev]
 description = "Start backend (uvicorn) and frontend (Vite) together"
