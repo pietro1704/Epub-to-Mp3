@@ -25,7 +25,7 @@ import AppKit
 /// the binary is fully self-contained (PyInstaller onefile). Resources
 /// is an executable-permitted location for app sandboxes; we copy it
 /// with `chmod +x` preserved by the Xcode build phase.
-final class SidecarManager: ObservableObject {
+final class SidecarManager: ObservableObject, @unchecked Sendable {
 
     enum State: Equatable {
         case idle

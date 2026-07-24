@@ -23,7 +23,6 @@ final class MacReaderViewController: NSSplitViewController, NSTableViewDataSourc
         self.settings = settings
         self.player = player
         super.init(nibName: nil, bundle: nil)
-        dividerStyle = .thin
         splitViewItems = [makeChapterPane(), makeContentPane()]
         library.$books.sink { [weak self] _ in self?.loadCurrentBook() }.store(in: &cancellables)
     }
@@ -59,7 +58,7 @@ final class MacReaderViewController: NSSplitViewController, NSTableViewDataSourc
                 cell.textField!.centerYAnchor.constraint(equalTo: cell.centerYAnchor)
             ])
         }
-        cell.textField?.stringValue = fulltext?.chapters[row].title ?? ""
+        cell.textField?.stringValue = fulltext?.chapters[row].name ?? ""
         return cell
     }
 
@@ -86,7 +85,7 @@ final class MacReaderViewController: NSSplitViewController, NSTableViewDataSourc
         chapterScrollView.hasVerticalScroller = true
         let stack = NSStackView(views: [header, chapterScrollView])
         stack.orientation = .vertical
-        stack.alignment = .stretch
+        stack.alignment = .leading
         stack.translatesAutoresizingMaskIntoConstraints = false
         controller.view = stack
         return NSSplitViewItem(viewController: controller)
@@ -105,7 +104,7 @@ final class MacReaderViewController: NSSplitViewController, NSTableViewDataSourc
         scroll.hasVerticalScroller = true
         let stack = NSStackView(views: [titleLabel, statusLabel, scroll])
         stack.orientation = .vertical
-        stack.alignment = .stretch
+        stack.alignment = .leading
         stack.spacing = 8
         stack.edgeInsets = NSEdgeInsets(top: 18, left: 24, bottom: 18, right: 24)
         stack.translatesAutoresizingMaskIntoConstraints = false
@@ -134,9 +133,12 @@ final class MacReaderViewController: NSSplitViewController, NSTableViewDataSourc
                     await showPDF(fileURL)
                     return
                 }
-                let payload = LocalFulltextCache.read(bookId: book.id)
-                    ?? try await MacEpubParser.parse(at: fileURL, bookId: book.id)
-                if LocalFulltextCache.read(bookId: book.id) == nil {
+                let cachedPayload = LocalFulltextCache.read(bookId: book.id)
+                let payload: EbookFulltext
+                if let cachedPayload {
+                    payload = cachedPayload
+                } else {
+                    payload = try await MacEpubParser.parse(at: fileURL, bookId: book.id)
                     LocalFulltextCache.save(payload, bookId: book.id)
                 }
                 fulltext = payload
@@ -153,7 +155,7 @@ final class MacReaderViewController: NSSplitViewController, NSTableViewDataSourc
 
     private func showChapter(_ index: Int) {
         guard let chapter = fulltext?.chapters[safe: index] else { return }
-        titleLabel.stringValue = chapter.title
+        titleLabel.stringValue = chapter.name ?? ""
         textView.string = chapter.text
         textView.font = .systemFont(ofSize: settings.readerPointSize)
         textView.scrollToBeginningOfDocument(nil)

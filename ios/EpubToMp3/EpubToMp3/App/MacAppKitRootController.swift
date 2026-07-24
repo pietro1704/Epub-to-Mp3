@@ -74,7 +74,6 @@ final class MacAppKitRootController: NSSplitViewController, NSTableViewDataSourc
             playerBar.view.bottomAnchor.constraint(equalTo: view.bottomAnchor),
             playerBar.view.heightAnchor.constraint(equalToConstant: 58)
         ])
-        playerBar.didMove(toParent: self)
         playerPresentation.objectWillChange
             .sink { [weak self] _ in self?.refreshFullPlayer() }
             .store(in: &cancellables)
@@ -121,7 +120,7 @@ final class MacAppKitRootController: NSSplitViewController, NSTableViewDataSourc
         scroll.hasVerticalScroller = true
         let stack = NSStackView(views: [title, scroll])
         stack.orientation = .vertical
-        stack.alignment = .stretch
+        stack.alignment = .leading
         stack.edgeInsets = NSEdgeInsets(top: 18, left: 12, bottom: 12, right: 8)
         stack.translatesAutoresizingMaskIntoConstraints = false
         controller.view = stack
@@ -139,7 +138,6 @@ final class MacAppKitRootController: NSSplitViewController, NSTableViewDataSourc
         detail.removeChildControllers()
         detail.addChild(controller)
         detail.view = controller.view
-        controller.didMove(toParent: detail)
     }
 
     private func refreshDetailIfNeeded() {
@@ -150,7 +148,7 @@ final class MacAppKitRootController: NSSplitViewController, NSTableViewDataSourc
     private func refreshFullPlayer() {
         guard isViewLoaded else { return }
         if playerPresentation.showingFullPlayer {
-            guard presentedViewControllers.isEmpty else { return }
+            guard presentedViewControllers?.isEmpty != false else { return }
             let controller = MacFullPlayerViewController(player: player, presentation: playerPresentation)
             fullPlayerController = controller
             presentAsSheet(controller)

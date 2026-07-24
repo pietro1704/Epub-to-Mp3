@@ -69,18 +69,31 @@ final class MacSettingsViewController: NSViewController {
         let refreshButton = NSButton(title: L10n.string("settings.refreshStorage"),
                                      target: self,
                                      action: #selector(refreshStorage))
-        let form = NSForm()
-        form.addRow(withIdentifier: "runtime", label: L10n.string("settings.useEmbeddedServer"), view: embeddedServerSwitch)
-        form.addRow(withIdentifier: "status", label: L10n.string("settings.embeddedServer"), view: statusLabel)
-        form.addRow(withIdentifier: "backend", label: L10n.string("settings.url"), view: backendField)
-        form.addRow(withIdentifier: "fontSize", label: L10n.string("settings.fontSize"), view: fontSizeStepper)
-        form.addRow(withIdentifier: "fontSizeValue", label: "", view: fontSizeLabel)
-        form.addRow(withIdentifier: "font", label: L10n.string("settings.font"), view: fontPopup)
-        form.addRow(withIdentifier: "theme", label: L10n.string("settings.theme"), view: themePopup)
-        form.addRow(withIdentifier: "layout", label: L10n.string("settings.layout"), view: layoutPopup)
-        form.addRow(withIdentifier: "storage", label: L10n.string("settings.storageUsage"), view: storageLabel)
-        form.addRow(withIdentifier: "refresh", label: "", view: refreshButton)
-        form.addRow(withIdentifier: "clear", label: "", view: clearButton)
+        func row(_ label: String, _ control: NSView) -> NSStackView {
+            let title = NSTextField(labelWithString: label)
+            title.setContentHuggingPriority(.required, for: .horizontal)
+            let row = NSStackView(views: [title, control])
+            row.orientation = .horizontal
+            row.alignment = .centerY
+            row.spacing = 12
+            return row
+        }
+        let form = NSStackView(views: [
+            row(L10n.string("settings.useEmbeddedServer"), embeddedServerSwitch),
+            row(L10n.string("settings.embeddedServer"), statusLabel),
+            row(L10n.string("settings.url"), backendField),
+            row(L10n.string("settings.fontSize"), fontSizeStepper),
+            row("", fontSizeLabel),
+            row(L10n.string("settings.font"), fontPopup),
+            row(L10n.string("settings.theme"), themePopup),
+            row(L10n.string("settings.layout"), layoutPopup),
+            row(L10n.string("settings.storageUsage"), storageLabel),
+            row("", refreshButton),
+            row("", clearButton),
+        ])
+        form.orientation = .vertical
+        form.alignment = .leading
+        form.spacing = 10
         form.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(form)
         NSLayoutConstraint.activate([

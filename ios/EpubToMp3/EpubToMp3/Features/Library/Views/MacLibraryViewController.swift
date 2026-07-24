@@ -189,11 +189,11 @@ final class MacLibraryViewController: NSViewController, NSSearchFieldDelegate,
             catch { firstError = firstError ?? error }
         }
         if let firstError {
-            presentError(firstError)
+            presentImportError(firstError)
         }
     }
 
-    private func presentError(_ error: Error) {
+    private func presentImportError(_ error: Error) {
         let alert = NSAlert(error: error)
         alert.runModal()
     }
