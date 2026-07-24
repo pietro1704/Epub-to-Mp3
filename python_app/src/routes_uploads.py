@@ -7,6 +7,7 @@ accessed via lazy imports inside each handler to avoid circular imports.
 
 from __future__ import annotations
 
+import os
 import shutil
 import time
 import uuid
@@ -40,29 +41,6 @@ def _validate_upload_id(upload_id: str) -> str:
     if not value or any(ch.lower() not in _VALID_UPLOAD_ID_CHARS for ch in value):
         raise HTTPException(status_code=400, detail="Invalid upload ID")
     return value
-
-
-def _allowed_local_source_roots() -> tuple[Path, ...]:
-    roots = [Path.cwd(), Path.home(), Path("/tmp"), Path("/private/tmp"), Path("/var/folders")]
-    if Path("/Volumes").exists():
-        roots.append(Path("/Volumes"))
-    return tuple(root.resolve() for root in roots if root.exists())
-
-
-def _resolve_allowed_local_source(raw_path: str) -> Path:
-    import python_app.server as _srv
-
-    candidate = Path(str(raw_path or ""))
-    if not candidate.is_absolute():
-        raise HTTPException(status_code=400, detail="Invalid file path")
-    if candidate.is_symlink():
-        raise HTTPException(status_code=400, detail="Symlinks are not supported")
-    for root in _allowed_local_source_roots():
-        try:
-            return _srv._resolve_path_within_root(root, candidate, must_exist=False)
-        except ValueError:
-            continue
-    raise HTTPException(status_code=400, detail="File path is outside allowed local roots")
 
 
 def _precache_uploaded_book(upload_path: Path, book_title: str, book_author: str) -> None:
@@ -229,10 +207,32 @@ async def upload_ebook_local(
             status_code=403, detail="Local uploads are only available from localhost"
         )
 
-    raw = body.path
-    src = _resolve_allowed_local_source(raw)
-    if not src.exists() or not src.is_file():
+    raw_path = str(body.path or "")
+    if not os.path.isabs(raw_path):
+        raise HTTPException(status_code=400, detail="Invalid file path")
+    if os.path.islink(raw_path):
+        raise HTTPException(status_code=400, detail="Symlinks are not supported")
+
+    resolved_source = os.path.realpath(raw_path)
+    allowed_roots = [
+        Path.cwd(),
+        Path.home(),
+        Path("/tmp"),
+        Path("/private/tmp"),
+        Path("/var/folders"),
+    ]
+    if Path("/Volumes").exists():
+        allowed_roots.append(Path("/Volumes"))
+    for root in allowed_roots:
+        resolved_root = os.path.realpath(root)
+        if resolved_source.startswith(f"{resolved_root}{os.sep}"):
+            break
+    else:
+        raise HTTPException(status_code=400, detail="File path is outside allowed local roots")
+
+    if not os.path.isfile(resolved_source):
         raise HTTPException(status_code=404, detail="File not found")
+    src = Path(resolved_source)
 
     storage_name = _local_upload_storage_name(src)
 
