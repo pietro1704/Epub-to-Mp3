@@ -33,7 +33,9 @@ def test_fulltext_store_exposes_jobid_eviction_api() -> None:
 def test_fulltext_store_tombstone_blocks_stale_disk_and_memory_replay() -> None:
     source = _read("Features/Offline/Services/FulltextStore.swift")
 
-    assert "private static var evictedJobIds: Set<String> = []" in source
+    assert "private static let evictionState = EvictionState()" in source
+    assert "var jobIds: Set<String> = []" in source
+    assert "evictionState.lock.lock()" in source
     assert "private static func markEvicted(jobId: String)" in source
     assert "private static func clearEvicted(jobId: String)" in source
     assert "private static func isEvicted(jobId: String) -> Bool" in source
