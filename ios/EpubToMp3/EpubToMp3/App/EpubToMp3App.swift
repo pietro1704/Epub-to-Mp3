@@ -88,6 +88,7 @@ final class EpubToMp3App: NSObject, PlatformApplicationDelegate {
         _ application: UIApplication,
         didFinishLaunchingWithOptions options: [UIApplication.LaunchOptionsKey: Any]? = nil
     ) -> Bool {
+        library.installUITestFixtureIfRequested()
         let root = IOSRootContainerController(
             settings: settings,
             library: library,

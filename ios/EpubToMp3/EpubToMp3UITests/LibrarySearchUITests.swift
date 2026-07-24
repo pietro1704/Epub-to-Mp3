@@ -41,6 +41,7 @@ final class LibrarySearchUITests: XCTestCase {
 
     private func launchedApp() -> XCUIApplication {
         let app = XCUIApplication()
+        app.launchArguments += ["-uiTestFixture"]
         app.launch()
         return app
     }

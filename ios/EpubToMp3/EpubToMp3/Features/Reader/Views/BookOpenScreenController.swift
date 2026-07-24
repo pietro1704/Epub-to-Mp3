@@ -88,7 +88,8 @@ final class BookOpenScreenController: UIViewController, UITableViewDataSource, U
             textView.trailingAnchor.constraint(equalTo: scroll.contentLayoutGuide.trailingAnchor),
             textView.topAnchor.constraint(equalTo: scroll.contentLayoutGuide.topAnchor),
             textView.bottomAnchor.constraint(equalTo: scroll.contentLayoutGuide.bottomAnchor),
-            textView.widthAnchor.constraint(equalTo: scroll.frameLayoutGuide.widthAnchor)
+            textView.widthAnchor.constraint(equalTo: scroll.frameLayoutGuide.widthAnchor),
+            textView.heightAnchor.constraint(greaterThanOrEqualTo: scroll.frameLayoutGuide.heightAnchor)
         ])
     }
 
@@ -96,6 +97,10 @@ final class BookOpenScreenController: UIViewController, UITableViewDataSource, U
         guard isViewLoaded else { return }
         titleLabel.text = book.resolvedTitle
         statusLabel.text = L10n.string("reader.loading")
+        if ProcessInfo.processInfo.arguments.contains("-uiTestFixture") {
+            showUITestFixture()
+            return
+        }
         Task { [weak self] in
             guard let self else { return }
             do {
@@ -121,6 +126,22 @@ final class BookOpenScreenController: UIViewController, UITableViewDataSource, U
                 textView.text = ""
             }
         }
+    }
+
+    private func showUITestFixture() {
+        let payload = EbookFulltext(
+            jobId: "ui-test-job",
+            bookTitle: book.resolvedTitle,
+            bookAuthor: book.author,
+            chapters: [
+                .init(index: 1, name: "Chapter One", text: String(repeating: "Test reader content. ", count: 80), html: nil, css: nil, charCount: 1680, segments: nil),
+                .init(index: 2, name: "Chapter Two", text: String(repeating: "Second chapter content. ", count: 80), html: nil, css: nil, charCount: 1920, segments: nil),
+            ]
+        )
+        fulltext = payload
+        chapterTable.reloadData()
+        statusLabel.text = "\(payload.chapters.count)"
+        showChapter(0)
     }
 
     private func showChapter(_ index: Int) {

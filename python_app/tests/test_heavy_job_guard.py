@@ -90,6 +90,28 @@ def test_nowait_fails_fast_when_lock_held(monkeypatch, tmp_path) -> None:
         holder.close()
 
 
+def test_nowait_preserves_existing_holder_record(monkeypatch, tmp_path, capsys) -> None:
+    import fcntl
+
+    module = _load_module()
+    monkeypatch.setenv("HEAVY_JOB_GUARD_NOWAIT", "1")
+    monkeypatch.setattr(module, "_LOCK_PATH", str(tmp_path / "heavy.lock"))
+    lock_path = Path(module._LOCK_PATH)
+    lock_path.write_text("existing-build pid=123\n")
+    holder = lock_path.open("r+")
+    fcntl.flock(holder.fileno(), fcntl.LOCK_EX)
+    try:
+        try:
+            module._acquire_lock("next-build")
+        except SystemExit as exc:
+            assert exc.code == 75
+        assert "existing-build pid=123" in capsys.readouterr().err
+        assert lock_path.read_text() == "existing-build pid=123\n"
+    finally:
+        fcntl.flock(holder.fileno(), fcntl.LOCK_UN)
+        holder.close()
+
+
 def test_nonzero_exit_propagates(monkeypatch, tmp_path) -> None:
     module = _load_module()
     monkeypatch.delenv("HEAVY_JOB_GUARD_DISABLE", raising=False)

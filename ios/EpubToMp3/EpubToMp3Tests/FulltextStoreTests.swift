@@ -29,16 +29,37 @@ private final class StubProtocol: URLProtocol {
         let body: Data
     }
 
-    static var queue: [StubResponse] = []
-    static var requestCount = 0
+    private struct State {
+        var queue: [StubResponse] = []
+        var requestCount = 0
+    }
+
+    private static let stateLock = NSLock()
+    nonisolated(unsafe) private static var state = State()
+
+    static func reset(with responses: [StubResponse] = []) {
+        stateLock.lock()
+        state = State(queue: responses)
+        stateLock.unlock()
+    }
+
+    static var completedRequestCount: Int {
+        stateLock.lock()
+        defer { stateLock.unlock() }
+        return state.requestCount
+    }
 
     override class func canInit(with request: URLRequest) -> Bool { true }
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
 
     override func startLoading() {
-        let idx = Self.requestCount
-        Self.requestCount += 1
-        let stub = idx < Self.queue.count ? Self.queue[idx] : StubResponse(statusCode: 200, body: Data())
+        Self.stateLock.lock()
+        let idx = Self.state.requestCount
+        Self.state.requestCount += 1
+        let stub = idx < Self.state.queue.count
+            ? Self.state.queue[idx]
+            : StubResponse(statusCode: 200, body: Data())
+        Self.stateLock.unlock()
         let http = HTTPURLResponse(
             url: request.url!,
             statusCode: stub.statusCode,
@@ -62,8 +83,7 @@ final class FulltextStoreTests: XCTestCase {
 
     override func setUp() {
         super.setUp()
-        StubProtocol.queue = []
-        StubProtocol.requestCount = 0
+        StubProtocol.reset()
         let config = URLSessionConfiguration.ephemeral
         config.protocolClasses = [StubProtocol.self]
         // Eliminate real delays in the retry ladder for fast tests.
@@ -80,15 +100,14 @@ final class FulltextStoreTests: XCTestCase {
         session = nil
         if let storageRoot { try? FileManager.default.removeItem(at: storageRoot) }
         storageRoot = nil
-        StubProtocol.queue = []
-        StubProtocol.requestCount = 0
+        StubProtocol.reset()
         super.tearDown()
     }
 
     // MARK: - 404 / 422 permanent errors
 
     func testRefresh404ThrowsGone() async throws {
-        StubProtocol.queue = [.init(statusCode: 404, body: Data())]
+        StubProtocol.reset(with: [.init(statusCode: 404, body: Data())])
         let store = FulltextStore(storageRoot: storageRoot)
 
         do {
@@ -98,11 +117,11 @@ final class FulltextStoreTests: XCTestCase {
             // Expected
         }
         // Only one request must have been made (no retry on 404).
-        XCTAssertEqual(StubProtocol.requestCount, 1)
+        XCTAssertEqual(StubProtocol.completedRequestCount, 1)
     }
 
     func testRefresh422ThrowsEmptyParse() async throws {
-        StubProtocol.queue = [.init(statusCode: 422, body: Data())]
+        StubProtocol.reset(with: [.init(statusCode: 422, body: Data())])
         let store = FulltextStore(storageRoot: storageRoot)
 
         do {
@@ -111,7 +130,7 @@ final class FulltextStoreTests: XCTestCase {
         } catch FulltextStore.FulltextError.emptyParse {
             // Expected
         }
-        XCTAssertEqual(StubProtocol.requestCount, 1)
+        XCTAssertEqual(StubProtocol.completedRequestCount, 1)
     }
 
     // MARK: - 503 retry ladder
@@ -122,10 +141,10 @@ final class FulltextStoreTests: XCTestCase {
         // requests before giving up).
         let ladderCount = FulltextStore.retryLadderMs.count
         let totalAttempts = ladderCount + 1
-        StubProtocol.queue = Array(
+        StubProtocol.reset(with: Array(
             repeating: StubProtocol.StubResponse(statusCode: 503, body: Data("still processing".utf8)),
             count: totalAttempts + 2  // extra headroom
-        )
+        ))
         let store = FulltextStore(storageRoot: storageRoot)
 
         do {
@@ -134,8 +153,8 @@ final class FulltextStoreTests: XCTestCase {
         } catch FulltextStore.FulltextError.transientExhausted {
             // Expected
         }
-        XCTAssertEqual(StubProtocol.requestCount, totalAttempts,
-            "Must attempt exactly retryLadder.count+1 times (\(totalAttempts)); got \(StubProtocol.requestCount)")
+        XCTAssertEqual(StubProtocol.completedRequestCount, totalAttempts,
+            "Must attempt exactly retryLadder.count+1 times (\(totalAttempts)); got \(StubProtocol.completedRequestCount)")
     }
 
     func test503ThenSuccessReturnsPayload() async throws {
@@ -150,18 +169,18 @@ final class FulltextStoreTests: XCTestCase {
         )
         let payloadData = try JSONEncoder().encode(payload)
 
-        StubProtocol.queue = [
+        StubProtocol.reset(with: [
             .init(statusCode: 503, body: Data("wait".utf8)),
             .init(statusCode: 503, body: Data("wait".utf8)),
             .init(statusCode: 200, body: payloadData),
-        ]
+        ])
         let store = FulltextStore(storageRoot: storageRoot)
 
         let result = try await store.refresh(jobId: "j-ok", baseURL: base, urlSession: session)
 
         XCTAssertEqual(result.bookTitle, "Foundation")
         XCTAssertEqual(result.chapters.count, 1)
-        XCTAssertEqual(StubProtocol.requestCount, 3)
+        XCTAssertEqual(StubProtocol.completedRequestCount, 3)
     }
 
     // MARK: - 200 decode + watch subscriber
@@ -176,7 +195,7 @@ final class FulltextStoreTests: XCTestCase {
                              charCount: 12, segments: nil)]
         )
         let payloadData = try JSONEncoder().encode(payload)
-        StubProtocol.queue = [.init(statusCode: 200, body: payloadData)]
+        StubProtocol.reset(with: [.init(statusCode: 200, body: payloadData)])
 
         let store = FulltextStore(storageRoot: storageRoot)
         var received: EbookFulltext?
@@ -262,7 +281,7 @@ final class FulltextStoreTests: XCTestCase {
             "watch must yield disk copy without a network call")
         XCTAssertEqual(got.bookTitle, "1984")
         // No network requests should have happened.
-        XCTAssertEqual(StubProtocol.requestCount, 0)
+        XCTAssertEqual(StubProtocol.completedRequestCount, 0)
     }
 
     // MARK: - Retry ladder constants

@@ -97,6 +97,11 @@ final class LibraryStore: ObservableObject {
             var migrated = false
             var result = pruned
             for i in result.indices {
+                if let author = result[i].author,
+                   Self.isParserErrorText(author) {
+                    result[i].author = nil
+                    migrated = true
+                }
                 if let cover = result[i].coverPNG,
                    cover.count > LibraryStore.coverMaxBytes {
                     result[i].coverPNG = LibraryStore.downsampleCover(cover)
@@ -107,6 +112,15 @@ final class LibraryStore: ObservableObject {
         } catch {
             return .failure(error.localizedDescription)
         }
+    }
+
+    private static func isParserErrorText(_ value: String) -> Bool {
+        let normalized = value.lowercased()
+        return normalized.contains("parse timed out")
+            || normalized.contains("python parser")
+            || normalized.contains("failed to parse epub")
+            || normalized.hasPrefix("reader.")
+            || normalized.hasPrefix("bookopen.")
     }
 
     // MARK: - CRUD
@@ -218,7 +232,7 @@ final class LibraryStore: ObservableObject {
         case .epub:
             let payload = (try? EpubMetadataReader.readMetadata(from: libraryURL)) ?? .init()
             resolvedTitle = payload.title
-            resolvedAuthor = payload.author
+            resolvedAuthor = Self.isParserErrorText(payload.author ?? "") ? nil : payload.author
             resolvedCover = Self.downsampleCover(payload.cover)
         }
 
@@ -229,6 +243,7 @@ final class LibraryStore: ObservableObject {
             existing.fileType = fileType
             if let t = resolvedTitle, !t.isEmpty { existing.title = t }
             if let a = resolvedAuthor, !a.isEmpty { existing.author = a }
+            else if Self.isParserErrorText(existing.author ?? "") { existing.author = nil }
             if existing.coverPNG == nil, let cover = resolvedCover {
                 existing.coverPNG = cover
             }
@@ -267,6 +282,21 @@ final class LibraryStore: ObservableObject {
     func update(_ book: BookEntity) {
         guard let i = books.firstIndex(where: { $0.id == book.id }) else { return }
         books[i] = book
+        persist()
+    }
+
+    func installUITestFixtureIfRequested(arguments: [String] = ProcessInfo.processInfo.arguments) {
+        guard arguments.contains("-uiTestFixture") else { return }
+        books = [
+            BookEntity(
+                id: "ui-test-book",
+                title: "UI Test Book",
+                author: "Test Author",
+                bookmark: Data([1]),
+                displayFilename: "ui-test-book.epub",
+                addedAt: .now
+            )
+        ]
         persist()
     }
 

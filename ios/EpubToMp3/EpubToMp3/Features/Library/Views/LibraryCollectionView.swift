@@ -59,6 +59,10 @@ final class LibraryGridController: UICollectionViewController {
             let width = environment.container.effectiveContentSize.width
             let columns = metrics.columnCount(forWidth: width)
             let fraction = 1.0 / CGFloat(columns)
+            let tileWidth = metrics.tileWidth(forWidth: width, columns: columns)
+            // The cover uses a 3:2 portrait ratio. Reserve label space so
+            // titles never fall outside an estimated collection item.
+            let tileHeight = tileWidth * 1.5 + 70
             let item = NSCollectionLayoutItem(
                 layoutSize: NSCollectionLayoutSize(
                     widthDimension: .fractionalWidth(1.0),
@@ -68,7 +72,7 @@ final class LibraryGridController: UICollectionViewController {
             let group = NSCollectionLayoutGroup.horizontal(
                 layoutSize: NSCollectionLayoutSize(
                     widthDimension: .fractionalWidth(fraction),
-                    heightDimension: .estimated(240)
+                    heightDimension: .absolute(tileHeight)
                 ),
                 subitems: [item]
             )

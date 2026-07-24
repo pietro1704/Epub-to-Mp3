@@ -71,6 +71,8 @@ def test_epub_fallback_parser_runs_off_main_actor() -> None:
         "PythonBridge.parseEpub(...) must execute through its dedicated "
         "runner so embedded Python parsing does not stall the main actor."
     )
+    assert "EpubFallbackParser.parse" in bridge
+    assert "Task.detached" in bridge
 
 
 def test_pdf_document_load_is_in_the_native_reader() -> None:

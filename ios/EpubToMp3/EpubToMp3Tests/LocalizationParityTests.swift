@@ -97,6 +97,14 @@ final class LocalizationParityTests: XCTestCase {
         }
     }
 
+    func testReaderLoadingKeyExistsInEveryLocale() throws {
+        let tables = try loadAllTables()
+        for locale in Self.locales {
+            XCTAssertNotEqual(tables[locale]?["reader.loading"], "reader.loading")
+            XCTAssertFalse(tables[locale]?["reader.loading"]?.isEmpty ?? true)
+        }
+    }
+
     /// Format-specifier parity: a key whose en value carries `%@` / `%d`
     /// placeholders must carry the same count in pt-BR and es, otherwise
     /// `String(format:)` crashes or drops an argument at runtime.

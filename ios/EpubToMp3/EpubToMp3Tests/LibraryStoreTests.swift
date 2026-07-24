@@ -18,6 +18,34 @@ final class LibraryStoreTests: XCTestCase {
         UserDefaults().removePersistentDomain(forName: suite)
     }
 
+    func testLoadMigratesPersistedLocalizationKeyOutOfAuthor() throws {
+        let suite = "library.test.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let book = BookEntity(
+            id: "bad-author",
+            title: "Book",
+            author: "reader.loading",
+            bookmark: Data([1]),
+            displayFilename: "book.epub",
+            addedAt: .now
+        )
+        defaults.set(try JSONEncoder().encode([book]), forKey: "library.books.v1")
+
+        let store = LibraryStore(defaults: defaults, defaultsKey: "library.books.v1")
+        XCTAssertNil(store.books.first?.author)
+    }
+
+    func testUITestFixtureInstallsDeterministicBook() {
+        let (store, defaults, suite) = ephemeralStore()
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        store.installUITestFixtureIfRequested(arguments: ["-uiTestFixture"])
+
+        XCTAssertEqual(store.books.map(\.id), ["ui-test-book"])
+        XCTAssertEqual(store.books.first?.title, "UI Test Book")
+    }
+
     func testContentHashIsStableAcrossInvocations() throws {
         // Write a deterministic file and ensure the SHA-256-based id is
         // identical across invocations — required for the de-dup path.

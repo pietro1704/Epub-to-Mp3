@@ -103,7 +103,6 @@ final class IOSRootContainerController: UIViewController {
             fullPlayerController.view.bottomAnchor.constraint(equalTo: view.bottomAnchor),
         ])
 
-        readerController.view.backgroundColor = .clear
         miniPlayerController.view.backgroundColor = .clear
         fullPlayerController.view.backgroundColor = .clear
 

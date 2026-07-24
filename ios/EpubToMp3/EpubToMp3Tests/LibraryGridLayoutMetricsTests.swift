@@ -11,6 +11,14 @@ import XCTest
 
 final class LibraryGridLayoutMetricsTests: XCTestCase {
 
+    func testPhoneTileReservesSpaceForCoverAndMetadata() {
+        let metrics = LibraryGridLayoutMetrics()
+        let columns = metrics.columnCount(forWidth: 390)
+        let height = metrics.tileWidth(forWidth: 390, columns: columns) * 1.5 + 70
+
+        XCTAssertGreaterThan(height, 600)
+    }
+
     func testColumnCountPacksAsManyMinWidthTilesAsFit() {
         let metrics = LibraryGridLayoutMetrics()
         // 390pt iPhone width minus 2*20 inset = 350 usable.

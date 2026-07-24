@@ -83,12 +83,23 @@ final class PythonBridge: @unchecked Sendable {
     /// - Throws: `PythonBridgeError` if bootstrap, parse, or JSON
     ///   decode fails.
     func parseEpub(at fileURL: URL, bookId: String) async throws -> EbookFulltext {
-        // 30 s deadline via PythonRunner's one-resume gate (not
-        // `withTimeout`, which deadlocks around continuations — see
-        // PythonRunner.callAsync(timeout:) doc).
-        try await runner.callAsync(timeout: 30, label: "EPUB parse") {
-            try PythonEmbed.shared.bootstrap()
-            return try self.parseEpubSync(path: fileURL.path, bookId: bookId)
+        do {
+            // 30 s deadline via PythonRunner's one-resume gate (not
+            // `withTimeout`, which deadlocks around continuations — see
+            // PythonRunner.callAsync(timeout:) doc).
+            return try await runner.callAsync(timeout: 30, label: "EPUB parse") {
+                try PythonEmbed.shared.bootstrap()
+                return try self.parseEpubSync(path: fileURL.path, bookId: bookId)
+            }
+        } catch {
+            // A slow or unavailable embedded interpreter must not make a
+            // locally imported book unreadable. The native parser runs off
+            // the main actor and preserves the reader's basic text path.
+            let fallback = await Task.detached(priority: .userInitiated) {
+                EpubFallbackParser.parse(url: fileURL, bookId: bookId)
+            }.value
+            guard !fallback.chapters.isEmpty else { throw error }
+            return fallback
         }
     }
 

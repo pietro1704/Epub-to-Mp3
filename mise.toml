@@ -548,6 +548,7 @@ fi
 
 if [[ -n "${IOS_SIMULATOR_UDID:-}" ]]; then
   UDID="$IOS_SIMULATOR_UDID"
+  DEST="id=$UDID"
 else
   DEST="${IOS_DEST:-$(python3 ../../scripts/select_ios_simulator.py)}"
   UDID="${DEST##*id=}"
@@ -563,6 +564,60 @@ xcrun simctl boot "$UDID" >/dev/null 2>&1 || true
 xcrun simctl bootstatus "$UDID" -b
 xcrun simctl install "$UDID" "$APP_PATH"
 xcrun simctl launch "$UDID" com.pietrocode.epubtomp3
+"""
+
+[tasks."ios:simulator:test"]
+description = "Build and run iOS XCTest/UI tests on a selected Simulator. Set IOS_TESTS=Target/Class or Target/Class/test."
+depends = ["vendor:python"]
+run = """
+#!/bin/bash
+set -euo pipefail
+"${MISE_PROJECT_ROOT:-.}/scripts/ios_disk_guard.sh"
+python3 "${MISE_PROJECT_ROOT:-.}/scripts/guard_ios_simulator_resources.py"
+cd ios/EpubToMp3
+
+if ! command -v xcodegen >/dev/null 2>&1; then
+  echo "error: xcodegen not installed. Install via: brew install xcodegen" >&2
+  exit 1
+fi
+xcodegen generate
+
+if [[ -n "${IOS_SIMULATOR_UDID:-}" ]]; then
+  DEST="id=${IOS_SIMULATOR_UDID}"
+else
+  DEST="${IOS_DEST:-$(python3 ../../scripts/select_ios_simulator.py)}"
+fi
+UDID="${DEST##*id=}"
+if [[ -z "$UDID" || "$UDID" == "$DEST" ]]; then
+  echo "ios:simulator:test error: could not resolve a simulator UDID." >&2
+  exit 2
+fi
+xcrun simctl boot "$UDID" >/dev/null 2>&1 || true
+xcrun simctl bootstatus "$UDID" -b
+# iOS 26 may report Booted before testmanagerd has established its socket.
+sleep 5
+
+DD="${IOS_DERIVED_DATA_PATH:-./.build}"
+run_simulator_tests() {
+  local only=()
+  if [[ -n "${IOS_TESTS:-}" ]]; then
+    local tests=()
+    IFS=',' read -r -a tests <<< "$IOS_TESTS"
+    for test in "${tests[@]}"; do
+      only+=("-only-testing:$test")
+    done
+  fi
+  if [[ "${IOS_SKIP_BUILD:-0}" != "1" ]]; then
+    xcodebuild -project EpubToMp3.xcodeproj -scheme EpubToMp3 -configuration Debug \
+      -destination "$DEST" -derivedDataPath "$DD" build-for-testing
+  fi
+  xcodebuild -project EpubToMp3.xcodeproj -scheme EpubToMp3 -configuration Debug \
+    -destination "$DEST" -derivedDataPath "$DD" test-without-building "${only[@]}"
+}
+
+export DEST DD IOS_SKIP_BUILD
+export -f run_simulator_tests
+python3 ../../scripts/heavy_job_guard.py ios:simulator:test -- bash -c run_simulator_tests
 """
 
 [tasks."ios:device:test"]

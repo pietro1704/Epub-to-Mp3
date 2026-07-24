@@ -69,7 +69,9 @@ def _acquire_lock(label: str) -> "object":
     """Acquire an exclusive advisory lock; wait until free (or fail fast)."""
     import fcntl
 
-    handle = open(_LOCK_PATH, "w")
+    # Do not truncate the holder record while another process owns the lock.
+    # A waiting guard needs that record for a useful diagnostic.
+    handle = open(_LOCK_PATH, "a+")
     nowait = os.environ.get("HEAVY_JOB_GUARD_NOWAIT") == "1"
     deadline = time.monotonic() + _WAIT_TIMEOUT_SECONDS
     announced = False

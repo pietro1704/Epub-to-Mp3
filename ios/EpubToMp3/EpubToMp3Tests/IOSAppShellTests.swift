@@ -109,6 +109,21 @@ final class IOSAppShellTests: XCTestCase {
         )
     }
 
+    func testReaderOverlayRemainsOpaqueAboveTheLibrary() throws {
+        let source = try String(
+            contentsOf: URL(fileURLWithPath: #filePath)
+                .deletingLastPathComponent()
+                .deletingLastPathComponent()
+                .appendingPathComponent("EpubToMp3/App/IOSRootContainer.swift"),
+            encoding: .utf8
+        )
+
+        XCTAssertFalse(
+            source.contains("readerController.view.backgroundColor = .clear"),
+            "An active reader must not reveal the library through a transparent overlay."
+        )
+    }
+
     func testMiniPlayerExposesAutomationIdentifiers() throws {
         let source = try String(
             contentsOf: URL(fileURLWithPath: #filePath)

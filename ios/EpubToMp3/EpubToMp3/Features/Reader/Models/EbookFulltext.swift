@@ -39,21 +39,21 @@ import Foundation
 /// - 404 → permanent (job gone or terminal failed with no source).
 /// - 422 → empty parse (parsed cleanly but produced zero chapters).
 /// - 200 → chapters available.
-struct EbookFulltext: Codable, Equatable {
+struct EbookFulltext: Codable, Equatable, Sendable {
 
     /// One sentence-level segment with millisecond timestamps relative to
     /// the start of the chapter audio. Optional in the response; the
     /// current backend does not emit this field, but `SyncEngine` will
     /// prefer it over WPM estimation when present.
-    struct Segment: Codable, Equatable, Hashable {
+    struct Segment: Codable, Equatable, Hashable, Sendable {
         let id: String?
         let text: String
         let startMs: Int?
         let endMs: Int?
     }
 
-    struct Chapter: Codable, Equatable, Identifiable {
-        struct Resource: Codable, Equatable, Hashable {
+    struct Chapter: Codable, Equatable, Identifiable, Sendable {
+        struct Resource: Codable, Equatable, Hashable, Sendable {
             let href: String
             let mediaType: String?
             let dataBase64: String?

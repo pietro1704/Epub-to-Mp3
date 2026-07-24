@@ -128,6 +128,9 @@
 "bookOpen.error" = "Couldn't open this book";
 "bookOpen.locateFile" = "Locate file…";
 "bookOpen.retry" = "Retry";
+"bookOpen.repick" = "Choose file";
+"reader.loading" = "Loading book…";
+"reader.chapter" = "Chapter %@";
 
 "player.error.title" = "Playback issue";
 "common.ok" = "OK";
