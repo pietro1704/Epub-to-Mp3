@@ -557,6 +557,15 @@ Rules:
 - `scripts/select_ios_simulator.py` must not choose iOS >17 by default; opt in only with `IOS_ALLOW_RECENT_SIMULATOR=1` or `IOS_MAX_SIMULATOR_MAJOR=<major>`.
 - Local macOS builds (`mise run mac:build`) are OK; avoid booting Simulator.app/CoreSimulator unless the user explicitly accepts the risk.
 
+## Lessons From Previous Apple UI Migration
+
+- Never run `xcodebuild`, `mise run mac:build`, iOS simulator tasks, or any automatic build unless the user explicitly asks for a build. Static parsing, project generation, and source-contract tests are allowed without that request.
+- A SwiftUI migration is complete only when the legacy implementation is removed from the app target. Do not keep duplicate SwiftUI screens behind flags, compatibility aliases, hosting controllers, or representable wrappers when UIKit/AppKit owns the same surface.
+- Before deleting a source file, search all source, tests, project manifests, and CI source-contract tests for references. Update or remove tests whose contract describes the deleted implementation; do not leave CI to discover stale paths after the push.
+- Treat a clean local commit as separate from verification. Report each verification state independently: local checks, CI tests, CI lint, CI smoke tests, and any external/API monitoring failure. Never call CI green while any required job is pending or its result is unavailable.
+- After pushing, monitor the exact commit's CI. If the provider rate-limits status queries, state that limitation explicitly and do not infer the final conclusion from partial logs.
+- Prefer a small number of native entry points over compatibility layers. When a replacement is ready, remove the old file, its obsolete tests, snapshots, and manifest exclusions in the same change, while preserving tests for behavior that still exists.
+
 ## Tooling Policy
 
 **Always use `mise` for all toolchain management and task execution — never install or invoke tools natively.**
