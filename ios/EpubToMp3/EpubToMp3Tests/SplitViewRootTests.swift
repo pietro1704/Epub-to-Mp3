@@ -60,12 +60,10 @@ final class SplitViewRootTests: XCTestCase {
     /// We can't call `.body` (SwiftUI traps on ModifiedContent.body)
     /// but the init alone catches signature/availability regressions.
     func testSplitViewRootInstantiates() {
-        guard #available(iOS 16, macOS 13, *) else {
-            // Older OSes never instantiate this view — the size-class
-            // branch in RootView falls through to TabRoot. Skip.
-            return
-        }
+        #if !os(iOS)
+        guard #available(macOS 13, *) else { return }
         _ = SplitViewRoot()
+        #endif
     }
 
     /// `LibrarySidebar` constructs with a binding and reads its
@@ -105,6 +103,20 @@ final class SplitViewRootTests: XCTestCase {
         let book = makeBook(id: "with-job", lastJobId: "job-xyz")
         _ = ChapterListColumn(book: book, selectedChapterIndex: .constant(nil))
         XCTAssertEqual(book.lastJobId, "job-xyz")
+    }
+
+    func testChapterListColumnUsesUIKitHostOnIOS() throws {
+        #if os(iOS)
+        let source = try String(
+            contentsOf: URL(fileURLWithPath: #filePath)
+                .deletingLastPathComponent()
+                .deletingLastPathComponent()
+                .appendingPathComponent("EpubToMp3/Features/Reader/Views/ChapterListColumn.swift")
+        )
+        XCTAssertFalse(source.contains("ChapterListScreenHost("))
+        XCTAssertFalse(source.contains("#if os(iOS)"))
+        XCTAssertTrue(source.contains("List(selection: $selectedChapterIndex)"))
+        #endif
     }
 
     // MARK: - Selection semantics
@@ -147,40 +159,17 @@ final class SplitViewRootTests: XCTestCase {
         XCTAssertNil(captured)
     }
 
-    // MARK: - Tab fallback
-
-    /// `TabRoot` is what iOS 15 / iPhone-compact users get. The
-    /// branch in `RootView` falls through to it; we just need the
-    /// view to construct.
-    func testTabRootInstantiates() {
-        _ = TabRoot()
-    }
-
     // MARK: - Adaptive column visibility (portrait vs landscape)
 
-    /// On iOS the launch default must be `.doubleColumn` so portrait
-    /// iPad doesn't open with three crammed columns; on macOS the
-    /// launch default stays `.all`. We verify this through the public
-    /// SwiftUI `NavigationSplitViewVisibility` value the view exposes
-    /// indirectly via construction — the actual size-class observer
-    /// is exercised at runtime, but the initial-state contract is
-    /// what fixes the reported bug.
+    /// Desktop split view now always starts with the full three-column
+    /// layout because the mobile shell no longer uses this view.
     func testInitialColumnVisibilityMatchesPlatform() {
-        guard #available(iOS 16, macOS 13, *) else { return }
-        // The default static factory mirrors the runtime path.
-        #if os(macOS)
+        guard #available(macOS 13, *) else { return }
         XCTAssertEqual(
             mirroredDefaultVisibility(),
             .all,
-            "macOS should start with three columns by default."
+            "Desktop split view should start with three columns by default."
         )
-        #else
-        XCTAssertEqual(
-            mirroredDefaultVisibility(),
-            .doubleColumn,
-            "iOS should start with two columns to avoid the crammed-three-column bug on iPad portrait."
-        )
-        #endif
     }
 
     /// The values returned by `NavigationSplitViewVisibility` need to
@@ -194,85 +183,15 @@ final class SplitViewRootTests: XCTestCase {
         XCTAssertNotEqual(NavigationSplitViewVisibility.all, .doubleColumn)
     }
 
-    // MARK: - Empty library reveal (iPad portrait import-discoverability)
-
-    /// On iPad portrait (compact horizontal proxy) an empty library
-    /// must surface the sidebar so the Empty State + import button
-    /// are discoverable without the user first hitting the toggle.
-    /// This guards the fix for the "user sees only a toggle icon and
-    /// 'Select a book'" bug.
-    func testEmptyLibraryRevealsSidebarOnCompactHorizontal() {
-        guard #available(iOS 16, macOS 13, *) else { return }
-        #if os(iOS)
-        let visibility = SplitViewRootVisibilityProbe.preferred(
-            isLibraryEmpty: true,
-            isCompactHorizontal: true
-        )
-        XCTAssertEqual(
-            visibility, .all,
-            "Empty library on iPad portrait must reveal the sidebar with the import button."
-        )
-        #endif
-    }
-
-    /// iPad landscape with an empty library: three columns (sidebar
-    /// + content + detail). The sidebar is already visible by default
-    /// here, so the contract is "no regression to two-column".
-    func testEmptyLibraryOnRegularLayoutStaysAtThreeColumns() {
-        guard #available(iOS 16, macOS 13, *) else { return }
-        #if os(iOS)
-        let visibility = SplitViewRootVisibilityProbe.preferred(
-            isLibraryEmpty: true,
-            isCompactHorizontal: false
-        )
-        XCTAssertEqual(
-            visibility, .all,
-            "Empty library on iPad landscape must keep the three-column layout."
-        )
-        #endif
-    }
-
-    /// Library with at least one book on iPad portrait: fall back to
-    /// the canonical two-column layout so the chapter list (content
-    /// column) owns the focus once the user has something to read.
-    func testPopulatedLibraryOnCompactHorizontalUsesDoubleColumn() {
-        guard #available(iOS 16, macOS 13, *) else { return }
-        #if os(iOS)
-        let visibility = SplitViewRootVisibilityProbe.preferred(
-            isLibraryEmpty: false,
-            isCompactHorizontal: true
-        )
-        XCTAssertEqual(
-            visibility, .doubleColumn,
-            "Populated library on iPad portrait must collapse to two columns."
-        )
-        #endif
-    }
-
-    /// Library with at least one book on iPad landscape: three columns.
-    func testPopulatedLibraryOnRegularLayoutUsesAllColumns() {
-        guard #available(iOS 16, macOS 13, *) else { return }
-        #if os(iOS)
-        let visibility = SplitViewRootVisibilityProbe.preferred(
-            isLibraryEmpty: false,
-            isCompactHorizontal: false
-        )
-        XCTAssertEqual(
-            visibility, .all,
-            "Populated library on iPad landscape must keep three columns."
-        )
-        #endif
-    }
-
     // MARK: - Sidebar mini-player visibility (duplicate-player bug)
 
     /// Reader mode never shows the sidebar mini-player — `MainReaderView`
     /// already carries its own bottom transport, so showing both stacks
     /// two mini-players on screen.
     func testSidebarMiniPlayerHiddenInReaderMode() {
-        guard #available(iOS 16, macOS 13, *) else { return }
+        guard #available(macOS 13, *) else { return }
         XCTAssertFalse(
-            SplitViewRoot.shouldShowSidebarMiniPlayer(
+            SplitViewSidebarMiniPlayerPolicy.shouldShow(
                 navMode: .reader,
                 hasPlayableBook: true,
                 isShowingPlayerReaderDetail: false
@@ -284,9 +203,9 @@ final class SplitViewRootTests: XCTestCase {
     /// Library mode shows the sidebar mini-player while browsing the
     /// chapter/book list (no `PlayerReaderDetail` on screen).
     func testSidebarMiniPlayerVisibleWhileBrowsingLibrary() {
-        guard #available(iOS 16, macOS 13, *) else { return }
+        guard #available(macOS 13, *) else { return }
         XCTAssertTrue(
-            SplitViewRoot.shouldShowSidebarMiniPlayer(
+            SplitViewSidebarMiniPlayerPolicy.shouldShow(
                 navMode: .library,
                 hasPlayableBook: true,
                 isShowingPlayerReaderDetail: false
@@ -297,9 +216,9 @@ final class SplitViewRootTests: XCTestCase {
     /// Library mode drilled into a `PlayerReaderDetail` hides the
     /// sidebar mini-player — that detail carries its own transport.
     func testSidebarMiniPlayerHiddenInLibraryReaderDetail() {
-        guard #available(iOS 16, macOS 13, *) else { return }
+        guard #available(macOS 13, *) else { return }
         XCTAssertFalse(
-            SplitViewRoot.shouldShowSidebarMiniPlayer(
+            SplitViewSidebarMiniPlayerPolicy.shouldShow(
                 navMode: .library,
                 hasPlayableBook: true,
                 isShowingPlayerReaderDetail: true
@@ -310,10 +229,10 @@ final class SplitViewRootTests: XCTestCase {
     /// Conversions and Settings keep the sidebar mini-player — those
     /// destinations have no transport of their own.
     func testSidebarMiniPlayerVisibleInJobsAndSettings() {
-        guard #available(iOS 16, macOS 13, *) else { return }
+        guard #available(macOS 13, *) else { return }
         for mode in [SplitNavMode.jobs, .settings] {
             XCTAssertTrue(
-                SplitViewRoot.shouldShowSidebarMiniPlayer(
+                SplitViewSidebarMiniPlayerPolicy.shouldShow(
                     navMode: mode,
                     hasPlayableBook: true,
                     isShowingPlayerReaderDetail: false
@@ -325,10 +244,10 @@ final class SplitViewRootTests: XCTestCase {
 
     /// No playable book → mini-player hidden regardless of mode.
     func testSidebarMiniPlayerHiddenWithoutPlayableBook() {
-        guard #available(iOS 16, macOS 13, *) else { return }
+        guard #available(macOS 13, *) else { return }
         for mode in SplitNavMode.allCases {
             XCTAssertFalse(
-                SplitViewRoot.shouldShowSidebarMiniPlayer(
+                SplitViewSidebarMiniPlayerPolicy.shouldShow(
                     navMode: mode,
                     hasPlayableBook: false,
                     isShowingPlayerReaderDetail: false
@@ -343,39 +262,8 @@ final class SplitViewRootTests: XCTestCase {
     /// Kept in sync with the source — if the source changes platform
     /// defaults, this needs to change too, and the assertion above
     /// will fail loudly.
-    @available(iOS 16, macOS 13, *)
+    @available(macOS 13, *)
     private func mirroredDefaultVisibility() -> NavigationSplitViewVisibility {
-        #if os(macOS)
         return .all
-        #else
-        return .doubleColumn
-        #endif
     }
 }
-
-#if os(iOS)
-/// Mirror of `SplitViewRoot.preferredVisibility(for:)` extracted to a
-/// pure-function probe so the tests can exercise the matrix
-/// (empty/populated × portrait/landscape) without needing to render
-/// the full split view. **Keep this in lockstep with the source**:
-/// any change to the production decision tree must be reflected here.
-///
-/// The "reveal the sidebar" branch fires only when the user is on the
-/// Library destination AND the library is empty — the Now-Playing
-/// landing screen has its own empty state, so it doesn't piggy-back on
-/// this column-visibility heuristic.
-@available(iOS 16, macOS 13, *)
-enum SplitViewRootVisibilityProbe {
-    static func preferred(
-        isLibraryEmpty: Bool,
-        isCompactHorizontal: Bool,
-        navMode: SplitNavMode = .library
-    ) -> NavigationSplitViewVisibility {
-        let needsEmptySidebarReveal = (navMode == .library) && isLibraryEmpty
-        if needsEmptySidebarReveal && isCompactHorizontal {
-            return .all
-        }
-        return isCompactHorizontal ? .doubleColumn : .all
-    }
-}
-#endif

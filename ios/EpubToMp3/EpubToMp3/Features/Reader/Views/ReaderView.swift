@@ -1610,7 +1610,17 @@ struct ReaderView: View {
             // window is over. Reset the display-page override so subsequent
             // transient empty states (e.g. rapid settings changes) don't
             // re-pin the footer to page 0 incorrectly.
-            chapterTransitionDisplayPage = 0
+            //
+            // `attributedPages` runs synchronously inside `body`'s
+            // GeometryReader closure (called from the `pages` computation
+            // at line ~1118), so writing `@State` here directly trips
+            // SwiftUI's "Modifying state during view update" runtime
+            // warning (undefined-behavior risk per Apple's own docs).
+            // Defer to the next run-loop turn — same end state, no
+            // same-frame mutation.
+            DispatchQueue.main.async { [self] in
+                chapterTransitionDisplayPage = 0
+            }
         }
         return pages
         #else

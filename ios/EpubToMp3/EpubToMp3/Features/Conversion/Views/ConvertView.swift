@@ -1,6 +1,7 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
+#if !os(iOS)
 @MainActor
 final class ConvertViewModel: ObservableObject {
     @Published var selectedFile: URL? = nil
@@ -43,18 +44,9 @@ final class ConvertViewModel: ObservableObject {
             opts.clearCache = clearCache
             opts.forceReprocess = forceReprocess
             opts.maxPerformance = maxPerformance
-            #if os(macOS)
             // Desktop sidecar always lives on loopback, so the
             // local-path shortcut works.
             let response = try await client.submitConversion(localPath: file, options: opts)
-            #else
-            // iOS / iPadOS — read into memory and POST as multipart.
-            let data = try Data(contentsOf: file)
-            let response = try await client.submitConversion(
-                uploadedFile: (data, file.lastPathComponent),
-                options: opts
-            )
-            #endif
             submittedJobId = response.jobId
         } catch {
             self.error = (error as? LocalizedError)?.errorDescription
@@ -114,7 +106,15 @@ final class ConvertViewModel: ObservableObject {
     }
     #endif
 }
+#endif
 
+#if os(iOS)
+struct ConvertView: View {
+    var body: some View {
+        EmptyView()
+    }
+}
+#else
 struct ConvertView: View {
     @EnvironmentObject private var settings: AppSettings
     @StateObject private var viewModel = ConvertViewModel()
@@ -184,7 +184,7 @@ struct ConvertView: View {
                 Section {
                     Label(L10n.string("convert.jobSubmitted", jobId), systemImage: "checkmark.seal.fill")
                         .foregroundStyle(.green)
-                    if #available(iOS 16, macOS 13, *) {
+                    if #available(macOS 13, *) {
                         NavigationLink(value: jobId) {
                             Label(L10n.string("convert.openProgress"), systemImage: "arrow.right.circle")
                         }
@@ -251,6 +251,7 @@ struct ConvertView: View {
         }
     }
 }
+#endif
 
 /// Value-based navigation destination requires iOS 16 / macOS 13.
 /// The fallback path uses explicit `NavigationLink { destination }`
@@ -258,7 +259,7 @@ struct ConvertView: View {
 private extension View {
     @ViewBuilder
     func compatConvertDestination() -> some View {
-        if #available(iOS 16, macOS 13, *) {
+        if #available(macOS 13, *) {
             self.navigationDestination(for: String.self) { jobId in
                 JobDetailView(jobId: jobId)
             }
@@ -268,9 +269,12 @@ private extension View {
     }
 }
 
-#if DEBUG
+#if DEBUG && !os(iOS)
 #Preview("Convert") {
     CompatNavigationStack { ConvertView() }
         .environmentObject(AppSettings())
+        .environmentObject(LibraryStore())
+        .environmentObject(AudioPlayer())
+        .environmentObject(PlaybackClock())
 }
 #endif

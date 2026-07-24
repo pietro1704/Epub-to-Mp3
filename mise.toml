@@ -288,6 +288,19 @@ description = "Build PyInstaller sidecar binary (epub-to-mp3-server, Edge-TTS on
 run = """
 #!/bin/bash
 set -euo pipefail
+BIN="dist/epub-to-mp3-server"
+# Cache guard: skip the PyInstaller rebuild (typically 20-90s) when the
+# existing binary is already newer than every input that could change its
+# contents. Every `mac:build` used to pay this cost unconditionally, even
+# for a Swift-only change. Override with SIDECAR_FORCE_REBUILD=1.
+if [[ "${SIDECAR_FORCE_REBUILD:-0}" != "1" && -x "$BIN" ]]; then
+  NEWEST_INPUT=$(find python_app desktop.spec requirements-desktop.txt \
+    -type f -newer "$BIN" 2>/dev/null | head -1)
+  if [[ -z "$NEWEST_INPUT" ]]; then
+    echo "Sidecar up to date (no python_app/desktop.spec/requirements-desktop.txt changes newer than $BIN) — skipping PyInstaller. Force with SIDECAR_FORCE_REBUILD=1."
+    exit 0
+  fi
+fi
 source .venv/bin/activate
 export PATH="/usr/bin:/bin:${PATH}"
 if ! .venv/bin/python -c 'import PyInstaller' >/dev/null 2>&1; then
@@ -299,7 +312,7 @@ echo "Sidecar ready: dist/epub-to-mp3-server"
 """
 
 [tasks."mac:build"]
-description = "Build SwiftUI macOS app with embedded Python sidecar"
+description = "Build SwiftUI macOS app with embedded Python sidecar (MAC_BUILD_CONFIG=Release|Debug, default Release)"
 # Ensure Python.xcframework is on disk before xcodebuild evaluates the
 # `Vendor/Python/Python.xcframework` framework dependency. The Xcode
 # pre-build run-script phase is a second safety net (covers users who
@@ -312,7 +325,15 @@ set -euo pipefail
 # utility. Put macOS system directories first so a user-level helper with
 # the same name cannot intercept `arch -x86_64` during isolated analysis.
 export PATH="/usr/bin:/bin:/usr/sbin:/sbin:${PATH}"
-# 1. Regenerate the Python sidecar (PyInstaller onefile).
+# Default stays Release so this task keeps producing the same distributable
+# artifact release-desktop.yml expects. Debug (wholemodule/-O/ThinLTO/dSYM
+# all skipped — see project.yml's own Debug tuning) is dramatically faster
+# for local iteration; use `mise run mac:build:dev` or set the var directly.
+CONFIG="${MAC_BUILD_CONFIG:-Release}"
+
+# 1. Regenerate the Python sidecar (PyInstaller onefile). Cached — see
+#    sidecar:build's mtime guard, skips the ~20-90s PyInstaller pass when
+#    python_app/ hasn't changed since the last build.
 mise run sidecar:build
 
 # 2. Build the SwiftUI app headlessly via xcodebuild.
@@ -331,18 +352,18 @@ python3 "${MISE_PROJECT_ROOT:-../..}/scripts/heavy_job_guard.py" mac:build -- \\
 xcodebuild \\
   -project EpubToMp3.xcodeproj \\
   -scheme EpubToMp3 \\
-  -configuration Release \\
+  -configuration "$CONFIG" \\
   -destination 'platform=macOS' \\
   -derivedDataPath ./.build \\
   build | tail -20
 
-APP_OUT=".build/Release/EpubToMp3.app"
-if [[ ! -d "$APP_OUT" && -d ".build/Build/Products/Release/EpubToMp3.app" ]]; then
-  APP_OUT=".build/Build/Products/Release/EpubToMp3.app"
+APP_OUT=".build/${CONFIG}/EpubToMp3.app"
+if [[ ! -d "$APP_OUT" && -d ".build/Build/Products/${CONFIG}/EpubToMp3.app" ]]; then
+  APP_OUT=".build/Build/Products/${CONFIG}/EpubToMp3.app"
 fi
 if [[ -d "$APP_OUT" ]]; then
   echo ""
-  echo "Built: $APP_OUT"
+  echo "Built ($CONFIG): $APP_OUT"
   echo "   Sidecar embedded: $(ls -lh "$APP_OUT/Contents/Resources/epub-to-mp3-server" 2>/dev/null | awk '{print $5}')"
   echo ""
   echo "To install, copy to /Applications:"
@@ -352,6 +373,10 @@ else
   exit 1
 fi
 """
+
+[tasks."mac:build:dev"]
+description = "Fast local-iteration macOS build (Debug config — incremental, -Onone, no LTO/dSYM). Not for distribution."
+run = "MAC_BUILD_CONFIG=Debug mise run mac:build"
 
 [tasks."ios:build"]
 description = "Build SwiftUI iOS app on the best installed iOS Simulator with embedded Python.xcframework"
@@ -473,6 +498,61 @@ echo "ios:device:run → device: $DEVICE"
 echo "ios:device:run → app: $APP_PATH"
 xcrun devicectl device install app --device "$DEVICE" "$APP_PATH"
 xcrun devicectl device process launch --device "$DEVICE" --terminate-existing "$BUNDLE_ID"
+"""
+
+[tasks."ios:simulator:run"]
+description = "Install and launch an existing iphonesimulator EpubToMp3.app; never builds or downloads runtimes"
+run = """
+#!/bin/bash
+set -euo pipefail
+
+# This task intentionally launches only an existing artifact. Use
+# `mise run ios:build` separately when a new simulator build is required.
+python3 "${MISE_PROJECT_ROOT:-.}/scripts/guard_ios_simulator_resources.py"
+cd ios/EpubToMp3
+
+if [[ -n "${IOS_APP_PATH:-}" ]]; then
+  APP_PATH="$IOS_APP_PATH"
+else
+  APP_PATH=$(python3 - <<'PY'
+from pathlib import Path
+
+apps = []
+for pattern in (".build/Build/Products/*-iphonesimulator/EpubToMp3.app", ".build/*-iphonesimulator/EpubToMp3.app"):
+    apps.extend(path for path in Path(".").glob(pattern) if path.is_dir())
+if not apps:
+    raise SystemExit(1)
+apps.sort(key=lambda path: path.stat().st_mtime, reverse=True)
+print(apps[0])
+PY
+  ) || {
+    echo "ios:simulator:run error: no existing iphonesimulator EpubToMp3.app found." >&2
+    echo "Run `mise run ios:build` first, or provide IOS_APP_PATH=/path/to/EpubToMp3.app." >&2
+    exit 2
+  }
+fi
+if [[ ! -d "$APP_PATH" ]]; then
+  echo "ios:simulator:run error: app not found: $APP_PATH" >&2
+  exit 2
+fi
+
+if [[ -n "${IOS_SIMULATOR_UDID:-}" ]]; then
+  UDID="$IOS_SIMULATOR_UDID"
+else
+  DEST="${IOS_DEST:-$(python3 ../../scripts/select_ios_simulator.py)}"
+  UDID="${DEST##*id=}"
+fi
+if [[ -z "$UDID" || "$UDID" == "$DEST" ]]; then
+  echo "ios:simulator:run error: could not resolve a simulator UDID." >&2
+  exit 2
+fi
+
+echo "ios:simulator:run → device: $UDID"
+echo "ios:simulator:run → app: $APP_PATH"
+xcrun simctl boot "$UDID" >/dev/null 2>&1 || true
+xcrun simctl bootstatus "$UDID" -b
+xcrun simctl install "$UDID" "$APP_PATH"
+xcrun simctl launch "$UDID" com.pietrocode.epubtomp3
 """
 
 [tasks."ios:device:test"]

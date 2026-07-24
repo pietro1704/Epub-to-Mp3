@@ -101,3 +101,20 @@ def test_ios_build_task_does_not_recommend_local_simulator_downloads():
     assert "Fix on this Mac:\n  xcodebuild -downloadPlatform" not in ios_build_task
     assert "ios:device:run" in ios_build_task
     assert "No local simulator download is required" in ios_build_task
+
+
+def test_simulator_run_task_requires_an_existing_app_and_never_builds():
+    """The explicit simulator launch task must not hide a build step."""
+    body = MISE_TOML.read_text(encoding="utf-8")
+    start = body.index('[tasks."ios:simulator:run"]')
+    end = body.index('\n[tasks."ios:device:test"]', start)
+    task = body[start:end]
+
+    assert "guard_ios_simulator_resources.py" in task
+    assert "select_ios_simulator.py" in task
+    assert "simctl install" in task
+    assert "simctl launch" in task
+    assert "mise run ios:build" in task
+    assert "xcodebuild" not in task
+    assert "xcodegen" not in task
+    assert "-downloadPlatform" not in task

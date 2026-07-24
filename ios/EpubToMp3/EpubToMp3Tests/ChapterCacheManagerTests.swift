@@ -256,6 +256,17 @@ final class ChapterCacheManagerTests: XCTestCase {
             "Chapter 0 is already cached — must not be re-enqueued")
     }
 
+    func testDownloadChapterEnqueuesOnlyRequestedUncachedChapter() {
+        let chapters = (1...3).map { makeChapter(index: $0, text: "Long enough text here.") }
+        let (mgr, _, _) = makeManager(chapters: chapters)
+
+        mgr.downloadChapter(1)
+        defer { mgr.cancelAll() }
+
+        XCTAssertEqual(mgr.generatingIndices, [1],
+                       "downloadChapter must enqueue only the requested zero-based chapter index.")
+    }
+
     // MARK: - Multiple chapters refreshed correctly
 
     func testRefreshHandlesMultipleCachedChapters() throws {

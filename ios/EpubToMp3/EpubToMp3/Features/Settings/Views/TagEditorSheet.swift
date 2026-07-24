@@ -1,5 +1,14 @@
 import SwiftUI
 
+#if os(iOS)
+struct TagEditorSheet: View {
+    let book: BookEntity
+
+    var body: some View {
+        EmptyView()
+    }
+}
+#else
 struct TagEditorSheet: View {
     let book: BookEntity
     @EnvironmentObject private var library: LibraryStore
@@ -87,6 +96,7 @@ struct TagEditorSheet: View {
         newTag = ""
     }
 }
+#endif
 
 @available(iOS 16, macOS 13, *)
 struct FlowLayout: Layout {

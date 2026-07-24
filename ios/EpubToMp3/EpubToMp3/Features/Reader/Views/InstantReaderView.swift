@@ -1,8 +1,5 @@
 import SwiftUI
 import NaturalLanguage
-#if os(iOS)
-import UIKit
-#endif
 
 enum InstantReaderIndexMapper {
     static func shouldMountLocalPlayer(useEmbeddedRuntime: Bool) -> Bool {
@@ -192,18 +189,165 @@ struct InstantReaderView: View {
     var onClose: (() -> Void)? = nil
     @ObservedObject var cacheManager: ChapterCacheManager
 
+    var body: some View {
+        #if os(iOS)
+        InstantReaderScreenHost(
+            fulltext: fulltext,
+            snapshot: $snapshot,
+            statusBanner: statusBanner,
+            hasAudio: hasAudio,
+            backendBaseURL: backendBaseURL,
+            coverPNG: coverPNG,
+            onRequestAudioRetry: onRequestAudioRetry,
+            onRequestPlay: onRequestPlay,
+            onClose: onClose,
+            cacheManager: cacheManager
+        )
+        #else
+        InstantReaderContentView(
+            fulltext: fulltext,
+            snapshot: $snapshot,
+            statusBanner: statusBanner,
+            hasAudio: hasAudio,
+            backendBaseURL: backendBaseURL,
+            coverPNG: coverPNG,
+            onRequestAudioRetry: onRequestAudioRetry,
+            onRequestPlay: onRequestPlay,
+            onClose: onClose,
+            cacheManager: cacheManager
+        )
+        #endif
+    }
+}
+
+@MainActor
+final class InstantReaderPresentationState: ObservableObject {
+    @Published var chromeVisible = true
+    @Published var audioPlayerVisible = true
+
+    func restore(for bookID: String) {
+        let session = ReaderSessionState.load(bookID: bookID)
+        chromeVisible = session.chromeVisible
+        audioPlayerVisible = session.miniPlayerVisible
+    }
+
+    func persist(for bookID: String, fullPlayerVisible: Bool) {
+        ReaderSessionState.save(
+            bookID: bookID,
+            chromeVisible: chromeVisible,
+            miniPlayerVisible: audioPlayerVisible,
+            fullPlayerVisible: fullPlayerVisible
+        )
+    }
+
+    func hideAudioPlayer() {
+        audioPlayerVisible = false
+    }
+
+    func showAudioPlayer() {
+        audioPlayerVisible = true
+    }
+
+    func autoHideChromeIfNeeded() {
+        guard chromeVisible else { return }
+        chromeVisible = false
+    }
+
+    func restoreChromeIfNeeded() {
+        guard !chromeVisible else { return }
+        chromeVisible = true
+    }
+}
+
+@MainActor
+final class InstantReaderReadingState: ObservableObject {
+    @Published var currentChapterIndex = 0
+    @Published var restoredPageRatio: Double?
+    @Published var pinnedReaderChapterIndex: Int?
+
+    func restoreInitialPosition(
+        fulltext: EbookFulltext,
+        settings: AppSettings,
+        readerCoordinator: ReaderCoordinator,
+        player: AudioPlayer,
+        forceReset: Bool
+    ) -> Bool {
+        let legacySaved = forceReset ? 0 : settings.savedChapterIndex(for: fulltext.jobId)
+        let restored = readerCoordinator.load(
+            for: fulltext.jobId,
+            fallbackChapterIndex: legacySaved
+        )
+        let audioMarker = forceReset ? nil : player.persistedResumeMarker(for: fulltext.jobId)
+        let audioChapter = audioMarker?.wasPlaying == true ? audioMarker?.chapterIndex : nil
+
+        restoredPageRatio = forceReset || audioChapter != nil ? nil : restored.pageRatio
+        if let audioChapter {
+            currentChapterIndex = max(0, audioChapter)
+        } else if !forceReset && (restored.chapterIndex > 0 || restored.pageRatio != nil || legacySaved > 0) {
+            currentChapterIndex = restored.chapterIndex
+        } else if currentChapterIndex == 0 {
+            currentChapterIndex = Self.firstReadableChapterIndex(in: fulltext)
+        }
+
+        return !forceReset && audioMarker?.wasPlaying == true
+    }
+
+    private static let frontMatterNames: Set<String> = [
+        "capa", "rosto", "créditos", "creditos", "sumário", "sumario",
+        "copyright", "cover", "title page", "table of contents",
+        "dedicatória", "dedicatoria", "epígrafe", "epigrafe",
+    ]
+
+    private static func isLikelyFrontMatter(_ chapter: EbookFulltext.Chapter, arrayIndex: Int) -> Bool {
+        let name = (chapter.name ?? "").lowercased()
+        if frontMatterNames.contains(where: { name.contains($0) }) { return true }
+        let text = chapter.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if arrayIndex < 10, text.count < 500, name.hasPrefix("chapter ") { return true }
+        return false
+    }
+
+    private static func firstReadableChapterIndex(in fulltext: EbookFulltext) -> Int {
+        for (index, chapter) in fulltext.chapters.enumerated() {
+            let text = chapter.text.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard text.count >= 10 else { continue }
+            if !isLikelyFrontMatter(chapter, arrayIndex: index) { return index }
+        }
+        if let first = fulltext.chapters.firstIndex(where: {
+            $0.text.trimmingCharacters(in: .whitespacesAndNewlines).count >= 10
+        }) {
+            return first
+        }
+        return 0
+    }
+}
+
+struct InstantReaderContentView: View {
+    let fulltext: EbookFulltext
+    @Binding var snapshot: JobSnapshot?
+    let statusBanner: String?
+    let hasAudio: Bool
+    let backendBaseURL: URL?
+    let coverPNG: Data?
+    let onRequestAudioRetry: () -> Void
+
+    var onRequestPlay: ((Int, String?) -> Void)? = nil
+    var onClose: (() -> Void)? = nil
+    @ObservedObject var cacheManager: ChapterCacheManager
+    var onShowToc: ((_ audioChapterIndex: Int, _ readingChapterIndex: Int, _ playerMounted: Bool, _ snapshot: JobSnapshot) -> Void)? = nil
+    var onShowSearch: (() -> Void)? = nil
+    var onShowReaderSettings: (() -> Void)? = nil
+    var onShowConversionStatus: (() -> Void)? = nil
+    var onChapterIndexChanged: ((Int) -> Void)? = nil
+    var onCloseAudioPlayer: (() -> Void)? = nil
+    var onReopenAudioPlayer: ((Int) -> Void)? = nil
+    var onAutoHideChrome: (() -> Void)? = nil
+    var onRestoreChrome: (() -> Void)? = nil
+
     @EnvironmentObject private var settings: AppSettings
     @EnvironmentObject private var globalPlayer: AudioPlayer
     @EnvironmentObject private var playerPresentation: PlayerPresentation
     @EnvironmentObject private var readerCoordinator: ReaderCoordinator
-    @Environment(\.horizontalSizeClass) private var hSize
 
-    @State private var currentChapterIndex: Int = 0
-    @State private var restoredPageRatio: Double? = nil
-    /// A chapter explicitly selected from the TOC. While the audio queue is
-    /// still on another chapter, retain this reader selection instead of
-    /// letting the position observer immediately snap it back.
-    @State private var pinnedReaderChapterIndex: Int?
     /// The Reader uses the same global AudioPlayer as every other playback
     /// surface. `playerMounted` remains a UI readiness flag only; it is not
     /// a second player lifecycle.
@@ -225,20 +369,85 @@ struct InstantReaderView: View {
     /// they happen to fire in the same runloop tick — see
     /// `installPositionLoop(on:isEmbedded:)`.
     @State private var activeSubscriptionPlayer: ObjectIdentifier?
+    #if !os(iOS)
     @State private var showingToc = false
     @State private var showingSearch = false
+    #endif
     @State private var pendingPlayAnchor: SentenceSpan?  // sentence the user tapped → "Play from here"
     @State private var floaterWordOffset: Double?
     @State private var floaterSentence: SentenceSpan?
-    @State private var showingPlayMenu = false
+    #if !os(iOS)
     @State private var showingConversionStatus = false
     @State private var showingReaderSettings = false
-    @State private var chromeVisible = true
-    @State private var audioPlayerVisible = true
+    #endif
+    @StateObject private var ownedReadingState: InstantReaderReadingState
+    @StateObject private var ownedPresentationState: InstantReaderPresentationState
     @State private var scrubberDragValue: TimeInterval? = nil
     @State private var showingRatePicker = false
 
     private var player: AudioPlayer { globalPlayer }
+    private var readingState: InstantReaderReadingState { ownedReadingState }
+    private var presentationState: InstantReaderPresentationState { ownedPresentationState }
+    private var currentChapterIndex: Int {
+        get { readingState.currentChapterIndex }
+        nonmutating set { readingState.currentChapterIndex = newValue }
+    }
+    private var restoredPageRatio: Double? {
+        get { readingState.restoredPageRatio }
+        nonmutating set { readingState.restoredPageRatio = newValue }
+    }
+    private var pinnedReaderChapterIndex: Int? {
+        get { readingState.pinnedReaderChapterIndex }
+        nonmutating set { readingState.pinnedReaderChapterIndex = newValue }
+    }
+    private var chromeVisible: Bool { presentationState.chromeVisible }
+    private var audioPlayerVisible: Bool { presentationState.audioPlayerVisible }
+
+    init(
+        fulltext: EbookFulltext,
+        snapshot: Binding<JobSnapshot?>,
+        statusBanner: String?,
+        hasAudio: Bool,
+        backendBaseURL: URL?,
+        coverPNG: Data?,
+        onRequestAudioRetry: @escaping () -> Void,
+        onRequestPlay: ((Int, String?) -> Void)? = nil,
+        onClose: (() -> Void)? = nil,
+        cacheManager: ChapterCacheManager,
+        readingState: InstantReaderReadingState? = nil,
+        presentationState: InstantReaderPresentationState? = nil,
+        onShowToc: ((_ audioChapterIndex: Int, _ readingChapterIndex: Int, _ playerMounted: Bool, _ snapshot: JobSnapshot) -> Void)? = nil,
+        onShowSearch: (() -> Void)? = nil,
+        onShowReaderSettings: (() -> Void)? = nil,
+        onShowConversionStatus: (() -> Void)? = nil,
+        onChapterIndexChanged: ((Int) -> Void)? = nil,
+        onCloseAudioPlayer: (() -> Void)? = nil,
+        onReopenAudioPlayer: ((Int) -> Void)? = nil,
+        onAutoHideChrome: (() -> Void)? = nil,
+        onRestoreChrome: (() -> Void)? = nil
+    ) {
+        self.fulltext = fulltext
+        self._snapshot = snapshot
+        self.statusBanner = statusBanner
+        self.hasAudio = hasAudio
+        self.backendBaseURL = backendBaseURL
+        self.coverPNG = coverPNG
+        self.onRequestAudioRetry = onRequestAudioRetry
+        self.onRequestPlay = onRequestPlay
+        self.onClose = onClose
+        self.cacheManager = cacheManager
+        self.onShowToc = onShowToc
+        self.onShowSearch = onShowSearch
+        self.onShowReaderSettings = onShowReaderSettings
+        self.onShowConversionStatus = onShowConversionStatus
+        self.onChapterIndexChanged = onChapterIndexChanged
+        self.onCloseAudioPlayer = onCloseAudioPlayer
+        self.onReopenAudioPlayer = onReopenAudioPlayer
+        self.onAutoHideChrome = onAutoHideChrome
+        self.onRestoreChrome = onRestoreChrome
+        _ownedReadingState = StateObject(wrappedValue: readingState ?? InstantReaderReadingState())
+        _ownedPresentationState = StateObject(wrappedValue: presentationState ?? InstantReaderPresentationState())
+    }
 
     private var embeddedAudioReady: Bool {
         settings.useEmbeddedRuntime && globalPlayer.firstSegmentReady
@@ -359,14 +568,16 @@ struct InstantReaderView: View {
             }
         }
         .accessibilityIdentifier("reader.divergenceDialog")
-        .modifier(ChromeVisibilityModifier(visible: chromeVisible))
-        .readerChromeVisible(chromeVisible)
+        .instantReaderSystemChrome(visible: chromeVisible)
         .compatOnChange(of: chromeVisible) { _ in persistSessionState() }
         .compatOnChange(of: audioPlayerVisible) { _ in persistSessionState() }
+        #if !os(iOS)
         .sheet(isPresented: $showingReaderSettings) {
             ReaderSettingsSheet()
                 .environmentObject(settings)
         }
+        #endif
+        #if !os(iOS)
         .sheet(isPresented: $showingSearch) {
             ReaderSearchOverlay(
                 chapters: fulltext.chapters,
@@ -383,10 +594,43 @@ struct InstantReaderView: View {
                 isPresented: $showingSearch
             )
         }
+        #endif
+        #if !os(iOS)
         .background {
             Color.clear.allowsHitTesting(false)
-                .sheet(isPresented: $showingToc) { tocSheet }
+                .sheet(isPresented: $showingToc) {
+                    TocDrawer(
+                        fulltext: fulltext,
+                        snapshot: snapshot ?? .empty,
+                        currentChapterIndex: playerMounted
+                            ? (snapshot.flatMap {
+                                InstantReaderIndexMapper.epubIndex(
+                                    forPlayableIndex: player.currentChapterIndex,
+                                    in: $0
+                                )
+                            } ?? -1)
+                            : -1,
+                        readingChapterIndex: currentChapterIndex,
+                        onJump: { target in
+                            pinnedReaderChapterIndex = target
+                            currentChapterIndex = target
+                            if playerMounted {
+                                let snap = snapshot ?? .empty
+                                let playableTarget = InstantReaderIndexMapper
+                                    .playableIndex(forEpubIndex: target, in: snap) ?? 0
+                                player.play(snapshot: snap, startingAt: playableTarget)
+                            }
+                            restoreChromeIfNeeded()
+                        },
+                        onDownload: { cacheManager.downloadChapter($0) },
+                        onDownloadAll: { cacheManager.downloadAll() },
+                        onCancelDownloads: { cacheManager.cancelAll() },
+                        onClearDownloads: { cacheManager.clearAll() }
+                    )
+                }
         }
+        #endif
+        #if !os(iOS)
         .background {
             Color.clear.allowsHitTesting(false)
                 .sheet(isPresented: $showingConversionStatus) {
@@ -404,15 +648,11 @@ struct InstantReaderView: View {
                     )
                 }
         }
+        #endif
         .compatOnChange(of: hasAudio) { isAudioReady in
             if isAudioReady, localPlayerAllowed, !playerMounted {
                 mountPlayerIfPossible()
             }
-        }
-        .compatOnChange(of: snapshot) { updatedSnapshot in
-            guard let updatedSnapshot, playerMounted else { return }
-            player.backendBaseURL = backendBaseURL
-            player.updateSnapshot(updatedSnapshot)
         }
         .compatOnChange(of: snapshot) { updatedSnapshot in
             guard let updatedSnapshot, playerMounted else { return }
@@ -444,81 +684,21 @@ struct InstantReaderView: View {
             // happens only in `ReaderView.onLastPageLanded`, fired by the
             // reader itself once pagination genuinely settles, and
             // defensively at the top of `advanceToNextChapter()`.
-            settings.saveChapterIndex(newIndex, for: fulltext.jobId)
-            // ReaderCoordinator is the source of truth — this single
-            // call (a) updates every play surface that derives
-            // `readerChapterIndex` from it, (b) resets the
-            // page-cursor (ratio + sentenceId) so a play tap fired
-            // before the new chapter's first ReaderView re-render
-            // doesn't seek with stale data, and (c) debounces a
-            // single mirror write to the App Group container for
-            // widget visibility.
-            readerCoordinator.setChapter(newIndex)
-            WidgetDataSync.updateLastRead(
-                bookId: fulltext.jobId,
-                chapterIndex: newIndex,
-                totalChapters: fulltext.chapters.count
-            )
-            cacheManager.refreshCachedIndices()
+            onChapterIndexChanged?(newIndex)
         }
         .onAppear {
-            // Restore the reader surface before any page/player interaction.
-            // A saved playing audio marker wins over the visual reader anchor:
-            // the reader must reopen where the audio will resume, not where
-            // the user last scrolled before leaving the app.
-            let session = ReaderSessionState.load(bookID: fulltext.jobId)
-            chromeVisible = session.chromeVisible
-            audioPlayerVisible = session.miniPlayerVisible
-            let forceReset = ProcessInfo.processInfo.arguments.contains("-uiTestResetReaderPosition")
-            let legacySaved = forceReset ? 0 : settings.savedChapterIndex(for: fulltext.jobId)
-            let restored = readerCoordinator.load(
-                for: fulltext.jobId,
-                fallbackChapterIndex: legacySaved
-            )
-            let audioMarker = forceReset ? nil : globalPlayer.persistedResumeMarker(for: fulltext.jobId)
-            let audioChapter = audioMarker?.wasPlaying == true ? audioMarker?.chapterIndex : nil
-            restoredPageRatio = forceReset || audioChapter != nil ? nil : restored.pageRatio
-            if let audioChapter {
-                currentChapterIndex = max(0, audioChapter)
-            } else if !forceReset && (restored.chapterIndex > 0 || restored.pageRatio != nil || legacySaved > 0) {
-                currentChapterIndex = restored.chapterIndex
-            } else if currentChapterIndex == 0 {
-                currentChapterIndex = firstReadableChapterIndex
-            }
-            if !forceReset && audioMarker?.wasPlaying == true {
-                globalPlayer.armPersistedResume()
-                onRequestPlay?(currentChapterIndex, nil)
-            }
-            // Seed the coordinator so a play tap right after launch
-            // already knows where the reader is, without waiting
-            // for the first compatOnChange to fire.
-            readerCoordinator.setChapter(currentChapterIndex)
             FlickerProbe.shared.chapterInfo = "\(currentChapterIndex)/\(fulltext.chapters.count)"
             reloadCurrentChapter(index: currentChapterIndex)
             if hasAudio, localPlayerAllowed {
                 mountPlayerIfPossible()
             }
             cacheManager.refreshCachedIndices()
-            persistSessionState()
         }
         .onDisappear {
             positionTask?.cancel()
             sentenceTask?.cancel()
             activeSubscriptionPlayer = nil
-            settings.saveChapterIndex(currentChapterIndex, for: fulltext.jobId)
-            WidgetDataSync.updateLastRead(
-                bookId: fulltext.jobId,
-                chapterIndex: currentChapterIndex,
-                totalChapters: fulltext.chapters.count
-            )
-            // Flush the debounced widget write immediately so the
-            // home-screen "Continue Reading" tile reflects the final
-            // chapter the moment the user leaves the book. Same for
-            // the reader-position UserDefaults mirror.
-            WidgetDataSync.flushLastRead()
-            readerCoordinator.flush()
             if playerMounted { player.pause() }
-            persistSessionState()
         }
         .confirmationDialog(
             pendingPlayAnchor?.text ?? "",
@@ -738,34 +918,6 @@ struct InstantReaderView: View {
         return candidates.compactMap { $0 }.first
     }
 
-    private static let frontMatterNames: Set<String> = [
-        "capa", "rosto", "créditos", "creditos", "sumário", "sumario",
-        "copyright", "cover", "title page", "table of contents",
-        "dedicatória", "dedicatoria", "epígrafe", "epigrafe",
-    ]
-
-    private func isLikelyFrontMatter(_ ch: EbookFulltext.Chapter, arrayIndex: Int) -> Bool {
-        let name = (ch.name ?? "").lowercased()
-        if Self.frontMatterNames.contains(where: { name.contains($0) }) { return true }
-        let text = ch.text.trimmingCharacters(in: .whitespacesAndNewlines)
-        if arrayIndex < 10, text.count < 500, name.hasPrefix("chapter ") { return true }
-        return false
-    }
-
-    private var firstReadableChapterIndex: Int {
-        for (i, ch) in fulltext.chapters.enumerated() {
-            let text = ch.text.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard text.count >= 10 else { continue }
-            if !isLikelyFrontMatter(ch, arrayIndex: i) { return i }
-        }
-        if let first = fulltext.chapters.firstIndex(where: {
-            $0.text.trimmingCharacters(in: .whitespacesAndNewlines).count >= 10
-        }) {
-            return first
-        }
-        return 0
-    }
-
     // MARK: - Idle player bar (no audio yet)
 
     // MARK: - Custom top bar (replaces NavigationStack's bar)
@@ -786,9 +938,7 @@ struct InstantReaderView: View {
 
             Spacer(minLength: 0)
 
-            Button {
-                showingSearch = true
-            } label: {
+            Button(action: openSearch) {
                 Image(systemName: "magnifyingglass")
                     .font(.system(size: 17, weight: .regular))
                     .frame(minWidth: 44, minHeight: 44)
@@ -798,9 +948,7 @@ struct InstantReaderView: View {
             .foregroundStyle(.tint)
             .accessibilityLabel(L10n.string("instantReader.searchInBook"))
 
-            Button {
-                showingReaderSettings = true
-            } label: {
+            Button(action: openReaderSettings) {
                 Image(systemName: "textformat.size")
                     .font(.system(size: 17, weight: .regular))
                     .frame(minWidth: 44, minHeight: 44)
@@ -810,9 +958,7 @@ struct InstantReaderView: View {
             .foregroundStyle(.tint)
             .accessibilityLabel(L10n.string("instantReader.readerSettings"))
 
-            Button {
-                showingToc = true
-            } label: {
+            Button(action: openToc) {
                 Image(systemName: "list.bullet.indent")
                     .font(.system(size: 17, weight: .regular))
                     .frame(minWidth: 44, minHeight: 44)
@@ -870,7 +1016,7 @@ struct InstantReaderView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
 
                 if statusBanner != nil {
-                    Button { showingConversionStatus = true } label: {
+                    Button(action: openConversionStatus) {
                         Image(systemName: "info.circle")
                             .font(.title3)
                             .foregroundStyle(.secondary)
@@ -981,6 +1127,56 @@ struct InstantReaderView: View {
     }
 
     private var currentBookCover: Data? { coverPNG }
+
+    private var currentAudioChapterIndex: Int {
+        guard playerMounted else { return -1 }
+        return snapshot.flatMap {
+            InstantReaderIndexMapper.epubIndex(
+                forPlayableIndex: player.currentChapterIndex,
+                in: $0
+            )
+        } ?? -1
+    }
+
+    private func openSearch() {
+        if let onShowSearch {
+            onShowSearch()
+            return
+        }
+        #if !os(iOS)
+        showingSearch = true
+        #endif
+    }
+
+    private func openReaderSettings() {
+        if let onShowReaderSettings {
+            onShowReaderSettings()
+            return
+        }
+        #if !os(iOS)
+        showingReaderSettings = true
+        #endif
+    }
+
+    private func openToc() {
+        if let onShowToc {
+            onShowToc(currentAudioChapterIndex, currentChapterIndex, playerMounted, snapshot ?? .empty)
+            return
+        }
+        #if !os(iOS)
+        showingToc = true
+        #endif
+    }
+
+    private func openConversionStatus() {
+        if let onShowConversionStatus {
+            onShowConversionStatus()
+            return
+        }
+        #if !os(iOS)
+        showingConversionStatus = true
+        #endif
+    }
 
 
     private func transportControls(player: AudioPlayer) -> some View {
@@ -1112,28 +1308,34 @@ struct InstantReaderView: View {
     }
 
     private func persistSessionState() {
-        ReaderSessionState.save(
-            bookID: fulltext.jobId,
-            chromeVisible: chromeVisible,
-            miniPlayerVisible: audioPlayerVisible,
+        presentationState.persist(
+            for: fulltext.jobId,
             fullPlayerVisible: playerPresentation.showingFullPlayer
         )
     }
 
     private func closeAudioPlayer() {
+        if let onCloseAudioPlayer {
+            onCloseAudioPlayer()
+            return
+        }
         // Close is a hard ownership boundary: stop both possible player
         // instances so a fallback cannot survive after the MP3 UI disappears.
         player.stop()
         globalPlayer.stop()
         playerPresentation.dismissFullPlayer()
         withAnimation(.easeInOut(duration: 0.2)) {
-            audioPlayerVisible = false
+            presentationState.hideAudioPlayer()
         }
     }
 
     private func reopenAudioPlayer() {
+        if let onReopenAudioPlayer {
+            onReopenAudioPlayer(currentChapterIndex)
+            return
+        }
         withAnimation(.easeInOut(duration: 0.2)) {
-            audioPlayerVisible = true
+            presentationState.showAudioPlayer()
         }
         startPlayOrFallback(forChapterIndex: currentChapterIndex)
         onRequestPlay?(currentChapterIndex, nil)
@@ -1166,107 +1368,6 @@ struct InstantReaderView: View {
 
     private func sleepTimerMenu(player: AudioPlayer) -> some View {
         InstantReaderSleepTimerMenu(player: player)
-    }
-
-    // MARK: - TOC
-
-    @ViewBuilder
-    private var tocSheet: some View {
-        CompatNavigationStack {
-            List {
-                // The TOC is structural metadata, not a text-quality filter.
-                // Short/numeric chapters and image-only sections must remain
-                // navigable even when their extracted body is empty.
-                ForEach(Array(fulltext.chapters.enumerated()), id: \.offset) { _, chapter in
-                    Button {
-                        let target = max(0, chapter.index - 1)
-                        // A position tick from the currently-playing audio used
-                        // to overwrite this assignment before the sheet could
-                        // dismiss. Keep the selected reader chapter pinned until
-                        // audio reaches it (or the user explicitly follows audio).
-                        pinnedReaderChapterIndex = target
-                        currentChapterIndex = target
-                        if playerMounted {
-                            let snap = snapshot ?? JobSnapshot.empty
-                            let playableTarget = InstantReaderIndexMapper
-                                .playableIndex(forEpubIndex: target, in: snap) ?? 0
-                            player.play(snapshot: snap, startingAt: playableTarget)
-                        }
-                        // Same Apple Books pattern as PlayerReader — jumping
-                        // to a new chapter restores chrome so the user can
-                        // confirm where they landed.
-                        restoreChromeIfNeeded()
-                        showingToc = false
-                    } label: {
-                        HStack {
-                            Text("\(chapter.index)")
-                                .font(.caption.monospacedDigit())
-                                .foregroundStyle(.secondary)
-                                .frame(width: 28, alignment: .trailing)
-                            Text(chapter.displayTitle)
-                                .lineLimit(2)
-                            Spacer()
-                            chapterCacheIcon(for: max(0, chapter.index - 1))
-                        }
-                        .foregroundStyle(.primary)
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityIdentifier("toc.chapter.\(max(0, chapter.index - 1))")
-                }
-            }
-            .frame(minHeight: 320)
-            .navigationTitle(L10n.string("player.chapters"))
-            .compatInlineNavigationTitle()
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button(L10n.string("player.close")) { showingToc = false }
-                }
-                ToolbarItem(placement: .compatPrimaryTrailing) {
-                    Button {
-                        cacheManager.downloadAll()
-                    } label: {
-                        Label(L10n.string("player.downloadAll"), systemImage: "arrow.down.circle")
-                    }
-                    .disabled(cacheManager.cachedIndices.count == fulltext.chapters.count)
-                }
-                ToolbarItem(placement: .compatPrimaryTrailing) {
-                    if !cacheManager.generatingIndices.isEmpty {
-                        Button(role: .destructive) {
-                            cacheManager.cancelAll()
-                        } label: {
-                            Label(L10n.string("chapterList.cancelDownloads"), systemImage: "xmark.circle")
-                        }
-                    } else if !cacheManager.cachedIndices.isEmpty {
-                        Button(role: .destructive) {
-                            cacheManager.clearAll()
-                        } label: {
-                            Label(L10n.string("chapterList.removeDownloads"), systemImage: "trash")
-                        }
-                    }
-                }
-            }
-        }
-        .compatPresentationDetents()
-    }
-
-    @ViewBuilder
-    private func chapterCacheIcon(for index: Int) -> some View {
-        switch cacheManager.status(for: index) {
-        case .cached:
-            Image(systemName: "checkmark.circle.fill")
-                .foregroundStyle(.green)
-                .font(.caption)
-                .accessibilityLabel(L10n.string("instantReader.downloaded"))
-        case .generating:
-            ProgressView()
-                .controlSize(.mini)
-                .accessibilityLabel(L10n.string("instantReader.generating"))
-        case .notStarted:
-            Image(systemName: "arrow.down.circle")
-                .foregroundStyle(.secondary)
-                .font(.caption)
-                .accessibilityLabel(L10n.string("instantReader.notDownloaded"))
-        }
     }
 
     // MARK: - Player wiring
@@ -1400,14 +1501,26 @@ struct InstantReaderView: View {
     /// animate the chrome out when it was actually showing.
     private func autoHideChromeIfNeeded() {
         guard chromeVisible else { return }
-        withAnimation(.easeInOut(duration: 0.25)) { chromeVisible = false }
+        if let onAutoHideChrome {
+            onAutoHideChrome()
+            return
+        }
+        withAnimation(.easeInOut(duration: 0.25)) {
+            presentationState.autoHideChromeIfNeeded()
+        }
     }
 
     /// Idempotent restore — called on TOC/search/bookmark jump and on
     /// edge-tap when chrome was hidden (Apple Books pattern).
     private func restoreChromeIfNeeded() {
         guard !chromeVisible else { return }
-        withAnimation(.easeInOut(duration: 0.25)) { chromeVisible = true }
+        if let onRestoreChrome {
+            onRestoreChrome()
+            return
+        }
+        withAnimation(.easeInOut(duration: 0.25)) {
+            presentationState.restoreChromeIfNeeded()
+        }
     }
 
     private func jumpToSentence(_ span: SentenceSpan) {
@@ -1594,33 +1707,13 @@ struct ChromeVisibilityModifier: ViewModifier {
             content
                 .navigationBarHidden(true)
                 .statusBarHidden(false)
-                .background(TabBarVisibilityController(visible: visible))
+                .background(IOSTabBarVisibilityBridge(visible: visible))
         }
         #else
         content
         #endif
     }
 }
-
-#if os(iOS)
-private struct TabBarVisibilityController: UIViewControllerRepresentable {
-    let visible: Bool
-
-    func makeUIViewController(context: Context) -> UIViewController {
-        UIViewController()
-    }
-
-    func updateUIViewController(_ viewController: UIViewController, context: Context) {
-        DispatchQueue.main.async {
-            viewController.tabBarController?.tabBar.isHidden = !visible
-        }
-    }
-
-    static func dismantleUIViewController(_ viewController: UIViewController, coordinator: ()) {
-        viewController.tabBarController?.tabBar.isHidden = false
-    }
-}
-#endif
 
 private extension JobSnapshot {
     /// Empty placeholder so the TocDrawer button can call `play(snapshot:)`
@@ -1637,4 +1730,17 @@ private extension JobSnapshot {
         chapterProgress: nil, outputs: nil,
         logUrl: nil, error: nil, lastActivityAt: nil
     )
+}
+
+private extension View {
+    @ViewBuilder
+    func instantReaderSystemChrome(visible: Bool) -> some View {
+        #if os(iOS)
+        self
+        #else
+        self
+            .modifier(ChromeVisibilityModifier(visible: visible))
+            .readerChromeVisible(visible)
+        #endif
+    }
 }

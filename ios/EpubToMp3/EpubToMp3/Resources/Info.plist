@@ -23,6 +23,12 @@
 	     player scrubber and library list. -->
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
+	<!-- WidgetDataSync.swift calls Activity.request(...) to start a
+	     conversion-progress Live Activity. Without this key every call
+	     silently no-ops (no error, the Dynamic Island/Lock Screen entry
+	     just never appears). -->
+	<key>NSSupportsLiveActivities</key>
+	<true/>
 	<!-- App ships pt-BR + en-US side-by-side; allow runtime mixing so a
 	     pt-BR user on an en-US device still sees localised strings. -->
 	<key>CFBundleAllowMixedLocalizations</key>
@@ -70,7 +76,6 @@
 			<array>
 				<string>org.idpf.epub-container</string>
 				<string>com.apple.ibooks.epub</string>
-				<string>public.epub</string>
 			</array>
 		</dict>
 		<dict>

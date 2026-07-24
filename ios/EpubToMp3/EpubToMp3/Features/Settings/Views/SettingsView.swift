@@ -10,20 +10,31 @@ import SwiftUI
 /// macOS prefers `.formStyle(.grouped)` (the modern System Settings
 /// look — translucent panels, generous spacing). iOS / iPadOS keep
 /// the default inset-grouped style.
+#if os(iOS)
+struct SettingsView: View {
+    var body: some View {
+        EmptyView()
+    }
+
+    static var platformMinimumLabel: String {
+        let info = Bundle.main.infoDictionary
+        if let version = info?["MinimumOSVersion"] as? String, !version.isEmpty {
+            return "iOS \(version)+"
+        }
+        return "iOS 15.0+"
+    }
+}
+#else
 struct SettingsView: View {
     @EnvironmentObject private var settings: AppSettings
     @EnvironmentObject private var library: LibraryStore
-    #if os(macOS)
     @EnvironmentObject private var sidecar: SidecarManager
-    #endif
-
     @State private var showClearCacheConfirm = false
     @State private var clearCacheDone = false
     @State private var showClearAllDownloadsConfirm = false
     @State private var storageUsage = StorageUsageScanner.current()
 
     var body: some View {
-        #if os(macOS)
         Group {
             if #available(macOS 13, *) {
                 Form {
@@ -52,9 +63,6 @@ struct SettingsView: View {
             }
         }
         .navigationTitle(L10n.string("settings.title"))
-        #else
-        settingsForm
-        #endif
     }
 
     // MARK: - Sections
@@ -126,35 +134,6 @@ struct SettingsView: View {
     }
     #endif
 
-    /// iOS-only toggle that exposes ``AppSettings.useEmbeddedRuntime``.
-    /// On macOS the equivalent control lives in ``embeddedServerSection``
-    /// (the sidecar toggle). Hiding it on macOS keeps the Settings UI
-    /// from duplicating the same idea.
-    @ViewBuilder
-    private var embeddedRuntimeSection: some View {
-        Section {
-            Toggle(isOn: $settings.useEmbeddedRuntime) {
-                Label {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(L10n.string("settings.useBuiltInEngine"))
-                        Text(L10n.string("settings.useBuiltInEngineDescription"))
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
-                    }
-                } icon: {
-                    Image(systemName: "iphone.gen3")
-                        .foregroundStyle(.tint)
-                }
-            }
-        } header: {
-            Text(L10n.string("settings.audioEngine"))
-        } footer: {
-            Text(L10n.string("settings.audioEngineFooter"))
-                .font(.footnote)
-                .foregroundStyle(.secondary)
-        }
-    }
-
     @ViewBuilder
     private var backendSection: some View {
         Section {
@@ -164,31 +143,17 @@ struct SettingsView: View {
                 HStack {
                     Label(L10n.string("settings.url"), systemImage: "network")
                     Spacer()
-                    let field = TextField("http://localhost:8000",
-                                          text: $settings.backendURL)
+                    TextField("http://localhost:8000",
+                              text: $settings.backendURL)
                         .multilineTextAlignment(.trailing)
                         .autocorrectionDisabled()
-                    #if os(iOS)
-                    field
-                        .keyboardType(.URL)
-                        .textInputAutocapitalization(.never)
-                    #else
-                    field
-                    #endif
                 }
             } vertical: {
                 VStack(alignment: .leading, spacing: 4) {
                     Label(L10n.string("settings.url"), systemImage: "network")
-                    let field = TextField("http://localhost:8000",
-                                          text: $settings.backendURL)
+                    TextField("http://localhost:8000",
+                              text: $settings.backendURL)
                         .autocorrectionDisabled()
-                    #if os(iOS)
-                    field
-                        .keyboardType(.URL)
-                        .textInputAutocapitalization(.never)
-                    #else
-                    field
-                    #endif
                 }
             }
             if self.settings.resolvedBaseURL == nil && settings.remoteBackendControlsEnabled {
@@ -199,15 +164,9 @@ struct SettingsView: View {
         } header: {
             Text(L10n.string("settings.remoteBackend"))
         } footer: {
-            #if os(macOS)
             Text(L10n.string("settings.remoteBackendFooterMac"))
                 .font(.footnote)
                 .foregroundStyle(.secondary)
-            #else
-            Text(L10n.string("settings.remoteBackendFooterIOS"))
-                .font(.footnote)
-                .foregroundStyle(.secondary)
-            #endif
         }
         .disabled(!settings.remoteBackendControlsEnabled)
         .opacity(settings.remoteBackendControlsEnabled ? 1 : 0.45)
@@ -545,75 +504,28 @@ struct SettingsView: View {
         }
     }
 
-    #if os(iOS)
-    /// iOS settings form with extra bottom scroll margin.
-    ///
-    /// SwiftUI's Form (UITableView) sometimes clips the last section
-    /// behind the tab bar when nested inside NavigationStack > TabView,
-    /// especially when a `.safeAreaInset` (MiniPlayerBar) is applied
-    /// on an ancestor. We add extra bottom inset via `.contentMargins`
-    /// (iOS 17+) or a transparent spacer section (iOS 15–16).
-    @ViewBuilder
-    private var settingsForm: some View {
-        if #available(iOS 17, *) {
-            Form {
-                embeddedRuntimeSection
-                backendSection
-                readerSection
-                storageSection
-                advancedSection
-                aboutSection
-            }
-            .contentMargins(.bottom, 88, for: .scrollContent)
-            .navigationTitle(L10n.string("settings.title"))
-        } else {
-            Form {
-                embeddedRuntimeSection
-                backendSection
-                readerSection
-                storageSection
-                advancedSection
-                aboutSection
-
-                // Invisible spacer section — extends the scroll content
-                // so the about section clears the tab bar + mini-player.
-                Section {
-                    Color.clear
-                        .frame(height: 80)
-                        .listRowBackground(Color.clear)
-                }
-            }
-            .navigationTitle(L10n.string("settings.title"))
-        }
-    }
-    #endif
-
     /// Dynamic "iOS 15.0+" / "macOS 12.0+" label, sourced from the
     /// bundle's deployment-target Info.plist keys. Falls back to a
     /// static label when the keys are missing (e.g. SPM preview builds).
     static var platformMinimumLabel: String {
         let info = Bundle.main.infoDictionary
-        #if os(iOS)
-        if let version = info?["MinimumOSVersion"] as? String, !version.isEmpty {
-            return "iOS \(version)+"
-        }
-        return "iOS 15.0+"
-        #elseif os(macOS)
         if let version = info?["LSMinimumSystemVersion"] as? String, !version.isEmpty {
             return "macOS \(version)+"
         }
         return "macOS 12.0+"
-        #else
-        return "—"
-        #endif
     }
 }
+#endif
 
+#if DEBUG && !os(iOS)
 #Preview("Settings") {
     CompatNavigationStack { SettingsView() }
         .environmentObject(AppSettings())
         .environmentObject(LibraryStore())
+        .environmentObject(AudioPlayer())
+        .environmentObject(PlaybackClock())
         #if os(macOS)
         .environmentObject(SidecarManager())
         #endif
 }
+#endif

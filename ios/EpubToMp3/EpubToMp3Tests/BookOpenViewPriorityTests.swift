@@ -66,13 +66,63 @@ final class BookOpenViewPriorityTests: XCTestCase {
         )
     }
 
+    func testBookOpenViewSplitsPdfAndEpubPreparationIntoDedicatedHelpers() throws {
+        let source = try sourceFile(named: "Features/Reader/Views/BookOpenView.swift")
+
+        XCTAssertTrue(
+            source.contains("if await preparePdfIfNeeded(fileURL: fileURL, bookId: bookId) {"),
+            "openFlow must delegate the PDF branch into preparePdfIfNeeded so UIKit can take over that slice incrementally."
+        )
+        XCTAssertTrue(
+            source.contains("if !await prepareCachedOrParsedEpub(fileURL: fileURL, bookId: bookId) {"),
+            "openFlow must delegate the EPUB text-open branch into prepareCachedOrParsedEpub instead of keeping it inline."
+        )
+        XCTAssertTrue(
+            source.contains("private func preparePdfIfNeeded(fileURL: URL, bookId: String) async -> Bool"),
+            "BookOpenView must expose a dedicated PDF-preparation helper."
+        )
+        XCTAssertTrue(
+            source.contains("private func prepareCachedOrParsedEpub(fileURL: URL, bookId: String) async -> Bool"),
+            "BookOpenView must expose a dedicated EPUB-preparation helper."
+        )
+    }
+
+    func testBookOpenViewExtractsLifecycleAndRepickShellHelpers() throws {
+        let source = try sourceFile(named: "Features/Reader/Views/BookOpenView.swift")
+
+        XCTAssertTrue(source.contains(".onAppear { beginOpenSession() }"))
+        XCTAssertTrue(source.contains(".onDisappear { endOpenSession() }"))
+        XCTAssertTrue(source.contains("#if !os(iOS)\n        .background(repickImporter)\n        #endif"))
+        XCTAssertTrue(source.contains("private func beginOpenSession()"))
+        XCTAssertTrue(source.contains("private func endOpenSession()"))
+        XCTAssertTrue(source.contains("#if !os(iOS)\n    private var repickImporter: some View"))
+        XCTAssertTrue(source.contains("private var repickImporter: some View"))
+        XCTAssertTrue(source.contains("private func retryOpenFlow()"))
+        XCTAssertTrue(source.contains("#if !os(iOS)\n    private func presentRePickImporter()"))
+        XCTAssertTrue(source.contains("#if !os(iOS)\n    private func handleRePick(_ result: Result<[URL], Error>)"))
+    }
+
+    func testBookOpenViewAllowsUIKitToOwnRepickRequest() throws {
+        let source = try sourceFile(named: "Features/Reader/Views/BookOpenView.swift")
+        let controllerSource = try sourceFile(named: "Features/Reader/Views/BookOpenScreenController.swift")
+
+        XCTAssertTrue(source.contains("#if os(iOS)\n        BookOpenScreenHost(book: book, onClose: onClose)"))
+        XCTAssertTrue(controllerSource.contains("onRequestRePick: { [weak self] in"))
+        XCTAssertTrue(controllerSource.contains("self?.presentRePickPicker()"))
+        XCTAssertTrue(controllerSource.contains("func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL])"))
+        XCTAssertTrue(controllerSource.contains("MainReaderView.setCurrentlyReading(bookID: imported.id)"))
+        XCTAssertTrue(controllerSource.contains("book = imported"))
+        XCTAssertTrue(controllerSource.contains("mountContentIfNeeded()"))
+        XCTAssertTrue(source.contains("#if !os(iOS)\n    @State private var showingPicker = false"))
+    }
+
     func testPlayButtonsUseTheSharedTransportAction() throws {
         let sources = [
             try sourceFile(named: "Features/Playback/Views/MiniPlayerBar.swift"),
             try sourceFile(named: "Features/Playback/Views/FullPlayerSheet.swift"),
             try sourceFile(named: "Features/Reader/Views/PlayerReaderView.swift"),
             try sourceFile(named: "Features/Reader/Views/InstantReaderView.swift"),
-            try sourceFile(named: "Features/Playback/Views/PlayerView.swift"),
+            try sourceFile(named: "Features/Playback/Views/PlaybackControlsSupport.swift"),
         ]
 
         for source in sources {
@@ -622,14 +672,32 @@ final class BookOpenViewPriorityTests: XCTestCase {
     }
 
     func testFullPlayerSheetTocButtonUsesTocDrawer() throws {
-        let source = try sourceFile(named: "Features/Playback/Views/FullPlayerSheet.swift")
+        let sheetSource = try sourceFile(named: "Features/Playback/Views/FullPlayerSheet.swift")
+        let controllerSource = try sourceFile(named: "Features/Playback/Views/FullPlayerScreenController.swift")
         XCTAssertTrue(
-            source.contains("TocDrawer("),
-            "FullPlayerSheet TOC button must open TocDrawer, not ChapterListSheet."
+            sheetSource.contains("TocDrawer("),
+            "The non-iOS FullPlayerSheet TOC button must keep using TocDrawer, not ChapterListSheet."
         )
         XCTAssertFalse(
-            source.contains("ChapterListSheet(player:"),
-            "ChapterListSheet must not be used from FullPlayerSheet — TocDrawer is the canonical TOC UI."
+            sheetSource.contains("ChapterListSheet(player:"),
+            "ChapterListSheet must not be used from the non-iOS FullPlayerSheet — TocDrawer is the canonical TOC UI there."
+        )
+        XCTAssertTrue(
+            controllerSource.contains("TocScreenController("),
+            "The iOS full-player controller should present the dedicated UIKit TOC controller instead of hosting the SwiftUI drawer."
+        )
+    }
+
+    func testPlayerReaderBookmarksSheetDoesNotWrapUIKitHostInExtraNavigationStackOnIOS() throws {
+        let source = try sourceFile(named: "Features/Reader/Views/PlayerReaderView.swift")
+        XCTAssertTrue(
+            source.contains("#if os(macOS)\n                CompatNavigationStack {")
+            || source.contains("BookmarksListView("),
+            "PlayerReader must route bookmarks through the shared wrapper and only add a navigation stack on macOS."
+        )
+        XCTAssertFalse(
+            source.contains("#if os(iOS)\n                CompatNavigationStack {"),
+            "Do not wrap the iOS bookmarks host in an extra SwiftUI navigation stack; that nests navigation containers over the UIKit host."
         )
     }
 

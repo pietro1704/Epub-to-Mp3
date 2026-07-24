@@ -111,6 +111,12 @@ final class ChapterCacheManager: ObservableObject {
         }
     }
 
+    /// Synthesise one chapter on demand when it is not yet cached.
+    func downloadChapter(_ index: Int) {
+        guard !cachedIndices.contains(index), !generatingIndices.contains(index) else { return }
+        synthesizeChapter(at: index)
+    }
+
     /// Cancel all active synthesis tasks.
     func cancelAll() {
         for (_, task) in activeTasks {

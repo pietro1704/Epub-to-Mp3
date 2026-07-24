@@ -96,6 +96,7 @@
 "player.skipForward15" = "Avanzar 15 segundos";
 "player.skipForward30" = "Avanzar 30 segundos";
 "player.nextChapter" = "Siguiente capítulo";
+"menu.playback" = "Reproducción";
 "player.playbackSpeed" = "Velocidad: %@";
 "player.sleep" = "Dormir";
 "player.sleepTimerOff" = "Temporizador de sueño: apagado. Toca para activar.";
@@ -468,3 +469,4 @@
 "settings.clearAllDownloads" = "Eliminar todas las descargas de libros";
 "settings.clearAllDownloadsConfirmTitle" = "¿Eliminar todas las descargas?";
 "settings.clearAllDownloadsConfirmMessage" = "Se eliminarán todos los MP3 offline y cachés de audio generados de los capítulos.";
+"jobs.historyDetailUnavailable" = "Esta sesión no incluye un ID de job en vivo.";

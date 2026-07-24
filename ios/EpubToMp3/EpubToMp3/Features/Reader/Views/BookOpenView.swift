@@ -25,9 +25,36 @@ struct BookOpenView: View {
     let book: BookEntity
     let onClose: (() -> Void)?
 
-    init(book: BookEntity, onClose: (() -> Void)? = nil) {
+    init(
+        book: BookEntity,
+        onClose: (() -> Void)? = nil
+    ) {
         self.book = book
         self.onClose = onClose
+    }
+
+    var body: some View {
+        #if os(iOS)
+        BookOpenScreenHost(book: book, onClose: onClose)
+        #else
+        BookOpenContentView(book: book, onClose: onClose)
+        #endif
+    }
+}
+
+struct BookOpenContentView: View {
+    let book: BookEntity
+    let onClose: (() -> Void)?
+    let onRequestRePick: (() -> Void)?
+
+    init(
+        book: BookEntity,
+        onClose: (() -> Void)? = nil,
+        onRequestRePick: (() -> Void)? = nil
+    ) {
+        self.book = book
+        self.onClose = onClose
+        self.onRequestRePick = onRequestRePick
     }
 
     @EnvironmentObject private var library: LibraryStore
@@ -53,7 +80,9 @@ struct BookOpenView: View {
     /// disconnect) — re-opening the same connection tears down a
     /// working backend pipe for no behavioural benefit.
     @State private var streamingJobId: String?
+    #if !os(iOS)
     @State private var showingPicker = false
+    #endif
     /// Live watchdog over the active audio bootstrap. Started by
     /// ``startAudioBootstrap``; stopped in ``onDisappear`` and on any
     /// terminal-state branch. Cancels + auto-retries the bootstrap on
@@ -152,13 +181,10 @@ struct BookOpenView: View {
             }
         }
         .navigationTitle("")
-        .compatReaderBackButtonHidden()
         .compatInlineNavigationTitle()
-        .modifier(PdfChromeVisibilityModifier(visible: book.fileType == .pdf ? pdfChromeVisible : false))
-        // BookOpenView is pushed from Library and owns its own in-reader
-        // playback chrome. Keep the root mini player hidden for the whole
-        // open-book detail so immersive reader mode has no stray global UI.
-        .readerChromeVisible(false)
+        .bookOpenSystemChrome(pdfVisible: book.fileType == .pdf ? pdfChromeVisible : false)
+        #if !os(iOS)
+        .compatReaderBackButtonHidden()
         .toolbar {
             ToolbarItem(placement: .cancellationAction) {
                 if let onClose, book.fileType == .pdf {
@@ -169,37 +195,13 @@ struct BookOpenView: View {
                 }
             }
         }
+        #endif
         .task { await openFlow() }
-        .onAppear {
-            CacheActivityRegistry.begin(jobId: book.id)
-        }
-        .onDisappear {
-            // If a conversion was running when the user left, end the Live
-            // Activity so it doesn't linger indefinitely on the lock screen.
-            if globalPlayer.isConverting {
-                WidgetDataSync.endConversionActivity(bookId: book.id, failed: true)
-            }
-            audioBootstrapTask?.cancel()
-            streamTask?.cancel()
-            streamingJobId = nil
-            watchdog?.stop()
-            chapterCacheManager?.cancelAll()
-            watchdog = nil
-            globalPlayer.clearConversionState()
-            CacheActivityRegistry.end(jobId: book.id)
-            EpubFontManager.unregisterFonts(registeredFontURLs)
-            registeredFontURLs = []
-        }
-        .background {
-            Color.clear.allowsHitTesting(false)
-                .fileImporter(
-                    isPresented: $showingPicker,
-                    allowedContentTypes: [.epub, .pdf],
-                    allowsMultipleSelection: false
-                ) { result in
-                    handleRePick(result)
-                }
-        }
+        .onAppear { beginOpenSession() }
+        .onDisappear { endOpenSession() }
+        #if !os(iOS)
+        .background(repickImporter)
+        #endif
     }
 
     // MARK: - Flow
@@ -231,94 +233,13 @@ struct BookOpenView: View {
             self.registeredFontURLs = fonts
         }
 
-        // PDF path: PDFKit is fully on-device; no Python parse needed.
-        // We still extract pseudo-chapters via `PdfTextExtractor` so
-        // the TTS conversion path (when the user taps Listen) has a
-        // chapter manifest to feed the engine — but the reader is
-        // `PdfReaderView`, not the reflow text view.
-        if book.fileType == .pdf {
-            // PDFDocument(url:) maps the entire file + parses xref on
-            // the calling thread — easily 200-500 ms on a large PDF.
-            // Hop to a detached task so the UI doesn't stall.
-            let docResult: PDFDocument? = await Task.detached(
-                priority: .userInitiated
-            ) { PDFDocument(url: fileURL) }.value
-            guard let doc = docResult else {
-                phase = .unreadable(fileURL)
-                return
-            }
-            if doc.isEncrypted && !doc.unlock(withPassword: "") {
-                phase = .error("\(book.displayFilename) is password-protected. Remove the password before importing.")
-                return
-            }
-            self.pdfDocument = doc
-            // Best-effort pseudo-fulltext extraction. Failure here is
-            // non-fatal — the reader still works; only audio is gated.
-            let cachedPdf: EbookFulltext? = await Task.detached(
-                priority: .userInitiated
-            ) { LocalFulltextCache.read(bookId: bookId) }.value
-            if let cached = cachedPdf {
-                self.fulltext = cached
-            } else {
-                let capturedURL = fileURL
-                let extracted: EbookFulltext? = await Task.detached(
-                    priority: .userInitiated
-                ) {
-                    try? PdfTextExtractor.extract(
-                        from: capturedURL, bookId: bookId
-                    )
-                }.value
-                if let extracted {
-                    self.fulltext = extracted
-                    Task.detached(priority: .background) {
-                        LocalFulltextCache.save(extracted, bookId: bookId)
-                    }
-                }
-            }
-            self.phase = .ready
+        if await preparePdfIfNeeded(fileURL: fileURL, bookId: bookId) {
             return
         }
 
-        // 2. Try the on-disk fulltext cache first. Even on a fresh
-        //    install of a book we built locally during the previous
-        //    session, this hits.  Run off the main actor — even a
-        //    small JSON read can stall during sandbox warm-up.
-        let cachedEpub: EbookFulltext? = await Task.detached(
-            priority: .userInitiated
-        ) { LocalFulltextCache.read(bookId: bookId) }.value
-        if let cached = cachedEpub {
-            self.fulltext = cached
-            ensureCacheManager()
-            self.phase = .ready
-        } else {
-            let accessing = fileURL.startAccessingSecurityScopedResource()
-
-            var parsed: EbookFulltext?
-            #if os(iOS)
-            if PythonEmbed.shared.isParserAvailable {
-                do {
-                    parsed = try await PythonBridge.shared.parseEpub(
-                        at: fileURL, bookId: book.id
-                    )
-                } catch {
-                    parsed = nil
-                }
-            }
-            #endif
-
-            if accessing { fileURL.stopAccessingSecurityScopedResource() }
-
-            if let parsed, !parsed.chapters.isEmpty {
-                self.fulltext = parsed
-                ensureCacheManager()
-                self.phase = .ready
-                Task.detached(priority: .background) {
-                    LocalFulltextCache.save(parsed, bookId: book.id)
-                }
-            } else {
-                phase = .unreadable(fileURL)
-                return
-            }
+        if !await prepareCachedOrParsedEpub(fileURL: fileURL, bookId: bookId) {
+            phase = .unreadable(fileURL)
+            return
         }
 
         // Audio conversion is strictly user-initiated. Opening a book only
@@ -333,6 +254,101 @@ struct BookOpenView: View {
             chapterIndex: max(0, savedChapter),
             totalChapters: fulltext?.chapters.count
         )
+    }
+
+    @MainActor
+    private func preparePdfIfNeeded(fileURL: URL, bookId: String) async -> Bool {
+        guard book.fileType == .pdf else { return false }
+
+        // PDF path: PDFKit is fully on-device; no Python parse needed.
+        // We still extract pseudo-chapters via `PdfTextExtractor` so
+        // the TTS conversion path (when the user taps Listen) has a
+        // chapter manifest to feed the engine — but the reader is
+        // `PdfReaderView`, not the reflow text view.
+        let docResult: PDFDocument? = await Task.detached(
+            priority: .userInitiated
+        ) { PDFDocument(url: fileURL) }.value
+        guard let doc = docResult else {
+            phase = .unreadable(fileURL)
+            return true
+        }
+        if doc.isEncrypted && !doc.unlock(withPassword: "") {
+            phase = .error("\(book.displayFilename) is password-protected. Remove the password before importing.")
+            return true
+        }
+        pdfDocument = doc
+
+        // Best-effort pseudo-fulltext extraction. Failure here is
+        // non-fatal — the reader still works; only audio is gated.
+        let cachedPdf: EbookFulltext? = await Task.detached(
+            priority: .userInitiated
+        ) { LocalFulltextCache.read(bookId: bookId) }.value
+        if let cached = cachedPdf {
+            fulltext = cached
+        } else {
+            let capturedURL = fileURL
+            let extracted: EbookFulltext? = await Task.detached(
+                priority: .userInitiated
+            ) {
+                try? PdfTextExtractor.extract(
+                    from: capturedURL, bookId: bookId
+                )
+            }.value
+            if let extracted {
+                fulltext = extracted
+                Task.detached(priority: .background) {
+                    LocalFulltextCache.save(extracted, bookId: bookId)
+                }
+            }
+        }
+        phase = .ready
+        return true
+    }
+
+    @MainActor
+    private func prepareCachedOrParsedEpub(fileURL: URL, bookId: String) async -> Bool {
+        // 2. Try the on-disk fulltext cache first. Even on a fresh
+        //    install of a book we built locally during the previous
+        //    session, this hits. Run off the main actor — even a
+        //    small JSON read can stall during sandbox warm-up.
+        let cachedEpub: EbookFulltext? = await Task.detached(
+            priority: .userInitiated
+        ) { LocalFulltextCache.read(bookId: bookId) }.value
+        if let cached = cachedEpub {
+            fulltext = cached
+            ensureCacheManager()
+            phase = .ready
+            return true
+        }
+
+        let accessing = fileURL.startAccessingSecurityScopedResource()
+
+        var parsed: EbookFulltext?
+        #if os(iOS)
+        if PythonEmbed.shared.isParserAvailable {
+            do {
+                parsed = try await PythonBridge.shared.parseEpub(
+                    at: fileURL, bookId: book.id
+                )
+            } catch {
+                parsed = nil
+            }
+        }
+        #endif
+
+        if accessing { fileURL.stopAccessingSecurityScopedResource() }
+
+        guard let parsed, !parsed.chapters.isEmpty else {
+            return false
+        }
+
+        fulltext = parsed
+        ensureCacheManager()
+        phase = .ready
+        Task.detached(priority: .background) {
+            LocalFulltextCache.save(parsed, bookId: book.id)
+        }
+        return true
     }
 
     /// Owns the audio bootstrap — reattach to an existing job, or
@@ -399,7 +415,7 @@ struct BookOpenView: View {
         wd.start()
         watchdog = wd
 
-        NowPlayingView.setCurrentlyPlaying(bookID: book.id, chapterIndex: startChapterIndex)
+        PlaybackBindingStore.setCurrentlyPlaying(bookID: book.id, chapterIndex: startChapterIndex)
 
         if settings.useEmbeddedRuntime {
             playerLog.debug("[AudioBootstrap] embedded path selected (hasClient=\(self.client != nil))")
@@ -1249,15 +1265,30 @@ struct BookOpenView: View {
     @ViewBuilder
     private func errorActions(message: String) -> some View {
         if needsRePick(message: message) {
+            #if os(iOS)
+            if let onRequestRePick {
+                Button {
+                    onRequestRePick()
+                } label: {
+                    Label(L10n.string("bookOpen.locateFile"), systemImage: "doc.badge.plus")
+                }
+                .buttonStyle(.borderedProminent)
+            }
+            #else
             Button {
-                showingPicker = true
+                if let onRequestRePick {
+                    onRequestRePick()
+                } else {
+                    presentRePickImporter()
+                }
             } label: {
                 Label(L10n.string("bookOpen.locateFile"), systemImage: "doc.badge.plus")
             }
             .buttonStyle(.borderedProminent)
+            #endif
         }
         Button(L10n.string("bookOpen.retry")) {
-            Task { await openFlow() }
+            retryOpenFlow()
         }
         .buttonStyle(.bordered)
     }
@@ -1269,15 +1300,61 @@ struct BookOpenView: View {
             || m.contains("couldn't be opened")
     }
 
+    #if !os(iOS)
     private func handleRePick(_ result: Result<[URL], Error>) {
         guard case .success(let urls) = result, let picked = urls.first else { return }
         do {
             _ = try library.importBook(from: picked)
-            Task { await openFlow() }
+            retryOpenFlow()
         } catch {
             phase = .error("Re-import failed: \(error.localizedDescription)")
         }
     }
+
+    private func retryOpenFlow() {
+        Task { await openFlow() }
+    }
+
+    #if !os(iOS)
+    private func presentRePickImporter() {
+        showingPicker = true
+    }
+    #endif
+
+    private func beginOpenSession() {
+        CacheActivityRegistry.begin(jobId: book.id)
+    }
+
+    private func endOpenSession() {
+        // If a conversion was running when the user left, end the Live
+        // Activity so it doesn't linger indefinitely on the lock screen.
+        if globalPlayer.isConverting {
+            WidgetDataSync.endConversionActivity(bookId: book.id, failed: true)
+        }
+        audioBootstrapTask?.cancel()
+        streamTask?.cancel()
+        streamingJobId = nil
+        watchdog?.stop()
+        chapterCacheManager?.cancelAll()
+        watchdog = nil
+        globalPlayer.clearConversionState()
+        CacheActivityRegistry.end(jobId: book.id)
+        EpubFontManager.unregisterFonts(registeredFontURLs)
+        registeredFontURLs = []
+    }
+
+    #if !os(iOS)
+    private var repickImporter: some View {
+        Color.clear.allowsHitTesting(false)
+            .fileImporter(
+                isPresented: $showingPicker,
+                allowedContentTypes: [.epub, .pdf],
+                allowsMultipleSelection: false
+            ) { result in
+                handleRePick(result)
+            }
+    }
+    #endif
 
     // MARK: - Chapter Cache Manager
 
@@ -1324,43 +1401,27 @@ struct BookOpenView: View {
 }
 #endif
 
+private extension View {
+    @ViewBuilder
+    func bookOpenSystemChrome(pdfVisible: Bool) -> some View {
+        #if os(iOS)
+        self
+        #else
+        self
+            .modifier(PdfChromeVisibilityModifier(visible: pdfVisible))
+            // BookOpenView is pushed from Library and owns its own in-reader
+            // playback chrome. Keep the root mini player hidden for the whole
+            // open-book detail so immersive reader mode has no stray global UI.
+            .readerChromeVisible(false)
+        #endif
+    }
+}
+
 private struct PdfChromeVisibilityModifier: ViewModifier {
     let visible: Bool
 
     @ViewBuilder
     func body(content: Content) -> some View {
-        #if os(iOS)
-        if #available(iOS 16, *) {
-            content
-                .toolbar(visible ? .visible : .hidden, for: .navigationBar)
-                .toolbar(.hidden, for: .tabBar)
-        } else {
-            content
-                .navigationBarHidden(!visible)
-                .background(BookOpenTabBarVisibilityController(visible: false))
-        }
-        #else
         content
-        #endif
     }
 }
-
-#if os(iOS)
-private struct BookOpenTabBarVisibilityController: UIViewControllerRepresentable {
-    let visible: Bool
-
-    func makeUIViewController(context: Context) -> UIViewController {
-        UIViewController()
-    }
-
-    func updateUIViewController(_ viewController: UIViewController, context: Context) {
-        DispatchQueue.main.async {
-            viewController.tabBarController?.tabBar.isHidden = !visible
-        }
-    }
-
-    static func dismantleUIViewController(_ viewController: UIViewController, coordinator: ()) {
-        viewController.tabBarController?.tabBar.isHidden = false
-    }
-}
-#endif

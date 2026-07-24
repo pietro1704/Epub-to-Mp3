@@ -1,21 +1,23 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
-#if canImport(UIKit)
-import UIKit
-#else
-import AppKit
-#endif
-
 /// The hero of the app. Lists every EPUB the user has imported.
 /// Tapping a book takes them straight to the reader/player. Adding a
 /// book is a small + button in the toolbar that triggers the system
 /// file picker.
+#if os(iOS)
+struct LibraryView: View {
+    var onOpenBook: (() -> Void)?
+
+    var body: some View {
+        EmptyView()
+    }
+}
+#else
 struct LibraryView: View {
     var onOpenBook: (() -> Void)?
 
     @EnvironmentObject private var library: LibraryStore
-    @EnvironmentObject private var settings: AppSettings
     @EnvironmentObject private var bookmarkStore: BookmarkStore
     @State private var showingPicker = false
     @State private var importError: String?
@@ -104,8 +106,8 @@ struct LibraryView: View {
         [GridItem(.adaptive(minimum: 160, maximum: 220), spacing: 20)]
     }
 
-    /// The SwiftUI `LazyVGrid` grid. AppKit has no `LibraryCollectionView`
-    /// counterpart, so this remains the only renderer on macOS.
+    /// The SwiftUI `LazyVGrid` grid used by the remaining SwiftUI shell
+    /// path (macOS / previews).
     @ViewBuilder
     private var legacyGrid: some View {
         LazyVGrid(columns: grid, spacing: 20) {
@@ -157,23 +159,7 @@ struct LibraryView: View {
                             .accessibilityValue(isSearchVisible ? "visible" : "hidden")
                             .animation(.easeInOut(duration: 0.2), value: isSearchVisible)
                         tagFilterBar
-                        #if canImport(UIKit)
-                        LibraryCollectionView(
-                            model: gridModel,
-                            onOpen: { book in
-                                MainReaderView.setCurrentlyReading(bookID: book.id)
-                                if let onOpenBook {
-                                    onOpenBook()
-                                } else {
-                                    openingBook = book
-                                }
-                            },
-                            onRemove: { book in bookPendingRemoval = book }
-                        )
-                        .frame(minHeight: 480)
-                        #else
                         legacyGrid
-                        #endif
                     }
                     .padding(.horizontal, 16)
                     .padding(.top, 8)
@@ -564,11 +550,14 @@ private extension View {
     CompatNavigationStack { LibraryView() }
         .environmentObject(LibraryStore.previewEmpty)
         .environmentObject(AppSettings())
+        .environmentObject(BookmarkStore())
 }
 
 #Preview("Library — populated") {
     CompatNavigationStack { LibraryView() }
         .environmentObject(LibraryStore.previewPopulated)
         .environmentObject(AppSettings())
+        .environmentObject(BookmarkStore())
 }
+#endif
 #endif

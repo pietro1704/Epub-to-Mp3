@@ -1,5 +1,15 @@
 import SwiftUI
 
+#if os(iOS)
+struct BookmarksListView: View {
+    let bookId: String
+    var onJumpToChapter: ((Int) -> Void)?
+
+    var body: some View {
+        EmptyView()
+    }
+}
+#else
 struct BookmarksListView: View {
     let bookId: String
     var onJumpToChapter: ((Int) -> Void)?
@@ -92,6 +102,7 @@ struct BookmarksListView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
+#endif
 
 struct BookmarkRow: View {
     let bookmark: Bookmark

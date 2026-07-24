@@ -1,5 +1,12 @@
 import SwiftUI
 
+#if os(iOS)
+struct TelemetryView: View {
+    var body: some View {
+        EmptyView()
+    }
+}
+#else
 @MainActor
 final class TelemetryViewModel: ObservableObject {
     @Published var rawJSON: String = ""
@@ -160,4 +167,5 @@ struct TelemetryView: View {
     CompatNavigationStack { TelemetryView() }
         .environmentObject(AppSettings())
 }
+#endif
 #endif

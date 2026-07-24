@@ -1,5 +1,6 @@
 import SwiftUI
 
+#if !os(iOS)
 @MainActor
 final class JobsListViewModel: ObservableObject {
     @Published var sessions: [SessionRecord] = []
@@ -21,16 +22,18 @@ final class JobsListViewModel: ObservableObject {
         }
     }
 }
+#endif
 
+#if os(iOS)
+struct JobsListView: View {
+    var body: some View {
+        EmptyView()
+    }
+}
+#else
 struct JobsListView: View {
     @EnvironmentObject private var settings: AppSettings
     @StateObject private var viewModel = JobsListViewModel()
-
-    /// Selected row, driven by the UIKit collection view's tap callback on
-    /// iOS/iPadOS (`JobsListCollectionView`); pushes via
-    /// `compatSessionDestination` below. Unused on AppKit, which keeps the
-    /// `NavigationLink(value:)`-driven SwiftUI `List`.
-    @State private var selectedSession: SessionRecord?
 
     private var client: APIClient? {
         settings.resolvedBaseURL.map(APIClient.init(baseURL:))
@@ -49,34 +52,30 @@ struct JobsListView: View {
                                              systemImage: "tray",
                                              description: Text(localized: "jobs.noConversionsDescription"))
             } else {
-                #if canImport(UIKit)
-                JobsListCollectionView(
-                    sessions: viewModel.sessions,
-                    onSelect: { selectedSession = $0 }
-                )
-                #else
                 List(viewModel.sessions) { session in
                     // `NavigationLink(value:)` requires the `.navigationDestination`
                     // value-based router (iOS 16+). On iOS 15 we fall back to
                     // the classic destination-based push.
-                    if #available(iOS 16, macOS 13, *) {
-                        NavigationLink(value: session) {
-                            SessionRow(session: session)
+                    if let jobId = session.jobId, !jobId.isEmpty {
+                        if #available(macOS 13, *) {
+                            NavigationLink(value: jobId) {
+                                SessionRow(session: session)
+                            }
+                        } else {
+                            NavigationLink {
+                                JobDetailView(jobId: jobId)
+                            } label: {
+                                SessionRow(session: session)
+                            }
                         }
                     } else {
-                        NavigationLink {
-                            JobDetailView(jobId: session.bookTitle)
-                        } label: {
-                            SessionRow(session: session)
-                        }
+                        SessionRow(session: session)
                     }
                 }
-                #endif
             }
         }
         .navigationTitle(L10n.string("jobs.title"))
         .compatJobsDestination()
-        .compatSessionDestination(selectedSession: $selectedSession)
         .toolbar {
             ToolbarItem(placement: .compatPrimaryTrailing) {
                 Button {
@@ -95,6 +94,7 @@ struct JobsListView: View {
         .refreshable { await viewModel.reload(client: client) }
     }
 }
+#endif
 
 struct SessionRow: View {
     let session: SessionRecord
@@ -141,6 +141,7 @@ struct SessionRow: View {
         SessionRow(session: SessionRecord(
             timestamp: "2026-05-08T10:23:45",
             bookTitle: "Foundation",
+            jobId: "job-foundation",
             engine: "edge",
             chaptersConverted: 24,
             durationSeconds: 1800,
@@ -149,6 +150,7 @@ struct SessionRow: View {
         SessionRow(session: SessionRecord(
             timestamp: "2026-05-07T22:01:11",
             bookTitle: "O Hobbit",
+            jobId: "job-hobbit",
             engine: "piper",
             chaptersConverted: 19,
             durationSeconds: 4200,
@@ -157,6 +159,7 @@ struct SessionRow: View {
         SessionRow(session: SessionRecord(
             timestamp: "2026-05-07T08:15:00",
             bookTitle: "Metro 2033",
+            jobId: nil,
             engine: "piper",
             chaptersConverted: 0,
             durationSeconds: 12,
@@ -171,51 +174,20 @@ struct SessionRow: View {
 private extension View {
     @ViewBuilder
     func compatJobsDestination() -> some View {
-        if #available(iOS 16, macOS 13, *) {
-            self.navigationDestination(for: SessionRecord.self) { session in
-                // Sessions don't carry a job id (they're a historical log), so for
-                // this slice we let users tap and observe the live SSE for an
-                // arbitrary id derived from the session's title — tweak in v2.
-                JobDetailView(jobId: session.bookTitle)
+        if #available(macOS 13, *) {
+            self.navigationDestination(for: String.self) { jobId in
+                JobDetailView(jobId: jobId)
             }
         } else {
             self
         }
-    }
-
-    /// Programmatic push for `JobsListCollectionView`'s tap callback
-    /// (iOS/iPadOS only — the UIKit list has no `NavigationLink(value:)` to
-    /// drive `.navigationDestination(for:)`). No-op on AppKit, where the
-    /// SwiftUI `List` + `compatJobsDestination()` above already handles it.
-    @ViewBuilder
-    func compatSessionDestination(selectedSession: Binding<SessionRecord?>) -> some View {
-        #if canImport(UIKit)
-        if #available(iOS 16, macOS 13, *) {
-            self.navigationDestination(isPresented: Binding(
-                get: { selectedSession.wrappedValue != nil },
-                set: { if !$0 { selectedSession.wrappedValue = nil } }
-            )) {
-                JobDetailView(jobId: selectedSession.wrappedValue?.bookTitle ?? "")
-            }
-        } else {
-            self.background {
-                NavigationLink(
-                    destination: JobDetailView(jobId: selectedSession.wrappedValue?.bookTitle ?? ""),
-                    isActive: Binding(
-                        get: { selectedSession.wrappedValue != nil },
-                        set: { if !$0 { selectedSession.wrappedValue = nil } }
-                    )
-                ) { EmptyView() }
-                .hidden()
-            }
-        }
-        #else
-        self
-        #endif
     }
 }
 
 #Preview("JobsList — empty") {
     CompatNavigationStack { JobsListView() }
         .environmentObject(AppSettings())
+        .environmentObject(LibraryStore())
+        .environmentObject(AudioPlayer())
+        .environmentObject(PlaybackClock())
 }

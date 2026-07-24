@@ -3,6 +3,45 @@ import SwiftUI
 /// Slide-over chapter list. Shown from `PlayerReaderView` toolbar.
 /// Tapping a chapter jumps both the audio queue (`onJump`) and the
 /// reader pane to that chapter.
+#if os(iOS)
+struct TocDrawer: View {
+    let fulltext: EbookFulltext?
+    let snapshot: JobSnapshot
+    let currentChapterIndex: Int
+    let readingChapterIndex: Int?
+    let onJump: (Int) -> Void
+    let onDownload: ((Int) -> Void)?
+    let onDownloadAll: (() -> Void)?
+    let onCancelDownloads: (() -> Void)?
+    let onClearDownloads: (() -> Void)?
+
+    init(
+        fulltext: EbookFulltext?,
+        snapshot: JobSnapshot,
+        currentChapterIndex: Int,
+        readingChapterIndex: Int? = nil,
+        onJump: @escaping (Int) -> Void,
+        onDownload: ((Int) -> Void)? = nil,
+        onDownloadAll: (() -> Void)? = nil,
+        onCancelDownloads: (() -> Void)? = nil,
+        onClearDownloads: (() -> Void)? = nil
+    ) {
+        self.fulltext = fulltext
+        self.snapshot = snapshot
+        self.currentChapterIndex = currentChapterIndex
+        self.readingChapterIndex = readingChapterIndex
+        self.onJump = onJump
+        self.onDownload = onDownload
+        self.onDownloadAll = onDownloadAll
+        self.onCancelDownloads = onCancelDownloads
+        self.onClearDownloads = onClearDownloads
+    }
+
+    var body: some View {
+        EmptyView()
+    }
+}
+#else
 struct TocDrawer: View {
     let fulltext: EbookFulltext?
     let snapshot: JobSnapshot
@@ -17,6 +56,7 @@ struct TocDrawer: View {
     let readingChapterIndex: Int?
     let onJump: (Int) -> Void
     let onDownload: ((Int) -> Void)?
+    let onDownloadAll: (() -> Void)?
     let onCancelDownloads: (() -> Void)?
     let onClearDownloads: (() -> Void)?
 
@@ -27,6 +67,7 @@ struct TocDrawer: View {
         readingChapterIndex: Int? = nil,
         onJump: @escaping (Int) -> Void,
         onDownload: ((Int) -> Void)? = nil,
+        onDownloadAll: (() -> Void)? = nil,
         onCancelDownloads: (() -> Void)? = nil,
         onClearDownloads: (() -> Void)? = nil
     ) {
@@ -36,6 +77,7 @@ struct TocDrawer: View {
         self.readingChapterIndex = readingChapterIndex
         self.onJump = onJump
         self.onDownload = onDownload
+        self.onDownloadAll = onDownloadAll
         self.onCancelDownloads = onCancelDownloads
         self.onClearDownloads = onClearDownloads
     }
@@ -49,6 +91,11 @@ struct TocDrawer: View {
     @State private var locallyDownloaded: Set<Int> = []
 
     var body: some View {
+        content
+    }
+
+    @ViewBuilder
+    private var content: some View {
         CompatNavigationStack {
             List {
                 if let fulltext, !fulltext.chapters.isEmpty {
@@ -94,6 +141,12 @@ struct TocDrawer: View {
                 }
                 ToolbarItem(placement: .compatPrimaryTrailing) {
                     Menu {
+                        Button {
+                            onDownloadAll?()
+                        } label: {
+                            Label(L10n.string("player.downloadAll"), systemImage: "arrow.down.circle")
+                        }
+                        .disabled(onDownloadAll == nil)
                         Button(role: .destructive) {
                             onCancelDownloads?()
                         } label: {
@@ -222,6 +275,7 @@ struct TocDrawer: View {
         return readingMatch
     }
 }
+#endif
 
 #if DEBUG
 #Preview("TocDrawer — fulltext") {

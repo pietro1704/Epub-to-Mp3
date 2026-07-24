@@ -25,14 +25,23 @@ final class InstantReaderPlayFromHereTests: XCTestCase {
 
     func testTocSelectionIsNotImmediatelyOverriddenByAudioFollow() throws {
         let source = try instantReaderSource()
+        let controller = try instantReaderControllerSource()
 
         XCTAssertTrue(
-            source.contains("@State private var pinnedReaderChapterIndex: Int?"),
-            "A TOC selection needs a temporary reader pin while audio is playing."
+            source.contains("@Published var pinnedReaderChapterIndex: Int?"),
+            "A TOC selection needs a temporary reader pin in the shared reading state while audio is playing."
         )
         XCTAssertTrue(
-            source.contains("pinnedReaderChapterIndex = target"),
-            "Selecting a TOC chapter must pin that selected EPUB index before dismissing the sheet."
+            controller.contains("readingState.pinnedReaderChapterIndex = target"),
+            "Selecting a TOC chapter on iOS must pin that selected EPUB index in the UIKit controller."
+        )
+        XCTAssertTrue(
+            controller.contains("readingState.currentChapterIndex = target"),
+            "Selecting a TOC chapter on iOS must also move the reader cursor in the UIKit controller."
+        )
+        XCTAssertTrue(
+            controller.contains("player.play(snapshot: snapshot, startingAt: playableTarget)"),
+            "Selecting a TOC chapter on iOS must resume playback from the mapped playable chapter in the UIKit controller."
         )
         XCTAssertTrue(
             source.contains("if let pinned = pinnedReaderChapterIndex"),
@@ -56,14 +65,16 @@ final class InstantReaderPlayFromHereTests: XCTestCase {
 
     func testReaderCanCloseAudioPlayerAndReopenWithLocalPlay() throws {
         let reader = try instantReaderSource()
+        let controller = try instantReaderControllerSource()
         XCTAssertTrue(reader.contains("reader.closeAudioPlayer"))
         XCTAssertTrue(reader.contains("reader.reopenAudioPlayer"))
-        XCTAssertTrue(reader.contains("private func closeAudioPlayer()"))
-        XCTAssertTrue(reader.contains("private func reopenAudioPlayer()"))
-        XCTAssertTrue(reader.contains("if settings.useEmbeddedRuntime {"))
-        XCTAssertTrue(reader.contains("languageCode: speechLanguageCode"))
-        XCTAssertFalse(reader.contains("self.player.stop()"))
-        XCTAssertTrue(reader.contains("globalPlayer.stop()"))
+        XCTAssertTrue(reader.contains("if let onCloseAudioPlayer {"))
+        XCTAssertTrue(reader.contains("if let onReopenAudioPlayer {"))
+        XCTAssertTrue(controller.contains("private func handleCloseAudioPlayer()"))
+        XCTAssertTrue(controller.contains("private func handleReopenAudioPlayer(currentChapterIndex: Int)"))
+        XCTAssertTrue(controller.contains("player.stop()"))
+        XCTAssertTrue(controller.contains("playerPresentation.dismissFullPlayer()"))
+        XCTAssertTrue(controller.contains("onRequestPlay?(currentChapterIndex, nil)"))
 
         let fullPlayer = try fullPlayerSource()
         XCTAssertTrue(fullPlayer.contains("fullPlayer.close"))
@@ -79,6 +90,21 @@ final class InstantReaderPlayFromHereTests: XCTestCase {
             .deletingLastPathComponent()
         return try String(
             contentsOf: projectRoot.appendingPathComponent("EpubToMp3/Features/Playback/Views/FullPlayerSheet.swift"),
+            encoding: .utf8
+        )
+        #endif
+    }
+
+    private func instantReaderControllerSource() throws -> String {
+        #if os(iOS)
+        throw XCTSkip("Source-contract tests run on the host, not inside the iOS app sandbox")
+        #else
+        let testFile = URL(fileURLWithPath: #filePath)
+        let projectRoot = testFile
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        return try String(
+            contentsOf: projectRoot.appendingPathComponent("EpubToMp3/Features/Reader/Views/InstantReaderScreenController.swift"),
             encoding: .utf8
         )
         #endif

@@ -2,8 +2,8 @@
 //  LibraryGridLayoutMetricsTests.swift
 //  EpubToMp3Tests
 //
-//  Pure column-math coverage for the UIKit library grid layout, now the
-//  default renderer on iOS/iPadOS (see LibraryView, LibraryCollectionView).
+//  Pure column-math coverage for the library grid layout helpers shared by
+//  the remaining grid renderers.
 //
 
 import XCTest

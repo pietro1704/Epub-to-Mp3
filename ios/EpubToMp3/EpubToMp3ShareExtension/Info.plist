@@ -8,23 +8,15 @@
     <dict>
         <key>NSExtensionAttributes</key>
         <dict>
+            <!-- UTI predicate: every attachment of every extension item
+                 must conform to one of the EPUB/PDF UTIs. The previous
+                 version only capped attachment COUNT (<= 10), so the
+                 extension appeared in the Share Sheet for photos, plain
+                 text, anything — ShareViewController.swift already
+                 filters by UTI when actually importing, but the sheet
+                 entry itself was unconditional (App Review 2.5/4.2). -->
             <key>NSExtensionActivationRule</key>
-            <dict>
-                <!-- Activation gating. Anything > 0 lets the
-                     extension show up in the Share Sheet when the
-                     host has at least one matching attachment.
-                     We accept EPUB / PDF file URLs primarily; the
-                     activation predicate below matches by UTI. -->
-                <key>NSExtensionActivationSupportsFileWithMaxCount</key>
-                <integer>10</integer>
-                <key>NSExtensionActivationSupportsAttachmentsWithMaxCount</key>
-                <integer>10</integer>
-            </dict>
-            <!-- Restrict the Share Sheet to apps whose attachments
-                 contain at least one EPUB / PDF. Apple Books uses
-                 the legacy IDPF UTI for exports. -->
-            <key>NSExtensionActivationDictionaryVersion</key>
-            <integer>2</integer>
+            <string>SUBQUERY (extensionItems, $extensionItem, SUBQUERY ($extensionItem.attachments, $attachment, ANY $attachment.registeredTypeIdentifiers UTI-CONFORMS-TO "org.idpf.epub-container" || ANY $attachment.registeredTypeIdentifiers UTI-CONFORMS-TO "com.apple.ibooks.epub" || ANY $attachment.registeredTypeIdentifiers UTI-CONFORMS-TO "com.adobe.pdf").@count == $extensionItem.attachments.@count).@count == extensionItems.@count</string>
         </dict>
         <key>NSExtensionPrincipalClass</key>
         <string>EpubToMp3ShareExtension.ShareViewController</string>

@@ -4,8 +4,8 @@ import SwiftUI
 ///
 ///   Nav sidebar | Detail (full-width content for current mode)
 ///
-/// Falls back to `TabRoot` on iPhone compact and pre-iOS-16/macOS-13
-/// systems via the branch in `RootView`.
+/// This surface is desktop-only now. Mobile platforms route through
+/// the UIKit root container instead of this SwiftUI split shell.
 
 /// Top-level destinations exposed in the split-view sidebar.
 ///
@@ -39,17 +39,31 @@ enum SplitNavMode: String, Hashable, CaseIterable, Identifiable {
     }
 }
 
-@available(iOS 16, macOS 13, *)
+enum SplitViewSidebarMiniPlayerPolicy {
+    static func shouldShow(
+        navMode: SplitNavMode,
+        hasPlayableBook: Bool,
+        isShowingPlayerReaderDetail: Bool
+    ) -> Bool {
+        guard hasPlayableBook else { return false }
+        switch navMode {
+        case .reader:
+            return false
+        case .library:
+            return !isShowingPlayerReaderDetail
+        case .jobs, .settings:
+            return true
+        }
+    }
+}
+
+#if !os(iOS)
+@available(macOS 13, *)
 struct SplitViewRoot: View {
     @EnvironmentObject private var library: LibraryStore
     @EnvironmentObject private var settings: AppSettings
     @EnvironmentObject private var player: AudioPlayer
     @EnvironmentObject private var playerPresentation: PlayerPresentation
-
-    #if os(iOS)
-    @Environment(\.horizontalSizeClass) private var hSize
-    @Environment(\.verticalSizeClass) private var vSize
-    #endif
 
     @State private var columnVisibility: NavigationSplitViewVisibility = SplitViewRoot.defaultColumnVisibility
     /// Default to `.reader` — the landing screen.
@@ -69,7 +83,7 @@ struct SplitViewRoot: View {
     /// bug). Mirrors iPhone `TabRoot`, where the reader tab gets no
     /// `.miniPlayerInset`.
     private var showMiniPlayer: Bool {
-        Self.shouldShowSidebarMiniPlayer(
+        SplitViewSidebarMiniPlayerPolicy.shouldShow(
             navMode: navMode,
             hasPlayableBook: hasPlayableBook,
             isShowingPlayerReaderDetail: isShowingPlayerReaderDetail
@@ -87,25 +101,6 @@ struct SplitViewRoot: View {
     private var isShowingPlayerReaderDetail: Bool {
         guard let book = selectedBook else { return false }
         return jobSnapshot(for: book) != nil && selectedChapterIndex != nil
-    }
-
-    /// Pure decision for sidebar mini-player visibility. Extracted as a
-    /// `static` so `SplitViewRootTests` exercises the real logic
-    /// directly instead of mirroring it.
-    static func shouldShowSidebarMiniPlayer(
-        navMode: SplitNavMode,
-        hasPlayableBook: Bool,
-        isShowingPlayerReaderDetail: Bool
-    ) -> Bool {
-        guard hasPlayableBook else { return false }
-        switch navMode {
-        case .reader:
-            return false
-        case .library:
-            return !isShowingPlayerReaderDetail
-        case .jobs, .settings:
-            return true
-        }
     }
 
     /// Currently-selected book, resolved through the library store.
@@ -171,19 +166,7 @@ struct SplitViewRoot: View {
             if let bookID = selectedBookID {
                 MainReaderView.setCurrentlyReading(bookID: bookID)
             }
-            #if os(iOS)
-            if isCompactHorizontal, selectedBookID != nil {
-                columnVisibility = .doubleColumn
-            }
-            #endif
         }
-        #if os(iOS)
-        .onAppear { applySizeClassDefault() }
-        .compatOnChange(of: hSize) { _ in applySizeClassDefault() }
-        .compatOnChange(of: vSize) { _ in applySizeClassDefault() }
-        .compatOnChange(of: library.books.count) { _ in applyEmptyLibraryReveal() }
-        .compatOnChange(of: navMode) { _ in applyEmptyLibraryReveal() }
-        #endif
     }
 
     // MARK: - Sidebar
@@ -198,11 +181,7 @@ struct SplitViewRoot: View {
                     .tag(Optional(mode))
             }
         }
-        #if os(macOS)
         .listStyle(.sidebar)
-        #else
-        .listStyle(.insetGrouped)
-        #endif
         .navigationTitle(Text(verbatim: "Epub-to-Mp3"))
         .accessibilityIdentifier("split.navList")
         // HIG sidebar footer: mini-player docked at the bottom of the
@@ -297,45 +276,8 @@ struct SplitViewRoot: View {
     // MARK: - Adaptive column visibility
 
     fileprivate static var defaultColumnVisibility: NavigationSplitViewVisibility {
-        #if os(macOS)
         return .all
-        #else
-        return .doubleColumn
-        #endif
     }
-
-    #if os(iOS)
-    private var isCompactHorizontal: Bool {
-        return !(hSize == .regular && vSize == .compact)
-    }
-
-    private func applySizeClassDefault() {
-        let desired = preferredVisibility(for: shouldRevealEmptyLibrarySidebar)
-        if columnVisibility != desired {
-            columnVisibility = desired
-        }
-    }
-
-    private var shouldRevealEmptyLibrarySidebar: Bool {
-        return navMode == .library && library.books.isEmpty
-    }
-
-    fileprivate func preferredVisibility(for needsEmptySidebarReveal: Bool) -> NavigationSplitViewVisibility {
-        if needsEmptySidebarReveal && isCompactHorizontal {
-            return .all
-        }
-        return isCompactHorizontal ? .doubleColumn : .all
-    }
-
-    private func applyEmptyLibraryReveal() {
-        let desired = preferredVisibility(for: shouldRevealEmptyLibrarySidebar)
-        if columnVisibility != desired {
-            withAnimation(.easeInOut(duration: 0.25)) {
-                columnVisibility = desired
-            }
-        }
-    }
-    #endif
 
 
     // MARK: - Helpers
@@ -410,9 +352,11 @@ private struct PlayerReaderDetail: View {
         }
     }
 }
+#endif
 
 #if DEBUG
-@available(iOS 16, macOS 13, *)
+#if !os(iOS)
+@available(macOS 13, *)
 #Preview("SplitViewRoot — populated") {
     SplitViewRoot()
         .environmentObject(AppSettings())
@@ -421,7 +365,7 @@ private struct PlayerReaderDetail: View {
         .environmentObject(PlayerPresentation())
 }
 
-@available(iOS 16, macOS 13, *)
+@available(macOS 13, *)
 #Preview("SplitViewRoot — empty") {
     SplitViewRoot()
         .environmentObject(AppSettings())
@@ -429,4 +373,5 @@ private struct PlayerReaderDetail: View {
         .environmentObject(AudioPlayer())
         .environmentObject(PlayerPresentation())
 }
+#endif
 #endif

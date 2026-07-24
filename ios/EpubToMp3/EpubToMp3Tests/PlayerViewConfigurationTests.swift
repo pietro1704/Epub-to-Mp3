@@ -5,11 +5,44 @@ final class PlayerViewConfigurationTests: XCTestCase {
         let sourceURL = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
             .deletingLastPathComponent()
-            .appendingPathComponent("EpubToMp3/Features/Playback/Views/PlayerView.swift")
+            .appendingPathComponent("EpubToMp3/Features/Playback/Views/PlaybackControlsSupport.swift")
         let source = try String(contentsOf: sourceURL, encoding: .utf8)
 
         XCTAssertTrue(source.contains("MPVolumeView"))
         XCTAssertTrue(source.contains("showsVolumeSlider = true"))
         XCTAssertFalse(source.contains("showsRouteButton"))
+    }
+
+    func testLegacyPlayerViewWasRemovedAfterUIKitMigration() {
+        let projectRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let legacyPlayerURL = projectRoot.appendingPathComponent("EpubToMp3/Features/Playback/Views/PlayerView.swift")
+        let supportURL = projectRoot.appendingPathComponent("EpubToMp3/Features/Playback/Views/PlaybackControlsSupport.swift")
+
+        XCTAssertFalse(
+            FileManager.default.fileExists(atPath: legacyPlayerURL.path),
+            "The legacy SwiftUI PlayerView should stay removed once the UIKit player controllers own the iOS job-detail flow."
+        )
+        XCTAssertTrue(
+            FileManager.default.fileExists(atPath: supportURL.path),
+            "Shared playback controls should live in PlaybackControlsSupport.swift after removing PlayerView.swift."
+        )
+    }
+
+    func testUIKitPlayerScreenReactsToPlaybackStateChanges() throws {
+        let projectRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let sourceURL = projectRoot.appendingPathComponent("EpubToMp3/Features/Playback/Views/PlayerScreenController.swift")
+        let source = try String(contentsOf: sourceURL, encoding: .utf8)
+
+        XCTAssertTrue(source.contains("import Combine"))
+        XCTAssertTrue(source.contains("private var cancellables: Set<AnyCancellable> = []"))
+        XCTAssertTrue(source.contains("bindState()"))
+        XCTAssertTrue(source.contains("player.objectWillChange"))
+        XCTAssertTrue(source.contains("playbackClock.objectWillChange"))
+        XCTAssertTrue(source.contains(".sink { [weak self] _ in self?.render() }"))
+        XCTAssertTrue(source.contains("if let playerSnapshot = player.snapshot, playerSnapshot.jobId == snapshot.jobId"))
     }
 }

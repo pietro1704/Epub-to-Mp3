@@ -9,15 +9,8 @@ import shutil
 from pathlib import Path
 from typing import List, Optional, Set
 
+from ._env_utils import env_bool as _env_bool
 from .config import ConversionConfig
-
-
-def _env_bool(name: str, default: bool = False) -> bool:
-    raw = os.getenv(name)
-    if raw is None:
-        return default
-    return raw.strip().lower() in {"1", "true", "yes", "on"}
-
 
 LEGACY_FINAL_FALLBACK_ENABLED = _env_bool("LEGACY_FINAL_FALLBACK_ENABLED", False)
 

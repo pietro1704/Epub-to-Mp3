@@ -2,8 +2,7 @@
 //  SessionRowModelTests.swift
 //  EpubToMp3Tests
 //
-//  Pure row-mapping coverage for the UIKit sessions list
-//  (JobsListCollectionView), now the default renderer on iOS/iPadOS.
+//  Pure row-mapping coverage for the sessions list row model.
 //
 
 import XCTest
@@ -12,6 +11,7 @@ import XCTest
 final class SessionRowModelTests: XCTestCase {
 
     private func session(
+        jobId: String? = nil,
         outcome: String? = nil,
         engine: String? = nil,
         chapters: Int? = nil
@@ -19,6 +19,7 @@ final class SessionRowModelTests: XCTestCase {
         SessionRecord(
             timestamp: "2026-05-08T10:23:45",
             bookTitle: "Foundation",
+            jobId: jobId,
             engine: engine,
             chaptersConverted: chapters,
             durationSeconds: 1800,
@@ -31,6 +32,11 @@ final class SessionRowModelTests: XCTestCase {
         let row = SessionRowModel.make(from: session())
         XCTAssertEqual(row.id, "2026-05-08T10:23:45|Foundation")
         XCTAssertEqual(row.title, "Foundation")
+    }
+
+    func testJobIDBecomesStableIdentityWhenAvailable() {
+        let row = SessionRowModel.make(from: session(jobId: "job-123"))
+        XCTAssertEqual(row.id, "job-123")
     }
 
     func testOutcomeStateMapping() {
@@ -74,5 +80,24 @@ final class SessionRowModelTests: XCTestCase {
         let sessions = [session(engine: "edge"), session(engine: "piper")]
         let rows = SessionRowModel.rows(from: sessions)
         XCTAssertEqual(rows.map(\.engineText), ["edge", "piper"])
+    }
+
+    func testSessionRecordDecodesOptionalJobID() throws {
+        let data = Data("""
+        {
+          "timestamp": "2026-05-08T10:23:45",
+          "book_title": "Foundation",
+          "job_id": "job-abc",
+          "engine": "edge",
+          "chapters_converted": 24,
+          "duration_seconds": 1800,
+          "outcome": "success",
+          "mode": "web"
+        }
+        """.utf8)
+
+        let decoded = try JSONDecoder().decode(SessionRecord.self, from: data)
+        XCTAssertEqual(decoded.jobId, "job-abc")
+        XCTAssertEqual(decoded.id, "job-abc")
     }
 }

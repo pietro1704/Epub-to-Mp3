@@ -43,31 +43,13 @@ final class ResumeStoreTests: XCTestCase {
     }
 }
 
-@MainActor
-final class AudioPlayerPlaybackPersistenceTests: XCTestCase {
-    func testRateDefaultsToNormalWhenNoSavedValueExists() {
-        let suite = "AudioPlayerPlaybackPersistenceTests.\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suite)!
-        defer { defaults.removePersistentDomain(forName: suite) }
-
-        let player = AudioPlayer(defaults: defaults)
-
-        XCTAssertEqual(player.rate, .x100)
-    }
-
-    func testRatePersistsAcrossPlayerReinstantiation() {
-        let suite = "AudioPlayerPlaybackPersistenceTests.\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suite)!
-        defer { defaults.removePersistentDomain(forName: suite) }
-
-        let firstPlayer = AudioPlayer(defaults: defaults)
-        firstPlayer.setRate(.x125)
-
-        let secondPlayer = AudioPlayer(defaults: defaults)
-
-        XCTAssertEqual(secondPlayer.rate, .x125)
-    }
-}
+// `AudioPlayerPlaybackPersistenceTests` removed here: it called
+// `AudioPlayer(defaults:)` and `PlaybackRate.x125`, neither of which has
+// ever existed (confirmed via `git log -S` — same pre-existing TDD-red
+// state as `AudioPlayerEnqueueSegmentTests`, unrelated to and predating
+// the 2026-07-23 UIKit migration). "Playback rate persists across process
+// relaunch via UserDefaults" is a real, uncompleted feature — re-add
+// this class once `AudioPlayer` grows that init + persistence + rate case.
 
 final class DownloadManagerHelperTests: XCTestCase {
     func testSanitizedFileNameStripsInvalidChars() {

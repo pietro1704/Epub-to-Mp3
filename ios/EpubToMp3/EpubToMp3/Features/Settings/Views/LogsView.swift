@@ -1,5 +1,14 @@
 import SwiftUI
 
+#if os(iOS)
+struct LogsView: View {
+    let jobId: String
+
+    var body: some View {
+        EmptyView()
+    }
+}
+#else
 @MainActor
 final class LogsViewModel: ObservableObject {
     @Published var content: String = ""
@@ -129,4 +138,5 @@ struct LogsView: View {
     }
     .environmentObject(AppSettings())
 }
+#endif
 #endif

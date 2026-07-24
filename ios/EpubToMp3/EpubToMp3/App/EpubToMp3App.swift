@@ -1,5 +1,6 @@
 import SwiftUI
 import Foundation
+import UniformTypeIdentifiers
 #if os(macOS)
 import AppKit
 #endif
@@ -82,7 +83,70 @@ struct EpubToMp3App: App {
         WindowGroup {
             appWindowContent
         }
+        .commands { appCommands }
+
+        #if os(macOS)
+        Settings {
+            SettingsView()
+                .environmentObject(settings)
+                .environmentObject(library)
+                .environmentObject(sidecar)
+        }
+        #endif
     }
+
+    /// HIG macOS Menus: transport controls belong in the menu bar, not
+    /// only on-screen buttons — Space/⌘←/⌘→ match the Apple Music /
+    /// Podcasts convention. `.commands` also surfaces these as discoverable
+    /// hardware-keyboard shortcuts on iPad, so it isn't macOS-gated.
+    @CommandsBuilder
+    private var appCommands: some Commands {
+        CommandGroup(after: .newItem) {
+            Button(L10n.string("library.addBook")) {
+                #if os(macOS)
+                importBookViaOpenPanel()
+                #endif
+            }
+            .keyboardShortcut("o", modifiers: .command)
+            #if !os(macOS)
+            .disabled(true)
+            #endif
+        }
+        CommandMenu(L10n.string("menu.playback")) {
+            Button(player.isPlaying ? L10n.string("player.pause") : L10n.string("player.play")) {
+                player.togglePlayPause()
+            }
+            .keyboardShortcut(" ", modifiers: [])
+            Divider()
+            Button(L10n.string("player.nextChapter")) {
+                player.nextChapter()
+            }
+            .keyboardShortcut(.rightArrow, modifiers: .command)
+            Button(L10n.string("player.previousChapter")) {
+                player.previousChapter()
+            }
+            .keyboardShortcut(.leftArrow, modifiers: .command)
+        }
+    }
+
+    #if os(macOS)
+    /// Menu-bar equivalent of `LibraryView`'s `fileImporter` — same
+    /// accepted types, but driven from `NSOpenPanel` since `.commands`
+    /// actions run outside any specific view's SwiftUI state.
+    private func importBookViaOpenPanel() {
+        let panel = NSOpenPanel()
+        panel.allowsMultipleSelection = true
+        panel.canChooseDirectories = false
+        panel.canChooseFiles = true
+        var types: [UTType] = [.epub, .pdf]
+        if let zip = UTType("org.idpf.epub-container") { types.append(zip) }
+        panel.allowedContentTypes = types
+        guard panel.runModal() == .OK else { return }
+        for url in panel.urls {
+            _ = try? library.importBook(from: url)
+        }
+    }
+    #endif
 
     private var appWindowContent: some View {
         RootView()
@@ -215,7 +279,7 @@ struct EpubToMp3App: App {
                 openBookById(bookId)
                 // Also set the player state so the full-player sheet
                 // can pick up this book on foreground.
-                NowPlayingView.setCurrentlyPlaying(bookID: bookId, chapterIndex: 0)
+                PlaybackBindingStore.setCurrentlyPlaying(bookID: bookId, chapterIndex: 0)
                 // Actually navigate to the player UI — without this the
                 // widget tap only opened the app to the Library/reader
                 // landing screen and never presented the full player.

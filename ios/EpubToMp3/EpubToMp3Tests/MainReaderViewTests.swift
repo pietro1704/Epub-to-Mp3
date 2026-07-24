@@ -148,6 +148,33 @@ final class MainReaderViewTests: XCTestCase {
                        "Manual conversion must live in the third tab, not inside Settings.")
     }
 
+    func testTabRootIsDesktopOnlyFallback() throws {
+        let source = try String(
+            contentsOf: URL(fileURLWithPath: #filePath)
+                .deletingLastPathComponent()
+                .deletingLastPathComponent()
+                .appendingPathComponent("EpubToMp3/App/RootView.swift")
+        )
+        XCTAssertTrue(source.contains("#if !os(iOS)\nstruct TabRoot: View"))
+        XCTAssertTrue(source.contains("#if !os(iOS)\n#Preview(\"Tab fallback\")"))
+        XCTAssertTrue(source.contains("private var shellContent: some View"))
+        XCTAssertTrue(source.contains("SplitViewRoot()"))
+        XCTAssertTrue(source.contains("TabRoot()"))
+    }
+
+    func testRootViewKeepsMobileBranchThin() throws {
+        let source = try String(
+            contentsOf: URL(fileURLWithPath: #filePath)
+                .deletingLastPathComponent()
+                .deletingLastPathComponent()
+                .appendingPathComponent("EpubToMp3/App/RootView.swift")
+        )
+        XCTAssertTrue(source.contains("#if os(iOS)\n        IOSRootContainer()"))
+        XCTAssertFalse(source.contains("@EnvironmentObject private var sidecar: SidecarManager"))
+        XCTAssertTrue(source.contains("#if !os(iOS)\n    @EnvironmentObject private var player: AudioPlayer"))
+        XCTAssertTrue(source.contains("#if !os(iOS)\n    private var isReaderActive: Bool"))
+    }
+
     func testReaderSessionStateRoundTripsPerBook() {
         let suite = "reader-session-\\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!
@@ -207,16 +234,16 @@ final class MainReaderViewTests: XCTestCase {
         let projectRoot = testFile
             .deletingLastPathComponent()
             .deletingLastPathComponent()
-        let source = try String(
-            contentsOf: projectRoot.appendingPathComponent("EpubToMp3/Features/Playback/Views/PlayerView.swift"),
+        let supportSource = try String(
+            contentsOf: projectRoot.appendingPathComponent("EpubToMp3/Features/Playback/Views/PlaybackControlsSupport.swift"),
             encoding: .utf8
         )
-        XCTAssertTrue(source.contains("PlaybackRateFloatingPicker"))
-        XCTAssertTrue(source.contains("ScrollView(.horizontal"))
-        XCTAssertTrue(source.contains("playbackRateButton"))
-        XCTAssertTrue(source.contains("player.setRate"))
-        XCTAssertTrue(source.contains("MPVolumeView"))
-        XCTAssertTrue(source.contains("SystemVolumeSlider"))
+        XCTAssertTrue(supportSource.contains("PlaybackRateFloatingPicker"))
+        XCTAssertTrue(supportSource.contains("ScrollView(.horizontal"))
+        XCTAssertTrue(supportSource.contains("player.setRate"))
+        XCTAssertTrue(supportSource.contains("MPVolumeView"))
+        XCTAssertTrue(supportSource.contains("SystemVolumeSlider"))
+        XCTAssertTrue(supportSource.contains("presentationCompactAdaptationIfAvailable"))
 
         let fullPlayerSource = try String(
             contentsOf: projectRoot.appendingPathComponent("EpubToMp3/Features/Playback/Views/FullPlayerSheet.swift"),
@@ -224,6 +251,7 @@ final class MainReaderViewTests: XCTestCase {
         )
         XCTAssertTrue(fullPlayerSource.contains("SystemVolumeSlider()"))
         XCTAssertTrue(fullPlayerSource.contains("fullPlayer.playbackRateButton"))
+        XCTAssertFalse(fullPlayerSource.contains("FullPlayerScreenHost()"))
 
         let miniPlayerSource = try String(
             contentsOf: projectRoot.appendingPathComponent("EpubToMp3/Features/Playback/Views/MiniPlayerBar.swift"),
@@ -243,8 +271,11 @@ final class MainReaderViewTests: XCTestCase {
     func testRootReaderRestoresReaderInsteadOfLibraryWhenReadingBookExists() throws {
         let sources = try appViewSources()
         let source = sources.root
-        XCTAssertTrue(source.contains("MainReaderView("),
-                      "The iPhone root must mount MainReaderView as the restored landing surface.")
+        let iosRootContainer = sources.iosRootContainer
+        XCTAssertTrue(source.contains("IOSRootContainer()"),
+                      "The iPhone root must delegate restored reader/player overlays to the UIKit root container.")
+        XCTAssertTrue(iosRootContainer.contains("MainReaderScreenController("),
+                      "The UIKit root container should embed the dedicated main-reader controller directly.")
         XCTAssertTrue(source.contains("currentlyReadingBookIDKey"),
                       "The iPhone root must use the persisted reader book, not only the playing book.")
         XCTAssertTrue(sources.instantReader.contains("ReaderSessionState.load(bookID: fulltext.jobId)"),
@@ -253,45 +284,332 @@ final class MainReaderViewTests: XCTestCase {
                       "A playing audio marker must take precedence over the visual reader anchor.")
     }
 
+    func testMainReaderUsesUIKitHostOnIOS() throws {
+        let source = try String(
+            contentsOf: URL(fileURLWithPath: #filePath)
+                .deletingLastPathComponent()
+                .deletingLastPathComponent()
+                .appendingPathComponent("EpubToMp3/Features/Reader/Views/MainReaderView.swift")
+        )
+        XCTAssertTrue(source.contains("#if os(iOS)\nstruct MainReaderView: View"))
+        XCTAssertTrue(source.contains("EmptyView()"))
+        XCTAssertFalse(source.contains("MainReaderScreenHost("))
+        XCTAssertTrue(source.contains("#if !os(iOS)\n    @EnvironmentObject private var playerPresentation: PlayerPresentation"))
+        XCTAssertTrue(source.contains("private func populatedReader(for book: BookEntity) -> some View"))
+        XCTAssertTrue(source.contains("BookOpenView(book: book, onClose: {"))
+        XCTAssertTrue(source.contains("#if !os(iOS)\n        .onAppear {"))
+        XCTAssertTrue(source.contains("#if !os(iOS)\n        .toolbar {"))
+        XCTAssertFalse(source.contains("private func iosReaderSurface(for book: BookEntity) -> some View"))
+        XCTAssertFalse(source.contains("private func desktopReaderSurface(for book: BookEntity) -> some View"))
+
+        let testFile = URL(fileURLWithPath: #filePath)
+        let projectRoot = testFile
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let screenSource = try String(
+            contentsOf: projectRoot.appendingPathComponent("EpubToMp3/Features/Reader/Views/MainReaderScreenController.swift"),
+            encoding: .utf8
+        )
+        XCTAssertTrue(screenSource.contains("final class MainReaderScreenController: UIViewController"))
+        XCTAssertTrue(screenSource.contains("private var hostedController: BookOpenScreenController?"))
+        XCTAssertTrue(screenSource.contains("let host = BookOpenScreenController("))
+        XCTAssertTrue(screenSource.contains("playerPresentation.showFullPlayer()"))
+        XCTAssertTrue(screenSource.contains("updated.lastOpenedAt = Date()"))
+        XCTAssertTrue(screenSource.contains("listenButton.accessibilityIdentifier = \"mainReader.listen\""))
+        XCTAssertTrue(screenSource.contains("hostedController.update("))
+        XCTAssertFalse(screenSource.contains("onRequestRePick: { [weak self] in"))
+        XCTAssertFalse(screenSource.contains("UIDocumentPickerViewController("))
+        XCTAssertFalse(screenSource.contains("func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL])"))
+    }
+
     func testManualConversionIsThirdTabAndReaderIsPushedFromLibrary() throws {
         let sources = try appViewSources()
         let rootSource = sources.root
+        let shellSource = sources.iosShell
         let settingsSource = sources.settings
         let librarySource = sources.library
         let bookOpenSource = sources.bookOpen
         let instantReaderSource = sources.instantReader
 
-        XCTAssertTrue(rootSource.contains("ConvertView()"),
-                      "TabRoot must expose manual conversion directly as a tab.")
-        XCTAssertTrue(rootSource.contains(".tag(RootTab.convert)"),
-                      "Manual conversion tab must use the RootTab.convert third-tab token.")
-        XCTAssertEqual(rootSource.components(separatedBy: ".tabItem").count - 1, 3,
-                       "The iPhone TabView must expose exactly three tab bar items.")
-        XCTAssertFalse(rootSource.contains(".tabItem { Label(L10n.string(\"nav.read\")"),
-                       "Reader must not appear as a persistent tab bar item.")
-        XCTAssertTrue(rootSource.contains("MainReaderView("),
-                      "The iPhone root must restore the reader surface when a reading book exists.")
-        XCTAssertFalse(rootSource.contains(".tag(RootTab.reader)"),
-                       "Reader must be restored as the root surface, not as a persistent tab item.")
-        XCTAssertLessThan(rootSource.range(of: ".tag(RootTab.settings)")!.lowerBound,
-                          rootSource.range(of: ".tag(RootTab.convert)")!.lowerBound,
-                          "Manual conversion must be the third tab after Settings.")
-        XCTAssertTrue(rootSource.contains("TabView(selection: $selectedTab)"),
-                      "The three items must live in the root iPhone TabView.")
+        XCTAssertTrue(rootSource.contains("IOSRootContainer()"),
+                      "The iPhone root must hand main navigation to the UIKit root container.")
+        XCTAssertTrue(shellSource.contains("case library"))
+        XCTAssertTrue(shellSource.contains("case settings"))
+        XCTAssertTrue(shellSource.contains("case convert"))
+        XCTAssertTrue(shellSource.contains("ConvertScreenController("),
+                      "Manual conversion must live as a dedicated UIKit tab controller.")
+        XCTAssertFalse(shellSource.contains("case reader"),
+                       "Reader must not be a persistent tab item in the UIKit shell.")
         XCTAssertFalse(settingsSource.contains("NavigationLink {\n                ConvertView()"),
                        "Settings must not contain the manual conversion entry.")
+        XCTAssertTrue(settingsSource.contains("@EnvironmentObject private var settings: AppSettings"))
+        XCTAssertTrue(settingsSource.contains("@EnvironmentObject private var sidecar: SidecarManager"))
+        XCTAssertFalse(settingsSource.contains("@State private var showClearCacheConfirm = false\n    @State private var clearCacheDone = false\n    @State private var showClearAllDownloadsConfirm = false\n    @State private var storageUsage = StorageUsageScanner.current()\n\n    var body"))
         XCTAssertTrue(librarySource.contains(".compatBookDestination($openingBook)"),
                       "Tapping a book must push a reader destination from Library.")
         XCTAssertTrue(librarySource.contains("BookOpenView(book: book, onClose: { binding.wrappedValue = nil })"),
                       "The pushed reader must close back to Library by clearing the navigation binding.")
         XCTAssertTrue(bookOpenSource.contains("let onClose: (() -> Void)?"),
                       "BookOpenView must expose an Apple Books-style close callback.")
-        XCTAssertTrue(bookOpenSource.contains("onClose: onClose"),
-                      "BookOpenView must forward close into the EPUB reader chrome.")
+        XCTAssertTrue(bookOpenSource.contains("#if os(iOS)\n        BookOpenScreenHost(book: book, onClose: onClose)"),
+                      "On iOS, BookOpenView must route through a dedicated UIKit host.")
+        XCTAssertTrue(bookOpenSource.contains("#else\n        BookOpenContentView(book: book, onClose: onClose)"),
+                      "Desktop BookOpenView must still render the shared SwiftUI content directly.")
         XCTAssertTrue(bookOpenSource.contains(".compatReaderBackButtonHidden()"),
-                      "Closing a pushed book must be controlled by the in-book X button, not by accidental navigation-edge swipes.")
+                      "Closing a pushed book must still be controlled by the in-book close flow rather than the default navigation back button.")
         XCTAssertTrue(instantReaderSource.contains("Image(systemName: \"xmark\")"),
                       "The in-book EPUB top bar must show an X close button.")
+    }
+
+    func testBookOpenContentIsHostedByMainReaderControllerOnIOS() throws {
+        let testFile = URL(fileURLWithPath: #filePath)
+        let projectRoot = testFile
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let bookOpenSource = try String(
+            contentsOf: projectRoot.appendingPathComponent("EpubToMp3/Features/Reader/Views/BookOpenView.swift"),
+            encoding: .utf8
+        )
+        XCTAssertTrue(bookOpenSource.contains("BookOpenScreenHost(book: book, onClose: onClose)"))
+        XCTAssertTrue(bookOpenSource.contains("struct BookOpenContentView: View"))
+        XCTAssertTrue(bookOpenSource.contains("func bookOpenSystemChrome(pdfVisible: Bool)"),
+                      "BookOpen content must route system-bar ownership through a dedicated compatibility helper.")
+
+        let screenSource = try String(
+            contentsOf: projectRoot.appendingPathComponent("EpubToMp3/Features/Reader/Views/MainReaderScreenController.swift"),
+            encoding: .utf8
+        )
+        XCTAssertTrue(screenSource.contains("final class MainReaderScreenController: UIViewController"))
+        XCTAssertTrue(screenSource.contains("private var hostedController: BookOpenScreenController?"))
+        XCTAssertTrue(screenSource.contains("let host = BookOpenScreenController("))
+
+        let bookOpenControllerSource = try String(
+            contentsOf: projectRoot.appendingPathComponent("EpubToMp3/Features/Reader/Views/BookOpenScreenController.swift"),
+            encoding: .utf8
+        )
+        XCTAssertTrue(bookOpenControllerSource.contains("struct BookOpenScreenHost: UIViewControllerRepresentable"))
+        XCTAssertTrue(bookOpenControllerSource.contains("final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate"))
+        XCTAssertTrue(bookOpenControllerSource.contains("BookOpenContentView("))
+        XCTAssertTrue(bookOpenControllerSource.contains("onRequestRePick: { [weak self] in"))
+        XCTAssertTrue(bookOpenControllerSource.contains("UIDocumentPickerViewController("))
+        XCTAssertTrue(bookOpenControllerSource.contains("func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL])"))
+    }
+
+    func testInstantReaderUsesUIKitHostOnIOS() throws {
+        let testFile = URL(fileURLWithPath: #filePath)
+        let projectRoot = testFile
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let instantSource = try String(
+            contentsOf: projectRoot.appendingPathComponent("EpubToMp3/Features/Reader/Views/InstantReaderView.swift"),
+            encoding: .utf8
+        )
+        XCTAssertTrue(instantSource.contains("struct InstantReaderContentView: View"))
+        XCTAssertTrue(instantSource.contains("InstantReaderScreenHost("))
+        XCTAssertFalse(instantSource.contains("TocScreenHost("))
+        XCTAssertFalse(instantSource.contains("ReaderSearchScreenHost("))
+        XCTAssertFalse(instantSource.contains("ReaderSettingsScreenHost()"))
+        XCTAssertFalse(instantSource.contains("ConversionStatusScreenHost("))
+
+        let controllerSource = try String(
+            contentsOf: projectRoot.appendingPathComponent("EpubToMp3/Features/Reader/Views/InstantReaderScreenController.swift"),
+            encoding: .utf8
+        )
+        XCTAssertTrue(controllerSource.contains("presentToc("))
+        XCTAssertTrue(controllerSource.contains("TocScreenController("))
+        XCTAssertTrue(controllerSource.contains("handleTocJump("))
+        XCTAssertTrue(controllerSource.contains("readingState.pinnedReaderChapterIndex = target"))
+        XCTAssertTrue(controllerSource.contains("readingState.currentChapterIndex = target"))
+        XCTAssertTrue(controllerSource.contains("player.play(snapshot: snapshot, startingAt: playableTarget)"))
+        XCTAssertTrue(controllerSource.contains("presentationState.restoreChromeIfNeeded()"))
+        XCTAssertTrue(controllerSource.contains("handleCurrentChapterChanged("))
+        XCTAssertTrue(controllerSource.contains("settings.saveChapterIndex(newIndex, for: fulltext.jobId)"))
+        XCTAssertTrue(controllerSource.contains("readerCoordinator.setChapter(newIndex)"))
+        XCTAssertTrue(controllerSource.contains("WidgetDataSync.updateLastRead("))
+        XCTAssertTrue(controllerSource.contains("cacheManager.refreshCachedIndices()"))
+        XCTAssertTrue(controllerSource.contains("handleCloseAudioPlayer()"))
+        XCTAssertTrue(controllerSource.contains("handleReopenAudioPlayer(currentChapterIndex:"))
+        XCTAssertTrue(controllerSource.contains("presentationState.hideAudioPlayer()"))
+        XCTAssertTrue(controllerSource.contains("presentationState.showAudioPlayer()"))
+        XCTAssertTrue(controllerSource.contains("handleAutoHideChrome()"))
+        XCTAssertTrue(controllerSource.contains("handleRestoreChrome()"))
+        XCTAssertTrue(controllerSource.contains("presentationState.autoHideChromeIfNeeded()"))
+        XCTAssertTrue(controllerSource.contains("presentationState.restoreChromeIfNeeded()"))
+        XCTAssertTrue(controllerSource.contains("presentSearch()"))
+        XCTAssertTrue(controllerSource.contains("onJumpToChapter: { [weak self] idx in"))
+        XCTAssertTrue(controllerSource.contains("self?.readingState.currentChapterIndex = max(0, idx - 1)"))
+        XCTAssertTrue(controllerSource.contains("presentReaderSettings()"))
+        XCTAssertTrue(controllerSource.contains("presentConversionStatus()"))
+        XCTAssertTrue(controllerSource.contains("private let readingState = InstantReaderReadingState()"))
+        XCTAssertTrue(controllerSource.contains("private let presentationState = InstantReaderPresentationState()"))
+        XCTAssertTrue(controllerSource.contains("prepareInitialReadingStateIfNeeded()"))
+        XCTAssertTrue(controllerSource.contains("player.armPersistedResume()"))
+        XCTAssertTrue(controllerSource.contains("persistLifecycleState()"))
+        XCTAssertTrue(controllerSource.contains("settings.saveChapterIndex(readingState.currentChapterIndex"))
+        XCTAssertTrue(controllerSource.contains("WidgetDataSync.flushLastRead()"))
+        XCTAssertTrue(controllerSource.contains("readerCoordinator.flush()"))
+        XCTAssertTrue(controllerSource.contains("ReaderSearchScreenController("))
+        XCTAssertTrue(controllerSource.contains("ReaderSettingsScreenController(settings: settings)"))
+        XCTAssertTrue(controllerSource.contains("ConversionStatusScreenController("))
+        XCTAssertTrue(instantSource.contains("private func openSearch()"))
+        XCTAssertTrue(instantSource.contains("var onShowSearch: (() -> Void)? = nil"))
+        XCTAssertTrue(instantSource.contains("onShowSearch()"))
+        XCTAssertTrue(instantSource.contains("private func openReaderSettings()"))
+        XCTAssertTrue(instantSource.contains("private func openToc()"))
+        XCTAssertTrue(instantSource.contains("onShowToc(currentAudioChapterIndex, currentChapterIndex, playerMounted, snapshot ?? .empty)"))
+        XCTAssertTrue(instantSource.contains("private func openConversionStatus()"))
+        XCTAssertTrue(instantSource.contains("var onChapterIndexChanged: ((Int) -> Void)? = nil"))
+        XCTAssertTrue(instantSource.contains("onChapterIndexChanged?(newIndex)"))
+        XCTAssertTrue(instantSource.contains("var onCloseAudioPlayer: (() -> Void)? = nil"))
+        XCTAssertTrue(instantSource.contains("var onReopenAudioPlayer: ((Int) -> Void)? = nil"))
+        XCTAssertTrue(instantSource.contains("var onAutoHideChrome: (() -> Void)? = nil"))
+        XCTAssertTrue(instantSource.contains("var onRestoreChrome: (() -> Void)? = nil"))
+        XCTAssertTrue(instantSource.contains("final class InstantReaderReadingState: ObservableObject"))
+        XCTAssertTrue(instantSource.contains("func restoreInitialPosition("))
+        XCTAssertTrue(instantSource.contains("@StateObject private var ownedReadingState: InstantReaderReadingState"))
+        XCTAssertTrue(instantSource.contains("final class InstantReaderPresentationState: ObservableObject"))
+        XCTAssertTrue(instantSource.contains("@StateObject private var ownedPresentationState: InstantReaderPresentationState"))
+        XCTAssertFalse(instantSource.contains("WidgetDataSync.flushLastRead()"))
+        XCTAssertFalse(instantSource.contains("readerCoordinator.flush()"))
+        XCTAssertFalse(instantSource.contains("settings.saveChapterIndex(newIndex, for: fulltext.jobId)"))
+        XCTAssertFalse(instantSource.contains("readerCoordinator.setChapter(newIndex)"))
+        XCTAssertFalse(instantSource.contains("WidgetDataSync.updateLastRead("))
+        XCTAssertFalse(instantSource.contains("currentChapterIndex = max(0, idx - 1)"))
+        XCTAssertFalse(instantSource.contains("@State private var currentChapterIndex: Int = 0"))
+        XCTAssertFalse(instantSource.contains("@State private var restoredPageRatio: Double? = nil"))
+        XCTAssertFalse(instantSource.contains("@State private var pinnedReaderChapterIndex: Int?"))
+        XCTAssertFalse(instantSource.contains("ReaderSessionState.load(bookID: fulltext.jobId)"))
+        XCTAssertFalse(instantSource.contains("@State private var chromeVisible = true"))
+        XCTAssertFalse(instantSource.contains("@State private var audioPlayerVisible = true"))
+        XCTAssertFalse(instantSource.contains("@Environment(\\.horizontalSizeClass) private var hSize"))
+        XCTAssertFalse(instantSource.contains("@State private var showingPlayMenu = false"))
+        XCTAssertEqual(instantSource.components(separatedBy: ".compatOnChange(of: snapshot)").count - 1, 1)
+    }
+
+    func testReaderAuxiliarySheetsUseUIKitHostsOnIOS() throws {
+        let testFile = URL(fileURLWithPath: #filePath)
+        let projectRoot = testFile
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+
+        let searchSource = try String(
+            contentsOf: projectRoot.appendingPathComponent("EpubToMp3/Features/Reader/Views/ReaderSearchOverlay.swift"),
+            encoding: .utf8
+        )
+        XCTAssertTrue(searchSource.contains("#if os(iOS)\nstruct ReaderSearchOverlay: View"))
+        XCTAssertTrue(searchSource.contains("EmptyView()"))
+        XCTAssertTrue(searchSource.contains("@State private var query = \"\""))
+        XCTAssertFalse(searchSource.contains("@State private var query = \"\"\n    @State private var results: [SearchResult] = []\n\n    var body"))
+
+        let settingsSource = try String(
+            contentsOf: projectRoot.appendingPathComponent("EpubToMp3/Features/Reader/Views/ReaderSettingsSheet.swift"),
+            encoding: .utf8
+        )
+        XCTAssertTrue(settingsSource.contains("#if os(iOS)\nstruct ReaderSettingsSheet: View"))
+        XCTAssertTrue(settingsSource.contains("EmptyView()"))
+        XCTAssertTrue(settingsSource.contains("@EnvironmentObject private var settings: AppSettings"))
+
+        let conversionSource = try String(
+            contentsOf: projectRoot.appendingPathComponent("EpubToMp3/Features/Conversion/Views/ConversionStatusSheet.swift"),
+            encoding: .utf8
+        )
+        XCTAssertTrue(conversionSource.contains("#if os(iOS)\nstruct ConversionStatusSheet: View"))
+        XCTAssertTrue(conversionSource.contains("EmptyView()"))
+        XCTAssertTrue(conversionSource.contains("/// Drives the elapsed-time label"))
+
+        let tocSource = try String(
+            contentsOf: projectRoot.appendingPathComponent("EpubToMp3/Features/Reader/Views/TocDrawer.swift"),
+            encoding: .utf8
+        )
+        XCTAssertTrue(tocSource.contains("#if os(iOS)\nstruct TocDrawer: View"))
+        XCTAssertTrue(tocSource.contains("EmptyView()"))
+        XCTAssertTrue(tocSource.contains("onDownloadAll: onDownloadAll"))
+        XCTAssertTrue(tocSource.contains("@Environment(\\.dismiss) private var dismiss"))
+
+        let searchControllerSource = try String(
+            contentsOf: projectRoot.appendingPathComponent("EpubToMp3/Features/Reader/Views/ReaderSearchScreenController.swift"),
+            encoding: .utf8
+        )
+        XCTAssertTrue(searchControllerSource.contains("final class ReaderSearchScreenController: UITableViewController"))
+
+        let settingsControllerSource = try String(
+            contentsOf: projectRoot.appendingPathComponent("EpubToMp3/Features/Reader/Views/ReaderSettingsScreenController.swift"),
+            encoding: .utf8
+        )
+        XCTAssertTrue(settingsControllerSource.contains("final class ReaderSettingsScreenController: UITableViewController"))
+
+        let conversionControllerSource = try String(
+            contentsOf: projectRoot.appendingPathComponent("EpubToMp3/Features/Conversion/Views/ConversionStatusScreenController.swift"),
+            encoding: .utf8
+        )
+        XCTAssertTrue(conversionControllerSource.contains("final class ConversionStatusScreenController: UITableViewController"))
+
+        let tocControllerSource = try String(
+            contentsOf: projectRoot.appendingPathComponent("EpubToMp3/Features/Reader/Views/TocScreenController.swift"),
+            encoding: .utf8
+        )
+        XCTAssertTrue(tocControllerSource.contains("final class TocScreenController: UITableViewController"))
+        XCTAssertTrue(tocControllerSource.contains("L10n.string(\"player.downloadAll\")"))
+
+        let bookmarksSource = try String(
+            contentsOf: projectRoot.appendingPathComponent("EpubToMp3/Features/Library/Views/BookmarksListView.swift"),
+            encoding: .utf8
+        )
+        XCTAssertTrue(bookmarksSource.contains("#if os(iOS)\nstruct BookmarksListView: View"))
+        XCTAssertTrue(bookmarksSource.contains("EmptyView()"))
+        XCTAssertTrue(bookmarksSource.contains("@EnvironmentObject private var bookmarkStore: BookmarkStore"))
+
+        let bookmarksControllerSource = try String(
+            contentsOf: projectRoot.appendingPathComponent("EpubToMp3/Features/Library/Views/BookmarksScreenController.swift"),
+            encoding: .utf8
+        )
+        XCTAssertTrue(bookmarksControllerSource.contains("final class BookmarksScreenController: UITableViewController"))
+
+        let playerReaderSource = try String(
+            contentsOf: projectRoot.appendingPathComponent("EpubToMp3/Features/Reader/Views/PlayerReaderView.swift"),
+            encoding: .utf8
+        )
+        XCTAssertTrue(playerReaderSource.contains("BookmarksListView("))
+        XCTAssertTrue(playerReaderSource.contains("ReaderSearchOverlay("))
+        XCTAssertTrue(playerReaderSource.contains("TocDrawer("))
+
+        let tagEditorSource = try String(
+            contentsOf: projectRoot.appendingPathComponent("EpubToMp3/Features/Settings/Views/TagEditorSheet.swift"),
+            encoding: .utf8
+        )
+        XCTAssertTrue(tagEditorSource.contains("#if os(iOS)\nstruct TagEditorSheet: View"))
+        XCTAssertTrue(tagEditorSource.contains("EmptyView()"))
+        XCTAssertTrue(tagEditorSource.contains("@EnvironmentObject private var library: LibraryStore"))
+
+        let tagEditorControllerSource = try String(
+            contentsOf: projectRoot.appendingPathComponent("EpubToMp3/Features/Settings/Views/TagEditorScreenController.swift"),
+            encoding: .utf8
+        )
+        XCTAssertTrue(tagEditorControllerSource.contains("final class TagEditorScreenController: UITableViewController"))
+
+        let telemetryControllerSource = try String(
+            contentsOf: projectRoot.appendingPathComponent("EpubToMp3/Features/Settings/Views/TelemetryScreenController.swift"),
+            encoding: .utf8
+        )
+        XCTAssertTrue(telemetryControllerSource.contains("final class TelemetryScreenController: UITableViewController"))
+
+        let telemetrySource = try String(
+            contentsOf: projectRoot.appendingPathComponent("EpubToMp3/Features/Settings/Views/TelemetryView.swift"),
+            encoding: .utf8
+        )
+        XCTAssertTrue(telemetrySource.contains("#if !os(iOS)\n@MainActor"))
+
+        let logsControllerSource = try String(
+            contentsOf: projectRoot.appendingPathComponent("EpubToMp3/Features/Settings/Views/LogsScreenController.swift"),
+            encoding: .utf8
+        )
+        XCTAssertTrue(logsControllerSource.contains("final class LogsScreenController: UIViewController"))
+
+        let logsSource = try String(
+            contentsOf: projectRoot.appendingPathComponent("EpubToMp3/Features/Settings/Views/LogsView.swift"),
+            encoding: .utf8
+        )
+        XCTAssertTrue(logsSource.contains("#if !os(iOS)\n@MainActor"))
     }
 
     func testMainReaderShowsListenToolbarButtonOnBookSurface() throws {
@@ -299,13 +617,13 @@ final class MainReaderViewTests: XCTestCase {
             contentsOf: URL(fileURLWithPath: #filePath)
                 .deletingLastPathComponent()
                 .deletingLastPathComponent()
-                .appendingPathComponent("EpubToMp3/Features/Reader/Views/MainReaderView.swift")
+                .appendingPathComponent("EpubToMp3/Features/Reader/Views/MainReaderScreenController.swift")
         )
 
-        XCTAssertTrue(source.contains(".toolbar {"),
-                      "MainReaderView must restore a toolbar on the populated book surface.")
-        XCTAssertTrue(source.contains("ToolbarItem(placement: .compatPrimaryTrailing)"),
-                      "The listen affordance must live in the trailing reader toolbar slot.")
+        XCTAssertTrue(source.contains("configureListenButton()"),
+                      "The UIKit main reader controller must configure the listen affordance.")
+        XCTAssertTrue(source.contains("listenButton"),
+                      "The UIKit main reader controller must own the shared listen button.")
         XCTAssertTrue(source.contains("listenButton"),
                       "The populated reader surface must mount the shared listen button helper.")
     }
@@ -335,15 +653,15 @@ final class MainReaderViewTests: XCTestCase {
             contentsOf: URL(fileURLWithPath: #filePath)
                 .deletingLastPathComponent()
                 .deletingLastPathComponent()
-                .appendingPathComponent("EpubToMp3/Features/Reader/Views/MainReaderView.swift")
+                .appendingPathComponent("EpubToMp3/Features/Reader/Views/MainReaderScreenController.swift")
         )
 
-        XCTAssertTrue(source.contains("@EnvironmentObject private var playerPresentation: PlayerPresentation"),
-                      "MainReaderView must read the shared player presentation coordinator from the environment.")
+        XCTAssertTrue(source.contains("private let playerPresentation: PlayerPresentation"),
+                      "The UIKit main reader controller must own the shared player presentation coordinator.")
         XCTAssertTrue(source.contains("playerPresentation.showFullPlayer()"),
                       "The listen button must open the player through PlayerPresentation.")
         XCTAssertFalse(source.contains("var onOpenPlayer: (() -> Void)?"),
-                       "MainReaderView must not expose the old onOpenPlayer callback once presentation is environment-driven.")
+                       "Main reader flow must not expose the old onOpenPlayer callback once presentation is environment-driven.")
     }
 
     func testPaginatedReaderRoutesTextViewTapsAndSwipesToPageTurns() throws {
@@ -392,13 +710,11 @@ final class MainReaderViewTests: XCTestCase {
 
     func testFullPlayerUsesSpotifyBottomSheetPresentation() throws {
         let sources = try appViewSources()
-        let rootSource = sources.root
+        let iosRootContainer = sources.iosRootContainer
         let fullPlayerSource = sources.fullPlayer
 
-        XCTAssertTrue(rootSource.contains(".transition(.spotifyBottomSheet)"),
-                      "Full player must slide in/out from below the screen like Spotify, not scale from the mini player.")
-        XCTAssertFalse(rootSource.contains(".transition(.risesFromMiniPlayer)"),
-                       "The old grow-from-mini-player transition must not be used.")
+        XCTAssertTrue(iosRootContainer.contains("fullPlayerController.view.isHidden = !playerPresentation.showingFullPlayer"),
+                      "The UIKit root container must own full-player visibility at the app-overlay layer.")
         XCTAssertTrue(fullPlayerSource.contains("@EnvironmentObject private var playerPresentation: PlayerPresentation"),
                       "In-tree player dismissal must clear PlayerPresentation instead of relying on Environment.dismiss.")
         XCTAssertTrue(fullPlayerSource.contains("playerPresentation.dismissFullPlayer()"),
@@ -408,26 +724,45 @@ final class MainReaderViewTests: XCTestCase {
     func testMiniPlayerInsetKeepsTabContentAboveMiniPlayer() throws {
         let sources = try appViewSources()
         let rootSource = sources.root
+        let iosRootContainer = sources.iosRootContainer
         let miniPlayerSource = sources.miniPlayer
 
         XCTAssertTrue(miniPlayerSource.contains("static let reservedHeight"),
                       "MiniPlayerBar must expose one canonical reserved height.")
-        XCTAssertTrue(rootSource.contains(".miniPlayerInset(visible: showMiniPlayer"),
-                      "Each tab's content must reserve space for MiniPlayerBar above the tab bar.")
-        XCTAssertEqual(rootSource.components(separatedBy: ".miniPlayerInset(visible: showMiniPlayer").count - 1, 3,
-                       "Every root tab must host the mini player above the tab bar.")
-        XCTAssertFalse(rootSource.contains(".padding(.bottom, visible ? MiniPlayerBar.reservedHeight : 0)"),
-                       "Do not add explicit bottom padding on top of safeAreaInset; it creates a blank white strip above the mini player.")
-        XCTAssertTrue(rootSource.contains("content\n            .safeAreaInset(edge: .bottom"),
-                      "The mini player must be inserted through safeAreaInset so content ends directly above it.")
+        XCTAssertTrue(rootSource.contains("IOSRootContainer()"),
+                      "The iPhone root must route mini-player ownership through the UIKit root container.")
+        XCTAssertTrue(iosRootContainer.contains("miniPlayerController.view.isHidden = !showMini"),
+                      "The UIKit root container must own mini-player visibility.")
+        XCTAssertTrue(iosRootContainer.contains("MiniPlayerContainerController("),
+                      "The UIKit root container must mount the mini-player through the dedicated UIKit container.")
+    }
+
+    func testMiniPlayerUIKitImplementationDoesNotKeepUnusedSwiftUIHostWrapper() throws {
+        let testFile = URL(fileURLWithPath: #filePath)
+        let projectRoot = testFile
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let miniPlayerUIKitSource = try String(
+            contentsOf: projectRoot.appendingPathComponent("EpubToMp3/Features/Playback/Views/MiniPlayerBarHost.swift"),
+            encoding: .utf8
+        )
+
+        XCTAssertFalse(miniPlayerUIKitSource.contains("struct MiniPlayerBarHost"),
+                       "The iOS mini-player should not keep an unused SwiftUI wrapper once the UIKit root owns the bar directly.")
+        XCTAssertTrue(miniPlayerUIKitSource.contains("final class MiniPlayerBarUIKitView: UIView"),
+                      "The reusable UIKit mini-player view must remain available for the root container.")
     }
 
     func testConvertViewHasScrollableBottomClearanceForMiniPlayer() throws {
         let sources = try appViewSources()
         let convertSource = sources.convert
+        let shellSource = sources.iosShell
 
-        XCTAssertTrue(convertSource.contains(".padding(.bottom, MiniPlayerBar.reservedHeight)"),
-                      "Manual conversion Form must have scrollable bottom clearance so its last controls are not covered by the mini player.")
+        XCTAssertTrue(convertSource.contains("#if !os(iOS)\n@MainActor\nfinal class ConvertViewModel: ObservableObject"))
+        XCTAssertTrue(convertSource.contains(".padding(.bottom, MiniPlayerBar.reservedHeight)")
+                      || shellSource.contains("ConvertScreenController("),
+                      "Manual conversion must either keep SwiftUI mini-player clearance or move to a dedicated UIKit screen.")
+        XCTAssertTrue(convertSource.contains("@StateObject private var viewModel = ConvertViewModel()"))
     }
 
     // MARK: - SplitNavMode stability
@@ -463,7 +798,7 @@ final class MainReaderViewTests: XCTestCase {
 
     // MARK: - AppStorage key contract
 
-    private func appViewSources() throws -> (root: String, settings: String, fullPlayer: String, miniPlayer: String, convert: String, library: String, bookOpen: String, instantReader: String, reader: String, attributedPage: String, platformCompat: String) {
+    private func appViewSources() throws -> (root: String, iosRootContainer: String, iosShell: String, settings: String, fullPlayer: String, miniPlayer: String, convert: String, library: String, bookOpen: String, instantReader: String, reader: String, attributedPage: String, platformCompat: String) {
         let testFile = URL(fileURLWithPath: #filePath)
         let projectRoot = testFile
             .deletingLastPathComponent()
@@ -471,6 +806,10 @@ final class MainReaderViewTests: XCTestCase {
         return (
             root: try String(contentsOf: projectRoot
                 .appendingPathComponent("EpubToMp3/App/RootView.swift")),
+            iosRootContainer: try String(contentsOf: projectRoot
+                .appendingPathComponent("EpubToMp3/App/IOSRootContainer.swift")),
+            iosShell: try String(contentsOf: projectRoot
+                .appendingPathComponent("EpubToMp3/App/IOSAppShell.swift")),
             settings: try String(contentsOf: projectRoot
                 .appendingPathComponent("EpubToMp3/Features/Settings/Views/SettingsView.swift")),
             fullPlayer: try String(contentsOf: projectRoot
@@ -509,6 +848,160 @@ final class MainReaderViewTests: XCTestCase {
         XCTAssertTrue(sources.settings.contains("ProgressView(value: storageUsage.budgetFraction)"))
         XCTAssertTrue(sources.settings.contains("clearAllDownloads()"))
         XCTAssertTrue(sources.settings.contains("settings.clearAllDownloads"))
+        XCTAssertFalse(sources.settings.contains("embeddedRuntimeSection"))
+        XCTAssertFalse(sources.settings.contains("settingsForm"))
+        XCTAssertTrue(sources.iosShell.contains("SettingsScreenController("),
+                      "The iOS shell must route Settings through the UIKit settings controller.")
+        XCTAssertTrue(sources.settings.contains("#if os(iOS)\nstruct SettingsView: View"))
+        XCTAssertTrue(sources.settings.contains("EmptyView()"))
+
+        let testFile = URL(fileURLWithPath: #filePath)
+        let projectRoot = testFile
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let settingsControllerSource = try String(
+            contentsOf: projectRoot.appendingPathComponent("EpubToMp3/Features/Settings/Views/SettingsScreenController.swift"),
+            encoding: .utf8
+        )
+        XCTAssertTrue(settingsControllerSource.contains("TelemetryScreenController(settings: settings)"))
+        XCTAssertTrue(settingsControllerSource.contains("JobsListScreenController("))
+        XCTAssertTrue(settingsControllerSource.contains("player: player"))
+        XCTAssertTrue(settingsControllerSource.contains("playbackClock: playbackClock"))
+    }
+
+    func testMainIOSViewsDelegateToUIKitHosts() throws {
+        let sources = try appViewSources()
+        XCTAssertTrue(sources.library.contains("#if os(iOS)\nstruct LibraryView: View"))
+        XCTAssertTrue(sources.library.contains("EmptyView()"))
+        XCTAssertTrue(sources.convert.contains("#if os(iOS)\nstruct ConvertView: View"))
+        XCTAssertTrue(sources.convert.contains("EmptyView()"))
+        XCTAssertTrue(sources.settings.contains("#if os(iOS)\nstruct SettingsView: View"))
+        XCTAssertTrue(sources.settings.contains("EmptyView()"))
+        XCTAssertFalse(sources.fullPlayer.contains("FullPlayerScreenHost"))
+        XCTAssertTrue(sources.fullPlayer.contains("struct FullPlayerSheet: View"))
+        XCTAssertFalse(sources.miniPlayer.contains("MiniPlayerBarBridge"))
+        XCTAssertFalse(sources.miniPlayer.contains("UIViewRepresentable"))
+
+        let testFile = URL(fileURLWithPath: #filePath)
+        let projectRoot = testFile
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let jobsSource = try String(
+            contentsOf: projectRoot.appendingPathComponent("EpubToMp3/Features/Conversion/Views/JobsListView.swift"),
+            encoding: .utf8
+        )
+        XCTAssertTrue(jobsSource.contains("#if os(iOS)\nstruct JobsListView: View"))
+        XCTAssertTrue(jobsSource.contains("EmptyView()"))
+        XCTAssertTrue(jobsSource.contains("#if !os(iOS)\n@MainActor\nfinal class JobsListViewModel: ObservableObject"))
+        XCTAssertTrue(jobsSource.contains("@StateObject private var viewModel = JobsListViewModel()"))
+        XCTAssertFalse(jobsSource.contains("JobDetailView(jobId: session.bookTitle)"))
+        XCTAssertTrue(jobsSource.contains("if let jobId = session.jobId, !jobId.isEmpty"))
+        XCTAssertTrue(jobsSource.contains("NavigationLink(value: jobId)"))
+        XCTAssertTrue(jobsSource.contains("JobDetailView(jobId: jobId)"))
+
+        let jobDetailSource = try String(
+            contentsOf: projectRoot.appendingPathComponent("EpubToMp3/Features/Conversion/Views/JobDetailView.swift"),
+            encoding: .utf8
+        )
+        XCTAssertTrue(jobDetailSource.contains("#if os(iOS)\nstruct JobDetailView: View"))
+        XCTAssertTrue(jobDetailSource.contains("EmptyView()"))
+        XCTAssertTrue(jobDetailSource.contains("#if !os(iOS)\n@MainActor\nfinal class JobDetailViewModel: ObservableObject"))
+        XCTAssertTrue(jobDetailSource.contains("@EnvironmentObject private var library: LibraryStore"))
+
+        let convertControllerSource = try String(
+            contentsOf: projectRoot.appendingPathComponent("EpubToMp3/Features/Conversion/Views/ConvertScreenController.swift"),
+            encoding: .utf8
+        )
+        XCTAssertTrue(convertControllerSource.contains("JobDetailScreenController(jobId: jobId"))
+        XCTAssertTrue(convertControllerSource.contains("player: player"))
+        XCTAssertTrue(convertControllerSource.contains("playbackClock: playbackClock"))
+
+        let librarySource = try String(
+            contentsOf: projectRoot.appendingPathComponent("EpubToMp3/Features/Library/Views/LibraryView.swift"),
+            encoding: .utf8
+        )
+        XCTAssertTrue(librarySource.contains("#if os(iOS)\nstruct LibraryView: View"))
+        XCTAssertTrue(librarySource.contains("@EnvironmentObject private var library: LibraryStore"))
+
+        let fullPlayerControllerSource = try String(
+            contentsOf: projectRoot.appendingPathComponent("EpubToMp3/Features/Playback/Views/FullPlayerScreenController.swift"),
+            encoding: .utf8
+        )
+        XCTAssertTrue(fullPlayerControllerSource.contains("final class FullPlayerScreenController: UIViewController"))
+        XCTAssertTrue(fullPlayerControllerSource.contains("TocScreenController("))
+
+        let jobDetailControllerSource = try String(
+            contentsOf: projectRoot.appendingPathComponent("EpubToMp3/Features/Conversion/Views/JobDetailScreenController.swift"),
+            encoding: .utf8
+        )
+        XCTAssertTrue(jobDetailControllerSource.contains("LogsScreenController(settings: settings, jobId: jobId)"))
+        XCTAssertTrue(jobDetailControllerSource.contains("PlayerScreenController("))
+        XCTAssertFalse(jobDetailControllerSource.contains("UIHostingController(\n            rootView: PlayerReaderView"),
+                       "The iOS job detail flow should use the dedicated UIKit player controller instead of hosting PlayerReaderView directly.")
+
+        let jobsControllerSource = try String(
+            contentsOf: projectRoot.appendingPathComponent("EpubToMp3/Features/Conversion/Views/JobsListScreenController.swift"),
+            encoding: .utf8
+        )
+        XCTAssertTrue(jobsControllerSource.contains("if let jobId = session.jobId, !jobId.isEmpty"))
+        XCTAssertTrue(jobsControllerSource.contains("JobDetailScreenController("))
+
+        let jobsCollectionSource = try String(
+            contentsOf: projectRoot.appendingPathComponent("EpubToMp3/Features/Conversion/Views/JobsListCollectionView.swift"),
+            encoding: .utf8
+        )
+        XCTAssertTrue(jobsCollectionSource.contains("if session.jobId?.isEmpty == false"))
+        XCTAssertTrue(jobsCollectionSource.contains(".disclosureIndicator()"))
+
+        let iosRootContainerSource = try String(
+            contentsOf: projectRoot.appendingPathComponent("EpubToMp3/App/IOSRootContainer.swift"),
+            encoding: .utf8
+        )
+        XCTAssertFalse(iosRootContainerSource.contains("UIHostingController("),
+                       "The iOS root container should not wrap UIKit-backed reader/full-player/mini-player surfaces in SwiftUI hosting controllers.")
+        XCTAssertTrue(iosRootContainerSource.contains("FullPlayerScreenController("))
+
+        let playerReaderSource = try String(
+            contentsOf: projectRoot.appendingPathComponent("EpubToMp3/Features/Reader/Views/PlayerReaderView.swift"),
+            encoding: .utf8
+        )
+        XCTAssertTrue(playerReaderSource.contains("PlayerReaderIOSHost("))
+        XCTAssertTrue(playerReaderSource.contains("PlayerScreenController("))
+
+        let fullPlayerSource = try String(
+            contentsOf: projectRoot.appendingPathComponent("EpubToMp3/Features/Playback/Views/FullPlayerSheet.swift"),
+            encoding: .utf8
+        )
+        XCTAssertTrue(fullPlayerSource.contains("#if os(iOS)\nstruct FullPlayerSheet: View"))
+        XCTAssertTrue(fullPlayerSource.contains("EmptyView()"))
+    }
+
+    func testUIKitMigrationLeavesOnlyReaderHostingControllersInAppSurfaces() throws {
+        let testFile = URL(fileURLWithPath: #filePath)
+        let projectRoot = testFile
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("EpubToMp3")
+
+        let enumerator = FileManager.default.enumerator(
+            at: projectRoot,
+            includingPropertiesForKeys: nil
+        )
+        var filesUsingHosting: [String] = []
+
+        while let fileURL = enumerator?.nextObject() as? URL {
+            guard fileURL.pathExtension == "swift" else { continue }
+            let source = try String(contentsOf: fileURL, encoding: .utf8)
+            if source.contains("UIHostingController(") {
+                filesUsingHosting.append(fileURL.lastPathComponent)
+            }
+        }
+
+        XCTAssertEqual(
+            Set(filesUsingHosting),
+            ["BookOpenScreenController.swift", "InstantReaderScreenController.swift"],
+            "The remaining UIHostingController usage should be constrained to the UIKit reader entry points that still host SwiftUI reader renderers."
+        )
     }
 
     func testSystemVolumeIconsUseEqualCenteredFrames() throws {
@@ -517,10 +1010,42 @@ final class MainReaderViewTests: XCTestCase {
             contentsOf: testFile
                 .deletingLastPathComponent()
                 .deletingLastPathComponent()
-                .appendingPathComponent("EpubToMp3/Features/Playback/Views/PlayerView.swift"),
+                .appendingPathComponent("EpubToMp3/Features/Playback/Views/PlaybackControlsSupport.swift"),
             encoding: .utf8
         )
         XCTAssertTrue(source.contains(".frame(width: 24, height: 24)"))
         XCTAssertTrue(source.contains(".frame(maxWidth: .infinity, minHeight: 44, alignment: .center)"))
+    }
+
+    func testGeneratedProjectDropsDeletedLegacyFilesAndShareExtensionDeclaresPrincipalClass() throws {
+        let testFile = URL(fileURLWithPath: #filePath)
+        let iosRoot = testFile
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+
+        let projectSource = try String(
+            contentsOf: iosRoot.appendingPathComponent("EpubToMp3.xcodeproj/project.pbxproj"),
+            encoding: .utf8
+        )
+        for deletedName in [
+            "PlayerView.swift",
+            "NowPlayingView.swift",
+            "NowPlayingScreenController.swift",
+            "ChapterListScreenController.swift",
+            "ChapterListCollectionView.swift",
+        ] {
+            XCTAssertFalse(
+                projectSource.contains(deletedName),
+                "The generated Xcode project must not keep stale references to \(deletedName)."
+            )
+        }
+
+        let shareExtensionPlist = try String(
+            contentsOf: iosRoot.appendingPathComponent("EpubToMp3ShareExtension/Info.plist"),
+            encoding: .utf8
+        )
+        XCTAssertTrue(shareExtensionPlist.contains("<key>NSExtensionPrincipalClass</key>"))
+        XCTAssertTrue(shareExtensionPlist.contains("EpubToMp3ShareExtension.ShareViewController"))
+        XCTAssertFalse(shareExtensionPlist.contains("<key>NSExtensionMainStoryboard</key>"))
     }
 }

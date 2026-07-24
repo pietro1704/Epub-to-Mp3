@@ -14,34 +14,58 @@ import SwiftUI
 import SnapshotTesting
 @testable import EpubToMp3
 
+private struct LibraryScreenSnapshotHost: UIViewControllerRepresentable {
+    let store: LibraryStore
+    let settings: AppSettings
+    let bookmarks: BookmarkStore
+
+    func makeUIViewController(context: Context) -> UINavigationController {
+        UINavigationController(
+            rootViewController: LibraryScreenController(
+                library: store,
+                settings: settings,
+                bookmarkStore: bookmarks
+            )
+        )
+    }
+
+    func updateUIViewController(_ controller: UINavigationController, context: Context) {
+        (controller.viewControllers.first as? LibraryScreenController)?.refreshFromStores()
+    }
+}
+
 @MainActor
 final class LibrarySnapshotTests: XCTestCase {
 
-    private func makeEmptyLibrary() -> (LibraryStore, AppSettings) {
+    private func makeEmptyLibrary() -> (LibraryStore, AppSettings, BookmarkStore) {
         let suite = "snapshot.library.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!
         defaults.removePersistentDomain(forName: suite)
         let store = LibraryStore()
         let settings = AppSettings(defaults: defaults)
-        return (store, settings)
+        return (store, settings, BookmarkStore())
     }
 
     // MARK: - Empty state hero
 
     func testLibraryEmptyStateIPhones() {
-        let (store, settings) = makeEmptyLibrary()
-        let view = LibraryView()
-            .environmentObject(store)
-            .environmentObject(settings)
+        let (store, settings, bookmarks) = makeEmptyLibrary()
+        let view = LibraryScreenSnapshotHost(
+            store: store,
+            settings: settings,
+            bookmarks: bookmarks
+        )
         assertSnapshots(of: view, on: SnapshotDevices.iPhonesPortrait,
                         named: "Library-Empty")
     }
 
     func testLibraryEmptyStateIPad() {
-        let (store, settings) = makeEmptyLibrary()
-        let view = LibraryView()
-            .environmentObject(store)
-            .environmentObject(settings)
+        let (store, settings, bookmarks) = makeEmptyLibrary()
+        let view = LibraryScreenSnapshotHost(
+            store: store,
+            settings: settings,
+            bookmarks: bookmarks
+        )
         assertDeviceSnapshot(of: view,
                              on: SnapshotDevices.iPadPro12_9Portrait,
                              named: "Library-Empty-iPadPro")

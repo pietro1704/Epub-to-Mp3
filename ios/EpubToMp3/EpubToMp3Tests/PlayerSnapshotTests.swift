@@ -2,10 +2,10 @@
 //  PlayerSnapshotTests.swift
 //  EpubToMp3Tests
 //
-//  Regression snapshots for the playback surfaces: `MiniPlayerBar`,
-//  `FullPlayerSheet`, `NowPlayingView`. We render each with a
-//  pre-populated `AudioPlayer` snapshot so the bar shows a real title /
-//  chapter / progress bar in the captured PNG.
+//  Regression snapshots for the playback surfaces: `MiniPlayerBar`
+//  and the iOS `FullPlayerScreenController`. We render each with an
+//  isolated player stack so the captured PNGs track the real platform
+//  surface instead of an extra SwiftUI host layer.
 //
 
 #if DEBUG && canImport(SnapshotTesting) && canImport(UIKit)
@@ -13,6 +13,27 @@ import XCTest
 import SwiftUI
 import SnapshotTesting
 @testable import EpubToMp3
+
+#if os(iOS)
+private struct FullPlayerControllerSnapshotHost: UIViewControllerRepresentable {
+    let player: AudioPlayer
+    let library: LibraryStore
+    let presentation: PlayerPresentation
+
+    func makeUIViewController(context: Context) -> FullPlayerScreenController {
+        FullPlayerScreenController(
+            player: player,
+            playbackClock: player.playbackClock,
+            library: library,
+            playerPresentation: presentation
+        )
+    }
+
+    func updateUIViewController(_ controller: FullPlayerScreenController, context: Context) {
+        controller.refresh(library: library)
+    }
+}
+#endif
 
 @MainActor
 final class PlayerSnapshotTests: XCTestCase {
@@ -40,32 +61,32 @@ final class PlayerSnapshotTests: XCTestCase {
         let stack = makeStack()
         let view = MiniPlayerBar(onTap: {})
             .environmentObject(stack.player)
+            .environmentObject(stack.player.playbackClock)
             .environmentObject(stack.library)
-            .environmentObject(stack.settings)
         assertSnapshots(of: view, on: SnapshotDevices.iPhonesPortrait,
                         named: "MiniPlayer-Empty")
     }
 
-    // MARK: - FullPlayerSheet (no current item — covers the empty-state branch)
+    // MARK: - Full player (no current item — covers the empty-state branch)
 
-    func testFullPlayerSheetEmptyIPhones() {
+    func testFullPlayerControllerEmptyIPhones() {
         let stack = makeStack()
-        let view = FullPlayerSheet()
-            .environmentObject(stack.player)
-            .environmentObject(stack.library)
-            .environmentObject(stack.settings)
-            .environmentObject(stack.presentation)
+        let view = FullPlayerControllerSnapshotHost(
+            player: stack.player,
+            library: stack.library,
+            presentation: stack.presentation
+        )
         assertSnapshots(of: view, on: SnapshotDevices.iPhonesPortrait,
                         named: "FullPlayer-Empty")
     }
 
-    func testFullPlayerSheetEmptyIPad() {
+    func testFullPlayerControllerEmptyIPad() {
         let stack = makeStack()
-        let view = FullPlayerSheet()
-            .environmentObject(stack.player)
-            .environmentObject(stack.library)
-            .environmentObject(stack.settings)
-            .environmentObject(stack.presentation)
+        let view = FullPlayerControllerSnapshotHost(
+            player: stack.player,
+            library: stack.library,
+            presentation: stack.presentation
+        )
         assertDeviceSnapshot(of: view,
                              on: SnapshotDevices.iPadPro12_9Portrait,
                              named: "FullPlayer-Empty-iPad")

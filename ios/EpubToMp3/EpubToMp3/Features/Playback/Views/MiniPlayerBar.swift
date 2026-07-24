@@ -109,16 +109,13 @@ struct MiniPlayerBar: View {
     // MARK: Body
 
     var body: some View {
+        #if !os(iOS)
         if let book = currentBook {
             VStack(spacing: 0) {
                 #if canImport(UIKit)
                 if bookProgress != nil {
                     SegmentedPlaybackProgressBar(
-                        bookProgressProvider: { [player] in
-                            guard let snapshot = player.snapshot,
-                                  snapshot.chapterProgress?.isEmpty == false else { return nil }
-                            return BookChapterProgress(snapshot: snapshot)
-                        },
+                        bookProgressProvider: { [player] in player.cachedBookChapterProgress },
                         currentPlayableIndexProvider: { [player] in player.currentChapterIndex }
                     )
                     .frame(height: 4)
@@ -303,6 +300,7 @@ struct MiniPlayerBar: View {
             )
 
         }
+        #endif
     }
 
     // MARK: Play / divergence routing
@@ -336,7 +334,6 @@ struct MiniPlayerBar: View {
     }
 
 }
-
 #if DEBUG
 private struct MiniPlayerPreviewPlaying: View {
     private let lib = LibraryStore.previewPopulated

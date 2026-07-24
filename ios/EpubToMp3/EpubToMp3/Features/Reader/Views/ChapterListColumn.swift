@@ -101,12 +101,6 @@ struct ChapterListColumn: View {
                     description: Text(localized: "chapterList.noChaptersYetDescription")
                 )
             } else {
-                #if canImport(UIKit)
-                ChapterListCollectionView(
-                    rows: ChapterListRowModel.rows(from: chapters),
-                    selectedChapterIndex: $selectedChapterIndex
-                )
-                #else
                 List(selection: $selectedChapterIndex) {
                     ForEach(chapters) { chapter in
                         ChapterListRow(chapter: chapter)
@@ -114,7 +108,6 @@ struct ChapterListColumn: View {
                     }
                 }
                 .listStyle(.inset)
-                #endif
             }
         }
     }

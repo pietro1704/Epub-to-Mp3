@@ -1,6 +1,8 @@
 import SwiftUI
+#if !os(iOS)
 import AVFoundation
 import MediaPlayer
+#endif
 
 struct FullPlayerLyricsState {
     static let tutorialSeenKey = "fullPlayer.coverLyricsTutorialSeen"
@@ -59,6 +61,13 @@ struct ChapterListRowState: Equatable {
 /// Presentation: `.fullScreenCover(isPresented:)` — slides up from the
 /// bottom, exactly like Spotify / Apple Music. Dismissed by swiping
 /// down (custom drag gesture) or tapping the chevron handle.
+#if os(iOS)
+struct FullPlayerSheet: View {
+    var body: some View {
+        EmptyView()
+    }
+}
+#else
 struct FullPlayerSheet: View {
     @EnvironmentObject private var player: AudioPlayer
     @EnvironmentObject private var playbackClock: PlaybackClock
@@ -170,7 +179,16 @@ struct FullPlayerSheet: View {
         .task(id: currentBookID) { await loadLyricsFulltext() }
         .compatOnChange(of: player.currentChapterIndex) { _ in prepareLyricsChapter() }
         .compatOnChange(of: playbackClock.durationSeconds) { _ in prepareLyricsChapter() }
-        .task {
+        // `player.position` ticks at ~4 Hz. Writing `@State lyricSentenceId`
+        // on every tick re-evaluates this whole body (1086 lines) even
+        // while `lyricsOverlay` is closed and `currentLyricText` isn't
+        // being read anywhere — the exact per-tick cost the CADisplayLink
+        // progress-bar migration removed elsewhere. `.task(id:
+        // showLyricsOverlay)` cancels/restarts this loop when the overlay
+        // toggles, so the position stream — and the state writes — only
+        // run while lyrics are actually visible.
+        .task(id: showLyricsOverlay) {
+            guard showLyricsOverlay else { return }
             for await position in player.position {
                 guard !Task.isCancelled else { break }
                 lyricSentenceId = lyricSync.update(positionSeconds: position)
@@ -211,7 +229,16 @@ struct FullPlayerSheet: View {
         .task(id: currentBookID) { await loadLyricsFulltext() }
         .compatOnChange(of: player.currentChapterIndex) { _ in prepareLyricsChapter() }
         .compatOnChange(of: playbackClock.durationSeconds) { _ in prepareLyricsChapter() }
-        .task {
+        // `player.position` ticks at ~4 Hz. Writing `@State lyricSentenceId`
+        // on every tick re-evaluates this whole body (1086 lines) even
+        // while `lyricsOverlay` is closed and `currentLyricText` isn't
+        // being read anywhere — the exact per-tick cost the CADisplayLink
+        // progress-bar migration removed elsewhere. `.task(id:
+        // showLyricsOverlay)` cancels/restarts this loop when the overlay
+        // toggles, so the position stream — and the state writes — only
+        // run while lyrics are actually visible.
+        .task(id: showLyricsOverlay) {
+            guard showLyricsOverlay else { return }
             for await position in player.position {
                 guard !Task.isCancelled else { break }
                 lyricSentenceId = lyricSync.update(positionSeconds: position)
@@ -415,11 +442,7 @@ struct FullPlayerSheet: View {
             #if canImport(UIKit)
             if let snapshot = player.snapshot, snapshot.chapterProgress?.isEmpty == false {
                 SegmentedPlaybackProgressBar(
-                    bookProgressProvider: { [player] in
-                        guard let snapshot = player.snapshot,
-                              snapshot.chapterProgress?.isEmpty == false else { return nil }
-                        return BookChapterProgress(snapshot: snapshot)
-                    },
+                    bookProgressProvider: { [player] in player.cachedBookChapterProgress },
                     currentPlayableIndexProvider: { [player] in player.currentChapterIndex }
                 )
                 .frame(height: 6)
@@ -1098,4 +1121,5 @@ private struct RemoveButtonTraitIfDisabledModifier: ViewModifier {
         .environmentObject(lib)
         .environmentObject(PlayerPresentation())
 }
+#endif
 #endif

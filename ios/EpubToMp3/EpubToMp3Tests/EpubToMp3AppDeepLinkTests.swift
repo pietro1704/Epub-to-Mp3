@@ -3,15 +3,14 @@ import XCTest
 
 /// Regression tests for the three widget-reported bugs:
 ///  1. Stale "pause" state in the Now Playing widget (covered in
-///     `NowPlayingViewTests` / `WidgetDataSyncTests`).
+///     `PlaybackBindingStoreTests` / `WidgetDataSyncTests`).
 ///  2. Widget play/pause/skip buttons not doing anything.
 ///  3. Tapping the widget opens the app but never navigates to the player.
 ///
 /// `EpubToMp3App` is a SwiftUI `App` struct — its `handleDeepLink` /
 /// `registerWidgetIntentObserver` logic isn't directly invokable from a
 /// unit-test host without a live scene. We assert on the source text
-/// (same pattern already used by `NowPlayingViewTests
-/// .testNowPlayingUsesJobSnapshotStubForPlayerReader`) to pin the wiring,
+/// (same pattern already used by the playback binding tests) to pin the wiring,
 /// plus a live Darwin-notification round trip for the parts that ARE
 /// invokable without a scene.
 final class EpubToMp3AppDeepLinkTests: XCTestCase {

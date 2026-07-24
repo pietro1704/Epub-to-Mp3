@@ -1,34 +1,5 @@
 #if os(iOS)
-import SwiftUI
 import UIKit
-
-struct IOSAppShell: UIViewControllerRepresentable {
-    @EnvironmentObject private var settings: AppSettings
-    @EnvironmentObject private var library: LibraryStore
-    @EnvironmentObject private var player: AudioPlayer
-    @EnvironmentObject private var playerPresentation: PlayerPresentation
-    @EnvironmentObject private var bookmarkStore: BookmarkStore
-    @EnvironmentObject private var readerCoordinator: ReaderCoordinator
-    @EnvironmentObject private var audioWarmup: AudioEngineWarmup
-
-    func makeUIViewController(context: Context) -> IOSAppShellController {
-        let controller = IOSAppShellController(
-            settings: settings,
-            library: library,
-            player: player,
-            playerPresentation: playerPresentation,
-            bookmarkStore: bookmarkStore,
-            readerCoordinator: readerCoordinator,
-            audioWarmup: audioWarmup
-        )
-        controller.applyTheme(settings.readerTheme)
-        return controller
-    }
-
-    func updateUIViewController(_ controller: IOSAppShellController, context: Context) {
-        controller.applyTheme(settings.readerTheme)
-    }
-}
 
 enum IOSAppShellTab: Int, CaseIterable {
     case library
@@ -109,33 +80,24 @@ final class IOSAppShellController: UITabBarController {
         let rootController: UIViewController
         switch tab {
         case .library:
-            rootController = UIHostingController(
-                rootView: LibraryView()
-                    .environmentObject(library)
-                    .environmentObject(settings)
-                    .environmentObject(bookmarkStore)
-                    .environmentObject(player)
-                    .environmentObject(playerPresentation)
-                    .environmentObject(readerCoordinator)
+            rootController = LibraryScreenController(
+                library: library,
+                settings: settings,
+                bookmarkStore: bookmarkStore
             )
         case .settings:
-            rootController = UIHostingController(
-                rootView: SettingsView()
-                    .environmentObject(settings)
-                    .environmentObject(library)
-                    .environmentObject(player)
-                    .environmentObject(playerPresentation)
-                    .environmentObject(readerCoordinator)
-                    .environmentObject(audioWarmup)
+            rootController = SettingsScreenController(
+                settings: settings,
+                library: library,
+                player: player,
+                playbackClock: player.playbackClock
             )
         case .convert:
-            rootController = UIHostingController(
-                rootView: ConvertView()
-                    .environmentObject(settings)
-                    .environmentObject(library)
-                    .environmentObject(player)
-                    .environmentObject(playerPresentation)
-                    .environmentObject(readerCoordinator)
+            rootController = ConvertScreenController(
+                settings: settings,
+                library: library,
+                player: player,
+                playbackClock: player.playbackClock
             )
         }
 

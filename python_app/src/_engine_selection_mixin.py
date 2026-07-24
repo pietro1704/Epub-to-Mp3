@@ -13,6 +13,9 @@ from dataclasses import replace
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Set
 
+from ._env_utils import env_bool as _env_bool
+from ._env_utils import env_float as _env_float
+from ._env_utils import env_int as _env_int
 from .config import ConversionConfig
 from .ebook_reader import Chapter
 
@@ -57,33 +60,6 @@ def _has_kokoro_support(language: Optional[str]) -> bool:
     from . import converter as _conv
 
     return _conv._has_kokoro_support(language)
-
-
-def _env_bool(name: str, default: bool = False) -> bool:
-    raw = os.getenv(name)
-    if raw is None:
-        return default
-    return raw.strip().lower() in {"1", "true", "yes", "on"}
-
-
-def _env_int(name: str, default: int) -> int:
-    raw = os.getenv(name)
-    if raw is None or raw == "":
-        return default
-    try:
-        return int(raw)
-    except (TypeError, ValueError):
-        return default
-
-
-def _env_float(name: str, default: float) -> float:
-    raw = os.getenv(name)
-    if raw is None or raw == "":
-        return default
-    try:
-        return float(raw)
-    except (TypeError, ValueError):
-        return default
 
 
 # Mirror of the same constants defined in converter.py

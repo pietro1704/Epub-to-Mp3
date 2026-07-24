@@ -11,6 +11,18 @@ import SwiftUI
 ///   1. Header   — book title + chapter name + elapsed time.
 ///   2. Event log — auto-scrolling list of `ConversionEvent`s.
 ///   3. Footer    — Cancel conversion (destructive) + Retry if error.
+#if os(iOS)
+struct ConversionStatusSheet: View {
+    @ObservedObject var status: ConversionStatus
+    let bookTitle: String
+    let onCancel: () -> Void
+    let onRetry: () -> Void
+
+    var body: some View {
+        EmptyView()
+    }
+}
+#else
 struct ConversionStatusSheet: View {
 
     @ObservedObject var status: ConversionStatus
@@ -224,6 +236,7 @@ struct ConversionStatusSheet: View {
         }
     }
 }
+#endif
 
 #if DEBUG
 #Preview("ConversionStatusSheet") {

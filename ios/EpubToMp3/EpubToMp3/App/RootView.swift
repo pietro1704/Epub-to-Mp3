@@ -7,6 +7,7 @@ import SwiftUI
 /// not tear down the underlying navigation hierarchy.
 struct RootView: View {
     @EnvironmentObject private var audioWarmup: AudioEngineWarmup
+    #if !os(iOS)
     @EnvironmentObject private var player: AudioPlayer
     @EnvironmentObject private var library: LibraryStore
     @EnvironmentObject private var playerPresentation: PlayerPresentation
@@ -18,13 +19,12 @@ struct RootView: View {
 
     @AppStorage(MainReaderView.currentlyReadingBookIDKey)
     private var currentlyReadingBookID: String?
-
-    #if !os(iOS)
     @Environment(\.horizontalSizeClass) private var hSize
 
     private var useSplit: Bool { hSize == .regular }
     #endif
 
+    #if !os(iOS)
     private var isReaderActive: Bool {
         guard let readingID = currentlyReadingBookID, !readingID.isEmpty else { return false }
         return library.books.contains(where: { $0.id == readingID })
@@ -48,8 +48,18 @@ struct RootView: View {
         guard let currentlyReadingBookID, !currentlyReadingBookID.isEmpty else { return true }
         return currentBookID != currentlyReadingBookID
     }
+    #endif
 
     var body: some View {
+        #if os(iOS)
+        IOSRootContainer()
+            .overlay(alignment: .topTrailing) {
+                AudioEngineWarmupBadge(warmup: audioWarmup)
+                    .padding(.top, 12)
+                    .padding(.trailing, 12)
+                    .zIndex(10)
+            }
+        #else
         ZStack {
             shellContent
                 .zIndex(0)
@@ -64,6 +74,9 @@ struct RootView: View {
             if showMiniPlayer {
                 VStack {
                     Spacer()
+                    // This branch is macOS-only — iOS/iPadOS never reaches
+                    // here, it returns early via `IOSRootContainer()` above.
+                    // `MiniPlayerBar` (SwiftUI) is the only reachable case.
                     MiniPlayerBar(onTap: { playerPresentation.showFullPlayer() })
                         .accessibilityIdentifier("miniPlayer.rootShell")
                 }
@@ -108,13 +121,12 @@ struct RootView: View {
                 dismissButton: .default(Text(L10n.string("common.ok")))
             )
         }
+        #endif
     }
 
+    #if !os(iOS)
     @ViewBuilder
     private var shellContent: some View {
-        #if os(iOS)
-        IOSAppShell()
-        #else
         if useSplit {
             if #available(iOS 16, macOS 13, *) {
                 SplitViewRoot()
@@ -124,8 +136,8 @@ struct RootView: View {
         } else {
             TabRoot()
         }
-        #endif
     }
+    #endif
 }
 
 /// Tabs surfaced by the iPhone-compact root. The raw values double as
@@ -142,15 +154,17 @@ enum RootTab: Int, Hashable {
     case convert
 }
 
-/// The iPhone-compact / iOS 15 fallback layout.
+/// The macOS tab fallback layout.
 ///
 /// Tab order:
 ///   0 Library  — default landing: navigable book catalog
 ///   1 Settings — preferences
 ///   2 Convert  — manual conversion workflow
 ///
-/// `MiniPlayerBar` floats above the tab bar on every tab. Tap it to open
-/// `FullPlayerSheet` (Apple Music style — sheet, not tab navigation).
+/// This no longer participates in the iOS/iPadOS app shell; UIKit owns
+/// the mobile root. It remains as the SwiftUI fallback for the desktop
+/// shell when split view is unavailable.
+#if !os(iOS)
 struct TabRoot: View {
     @EnvironmentObject private var player: AudioPlayer
     @EnvironmentObject private var library: LibraryStore
@@ -261,6 +275,7 @@ struct TabRoot: View {
         }
     }
 }
+#endif
 
 /// Small app-wide badge shown while the embedded audio runtime starts.
 /// The warm-up is process-lifetime state, not per-book state; keeping it
@@ -484,6 +499,7 @@ extension AnyTransition {
     }
 }
 
+#if !os(iOS)
 #Preview("Tab fallback") {
     TabRoot()
         .environmentObject(AppSettings())
@@ -496,3 +512,4 @@ extension AnyTransition {
         .environmentObject(SidecarManager())
         #endif
 }
+#endif

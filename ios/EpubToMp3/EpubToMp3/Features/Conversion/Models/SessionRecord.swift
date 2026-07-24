@@ -4,14 +4,15 @@ import Foundation
 ///
 /// The Python backend (see `python_app/src/session_logger.py`) writes records
 /// shaped like:
-///   { timestamp, book_title, engine, chapters_converted,
-///     duration_seconds, outcome, mode, ... }
+///   { timestamp, book_title, job_id?, engine,
+///     chapters_converted, duration_seconds, outcome, mode, ... }
 ///
 /// We only decode the fields the iOS UI currently needs. Unknown fields are
 /// ignored thanks to `Codable` default behaviour.
 struct SessionRecord: Codable, Identifiable, Hashable {
     let timestamp: String
     let bookTitle: String
+    let jobId: String?
     let engine: String?
     let chaptersConverted: Int?
     let durationSeconds: Double?
@@ -19,12 +20,14 @@ struct SessionRecord: Codable, Identifiable, Hashable {
     let mode: String?
 
     /// Stable identifier for SwiftUI lists. The session log doesn't ship an
-    /// explicit id, so the timestamp + title combo is used as a surrogate.
-    var id: String { "\(timestamp)|\(bookTitle)" }
+    /// explicit id for CLI-only rows; prefer the backend job id when present
+    /// and fall back to the timestamp + title combo for history-only entries.
+    var id: String { jobId?.isEmpty == false ? jobId! : "\(timestamp)|\(bookTitle)" }
 
     enum CodingKeys: String, CodingKey {
         case timestamp
         case bookTitle = "book_title"
+        case jobId = "job_id"
         case engine
         case chaptersConverted = "chapters_converted"
         case durationSeconds = "duration_seconds"

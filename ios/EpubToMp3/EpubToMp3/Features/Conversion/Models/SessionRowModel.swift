@@ -1,8 +1,8 @@
 import Foundation
 
 /// Pure row model for the sessions (jobs history) list, shared by the
-/// UIKit list-config collection view (`JobsListCollectionView`) and unit
-/// tests. Kept Foundation-only so it's testable off-device — mirrors
+/// list renderers and unit tests. Kept Foundation-only so it's
+/// testable off-device — mirrors
 /// `ChapterListRowModel`/`LibraryGridLayoutMetrics`.
 struct SessionRowModel: Equatable {
     enum OutcomeState: Equatable {

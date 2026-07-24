@@ -8,6 +8,17 @@ struct SearchResult: Identifiable, Equatable {
     let range: Range<String.Index>
 }
 
+#if os(iOS)
+struct ReaderSearchOverlay: View {
+    let chapters: [EbookFulltext.Chapter]
+    var onJumpToChapter: ((Int) -> Void)?
+    @Binding var isPresented: Bool
+
+    var body: some View {
+        EmptyView()
+    }
+}
+#else
 struct ReaderSearchOverlay: View {
     let chapters: [EbookFulltext.Chapter]
     var onJumpToChapter: ((Int) -> Void)?
@@ -98,6 +109,7 @@ struct ReaderSearchOverlay: View {
         results = found
     }
 }
+#endif
 
 #if DEBUG
 #Preview("Search overlay") {

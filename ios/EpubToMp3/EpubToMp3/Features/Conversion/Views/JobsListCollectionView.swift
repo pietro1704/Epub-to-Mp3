@@ -3,42 +3,11 @@ import SwiftUI
 #if canImport(UIKit)
 import UIKit
 
-/// UIKit sessions list backing `JobsListView`. A `UICollectionViewController`
-/// with a plain list configuration replaces the SwiftUI `List` on iOS/
-/// iPadOS — same rationale as `ChapterListCollectionView`.
-///
-/// See docs/plans/uikit-performance-migration.md (Phase 1, slice 3).
-struct JobsListCollectionView: UIViewControllerRepresentable {
-    var sessions: [SessionRecord]
-    var onSelect: (SessionRecord) -> Void
-
-    func makeCoordinator() -> Coordinator {
-        Coordinator(onSelect: onSelect)
-    }
-
-    func makeUIViewController(context: Context) -> JobsListController {
-        let controller = JobsListController()
-        controller.coordinator = context.coordinator
-        controller.apply(sessions: sessions, animated: false)
-        return controller
-    }
-
-    func updateUIViewController(_ controller: JobsListController, context: Context) {
-        context.coordinator.onSelect = onSelect
-        controller.apply(sessions: sessions, animated: true)
-    }
-
-    final class Coordinator {
-        var onSelect: (SessionRecord) -> Void
-        init(onSelect: @escaping (SessionRecord) -> Void) { self.onSelect = onSelect }
-    }
-}
-
 /// The `UICollectionViewController` that owns the diffable list data source.
 final class JobsListController: UICollectionViewController {
     private enum Section { case main }
 
-    weak var coordinator: JobsListCollectionView.Coordinator?
+    var onSelect: ((SessionRecord) -> Void)?
 
     private var sessionsByID: [String: SessionRecord] = [:]
     private var dataSource: UICollectionViewDiffableDataSource<Section, String>!
@@ -64,12 +33,15 @@ final class JobsListController: UICollectionViewController {
             content.secondaryText = row.detailText
             content.textProperties.numberOfLines = 2
             cell.contentConfiguration = content
+            var accessories: [UICellAccessory] = []
             if let outcomeText = row.outcomeText {
                 let badge = Self.makeBadge(text: outcomeText, color: Self.color(for: row.outcomeState))
-                cell.accessories = [.customView(configuration: .init(customView: badge, placement: .trailing()))]
-            } else {
-                cell.accessories = [.disclosureIndicator()]
+                accessories.append(.customView(configuration: .init(customView: badge, placement: .trailing())))
             }
+            if session.jobId?.isEmpty == false {
+                accessories.append(.disclosureIndicator())
+            }
+            cell.accessories = accessories
         }
         dataSource = UICollectionViewDiffableDataSource<Section, String>(
             collectionView: collectionView
@@ -92,7 +64,7 @@ final class JobsListController: UICollectionViewController {
         collectionView.deselectItem(at: indexPath, animated: true)
         guard let id = dataSource.itemIdentifier(for: indexPath),
               let session = sessionsByID[id] else { return }
-        coordinator?.onSelect(session)
+        onSelect?(session)
     }
 
     private static func makeBadge(text: String, color: UIColor) -> UIView {

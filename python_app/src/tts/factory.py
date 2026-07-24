@@ -71,8 +71,21 @@ DEFAULT_PIPER_SOURCES = {
 
 
 class TTSFactory:
+    #: Engines allowed to honour a narrator/character voice split
+    #: (`enable_character_voices`). Checked by `create_engine` before
+    #: dispatch so an unsupported engine gets one clear warning instead
+    #: of silently dropping the config.
+    _ENGINES_WITH_MULTI_VOICE = {"edge", "piper"}
+
     def __init__(self) -> None:
         self.voice_provider = VoiceConfigProvider()
+        # Open/Closed: a new engine registers a builder here instead of
+        # extending an if/elif chain in create_engine. Each builder has
+        # the exact signature `(config: ConversionConfig) -> TTSEngine`.
+        self._engine_builders: dict = {
+            "edge": self._build_edge_engine,
+            "piper": self._build_piper_engine,
+        }
 
     def available_engines(self) -> list[str]:
         """Return list of available TTS engines."""
@@ -103,114 +116,115 @@ class TTSFactory:
 
     def create_engine(self, config: ConversionConfig) -> TTSEngine:
         engine = (config.engine or "").lower()
+        self._warn_if_multi_voice_unsupported(engine, config)
+        builder = self._engine_builders.get(engine)
+        if builder is None:
+            raise ValueError(f"Unsupported engine: {config.engine}")
+        return builder(config)
 
+    def _warn_if_multi_voice_unsupported(self, engine: str, config: ConversionConfig) -> None:
         # Multi-voice narration support matrix:
         #   * edge   — dialogue splitter (v0.3.7).
         #   * piper  — two ONNX model paths (v0.3.18).
         # When the user configured a narrator/character split but picked
         # an engine that won't honour it, surface a clear warning so the
         # config isn't silently dropped.
-        _ENGINES_WITH_MULTI_VOICE = {"edge", "piper"}
-        if engine not in _ENGINES_WITH_MULTI_VOICE:
-            wants_split = bool(getattr(config, "enable_character_voices", False))
-            has_distinct_voices = (
-                getattr(config, "narrator_voice", None)
-                and getattr(config, "character_voice", None)
-                and config.narrator_voice != config.character_voice
-            )
-            if wants_split and has_distinct_voices:
-                import sys as _sys
+        if engine in self._ENGINES_WITH_MULTI_VOICE:
+            return
+        wants_split = bool(getattr(config, "enable_character_voices", False))
+        has_distinct_voices = (
+            getattr(config, "narrator_voice", None)
+            and getattr(config, "character_voice", None)
+            and config.narrator_voice != config.character_voice
+        )
+        if wants_split and has_distinct_voices:
+            import sys as _sys
 
-                print(
-                    "⚠️  Multi-voice narration (narrator/character split) is only "
-                    f"supported by Edge-TTS and Piper. Engine '{engine}' "
-                    "will use a single voice; narrator_voice and character_voice are ignored.",
-                    file=_sys.stderr,
-                )
-
-        if engine == "edge":
-            from .edge_engine import EdgeTTSEngine
-
-            voice = (
-                config.voice
-                or self.voice_provider.get_voice("edge", config.primary_language)
-                or "pt-BR-ThalitaMultilingualNeural"
-            )
-            chunk_chars = config.edge_chunk_chars or None
-            max_segment = config.edge_max_segment_seconds or None
-            if getattr(config, "edge_aggressive_mode", False):
-                chunk_chars = 8_000
-                max_segment = 40
-
-            # **PARALLEL MODE**: Enable parallel processing by default, disable for HF Space if needed
-            enable_parallel = getattr(config, "edge_enable_parallel", True)
-
-            # Multi-voice narration: prefer the operator-provided narrator/character
-            # voices, falling back to the primary `voice` so a partial config
-            # (only one slot set) still works.
-            narrator_voice = getattr(config, "narrator_voice", None) or voice
-            character_voice = getattr(config, "character_voice", None) or voice
-            enable_character_voices = bool(
-                getattr(config, "enable_character_voices", False)
-                and narrator_voice
-                and character_voice
-                and narrator_voice != character_voice
+            print(
+                "⚠️  Multi-voice narration (narrator/character split) is only "
+                f"supported by Edge-TTS and Piper. Engine '{engine}' "
+                "will use a single voice; narrator_voice and character_voice are ignored.",
+                file=_sys.stderr,
             )
 
-            engine_instance = EdgeTTSEngine(
-                voice,
-                primary_language=config.primary_language,
-                language_voices=config.language_voices,
-                verbose=config.verbose,
-                max_segment_seconds=max_segment,
-                adaptive_segment_seconds=getattr(config, "edge_adaptive_segment_seconds", False),
-                adaptive_segment_max_seconds=getattr(
-                    config, "edge_adaptive_segment_max_seconds", 180
-                ),
-                chunk_char_limit=chunk_chars,
-                enable_parallel=enable_parallel,
-                formatting_cues_enabled=getattr(config, "speak_formatting_cues", True),
-                formatting_locale=getattr(config, "formatting_locale", "pt"),
-                log_callback=config.log_callback,
-                metric_callback=getattr(config, "segment_metric_sink", None),
-                enable_character_voices=enable_character_voices,
-                narrator_voice=narrator_voice,
-                character_voice=character_voice,
+    def _build_edge_engine(self, config: ConversionConfig) -> TTSEngine:
+        from .edge_engine import EdgeTTSEngine
+
+        voice = (
+            config.voice
+            or self.voice_provider.get_voice("edge", config.primary_language)
+            or "pt-BR-ThalitaMultilingualNeural"
+        )
+        chunk_chars = config.edge_chunk_chars or None
+        max_segment = config.edge_max_segment_seconds or None
+        if getattr(config, "edge_aggressive_mode", False):
+            chunk_chars = 8_000
+            max_segment = 40
+
+        # **PARALLEL MODE**: Enable parallel processing by default, disable for HF Space if needed
+        enable_parallel = getattr(config, "edge_enable_parallel", True)
+
+        # Multi-voice narration: prefer the operator-provided narrator/character
+        # voices, falling back to the primary `voice` so a partial config
+        # (only one slot set) still works.
+        narrator_voice = getattr(config, "narrator_voice", None) or voice
+        character_voice = getattr(config, "character_voice", None) or voice
+        enable_character_voices = bool(
+            getattr(config, "enable_character_voices", False)
+            and narrator_voice
+            and character_voice
+            and narrator_voice != character_voice
+        )
+
+        return EdgeTTSEngine(
+            voice,
+            primary_language=config.primary_language,
+            language_voices=config.language_voices,
+            verbose=config.verbose,
+            max_segment_seconds=max_segment,
+            adaptive_segment_seconds=getattr(config, "edge_adaptive_segment_seconds", False),
+            adaptive_segment_max_seconds=getattr(config, "edge_adaptive_segment_max_seconds", 180),
+            chunk_char_limit=chunk_chars,
+            enable_parallel=enable_parallel,
+            formatting_cues_enabled=getattr(config, "speak_formatting_cues", True),
+            formatting_locale=getattr(config, "formatting_locale", "pt"),
+            log_callback=config.log_callback,
+            metric_callback=getattr(config, "segment_metric_sink", None),
+            enable_character_voices=enable_character_voices,
+            narrator_voice=narrator_voice,
+            character_voice=character_voice,
+        )
+
+    def _build_piper_engine(self, config: ConversionConfig) -> TTSEngine:
+        piper_supported = is_piper_supported_environment()
+        if not piper_supported and not _is_testing_environment():
+            raise RuntimeError(
+                "Piper TTS unavailable on this system. "
+                "Ensure the 'piper' binary is installed (pip install piper-tts) "
+                "or set ENABLE_PIPER=1 to force."
             )
-            return engine_instance
+        from .piper_engine import PiperTTSEngine
 
-        if engine == "piper":
-            piper_supported = is_piper_supported_environment()
-            if not piper_supported and not _is_testing_environment():
-                raise RuntimeError(
-                    "Piper TTS unavailable on this system. "
-                    "Ensure the 'piper' binary is installed (pip install piper-tts) "
-                    "or set ENABLE_PIPER=1 to force."
-                )
-            from .piper_engine import PiperTTSEngine
-
-            model_path = config.model_path
-            if model_path is None and config.voice:
-                candidate = Path(str(config.voice))
-                if candidate.suffix.lower() == ".onnx" and candidate.exists():
-                    model_path = candidate
-            preferred_code = (config.primary_language or "").split("-", 1)[0]
-            model_path = model_path or self._find_piper_model(preferred_code=preferred_code)
-            engine_instance = PiperTTSEngine(
-                model_path,
-                primary_language=config.primary_language,
-                language_voices=config.language_voices,
-                formatting_cues_enabled=getattr(config, "speak_formatting_cues", True),
-                formatting_locale=getattr(config, "formatting_locale", "pt"),
-                max_procs=getattr(config, "piper_max_procs", None),
-                enable_character_voices=bool(getattr(config, "enable_character_voices", False)),
-                narrator_voice=getattr(config, "narrator_voice", None),
-                character_voice=getattr(config, "character_voice", None),
-            )
-            engine_instance.verbose = config.verbose
-            return engine_instance
-
-        raise ValueError(f"Unsupported engine: {config.engine}")
+        model_path = config.model_path
+        if model_path is None and config.voice:
+            candidate = Path(str(config.voice))
+            if candidate.suffix.lower() == ".onnx" and candidate.exists():
+                model_path = candidate
+        preferred_code = (config.primary_language or "").split("-", 1)[0]
+        model_path = model_path or self._find_piper_model(preferred_code=preferred_code)
+        engine_instance = PiperTTSEngine(
+            model_path,
+            primary_language=config.primary_language,
+            language_voices=config.language_voices,
+            formatting_cues_enabled=getattr(config, "speak_formatting_cues", True),
+            formatting_locale=getattr(config, "formatting_locale", "pt"),
+            max_procs=getattr(config, "piper_max_procs", None),
+            enable_character_voices=bool(getattr(config, "enable_character_voices", False)),
+            narrator_voice=getattr(config, "narrator_voice", None),
+            character_voice=getattr(config, "character_voice", None),
+        )
+        engine_instance.verbose = config.verbose
+        return engine_instance
 
     def _find_piper_model(
         self, preferred_code: Optional[str] = None, models_dir: Optional[Path] = None

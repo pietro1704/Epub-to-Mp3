@@ -2,8 +2,7 @@
 //  ChapterListRowModelTests.swift
 //  EpubToMp3Tests
 //
-//  Pure row-mapping coverage for the UIKit chapter list
-//  (ChapterListCollectionView), now the default renderer on iOS/iPadOS.
+//  Pure row-mapping coverage for the chapter list row model.
 //
 
 import XCTest

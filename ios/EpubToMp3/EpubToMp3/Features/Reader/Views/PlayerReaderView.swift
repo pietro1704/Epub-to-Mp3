@@ -1,7 +1,7 @@
 import SwiftUI
 import os.log
 #if os(iOS)
-import AVKit
+import UIKit
 #endif
 
 /// Full-screen split view: reader pane + compact transport controls.
@@ -10,9 +10,66 @@ import AVKit
 ///   - Phone (compact horizontal): reader on top, transport on bottom.
 ///   - iPad landscape (regular horizontal): reader left, transport right.
 ///
-/// Replaces the slice-2 `PlayerView` sheet. The audio player itself is
-/// still owned by this view via `@State` so it lives for the duration
-/// of the reader session.
+/// Replaces the legacy job-detail player sheet with a combined reader +
+/// transport surface. The shared audio player is injected from the app
+/// root so playback survives transitions between reader entry points.
+#if os(iOS)
+struct PlayerReaderView: View {
+    let snapshot: JobSnapshot
+    let backendBaseURL: URL?
+    var initialChapterIndex: Int = 0
+
+    @EnvironmentObject private var player: AudioPlayer
+    @EnvironmentObject private var playbackClock: PlaybackClock
+    var body: some View {
+        PlayerReaderIOSHost(
+            snapshot: snapshot,
+            backendBaseURL: backendBaseURL,
+            player: player,
+            playbackClock: playbackClock
+        )
+    }
+
+    nonisolated static func shouldAutoRetryFulltext(
+        hasFulltext: Bool,
+        jobIsTerminal: Bool,
+        hasBackend: Bool,
+        loadInFlight: Bool,
+        now: Date,
+        lastRetryAt: Date,
+        minInterval: TimeInterval
+    ) -> Bool {
+        guard !hasFulltext else { return false }
+        guard !jobIsTerminal else { return false }
+        guard hasBackend else { return false }
+        guard !loadInFlight else { return false }
+        return now.timeIntervalSince(lastRetryAt) >= minInterval
+    }
+}
+
+private struct PlayerReaderIOSHost: UIViewControllerRepresentable {
+    let snapshot: JobSnapshot
+    let backendBaseURL: URL?
+    let player: AudioPlayer
+    let playbackClock: PlaybackClock
+
+    func makeUIViewController(context: Context) -> UINavigationController {
+        UINavigationController(
+            rootViewController: PlayerScreenController(
+                snapshot: snapshot,
+                backendBaseURL: backendBaseURL,
+                player: player,
+                playbackClock: playbackClock
+            )
+        )
+    }
+
+    func updateUIViewController(_ controller: UINavigationController, context: Context) {
+        guard let root = controller.viewControllers.first as? PlayerScreenController else { return }
+        root.update(snapshot: snapshot, backendBaseURL: backendBaseURL)
+    }
+}
+#else
 struct PlayerReaderView: View {
     let snapshot: JobSnapshot
     let backendBaseURL: URL?
@@ -149,17 +206,6 @@ struct PlayerReaderView: View {
             bootstrap()
         }
         .onDisappear(perform: teardown)
-        // Defense-in-depth: every current parent forces a fresh view
-        // identity on snapshot change via `.id(...)`, so `onAppear`
-        // re-fires and `bootstrap()` runs against the new jobId.
-        // A future caller that forgets the `.id(...)` would leave this
-        // view mounted while `snapshot.jobId` mutates underneath us —
-        // `positionTask` / `sentenceTask` would keep reading the OLD
-        // player's streams, `streamingJobId` / `coverFetchJobId` would
-        // stick to the previous job, and the UI would silently desync.
-        // Tearing down and re-bootstrapping on jobId change keeps the
-        // invariant local to this view instead of trusting every call
-        // site to remember the identity key.
         .compatOnChange(of: snapshot.jobId) { _ in
             guard !isSwiftUIPreview else { return }
             teardown()
@@ -167,11 +213,6 @@ struct PlayerReaderView: View {
         }
         .compatOnChange(of: playingEpubZeroBasedIndex) { newEpubIndex in
             guard let newEpubIndex else { return }
-            // Only clear the override for a non-retreat jump (TOC / advance)
-            // here — the audio index catches up near-instantly, well before
-            // this instance may still need `startAtLastPage: true` on a
-            // retreat. Retreat's own reset happens in `onLastPageLanded`,
-            // once the reader (not the player) confirms it landed.
             if displayedEpubIndexOverride == newEpubIndex, pendingRetreatTargetEpubIndex == nil {
                 displayedEpubIndexOverride = nil
             }
@@ -248,8 +289,7 @@ struct PlayerReaderView: View {
                     }
                 }
             }
-            .modifier(ChromeVisibilityModifier(visible: chromeVisible))
-            .readerChromeVisible(chromeVisible)
+            .playerReaderSystemChrome(visible: chromeVisible)
             .navigationTitle(snapshot.bookTitle ?? L10n.string("player.audiobookFallback"))
             .compatInlineNavigationTitle()
             .toolbar {
@@ -310,6 +350,7 @@ struct PlayerReaderView: View {
                 }
             }
             .sheet(isPresented: $showingBookmarks) {
+                #if os(macOS)
                 CompatNavigationStack {
                     BookmarksListView(
                         bookId: bookId,
@@ -321,6 +362,17 @@ struct PlayerReaderView: View {
                     .environmentObject(bookmarkStore)
                 }
                 .compatPresentationDetents()
+                #else
+                BookmarksListView(
+                    bookId: bookId,
+                    onJumpToChapter: { idx in
+                        showingBookmarks = false
+                        jumpTo(chapterIndex: idx)
+                    }
+                )
+                .environmentObject(bookmarkStore)
+                .compatPresentationDetents()
+                #endif
             }
             .sheet(isPresented: $showingToc) {
                 // SOURCE OF TRUTH: TocDrawer compares against the EPUB-side
@@ -337,8 +389,10 @@ struct PlayerReaderView: View {
                     fulltext: fulltext,
                     snapshot: snapshot,
                     currentChapterIndex: playingEpubIndex,
+                    readingChapterIndex: nil,
                     onJump: jumpTo(chapterIndex:),
                     onDownload: downloadChapter(epubIndex:),
+                    onDownloadAll: nil,
                     onCancelDownloads: cancelDownloads,
                     onClearDownloads: clearDownloads
                 )
@@ -1188,6 +1242,29 @@ struct PlayerReaderView: View {
     }
 }
 
+private extension View {
+    @ViewBuilder
+    func playerReaderSystemChrome(visible: Bool) -> some View {
+        #if os(iOS)
+        if #available(iOS 16, *) {
+            self
+                .toolbar(.hidden, for: .navigationBar)
+                .statusBarHidden(false)
+                .toolbar(visible ? .visible : .hidden, for: .tabBar)
+        } else {
+            self
+                .navigationBarHidden(true)
+                .statusBarHidden(false)
+                .background(IOSTabBarVisibilityBridge(visible: visible))
+        }
+        #else
+        self
+            .modifier(ChromeVisibilityModifier(visible: visible))
+            .readerChromeVisible(visible)
+        #endif
+    }
+}
+
 #if DEBUG
 #Preview("PlayerReader") {
     let player = AudioPlayer()
@@ -1201,4 +1278,5 @@ struct PlayerReaderView: View {
     .environmentObject(LibraryStore.previewPopulated)
     .environmentObject(BookmarkStore.previewPopulated)
 }
+#endif
 #endif

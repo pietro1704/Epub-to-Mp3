@@ -1,5 +1,6 @@
 import SwiftUI
 
+#if !os(iOS)
 @MainActor
 final class JobDetailViewModel: ObservableObject {
     @Published var snapshot: JobSnapshot?
@@ -92,7 +93,17 @@ final class JobDetailViewModel: ObservableObject {
         downloadProgressLabel = nil
     }
 }
+#endif
 
+#if os(iOS)
+struct JobDetailView: View {
+    let jobId: String
+
+    var body: some View {
+        EmptyView()
+    }
+}
+#else
 struct JobDetailView: View {
     let jobId: String
     @EnvironmentObject private var settings: AppSettings
@@ -222,13 +233,16 @@ struct JobDetailView: View {
         }
     }
 }
+#endif
 
-#if DEBUG
+#if DEBUG && !os(iOS)
 #Preview("JobDetail — empty state") {
     CompatNavigationStack {
         JobDetailView(jobId: "preview-job-id")
     }
     .environmentObject(AppSettings())
     .environmentObject(LibraryStore.previewEmpty)
+    .environmentObject(AudioPlayer())
+    .environmentObject(PlaybackClock())
 }
 #endif

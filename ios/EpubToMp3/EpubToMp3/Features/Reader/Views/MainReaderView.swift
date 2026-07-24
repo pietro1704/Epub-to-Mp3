@@ -17,12 +17,20 @@ import SwiftUI
 ///     the book currently being read, then opens the shared full-player
 ///     flow via `PlayerPresentation`. `MainReaderView` no longer owns a
 ///     fallback local sheet; presentation lives in the root container.
+#if os(iOS)
+struct MainReaderView: View {
+    var onBrowseLibrary: (() -> Void)?
+
+    var body: some View {
+        EmptyView()
+    }
+}
+#else
 struct MainReaderView: View {
 
     // MARK: - Dependencies
 
     @EnvironmentObject private var library: LibraryStore
-    @EnvironmentObject private var settings: AppSettings
     @EnvironmentObject private var playerPresentation: PlayerPresentation
 
     // MARK: - AppStorage keys
@@ -77,16 +85,16 @@ struct MainReaderView: View {
             currentlyReadingBookID = nil
             onBrowseLibrary?()
         })
-            .onAppear {
-                var updated = book
-                updated.lastOpenedAt = Date()
-                library.update(updated)
+        .onAppear {
+            var updated = book
+            updated.lastOpenedAt = Date()
+            library.update(updated)
+        }
+        .toolbar {
+            ToolbarItem(placement: .compatPrimaryTrailing) {
+                listenButton
             }
-            .toolbar {
-                ToolbarItem(placement: .compatPrimaryTrailing) {
-                    listenButton
-                }
-            }
+        }
     }
 
     // MARK: - Toolbar "Listen" button
@@ -137,6 +145,7 @@ struct MainReaderView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
+#endif
 
 // MARK: - Static helpers
 
@@ -162,15 +171,19 @@ extension MainReaderView {
 
 // MARK: - Previews
 
-#if DEBUG
+#if DEBUG && !os(iOS)
 #Preview("MainReader — empty") {
+    let player = AudioPlayer()
     MainReaderView(onBrowseLibrary: {})
         .environmentObject(AppSettings())
         .environmentObject(LibraryStore.previewEmpty)
+        .environmentObject(player)
+        .environmentObject(AudioEngineWarmup())
         .environmentObject(PlayerPresentation())
 }
 
 #Preview("MainReader — populated (no audio)") {
+    let player = AudioPlayer()
     let lib = LibraryStore.previewPopulated
     if let first = lib.books.first {
         UserDefaults.standard.set(first.id, forKey: MainReaderView.currentlyReadingBookIDKey)
@@ -178,10 +191,13 @@ extension MainReaderView {
     return MainReaderView(onBrowseLibrary: {})
         .environmentObject(AppSettings())
         .environmentObject(lib)
+        .environmentObject(player)
+        .environmentObject(AudioEngineWarmup())
         .environmentObject(PlayerPresentation())
 }
 
 #Preview("MainReader — populated (with audio)") {
+    let player = AudioPlayer()
     let lib = LibraryStore.previewPopulated
     // pick a book that has a jobId so the Listen button appears
     if let book = lib.books.first(where: { $0.lastJobId != nil }) {
@@ -190,6 +206,8 @@ extension MainReaderView {
     return MainReaderView(onBrowseLibrary: {})
         .environmentObject(AppSettings())
         .environmentObject(lib)
+        .environmentObject(player)
+        .environmentObject(AudioEngineWarmup())
         .environmentObject(PlayerPresentation())
 }
 #endif

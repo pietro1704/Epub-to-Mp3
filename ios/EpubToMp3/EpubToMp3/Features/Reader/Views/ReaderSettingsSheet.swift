@@ -3,6 +3,13 @@ import SwiftUI
 /// Compact reader-settings sheet — theme, font family, font size,
 /// line spacing. Presented as a half-height detent from the reader
 /// toolbar (replaces the old in-toolbar horizontal scroll bar).
+#if os(iOS)
+struct ReaderSettingsSheet: View {
+    var body: some View {
+        EmptyView()
+    }
+}
+#else
 struct ReaderSettingsSheet: View {
     @EnvironmentObject private var settings: AppSettings
     @Environment(\.dismiss) private var dismiss
@@ -203,3 +210,4 @@ struct ReaderSettingsSheet: View {
         }
     }
 }
+#endif

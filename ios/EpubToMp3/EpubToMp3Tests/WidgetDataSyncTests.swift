@@ -143,7 +143,7 @@ final class WidgetDataSyncTests: XCTestCase {
     // MARK: - AudioPlayer -> widget isPlaying sync (regression)
 
     /// Regression for: the widget showed "pause" forever because only
-    /// `NowPlayingView.setCurrentlyPlaying` (fired once, on book-open)
+    /// `PlaybackBindingStore.setCurrentlyPlaying` (fired once, on book-open)
     /// wrote `widget.nowPlayingIsPlaying`, and it always wrote `true`.
     /// `AudioPlayer.pause()`/`resume()` must keep the real App Group flag
     /// in sync via `updateNowPlayingInfo() -> syncWidgetNowPlaying()`.

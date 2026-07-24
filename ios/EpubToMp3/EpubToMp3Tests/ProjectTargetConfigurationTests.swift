@@ -54,4 +54,64 @@ final class ProjectTargetConfigurationTests: XCTestCase {
         XCTAssertTrue(project.contains("SWIFT_TREAT_WARNINGS_AS_ERRORS: YES"))
         XCTAssertTrue(project.contains("GCC_TREAT_WARNINGS_AS_ERRORS: YES"))
     }
+
+    func testProjectFileUsesInTreeTargetPathsForAppAndExtensions() throws {
+        let projectFileURL = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("EpubToMp3.xcodeproj/project.pbxproj")
+        let projectFile = try String(contentsOf: projectFileURL, encoding: .utf8)
+
+        XCTAssertTrue(projectFile.contains("path = EpubToMp3;"))
+        XCTAssertTrue(projectFile.contains("path = Vendor;"))
+        XCTAssertTrue(projectFile.contains("path = EpubToMp3Widget;"))
+        XCTAssertTrue(projectFile.contains("path = EpubToMp3ShareExtension;"))
+        XCTAssertTrue(projectFile.contains("path = EpubToMp3Tests;"))
+        XCTAssertTrue(projectFile.contains("path = EpubToMp3UITests;"))
+        XCTAssertFalse(projectFile.contains("path = ../EpubToMp3;"))
+        XCTAssertFalse(projectFile.contains("path = ../Vendor;"))
+        XCTAssertFalse(projectFile.contains("path = ../EpubToMp3Widget;"))
+        XCTAssertFalse(projectFile.contains("path = ../EpubToMp3ShareExtension;"))
+        XCTAssertFalse(projectFile.contains("path = ../EpubToMp3Tests;"))
+        XCTAssertFalse(projectFile.contains("path = ../EpubToMp3UITests;"))
+    }
+
+    func testProjectFileUsesExplicitPrivacyManifestPaths() throws {
+        let projectFileURL = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("EpubToMp3.xcodeproj/project.pbxproj")
+        let projectFile = try String(contentsOf: projectFileURL, encoding: .utf8)
+
+        XCTAssertTrue(projectFile.contains("path = EpubToMp3/Resources/PrivacyInfo.xcprivacy; sourceTree = SOURCE_ROOT;"))
+        XCTAssertTrue(projectFile.contains("path = EpubToMp3Widget/PrivacyInfo.xcprivacy; sourceTree = SOURCE_ROOT;"))
+        XCTAssertTrue(projectFile.contains("path = EpubToMp3ShareExtension/PrivacyInfo.xcprivacy; sourceTree = SOURCE_ROOT;"))
+        XCTAssertFalse(projectFile.contains("path = PrivacyInfo.xcprivacy; sourceTree = \"<group>\";"))
+    }
+
+    func testLegacyTopLevelPrivacyManifestsExistAndMatchCanonicalCopies() throws {
+        let repoRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let manifestPairs = [
+            (
+                canonical: repoRoot.appendingPathComponent("ios/EpubToMp3/EpubToMp3Widget/PrivacyInfo.xcprivacy"),
+                legacy: repoRoot.appendingPathComponent("ios/EpubToMp3Widget/PrivacyInfo.xcprivacy")
+            ),
+            (
+                canonical: repoRoot.appendingPathComponent("ios/EpubToMp3/EpubToMp3ShareExtension/PrivacyInfo.xcprivacy"),
+                legacy: repoRoot.appendingPathComponent("ios/EpubToMp3ShareExtension/PrivacyInfo.xcprivacy")
+            ),
+        ]
+
+        for pair in manifestPairs {
+            XCTAssertTrue(FileManager.default.fileExists(atPath: pair.canonical.path))
+            XCTAssertTrue(FileManager.default.fileExists(atPath: pair.legacy.path))
+            XCTAssertEqual(
+                try String(contentsOf: pair.legacy, encoding: .utf8),
+                try String(contentsOf: pair.canonical, encoding: .utf8)
+            )
+        }
+    }
 }

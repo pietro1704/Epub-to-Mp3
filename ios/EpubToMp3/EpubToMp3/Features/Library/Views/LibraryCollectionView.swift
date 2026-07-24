@@ -33,54 +33,15 @@ struct LibraryGridLayoutMetrics: Equatable {
 
 #if canImport(UIKit)
 import UIKit
-import SwiftUI
-
-/// UIKit book grid backing the library hero. A `UICollectionView` with a
-/// compositional layout, diffable data source and cell prefetching
-/// replaces the SwiftUI `LazyVGrid` on iOS/iPadOS for O(visible) scroll
-/// cost and zero view-tree re-evaluation. Hosted inside the existing
-/// SwiftUI `LibraryView` chrome via `UIViewControllerRepresentable`.
-///
-/// See docs/plans/uikit-performance-migration.md (Phase 1, slice 1).
-struct LibraryCollectionView: UIViewControllerRepresentable {
-    var model: LibraryGridModel
-    var metrics: LibraryGridLayoutMetrics = .init()
-    var onOpen: (BookEntity) -> Void
-    var onRemove: (BookEntity) -> Void
-
-    func makeCoordinator() -> Coordinator {
-        Coordinator(onOpen: onOpen, onRemove: onRemove)
-    }
-
-    func makeUIViewController(context: Context) -> LibraryGridController {
-        let controller = LibraryGridController(metrics: metrics)
-        controller.coordinator = context.coordinator
-        controller.apply(model: model, animated: false)
-        return controller
-    }
-
-    func updateUIViewController(_ controller: LibraryGridController, context: Context) {
-        context.coordinator.onOpen = onOpen
-        context.coordinator.onRemove = onRemove
-        controller.apply(model: model, animated: true)
-    }
-
-    final class Coordinator {
-        var onOpen: (BookEntity) -> Void
-        var onRemove: (BookEntity) -> Void
-        init(onOpen: @escaping (BookEntity) -> Void, onRemove: @escaping (BookEntity) -> Void) {
-            self.onOpen = onOpen
-            self.onRemove = onRemove
-        }
-    }
-}
+import ImageIO
 
 /// The `UICollectionViewController` that owns the diffable data source.
 final class LibraryGridController: UICollectionViewController {
     private enum Section { case main }
 
     private let metrics: LibraryGridLayoutMetrics
-    weak var coordinator: LibraryCollectionView.Coordinator?
+    var onOpen: ((BookEntity) -> Void)?
+    var onRemove: ((BookEntity) -> Void)?
 
     /// id → book, so selection/context callbacks can hand back the entity.
     private var booksByID: [String: BookEntity] = [:]
@@ -158,7 +119,7 @@ final class LibraryGridController: UICollectionViewController {
         collectionView.deselectItem(at: indexPath, animated: true)
         guard let id = dataSource.itemIdentifier(for: indexPath),
               let book = booksByID[id] else { return }
-        coordinator?.onOpen(book)
+        onOpen?(book)
     }
 
     override func collectionView(
@@ -173,9 +134,54 @@ final class LibraryGridController: UICollectionViewController {
                 title: L10n.string("library.removeBook"),
                 image: UIImage(systemName: "trash"),
                 attributes: .destructive
-            ) { _ in self?.coordinator?.onRemove(book) }
+            ) { [weak self] _ in self?.onRemove?(book) }
             return UIMenu(children: [remove])
         }
+    }
+}
+
+/// Off-main-thread cover thumbnail decode + memory-bounded cache, scoped to
+/// the library grid tile size. `UIImage(data:)` decodes to the SOURCE
+/// resolution (a 3000×3000 cover PNG is a ~36 MB bitmap) synchronously on
+/// the main thread inside `CellRegistration`, which fires on every dequeue
+/// while scrolling — the single biggest jank + memory source in the grid.
+/// `CGImageSourceCreateThumbnailAtIndex` decodes directly at the requested
+/// pixel size instead, off the main thread.
+enum LibraryCoverThumbnailCache {
+    /// ~220pt max tile width (`LibraryGridLayoutMetrics`) × 3x Retina.
+    static let maxPixelSize: CGFloat = 660
+
+    private static let cache: NSCache<NSString, UIImage> = {
+        let c = NSCache<NSString, UIImage>()
+        // Cost-based, not count-based: a 660px-max thumbnail is at most
+        // ~1.7 MB decoded (660×660×4 bytes); 96 MB covers a large library's
+        // visible + nearby-scroll working set without an unbounded ceiling.
+        c.totalCostLimit = 96 * 1024 * 1024
+        return c
+    }()
+
+    static func cached(for bookID: String) -> UIImage? {
+        cache.object(forKey: bookID as NSString)
+    }
+
+    /// Decodes off the calling thread's actor — call from a background
+    /// `Task`, never directly on main.
+    static func decode(_ data: Data, bookID: String) -> UIImage? {
+        let options: [CFString: Any] = [kCGImageSourceShouldCache: false]
+        guard let source = CGImageSourceCreateWithData(data as CFData, options as CFDictionary)
+        else { return nil }
+        let thumbnailOptions: [CFString: Any] = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceThumbnailMaxPixelSize: maxPixelSize,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceShouldCacheImmediately: true,
+        ]
+        guard let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, thumbnailOptions as CFDictionary)
+        else { return nil }
+        let image = UIImage(cgImage: cgImage)
+        let cost = cgImage.width * cgImage.height * 4
+        cache.setObject(image, forKey: bookID as NSString, cost: cost)
+        return image
     }
 }
 
@@ -184,6 +190,9 @@ final class BookGridCell: UICollectionViewCell {
     private let cover = UIImageView()
     private let title = UILabel()
     private let author = UILabel()
+    /// Generation token guarding against a stale async decode landing on a
+    /// cell the collection view has since recycled for a different book.
+    private var configurationToken = UUID()
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -223,16 +232,29 @@ final class BookGridCell: UICollectionViewCell {
         title.text = book.resolvedTitle
         author.text = book.author
         author.isHidden = (book.author?.isEmpty ?? true)
-        if let data = book.coverPNG, let image = UIImage(data: data) {
-            cover.image = image
-        } else {
-            cover.image = UIImage(systemName: "book.closed")
-        }
         accessibilityIdentifier = "library.bookTile.\(book.id)"
+
+        let token = UUID()
+        configurationToken = token
+        cover.image = UIImage(systemName: "book.closed")
+
+        guard let data = book.coverPNG else { return }
+        if let hit = LibraryCoverThumbnailCache.cached(for: book.id) {
+            cover.image = hit
+            return
+        }
+        Task.detached(priority: .userInitiated) { [bookID = book.id] in
+            let decoded = LibraryCoverThumbnailCache.decode(data, bookID: bookID)
+            await MainActor.run { [weak self] in
+                guard let self, self.configurationToken == token, let decoded else { return }
+                self.cover.image = decoded
+            }
+        }
     }
 
     override func prepareForReuse() {
         super.prepareForReuse()
+        configurationToken = UUID()
         cover.image = nil
         title.text = nil
         author.text = nil

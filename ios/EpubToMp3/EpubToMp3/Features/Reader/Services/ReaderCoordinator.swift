@@ -12,7 +12,7 @@ import Combine
 /// kicking the prefs daemon three times.
 ///
 /// Read sites: every play surface (mini player, full player,
-/// PlayerView, PlayerReaderView, InstantReader transport) consults
+/// PlayerReaderView, InstantReader transport) consults
 /// `anchor.chapterIndex` to detect divergence vs the audio.
 /// `PlayDivergenceAnchor.capture(readerChapterIndex:)` reads
 /// `pageRatio` / `sentenceId` to scope its decision snapshot.

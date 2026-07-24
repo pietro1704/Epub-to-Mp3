@@ -1,0 +1,201 @@
+import XCTest
+import MediaPlayer
+@testable import EpubToMp3
+
+@MainActor
+final class PlaybackBindingStoreTests: XCTestCase {
+
+    private var defaults: UserDefaults!
+    private let suite = "playback.binding.tests.\(UUID().uuidString)"
+
+    override func setUp() {
+        super.setUp()
+        defaults = UserDefaults(suiteName: suite)
+        defaults.removePersistentDomain(forName: suite)
+    }
+
+    override func tearDown() {
+        defaults.removePersistentDomain(forName: suite)
+        defaults = nil
+        super.tearDown()
+    }
+
+    func testSetCurrentlyPlayingPersistsBookAndChapter() {
+        PlaybackBindingStore.setCurrentlyPlaying(
+            bookID: "book-123",
+            chapterIndex: 4,
+            defaults: defaults
+        )
+        XCTAssertEqual(
+            defaults.string(forKey: AudioPlayer.currentBookIDDefaultsKey),
+            "book-123"
+        )
+        XCTAssertEqual(
+            defaults.integer(forKey: AudioPlayer.currentChapterIndexDefaultsKey),
+            4
+        )
+    }
+
+    func testSetCurrentlyPlayingClearsBookWhenNil() {
+        defaults.set("seed", forKey: AudioPlayer.currentBookIDDefaultsKey)
+        defaults.set(7, forKey: AudioPlayer.currentChapterIndexDefaultsKey)
+
+        PlaybackBindingStore.setCurrentlyPlaying(
+            bookID: nil,
+            chapterIndex: 99,
+            defaults: defaults
+        )
+        XCTAssertNil(defaults.string(forKey: AudioPlayer.currentBookIDDefaultsKey))
+        XCTAssertNil(defaults.object(forKey: AudioPlayer.currentChapterIndexDefaultsKey))
+    }
+
+    func testSetCurrentlyPlayingClampsNegativeChapterIndexToZero() {
+        PlaybackBindingStore.setCurrentlyPlaying(
+            bookID: "book-x",
+            chapterIndex: -3,
+            defaults: defaults
+        )
+        XCTAssertEqual(
+            defaults.integer(forKey: AudioPlayer.currentChapterIndexDefaultsKey),
+            0
+        )
+    }
+
+    func testSetCurrentlyPlayingTreatsEmptyStringAsNil() {
+        defaults.set("seed", forKey: AudioPlayer.currentBookIDDefaultsKey)
+
+        PlaybackBindingStore.setCurrentlyPlaying(
+            bookID: "",
+            chapterIndex: 0,
+            defaults: defaults
+        )
+        XCTAssertNil(defaults.string(forKey: AudioPlayer.currentBookIDDefaultsKey))
+    }
+
+    func testSetCurrentlyPlayingNeverClaimsWidgetIsPlaying() {
+        let appGroupID = WidgetDataSync.appGroupID
+        guard let groupDefaults = UserDefaults(suiteName: appGroupID) else {
+            XCTFail("App Group suite must be constructible in tests")
+            return
+        }
+        let previousBookID = groupDefaults.object(forKey: "currentlyPlayingBookId")
+        let previousIsPlaying = groupDefaults.object(forKey: "widget.nowPlayingIsPlaying")
+        defer {
+            if let previousBookID {
+                groupDefaults.set(previousBookID, forKey: "currentlyPlayingBookId")
+            } else {
+                groupDefaults.removeObject(forKey: "currentlyPlayingBookId")
+            }
+            if let previousIsPlaying {
+                groupDefaults.set(previousIsPlaying, forKey: "widget.nowPlayingIsPlaying")
+            } else {
+                groupDefaults.removeObject(forKey: "widget.nowPlayingIsPlaying")
+            }
+        }
+
+        PlaybackBindingStore.setCurrentlyPlaying(
+            bookID: "book-123",
+            chapterIndex: 2,
+            chapterName: "Chapter 3"
+        )
+
+        XCTAssertEqual(groupDefaults.string(forKey: "currentlyPlayingBookId"), "book-123")
+        XCTAssertEqual(groupDefaults.bool(forKey: "widget.nowPlayingIsPlaying"), false)
+    }
+
+    func testNowPlayingChapterTitleStripsGenericChapterPrefix() {
+        XCTAssertEqual(
+            AudioPlayer.preferredChapterTitle(
+                primary: "Chapter 2: The Shadow of the Past",
+                secondary: "Chapter 2",
+                fallback: "Chapter"
+            ),
+            "The Shadow of the Past"
+        )
+    }
+
+    func testNowPlayingMetadataUsesChapterAsTitleAndBookAsAlbum() {
+        let chapter = JobSnapshot.Chapter(
+            index: 11,
+            name: "Chapter 2: The Shadow of the Past",
+            status: "completed",
+            downloadUrl: "chapter-2.mp3",
+            chars: nil,
+            charsProcessed: nil,
+            progressRatio: 1,
+            durationSeconds: 120,
+            startedAt: nil,
+            completedAt: nil
+        )
+        let snapshot = JobSnapshot(
+            jobId: "job",
+            state: "finished",
+            bookTitle: "The Lord of the Rings",
+            bookAuthor: nil,
+            coverUrl: nil,
+            coverMimeType: nil,
+            engine: nil,
+            voice: nil,
+            language: "en",
+            progressPercent: 100,
+            chaptersTotal: 12,
+            chaptersCompleted: 12,
+            chapterProgress: [chapter],
+            outputs: nil,
+            logUrl: nil,
+            error: nil,
+            lastActivityAt: nil
+        )
+        let player = AudioPlayer()
+        player.setSnapshot(snapshot)
+        let info = player.makeNowPlayingInfo()
+
+        XCTAssertEqual(info[MPMediaItemPropertyTitle] as? String, "The Shadow of the Past")
+        XCTAssertEqual(info[MPMediaItemPropertyAlbumTitle] as? String, "The Lord of the Rings")
+    }
+
+    func testPlaybackBindingStoreReplacesLegacyNowPlayingViewHelper() throws {
+        let testFile = URL(fileURLWithPath: #filePath)
+        let projectRoot = testFile
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let appSource = try String(
+            contentsOf: projectRoot.appendingPathComponent("EpubToMp3/App/EpubToMp3App.swift"),
+            encoding: .utf8
+        )
+        let bookOpenSource = try String(
+            contentsOf: projectRoot.appendingPathComponent("EpubToMp3/Features/Reader/Views/BookOpenView.swift"),
+            encoding: .utf8
+        )
+
+        XCTAssertTrue(appSource.contains("PlaybackBindingStore.setCurrentlyPlaying"))
+        XCTAssertTrue(bookOpenSource.contains("PlaybackBindingStore.setCurrentlyPlaying"))
+        XCTAssertFalse(FileManager.default.fileExists(
+            atPath: projectRoot.appendingPathComponent("EpubToMp3/Features/Playback/Views/NowPlayingView.swift").path
+        ))
+    }
+
+    func testRootTabRawValuesAreStable() {
+        XCTAssertEqual(RootTab.library.rawValue, 0)
+        XCTAssertEqual(RootTab.settings.rawValue, 1)
+        XCTAssertEqual(RootTab.convert.rawValue, 2)
+    }
+
+    func testSplitNavModeDoesNotIncludeNowPlaying() {
+        XCTAssertEqual(SplitNavMode.allCases.first, .reader)
+        XCTAssertFalse(
+            SplitNavMode.allCases.contains(where: { $0.rawValue == "nowPlaying" }),
+            "nowPlaying must not be a sidebar destination — it is a sheet now."
+        )
+        XCTAssertTrue(SplitNavMode.allCases.contains(.library))
+        XCTAssertTrue(SplitNavMode.allCases.contains(.settings))
+    }
+
+    func testSplitNavModeProvidesSFSymbolForEveryDestination() {
+        for mode in SplitNavMode.allCases {
+            XCTAssertFalse(mode.systemImage.isEmpty,
+                           "Sidebar would render a missing icon for \(mode).")
+            XCTAssertFalse(mode.label.isEmpty)
+        }
+    }
+}

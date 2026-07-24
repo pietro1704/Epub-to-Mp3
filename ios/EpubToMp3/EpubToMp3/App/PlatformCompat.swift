@@ -382,11 +382,23 @@ private typealias PlatformImage = NSImage
 private enum _CoverImageCache {
     nonisolated(unsafe) static let cache: NSCache<NSNumber, PlatformImage> = {
         let c = NSCache<NSNumber, PlatformImage>()
-        // ~64 covers × ~2 MB decoded ≈ 128 MB ceiling. NSCache
-        // evicts under memory pressure automatically.
+        // `countLimit` alone assumed ~2 MB/decoded image, but a real cover
+        // (e.g. 3000×3000 source PNG) decodes to ~36 MB — 64 of those is a
+        // ~2.3 GB ceiling, not the ~128 MB the old comment claimed. Cap by
+        // decoded byte cost instead so eviction tracks actual memory.
         c.countLimit = 64
+        c.totalCostLimit = 160 * 1024 * 1024
         return c
     }()
+
+    static func cost(of image: PlatformImage) -> Int {
+        #if canImport(UIKit)
+        guard let cg = image.cgImage else { return 0 }
+        #else
+        guard let cg = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return 0 }
+        #endif
+        return cg.width * cg.height * 4
+    }
 }
 
 func platformImage(from data: Data) -> Image? {
@@ -400,11 +412,11 @@ func platformImage(from data: Data) -> Image? {
     }
     #if canImport(UIKit)
     guard let ui = UIImage(data: data) else { return nil }
-    _CoverImageCache.cache.setObject(ui, forKey: key)
+    _CoverImageCache.cache.setObject(ui, forKey: key, cost: _CoverImageCache.cost(of: ui))
     return Image(uiImage: ui)
     #else
     guard let ns = NSImage(data: data) else { return nil }
-    _CoverImageCache.cache.setObject(ns, forKey: key)
+    _CoverImageCache.cache.setObject(ns, forKey: key, cost: _CoverImageCache.cost(of: ns))
     return Image(nsImage: ns)
     #endif
 }

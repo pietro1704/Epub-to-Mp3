@@ -102,14 +102,15 @@ final class ReaderTapRoutingTests: XCTestCase {
 
     func testChromeVisibilityModifierUsesVisibleStateForSystemBars() throws {
         let instantReader = try source("Features/Reader/Views/InstantReaderView.swift")
-        let modifier = try XCTUnwrap(
-            instantReader.range(of: "struct ChromeVisibilityModifier")
-                .map { instantReader[$0.lowerBound...] }
-        )
+        XCTAssertTrue(instantReader.contains("func instantReaderSystemChrome(visible: Bool)"),
+                      "InstantReader must route system-bar behavior through a dedicated compatibility helper.")
 
-        XCTAssertTrue(modifier.contains(".toolbar(visible ? .visible : .hidden, for: .tabBar)"),
-                      "the tab bar must follow the same reader chrome state")
-        XCTAssertTrue(modifier.contains("TabBarVisibilityController(visible: visible)"),
-                      "the iOS 15 fallback must propagate visible instead of always hiding the tab bar")
+        let controller = try source("Features/Reader/Views/MainReaderScreenController.swift")
+        XCTAssertTrue(controller.contains("tabBarController?.tabBar.isHidden = true"),
+                      "The main-reader UIKit host must keep the tab bar hidden while a book is open.")
+
+        let playerReader = try source("Features/Reader/Views/PlayerReaderView.swift")
+        XCTAssertTrue(playerReader.contains("func playerReaderSystemChrome(visible: Bool)"),
+                      "PlayerReader must route system-bar behavior through a dedicated compatibility helper.")
     }
 }

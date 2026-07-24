@@ -32,6 +32,9 @@ from mutagen.mp3 import MP3
 from ._cache_mixin import _CacheMixin
 from ._edge_throttle_mixin import _EdgeThrottleMixin
 from ._engine_selection_mixin import _EngineSelectionMixin
+from ._env_utils import env_bool as _env_bool
+from ._env_utils import env_float as _env_float
+from ._env_utils import env_int as _env_int
 from ._health_watchdog_mixin import (
     _await_task_with_deadline,
     _HealthWatchdogMixin,
@@ -77,33 +80,6 @@ def _has_piper_support() -> bool:
 def _has_coqui_support() -> bool:
     """Stub kept for back-compat after the Coqui engine was removed."""
     return False
-
-
-def _env_bool(name: str, default: bool = False) -> bool:
-    raw = os.getenv(name)
-    if raw is None:
-        return default
-    return raw.strip().lower() in {"1", "true", "yes", "on"}
-
-
-def _env_int(name: str, default: int) -> int:
-    raw = os.getenv(name)
-    if raw is None or raw == "":
-        return default
-    try:
-        return int(raw)
-    except (TypeError, ValueError):
-        return default
-
-
-def _env_float(name: str, default: float) -> float:
-    raw = os.getenv(name)
-    if raw is None or raw == "":
-        return default
-    try:
-        return float(raw)
-    except (TypeError, ValueError):
-        return default
 
 
 async def _apply_silence_padding(

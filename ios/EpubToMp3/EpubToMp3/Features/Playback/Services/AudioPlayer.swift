@@ -77,8 +77,8 @@ enum PlaybackRate: Float, CaseIterable, Identifiable {
 final class AudioPlayer: ObservableObject {
 
     /// UserDefaults key holding the `BookEntity.id` of the book that was
-    /// most recently surfaced in `NowPlayingView`. Written by the view
-    /// when the user begins playback so the landing screen rehydrates
+    /// most recently bound to playback via `PlaybackBindingStore`.
+    /// Written when the user begins playback so the shell can rehydrate
     /// after a cold launch. Centralised here so the rest of the app
     /// shares a single source of truth.
     /// `nonisolated` — a plain string constant carries no actor state,
@@ -111,7 +111,27 @@ final class AudioPlayer: ObservableObject {
 
     // MARK: Public observable state
 
-    @Published private(set) var snapshot: JobSnapshot?
+    @Published private(set) var snapshot: JobSnapshot? {
+        didSet { refreshCachedBookChapterProgress() }
+    }
+
+    /// Derived from `snapshot`, recomputed only when `snapshot` is reassigned
+    /// (once per SSE/poll update), not on every read. The segmented playback
+    /// progress bars (`MiniPlayerBar`, `FullPlayerSheet`) poll this from a
+    /// `CADisplayLink` at up to 30 fps — reconstructing `BookChapterProgress`
+    /// (sort + map + two reduce over every chapter) on each of those ticks
+    /// would burn main-thread time on a large book for no reason, since the
+    /// underlying data hasn't changed between ticks.
+    private(set) var cachedBookChapterProgress: BookChapterProgress?
+
+    private func refreshCachedBookChapterProgress() {
+        guard let snapshot, snapshot.chapterProgress?.isEmpty == false else {
+            cachedBookChapterProgress = nil
+            return
+        }
+        cachedBookChapterProgress = BookChapterProgress(snapshot: snapshot)
+    }
+
     @Published private(set) var currentChapterIndex: Int = 0
     @Published private(set) var isPlaying: Bool = false
     @Published private(set) var rate: PlaybackRate = .x100
@@ -2277,7 +2297,7 @@ final class AudioPlayer: ObservableObject {
     /// Called from every site that already calls `updateNowPlayingInfo()`
     /// (play, pause, resume, chapter advance) — the single choke point for
     /// "did the transport state change" in this class. Previously only
-    /// `NowPlayingView.setCurrentlyPlaying` wrote to the widget, and only
+    /// `PlaybackBindingStore.setCurrentlyPlaying` wrote to the widget, and only
     /// once, when a book was opened — the widget then never learned about
     /// a later pause, so it showed "pause" forever.
     /// Pure decision helper behind `syncWidgetNowPlaying()`: does the new
@@ -2448,6 +2468,7 @@ final class AudioPlayer: ObservableObject {
         let candidates = [primary, secondary]
             .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty && !isGenericChapterTitle($0) }
+            .map { stripGenericChapterPrefix($0) }
         return candidates.first ?? fallback
     }
 
@@ -2462,6 +2483,33 @@ final class AudioPlayer: ObservableObject {
             }
         }
         return false
+    }
+
+    /// Strips a leading "Chapter N: "/"Capítulo N: " label from an
+    /// otherwise-substantive title (e.g. an EPUB TOC entry the backend
+    /// prefixed with its own numbering) — unlike `isGenericChapterTitle`,
+    /// which only rejects titles that are PURELY the generic label. Now
+    /// Playing / lock-screen metadata should show "The Shadow of the
+    /// Past", not "Chapter 2: The Shadow of the Past".
+    private nonisolated static func stripGenericChapterPrefix(_ title: String) -> String {
+        let normalized = title.lowercased()
+            .replacingOccurrences(of: "á", with: "a")
+            .replacingOccurrences(of: "í", with: "i")
+        for prefix in ["chapter ", "capitulo "] {
+            guard normalized.hasPrefix(prefix) else { continue }
+            let afterPrefix = normalized[normalized.index(normalized.startIndex, offsetBy: prefix.count)...]
+            guard let colonRange = afterPrefix.range(of: ": ") else { continue }
+            let numberPart = afterPrefix[afterPrefix.startIndex..<colonRange.lowerBound]
+            guard Int(numberPart) != nil else { continue }
+            // `normalized` is a 1-char-for-1-char transform of `title`
+            // (lowercasing + single-accented-letter substitution never
+            // changes character count), so the same character offset
+            // slices the ORIGINAL (non-lowercased) string correctly.
+            let prefixCharCount = prefix.count + numberPart.count + 2 // + ": "
+            let stripped = String(title.dropFirst(prefixCharCount))
+            return stripped.isEmpty ? title : stripped
+        }
+        return title
     }
 
     private var currentChapterValue: JobSnapshot.Chapter? {

@@ -259,7 +259,10 @@ final class ReaderChromeAutoHideTests: XCTestCase {
     func testChromeVisibilityModifierKeepsStatusBarVisible() throws {
         let source = try instantReaderSource()
         XCTAssertFalse(source.contains(".statusBarHidden(!visible)"))
-        XCTAssertTrue(source.contains(".statusBarHidden(false)"))
+        XCTAssertTrue(
+            source.contains(".statusBarHidden(false)")
+            || source.contains("instantReaderSystemChrome(visible: chromeVisible)")
+        )
     }
 
     /// Reading a pushed book follows Apple Books: the root TabView's tab
@@ -267,9 +270,19 @@ final class ReaderChromeAutoHideTests: XCTestCase {
     /// top/bottom chrome remains independently toggleable.
     func testChromeVisibilityModifierHidesTabBarForBookReader() throws {
         let source = try instantReaderSource()
-        XCTAssertTrue(source.contains(".toolbar(.hidden, for: .tabBar)"))
-        XCTAssertTrue(source.contains("TabBarVisibilityController(visible: false)"),
-            "The iOS 15 fallback must hide the root UITabBar while a book is open")
+        let controller = try appSource(named: "Features/Reader/Views/MainReaderScreenController.swift")
+        XCTAssertTrue(source.contains("instantReaderSystemChrome(visible: chromeVisible)"))
+        XCTAssertTrue(controller.contains("tabBarController?.tabBar.isHidden = true"),
+            "The main reader UIKit controller must hide the root UITabBar while a book is open")
+    }
+
+    func testPlayerReaderRoutesSystemBarsThroughDedicatedCompatibilityHelper() throws {
+        let source = try appSource(named: "Features/Reader/Views/PlayerReaderView.swift")
+        let sharedBridge = try appSource(named: "Shared/UI/IOSTabBarVisibilityBridge.swift")
+        XCTAssertTrue(source.contains(".playerReaderSystemChrome(visible: chromeVisible)"))
+        XCTAssertTrue(source.contains("func playerReaderSystemChrome(visible: Bool)"))
+        XCTAssertTrue(source.contains("IOSTabBarVisibilityBridge(visible: visible)"))
+        XCTAssertTrue(sharedBridge.contains("struct IOSTabBarVisibilityBridge: UIViewControllerRepresentable"))
     }
 
 
@@ -313,8 +326,8 @@ final class ReaderChromeAutoHideTests: XCTestCase {
                       "ReaderView must hold the last valid page array to avoid a blank/TOC flash while the new chapter re-paginates in any paginated mode.")
         XCTAssertTrue(reader.contains("pages.isEmpty ? paginationCache.lastValidPages : pages"),
                       "effectivePages must fall back to lastValidPages for ALL paginated modes, not just page-curl.")
-        XCTAssertTrue(instantReader.contains(".readerChromeVisible(chromeVisible)"),
-                      "InstantReader chrome state must propagate to RootView so the mini player disappears too.")
+        XCTAssertTrue(instantReader.contains(".instantReaderSystemChrome(visible: chromeVisible)"),
+                      "InstantReader must route system-bar ownership through the compatibility helper.")
         XCTAssertTrue(instantReader.contains("if chromeVisible && audioPlayerVisible"),
                       "The inline mini player must be hidden together with the top chrome on a center tap.")
     }
@@ -390,6 +403,7 @@ final class ReaderChromeAutoHideTests: XCTestCase {
         let pdfReader = try appSource(named: "Features/Reader/Views/PdfReaderView.swift")
         let bookOpen = try appSource(named: "Features/Reader/Views/BookOpenView.swift")
         let root = try appSource(named: "App/RootView.swift")
+        let iosRootContainer = try appSource(named: "App/IOSRootContainer.swift")
 
         XCTAssertTrue(pdfReader.contains("let onPageTap: (() -> Void)?"),
                       "PDF reader must expose a tap callback for immersive chrome toggle.")
@@ -399,12 +413,12 @@ final class ReaderChromeAutoHideTests: XCTestCase {
                       "BookOpenView must own PDF chrome visibility like InstantReader owns EPUB chrome.")
         XCTAssertTrue(bookOpen.contains("onPageTap: { withAnimation(.easeInOut(duration: 0.25)) { pdfChromeVisible.toggle() } }"),
                       "Tapping a PDF page must toggle top/bottom chrome.")
-        XCTAssertTrue(bookOpen.contains(".readerChromeVisible(false)"),
-                      "Opening a book from Library must hide the global mini player; the in-book bottom/player bar owns reader playback chrome.")
-        XCTAssertTrue(root.contains("@State private var readerChromeVisible = true"),
-                      "RootView must observe reader chrome state for mini-player visibility.")
-        XCTAssertTrue(root.contains("&& readerChromeVisible"),
-                      "MiniPlayerBar visibility must respect hidden reader chrome.")
+        XCTAssertTrue(bookOpen.contains(".bookOpenSystemChrome(pdfVisible:"),
+                      "Opening a book from Library must route through the dedicated book-open system-chrome helper.")
+        XCTAssertTrue(root.contains("IOSRootContainer()"),
+                      "The iOS root must delegate overlay ownership to the UIKit root container.")
+        XCTAssertTrue(iosRootContainer.contains("readerController.view.isHidden = !readerActive"),
+                      "The UIKit root container must own reader overlay visibility.")
     }
 
     /// The embedded Python/Edge audio engine must be warmed exactly once
@@ -414,6 +428,7 @@ final class ReaderChromeAutoHideTests: XCTestCase {
     func testAudioEngineWarmupIsGlobalVisibleAndAwaitedByAudioBootstrap() throws {
         let app = try appSource(named: "App/EpubToMp3App.swift")
         let root = try appSource(named: "App/RootView.swift")
+        let iosRootContainer = try appSource(named: "App/IOSRootContainer.swift")
         let bookOpen = try appSource(named: "Features/Reader/Views/BookOpenView.swift")
         let reader = try appSource(named: "Features/Reader/Views/ReaderView.swift")
 
@@ -437,7 +452,7 @@ final class ReaderChromeAutoHideTests: XCTestCase {
 
         XCTAssertTrue(root.contains("@EnvironmentObject private var audioWarmup: AudioEngineWarmup"))
         XCTAssertTrue(root.contains("AudioEngineWarmupBadge(warmup: audioWarmup)"))
-        XCTAssertTrue(root.contains("ZStack(alignment: .topTrailing)"),
+        XCTAssertTrue(root.contains(".overlay(alignment: .topTrailing)"),
                       "The audio runtime status should be a floating top-trailing badge, not inline content that looks stuck in the screen body.")
         XCTAssertTrue(root.contains(".padding(.trailing, 12)"))
         XCTAssertTrue(root.contains("Circle()"))
@@ -464,6 +479,10 @@ final class ReaderChromeAutoHideTests: XCTestCase {
                       "Only an upward slide should hide the warmup badge.")
         XCTAssertTrue(root.contains("hiddenByUser = true"),
                       "The upward slide handler must set the local hidden state.")
+        XCTAssertTrue(iosRootContainer.contains("MiniPlayerContainerController("),
+                      "The UIKit root container must mount the mini-player through the dedicated UIKit container.")
+        XCTAssertTrue(iosRootContainer.contains("fullPlayerController.view.isHidden = !playerPresentation.showingFullPlayer"),
+                      "The UIKit root container must own full-player visibility.")
 
         XCTAssertTrue(bookOpen.contains("@EnvironmentObject private var audioWarmup: AudioEngineWarmup"))
         XCTAssertTrue(bookOpen.contains("_ = await self.audioWarmup.start()"))
@@ -484,10 +503,13 @@ final class ReaderChromeAutoHideTests: XCTestCase {
     func testReaderSessionAndAudioPrecedenceArePersisted() throws {
         let instantReader = try appSource(named: "Features/Reader/Views/InstantReaderView.swift")
         let root = try appSource(named: "App/RootView.swift")
+        let iosRootContainer = try appSource(named: "App/IOSRootContainer.swift")
         let presentation = try appSource(named: "Features/Playback/Services/PlayerPresentation.swift")
 
-        XCTAssertTrue(root.contains("readerSurfaceOrTabs"),
-                      "The iPhone root must choose the restored reader before showing tabs.")
+        XCTAssertTrue(root.contains("IOSRootContainer()"),
+                      "The iPhone root must choose the restored reader through the UIKit root container.")
+        XCTAssertTrue(iosRootContainer.contains("MainReaderScreenController("),
+                      "The UIKit root container must host the restored reader surface.")
         XCTAssertTrue(root.contains("currentlyReadingBookIDKey"),
                       "Reader restoration must use the reading pointer, not only the audio pointer.")
         XCTAssertTrue(instantReader.contains("ReaderSessionState.load(bookID: fulltext.jobId)"),

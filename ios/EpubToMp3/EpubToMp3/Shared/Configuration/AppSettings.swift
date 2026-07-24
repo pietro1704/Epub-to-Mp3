@@ -573,8 +573,13 @@ final class AppSettings: ObservableObject {
     }
 
     /// Resolved point size for the current font-size step.
-    var readerPointSize: CGFloat {
-        switch readerFontSize {
+    var readerPointSize: CGFloat { Self.pointSize(for: readerFontSize) }
+
+    /// Point size for an arbitrary font-size step (0...4), independent of
+    /// the currently selected one — used by size pickers that need to
+    /// preview every step's resolved size (e.g. `ReaderSettingsScreenController`).
+    static func pointSize(for step: Int) -> CGFloat {
+        switch step {
         case 0: return 14
         case 1: return 17
         case 2: return 20

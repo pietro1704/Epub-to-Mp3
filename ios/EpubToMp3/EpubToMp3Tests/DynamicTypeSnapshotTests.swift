@@ -25,6 +25,74 @@ import SwiftUI
 import SnapshotTesting
 @testable import EpubToMp3
 
+private final class DynamicTypeNavigationController: UINavigationController {
+    private let contentSizeCategory: UIContentSizeCategory
+
+    init(rootViewController: UIViewController, contentSizeCategory: UIContentSizeCategory) {
+        self.contentSizeCategory = contentSizeCategory
+        super.init(rootViewController: rootViewController)
+    }
+
+    @available(*, unavailable)
+    required init?(coder aDecoder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        setOverrideTraitCollection(
+            UITraitCollection(preferredContentSizeCategory: contentSizeCategory),
+            forChild: topViewController
+        )
+    }
+}
+
+private struct LibraryDynamicTypeSnapshotHost: UIViewControllerRepresentable {
+    let store: LibraryStore
+    let settings: AppSettings
+    let bookmarks: BookmarkStore
+    let contentSizeCategory: UIContentSizeCategory
+
+    func makeUIViewController(context: Context) -> UINavigationController {
+        DynamicTypeNavigationController(
+            rootViewController: LibraryScreenController(
+                library: store,
+                settings: settings,
+                bookmarkStore: bookmarks
+            ),
+            contentSizeCategory: contentSizeCategory
+        )
+    }
+
+    func updateUIViewController(_ controller: UINavigationController, context: Context) {
+        (controller.viewControllers.first as? LibraryScreenController)?.refreshFromStores()
+    }
+}
+
+private struct SettingsDynamicTypeSnapshotHost: UIViewControllerRepresentable {
+    let settings: AppSettings
+    let library: LibraryStore
+    let player: AudioPlayer
+    let playbackClock: PlaybackClock
+    let contentSizeCategory: UIContentSizeCategory
+
+    func makeUIViewController(context: Context) -> UINavigationController {
+        DynamicTypeNavigationController(
+            rootViewController: SettingsScreenController(
+                settings: settings,
+                library: library,
+                player: player,
+                playbackClock: playbackClock
+            ),
+            contentSizeCategory: contentSizeCategory
+        )
+    }
+
+    func updateUIViewController(_ controller: UINavigationController, context: Context) {
+        (controller.viewControllers.first as? SettingsScreenController)?.refreshFromStores()
+    }
+}
+
 @MainActor
 final class DynamicTypeSnapshotTests: XCTestCase {
 
@@ -57,10 +125,12 @@ final class DynamicTypeSnapshotTests: XCTestCase {
 
     func testLibraryEmptyStateXXXL() {
         let (store, settings) = makeLibrarySettings()
-        let view = LibraryView()
-            .environmentObject(store)
-            .environmentObject(settings)
-            .environment(\.dynamicTypeSize, .accessibility3)
+        let view = LibraryDynamicTypeSnapshotHost(
+            store: store,
+            settings: settings,
+            bookmarks: BookmarkStore(),
+            contentSizeCategory: .accessibilityExtraExtraExtraLarge
+        )
         // iPhone SE is the worst-case (narrowest) device.
         assertDeviceSnapshot(
             of: view,
@@ -73,10 +143,12 @@ final class DynamicTypeSnapshotTests: XCTestCase {
 
     func testLibraryPopulatedXXXL() {
         let (_, settings) = makeLibrarySettings()
-        let view = LibraryView()
-            .environmentObject(LibraryStore.previewPopulated)
-            .environmentObject(settings)
-            .environment(\.dynamicTypeSize, .accessibility3)
+        let view = LibraryDynamicTypeSnapshotHost(
+            store: LibraryStore.previewPopulated,
+            settings: settings,
+            bookmarks: BookmarkStore(),
+            contentSizeCategory: .accessibilityExtraExtraExtraLarge
+        )
         assertSnapshots(
             of: view,
             on: [SnapshotDevices.iPhoneSEPortrait, SnapshotDevices.iPhone15ProPortrait],
@@ -127,12 +199,14 @@ final class DynamicTypeSnapshotTests: XCTestCase {
         let defaults = UserDefaults(suiteName: suite)!
         defaults.removePersistentDomain(forName: suite)
         let settings = AppSettings(defaults: defaults)
-        let view = CompatNavigationStack {
-            SettingsView()
-        }
-        .environmentObject(settings)
-        .environmentObject(LibraryStore())
-        .environment(\.dynamicTypeSize, .accessibility3)
+        let player = AudioPlayer()
+        let view = SettingsDynamicTypeSnapshotHost(
+            settings: settings,
+            library: LibraryStore(),
+            player: player,
+            playbackClock: player.playbackClock,
+            contentSizeCategory: .accessibilityExtraExtraExtraLarge
+        )
         assertSnapshots(
             of: view,
             on: [SnapshotDevices.iPhoneSEPortrait, SnapshotDevices.iPhone15ProPortrait],

@@ -96,6 +96,7 @@
 "player.skipForward15" = "Skip forward 15 seconds";
 "player.skipForward30" = "Skip forward 30 seconds";
 "player.nextChapter" = "Next chapter";
+"menu.playback" = "Playback";
 "player.playbackSpeed" = "Playback speed: %@";
 "player.sleep" = "Sleep";
 "player.sleepTimerOff" = "Sleep timer: off. Tap to set.";
@@ -467,3 +468,4 @@
 "settings.clearAllDownloads" = "Clear all book downloads";
 "settings.clearAllDownloadsConfirmTitle" = "Clear all downloads?";
 "settings.clearAllDownloadsConfirmMessage" = "All offline MP3s and generated chapter audio caches will be deleted.";
+"jobs.historyDetailUnavailable" = "This session does not include a live job ID.";
