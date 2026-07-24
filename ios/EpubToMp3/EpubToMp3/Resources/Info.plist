@@ -76,6 +76,7 @@
 			<array>
 				<string>org.idpf.epub-container</string>
 				<string>com.apple.ibooks.epub</string>
+				<string>public.epub</string>
 			</array>
 		</dict>
 		<dict>

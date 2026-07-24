@@ -9,7 +9,8 @@ chews a ZIP + XML tree, and tap events being dropped.
 delegate work to a `Task.detached`-style off-actor hop. We pin two
 specific call sites here:
 
-1. ``EpubFallbackParser.parse`` — full ZIP + XMLParser walk.
+1. The EPUB parser — either ``EpubFallbackParser.parse`` in the legacy
+   Swift path or ``PythonBridge.parseEpub`` in the embedded Python path.
 2. ``PdfTextExtractor.extract`` — PDFKit text extraction across pages.
 
 If you ever inline either back onto the main actor, this test fails
@@ -32,6 +33,16 @@ BOOK_OPEN = (
     / "Views"
     / "BookOpenView.swift"
 )
+PYTHON_BRIDGE = (
+    REPO_ROOT
+    / "ios"
+    / "EpubToMp3"
+    / "EpubToMp3"
+    / "Features"
+    / "Conversion"
+    / "Services"
+    / "PythonBridge.swift"
+)
 
 
 def _enclosing_block(text: str, needle: str) -> str:
@@ -45,12 +56,21 @@ def _enclosing_block(text: str, needle: str) -> str:
 
 def test_epub_fallback_parser_runs_off_main_actor() -> None:
     body = BOOK_OPEN.read_text(encoding="utf-8")
-    block = _enclosing_block(body, "EpubFallbackParser.parse(")
-    assert re.search(r"Task\.detached\s*\(", block), (
-        "EpubFallbackParser.parse(...) must be wrapped in a "
-        "Task.detached so the ZIP + XMLParser walk does not stall "
-        "the main actor — symptom: 'Gesture: System gesture gate "
-        "timed out' in syslog."
+    if "EpubFallbackParser.parse(" in body:
+        block = _enclosing_block(body, "EpubFallbackParser.parse(")
+        assert re.search(r"Task\.detached\s*\(", block), (
+            "EpubFallbackParser.parse(...) must be wrapped in a "
+            "Task.detached so the ZIP + XMLParser walk does not stall "
+            "the main actor — symptom: 'Gesture: System gesture gate "
+            "timed out' in syslog."
+        )
+        return
+
+    assert "PythonBridge.shared.parseEpub(" in body
+    bridge = PYTHON_BRIDGE.read_text(encoding="utf-8")
+    assert "runner.callAsync(" in bridge, (
+        "PythonBridge.parseEpub(...) must execute through its dedicated "
+        "runner so embedded Python parsing does not stall the main actor."
     )
 
 
