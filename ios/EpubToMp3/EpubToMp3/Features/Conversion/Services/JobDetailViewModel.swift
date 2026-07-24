@@ -39,7 +39,7 @@ final class JobDetailViewModel: ObservableObject {
                 }
                 self.isStreaming = false
             } catch {
-                guard !Task.isCancelled else { return }
+                guard let self, !Task.isCancelled else { return }
                 self.errorMessage = error.localizedDescription
                 self.isStreaming = false
             }
