@@ -447,8 +447,10 @@ final class FullPlayerScreenController: UIViewController {
     private func tocTapped() {
         guard let snapshot = player.snapshot else { return }
         let fulltext = currentBookID.flatMap { LocalFulltextCache.read(bookId: $0) }
-        let playingEpubIndex = InstantReaderIndexMapper
-            .epubIndex(forPlayableIndex: player.currentChapterIndex, in: snapshot) ?? -1
+        let playableChapters = snapshot.playableChapters
+        let playingEpubIndex = playableChapters.indices.contains(player.currentChapterIndex)
+            ? playableChapters[player.currentChapterIndex].index
+            : -1
         let controller = UINavigationController(
             rootViewController: TocScreenController(
                 fulltext: fulltext,
@@ -457,17 +459,21 @@ final class FullPlayerScreenController: UIViewController {
                 readingChapterIndex: nil,
                 onJump: { [weak self] epubIndex in
                     guard let self,
-                          let playable = InstantReaderIndexMapper.playableIndex(forEpubIndex: epubIndex, in: snapshot) else { return }
+                          let playable = playableChapters.firstIndex(where: { $0.index == epubIndex }) else { return }
                     self.player.play(snapshot: snapshot, startingAt: playable)
                 },
                 onDownload: nil,
+                onDownloadAll: nil,
                 onCancelDownloads: nil,
                 onClearDownloads: nil
             )
         )
         if let sheet = controller.sheetPresentationController {
             if #available(iOS 16.0, *) {
-                sheet.detents = [.medium(), .large()]
+                sheet.detents = [
+                    UISheetPresentationController.Detent.medium(),
+                    UISheetPresentationController.Detent.large()
+                ]
             }
         }
         present(controller, animated: true)

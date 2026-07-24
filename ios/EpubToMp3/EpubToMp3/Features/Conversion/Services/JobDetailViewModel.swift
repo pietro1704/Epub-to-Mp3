@@ -39,9 +39,9 @@ final class JobDetailViewModel: ObservableObject {
                 }
                 self.isStreaming = false
             } catch {
-                guard let self, !Task.isCancelled else { return }
-                self.errorMessage = error.localizedDescription
-                self.isStreaming = false
+                guard !Task.isCancelled, let strongSelf = self else { return }
+                strongSelf.errorMessage = error.localizedDescription
+                strongSelf.isStreaming = false
             }
         }
         progressTask = Task { [weak self] in
