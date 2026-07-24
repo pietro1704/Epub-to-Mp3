@@ -63,3 +63,16 @@ def test_ios_app_declares_document_types_for_supported_book_documents() -> None:
     assert "public.epub" in declared_types
     assert "com.adobe.pdf" in declared_types
     assert "public.pdf" in declared_types
+
+
+def test_android_shortcut_labels_use_string_resources() -> None:
+    shortcuts = PROJECT_ROOT / "flutter_app/android/app/src/main/res/xml/shortcuts.xml"
+    root = ET.parse(shortcuts).getroot()
+    shortcut = root.find("shortcut")
+    assert shortcut is not None
+
+    for attribute in ("shortcutShortLabel", "shortcutLongLabel"):
+        value = shortcut.attrib[f"{ANDROID_NS}{attribute}"]
+        assert value.startswith(
+            "@string/"
+        ), f"Android {attribute} must reference a string resource, not a literal"

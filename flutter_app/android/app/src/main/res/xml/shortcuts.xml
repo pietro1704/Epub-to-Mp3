@@ -6,8 +6,8 @@
         android:shortcutId="jobs"
         android:enabled="true"
         android:icon="@mipmap/ic_launcher"
-        android:shortcutShortLabel="Jobs"
-        android:shortcutLongLabel="Open conversion jobs">
+        android:shortcutShortLabel="@string/shortcut_jobs_short"
+        android:shortcutLongLabel="@string/shortcut_jobs_long">
         <intent
             android:action="android.intent.action.VIEW"
             android:targetPackage="com.pietrocode.epubtomp3.flutter_app"

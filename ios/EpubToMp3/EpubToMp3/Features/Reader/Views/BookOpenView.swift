@@ -237,7 +237,7 @@ struct BookOpenContentView: View {
             return
         }
 
-        if !await prepareCachedOrParsedEpub(fileURL: fileURL, bookId: bookId) {
+        if !(await prepareCachedOrParsedEpub(fileURL: fileURL, bookId: bookId)) {
             phase = .unreadable(fileURL)
             return
         }
