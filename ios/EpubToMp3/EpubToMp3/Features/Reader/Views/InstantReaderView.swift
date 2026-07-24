@@ -257,6 +257,10 @@ final class InstantReaderPresentationState: ObservableObject {
         guard !chromeVisible else { return }
         chromeVisible = true
     }
+
+    func toggleChrome() {
+        chromeVisible.toggle()
+    }
 }
 
 @MainActor
@@ -753,7 +757,7 @@ struct InstantReaderContentView: View {
                 },
                 onAdvanceChapter: advanceToNextChapter,
                 onPreviousChapter: returnToPreviousChapter,
-                onCenterTap: { withAnimation(.easeInOut(duration: 0.25)) { chromeVisible.toggle() } },
+                onCenterTap: { withAnimation(.easeInOut(duration: 0.25)) { presentationState.toggleChrome() } },
                 chromeVisible: chromeVisible,
                 onAutoHideChrome: { autoHideChromeIfNeeded() },
                 onRestoreChrome: { restoreChromeIfNeeded() },
@@ -782,7 +786,7 @@ struct InstantReaderContentView: View {
                 },
                 onAdvanceChapter: advanceToNextChapter,
                 onPreviousChapter: returnToPreviousChapter,
-                onCenterTap: { withAnimation(.easeInOut(duration: 0.25)) { chromeVisible.toggle() } },
+                onCenterTap: { withAnimation(.easeInOut(duration: 0.25)) { presentationState.toggleChrome() } },
                 chromeVisible: chromeVisible,
                 onAutoHideChrome: { autoHideChromeIfNeeded() },
                 onRestoreChrome: { restoreChromeIfNeeded() },

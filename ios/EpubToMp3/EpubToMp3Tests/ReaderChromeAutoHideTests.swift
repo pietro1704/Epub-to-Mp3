@@ -523,4 +523,12 @@ final class ReaderChromeAutoHideTests: XCTestCase {
         XCTAssertTrue(presentation.contains("persistedExpandedKey"),
                       "Expanded player presentation must survive app termination.")
     }
+
+    func testInstantReaderTogglesChromeThroughPresentationState() throws {
+        let source = try appSource(named: "Features/Reader/Views/InstantReaderView.swift")
+
+        XCTAssertTrue(source.contains("func toggleChrome()"))
+        XCTAssertEqual(source.components(separatedBy: "presentationState.toggleChrome()").count - 1, 2)
+        XCTAssertFalse(source.contains("chromeVisible.toggle() }"))
+    }
 }
