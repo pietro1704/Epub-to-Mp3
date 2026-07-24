@@ -210,8 +210,6 @@ async def upload_ebook_local(
     raw_path = str(body.path or "")
     if not os.path.isabs(raw_path):
         raise HTTPException(status_code=400, detail="Invalid file path")
-    if os.path.islink(raw_path):
-        raise HTTPException(status_code=400, detail="Symlinks are not supported")
 
     resolved_source = os.path.realpath(raw_path)
     allowed_roots = [

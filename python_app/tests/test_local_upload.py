@@ -190,13 +190,27 @@ class TestLocalUploadEndpoint(unittest.TestCase):
         self._restore_server(srv)
         assert resp.status_code == 400
 
-    def test_400_for_symlink(self):
+    def test_allows_symlink_resolving_within_allowed_root(self):
         client, srv = _make_client()
         self._patch_server(srv)
         target = _minimal_epub(self.tmp / "target.epub")
         link = self.tmp / "linked.epub"
         link.symlink_to(target)
+
+        with patch("src.ebook_reader.EbookReader", return_value=_fake_reader()):
+            resp = client.post("/api/uploads/local", json={"path": str(link)})
+
+        self._restore_server(srv)
+        assert resp.status_code == 200
+
+    def test_400_for_symlink_resolving_outside_allowed_roots(self):
+        client, srv = _make_client()
+        self._patch_server(srv)
+        link = self.tmp / "outside.epub"
+        link.symlink_to("/etc/passwd")
+
         resp = client.post("/api/uploads/local", json={"path": str(link)})
+
         self._restore_server(srv)
         assert resp.status_code == 400
 
