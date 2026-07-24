@@ -19,6 +19,14 @@ struct LibraryGridModel: Equatable {
         case title
         case addedDate
         var id: String { rawValue }
+
+        var label: String {
+            switch self {
+            case .lastOpened: return L10n.string("library.lastOpened")
+            case .title: return L10n.string("library.titleSort")
+            case .addedDate: return L10n.string("library.dateAdded")
+            }
+        }
     }
 
     var books: [BookEntity]

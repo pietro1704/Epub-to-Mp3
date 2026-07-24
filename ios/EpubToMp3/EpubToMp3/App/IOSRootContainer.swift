@@ -1,36 +1,6 @@
 #if os(iOS)
 import Combine
-import SwiftUI
 import UIKit
-
-struct IOSRootContainer: UIViewControllerRepresentable {
-    @EnvironmentObject private var settings: AppSettings
-    @EnvironmentObject private var sidecar: SidecarManager
-    @EnvironmentObject private var library: LibraryStore
-    @EnvironmentObject private var player: AudioPlayer
-    @EnvironmentObject private var audioWarmup: AudioEngineWarmup
-    @EnvironmentObject private var playerPresentation: PlayerPresentation
-    @EnvironmentObject private var bookmarkStore: BookmarkStore
-    @EnvironmentObject private var readerCoordinator: ReaderCoordinator
-
-    func makeUIViewController(context: Context) -> IOSRootContainerController {
-        IOSRootContainerController(
-            settings: settings,
-            sidecar: sidecar,
-            library: library,
-            player: player,
-            audioWarmup: audioWarmup,
-            playerPresentation: playerPresentation,
-            bookmarkStore: bookmarkStore,
-            readerCoordinator: readerCoordinator
-        )
-    }
-
-    func updateUIViewController(_ controller: IOSRootContainerController, context: Context) {
-        controller.updateTheme(settings.readerTheme)
-        controller.refreshOverlayState()
-    }
-}
 
 @MainActor
 final class IOSRootContainerController: UIViewController {

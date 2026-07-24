@@ -15,7 +15,7 @@ struct LibrarySidebar: View {
     @EnvironmentObject private var bookmarkStore: BookmarkStore
     @Binding var selectedBookID: String?
 
-    @State private var sortMode: LibraryView.SortMode = .lastOpened
+    @State private var sortMode: LibraryGridModel.SortMode = .lastOpened
     @State private var showingPicker = false
     @State private var importError: String?
     @State private var isDropTargeted = false
@@ -101,7 +101,7 @@ struct LibrarySidebar: View {
             ToolbarItem(placement: .compatPrimaryTrailing) {
                 Menu {
                     Picker(L10n.string("library.sortBy"), selection: $sortMode) {
-                        ForEach(LibraryView.SortMode.allCases) { Text($0.label).tag($0) }
+                        ForEach(LibraryGridModel.SortMode.allCases) { Text($0.label).tag($0) }
                     }
                 } label: { Image(systemName: "arrow.up.arrow.down.circle") }
             }

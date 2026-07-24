@@ -169,7 +169,7 @@ final class MainReaderViewTests: XCTestCase {
                 .deletingLastPathComponent()
                 .appendingPathComponent("EpubToMp3/App/RootView.swift")
         )
-        XCTAssertTrue(source.contains("#if os(iOS)\n        IOSRootContainer()"))
+        XCTAssertTrue(source.contains("EmptyView()"))
         XCTAssertFalse(source.contains("@EnvironmentObject private var sidecar: SidecarManager"))
         XCTAssertTrue(source.contains("#if !os(iOS)\n    @EnvironmentObject private var player: AudioPlayer"))
         XCTAssertTrue(source.contains("#if !os(iOS)\n    private var isReaderActive: Bool"))
@@ -272,8 +272,8 @@ final class MainReaderViewTests: XCTestCase {
         let sources = try appViewSources()
         let source = sources.root
         let iosRootContainer = sources.iosRootContainer
-        XCTAssertTrue(source.contains("IOSRootContainer()"),
-                      "The iPhone root must delegate restored reader/player overlays to the UIKit root container.")
+        XCTAssertTrue(source.contains("EmptyView()"),
+                      "The legacy SwiftUI root must not mount a second shell.")
         XCTAssertTrue(iosRootContainer.contains("MainReaderScreenController("),
                       "The UIKit root container should embed the dedicated main-reader controller directly.")
         XCTAssertTrue(source.contains("currentlyReadingBookIDKey"),
@@ -331,8 +331,8 @@ final class MainReaderViewTests: XCTestCase {
         let bookOpenSource = sources.bookOpen
         let instantReaderSource = sources.instantReader
 
-        XCTAssertTrue(rootSource.contains("IOSRootContainer()"),
-                      "The iPhone root must hand main navigation to the UIKit root container.")
+        XCTAssertTrue(rootSource.contains("EmptyView()"),
+                      "The legacy SwiftUI root must not own iOS navigation.")
         XCTAssertTrue(shellSource.contains("case library"))
         XCTAssertTrue(shellSource.contains("case settings"))
         XCTAssertTrue(shellSource.contains("case convert"))
@@ -351,10 +351,10 @@ final class MainReaderViewTests: XCTestCase {
                       "The pushed reader must close back to Library by clearing the navigation binding.")
         XCTAssertTrue(bookOpenSource.contains("let onClose: (() -> Void)?"),
                       "BookOpenView must expose an Apple Books-style close callback.")
-        XCTAssertTrue(bookOpenSource.contains("#if os(iOS)\n        BookOpenScreenHost(book: book, onClose: onClose)"),
-                      "On iOS, BookOpenView must route through a dedicated UIKit host.")
-        XCTAssertTrue(bookOpenSource.contains("#else\n        BookOpenContentView(book: book, onClose: onClose)"),
-                      "Desktop BookOpenView must still render the shared SwiftUI content directly.")
+        XCTAssertTrue(bookOpenSource.contains("#if !os(iOS)\nstruct BookOpenView: View"),
+                      "BookOpenView must remain available only to the desktop SwiftUI reader.")
+        XCTAssertFalse(bookOpenSource.contains("BookOpenScreenHost(book: book, onClose: onClose)"),
+                       "The iOS reader must not route through a SwiftUI BookOpenView wrapper.")
         XCTAssertTrue(bookOpenSource.contains(".compatReaderBackButtonHidden()"),
                       "Closing a pushed book must still be controlled by the in-book close flow rather than the default navigation back button.")
         XCTAssertTrue(instantReaderSource.contains("Image(systemName: \"xmark\")"),
@@ -370,7 +370,7 @@ final class MainReaderViewTests: XCTestCase {
             contentsOf: projectRoot.appendingPathComponent("EpubToMp3/Features/Reader/Views/BookOpenView.swift"),
             encoding: .utf8
         )
-        XCTAssertTrue(bookOpenSource.contains("BookOpenScreenHost(book: book, onClose: onClose)"))
+        XCTAssertTrue(bookOpenSource.contains("#if !os(iOS)\nstruct BookOpenView: View"))
         XCTAssertTrue(bookOpenSource.contains("struct BookOpenContentView: View"))
         XCTAssertTrue(bookOpenSource.contains("func bookOpenSystemChrome(pdfVisible: Bool)"),
                       "BookOpen content must route system-bar ownership through a dedicated compatibility helper.")
@@ -387,7 +387,8 @@ final class MainReaderViewTests: XCTestCase {
             contentsOf: projectRoot.appendingPathComponent("EpubToMp3/Features/Reader/Views/BookOpenScreenController.swift"),
             encoding: .utf8
         )
-        XCTAssertTrue(bookOpenControllerSource.contains("struct BookOpenScreenHost: UIViewControllerRepresentable"))
+        XCTAssertFalse(bookOpenControllerSource.contains("struct BookOpenScreenHost: UIViewControllerRepresentable"),
+                       "The reader must not retain an unused SwiftUI-to-UIKit adapter.")
         XCTAssertTrue(bookOpenControllerSource.contains("final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate"))
         XCTAssertTrue(bookOpenControllerSource.contains("BookOpenContentView("))
         XCTAssertTrue(bookOpenControllerSource.contains("onRequestRePick: { [weak self] in"))
@@ -729,8 +730,8 @@ final class MainReaderViewTests: XCTestCase {
 
         XCTAssertTrue(miniPlayerSource.contains("static let reservedHeight"),
                       "MiniPlayerBar must expose one canonical reserved height.")
-        XCTAssertTrue(rootSource.contains("IOSRootContainer()"),
-                      "The iPhone root must route mini-player ownership through the UIKit root container.")
+        XCTAssertTrue(rootSource.contains("EmptyView()"),
+                      "The legacy SwiftUI root must not own mini-player routing.")
         XCTAssertTrue(iosRootContainer.contains("miniPlayerController.view.isHidden = !showMini"),
                       "The UIKit root container must own mini-player visibility.")
         XCTAssertTrue(iosRootContainer.contains("MiniPlayerContainerController("),

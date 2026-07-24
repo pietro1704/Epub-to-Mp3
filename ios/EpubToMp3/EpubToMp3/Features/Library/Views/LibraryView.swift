@@ -22,7 +22,7 @@ struct LibraryView: View {
     @State private var showingPicker = false
     @State private var importError: String?
     @State private var openingBook: BookEntity?
-    @State private var sortMode: SortMode = .lastOpened
+    @State private var sortMode: LibraryGridModel.SortMode = .lastOpened
     @State private var isDropTargeted = false
     /// Book the user long-pressed on; surfaced via
     /// ``confirmationDialog`` instead of ``.contextMenu``. The latter
@@ -44,20 +44,6 @@ struct LibraryView: View {
         static var defaultValue: CGFloat = 0
         static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
             value = nextValue()
-        }
-    }
-
-    enum SortMode: String, CaseIterable, Identifiable {
-        case lastOpened
-        case title
-        case addedDate
-        var id: String { rawValue }
-        var label: String {
-            switch self {
-            case .lastOpened: return L10n.string("library.lastOpened")
-            case .title:      return L10n.string("library.titleSort")
-            case .addedDate:  return L10n.string("library.dateAdded")
-            }
         }
     }
 
@@ -184,7 +170,7 @@ struct LibraryView: View {
             ToolbarItem(placement: .compatPrimaryTrailing) {
                 Menu {
                     Picker(L10n.string("library.sortBy"), selection: $sortMode) {
-                        ForEach(SortMode.allCases) { Text($0.label).tag($0) }
+                        ForEach(LibraryGridModel.SortMode.allCases) { Text($0.label).tag($0) }
                     }
                 } label: { Image(systemName: "arrow.up.arrow.down.circle") }
                 .accessibilityLabel(L10n.string("library.sortLibrary"))

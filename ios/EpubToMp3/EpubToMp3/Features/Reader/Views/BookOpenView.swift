@@ -21,6 +21,7 @@ private let playerLog = Logger(subsystem: "epub2mp3", category: "AudioPlayer")
 ///      via `/api/convert`. Either way the reader is already
 ///      displayed; chapters get audio added to `AVQueuePlayer` as
 ///      `chapterProgress[i].downloadUrl` lands via SSE.
+#if !os(iOS)
 struct BookOpenView: View {
     let book: BookEntity
     let onClose: (() -> Void)?
@@ -34,13 +35,10 @@ struct BookOpenView: View {
     }
 
     var body: some View {
-        #if os(iOS)
-        BookOpenScreenHost(book: book, onClose: onClose)
-        #else
         BookOpenContentView(book: book, onClose: onClose)
-        #endif
     }
 }
+#endif
 
 struct BookOpenContentView: View {
     let book: BookEntity
@@ -321,7 +319,7 @@ struct BookOpenContentView: View {
             return true
         }
 
-        let accessing = fileURL.startAccessingSecurityScopedResource()
+        let accessing = ofileURL.startAccessingSecurityScopedResource()
 
         var parsed: EbookFulltext?
         #if os(iOS)

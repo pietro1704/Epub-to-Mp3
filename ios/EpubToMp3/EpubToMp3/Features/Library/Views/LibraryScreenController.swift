@@ -9,7 +9,7 @@ final class LibraryScreenController: UIViewController, UIDocumentPickerDelegate,
     private let bookmarkStore: BookmarkStore
     private let onOpenBook: (() -> Void)?
 
-    private var sortMode: LibraryView.SortMode = .lastOpened
+    private var sortMode: LibraryGridModel.SortMode = .lastOpened
     private var selectedTag: String?
     private var searchQuery = ""
     private let gridController = LibraryGridController(metrics: .init())
@@ -170,7 +170,7 @@ final class LibraryScreenController: UIViewController, UIDocumentPickerDelegate,
     }
 
     private func makeFilterMenu() -> UIMenu {
-        let sortActions = LibraryView.SortMode.allCases.map { mode in
+        let sortActions = LibraryGridModel.SortMode.allCases.map { mode in
             UIAction(
                 title: mode.label,
                 state: mode == sortMode ? .on : .off

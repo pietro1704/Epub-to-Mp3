@@ -52,13 +52,10 @@ struct RootView: View {
 
     var body: some View {
         #if os(iOS)
-        IOSRootContainer()
-            .overlay(alignment: .topTrailing) {
-                AudioEngineWarmupBadge(warmup: audioWarmup)
-                    .padding(.top, 12)
-                    .padding(.trailing, 12)
-                    .zIndex(10)
-            }
+        // The native app delegate mounts IOSRootContainerController directly.
+        // Keep this legacy preview surface inert so it cannot become a second
+        // UIKit/SwiftUI shell by accident.
+        EmptyView()
         #else
         ZStack {
             shellContent
@@ -75,8 +72,8 @@ struct RootView: View {
                 VStack {
                     Spacer()
                     // This branch is macOS-only — iOS/iPadOS never reaches
-                    // here, it returns early via `IOSRootContainer()` above.
-                    // `MiniPlayerBar` (SwiftUI) is the only reachable case.
+                    // This legacy compatibility surface is not mounted by
+                    // the native application delegates.
                     MiniPlayerBar(onTap: { playerPresentation.showFullPlayer() })
                         .accessibilityIdentifier("miniPlayer.rootShell")
                 }

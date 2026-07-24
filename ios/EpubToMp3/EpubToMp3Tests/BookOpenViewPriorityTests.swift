@@ -106,7 +106,10 @@ final class BookOpenViewPriorityTests: XCTestCase {
         let source = try sourceFile(named: "Features/Reader/Views/BookOpenView.swift")
         let controllerSource = try sourceFile(named: "Features/Reader/Views/BookOpenScreenController.swift")
 
-        XCTAssertTrue(source.contains("#if os(iOS)\n        BookOpenScreenHost(book: book, onClose: onClose)"))
+        XCTAssertTrue(source.contains("#if !os(iOS)\nstruct BookOpenView: View"),
+                      "The SwiftUI BookOpenView must be excluded from the iOS target.")
+        XCTAssertFalse(source.contains("BookOpenScreenHost(book: book, onClose: onClose)"),
+                       "UIKit must own the iOS reader entry point without a SwiftUI wrapper.")
         XCTAssertTrue(controllerSource.contains("onRequestRePick: { [weak self] in"))
         XCTAssertTrue(controllerSource.contains("self?.presentRePickPicker()"))
         XCTAssertTrue(controllerSource.contains("func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL])"))
