@@ -3,7 +3,7 @@ import Foundation
 /// Discriminator between the two natively supported book formats. The
 /// Library opens both with the same picker / drop / share surface,
 /// then routes to the right reader at open time.
-enum BookFileType: String, Codable, Hashable, CaseIterable {
+enum BookFileType: String, Codable, Hashable, CaseIterable, Sendable {
     case epub
     case pdf
 
@@ -28,7 +28,7 @@ enum BookFileType: String, Codable, Hashable, CaseIterable {
 ///
 /// Persisted as JSON inside `UserDefaults` under key
 /// `"library.books.v1"` (see `LibraryStore`).
-struct BookEntity: Codable, Identifiable, Hashable {
+struct BookEntity: Codable, Identifiable, Hashable, Sendable {
     /// Stable id derived from the EPUB file content hash; survives
     /// renames and moves of the bookmarked file.
     let id: String
@@ -83,7 +83,7 @@ struct BookEntity: Codable, Identifiable, Hashable {
 
     var tags: [String] = []
 
-    enum LibraryStatus: String, Hashable, Codable {
+    enum LibraryStatus: String, Hashable, Codable, Sendable {
         /// EPUB on disk, no audio yet — opening it streams TTS.
         case textOnly
         /// User pressed "Save offline" and a conversion is in flight.

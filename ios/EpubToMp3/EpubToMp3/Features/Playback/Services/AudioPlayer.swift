@@ -322,9 +322,8 @@ final class AudioPlayer: ObservableObject {
     /// Resolved backend base URL used to turn relative `downloadUrl`
     /// paths into absolute fetch URLs. Mutable so the host view can
     /// reconfigure an already-instantiated player after the sidecar
-    /// finishes booting (we keep the same `ObservableObject` instance
-    /// across reconfigurations so `@StateObject` subscriptions stay
-    /// live).
+    /// finishes booting. The same publisher-backed instance is kept across
+    /// reconfigurations so UIKit/AppKit subscriptions remain stable.
     var backendBaseURL: URL?
     // `nonisolated(unsafe)` so `deinit` (which is non-isolated on a
     // `@MainActor` class under Swift 6) can read these to detach
@@ -348,7 +347,7 @@ final class AudioPlayer: ObservableObject {
     /// hitting the system's info center on every 250ms tick.
     private var lastNowPlayingUpdate: Date = .distantPast
     private var audioSessionConfigured = false
-    private var audioSessionObserverTokens: [NSObjectProtocol] = []
+    nonisolated(unsafe) private var audioSessionObserverTokens: [NSObjectProtocol] = []
     private var wasPlayingBeforeInterruption = false
     /// Last (bookId, chapterName, isPlaying) tuple pushed to the widget via
     /// the RELOADING `WidgetDataSync.updateNowPlaying`. `syncWidgetNowPlaying()`
@@ -559,14 +558,21 @@ final class AudioPlayer: ObservableObject {
             object: AVAudioSession.sharedInstance(),
             queue: .main
         ) { [weak self] note in
-            Task { @MainActor [weak self] in self?.handleInterruption(note) }
+            let typeRaw = (note.userInfo?[AVAudioSessionInterruptionTypeKey] as? NSNumber)?.uintValue
+            let optionRaw = (note.userInfo?[AVAudioSessionInterruptionOptionKey] as? NSNumber)?.uintValue ?? 0
+            MainActor.assumeIsolated { [weak self] in
+                self?.handleInterruption(typeRaw: typeRaw, optionRaw: optionRaw)
+            }
         })
         audioSessionObserverTokens.append(center.addObserver(
             forName: AVAudioSession.routeChangeNotification,
             object: AVAudioSession.sharedInstance(),
             queue: .main
         ) { [weak self] note in
-            Task { @MainActor [weak self] in self?.handleRouteChange(note) }
+            let reasonRaw = (note.userInfo?[AVAudioSessionRouteChangeReasonKey] as? NSNumber)?.intValue
+            MainActor.assumeIsolated { [weak self] in
+                self?.handleRouteChange(reasonRaw: reasonRaw)
+            }
         })
         audioSessionObserverTokens.append(center.addObserver(
             forName: AVAudioSession.mediaServicesWereResetNotification,
@@ -579,16 +585,15 @@ final class AudioPlayer: ObservableObject {
     }
 
     #if os(iOS)
-    private func handleInterruption(_ note: Notification) {
-        guard let raw = (note.userInfo?[AVAudioSessionInterruptionTypeKey] as? NSNumber)?.uintValue,
+    private func handleInterruption(typeRaw: UInt?, optionRaw: UInt) {
+        guard let raw = typeRaw,
               let type = AVAudioSession.InterruptionType(rawValue: raw) else { return }
         switch type {
         case .began:
             wasPlayingBeforeInterruption = isPlaying
             if isPlaying { player?.pause(); isPlaying = false }
         case .ended:
-            let rawOptions = (note.userInfo?[AVAudioSessionInterruptionOptionKey] as? NSNumber)?.uintValue ?? 0
-            let shouldResume = AVAudioSession.InterruptionOptions(rawValue: rawOptions).contains(.shouldResume)
+            let shouldResume = AVAudioSession.InterruptionOptions(rawValue: optionRaw).contains(.shouldResume)
             guard shouldResume, wasPlayingBeforeInterruption else { return }
             ensureAudioSession()
             player?.rate = rate.rawValue
@@ -600,8 +605,8 @@ final class AudioPlayer: ObservableObject {
         }
     }
 
-    private func handleRouteChange(_ note: Notification) {
-        guard let raw = (note.userInfo?[AVAudioSessionRouteChangeReasonKey] as? NSNumber)?.intValue,
+    private func handleRouteChange(reasonRaw: Int?) {
+        guard let raw = reasonRaw,
               let reason = RouteChangeReason(rawValue: raw) else { return }
         if Self.shouldPauseForRouteChange(reason: reason), isPlaying {
             player?.pause()
@@ -2016,7 +2021,9 @@ final class AudioPlayer: ObservableObject {
             object: nil,
             queue: .main
         ) { [weak self] notification in
-            Task { @MainActor in
+            let finishedID = (notification.object as AnyObject?).map(ObjectIdentifier.init)
+            let finishedDuration = (notification.object as? AVPlayerItem)?.duration.seconds
+            MainActor.assumeIsolated {
                 guard let self else { return }
                 // `object: nil` above subscribes us to *every* AVPlayerItem
                 // ending in the process — share extensions / preview
@@ -2024,16 +2031,18 @@ final class AudioPlayer: ObservableObject {
                 // trigger this handler with their own items. Filter to
                 // items currently owned by OUR queue so we never advance
                 // chapters on an unrelated item-end.
-                guard let finished = notification.object as? AVPlayerItem else { return }
+                guard let finishedID else { return }
                 // items() is empty after the last item ends — the finished item
                 // is already dequeued. Accept that case too so the last chapter's
                 // end is handled and isPlaying is set to false correctly.
-                let ownedByUs = self.player?.items().contains(finished) == true
+                let ownedByUs = self.player?.items().contains {
+                    ObjectIdentifier($0) == finishedID
+                } == true
                     || (self.player != nil && self.player?.items().isEmpty == true)
                 guard ownedByUs else { return }
 
                 if self.isSegmentMode {
-                    let dur = finished.duration.seconds
+                    let dur = finishedDuration ?? 0
                     if dur.isFinite { self.segmentCumulativeBase += dur }
                     self.segmentPlayedCount += 1
                     if self.segmentPlayedCount < self.segmentSentenceIds.count {

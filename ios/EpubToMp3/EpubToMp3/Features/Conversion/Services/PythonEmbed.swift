@@ -35,6 +35,30 @@ enum PythonEmbedError: Error, LocalizedError {
     }
 }
 
+/// Bridges a synchronous Python callback to an async task without racing on
+/// a captured mutable local. The callback waits on the semaphore, while the
+/// detached task publishes the result from another thread.
+private final class LockedValue<Value>: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value: Value
+
+    init(_ value: Value) {
+        self.value = value
+    }
+
+    func set(_ value: Value) {
+        lock.lock()
+        self.value = value
+        lock.unlock()
+    }
+
+    func get() -> Value {
+        lock.lock()
+        defer { lock.unlock() }
+        return value
+    }
+}
+
 /// Thin wrapper around an in-process CPython interpreter loaded from
 /// Python.xcframework. Use `PythonEmbed.shared.convertWithEdgeTTS(...)`
 /// to synthesize a chunk; the wrapper handles one-time bootstrap on
@@ -112,20 +136,21 @@ final class PythonEmbed: @unchecked Sendable {
         // OR be set alongside PYTHONPATH that explicitly lists the stdlib.
         // Beeware ships python-stdlib as the stdlib root, so we set
         // PYTHONPATH = stdlib:site-packages and PYTHONHOME = stdlib.
-        setenv("PYTHONHOME", stdlib, 1)
-        setenv("PYTHONPATH", "\(stdlib):\(sitePackages)", 1)
+        unsafe setenv("PYTHONHOME", stdlib, 1)
+        unsafe setenv("PYTHONPATH", "\(stdlib):\(sitePackages)", 1)
         // Beeware recommendations: keep things deterministic + isolated.
-        setenv("PYTHONDONTWRITEBYTECODE", "1", 1)
-        setenv("PYTHONUNBUFFERED", "1", 1)
-        setenv("PYTHONNOUSERSITE", "1", 1)
+        unsafe setenv("PYTHONDONTWRITEBYTECODE", "1", 1)
+        unsafe setenv("PYTHONUNBUFFERED", "1", 1)
+        unsafe setenv("PYTHONNOUSERSITE", "1", 1)
         // iOS has no DNS resolv.conf; aiohttp/asyncio default loop is fine.
 
         // PythonKit lazy-loads libpython via dlopen. If the framework
         // is missing (simulator without bootstrap), dlopen returns NULL
         // and PythonKit traps. Guard with a dlopen probe first so we
         // throw a recoverable error instead of crashing.
-        guard dlopen("Python.framework/Python", RTLD_NOLOAD) != nil
-              || dlopen("@rpath/Python.framework/Python", RTLD_LAZY) != nil else {
+        let alreadyLoaded = unsafe dlopen("Python.framework/Python", RTLD_NOLOAD) != nil
+        let loadedFromRPath = unsafe dlopen("@rpath/Python.framework/Python", RTLD_LAZY) != nil
+        guard alreadyLoaded || loadedFromRPath else {
             throw PythonEmbedError.pythonInitFailed(
                 "libpython not loadable — Python.xcframework missing from bundle"
             )
@@ -228,9 +253,9 @@ final class PythonEmbed: @unchecked Sendable {
             let text = String(args[0]) ?? ""
             let voice = String(args[1]) ?? ""
             let sem = DispatchSemaphore(value: 0)
-            var outcome: Result<Data, Error> = .failure(
+            let outcome = LockedValue<Result<Data, Error>>(.failure(
                 EdgeTTSBridgeError.webSocketFailed("uninitialised")
-            )
+            ))
             Task.detached(priority: .userInitiated) {
                 do {
                     let mp3 = try await withTimeout(
@@ -240,14 +265,14 @@ final class PythonEmbed: @unchecked Sendable {
                             text: text, voice: voice
                         )
                     }
-                    outcome = .success(mp3)
+                    outcome.set(.success(mp3))
                 } catch {
-                    outcome = .failure(error)
+                    outcome.set(.failure(error))
                 }
                 sem.signal()
             }
             sem.wait()
-            switch outcome {
+            switch outcome.get() {
             case .success(let data):
                 return Python.bytes(Python.list(Array(data)))
             case .failure(let err):
@@ -303,22 +328,22 @@ final class PythonEmbed: @unchecked Sendable {
             let text = String(args[0]) ?? ""
             let lang = String(args[1]) ?? ""
             let sem = DispatchSemaphore(value: 0)
-            var outcome: Result<Data, Error> = .failure(
+            let outcome = LockedValue<Result<Data, Error>>(.failure(
                 PiperBridgeError.notImplemented
-            )
+            ))
             Task.detached(priority: .userInitiated) {
                 do {
                     let mp3 = try await bridge.synthesize(
                         text: text, language: lang
                     )
-                    outcome = .success(mp3)
+                    outcome.set(.success(mp3))
                 } catch {
-                    outcome = .failure(error)
+                    outcome.set(.failure(error))
                 }
                 sem.signal()
             }
             sem.wait()
-            switch outcome {
+            switch outcome.get() {
             case .success(let data):
                 return Python.bytes(Python.list(Array(data)))
             case .failure(let err):

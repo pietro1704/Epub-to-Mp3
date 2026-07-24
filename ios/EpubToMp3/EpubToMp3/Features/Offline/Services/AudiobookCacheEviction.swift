@@ -17,30 +17,34 @@ let defaultOfflineCacheTTLSeconds: TimeInterval = 24 * 60 * 60
 /// Reference counts allow a reader and a download to protect the same job
 /// concurrently while releasing their protection independently.
 enum CacheActivityRegistry {
-    private static let lock = NSLock()
-    private static var referenceCounts: [String: Int] = [:]
+    private final class State: @unchecked Sendable {
+        let lock = NSLock()
+        var referenceCounts: [String: Int] = [:]
+    }
+
+    private static let state = State()
 
     static func begin(jobId: String) {
-        lock.lock()
-        defer { lock.unlock() }
-        referenceCounts[jobId, default: 0] += 1
+        state.lock.lock()
+        defer { state.lock.unlock() }
+        state.referenceCounts[jobId, default: 0] += 1
     }
 
     static func end(jobId: String) {
-        lock.lock()
-        defer { lock.unlock() }
-        guard let count = referenceCounts[jobId] else { return }
+        state.lock.lock()
+        defer { state.lock.unlock() }
+        guard let count = state.referenceCounts[jobId] else { return }
         if count <= 1 {
-            referenceCounts.removeValue(forKey: jobId)
+            state.referenceCounts.removeValue(forKey: jobId)
         } else {
-            referenceCounts[jobId] = count - 1
+            state.referenceCounts[jobId] = count - 1
         }
     }
 
     static func activeJobIds() -> Set<String> {
-        lock.lock()
-        defer { lock.unlock() }
-        return Set(referenceCounts.keys)
+        state.lock.lock()
+        defer { state.lock.unlock() }
+        return Set(state.referenceCounts.keys)
     }
 }
 

@@ -1,4 +1,4 @@
-# EpubToMp3 — iOS/macOS SwiftUI app
+# EpubToMp3 — native UIKit/AppKit iOS/macOS app
 
 ## Build
 

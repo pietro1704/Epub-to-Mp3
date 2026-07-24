@@ -36,7 +36,7 @@ enum APIError: LocalizedError {
 /// as a computed property, which leaked a brand-new `URLSession` (and its
 /// delegate retain) on every call — and tore the session down mid-flight
 /// during SSE iteration.
-final class APIClient {
+final class APIClient: @unchecked Sendable {
     let baseURL: URL
 
     /// Shared session for unary requests. Configured once; reused for

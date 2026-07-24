@@ -14,6 +14,14 @@ private let cacheLog = Logger(subsystem: "epub2mp3", category: "ChapterCacheMana
 @MainActor
 final class ChapterCacheManager: ObservableObject {
 
+    private final class ObserverState: @unchecked Sendable {
+        let token: NSObjectProtocol
+
+        init(token: NSObjectProtocol) {
+            self.token = token
+        }
+    }
+
     nonisolated static let clearAllNotification = Notification.Name("epub2mp3.clearAllChapterCaches")
 
     enum ChapterStatus: Equatable {
@@ -34,7 +42,7 @@ final class ChapterCacheManager: ObservableObject {
 
     /// Active prefetch/download tasks keyed by chapter index.
     private var activeTasks: [Int: Task<Void, Never>] = [:]
-    private var clearObserver: NSObjectProtocol?
+    private var clearObserver: ObserverState?
 
     init(bookId: String, chapters: [EbookFulltext.Chapter], voice: String) {
         self.bookId = bookId
@@ -45,7 +53,7 @@ final class ChapterCacheManager: ObservableObject {
             .appendingPathComponent("epub2mp3-tts/\(bookId)", isDirectory: true)
         self.cacheRoot = root
         try? FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-        clearObserver = NotificationCenter.default.addObserver(
+        let observer = NotificationCenter.default.addObserver(
             forName: Self.clearAllNotification,
             object: nil,
             queue: .main
@@ -55,12 +63,13 @@ final class ChapterCacheManager: ObservableObject {
                 manager.clearAll()
             }
         }
+        clearObserver = ObserverState(token: observer)
         refreshCachedIndices()
     }
 
     deinit {
         if let clearObserver {
-            NotificationCenter.default.removeObserver(clearObserver)
+            NotificationCenter.default.removeObserver(clearObserver.token)
         }
     }
 

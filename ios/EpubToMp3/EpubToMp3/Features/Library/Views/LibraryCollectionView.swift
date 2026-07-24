@@ -150,17 +150,33 @@ enum LibraryCoverThumbnailCache {
     /// ~220pt max tile width (`LibraryGridLayoutMetrics`) × 3x Retina.
     static let maxPixelSize: CGFloat = 660
 
-    private static let cache: NSCache<NSString, UIImage> = {
-        let c = NSCache<NSString, UIImage>()
-        // Cost-based, not count-based: a 660px-max thumbnail is at most
-        // ~1.7 MB decoded (660×660×4 bytes); 96 MB covers a large library's
-        // visible + nearby-scroll working set without an unbounded ceiling.
-        c.totalCostLimit = 96 * 1024 * 1024
-        return c
-    }()
+    private final class ImageCache: @unchecked Sendable {
+        private let lock = NSLock()
+        private let storage: NSCache<NSString, UIImage> = {
+            let cache = NSCache<NSString, UIImage>()
+            // Cost-based, not count-based: a 660px-max thumbnail is at most
+            // ~1.7 MB decoded; 96 MB bounds the scrolling working set.
+            cache.totalCostLimit = 96 * 1024 * 1024
+            return cache
+        }()
+
+        func image(for key: NSString) -> UIImage? {
+            lock.lock()
+            defer { lock.unlock() }
+            return storage.object(forKey: key)
+        }
+
+        func insert(_ image: UIImage, for key: NSString, cost: Int) {
+            lock.lock()
+            storage.setObject(image, forKey: key, cost: cost)
+            lock.unlock()
+        }
+    }
+
+    private static let cache = ImageCache()
 
     static func cached(for bookID: String) -> UIImage? {
-        cache.object(forKey: bookID as NSString)
+        cache.image(for: bookID as NSString)
     }
 
     /// Decodes off the calling thread's actor — call from a background
@@ -179,7 +195,7 @@ enum LibraryCoverThumbnailCache {
         else { return nil }
         let image = UIImage(cgImage: cgImage)
         let cost = cgImage.width * cgImage.height * 4
-        cache.setObject(image, forKey: bookID as NSString, cost: cost)
+        cache.insert(image, for: bookID as NSString, cost: cost)
         return image
     }
 }

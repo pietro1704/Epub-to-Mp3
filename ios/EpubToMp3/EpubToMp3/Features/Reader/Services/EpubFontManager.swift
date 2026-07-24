@@ -8,17 +8,21 @@ enum EpubFontManager {
     // the only piece that needed protection was this bookkeeping set.
     // Swift 6 strict concurrency would otherwise flag the mutable
     // `nonisolated` global.
-    private static let lock = NSLock()
-    nonisolated(unsafe) private static var _registeredDirs: Set<String> = []
+    private final class RegistrationState: @unchecked Sendable {
+        let lock = NSLock()
+        var directories: Set<String> = []
+    }
+
+    private static let state = RegistrationState()
 
     private static func hasRegistered(_ key: String) -> Bool {
-        lock.lock(); defer { lock.unlock() }
-        return _registeredDirs.contains(key)
+        state.lock.lock(); defer { state.lock.unlock() }
+        return state.directories.contains(key)
     }
 
     private static func markRegistered(_ key: String) {
-        lock.lock(); defer { lock.unlock() }
-        _registeredDirs.insert(key)
+        state.lock.lock(); defer { state.lock.unlock() }
+        state.directories.insert(key)
     }
 
     static func registerFonts(from epubURL: URL) -> [URL] {
@@ -52,11 +56,11 @@ enum EpubFontManager {
             let fontURL = tmpDir.appendingPathComponent(filename)
             guard (try? data.write(to: fontURL)) != nil else { continue }
             var err: Unmanaged<CFError>?
-            if CTFontManagerRegisterFontsForURL(
+            if unsafe CTFontManagerRegisterFontsForURL(
                 fontURL as CFURL, .process, &err
             ) {
                 registered.append(fontURL)
-            } else if let cfErr = err?.takeRetainedValue(),
+            } else if let cfErr = unsafe err?.takeRetainedValue(),
                       CFErrorGetCode(cfErr) == 105 {
                 // kCTFontManagerErrorAlreadyRegistered — silently skip
                 registered.append(fontURL)
@@ -70,7 +74,7 @@ enum EpubFontManager {
         guard !urls.isEmpty else { return }
         for url in urls {
             var err: Unmanaged<CFError>?
-            CTFontManagerUnregisterFontsForURL(url as CFURL, .process, &err)
+            unsafe CTFontManagerUnregisterFontsForURL(url as CFURL, .process, &err)
         }
         if let first = urls.first {
             let dir = first.deletingLastPathComponent()

@@ -94,7 +94,8 @@ final class IOSRootContainerController: UIViewController {
 
             miniPlayerController.view.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             miniPlayerController.view.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            miniPlayerController.view.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            // Keep the mini-player above the tab bar instead of covering it.
+            miniPlayerController.view.bottomAnchor.constraint(equalTo: shellController.tabBar.topAnchor),
 
             fullPlayerController.view.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             fullPlayerController.view.trailingAnchor.constraint(equalTo: view.trailingAnchor),
@@ -224,6 +225,7 @@ private final class MiniPlayerContainerController: UIViewController {
 
     override func loadView() {
         view = miniPlayerView
+        view.accessibilityIdentifier = "miniPlayer.container"
     }
 
     func update(

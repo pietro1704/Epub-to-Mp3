@@ -28,22 +28,26 @@ enum SharedContainerImporter {
     // concurrency-safe under Swift 6. The cache key is fixed
     // (`appGroupID`) and `FileManager.containerURL` is documented as
     // thread-safe; this lock only protects the cache assignment.
-    private static let cacheLock = NSLock()
-    nonisolated(unsafe) private static var groupAvailabilityCache: [String: Bool] = [:]
+    private final class AvailabilityState: @unchecked Sendable {
+        let lock = NSLock()
+        var cache: [String: Bool] = [:]
+    }
+
+    private static let availabilityState = AvailabilityState()
 
     static var isAppGroupAvailable: Bool {
-        cacheLock.lock()
-        if let cached = groupAvailabilityCache[appGroupID] {
-            cacheLock.unlock()
+        availabilityState.lock.lock()
+        if let cached = availabilityState.cache[appGroupID] {
+            availabilityState.lock.unlock()
             return cached
         }
-        cacheLock.unlock()
+        availabilityState.lock.unlock()
         let available = FileManager.default.containerURL(
             forSecurityApplicationGroupIdentifier: appGroupID
         ) != nil
-        cacheLock.lock()
-        groupAvailabilityCache[appGroupID] = available
-        cacheLock.unlock()
+        availabilityState.lock.lock()
+        availabilityState.cache[appGroupID] = available
+        availabilityState.lock.unlock()
         return available
     }
 
@@ -69,17 +73,24 @@ enum SharedContainerImporter {
         groupID: String = appGroupID,
         containerURLProvider: ((FileManager, String) -> URL?)? = nil
     ) -> URL? {
-        if let cached = groupAvailabilityCache[groupID], !cached {
+        availabilityState.lock.lock()
+        let cached = availabilityState.cache[groupID]
+        availabilityState.lock.unlock()
+        if let cached, !cached {
             return nil
         }
         let resolveContainer = containerURLProvider ?? {
             $0.containerURL(forSecurityApplicationGroupIdentifier: $1)
         }
         guard let container = resolveContainer(fileManager, groupID) else {
-            groupAvailabilityCache[groupID] = false
+            availabilityState.lock.lock()
+            availabilityState.cache[groupID] = false
+            availabilityState.lock.unlock()
             return nil
         }
-        groupAvailabilityCache[groupID] = true
+        availabilityState.lock.lock()
+        availabilityState.cache[groupID] = true
+        availabilityState.lock.unlock()
         let inbox = container.appendingPathComponent(inboxSubpath, isDirectory: true)
         if !fileManager.fileExists(atPath: inbox.path) {
             try? fileManager.createDirectory(

@@ -9,6 +9,18 @@ import XCTest
 @testable import EpubToMp3
 
 final class PythonEmbedTests: XCTestCase {
+    func testPythonTransportSynchronizesDetachedResults() throws {
+        let sourceURL = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("EpubToMp3/Features/Conversion/Services/PythonEmbed.swift")
+        let source = try String(contentsOf: sourceURL, encoding: .utf8)
+
+        XCTAssertTrue(source.contains("private final class LockedValue<Value>: @unchecked Sendable"))
+        XCTAssertTrue(source.contains("let outcome = LockedValue<Result<Data, Error>>"))
+        XCTAssertFalse(source.contains("var outcome: Result<Data, Error>"))
+    }
+
     private func requireNetworkTTS(_ testName: String = #function) throws {
         let value = (ProcessInfo.processInfo.environment["RUN_IOS_NETWORK_TTS_TESTS"] ?? "")
             .trimmingCharacters(in: .whitespacesAndNewlines)

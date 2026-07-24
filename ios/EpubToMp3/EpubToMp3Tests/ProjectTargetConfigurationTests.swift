@@ -33,6 +33,28 @@ final class ProjectTargetConfigurationTests: XCTestCase {
         XCTAssertTrue(info.contains("EpubToMp3ShareExtension.ShareViewController"))
     }
 
+    func testShareExtensionFilesystemHelpersAreNonisolated() throws {
+        let sourceURL = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("EpubToMp3ShareExtension/ShareViewController.swift")
+        let source = try String(contentsOf: sourceURL, encoding: .utf8)
+
+        XCTAssertTrue(source.contains("private nonisolated static func copyToTemp"))
+        XCTAssertTrue(source.contains("private nonisolated static func tempURL"))
+    }
+
+    func testWidgetDarwinNotificationKeepsSendableStorage() throws {
+        let sourceURL = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("EpubToMp3Widget/EpubToMp3Widget.swift")
+        let source = try String(contentsOf: sourceURL, encoding: .utf8)
+
+        XCTAssertTrue(source.contains("private let widgetIntentDarwinNotification = \""))
+        XCTAssertFalse(source.contains("= \"com.pietrocode.epubtomp3.widgetIntent\" as CFString"))
+    }
+
     func testNativeBookReaderUsesPythonParserWithoutSwiftFallback() throws {
         let sourceURL = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
@@ -103,6 +125,79 @@ final class ProjectTargetConfigurationTests: XCTestCase {
 
         XCTAssertTrue(project.contains("SWIFT_TREAT_WARNINGS_AS_ERRORS: YES"))
         XCTAssertTrue(project.contains("GCC_TREAT_WARNINGS_AS_ERRORS: YES"))
+    }
+
+    func testSwift6MigrationAndBuildSafetySettingsArePinned() throws {
+        let projectURL = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("project.yml")
+        let project = try String(contentsOf: projectURL, encoding: .utf8)
+
+        XCTAssertTrue(project.contains("SWIFT_VERSION: \"6\""))
+        XCTAssertTrue(project.contains("SWIFT_STRICT_CONCURRENCY: complete"))
+        XCTAssertTrue(project.contains("SWIFT_STRICT_MEMORY_SAFETY: YES"))
+        XCTAssertTrue(project.contains("SWIFT_STRICT_MEMORY_SAFETY: NO"))
+        XCTAssertTrue(project.contains("SWIFT_ENFORCE_EXCLUSIVE_ACCESS: full"))
+        XCTAssertTrue(project.contains("SWIFT_COMPILATION_MODE: incremental"))
+        XCTAssertTrue(project.contains("SWIFT_COMPILATION_MODE: wholemodule"))
+        XCTAssertTrue(project.contains("ONLY_ACTIVE_ARCH: YES"))
+        XCTAssertTrue(project.contains("ONLY_ACTIVE_ARCH: NO"))
+        XCTAssertTrue(project.contains("LLVM_LTO: YES_THIN"))
+    }
+
+    func testStrictMemorySafetyUsesExplicitBoundaries() throws {
+        let root = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let widgetSync = try String(
+            contentsOf: root.appendingPathComponent(
+                "EpubToMp3/Shared/Integrations/WidgetDataSync.swift"
+            ), encoding: .utf8
+        )
+        let zipReader = try String(
+            contentsOf: root.appendingPathComponent(
+                "EpubToMp3/Features/Documents/Services/ZipReader.swift"
+            ), encoding: .utf8
+        )
+        let telemetry = try String(
+            contentsOf: root.appendingPathComponent(
+                "EpubToMp3/Features/Settings/Views/TelemetryScreenController.swift"
+            ), encoding: .utf8
+        )
+
+        XCTAssertTrue(widgetSync.contains("private static let lastReadState = LastReadState()"))
+        XCTAssertFalse(widgetSync.contains("nonisolated(unsafe) private static var pendingLastRead"))
+        XCTAssertFalse(widgetSync.contains("nonisolated(unsafe) private static var lastReadFlushTask"))
+        XCTAssertTrue(zipReader.contains("let rc = unsafe deflated.withUnsafeBytes"))
+        XCTAssertFalse(telemetry.contains("String(format:"))
+
+        let pythonRunner = try String(
+            contentsOf: root.appendingPathComponent(
+                "EpubToMp3/Features/Conversion/Services/PythonRunner.swift"
+            ), encoding: .utf8
+        )
+        let importer = try String(
+            contentsOf: root.appendingPathComponent(
+                "EpubToMp3/Features/Offline/Services/SharedContainerImporter.swift"
+            ), encoding: .utf8
+        )
+        XCTAssertTrue(pythonRunner.contains("private final class CompletionGate: @unchecked Sendable"))
+        XCTAssertTrue(importer.contains("private static let availabilityState = AvailabilityState()"))
+        XCTAssertFalse(importer.contains("nonisolated(unsafe) private static var groupAvailabilityCache"))
+
+        let cacheManager = try String(
+            contentsOf: root.appendingPathComponent(
+                "EpubToMp3/Features/Offline/Services/ChapterCacheManager.swift"
+            ), encoding: .utf8
+        )
+        let apiClient = try String(
+            contentsOf: root.appendingPathComponent(
+                "EpubToMp3/Features/Conversion/Services/APIClient.swift"
+            ), encoding: .utf8
+        )
+        XCTAssertTrue(cacheManager.contains("private final class ObserverState: @unchecked Sendable"))
+        XCTAssertTrue(apiClient.contains("final class APIClient: @unchecked Sendable"))
     }
 
     func testProjectFileUsesInTreeTargetPathsForAppAndExtensions() throws {

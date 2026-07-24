@@ -17,12 +17,12 @@ enum L10n {
     /// Localised string with a single format argument.
     static func string(_ key: String, _ arg: any CVarArg) -> String {
         let fmt = string(key)
-        return String(format: fmt, arg)
+        return unsafe String(format: fmt, arg)
     }
 
     /// Localised string with two format arguments.
     static func string(_ key: String, _ arg1: any CVarArg, _ arg2: any CVarArg) -> String {
         let fmt = string(key)
-        return String(format: fmt, arg1, arg2)
+        return unsafe String(format: fmt, arg1, arg2)
     }
 }

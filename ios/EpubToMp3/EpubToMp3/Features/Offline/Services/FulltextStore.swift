@@ -13,8 +13,12 @@ import Foundation
 ///     reusing the layout established by `DownloadManager`.
 final class FulltextStore: @unchecked Sendable {
 
-    private static let evictionLock = NSLock()
-    private static var evictedJobIds: Set<String> = []
+    private final class EvictionState: @unchecked Sendable {
+        let lock = NSLock()
+        var jobIds: Set<String> = []
+    }
+
+    private static let evictionState = EvictionState()
     private let storageRoot: URL?
 
     init(storageRoot: URL? = nil) {
@@ -74,21 +78,21 @@ final class FulltextStore: @unchecked Sendable {
     /// library. A later successful save for the same job clears the
     /// tombstone.
     private static func markEvicted(jobId: String) {
-        evictionLock.lock()
-        evictedJobIds.insert(jobId)
-        evictionLock.unlock()
+        evictionState.lock.lock()
+        evictionState.jobIds.insert(jobId)
+        evictionState.lock.unlock()
     }
 
     private static func clearEvicted(jobId: String) {
-        evictionLock.lock()
-        evictedJobIds.remove(jobId)
-        evictionLock.unlock()
+        evictionState.lock.lock()
+        evictionState.jobIds.remove(jobId)
+        evictionState.lock.unlock()
     }
 
     private static func isEvicted(jobId: String) -> Bool {
-        evictionLock.lock()
-        let result = evictedJobIds.contains(jobId)
-        evictionLock.unlock()
+        evictionState.lock.lock()
+        let result = evictionState.jobIds.contains(jobId)
+        evictionState.lock.unlock()
         return result
     }
 

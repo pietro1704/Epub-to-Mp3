@@ -145,9 +145,9 @@ enum WidgetDataSync {
             chapterIndex: chapterIndex,
             totalChapters: totalChapters
         )
-        lastReadLock.lock()
-        pendingLastRead = snapshot
-        lastReadLock.unlock()
+        lastReadState.lock.lock()
+        lastReadState.pending = snapshot
+        lastReadState.lock.unlock()
         scheduleLastReadFlush()
     }
 
@@ -155,12 +155,13 @@ enum WidgetDataSync {
     /// `onDisappear` (reader teardown) so the widget reflects the
     /// final position the moment the user leaves the book.
     static func flushLastRead() {
-        lastReadFlushTask?.cancel()
-        lastReadFlushTask = nil
-        lastReadLock.lock()
-        let snapshot = pendingLastRead
-        pendingLastRead = nil
-        lastReadLock.unlock()
+        lastReadState.lock.lock()
+        let task = lastReadState.flushTask
+        lastReadState.flushTask = nil
+        let snapshot = lastReadState.pending
+        lastReadState.pending = nil
+        lastReadState.lock.unlock()
+        task?.cancel()
         guard let snapshot else { return }
         commitLastRead(snapshot)
     }
@@ -171,17 +172,25 @@ enum WidgetDataSync {
         let totalChapters: Int?
     }
 
-    private static let lastReadLock = NSLock()
-    nonisolated(unsafe) private static var pendingLastRead: LastReadSnapshot?
-    nonisolated(unsafe) private static var lastReadFlushTask: Task<Void, Never>?
+    private final class LastReadState: @unchecked Sendable {
+        let lock = NSLock()
+        var pending: LastReadSnapshot?
+        var flushTask: Task<Void, Never>?
+    }
+
+    private static let lastReadState = LastReadState()
 
     private static func scheduleLastReadFlush() {
-        lastReadFlushTask?.cancel()
-        lastReadFlushTask = Task { @MainActor in
+        let task = Task { @MainActor in
             try? await Task.sleep(nanoseconds: 800_000_000)
             guard !Task.isCancelled else { return }
             flushLastRead()
         }
+        lastReadState.lock.lock()
+        let previousTask = lastReadState.flushTask
+        lastReadState.flushTask = task
+        lastReadState.lock.unlock()
+        previousTask?.cancel()
     }
 
     private static func commitLastRead(_ snapshot: LastReadSnapshot) {

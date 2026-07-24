@@ -236,7 +236,7 @@ final class EdgeTTSBridge: NSObject, URLSessionWebSocketDelegate, @unchecked Sen
         let intTicks = UInt64(ticks100ns)
         let strToHash = "\(intTicks)\(trustedClientToken)"
         let hash = SHA256.hash(data: Data(strToHash.utf8))
-        return hash.map { String(format: "%02X", $0) }.joined()
+        return hash.map { unsafe String(format: "%02X", $0) }.joined()
     }
 
     private static func uuidHex() -> String {
@@ -245,8 +245,8 @@ final class EdgeTTSBridge: NSObject, URLSessionWebSocketDelegate, @unchecked Sen
 
     private static func muidHex() -> String {
         var bytes = [UInt8](repeating: 0, count: 16)
-        _ = SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes)
-        return bytes.map { String(format: "%02X", $0) }.joined()
+        _ = unsafe SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes)
+        return bytes.map { unsafe String(format: "%02X", $0) }.joined()
     }
 
     private static func dateString() -> String {

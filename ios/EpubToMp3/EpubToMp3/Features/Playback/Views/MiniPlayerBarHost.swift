@@ -54,6 +54,7 @@ final class MiniPlayerBarUIKitView: UIView {
         labels.spacing = 2
 
         openButton.addTarget(self, action: #selector(openTapped), for: .touchUpInside)
+        openButton.accessibilityIdentifier = "miniPlayer.open"
         openButton.translatesAutoresizingMaskIntoConstraints = false
         openButton.addSubview(coverView)
         openButton.addSubview(labels)
@@ -69,8 +70,11 @@ final class MiniPlayerBarUIKitView: UIView {
         ])
 
         playPauseButton.tintColor = .label
+        playPauseButton.accessibilityIdentifier = "miniPlayer.playPause"
         nextButton.tintColor = .label
+        nextButton.accessibilityIdentifier = "miniPlayer.next"
         rateButton.tintColor = .label
+        rateButton.accessibilityIdentifier = "miniPlayer.rate"
         playPauseButton.addTarget(self, action: #selector(playPauseTapped), for: .touchUpInside)
         nextButton.addTarget(self, action: #selector(nextTapped), for: .touchUpInside)
         for button in [playPauseButton, nextButton, rateButton] {
@@ -184,7 +188,7 @@ final class MiniPlayerBarUIKitView: UIView {
         let playPauseName = player.isPlaying ? "pause.fill" : "play.fill"
         playPauseButton.setImage(UIImage(systemName: playPauseName), for: .normal)
         rateButton.setTitle(player.rate.shortLabel, for: .normal)
-        accessibilityIdentifier = "miniPlayer.bar.uikit"
+        accessibilityIdentifier = "miniPlayer.bar"
     }
 
     private func rebuildRateMenu(player: AudioPlayer) {

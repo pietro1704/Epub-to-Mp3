@@ -56,66 +56,41 @@ final class LibraryStore: ObservableObject {
         self.defaults = resolvedDefaults
         self.defaultsKey = defaultsKey
         self.fileManager = fileManager
-        // When the caller injected a UserDefaults instance directly,
-        // we're almost certainly in a test or preview context — load
-        // synchronously so assertions made right after `init` see the
-        // persisted state. Production app-group defaults still take
-        // the detached path so the main thread isn't blocked by a
-        // large persisted JSON (book covers inflate decode time).
-        if defaults != nil {
-            loadSync()
-        } else {
-            Task.detached(priority: .userInitiated) { [weak self] in
-                await self?.loadAsync()
-            }
-        }
+        // The persisted index is intentionally small; decode synchronously
+        // during construction so a mutable ObservableObject is never sent
+        // across an actor boundary while it is being initialized.
+        loadSync()
     }
 
     /// Synchronous on-actor load. Used by test/preview inits where the
     /// caller passed a specific `UserDefaults` and expects the books
     /// array to be hydrated before control returns.
     private func loadSync() {
-        switch Self.decode(defaults: defaults, key: defaultsKey) {
+        apply(Self.decode(data: defaults.data(forKey: defaultsKey)))
+    }
+
+    private func apply(_ outcome: DecodeOutcome) {
+        switch outcome {
         case .success(let (books, needsPersist)):
             self.books = books
             if needsPersist { persist() }
         case .failure(let error):
-            self.loadError = error.localizedDescription
+            self.loadError = error
         case .empty:
             break
         }
     }
 
-    /// Async load on a background actor — production path. Same
-    /// decode logic as `loadSync`, just dispatched off main.
-    private func loadAsync() async {
-        let outcome = Self.decode(defaults: defaults, key: defaultsKey)
-        await MainActor.run {
-            switch outcome {
-            case .success(let (books, needsPersist)):
-                self.books = books
-                if needsPersist { self.persist() }
-            case .failure(let error):
-                self.loadError = error.localizedDescription
-            case .empty:
-                break
-            }
-        }
-    }
-
     /// Outcome of the persisted-library decode.
-    private enum DecodeOutcome {
+    private enum DecodeOutcome: Sendable {
         case success((books: [BookEntity], needsPersist: Bool))
-        case failure(Error)
+        case failure(String)
         case empty
     }
 
     /// Single decode + migrate pipeline shared by both load paths.
-    private static func decode(
-        defaults: UserDefaults,
-        key: String
-    ) -> DecodeOutcome {
-        guard let data = defaults.data(forKey: key) else { return .empty }
+    private static func decode(data: Data?) -> DecodeOutcome {
+        guard let data else { return .empty }
         do {
             let decoded = try JSONDecoder().decode([BookEntity].self, from: data)
             let pruned = decoded.filter { !$0.bookmark.isEmpty }
@@ -130,7 +105,7 @@ final class LibraryStore: ObservableObject {
             }
             return .success((result, pruned.count != decoded.count || migrated))
         } catch {
-            return .failure(error)
+            return .failure(error.localizedDescription)
         }
     }
 
@@ -523,7 +498,7 @@ final class LibraryStore: ObservableObject {
         var hasher = SHA256()
         hasher.update(data: data)
         let digest = hasher.finalize()
-        return digest.compactMap { String(format: "%02x", $0) }.joined().prefix(32).description
+        return digest.compactMap { unsafe String(format: "%02x", $0) }.joined().prefix(32).description
     }
 
     private static func titleFromFilename(_ name: String) -> String {

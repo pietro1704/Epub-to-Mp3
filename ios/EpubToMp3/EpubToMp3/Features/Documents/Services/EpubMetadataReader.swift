@@ -81,7 +81,7 @@ enum EpubMetadataReader {
     static func parseOPF(data: Data) -> OPFMetadata {
         let delegate = OPFDelegate()
         let parser = XMLParser(data: data)
-        parser.delegate = delegate
+        unsafe parser.delegate = delegate
         _ = parser.parse()
         return OPFMetadata(
             title: delegate.title,

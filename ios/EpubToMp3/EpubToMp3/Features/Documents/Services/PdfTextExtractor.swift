@@ -285,7 +285,7 @@ enum PdfTextExtractor {
         // Font size of the first line: take the dominant size in the
         // attributed-string range we identified.
         var firstSize: CGFloat = 0
-        attributed.enumerateAttribute(
+        unsafe attributed.enumerateAttribute(
             .font,
             in: firstLineRange,
             options: []
@@ -299,7 +299,7 @@ enum PdfTextExtractor {
         var bodySizesCount: Int = 0
         let restStart = firstLineRange.location + firstLineRange.length
         if restStart < nsFull.length {
-            attributed.enumerateAttribute(
+            unsafe attributed.enumerateAttribute(
                 .font,
                 in: NSRange(location: restStart, length: nsFull.length - restStart),
                 options: []

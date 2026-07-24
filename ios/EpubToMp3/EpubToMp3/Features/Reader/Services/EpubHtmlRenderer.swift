@@ -89,7 +89,7 @@ enum EpubHtmlRenderer {
             .documentType: NSAttributedString.DocumentType.html,
             .characterEncoding: String.Encoding.utf8.rawValue,
         ]
-        guard let imported = try? NSAttributedString(
+        guard let imported = try? unsafe NSAttributedString(
             data: data, options: options, documentAttributes: nil
         ) else {
             return nil
@@ -151,7 +151,7 @@ enum EpubHtmlRenderer {
             }
 
             let range = paragraphRanges[index]
-            let style = (attr.attribute(.paragraphStyle, at: range.location, effectiveRange: nil) as? NSParagraphStyle)?.mutableCopy() as? NSMutableParagraphStyle
+            let style = (unsafe attr.attribute(.paragraphStyle, at: range.location, effectiveRange: nil) as? NSParagraphStyle)?.mutableCopy() as? NSMutableParagraphStyle
                 ?? NSMutableParagraphStyle()
             if let value = merged["text-indent"] {
                 style.firstLineHeadIndent = cssLength(value, bodyFontSize: bodyFontSize)
@@ -237,7 +237,7 @@ enum EpubHtmlRenderer {
     private static func modalBodyFontSize(in attr: NSAttributedString) -> CGFloat {
         guard attr.length > 0 else { return 0 }
         var histogram: [CGFloat: Int] = [:]
-        attr.enumerateAttribute(.font, in: NSRange(location: 0, length: attr.length)) { value, range, _ in
+        unsafe attr.enumerateAttribute(.font, in: NSRange(location: 0, length: attr.length)) { value, range, _ in
             guard let f = value as? PlatformFont else { return }
             // Weight by character count so a long body dominates over a
             // short heading even if there are several headings.
@@ -292,7 +292,7 @@ enum EpubHtmlRenderer {
         // without breaking pagination.
         let maxHeadingSize = targetSize * 1.5
 
-        attr.enumerateAttributes(in: fullRange, options: []) { attrs, range, _ in
+        unsafe attr.enumerateAttributes(in: fullRange, options: []) { attrs, range, _ in
             // ---- Font ----------------------------------------------
             let baseFont = (attrs[.font] as? PlatformFont)
                 ?? PlatformFont.systemFont(ofSize: targetSize)

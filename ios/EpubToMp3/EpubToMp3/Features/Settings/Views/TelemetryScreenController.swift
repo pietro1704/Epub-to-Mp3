@@ -96,7 +96,7 @@ final class TelemetryScreenController: UITableViewController {
                 let row = viewModel.perEngine[indexPath.row]
                 content.text = row.engine
                 if let cps = row.charsPerSecond {
-                    var lines = [L10n.string("telemetry.charsPerSecond", String(format: "%.0f", cps))]
+                    var lines = [L10n.string("telemetry.charsPerSecond", String(Int(cps.rounded())))]
                     if let n = row.samples {
                         lines.append(L10n.string("telemetry.chaptersCount", n))
                     }

@@ -219,7 +219,7 @@ final class JobDetailScreenController: UITableViewController {
             rows.insert((L10n.string("jobDetail.book"), title), at: 2)
         }
         if let pct = viewModel.snapshot?.progressPercent {
-            rows.append((L10n.string("jobDetail.progress"), String(format: "%.0f%%", pct)))
+            rows.append((L10n.string("jobDetail.progress"), unsafe String(format: "%.0f%%", pct)))
         }
         rows.append((
             L10n.string("jobDetail.streaming"),

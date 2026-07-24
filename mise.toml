@@ -272,7 +272,7 @@ set -euo pipefail
 """
 
 # ── Python sidecar + native macOS build ───────────────────────────────────────
-# The PyInstaller sidecar binary is consumed by the SwiftUI macOS app
+# The PyInstaller sidecar binary is consumed by the native AppKit macOS app
 # (ios/EpubToMp3/) via its post-build script. Linux/Windows users run the
 # Flutter app under flutter_app/ — Flutter builds its own native packages.
 
@@ -313,7 +313,7 @@ echo "Sidecar ready: dist/epub-to-mp3-server"
 """
 
 [tasks."mac:build"]
-description = "Build SwiftUI macOS app with embedded Python sidecar (MAC_BUILD_CONFIG=Release|Debug, default Release)"
+description = "Build native AppKit macOS app with embedded Python sidecar (MAC_BUILD_CONFIG=Release|Debug, default Release)"
 # Ensure Python.xcframework is on disk before xcodebuild evaluates the
 # `Vendor/Python/Python.xcframework` framework dependency. The Xcode
 # pre-build run-script phase is a second safety net (covers users who
@@ -337,7 +337,7 @@ CONFIG="${MAC_BUILD_CONFIG:-Release}"
 #    python_app/ hasn't changed since the last build.
 mise run sidecar:build
 
-# 2. Build the SwiftUI app headlessly via xcodebuild.
+# 2. Build the AppKit/UIKit app headlessly via xcodebuild.
 cd ios/EpubToMp3
 # Ensure project.yml is materialized to .xcodeproj.
 if ! command -v xcodegen >/dev/null 2>&1; then
@@ -356,6 +356,7 @@ xcodebuild \\
   -configuration "$CONFIG" \\
   -destination 'platform=macOS' \\
   -derivedDataPath ./.build \\
+  -showBuildTimingSummary \\
   build | tail -20
 
 APP_OUT=".build/${CONFIG}/EpubToMp3.app"
@@ -380,7 +381,7 @@ description = "Fast local-iteration macOS build (Debug config — incremental, -
 run = "MAC_BUILD_CONFIG=Debug mise run mac:build"
 
 [tasks."ios:build"]
-description = "Build SwiftUI iOS app on the best installed iOS Simulator with embedded Python.xcframework"
+description = "Build native UIKit iOS app on the best installed iOS Simulator with embedded Python.xcframework"
 # vendor:python must finish before xcodebuild resolves the framework
 # dependency declared in project.yml.
 depends = ["vendor:python"]
@@ -453,13 +454,21 @@ else
 fi
 echo "ios:build → destination: ${DEST}"
 
-xcodebuild \\
-  -project EpubToMp3.xcodeproj \\
-  -scheme EpubToMp3 \\
-  -configuration Debug \\
-  -destination "${DEST}" \\
-  -derivedDataPath ./.build \\
-  build | tail -20
+BUILD_LOG="${TMPDIR:-/tmp}/epub-to-mp3-ios-build.log"
+if ! xcodebuild \\
+       -project EpubToMp3.xcodeproj \\
+       -scheme EpubToMp3 \\
+       -configuration Debug \\
+       -destination "${DEST}" \\
+       -derivedDataPath ./.build \\
+       -showBuildTimingSummary \\
+       build >"${BUILD_LOG}" 2>&1; then
+  echo "** BUILD FAILED **"
+  echo "Build log: ${BUILD_LOG}"
+  grep -nE "error:|fatal error:|BUILD FAILED|SwiftCompile|SwiftEmitModule" "${BUILD_LOG}" | tail -200 || true
+  exit 65
+fi
+tail -20 "${BUILD_LOG}"
 """
 
 [tasks."ios:device:run"]
@@ -583,6 +592,7 @@ if [[ -n "${IOS_TESTS:-}" ]]; then
 fi
 echo "ios:device:test → device: $DEVICE"
 run_device_tests() {
+  set -euo pipefail
   if [[ "${IOS_SKIP_BUILD:-0}" != "1" ]]; then
     xcodebuild -project EpubToMp3.xcodeproj -scheme EpubToMp3 -configuration Debug \\
       -destination "id=$DEVICE" -derivedDataPath "$DD" build-for-testing | tail -5
@@ -593,6 +603,9 @@ run_device_tests() {
     test-without-building 2>&1 | grep -iE "Test Suite|Test Case|passed|failed|error:|XCTAssert|skip|flicker" || true
 }
 export -f run_device_tests
+# The test runner executes in a child shell; export the destination so the
+# function cannot silently turn `id=$DEVICE` into the invalid `id=`.
+export DEVICE ONLY
 # Hold the single-heavy-job lock for the whole device run (PCIe panic guard).
 python3 ../../scripts/heavy_job_guard.py ios:device:test -- bash -c run_device_tests
 """

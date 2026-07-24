@@ -94,6 +94,54 @@ final class IOSAppShellTests: XCTestCase {
         XCTAssertTrue(navigationControllers?[2].viewControllers.first is ConvertScreenController)
     }
 
+    func testMiniPlayerIsAnchoredAboveTheTabBar() throws {
+        let source = try String(
+            contentsOf: URL(fileURLWithPath: #filePath)
+                .deletingLastPathComponent()
+                .deletingLastPathComponent()
+                .appendingPathComponent("EpubToMp3/App/IOSRootContainer.swift"),
+            encoding: .utf8
+        )
+
+        XCTAssertTrue(
+            source.contains("miniPlayerController.view.bottomAnchor.constraint(equalTo: shellController.tabBar.topAnchor)"),
+            "The mini-player must sit above the tab bar, not cover it."
+        )
+    }
+
+    func testMiniPlayerExposesAutomationIdentifiers() throws {
+        let source = try String(
+            contentsOf: URL(fileURLWithPath: #filePath)
+                .deletingLastPathComponent()
+                .deletingLastPathComponent()
+                .appendingPathComponent("EpubToMp3/Features/Playback/Views/MiniPlayerBarHost.swift"),
+            encoding: .utf8
+        )
+
+        XCTAssertTrue(source.contains("miniPlayer.bar"))
+        XCTAssertTrue(source.contains("miniPlayer.playPause"))
+    }
+
+    func testMainAppContainsNoSwiftUIScreensOrHostingBridges() throws {
+        let appRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("EpubToMp3")
+        let swiftFiles = try FileManager.default
+            .subpaths(atPath: appRoot.path)
+            .compactMap { relativePath -> URL? in
+                guard relativePath.hasSuffix(".swift") else { return nil }
+                return appRoot.appendingPathComponent(relativePath)
+            }
+
+        for file in swiftFiles {
+            let source = try String(contentsOf: file, encoding: .utf8)
+            XCTAssertFalse(source.contains("import SwiftUI"), "UIKit/AppKit app must not import SwiftUI: \(file.lastPathComponent)")
+            XCTAssertFalse(source.contains("UIHostingController"), "UIKit app must not host SwiftUI screens: \(file.lastPathComponent)")
+            XCTAssertFalse(source.contains("NSHostingController"), "AppKit app must not host SwiftUI screens: \(file.lastPathComponent)")
+        }
+    }
+
     func testUIKitShellThreadsPlaybackDependenciesIntoSettingsFlow() throws {
         let source = try String(
             contentsOf: URL(fileURLWithPath: #filePath)

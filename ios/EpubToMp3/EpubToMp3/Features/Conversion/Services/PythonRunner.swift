@@ -80,10 +80,14 @@ final class PythonRunner: @unchecked Sendable {
     /// Await `block` on the dedicated Python thread. Replaces the
     /// manual `withCheckedThrowingContinuation { cont in self.async { … } }`
     /// boilerplate at every call site.
-    func callAsync<T>(_ block: @escaping () throws -> T) async throws -> T {
+    func callAsync<T: Sendable>(_ block: @escaping @Sendable () throws -> T) async throws -> T {
         try await withCheckedThrowingContinuation { cont in
             self.async {
-                cont.resume(with: Result { try block() })
+                do {
+                    cont.resume(returning: try block())
+                } catch {
+                    cont.resume(throwing: error)
+                }
             }
         }
     }
@@ -96,25 +100,35 @@ final class PythonRunner: @unchecked Sendable {
     /// deadlock: ``withThrowingTaskGroup`` can never exit when its
     /// continuation-based child hasn't resumed yet. Here, the one-resume
     /// gate guarantees exactly one side wins.
-    func callAsync<T>(timeout seconds: TimeInterval, label: String = "PythonRunner", _ block: @escaping () throws -> T) async throws -> T {
+    func callAsync<T: Sendable>(timeout seconds: TimeInterval, label: String = "PythonRunner", _ block: @escaping @Sendable () throws -> T) async throws -> T {
         try await withCheckedThrowingContinuation { cont in
-            let gate = NSLock()
-            var resumed = false
+            let completionGate = CompletionGate()
 
             self.async {
-                let result = Result { try block() }
-                gate.lock()
-                guard !resumed else { gate.unlock(); return }
-                resumed = true
-                gate.unlock()
+                let result: Result<T, Error>
+                do {
+                    result = .success(try block())
+                } catch {
+                    result = .failure(error)
+                }
+                completionGate.lock.lock()
+                guard !completionGate.resumed else {
+                    completionGate.lock.unlock()
+                    return
+                }
+                completionGate.resumed = true
+                completionGate.lock.unlock()
                 cont.resume(with: result)
             }
 
             DispatchQueue.global().asyncAfter(deadline: .now() + seconds) {
-                gate.lock()
-                guard !resumed else { gate.unlock(); return }
-                resumed = true
-                gate.unlock()
+                completionGate.lock.lock()
+                guard !completionGate.resumed else {
+                    completionGate.lock.unlock()
+                    return
+                }
+                completionGate.resumed = true
+                completionGate.lock.unlock()
                 cont.resume(throwing: TimeoutError(seconds: seconds, label: label))
             }
         }
@@ -137,7 +151,12 @@ final class PythonRunner: @unchecked Sendable {
     }
 }
 
-private final class Bootstrap {
+private final class CompletionGate: @unchecked Sendable {
+    let lock = NSLock()
+    var resumed = false
+}
+
+private final class Bootstrap: @unchecked Sendable {
     weak var owner: PythonRunner?
 
     func runLoop() {

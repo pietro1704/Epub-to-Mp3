@@ -27,7 +27,7 @@ final class EpubToMp3App: NSObject, PlatformApplicationDelegate {
     let playerPresentation = PlayerPresentation()
     let bookmarkStore = BookmarkStore()
 
-    nonisolated(unsafe) private static var sharedPlayerForWidgetIntents: AudioPlayer?
+    private static var sharedPlayerForWidgetIntents: AudioPlayer?
 
     override init() {
         super.init()
@@ -210,7 +210,7 @@ final class EpubToMp3App: NSObject, PlatformApplicationDelegate {
 
     private static func registerWidgetIntentObserver() {
         guard !isRunningUnderXCTest() else { return }
-        CFNotificationCenterAddObserver(
+        unsafe CFNotificationCenterAddObserver(
             CFNotificationCenterGetDarwinNotifyCenter(),
             nil,
             { _, _, _, _, _ in
@@ -241,19 +241,20 @@ final class EpubToMp3App: NSObject, PlatformApplicationDelegate {
         let ttl = settings.offlineCacheTTLSeconds
         var activeIDs: Set<String> = []
         if let jobID = player.snapshot?.jobId { activeIDs.insert(jobID) }
-        let library = self.library
-        Task.detached(priority: .background) {
+        let evictionTask = Task.detached(priority: .background) {
             AudiobookCacheEviction.runEviction(
                 budgetBytes: budget,
                 ttlSeconds: ttl,
                 activeJobIds: activeIDs
             )
-            await MainActor.run {
-                for id in AudiobookCacheEviction.staleOfflineBookIds(books: library.books) {
-                    guard var book = library.books.first(where: { $0.id == id }) else { continue }
-                    book.cachedOffline = false
-                    library.update(book)
-                }
+        }
+        Task { @MainActor [weak self] in
+            _ = await evictionTask.value
+            guard let self else { return }
+            for id in AudiobookCacheEviction.staleOfflineBookIds(books: self.library.books) {
+                guard var book = self.library.books.first(where: { $0.id == id }) else { continue }
+                book.cachedOffline = false
+                self.library.update(book)
             }
         }
     }

@@ -17,7 +17,7 @@ options:
 
 settings:
   base:
-    SWIFT_VERSION: "5.9"
+    SWIFT_VERSION: "6"
     PRODUCT_BUNDLE_IDENTIFIER: com.pietrocode.epubtomp3
     MARKETING_VERSION: "0.3.0"
     CURRENT_PROJECT_VERSION: "1"
@@ -29,7 +29,7 @@ settings:
     # Build-speed: Intel Macs benefit from a single-arch Debug build
     # (skip x86_64h and any cross-compile to arm64). Release stays
     # universal so a CI-built artefact runs on Apple Silicon too.
-    ONLY_ACTIVE_ARCH: YES
+    ONLY_ACTIVE_ARCH: NO
     # Faster Swift incremental compiles. The whole-module mode is
     # locked in for Release for runtime speed.
     SWIFT_COMPILATION_MODE: incremental
@@ -53,8 +53,15 @@ settings:
     # and simulator without the simulator runtime check.
     ENABLE_ON_DEMAND_RESOURCES: NO
     GCC_TREAT_WARNINGS_AS_ERRORS: YES
-    # Stricter Swift warnings worth promoting.
-    SWIFT_STRICT_CONCURRENCY: minimal
+    # Swift 5 migration stage: diagnose all actor isolation and Sendable
+    # crossings before enabling Swift 6 language mode. Warnings remain errors
+    # so unsafe crossings cannot silently accumulate.
+    SWIFT_STRICT_CONCURRENCY: complete
+    # The main app contains AVFoundation/Objective-C handles whose lifetime
+    # is intentionally controlled by AudioPlayer. Extensions remain strict
+    # below; the app keeps Swift 6 concurrency and warning checks enabled.
+    SWIFT_STRICT_MEMORY_SAFETY: NO
+    SWIFT_ENFORCE_EXCLUSIVE_ACCESS: full
     # Custom launch storyboard (was UILaunchScreen_Generation=YES auto).
     # The storyboard lives at EpubToMp3/Resources/LaunchScreen.storyboard
     # and is picked up automatically by xcodegen's group recursion (not
@@ -143,6 +150,9 @@ settings:
 
   configs:
     Debug:
+      # One architecture keeps local incremental builds light on the
+      # constrained Intel development machine. Release is universal below.
+      ONLY_ACTIVE_ARCH: YES
       # Skip the codesign / framework validation pass on every Debug build.
       # Saves ~2-5s per incremental rebuild; Release still validates.
       VALIDATE_BUILT_PRODUCT: NO
@@ -151,6 +161,7 @@ settings:
       # "recommended settings" auto-applier doesn't flip it.
       SWIFT_DISABLE_SAFETY_CHECKS: NO
     Release:
+      ONLY_ACTIVE_ARCH: NO
       # ThinLTO: cross-module inlining without full LTO's link-time cost.
       # Typical 5-8% runtime win in Swift-heavy apps + ~10-15% smaller binary.
       LLVM_LTO: YES_THIN
@@ -250,6 +261,11 @@ targets:
       base:
         SUPPORTED_PLATFORMS: "iphoneos iphonesimulator macosx"
         ENABLE_HARDENED_RUNTIME: YES
+        # AVFoundation exposes legacy non-Sendable handles and the player
+        # intentionally isolates them behind locked nonisolated storage.
+        # Keep Swift 6 concurrency checking and warnings-as-errors enabled;
+        # strict memory-safety auditing remains enabled for extensions.
+        SWIFT_STRICT_MEMORY_SAFETY: NO
         # PythonKit dlopens libpython at runtime — the embedded
         # xcframework lives under Frameworks/. Default @rpath covers
         # this on iOS, but make it explicit for the simulator.
@@ -424,6 +440,7 @@ targets:
     settings:
       base:
         SUPPORTED_PLATFORMS: "iphoneos iphonesimulator"
+        SWIFT_STRICT_MEMORY_SAFETY: YES
         PRODUCT_BUNDLE_IDENTIFIER: com.pietrocode.epubtomp3.uitests
         TEST_TARGET_NAME: EpubToMp3
         GENERATE_INFOPLIST_FILE: YES
@@ -450,12 +467,13 @@ targets:
     settings:
       base:
         SUPPORTED_PLATFORMS: "iphoneos iphonesimulator"
+        SWIFT_STRICT_MEMORY_SAFETY: YES
         IPHONEOS_DEPLOYMENT_TARGET: "15.0"
         PRODUCT_BUNDLE_IDENTIFIER: com.pietrocode.epubtomp3.share
         INFOPLIST_FILE: EpubToMp3ShareExtension/Info.plist
         CODE_SIGN_ENTITLEMENTS: EpubToMp3ShareExtension/ShareExtension.entitlements
         TARGETED_DEVICE_FAMILY: "1,2"
-        SWIFT_VERSION: "5.9"
+        SWIFT_VERSION: "6"
         APPLICATION_EXTENSION_API_ONLY: YES
         ENABLE_USER_SCRIPT_SANDBOXING: YES
       configs:
@@ -505,9 +523,9 @@ targets:
         INFOPLIST_FILE: EpubToMp3Widget/Info.plist
         CODE_SIGN_ENTITLEMENTS: EpubToMp3Widget/Resources/EpubToMp3Widget.entitlements
         TARGETED_DEVICE_FAMILY: "1,2"
-        SWIFT_VERSION: "5.9"
+        SWIFT_VERSION: "6"
         # Widget extensions must not import UIKit directly. WidgetKit and
-        # SwiftUI provide the only rendering surface for this target.
+        # SwiftUI provides the only rendering surface for this target.
         ENABLE_USER_SCRIPT_SANDBOXING: YES
       configs:
         Debug:

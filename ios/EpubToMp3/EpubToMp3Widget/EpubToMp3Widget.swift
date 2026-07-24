@@ -470,12 +470,12 @@ private struct NowPlayingEntryView: View {
 /// `.active`, which never fires if the app is already frontmost/backgrounded
 /// when the widget button is tapped — the widget button appeared to do
 /// nothing.
-private let widgetIntentDarwinNotification = "com.pietrocode.epubtomp3.widgetIntent" as CFString
+private let widgetIntentDarwinNotification = "com.pietrocode.epubtomp3.widgetIntent"
 
 private func postWidgetIntentNotification() {
     CFNotificationCenterPostNotification(
         CFNotificationCenterGetDarwinNotifyCenter(),
-        CFNotificationName(widgetIntentDarwinNotification),
+        CFNotificationName(widgetIntentDarwinNotification as CFString),
         nil, nil, true
     )
 }

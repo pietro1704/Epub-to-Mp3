@@ -228,18 +228,18 @@ Each one is its own codebase; the backend is the single source of truth.
 
 | Client | Path | Platforms | Role |
 |---|---|---|---|
-| **SwiftUI** | `ios/EpubToMp3/` | macOS · iPadOS · iOS | Official Apple client. Library-first reader. macOS embeds the Python server as a sidecar (PyInstaller binary copied into `Contents/Resources/` at build time). iOS / iPadOS talk to a remote backend (`mise run web` or HF Spaces). |
-| **Flutter** | `flutter_app/` | Linux · Windows · Android | Official non-Apple client. Single Dart codebase. Talks to the same FastAPI surface. **macOS/iOS are NOT supported** — the SwiftUI app owns those platforms. |
+| **UIKit/AppKit** | `ios/EpubToMp3/` | macOS · iPadOS · iOS | Official Apple client. Native UIKit/AppKit library-first reader. macOS embeds the Python server as a sidecar (PyInstaller binary copied into `Contents/Resources/` at build time). iOS / iPadOS talk to a remote backend (`mise run web` or HF Spaces). SwiftUI is restricted to WidgetKit and Live Activities. |
+| **Flutter** | `flutter_app/` | Linux · Windows · Android | Official non-Apple client. Single Dart codebase. Talks to the same FastAPI surface. **macOS/iOS are NOT supported** — the UIKit/AppKit app owns those platforms. |
 
 Generic rules:
 
 - **Backend contract is the only shared API** — never reach across
   clients (e.g. don't import Swift types from the Flutter Dart side).
 - **`/api/jobs/{id}/stream` (SSE)** drives chapter-by-chapter streaming
-  playback in SwiftUI's `PlayerReaderView` — `AudioPlayer.updateSnapshot`
+  playback in the native UIKit/AppKit reader — `AudioPlayer.updateSnapshot`
   appends new chapters to the `AVQueuePlayer` queue without
   interrupting playback.
-- The **SwiftUI Library hero** persists imported EPUBs in
+- The **native Library screen** persists imported EPUBs in
   `UserDefaults` via `LibraryStore`. Books are identified by SHA-256 of
   file content (survives renames). macOS uses security-scoped
   bookmarks; iOS uses `suitableForBookmarkFile`.
@@ -575,7 +575,7 @@ Rules:
 - Adding a new tool: add it to `[tools]` in `mise.toml`, then `mise install`
 - Adding a new task: add it to `mise.toml` under `[tasks."name"]`, not as a standalone script
 
-### Native macOS build (SwiftUI)
+### Native macOS build (AppKit)
 - Local: `mise run mac:build` — runs `sidecar:build` then `xcodebuild` headlessly, reporting the produced `.app` path (usually `ios/EpubToMp3/.build/Release/EpubToMp3.app` with the current `SYMROOT` layout)
 - Sidecar only: `mise run sidecar:build` — produces `dist/epub-to-mp3-server` (PyInstaller onefile)
 - Requires `xcodegen` (brew install xcodegen). Xcode is optional — `mac:build` is fully headless
