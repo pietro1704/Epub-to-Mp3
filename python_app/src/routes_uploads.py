@@ -193,8 +193,17 @@ class LocalUploadRequest(BaseModel):
     path: str
 
 
-_LOCAL_ALLOWED_SUFFIXES = {".epub", ".pdf"}
 _LOCAL_ALLOWED_HOSTS = {"127.0.0.1", "::1", "localhost", "::ffff:127.0.0.1"}
+
+
+def _local_upload_storage_name(source: Path) -> str:
+    """Return the fixed internal filename used for a local upload."""
+    suffix = source.suffix.lower()
+    if suffix == ".epub":
+        return "source.epub"
+    if suffix == ".pdf":
+        return "source.pdf"
+    raise HTTPException(status_code=400, detail="Only .epub and .pdf files are supported")
 
 
 @router.post("/uploads/local")
@@ -225,8 +234,7 @@ async def upload_ebook_local(
     if not src.exists() or not src.is_file():
         raise HTTPException(status_code=404, detail="File not found")
 
-    if src.suffix.lower() not in _LOCAL_ALLOWED_SUFFIXES:
-        raise HTTPException(status_code=400, detail="Only .epub and .pdf files are supported")
+    storage_name = _local_upload_storage_name(src)
 
     if _srv.MAX_UPLOAD_BYTES and src.stat().st_size > _srv.MAX_UPLOAD_BYTES:
         raise HTTPException(
@@ -241,14 +249,9 @@ async def upload_ebook_local(
     )
     upload_dir.mkdir(parents=True, exist_ok=True)
 
-    dest_path = _srv._resolve_relative_path_within_root(upload_dir, src.name, must_exist=False)
+    dest_path = _srv._resolve_relative_path_within_root(upload_dir, storage_name, must_exist=False)
     shutil.copy2(src, dest_path)
-
-    safe_upload_root = Path(_srv.uploads_dir).resolve()
-    safe_dest_path = dest_path.resolve()  # lgtm[py/path-injection]
-    if not safe_dest_path.is_relative_to(safe_upload_root):
-        raise HTTPException(status_code=400, detail="Invalid upload destination")
-    with safe_dest_path.open("rb") as handle:
+    with dest_path.open("rb") as handle:
         file_hash = hash_file_incremental(handle)
 
     book_title = src.stem

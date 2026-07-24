@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import unittest
 from dataclasses import replace
 from pathlib import Path
@@ -153,6 +154,25 @@ def test_resolve_relative_path_within_root_rejects_absolute_candidate(tmp_path, 
 
     with pytest.raises(ValueError, match="Expected relative path"):
         server._resolve_relative_path_within_root(tmp_path, "/tmp/escape", must_exist=False)
+
+
+def test_cleanup_does_not_expose_filesystem_exceptions(tmp_path, monkeypatch):
+    _configure_server_paths(tmp_path, monkeypatch)
+    expired_dir = tmp_path / "expired-job"
+    expired_dir.mkdir()
+    os.utime(expired_dir, (0, 0))
+
+    monkeypatch.setattr("python_app.server.time.time", lambda: 10_000)
+
+    def fail_removal(_: Path) -> None:
+        raise OSError("/secret/path")
+
+    monkeypatch.setattr("python_app.server.shutil.rmtree", fail_removal)
+
+    result = asyncio.run(server.cleanup_old_files(max_age_hours=0))
+
+    assert result["errors"] == 1
+    assert "/secret/path" not in str(result)
 
 
 def test_get_job_fulltext_rejects_source_path_outside_allowed_roots(tmp_path, monkeypatch):

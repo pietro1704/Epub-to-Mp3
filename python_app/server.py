@@ -3075,7 +3075,7 @@ async def cleanup_old_files(max_age_hours: int = 48) -> dict:
 
     This endpoint should be called periodically (e.g., via cron job).
     """
-    result = {"local_deleted": 0, "errors": []}
+    result = {"local_deleted": 0, "errors": 0}
 
     # Cleanup local files
     import time
@@ -3095,8 +3095,9 @@ async def cleanup_old_files(max_age_hours: int = 48) -> dict:
                 shutil.rmtree(job_dir)
                 result["local_deleted"] += 1
                 logger.info(f"Deleted old job directory: {job_dir.name}")
-            except Exception as e:
-                result["errors"].append(f"Failed to delete {job_dir.name}: {str(e)}")
+            except Exception:
+                result["errors"] += 1
+                logger.exception("Failed to delete old job directory: %s", job_dir.name)
 
     # Cleanup old job state files
     jobs_deleted = job_manager.cleanup_old_jobs(max_age_hours=max_age_hours)

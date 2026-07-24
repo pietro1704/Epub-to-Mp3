@@ -130,7 +130,7 @@ class TestLocalUploadEndpoint(unittest.TestCase):
         assert resp.status_code == 200
         assert resp.json()["fileName"] == "report.pdf"
 
-    def test_file_is_copied_to_uploads_dir(self):
+    def test_file_is_copied_to_uploads_dir_with_fixed_internal_name(self):
         client, srv = _make_client()
         self._patch_server(srv)
         epub = _minimal_epub(self.tmp / "copy_test.epub")
@@ -141,8 +141,14 @@ class TestLocalUploadEndpoint(unittest.TestCase):
         self._restore_server(srv)
         assert resp.status_code == 200
         upload_id = resp.json()["uploadId"]
-        dest = srv.uploads_dir / upload_id / "copy_test.epub"
+        dest = srv.uploads_dir / upload_id / "source.epub"
         assert dest.exists(), "File should be copied to uploads dir"
+
+    def test_local_upload_storage_name_does_not_reuse_user_filename(self):
+        import src.routes_uploads as mod
+
+        assert mod._local_upload_storage_name(Path("../../untrusted.EPUB")) == "source.epub"
+        assert mod._local_upload_storage_name(Path("report.pdf")) == "source.pdf"
 
     def test_fallback_title_is_stem_when_reader_fails(self):
         client, srv = _make_client()
