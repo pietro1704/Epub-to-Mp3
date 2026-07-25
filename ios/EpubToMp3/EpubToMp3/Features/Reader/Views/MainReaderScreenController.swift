@@ -8,6 +8,7 @@ final class MainReaderScreenController: UIViewController {
     private var settings: AppSettings
     private let player: AudioPlayer
     private let playerPresentation: PlayerPresentation
+    private let bookmarkStore: BookmarkStore
     private var onBrowseLibrary: (() -> Void)?
 
     private var cancellables: Set<AnyCancellable> = []
@@ -35,12 +36,14 @@ final class MainReaderScreenController: UIViewController {
         settings: AppSettings,
         player: AudioPlayer,
         playerPresentation: PlayerPresentation,
+        bookmarkStore: BookmarkStore,
         onBrowseLibrary: (() -> Void)?
     ) {
         self.library = library
         self.settings = settings
         self.player = player
         self.playerPresentation = playerPresentation
+        self.bookmarkStore = bookmarkStore
         self.onBrowseLibrary = onBrowseLibrary
         super.init(nibName: nil, bundle: nil)
     }
@@ -224,7 +227,8 @@ final class MainReaderScreenController: UIViewController {
         let reader = BookOpenScreenController(
             book: book,
             library: library,
-            settings: settings
+            settings: settings,
+            bookmarkStore: bookmarkStore
         )
         addChild(reader)
         reader.view.translatesAutoresizingMaskIntoConstraints = false

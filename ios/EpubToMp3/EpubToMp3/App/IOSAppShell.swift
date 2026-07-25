@@ -77,6 +77,7 @@ final class IOSAppShellController: UITabBarController {
             rootController = LibraryScreenController(
                 library: library,
                 settings: settings,
+                player: player,
                 bookmarkStore: bookmarkStore
             )
         case .settings:

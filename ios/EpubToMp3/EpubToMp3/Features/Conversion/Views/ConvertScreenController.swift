@@ -17,6 +17,7 @@ final class ConvertScreenController: UITableViewController, UIDocumentPickerDele
     private let library: LibraryStore
     private let player: AudioPlayer
     private let playbackClock: PlaybackClock
+    private let preselectedFileURL: URL?
     private let viewModel = ConvertViewModel()
 
     private static let acceptedTypes: [UTType] = {
@@ -25,11 +26,22 @@ final class ConvertScreenController: UITableViewController, UIDocumentPickerDele
         return types
     }()
 
-    init(settings: AppSettings, library: LibraryStore, player: AudioPlayer, playbackClock: PlaybackClock) {
+    /// `preselectedFileURL` lets Book Detail's "Listen" action jump straight
+    /// to the "file selected" state without forcing the user back through
+    /// the document picker for a book already in the library — the default
+    /// `nil` preserves the standalone Convert tab's picker-first flow.
+    init(
+        settings: AppSettings,
+        library: LibraryStore,
+        player: AudioPlayer,
+        playbackClock: PlaybackClock,
+        preselectedFileURL: URL? = nil
+    ) {
         self.settings = settings
         self.library = library
         self.player = player
         self.playbackClock = playbackClock
+        self.preselectedFileURL = preselectedFileURL
         super.init(style: .insetGrouped)
         title = L10n.string("convert.title")
         tabBarItem = UITabBarItem(
@@ -50,6 +62,9 @@ final class ConvertScreenController: UITableViewController, UIDocumentPickerDele
 
     override func viewDidLoad() {
         super.viewDidLoad()
+        if let preselectedFileURL {
+            viewModel.selectedFile = preselectedFileURL
+        }
         tableView.register(UITableViewCell.self, forCellReuseIdentifier: "Cell")
         tableView.register(IOSInlineTextFieldCell.self, forCellReuseIdentifier: "TextField")
         tableView.register(IOSSwitchCell.self, forCellReuseIdentifier: "Switch")

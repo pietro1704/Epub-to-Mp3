@@ -42,6 +42,7 @@ final class IOSRootContainerController: UIViewController {
             settings: settings,
             player: player,
             playerPresentation: playerPresentation,
+            bookmarkStore: bookmarkStore,
             onBrowseLibrary: {
                 ReaderSessionState.setCurrentlyReading(bookID: nil)
             }

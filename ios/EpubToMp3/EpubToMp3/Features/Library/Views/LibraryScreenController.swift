@@ -6,8 +6,8 @@ import UniformTypeIdentifiers
 final class LibraryScreenController: UIViewController, UIDocumentPickerDelegate, UISearchResultsUpdating {
     private let library: LibraryStore
     private let settings: AppSettings
+    private let player: AudioPlayer
     private let bookmarkStore: BookmarkStore
-    private let onOpenBook: (() -> Void)?
 
     private var sortMode: LibraryGridModel.SortMode = .lastOpened
     private var selectedTag: String?
@@ -25,13 +25,13 @@ final class LibraryScreenController: UIViewController, UIDocumentPickerDelegate,
     init(
         library: LibraryStore,
         settings: AppSettings,
-        bookmarkStore: BookmarkStore,
-        onOpenBook: (() -> Void)? = nil
+        player: AudioPlayer,
+        bookmarkStore: BookmarkStore
     ) {
         self.library = library
         self.settings = settings
+        self.player = player
         self.bookmarkStore = bookmarkStore
-        self.onOpenBook = onOpenBook
         super.init(nibName: nil, bundle: nil)
         title = L10n.string("library.title")
         tabBarItem = UITabBarItem(
@@ -93,9 +93,12 @@ final class LibraryScreenController: UIViewController, UIDocumentPickerDelegate,
     private func configureGrid() {
         addChild(gridController)
         gridController.onOpen = { [weak self] book in
-            ReaderSessionState.setCurrentlyReading(bookID: book.id)
-            self?.library.update(Self.touchLastOpened(book))
-            self?.onOpenBook?()
+            guard let self else { return }
+            self.library.update(Self.touchLastOpened(book))
+            let detail = BookDetailScreenController(
+                book: book, library: self.library, settings: self.settings, player: self.player
+            )
+            self.navigationController?.pushViewController(detail, animated: true)
         }
         gridController.onRemove = { [weak self] book in
             self?.presentRemoveAlert(for: book)
