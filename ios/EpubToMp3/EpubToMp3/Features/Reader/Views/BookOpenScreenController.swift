@@ -12,6 +12,7 @@ final class BookOpenScreenController: UIViewController, UITableViewDataSource, U
     private let chapterTable = UITableView(frame: .zero, style: .plain)
     private let titleLabel = UILabel()
     private let textView = UITextView()
+    private let comicPageImageView = UIImageView()
     private let scrollView = UIScrollView()
     private let statusLabel = UILabel()
     private var fulltext: EbookFulltext?
@@ -22,7 +23,7 @@ final class BookOpenScreenController: UIViewController, UITableViewDataSource, U
     /// book is (re)loaded.
     private var hasRestoredInitialPosition = false
 
-    private static let reimportTypes: [UTType] = [.epub, .pdf]
+    private static let reimportTypes: [UTType] = SupportedImportTypes.all
 
     init(book: BookEntity, library: LibraryStore, settings: AppSettings, bookmarkStore: BookmarkStore) {
         self.book = book
@@ -89,7 +90,11 @@ final class BookOpenScreenController: UIViewController, UITableViewDataSource, U
         chapterTable.delegate = self
         scrollView.delegate = self
         scrollView.addSubview(textView)
+        comicPageImageView.contentMode = .scaleAspectFit
+        comicPageImageView.isHidden = true
+        scrollView.addSubview(comicPageImageView)
         textView.translatesAutoresizingMaskIntoConstraints = false
+        comicPageImageView.translatesAutoresizingMaskIntoConstraints = false
         scrollView.translatesAutoresizingMaskIntoConstraints = false
         chapterTable.translatesAutoresizingMaskIntoConstraints = false
 
@@ -119,7 +124,13 @@ final class BookOpenScreenController: UIViewController, UITableViewDataSource, U
             textView.topAnchor.constraint(equalTo: scrollView.contentLayoutGuide.topAnchor),
             textView.bottomAnchor.constraint(equalTo: scrollView.contentLayoutGuide.bottomAnchor),
             textView.widthAnchor.constraint(equalTo: scrollView.frameLayoutGuide.widthAnchor),
-            textView.heightAnchor.constraint(greaterThanOrEqualTo: scrollView.frameLayoutGuide.heightAnchor)
+            textView.heightAnchor.constraint(greaterThanOrEqualTo: scrollView.frameLayoutGuide.heightAnchor),
+            comicPageImageView.leadingAnchor.constraint(equalTo: scrollView.contentLayoutGuide.leadingAnchor),
+            comicPageImageView.trailingAnchor.constraint(equalTo: scrollView.contentLayoutGuide.trailingAnchor),
+            comicPageImageView.topAnchor.constraint(equalTo: scrollView.contentLayoutGuide.topAnchor),
+            comicPageImageView.bottomAnchor.constraint(equalTo: scrollView.contentLayoutGuide.bottomAnchor),
+            comicPageImageView.widthAnchor.constraint(equalTo: scrollView.frameLayoutGuide.widthAnchor),
+            comicPageImageView.heightAnchor.constraint(equalTo: scrollView.frameLayoutGuide.heightAnchor),
         ])
     }
 
@@ -236,16 +247,30 @@ final class BookOpenScreenController: UIViewController, UITableViewDataSource, U
     private func showChapter(_ index: Int) {
         guard let chapter = fulltext?.chapters[safe: index] else { return }
         titleLabel.text = chapter.displayTitle
-        if let html = chapter.html,
-           let rendered = EpubHtmlRenderer.render(
-               html: html, css: chapter.css, settings: settings, resources: chapter.resources
-           ) {
-            textView.attributedText = NSAttributedString(rendered)
+
+        if chapter.isImageOnly {
+            comicPageImageView.isHidden = false
+            textView.isHidden = true
+            if let base64 = chapter.resources?.first?.dataBase64,
+               let data = Data(base64Encoded: base64) {
+                comicPageImageView.image = UIImage(data: data)
+            } else {
+                comicPageImageView.image = nil
+            }
         } else {
-            textView.text = chapter.text
-            textView.font = .systemFont(ofSize: settings.readerPointSize)
+            comicPageImageView.isHidden = true
+            textView.isHidden = false
+            if let html = chapter.html,
+               let rendered = EpubHtmlRenderer.render(
+                   html: html, css: chapter.css, settings: settings, resources: chapter.resources
+               ) {
+                textView.attributedText = NSAttributedString(rendered)
+            } else {
+                textView.text = chapter.text
+                textView.font = .systemFont(ofSize: settings.readerPointSize)
+            }
+            repaintSavedHighlights(chapterIndex: index)
         }
-        repaintSavedHighlights(chapterIndex: index)
         UserDefaults.standard.set(index, forKey: AudioPlayer.readerCurrentChapterIndexDefaultsKey)
     }
 

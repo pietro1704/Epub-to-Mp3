@@ -1,20 +1,57 @@
 import Foundation
 
-/// Discriminator between the two natively supported book formats. The
-/// Library opens both with the same picker / drop / share surface,
-/// then routes to the right reader at open time.
+/// Discriminator between the natively supported book formats. The Library
+/// opens all of them with the same picker / drop / share surface, then
+/// routes to the right reader/parser at open time.
+///
+/// `.unsupported` is a real case, not silently mapped to `.epub` — with only
+/// 2 formats it was safe to guess "probably EPUB" for an unknown extension
+/// (the EPUB reader tolerates non-zip input and returns an empty payload).
+/// With 8 formats, that guess just produces a confusing empty-book failure
+/// instead of a clear "this format isn't supported" message at import time.
 enum BookFileType: String, Codable, Hashable, CaseIterable, Sendable {
     case epub
     case pdf
+    case fb2
+    case docx
+    case cbz
+    case cbr
+    case mobi
+    case azw3
+    case unsupported
 
-    /// Best-effort classification by extension. Anything we cannot
-    /// classify falls back to `.epub` because the EPUB reader is
-    /// tolerant of non-zip inputs (returns an empty payload), whereas
-    /// PDFKit hard-errors on non-PDF bytes.
     static func detect(from url: URL) -> BookFileType {
         switch url.pathExtension.lowercased() {
+        case "epub": return .epub
         case "pdf": return .pdf
-        default:    return .epub
+        case "fb2": return .fb2
+        case "docx": return .docx
+        case "cbz": return .cbz
+        case "cbr": return .cbr
+        case "mobi", "prc": return .mobi
+        case "azw", "azw3": return .azw3
+        default: return .unsupported
+        }
+    }
+
+    /// Comics are read visually — there's no text to convert to audio
+    /// without OCR (out of scope; see docs/reader-spec-comparison.md P1).
+    var supportsAudioConversion: Bool {
+        switch self {
+        case .cbz, .cbr, .unsupported: return false
+        default: return true
+        }
+    }
+
+    /// MOBI/AZW3 (unpacking library maturity) and CBR (the `unrar` binary's
+    /// licensing makes it unsuitable to embed in the app bundle) can only be
+    /// parsed/converted through the server — the on-device `PythonBridge`
+    /// path doesn't support them at all yet. For CBR this only affects
+    /// *reading* (comics never convert to audio either way).
+    var requiresServerConversion: Bool {
+        switch self {
+        case .mobi, .azw3, .cbr: return true
+        default: return false
         }
     }
 }

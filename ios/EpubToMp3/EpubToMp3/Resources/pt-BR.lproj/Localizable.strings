@@ -11,6 +11,7 @@
 
 /* LibraryView */
 "library.title" = "Biblioteca";
+"library.unsupportedFormat" = "%@ não é um formato suportado.";
 "library.addBook" = "Adicionar Livro";
 "library.addBookAccessibility" = "Adicionar livro";
 "library.sortLibrary" = "Ordenar biblioteca";
@@ -448,6 +449,7 @@
 "bookDetail.read" = "Ler";
 "bookDetail.download" = "Baixar";
 "bookDetail.listenStart" = "Ouvir";
+"bookDetail.listenUnavailableComic" = "Quadrinhos não podem ser convertidos em áudio";
 "bookDetail.listenResume" = "Retomar áudio";
 "bookDetail.notStarted" = "Não iniciado";
 "bookDetail.progressPercent" = "%d%% concluído";

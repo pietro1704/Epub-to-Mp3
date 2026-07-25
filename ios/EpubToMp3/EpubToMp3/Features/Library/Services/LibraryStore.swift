@@ -175,6 +175,16 @@ final class LibraryStore: ObservableObject {
 
         let filename = url.lastPathComponent
         let fileType = BookFileType.detect(from: url)
+        guard fileType != .unsupported else {
+            throw NSError(
+                domain: "LibraryStore",
+                code: 4,
+                userInfo: [
+                    NSLocalizedDescriptionKey:
+                        L10n.string("library.unsupportedFormat", filename)
+                ]
+            )
+        }
         // Keep the user's original file untouched. The app-owned copy means
         // future launches can read the book without reopening the user's
         // Documents/Downloads permission scope.
@@ -204,10 +214,13 @@ final class LibraryStore: ObservableObject {
             #endif
         }
 
-        // Route to the right metadata reader. PDFKit handles `.pdf`;
-        // the in-process EPUB reader handles `.epub` (plus anything we
-        // can't classify — the EPUB reader returns an empty payload
-        // for non-zip inputs, so the fall-through is safe).
+        // Route to the right metadata reader. PDFKit handles `.pdf`; every
+        // other format goes through the in-process EPUB/zip-oriented reader
+        // best-effort (`try?` swallows a parse failure and falls back to an
+        // empty payload — the caller below then derives a title from the
+        // filename). Formats that need dedicated metadata extraction
+        // (FB2/DOCX/CBZ title-info) can replace this fallback per-case
+        // later without touching the dispatch shape.
         let resolvedTitle: String?
         let resolvedAuthor: String?
         let resolvedCover: Data?
@@ -219,7 +232,7 @@ final class LibraryStore: ObservableObject {
             } catch let err as PdfMetadataReader.ReaderError {
                 throw NSError(
                     domain: "LibraryStore",
-                    code: 4,
+                    code: 5,
                     userInfo: [
                         NSLocalizedDescriptionKey: err.errorDescription
                             ?? "PDF metadata read failed for \(filename)."
@@ -229,7 +242,7 @@ final class LibraryStore: ObservableObject {
             resolvedTitle = payload.title
             resolvedAuthor = payload.author
             resolvedCover = Self.downsampleCover(payload.cover)
-        case .epub:
+        case .epub, .fb2, .docx, .cbz, .cbr, .mobi, .azw3, .unsupported:
             let payload = (try? EpubMetadataReader.readMetadata(from: libraryURL)) ?? .init()
             resolvedTitle = payload.title
             resolvedAuthor = Self.isParserErrorText(payload.author ?? "") ? nil : payload.author

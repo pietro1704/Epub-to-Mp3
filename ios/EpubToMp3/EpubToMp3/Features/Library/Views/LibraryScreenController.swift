@@ -16,11 +16,7 @@ final class LibraryScreenController: UIViewController, UIDocumentPickerDelegate,
     private let emptyStateLabel = UILabel()
     private let addButton = UIButton(type: .system)
 
-    private static let acceptedTypes: [UTType] = {
-        var types: [UTType] = [.epub, .pdf]
-        if let zip = UTType("org.idpf.epub-container") { types.append(zip) }
-        return types
-    }()
+    private static let acceptedTypes: [UTType] = SupportedImportTypes.all
 
     init(
         library: LibraryStore,

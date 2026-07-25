@@ -109,9 +109,17 @@ final class MacBookDetailViewController: NSViewController {
         } else {
             progressLabel.stringValue = L10n.string("bookDetail.notStarted")
         }
-        listenButton.title = book.lastJobId != nil
-            ? L10n.string("bookDetail.listenResume")
-            : L10n.string("bookDetail.listenStart")
+        if book.fileType.supportsAudioConversion {
+            listenButton.isEnabled = true
+            listenButton.title = book.lastJobId != nil
+                ? L10n.string("bookDetail.listenResume")
+                : L10n.string("bookDetail.listenStart")
+        } else {
+            // Comics (CBZ/CBR) are read visually — there's no text to
+            // narrate without OCR, which is out of scope.
+            listenButton.isEnabled = false
+            listenButton.title = L10n.string("bookDetail.listenUnavailableComic")
+        }
     }
 
     @objc private func tapRead() {

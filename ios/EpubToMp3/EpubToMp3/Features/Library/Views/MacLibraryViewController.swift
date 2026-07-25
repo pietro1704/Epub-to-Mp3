@@ -24,11 +24,7 @@ final class MacLibraryViewController: NSViewController, NSSearchFieldDelegate,
     private let emptyLabel = NSTextField(wrappingLabelWithString: "")
     private let addButton = NSButton()
 
-    private static let acceptedTypes: [UTType] = {
-        var types: [UTType] = [.epub, .pdf]
-        if let zip = UTType("org.idpf.epub-container") { types.append(zip) }
-        return types
-    }()
+    private static let acceptedTypes: [UTType] = SupportedImportTypes.all
 
     init(
         library: LibraryStore,

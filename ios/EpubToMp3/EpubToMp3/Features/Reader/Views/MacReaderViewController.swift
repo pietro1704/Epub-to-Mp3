@@ -11,6 +11,7 @@ final class MacReaderViewController: NSViewController, NSTableViewDataSource, NS
     private let onClose: () -> Void
     private let chaptersTable = NSTableView()
     private let textView = MacReaderTextView()
+    private let comicPageImageView = NSImageView()
     private let contentScrollView = NSScrollView()
     private let bookTitleLabel = NSTextField(labelWithString: "")
     private let chapterTitleLabel = NSTextField(labelWithString: "")
@@ -288,17 +289,29 @@ final class MacReaderViewController: NSViewController, NSTableViewDataSource, NS
     private func showChapter(_ index: Int) {
         guard let chapter = fulltext?.chapters[safe: index] else { return }
         chapterTitleLabel.stringValue = chapter.name ?? ""
-        if let html = chapter.html,
-           let rendered = EpubHtmlRenderer.render(
-               html: html, css: chapter.css, settings: settings, resources: chapter.resources
-           ) {
-            textView.textStorage?.setAttributedString(NSAttributedString(rendered))
+
+        if chapter.isImageOnly {
+            if let base64 = chapter.resources?.first?.dataBase64, let data = Data(base64Encoded: base64) {
+                comicPageImageView.image = NSImage(data: data)
+            } else {
+                comicPageImageView.image = nil
+            }
+            comicPageImageView.imageScaling = .scaleProportionallyUpOrDown
+            contentScrollView.documentView = comicPageImageView
         } else {
-            textView.string = chapter.text
-            textView.font = .systemFont(ofSize: settings.readerPointSize)
+            contentScrollView.documentView = textView
+            if let html = chapter.html,
+               let rendered = EpubHtmlRenderer.render(
+                   html: html, css: chapter.css, settings: settings, resources: chapter.resources
+               ) {
+                textView.textStorage?.setAttributedString(NSAttributedString(rendered))
+            } else {
+                textView.string = chapter.text
+                textView.font = .systemFont(ofSize: settings.readerPointSize)
+            }
+            repaintSavedHighlights(chapterIndex: index)
+            textView.scrollToBeginningOfDocument(nil)
         }
-        repaintSavedHighlights(chapterIndex: index)
-        textView.scrollToBeginningOfDocument(nil)
         UserDefaults.standard.set(index, forKey: AudioPlayer.readerCurrentChapterIndexDefaultsKey)
     }
 

@@ -111,10 +111,18 @@ final class BookDetailScreenController: UIViewController {
         } else {
             progressLabel.text = L10n.string("bookDetail.notStarted")
         }
-        listenButton.setTitle(
-            book.lastJobId != nil ? L10n.string("bookDetail.listenResume") : L10n.string("bookDetail.listenStart"),
-            for: .normal
-        )
+        if book.fileType.supportsAudioConversion {
+            listenButton.isEnabled = true
+            listenButton.setTitle(
+                book.lastJobId != nil ? L10n.string("bookDetail.listenResume") : L10n.string("bookDetail.listenStart"),
+                for: .normal
+            )
+        } else {
+            // Comics (CBZ/CBR) are read visually — there's no text to
+            // narrate without OCR, which is out of scope.
+            listenButton.isEnabled = false
+            listenButton.setTitle(L10n.string("bookDetail.listenUnavailableComic"), for: .normal)
+        }
     }
 
     /// Reuses the existing reactive overlay instead of instantiating a

@@ -20,11 +20,7 @@ final class ConvertScreenController: UITableViewController, UIDocumentPickerDele
     private let preselectedFileURL: URL?
     private let viewModel = ConvertViewModel()
 
-    private static let acceptedTypes: [UTType] = {
-        var types: [UTType] = [.epub, .pdf]
-        if let zip = UTType("org.idpf.epub-container") { types.append(zip) }
-        return types
-    }()
+    private static let acceptedTypes: [UTType] = SupportedImportTypes.all
 
     /// `preselectedFileURL` lets Book Detail's "Listen" action jump straight
     /// to the "file selected" state without forcing the user back through
