@@ -2358,6 +2358,224 @@ class EpubParser:
             "footnotes": footnotes,
         }
 
+    @staticmethod
+    def _html_fragment_to_chapters(
+        markup_with_markers: str,
+        raw_content: str,
+        chapter_idx: Any,
+        asset_path: str,
+        toc_chapter_title: Optional[str],
+        footnotes: Optional[List[Dict[str, str]]],
+        cue_locale: str,
+        context_words: int = 8,
+        paragraph_split_chars: Optional[int] = None,
+    ) -> List[Chapter]:
+        """Turn one prepared HTML fragment (a spine item, or an equivalent
+        section from a non-EPUB format) into one or more `Chapter` objects.
+
+        This is the reusable core extracted from `_extract_chapters`: CSS/
+        numeric-heading subchapter detection, footnote inlining, structural
+        speech cues, and the paragraph-boundary size-guard split — all format
+        -agnostic once the caller has produced HTML + footnotes for a single
+        section. Non-EPUB parsers (FB2, DOCX, MOBI) should call this directly
+        (`EpubParser._html_fragment_to_chapters(...)`, no EPUB instance
+        needed — it's a `@staticmethod`) instead of reimplementing any of the
+        above; only EPUB's spine/manifest traversal and CBZ (no HTML/text at
+        all) live outside of it.
+        """
+        chapters: List[Chapter] = []
+        paragraph_split_chars = paragraph_split_chars or SUBCHAPTER_MAX_CHARS
+
+        # --- Subchapter detection ---
+        # Try to split the spine file at known CSS subchapter-title markers.
+        sub_splits = EpubParser._split_html_on_subchapter_markers(
+            markup_with_markers,
+            chapter_idx,
+            SUBCHAPTER_NUMBER_CLASSES,
+            SUBCHAPTER_TITLE_CLASS,
+        )
+        # Fallback: detect numeric headings (e.g. <h3>1</h3>, <h3>2</h3>...).
+        if sub_splits is None:
+            sub_splits = EpubParser._split_html_on_numeric_headings(
+                markup_with_markers, chapter_idx
+            )
+
+        if sub_splits:
+            # Each CSS-marker fragment becomes an independent Chapter.
+            for sec_num, (sub_index, sub_title, sub_html, has_explicit_title) in enumerate(
+                sub_splits, 1
+            ):
+                # When the section has no dedicated title element (class_sG5),
+                # the title was derived from the first content paragraph.
+                # Prefix it with the parent chapter title and section number
+                # so that each file is identifiable without extra context.
+                if has_explicit_title:
+                    chapter_name = sub_title
+                else:
+                    if toc_chapter_title:
+                        chapter_name = f"{toc_chapter_title} - {sec_num} - {sub_title}"
+                    else:
+                        chapter_name = f"{sec_num} - {sub_title}"
+
+                sub_text_fmt, sub_segments = TextProcessor.html_to_plain_text_with_formatting(
+                    sub_html
+                )
+                if footnotes:
+                    sub_text_fn = TextProcessor._render_footnotes(
+                        sub_text_fmt,
+                        footnotes,
+                        mode="inline",
+                        context_words=context_words,
+                        phrases=_footnote_phrases_for_locale(cue_locale),
+                    )
+                    sub_segments = TextProcessor._apply_footnotes_to_segments(
+                        sub_segments,
+                        footnotes,
+                        mode="inline",
+                        context_words=context_words,
+                        phrases=_footnote_phrases_for_locale(cue_locale),
+                    )
+                else:
+                    sub_text_fn = sub_text_fmt
+                sub_text = TextProcessor.add_pause_before_dash(sub_text_fn)
+                # Use only the parent TOC title (not the full chapter_name which
+                # includes the derived sub_title snippet) so that the first-sentence
+                # content is not double-spoken: once as a structural heading and
+                # again as the opening line of the section.
+                speech_title = toc_chapter_title or chapter_name
+                sub_speech = EpubParser._prepare_speech_text(
+                    sub_text,
+                    sub_segments,
+                    raw_html=sub_html,
+                    chapter_title=speech_title,
+                    cue_locale=cue_locale,
+                )
+
+                # A CSS sub-chapter can still be very long (e.g. a long
+                # chapter with no further heading markers).  Apply the same
+                # paragraph-boundary split so no single chapter exceeds the
+                # max size threshold.
+                if sub_text and len(sub_text) > paragraph_split_chars:
+                    para_splits = EpubParser._split_text_at_paragraph_boundaries(
+                        sub_text, paragraph_split_chars, sub_index
+                    )
+                    for p_idx, p_text in para_splits:
+                        p_speech = EpubParser._prepare_speech_text(
+                            p_text,
+                            None,  # re-parse from fragment, not full-chapter segments
+                            raw_html=sub_html,
+                            chapter_title=speech_title,
+                            cue_locale=cue_locale,
+                        )
+                        chapters.append(
+                            Chapter(
+                                index=p_idx,
+                                name=chapter_name,
+                                source_path=asset_path,
+                                text=p_text,
+                                raw_html=sub_html,
+                                formatting_segments=sub_segments,
+                                footnotes=list(footnotes) if footnotes else None,
+                                speech_text=p_speech or "",
+                            )
+                        )
+                else:
+                    chapters.append(
+                        Chapter(
+                            index=sub_index,
+                            name=chapter_name,
+                            source_path=asset_path,
+                            text=sub_text or "",
+                            raw_html=sub_html,
+                            formatting_segments=sub_segments,
+                            footnotes=list(footnotes) if footnotes else None,
+                            speech_text=sub_speech or "",
+                        )
+                    )
+        else:
+            # No CSS markers — process as a single chapter.
+            text_with_formatting, formatting_segments = (
+                TextProcessor.html_to_plain_text_with_formatting(markup_with_markers)
+            )
+            if footnotes:
+                text_with_footnotes = TextProcessor._render_footnotes(
+                    text_with_formatting,
+                    footnotes,
+                    mode="inline",
+                    context_words=context_words,
+                    phrases=_footnote_phrases_for_locale(cue_locale),
+                )
+                formatting_segments = TextProcessor._apply_footnotes_to_segments(
+                    formatting_segments,
+                    footnotes,
+                    mode="inline",
+                    context_words=context_words,
+                    phrases=_footnote_phrases_for_locale(cue_locale),
+                )
+            else:
+                text_with_footnotes = text_with_formatting
+            text = TextProcessor.add_pause_before_dash(text_with_footnotes)
+            raw_title = toc_chapter_title or (
+                TextProcessor.extract_title(raw_content, f"Chapter {chapter_idx}")
+                if text
+                else f"Chapter {chapter_idx}"
+            )
+            title = TextProcessor.clean_chapter_title(raw_title)
+
+            # IMPORTANT: speech_text preserves [[lang:xx]] and [[fmt:...]] tags
+            # while stripping only inline markdown (_italic_, **bold**, `code`).
+            speech_text = EpubParser._prepare_speech_text(
+                text,
+                formatting_segments,
+                raw_html=raw_content,
+                chapter_title=title,
+                cue_locale=cue_locale,
+            )
+
+            # --- Paragraph-boundary fallback split ---
+            # When a chapter has no CSS subchapter markers but exceeds the
+            # size threshold (computed from Edge concurrency / timeout),
+            # split at paragraph boundaries to prevent Edge-TTS timeouts.
+            if text and len(text) > paragraph_split_chars:
+                para_splits = EpubParser._split_text_at_paragraph_boundaries(
+                    text, paragraph_split_chars, chapter_idx
+                )
+                for split_idx, split_text in para_splits:
+                    split_speech = EpubParser._prepare_speech_text(
+                        split_text,
+                        None,  # re-parse from fragment, not full-chapter segments
+                        raw_html=markup_with_markers,
+                        chapter_title=title,
+                        cue_locale=cue_locale,
+                    )
+                    chapters.append(
+                        Chapter(
+                            index=split_idx,
+                            name=title,
+                            source_path=asset_path,
+                            text=split_text,
+                            raw_html=markup_with_markers,
+                            formatting_segments=formatting_segments,
+                            footnotes=list(footnotes) if footnotes else None,
+                            speech_text=split_speech or "",
+                        )
+                    )
+            else:
+                chapters.append(
+                    Chapter(
+                        index=chapter_idx,
+                        name=title,
+                        source_path=asset_path,
+                        text=text or "",
+                        raw_html=raw_content,
+                        formatting_segments=formatting_segments,
+                        footnotes=list(footnotes) if footnotes else None,
+                        speech_text=speech_text or "",
+                    )
+                )
+
+        return chapters
+
     def _extract_chapters(
         self,
         archive: zipfile.ZipFile,
@@ -2447,191 +2665,19 @@ class EpubParser:
             if toc_title_map:
                 toc_chapter_title = toc_title_map.get(asset_path) or toc_title_map.get(href)
 
-            # --- Subchapter detection ---
-            # Try to split the spine file at known CSS subchapter-title markers.
-            sub_splits = self._split_html_on_subchapter_markers(
-                markup_with_markers,
-                chapter_idx,
-                SUBCHAPTER_NUMBER_CLASSES,
-                SUBCHAPTER_TITLE_CLASS,
-            )
-            # Fallback: detect numeric headings (e.g. <h3>1</h3>, <h3>2</h3>...).
-            if sub_splits is None:
-                sub_splits = self._split_html_on_numeric_headings(markup_with_markers, chapter_idx)
-
-            if sub_splits:
-                # Each CSS-marker fragment becomes an independent Chapter.
-                for sec_num, (sub_index, sub_title, sub_html, has_explicit_title) in enumerate(
-                    sub_splits, 1
-                ):
-                    # When the section has no dedicated title element (class_sG5),
-                    # the title was derived from the first content paragraph.
-                    # Prefix it with the parent chapter title and section number
-                    # so that each file is identifiable without extra context.
-                    if has_explicit_title:
-                        chapter_name = sub_title
-                    else:
-                        if toc_chapter_title:
-                            chapter_name = f"{toc_chapter_title} - {sec_num} - {sub_title}"
-                        else:
-                            chapter_name = f"{sec_num} - {sub_title}"
-
-                    sub_text_fmt, sub_segments = TextProcessor.html_to_plain_text_with_formatting(
-                        sub_html
-                    )
-                    if footnotes:
-                        sub_text_fn = TextProcessor._render_footnotes(
-                            sub_text_fmt,
-                            footnotes,
-                            mode="inline",
-                            context_words=context_words,
-                            phrases=_footnote_phrases_for_locale(cue_locale),
-                        )
-                        sub_segments = TextProcessor._apply_footnotes_to_segments(
-                            sub_segments,
-                            footnotes,
-                            mode="inline",
-                            context_words=context_words,
-                            phrases=_footnote_phrases_for_locale(cue_locale),
-                        )
-                    else:
-                        sub_text_fn = sub_text_fmt
-                    sub_text = TextProcessor.add_pause_before_dash(sub_text_fn)
-                    # Use only the parent TOC title (not the full chapter_name which
-                    # includes the derived sub_title snippet) so that the first-sentence
-                    # content is not double-spoken: once as a structural heading and
-                    # again as the opening line of the section.
-                    speech_title = toc_chapter_title or chapter_name
-                    sub_speech = self._prepare_speech_text(
-                        sub_text,
-                        sub_segments,
-                        raw_html=sub_html,
-                        chapter_title=speech_title,
-                        cue_locale=cue_locale,
-                    )
-
-                    # A CSS sub-chapter can still be very long (e.g. a long
-                    # chapter with no further heading markers).  Apply the same
-                    # paragraph-boundary split so no single chapter exceeds the
-                    # max size threshold.
-                    if sub_text and len(sub_text) > self.paragraph_split_chars:
-                        para_splits = self._split_text_at_paragraph_boundaries(
-                            sub_text, self.paragraph_split_chars, sub_index
-                        )
-                        for p_idx, p_text in para_splits:
-                            p_speech = self._prepare_speech_text(
-                                p_text,
-                                None,  # re-parse from fragment, not full-chapter segments
-                                raw_html=sub_html,
-                                chapter_title=speech_title,
-                                cue_locale=cue_locale,
-                            )
-                            chapters.append(
-                                Chapter(
-                                    index=p_idx,
-                                    name=chapter_name,
-                                    source_path=asset_path,
-                                    text=p_text,
-                                    raw_html=sub_html,
-                                    formatting_segments=sub_segments,
-                                    footnotes=list(footnotes) if footnotes else None,
-                                    speech_text=p_speech or "",
-                                )
-                            )
-                    else:
-                        chapters.append(
-                            Chapter(
-                                index=sub_index,
-                                name=chapter_name,
-                                source_path=asset_path,
-                                text=sub_text or "",
-                                raw_html=sub_html,
-                                formatting_segments=sub_segments,
-                                footnotes=list(footnotes) if footnotes else None,
-                                speech_text=sub_speech or "",
-                            )
-                        )
-            else:
-                # No CSS markers — process as a single chapter.
-                text_with_formatting, formatting_segments = (
-                    TextProcessor.html_to_plain_text_with_formatting(markup_with_markers)
-                )
-                if footnotes:
-                    text_with_footnotes = TextProcessor._render_footnotes(
-                        text_with_formatting,
-                        footnotes,
-                        mode="inline",
-                        context_words=context_words,
-                        phrases=_footnote_phrases_for_locale(cue_locale),
-                    )
-                    formatting_segments = TextProcessor._apply_footnotes_to_segments(
-                        formatting_segments,
-                        footnotes,
-                        mode="inline",
-                        context_words=context_words,
-                        phrases=_footnote_phrases_for_locale(cue_locale),
-                    )
-                else:
-                    text_with_footnotes = text_with_formatting
-                text = TextProcessor.add_pause_before_dash(text_with_footnotes)
-                raw_title = toc_chapter_title or (
-                    TextProcessor.extract_title(raw_content, f"Chapter {chapter_idx}")
-                    if text
-                    else f"Chapter {chapter_idx}"
-                )
-                title = TextProcessor.clean_chapter_title(raw_title)
-
-                # IMPORTANT: speech_text preserves [[lang:xx]] and [[fmt:...]] tags
-                # while stripping only inline markdown (_italic_, **bold**, `code`).
-                speech_text = self._prepare_speech_text(
-                    text,
-                    formatting_segments,
-                    raw_html=raw_content,
-                    chapter_title=title,
+            chapters.extend(
+                self._html_fragment_to_chapters(
+                    markup_with_markers=markup_with_markers,
+                    raw_content=raw_content,
+                    chapter_idx=chapter_idx,
+                    asset_path=asset_path,
+                    toc_chapter_title=toc_chapter_title,
+                    footnotes=footnotes,
                     cue_locale=cue_locale,
+                    context_words=context_words,
+                    paragraph_split_chars=self.paragraph_split_chars,
                 )
-
-                # --- Paragraph-boundary fallback split ---
-                # When a chapter has no CSS subchapter markers but exceeds the
-                # size threshold (computed from Edge concurrency / timeout),
-                # split at paragraph boundaries to prevent Edge-TTS timeouts.
-                if text and len(text) > self.paragraph_split_chars:
-                    para_splits = self._split_text_at_paragraph_boundaries(
-                        text, self.paragraph_split_chars, chapter_idx
-                    )
-                    for split_idx, split_text in para_splits:
-                        split_speech = self._prepare_speech_text(
-                            split_text,
-                            None,  # re-parse from fragment, not full-chapter segments
-                            raw_html=markup_with_markers,
-                            chapter_title=title,
-                            cue_locale=cue_locale,
-                        )
-                        chapters.append(
-                            Chapter(
-                                index=split_idx,
-                                name=title,
-                                source_path=asset_path,
-                                text=split_text,
-                                raw_html=markup_with_markers,
-                                formatting_segments=formatting_segments,
-                                footnotes=list(footnotes) if footnotes else None,
-                                speech_text=split_speech or "",
-                            )
-                        )
-                else:
-                    chapters.append(
-                        Chapter(
-                            index=chapter_idx,
-                            name=title,
-                            source_path=asset_path,
-                            text=text or "",
-                            raw_html=raw_content,
-                            formatting_segments=formatting_segments,
-                            footnotes=list(footnotes) if footnotes else None,
-                            speech_text=speech_text or "",
-                        )
-                    )
+            )
 
             index_counter += 1
 
@@ -3205,7 +3251,7 @@ class EbookReader:
             raise FileNotFoundError(f"File not found: {path}")
 
         suffix = path.suffix.lower()
-        if suffix not in {".epub", ".pdf"}:
+        if suffix not in {".epub", ".pdf", ".fb2"}:
             raise ValueError(f"Unsupported format: {suffix}")
 
         ps_chars = (
@@ -3217,6 +3263,12 @@ class EbookReader:
         self.file_path = path
         if suffix == ".epub":
             self.book = EpubParser(str(path), paragraph_split_chars=ps_chars).parse()
+        elif suffix == ".fb2":
+            # Local import: fb2_parser imports Book/Chapter/EpubParser/TocItem
+            # from this module, so a module-level import here would be circular.
+            from .fb2_parser import Fb2Parser
+
+            self.book = Fb2Parser(str(path)).parse()
         else:
             self.book = PdfParser(str(path)).parse()
 

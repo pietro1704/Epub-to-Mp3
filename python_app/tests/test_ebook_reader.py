@@ -1382,6 +1382,42 @@ class TestParseEpubToDict(unittest.TestCase):
         self.assertEqual(len(decoded["chapters"]), len(payload["chapters"]))
 
 
+class TestHtmlFragmentToChaptersReusableAsStaticmethod(unittest.TestCase):
+    """`_html_fragment_to_chapters` is the shared pipeline non-EPUB parsers
+    (FB2, DOCX, MOBI) call directly — it must be usable with no `EpubParser`
+    instance at all."""
+
+    def test_callable_without_an_epubparser_instance(self):
+        chapters = EpubParser._html_fragment_to_chapters(
+            markup_with_markers="<p>Hello world.</p>",
+            raw_content="<p>Hello world.</p>",
+            chapter_idx=1,
+            asset_path="section-1",
+            toc_chapter_title="Chapter One",
+            footnotes=None,
+            cue_locale="en",
+        )
+        self.assertEqual(len(chapters), 1)
+        self.assertEqual(chapters[0].name, "Chapter One")
+        self.assertIn("Hello world.", chapters[0].text)
+
+    def test_paragraph_split_chars_defaults_when_not_provided(self):
+        long_text = "Sentence. " * 5000
+        chapters = EpubParser._html_fragment_to_chapters(
+            markup_with_markers=f"<p>{long_text}</p>",
+            raw_content=f"<p>{long_text}</p>",
+            chapter_idx=1,
+            asset_path="section-1",
+            toc_chapter_title="Long Chapter",
+            footnotes=None,
+            cue_locale="en",
+        )
+        # Should not crash and should produce at least one chapter even
+        # without an explicit paragraph_split_chars (falls back to the
+        # module default SUBCHAPTER_MAX_CHARS).
+        self.assertGreaterEqual(len(chapters), 1)
+
+
 class TestChapterNameFromToc(unittest.TestCase):
     """Regression: chapter.name must come from TOC navLabel text, NOT the file ID or href.
 
