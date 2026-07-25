@@ -3251,7 +3251,7 @@ class EbookReader:
             raise FileNotFoundError(f"File not found: {path}")
 
         suffix = path.suffix.lower()
-        if suffix not in {".epub", ".pdf", ".fb2", ".cbz"}:
+        if suffix not in {".epub", ".pdf", ".fb2", ".cbz", ".docx"}:
             raise ValueError(f"Unsupported format: {suffix}")
 
         ps_chars = (
@@ -3273,6 +3273,10 @@ class EbookReader:
             from .cbz_parser import CbzParser
 
             self.book = CbzParser(str(path)).parse()
+        elif suffix == ".docx":
+            from .docx_parser import DocxParser
+
+            self.book = DocxParser(str(path)).parse()
         else:
             self.book = PdfParser(str(path)).parse()
 
