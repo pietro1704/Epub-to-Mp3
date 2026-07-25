@@ -21,7 +21,6 @@ except ImportError:
 
 import asyncio
 import contextlib
-import html
 import json
 import logging
 import random
@@ -65,7 +64,7 @@ from src.paths import (
     SOURCE_BACKUPS_DIR,
     UPLOADS_DIR,
 )
-from src.reader_sanitizer import sanitize_reader_css, sanitize_reader_html
+from src.reader_sanitizer import chapter_html_fallback, sanitize_reader_css, sanitize_reader_html
 from src.telemetry import TelemetryRecorder
 from src.text_formatting import TextFormattingProcessor
 from src.tts.edge_engine import reset_adaptive_settings
@@ -1028,14 +1027,6 @@ def _resolve_chapter_timeout(estimated_seconds: float, text_chars: int = 0) -> f
         synthesis_min = (text_chars / 30.0) * 1.5
         timeout = max(timeout, synthesis_min)
     return min(timeout, _CHAPTER_TIMEOUT_MAX)
-
-
-def _chapter_html_fallback(text: str) -> str:
-    paragraphs = [segment.strip() for segment in (text or "").split("\n\n")]
-    blocks = [segment for segment in paragraphs if segment]
-    if not blocks:
-        return "<p></p>"
-    return "".join(f"<p>{html.escape(block).replace(chr(10), '<br />')}</p>" for block in blocks)
 
 
 def _collect_resumable_job_entries() -> list[dict]:
@@ -2905,7 +2896,7 @@ def _build_fulltext_chapters_from_cache(cached: dict) -> list[dict]:
             "name": ch.get("title") or f"Chapter {idx}",
             "text": ch.get("text") or "",
             "html": sanitize_reader_html(
-                ch.get("html") or _chapter_html_fallback(ch.get("text") or "")
+                ch.get("html") or chapter_html_fallback(ch.get("text") or "")
             ),
             "css": sanitize_reader_css(ch.get("css") or ""),
             "resources": ch.get("resources") or [],
@@ -3006,7 +2997,7 @@ async def get_job_fulltext(job_id: str) -> dict:
             clean_text = TextFormattingProcessor.strip_inline_markdown(chapter_text)
             chapter_html = sanitize_reader_html((getattr(chapter, "raw_html", None) or "").strip())
             if not chapter_html:
-                chapter_html = sanitize_reader_html(_chapter_html_fallback(clean_text))
+                chapter_html = sanitize_reader_html(chapter_html_fallback(clean_text))
             chapter_css = sanitize_reader_css(reader.extract_chapter_stylesheet(chapter))
             chapter_resources = reader.extract_chapter_resources(chapter)
 

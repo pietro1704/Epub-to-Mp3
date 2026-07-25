@@ -1,4 +1,4 @@
-from src.reader_sanitizer import sanitize_reader_css, sanitize_reader_html
+from src.reader_sanitizer import chapter_html_fallback, sanitize_reader_css, sanitize_reader_html
 
 
 def test_sanitize_reader_html_removes_active_content_and_preserves_reader_markup():
@@ -46,3 +46,25 @@ def test_sanitize_reader_css_removes_active_constructs_and_keeps_safe_declaratio
     assert "color: #123456" in sanitized
     assert "font-weight: 700" in sanitized
     assert "display: block" in sanitized
+
+
+def test_chapter_html_fallback_wraps_paragraphs():
+    text = "First paragraph.\n\nSecond paragraph."
+
+    html = chapter_html_fallback(text)
+
+    assert html == "<p>First paragraph.</p><p>Second paragraph.</p>"
+
+
+def test_chapter_html_fallback_escapes_and_converts_single_newlines():
+    text = "Line one\nLine two & <tag>"
+
+    html = chapter_html_fallback(text)
+
+    assert html == "<p>Line one<br />Line two &amp; &lt;tag&gt;</p>"
+
+
+def test_chapter_html_fallback_empty_text_returns_empty_paragraph():
+    assert chapter_html_fallback("") == "<p></p>"
+    assert chapter_html_fallback(None) == "<p></p>"
+    assert chapter_html_fallback("   \n\n   ") == "<p></p>"

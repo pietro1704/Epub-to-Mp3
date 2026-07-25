@@ -196,3 +196,12 @@ def sanitize_reader_html(markup: str | None) -> str:
     parser.feed(markup)
     parser.close()
     return "".join(parser.output)
+
+
+def chapter_html_fallback(text: str) -> str:
+    """Wrap plain chapter text in paragraph tags when no raw HTML is available."""
+    paragraphs = [segment.strip() for segment in (text or "").split("\n\n")]
+    blocks = [segment for segment in paragraphs if segment]
+    if not blocks:
+        return "<p></p>"
+    return "".join(f"<p>{html.escape(block).replace(chr(10), '<br />')}</p>" for block in blocks)

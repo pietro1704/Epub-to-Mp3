@@ -51,6 +51,7 @@ except ImportError:
 
 from xml.etree import ElementTree as ET
 
+from .reader_sanitizer import chapter_html_fallback, sanitize_reader_css, sanitize_reader_html
 from .text_formatting import FormattingSegment, TextFormattingProcessor
 
 try:  # pragma: no cover - exercised indirectly in tests
@@ -3340,9 +3341,13 @@ class EbookReader:
         try:
             parser = EpubParser(str(self.file_path))
             with zipfile.ZipFile(self.file_path, "r") as archive:
-                opf_dir = parser._opf_dir(parser._find_opf_path(archive))
-                chapter_asset = parser._join_path(opf_dir, source_path)
-                chapter_dir = posixpath.dirname(chapter_asset)
+                # `chapter.source_path` is already zip-root-relative (it's
+                # set from the resolved manifest href during parsing, not
+                # merely opf-dir-relative) — joining it with `opf_dir` again
+                # here would double-prefix the path (e.g.
+                # "OEBPS/OEBPS/chapter1.xhtml") and every asset lookup below
+                # would silently miss.
+                chapter_dir = posixpath.dirname(source_path)
                 resources: list[dict[str, str]] = []
                 for href in refs[:32]:
                     if href.lower().startswith(("data:", "http:", "https:")):
@@ -3400,10 +3405,10 @@ class EbookReader:
 
         try:
             with zipfile.ZipFile(self.file_path, "r") as archive:
-                opf_path = parser._find_opf_path(archive)
-                opf_dir = parser._opf_dir(opf_path)
-                chapter_asset = parser._join_path(opf_dir, source_path)
-                chapter_dir = posixpath.dirname(chapter_asset)
+                # See the matching comment in `extract_chapter_resources`:
+                # `source_path` is already zip-root-relative, so it must not
+                # be re-joined with `opf_dir` here.
+                chapter_dir = posixpath.dirname(source_path)
 
                 seen_paths: set[str] = set()
                 for href in hrefs:
@@ -3577,34 +3582,99 @@ def parse_epub_to_dict(file_path: str, book_id: str = "") -> dict:
     (``LocalEpubParser.swift``, removed).
 
     Drops zero-length chapters; ``charCount`` reflects only ``text``.
-    ``html`` / ``css`` / ``segments`` are emitted as ``None`` (iOS
-    decoder treats them as optional) because the on-device parse path
-    does not preserve raw HTML/CSS today.
+    ``html``/``css`` mirror the sanitized markup served by
+    ``GET /api/jobs/{id}/fulltext`` (falling back to a plain paragraph wrap
+    of ``text`` when a chapter has no captured ``raw_html``, e.g. PDF
+    sources). ``segments`` remains ``None`` — no on-device path populates
+    per-sentence timing yet. ``resources`` carries bounded inline images;
+    ``footnotes`` carries the ``{number, text}`` pairs already extracted by
+    the speech pipeline. ``toc`` mirrors ``EbookReader.get_toc()`` with each
+    entry's ``href`` pre-resolved to the compacted ``chapters[].index`` (the
+    client never needs to match a raw href against a chapter path).
     """
-    book = read_book(file_path)
+    reader = EbookReader(file_path)
+    if not reader.book:
+        raise RuntimeError("Failed to read book")
+    book = reader.book
     chapters: list[dict] = []
+    source_path_to_index: dict[str, int] = {}
     out_index = 1
     for chapter in book.chapters:
         text = (chapter.text or "").strip()
         if not text:
             continue
+        html_raw = sanitize_reader_html((chapter.raw_html or "").strip())
+        if not html_raw:
+            html_raw = sanitize_reader_html(chapter_html_fallback(text))
+        try:
+            css_raw = sanitize_reader_css(reader.extract_chapter_stylesheet(chapter))
+        except Exception:
+            css_raw = ""
+        try:
+            resources = reader.extract_chapter_resources(chapter)
+        except Exception:
+            resources = []
+        footnotes = list(chapter.footnotes) if chapter.footnotes else None
         chapters.append(
             {
                 "index": out_index,
                 "name": chapter.name,
                 "text": text,
-                "html": None,
-                "css": None,
+                "html": html_raw or None,
+                "css": css_raw or None,
                 "charCount": len(text),
                 "segments": None,
+                "resources": resources or None,
+                "footnotes": footnotes,
             }
         )
+        source_path = (chapter.source_path or "").split("#", 1)[0].strip()
+        if source_path and source_path not in source_path_to_index:
+            source_path_to_index[source_path] = out_index
         out_index += 1
+
+    def resolve_chapter_index(href: str) -> Optional[int]:
+        """Match a TOC entry's href against `source_path_to_index`.
+
+        `TocItem.href` (read from the NCX/nav `content src=...`) is
+        relative to the OPF directory, while `Chapter.source_path` is
+        zip-root-relative (e.g. "OEBPS/chapter1.xhtml" vs.
+        "chapter1.xhtml") — the two conventions don't share a common
+        prefix, so an exact-match lookup silently drops every TOC
+        resolution. Fall back to a suffix match (`.../href`) before
+        giving up.
+        """
+        if not href:
+            return None
+        if href in source_path_to_index:
+            return source_path_to_index[href]
+        for candidate, idx in source_path_to_index.items():
+            if candidate == href or candidate.endswith("/" + href):
+                return idx
+        return None
+
+    def resolve_toc(items: List["TocItem"]) -> list[dict]:
+        entries: list[dict] = []
+        for item in items:
+            href = (item.href or "").split("#", 1)[0].strip()
+            entries.append(
+                {
+                    "title": item.title,
+                    "level": item.level,
+                    "chapterIndex": resolve_chapter_index(href),
+                    "children": resolve_toc(item.children),
+                }
+            )
+        return entries
+
+    toc = resolve_toc(book.toc) if book.toc else None
+
     return {
         "jobId": book_id,
         "bookTitle": book.title,
         "bookAuthor": book.author,
         "chapters": chapters,
+        "toc": toc,
     }
 
 
