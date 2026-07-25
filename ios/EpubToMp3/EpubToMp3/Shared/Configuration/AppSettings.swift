@@ -132,17 +132,13 @@ final class AppSettings: ObservableObject {
         // the system log with `Connection refused`). The embedded Python
         // runtime handles everything in-process; users only set this in
         // Settings if they actually want to point at a remote backend.
-        // macOS keeps the localhost default since the sidecar binds there.
+        // macOS keeps the historical localhost value for remote-only tools.
         #if os(macOS)
         self.backendURL = defaults.string(forKey: "backendURL") ?? "http://localhost:8000"
         #else
         self.backendURL = defaults.string(forKey: "backendURL") ?? ""
         #endif
-        self.useEmbeddedSidecar = defaults.object(forKey: "useEmbeddedSidecar") as? Bool ?? true
-        // Default ON everywhere — iOS uses PythonEmbed (in-process CPython
-        // via `Python.xcframework`); macOS uses the PyInstaller sidecar.
-        // Both ship inside the app bundle and let the reader work without
-        // any external backend URL.
+        // The Apple clients use the bundled Python runtime in-process.
         self.useEmbeddedRuntime = defaults.object(forKey: "useEmbeddedRuntime") as? Bool ?? true
         self.readerFontSize = (defaults.object(forKey: "readerFontSize") as? Int) ?? 3
         self.readerFontFamily = ReaderFontFamily(
@@ -201,27 +197,14 @@ final class AppSettings: ObservableObject {
             ?? defaultOfflineCacheTTLSeconds
     }
 
-    /// Filled in by `SidecarManager` once the bundled Python server is
-    /// healthy. When non-nil and `useEmbeddedSidecar == true`, all API
-    /// calls go to this URL instead of the user-typed `backendURL`. Not
-    /// persisted — the port is recomputed on each app launch.
-    @Published var sidecarURL: URL? = nil
-
     @Published var backendURL: String = "" {
         didSet { defaults.set(backendURL, forKey: "backendURL") }
     }
 
-    /// Whether to prefer the embedded sidecar over the user-configured
-    /// backend URL. macOS-only switch (iOS / iPadOS always use
-    /// `backendURL` since they cannot embed a Python process).
-    @Published var useEmbeddedSidecar: Bool = true {
-        didSet { defaults.set(useEmbeddedSidecar, forKey: "useEmbeddedSidecar") }
-    }
-
     /// Master switch: when `true` the app uses its bundled runtime for
     /// everything that *can* run on-device — EPUB parsing (pure Swift +
-    /// PythonBridge), TTS conversion (PythonEmbed on iOS, sidecar on
-    /// macOS) — and treats the configured `backendURL` only as an
+    /// PythonBridge), TTS conversion (PythonEmbed on iOS and macOS) —
+    /// and treats the configured `backendURL` only as an
     /// optional remote fallback for users who genuinely want it.
     ///
     /// Reader paths NEVER require this to be false. EPUB parsing is
@@ -234,8 +217,7 @@ final class AppSettings: ObservableObject {
 
     /// True iff the reader and library can render the current book
     /// without a configured backend URL. The reader pipeline is always
-    /// local on iOS (PythonBridge / EpubMetadataReader) and macOS uses
-    /// the auto-started sidecar, so this is `true` whenever the
+    /// local on iOS and macOS through PythonBridge, so this is `true` whenever the
     /// embedded runtime is enabled — regardless of `backendURL`.
     var canReadOffline: Bool { useEmbeddedRuntime }
 
@@ -378,16 +360,8 @@ final class AppSettings: ObservableObject {
 
     /// Best-effort parsed URL — returns nil if the user typed garbage so the
     /// caller can surface a validation error instead of silently failing.
-    /// On macOS, when `useEmbeddedSidecar` is on and the sidecar has come
-    /// up healthy, the sidecar URL wins so the app stays self-contained
-    /// even if the user once pointed `backendURL` at HF Spaces. When the
-    /// sidecar is expected but not yet healthy, returns nil so the rest of
-    /// the app doesn't flood `localhost:8000` with connection-refused spam.
+    /// The URL is retained only for explicit remote-backend screens.
     var resolvedBaseURL: URL? {
-        if useEmbeddedSidecar, let sidecarURL { return sidecarURL }
-        #if os(macOS)
-        if useEmbeddedSidecar { return nil }
-        #endif
         let trimmed = backendURL.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
         let raw = trimmed.hasSuffix("/") ? String(trimmed.dropLast()) : trimmed

@@ -68,8 +68,7 @@ jobs:
           RULE=$(jq -r .rule <<< "$ALERT")
           ISSUE=$(gh issue create --repo "$GITHUB_REPOSITORY" \
             --title "[code-scanning-bot] alert #${NUMBER}: ${RULE}" \
-            --body "Automated remediation is tracking ${URL}." \
-            --label security)
+            --body "Automated remediation is tracking ${URL}.")
           echo "url=$ISSUE" >> "$GITHUB_OUTPUT"
 
       - name: Notify Telegram

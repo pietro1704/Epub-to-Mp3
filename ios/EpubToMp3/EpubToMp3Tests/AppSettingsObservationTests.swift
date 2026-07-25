@@ -220,7 +220,7 @@ final class AppSettingsObservationTests: XCTestCase {
     //
     // Regression for the "Reader needs the backend" bug: the reader
     // pipeline (EpubMetadataReader + PythonBridge.parseEpub on iOS,
-    // SidecarManager on macOS) is fully on-device. The
+    // embedded Python runtime on macOS) is fully on-device. The
     // `useEmbeddedRuntime` flag must default to `true` on a fresh
     // install so first-launch users never see the "Configure the URL"
     // wall and `canReadOffline` mirrors the flag exactly.
@@ -265,50 +265,29 @@ final class AppSettingsObservationTests: XCTestCase {
 
     /// The reader must not depend on the backend URL when the embedded
     /// runtime is on. Concretely: with no `backendURL` and no
-    /// `sidecarURL`, `canReadOffline` is still `true`, so the
+    /// `canReadOffline` is still `true`, so the
     /// `BookOpenView` open flow won't gate parsing on a network
     /// resource.
     func testReaderCanReadOfflineEvenWithBlankBackendURL() {
         let s = makeSettings()
         s.useEmbeddedRuntime = true
         s.backendURL = ""
-        s.sidecarURL = nil
         XCTAssertNil(s.resolvedBaseURL,
                      "Pre-condition: no URL resolvable.")
         XCTAssertTrue(s.canReadOffline,
                       "Reader must remain available without any backend URL when the embedded runtime is on.")
     }
 
-    /// On macOS, when `useEmbeddedSidecar` is true but the sidecar
-    /// hasn't started yet, `resolvedBaseURL` must return nil — not the
-    /// stale default `http://localhost:8000`. Falling through to the
-    /// default URL floods the system log with hundreds of
-    /// "Connection refused" requests per second.
-    func testMacOSSidecarExpectedButNotRunningReturnsNil() {
+    /// The embedded runtime remains authoritative while a remote URL is
+    /// retained only for explicit remote-backend screens.
+    func testEmbeddedRuntimeRemainsAuthoritativeWithRemoteURL() {
         let s = makeSettings()
         s.useEmbeddedRuntime = true
-        s.useEmbeddedSidecar = true
         s.backendURL = "http://localhost:8000"
-        s.sidecarURL = nil
-        #if os(macOS)
-        XCTAssertNil(s.resolvedBaseURL,
-                     "macOS must not fall through to backendURL when the sidecar is expected but not running.")
-        #else
         XCTAssertNotNil(s.resolvedBaseURL,
-                        "iOS ignores the sidecar gate — legacy URL still resolves for remote-backend users.")
-        #endif
+                        "Remote URL remains available to explicit remote-backend screens.")
         XCTAssertTrue(s.useEmbeddedRuntime,
-                      "Embedded runtime must remain authoritative even when a legacy backend URL is present.")
-    }
-
-    /// When `useEmbeddedSidecar` is false, `backendURL` is respected
-    /// regardless of sidecar state.
-    func testManualBackendURLRespectedWhenSidecarDisabled() {
-        let s = makeSettings()
-        s.useEmbeddedSidecar = false
-        s.backendURL = "https://example.com"
-
-        XCTAssertEqual(s.resolvedBaseURL?.absoluteString, "https://example.com")
+                      "Embedded runtime must remain authoritative even when a remote URL is present.")
     }
 
     func testRemoteBackendControlsDimWhenEmbeddedRuntimeIsEnabled() {

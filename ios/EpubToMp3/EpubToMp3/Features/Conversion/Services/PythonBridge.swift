@@ -2,7 +2,7 @@
 //
 // Thin Swift wrappers around the canonical Python pipeline modules
 // embedded in the iOS bundle (see `python_app/src/`). Calling into
-// these from Swift means the iOS app, the macOS sidecar, and the HF
+// these from Swift means the native Apple apps and the HF
 // Spaces backend all run the SAME parser / cache / chunker / validator
 // code. No more Swift reimplementations of EPUB parsing.
 //
@@ -15,8 +15,7 @@
 // Bootstrap requirements (run once before building):
 //   ios/EpubToMp3/scripts/bootstrap-ios-python.sh
 //
-// macOS still uses the sidecar path (`SidecarManager.swift`). This
-// file only compiles on iOS / simulator.
+// The same in-process bridge is used on iOS and macOS.
 
 import Foundation
 
@@ -38,7 +37,7 @@ enum PythonBridgeError: Error, LocalizedError {
     }
 }
 
-#if os(iOS) || targetEnvironment(simulator)
+#if os(iOS) || os(macOS)
 
 import PythonKit
 
@@ -70,7 +69,7 @@ final class PythonBridge: @unchecked Sendable {
     // MARK: - EPUB parse
 
     /// Parses an EPUB on disk via `python_app.src.ebook_reader.parse_epub_to_dict`,
-    /// the same function the macOS sidecar exposes through
+    /// the same function the backend exposes through
     /// `GET /api/jobs/{id}/fulltext`. Returns an `EbookFulltext` already
 /// decoded into the model the native reader expects — same wire
     /// shape, same code path, no Swift-side parser to maintain.
@@ -164,7 +163,7 @@ final class PythonBridge: @unchecked Sendable {
     ///
     /// This replaces the direct `EdgeTTSBridge().synthesize(...)` path
     /// that `PythonEmbed.convertWithEdgeTTS` used during the spike --
-    /// the iOS app and the macOS sidecar now share a single conversion
+    /// the native Apple apps now share a single conversion
     /// pipeline, the only difference being which transport is wired
     /// into `_edge_transport`.
     func convertChapter(
@@ -491,7 +490,7 @@ final class PythonBridge: @unchecked Sendable {
     ///
     /// Namespaced inside ``PythonBridge`` to avoid a clash with
     /// ``APIClient.ConvertOptions`` (the network-side analogue used by
-    /// the sidecar/HF Spaces backend).
+    /// the HF Spaces backend).
     struct ConvertOptions: Sendable {
         // Slice-1a surface (honoured today).
         var voice: String = "auto"

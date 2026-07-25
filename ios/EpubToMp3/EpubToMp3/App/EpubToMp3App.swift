@@ -16,11 +16,9 @@ enum EpubToMp3WindowConfiguration {
 private typealias PlatformApplicationDelegate = UIApplicationDelegate
 #endif
 
-@main
 @MainActor
 final class EpubToMp3App: NSObject, PlatformApplicationDelegate {
     let settings = AppSettings()
-    let sidecar = SidecarManager()
     let library = LibraryStore()
     let player = AudioPlayer()
     let audioWarmup = AudioEngineWarmup()
@@ -35,16 +33,52 @@ final class EpubToMp3App: NSObject, PlatformApplicationDelegate {
     }
 
 #if os(macOS)
+    // AppKit uses the explicit main.swift bootstrap. Retain the delegate before
+    // entering the application loop so it remains alive for the full session.
+    private static var macOSDelegate: EpubToMp3App?
+
+    static func runApp() {
+        let application = NSApplication.shared
+        let delegate = EpubToMp3App()
+        macOSDelegate = delegate
+        application.setActivationPolicy(.regular)
+        application.mainMenu = makeMainMenu()
+        application.delegate = delegate
+        delegate.configureMainWindowIfNeeded()
+        application.finishLaunching()
+        application.run()
+    }
+
+    private static func makeMainMenu() -> NSMenu {
+        let mainMenu = NSMenu()
+        let appMenuItem = NSMenuItem()
+        let appMenu = NSMenu(title: "Epub-to-Mp3")
+        let quit = NSMenuItem(
+            title: "Quit Epub-to-Mp3",
+            action: #selector(NSApplication.terminate(_:)),
+            keyEquivalent: "q"
+        )
+        quit.target = NSApplication.shared
+        appMenu.addItem(quit)
+        appMenuItem.submenu = appMenu
+        mainMenu.addItem(appMenuItem)
+        return mainMenu
+    }
+
     private var window: NSWindow?
     private var rootController: MacAppKitRootController?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        configureMainWindowIfNeeded()
+    }
+
+    private func configureMainWindowIfNeeded() {
+        guard window == nil else { return }
         let root = MacAppKitRootController(
             settings: settings,
             library: library,
             player: player,
             bookmarkStore: bookmarkStore,
-            sidecar: sidecar,
             playerPresentation: playerPresentation
         )
         rootController = root
@@ -62,23 +96,54 @@ final class EpubToMp3App: NSObject, PlatformApplicationDelegate {
         window.title = "Epub-to-Mp3"
         window.minSize = EpubToMp3WindowConfiguration.macOSMinimumSize
         window.contentViewController = root
-        window.center()
+        root.configureWindowToolbar(window)
+        // Pin the programmatic split view to the content view. Its intrinsic
+        // width otherwise leaves an unused trailing region in NSWindow.
+        if let contentView = window.contentView, contentView !== root.view {
+            root.view.translatesAutoresizingMaskIntoConstraints = false
+            NSLayoutConstraint.activate([
+                root.view.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
+                root.view.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
+                root.view.topAnchor.constraint(equalTo: contentView.topAnchor),
+                root.view.bottomAnchor.constraint(equalTo: contentView.bottomAnchor),
+            ])
+        }
+        centerWindowOnActiveScreen(window)
         window.makeKeyAndOrderFront(nil)
         self.window = window
         NSApplication.shared.activate(ignoringOtherApps: true)
-        startSidecarIfNeeded()
+        bootstrapEmbeddedRuntime()
         activateRuntime()
+    }
+
+    private func centerWindowOnActiveScreen(_ window: NSWindow) {
+        // Cursor coordinates can point at a virtual display before the first
+        // window is visible. The primary screen is the predictable target for
+        // the initial desktop window.
+        guard let visibleFrame = NSScreen.main?.visibleFrame else {
+            window.center()
+            return
+        }
+
+        let origin = NSPoint(
+            x: visibleFrame.midX - (window.frame.width / 2),
+            y: visibleFrame.midY - (window.frame.height / 2)
+        )
+        window.setFrameOrigin(origin)
     }
 
     func application(_ application: NSApplication, open urls: [URL]) {
         for url in urls { handleIncomingURL(url) }
     }
 
-    private func startSidecarIfNeeded() {
-        guard settings.useEmbeddedSidecar, !Self.isRunningUnderXCTest() else { return }
+    private func bootstrapEmbeddedRuntime() {
+        guard !Self.isRunningUnderXCTest() else { return }
         Task {
-            let result = await sidecar.start()
-            if case .running(let url) = result { settings.sidecarURL = url }
+            do {
+                try PythonEmbed.shared.bootstrap()
+            } catch {
+                print("[EmbeddedRuntime] bootstrap failed: \(error)")
+            }
         }
     }
 #else

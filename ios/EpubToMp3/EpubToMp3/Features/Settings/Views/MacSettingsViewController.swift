@@ -5,9 +5,6 @@ import AppKit
 final class MacSettingsViewController: NSViewController {
     private let settings: AppSettings
     private let library: LibraryStore
-    private let sidecar: SidecarManager
-    private let embeddedServerSwitch = NSSwitch()
-    private let backendField = NSTextField()
     private let fontSizeStepper = NSStepper()
     private let fontSizeLabel = NSTextField(labelWithString: "")
     private let fontPopup = NSPopUpButton()
@@ -16,10 +13,9 @@ final class MacSettingsViewController: NSViewController {
     private let statusLabel = NSTextField(labelWithString: "")
     private let storageLabel = NSTextField(labelWithString: "")
 
-    init(settings: AppSettings, library: LibraryStore, sidecar: SidecarManager) {
+    init(settings: AppSettings, library: LibraryStore) {
         self.settings = settings
         self.library = library
-        self.sidecar = sidecar
         super.init(nibName: nil, bundle: nil)
         title = L10n.string("settings.title")
     }
@@ -41,11 +37,6 @@ final class MacSettingsViewController: NSViewController {
     }
 
     private func configureControls() {
-        embeddedServerSwitch.target = self
-        embeddedServerSwitch.action = #selector(embeddedServerChanged(_:))
-        backendField.placeholderString = "http://localhost:8000"
-        backendField.target = self
-        backendField.action = #selector(backendChanged(_:))
         fontSizeStepper.minValue = 0
         fontSizeStepper.maxValue = 4
         fontSizeStepper.increment = 1
@@ -79,9 +70,7 @@ final class MacSettingsViewController: NSViewController {
             return row
         }
         let form = NSStackView(views: [
-            row(L10n.string("settings.useEmbeddedServer"), embeddedServerSwitch),
             row(L10n.string("settings.embeddedServer"), statusLabel),
-            row(L10n.string("settings.url"), backendField),
             row(L10n.string("settings.fontSize"), fontSizeStepper),
             row("", fontSizeLabel),
             row(L10n.string("settings.font"), fontPopup),
@@ -105,25 +94,19 @@ final class MacSettingsViewController: NSViewController {
     }
 
     private func refresh() {
-        embeddedServerSwitch.state = settings.useEmbeddedSidecar ? .on : .off
-        backendField.stringValue = settings.backendURL
         fontSizeStepper.integerValue = settings.readerFontSize
-        fontSizeLabel.stringValue = "\(settings.readerFontSize + 1) of 5"
+        fontSizeLabel.stringValue = L10n.string("settings.fontStep", settings.readerFontSize + 1, 5)
         fontPopup.selectItem(at: ReaderFontFamily.allCases.firstIndex(of: settings.readerFontFamily) ?? 0)
         themePopup.selectItem(at: ReaderTheme.allCases.firstIndex(of: settings.readerTheme) ?? 0)
         layoutPopup.selectItem(at: ReaderLayout.allCases.firstIndex(of: settings.readerLayout) ?? 0)
-        statusLabel.stringValue = sidecarStatusLabel
+        statusLabel.stringValue = embeddedRuntimeStatusLabel
         storageLabel.stringValue = formatStorage(StorageUsageScanner.current(budgetBytes: settings.offlineCacheBudgetBytes))
     }
 
-    private var sidecarStatusLabel: String {
-        switch sidecar.state {
-        case .idle: return L10n.string("settings.sidecar.idle")
-        case .starting: return L10n.string("settings.sidecar.starting")
-        case .running(let url): return L10n.string("settings.sidecar.running") + " (\(url.absoluteString))"
-        case .failed(let error): return L10n.string("settings.sidecar.failed", String(error.prefix(120)))
-        case .unsupported: return L10n.string("settings.sidecar.unsupported")
-        }
+    private var embeddedRuntimeStatusLabel: String {
+        PythonEmbed.shared.isBootstrapComplete
+            ? L10n.string("settings.embeddedRuntime.ready")
+            : L10n.string("settings.embeddedRuntime.starting")
     }
 
     private func formatStorage(_ usage: StorageUsageSnapshot) -> String {
@@ -131,16 +114,9 @@ final class MacSettingsViewController: NSViewController {
             + ByteCountFormatter.string(fromByteCount: usage.budgetBytes, countStyle: .file)
     }
 
-    @objc private func embeddedServerChanged(_ sender: NSSwitch) {
-        settings.useEmbeddedSidecar = sender.state == .on
-        refresh()
-    }
-
-    @objc private func backendChanged(_ sender: NSTextField) { settings.backendURL = sender.stringValue }
-
     @objc private func fontSizeChanged(_ sender: NSStepper) {
         settings.readerFontSize = sender.integerValue
-        fontSizeLabel.stringValue = "\(sender.integerValue + 1) of 5"
+        fontSizeLabel.stringValue = L10n.string("settings.fontStep", sender.integerValue + 1, 5)
     }
 
     @objc private func fontChanged(_ sender: NSPopUpButton) {

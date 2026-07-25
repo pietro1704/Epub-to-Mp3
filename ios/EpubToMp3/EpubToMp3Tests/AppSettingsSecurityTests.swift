@@ -12,8 +12,6 @@ final class AppSettingsSecurityTests: XCTestCase {
     private func makeSettings(url: String) -> AppSettings {
         let s = AppSettings(defaults: UserDefaults(suiteName: "test-\(UUID().uuidString)")!)
         s.backendURL = url
-        // Disable sidecar so resolvedBaseURL always uses backendURL
-        s.useEmbeddedSidecar = false
         return s
     }
 

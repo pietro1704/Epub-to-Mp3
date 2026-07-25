@@ -28,7 +28,8 @@ def test_mac_reader_uses_ebook_chapter_name_and_explicit_async_parse() -> None:
     assert "?? try await" not in reader
 
 
-def test_sidecar_is_explicitly_sendable_for_system_callbacks() -> None:
-    sidecar = _source("Features/Conversion/Services/SidecarManager.swift")
+def test_mac_epub_parser_uses_the_embedded_python_bridge() -> None:
+    parser = _source("Features/Documents/Services/MacEpubParser.swift")
 
-    assert "SidecarManager: ObservableObject, @unchecked Sendable" in sidecar
+    assert "PythonBridge.shared.parseEpub" in parser
+    assert "Process()" not in parser

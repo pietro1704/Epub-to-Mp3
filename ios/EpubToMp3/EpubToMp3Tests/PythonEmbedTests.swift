@@ -1,9 +1,8 @@
 // PythonEmbedTests.swift
 //
-// Simulator-only smoke test for the embedded-Python spike.
-// Skipped on macOS (the sidecar still owns macOS).
+// Smoke tests for the embedded Python runtime on Apple platforms.
 
-#if os(iOS) || targetEnvironment(simulator)
+#if os(iOS) || os(macOS)
 
 import XCTest
 @testable import EpubToMp3

@@ -1,18 +1,14 @@
 // PythonEmbed.swift
 //
-// Spike (branch feat/ios-python-embed): proves that Edge-TTS can run
-// in-process inside the UIKit iOS app, replacing the PyInstaller
-// sidecar (which uses Process() — forbidden on iOS).
-//
-// macOS still uses the sidecar path (SidecarManager.swift). This file
-// only compiles on iOS / simulator.
+// In-process CPython runtime shared by the native iOS and macOS apps.
+// The Apple clients do not launch a second server process.
 //
 // Bootstrap requirements (run once before building):
 //   ios/EpubToMp3/scripts/bootstrap-ios-python.sh
 //
 // See ios/PYTHON-EMBED.md for the full architecture write-up.
 
-#if os(iOS) || targetEnvironment(simulator)
+#if os(iOS) || os(macOS)
 
 import Foundation
 import PythonKit
@@ -142,7 +138,14 @@ final class PythonEmbed: @unchecked Sendable {
         unsafe setenv("PYTHONDONTWRITEBYTECODE", "1", 1)
         unsafe setenv("PYTHONUNBUFFERED", "1", 1)
         unsafe setenv("PYTHONNOUSERSITE", "1", 1)
-        // iOS has no DNS resolv.conf; aiohttp/asyncio default loop is fine.
+        #if os(macOS)
+        let supportRoot = FileManager.default.urls(for: .applicationSupportDirectory,
+                                                    in: .userDomainMask)[0]
+            .appendingPathComponent("EpubToMp3", isDirectory: true)
+        try? FileManager.default.createDirectory(at: supportRoot,
+                                                   withIntermediateDirectories: true)
+        unsafe setenv("PERSISTENT_ROOT", supportRoot.path, 1)
+        #endif
 
         // PythonKit lazy-loads libpython via dlopen. If the framework
         // is missing (simulator without bootstrap), dlopen returns NULL

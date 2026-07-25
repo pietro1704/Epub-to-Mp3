@@ -3,15 +3,12 @@ import AppKit
 
 @MainActor
 final class MacJobsListViewController: NSViewController, NSTableViewDataSource, NSTableViewDelegate {
-    private let settings: AppSettings
     private var sessions: [SessionRecord] = []
-    private var fetchTask: Task<Void, Never>?
     private let tableView = NSTableView()
     private let spinner = NSProgressIndicator()
     private let messageLabel = NSTextField(wrappingLabelWithString: "")
 
-    init(settings: AppSettings) {
-        self.settings = settings
+    init() {
         super.init(nibName: nil, bundle: nil)
         title = L10n.string("jobs.title")
     }
@@ -20,8 +17,6 @@ final class MacJobsListViewController: NSViewController, NSTableViewDataSource, 
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
     }
-
-    deinit { fetchTask?.cancel() }
 
     override func loadView() {
         view = NSView()
@@ -41,11 +36,12 @@ final class MacJobsListViewController: NSViewController, NSTableViewDataSource, 
         scroll.hasVerticalScroller = true
         scroll.translatesAutoresizingMaskIntoConstraints = false
         let titleColumn = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("title"))
-        titleColumn.title = L10n.string("library.title")
-        titleColumn.width = 300
+        titleColumn.title = L10n.string("jobs.book")
+        titleColumn.width = 220
+        titleColumn.resizingMask = .userResizingMask
         let detailColumn = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("detail"))
-        detailColumn.title = L10n.string("jobs.title")
-        detailColumn.width = 420
+        detailColumn.title = L10n.string("jobs.status")
+        detailColumn.resizingMask = .autoresizingMask
         tableView.addTableColumn(titleColumn)
         tableView.addTableColumn(detailColumn)
         tableView.headerView = NSTableHeaderView()
@@ -87,32 +83,27 @@ final class MacJobsListViewController: NSViewController, NSTableViewDataSource, 
     @objc private func refreshTapped() { reload() }
 
     private func reload() {
-        fetchTask?.cancel()
-        guard let baseURL = settings.resolvedBaseURL else {
-            showMessage(L10n.string("jobDetail.error.configureBackend"))
-            return
-        }
-        spinner.startAnimation(nil)
-        messageLabel.isHidden = true
-        tableView.isHidden = true
-        fetchTask = Task { [weak self] in
-            guard let self else { return }
-            do {
-                let fetched = try await APIClient(baseURL: baseURL).fetchSessions()
-                guard !Task.isCancelled else { return }
-                sessions = fetched
-                tableView.reloadData()
-                spinner.stopAnimation(nil)
-                if fetched.isEmpty {
-                    showMessage(L10n.string("jobs.noConversionsDescription"))
-                } else {
-                    tableView.isHidden = false
-                }
-            } catch {
-                guard !Task.isCancelled else { return }
-                spinner.stopAnimation(nil)
-                showMessage(error.localizedDescription)
+        let logURL = FileManager.default.urls(for: .applicationSupportDirectory,
+                                                in: .userDomainMask)[0]
+            .appendingPathComponent("EpubToMp3/.logs/conversions.jsonl")
+        do {
+            let lines = try String(contentsOf: logURL, encoding: .utf8)
+                .split(whereSeparator: \.isNewline)
+            let decoder = JSONDecoder()
+            sessions = Array(lines.suffix(100).compactMap { line in
+                try? decoder.decode(SessionRecord.self, from: Data(line.utf8))
+            }.reversed())
+            tableView.reloadData()
+            if sessions.isEmpty {
+                showMessage(L10n.string("jobs.noConversionsDescription"))
+            } else {
+                tableView.isHidden = false
+                messageLabel.isHidden = true
             }
+        } catch {
+            showMessage(sessions.isEmpty
+                        ? L10n.string("jobs.noConversionsDescription")
+                        : error.localizedDescription)
         }
     }
 

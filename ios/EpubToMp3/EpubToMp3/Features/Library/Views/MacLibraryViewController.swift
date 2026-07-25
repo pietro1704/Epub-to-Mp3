@@ -11,6 +11,7 @@ final class MacLibraryViewController: NSViewController, NSSearchFieldDelegate,
     NSCollectionViewDataSource, NSCollectionViewDelegate {
     private let library: LibraryStore
     private let bookmarkStore: BookmarkStore
+    private let onOpenBook: (String) -> Void
     private var cancellables: Set<AnyCancellable> = []
     private var sortMode: LibraryGridModel.SortMode = .lastOpened
     private var selectedTag: String?
@@ -29,9 +30,14 @@ final class MacLibraryViewController: NSViewController, NSSearchFieldDelegate,
         return types
     }()
 
-    init(library: LibraryStore, bookmarkStore: BookmarkStore) {
+    init(
+        library: LibraryStore,
+        bookmarkStore: BookmarkStore,
+        onOpenBook: @escaping (String) -> Void
+    ) {
         self.library = library
         self.bookmarkStore = bookmarkStore
+        self.onOpenBook = onOpenBook
         super.init(nibName: nil, bundle: nil)
         title = L10n.string("library.title")
     }
@@ -53,6 +59,8 @@ final class MacLibraryViewController: NSViewController, NSSearchFieldDelegate,
         configureEmptyState()
         bindStore()
         reload()
+        view.setAccessibilityElement(false)
+        view.setAccessibilityChildren([searchField, sortButton, collectionView, emptyLabel, addButton])
     }
 
     private func configureToolbar() {
@@ -95,12 +103,12 @@ final class MacLibraryViewController: NSViewController, NSSearchFieldDelegate,
         scrollView.drawsBackground = false
         scrollView.translatesAutoresizingMaskIntoConstraints = false
         collectionView.isSelectable = true
+        collectionView.setAccessibilityElement(true)
+        collectionView.setAccessibilityLabel(L10n.string("library.title"))
         collectionView.allowsMultipleSelection = false
         collectionView.backgroundColors = [.clear]
         collectionView.delegate = self
         collectionView.dataSource = self
-        collectionView.register(MacBookCollectionItem.self,
-                                forItemWithIdentifier: MacBookCollectionItem.reuseIdentifier)
         let layout = NSCollectionViewFlowLayout()
         layout.itemSize = NSSize(width: 180, height: 270)
         layout.minimumInteritemSpacing = 18
@@ -161,6 +169,12 @@ final class MacLibraryViewController: NSViewController, NSSearchFieldDelegate,
         )
         books = model.arrangedBooks()
         collectionView.reloadData()
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.collectionView.setAccessibilityChildren(
+                self.collectionView.visibleItems().compactMap { $0.view }
+            )
+        }
         let empty = books.isEmpty
         collectionView.isHidden = empty
         emptyLabel.isHidden = !empty || !library.books.isEmpty
@@ -210,21 +224,23 @@ final class MacLibraryViewController: NSViewController, NSSearchFieldDelegate,
 
     func collectionView(_ collectionView: NSCollectionView,
                         itemForRepresentedObjectAt indexPath: IndexPath) -> NSCollectionViewItem {
-        let item = collectionView.makeItem(withIdentifier: MacBookCollectionItem.reuseIdentifier,
-                                            for: indexPath)
-        guard let bookItem = item as? MacBookCollectionItem else { return item }
-        bookItem.configure(with: books[indexPath.item])
+        let bookItem = MacBookCollectionItem(nibName: nil, bundle: nil)
+        let book = books[indexPath.item]
+        bookItem.configure(with: book, onOpen: { [weak self] in self?.open(book) })
         return bookItem
     }
 
-    func collectionView(_ collectionView: NSCollectionView,
-                        didSelectItemsAt indexPaths: Set<IndexPath>) {
-        guard let indexPath = indexPaths.first else { return }
-        let book = books[indexPath.item]
+    func collectionView(_ collectionView: NSCollectionView, didSelectItemsAt indexPaths: Set<IndexPath>) {
+        guard let indexPath = indexPaths.first, books.indices.contains(indexPath.item) else { return }
+        open(books[indexPath.item])
+    }
+
+    private func open(_ book: BookEntity) {
         UserDefaults.standard.set(book.id, forKey: "currentlyReadingBookID")
         var updated = book
         updated.lastOpenedAt = Date()
         library.update(updated)
+        onOpenBook(book.id)
     }
 
     func collectionView(_ collectionView: NSCollectionView,
@@ -254,18 +270,16 @@ final class MacLibraryViewController: NSViewController, NSSearchFieldDelegate,
 }
 
 private final class MacBookCollectionItem: NSCollectionViewItem {
-    static let reuseIdentifier = NSUserInterfaceItemIdentifier("MacBookCollectionItem")
     private let coverView = NSImageView()
     private let titleField = NSTextField(labelWithString: "")
     private let authorField = NSTextField(labelWithString: "")
+    private let openButton = NSButton()
+    private var onOpen: (() -> Void)?
 
     override func loadView() {
         let root = NSView()
         coverView.imageScaling = .scaleProportionallyUpOrDown
         coverView.imageAlignment = .alignCenter
-        coverView.wantsLayer = true
-        coverView.layer?.cornerRadius = 8
-        coverView.layer?.backgroundColor = NSColor.controlBackgroundColor.cgColor
         coverView.translatesAutoresizingMaskIntoConstraints = false
         titleField.lineBreakMode = .byTruncatingTail
         titleField.maximumNumberOfLines = 2
@@ -276,17 +290,33 @@ private final class MacBookCollectionItem: NSCollectionViewItem {
         stack.spacing = 5
         stack.translatesAutoresizingMaskIntoConstraints = false
         root.addSubview(stack)
+        openButton.title = ""
+        openButton.isBordered = false
+        openButton.focusRingType = .none
+        openButton.target = self
+        openButton.action = #selector(openBook)
+        openButton.translatesAutoresizingMaskIntoConstraints = false
+        root.addSubview(openButton)
         NSLayoutConstraint.activate([
             coverView.heightAnchor.constraint(equalToConstant: 210),
             stack.leadingAnchor.constraint(equalTo: root.leadingAnchor),
             stack.trailingAnchor.constraint(equalTo: root.trailingAnchor),
             stack.topAnchor.constraint(equalTo: root.topAnchor),
             stack.bottomAnchor.constraint(equalTo: root.bottomAnchor),
+            openButton.leadingAnchor.constraint(equalTo: root.leadingAnchor),
+            openButton.trailingAnchor.constraint(equalTo: root.trailingAnchor),
+            openButton.topAnchor.constraint(equalTo: root.topAnchor),
+            openButton.bottomAnchor.constraint(equalTo: root.bottomAnchor),
         ])
         view = root
     }
 
-    func configure(with book: BookEntity) {
+    func configure(with book: BookEntity, onOpen: @escaping () -> Void) {
+        self.onOpen = onOpen
+        view.setAccessibilityElement(false)
+        view.setAccessibilityChildren([openButton])
+        openButton.setAccessibilityLabel(book.resolvedTitle)
+        openButton.setAccessibilityHelp(L10n.string("library.openBook"))
         titleField.stringValue = book.resolvedTitle
         authorField.stringValue = book.author ?? ""
         authorField.isHidden = book.author?.isEmpty ?? true
@@ -294,5 +324,7 @@ private final class MacBookCollectionItem: NSCollectionViewItem {
             ?? NSImage(systemSymbolName: book.fileType == .pdf ? "doc.richtext" : "book.closed",
                        accessibilityDescription: nil)
     }
+
+    @objc private func openBook() { onOpen?() }
 }
 #endif

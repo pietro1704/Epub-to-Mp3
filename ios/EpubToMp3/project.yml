@@ -80,6 +80,9 @@ settings:
     INFOPLIST_FILE: EpubToMp3/Resources/Info.plist
     INFOPLIST_KEY_NSHumanReadableCopyright: "© 2026 Pietro Pugliesi"
     INFOPLIST_KEY_LSApplicationCategoryType: "public.app-category.productivity"
+    # A native AppKit target needs NSApplication as its principal class so the
+    # @main delegate receives applicationDidFinishLaunching and creates a window.
+    "INFOPLIST_KEY_NSPrincipalClass[sdk=macosx*]": "NSApplication"
     # Intel Macs with discrete + integrated GPU: tell macOS we don't
     # need the dGPU for this native AppKit renderer.
     INFOPLIST_KEY_NSSupportsAutomaticGraphicsSwitching: YES
@@ -234,10 +237,8 @@ targets:
         type: folder
         createIntermediateGroups: true
     dependencies:
-      # Python.xcframework is iOS-only (Beeware ships no macOS slice).
-      # We exclude it from the macOS link via EXCLUDED_SOURCE_FILE_NAMES
-      # below — macOS uses the PyInstaller sidecar embedded by the
-      # post-build script and shares `python_app/src/` via runtime IPC.
+      # Python.xcframework contains iOS and macOS slices. The native app
+      # uses the embedded interpreter directly on both platforms.
       - framework: Vendor/Python/Python.xcframework
         embed: true
         codeSign: true
@@ -276,17 +277,15 @@ targets:
         # xcframework lives under Frameworks/. Default @rpath covers
         # this on iOS, but make it explicit for the simulator.
         LD_RUNPATH_SEARCH_PATHS: "$(inherited) @executable_path/Frameworks"
-        # Python.xcframework has no macOS slice — exclude the framework
-        # from the macOS link line entirely so xcodebuild stops yelling
-        # "no library for this platform was found". The EpubToMp3Widget
+        # Keep iOS-only extensions out of the macOS app bundle. The
+        # EpubToMp3Widget
         # extension is iOS-only by `supportedDestinations: [iOS]`; we
         # also have to strip it from the macOS embed copy phase or the
         # Release build fails ValidateEmbeddedBinary with "Your target
         # is built for macOS but contains embedded content built for
         # the iOS platform".
-        "EXCLUDED_SOURCE_FILE_NAMES[sdk=macosx*]": "Python.xcframework EpubToMp3Widget.appex EpubToMp3ShareExtension.appex"
-        # Both run-script phases on this target (the pre-build bootstrap
-        # and the post-build sidecar embed) write into directories that
+        "EXCLUDED_SOURCE_FILE_NAMES[sdk=macosx*]": "EpubToMp3Widget.appex EpubToMp3ShareExtension.appex"
+        # The pre-build bootstrap writes into directories that
         # the sandbox cannot pre-declare (e.g. download caches under
         # ~/.cache, the repo-rooted dist/ folder, large recursive copies
         # into Vendor/). Disable script sandboxing for THIS TARGET only —
@@ -352,33 +351,6 @@ targets:
           fi
           echo "==> Python.xcframework missing — running bootstrap"
           bash "${SRCROOT}/scripts/bootstrap-ios-python.sh"
-    postBuildScripts:
-      - name: "Embed Python sidecar (macOS only)"
-        runOnlyWhenInstalling: false
-        shell: /bin/bash
-        outputFiles:
-          - "$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/epub-to-mp3-server"
-        script: |
-          set -euo pipefail
-          if [[ "${PLATFORM_NAME}" != "macosx" ]]; then
-            echo "Skipping sidecar embed for ${PLATFORM_NAME}"
-            exit 0
-          fi
-          REPO_ROOT="${SRCROOT}/../.."
-          # The PyInstaller sidecar is produced by `mise run sidecar:build`
-          # into dist/epub-to-mp3-server. The mac:build mise task chains the
-          # sidecar build immediately before invoking xcodebuild.
-          SIDECAR_SRC="${REPO_ROOT}/dist/epub-to-mp3-server"
-          if [[ ! -x "$SIDECAR_SRC" ]]; then
-            echo "warning: sidecar binary not found at ${SIDECAR_SRC}. Run 'mise run sidecar:build' first, or use 'mise run mac:build' to build sidecar+app together. App will start in remote-backend mode only."
-            exit 0
-          fi
-          DEST="${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/epub-to-mp3-server"
-          mkdir -p "$(dirname "${DEST}")"
-          cp "${SIDECAR_SRC}" "${DEST}"
-          chmod +x "${DEST}"
-          echo "Embedded sidecar: ${SIDECAR_SRC} → ${DEST}"
-
   EpubToMp3Tests:
     type: bundle.unit-test
     supportedDestinations: [iOS, macOS]

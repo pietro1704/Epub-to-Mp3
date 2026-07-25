@@ -36,14 +36,19 @@
 /* SettingsView */
 "settings.title" = "Configuración";
 "settings.embeddedServer" = "Servidor integrado";
+"settings.embeddedRuntime.ready" = "Listo";
+"settings.embeddedRuntime.starting" = "Iniciando…";
 "settings.useEmbeddedServer" = "Usar servidor integrado";
 "settings.useEmbeddedServerDescription" = "Ejecuta una instancia privada de Python en un puerto local libre. Recomendado.";
 "settings.embeddedServerFooter" = "Con el servidor integrado activo, la app es completamente autónoma y funciona sin conexión. Desactívalo solo si quieres apuntar a un backend remoto.";
-"settings.sidecar.idle" = "Inactivo";
-"settings.sidecar.starting" = "Iniciando…";
-"settings.sidecar.running" = "En ejecución";
-"settings.sidecar.failed" = "Falló — %@";
-"settings.sidecar.unsupported" = "No compatible con esta plataforma";
+"reader.contents" = "Contenido";
+"reader.chapterCount" = "%d capítulos";
+"reader.close" = "Cerrar libro";
+"reader.toc" = "TOC";
+"library.openBook" = "Abrir libro";
+"jobs.book" = "Libro";
+"jobs.status" = "Estado";
+"settings.fontStep" = "%d de %d";
 "settings.audioEngine" = "Motor de audio";
 "settings.useBuiltInEngine" = "Usar motor de audio integrado";
 "settings.useBuiltInEngineDescription" = "Sintetiza capítulos en este dispositivo. No necesita backend.";
@@ -93,6 +98,8 @@
 "player.skipBack15" = "Retroceder 15 segundos";
 "player.pause" = "Pausa";
 "player.play" = "Reproducir";
+"player.nothingPlaying" = "Nada en reproducción";
+"player.fullPlayer" = "Reproductor completo";
 "player.skipForward15" = "Avanzar 15 segundos";
 "player.skipForward30" = "Avanzar 30 segundos";
 "player.nextChapter" = "Siguiente capítulo";
@@ -130,7 +137,7 @@
 "bookOpen.retry" = "Reintentar";
 "bookOpen.repick" = "Elegir archivo";
 "reader.loading" = "Cargando libro…";
-"reader.chapter" = "Capítulo %@";
+"reader.chapter" = "Capítulo %d";
 
 "player.error.title" = "Problema de reproducción";
 "common.ok" = "OK";
@@ -272,6 +279,7 @@
 "nav.library" = "Biblioteca";
 "nav.conversions" = "Conversiones";
 "nav.settings" = "Ajustes";
+"nav.toggleSidebar" = "Mostrar u ocultar navegación";
 
 /* === ConvertView === */
 "convert.title" = "Convertir";
@@ -431,6 +439,20 @@
 "reader.selection.playSentence" = "Reproducir esta frase";
 "reader.selection.playParagraph" = "Reproducir este párrafo";
 "reader.follow" = "Seguir";
+"reader.action.highlight" = "Resaltar";
+"reader.action.addNote" = "Agregar nota";
+"reader.note.placeholder" = "Nota";
+"reader.footnotes.title" = "Notas al pie";
+"reader.footnotes.empty" = "No hay notas al pie en este capítulo.";
+"reader.search.placeholder" = "Buscar en el capítulo";
+"reader.search.noResults" = "No se encontraron resultados";
+"bookDetail.read" = "Leer";
+"bookDetail.download" = "Descargar";
+"bookDetail.listenStart" = "Escuchar";
+"bookDetail.listenResume" = "Reanudar audio";
+"bookDetail.notStarted" = "Sin comenzar";
+"bookDetail.progressPercent" = "%d%% completado";
+"bookDetail.downloadRequiresConversion" = "Convierte este libro a audio primero.";
 
 /* === LocalEpubReaderView === */
 "localEpubReader.couldntRead" = "No se pudo leer este libro";

@@ -229,7 +229,7 @@ final class APIClient: @unchecked Sendable {
 
     /// Tell the backend to convert a file the user already has on disk.
     /// Backed by `POST /api/uploads/local` (desktop-only path, hits the
-    /// loopback sidecar) so we don't have to upload hundreds of MB of
+    /// local backend) so we don't have to upload hundreds of MB of
     /// EPUB/PDF for a local file. Returns the upload id that
     /// `submitConversion` then forwards.
     func registerLocalUpload(path: URL) async throws -> String {
@@ -284,7 +284,7 @@ final class APIClient: @unchecked Sendable {
         }
 
         if let localPath {
-            // Path 1 — desktop-local: register the path with the sidecar
+            // Path 1 — desktop-local: register the path with the backend
             // and forward only the `upload_id`.
             let uploadId = try await registerLocalUpload(path: localPath)
             appendField(name: "upload_id", value: uploadId)

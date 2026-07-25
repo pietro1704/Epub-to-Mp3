@@ -3,12 +3,11 @@ import AppKit
 import Combine
 
 @MainActor
-final class MacAppKitRootController: NSSplitViewController, NSTableViewDataSource, NSTableViewDelegate {
+final class MacAppKitRootController: NSSplitViewController {
     private enum Destination: Int, CaseIterable {
-        case reader, library, jobs, settings
+        case library, jobs, settings
         var title: String {
             switch self {
-            case .reader: return L10n.string("nav.read")
             case .library: return L10n.string("nav.library")
             case .jobs: return L10n.string("nav.conversions")
             case .settings: return L10n.string("nav.settings")
@@ -16,7 +15,6 @@ final class MacAppKitRootController: NSSplitViewController, NSTableViewDataSourc
         }
         var icon: String {
             switch self {
-            case .reader: return "book"
             case .library: return "books.vertical"
             case .jobs: return "arrow.triangle.2.circlepath"
             case .settings: return "gearshape"
@@ -27,37 +25,40 @@ final class MacAppKitRootController: NSSplitViewController, NSTableViewDataSourc
     private let settings: AppSettings
     private let library: LibraryStore
     private let bookmarkStore: BookmarkStore
-    private let sidecar: SidecarManager
     private let player: AudioPlayer
     private let playerPresentation: PlayerPresentation
-    private let sidebar = NSTableView()
-    private let detail = NSViewController()
+    private let detailContainer = NSViewController()
     private let playerBar: MacPlayerBarViewController
+    private var playerBarHeightConstraint: NSLayoutConstraint?
     private var cancellables: Set<AnyCancellable> = []
+    private var detailController: NSViewController?
     private var fullPlayerController: MacFullPlayerViewController?
+    private var controllers: [Destination: NSViewController] = [:]
+    private var sidebarButtons: [Destination: NSButton] = [:]
 
     init(
         settings: AppSettings,
         library: LibraryStore,
         player: AudioPlayer,
         bookmarkStore: BookmarkStore,
-        sidecar: SidecarManager,
         playerPresentation: PlayerPresentation = PlayerPresentation()
     ) {
         self.settings = settings
         self.library = library
         self.player = player
         self.bookmarkStore = bookmarkStore
-        self.sidecar = sidecar
         self.playerPresentation = playerPresentation
         self.playerBar = MacPlayerBarViewController(player: player, onShowFullPlayer: { [weak playerPresentation] in
             playerPresentation?.showFullPlayer()
         })
         super.init(nibName: nil, bundle: nil)
-        splitViewItems = [NSSplitViewItem(viewController: makeSidebar()), NSSplitViewItem(viewController: detail)]
+        splitViewItems = [
+            NSSplitViewItem(viewController: makeSidebar()),
+            NSSplitViewItem(viewController: detailContainer),
+        ]
         splitViewItems[0].minimumThickness = 190
         splitViewItems[0].maximumThickness = 280
-        library.$books.sink { [weak self] _ in self?.refreshDetailIfNeeded() }.store(in: &cancellables)
+        splitViewItems[0].canCollapse = true
     }
 
     @available(*, unavailable)
@@ -65,60 +66,97 @@ final class MacAppKitRootController: NSSplitViewController, NSTableViewDataSourc
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        addChild(playerBar)
-        view.addSubview(playerBar.view)
+        detailContainer.view.addSubview(playerBar.view)
         playerBar.view.translatesAutoresizingMaskIntoConstraints = false
+        let playerBarHeight = playerBar.view.heightAnchor.constraint(equalToConstant: 0)
+        playerBarHeightConstraint = playerBarHeight
         NSLayoutConstraint.activate([
-            playerBar.view.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            playerBar.view.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            playerBar.view.bottomAnchor.constraint(equalTo: view.bottomAnchor),
-            playerBar.view.heightAnchor.constraint(equalToConstant: 58)
+            playerBar.view.leadingAnchor.constraint(equalTo: detailContainer.view.leadingAnchor),
+            playerBar.view.trailingAnchor.constraint(equalTo: detailContainer.view.trailingAnchor),
+            playerBar.view.bottomAnchor.constraint(equalTo: detailContainer.view.bottomAnchor),
+            playerBarHeight,
         ])
+        player.objectWillChange
+            .sink { [weak self] _ in self?.refreshPlayerBar() }
+            .store(in: &cancellables)
         playerPresentation.objectWillChange
             .sink { [weak self] _ in self?.refreshFullPlayer() }
             .store(in: &cancellables)
-        sidebar.selectRowIndexes(IndexSet(integer: Destination.reader.rawValue), byExtendingSelection: false)
-        show(.reader)
+        show(.library)
+        refreshPlayerBar()
     }
 
-    func numberOfRows(in tableView: NSTableView) -> Int { Destination.allCases.count }
+    override func viewDidAppear() {
+        super.viewDidAppear()
+        guard let contentView = view.window?.contentView else { return }
+        view.frame = contentView.bounds
+        view.autoresizingMask = [.width, .height]
+    }
 
-    func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
-        let cell = NSTableCellView()
-        let item = Destination.allCases[row]
-        let image = NSImageView(image: NSImage(systemSymbolName: item.icon, accessibilityDescription: nil) ?? NSImage())
-        let label = NSTextField(labelWithString: item.title)
-        let stack = NSStackView(views: [image, label])
-        stack.spacing = 8
-        stack.translatesAutoresizingMaskIntoConstraints = false
-        cell.addSubview(stack)
+    func configureWindowToolbar(_ window: NSWindow) {
+        let accessory = NSTitlebarAccessoryViewController()
+        accessory.layoutAttribute = .leading
+        let button = NSButton(
+            image: NSImage(
+                systemSymbolName: "sidebar.left",
+                accessibilityDescription: L10n.string("nav.toggleSidebar")
+            ) ?? NSImage(),
+            target: self,
+            action: #selector(toggleNavigationSidebar)
+        )
+        button.bezelStyle = .texturedRounded
+        button.toolTip = L10n.string("nav.toggleSidebar")
+        button.setAccessibilityLabel(L10n.string("nav.toggleSidebar"))
+        button.translatesAutoresizingMaskIntoConstraints = false
+        let container = NSView()
+        container.addSubview(button)
         NSLayoutConstraint.activate([
-            stack.leadingAnchor.constraint(equalTo: cell.leadingAnchor, constant: 12),
-            stack.trailingAnchor.constraint(equalTo: cell.trailingAnchor, constant: -8),
-            stack.centerYAnchor.constraint(equalTo: cell.centerYAnchor)
+            button.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            button.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            button.topAnchor.constraint(equalTo: container.topAnchor),
+            button.bottomAnchor.constraint(equalTo: container.bottomAnchor),
+            container.widthAnchor.constraint(equalToConstant: 28),
+            container.heightAnchor.constraint(equalToConstant: 28),
         ])
-        return cell
+        accessory.view = container
+        window.addTitlebarAccessoryViewController(accessory)
     }
 
-    func tableViewSelectionDidChange(_ notification: Notification) {
-        guard let table = notification.object as? NSTableView,
-              let destination = Destination(rawValue: table.selectedRow) else { return }
-        show(destination)
+    @objc private func toggleNavigationSidebar() {
+        let sidebarItem = splitViewItems[0]
+        sidebarItem.isCollapsed.toggle()
     }
 
     private func makeSidebar() -> NSViewController {
         let controller = NSViewController()
-        sidebar.headerView = nil
-        sidebar.delegate = self
-        sidebar.dataSource = self
-        sidebar.addTableColumn(NSTableColumn(identifier: NSUserInterfaceItemIdentifier("destination")))
-        sidebar.rowSizeStyle = .medium
+        let toggle = NSButton(image: NSImage(systemSymbolName: "sidebar.left", accessibilityDescription: L10n.string("nav.toggleSidebar")) ?? NSImage(), target: self, action: #selector(toggleNavigationSidebar))
+        toggle.bezelStyle = .texturedRounded
+        toggle.toolTip = L10n.string("nav.toggleSidebar")
+        toggle.setAccessibilityLabel(L10n.string("nav.toggleSidebar"))
         let title = NSTextField(labelWithString: "Epub-to-Mp3")
         title.font = .boldSystemFont(ofSize: 16)
-        let scroll = NSScrollView()
-        scroll.documentView = sidebar
-        scroll.hasVerticalScroller = true
-        let stack = NSStackView(views: [title, scroll])
+        let menu = NSStackView()
+        menu.orientation = .vertical
+        menu.alignment = .width
+        menu.spacing = 4
+        for destination in Destination.allCases {
+            let button = NSButton(title: destination.title, target: self, action: #selector(sidebarButtonActivated(_:)))
+            button.tag = destination.rawValue
+            button.alignment = .left
+            button.image = NSImage(systemSymbolName: destination.icon, accessibilityDescription: destination.title)
+            button.imagePosition = .imageLeading
+            button.isBordered = false
+            button.focusRingType = .none
+            button.wantsLayer = true
+            button.layer?.cornerRadius = 6
+            button.contentTintColor = .secondaryLabelColor
+            button.setAccessibilityLabel(destination.title)
+            sidebarButtons[destination] = button
+            menu.addArrangedSubview(button)
+        }
+        let spacer = NSView()
+        spacer.setContentHuggingPriority(.defaultLow, for: .vertical)
+        let stack = NSStackView(views: [toggle, title, menu, spacer])
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.edgeInsets = NSEdgeInsets(top: 18, left: 12, bottom: 12, right: 8)
@@ -127,22 +165,114 @@ final class MacAppKitRootController: NSSplitViewController, NSTableViewDataSourc
         return controller
     }
 
-    private func show(_ destination: Destination) {
-        let controller: NSViewController
-        switch destination {
-        case .reader: controller = MacReaderViewController(library: library, settings: settings, player: player)
-        case .library: controller = MacLibraryViewController(library: library, bookmarkStore: bookmarkStore)
-        case .jobs: controller = MacJobsListViewController(settings: settings)
-        case .settings: controller = MacSettingsViewController(settings: settings, library: library, sidecar: sidecar)
-        }
-        detail.removeChildControllers()
-        detail.addChild(controller)
-        detail.view = controller.view
+    @objc private func sidebarButtonActivated(_ sender: NSButton) {
+        guard let destination = Destination(rawValue: sender.tag) else { return }
+        show(destination)
     }
 
-    private func refreshDetailIfNeeded() {
-        guard sidebar.selectedRow == Destination.reader.rawValue else { return }
-        show(.reader)
+    private func show(_ destination: Destination) {
+        updateSidebarSelection(destination)
+        if let detailController, detailController === controllers[destination] {
+            return
+        }
+        let controller: NSViewController
+        if let existing = controllers[destination] {
+            controller = existing
+        } else {
+            switch destination {
+            case .library:
+                controller = MacLibraryViewController(
+                    library: library,
+                    bookmarkStore: bookmarkStore,
+                    onOpenBook: { [weak self] bookID in self?.showBookDetail(bookID: bookID) }
+                )
+            case .jobs: controller = MacJobsListViewController()
+            case .settings: controller = MacSettingsViewController(settings: settings, library: library)
+            }
+            controllers[destination] = controller
+        }
+        if let current = detailController {
+            current.view.removeFromSuperview()
+            current.removeFromParent()
+        }
+        detailContainer.addChild(controller)
+        let contentView = controller.view
+        contentView.translatesAutoresizingMaskIntoConstraints = false
+        detailContainer.view.addSubview(contentView)
+        detailContainer.view.setAccessibilityChildren([contentView])
+        NSLayoutConstraint.activate([
+            contentView.leadingAnchor.constraint(equalTo: detailContainer.view.leadingAnchor),
+            contentView.trailingAnchor.constraint(equalTo: detailContainer.view.trailingAnchor),
+            contentView.topAnchor.constraint(equalTo: detailContainer.view.topAnchor),
+            contentView.bottomAnchor.constraint(equalTo: playerBar.view.topAnchor),
+        ])
+        detailController = controller
+    }
+
+    private func updateSidebarSelection(_ destination: Destination) {
+        for (candidate, button) in sidebarButtons {
+            let selected = candidate == destination
+            button.state = selected ? .on : .off
+            button.contentTintColor = selected ? .controlAccentColor : .secondaryLabelColor
+            button.layer?.backgroundColor = selected
+                ? NSColor.controlAccentColor.withAlphaComponent(0.18).cgColor
+                : NSColor.clear.cgColor
+        }
+    }
+
+    private func showBookDetail(bookID: String) {
+        guard let book = library.books.first(where: { $0.id == bookID }) else { return }
+        updateSidebarSelection(.library)
+        let detail = MacBookDetailViewController(
+            book: book,
+            onRead: { [weak self] bookID in self?.showReader(bookID: bookID) },
+            onShowJobs: { [weak self] in self?.show(.jobs) }
+        )
+        if let current = detailController {
+            current.view.removeFromSuperview()
+            current.removeFromParent()
+        }
+        detailContainer.addChild(detail)
+        let contentView = detail.view
+        contentView.translatesAutoresizingMaskIntoConstraints = false
+        detailContainer.view.addSubview(contentView)
+        detailContainer.view.setAccessibilityChildren([contentView])
+        NSLayoutConstraint.activate([
+            contentView.leadingAnchor.constraint(equalTo: detailContainer.view.leadingAnchor),
+            contentView.trailingAnchor.constraint(equalTo: detailContainer.view.trailingAnchor),
+            contentView.topAnchor.constraint(equalTo: detailContainer.view.topAnchor),
+            contentView.bottomAnchor.constraint(equalTo: playerBar.view.topAnchor),
+        ])
+        detailController = detail
+    }
+
+    private func showReader(bookID: String) {
+        updateSidebarSelection(.library)
+        let reader = MacReaderViewController(
+            library: library,
+            settings: settings,
+            player: player,
+            bookmarkStore: bookmarkStore,
+            onClose: { [weak self] in self?.show(.library) }
+        )
+        reader.setBook(bookID)
+        if let current = detailController {
+            current.view.removeFromSuperview()
+            current.removeFromParent()
+        }
+        detailContainer.addChild(reader)
+        let contentView = reader.view
+        contentView.translatesAutoresizingMaskIntoConstraints = false
+        detailContainer.view.addSubview(contentView)
+        detailContainer.view.setAccessibilityChildren([contentView])
+        NSLayoutConstraint.activate([
+            contentView.leadingAnchor.constraint(equalTo: detailContainer.view.leadingAnchor),
+            contentView.trailingAnchor.constraint(equalTo: detailContainer.view.trailingAnchor),
+            contentView.topAnchor.constraint(equalTo: detailContainer.view.topAnchor),
+            contentView.bottomAnchor.constraint(equalTo: playerBar.view.topAnchor),
+        ])
+        detailController = reader
+        refreshPlayerBar()
     }
 
     private func refreshFullPlayer() {
@@ -156,6 +286,14 @@ final class MacAppKitRootController: NSSplitViewController, NSTableViewDataSourc
             controller.dismiss(nil)
             fullPlayerController = nil
         }
+    }
+
+    private func refreshPlayerBar() {
+        let hasReadingContext = player.snapshot != nil
+            || UserDefaults.standard.string(forKey: ReaderSessionState.currentlyReadingBookIDKey) != nil
+            || library.books.contains { $0.lastOpenedAt != nil }
+        playerBar.view.isHidden = !hasReadingContext
+        playerBarHeightConstraint?.constant = hasReadingContext ? 58 : 0
     }
 }
 
@@ -213,6 +351,7 @@ private final class MacPlayerBarViewController: NSViewController {
     private func refresh() {
         titleLabel.stringValue = player.snapshot?.bookTitle ?? L10n.string("player.nothingPlaying")
         playButton.title = player.isPlaying ? L10n.string("player.pause") : L10n.string("player.play")
+        playButton.isEnabled = player.snapshot != nil
     }
 }
 
