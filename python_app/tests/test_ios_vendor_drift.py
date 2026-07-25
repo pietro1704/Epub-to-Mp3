@@ -36,6 +36,7 @@ VENDOR_DIR = REPO_ROOT / "ios" / "EpubToMp3" / "Vendor" / "site-packages" / "pyt
         "src/ebook_reader.py",
         "src/reader_sanitizer.py",
         "src/fb2_parser.py",
+        "src/cbz_parser.py",
         "src/paths.py",
         "src/utils.py",
         "src/tts/__init__.py",

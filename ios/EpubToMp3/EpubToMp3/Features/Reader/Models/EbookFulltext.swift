@@ -78,6 +78,13 @@ struct EbookFulltext: Codable, Equatable, Sendable {
         let segments: [Segment]?
         let resources: [Resource]?
         let footnotes: [Footnote]?
+        /// `"images"` for CBZ (one page image per chapter, `text` is
+        /// intentionally empty); `"text"` (or absent, for older cached
+        /// payloads) for every other format. Used to render an image page
+        /// instead of text, and to disable TTS conversion for comics.
+        let contentKind: String?
+
+        var isImageOnly: Bool { contentKind == "images" }
 
         init(
             index: Int,
@@ -88,7 +95,8 @@ struct EbookFulltext: Codable, Equatable, Sendable {
             charCount: Int?,
             segments: [Segment]?,
             resources: [Resource]? = nil,
-            footnotes: [Footnote]? = nil
+            footnotes: [Footnote]? = nil,
+            contentKind: String? = nil
         ) {
             self.index = index
             self.name = name
@@ -99,6 +107,7 @@ struct EbookFulltext: Codable, Equatable, Sendable {
             self.segments = segments
             self.resources = resources
             self.footnotes = footnotes
+            self.contentKind = contentKind
         }
 
         var id: String { String(index) }
