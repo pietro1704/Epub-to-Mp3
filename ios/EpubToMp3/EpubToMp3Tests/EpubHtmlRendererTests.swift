@@ -420,4 +420,29 @@ final class EpubHtmlRendererTests: XCTestCase {
         XCTAssertNil(EpubHtmlRenderer.render(html: "", css: nil, settings: s))
         XCTAssertNil(EpubHtmlRenderer.render(html: "   \n  ", css: nil, settings: s))
     }
+
+    /// Canary, not a regression guard: documents that the rendered
+    /// AttributedString's plain-text projection is NOT guaranteed to be
+    /// character-identical to `chapter.text`. `chapter.text` goes through
+    /// inline footnote-body injection and forced line breaks before em
+    /// dashes; the HTML render does neither. A future text-selection →
+    /// bookmark/highlight feature must not assume a rendered-view NSRange
+    /// can be used directly as a `chapter.text` char offset. See the
+    /// "Known limitations" doc comment on `EpubHtmlRenderer.render`.
+    func testRenderedPlainTextIsNotGuaranteedToMatchChapterText() {
+        let s = makeSettings()
+        let html = "<p>Paragraph one.</p><p>Paragraph two.</p>"
+        // Mirrors what `TextProcessor.add_pause_before_dash` /
+        // footnote-inlining would have produced for the reading `text`
+        // field — a plain string with its own line breaks, independent
+        // of the HTML the renderer receives.
+        let chapterText = "Paragraph one.\nParagraph two.\n\nnota de rodapé 1\nfim da nota de rodapé"
+        guard let out = EpubHtmlRenderer.render(html: html, css: nil, settings: s) else {
+            return XCTFail("renderer returned nil for non-empty HTML")
+        }
+        XCTAssertNotEqual(
+            ns(out).string, chapterText,
+            "Documented gap: rendered HTML plain-text and chapter.text are independent pipelines."
+        )
+    }
 }

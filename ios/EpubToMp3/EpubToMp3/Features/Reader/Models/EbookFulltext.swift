@@ -52,6 +52,16 @@ struct EbookFulltext: Codable, Equatable, Sendable {
         let endMs: Int?
     }
 
+    /// One footnote body extracted for a chapter — the same `{number,
+    /// text}` pairs the speech pipeline already narrates inline. Used to
+    /// power a native "Footnotes" sheet instead of trying to resolve a
+    /// clickable in-document anchor (fragile: the reference can point at a
+    /// separate notes file the sanitizer doesn't preserve cross-document).
+    struct Footnote: Codable, Equatable, Hashable, Sendable {
+        let number: String?
+        let text: String
+    }
+
     struct Chapter: Codable, Equatable, Identifiable, Sendable {
         struct Resource: Codable, Equatable, Hashable, Sendable {
             let href: String
@@ -67,6 +77,7 @@ struct EbookFulltext: Codable, Equatable, Sendable {
         let charCount: Int?
         let segments: [Segment]?
         let resources: [Resource]?
+        let footnotes: [Footnote]?
 
         init(
             index: Int,
@@ -76,7 +87,8 @@ struct EbookFulltext: Codable, Equatable, Sendable {
             css: String?,
             charCount: Int?,
             segments: [Segment]?,
-            resources: [Resource]? = nil
+            resources: [Resource]? = nil,
+            footnotes: [Footnote]? = nil
         ) {
             self.index = index
             self.name = name
@@ -86,6 +98,7 @@ struct EbookFulltext: Codable, Equatable, Sendable {
             self.charCount = charCount
             self.segments = segments
             self.resources = resources
+            self.footnotes = footnotes
         }
 
         var id: String { String(index) }
@@ -223,10 +236,36 @@ struct EbookFulltext: Codable, Equatable, Sendable {
         }
     }
 
+    /// One TOC entry, hierarchy pre-resolved server-side (`chapterIndex`
+    /// already points at the compacted `chapters[].index`, or `nil` when
+    /// the href targets a dropped/empty chapter). The client never matches
+    /// a raw href against a chapter path.
+    struct TocEntry: Codable, Equatable, Sendable {
+        let title: String
+        let level: Int
+        let chapterIndex: Int?
+        let children: [TocEntry]
+    }
+
     let jobId: String
     let bookTitle: String?
     let bookAuthor: String?
     let chapters: [Chapter]
+    let toc: [TocEntry]?
+
+    init(
+        jobId: String,
+        bookTitle: String?,
+        bookAuthor: String?,
+        chapters: [Chapter],
+        toc: [TocEntry]? = nil
+    ) {
+        self.jobId = jobId
+        self.bookTitle = bookTitle
+        self.bookAuthor = bookAuthor
+        self.chapters = chapters
+        self.toc = toc
+    }
 }
 
 /// Sentence span produced either by `Chapter.splitSentences()` or by

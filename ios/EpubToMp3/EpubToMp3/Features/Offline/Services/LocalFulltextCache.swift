@@ -18,7 +18,10 @@ enum LocalFulltextCache {
             appropriateFor: nil,
             create: true
         ) else { return nil }
-        let dir = base.appendingPathComponent("fulltext", isDirectory: true)
+        // v2: the on-device parser started emitting `html`/`css` per
+        // chapter. Renamed so books cached under v1 (html/css always nil)
+        // are re-parsed instead of permanently serving plain text.
+        let dir = base.appendingPathComponent("fulltext-v2", isDirectory: true)
         try? FileManager.default.createDirectory(
             at: dir, withIntermediateDirectories: true
         )

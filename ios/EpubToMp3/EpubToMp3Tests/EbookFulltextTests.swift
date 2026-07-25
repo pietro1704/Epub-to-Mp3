@@ -69,6 +69,48 @@ final class EbookFulltextTests: XCTestCase {
         XCTAssertEqual(payload.chapters.first?.resources?.first?.dataBase64, "AQI=")
     }
 
+    func testDecodesOptionalFootnotesWithoutChangingLegacyPayloads() throws {
+        let json = """
+        {
+          "jobId": "j",
+          "chapters": [{
+            "index": 1, "name": "Ch", "text": "abc",
+            "footnotes": [{"number": "1", "text": "See appendix A."}]
+          }]
+        }
+        """.data(using: .utf8)!
+        let payload = try JSONDecoder().decode(EbookFulltext.self, from: json)
+        XCTAssertEqual(payload.chapters.first?.footnotes?.first?.number, "1")
+        XCTAssertEqual(payload.chapters.first?.footnotes?.first?.text, "See appendix A.")
+    }
+
+    func testDecodesNestedTocWithResolvedChapterIndex() throws {
+        let json = """
+        {
+          "jobId": "j",
+          "chapters": [{"index": 1, "name": "Ch 1", "text": "abc"}],
+          "toc": [
+            {"title": "Part One", "level": 1, "chapterIndex": null, "children": [
+              {"title": "Chapter 1", "level": 2, "chapterIndex": 1, "children": []}
+            ]}
+          ]
+        }
+        """.data(using: .utf8)!
+        let payload = try JSONDecoder().decode(EbookFulltext.self, from: json)
+        XCTAssertEqual(payload.toc?.count, 1)
+        XCTAssertEqual(payload.toc?.first?.title, "Part One")
+        XCTAssertNil(payload.toc?.first?.chapterIndex)
+        XCTAssertEqual(payload.toc?.first?.children.first?.chapterIndex, 1)
+    }
+
+    func testMissingTocDecodesAsNil() throws {
+        let json = """
+        {"jobId": "j", "chapters": []}
+        """.data(using: .utf8)!
+        let payload = try JSONDecoder().decode(EbookFulltext.self, from: json)
+        XCTAssertNil(payload.toc)
+    }
+
     func testSplitSentencesOnPunctuation() {
         let chapter = EbookFulltext.Chapter(
             index: 1,

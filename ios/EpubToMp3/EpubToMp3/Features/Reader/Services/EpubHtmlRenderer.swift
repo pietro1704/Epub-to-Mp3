@@ -42,6 +42,14 @@ private typealias EpubInlineImage = NSImage
 ///   `background-color` on `<body>` / `<html>` is dropped (the
 ///   importer treats those as page-level chrome which native text views
 ///   cannot render anyway).
+/// - The returned `AttributedString`'s character offsets are **not**
+///   guaranteed to line up with `chapter.text` offsets. `chapter.text`
+///   goes through a separate pipeline (inline footnote-body injection,
+///   forced line breaks before em dashes) that this HTML render does not
+///   replicate. Any future text-selection → bookmark/highlight feature
+///   must not assume `NSRange` from a selection in the rendered view can
+///   be used directly as a `chapter.text` char offset — it needs its own
+///   mapping (or a shared source of truth) instead.
 @MainActor
 enum EpubHtmlRenderer {
 
