@@ -384,6 +384,23 @@ fi
 description = "Fast local-iteration macOS build (Debug config — incremental, -Onone, no LTO/dSYM). Not for distribution."
 run = "MAC_BUILD_CONFIG=Debug mise run mac:build"
 
+[tasks."mac:run"]
+description = "Build and launch the native macOS app in Debug for local development"
+run = """
+#!/bin/bash
+set -euo pipefail
+mise run mac:build:dev
+APP_PATH="ios/EpubToMp3/.build/Debug/EpubToMp3.app"
+if [[ ! -d "$APP_PATH" ]]; then
+  APP_PATH="ios/EpubToMp3/.build/Build/Products/Debug/EpubToMp3.app"
+fi
+if [[ ! -d "$APP_PATH" ]]; then
+  echo "mac:run error: Debug app was not produced." >&2
+  exit 1
+fi
+open -n "$APP_PATH"
+"""
+
 [tasks."ios:build"]
 description = "Build native UIKit iOS app on the best installed iOS Simulator with embedded Python.xcframework"
 # vendor:python must finish before xcodebuild resolves the framework
@@ -549,6 +566,29 @@ if ! xcodebuild \\
   exit 65
 fi
 tail -20 "${BUILD_LOG}"
+"""
+
+[tasks."ios:run"]
+description = "Build and launch the iOS app in Debug; physical iPhone by default, use IOS_TARGET=simulator for Simulator"
+run = """
+#!/bin/bash
+set -euo pipefail
+TARGET="${IOS_TARGET:-device}"
+case "$TARGET" in
+  device)
+    DEVICE="${IOS_DEVICE_ID:-44B2CFBD-2193-5086-8E8D-BF7A2876C321}"
+    IOS_DEVICE_ID="$DEVICE" mise run ios:device:build
+    IOS_DEVICE_ID="$DEVICE" mise run ios:device:run
+    ;;
+  simulator)
+    mise run ios:build
+    mise run ios:simulator:run
+    ;;
+  *)
+    echo "ios:run error: IOS_TARGET must be device or simulator." >&2
+    exit 2
+    ;;
+esac
 """
 
 [tasks."ios:simulator:run"]
@@ -763,8 +803,38 @@ description = "Regenerate CHANGELOG.md from git history using git-cliff"
 run = "git-cliff -o CHANGELOG.md"
 
 [tasks."flutter:run"]
-description = "Run the Flutter companion app on the connected device"
-run = "cd flutter_app && flutter run"
+description = "Run Flutter in Debug on a connected Android device, or start the lightest available AVD"
+run = """
+#!/bin/bash
+set -euo pipefail
+SELECTOR="${MISE_PROJECT_ROOT:-.}/scripts/select_android_target.py"
+DEVICE="${FLUTTER_DEVICE_ID:-}"
+if [[ -z "$DEVICE" ]]; then
+  DEVICES_JSON="$(mise exec -- flutter devices --machine)"
+  DEVICE="$(printf '%s' "$DEVICES_JSON" | mise exec -- python "$SELECTOR" --devices-json || true)"
+fi
+if [[ -z "$DEVICE" ]]; then
+  AVD="$(mise exec -- python "$SELECTOR" --lightest-avd)" || {
+    echo "flutter:run error: no Android device or AVD is available." >&2
+    exit 2
+  }
+  echo "flutter:run → starting lightest AVD: $AVD"
+  mise exec -- emulator -avd "$AVD" -no-boot-anim -no-snapshot >/tmp/epub-to-mp3-android-emulator.log 2>&1 &
+  for _ in $(seq 1 90); do
+    DEVICES_JSON="$(mise exec -- flutter devices --machine)"
+    DEVICE="$(printf '%s' "$DEVICES_JSON" | mise exec -- python "$SELECTOR" --devices-json || true)"
+    [[ -n "$DEVICE" ]] && break
+    sleep 2
+  done
+fi
+if [[ -z "$DEVICE" ]]; then
+  echo "flutter:run error: Android emulator did not become available within 180 seconds." >&2
+  exit 1
+fi
+echo "flutter:run → device: $DEVICE"
+cd flutter_app
+mise exec -- flutter run -d "$DEVICE"
+"""
 
 [tasks."flutter:test"]
 description = "Run Flutter unit + widget tests"

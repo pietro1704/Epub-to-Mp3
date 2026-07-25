@@ -83,7 +83,10 @@ inputs), and verify that a directory is not active or tracked before deleting it
 ### Flutter app
 
 ```bash
-mise run flutter:run                # host platform
+mise run mac:run                    # native macOS app, Debug
+mise run ios:run                    # native iOS app on the paired iPhone, Debug
+IOS_TARGET=simulator mise run ios:run # iOS Simulator, Debug (explicitly opt in on capable hardware)
+mise run flutter:run                # Android phone, or the lightest available Android AVD, Debug
 mise run flutter:build-linux        # Linux desktop release
 mise run flutter:build-windows      # Windows desktop release
 mise run flutter:build-apk          # Android (release)

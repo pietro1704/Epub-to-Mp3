@@ -107,7 +107,7 @@ def test_simulator_run_task_requires_an_existing_app_and_never_builds():
     """The explicit simulator launch task must not hide a build step."""
     body = MISE_TOML.read_text(encoding="utf-8")
     start = body.index('[tasks."ios:simulator:run"]')
-    end = body.index('\n[tasks."ios:device:test"]', start)
+    end = body.index('\n[tasks."ios:simulator:test"]', start)
     task = body[start:end]
 
     assert "guard_ios_simulator_resources.py" in task
