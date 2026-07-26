@@ -267,7 +267,9 @@ enum AudiobookCacheEviction {
         books.compactMap { book in
             guard book.cachedOffline else { return nil }
             guard let jobId = book.lastJobId,
-                  DownloadManager.loadManifest(for: jobId) != nil else {
+                  let manifest = DownloadManager.loadManifest(for: jobId),
+                  manifest.completedAt != nil,
+                  DownloadManager.locallyDownloadedIndices(for: jobId).count == manifest.chapters.count else {
                 return book.id
             }
             return nil

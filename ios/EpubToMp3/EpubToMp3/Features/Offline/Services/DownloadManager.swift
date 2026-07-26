@@ -486,10 +486,29 @@ actor DownloadManager {
                 expectedBytes: expectedBytes
             )
         }
-        let (tempURL, response) = try await BackgroundDownloadSession.shared.download(from: url)
+        let partial = destination.appendingPathExtension("partial")
+        let existingBytes = (try? FileManager.default.attributesOfItem(atPath: partial.path)[.size] as? Int64) ?? 0
+        let (tempURL, response) = try await BackgroundDownloadSession.shared.download(
+            from: Self.request(url: url, resumingAt: existingBytes)
+        )
         if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
             throw URLError(.badServerResponse)
         }
+        let statusCode = (response as? HTTPURLResponse)?.statusCode ?? 200
+        if existingBytes > 0, statusCode == 206 {
+            let handle = try FileHandle(forWritingTo: partial)
+            try handle.seekToEnd()
+            try handle.write(contentsOf: Data(contentsOf: tempURL))
+            try handle.close()
+            try? FileManager.default.removeItem(at: tempURL)
+            guard let expectedBytes = Self.contentRangeTotal(from: response) else {
+                throw URLError(.cannotDecodeContentData)
+            }
+            return try commitDownloadedFile(from: partial, to: destination, expectedBytes: expectedBytes)
+        }
+        // A server may ignore Range and return the complete object. Never
+        // append that response to an existing partial file.
+        try? FileManager.default.removeItem(at: partial)
         let expectedBytes = (response as? HTTPURLResponse)?.expectedContentLength ?? 0
         return try commitDownloadedFile(from: tempURL, to: destination, expectedBytes: expectedBytes)
     }
@@ -515,6 +534,25 @@ actor DownloadManager {
         }
         try FileManager.default.moveItem(at: stagedFile, to: destination)
         return bytes
+    }
+
+    /// Builds the request used to resume a staged audiobook chapter.
+    nonisolated static func request(url: URL, resumingAt offset: Int64) -> URLRequest {
+        var request = URLRequest(url: url)
+        if offset > 0 {
+            request.setValue("bytes=\(offset)-", forHTTPHeaderField: "Range")
+        }
+        return request
+    }
+
+    /// Returns the complete object size from a `Content-Range` header such as
+    /// `bytes 100-199/200`.
+    nonisolated static func contentRangeTotal(from response: URLResponse) -> Int64? {
+        guard let http = response as? HTTPURLResponse,
+              let value = http.value(forHTTPHeaderField: "Content-Range") else { return nil }
+        let total = value.split(separator: "/", maxSplits: 1).last.map(String.init)
+        guard let total, total != "*" else { return nil }
+        return Int64(total)
     }
 
     // MARK: Helpers (nonisolated — stateless)
@@ -561,9 +599,9 @@ private final class BackgroundDownloadSession: NSObject, URLSessionDownloadDeleg
     )
     private var pending: [Int: Pending] = [:]
 
-    func download(from url: URL) async throws -> (URL, URLResponse) {
+    func download(from request: URLRequest) async throws -> (URL, URLResponse) {
         try await withCheckedThrowingContinuation { continuation in
-            let task = session.downloadTask(with: url)
+            let task = session.downloadTask(with: request)
             lock.lock()
             pending[task.taskIdentifier] = Pending(continuation: continuation)
             lock.unlock()

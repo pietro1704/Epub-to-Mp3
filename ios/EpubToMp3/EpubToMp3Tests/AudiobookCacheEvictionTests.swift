@@ -108,6 +108,42 @@ final class AudiobookCacheEvictionTests: XCTestCase {
         )
     }
 
+    func testStaleOfflineBookIdsFlagsMissingChapterFileAndIncompleteManifest() throws {
+        let missingFileJobId = "test-missing-file-\(UUID().uuidString)"
+        let incompleteJobId = "test-incomplete-\(UUID().uuidString)"
+        defer {
+            AudiobookCacheEviction.deleteAudiobook(jobId: missingFileJobId)
+            AudiobookCacheEviction.deleteAudiobook(jobId: incompleteJobId)
+        }
+
+        try plantRealAudiobook(jobId: missingFileJobId, entries: [
+            (index: 0, fileName: "present.mp3", onDisk: true),
+            (index: 1, fileName: "missing.mp3", onDisk: false)
+        ])
+        try plantRealAudiobook(jobId: incompleteJobId, entries: [
+            (index: 0, fileName: "partial.mp3", onDisk: true)
+        ])
+        guard var missingManifest = DownloadManager.loadManifest(for: missingFileJobId),
+              var incompleteManifest = DownloadManager.loadManifest(for: incompleteJobId) else {
+            XCTFail("Fixtures must have manifests")
+            return
+        }
+        missingManifest.completedAt = Date()
+        incompleteManifest.completedAt = nil
+        try DownloadManager.saveManifest(missingManifest)
+        try DownloadManager.saveManifest(incompleteManifest)
+
+        let books = [
+            makeBook(id: "missing-file", lastJobId: missingFileJobId, cachedOffline: true),
+            makeBook(id: "incomplete", lastJobId: incompleteJobId, cachedOffline: true)
+        ]
+
+        XCTAssertEqual(
+            AudiobookCacheEviction.staleOfflineBookIds(books: books),
+            ["missing-file", "incomplete"]
+        )
+    }
+
     // MARK: - Helpers
 
     /// Isolated temp folder used as the audiobooks root.

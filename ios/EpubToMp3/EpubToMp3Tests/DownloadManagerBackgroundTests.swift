@@ -62,4 +62,40 @@ final class DownloadManagerBackgroundTests: XCTestCase {
         let source = URL(fileURLWithPath: "/tmp/chapter.mp3")
         XCTAssertEqual(DownloadManager.resolve(path: source.absoluteString, base: nil), source)
     }
+
+    func testResumeRequestUsesInclusiveByteRange() {
+        let url = URL(string: "https://example.com/chapter.mp3")!
+        let request = DownloadManager.request(url: url, resumingAt: 128)
+
+        XCTAssertEqual(request.value(forHTTPHeaderField: "Range"), "bytes=128-")
+    }
+
+    func testResumeRequestOmitsRangeForFreshDownload() {
+        let url = URL(string: "https://example.com/chapter.mp3")!
+        let request = DownloadManager.request(url: url, resumingAt: 0)
+
+        XCTAssertNil(request.value(forHTTPHeaderField: "Range"))
+    }
+
+    func testContentRangeReportsCompleteObjectSize() {
+        let response = HTTPURLResponse(
+            url: URL(string: "https://example.com/chapter.mp3")!,
+            statusCode: 206,
+            httpVersion: nil,
+            headerFields: ["Content-Range": "bytes 128-255/256"]
+        )!
+
+        XCTAssertEqual(DownloadManager.contentRangeTotal(from: response), 256)
+    }
+
+    func testWildcardContentRangeDoesNotValidateAResumedObject() {
+        let response = HTTPURLResponse(
+            url: URL(string: "https://example.com/chapter.mp3")!,
+            statusCode: 206,
+            httpVersion: nil,
+            headerFields: ["Content-Range": "bytes 128-255/*"]
+        )!
+
+        XCTAssertNil(DownloadManager.contentRangeTotal(from: response))
+    }
 }
