@@ -4,6 +4,7 @@ import XCTest
 /// reader in scrolling layout and drags up repeatedly, asserting the visible
 /// text actually changes (the reader scrolls past the first screen instead of
 /// snapping back to the top).
+@MainActor
 final class ScrollStuckUITests: XCTestCase {
     override func setUpWithError() throws { continueAfterFailure = false }
 

@@ -8,6 +8,7 @@ import XCTest
 /// queryable element. We assert its frame stays inside the window's safe
 /// region (approximated by a conservative top inset) in BOTH chrome states,
 /// and attach screenshots for manual confirmation.
+@MainActor
 final class SafeAreaCaptureUITests: XCTestCase {
     override func setUpWithError() throws { continueAfterFailure = false }
 

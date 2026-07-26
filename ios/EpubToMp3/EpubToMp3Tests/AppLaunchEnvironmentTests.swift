@@ -1,6 +1,7 @@
 import XCTest
 @testable import EpubToMp3
 
+@MainActor
 final class AppLaunchEnvironmentTests: XCTestCase {
     func testDetectsXCTestConfigurationFilePathEvenWhenEmpty() {
         XCTAssertTrue(EpubToMp3App.isRunningUnderXCTest(environment: [

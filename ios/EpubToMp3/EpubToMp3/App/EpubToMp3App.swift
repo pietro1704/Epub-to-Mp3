@@ -117,19 +117,21 @@ final class EpubToMp3App: NSObject, PlatformApplicationDelegate {
     }
 
     private func centerWindowOnActiveScreen(_ window: NSWindow) {
-        // Cursor coordinates can point at a virtual display before the first
-        // window is visible. The primary screen is the predictable target for
-        // the initial desktop window.
-        guard let visibleFrame = NSScreen.main?.visibleFrame else {
+        // NSScreen.main can refer to a stale virtual display after a monitor
+        // disconnect. The first screen is AppKit's primary display; clamp
+        // the calculated frame to its visible area so a new window remains
+        // reachable even when another display is arranged above it.
+        let screen = NSScreen.screens.first
+        guard let visibleFrame = screen?.visibleFrame else {
             window.center()
             return
         }
-
-        let origin = NSPoint(
-            x: visibleFrame.midX - (window.frame.width / 2),
-            y: visibleFrame.midY - (window.frame.height / 2)
-        )
-        window.setFrameOrigin(origin)
+        var frame = window.frame
+        frame.origin.x = visibleFrame.midX - frame.width / 2
+        frame.origin.y = visibleFrame.midY - frame.height / 2
+        frame.origin.x = min(max(frame.origin.x, visibleFrame.minX), visibleFrame.maxX - frame.width)
+        frame.origin.y = min(max(frame.origin.y, visibleFrame.minY), visibleFrame.maxY - frame.height)
+        window.setFrame(frame, display: false)
     }
 
     func application(_ application: NSApplication, open urls: [URL]) {
@@ -168,6 +170,22 @@ final class EpubToMp3App: NSObject, PlatformApplicationDelegate {
         Task { await audioWarmup.start() }
         activateRuntime()
         return true
+    }
+
+    func application(
+        _ application: UIApplication,
+        configurationForConnecting connectingSceneSession: UISceneSession,
+        options: UIScene.ConnectionOptions
+    ) -> UISceneConfiguration {
+        let isCarPlay = connectingSceneSession.role == .carTemplateApplication
+        let configuration = UISceneConfiguration(
+            name: isCarPlay ? "CarPlay" : "Default Configuration",
+            sessionRole: connectingSceneSession.role
+        )
+        if isCarPlay {
+            configuration.delegateClass = CarPlaySceneDelegate.self
+        }
+        return configuration
     }
 
     func application(_ app: UIApplication, open url: URL, options: [UIApplication.OpenURLOptionsKey: Any] = [:]) -> Bool {

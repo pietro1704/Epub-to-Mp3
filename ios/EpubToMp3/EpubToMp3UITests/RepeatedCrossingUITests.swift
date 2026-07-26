@@ -5,6 +5,7 @@ import XCTest
 /// going forward then backward, asserting each crossing actually changes the
 /// chapter index. Catches a stuck swap latch / disabled gesture after the
 /// first cross.
+@MainActor
 final class RepeatedCrossingUITests: XCTestCase {
     override func setUpWithError() throws { continueAfterFailure = false }
 

@@ -70,6 +70,35 @@ def _precache_uploaded_book(upload_path: Path, book_title: str, book_author: str
         _srv.logger.warning(f"Failed to cache chapters during upload: {cache_error}")
 
 
+@router.get("/uploads/{upload_id}/fulltext")
+async def get_uploaded_fulltext(upload_id: str) -> dict:
+    """Return parsed fulltext for a still-pending uploaded book."""
+    from src.ebook_reader import parse_epub_to_dict
+
+    import python_app.server as _srv
+
+    safe_upload_id = _validate_upload_id(upload_id)
+    with _srv._pending_lock:
+        upload_info = _srv._pending_uploads.get(safe_upload_id)
+    if not upload_info:
+        upload_info = _srv._load_pending_upload_from_disk(safe_upload_id)
+    if not upload_info:
+        raise HTTPException(status_code=404, detail="Upload not found or expired")
+
+    upload_root = _srv._resolve_relative_path_within_root(
+        _srv.uploads_dir, safe_upload_id, must_exist=True
+    )
+    stored_name = Path(upload_info.get("file_path") or upload_info.get("file_name") or "").name
+    file_path = _srv._resolve_relative_path_within_root(upload_root, stored_name, must_exist=True)
+    try:
+        return parse_epub_to_dict(file_path, safe_upload_id)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Unable to parse uploaded book: {exc}",
+        ) from exc
+
+
 @router.get("/uploads/{upload_id}/{filename}")
 async def serve_uploaded_asset(upload_id: str, filename: str):
     """Serve a previously uploaded asset (e.g. cover image)."""
@@ -175,13 +204,29 @@ _LOCAL_ALLOWED_HOSTS = {"127.0.0.1", "::1", "localhost", "::ffff:127.0.0.1"}
 
 
 def _local_upload_storage_name(source: Path) -> str:
-    """Return the fixed internal filename used for a local upload."""
+    """Return a fixed internal filename for every supported book format.
+
+    The original filename is retained in upload metadata for display, while
+    the stored basename is deliberately fixed to prevent path traversal and
+    keep downstream parser paths predictable.
+    """
     suffix = source.suffix.lower()
-    if suffix == ".epub":
-        return "source.epub"
-    if suffix == ".pdf":
-        return "source.pdf"
-    raise HTTPException(status_code=400, detail="Only .epub and .pdf files are supported")
+    canonical_suffixes = {
+        ".epub": ".epub",
+        ".pdf": ".pdf",
+        ".fb2": ".fb2",
+        ".docx": ".docx",
+        ".cbz": ".cbz",
+        ".cbr": ".cbr",
+        ".mobi": ".mobi",
+        ".prc": ".mobi",
+        ".azw": ".azw3",
+        ".azw3": ".azw3",
+    }
+    canonical_suffix = canonical_suffixes.get(suffix)
+    if canonical_suffix is None:
+        raise HTTPException(status_code=400, detail="Unsupported book format")
+    return f"source{canonical_suffix}"
 
 
 @router.post("/uploads/local")

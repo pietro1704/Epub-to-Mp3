@@ -168,6 +168,18 @@ actor DownloadManager {
         return url
     }
 
+    nonisolated static func reusableDownloadedEntry(
+        chapterIndex: Int,
+        manifestEntry: AudiobookManifest.ChapterEntry?,
+        fileExists: Bool
+    ) -> AudiobookManifest.ChapterEntry? {
+        guard let manifestEntry,
+              manifestEntry.index == chapterIndex,
+              manifestEntry.mp3Bytes > 0,
+              fileExists else { return nil }
+        return manifestEntry
+    }
+
     nonisolated static func mergeManifests(_ old: AudiobookManifest?, _ incoming: AudiobookManifest) -> AudiobookManifest {
         guard let old else { return incoming }
         var byIndex = Dictionary(uniqueKeysWithValues: old.chapters.map { ($0.index, $0) })
@@ -314,6 +326,33 @@ actor DownloadManager {
                 ))
                 return
             }
+            let previousEntry = Self.loadManifest(for: snapshot.jobId)?.chapters.first {
+                $0.index == chapter.index
+            }
+            let previousURL = Self.localAudioURL(
+                jobId: snapshot.jobId,
+                chapterIndex: chapter.index
+            )
+            if let existing = Self.reusableDownloadedEntry(
+                chapterIndex: chapter.index,
+                manifestEntry: previousEntry,
+                fileExists: previousURL != nil
+            ) {
+                entries.append(existing)
+                completed += 1
+                totalBytes += existing.mp3Bytes
+                emit(DownloadProgress(
+                    jobId: snapshot.jobId,
+                    chapterIndex: chapter.index,
+                    totalChapters: total,
+                    completedChapters: completed,
+                    bytesDownloaded: existing.mp3Bytes,
+                    bytesExpected: existing.mp3Bytes,
+                    state: .downloading,
+                    lastError: nil
+                ))
+                continue
+            }
             guard let path = chapter.downloadUrl,
                   let url = Self.resolve(path: path, base: baseURL) else { continue }
 
@@ -434,6 +473,19 @@ actor DownloadManager {
     }
 
     private nonisolated static func downloadOnce(url: URL, to destination: URL) async throws -> Int64 {
+        if url.isFileURL {
+            let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
+            let expectedBytes = (attributes[.size] as? Int64) ?? 0
+            guard expectedBytes > 0 else { throw URLError(.cannotDecodeContentData) }
+            let staged = destination.appendingPathExtension("local-partial")
+            try? FileManager.default.removeItem(at: staged)
+            try FileManager.default.copyItem(at: url, to: staged)
+            return try commitDownloadedFile(
+                from: staged,
+                to: destination,
+                expectedBytes: expectedBytes
+            )
+        }
         let (tempURL, response) = try await BackgroundDownloadSession.shared.download(from: url)
         if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
             throw URLError(.badServerResponse)
@@ -468,6 +520,7 @@ actor DownloadManager {
     // MARK: Helpers (nonisolated — stateless)
 
     nonisolated static func resolve(path: String, base: URL?) -> URL? {
+        if path.lowercased().hasPrefix("file://") { return URL(string: path) }
         if path.lowercased().hasPrefix("http") { return URL(string: path) }
         guard let base else { return nil }
         return URL(string: path, relativeTo: base)?.absoluteURL

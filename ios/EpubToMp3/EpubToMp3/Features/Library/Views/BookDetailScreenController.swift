@@ -13,6 +13,7 @@ final class BookDetailScreenController: UIViewController {
     private let library: LibraryStore
     private let settings: AppSettings
     private let player: AudioPlayer
+    private let playerPresentation: PlayerPresentation
 
     private let coverView = UIImageView()
     private let titleLabel = UILabel()
@@ -26,12 +27,14 @@ final class BookDetailScreenController: UIViewController {
         book: BookEntity,
         library: LibraryStore,
         settings: AppSettings,
-        player: AudioPlayer
+        player: AudioPlayer,
+        playerPresentation: PlayerPresentation
     ) {
         self.book = book
         self.library = library
         self.settings = settings
         self.player = player
+        self.playerPresentation = playerPresentation
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -137,6 +140,31 @@ final class BookDetailScreenController: UIViewController {
     }
 
     @objc private func tapListen() {
+        if settings.useEmbeddedRuntime && !book.fileType.requiresServerConversion {
+            guard let url = try? library.openBookFile(id: book.id) else { return }
+            Task { [weak self] in
+                guard let self else { return }
+                do {
+                    let snapshot = try await EmbeddedConversionCoordinator.stream(
+                        bookURL: url,
+                        bookID: book.id,
+                        player: self.player
+                    )
+                    self.book.lastJobId = snapshot.jobId
+                    self.library.recordConversion(jobId: snapshot.jobId, for: self.book.id)
+                    self.playerPresentation.showFullPlayer()
+                } catch {
+                    let alert = UIAlertController(
+                        title: L10n.string("bookDetail.listenStart"),
+                        message: error.localizedDescription,
+                        preferredStyle: .alert
+                    )
+                    alert.addAction(UIAlertAction(title: L10n.string("common.ok"), style: .default))
+                    present(alert, animated: true)
+                }
+            }
+            return
+        }
         if let jobId = book.lastJobId {
             navigationController?.pushViewController(
                 JobDetailScreenController(
@@ -150,7 +178,9 @@ final class BookDetailScreenController: UIViewController {
         navigationController?.pushViewController(
             ConvertScreenController(
                 settings: settings, library: library, player: player,
-                playbackClock: player.playbackClock, preselectedFileURL: url
+                playbackClock: player.playbackClock,
+                preselectedFileURL: url,
+                preselectedBookID: book.id
             ),
             animated: true
         )
@@ -165,6 +195,15 @@ final class BookDetailScreenController: UIViewController {
             )
             alert.addAction(UIAlertAction(title: L10n.string("common.ok"), style: .default))
             present(alert, animated: true)
+            return
+        }
+        if let snapshot = player.snapshot, snapshot.jobId == jobId {
+            Task {
+                await DownloadManager.shared.enqueueAll(
+                    snapshot: snapshot,
+                    baseURL: settings.resolvedBaseURL
+                )
+            }
             return
         }
         navigationController?.pushViewController(

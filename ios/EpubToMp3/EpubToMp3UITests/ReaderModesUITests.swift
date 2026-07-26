@@ -5,6 +5,7 @@ import XCTest
 ///     crossing) must still work when the top/bottom bars are gone.
 ///  2. Continuous-scroll mode — a single tap toggles chrome, a drag scrolls
 ///     the book, and a tap must NOT be swallowed by the scroll gesture.
+@MainActor
 final class ReaderModesUITests: XCTestCase {
     override func setUpWithError() throws { continueAfterFailure = false }
 

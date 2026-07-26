@@ -18,6 +18,7 @@ final class ConvertScreenController: UITableViewController, UIDocumentPickerDele
     private let player: AudioPlayer
     private let playbackClock: PlaybackClock
     private let preselectedFileURL: URL?
+    private let preselectedBookID: String?
     private let viewModel = ConvertViewModel()
 
     private static let acceptedTypes: [UTType] = SupportedImportTypes.all
@@ -31,13 +32,15 @@ final class ConvertScreenController: UITableViewController, UIDocumentPickerDele
         library: LibraryStore,
         player: AudioPlayer,
         playbackClock: PlaybackClock,
-        preselectedFileURL: URL? = nil
+        preselectedFileURL: URL? = nil,
+        preselectedBookID: String? = nil
     ) {
         self.settings = settings
         self.library = library
         self.player = player
         self.playbackClock = playbackClock
         self.preselectedFileURL = preselectedFileURL
+        self.preselectedBookID = preselectedBookID
         super.init(style: .insetGrouped)
         title = L10n.string("convert.title")
         tabBarItem = UITabBarItem(
@@ -313,13 +316,33 @@ final class ConvertScreenController: UITableViewController, UIDocumentPickerDele
         guard viewModel.selectedFile != nil, !viewModel.isSubmitting else { return }
         Task { [weak self] in
             guard let self else { return }
-            await self.viewModel.submit(client: self.client)
+            await self.viewModel.submit(
+                client: self.client,
+                useEmbeddedRuntime: self.settings.useEmbeddedRuntime,
+                player: self.player
+            )
+            if let jobId = self.viewModel.submittedJobId,
+               let bookID = self.preselectedBookID {
+                self.library.recordConversion(jobId: jobId, for: bookID)
+            }
             self.reloadData()
         }
     }
 
     private func openSubmittedJob() {
         guard let jobId = viewModel.submittedJobId else { return }
+        if let snapshot = viewModel.embeddedSnapshot {
+            navigationController?.pushViewController(
+                PlayerScreenController(
+                    snapshot: snapshot,
+                    backendBaseURL: nil,
+                    player: player,
+                    playbackClock: playbackClock
+                ),
+                animated: true
+            )
+            return
+        }
         let detail = JobDetailScreenController(
             jobId: jobId,
             settings: settings,

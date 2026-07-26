@@ -6,6 +6,7 @@ import XCTest
 /// resets from the last page back to page 1 (a new chapter's pagination).
 /// Symmetrically, retreating from page 1 must land on the previous chapter's
 /// last page.
+@MainActor
 final class ChapterCrossingUITests: XCTestCase {
     override func setUpWithError() throws { continueAfterFailure = false }
 

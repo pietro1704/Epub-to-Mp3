@@ -986,6 +986,30 @@ final class AudioPlayer: ObservableObject {
         updateNowPlayingInfo()
     }
 
+    /// Publish the completed manifest for an embedded segment session without
+    /// replacing the live segment queue with duplicate full-chapter MP3s.
+    /// The queue already contains every segment in playback order; the final
+    /// URLs are retained for resume/offline metadata only.
+    func finishEmbeddedStreaming(snapshot: JobSnapshot) {
+        guard isSegmentMode, player != nil else {
+            isConverting = false
+            updateSnapshot(snapshot)
+            return
+        }
+        let activeEPUBIndex = currentChapterIndex + 1
+        let activePosition = max(0, positionSeconds - segmentCumulativeBase)
+        let wasPlaying = isPlaying
+        let target = snapshot.playableChapters.firstIndex { $0.index == activeEPUBIndex } ?? 0
+        isConverting = false
+        // Once every full chapter file exists, replace the segment queue with
+        // the canonical chapter queue. This restores normal previous/next,
+        // seeking, resume markers, and offline playback semantics without
+        // leaving the player permanently tied to per-segment items.
+        play(snapshot: snapshot, startingAt: target)
+        if activePosition > 0 { seek(to: activePosition) }
+        if wasPlaying { resume() }
+    }
+
     /// Chapters present in `new` but absent from `old`, keyed by the EPUB-side
     /// chapter index. Pure helper for streaming updates where completion order
     /// can differ from EPUB order because the backend prioritises the chapter
@@ -2611,6 +2635,12 @@ final class AudioPlayer: ObservableObject {
             return local
         }
         guard let path, !path.isEmpty else { return nil }
+        if path.lowercased().hasPrefix("file://") {
+            return URL(string: path)
+        }
+        if path.hasPrefix("/") {
+            return URL(fileURLWithPath: path)
+        }
         if path.lowercased().hasPrefix("http") { return URL(string: path) }
         guard let baseURL = backendBaseURL else { return nil }
         return URL(string: path, relativeTo: baseURL)?.absoluteURL

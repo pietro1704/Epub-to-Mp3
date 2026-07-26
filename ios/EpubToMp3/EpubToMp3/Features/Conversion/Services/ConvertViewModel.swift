@@ -13,21 +13,29 @@ final class ConvertViewModel {
 
     var isSubmitting = false
     var submittedJobId: String?
+    var embeddedSnapshot: JobSnapshot?
     var error: String?
 
-    func submit(client: APIClient?) async {
-        guard let client else {
-            error = L10n.string("convert.error.engineWarmingUp")
-            return
-        }
+    func submit(
+        client: APIClient?,
+        useEmbeddedRuntime: Bool = false,
+        player: AudioPlayer? = nil
+    ) async {
         guard let file = selectedFile else {
             error = L10n.string("convert.error.pickFileFirst")
+            return
+        }
+        let canUseEmbeddedRuntime = useEmbeddedRuntime
+            && !BookFileType.detect(from: file).requiresServerConversion
+        guard canUseEmbeddedRuntime || client != nil else {
+            error = L10n.string("convert.error.engineWarmingUp")
             return
         }
 
         isSubmitting = true
         error = nil
         submittedJobId = nil
+        embeddedSnapshot = nil
         defer { isSubmitting = false }
 
         do {
@@ -39,10 +47,51 @@ final class ConvertViewModel {
             options.clearCache = clearCache
             options.forceReprocess = forceReprocess
             options.maxPerformance = maxPerformance
-            submittedJobId = try await client.submitConversion(
+            if canUseEmbeddedRuntime {
+                let bookID = "conversion-\(UUID().uuidString)"
+                let snapshot: JobSnapshot
+                if let player {
+                    snapshot = try await EmbeddedConversionCoordinator.stream(
+                        bookURL: file,
+                        bookID: bookID,
+                        engine: options.engine,
+                        voice: options.voice ?? "auto",
+                        language: options.language,
+                        clearCache: options.clearCache,
+                        forceReprocess: options.forceReprocess,
+                        maxPerformance: options.maxPerformance,
+                        player: player
+                    )
+                } else {
+                    snapshot = try await EmbeddedConversionCoordinator.convert(
+                        bookURL: file,
+                        bookID: bookID,
+                        engine: options.engine,
+                        voice: options.voice ?? "auto",
+                        language: options.language,
+                        clearCache: options.clearCache,
+                        forceReprocess: options.forceReprocess,
+                        maxPerformance: options.maxPerformance
+                    )
+                }
+                embeddedSnapshot = snapshot
+                submittedJobId = snapshot.jobId
+                return
+            }
+#if os(macOS)
+            submittedJobId = try await client!.submitConversion(
                 localPath: file,
                 options: options
             ).jobId
+#else
+            let accessing = file.startAccessingSecurityScopedResource()
+            defer { if accessing { file.stopAccessingSecurityScopedResource() } }
+            let data = try Data(contentsOf: file, options: .mappedIfSafe)
+            submittedJobId = try await client!.submitConversion(
+                uploadedFile: (data: data, filename: file.lastPathComponent),
+                options: options
+            ).jobId
+#endif
         } catch {
             self.error = (error as? LocalizedError)?.errorDescription
                 ?? error.localizedDescription

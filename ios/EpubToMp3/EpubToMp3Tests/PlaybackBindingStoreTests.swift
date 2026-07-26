@@ -8,16 +8,16 @@ final class PlaybackBindingStoreTests: XCTestCase {
     private var defaults: UserDefaults!
     private let suite = "playback.binding.tests.\(UUID().uuidString)"
 
-    override func setUp() {
-        super.setUp()
+    override func setUp() async throws {
+        try await super.setUp()
         defaults = UserDefaults(suiteName: suite)
         defaults.removePersistentDomain(forName: suite)
     }
 
-    override func tearDown() {
+    override func tearDown() async throws {
         defaults.removePersistentDomain(forName: suite)
         defaults = nil
-        super.tearDown()
+        try await super.tearDown()
     }
 
     func testSetCurrentlyPlayingPersistsBookAndChapter() {

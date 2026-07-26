@@ -62,6 +62,10 @@ final class JobDetailScreenController: UITableViewController {
                 self?.tableView.reloadData()
             }
         }
+        viewModel.onSnapshot = { [weak self] snapshot in
+            guard let self, self.player.snapshot?.jobId == snapshot.jobId else { return }
+            self.player.updateSnapshot(snapshot)
+        }
     }
 
     override func viewWillAppear(_ animated: Bool) {

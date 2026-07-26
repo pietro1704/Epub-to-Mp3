@@ -75,14 +75,15 @@ private final class StubProtocol: URLProtocol {
 
 // MARK: - Tests
 
+@MainActor
 final class FulltextStoreTests: XCTestCase {
 
     private var session: URLSession!
     private var storageRoot: URL!
     private let base = URL(string: "http://stub.local")!
 
-    override func setUp() {
-        super.setUp()
+    override func setUp() async throws {
+        try await super.setUp()
         StubProtocol.reset()
         let config = URLSessionConfiguration.ephemeral
         config.protocolClasses = [StubProtocol.self]
@@ -95,13 +96,13 @@ final class FulltextStoreTests: XCTestCase {
         try? FileManager.default.createDirectory(at: storageRoot, withIntermediateDirectories: true)
     }
 
-    override func tearDown() {
+    override func tearDown() async throws {
         session.invalidateAndCancel()
         session = nil
         if let storageRoot { try? FileManager.default.removeItem(at: storageRoot) }
         storageRoot = nil
         StubProtocol.reset()
-        super.tearDown()
+        try await super.tearDown()
     }
 
     // MARK: - 404 / 422 permanent errors

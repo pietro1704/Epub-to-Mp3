@@ -207,6 +207,7 @@ final class ChapterCacheManagerTests: XCTestCase {
         let source = try String(contentsOf: sourceURL, encoding: .utf8)
 
         XCTAssertTrue(source.contains("guard let manager = self else { return }"))
+        XCTAssertTrue(source.contains("self.clearObserver = nil"))
         XCTAssertTrue(source.contains("Task { @MainActor in"))
         XCTAssertTrue(source.contains("manager.clearAll()"))
     }

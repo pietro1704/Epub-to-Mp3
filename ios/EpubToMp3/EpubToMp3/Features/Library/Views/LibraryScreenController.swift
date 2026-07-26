@@ -7,6 +7,7 @@ final class LibraryScreenController: UIViewController, UIDocumentPickerDelegate,
     private let library: LibraryStore
     private let settings: AppSettings
     private let player: AudioPlayer
+    private let playerPresentation: PlayerPresentation
     private let bookmarkStore: BookmarkStore
 
     private var sortMode: LibraryGridModel.SortMode = .lastOpened
@@ -22,11 +23,13 @@ final class LibraryScreenController: UIViewController, UIDocumentPickerDelegate,
         library: LibraryStore,
         settings: AppSettings,
         player: AudioPlayer,
+        playerPresentation: PlayerPresentation,
         bookmarkStore: BookmarkStore
     ) {
         self.library = library
         self.settings = settings
         self.player = player
+        self.playerPresentation = playerPresentation
         self.bookmarkStore = bookmarkStore
         super.init(nibName: nil, bundle: nil)
         title = L10n.string("library.title")
@@ -92,7 +95,11 @@ final class LibraryScreenController: UIViewController, UIDocumentPickerDelegate,
             guard let self else { return }
             self.library.update(Self.touchLastOpened(book))
             let detail = BookDetailScreenController(
-                book: book, library: self.library, settings: self.settings, player: self.player
+                book: book,
+                library: self.library,
+                settings: self.settings,
+                player: self.player,
+                playerPresentation: self.playerPresentation
             )
             self.navigationController?.pushViewController(detail, animated: true)
         }

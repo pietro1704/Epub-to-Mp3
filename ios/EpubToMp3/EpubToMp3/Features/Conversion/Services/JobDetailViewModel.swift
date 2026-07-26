@@ -12,6 +12,11 @@ final class JobDetailViewModel: ObservableObject {
     @Published private(set) var downloadState: DownloadProgress.State?
     @Published private(set) var downloadProgressLabel: String?
 
+    /// Delivers every decoded snapshot to the owning screen so a player that
+    /// is already attached to this job can append newly completed chapters
+    /// without coupling this view model to UIKit or AppKit.
+    var onSnapshot: ((JobSnapshot) -> Void)?
+
     private var streamTask: Task<Void, Never>?
     private var progressTask: Task<Void, Never>?
 
@@ -26,6 +31,7 @@ final class JobDetailViewModel: ObservableObject {
                 let initial = try await client.fetchJob(id: jobId)
                 guard let self, !Task.isCancelled else { return }
                 self.snapshot = initial
+                self.onSnapshot?(initial)
                 self.errorMessage = nil
                 self.isStreaming = true
                 for try await event in client.eventStream(jobId: jobId) {
@@ -34,6 +40,7 @@ final class JobDetailViewModel: ObservableObject {
                     self.latestPayload = event.rawPayload
                     if let next = APIClient.decodeSnapshot(from: event.rawPayload) {
                         self.snapshot = next
+                        self.onSnapshot?(next)
                         if next.isTerminal { self.isStreaming = false }
                     }
                 }

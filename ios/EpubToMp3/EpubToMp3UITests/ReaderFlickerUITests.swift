@@ -14,6 +14,7 @@ import XCTest
 /// A hidden accessibility element (`flicker.probe.summary`) surfaces the live
 /// counters; `flicker.probe.reset` zeroes them between scenarios. Each test
 /// scripts an interaction, then asserts every counter is 0.
+@MainActor
 final class ReaderFlickerUITests: XCTestCase {
     override func setUpWithError() throws {
         continueAfterFailure = false

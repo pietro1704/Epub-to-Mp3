@@ -259,6 +259,61 @@ final class APIClient: @unchecked Sendable {
         }
     }
 
+    /// Upload a book's bytes for remote parsing. This is used by iOS and by
+    /// server-only formats whose local embedded runtime cannot parse them.
+    func uploadBook(at fileURL: URL) async throws -> String {
+        let accessing = fileURL.startAccessingSecurityScopedResource()
+        defer { if accessing { fileURL.stopAccessingSecurityScopedResource() } }
+        let data = try Data(contentsOf: fileURL, options: .mappedIfSafe)
+        let boundary = "Boundary-\(UUID().uuidString)"
+        var request = URLRequest(url: baseURL.appendingPathComponent("api/uploads"))
+        request.httpMethod = "POST"
+        request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+        var body = Data()
+        body.append("--\(boundary)\r\n".data(using: .utf8)!)
+        body.append(
+            "Content-Disposition: form-data; name=\"file\"; filename=\"\(fileURL.lastPathComponent)\"\r\n"
+                .data(using: .utf8)!
+        )
+        body.append("Content-Type: application/octet-stream\r\n\r\n".data(using: .utf8)!)
+        body.append(data)
+        body.append("\r\n--\(boundary)--\r\n".data(using: .utf8)!)
+        request.httpBody = body
+
+        do {
+            let (responseData, response) = try await session.data(for: request)
+            try Self.assertOK(response: response, data: responseData)
+            let decoded = try decoder.decode([String: String].self, from: responseData)
+            guard let uploadID = decoded["uploadId"] ?? decoded["upload_id"] ?? decoded["id"] else {
+                throw APIError.decoding(NSError(
+                    domain: "APIClient",
+                    code: 101,
+                    userInfo: [NSLocalizedDescriptionKey: "uploadId missing"]
+                ))
+            }
+            return uploadID
+        } catch let error as APIError {
+            throw error
+        } catch {
+            throw APIError.transport(error)
+        }
+    }
+
+    /// Fetch parsed fulltext for an upload and let the caller persist it in
+    /// the same local cache used by embedded parsing.
+    func fetchUploadedFulltext(uploadID: String) async throws -> EbookFulltext {
+        let endpoint = baseURL.appendingPathComponent("api/uploads/\(uploadID)/fulltext")
+        do {
+            let (data, response) = try await session.data(from: endpoint)
+            try Self.assertOK(response: response, data: data)
+            return try decoder.decode(EbookFulltext.self, from: data)
+        } catch let error as APIError {
+            throw error
+        } catch {
+            throw APIError.transport(error)
+        }
+    }
+
     /// Submit a conversion. Either `localPath` (desktop) or `uploadedFile`
     /// (mobile or remote backend) must be provided. Returns the new job id.
     func submitConversion(

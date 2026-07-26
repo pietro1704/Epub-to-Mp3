@@ -57,4 +57,9 @@ final class DownloadManagerBackgroundTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: destination.path))
         XCTAssertFalse(FileManager.default.fileExists(atPath: staged.path))
     }
+
+    func testLocalFileURLsAreValidDownloadSources() {
+        let source = URL(fileURLWithPath: "/tmp/chapter.mp3")
+        XCTAssertEqual(DownloadManager.resolve(path: source.absoluteString, base: nil), source)
+    }
 }

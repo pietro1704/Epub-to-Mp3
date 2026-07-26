@@ -78,6 +78,7 @@ final class IOSAppShellController: UITabBarController {
                 library: library,
                 settings: settings,
                 player: player,
+                playerPresentation: playerPresentation,
                 bookmarkStore: bookmarkStore
             )
         case .settings:

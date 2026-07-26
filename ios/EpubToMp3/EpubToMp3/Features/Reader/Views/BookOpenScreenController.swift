@@ -77,17 +77,22 @@ final class BookOpenScreenController: UIViewController, UITableViewDataSource, U
 
     private func configureNativeReader() {
         titleLabel.text = book.resolvedTitle
+        titleLabel.accessibilityIdentifier = "reader.title"
         titleLabel.font = .preferredFont(forTextStyle: .title2)
         titleLabel.numberOfLines = 2
         statusLabel.textColor = .secondaryLabel
+        statusLabel.accessibilityIdentifier = "reader.status"
         statusLabel.numberOfLines = 0
         textView.isEditable = false
         textView.isSelectable = true
         textView.delegate = self
         textView.font = .systemFont(ofSize: settings.readerPointSize)
+        textView.adjustsFontForContentSizeCategory = true
+        textView.accessibilityIdentifier = "reader.content"
         textView.textContainerInset = UIEdgeInsets(top: 20, left: 20, bottom: 32, right: 20)
         chapterTable.dataSource = self
         chapterTable.delegate = self
+        chapterTable.accessibilityIdentifier = "reader.toc"
         scrollView.delegate = self
         scrollView.addSubview(textView)
         comicPageImageView.contentMode = .scaleAspectFit
@@ -99,9 +104,11 @@ final class BookOpenScreenController: UIViewController, UITableViewDataSource, U
         chapterTable.translatesAutoresizingMaskIntoConstraints = false
 
         let footnotesButton = UIButton(type: .system)
+        footnotesButton.accessibilityIdentifier = "reader.footnotes"
         footnotesButton.setTitle(L10n.string("reader.footnotes.title"), for: .normal)
         footnotesButton.addTarget(self, action: #selector(showFootnotes), for: .touchUpInside)
         let searchButton = UIButton(type: .system)
+        searchButton.accessibilityIdentifier = "reader.search"
         searchButton.setImage(UIImage(systemName: "magnifyingglass"), for: .normal)
         searchButton.addTarget(self, action: #selector(promptSearch), for: .touchUpInside)
         let toolsBar = UIStackView(arrangedSubviews: [footnotesButton, UIView(), searchButton])
@@ -209,10 +216,17 @@ final class BookOpenScreenController: UIViewController, UITableViewDataSource, U
                 let payload: EbookFulltext
                 if let cached {
                     payload = cached
+                } else if book.fileType.requiresServerConversion {
+                    guard let baseURL = settings.resolvedBaseURL else {
+                        throw APIError.invalidBaseURL
+                    }
+                    let client = APIClient(baseURL: baseURL)
+                    let uploadID = try await client.uploadBook(at: url)
+                    payload = try await client.fetchUploadedFulltext(uploadID: uploadID)
                 } else {
                     payload = try await PythonBridge.shared.parseEpub(at: url, bookId: book.id)
-                    LocalFulltextCache.save(payload, bookId: book.id)
                 }
+                LocalFulltextCache.save(payload, bookId: book.id)
                 fulltext = payload
                 chapterTable.reloadData()
                 statusLabel.text = "\(payload.chapters.count)"
@@ -360,18 +374,27 @@ final class BookOpenScreenController: UIViewController, UITableViewDataSource, U
     }
 
     private func performSearch(query: String) {
-        let full = (textView.text ?? "") as NSString
-        let range = full.range(of: query, options: .caseInsensitive)
-        guard range.location != NSNotFound else {
-            let alert = UIAlertController(
-                title: L10n.string("reader.search.noResults"), message: nil, preferredStyle: .alert
-            )
-            alert.addAction(UIAlertAction(title: L10n.string("common.ok"), style: .default))
-            present(alert, animated: true)
+        guard let chapters = fulltext?.chapters, !chapters.isEmpty else { return }
+        let order = Array(chapters.indices.dropFirst(selectedChapter))
+            + Array(chapters.indices.prefix(selectedChapter + 1))
+        for chapterIndex in order {
+            let full = chapters[chapterIndex].text as NSString
+            let range = full.range(of: query, options: .caseInsensitive)
+            guard range.location != NSNotFound else { continue }
+            if chapterIndex != selectedChapter {
+                persistReadingProgress()
+                selectedChapter = chapterIndex
+                showChapter(chapterIndex)
+            }
+            textView.selectedRange = range
+            textView.scrollRangeToVisible(range)
             return
         }
-        textView.selectedRange = range
-        textView.scrollRangeToVisible(range)
+        let alert = UIAlertController(
+            title: L10n.string("reader.search.noResults"), message: nil, preferredStyle: .alert
+        )
+        alert.addAction(UIAlertAction(title: L10n.string("common.ok"), style: .default))
+        present(alert, animated: true)
     }
 
     private func addBookmark(range: NSRange, selectedText: String, note: String?) {

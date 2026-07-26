@@ -415,6 +415,13 @@ final class LibraryStore: ObservableObject {
         books.filter { $0.tags.contains(tag) }
     }
 
+    func recordConversion(jobId: String, for bookId: String, cachedOffline: Bool = false) {
+        guard let index = books.firstIndex(where: { $0.id == bookId }) else { return }
+        books[index].lastJobId = jobId
+        books[index].cachedOffline = cachedOffline
+        persist()
+    }
+
     // MARK: - Persistence
 
     private func persist() {

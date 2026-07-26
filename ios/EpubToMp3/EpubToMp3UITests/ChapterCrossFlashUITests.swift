@@ -6,6 +6,7 @@ import XCTest
 /// which hangs on device. Across the swipe, the visible page number must go
 /// straight from the old chapter's LAST page to the new chapter's page 1,
 /// without exposing an intermediate page in between.
+@MainActor
 final class ChapterCrossFlashUITests: XCTestCase {
     override func setUpWithError() throws { continueAfterFailure = false }
 

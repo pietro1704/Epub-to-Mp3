@@ -53,6 +53,7 @@ final class ChapterCacheManager: ObservableObject {
             .appendingPathComponent("epub2mp3-tts/\(bookId)", isDirectory: true)
         self.cacheRoot = root
         try? FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        self.clearObserver = nil
         let observer = NotificationCenter.default.addObserver(
             forName: Self.clearAllNotification,
             object: nil,

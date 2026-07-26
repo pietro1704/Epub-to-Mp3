@@ -9,8 +9,13 @@ import AppKit
 @MainActor
 final class MacBookDetailViewController: NSViewController {
     private let book: BookEntity
+    private let library: LibraryStore
+    private let settings: AppSettings
+    private let player: AudioPlayer
+    private let playerPresentation: PlayerPresentation
     private let onRead: (String) -> Void
     private let onShowJobs: () -> Void
+    private var remoteStreamTask: Task<Void, Never>?
 
     private let coverView = NSImageView()
     private let titleLabel = NSTextField(labelWithString: "")
@@ -22,10 +27,18 @@ final class MacBookDetailViewController: NSViewController {
 
     init(
         book: BookEntity,
+        library: LibraryStore,
+        settings: AppSettings,
+        player: AudioPlayer,
+        playerPresentation: PlayerPresentation,
         onRead: @escaping (String) -> Void,
         onShowJobs: @escaping () -> Void
     ) {
         self.book = book
+        self.library = library
+        self.settings = settings
+        self.player = player
+        self.playerPresentation = playerPresentation
         self.onRead = onRead
         self.onShowJobs = onShowJobs
         super.init(nibName: nil, bundle: nil)
@@ -33,6 +46,10 @@ final class MacBookDetailViewController: NSViewController {
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    deinit {
+        remoteStreamTask?.cancel()
+    }
 
     override func loadView() {
         view = NSView()
@@ -126,17 +143,93 @@ final class MacBookDetailViewController: NSViewController {
         onRead(book.id)
     }
 
-    /// macOS has no per-book-scoped conversion/job screen yet (unlike iOS's
-    /// `ConvertScreenController(preselectedFileURL:)` /
-    /// `JobDetailScreenController(jobId:)`) — `MacJobsListViewController`
-    /// takes no book context at all. Rather than fake a deep link that
-    /// goes nowhere, both actions route to the Jobs sidebar, where the
-    /// conversion/download UI actually lives today.
+    /// macOS starts conversion directly from Book Detail. Embedded conversion
+    /// stays local by default; server-only formats and the explicit remote
+    /// provider use the same API/SSE contract as iOS.
     @objc private func tapListen() {
-        onShowJobs()
+        if settings.useEmbeddedRuntime && !book.fileType.requiresServerConversion {
+            guard let url = try? library.openBookFile(id: book.id) else {
+                onShowJobs()
+                return
+            }
+            Task { [weak self] in
+                guard let self else { return }
+                do {
+                    let snapshot = try await EmbeddedConversionCoordinator.stream(
+                        bookURL: url,
+                        bookID: book.id,
+                        player: self.player
+                    )
+                    self.library.recordConversion(jobId: snapshot.jobId, for: self.book.id)
+                    self.playerPresentation.showFullPlayer()
+                } catch {
+                    let alert = NSAlert()
+                    alert.messageText = L10n.string("bookDetail.listenStart")
+                    alert.informativeText = error.localizedDescription
+                    alert.addButton(withTitle: L10n.string("common.ok"))
+                    alert.runModal()
+                }
+            }
+            return
+        }
+        guard let url = try? library.openBookFile(id: book.id) else {
+            onShowJobs()
+            return
+        }
+        startRemoteConversion(url: url)
+    }
+
+    private func startRemoteConversion(url: URL) {
+        guard let baseURL = settings.resolvedBaseURL else {
+            let alert = NSAlert()
+            alert.messageText = L10n.string("bookDetail.listenStart")
+            alert.informativeText = APIError.invalidBaseURL.localizedDescription
+            alert.addButton(withTitle: L10n.string("common.ok"))
+            alert.runModal()
+            return
+        }
+        remoteStreamTask?.cancel()
+        let player = self.player
+        let presentation = self.playerPresentation
+        let library = self.library
+        let bookID = self.book.id
+        remoteStreamTask = Task {
+            do {
+                let client = APIClient(baseURL: baseURL)
+                let response = try await client.submitConversion(
+                    localPath: url,
+                    options: APIClient.ConvertOptions()
+                )
+                library.recordConversion(jobId: response.jobId, for: bookID)
+                let initial = try await client.fetchJob(id: response.jobId)
+                guard !Task.isCancelled else { return }
+                player.backendBaseURL = baseURL
+                player.play(snapshot: initial)
+                presentation.showFullPlayer()
+                for try await event in client.eventStream(jobId: response.jobId) {
+                    guard !Task.isCancelled else { return }
+                    if let snapshot = APIClient.decodeSnapshot(from: event.rawPayload) {
+                        player.updateSnapshot(snapshot)
+                    }
+                }
+            } catch {
+                guard !Task.isCancelled else { return }
+                let alert = NSAlert()
+                alert.messageText = L10n.string("bookDetail.listenStart")
+                alert.informativeText = error.localizedDescription
+                alert.addButton(withTitle: L10n.string("common.ok"))
+                alert.runModal()
+            }
+        }
     }
 
     @objc private func tapDownload() {
+        if let snapshot = player.snapshot, snapshot.bookTitle == book.resolvedTitle {
+            Task {
+                await DownloadManager.shared.enqueueAll(snapshot: snapshot, baseURL: settings.resolvedBaseURL)
+            }
+            return
+        }
         guard book.lastJobId != nil else {
             let alert = NSAlert()
             alert.messageText = L10n.string("bookDetail.download")

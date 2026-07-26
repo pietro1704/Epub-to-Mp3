@@ -5,6 +5,7 @@ import XCTest
 /// chapter it already rendered (same chapter id, settings unchanged) repaints
 /// its text — the scroll-mode flicker. The probe counts those re-renders as
 /// `stale`; after a scroll burst the count must be 0.
+@MainActor
 final class ScrollFlickerUITests: XCTestCase {
     override func setUpWithError() throws { continueAfterFailure = false }
 
@@ -85,7 +86,7 @@ final class ScrollFlickerUITests: XCTestCase {
             window.swipeUp(velocity: .fast)
             for i in 0..<5 {
                 let a = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
-                a.name = String(format: "scroll-%d-%02d", f, i)
+                a.name = "scroll-\(f)-\(i < 10 ? "0" : "")\(i)"
                 a.lifetime = .keepAlways
                 add(a)
                 usleep(50_000)

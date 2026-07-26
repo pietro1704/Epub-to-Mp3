@@ -27,8 +27,8 @@ def test_macos_target_declares_nsapplication_principal_class() -> None:
     assert "application.run()" in app_delegate
     assert "sidecar" not in app_delegate.lower()
     assert "guard window == nil else { return }" in app_delegate
-    assert "NSScreen.main?.visibleFrame" in app_delegate
-    assert "NSScreen.screens.first { $0.frame.contains(NSEvent.mouseLocation) }" not in app_delegate
+    assert "NSScreen.screens.first" in app_delegate
+    assert "NSScreen.main?.visibleFrame" not in app_delegate
     assert "bootstrapEmbeddedRuntime" in app_delegate
     assert "application.mainMenu = makeMainMenu()" in app_delegate
     assert "#selector(NSApplication.terminate(_:))" in app_delegate

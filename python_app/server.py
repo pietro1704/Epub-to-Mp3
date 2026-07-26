@@ -3457,7 +3457,18 @@ async def estimate_conversion(
         upload_dir = uploads_dir / upload_id
         if upload_dir.exists():
             for candidate in upload_dir.iterdir():
-                if candidate.suffix.lower() in {".epub", ".pdf"}:
+                if candidate.suffix.lower() in {
+                    ".epub",
+                    ".pdf",
+                    ".fb2",
+                    ".docx",
+                    ".cbz",
+                    ".cbr",
+                    ".mobi",
+                    ".prc",
+                    ".azw",
+                    ".azw3",
+                }:
                     file_path = str(candidate)
                     break
 

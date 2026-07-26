@@ -1,5 +1,6 @@
 import XCTest
 
+@MainActor
 final class EpubToMp3AudioUITests: XCTestCase {
     override func setUpWithError() throws {
         continueAfterFailure = false

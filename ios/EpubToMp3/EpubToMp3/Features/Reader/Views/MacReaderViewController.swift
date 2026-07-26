@@ -125,10 +125,12 @@ final class MacReaderViewController: NSViewController, NSTableViewDataSource, NS
         let close = NSButton(image: NSImage(systemSymbolName: "xmark", accessibilityDescription: L10n.string("reader.close")) ?? NSImage(), target: self, action: #selector(closeReader))
         close.bezelStyle = .texturedRounded
         close.toolTip = L10n.string("reader.close")
+        close.setAccessibilityIdentifier("reader.close")
 
         let toc = NSButton(title: L10n.string("reader.toc"), target: self, action: #selector(showTOC(_:)))
         toc.bezelStyle = .texturedRounded
         toc.toolTip = L10n.string("reader.toc")
+        toc.setAccessibilityIdentifier("reader.toc")
 
         let footnotes = NSButton(
             image: NSImage(systemSymbolName: "text.append", accessibilityDescription: L10n.string("reader.footnotes.title")) ?? NSImage(),
@@ -136,6 +138,7 @@ final class MacReaderViewController: NSViewController, NSTableViewDataSource, NS
         )
         footnotes.bezelStyle = .texturedRounded
         footnotes.toolTip = L10n.string("reader.footnotes.title")
+        footnotes.setAccessibilityIdentifier("reader.footnotes")
 
         let search = NSButton(
             image: NSImage(systemSymbolName: "magnifyingglass", accessibilityDescription: L10n.string("reader.search.placeholder")) ?? NSImage(),
@@ -143,6 +146,7 @@ final class MacReaderViewController: NSViewController, NSTableViewDataSource, NS
         )
         search.bezelStyle = .texturedRounded
         search.toolTip = L10n.string("reader.search.placeholder")
+        search.setAccessibilityIdentifier("reader.search")
 
         bookTitleLabel.font = .systemFont(ofSize: 13, weight: .semibold)
         bookTitleLabel.alignment = .center
@@ -168,6 +172,7 @@ final class MacReaderViewController: NSViewController, NSTableViewDataSource, NS
         statusLabel.font = .systemFont(ofSize: 13)
         textView.isEditable = false
         textView.isSelectable = true
+        textView.setAccessibilityIdentifier("reader.content")
         textView.font = .systemFont(ofSize: settings.readerPointSize)
         textView.textContainerInset = NSSize(width: 32, height: 24)
         textView.isVerticallyResizable = true
@@ -258,6 +263,13 @@ final class MacReaderViewController: NSViewController, NSTableViewDataSource, NS
                 let payload: EbookFulltext
                 if let cachedPayload {
                     payload = cachedPayload
+                } else if book.fileType.requiresServerConversion {
+                    guard let baseURL = settings.resolvedBaseURL else {
+                        throw APIError.invalidBaseURL
+                    }
+                    let client = APIClient(baseURL: baseURL)
+                    let uploadID = try await client.uploadBook(at: fileURL)
+                    payload = try await client.fetchUploadedFulltext(uploadID: uploadID)
                 } else {
                     payload = try await MacEpubParser.parse(at: fileURL, bookId: book.id)
                 }
@@ -522,17 +534,26 @@ final class MacReaderViewController: NSViewController, NSTableViewDataSource, NS
     }
 
     private func performSearch(query: String) {
-        let full = textView.string as NSString
-        let range = full.range(of: query, options: .caseInsensitive)
-        guard range.location != NSNotFound else {
-            let alert = NSAlert()
-            alert.messageText = L10n.string("reader.search.noResults")
-            alert.addButton(withTitle: L10n.string("common.ok"))
-            alert.runModal()
+        guard let chapters = fulltext?.chapters, !chapters.isEmpty else { return }
+        let order = Array(chapters.indices.dropFirst(selectedChapter))
+            + Array(chapters.indices.prefix(selectedChapter + 1))
+        for chapterIndex in order {
+            let full = chapters[chapterIndex].text as NSString
+            let range = full.range(of: query, options: .caseInsensitive)
+            guard range.location != NSNotFound else { continue }
+            if chapterIndex != selectedChapter {
+                persistReadingProgress()
+                selectedChapter = chapterIndex
+                showChapter(chapterIndex)
+            }
+            textView.setSelectedRange(range)
+            textView.scrollRangeToVisible(range)
             return
         }
-        textView.setSelectedRange(range)
-        textView.scrollRangeToVisible(range)
+        let alert = NSAlert()
+        alert.messageText = L10n.string("reader.search.noResults")
+        alert.addButton(withTitle: L10n.string("common.ok"))
+        alert.runModal()
     }
 
     private func showPDF(_ url: URL) async {

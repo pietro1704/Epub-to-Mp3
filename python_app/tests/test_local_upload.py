@@ -150,6 +150,37 @@ class TestLocalUploadEndpoint(unittest.TestCase):
         assert mod._local_upload_storage_name(Path("../../untrusted.EPUB")) == "source.epub"
         assert mod._local_upload_storage_name(Path("report.pdf")) == "source.pdf"
 
+    def test_local_upload_storage_name_supports_all_book_formats(self):
+        import src.routes_uploads as mod
+
+        expected = {
+            "book.fb2": "source.fb2",
+            "book.docx": "source.docx",
+            "book.cbz": "source.cbz",
+            "book.cbr": "source.cbr",
+            "book.mobi": "source.mobi",
+            "book.prc": "source.mobi",
+            "book.azw": "source.azw3",
+            "book.azw3": "source.azw3",
+        }
+        for filename, stored in expected.items():
+            assert mod._local_upload_storage_name(Path(filename)) == stored
+
+    def test_fulltext_route_precedes_generic_asset_route(self):
+        import src.routes_uploads as mod
+
+        source = Path(mod.__file__).read_text(encoding="utf-8")
+        assert source.index('@router.get("/uploads/{upload_id}/fulltext")') < source.index(
+            '@router.get("/uploads/{upload_id}/{filename}")'
+        )
+
+    def test_estimate_scan_includes_server_only_book_formats(self):
+        import python_app.server as server
+
+        source = Path(server.__file__).read_text(encoding="utf-8")
+        for suffix in (".fb2", ".docx", ".cbz", ".cbr", ".mobi", ".azw3"):
+            assert suffix in source
+
     def test_fallback_title_is_stem_when_reader_fails(self):
         client, srv = _make_client()
         self._patch_server(srv)

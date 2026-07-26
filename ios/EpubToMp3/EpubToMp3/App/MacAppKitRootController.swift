@@ -225,6 +225,10 @@ final class MacAppKitRootController: NSSplitViewController {
         updateSidebarSelection(.library)
         let detail = MacBookDetailViewController(
             book: book,
+            library: library,
+            settings: settings,
+            player: player,
+            playerPresentation: playerPresentation,
             onRead: { [weak self] bookID in self?.showReader(bookID: bookID) },
             onShowJobs: { [weak self] in self?.show(.jobs) }
         )

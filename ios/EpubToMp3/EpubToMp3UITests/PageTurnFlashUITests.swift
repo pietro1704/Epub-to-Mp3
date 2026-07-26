@@ -4,6 +4,7 @@ import XCTest
 /// (forward and backward), to catch a flash where page 1 (the first page)
 /// briefly interleaves mid-animation. Paginated mode, chrome left visible so
 /// the page indicator is readable per frame.
+@MainActor
 final class PageTurnFlashUITests: XCTestCase {
     override func setUpWithError() throws { continueAfterFailure = false }
 
@@ -64,7 +65,7 @@ final class PageTurnFlashUITests: XCTestCase {
         right.tap()
         var pagesSeen: Set<Int> = []
         for i in 0..<10 {
-            attach(app, String(format: "fwd-%02d", i))
+            attach(app, "fwd-\(i < 10 ? "0" : "")\(i)")
             if let p = indicator(app)?.page { pagesSeen.insert(p) }
             usleep(60_000)
         }
@@ -78,7 +79,7 @@ final class PageTurnFlashUITests: XCTestCase {
         left.tap()
         var backSeen: Set<Int> = []
         for i in 0..<10 {
-            attach(app, String(format: "back-%02d", i))
+            attach(app, "back-\(i < 10 ? "0" : "")\(i)")
             if let p = indicator(app)?.page { backSeen.insert(p) }
             usleep(60_000)
         }

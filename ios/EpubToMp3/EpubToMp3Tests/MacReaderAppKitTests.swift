@@ -12,6 +12,13 @@ final class MacReaderAppKitTests: XCTestCase {
         XCTAssertFalse(reader.contains("NSHostingController"))
     }
 
+    func testMacAppUsesAppKitWindowCentering() throws {
+        let app = try source("App/EpubToMp3App.swift")
+        XCTAssertTrue(app.contains("NSScreen.screens.first"))
+        XCTAssertTrue(app.contains("visibleFrame.midX"))
+        XCTAssertTrue(app.contains("window.setFrame(frame, display: false)"))
+    }
+
     private func source(_ relativePath: String) throws -> String {
         let file = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
