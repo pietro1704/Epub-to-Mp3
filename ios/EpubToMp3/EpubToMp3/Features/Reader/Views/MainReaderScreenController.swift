@@ -140,20 +140,13 @@ final class MainReaderScreenController: UIViewController {
     }
 
     private func configureListenButton() {
-        var config = UIButton.Configuration.plain()
-        config.image = UIImage(systemName: "headphones")
-        config.title = L10n.string("mainReader.listen")
-        config.imagePadding = 6
-        listenButton.configuration = config
+        // Playback is controlled exclusively from the persistent mini-player.
+        // A second "Listen" button here duplicated the control and pushed the
+        // reader content into an inconsistent layout while a book was loading.
+        listenButton.isHidden = true
         listenButton.translatesAutoresizingMaskIntoConstraints = false
         listenButton.accessibilityIdentifier = "mainReader.listen"
         listenButton.addTarget(self, action: #selector(listenTapped), for: .touchUpInside)
-        view.addSubview(listenButton)
-        NSLayoutConstraint.activate([
-            listenButton.topAnchor.constraint(equalTo: readerToolbar.bottomAnchor, constant: 8),
-            listenButton.trailingAnchor.constraint(equalTo: view.layoutMarginsGuide.trailingAnchor),
-            listenButton.heightAnchor.constraint(greaterThanOrEqualToConstant: 44),
-        ])
     }
 
     private func configureReaderToolbar() {
@@ -177,10 +170,7 @@ final class MainReaderScreenController: UIViewController {
         readerTitleLabel.lineBreakMode = .byTruncatingMiddle
         readerTitleLabel.setContentHuggingPriority(.defaultLow, for: .horizontal)
 
-        var repickConfiguration = UIButton.Configuration.plain()
-        repickConfiguration.title = L10n.string("bookOpen.repick")
-        repickConfiguration.contentInsets = .zero
-        repickBookButton.configuration = repickConfiguration
+        repickBookButton.isHidden = true
         repickBookButton.accessibilityIdentifier = "reader.repick"
         repickBookButton.addTarget(self, action: #selector(repickBookTapped), for: .touchUpInside)
 

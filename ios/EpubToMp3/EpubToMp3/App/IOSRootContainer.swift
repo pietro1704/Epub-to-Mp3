@@ -94,12 +94,11 @@ final class IOSRootContainerController: UIViewController {
             readerController.view.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             readerController.view.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             readerController.view.topAnchor.constraint(equalTo: view.topAnchor),
-            readerController.view.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            readerController.view.bottomAnchor.constraint(equalTo: miniPlayerController.view.topAnchor),
 
             miniPlayerController.view.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             miniPlayerController.view.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            // Keep the mini-player above the tab bar instead of covering it.
-            miniPlayerController.view.bottomAnchor.constraint(equalTo: shellController.tabBar.topAnchor),
+            miniPlayerController.view.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor),
 
             fullPlayerController.view.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             fullPlayerController.view.trailingAnchor.constraint(equalTo: view.trailingAnchor),
@@ -157,6 +156,9 @@ final class IOSRootContainerController: UIViewController {
         )
 
         readerController.view.isHidden = !readerActive
+        // The reader owns the full screen while open. The library/settings/
+        // conversion tabs must not remain visible underneath its player bar.
+        shellController.tabBar.isHidden = readerActive
         miniPlayerController.view.isHidden = !showMini
         fullPlayerController.view.isHidden = !playerPresentation.showingFullPlayer
         fullPlayerController.view.alpha = playerPresentation.showingFullPlayer ? 1 : 0
