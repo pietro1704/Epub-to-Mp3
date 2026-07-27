@@ -38,6 +38,12 @@ final class BookOpenScreenController: UIViewController, UITableViewDataSource, U
         if let index = arguments.firstIndex(of: "-uiTestReaderLayout"), index + 1 < arguments.count {
             return arguments[index + 1] == "paginated"
         }
+        // The base UI fixture passes the marker without a value. Its
+        // deterministic reader contract is paginated; only tests that need
+        // scrolling pass the explicit "scrolling" value above.
+        if arguments.contains("-uiTestReaderLayout") {
+            return true
+        }
         return settings.readerLayout == .paginated
     }
     private var pdfView: PDFView?
