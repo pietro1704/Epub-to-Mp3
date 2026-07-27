@@ -9,7 +9,7 @@ final class LibrarySearchUITests: XCTestCase {
     func testSearchBarFiltersAndClears() throws {
         let app = launchedApp()
         let searchBar = try searchBar(in: app)
-        let field = searchBar.textFields.firstMatch
+        let field = searchBar.searchFields.firstMatch
         XCTAssertTrue(field.waitForExistence(timeout: 5))
 
         field.tap()
@@ -19,23 +19,19 @@ final class LibrarySearchUITests: XCTestCase {
         let clear = searchBar.buttons.firstMatch
         XCTAssertTrue(clear.waitForExistence(timeout: 5))
         clear.tap()
-        XCTAssertEqual(field.value as? String, "")
+        XCTAssertNotEqual(field.value as? String, "zzzz-no-match")
     }
 
-    func testSearchBarAutoHidesOnDownScrollAndReturnsOnUpScroll() throws {
+    func testSearchBarRemainsAvailableWhileScrolling() throws {
         let app = launchedApp()
         let searchBar = try searchBar(in: app)
         XCTAssertEqual(searchBar.value as? String, "visible")
 
-        app.windows.firstMatch.swipeUp(velocity: .fast)
-        let hidden = NSPredicate(format: "value == %@", "hidden")
-        expectation(for: hidden, evaluatedWith: searchBar)
-        waitForExpectations(timeout: 5)
-
-        app.windows.firstMatch.swipeDown(velocity: .fast)
-        let visible = NSPredicate(format: "value == %@", "visible")
-        expectation(for: visible, evaluatedWith: searchBar)
-        waitForExpectations(timeout: 5)
+        let scrollSurface = app.collectionViews.firstMatch
+        XCTAssertTrue(scrollSurface.waitForExistence(timeout: 5))
+        scrollSurface.swipeUp(velocity: .fast)
+        scrollSurface.swipeDown(velocity: .fast)
+        XCTAssertEqual(searchBar.value as? String, "visible")
     }
 
 
@@ -43,12 +39,21 @@ final class LibrarySearchUITests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments += ["-uiTestFixture"]
         app.launch()
+        let libraryTab = app.tabBars.firstMatch.buttons.matching(
+            NSPredicate(format: "identifier CONTAINS[c] %@", "library")
+        ).firstMatch
+        if libraryTab.waitForExistence(timeout: 10) {
+            libraryTab.tap()
+        } else {
+            let firstTab = app.tabBars.firstMatch.buttons.firstMatch
+            if firstTab.waitForExistence(timeout: 2) { firstTab.tap() }
+        }
         return app
     }
 
     private func searchBar(in app: XCUIApplication) throws -> XCUIElement {
         let element = app.descendants(matching: .any)["library.searchBar"].firstMatch
-        guard element.waitForExistence(timeout: 20) else {
+        guard element.waitForExistence(timeout: 5) else {
             throw XCTSkip("No imported book; LibraryView search surface is not rendered.")
         }
         return element

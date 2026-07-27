@@ -10,10 +10,6 @@ final class EmbeddedEngineRuntimeTests: XCTestCase {
     func testEdgeTTSWritesPlayableMp3OnSimulator() async throws {
         #if os(iOS)
         #if LIVE_ENGINE_SMOKE
-        #else
-        throw XCTSkip("Build with OTHER_SWIFT_FLAGS='$(inherited) -D LIVE_ENGINE_SMOKE' to run the live embedded-engine smoke test.")
-        #endif
-
         let outputDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("embedded-engine-smoke", isDirectory: true)
         try? FileManager.default.removeItem(at: outputDir)
@@ -31,6 +27,9 @@ final class EmbeddedEngineRuntimeTests: XCTestCase {
             data.starts(with: Data([0x49, 0x44, 0x33])) || data.starts(with: Data([0xFF])),
             "Output should look like MP3 bytes, path: \(url.path)"
         )
+        #else
+        throw XCTSkip("Build with OTHER_SWIFT_FLAGS='$(inherited) -D LIVE_ENGINE_SMOKE' to run the live embedded-engine smoke test.")
+        #endif
         #else
         throw XCTSkip("Embedded Edge-TTS runtime smoke is only available on iOS.")
         #endif

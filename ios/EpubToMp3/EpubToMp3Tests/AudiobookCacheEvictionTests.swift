@@ -149,16 +149,18 @@ final class AudiobookCacheEvictionTests: XCTestCase {
     /// Isolated temp folder used as the audiobooks root.
     private var tempRoot: URL!
 
-    override func setUp() async throws {
-        try await super.setUp()
+    override func setUpWithError() throws {
+        try super.setUpWithError()
         tempRoot = FileManager.default.temporaryDirectory
             .appendingPathComponent("CacheEvictionTests-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: tempRoot, withIntermediateDirectories: true)
+        DownloadManager.rootOverrideForTesting = tempRoot
     }
 
-    override func tearDown() async throws {
+    override func tearDownWithError() throws {
+        DownloadManager.rootOverrideForTesting = nil
         try? FileManager.default.removeItem(at: tempRoot)
-        try await super.tearDown()
+        try super.tearDownWithError()
     }
 
     /// Plant a fake audiobook folder + manifest under `tempRoot`.

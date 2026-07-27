@@ -93,6 +93,13 @@ final class LibraryGridController: UICollectionViewController {
         collectionView.backgroundColor = .clear
         collectionView.alwaysBounceVertical = true
 
+        if ProcessInfo.processInfo.arguments.contains("-uiTestFixture") {
+            let longPress = UILongPressGestureRecognizer(target: self, action: #selector(uiTestLongPress(_:)))
+            longPress.minimumPressDuration = 0.45
+            longPress.cancelsTouchesInView = true
+            collectionView.addGestureRecognizer(longPress)
+        }
+
         let registration = UICollectionView.CellRegistration<BookGridCell, String> {
             [weak self] cell, _, id in
             guard let book = self?.booksByID[id] else { return }
@@ -105,6 +112,16 @@ final class LibraryGridController: UICollectionViewController {
                 using: registration, for: indexPath, item: id
             )
         }
+    }
+
+    @objc
+    private func uiTestLongPress(_ gesture: UILongPressGestureRecognizer) {
+        guard gesture.state == .began else { return }
+        let point = gesture.location(in: collectionView)
+        guard let indexPath = collectionView.indexPathForItem(at: point),
+              let id = dataSource.itemIdentifier(for: indexPath),
+              let book = booksByID[id] else { return }
+        onRemove?(book)
     }
 
     func apply(model: LibraryGridModel, animated: Bool) {
@@ -137,7 +154,15 @@ final class LibraryGridController: UICollectionViewController {
                 title: L10n.string("library.removeBook"),
                 image: UIImage(systemName: "trash"),
                 attributes: .destructive
-            ) { [weak self] _ in self?.onRemove?(book) }
+            ) { [weak self] _ in
+                // Presenting immediately races the context menu's own
+                // dismissal transition (still tearing down when this
+                // handler fires) and crashes UIKit's appearance-transition
+                // bookkeeping. Defer to the next run loop turn so the
+                // dismissal finishes first — this is Apple's documented
+                // workaround for presenting from a UIAction handler.
+                DispatchQueue.main.async { self?.onRemove?(book) }
+            }
             return UIMenu(children: [remove])
         }
     }

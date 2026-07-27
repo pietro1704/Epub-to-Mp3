@@ -105,8 +105,15 @@ actor DownloadManager {
 
     nonisolated static let audiobooksFolderName = "Audiobooks"
     nonisolated static let applicationSupportFolderName = "EpubToMp3"
+    /// Test-only storage injection. Production never assigns this value;
+    /// tests use it to keep fixtures out of Documents/Application Support.
+    nonisolated(unsafe) static var rootOverrideForTesting: URL?
 
     nonisolated static func audiobooksRoot() -> URL {
+        if let override = rootOverrideForTesting {
+            try? FileManager.default.createDirectory(at: override, withIntermediateDirectories: true)
+            return override
+        }
         let base: URL
         #if os(macOS)
         // App-owned audio must stay inside the sandbox. Reading the user's
@@ -150,7 +157,12 @@ actor DownloadManager {
     /// `downloadUrl` only means the SERVER has the chapter.
     nonisolated static func locallyDownloadedIndices(for jobId: String) -> Set<Int> {
         guard let manifest = loadManifest(for: jobId) else { return [] }
-        let folder = audiobookFolder(for: jobId)
+        // This is a read-only query. Do not call `audiobookFolder(for:)`
+        // here because that helper creates missing directories, causing
+        // filesystem work for every absent/evicted manifest lookup.
+        let folder = audiobooksRoot()
+            .appendingPathComponent(jobId, isDirectory: true)
+            .appendingPathComponent("chapters", isDirectory: true)
         let fm = FileManager.default
         return Set(
             manifest.chapters

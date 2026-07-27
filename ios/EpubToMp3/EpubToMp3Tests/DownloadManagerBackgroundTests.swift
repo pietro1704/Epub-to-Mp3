@@ -98,4 +98,68 @@ final class DownloadManagerBackgroundTests: XCTestCase {
 
         XCTAssertNil(DownloadManager.contentRangeTotal(from: response))
     }
+
+    func testLocalFixtureDownloadsAllChaptersAndRoutesPlaybackOffline() async throws {
+        let jobId = "download-fixture-\(UUID().uuidString)"
+        let sourceRoot = FileManager.default.temporaryDirectory
+            .appendingPathComponent("download-source-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: sourceRoot, withIntermediateDirectories: true)
+        defer {
+            DownloadManager.deleteAudiobook(jobId: jobId)
+            try? FileManager.default.removeItem(at: sourceRoot)
+        }
+
+        let chapterOne = sourceRoot.appendingPathComponent("chapter-one.mp3")
+        let chapterFive = sourceRoot.appendingPathComponent("chapter-five.mp3")
+        try Data(repeating: 0x11, count: 32).write(to: chapterOne)
+        try Data(repeating: 0x22, count: 48).write(to: chapterFive)
+
+        let snapshotJSON = """
+        {
+          "jobId": "\(jobId)",
+          "state": "finished",
+          "bookTitle": "Offline fixture",
+          "chapterProgress": [
+            {"index": 0, "name": "Chapter One", "status": "completed", "downloadUrl": "\(chapterOne.absoluteString)"},
+            {"index": 4, "name": "Chapter Five", "status": "completed", "downloadUrl": "\(chapterFive.absoluteString)"}
+          ]
+        }
+        """
+        let snapshot = try JSONDecoder().decode(JobSnapshot.self, from: Data(snapshotJSON.utf8))
+        let manager = DownloadManager()
+        let progress = await manager.watchProgress(jobId: jobId)
+
+        await manager.enqueueAll(snapshot: snapshot, baseURL: nil)
+
+        var terminalProgress: DownloadProgress?
+        for await update in progress {
+            if update.state == .completed || update.state == .failed {
+                terminalProgress = update
+                break
+            }
+        }
+
+        XCTAssertEqual(terminalProgress?.state, .completed)
+        XCTAssertEqual(terminalProgress?.completedChapters, 2)
+        XCTAssertEqual(DownloadManager.locallyDownloadedIndices(for: jobId), [0, 4])
+        XCTAssertTrue(DownloadManager.isManifestComplete(
+            DownloadManager.loadManifest(for: jobId)!,
+            expectedChapterIndices: [0, 4]
+        ))
+
+        let localURL = try XCTUnwrap(DownloadManager.localAudioURL(jobId: jobId, chapterIndex: 4))
+        let route = PlaybackRouter.route(
+            chapter: snapshot.playableChapters[1],
+            baseURL: nil,
+            localAudioURL: localURL,
+            chapterText: nil,
+            languageCode: nil,
+            isAudioPlayable: { url in
+                guard url.isFileURL else { return false }
+                return (try? Data(contentsOf: url).isEmpty) == false
+            }
+        )
+
+        XCTAssertEqual(route, .audio(localURL))
+    }
 }

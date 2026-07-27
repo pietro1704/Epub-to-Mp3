@@ -5,11 +5,10 @@ final class AppKitMigrationTests: XCTestCase {
         let root = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
             .deletingLastPathComponent()
-        let source = try String(
-            contentsOf: root.appendingPathComponent(
+        let source = try readSourceFileIfAvailable(
+            at: root.appendingPathComponent(
                 "EpubToMp3/Features/Library/Views/MacLibraryViewController.swift"
-            ),
-            encoding: .utf8
+            )
         )
 
         XCTAssertTrue(source.contains("final class MacLibraryViewController: NSViewController"))
@@ -23,11 +22,10 @@ final class AppKitMigrationTests: XCTestCase {
         let root = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
             .deletingLastPathComponent()
-        let source = try String(
-            contentsOf: root.appendingPathComponent(
+        let source = try readSourceFileIfAvailable(
+            at: root.appendingPathComponent(
                 "EpubToMp3/Features/Library/Models/LibraryGridModel.swift"
-            ),
-            encoding: .utf8
+            )
         )
 
         XCTAssertFalse(source.contains("LibraryView"))
@@ -38,19 +36,18 @@ final class AppKitMigrationTests: XCTestCase {
         let root = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
             .deletingLastPathComponent()
-        let shell = try String(
-            contentsOf: root.appendingPathComponent(
+        let shell = try readSourceFileIfAvailable(
+            at: root.appendingPathComponent(
                 "EpubToMp3/App/MacAppKitRootController.swift"
-            ), encoding: .utf8
+            )
         )
-        let reader = try String(
-            contentsOf: root.appendingPathComponent(
+        let reader = try readSourceFileIfAvailable(
+            at: root.appendingPathComponent(
                 "EpubToMp3/Features/Reader/Views/MacReaderViewController.swift"
-            ), encoding: .utf8
+            )
         )
-        let app = try String(
-            contentsOf: root.appendingPathComponent("EpubToMp3/App/EpubToMp3App.swift"),
-            encoding: .utf8
+        let app = try readSourceFileIfAvailable(
+            at: root.appendingPathComponent("EpubToMp3/App/EpubToMp3App.swift")
         )
 
         XCTAssertTrue(shell.contains("NSSplitViewController"))
@@ -68,8 +65,8 @@ final class AppKitMigrationTests: XCTestCase {
         let root = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
             .deletingLastPathComponent()
-        let app = try String(contentsOf: root.appendingPathComponent("EpubToMp3/App/EpubToMp3App.swift"), encoding: .utf8)
-        let bookOpen = try String(contentsOf: root.appendingPathComponent("EpubToMp3/Features/Reader/Views/BookOpenScreenController.swift"), encoding: .utf8)
+        let app = try readSourceFileIfAvailable(at: root.appendingPathComponent("EpubToMp3/App/EpubToMp3App.swift"))
+        let bookOpen = try readSourceFileIfAvailable(at: root.appendingPathComponent("EpubToMp3/Features/Reader/Views/BookOpenScreenController.swift"))
 
         XCTAssertTrue(app.contains("MacAppKitRootController"))
         XCTAssertFalse(bookOpen.contains("UIHostingController"))

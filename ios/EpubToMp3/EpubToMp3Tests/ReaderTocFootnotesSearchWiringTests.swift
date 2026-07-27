@@ -1,7 +1,8 @@
 import XCTest
 
-/// Source-contract tests for the slice-3 TOC hierarchy, footnotes sheet,
-/// and in-chapter search wiring on both native reader controllers.
+/// Source-contract tests for TOC and in-chapter search wiring on both native
+/// reader controllers. macOS follows EPUB hyperlinks for footnotes, like
+/// Apple Books, so it intentionally has no separate footnotes button.
 /// See `docs/reader-spec-comparison.md` P0 gap #1 (footnotes) and #3 (TOC).
 final class ReaderTocFootnotesSearchWiringTests: XCTestCase {
     private func source(_ relativePath: String) throws -> String {
@@ -22,11 +23,11 @@ final class ReaderTocFootnotesSearchWiringTests: XCTestCase {
         XCTAssertTrue(source.contains("scrollRangeToVisible"))
     }
 
-    func testMacReaderViewControllerHasTocFootnotesAndSearch() throws {
+    func testMacReaderViewControllerHasTocAndSearchWithoutFootnotesButton() throws {
         let source = try source("Features/Reader/Views/MacReaderViewController.swift")
 
         XCTAssertTrue(source.contains("ReaderTocFlattener.rows("))
-        XCTAssertTrue(source.contains("showFootnotes"))
         XCTAssertTrue(source.contains("scrollRangeToVisible"))
+        XCTAssertFalse(source.contains("accessibilityIdentifier = \"reader.footnotes\""))
     }
 }

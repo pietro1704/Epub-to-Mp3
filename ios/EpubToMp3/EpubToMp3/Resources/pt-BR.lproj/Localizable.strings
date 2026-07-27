@@ -100,6 +100,8 @@
 "player.pause" = "Pausar";
 "player.play" = "Reproduzir";
 "player.nothingPlaying" = "Nada em reprodução";
+"player.remaining" = "%@ restantes";
+"player.preparingAudio" = "Preparando áudio…";
 "player.fullPlayer" = "Player completo";
 "player.skipForward15" = "Avançar 15 segundos";
 "player.skipForward30" = "Avançar 30 segundos";
@@ -496,3 +498,5 @@
 "settings.clearAllDownloadsConfirmTitle" = "Limpar todos os downloads?";
 "settings.clearAllDownloadsConfirmMessage" = "Todos os MP3s offline e caches de áudio gerados dos capítulos serão apagados.";
 "jobs.historyDetailUnavailable" = "Esta sessão não inclui um ID de job ao vivo.";
+"common.close" = "Fechar";
+"reader.settings" = "Ajustes de leitura";

@@ -23,10 +23,11 @@ final class ReaderFlickerUITests: XCTestCase {
     private func launchInReader() throws -> XCUIApplication {
         XCUIDevice.shared.orientation = .portrait
         let app = XCUIApplication()
+        app.launchArguments += ["-uiTestFixture"]
         app.launchArguments += ["-uiTestFlickerProbe"]
         app.launch()
 
-        let firstBook = app.buttons.matching(
+        let firstBook = app.descendants(matching: .any).matching(
             NSPredicate(format: "identifier BEGINSWITH %@", "library.bookTile.")
         ).firstMatch
         guard firstBook.waitForExistence(timeout: 20) else {
@@ -35,7 +36,7 @@ final class ReaderFlickerUITests: XCTestCase {
         firstBook.tap()
 
         // Reader chrome present == we're inside the book.
-        let searchButton = app.buttons["Buscar no livro"].firstMatch
+        let searchButton = app.buttons["reader.search"].firstMatch
         guard searchButton.waitForExistence(timeout: 20) else {
             throw XCTSkip("Reader did not open; skipping flicker test.")
         }

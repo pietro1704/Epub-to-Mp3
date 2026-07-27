@@ -14,6 +14,9 @@ final class MainReaderScreenController: UIViewController {
     private var cancellables: Set<AnyCancellable> = []
     private var readerController: BookOpenScreenController?
     private var readerBookID: String?
+    /// Mirrors `BookOpenScreenController.onLoadStateChanged` so `render()`
+    /// can keep "Ouvir" hidden while the book's content is still loading.
+    private var isReaderLoading = false
 
     private let emptyStateStack = UIStackView()
     private let emptyTitleLabel = UILabel()
@@ -201,7 +204,13 @@ final class MainReaderScreenController: UIViewController {
         } else {
             showEmptyState()
         }
-        listenButton.isHidden = currentBook?.lastJobId == nil
+        // Visible once a book is loaded (never for a never-converted book,
+        // tapping it starts conversion in the background — mirrors the
+        // macOS reader's "Play inicia a conversão/reprodução do livro").
+        // Hidden while `BookOpenScreenController` is still parsing so the
+        // open screen only ever shows cover+spinner, never chrome layered
+        // on top of a blank/loading book.
+        listenButton.isHidden = currentBook == nil || isReaderLoading
     }
 
     private func showEmptyState() {
@@ -215,10 +224,10 @@ final class MainReaderScreenController: UIViewController {
         emptyStateStack.isHidden = true
         readerToolbar.isHidden = false
         readerTitleLabel.text = book.resolvedTitle
-        if let readerController, readerBookID == book.id {
-            readerController.update(
-                book: book
-            )
+        if readerController != nil, readerBookID == book.id {
+            // The existing reader already owns this book. Re-loading it on
+            // every library notification causes `loadBook()` to publish a
+            // loading-state change, which re-enters `render()` indefinitely.
             return
         }
 
@@ -230,6 +239,12 @@ final class MainReaderScreenController: UIViewController {
             settings: settings,
             bookmarkStore: bookmarkStore
         )
+        isReaderLoading = true
+        reader.onLoadStateChanged = { [weak self] isLoading in
+            guard let self else { return }
+            self.isReaderLoading = isLoading
+            self.listenButton.isHidden = self.currentBook == nil || isLoading
+        }
         addChild(reader)
         reader.view.translatesAutoresizingMaskIntoConstraints = false
         view.insertSubview(reader.view, belowSubview: listenButton)
@@ -243,9 +258,10 @@ final class MainReaderScreenController: UIViewController {
         readerController = reader
         readerBookID = book.id
 
-        var updated = book
-        updated.lastOpenedAt = Date()
-        library.update(updated)
+        // Do not mutate the library while rendering. `library.update` emits
+        // `objectWillChange`, which calls `render()` again; updating
+        // `lastOpenedAt` here creates an unbounded render/persist loop and
+        // leaves the app at 100% CPU when a book is opened from the grid.
     }
 
     private func removeReaderControllerIfNeeded() {
@@ -279,11 +295,55 @@ final class MainReaderScreenController: UIViewController {
         onBrowseLibrary?()
     }
 
+    // Mirrors `BookDetailScreenController.tapListen()` — the reader is now
+    // the only iOS entry point for starting/resuming playback (Book Detail
+    // no longer sits between the library grid and the reader).
     @objc
     private func listenTapped() {
-        guard let bookID = currentBook?.id else { return }
-        UserDefaults.standard.set(bookID, forKey: AudioPlayer.currentBookIDDefaultsKey)
-        playerPresentation.showFullPlayer()
+        guard let book = currentBook else { return }
+        if settings.useEmbeddedRuntime && !book.fileType.requiresServerConversion {
+            guard let url = try? library.openBookFile(id: book.id) else { return }
+            Task { [weak self] in
+                guard let self else { return }
+                do {
+                    let snapshot = try await EmbeddedConversionCoordinator.stream(
+                        bookURL: url,
+                        bookID: book.id,
+                        player: self.player
+                    )
+                    self.library.recordConversion(jobId: snapshot.jobId, for: book.id)
+                    self.playerPresentation.showFullPlayer()
+                } catch {
+                    let alert = UIAlertController(
+                        title: L10n.string("bookDetail.listenStart"),
+                        message: error.localizedDescription,
+                        preferredStyle: .alert
+                    )
+                    alert.addAction(UIAlertAction(title: L10n.string("common.ok"), style: .default))
+                    self.present(alert, animated: true)
+                }
+            }
+            return
+        }
+        if let jobId = book.lastJobId {
+            navigationController?.pushViewController(
+                JobDetailScreenController(
+                    jobId: jobId, settings: settings, library: library, player: player, playbackClock: player.playbackClock
+                ),
+                animated: true
+            )
+            return
+        }
+        guard let url = try? library.openBookFile(id: book.id) else { return }
+        navigationController?.pushViewController(
+            ConvertScreenController(
+                settings: settings, library: library, player: player,
+                playbackClock: player.playbackClock,
+                preselectedFileURL: url,
+                preselectedBookID: book.id
+            ),
+            animated: true
+        )
     }
 }
 #endif

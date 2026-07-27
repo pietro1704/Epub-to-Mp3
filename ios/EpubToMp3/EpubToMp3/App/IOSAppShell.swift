@@ -99,11 +99,13 @@ final class IOSAppShellController: UITabBarController {
 
         rootController.title = tab.title
         let navigationController = UINavigationController(rootViewController: rootController)
-        navigationController.tabBarItem = UITabBarItem(
+        let tabBarItem = UITabBarItem(
             title: tab.title,
             image: UIImage(systemName: tab.systemImage),
             tag: tab.rawValue
         )
+        tabBarItem.accessibilityIdentifier = "tab.\(tab.title.lowercased())"
+        navigationController.tabBarItem = tabBarItem
         return navigationController
     }
 }

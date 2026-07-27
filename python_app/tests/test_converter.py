@@ -11,6 +11,7 @@ import sys
 import tempfile
 import time
 import unittest
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, patch
@@ -2396,8 +2397,12 @@ class TestAudioConverter(unittest.IsolatedAsyncioTestCase):
         old_threshold = os.environ.get("EDGE_PIPER_THRESHOLD")
         os.environ["EDGE_PIPER_THRESHOLD"] = "999"
         try:
+            test_config = replace(
+                self.config,
+                extra={**(self.config.extra or {}), "max_chapter_attempts": "1"},
+            )
             result = await self.converter._convert_chapters_sequential(
-                chapters, mock_tts_engine, output_dir, self.config
+                chapters, mock_tts_engine, output_dir, test_config
             )
         finally:
             if old_threshold is None:

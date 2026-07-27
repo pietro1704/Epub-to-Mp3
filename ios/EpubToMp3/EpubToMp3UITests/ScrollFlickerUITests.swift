@@ -27,6 +27,7 @@ final class ScrollFlickerUITests: XCTestCase {
     func testScrollUpDownDoesNotReRenderChapters() throws {
         XCUIDevice.shared.orientation = .portrait
         let app = XCUIApplication()
+        app.launchArguments += ["-uiTestFixture"]
         app.launchArguments += [
             "-uiTestResetReaderPosition",
             "-uiTestFlickerProbe",
@@ -34,13 +35,13 @@ final class ScrollFlickerUITests: XCTestCase {
         ]
         app.launch()
 
-        let firstBook = app.buttons.matching(
+        let firstBook = app.descendants(matching: .any).matching(
             NSPredicate(format: "identifier BEGINSWITH %@", "library.bookTile.")
         ).firstMatch
         guard firstBook.waitForExistence(timeout: 20) else { throw XCTSkip("No book.") }
         firstBook.tap()
         // Reader chrome present == inside the book.
-        guard app.buttons["Buscar no livro"].firstMatch.waitForExistence(timeout: 20) else {
+        guard app.buttons["reader.search"].firstMatch.waitForExistence(timeout: 20) else {
             throw XCTSkip("Reader did not open.")
         }
         resetProbe(app)
@@ -63,17 +64,18 @@ final class ScrollFlickerUITests: XCTestCase {
     func testFastScrollCaptureForWhiteBand() throws {
         XCUIDevice.shared.orientation = .portrait
         let app = XCUIApplication()
+        app.launchArguments += ["-uiTestFixture"]
         app.launchArguments += [
             "-uiTestResetReaderPosition",
             "-uiTestReaderLayout", "scrolling",
         ]
         app.launch()
-        let firstBook = app.buttons.matching(
+        let firstBook = app.descendants(matching: .any).matching(
             NSPredicate(format: "identifier BEGINSWITH %@", "library.bookTile.")
         ).firstMatch
         guard firstBook.waitForExistence(timeout: 20) else { throw XCTSkip("No book.") }
         firstBook.tap()
-        guard app.buttons["Buscar no livro"].firstMatch.waitForExistence(timeout: 20) else {
+        guard app.buttons["reader.search"].firstMatch.waitForExistence(timeout: 20) else {
             throw XCTSkip("Reader did not open.")
         }
         sleep(1)

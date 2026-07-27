@@ -62,12 +62,14 @@ final class MacLibraryViewController: NSViewController, NSSearchFieldDelegate,
     private func configureToolbar() {
         searchField.placeholderString = L10n.string("library.searchPlaceholder")
         searchField.delegate = self
+        searchField.setAccessibilityIdentifier("library.search")
         searchField.translatesAutoresizingMaskIntoConstraints = false
 
         sortButton.removeAllItems()
         sortButton.addItems(withTitles: LibraryGridModel.SortMode.allCases.map(\.label))
         sortButton.target = self
         sortButton.action = #selector(sortChanged(_:))
+        sortButton.setAccessibilityIdentifier("library.sort")
         sortButton.translatesAutoresizingMaskIntoConstraints = false
 
         let add = NSButton(image: NSImage(systemSymbolName: "plus", accessibilityDescription: nil)!,
@@ -75,6 +77,7 @@ final class MacLibraryViewController: NSViewController, NSSearchFieldDelegate,
                            action: #selector(addTapped))
         add.bezelStyle = .texturedRounded
         add.toolTip = L10n.string("library.addBook")
+        add.setAccessibilityIdentifier("library.add")
         add.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(searchField)
         view.addSubview(sortButton)
@@ -101,6 +104,7 @@ final class MacLibraryViewController: NSViewController, NSSearchFieldDelegate,
         collectionView.isSelectable = true
         collectionView.setAccessibilityElement(true)
         collectionView.setAccessibilityLabel(L10n.string("library.title"))
+        collectionView.setAccessibilityIdentifier("library.collection")
         collectionView.allowsMultipleSelection = false
         collectionView.backgroundColors = [.clear]
         collectionView.delegate = self
@@ -311,6 +315,8 @@ private final class MacBookCollectionItem: NSCollectionViewItem {
         self.onOpen = onOpen
         view.setAccessibilityElement(false)
         view.setAccessibilityChildren([openButton])
+        view.setAccessibilityIdentifier("library.book.\(book.id)")
+        openButton.setAccessibilityIdentifier("library.book.open.\(book.id)")
         openButton.setAccessibilityLabel(book.resolvedTitle)
         openButton.setAccessibilityHelp(L10n.string("library.openBook"))
         titleField.stringValue = book.resolvedTitle

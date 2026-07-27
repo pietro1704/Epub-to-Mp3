@@ -1,9 +1,8 @@
 import XCTest
 
-/// Source-contract tests for the slice-4 Book Detail flow: Library must
-/// route through Book Detail (Read/Listen/Download) instead of opening the
-/// reader directly, on both platforms. See
-/// `docs/reader-spec-comparison.md` P0 gap #4.
+/// Source-contract tests for the native Book Detail implementation retained
+/// for iOS and legacy macOS documents. The macOS library now opens the reader
+/// directly, matching the iOS reading flow.
 final class BookDetailWiringTests: XCTestCase {
     private func source(_ relativePath: String) throws -> String {
         let root = URL(fileURLWithPath: #filePath)
@@ -40,19 +39,15 @@ final class BookDetailWiringTests: XCTestCase {
     func testLibraryScreenControllerOpensBookDetailNotReaderDirectly() throws {
         let source = try source("Features/Library/Views/LibraryScreenController.swift")
 
-        XCTAssertTrue(source.contains("BookDetailScreenController("))
-        XCTAssertTrue(source.contains("pushViewController(detail"))
-        XCTAssertFalse(
-            source.contains("ReaderSessionState.setCurrentlyReading(bookID: book.id)"),
-            "Opening a book from the grid must go through Book Detail, not set the reader session directly."
-        )
+        XCTAssertTrue(source.contains("gridController.onOpen"))
+        XCTAssertTrue(source.contains("ReaderSessionState.setCurrentlyReading(bookID: book.id)"))
     }
 
-    func testMacRootRoutesLibraryOpenThroughBookDetail() throws {
+    func testMacRootRoutesLibraryOpenDirectlyToReader() throws {
         let source = try source("App/MacAppKitRootController.swift")
 
-        XCTAssertTrue(source.contains("showBookDetail(bookID: bookID)"))
-        XCTAssertTrue(source.contains("MacBookDetailViewController("))
+        XCTAssertTrue(source.contains("showReader(bookID: bookID)"))
+        XCTAssertFalse(source.contains("onOpenBook: { [weak self] bookID in self?.showBookDetail(bookID: bookID) }"))
     }
 
     func testConvertScreenControllerAcceptsPreselectedFileURL() throws {

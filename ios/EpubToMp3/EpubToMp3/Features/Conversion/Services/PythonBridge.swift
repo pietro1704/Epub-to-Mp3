@@ -64,6 +64,25 @@ final class PythonBridge: @unchecked Sendable {
     /// Access only from `queue`.
     private var _iosEntrypointsModule: PythonObject?
 
+    /// Set once a `parseEpub` call has ever timed out. `PythonRunner` is a
+    /// strict single-thread FIFO queue: when a call hangs, that dedicated
+    /// thread never returns, so the timeout only resolves the *caller's*
+    /// continuation — it does not stop the underlying blocked work. Every
+    /// later Python call queues up behind the permanently-stuck one and
+    /// waits forever, which is exactly what "carregamento infinito" looked
+    /// like: the first book's parse falls back correctly after 30s, but
+    /// every book opened afterward (including a fresh one) hangs too,
+    /// because they're all stuck in line behind the wedged call. Once this
+    /// fires, skip the interpreter entirely for the rest of the session and
+    /// go straight to `EpubFallbackParser` so opening a book never waits on
+    /// a queue that will never drain.
+    private static let interpreterHealthLock = NSLock()
+    nonisolated(unsafe) private static var _interpreterWedged = false
+    private static var interpreterWedged: Bool {
+        get { interpreterHealthLock.lock(); defer { interpreterHealthLock.unlock() }; return _interpreterWedged }
+        set { interpreterHealthLock.lock(); _interpreterWedged = newValue; interpreterHealthLock.unlock() }
+    }
+
     private init() {}
 
     // MARK: - EPUB parse
@@ -82,6 +101,15 @@ final class PythonBridge: @unchecked Sendable {
     /// - Throws: `PythonBridgeError` if bootstrap, parse, or JSON
     ///   decode fails.
     func parseEpub(at fileURL: URL, bookId: String) async throws -> EbookFulltext {
+        guard !Self.interpreterWedged else {
+            let fallback = await Task.detached(priority: .userInitiated) {
+                EpubFallbackParser.parse(url: fileURL, bookId: bookId)
+            }.value
+            guard !fallback.chapters.isEmpty else {
+                throw PythonBridgeError.emptyResult
+            }
+            return fallback
+        }
         do {
             // 30 s deadline via PythonRunner's one-resume gate (not
             // `withTimeout`, which deadlocks around continuations — see
@@ -90,6 +118,19 @@ final class PythonBridge: @unchecked Sendable {
                 try PythonEmbed.shared.bootstrap()
                 return try self.parseEpubSync(path: fileURL.path, bookId: bookId)
             }
+        } catch is TimeoutError {
+            // The dedicated Python thread is still blocked on the call we
+            // just gave up on and will never drain its FIFO queue again —
+            // mark the interpreter unhealthy so every later book skips
+            // straight to the fallback instead of queuing behind it.
+            Self.interpreterWedged = true
+            let fallback = await Task.detached(priority: .userInitiated) {
+                EpubFallbackParser.parse(url: fileURL, bookId: bookId)
+            }.value
+            guard !fallback.chapters.isEmpty else {
+                throw PythonBridgeError.emptyResult
+            }
+            return fallback
         } catch {
             // A slow or unavailable embedded interpreter must not make a
             // locally imported book unreadable. The native parser runs off

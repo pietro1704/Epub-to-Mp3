@@ -65,6 +65,19 @@ def test_project_yml_excludes_widget_from_macos_build():
     )
 
 
+def test_ios_only_extensions_have_ios_platform_filters():
+    """The macOS test host must not build or sign iOS-only extensions."""
+    body = PROJECT_YML.read_text(encoding="utf-8")
+    for target in ("EpubToMp3Widget", "EpubToMp3ShareExtension"):
+        idx = body.find(f"target: {target}")
+        assert idx != -1, f"project.yml is missing {target}"
+        nearby = body[idx : idx + 180]
+        assert "destinationFilters: [iOS]" in nearby, (
+            f"{target} embed dependency is missing destinationFilters: [iOS]; "
+            "macOS test/build targets may try to sign the iOS-only extension"
+        )
+
+
 def test_widget_has_dedicated_info_plist():
     """Slice 21B guard: the widget target must use its own Info.plist
     file (containing the NSExtension dictionary) so the iOS simulator's

@@ -41,6 +41,29 @@ final class ResumeStoreTests: XCTestCase {
     func testKeyFormat() {
         XCTAssertEqual(ResumeStore.key(jobId: "abc", chapterIndex: 7), "abc#7")
     }
+
+    func testUserDefaultsStoragePersistsWithoutRecursing() {
+        let suite = "ResumeStoreTests.userDefaults"
+        let defaults = UserDefaults(suiteName: suite)!
+        defaults.removePersistentDomain(forName: suite)
+        let store = ResumeStore(storage: UserDefaultsResumeStorage(defaults: defaults))
+
+        store.save(jobId: "book", chapterIndex: 0, position: 12)
+
+        XCTAssertNotNil(defaults.data(forKey: "audioPlayer.resumeMarkers.v1"))
+        defaults.removePersistentDomain(forName: suite)
+    }
+
+    /// Regression: `UserDefaults` must NOT conform to `ResumeStorage`
+    /// directly. A same-signature `set(_ value: Data?, forKey:)` declared
+    /// straight on the `UserDefaults` class shadows Foundation's native
+    /// `Any?` overload for every `Data`-typed call in the module — including
+    /// unrelated code like `LibraryStore.persist()` — which crashed the app
+    /// by posting `UserDefaults.didChangeNotification` off the main thread.
+    func testUserDefaultsDoesNotConformToResumeStorage() {
+        XCTAssertNil(UserDefaults.standard as? ResumeStorage,
+                     "UserDefaults must not conform to ResumeStorage — use UserDefaultsResumeStorage instead")
+    }
 }
 
 // `AudioPlayerPlaybackPersistenceTests` removed here: it called

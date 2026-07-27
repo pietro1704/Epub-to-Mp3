@@ -1,4 +1,5 @@
 /* English (base) — EpubToMp3 localisation */
+"common.close" = "Close";
 
 /* MainReaderView */
 "mainReader.pickBook" = "Pick a book to read";
@@ -46,6 +47,7 @@
 "reader.chapterCount" = "%d chapters";
 "reader.close" = "Close book";
 "reader.toc" = "TOC";
+"reader.settings" = "Reader settings";
 "library.openBook" = "Open book";
 "jobs.book" = "Book";
 "jobs.status" = "Status";
@@ -100,6 +102,8 @@
 "player.pause" = "Pause";
 "player.play" = "Play";
 "player.nothingPlaying" = "Nothing playing";
+"player.remaining" = "%@ remaining";
+"player.preparingAudio" = "Preparing audio…";
 "player.fullPlayer" = "Full player";
 "player.skipForward15" = "Skip forward 15 seconds";
 "player.skipForward30" = "Skip forward 30 seconds";

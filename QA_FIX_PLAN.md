@@ -1,7 +1,7 @@
 # EpubToMp3 — plano de QA e correção
 
 Data: 2026-07-22 21:56 -03:00
-Status: plano vivo; correções e infraestrutura UIKit/SwiftUI locais até 2026-07-23 08:50 -03:00; aceite visual/runtime ainda pendente e a QA macOS está bloqueada pelo display inativo.
+Status: plano vivo; correções e infraestrutura UIKit/SwiftUI locais até 2026-07-23 08:50 -03:00; a continuidade macOS de 2026-07-26 validou build Release/Debug, smoke visual, fixture local de download/offline/eviction e build genérico iOS, mas o aceite funcional completo ainda está pendente. Evidências: [QA_MACOS_SESSION_2026-07-26.md](docs/QA_MACOS_SESSION_2026-07-26.md).
 
 ## Objetivo
 
@@ -148,6 +148,8 @@ Cada fase abaixo deve seguir: reprodução/diagnóstico → teste de regressão 
 
 **Estado conhecido:** merge de manifestos, download em background, arquivo parcial e rota local já têm implementação/testes unitários. O que falta é a prova integrada.
 
+**Evidência adicional em 2026-07-26:** o teste `DownloadManagerBackgroundTests.testLocalFixtureDownloadsAllChaptersAndRoutesPlaybackOffline` executa o loop público com dois arquivos `file://` temporários, aguarda `.completed`, verifica manifest/arquivos locais nos índices 0 e 4 e confirma que o `PlaybackRouter` escolhe o MP3 local sem URL base. Isso valida a integração local controlada; não substitui o roteiro em device com rede desabilitada nem um download HTTP real.
+
 **Verificar:**
 
 - download completo → modo avião → player escolhe MP3 local validado;
@@ -158,6 +160,8 @@ Cada fase abaixo deve seguir: reprodução/diagnóstico → teste de regressão 
 - eviction reconcilia `cachedOffline` da biblioteca quando o arquivo desaparece.
 
 **Aceite:** testes unitários e um roteiro de device com rede desabilitada; se o servidor local for necessário, usar fixture controlada e registrar o endpoint/artefato, sem afirmar offline por inspeção do manifest.
+
+**Estado atual:** fixture controlada no macOS passou; o roteiro de device/rede desabilitada continua pendente.
 
 ### U5 — Reclassificar bugs históricos em vez de duplicá-los
 
@@ -185,6 +189,8 @@ Cada fase abaixo deve seguir: reprodução/diagnóstico → teste de regressão 
 6. Final: `mise run test`, artefatos, processos filhos e `git status`.
 
 **Restrição:** não iniciar Simulator/CoreSimulator neste Mac Intel com 8 GiB. Build genérico e host tests não substituem validação visual/áudio no iPhone.
+
+**Evidência adicional em 2026-07-26:** `xcodebuild` para `generic/platform=iOS` passou sem assinatura, gerando `EpubToMp3.app`, `EpubToMp3Widget.appex` e `EpubToMp3ShareExtension.appex`, com ambos os appex também embutidos em `EpubToMp3.app/PlugIns/`. Isso é gate de packaging, não aceite de runtime no iPhone.
 
 ### U7 — Decisão posterior: UIKit integral
 

@@ -18,12 +18,13 @@ final class PageTurnFlashUITests: XCTestCase {
     private func open() throws -> XCUIApplication {
         XCUIDevice.shared.orientation = .portrait
         let app = XCUIApplication()
+        app.launchArguments += ["-uiTestFixture"]
         app.launchArguments += [
             "-uiTestResetReaderPosition",
             "-uiTestReaderLayout", "paginated",
         ]
         app.launch()
-        let firstBook = app.buttons.matching(
+        let firstBook = app.descendants(matching: .any).matching(
             NSPredicate(format: "identifier BEGINSWITH %@", "library.bookTile.")
         ).firstMatch
         guard firstBook.waitForExistence(timeout: 20) else { throw XCTSkip("No book.") }
@@ -31,7 +32,8 @@ final class PageTurnFlashUITests: XCTestCase {
         guard indicator(app) != nil else { throw XCTSkip("No page indicator.") }
         // The opening chapter (front matter) may be short. Page forward across
         // chapters until we land in one with >=3 pages.
-        let right = app.coordinate(withNormalizedOffset: CGVector(dx: 0.85, dy: 0.5))
+        let right = app.buttons["reader.pageTurn.right"].firstMatch
+        XCTAssertTrue(right.waitForExistence(timeout: 5))
         var guardCount = 0
         while (indicator(app)?.total ?? 0) < 3, guardCount < 30 {
             right.tap(); usleep(700_000); guardCount += 1
@@ -43,7 +45,8 @@ final class PageTurnFlashUITests: XCTestCase {
             throw XCTSkip("Could not reach a chapter with >=3 pages.")
         }
         // Make sure we're on page 1 of that chapter for a deterministic start.
-        let left = app.coordinate(withNormalizedOffset: CGVector(dx: 0.15, dy: 0.5))
+        let left = app.buttons["reader.pageTurn.left"].firstMatch
+        XCTAssertTrue(left.waitForExistence(timeout: 5))
         guardCount = 0
         while (indicator(app)?.page ?? 1) > 1, guardCount < 20 {
             left.tap(); usleep(700_000); guardCount += 1
@@ -53,8 +56,8 @@ final class PageTurnFlashUITests: XCTestCase {
 
     func testForwardThenBackwardTurnBurst() throws {
         let app = try open()
-        let right = app.coordinate(withNormalizedOffset: CGVector(dx: 0.85, dy: 0.5))
-        let left = app.coordinate(withNormalizedOffset: CGVector(dx: 0.15, dy: 0.5))
+        let right = app.buttons["reader.pageTurn.right"].firstMatch
+        let left = app.buttons["reader.pageTurn.left"].firstMatch
 
         // Advance to page 2 first so a backward turn has somewhere to go and a
         // forward turn is mid-chapter (page 1 should NEVER reappear).

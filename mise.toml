@@ -666,6 +666,59 @@ run_simulator_tests() {
     xcodebuild -project EpubToMp3.xcodeproj -scheme EpubToMp3 -configuration Debug \
       -destination "$DEST" -derivedDataPath "$DD" build-for-testing
   fi
+  if [[ "${IOS_TEST_SHARDS:-4}" =~ ^[1-9][0-9]*$ ]]; then
+    local shard_count="${IOS_TEST_SHARDS:-4}"
+    local shard_index
+    local -a unit_classes=()
+    local -a ui_classes=()
+    if [[ -z "${IOS_TESTS:-}" || "${IOS_TESTS}" == EpubToMp3Tests* ]]; then
+      while IFS= read -r -d '' file; do
+        while read -r class_name; do
+          [[ -n "$class_name" ]] && unit_classes+=("EpubToMp3Tests/$class_name")
+        done < <(sed -nE 's/^[[:space:]]*(final[[:space:]]+)?class[[:space:]]+([A-Za-z0-9_]+):[[:space:]]*XCTestCase.*/\\2/p' "$file")
+      done < <(find EpubToMp3Tests -maxdepth 1 -name '*.swift' -print0 | sort -z)
+    fi
+    if [[ -z "${IOS_TESTS:-}" || "${IOS_TESTS}" == EpubToMp3UITests* ]]; then
+      while IFS= read -r -d '' file; do
+        while read -r class_name; do
+          [[ -n "$class_name" ]] && ui_classes+=("EpubToMp3UITests/$class_name")
+        done < <(sed -nE 's/^[[:space:]]*(final[[:space:]]+)?class[[:space:]]+([A-Za-z0-9_]+):[[:space:]]*XCTestCase.*/\\2/p' "$file")
+      done < <(find EpubToMp3UITests -maxdepth 1 -name '*.swift' -print0 | sort -z)
+    fi
+    local -a isolated_classes=()
+    local -a grouped_classes=()
+    local class_name
+    for class_name in "${unit_classes[@]}" "${ui_classes[@]}"; do
+      if [[ "$class_name" == *Audiobook* || "$class_name" == *AudioPlayerStreamingTests || "$class_name" == *AudioPlayerSleepTimerTests || "$class_name" == *AudioPlayerSpeechFallbackTests || "$class_name" == *AudioUITests ]]; then
+        isolated_classes+=("$class_name")
+      else
+        grouped_classes+=("$class_name")
+      fi
+    done
+    for class_name in "${isolated_classes[@]}"; do
+      echo "ios:simulator:test → isolated $class_name"
+      xcodebuild -project EpubToMp3.xcodeproj -scheme EpubToMp3 -configuration Debug \
+        -destination "$DEST" -derivedDataPath "$DD" -parallel-testing-enabled NO \
+        test-without-building "-only-testing:$class_name"
+    done
+    local -a all_classes=("${grouped_classes[@]}")
+    for ((shard_index=0; shard_index<shard_count; shard_index++)); do
+      local -a shard_only=()
+      local class_position
+      for class_position in "${!all_classes[@]}"; do
+        if (( class_position % shard_count == shard_index )); then
+          shard_only+=("-only-testing:${all_classes[$class_position]}")
+        fi
+      done
+      if [[ -n "${shard_only[*]}" ]]; then
+        echo "ios:simulator:test → shard $((shard_index + 1))/$shard_count"
+        xcodebuild -project EpubToMp3.xcodeproj -scheme EpubToMp3 -configuration Debug \
+          -destination "$DEST" -derivedDataPath "$DD" \
+          -parallel-testing-enabled NO test-without-building "${shard_only[@]}"
+      fi
+    done
+    return 0
+  fi
   xcodebuild -project EpubToMp3.xcodeproj -scheme EpubToMp3 -configuration Debug \
     -destination "$DEST" -derivedDataPath "$DD" test-without-building "${only[@]}"
 }
@@ -704,20 +757,57 @@ echo "ios:device:test → device: $DEVICE"
 run_device_tests() {
   set -euo pipefail
   if [[ "${IOS_SKIP_BUILD:-0}" != "1" ]]; then
-    xcodebuild -project EpubToMp3.xcodeproj -scheme EpubToMp3 -configuration Debug \\
-      -destination "id=$DEVICE" -derivedDataPath "$DD" build-for-testing | tail -5
+    BUILD_LOG="${TMPDIR:-/tmp}/epub-to-mp3-ios-device-test-build.log"
+    if ! xcodebuild -project EpubToMp3.xcodeproj -scheme EpubToMp3 -configuration Debug \\
+      -destination "id=$DEVICE" -derivedDataPath "$DD" -showBuildTimingSummary \\
+      build-for-testing >"$BUILD_LOG" 2>&1; then
+      echo "** DEVICE TEST BUILD FAILED **" >&2
+      echo "Build log: $BUILD_LOG" >&2
+      grep -nE "error:|fatal error:|BUILD FAILED|SwiftCompile|SwiftEmitModule" "$BUILD_LOG" | tail -200 || true
+      return 65
+    fi
+    tail -40 "$BUILD_LOG"
   fi
+  TEST_LOG="${TMPDIR:-/tmp}/epub-to-mp3-ios-device-test-run.log"
   # shellcheck disable=SC2086
-  xcodebuild -project EpubToMp3.xcodeproj -scheme EpubToMp3 \\
+  if ! xcodebuild -project EpubToMp3.xcodeproj -scheme EpubToMp3 \\
     -destination "id=$DEVICE" -derivedDataPath "$DD" $ONLY \\
-    test-without-building 2>&1 | grep -iE "Test Suite|Test Case|passed|failed|error:|XCTAssert|skip|flicker" || true
+    test-without-building >"$TEST_LOG" 2>&1; then
+    echo "** DEVICE TESTS FAILED **" >&2
+    echo "Test log: $TEST_LOG" >&2
+    grep -iE "Test Suite|Test Case|passed|failed|error:|XCTAssert|skip|flicker" "$TEST_LOG" | tail -300 || true
+    return 65
+  fi
+  grep -iE "Test Suite|Test Case|passed|failed|error:|XCTAssert|skip|flicker" "$TEST_LOG" | tail -300 || true
 }
 export -f run_device_tests
 # The test runner executes in a child shell; export the destination so the
 # function cannot silently turn `id=$DEVICE` into the invalid `id=`.
-export DEVICE ONLY
+export DEVICE DD ONLY
 # Hold the single-heavy-job lock for the whole device run (PCIe panic guard).
 python3 ../../scripts/heavy_job_guard.py ios:device:test -- bash -c run_device_tests
+"""
+
+[tasks."ios:test"]
+description = "Run all iOS XCTest/UI tests on a connected device, falling back to Simulator only when no device is available"
+run = """
+#!/bin/bash
+set -euo pipefail
+ROOT="${MISE_PROJECT_ROOT:-.}"
+if [[ -n "${IOS_DEVICE_ID:-}" ]]; then
+  IOS_DEVICE_ID="$IOS_DEVICE_ID" mise run ios:device:test
+  exit $?
+fi
+
+DEVICE=$(xcrun devicectl list devices 2>/dev/null | awk '$4 == "available" { print $3; exit }')
+if [[ -n "$DEVICE" ]]; then
+  echo "ios:test → physical device available; using the Xcode destination configured by ios:device:test"
+  mise run ios:device:test
+  exit $?
+fi
+
+echo "ios:test → no available physical device; falling back to Simulator" >&2
+IOS_ALLOW_LOW_RESOURCE_SIMULATOR=1 mise run ios:simulator:test
 """
 
 # ── Docker ───────────────────────────────────────────────────────────────────────
