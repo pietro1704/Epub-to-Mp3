@@ -74,16 +74,12 @@ final class AudioPlayerSleepTimerTests: XCTestCase {
     ///
     /// We test the observable outcome: `sleepTimerRemaining` drops to 0 and
     /// `sleepTimerExpiresAt` is cleared — the fade task owns the pause call.
-    func testTickSleepTimerArmsTaskWhenExpired() async throws {
+    func testTickSleepTimerArmsTaskWhenExpired() {
         let audioPlayer = AudioPlayer()
-        // Set timer to expire immediately.
+        // The timer observer is driven by AVPlayer in production. This test
+        // verifies the public cancellation contract without introducing a
+        // wall-clock wait into the unit-test process.
         audioPlayer.setSleepTimer(seconds: 0.001)
-        // Wait for expiry.
-        try await Task.sleep(nanoseconds: 5_000_000)  // 5 ms
-        // Simulate one time-observer tick by calling the internal method via
-        // mirrored access — we call the public interface instead:
-        // Trigger via an additional `setSleepTimer` that forces the remaining
-        // path: we just re-verify `sleepTimerRemaining` ends at 0 after cancel.
         audioPlayer.cancelSleepTimer()
         XCTAssertEqual(audioPlayer.sleepTimerRemaining, 0)
     }

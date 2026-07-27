@@ -295,6 +295,9 @@ enum AudiobookCacheEviction {
     private static func deleteAudiobook(jobId: String, root: URL) -> Bool {
         let folder = root
             .appendingPathComponent(jobId, isDirectory: true)
+        guard FileManager.default.fileExists(atPath: folder.path) else {
+            return false
+        }
         do {
             try FileManager.default.removeItem(at: folder)
             return true

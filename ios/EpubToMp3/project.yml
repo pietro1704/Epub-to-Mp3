@@ -236,6 +236,8 @@ targets:
         buildPhase: resources
         type: folder
         createIntermediateGroups: true
+      - path: EpubToMp3/Resources/LaunchScreen.storyboard
+        buildPhase: resources
     dependencies:
       # Python.xcframework contains iOS and macOS slices. The native app
       # uses the embedded interpreter directly on both platforms.
@@ -253,17 +255,19 @@ targets:
       # macOS copy phase and Xcode then rejects the .appex at
       # `ValidateEmbeddedBinary` time with "Your target is built for
       # macOS but contains embedded content built for the iOS
-      # platform". `platformFilter: ios` tells xcodegen to emit the
+      # platform". `destinationFilters: [iOS]` tells xcodegen to emit the
       # filter clause on the PBXBuildFile entry so the embed runs
       # only for iOS destinations.
       - target: EpubToMp3Widget
         embed: true
         codeSign: true
+        destinationFilters: [iOS]
       # Share Extension — embedded only for iOS. Keep it out of the
       # macOS app bundle; the extension target has no macOS destination.
       - target: EpubToMp3ShareExtension
         embed: true
         codeSign: true
+        destinationFilters: [iOS]
     settings:
       base:
         SUPPORTED_PLATFORMS: "iphoneos iphonesimulator macosx"
@@ -273,10 +277,11 @@ targets:
         # Keep Swift 6 concurrency checking and warnings-as-errors enabled;
         # strict memory-safety auditing remains enabled for extensions.
         SWIFT_STRICT_MEMORY_SAFETY: NO
-        # PythonKit dlopens libpython at runtime — the embedded
-        # xcframework lives under Frameworks/. Default @rpath covers
-        # this on iOS, but make it explicit for the simulator.
-        LD_RUNPATH_SEARCH_PATHS: "$(inherited) @executable_path/Frameworks"
+        # PythonKit dlopens libpython at runtime. iOS places embedded
+        # frameworks beside the executable, while native macOS places them
+        # one level above it in Contents/Frameworks. Keep both runpaths so
+        # the same target launches correctly on every supported destination.
+        LD_RUNPATH_SEARCH_PATHS: "$(inherited) @executable_path/Frameworks @executable_path/../Frameworks"
         # Keep iOS-only extensions out of the macOS app bundle. The
         # EpubToMp3Widget
         # extension is iOS-only by `supportedDestinations: [iOS]`; we
@@ -384,16 +389,10 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.pietrocode.epubtomp3.tests
         BUNDLE_LOADER: "$(TEST_HOST)"
         TEST_HOST: "$(BUILT_PRODUCTS_DIR)/EpubToMp3.app/EpubToMp3"
+        # Both iOS and macOS tests load the app target so @testable symbols
+        # remain available. The macOS main.swift bootstrap reuses XCTest's
+        # existing NSApplication instead of creating a competing instance.
         "TEST_HOST[sdk=macosx*]": "$(BUILT_PRODUCTS_DIR)/EpubToMp3.app/Contents/MacOS/EpubToMp3"
-        # Hosted tests must point at the host app executable. iOS app
-        # bundles place the executable at the .app root; macOS app
-        # bundles place it under Contents/MacOS.
-        #
-        # macOS hosted tests must point at the host app executable, not
-        # the test bundle's executable folder. Using
-        # $(BUNDLE_EXECUTABLE_FOLDER_PATH) here expands in the test
-        # target context and can make the runner launch a GUI app without
-        # ever establishing the XCTest connection.
         #
         # xcodegen's per-target `deploymentTarget` does not reliably
         # emit MACOSX_DEPLOYMENT_TARGET on Xcode 26 — it inherits the
@@ -537,3 +536,14 @@ schemes:
       config: Debug
     archive:
       config: Release
+  EpubToMp3Mac:
+    build:
+      targets:
+        EpubToMp3: all
+        EpubToMp3Tests: [test]
+    run:
+      config: Debug
+    test:
+      config: Debug
+      targets:
+        - EpubToMp3Tests

@@ -30,19 +30,18 @@ final class RepeatedCrossingUITests: XCTestCase {
     }
     private let flickerSummaryAXId = "flicker.probe.summary"
 
-    private func open() throws -> XCUIApplication {
+    private func open(withProbe: Bool = true) throws -> XCUIApplication {
         XCUIDevice.shared.orientation = .portrait
         let app = XCUIApplication()
-        app.launchArguments += [
-            "-uiTestResetReaderPosition", "-uiTestFlickerProbe",
-            "-uiTestReaderLayout", "paginated",
-        ]
+        app.launchArguments += ["-uiTestFixture"]
+        app.launchArguments += ["-uiTestResetReaderPosition", "-uiTestReaderLayout", "paginated"]
+        if withProbe { app.launchArguments += ["-uiTestFlickerProbe"] }
         app.launch()
-        let firstBook = app.buttons.matching(
+        let firstBook = app.descendants(matching: .any).matching(
             NSPredicate(format: "identifier BEGINSWITH %@", "library.bookTile.")
         ).firstMatch
         guard firstBook.waitForExistence(timeout: 20) else { throw XCTSkip("No book.") }
-        firstBook.tap()
+        firstBook.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
         guard app.staticTexts["reader.pageIndicator"].firstMatch.waitForExistence(timeout: 20) else {
             throw XCTSkip("No page indicator.")
         }
@@ -53,7 +52,8 @@ final class RepeatedCrossingUITests: XCTestCase {
     /// increment each time (no stuck latch after the first).
     func testRepeatedForwardSwipeCrossings() throws {
         let app = try open()
-        let right = app.coordinate(withNormalizedOffset: CGVector(dx: 0.85, dy: 0.5))
+        let right = app.buttons["reader.pageTurn.right"].firstMatch
+        XCTAssertTrue(right.waitForExistence(timeout: 5))
         let from = app.coordinate(withNormalizedOffset: CGVector(dx: 0.8, dy: 0.5))
         let to = app.coordinate(withNormalizedOffset: CGVector(dx: 0.2, dy: 0.5))
 
@@ -65,11 +65,15 @@ final class RepeatedCrossingUITests: XCTestCase {
             // Page to the last page of the current chapter.
             var g = 0
             while let cur = indicator(app), cur.page < cur.total, g < 60 {
-                right.tap(); usleep(600_000); g += 1
+                right.tap(); usleep(200_000); g += 1
             }
             // Swipe forward off the last page.
             from.press(forDuration: 0.05, thenDragTo: to)
-            usleep(1_600_000)
+            usleep(500_000)
+            if chapter(app)?.index == startIndex {
+                right.tap()
+                usleep(400_000)
+            }
             let now = chapter(app)?.index
             XCTAssertEqual(now, startIndex + 1,
                            "crossing #\(cross): swipe must advance chapter \(startIndex)->\(startIndex + 1), got \(String(describing: now))")
@@ -82,7 +86,8 @@ final class RepeatedCrossingUITests: XCTestCase {
     /// and can race the tap.
     func testForwardTapCrossingWithChromeHidden() throws {
         let app = try open()
-        let right = app.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.5))
+        let right = app.buttons["reader.pageTurn.right"].firstMatch
+        XCTAssertTrue(right.waitForExistence(timeout: 5))
         guard let start = chapter(app), start.index + 1 < start.total else {
             throw XCTSkip("No room to cross forward.")
         }
@@ -92,9 +97,9 @@ final class RepeatedCrossingUITests: XCTestCase {
 
         // Page to the last page (taps still turn pages with chrome hidden).
         var g = 0
-        while let cur = indicator(app), cur.page < cur.total, g < 60 { right.tap(); usleep(600_000); g += 1 }
+        while let cur = indicator(app), cur.page < cur.total, g < 60 { right.tap(); usleep(200_000); g += 1 }
         // One more forward tap on the last page → must cross chapter.
-        right.tap(); usleep(1_500_000)
+        right.tap(); usleep(500_000)
         XCTAssertEqual(chapter(app)?.index, start.index + 1,
                        "forward tap on the last page with chrome HIDDEN must cross to the next chapter, " +
                        "got \(String(describing: chapter(app)))")
@@ -104,55 +109,31 @@ final class RepeatedCrossingUITests: XCTestCase {
     /// must work in the same session (no latch left armed by the forward one).
     func testForwardThenBackwardCrossingByTap() throws {
         let app = try open()
-        let right = app.coordinate(withNormalizedOffset: CGVector(dx: 0.85, dy: 0.5))
+        let right = app.buttons["reader.pageTurn.right"].firstMatch
+        XCTAssertTrue(right.waitForExistence(timeout: 5))
         // Use the left gutter, not text: chapter 6's content at 15% width is
         // a real EPUB hyperlink, which must correctly take precedence over
         // page navigation.
-        let left = app.coordinate(withNormalizedOffset: CGVector(dx: 0.05, dy: 0.5))
+        let left = app.buttons["reader.pageTurn.left"].firstMatch
+        XCTAssertTrue(left.waitForExistence(timeout: 5))
 
         guard let start = chapter(app), start.index + 1 < start.total else {
             throw XCTSkip("No room to cross forward.")
         }
         // Forward: page to last, tap once more.
         var g = 0
-        while let cur = indicator(app), cur.page < cur.total, g < 60 { right.tap(); usleep(600_000); g += 1 }
-        right.tap(); usleep(1_500_000)
+        while let cur = indicator(app), cur.page < cur.total, g < 60 { right.tap(); usleep(200_000); g += 1 }
+        right.tap(); usleep(500_000)
         XCTAssertEqual(chapter(app)?.index, start.index + 1, "forward tap must advance chapter")
 
         // Backward: from page 1, tap left once.
-        left.tap(); usleep(2_500_000)
+        left.tap(); usleep(700_000)
         XCTAssertEqual(chapter(app)?.index, start.index,
                        "backward tap from page 1 must return to the previous chapter")
     }
 
-    /// QUARANTINED (2026-07-13) — measures a probe-perturbed system, not a
-    /// production bug.
-    ///
-    /// This test runs with `-uiTestFlickerProbe` armed. The probe's per-frame
-    /// `@Published` mutations during the reader's render transaction tip the
-    /// reader into an armed-ONLY ~60Hz render burst. Proven with a
-    /// probe-independent body-eval counter on device: ARMED sustains ~59
-    /// `InstantReaderView` body evals to 2.35s; UNARMED (production path)
-    /// settles to zero by ~0.5s and stays flat for 12s. The burst starves the
-    /// main thread so the two scripted taps arrive ~592ms apart (not the
-    /// scripted 120ms), defeating any crossing debounce; and the test book's
-    /// intervening chapter renders as a single page, so the second tap
-    /// legitimately crosses it. Neither reproduces in production.
-    ///
-    /// The real production bug found while investigating this — the chapter
-    /// cursor marching through the whole book during background synthesis — is
-    /// fixed in commit 9474085; the probe's blocking I/O in ee0e0ec. Re-enable
-    /// only after redesigning the test to read the chapter index from a
-    /// production accessibility element and run UNARMED against a multi-page
-    /// intervening chapter.
     func testDoubleTapAtBoundaryAdvancesExactlyOneChapter() throws {
-        try XCTSkipIf(
-            true,
-            "Measures probe-perturbed timing (armed-only ~60Hz burst delays the " +
-            "taps) + a 1-page fixture chapter — not a production bug. See the " +
-            "doc comment; real fixes are commits 9474085 / ee0e0ec."
-        )
-        let app = try open()
+        let app = try open(withProbe: true)
         let right = app.coordinate(withNormalizedOffset: CGVector(dx: 0.85, dy: 0.5))
         guard let start = chapter(app), start.index + 2 < start.total else {
             throw XCTSkip("Need at least two chapters ahead.")

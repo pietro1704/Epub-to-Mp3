@@ -110,6 +110,14 @@ final class EpubFallbackParserTests: XCTestCase {
             "&hellip; must decode; got: \(text.prefix(80))")
     }
 
+    func testLargeEntityHeavyChapterDoesNotMultiplyWholeStringMemory() throws {
+        let body = String(repeating: "word&amp;word ", count: 100_000)
+        let text = try parsed(html: "<p>\(body)</p>")
+
+        XCTAssertTrue(text.contains("word&word"))
+        XCTAssertFalse(text.contains("&amp;"))
+    }
+
     // MARK: - Script / style exclusion
 
     func testScriptContentExcluded() throws {
@@ -160,9 +168,17 @@ final class EpubFallbackParserTests: XCTestCase {
             "End text must be present; got: \(text.prefix(120))")
     }
 
-    // MARK: - Title extraction
+    // MARK: - Minimal-safety-net contract
+    //
+    // This parser is a plain-text-only fallback for when the embedded
+    // Python pipeline (the sole source of truth for book structure) is
+    // unavailable. It intentionally does NOT extract TOC-derived titles,
+    // CSS, or image resources — that logic lives in
+    // `python_app/src/ebook_reader.py` and duplicating it here is exactly
+    // what caused the multi-GB `stripHTML` regex crash on a pathological
+    // chapter. These tests pin the *absence* of that duplicated surface.
 
-    func testH1TitleUsedAsChapterName() throws {
+    func testChapterNameIsAlwaysGenericNeverDerivedFromHeadings() throws {
         let url = try EpubFixture.createWithChapter(
             chapterTitle: "My Chapter",
             body: "<h1>My Chapter</h1><p>Body text here.</p>"
@@ -170,37 +186,24 @@ final class EpubFallbackParserTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: url) }
 
         let result = EpubFallbackParser.parse(url: url, bookId: "t")
-        let chapter = result.chapters.first
-        let name = try XCTUnwrap(chapter?.name)
+        let name = try XCTUnwrap(result.chapters.first?.name)
 
-        XCTAssertTrue(name.contains("My Chapter") || name.contains("Chapter"),
-            "Chapter name must derive from <h1>; got: \(name)")
+        XCTAssertEqual(name, "Chapter 1",
+            "The fallback parser must not scan headings for a title — that's Python's job")
     }
 
-    func testChapterImagesResolveRelativeToArchivePath() throws {
+    func testChapterHasNoHtmlCssOrImageResources() throws {
         let url = try EpubFixture.createWithChapter(
             body: "<img src=\"../images/cover.png\"/><p>Body text here.</p>"
         )
         defer { try? FileManager.default.removeItem(at: url) }
 
-        let result = EpubFallbackParser.parse(url: url, bookId: "image-test")
-        let resources = try XCTUnwrap(result.chapters.first?.resources)
-        let resource = try XCTUnwrap(resources.first)
+        let chapter = try XCTUnwrap(EpubFallbackParser.parse(url: url, bookId: "image-test").chapters.first)
 
-        XCTAssertEqual(resources.count, 1)
-        XCTAssertEqual(resource.href, "../images/cover.png")
-        XCTAssertEqual(resource.mediaType, "image/png")
-        XCTAssertEqual(Data(base64Encoded: resource.dataBase64 ?? ""), EpubFixture.coverPNG)
-    }
-
-    func testAbsoluteFilesystemPrefixResolvesToArchiveSuffix() {
-        let candidate = "/tmp/imported-book/Users/pietro/Developer/Epub-to-Mp3/OEBPS/images/cover.png"
-        let entries = ["OEBPS/images/cover.png"]
-
-        XCTAssertEqual(
-            EpubFallbackParser.resolveArchiveMember(candidate, entries: entries),
-            "OEBPS/images/cover.png"
-        )
+        XCTAssertNil(chapter.html, "Fallback chapters render as plain text, never HTML")
+        XCTAssertNil(chapter.css)
+        XCTAssertNil(chapter.resources, "Image extraction stays in Python — this is a text-only safety net")
+        XCTAssertTrue(chapter.text.contains("Body text here"))
     }
 
     // MARK: - Large single paragraph

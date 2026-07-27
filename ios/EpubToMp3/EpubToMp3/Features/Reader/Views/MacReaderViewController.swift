@@ -1,6 +1,7 @@
 #if os(macOS) && !targetEnvironment(simulator)
 import AppKit
 import PDFKit
+import Combine
 
 @MainActor
 final class MacReaderViewController: NSViewController, NSTableViewDataSource, NSTableViewDelegate {
@@ -17,6 +18,8 @@ final class MacReaderViewController: NSViewController, NSTableViewDataSource, NS
     private let chapterTitleLabel = NSTextField(labelWithString: "")
     private let statusLabel = NSTextField(labelWithString: "")
     private let tocPopover = NSPopover()
+    private let settingsPopover = NSPopover()
+    private var settingsCancellables: Set<AnyCancellable> = []
     private var pdfView: PDFView?
     private var fulltext: EbookFulltext?
     private var selectedChapter = 0
@@ -52,6 +55,10 @@ final class MacReaderViewController: NSViewController, NSTableViewDataSource, NS
         surface.onKeyDown = { [weak self] event in
             self?.handleKeyboardEvent(event) ?? false
         }
+        surface.onPageTap = { [weak self] forward in
+            self?.scrollPage(forward: forward)
+            return true
+        }
         view = surface
         view.wantsLayer = true
     }
@@ -69,7 +76,12 @@ final class MacReaderViewController: NSViewController, NSTableViewDataSource, NS
     override func viewDidLoad() {
         super.viewDidLoad()
         configureReader()
-        configureTOCPopover()
+        settings.objectWillChange
+            .sink { [weak self] _ in
+                guard let self, self.fulltext != nil else { return }
+                self.showChapter(self.selectedChapter)
+            }
+            .store(in: &settingsCancellables)
         loadCurrentBook()
         NotificationCenter.default.addObserver(
             self,
@@ -132,14 +144,6 @@ final class MacReaderViewController: NSViewController, NSTableViewDataSource, NS
         toc.toolTip = L10n.string("reader.toc")
         toc.setAccessibilityIdentifier("reader.toc")
 
-        let footnotes = NSButton(
-            image: NSImage(systemSymbolName: "text.append", accessibilityDescription: L10n.string("reader.footnotes.title")) ?? NSImage(),
-            target: self, action: #selector(showFootnotes)
-        )
-        footnotes.bezelStyle = .texturedRounded
-        footnotes.toolTip = L10n.string("reader.footnotes.title")
-        footnotes.setAccessibilityIdentifier("reader.footnotes")
-
         let search = NSButton(
             image: NSImage(systemSymbolName: "magnifyingglass", accessibilityDescription: L10n.string("reader.search.placeholder")) ?? NSImage(),
             target: self, action: #selector(promptSearch)
@@ -148,11 +152,17 @@ final class MacReaderViewController: NSViewController, NSTableViewDataSource, NS
         search.toolTip = L10n.string("reader.search.placeholder")
         search.setAccessibilityIdentifier("reader.search")
 
+        let appearance = NSButton(title: "Aa", target: self, action: #selector(showSettings(_:)))
+        appearance.bezelStyle = .texturedRounded
+        appearance.toolTip = L10n.string("reader.settings")
+        appearance.setAccessibilityIdentifier("reader.settings")
+
         bookTitleLabel.font = .systemFont(ofSize: 13, weight: .semibold)
         bookTitleLabel.alignment = .center
         bookTitleLabel.lineBreakMode = .byTruncatingTail
+        bookTitleLabel.setAccessibilityIdentifier("reader.title")
         bookTitleLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-        let leadingControls = NSStackView(views: [close, toc, footnotes, search])
+        let leadingControls = NSStackView(views: [close, toc, search, appearance])
         leadingControls.orientation = .horizontal
         leadingControls.spacing = 8
         let leadingSpacer = NSView()
@@ -165,11 +175,14 @@ final class MacReaderViewController: NSViewController, NSTableViewDataSource, NS
         toolbar.edgeInsets = NSEdgeInsets(top: 10, left: 16, bottom: 10, right: 16)
         toolbar.wantsLayer = true
         toolbar.layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
+        toolbar.setAccessibilityIdentifier("reader.toolbar")
 
         chapterTitleLabel.font = .systemFont(ofSize: 24, weight: .bold)
         chapterTitleLabel.lineBreakMode = .byTruncatingTail
+        chapterTitleLabel.setAccessibilityIdentifier("reader.chapterTitle")
         statusLabel.textColor = .secondaryLabelColor
         statusLabel.font = .systemFont(ofSize: 13)
+        statusLabel.setAccessibilityIdentifier("reader.status")
         textView.isEditable = false
         textView.isSelectable = true
         textView.setAccessibilityIdentifier("reader.content")
@@ -209,6 +222,10 @@ final class MacReaderViewController: NSViewController, NSTableViewDataSource, NS
         textView.onKeyDown = { [weak self] event in
             self?.handleKeyboardEvent(event) ?? false
         }
+        textView.onPageTap = { [weak self] forward in
+            self?.scrollPage(forward: forward)
+            return true
+        }
         textView.onBuildSelectionMenu = { [weak self] range in
             self?.buildSelectionMenuItems(range: range) ?? []
         }
@@ -229,6 +246,95 @@ final class MacReaderViewController: NSViewController, NSTableViewDataSource, NS
         tocPopover.contentSize = NSSize(width: 320, height: 480)
         tocPopover.behavior = .transient
     }
+
+    private func configureSettingsPopover() {
+        let font = NSPopUpButton()
+        font.addItems(withTitles: ReaderFontFamily.allCases.map(\.displayName))
+        font.selectItem(at: ReaderFontFamily.allCases.firstIndex(of: settings.readerFontFamily) ?? 0)
+        font.target = self
+        font.action = #selector(fontChanged(_:))
+
+        let theme = NSPopUpButton()
+        theme.addItems(withTitles: ReaderTheme.allCases.map(\.displayName))
+        theme.selectItem(at: ReaderTheme.allCases.firstIndex(of: settings.readerTheme) ?? 0)
+        theme.target = self
+        theme.action = #selector(themeChanged(_:))
+
+        let layout = NSPopUpButton()
+        layout.addItems(withTitles: ReaderLayout.allCases.map(\.displayName))
+        layout.selectItem(at: ReaderLayout.allCases.firstIndex(of: settings.readerLayout) ?? 0)
+        layout.target = self
+        layout.action = #selector(layoutChanged(_:))
+
+        let smaller = NSButton(title: "A−", target: self, action: #selector(decreaseFont))
+        let larger = NSButton(title: "A+", target: self, action: #selector(increaseFont))
+        let sizeButtons = NSStackView(views: [smaller, larger])
+        sizeButtons.spacing = 8
+        let margin = NSPopUpButton()
+        margin.addItems(withTitles: ["16", "24", "32", "48", "64"])
+        margin.selectItem(withTitle: String(Int(settings.readerMargin)))
+        margin.target = self
+        margin.action = #selector(marginChanged(_:))
+
+        let kerning = NSPopUpButton()
+        kerning.addItems(withTitles: ["-1", "0", "0.5", "1", "2", "3"])
+        kerning.selectItem(withTitle: String(settings.readerLetterSpacing))
+        kerning.target = self
+        kerning.action = #selector(kerningChanged(_:))
+
+        let columns = NSPopUpButton()
+        columns.addItems(withTitles: ["1", "2", "3", "4"])
+        columns.selectItem(withTitle: String(settings.readerColumns))
+        columns.target = self
+        columns.action = #selector(columnsChanged(_:))
+
+        let stack = NSStackView(views: [label("Fonte"), font, sizeButtons, label("Tema"), theme, label("Layout"), layout, label("Margens"), margin, label("Kerning"), kerning, label("Colunas"), columns])
+        stack.orientation = .vertical
+        stack.alignment = .leading
+        stack.spacing = 8
+        stack.edgeInsets = NSEdgeInsets(top: 14, left: 14, bottom: 14, right: 14)
+        let controller = NSViewController()
+        controller.view = stack
+        settingsPopover.contentViewController = controller
+        settingsPopover.contentSize = NSSize(width: 220, height: 360)
+        settingsPopover.behavior = .transient
+    }
+
+    private func label(_ value: String) -> NSTextField {
+        NSTextField(labelWithString: value)
+    }
+
+    @objc private func showSettings(_ sender: NSButton) {
+        if settingsPopover.contentViewController == nil { configureSettingsPopover() }
+        settingsPopover.show(relativeTo: sender.bounds, of: sender, preferredEdge: .maxY)
+    }
+
+    @objc private func fontChanged(_ sender: NSPopUpButton) {
+        settings.readerFontFamily = ReaderFontFamily.allCases[sender.indexOfSelectedItem]
+    }
+
+    @objc private func themeChanged(_ sender: NSPopUpButton) {
+        settings.readerTheme = ReaderTheme.allCases[sender.indexOfSelectedItem]
+    }
+
+    @objc private func layoutChanged(_ sender: NSPopUpButton) {
+        settings.readerLayout = ReaderLayout.allCases[sender.indexOfSelectedItem]
+    }
+
+    @objc private func marginChanged(_ sender: NSPopUpButton) {
+        settings.readerMargin = Double(sender.titleOfSelectedItem ?? "24") ?? 24
+    }
+
+    @objc private func kerningChanged(_ sender: NSPopUpButton) {
+        settings.readerLetterSpacing = Double(sender.titleOfSelectedItem ?? "0") ?? 0
+    }
+
+    @objc private func columnsChanged(_ sender: NSPopUpButton) {
+        settings.readerColumns = Int(sender.titleOfSelectedItem ?? "1") ?? 1
+    }
+
+    @objc private func decreaseFont() { settings.readerFontSize -= 1 }
+    @objc private func increaseFont() { settings.readerFontSize += 1 }
 
     private func loadCurrentBook() {
         guard isViewLoaded else { return }
@@ -298,7 +404,7 @@ final class MacReaderViewController: NSViewController, NSTableViewDataSource, NS
         }
     }
 
-    private func showChapter(_ index: Int) {
+    private func showChapter(_ index: Int, scrollToEnd: Bool = false) {
         guard let chapter = fulltext?.chapters[safe: index] else { return }
         chapterTitleLabel.stringValue = chapter.name ?? ""
 
@@ -322,7 +428,13 @@ final class MacReaderViewController: NSViewController, NSTableViewDataSource, NS
                 textView.font = .systemFont(ofSize: settings.readerPointSize)
             }
             repaintSavedHighlights(chapterIndex: index)
-            textView.scrollToBeginningOfDocument(nil)
+            if scrollToEnd {
+                DispatchQueue.main.async { [weak self] in
+                    self?.textView.scrollToEndOfDocument(nil)
+                }
+            } else {
+                textView.scrollToBeginningOfDocument(nil)
+            }
         }
         UserDefaults.standard.set(index, forKey: AudioPlayer.readerCurrentChapterIndexDefaultsKey)
     }
@@ -437,11 +549,32 @@ final class MacReaderViewController: NSViewController, NSTableViewDataSource, NS
         let visibleBounds = clipView.bounds
         let page = max(1, visibleBounds.height * 0.9)
         let maximumY = max(0, documentView.frame.height - visibleBounds.height)
+        let atStart = visibleBounds.origin.y <= 1
+        let atEnd = visibleBounds.origin.y >= maximumY - 1
+        if forward && atEnd, selectedChapter + 1 < (fulltext?.chapters.count ?? 0) {
+            persistReadingProgress()
+            selectedChapter += 1
+            showChapter(selectedChapter)
+            selectCurrentTOCRow()
+            return
+        }
+        if !forward && atStart, selectedChapter > 0 {
+            persistReadingProgress()
+            selectedChapter -= 1
+            showChapter(selectedChapter, scrollToEnd: true)
+            selectCurrentTOCRow()
+            return
+        }
         let offset = forward ? page : -page
         let nextY = min(max(visibleBounds.origin.y + offset, 0), maximumY)
         clipView.scroll(to: NSPoint(x: visibleBounds.origin.x, y: nextY))
         contentScrollView.reflectScrolledClipView(clipView)
         persistReadingProgress()
+    }
+
+    private func selectCurrentTOCRow() {
+        guard let row = tocRows.firstIndex(where: { $0.chapterIndex == selectedChapter }) else { return }
+        chaptersTable.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
     }
 
     // MARK: - Pagination (viewport snap) + progress restoration
@@ -490,6 +623,7 @@ final class MacReaderViewController: NSViewController, NSTableViewDataSource, NS
     }
 
     @objc private func showTOC(_ sender: NSButton) {
+        if tocPopover.contentViewController == nil { configureTOCPopover() }
         tocPopover.show(relativeTo: sender.bounds, of: sender, preferredEdge: .maxY)
     }
 
@@ -569,6 +703,7 @@ final class MacReaderViewController: NSViewController, NSTableViewDataSource, NS
 
 private final class MacReaderSurfaceView: NSView {
     var onKeyDown: ((NSEvent) -> Bool)?
+    var onPageTap: ((Bool) -> Bool)?
 
     override var acceptsFirstResponder: Bool { true }
 
@@ -578,10 +713,17 @@ private final class MacReaderSurfaceView: NSView {
             return
         }
     }
+
+    override func mouseUp(with event: NSEvent) {
+        let location = convert(event.locationInWindow, from: nil)
+        let forward = location.x >= bounds.midX
+        if onPageTap?(forward) != true { super.mouseUp(with: event) }
+    }
 }
 
 private final class MacReaderTextView: NSTextView {
     var onKeyDown: ((NSEvent) -> Bool)?
+    var onPageTap: ((Bool) -> Bool)?
     var onBuildSelectionMenu: ((NSRange) -> [NSMenuItem])?
 
     override func keyDown(with event: NSEvent) {
@@ -589,6 +731,12 @@ private final class MacReaderTextView: NSTextView {
             super.keyDown(with: event)
             return
         }
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        let location = convert(event.locationInWindow, from: nil)
+        let forward = location.x >= bounds.midX
+        if onPageTap?(forward) != true { super.mouseUp(with: event) }
     }
 
     override func menu(for event: NSEvent) -> NSMenu? {

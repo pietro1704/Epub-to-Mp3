@@ -23,6 +23,7 @@ import AppKit
 /// read the same `"library.books.v1"` key without IPC. Falls back to
 /// `.standard` on simulators without a provisioned group and in unit tests.
 final class LibraryStore: ObservableObject {
+    private let persistenceQueue = DispatchQueue(label: "com.epubtomp3.library-persistence", qos: .utility)
     private static let applicationSupportFolderName = "EpubToMp3"
 
     @Published private(set) var books: [BookEntity] = []
@@ -56,10 +57,16 @@ final class LibraryStore: ObservableObject {
         self.defaults = resolvedDefaults
         self.defaultsKey = defaultsKey
         self.fileManager = fileManager
-        // The persisted index is intentionally small; decode synchronously
-        // during construction so a mutable ObservableObject is never sent
-        // across an actor boundary while it is being initialized.
-        loadSync()
+        // UI tests install a deterministic fixture immediately after app
+        // launch. Skip decoding the user's persisted library in that mode:
+        // it can contain large cover payloads and makes launch timing and
+        // accessibility tests depend on unrelated local state.
+        if !ProcessInfo.processInfo.arguments.contains("-uiTestFixture") {
+            // The persisted index is intentionally small; decode synchronously
+            // during construction so a mutable ObservableObject is never sent
+            // across an actor boundary while it is being initialized.
+            loadSync()
+        }
     }
 
     /// Synchronous on-actor load. Used by test/preview inits where the
@@ -137,6 +144,13 @@ final class LibraryStore: ObservableObject {
     ///    refresh its bookmark + filename and skip the rest.
     @discardableResult
     func importBook(from url: URL) throws -> BookEntity {
+        guard url.isFileURL, !url.path.isEmpty else {
+            throw NSError(
+                domain: "LibraryStore",
+                code: 0,
+                userInfo: [NSLocalizedDescriptionKey: "The selected book URL is invalid or unavailable."]
+            )
+        }
         // Sandbox: the parent grants us access to the user-picked URL
         // for the duration of this scope. We must ensure every read
         // (hash, bookmark, metadata) happens INSIDE the same
@@ -243,6 +257,8 @@ final class LibraryStore: ObservableObject {
             resolvedAuthor = payload.author
             resolvedCover = Self.downsampleCover(payload.cover)
         case .epub, .fb2, .docx, .cbz, .cbr, .mobi, .azw3, .unsupported:
+            // Metadata is optional. A malformed container must not abort the
+            // import after the app-owned copy has already been created.
             let payload = (try? EpubMetadataReader.readMetadata(from: libraryURL)) ?? .init()
             resolvedTitle = payload.title
             resolvedAuthor = Self.isParserErrorText(payload.author ?? "") ? nil : payload.author
@@ -305,7 +321,7 @@ final class LibraryStore: ObservableObject {
                 id: "ui-test-book",
                 title: "UI Test Book",
                 author: "Test Author",
-                bookmark: Data([1]),
+                bookmark: Data(),
                 displayFilename: "ui-test-book.epub",
                 addedAt: .now
             )
@@ -341,28 +357,24 @@ final class LibraryStore: ObservableObject {
         var stale = false
         var url: URL
         #if os(macOS)
-        if let scoped = try? URL(
-            resolvingBookmarkData: books[i].bookmark,
-            options: [.withSecurityScope],
-            relativeTo: nil,
-            bookmarkDataIsStale: &stale
+        if let scoped = try? Self.resolveBookmarkWithTimeout(
+            books[i].bookmark, options: [.withSecurityScope]
         ) {
-            url = scoped
+            url = scoped.url
+            stale = scoped.stale
         } else {
-            url = try URL(
-                resolvingBookmarkData: books[i].bookmark,
-                options: [],
-                relativeTo: nil,
-                bookmarkDataIsStale: &stale
+            let resolved = try Self.resolveBookmarkWithTimeout(
+                books[i].bookmark, options: []
             )
+            url = resolved.url
+            stale = resolved.stale
         }
         #else
-        url = try URL(
-            resolvingBookmarkData: books[i].bookmark,
-            options: [],
-            relativeTo: nil,
-            bookmarkDataIsStale: &stale
+        let resolved = try Self.resolveBookmarkWithTimeout(
+            books[i].bookmark, options: []
         )
+        url = resolved.url
+        stale = resolved.stale
         #endif
         #if os(macOS)
         if !Self.isAppOwnedLibraryURL(url) {
@@ -389,6 +401,58 @@ final class LibraryStore: ObservableObject {
         books[i].lastOpenedAt = Date()
         persist()
         return url
+    }
+
+    /// `URL(resolvingBookmarkData:)` is a synchronous, non-cancellable
+    /// system call. For a bookmark pointing at an iCloud-backed file that
+    /// isn't downloaded locally, resolution can stall for a long time (or
+    /// indefinitely on a bad connection) waiting on the download —
+    /// blocking whichever thread called it. `openBookFile` runs inside
+    /// `BookOpenScreenController.loadBook()`'s `Task { }`, which — created
+    /// from a `@MainActor` method — inherits MainActor isolation, so a
+    /// stuck resolve here froze the entire app, not just the reader's
+    /// spinner ("carregamento infinito"). Bound it with a hard deadline:
+    /// still blocks the calling thread for that window (this API can't be
+    /// cancelled), but guarantees the caller gets control back and can
+    /// surface a real error instead of hanging forever.
+    private static func resolveBookmarkWithTimeout(
+        _ bookmark: Data,
+        options: URL.BookmarkResolutionOptions,
+        timeout: TimeInterval = 10
+    ) throws -> (url: URL, stale: Bool) {
+        let semaphore = DispatchSemaphore(value: 0)
+        let box = ResolveResultBox()
+        DispatchQueue.global(qos: .userInitiated).async {
+            var stale = false
+            do {
+                let url = try URL(
+                    resolvingBookmarkData: bookmark,
+                    options: options,
+                    relativeTo: nil,
+                    bookmarkDataIsStale: &stale
+                )
+                box.result = .success((url, stale))
+            } catch {
+                box.result = .failure(error)
+            }
+            semaphore.signal()
+        }
+        guard semaphore.wait(timeout: .now() + timeout) == .success else {
+            throw NSError(
+                domain: "LibraryStore",
+                code: 408,
+                userInfo: [NSLocalizedDescriptionKey:
+                    "Timed out opening this book's file — it may be stuck downloading from iCloud. Check your connection and try again."]
+            )
+        }
+        guard let result = box.result else {
+            throw NSError(domain: "LibraryStore", code: 500,
+                          userInfo: [NSLocalizedDescriptionKey: "Bookmark resolution finished without a result."])
+        }
+        switch result {
+        case .success(let value): return value
+        case .failure(let error): throw error
+        }
     }
 
     // MARK: - Tags
@@ -425,14 +489,20 @@ final class LibraryStore: ObservableObject {
     // MARK: - Persistence
 
     private func persist() {
+        let snapshot = books
         do {
-            let data = try JSONEncoder().encode(books)
+            let data = try JSONEncoder().encode(snapshot)
             defaults.set(data, forKey: defaultsKey)
-            // Notify widgets that the library changed.
-            WidgetDataSync.reloadLibraryWidgets()
         } catch {
-            self.loadError = error.localizedDescription
+            NSLog("Library persistence failed: %@", error.localizedDescription)
         }
+        persistenceQueue.async(execute: DispatchWorkItem {
+            // Widget refresh is deliberately off the mutation path; the
+            // small UserDefaults index above is committed synchronously so a
+            // new LibraryStore observes an import immediately.
+            _ = snapshot
+            WidgetDataSync.reloadLibraryWidgets()
+        })
     }
 
     // MARK: - Durable import storage
@@ -653,6 +723,13 @@ final class LibraryStore: ObservableObject {
         ) ?? data
         #endif
     }
+}
+
+/// Cross-thread result box for `resolveBookmarkWithTimeout` — the
+/// resolution work runs on `DispatchQueue.global()` while the caller waits
+/// on a semaphore, so the result needs a `Sendable` carrier between them.
+private final class ResolveResultBox: @unchecked Sendable {
+    var result: Result<(URL, Bool), Error>?
 }
 
 #if DEBUG

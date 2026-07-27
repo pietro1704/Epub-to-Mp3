@@ -128,34 +128,51 @@ or common word in the opening paragraph.
 
 ## Testing Policy
 
-**MANDATORY: every code modification MUST ship with tests.** This is enforced by
-`.claude/hooks/test_coverage_gate.sh` (Stop hook). If you edit any file under
-`python_app/*.py` (excluding `__init__.py`, `__main__.py`) or
-`web/src/**/*.{ts,tsx}` (excluding `.test.*`, `.d.ts`), you MUST also add or
-update at least one test file (`python_app/tests/**` or `web/src/**/*.test.{ts,tsx}`)
-in the same turn. The Stop hook blocks completion otherwise.
+**Tests live next to the runtime they verify — never cross the CLI/app boundary.**
 
-Rules:
-- **Every code change ships with tests** — new file → new test; bug fix → regression test; refactor → tests still cover the refactored path
-- **All code must be covered** — no source file should exist without at least one test exercising its public surface
+- **Python tests (`python_app/tests/`) cover CLI/backend business logic ONLY**
+  — `python_app/`, `web/` (via its own suite), conversion pipeline, engines,
+  cache/job/storage logic. A Python test must never open, grep, or otherwise
+  assert against a `.swift` file. If a change lives in `ios/EpubToMp3/`, no
+  Python test is the right response to it, ever — not even a "source-contract"
+  test that parses Swift source as text. That pattern (used historically
+  because this Mac can't safely boot CoreSimulator — see "Local iOS Simulator
+  Safety") was removed; it produced tests that couldn't catch real regressions
+  and gave false coverage signal.
+- **iOS/macOS app tests live in Xcode** — `ios/EpubToMp3/EpubToMp3Tests/`
+  (unit + integration) and `ios/EpubToMp3/EpubToMp3UITests/` (UI). Written in
+  Swift, run via `xcodebuild test` / Xcode's Test Navigator, never via
+  `pytest`. Claude does not run these itself by default (see "Local iOS
+  Simulator Safety" / "Lessons From Previous Apple UI Migration" — no
+  automatic builds/simulator boots); the user runs them in Xcode on-device.
+  When proposing a Swift-side regression test, write it as a normal XCTest in
+  the Tests target and tell the user to run it — don't reach for Python as a
+  substitute because it's runnable from the terminal.
+- **`mise run test`** (Python + web + lint + build) remains the full CLI/web
+  gate and must stay green before committing changes to `python_app/` or
+  `web/`. It does not and should not attempt to build or test the iOS/macOS
+  targets.
+
+Rules (CLI/backend scope):
+- **Every Python/web code change ships with a Python/web test** — new file → new test; bug fix → regression test; refactor → tests still cover the refactored path
+- **All Python/web code must be covered** — no source file should exist without at least one test exercising its public surface
 - **Always run the full suite before committing**
-- **Add tests for every new feature AND every bug fix**
 - Critical paths need both unit tests AND integration tests
 - Test edge cases: empty chapters, oversized chapters, engine failures
 
-Before committing:
+Before committing (Python/web changes):
 ```bash
 mise run test           # Full suite: Python + web + lint + build
 # OR individually:
-pytest -v --tb=short    # Python only (581+ tests)
+pytest -v --tb=short    # Python only
 pytest -v --tb=short python_app/tests/test_edge_engine.py  # Single test file
 pytest -v --tb=short -k "test_name"                        # Single test by name
-cd web && npm run test  # Web only (17 tests)
+cd web && npm run test  # Web only
 ```
 
-Escape hatch: if a change is genuinely untestable (comment-only edit, pure
-formatting, README update), justify explicitly in the commit message and the
-hook's reason field will be acknowledged.
+Escape hatch: if a Python/web change is genuinely untestable (comment-only
+edit, pure formatting, README update), justify explicitly in the commit
+message.
 
 ---
 

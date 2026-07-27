@@ -25,6 +25,9 @@ final class IOSRootContainerController: UIViewController {
         playerPresentation: PlayerPresentation,
         bookmarkStore: BookmarkStore
     ) {
+        if ProcessInfo.processInfo.arguments.contains("-uiTestFixture") {
+            ReaderSessionState.setCurrentlyReading(bookID: nil)
+        }
         self.settings = settings
         self.library = library
         self.player = player
@@ -170,7 +173,16 @@ final class IOSRootContainerController: UIViewController {
         player.objectWillChange
             .sink { [weak self] _ in self?.refreshOverlayState() }
             .store(in: &cancellables)
+        // `UserDefaults.didChangeNotification` is posted synchronously on
+        // whatever thread called `UserDefaults.set` — including the
+        // background `persistenceQueue` used by `LibraryStore.persist()`
+        // (moved off main to avoid blocking the UI on JSON encode). Without
+        // `.receive(on: .main)` here, `refreshOverlayState()` — MainActor
+        // isolated via this controller — runs off the main executor and
+        // Swift's runtime isolation check crashes with
+        // `dispatch_assert_queue_fail` the moment a book is added/removed.
         NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)
+            .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in self?.refreshOverlayState() }
             .store(in: &cancellables)
     }

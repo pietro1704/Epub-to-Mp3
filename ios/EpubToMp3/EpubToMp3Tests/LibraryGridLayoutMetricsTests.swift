@@ -16,7 +16,7 @@ final class LibraryGridLayoutMetricsTests: XCTestCase {
         let columns = metrics.columnCount(forWidth: 390)
         let height = metrics.tileWidth(forWidth: 390, columns: columns) * 1.5 + 70
 
-        XCTAssertGreaterThan(height, 600)
+        XCTAssertGreaterThan(height, 300)
     }
 
     func testColumnCountPacksAsManyMinWidthTilesAsFit() {

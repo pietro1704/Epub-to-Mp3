@@ -28,7 +28,7 @@ final class MacAppKitRootController: NSSplitViewController {
     private let player: AudioPlayer
     private let playerPresentation: PlayerPresentation
     private let detailContainer = NSViewController()
-    private let playerBar: MacPlayerBarViewController
+    private var playerBar: MacPlayerBarViewController!
     private var playerBarHeightConstraint: NSLayoutConstraint?
     private var cancellables: Set<AnyCancellable> = []
     private var detailController: NSViewController?
@@ -48,10 +48,13 @@ final class MacAppKitRootController: NSSplitViewController {
         self.player = player
         self.bookmarkStore = bookmarkStore
         self.playerPresentation = playerPresentation
-        self.playerBar = MacPlayerBarViewController(player: player, onShowFullPlayer: { [weak playerPresentation] in
+        self.playerPresentation.dismissFullPlayer()
+        super.init(nibName: nil, bundle: nil)
+        self.playerBar = MacPlayerBarViewController(player: player, library: library, onStartPlayback: { [weak self] in
+            self?.startPlaybackForCurrentBook()
+        }, onShowFullPlayer: { [weak playerPresentation] in
             playerPresentation?.showFullPlayer()
         })
-        super.init(nibName: nil, bundle: nil)
         splitViewItems = [
             NSSplitViewItem(viewController: makeSidebar()),
             NSSplitViewItem(viewController: detailContainer),
@@ -91,6 +94,18 @@ final class MacAppKitRootController: NSSplitViewController {
         guard let contentView = view.window?.contentView else { return }
         view.frame = contentView.bounds
         view.autoresizingMask = [.width, .height]
+        ensureApplicationFocus()
+    }
+
+    /// AppKit can leave the window visible but inactive after a build,
+    /// notification, or another app's modal surface takes focus. Restore
+    /// focus whenever this root controller needs to be interactive.
+    func ensureApplicationFocus() {
+        guard let window = view.window else { return }
+        if !window.isKeyWindow || !NSApp.isActive {
+            window.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
+        }
     }
 
     func configureWindowToolbar(_ window: NSWindow) {
@@ -109,6 +124,7 @@ final class MacAppKitRootController: NSSplitViewController {
         button.setAccessibilityLabel(L10n.string("nav.toggleSidebar"))
         button.translatesAutoresizingMaskIntoConstraints = false
         let container = NSView()
+        container.translatesAutoresizingMaskIntoConstraints = false
         container.addSubview(button)
         NSLayoutConstraint.activate([
             button.leadingAnchor.constraint(equalTo: container.leadingAnchor),
@@ -184,7 +200,7 @@ final class MacAppKitRootController: NSSplitViewController {
                 controller = MacLibraryViewController(
                     library: library,
                     bookmarkStore: bookmarkStore,
-                    onOpenBook: { [weak self] bookID in self?.showBookDetail(bookID: bookID) }
+                onOpenBook: { [weak self] bookID in self?.showReader(bookID: bookID) }
                 )
             case .jobs: controller = MacJobsListViewController()
             case .settings: controller = MacSettingsViewController(settings: settings, library: library)
@@ -279,11 +295,41 @@ final class MacAppKitRootController: NSSplitViewController {
         refreshPlayerBar()
     }
 
+    private func startPlaybackForCurrentBook() {
+        playerPresentation.dismissFullPlayer()
+        guard let bookID = UserDefaults.standard.string(forKey: ReaderSessionState.currentlyReadingBookIDKey),
+              let book = library.books.first(where: { $0.id == bookID }),
+              let url = try? library.openBookFile(id: bookID) else { return }
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                let snapshot = try await EmbeddedConversionCoordinator.stream(
+                    bookURL: url,
+                    bookID: book.id,
+                    player: player
+                )
+                library.recordConversion(jobId: snapshot.jobId, for: book.id)
+            } catch {
+                let alert = NSAlert()
+                alert.messageText = L10n.string("bookDetail.listenStart")
+                alert.informativeText = error.localizedDescription
+                alert.addButton(withTitle: L10n.string("common.ok"))
+                alert.runModal()
+            }
+        }
+    }
+
     private func refreshFullPlayer() {
         guard isViewLoaded else { return }
         if playerPresentation.showingFullPlayer {
             guard presentedViewControllers?.isEmpty != false else { return }
-            let controller = MacFullPlayerViewController(player: player, presentation: playerPresentation)
+            let controller = MacFullPlayerViewController(
+                player: player,
+                library: library,
+                presentation: playerPresentation,
+                onStartPlayback: { [weak self] in self?.startPlaybackForCurrentBook() }
+            )
+            controller.preferredContentSize = view.window?.contentView?.bounds.size ?? NSSize(width: 1000, height: 700)
             fullPlayerController = controller
             presentAsSheet(controller)
         } else if let controller = fullPlayerController {
@@ -297,20 +343,30 @@ final class MacAppKitRootController: NSSplitViewController {
             || UserDefaults.standard.string(forKey: ReaderSessionState.currentlyReadingBookIDKey) != nil
             || library.books.contains { $0.lastOpenedAt != nil }
         playerBar.view.isHidden = !hasReadingContext
-        playerBarHeightConstraint?.constant = hasReadingContext ? 58 : 0
+        playerBarHeightConstraint?.constant = hasReadingContext ? 76 : 0
     }
 }
 
 @MainActor
 private final class MacPlayerBarViewController: NSViewController {
     private let player: AudioPlayer
+    private let library: LibraryStore
+    private let onStartPlayback: () -> Void
     private let onShowFullPlayer: () -> Void
     private let titleLabel = NSTextField(labelWithString: "")
+    private let chapterLabel = NSTextField(labelWithString: "")
+    private let etaLabel = NSTextField(labelWithString: "")
+    private let coverView = NSImageView()
+    private let progress = NSProgressIndicator()
     private let playButton = NSButton()
+    private let nextButton = NSButton()
+    private let rateButton = NSButton()
     private var cancellable: AnyCancellable?
 
-    init(player: AudioPlayer, onShowFullPlayer: @escaping () -> Void) {
+    init(player: AudioPlayer, library: LibraryStore, onStartPlayback: @escaping () -> Void, onShowFullPlayer: @escaping () -> Void) {
         self.player = player
+        self.library = library
+        self.onStartPlayback = onStartPlayback
         self.onShowFullPlayer = onShowFullPlayer
         super.init(nibName: nil, bundle: nil)
     }
@@ -322,53 +378,149 @@ private final class MacPlayerBarViewController: NSViewController {
         let background = NSVisualEffectView()
         background.material = .headerView
         background.blendingMode = .withinWindow
-        let skip = NSButton(title: "30s", target: self, action: #selector(skipForward))
-        let full = NSButton(title: L10n.string("player.fullPlayer"), target: self, action: #selector(showFullPlayer))
-        playButton.title = L10n.string("player.play")
+        coverView.imageScaling = .scaleProportionallyUpOrDown
+        coverView.wantsLayer = true
+        coverView.layer?.cornerRadius = 5
+        coverView.layer?.masksToBounds = true
+        coverView.image = NSImage(systemSymbolName: "book.closed", accessibilityDescription: nil)
+        chapterLabel.textColor = .secondaryLabelColor
+        chapterLabel.font = .systemFont(ofSize: 11)
+        etaLabel.textColor = .secondaryLabelColor
+        etaLabel.font = .systemFont(ofSize: 10)
+        titleLabel.font = .systemFont(ofSize: 13, weight: .semibold)
+        progress.isIndeterminate = false
+        progress.style = .bar
+        progress.controlSize = .small
+        progress.maxValue = 1
+        playButton.imagePosition = .imageOnly
         playButton.bezelStyle = .texturedRounded
         playButton.target = self
         playButton.action = #selector(togglePlayback)
-        titleLabel.lineBreakMode = .byTruncatingTail
-        let stack = NSStackView(views: [titleLabel, skip, playButton, full])
+        nextButton.image = NSImage(systemSymbolName: "forward.end.fill", accessibilityDescription: L10n.string("player.nextChapter"))
+        nextButton.bezelStyle = .texturedRounded
+        nextButton.target = self
+        nextButton.action = #selector(nextChapter)
+        rateButton.bezelStyle = .texturedRounded
+        rateButton.target = self
+        rateButton.action = #selector(showRateMenu)
+        let labels = NSStackView(views: [titleLabel, chapterLabel, etaLabel])
+        labels.orientation = .vertical
+        labels.spacing = 2
+        let info = NSStackView(views: [coverView, labels])
+        info.orientation = .horizontal
+        info.spacing = 10
+        let openButton = NSButton()
+        openButton.isBordered = false
+        openButton.target = self
+        openButton.action = #selector(showFullPlayer)
+        openButton.addSubview(info)
+        info.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            info.leadingAnchor.constraint(equalTo: openButton.leadingAnchor),
+            info.trailingAnchor.constraint(equalTo: openButton.trailingAnchor),
+            info.topAnchor.constraint(equalTo: openButton.topAnchor),
+            info.bottomAnchor.constraint(equalTo: openButton.bottomAnchor),
+        ])
+        let stack = NSStackView(views: [openButton, playButton, nextButton, rateButton])
         stack.orientation = .horizontal
         stack.alignment = .centerY
-        stack.spacing = 12
-        stack.edgeInsets = NSEdgeInsets(top: 8, left: 18, bottom: 8, right: 18)
+        stack.distribution = .fill
+        stack.spacing = 8
+        stack.edgeInsets = NSEdgeInsets(top: 8, left: 14, bottom: 8, right: 14)
         background.addSubview(stack)
+        background.addSubview(progress)
         stack.translatesAutoresizingMaskIntoConstraints = false
+        progress.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
             stack.leadingAnchor.constraint(equalTo: background.leadingAnchor),
             stack.trailingAnchor.constraint(equalTo: background.trailingAnchor),
             stack.topAnchor.constraint(equalTo: background.topAnchor),
-            stack.bottomAnchor.constraint(equalTo: background.bottomAnchor),
-            titleLabel.widthAnchor.constraint(greaterThanOrEqualToConstant: 180)
+            stack.bottomAnchor.constraint(equalTo: background.bottomAnchor, constant: -5),
+            info.widthAnchor.constraint(greaterThanOrEqualToConstant: 220),
+            coverView.widthAnchor.constraint(equalToConstant: 44),
+            coverView.heightAnchor.constraint(equalToConstant: 44),
+            progress.leadingAnchor.constraint(equalTo: background.leadingAnchor),
+            progress.trailingAnchor.constraint(equalTo: background.trailingAnchor),
+            progress.topAnchor.constraint(equalTo: background.topAnchor),
+            progress.heightAnchor.constraint(equalToConstant: 3),
         ])
+        openButton.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        openButton.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        for button in [playButton, nextButton, rateButton] {
+            button.setContentHuggingPriority(.required, for: .horizontal)
+            button.setContentCompressionResistancePriority(.required, for: .horizontal)
+        }
         view = background
         cancellable = player.objectWillChange.sink { [weak self] _ in self?.refresh() }
         refresh()
     }
 
-    @objc private func togglePlayback() { player.togglePlayPause(); refresh() }
-    @objc private func skipForward() { player.skipForward(seconds: 30) }
+    @objc private func togglePlayback() {
+        if player.snapshot == nil { onStartPlayback() } else { player.togglePlayPause() }
+        refresh()
+    }
+    @objc private func nextChapter() { player.nextChapter(); refresh() }
+    @objc private func showRateMenu() {
+        let menu = NSMenu()
+        PlaybackRate.allCases.forEach { rate in
+            let item = NSMenuItem(title: rate.shortLabel, action: #selector(selectRate(_:)), keyEquivalent: "")
+            item.representedObject = rate.rawValue
+            item.state = rate == player.rate ? .on : .off
+            menu.addItem(item)
+        }
+        rateButton.menu = menu
+        rateButton.performClick(nil)
+    }
+    @objc private func selectRate(_ sender: NSMenuItem) {
+        if let raw = sender.representedObject as? Float, let rate = PlaybackRate(rawValue: raw) { player.setRate(rate) }
+        refresh()
+    }
     @objc private func showFullPlayer() { onShowFullPlayer() }
 
     private func refresh() {
-        titleLabel.stringValue = player.snapshot?.bookTitle ?? L10n.string("player.nothingPlaying")
-        playButton.title = player.isPlaying ? L10n.string("player.pause") : L10n.string("player.play")
-        playButton.isEnabled = player.snapshot != nil
+        let currentBookID = UserDefaults.standard.string(forKey: AudioPlayer.currentBookIDDefaultsKey)
+            ?? UserDefaults.standard.string(forKey: ReaderSessionState.currentlyReadingBookIDKey)
+        let book = currentBookID.flatMap { id in library.books.first(where: { $0.id == id }) }
+        titleLabel.stringValue = book?.resolvedTitle ?? player.snapshot?.bookTitle ?? L10n.string("player.nothingPlaying")
+        chapterLabel.stringValue = player.snapshot == nil ? "" : player.effectiveChapterTitle
+        etaLabel.stringValue = player.durationSeconds > 0
+            ? L10n.string("player.remaining", formatTime(player.playbackDurationSeconds - player.playbackPositionSeconds))
+            : ""
+        coverView.image = book?.coverPNG.flatMap(NSImage.init(data:)) ?? NSImage(systemSymbolName: "book.closed", accessibilityDescription: nil)
+        let fraction = player.durationSeconds > 0 ? player.positionSeconds / player.durationSeconds : 0
+        progress.doubleValue = min(1, max(0, fraction))
+        playButton.image = NSImage(systemSymbolName: player.isPlaying ? "pause.fill" : "play.fill", accessibilityDescription: nil)
+        rateButton.title = player.rate.shortLabel
+        playButton.isEnabled = player.snapshot != nil || currentBookID != nil
+        nextButton.isEnabled = player.snapshot != nil
+        rateButton.isEnabled = player.snapshot != nil
+    }
+
+    private func formatTime(_ seconds: TimeInterval) -> String {
+        let total = max(0, Int(seconds.rounded()))
+        return total >= 3600
+            ? String(format: "%d:%02d:%02d", total / 3600, (total / 60) % 60, total % 60)
+            : String(format: "%d:%02d", total / 60, total % 60)
     }
 }
 
 @MainActor
 private final class MacFullPlayerViewController: NSViewController {
     private let player: AudioPlayer
+    private let library: LibraryStore
     private let presentation: PlayerPresentation
+    private let onStartPlayback: () -> Void
     private let titleLabel = NSTextField(labelWithString: "")
+    private let statusLabel = NSTextField(labelWithString: "")
+    private let coverView = NSImageView()
     private let playButton = NSButton()
+    private var cancellable: AnyCancellable?
 
-    init(player: AudioPlayer, presentation: PlayerPresentation) {
+    init(player: AudioPlayer, library: LibraryStore, presentation: PlayerPresentation, onStartPlayback: @escaping () -> Void) {
         self.player = player
+        self.library = library
         self.presentation = presentation
+        self.onStartPlayback = onStartPlayback
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -376,27 +528,62 @@ private final class MacFullPlayerViewController: NSViewController {
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
     override func loadView() {
+        let background = NSVisualEffectView()
+        background.material = .underWindowBackground
+        coverView.imageScaling = .scaleProportionallyUpOrDown
+        coverView.wantsLayer = true
+        coverView.layer?.cornerRadius = 10
+        coverView.layer?.masksToBounds = true
+        coverView.translatesAutoresizingMaskIntoConstraints = false
         titleLabel.font = .boldSystemFont(ofSize: 24)
         titleLabel.alignment = .center
-        titleLabel.stringValue = player.snapshot?.bookTitle ?? L10n.string("player.nothingPlaying")
-        playButton.title = player.isPlaying ? L10n.string("player.pause") : L10n.string("player.play")
+        statusLabel.textColor = .secondaryLabelColor
+        statusLabel.alignment = .center
+        playButton.imagePosition = .imageOnly
+        playButton.bezelStyle = .texturedRounded
         playButton.target = self
         playButton.action = #selector(togglePlayback)
-        let previous = NSButton(title: "|<", target: self, action: #selector(previousChapter))
-        let next = NSButton(title: ">|", target: self, action: #selector(nextChapter))
+        let previous = NSButton(image: NSImage(systemSymbolName: "backward.end.fill", accessibilityDescription: nil) ?? NSImage(), target: self, action: #selector(previousChapter))
+        let next = NSButton(image: NSImage(systemSymbolName: "forward.end.fill", accessibilityDescription: nil) ?? NSImage(), target: self, action: #selector(nextChapter))
         let close = NSButton(title: L10n.string("common.close"), target: self, action: #selector(closePlayer))
         let controls = NSStackView(views: [previous, playButton, next])
         controls.spacing = 12
         controls.alignment = .centerY
-        let stack = NSStackView(views: [titleLabel, controls, close])
-        stack.orientation = .vertical
-        stack.alignment = .centerX
-        stack.spacing = 22
-        stack.edgeInsets = NSEdgeInsets(top: 36, left: 36, bottom: 36, right: 36)
-        view = stack
+        let content = NSStackView(views: [coverView, titleLabel, statusLabel, controls, close])
+        content.orientation = .vertical
+        content.alignment = .centerX
+        content.spacing = 22
+        content.translatesAutoresizingMaskIntoConstraints = false
+        background.addSubview(content)
+        NSLayoutConstraint.activate([
+            content.centerXAnchor.constraint(equalTo: background.centerXAnchor),
+            content.centerYAnchor.constraint(equalTo: background.centerYAnchor),
+            coverView.widthAnchor.constraint(equalToConstant: 280),
+            coverView.heightAnchor.constraint(equalToConstant: 280),
+        ])
+        view = background
+        cancellable = player.objectWillChange.sink { [weak self] _ in self?.refresh() }
+        refresh()
     }
 
-    @objc private func togglePlayback() { player.togglePlayPause(); playButton.title = player.isPlaying ? L10n.string("player.pause") : L10n.string("player.play") }
+    private func refresh() {
+        let bookID = UserDefaults.standard.string(forKey: AudioPlayer.currentBookIDDefaultsKey)
+            ?? UserDefaults.standard.string(forKey: ReaderSessionState.currentlyReadingBookIDKey)
+        let book = bookID.flatMap { id in library.books.first(where: { $0.id == id }) }
+        titleLabel.stringValue = player.snapshot?.bookTitle ?? book?.resolvedTitle ?? L10n.string("player.nothingPlaying")
+        coverView.image = book?.coverPNG.flatMap(NSImage.init(data:))
+            ?? NSImage(systemSymbolName: "book.closed", accessibilityDescription: nil)
+        statusLabel.stringValue = player.isConverting
+            ? L10n.string("player.preparingAudio")
+            : (player.snapshot == nil ? L10n.string("player.nothingPlaying") : player.effectiveChapterTitle)
+        playButton.image = NSImage(systemSymbolName: player.isPlaying ? "pause.fill" : "play.fill", accessibilityDescription: nil)
+        playButton.isEnabled = player.snapshot != nil || bookID != nil
+    }
+
+    @objc private func togglePlayback() {
+        if player.snapshot == nil { onStartPlayback() } else { player.togglePlayPause() }
+        refresh()
+    }
     @objc private func previousChapter() { player.previousChapter() }
     @objc private func nextChapter() { player.nextChapter() }
     @objc private func closePlayer() { presentation.dismissFullPlayer() }

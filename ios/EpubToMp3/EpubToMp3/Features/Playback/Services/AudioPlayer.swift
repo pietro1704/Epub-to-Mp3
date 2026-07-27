@@ -272,18 +272,11 @@ final class AudioPlayer: ObservableObject {
     var currentChapter: AsyncStream<JobSnapshot.Chapter?> {
         AsyncStream { continuation in
             let id = UUID()
-            // Capture the initial value before the Task hop so we yield
-            // the correct snapshot even if the caller subscribes during
-            // a mid-update window.
-            // Initial-value capture moved INTO the @MainActor Task —
-            // accessing `self.currentChapterValue` from outside main
-            // is a latent data race the compiler permits only because
-            // the AsyncStream factory is implicitly inherited-isolated.
-            // Under Swift 6 strict-concurrency this would warn.
-            Task { @MainActor [weak self] in
-                self?.chapterContinuations[id] = continuation
-                continuation.yield(self?.currentChapterValue)
-            }
+            // This property is MainActor-isolated. Register synchronously so
+            // the initial value is available before an async consumer starts
+            // waiting; an extra actor hop can deadlock async-let consumers.
+            chapterContinuations[id] = continuation
+            continuation.yield(currentChapterValue)
             continuation.onTermination = { @Sendable [weak self] _ in
                 Task { @MainActor [weak self] in
                     self?.chapterContinuations.removeValue(forKey: id)
@@ -297,13 +290,10 @@ final class AudioPlayer: ObservableObject {
     var position: AsyncStream<TimeInterval> {
         AsyncStream { continuation in
             let id = UUID()
-            // See `currentChapter` above — capture inside the Task,
-            // weakly so a long-running subscriber doesn't pin the
-            // AudioPlayer past its useful lifetime.
-            Task { @MainActor [weak self] in
-                self?.positionContinuations[id] = continuation
-                continuation.yield(self?.positionSeconds ?? 0)
-            }
+            // Register synchronously for deterministic initial delivery and
+            // to avoid an actor-hop deadlock with concurrent consumers.
+            positionContinuations[id] = continuation
+            continuation.yield(positionSeconds)
             continuation.onTermination = { @Sendable [weak self] _ in
                 Task { @MainActor [weak self] in
                     self?.positionContinuations.removeValue(forKey: id)
@@ -346,8 +336,24 @@ final class AudioPlayer: ObservableObject {
     /// once per second so the lock-screen scrubber stays fresh without
     /// hitting the system's info center on every 250ms tick.
     private var lastNowPlayingUpdate: Date = .distantPast
-    private var audioSessionConfigured = false
+    // `nonisolated(unsafe)` (matching `player`/`timeObserverToken`/`endObserver`
+    // above) so `deinit` — non-isolated under Swift 6 on a `@MainActor` class —
+    // can read/reset it from `releaseSystemPlaybackResources()`. Every mutator
+    // besides deinit still runs on MainActor, so there is no concurrent writer.
+    nonisolated(unsafe) private var audioSessionConfigured = false
     nonisolated(unsafe) private var audioSessionObserverTokens: [NSObjectProtocol] = []
+    /// One removal thunk per `MPRemoteCommandCenter.shared()` `addTarget`
+    /// call in `configureRemoteCommands()`, each closing over the exact
+    /// command + opaque target token it belongs to. `MPRemoteCommandCenter`
+    /// is a process-wide singleton — without calling `removeTarget(_:)` on
+    /// the matching command in `deinit`, every `AudioPlayer` instance that
+    /// ever reaches `ensureRemoteCommands()` (any real `play()`/`resume()`
+    /// call) leaks its closures onto the shared command center for the
+    /// lifetime of the process. Harmless in a long-lived app (one instance),
+    /// but compounds across an XCTest run that constructs dozens of real
+    /// `AudioPlayer`s in one process on a physical device with a real
+    /// audio session.
+    nonisolated(unsafe) private var remoteCommandRemovers: [() -> Void] = []
     private var wasPlayingBeforeInterruption = false
     /// Last (bookId, chapterName, isPlaying) tuple pushed to the widget via
     /// the RELOADING `WidgetDataSync.updateNowPlaying`. `syncWidgetNowPlaying()`
@@ -483,11 +489,25 @@ final class AudioPlayer: ObservableObject {
         // (FB7359919). NotificationCenter observer must also be
         // removed manually — the framework retains it strongly.
         if let token = timeObserverToken { player?.removeTimeObserver(token) }
+        // Explicitly tear down AVQueuePlayer resources before ARC releases
+        // the object. Leaving failed/test items queued can keep AVFoundation
+        // worker threads alive and prevent XCTest from terminating cleanly.
+        player?.pause()
+        player?.removeAllItems()
         if let endObserver { NotificationCenter.default.removeObserver(endObserver) }
         currentItemObserver?.invalidate()
         for token in audioSessionObserverTokens {
             NotificationCenter.default.removeObserver(token)
         }
+        // Undo `ensureRemoteCommands()` / `ensureAudioSession()` so this
+        // instance's real system registrations don't outlive it — see
+        // `releaseSystemPlaybackResources()` doc comment. `deinit` on a
+        // `@MainActor` class is non-isolated under Swift 6; every property
+        // this touches (`remoteCommandRemovers`, `audioSessionConfigured`)
+        // is either `nonisolated(unsafe)` or, like the observer tokens
+        // above, only ever mutated from MainActor call sites that have
+        // already returned by the time ARC reaches zero refcount.
+        releaseSystemPlaybackResources()
         // Drain AsyncStream continuations so any subscriber that holds
         // an unbroken `for await pos in player.position` loop exits
         // cleanly. Without this, a subscriber Task could hang forever
@@ -2162,47 +2182,63 @@ final class AudioPlayer: ObservableObject {
 
     private func configureRemoteCommands() {
         let center = MPRemoteCommandCenter.shared()
-        center.playCommand.addTarget { [weak self] _ in
+        let playTarget = center.playCommand.addTarget { [weak self] _ in
             Task { @MainActor in self?.resume() }
             return .success
         }
-        center.pauseCommand.addTarget { [weak self] _ in
+        remoteCommandRemovers.append { center.playCommand.removeTarget(playTarget) }
+
+        let pauseTarget = center.pauseCommand.addTarget { [weak self] _ in
             Task { @MainActor in self?.pause() }
             return .success
         }
-        center.togglePlayPauseCommand.addTarget { [weak self] _ in
+        remoteCommandRemovers.append { center.pauseCommand.removeTarget(pauseTarget) }
+
+        let toggleTarget = center.togglePlayPauseCommand.addTarget { [weak self] _ in
             Task { @MainActor in self?.togglePlayPause() }
             return .success
         }
-        center.nextTrackCommand.addTarget { [weak self] _ in
+        remoteCommandRemovers.append { center.togglePlayPauseCommand.removeTarget(toggleTarget) }
+
+        let nextTarget = center.nextTrackCommand.addTarget { [weak self] _ in
             Task { @MainActor in self?.nextChapter() }
             return .success
         }
-        center.previousTrackCommand.addTarget { [weak self] _ in
+        remoteCommandRemovers.append { center.nextTrackCommand.removeTarget(nextTarget) }
+
+        let previousTarget = center.previousTrackCommand.addTarget { [weak self] _ in
             Task { @MainActor in self?.previousChapter() }
             return .success
         }
-        center.changePlaybackPositionCommand.addTarget { [weak self] event in
+        remoteCommandRemovers.append { center.previousTrackCommand.removeTarget(previousTarget) }
+
+        let positionTarget = center.changePlaybackPositionCommand.addTarget { [weak self] event in
             guard let event = event as? MPChangePlaybackPositionCommandEvent else { return .commandFailed }
             Task { @MainActor in self?.seek(to: event.positionTime) }
             return .success
         }
+        remoteCommandRemovers.append { center.changePlaybackPositionCommand.removeTarget(positionTarget) }
+
         // Skip ±N seconds (Control Center, AirPods double-tap, lock-screen
         // arrow buttons). 15 / 30 are the standard audiobook intervals.
         center.skipForwardCommand.preferredIntervals = [30]
-        center.skipForwardCommand.addTarget { [weak self] event in
+        let skipForwardTarget = center.skipForwardCommand.addTarget { [weak self] event in
             guard let e = event as? MPSkipIntervalCommandEvent else { return .commandFailed }
             Task { @MainActor in self?.skip(by: e.interval) }
             return .success
         }
+        remoteCommandRemovers.append { center.skipForwardCommand.removeTarget(skipForwardTarget) }
+
         center.skipBackwardCommand.preferredIntervals = [15]
-        center.skipBackwardCommand.addTarget { [weak self] event in
+        let skipBackwardTarget = center.skipBackwardCommand.addTarget { [weak self] event in
             guard let e = event as? MPSkipIntervalCommandEvent else { return .commandFailed }
             Task { @MainActor in self?.skip(by: -e.interval) }
             return .success
         }
+        remoteCommandRemovers.append { center.skipBackwardCommand.removeTarget(skipBackwardTarget) }
+
         center.changePlaybackRateCommand.supportedPlaybackRates = PlaybackRate.allCases.map { NSNumber(value: $0.rawValue) }
-        center.changePlaybackRateCommand.addTarget { [weak self] event in
+        let rateTarget = center.changePlaybackRateCommand.addTarget { [weak self] event in
             guard let e = event as? MPChangePlaybackRateCommandEvent,
                   let rate = PlaybackRate(rawValue: e.playbackRate) else {
                 return .commandFailed
@@ -2210,6 +2246,27 @@ final class AudioPlayer: ObservableObject {
             Task { @MainActor in self?.setRate(rate) }
             return .success
         }
+        remoteCommandRemovers.append { center.changePlaybackRateCommand.removeTarget(rateTarget) }
+    }
+
+    /// Undo `configureRemoteCommands()` — removes every target this instance
+    /// registered on the process-wide `MPRemoteCommandCenter` and deactivates
+    /// the audio session if this instance activated it. Called from `deinit`
+    /// so real playback state never outlives the `AudioPlayer` that created
+    /// it (critical for XCTest, which constructs many real instances in one
+    /// process on a physical device — see `remoteCommandRemovers` doc comment).
+    /// `nonisolated` so `deinit` (non-isolated under Swift 6 on this
+    /// `@MainActor` class) can call it directly, matching the rest of the
+    /// teardown block above.
+    nonisolated private func releaseSystemPlaybackResources() {
+        for remove in remoteCommandRemovers { remove() }
+        remoteCommandRemovers.removeAll()
+        #if os(iOS)
+        if audioSessionConfigured {
+            try? AVAudioSession.sharedInstance().setActive(false, options: [.notifyOthersOnDeactivation])
+            audioSessionConfigured = false
+        }
+        #endif
     }
 
     private func bindDurationObservers(to item: AVPlayerItem) {
@@ -2460,7 +2517,15 @@ final class AudioPlayer: ObservableObject {
                 return
             }
             player.volume = originalVolume * (Float(i) / Float(steps))
-            try? await Task.sleep(nanoseconds: stepNs)
+            do {
+                try await Task.sleep(nanoseconds: stepNs)
+            } catch is CancellationError {
+                player.volume = originalVolume
+                return
+            } catch {
+                player.volume = originalVolume
+                return
+            }
         }
         guard !sleepTimerCancelled else {
             player.volume = originalVolume

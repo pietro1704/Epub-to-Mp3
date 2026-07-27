@@ -41,9 +41,33 @@ protocol ResumeStorage: AnyObject {
     func set(_ value: Data?, forKey key: String)
 }
 
-extension UserDefaults: ResumeStorage {
+/// Adapter instead of a direct `UserDefaults: ResumeStorage` conformance.
+/// Adding `func set(_ value: Data?, forKey key: String)` straight on the
+/// `UserDefaults` class pollutes Swift's overload resolution for *every*
+/// `UserDefaults.set(_:forKey:)` call in the module whose argument is
+/// `Data`/`Data?` — including unrelated call sites like
+/// `LibraryStore.persist()`, which got silently rerouted through this
+/// witness on a background queue and posted
+/// `NSUserDefaultsDidChangeNotification` off the main thread, crashing a
+/// MainActor-isolated Combine subscriber in `IOSRootContainerController`.
+/// A wrapper type keeps the conformance scoped to `ResumeStore`.
+final class UserDefaultsResumeStorage: ResumeStorage {
+    private let defaults: UserDefaults
+
+    init(defaults: UserDefaults) {
+        self.defaults = defaults
+    }
+
+    func data(forKey key: String) -> Data? {
+        defaults.data(forKey: key)
+    }
+
     func set(_ value: Data?, forKey key: String) {
-        if let value { set(value as Any, forKey: key) } else { removeObject(forKey: key) }
+        if let value {
+            defaults.set(value, forKey: key)
+        } else {
+            defaults.removeObject(forKey: key)
+        }
     }
 }
 
@@ -55,7 +79,7 @@ final class ResumeStore {
     private let encoder = JSONEncoder()
     private let decoder = JSONDecoder()
 
-    init(storage: ResumeStorage = UserDefaults.standard) {
+    init(storage: ResumeStorage = UserDefaultsResumeStorage(defaults: .standard)) {
         self.storage = storage
         if let data = storage.data(forKey: Self.storageKey),
            let decoded = try? JSONDecoder().decode([String: ResumeMarker].self, from: data) {

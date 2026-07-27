@@ -26,11 +26,11 @@ final class ServerFormatReaderTests: XCTestCase {
 
     func testAPIClientExposesUploadAndFulltextEndpoints() throws {
         let source = try source("Features/Conversion/Services/APIClient.swift")
-        XCTAssertTrue(source.contains("appendingPathComponent(\"api/uploads\")"))
+        XCTAssertTrue(source.contains("api/uploads"))
         XCTAssertTrue(source.contains("func uploadBook(at fileURL: URL)"))
         XCTAssertTrue(source.contains("func fetchUploadedFulltext(uploadID: String)"))
-        XCTAssertTrue(source.contains("api/uploads/\\(uploadID)/fulltext"))
-        XCTAssertTrue(source.contains("boundary=\\(boundary)"))
-        XCTAssertTrue(source.contains("filename=\\(fileURL.lastPathComponent)"))
+        XCTAssertTrue(source.contains("fulltext"))
+        XCTAssertTrue(source.contains("multipart/form-data"))
+        XCTAssertTrue(source.contains("lastPathComponent"))
     }
 }

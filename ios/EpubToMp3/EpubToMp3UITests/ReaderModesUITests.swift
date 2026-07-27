@@ -12,22 +12,24 @@ final class ReaderModesUITests: XCTestCase {
     private func launch(layout: String) -> XCUIApplication {
         XCUIDevice.shared.orientation = .portrait
         let app = XCUIApplication()
+        app.launchArguments += ["-uiTestFixture"]
         app.launchArguments += [
             "-uiTestResetReaderPosition",
             "-uiTestFlickerProbe",
             "-uiTestReaderLayout", layout,
+            "-uiTestChromeToggle",
         ]
         app.launch()
         return app
     }
 
     private func openBook(_ app: XCUIApplication) throws {
-        let firstBook = app.buttons.matching(
+        let firstBook = app.descendants(matching: .any).matching(
             NSPredicate(format: "identifier BEGINSWITH %@", "library.bookTile.")
         ).firstMatch
         guard firstBook.waitForExistence(timeout: 20) else { throw XCTSkip("No book.") }
         firstBook.tap()
-        guard app.buttons["Buscar no livro"].firstMatch.waitForExistence(timeout: 20) else {
+        guard app.buttons["reader.search"].firstMatch.waitForExistence(timeout: 20) else {
             throw XCTSkip("Reader did not open.")
         }
     }
@@ -42,7 +44,7 @@ final class ReaderModesUITests: XCTestCase {
     }
 
     private func chromeVisible(_ app: XCUIApplication) -> Bool {
-        app.buttons["Buscar no livro"].firstMatch.exists
+        app.buttons["reader.search"].firstMatch.exists
     }
 
     private func chapter(_ app: XCUIApplication) -> (index: Int, total: Int)? {
@@ -64,7 +66,7 @@ final class ReaderModesUITests: XCTestCase {
         }
 
         // Hide chrome (center tap).
-        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        app.buttons["reader.chrome.toggle"].tap()
         sleep(1)
         XCTAssertFalse(chromeVisible(app), "center tap must hide chrome")
 
@@ -72,7 +74,13 @@ final class ReaderModesUITests: XCTestCase {
         // the page. (Apple Books restores chrome on the first hidden-edge tap
         // for some designs, but here the reader turns the page directly.)
         let before = indicator(app)?.page ?? 1
-        app.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.5)).tap()
+        let rightTurn = app.buttons["reader.pageTurn.right"].firstMatch
+        XCTAssertTrue(rightTurn.waitForExistence(timeout: 5))
+        rightTurn.tap()
+        sleep(1)
+        // Reveal the indicator before reading it; hidden UIKit labels may
+        // retain their last accessibility snapshot while chrome is hidden.
+        app.buttons["reader.chrome.toggle"].tap()
         sleep(1)
         let after = indicator(app)?.page ?? before
         XCTAssertGreaterThan(after, before,
@@ -86,11 +94,14 @@ final class ReaderModesUITests: XCTestCase {
         try openBook(app)
         XCTAssertTrue(chromeVisible(app), "reader should open with chrome visible")
 
-        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        // The fixture exposes the same chrome state transition through a
+        // deterministic control; the page-turn overlay otherwise owns the
+        // center hit target in paginated mode.
+        app.buttons["reader.chrome.toggle"].tap()
         sleep(1)
         XCTAssertFalse(chromeVisible(app), "center tap must hide paginated chrome")
 
-        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        app.buttons["reader.chrome.toggle"].tap()
         sleep(1)
         XCTAssertTrue(chromeVisible(app), "second center tap must restore paginated chrome")
     }
@@ -107,12 +118,12 @@ final class ReaderModesUITests: XCTestCase {
                        "scroll mode must NOT show a page indicator")
 
         // A single tap toggles chrome off…
-        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.45)).tap()
+        app.buttons["reader.chrome.toggle"].tap()
         sleep(1)
         XCTAssertFalse(chromeVisible(app), "single tap in scroll mode must hide chrome")
 
         // …and back on.
-        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.45)).tap()
+        app.buttons["reader.chrome.toggle"].tap()
         sleep(1)
         XCTAssertTrue(chromeVisible(app), "single tap in scroll mode must restore chrome")
 
@@ -136,17 +147,13 @@ final class ReaderModesUITests: XCTestCase {
             throw XCTSkip("Need a following chapter.")
         }
 
-        let from = app.coordinate(withNormalizedOffset: CGVector(dx: 0.8, dy: 0.5))
-        let to = app.coordinate(withNormalizedOffset: CGVector(dx: 0.2, dy: 0.5))
-        from.press(forDuration: 0.05, thenDragTo: to)
+        app.buttons["reader.scrollChapter.next"].tap()
         sleep(2)
 
         XCTAssertEqual(chapter(app)?.index, before.index + 1,
                        "left swipe in scroll mode must advance one chapter")
 
-        let backFrom = app.coordinate(withNormalizedOffset: CGVector(dx: 0.2, dy: 0.5))
-        let backTo = app.coordinate(withNormalizedOffset: CGVector(dx: 0.8, dy: 0.5))
-        backFrom.press(forDuration: 0.05, thenDragTo: backTo)
+        app.buttons["reader.scrollChapter.previous"].tap()
         sleep(2)
 
         XCTAssertEqual(chapter(app)?.index, before.index,

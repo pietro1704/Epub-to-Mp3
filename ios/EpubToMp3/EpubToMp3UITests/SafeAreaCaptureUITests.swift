@@ -15,20 +15,21 @@ final class SafeAreaCaptureUITests: XCTestCase {
     func testReaderRespectsSafeAreaWithChromeHidden() throws {
         XCUIDevice.shared.orientation = .portrait
         let app = XCUIApplication()
+        app.launchArguments += ["-uiTestFixture"]
         // Pin paginated mode: this test inspects a single page's text frame.
         // In scroll mode the whole book is rendered, so enumerating every text
         // element takes minutes and the run times out.
         app.launchArguments += ["-uiTestResetReaderPosition", "-uiTestReaderLayout", "paginated"]
         app.launch()
 
-        let firstBook = app.buttons.matching(
+        let firstBook = app.descendants(matching: .any).matching(
             NSPredicate(format: "identifier BEGINSWITH %@", "library.bookTile.")
         ).firstMatch
         guard firstBook.waitForExistence(timeout: 20) else {
             throw XCTSkip("No book in library.")
         }
         firstBook.tap()
-        guard app.buttons["Buscar no livro"].firstMatch.waitForExistence(timeout: 20) else {
+        guard app.buttons["reader.search"].firstMatch.waitForExistence(timeout: 20) else {
             throw XCTSkip("Reader did not open.")
         }
         sleep(2)

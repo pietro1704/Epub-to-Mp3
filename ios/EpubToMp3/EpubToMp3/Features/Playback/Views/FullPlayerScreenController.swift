@@ -37,7 +37,7 @@ final class FullPlayerScreenController: UIViewController {
     private let tocButton = UIButton(type: .system)
     private let sleepButton = UIButton(type: .system)
     private let airPlayContainer = UIView()
-    // `MPVolumeView.showsRouteButton`/`showsVolumeSlider` are deprecated
+    // The legacy route-button configuration is intentionally omitted.
     // since iOS 13 (this project builds with SWIFT_TREAT_WARNINGS_AS_ERRORS,
     // so the deprecation is a hard build failure, not just a warning).
     // `AVRoutePickerView` is Apple's replacement and is exactly an AirPlay
@@ -176,13 +176,20 @@ final class FullPlayerScreenController: UIViewController {
         airPlayView.translatesAutoresizingMaskIntoConstraints = false
         airPlayContainer.translatesAutoresizingMaskIntoConstraints = false
         airPlayContainer.addSubview(airPlayView)
+        // Same narrow-screen conflict as the transport/secondary buttons —
+        // a hard `== 44` here left Auto Layout no room to shrink and forced
+        // it to break an arbitrary constraint elsewhere in the row instead.
+        let airPlayWidth = airPlayContainer.widthAnchor.constraint(equalToConstant: 44)
+        let airPlayHeight = airPlayContainer.heightAnchor.constraint(equalToConstant: 44)
+        airPlayWidth.priority = .required - 1
+        airPlayHeight.priority = .required - 1
         NSLayoutConstraint.activate([
             airPlayView.leadingAnchor.constraint(equalTo: airPlayContainer.leadingAnchor),
             airPlayView.trailingAnchor.constraint(equalTo: airPlayContainer.trailingAnchor),
             airPlayView.topAnchor.constraint(equalTo: airPlayContainer.topAnchor),
             airPlayView.bottomAnchor.constraint(equalTo: airPlayContainer.bottomAnchor),
-            airPlayContainer.widthAnchor.constraint(equalToConstant: 44),
-            airPlayContainer.heightAnchor.constraint(equalToConstant: 44),
+            airPlayWidth,
+            airPlayHeight,
         ])
 
         let secondary = UIStackView(arrangedSubviews: [rateButton, UIView(), tocButton, sleepButton, airPlayContainer])
@@ -197,10 +204,22 @@ final class FullPlayerScreenController: UIViewController {
         timeRow.axis = .horizontal
         timeRow.alignment = .fill
 
+        // `coverContainer` must NOT be an arranged subview directly: the
+        // vertical stack's default `.fill` alignment pins every arranged
+        // subview's leading/trailing to the stack's own edges (full width),
+        // which unconditionally contradicts the explicit 0.7-multiplier
+        // width + centerX constraints below — "Unable to simultaneously
+        // satisfy constraints" on every single appearance, regardless of
+        // device width. A plain full-width wrapper absorbs the stack's fill
+        // pinning; `coverContainer` sizes itself against the wrapper instead.
+        let coverRow = UIView()
+        coverRow.translatesAutoresizingMaskIntoConstraints = false
+        coverRow.addSubview(coverContainer)
+
         stackView.axis = .vertical
         stackView.spacing = 20
         stackView.translatesAutoresizingMaskIntoConstraints = false
-        stackView.addArrangedSubview(coverContainer)
+        stackView.addArrangedSubview(coverRow)
         stackView.addArrangedSubview(titleLabel)
         stackView.addArrangedSubview(authorLabel)
         stackView.addArrangedSubview(chapterLabel)
@@ -222,11 +241,13 @@ final class FullPlayerScreenController: UIViewController {
             stackView.topAnchor.constraint(equalTo: closeButton.bottomAnchor, constant: 8),
             stackView.bottomAnchor.constraint(lessThanOrEqualTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -16),
 
-            coverContainer.widthAnchor.constraint(equalTo: stackView.widthAnchor, multiplier: 0.7),
+            coverContainer.widthAnchor.constraint(equalTo: coverRow.widthAnchor, multiplier: 0.7),
             coverContainer.heightAnchor.constraint(equalTo: coverContainer.widthAnchor, multiplier: 1.5),
+            coverContainer.topAnchor.constraint(equalTo: coverRow.topAnchor),
+            coverContainer.bottomAnchor.constraint(equalTo: coverRow.bottomAnchor),
+            coverContainer.centerXAnchor.constraint(equalTo: coverRow.centerXAnchor),
             volumeView.heightAnchor.constraint(equalToConstant: 34),
         ])
-        coverContainer.centerXAnchor.constraint(equalTo: stackView.centerXAnchor).isActive = true
     }
 
     private func bind() {
@@ -267,10 +288,19 @@ final class FullPlayerScreenController: UIViewController {
         button.addTarget(self, action: action, for: .touchUpInside)
         button.translatesAutoresizingMaskIntoConstraints = false
         button.imageView?.preferredSymbolConfiguration = UIImage.SymbolConfiguration(pointSize: pointSize, weight: .regular)
-        NSLayoutConstraint.activate([
-            button.widthAnchor.constraint(greaterThanOrEqualToConstant: 44),
-            button.heightAnchor.constraint(greaterThanOrEqualToConstant: 44),
-        ])
+        // 44pt is the HIG minimum tap target, but on a standard-width iPhone
+        // five transport buttons (the 64pt play/pause icon alone needs more
+        // than 44pt) cannot all satisfy it plus their minimum spacing at
+        // once — that combination produced "Unable to simultaneously
+        // satisfy constraints" every time the full player appeared. Priority
+        // just below required lets Auto Layout shrink below 44pt on narrow
+        // screens instead of throwing, while still holding 44pt whenever
+        // there's room for it.
+        let width = button.widthAnchor.constraint(greaterThanOrEqualToConstant: 44)
+        let height = button.heightAnchor.constraint(greaterThanOrEqualToConstant: 44)
+        width.priority = .required - 1
+        height.priority = .required - 1
+        NSLayoutConstraint.activate([width, height])
     }
 
     private func configureSecondaryButton(
@@ -289,10 +319,13 @@ final class FullPlayerScreenController: UIViewController {
         if let action {
             button.addTarget(self, action: action, for: .touchUpInside)
         }
-        NSLayoutConstraint.activate([
-            button.widthAnchor.constraint(greaterThanOrEqualToConstant: 44),
-            button.heightAnchor.constraint(greaterThanOrEqualToConstant: 44),
-        ])
+        // See configureTransportButton: same narrow-screen conflict applies
+        // to the secondary row (rate/TOC/sleep/AirPlay).
+        let width = button.widthAnchor.constraint(greaterThanOrEqualToConstant: 44)
+        let height = button.heightAnchor.constraint(greaterThanOrEqualToConstant: 44)
+        width.priority = .required - 1
+        height.priority = .required - 1
+        NSLayoutConstraint.activate([width, height])
     }
 
     private func render() {

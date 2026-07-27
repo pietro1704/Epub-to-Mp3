@@ -11,7 +11,7 @@ final class AppTransportSecurityTests: XCTestCase {
         let testsDirectory = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
         let projectRoot = testsDirectory.deletingLastPathComponent()
         let plistURL = projectRoot.appendingPathComponent("EpubToMp3/Resources/Info.plist")
-        return try String(contentsOf: plistURL, encoding: .utf8)
+        return try readSourceFileIfAvailable(at: plistURL)
     }
 
     func testInfoPlistDoesNotAllowArbitraryWebContentLoads() throws {

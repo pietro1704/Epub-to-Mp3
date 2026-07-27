@@ -16,14 +16,27 @@ final class IOSMiniPlayerPolicyTests: XCTestCase {
         XCTAssertTrue(visible)
     }
 
-    func testMiniPlayerHidesWhenReaderOwnsCurrentBook() {
+    /// The mini player is the reader's only "listen" trigger (no separate
+    /// "Ouvir" button) — it must stay visible even while its book matches
+    /// the one being read, not just before/after.
+    func testMiniPlayerShowsWhileReadingEvenIfItOwnsCurrentBook() {
         let visible = IOSMiniPlayerPolicy.shouldShow(
             currentBookID: "book-1",
             currentlyReadingBookID: "book-1",
             availableBookIDs: ["book-1", "book-2"]
         )
 
-        XCTAssertFalse(visible)
+        XCTAssertTrue(visible)
+    }
+
+    func testMiniPlayerShowsWhileReadingBeforeAnyPlaybackStarted() {
+        let visible = IOSMiniPlayerPolicy.shouldShow(
+            currentBookID: nil,
+            currentlyReadingBookID: "book-1",
+            availableBookIDs: ["book-1", "book-2"]
+        )
+
+        XCTAssertTrue(visible)
     }
 
     func testMiniPlayerHidesWhenCurrentBookIsMissingFromLibrary() {
@@ -41,12 +54,11 @@ final class IOSMiniPlayerPolicyTests: XCTestCase {
 @MainActor
 final class IOSAppShellTests: XCTestCase {
     func testIOSAppShellFileKeepsOnlyUIKitControllerEntryPoint() throws {
-        let source = try String(
-            contentsOf: URL(fileURLWithPath: #filePath)
+        let source = try readSourceFileIfAvailable(
+            at: URL(fileURLWithPath: #filePath)
                 .deletingLastPathComponent()
                 .deletingLastPathComponent()
-                .appendingPathComponent("EpubToMp3/App/IOSAppShell.swift"),
-            encoding: .utf8
+                .appendingPathComponent("EpubToMp3/App/IOSAppShell.swift")
         )
 
         XCTAssertFalse(source.contains("struct IOSAppShell: UIViewControllerRepresentable"))
@@ -95,12 +107,11 @@ final class IOSAppShellTests: XCTestCase {
     }
 
     func testMiniPlayerIsAnchoredAboveTheTabBar() throws {
-        let source = try String(
-            contentsOf: URL(fileURLWithPath: #filePath)
+        let source = try readSourceFileIfAvailable(
+            at: URL(fileURLWithPath: #filePath)
                 .deletingLastPathComponent()
                 .deletingLastPathComponent()
-                .appendingPathComponent("EpubToMp3/App/IOSRootContainer.swift"),
-            encoding: .utf8
+                .appendingPathComponent("EpubToMp3/App/IOSRootContainer.swift")
         )
 
         XCTAssertTrue(
@@ -110,12 +121,11 @@ final class IOSAppShellTests: XCTestCase {
     }
 
     func testReaderOverlayRemainsOpaqueAboveTheLibrary() throws {
-        let source = try String(
-            contentsOf: URL(fileURLWithPath: #filePath)
+        let source = try readSourceFileIfAvailable(
+            at: URL(fileURLWithPath: #filePath)
                 .deletingLastPathComponent()
                 .deletingLastPathComponent()
-                .appendingPathComponent("EpubToMp3/App/IOSRootContainer.swift"),
-            encoding: .utf8
+                .appendingPathComponent("EpubToMp3/App/IOSRootContainer.swift")
         )
 
         XCTAssertFalse(
@@ -125,12 +135,11 @@ final class IOSAppShellTests: XCTestCase {
     }
 
     func testMiniPlayerExposesAutomationIdentifiers() throws {
-        let source = try String(
-            contentsOf: URL(fileURLWithPath: #filePath)
+        let source = try readSourceFileIfAvailable(
+            at: URL(fileURLWithPath: #filePath)
                 .deletingLastPathComponent()
                 .deletingLastPathComponent()
-                .appendingPathComponent("EpubToMp3/Features/Playback/Views/MiniPlayerBarHost.swift"),
-            encoding: .utf8
+                .appendingPathComponent("EpubToMp3/Features/Playback/Views/MiniPlayerBarHost.swift")
         )
 
         XCTAssertTrue(source.contains("miniPlayer.bar"))
@@ -142,15 +151,15 @@ final class IOSAppShellTests: XCTestCase {
             .deletingLastPathComponent()
             .deletingLastPathComponent()
             .appendingPathComponent("EpubToMp3")
-        let swiftFiles = try FileManager.default
-            .subpaths(atPath: appRoot.path)
+        let swiftFiles = (FileManager.default
+            .subpaths(atPath: appRoot.path) ?? [])
             .compactMap { relativePath -> URL? in
                 guard relativePath.hasSuffix(".swift") else { return nil }
                 return appRoot.appendingPathComponent(relativePath)
             }
 
         for file in swiftFiles {
-            let source = try String(contentsOf: file, encoding: .utf8)
+            let source = try readSourceFileIfAvailable(at: file)
             XCTAssertFalse(source.contains("import SwiftUI"), "UIKit/AppKit app must not import SwiftUI: \(file.lastPathComponent)")
             XCTAssertFalse(source.contains("UIHostingController"), "UIKit app must not host SwiftUI screens: \(file.lastPathComponent)")
             XCTAssertFalse(source.contains("NSHostingController"), "AppKit app must not host SwiftUI screens: \(file.lastPathComponent)")
@@ -158,12 +167,11 @@ final class IOSAppShellTests: XCTestCase {
     }
 
     func testUIKitShellThreadsPlaybackDependenciesIntoSettingsFlow() throws {
-        let source = try String(
-            contentsOf: URL(fileURLWithPath: #filePath)
+        let source = try readSourceFileIfAvailable(
+            at: URL(fileURLWithPath: #filePath)
                 .deletingLastPathComponent()
                 .deletingLastPathComponent()
-                .appendingPathComponent("EpubToMp3/App/IOSAppShell.swift"),
-            encoding: .utf8
+                .appendingPathComponent("EpubToMp3/App/IOSAppShell.swift")
         )
 
         XCTAssertTrue(source.contains("SettingsScreenController("))

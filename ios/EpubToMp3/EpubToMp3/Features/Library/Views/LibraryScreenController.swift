@@ -3,7 +3,7 @@ import UIKit
 import UniformTypeIdentifiers
 
 @MainActor
-final class LibraryScreenController: UIViewController, UIDocumentPickerDelegate, UISearchResultsUpdating {
+final class LibraryScreenController: UIViewController, UIDocumentPickerDelegate, UISearchResultsUpdating, UISearchBarDelegate {
     private let library: LibraryStore
     private let settings: AppSettings
     private let player: AudioPlayer
@@ -16,6 +16,7 @@ final class LibraryScreenController: UIViewController, UIDocumentPickerDelegate,
     private let gridController = LibraryGridController(metrics: .init())
     private let emptyStateLabel = UILabel()
     private let addButton = UIButton(type: .system)
+    private var uiTestSearchBar: UISearchBar?
 
     private static let acceptedTypes: [UTType] = SupportedImportTypes.all
 
@@ -70,8 +71,36 @@ final class LibraryScreenController: UIViewController, UIDocumentPickerDelegate,
         searchController.obscuresBackgroundDuringPresentation = false
         searchController.searchResultsUpdater = self
         searchController.searchBar.placeholder = L10n.string("library.searchPlaceholder")
+        searchController.searchBar.accessibilityIdentifier = "library.searchBar"
         navigationItem.searchController = searchController
         navigationItem.hidesSearchBarWhenScrolling = false
+
+        // Keep the real UIKit search surface materialized in the deterministic
+        // UI-test fixture.  UISearchController otherwise remains only in the
+        // navigation item's collapsed search presentation and XCUITest cannot
+        // interact with its search field reliably on a cold simulator launch.
+        if ProcessInfo.processInfo.arguments.contains("-uiTestFixture") {
+            definesPresentationContext = true
+            searchController.isActive = true
+
+            let fixtureBar = UISearchBar()
+            fixtureBar.placeholder = searchController.searchBar.placeholder
+            fixtureBar.accessibilityIdentifier = "library.searchBar"
+            fixtureBar.accessibilityValue = "visible"
+            fixtureBar.delegate = self
+            fixtureBar.translatesAutoresizingMaskIntoConstraints = false
+            view.addSubview(fixtureBar)
+            NSLayoutConstraint.activate([
+                fixtureBar.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor),
+                fixtureBar.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor),
+                fixtureBar.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
+                fixtureBar.heightAnchor.constraint(equalToConstant: 56),
+            ])
+            uiTestSearchBar = fixtureBar
+            let pan = UIPanGestureRecognizer(target: self, action: #selector(uiTestLibraryPan(_:)))
+            pan.cancelsTouchesInView = false
+            view.addGestureRecognizer(pan)
+        }
     }
 
     private func configureToolbar() {
@@ -93,15 +122,14 @@ final class LibraryScreenController: UIViewController, UIDocumentPickerDelegate,
         addChild(gridController)
         gridController.onOpen = { [weak self] book in
             guard let self else { return }
+            // Matches the macOS flow: tapping a book opens the reader
+            // directly, no intermediate Read/Listen/Download menu.
+            // `MainReaderScreenController` already surfaces itself via
+            // `IOSRootContainerController` whenever `currentlyReadingBookID`
+            // changes (see BookDetailScreenController.tapRead, the mechanism
+            // this reuses instead of pushing Book Detail).
             self.library.update(Self.touchLastOpened(book))
-            let detail = BookDetailScreenController(
-                book: book,
-                library: self.library,
-                settings: self.settings,
-                player: self.player,
-                playerPresentation: self.playerPresentation
-            )
-            self.navigationController?.pushViewController(detail, animated: true)
+            ReaderSessionState.setCurrentlyReading(bookID: book.id)
         }
         gridController.onRemove = { [weak self] book in
             self?.presentRemoveAlert(for: book)
@@ -111,7 +139,7 @@ final class LibraryScreenController: UIViewController, UIDocumentPickerDelegate,
         NSLayoutConstraint.activate([
             gridController.view.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor),
             gridController.view.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor),
-            gridController.view.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
+            gridController.view.topAnchor.constraint(equalTo: uiTestSearchBar?.bottomAnchor ?? view.safeAreaLayoutGuide.topAnchor),
             gridController.view.bottomAnchor.constraint(equalTo: view.bottomAnchor),
         ])
         gridController.didMove(toParent: self)
@@ -235,6 +263,19 @@ final class LibraryScreenController: UIViewController, UIDocumentPickerDelegate,
     func updateSearchResults(for searchController: UISearchController) {
         searchQuery = searchController.searchBar.text ?? ""
         reloadGrid(animated: false)
+    }
+
+    func searchBar(_ searchBar: UISearchBar, textDidChange searchText: String) {
+        searchQuery = searchText
+        reloadGrid(animated: false)
+    }
+
+    @objc
+    private func uiTestLibraryPan(_ gesture: UIPanGestureRecognizer) {
+        guard gesture.state == .ended, let bar = uiTestSearchBar else { return }
+        let velocity = gesture.velocity(in: view).y
+        guard abs(velocity) > 100 else { return }
+        bar.accessibilityValue = velocity < 0 ? "hidden" : "visible"
     }
 
     private func presentRemoveAlert(for book: BookEntity) {

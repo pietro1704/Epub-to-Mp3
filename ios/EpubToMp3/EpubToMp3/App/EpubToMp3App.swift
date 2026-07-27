@@ -3,6 +3,7 @@ import Foundation
 #if os(macOS)
 import AppKit
 #else
+import AVFoundation
 import UIKit
 #endif
 
@@ -29,8 +30,64 @@ final class EpubToMp3App: NSObject, PlatformApplicationDelegate {
 
     override init() {
         super.init()
+#if os(iOS)
+        library.installUITestFixtureIfRequested()
+        installUITestPlaybackFixtureIfRequested()
+#endif
         Self.registerWidgetIntentObserver()
     }
+
+#if os(iOS)
+    private func installUITestPlaybackFixtureIfRequested() {
+        guard ProcessInfo.processInfo.arguments.contains("-uiTestPlaybackFixture") else { return }
+
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("ui-test-playback.wav")
+        let sampleRate: UInt32 = 8_000
+        let sampleCount = Int(sampleRate / 2)
+        var pcm = Data(capacity: sampleCount * 2)
+        for index in 0..<sampleCount {
+            let phase = Double(index) / Double(sampleRate) * 2 * .pi * 440
+            var sample = Int16(sin(phase) * 2_000).littleEndian
+            withUnsafeBytes(of: &sample) { pcm.append(contentsOf: $0) }
+        }
+
+        var wav = Data()
+        wav.append(contentsOf: Array("RIFF".utf8))
+        appendLittleEndian(UInt32(36 + pcm.count), to: &wav)
+        wav.append(contentsOf: Array("WAVEfmt ".utf8))
+        appendLittleEndian(UInt32(16), to: &wav)
+        appendLittleEndian(UInt16(1), to: &wav)
+        appendLittleEndian(UInt16(1), to: &wav)
+        appendLittleEndian(sampleRate, to: &wav)
+        appendLittleEndian(sampleRate * 2, to: &wav)
+        appendLittleEndian(UInt16(2), to: &wav)
+        appendLittleEndian(UInt16(16), to: &wav)
+        wav.append(contentsOf: Array("data".utf8))
+        appendLittleEndian(UInt32(pcm.count), to: &wav)
+        wav.append(pcm)
+        try? wav.write(to: url, options: .atomic)
+
+        let chapter = JobSnapshot.Chapter(
+            index: 0, name: "UI Test Chapter", status: "completed",
+            downloadUrl: url.absoluteString, chars: 100, charsProcessed: 100,
+            progressRatio: 1, durationSeconds: 0.5, startedAt: nil, completedAt: nil
+        )
+        let snapshot = JobSnapshot(
+            jobId: "ui-test-playback", state: "finished", bookTitle: "UI Test Book",
+            bookAuthor: nil, coverUrl: nil, coverMimeType: nil, engine: "fixture",
+            voice: nil, language: "en", progressPercent: 100, chaptersTotal: 1,
+            chaptersCompleted: 1, chapterProgress: [chapter], outputs: nil,
+            logUrl: nil, error: nil, lastActivityAt: nil
+        )
+        PlaybackBindingStore.setCurrentlyPlaying(bookID: "ui-test-book", chapterIndex: 0)
+        player.play(snapshot: snapshot)
+    }
+
+    private func appendLittleEndian<T: FixedWidthInteger>(_ value: T, to data: inout Data) {
+        var value = value.littleEndian
+        withUnsafeBytes(of: &value) { data.append(contentsOf: $0) }
+    }
+#endif
 
 #if os(macOS)
     // AppKit uses the explicit main.swift bootstrap. Retain the delegate before
@@ -156,20 +213,30 @@ final class EpubToMp3App: NSObject, PlatformApplicationDelegate {
         didFinishLaunchingWithOptions options: [UIApplication.LaunchOptionsKey: Any]? = nil
     ) -> Bool {
         library.installUITestFixtureIfRequested()
-        let root = IOSRootContainerController(
+        if ProcessInfo.processInfo.arguments.contains("-uiTestFixture") {
+            // Each UI test must start at the deterministic library surface;
+            // otherwise a previous test's reader session wins at launch.
+            ReaderSessionState.setCurrentlyReading(bookID: nil)
+        }
+        // The scene delegate owns the visible window on iOS. Keep this
+        // callback for shared initialization and legacy launch paths.
+        if application.connectedScenes.isEmpty {
+            let window = UIWindow(frame: UIScreen.main.bounds)
+            window.rootViewController = makeIOSRootController()
+            window.makeKeyAndVisible()
+            self.window = window
+        }
+        return true
+    }
+
+    func makeIOSRootController() -> IOSRootContainerController {
+        IOSRootContainerController(
             settings: settings,
             library: library,
             player: player,
             playerPresentation: playerPresentation,
             bookmarkStore: bookmarkStore
         )
-        let window = UIWindow(frame: UIScreen.main.bounds)
-        window.rootViewController = root
-        window.makeKeyAndVisible()
-        self.window = window
-        Task { await audioWarmup.start() }
-        activateRuntime()
-        return true
     }
 
     func application(
@@ -194,10 +261,19 @@ final class EpubToMp3App: NSObject, PlatformApplicationDelegate {
     }
 
     func applicationDidBecomeActive(_ application: UIApplication) {
-        activateRuntime()
+        activateRuntimeForScene()
     }
 
     func applicationDidEnterBackground(_ application: UIApplication) {
+        deactivateRuntimeForScene()
+    }
+
+    func activateRuntimeForScene() {
+        Task { await audioWarmup.start() }
+        activateRuntime()
+    }
+
+    func deactivateRuntimeForScene() {
         deactivateRuntime()
     }
 #endif
@@ -355,9 +431,9 @@ final class EpubToMp3App: NSObject, PlatformApplicationDelegate {
         environment: [String: String] = ProcessInfo.processInfo.environment,
         classLookup: (String) -> AnyClass? = NSClassFromString
     ) -> Bool {
-        environment["XCTestConfigurationFilePath"] != nil
-            || environment["XCTestSessionIdentifier"] != nil
-            || environment["XCTestBundlePath"] != nil
+        environment.keys.contains("XCTestConfigurationFilePath")
+            || environment.keys.contains("XCTestSessionIdentifier")
+            || environment.keys.contains("XCTestBundlePath")
             || classLookup("XCTest.XCTestCase") != nil
             || classLookup("XCTestCase") != nil
     }

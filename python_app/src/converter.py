@@ -4176,7 +4176,15 @@ class AudioConverter(
                 )
             progress_started = False
             chapter_attempt = 0
-            max_chapter_attempts = 4 if deferred_safe_pass else 6
+            configured_max_attempts = None
+            if getattr(config, "extra", None):
+                raw_max_attempts = config.extra.get("max_chapter_attempts")
+                if raw_max_attempts is not None:
+                    try:
+                        configured_max_attempts = max(1, min(6, int(raw_max_attempts)))
+                    except (TypeError, ValueError):
+                        configured_max_attempts = None
+            max_chapter_attempts = configured_max_attempts or (4 if deferred_safe_pass else 6)
             forced_auto_engine: Optional[str] = None
             blocked_engines_for_chapter: Set[str] = set()
             edge_connectivity_recorded = False

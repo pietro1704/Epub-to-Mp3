@@ -14,7 +14,7 @@ One-line guide: **name** — when to invoke.
 | `book-triager` | Choosing engine / flags / settings for a specific EPUB (oversized chapters, footnotes, language). |
 | `cache-storage-engineer` | `.cache/`, `.jobs/`, `output/`, `UserDefaults` persistence, or TTL/cleanup logic. |
 | `ci-watcher` | Triage GitHub CI failures, CodeQL alerts, Dependabot PRs. |
-| `docs-curator` | README, CHANGELOG, CLAUDE.md, agent definitions, module docstrings. |
+| `documentation-engineer` | README, CHANGELOG, CLAUDE.md, agent definitions, docstrings, AND the GitHub Wiki (merged docs-curator + wiki-curator). |
 | `epub-parser-specialist` | NCX / EPUB3 nav hierarchy, footnote handling, duplicate-chapter detection. |
 | `epub-reader-ui` | Paginated reader UI, font/size controls, scroll-to-chapter on mobile clients. |
 | `error-archaeologist` | Dig into conversion failures: retry chains, error_classifier patterns. |
@@ -31,19 +31,27 @@ One-line guide: **name** — when to invoke.
 | `mobile-coordinator` | Coordinating lockstep changes across iOS and Flutter clients. |
 | `offline-cache-mobile` | Local MP3 + chapter-text cache on device: download manager, eviction, resume. |
 | `performance-speed-monitor` | Analyse conversion throughput, diagnose slowness, push speed limits. |
-| `release-coordinator` | Cut a release: version bumps, CHANGELOG entry, tag, CI artefacts. **Do not run in parallel with docs-curator on CHANGELOG.** |
+| `release-coordinator` | Cut a release: version bumps, CHANGELOG entry, tag, CI artefacts. **Do not run in parallel with documentation-engineer on CHANGELOG.** |
 | `security-auditor` | CVE sweep (pip-audit + npm audit), CodeQL alerts, supply-chain hardening. |
 | `speed-benchmarker` | Reproducible chars/s benchmarks per engine, parallel vs serial comparisons. |
 | **`swiftui-performance-profiler`** | Profile excessive view redraws, layout thrash, Instruments traces in the iOS/macOS app. |
 | `xcode-toolchain-manager` | Xcode/iOS Simulator runtimes, CoreSimulator cleanup, destinations, and smallest compatible iPhone setup. |
 | `sync-engine` | Time-based text ↔ audio sync on mobile: word highlighting, scroll tracking. |
 | `telemetry-analyst` | Mine `conversions.jsonl` and `telemetry/*.jsonl` for patterns, regressions. |
-| `test-engineer` | Expand test coverage, fixture extraction, parametrised tests, coverage gaps. |
+| `test-engineer` | Write/expand the permanent unit + integration + UI test suite (always all 3), fixture extraction, coverage gaps. Runs LAST in the pipeline, after verification + QA sign off. |
 | `tts-engine-engineer` | Edge-TTS / Piper engine internals: chunk tuning, backoff, segment integrity. |
 | `ui-modernizer` | Web frontend (React/TypeScript): component styling, i18n labels, Tailwind. |
 | `web-frontend-engineer` | Deep frontend work: state machine (`useConversionFlow`), SSE wiring, API client. |
-| `wiki-curator` | Keep GitHub Wiki in sync with README and CLAUDE.md. |
 | `workflow-coordinator` | GitHub Actions mechanics: skipped jobs, required-checks config, matrix. |
+
+### Pipeline agents (analysis → execution → verification → QA → tests → commit/PR)
+
+| Agent | When to invoke |
+|---|---|
+| `apple-standards-reviewer` | PRE (plan) and POST (diff) review of any iOS/macOS change against SOLID, Apple HIG, and Apple platform/API idiom. |
+| `verification-engineer` | Right after implementation, before any test is written — proves the change actually works (runs it, or for iOS/macOS hands back a device checklist). |
+| `qa-engineer` | After verification passes — adversarial sweep for edge cases, cross-feature regressions, UX polish, before tests are written. |
+| `pipeline-compliance-monitor` | Meta-agent: audits whether a task/session actually followed this pipeline (grill → parallel delegation → stage order → PR/CI/review → P0 handling), on demand. |
 
 ## Global agents (`~/.claude/agents/`)
 

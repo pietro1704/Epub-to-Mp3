@@ -155,6 +155,7 @@ final class AppSettings: ObservableObject {
         self.readerLayout = ReaderLayout(
             rawValue: defaults.string(forKey: "readerLayout") ?? ""
         ) ?? .paginated
+        self.readerColumns = max(1, min(4, (defaults.object(forKey: "readerColumns") as? Int) ?? 1))
         // UI tests can pin the reader layout regardless of persisted state,
         // e.g. `-uiTestReaderLayout paginated` / `-uiTestReaderLayout scrolling`.
         let args = ProcessInfo.processInfo.arguments
@@ -221,10 +222,11 @@ final class AppSettings: ObservableObject {
     /// embedded runtime is enabled — regardless of `backendURL`.
     var canReadOffline: Bool { useEmbeddedRuntime }
 
-    /// Remote backend controls are intentionally inactive while the
-    /// built-in runtime is selected. The URL still stays persisted as a
-    /// fallback, but the Settings UI dims the section so users do not
-    /// think a remote server is required for on-device reading/audio.
+    /// Dimmed while the embedded runtime handles reading/conversion
+    /// locally — a remote backend URL has nothing to do in that mode.
+    /// Only enabled once the user opts out of the embedded runtime
+    /// (`useEmbeddedRuntime = false`), which is when the app actually
+    /// talks to a configured backend.
     var remoteBackendControlsEnabled: Bool { !useEmbeddedRuntime }
 
     /// 5-step font size scale: 0=XS, 1=S, 2=M (default), 3=L, 4=XL.
@@ -271,6 +273,18 @@ final class AppSettings: ObservableObject {
 
     @Published var readerLayout: ReaderLayout = .paginated {
         didSet { defaults.set(readerLayout.rawValue, forKey: "readerLayout") }
+    }
+
+    /// Number of text columns shown by the desktop reader in paginated mode.
+    @Published var readerColumns: Int = 1 {
+        didSet {
+            let clamped = max(1, min(4, readerColumns))
+            if clamped != readerColumns {
+                readerColumns = clamped
+                return
+            }
+            defaults.set(readerColumns, forKey: "readerColumns")
+        }
     }
 
     /// Page-turn animation in paginated mode. Default: `.flip` (curl).
@@ -364,7 +378,10 @@ final class AppSettings: ObservableObject {
     var resolvedBaseURL: URL? {
         let trimmed = backendURL.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
-        let raw = trimmed.hasSuffix("/") ? String(trimmed.dropLast()) : trimmed
+        var raw = trimmed
+        while raw.hasSuffix("/") { raw.removeLast() }
+        if raw.hasSuffix("/api") { raw.removeLast(4) }
+        while raw.hasSuffix("/") { raw.removeLast() }
         guard let url = URL(string: raw) else { return nil }
         let scheme = url.scheme?.lowercased()
         guard scheme == "http" || scheme == "https",
