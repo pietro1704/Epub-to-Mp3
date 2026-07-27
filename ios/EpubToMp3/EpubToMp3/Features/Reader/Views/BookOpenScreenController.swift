@@ -164,15 +164,10 @@ final class BookOpenScreenController: UIViewController, UITableViewDataSource, U
         scrollView.translatesAutoresizingMaskIntoConstraints = false
         chapterTable.translatesAutoresizingMaskIntoConstraints = false
 
-        let footnotesButton = UIButton(type: .system)
-        footnotesButton.accessibilityIdentifier = "reader.footnotes"
-        footnotesButton.setTitle(L10n.string("reader.footnotes.title"), for: .normal)
-        footnotesButton.addTarget(self, action: #selector(showFootnotes), for: .touchUpInside)
         let searchButton = UIButton(type: .system)
         searchButton.accessibilityIdentifier = "reader.search"
         searchButton.setImage(UIImage(systemName: "magnifyingglass"), for: .normal)
         searchButton.addTarget(self, action: #selector(promptSearch), for: .touchUpInside)
-        toolsBar.addArrangedSubview(footnotesButton)
         toolsBar.addArrangedSubview(UIView())
         toolsBar.addArrangedSubview(searchButton)
         if ProcessInfo.processInfo.arguments.contains("-uiTestFlickerProbe") {
