@@ -121,7 +121,10 @@ run = """
 set -e
 
 THRESHOLD_GB="${DISK_GUARD_THRESHOLD_GB:-20}"
-AVAIL_GB="$(df -g / | tail -1 | awk '{print $4}')"
+# /System/Volumes/Data, not /: `df /` reports the sealed System snapshot
+# (barely moves regardless of real usage) — actual builds/caches live on
+# the Data volume. Checking `/` made this threshold nearly meaningless.
+AVAIL_GB="$(df -g /System/Volumes/Data | tail -1 | awk '{print $4}')"
 
 echo "Available: ${AVAIL_GB}Gi (threshold: ${THRESHOLD_GB}Gi)"
 
