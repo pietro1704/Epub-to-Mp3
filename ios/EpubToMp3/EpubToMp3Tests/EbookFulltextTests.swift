@@ -216,7 +216,7 @@ final class EbookFulltextTests: XCTestCase {
             .deletingLastPathComponent()  // ios/EpubToMp3
         for relative in ["EpubToMp3/Features/Reader/Models/EbookFulltext.swift",
                          "EpubToMp3/Features/Conversion/Models/JobSnapshot.swift"] {
-            let source = try String(contentsOf: root.appendingPathComponent(relative), encoding: .utf8)
+            let source = try readSourceFileIfAvailable(at: root.appendingPathComponent(relative))
             XCTAssertFalse(
                 source.contains("\"Chapter \\("),
                 "\(relative) must localize the chapter fallback via L10n, not a hardcoded literal"

@@ -58,16 +58,11 @@ final class AudioPlayerDurationTests: XCTestCase {
     }
 
     private func sourceFile(named name: String) throws -> String {
-#if os(iOS)
-        throw XCTSkip("Source-contract tests run on the host, not inside the iOS app sandbox")
-#else
         let projectRoot = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
             .deletingLastPathComponent()
-        return try String(
-            contentsOf: projectRoot.appendingPathComponent("EpubToMp3/Features/Playback/Services/\(name)"),
-            encoding: .utf8
+        return try readSourceFileIfAvailable(
+            at: projectRoot.appendingPathComponent("EpubToMp3/Features/Playback/Services/\(name)")
         )
-#endif
     }
 }

@@ -261,6 +261,12 @@ final class EpubToMp3AudioUITests: XCTestCase {
             throw XCTSkip("Reader chrome unavailable; skipping TOC test.")
         }
 
+        // A book opens directly into the reader view — the TOC is opt-in,
+        // revealed only by tapping the toolbar toggle.
+        let tocToggle = app.buttons["reader.toc.toggle"].firstMatch
+        XCTAssertTrue(tocToggle.waitForExistence(timeout: 5), "Reader toolbar must expose a TOC toggle.")
+        tocToggle.tap()
+
         let tocRows = app.tables["reader.toc"].cells
         XCTAssertTrue(tocRows.firstMatch.waitForExistence(timeout: 5), "TOC must expose chapter rows.")
         tocRows.firstMatch.tap()

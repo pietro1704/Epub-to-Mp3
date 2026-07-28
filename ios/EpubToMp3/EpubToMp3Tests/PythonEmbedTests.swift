@@ -13,7 +13,7 @@ final class PythonEmbedTests: XCTestCase {
             .deletingLastPathComponent()
             .deletingLastPathComponent()
             .appendingPathComponent("EpubToMp3/Features/Conversion/Services/PythonEmbed.swift")
-        let source = try String(contentsOf: sourceURL, encoding: .utf8)
+        let source = try readSourceFileIfAvailable(at: sourceURL)
 
         XCTAssertTrue(source.contains("private final class LockedValue<Value>: @unchecked Sendable"))
         XCTAssertTrue(source.contains("let outcome = LockedValue<Result<Data, Error>>"))

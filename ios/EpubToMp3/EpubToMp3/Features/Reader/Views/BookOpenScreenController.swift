@@ -4,12 +4,11 @@ import UIKit
 import UniformTypeIdentifiers
 
 @MainActor
-final class BookOpenScreenController: UIViewController, UITableViewDataSource, UITableViewDelegate, UIDocumentPickerDelegate, UIScrollViewDelegate, UITextViewDelegate, UIGestureRecognizerDelegate {
+final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate, UIScrollViewDelegate, UITextViewDelegate, UIGestureRecognizerDelegate {
     private var book: BookEntity
     private let library: LibraryStore
     private let settings: AppSettings
     private let bookmarkStore: BookmarkStore
-    private let chapterTable = UITableView(frame: .zero, style: .plain)
     private let titleLabel = UILabel()
     private let textView = UITextView()
     private let comicPageImageView = UIImageView()
@@ -88,27 +87,6 @@ final class BookOpenScreenController: UIViewController, UITableViewDataSource, U
         return ReaderTocFlattener.rows(toc: fulltext.toc, chapters: fulltext.chapters)
     }
 
-    func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int { tocRows.count }
-
-    func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
-        let cell = tableView.dequeueReusableCell(withIdentifier: "chapter") ?? UITableViewCell(style: .default, reuseIdentifier: "chapter")
-        let row = tocRows[indexPath.row]
-        var content = cell.defaultContentConfiguration()
-        content.text = row.title
-        content.secondaryText = row.chapterIndex.map { L10n.string("reader.chapter", $0 + 1) }
-        cell.contentConfiguration = content
-        cell.indentationLevel = row.level
-        return cell
-    }
-
-    func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
-        guard let chapterIndex = tocRows[indexPath.row].chapterIndex else { return }
-        persistReadingProgress()
-        selectedChapter = chapterIndex
-        showChapter(chapterIndex)
-        scrollView.setContentOffset(.zero, animated: false)
-    }
-
     private func configureNativeReader() {
         titleLabel.text = book.resolvedTitle
         titleLabel.accessibilityIdentifier = "reader.title"
@@ -146,9 +124,6 @@ final class BookOpenScreenController: UIViewController, UITableViewDataSource, U
             ])
         }
         textView.textContainerInset = UIEdgeInsets(top: 20, left: 20, bottom: 32, right: 20)
-        chapterTable.dataSource = self
-        chapterTable.delegate = self
-        chapterTable.accessibilityIdentifier = "reader.toc"
         scrollView.delegate = self
         scrollView.isScrollEnabled = isPaginatedMode
         let pageTap = UITapGestureRecognizer(target: self, action: #selector(handleReaderTap(_:)))
@@ -168,14 +143,25 @@ final class BookOpenScreenController: UIViewController, UITableViewDataSource, U
         textView.translatesAutoresizingMaskIntoConstraints = false
         comicPageImageView.translatesAutoresizingMaskIntoConstraints = false
         scrollView.translatesAutoresizingMaskIntoConstraints = false
-        chapterTable.translatesAutoresizingMaskIntoConstraints = false
 
+        let tocButton = UIButton(type: .system)
+        tocButton.accessibilityIdentifier = "reader.toc.toggle"
+        tocButton.setImage(UIImage(systemName: "list.bullet.indent"), for: .normal)
+        tocButton.addTarget(self, action: #selector(presentTOC), for: .touchUpInside)
         let searchButton = UIButton(type: .system)
         searchButton.accessibilityIdentifier = "reader.search"
         searchButton.setImage(UIImage(systemName: "magnifyingglass"), for: .normal)
         searchButton.addTarget(self, action: #selector(promptSearch), for: .touchUpInside)
+        let aaButton = UIButton(type: .system)
+        aaButton.accessibilityIdentifier = "reader.settings.toggle"
+        aaButton.setImage(UIImage(systemName: "textformat.size"), for: .normal)
+        aaButton.addTarget(self, action: #selector(presentReaderSettings), for: .touchUpInside)
+        // Leading flexible spacer pushes all three icon buttons together at
+        // the trailing edge (matches the old SwiftUI toolbar layout).
         toolsBar.addArrangedSubview(UIView())
         toolsBar.addArrangedSubview(searchButton)
+        toolsBar.addArrangedSubview(aaButton)
+        toolsBar.addArrangedSubview(tocButton)
         if ProcessInfo.processInfo.arguments.contains("-uiTestFlickerProbe") {
             flickerChapterLabel.accessibilityIdentifier = "flicker.probe.chapter"
             flickerSummaryLabel.accessibilityIdentifier = "flicker.probe.summary"
@@ -190,7 +176,7 @@ final class BookOpenScreenController: UIViewController, UITableViewDataSource, U
         toolsBar.axis = .horizontal
         toolsBar.alignment = .center
 
-        let stack = UIStackView(arrangedSubviews: [titleLabel, statusLabel, toolsBar, chapterTable, pageIndicator, scrollView])
+        let stack = UIStackView(arrangedSubviews: [titleLabel, statusLabel, toolsBar, pageIndicator, scrollView])
         stack.axis = .vertical
         stack.spacing = 8
         stack.translatesAutoresizingMaskIntoConstraints = false
@@ -314,6 +300,14 @@ final class BookOpenScreenController: UIViewController, UITableViewDataSource, U
         loadingContainer.addSubview(loadingStack)
         loadingContainer.accessibilityIdentifier = "reader.loadingOverlay"
         view.addSubview(loadingContainer)
+        let loadingMarginLeading = loadingStack.leadingAnchor.constraint(
+            greaterThanOrEqualTo: loadingContainer.safeAreaLayoutGuide.leadingAnchor, constant: 32
+        )
+        let loadingMarginTrailing = loadingStack.trailingAnchor.constraint(
+            lessThanOrEqualTo: loadingContainer.safeAreaLayoutGuide.trailingAnchor, constant: -32
+        )
+        loadingMarginLeading.priority = .required - 1
+        loadingMarginTrailing.priority = .required - 1
         NSLayoutConstraint.activate([
             loadingContainer.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             loadingContainer.trailingAnchor.constraint(equalTo: view.trailingAnchor),
@@ -321,10 +315,21 @@ final class BookOpenScreenController: UIViewController, UITableViewDataSource, U
             loadingContainer.bottomAnchor.constraint(equalTo: view.bottomAnchor),
             loadingStack.centerXAnchor.constraint(equalTo: loadingContainer.centerXAnchor),
             loadingStack.centerYAnchor.constraint(equalTo: loadingContainer.centerYAnchor),
-            loadingStack.leadingAnchor.constraint(greaterThanOrEqualTo: loadingContainer.safeAreaLayoutGuide.leadingAnchor, constant: 32),
-            loadingStack.trailingAnchor.constraint(lessThanOrEqualTo: loadingContainer.safeAreaLayoutGuide.trailingAnchor, constant: -32),
-            loadingCoverView.widthAnchor.constraint(equalToConstant: 160),
-            loadingCoverView.heightAnchor.constraint(equalToConstant: 240),
+            loadingMarginLeading,
+            loadingMarginTrailing,
+            // 75% of the full loading overlay's width, 2:3 book-cover aspect
+            // ratio (same ratio `FullPlayerScreenController.coverContainer`
+            // uses). `loadingStack` uses `.center` alignment (not `.fill`),
+            // so — unlike `FullPlayerScreenController`'s `coverRow` wrapper
+            // case — an arranged subview here is NOT force-pinned edge to
+            // edge by the stack, and a direct percentage-of-container width
+            // constraint on `loadingCoverView` does not fight another
+            // required constraint. The `loadingMarginLeading`/`Trailing`
+            // pair above is dropped to `.required - 1` defensively so a
+            // pathological safe-area inset can never produce an "Unable to
+            // simultaneously satisfy constraints" crash log.
+            loadingCoverView.widthAnchor.constraint(equalTo: loadingContainer.widthAnchor, multiplier: 0.75),
+            loadingCoverView.heightAnchor.constraint(equalTo: loadingCoverView.widthAnchor, multiplier: 1.5),
         ])
 
         NSLayoutConstraint.activate([
@@ -332,7 +337,6 @@ final class BookOpenScreenController: UIViewController, UITableViewDataSource, U
             stack.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor, constant: -12),
             stack.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 12),
             stack.bottomAnchor.constraint(equalTo: view.bottomAnchor),
-            chapterTable.heightAnchor.constraint(equalToConstant: 150),
             textView.leadingAnchor.constraint(equalTo: scrollView.contentLayoutGuide.leadingAnchor),
             textView.trailingAnchor.constraint(equalTo: scrollView.contentLayoutGuide.trailingAnchor),
             textView.topAnchor.constraint(equalTo: scrollView.contentLayoutGuide.topAnchor),
@@ -453,8 +457,7 @@ final class BookOpenScreenController: UIViewController, UITableViewDataSource, U
                 }
                 LocalFulltextCache.save(payload, bookId: book.id)
                 fulltext = payload
-                chapterTable.reloadData()
-                statusLabel.text = "\(payload.chapters.count)"
+                statusLabel.text = nil
                 if !hasRestoredInitialPosition, let entry = ReaderProgressStore.read(bookId: book.id) {
                     selectedChapter = entry.chapterIndex
                 }
@@ -515,8 +518,7 @@ final class BookOpenScreenController: UIViewController, UITableViewDataSource, U
             ]
         )
         fulltext = payload
-        chapterTable.reloadData()
-        statusLabel.text = "\(payload.chapters.count)"
+        statusLabel.text = nil
         showChapter(0)
     }
 
@@ -641,8 +643,38 @@ final class BookOpenScreenController: UIViewController, UITableViewDataSource, U
         toolsBar.isHidden = chromeHidden
         titleLabel.isHidden = chromeHidden
         statusLabel.isHidden = chromeHidden
-        chapterTable.isHidden = chromeHidden
         pageIndicator.isHidden = chromeHidden || !isPaginatedMode
+    }
+
+    /// TOC is a floating modal sheet — never inline in the reader's own
+    /// layout — so a book always opens directly into its content and the
+    /// chapter list never pushes or overlays the reading column.
+    @objc private func presentTOC() {
+        let sheet = TocSheetController(rows: tocRows) { [weak self] chapterIndex in
+            guard let self else { return }
+            self.persistReadingProgress()
+            self.selectedChapter = chapterIndex
+            self.showChapter(chapterIndex)
+            self.scrollView.setContentOffset(.zero, animated: false)
+        }
+        let nav = UINavigationController(rootViewController: sheet)
+        if let presentationSheet = nav.sheetPresentationController {
+            if #available(iOS 16.0, *) {
+                presentationSheet.detents = [.medium(), .large()]
+            }
+        }
+        present(nav, animated: true)
+    }
+
+    /// Reader typography/theme/layout controls, presented as a floating
+    /// modal sheet (mirrors `presentTOC()` / `showFootnotes()`).
+    @objc private func presentReaderSettings() {
+        let controller = ReaderSettingsScreenController(settings: settings)
+        controller.onChange = { [weak self] in
+            guard let self, self.fulltext != nil else { return }
+            self.showChapter(self.selectedChapter)
+        }
+        present(UINavigationController(rootViewController: controller), animated: true)
     }
 
     @objc private func turnPageLeft() { turnPage(forward: false) }
@@ -867,7 +899,6 @@ final class BookOpenScreenController: UIViewController, UITableViewDataSource, U
         view.autoScales = true
         view.document = PDFDocument(url: url)
         pdfView = view
-        chapterTable.isHidden = true
         textView.removeFromSuperview()
         self.view.addSubview(view)
         view.translatesAutoresizingMaskIntoConstraints = false
@@ -901,6 +932,55 @@ final class BookOpenScreenController: UIViewController, UITableViewDataSource, U
 
 private extension Array {
     subscript(safe index: Index) -> Element? { indices.contains(index) ? self[index] : nil }
+}
+
+/// Native sheet listing the book's table of contents (chapter/TOC-entry
+/// rows). Presented as a floating modal over the reader — never inline in
+/// the reader's own layout — so opening it never pushes or resizes the
+/// book's own content. Mirrors `FootnotesSheetController`'s self-contained
+/// sheet pattern below.
+private final class TocSheetController: UITableViewController {
+    private let rows: [ReaderTocRow]
+    private let onSelect: (Int) -> Void
+
+    init(rows: [ReaderTocRow], onSelect: @escaping (Int) -> Void) {
+        self.rows = rows
+        self.onSelect = onSelect
+        super.init(style: .plain)
+        title = L10n.string("player.chapters")
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        tableView.accessibilityIdentifier = "reader.toc"
+        navigationItem.rightBarButtonItem = UIBarButtonItem(
+            barButtonSystemItem: .done, target: self, action: #selector(dismissSelf)
+        )
+    }
+
+    @objc private func dismissSelf() { dismiss(animated: true) }
+
+    override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int { rows.count }
+
+    override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
+        let cell = tableView.dequeueReusableCell(withIdentifier: "chapter") ?? UITableViewCell(style: .default, reuseIdentifier: "chapter")
+        let row = rows[indexPath.row]
+        var content = cell.defaultContentConfiguration()
+        content.text = row.title
+        content.secondaryText = row.chapterIndex.map { L10n.string("reader.chapter", $0 + 1) }
+        cell.contentConfiguration = content
+        cell.indentationLevel = row.level
+        return cell
+    }
+
+    override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
+        guard let chapterIndex = rows[indexPath.row].chapterIndex else { return }
+        onSelect(chapterIndex)
+        dismiss(animated: true)
+    }
 }
 
 /// Native sheet listing a chapter's footnotes as `{number, text}` pairs.

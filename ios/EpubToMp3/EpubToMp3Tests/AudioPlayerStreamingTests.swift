@@ -123,12 +123,11 @@ final class AudioPlayerStreamingTests: XCTestCase {
     }
 
     func testSegmentQueueDoesNotDropWhenInsertionIsTemporarilyRejected() throws {
-        let source = try String(
-            contentsOf: URL(fileURLWithPath: #filePath)
+        let source = try readSourceFileIfAvailable(
+            at: URL(fileURLWithPath: #filePath)
                 .deletingLastPathComponent()
                 .deletingLastPathComponent()
-                .appendingPathComponent("EpubToMp3/Features/Playback/Services/AudioPlayer.swift"),
-            encoding: .utf8
+                .appendingPathComponent("EpubToMp3/Features/Playback/Services/AudioPlayer.swift")
         )
         XCTAssertTrue(source.contains("queue rejected insert; deferred segment"))
         XCTAssertTrue(source.contains("let next = backlog.peekNext()"))

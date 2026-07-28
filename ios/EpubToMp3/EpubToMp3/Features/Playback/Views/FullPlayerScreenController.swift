@@ -20,6 +20,11 @@ final class FullPlayerScreenController: UIViewController {
     }
 
     private let closeButton = UIButton(type: .system)
+    private let dragHandle = UIView()
+    private lazy var dismissPanGesture = UIPanGestureRecognizer(
+        target: self,
+        action: #selector(handleDismissPan(_:))
+    )
     private let coverContainer = UIView()
     private let coverImageView = UIImageView()
     private let titleLabel = UILabel()
@@ -74,6 +79,16 @@ final class FullPlayerScreenController: UIViewController {
         buildUI()
         bind()
         render()
+
+        // Attached to the whole view (rather than only the drag-handle strip)
+        // so the drag also works when starting on the blurred background or
+        // the title/author/chapter labels, matching Apple Music/Podcasts.
+        // `gestureRecognizer(_:shouldReceive:)` below excludes every
+        // interactive control's frame so the scrubber, transport buttons,
+        // volume slider, and AirPlay button keep receiving their own touches
+        // untouched.
+        dismissPanGesture.delegate = self
+        view.addGestureRecognizer(dismissPanGesture)
     }
 
     override func viewDidDisappear(_ animated: Bool) {
@@ -98,6 +113,16 @@ final class FullPlayerScreenController: UIViewController {
             background.topAnchor.constraint(equalTo: view.topAnchor),
             background.bottomAnchor.constraint(equalTo: view.bottomAnchor),
         ])
+
+        // HIG-standard grabber affordance signalling "this can be dragged" —
+        // purely visual, the pan gesture is attached to `view` itself (see
+        // viewDidLoad) so dragging also works from the background/labels.
+        dragHandle.translatesAutoresizingMaskIntoConstraints = false
+        dragHandle.backgroundColor = .tertiaryLabel
+        dragHandle.layer.cornerRadius = 2.5
+        dragHandle.isUserInteractionEnabled = false
+        dragHandle.accessibilityIdentifier = "fullPlayer.dragHandle"
+        view.addSubview(dragHandle)
 
         closeButton.setImage(UIImage(systemName: "xmark"), for: .normal)
         closeButton.tintColor = .label
@@ -231,7 +256,12 @@ final class FullPlayerScreenController: UIViewController {
         view.addSubview(stackView)
 
         NSLayoutConstraint.activate([
-            closeButton.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 6),
+            dragHandle.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 8),
+            dragHandle.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            dragHandle.widthAnchor.constraint(equalToConstant: 36),
+            dragHandle.heightAnchor.constraint(equalToConstant: 5),
+
+            closeButton.topAnchor.constraint(equalTo: dragHandle.bottomAnchor, constant: 6),
             closeButton.trailingAnchor.constraint(equalTo: view.layoutMarginsGuide.trailingAnchor),
             closeButton.widthAnchor.constraint(equalToConstant: 44),
             closeButton.heightAnchor.constraint(equalToConstant: 44),
@@ -429,6 +459,87 @@ final class FullPlayerScreenController: UIViewController {
         playerPresentation.dismissFullPlayer()
     }
 
+    /// Interactive controls whose own gesture/touch handling must never be
+    /// stolen by `dismissPanGesture` (see `gestureRecognizer(_:shouldReceive:)`
+    /// below). Computed rather than cached so it always reflects current
+    /// frames/visibility without needing invalidation on layout changes.
+    private var nonDraggableViews: [UIView] {
+        [
+            slider, volumeView, airPlayContainer,
+            previousChapterButton, skipBackButton, playPauseButton, skipForwardButton, nextChapterButton,
+            rateButton, tocButton, sleepButton,
+        ]
+    }
+
+    @objc
+    private func handleDismissPan(_ gesture: UIPanGestureRecognizer) {
+        let translation = gesture.translation(in: view)
+        let velocity = gesture.velocity(in: view)
+
+        switch gesture.state {
+        case .changed:
+            // Only downward drags are meaningful — there's nowhere "more
+            // full" to go, so upward translation is clamped to zero.
+            let clampedY = max(0, translation.y)
+            view.transform = CGAffineTransform(translationX: 0, y: clampedY)
+
+        case .ended, .cancelled:
+            let dismissDistanceThreshold: CGFloat = 120
+            let dismissVelocityThreshold: CGFloat = 800
+            let shouldDismiss = translation.y > dismissDistanceThreshold || velocity.y > dismissVelocityThreshold
+
+            guard shouldDismiss else {
+                resetTransformToIdentity(animated: !UIAccessibility.isReduceMotionEnabled, velocity: velocity.y)
+                return
+            }
+
+            if UIAccessibility.isReduceMotionEnabled {
+                // Snap instead of sliding when the user has asked for less
+                // motion — the dismissal itself still happens immediately.
+                view.transform = .identity
+                playerPresentation.dismissFullPlayer()
+            } else {
+                UIView.animate(
+                    withDuration: 0.25,
+                    delay: 0,
+                    options: [.curveEaseIn],
+                    animations: {
+                        self.view.transform = CGAffineTransform(translationX: 0, y: self.view.bounds.height)
+                    },
+                    completion: { [weak self] _ in
+                        guard let self else { return }
+                        self.playerPresentation.dismissFullPlayer()
+                        // `IOSRootContainer.refreshOverlayState()` only toggles
+                        // isHidden/alpha and never resets transform, so this
+                        // view must restore its own resting transform here —
+                        // otherwise it reappears off-screen next time it's shown.
+                        self.view.transform = .identity
+                    }
+                )
+            }
+
+        default:
+            break
+        }
+    }
+
+    private func resetTransformToIdentity(animated: Bool, velocity: CGFloat) {
+        guard animated else {
+            view.transform = .identity
+            return
+        }
+        UIView.animate(
+            withDuration: 0.3,
+            delay: 0,
+            usingSpringWithDamping: 0.8,
+            initialSpringVelocity: abs(velocity) / 1000,
+            options: [.allowUserInteraction],
+            animations: {
+                self.view.transform = .identity
+            }
+        )
+    }
+
     @objc
     private func previousChapterTapped() {
         player.previousChapter()
@@ -520,6 +631,24 @@ final class FullPlayerScreenController: UIViewController {
         let s = total % 60
         if h > 0 { return unsafe String(format: "%d:%02d:%02d", h, m, s) }
         return unsafe String(format: "%d:%02d", m, s)
+    }
+}
+
+extension FullPlayerScreenController: UIGestureRecognizerDelegate {
+    /// Rejects touches that land on the scrubber, transport buttons, volume
+    /// slider, or AirPlay button so `dismissPanGesture` never competes with
+    /// their own gesture/target-action handling — only `dismissPanGesture`
+    /// itself is filtered here; any other recognizer is left untouched.
+    func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
+        guard gestureRecognizer === dismissPanGesture else { return true }
+        let location = touch.location(in: view)
+        for control in nonDraggableViews where !control.isHidden {
+            let frameInView = control.convert(control.bounds, to: view)
+            if frameInView.contains(location) {
+                return false
+            }
+        }
+        return true
     }
 }
 

@@ -2,8 +2,8 @@ import XCTest
 
 final class LockScreenWidgetTests: XCTestCase {
     func testLockScreenWidgetAdoptsContainerBackgroundAPI() throws {
-        let source = try String(
-            contentsOf: URL(fileURLWithPath: #filePath)
+        let source = try readSourceFileIfAvailable(
+            at: URL(fileURLWithPath: #filePath)
                 .deletingLastPathComponent()
                 .deletingLastPathComponent()
                 .appendingPathComponent("EpubToMp3Widget/LockScreenWidgets.swift")

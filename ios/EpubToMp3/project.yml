@@ -536,6 +536,46 @@ schemes:
       config: Debug
     archive:
       config: Release
+  # Split-out schemes so unit / UI / integration tests can run
+  # independently instead of always paying for the full EpubToMp3Tests +
+  # EpubToMp3UITests bundle. Each points at its own dedicated .xctestplan
+  # (single plan, no picker) rather than duplicating target lists here.
+  EpubToMp3-UnitTests:
+    build:
+      targets:
+        EpubToMp3: all
+        EpubToMp3Tests: [test]
+    run:
+      config: Debug
+    test:
+      config: Debug
+      testPlans:
+        - path: EpubToMp3-Unit.xctestplan
+          defaultPlan: true
+  EpubToMp3-UITests:
+    build:
+      targets:
+        EpubToMp3: all
+        EpubToMp3UITests: [test]
+    run:
+      config: Debug
+    test:
+      config: Debug
+      testPlans:
+        - path: EpubToMp3-UI.xctestplan
+          defaultPlan: true
+  EpubToMp3-IntegrationTests:
+    build:
+      targets:
+        EpubToMp3: all
+        EpubToMp3Tests: [test]
+    run:
+      config: Debug
+    test:
+      config: Debug
+      testPlans:
+        - path: EpubToMp3-Integration.xctestplan
+          defaultPlan: true
   EpubToMp3Mac:
     build:
       targets:

@@ -59,7 +59,7 @@ final class ReaderFlickerUITests: XCTestCase {
         // Confirm the reset actually landed — the summary must read all-zero
         // before the scripted interaction begins, otherwise a stale cold-load
         // counter would masquerade as interaction-induced flicker.
-        usleep(300_000)
+        waitUntil(timeout: 1.0) { totalEvents(probeSummary(app)) == 0 }
         return totalEvents(probeSummary(app)) == 0
     }
 

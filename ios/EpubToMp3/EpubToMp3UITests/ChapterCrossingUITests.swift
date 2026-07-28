@@ -64,7 +64,10 @@ final class ChapterCrossingUITests: XCTestCase {
     private func resetProbe(_ app: XCUIApplication) {
         usleep(1_500_000)   // let the initial chapter fully paginate first
         let reset = app.buttons["flicker.probe.reset"].firstMatch
-        if reset.waitForExistence(timeout: 5) { reset.tap(); usleep(300_000) }
+        if reset.waitForExistence(timeout: 5) {
+            reset.tap()
+            waitUntil(timeout: 1.0) { flickerTotal(app) == 0 }
+        }
     }
 
     func testForwardCrossesChapterBoundary() throws {
@@ -82,7 +85,9 @@ final class ChapterCrossingUITests: XCTestCase {
         // Page to the last page of the current chapter.
         var guardCount = 0
         while let cur = indicator(app), cur.page < cur.total, guardCount < 80 {
-            right.tap(); usleep(250_000); guardCount += 1
+            right.tap()
+            waitUntil(timeout: 1.0) { indicator(app)?.page != cur.page }
+            guardCount += 1
         }
         let beforeCross = indicator(app)
         XCTAssertEqual(beforeCross?.page, beforeCross?.total,
@@ -92,7 +97,7 @@ final class ChapterCrossingUITests: XCTestCase {
         // index must increment. This is the exact bug the user hit: stuck on
         // the last page, no advance.
         right.tap()
-        usleep(500_000)   // chapter swap + repagination settle
+        waitUntil(timeout: 1.0) { chapter(app)?.index == startCh.index + 1 }   // chapter swap + repagination settle
         let afterCh = chapter(app)
         XCTAssertEqual(afterCh?.index, startCh.index + 1,
                        "Forward off the last page must advance to the next chapter. " +
@@ -122,10 +127,12 @@ final class ChapterCrossingUITests: XCTestCase {
         // First, advance into the next chapter so there's a previous one.
         var guardCount = 0
         while let cur = indicator(app), cur.page < cur.total, guardCount < 80 {
-            right.tap(); usleep(200_000); guardCount += 1
+            right.tap()
+            waitUntil(timeout: 1.0) { indicator(app)?.page != cur.page }
+            guardCount += 1
         }
         right.tap()              // cross forward into the next chapter
-        usleep(500_000)
+        waitUntil(timeout: 1.0) { chapter(app)?.index == startCh.index + 1 }
         guard let nextCh = chapter(app), nextCh.index == startCh.index + 1 else {
             throw XCTSkip("Could not reach a second chapter to test backward crossing.")
         }
@@ -133,7 +140,7 @@ final class ChapterCrossingUITests: XCTestCase {
         // Now retreat from page 1 — must go BACK to the previous chapter
         // (index decrements) and land on its LAST page, not stay stuck.
         left.tap()
-        usleep(700_000)        // backward swap polls for the previous chapter's last page
+        waitUntil(timeout: 1.0) { chapter(app)?.index == nextCh.index - 1 }   // backward swap polls for the previous chapter's last page
         let afterCh = chapter(app)
         XCTAssertEqual(afterCh?.index, nextCh.index - 1,
                        "Retreating from page 1 must return to the previous chapter. " +
@@ -157,7 +164,9 @@ final class ChapterCrossingUITests: XCTestCase {
         // Page to the last page of the current chapter (taps are fine here).
         var guardCount = 0
         while let cur = indicator(app), cur.page < cur.total, guardCount < 80 {
-            right.tap(); usleep(200_000); guardCount += 1
+            right.tap()
+            waitUntil(timeout: 1.0) { indicator(app)?.page != cur.page }
+            guardCount += 1
         }
         XCTAssertEqual(indicator(app)?.page, indicator(app)?.total, "should be on the last page")
 
@@ -165,7 +174,7 @@ final class ChapterCrossingUITests: XCTestCase {
         let from = app.coordinate(withNormalizedOffset: CGVector(dx: 0.8, dy: 0.5))
         let to = app.coordinate(withNormalizedOffset: CGVector(dx: 0.2, dy: 0.5))
         from.press(forDuration: 0.05, thenDragTo: to)
-        usleep(1_800_000)
+        waitUntil(timeout: 2.0) { chapter(app)?.index == startCh.index + 1 }
 
         // The Simulator may route the drag to the scroll view without
         // delivering the controller's edge-pan callback. Repeat the same
@@ -173,7 +182,7 @@ final class ChapterCrossingUITests: XCTestCase {
         // remains deterministic while still exercising the real swipe path.
         if chapter(app)?.index == startCh.index {
             right.tap()
-            usleep(400_000)
+            waitUntil(timeout: 1.0) { chapter(app)?.index == startCh.index + 1 }
         }
 
         XCTAssertEqual(chapter(app)?.index, startCh.index + 1,
@@ -199,13 +208,20 @@ final class ChapterCrossingUITests: XCTestCase {
         // only the crossing (not the cold-load / in-chapter turns) is measured.
         var guardCount = 0
         while let cur = indicator(app), cur.page < cur.total, guardCount < 80 {
-            right.tap(); usleep(200_000); guardCount += 1
+            right.tap()
+            waitUntil(timeout: 1.0) { indicator(app)?.page != cur.page }
+            guardCount += 1
         }
         resetProbe(app)
 
-        // Cross forward — the animated re-seed fires here.
+        // Cross forward — this triggers the chapter swap + repagination.
+        // `showChapter` + `setContentOffset(animated: false)` is a
+        // synchronous state change (no CATransform to wait out), so chapter
+        // index and page are reliable, near-instant observable signals.
         right.tap()
-        usleep(2_000_000)   // let the crossing curl fully finish
+        waitUntil(timeout: 2.0) {
+            chapter(app)?.index == startCh.index + 1 && indicator(app)?.page == 1
+        }
 
         XCTAssertEqual(chapter(app)?.index, startCh.index + 1,
                        "forward crossing must advance exactly one chapter")

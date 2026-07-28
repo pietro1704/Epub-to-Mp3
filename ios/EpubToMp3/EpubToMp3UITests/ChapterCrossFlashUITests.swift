@@ -36,7 +36,9 @@ final class ChapterCrossFlashUITests: XCTestCase {
         XCTAssertTrue(right.waitForExistence(timeout: 5))
         var guardCount = 0
         while let cur = indicator(app), cur.page < cur.total, guardCount < 60 {
-            right.tap(); usleep(250_000); guardCount += 1
+            right.tap()
+            waitUntil(timeout: 1.0) { indicator(app)?.page != cur.page }
+            guardCount += 1
         }
         guard let last = indicator(app), last.page == last.total else {
             throw XCTSkip("Could not reach the last page.")

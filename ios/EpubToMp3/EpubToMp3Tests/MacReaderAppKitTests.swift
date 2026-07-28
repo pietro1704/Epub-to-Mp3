@@ -25,6 +25,6 @@ final class MacReaderAppKitTests: XCTestCase {
             .deletingLastPathComponent()
             .appendingPathComponent("EpubToMp3")
             .appendingPathComponent(relativePath)
-        return try String(contentsOf: file, encoding: .utf8)
+        return try readSourceFileIfAvailable(at: file)
     }
 }

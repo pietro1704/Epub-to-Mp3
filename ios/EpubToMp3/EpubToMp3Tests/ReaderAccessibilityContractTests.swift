@@ -6,7 +6,7 @@ final class ReaderAccessibilityContractTests: XCTestCase {
             .deletingLastPathComponent()
             .deletingLastPathComponent()
             .appendingPathComponent("EpubToMp3")
-        return try String(contentsOf: root.appendingPathComponent(relativePath), encoding: .utf8)
+        return try readSourceFileIfAvailable(at: root.appendingPathComponent(relativePath))
     }
 
     func testNativeReadersExposeStableAccessibilityIdentifiers() throws {

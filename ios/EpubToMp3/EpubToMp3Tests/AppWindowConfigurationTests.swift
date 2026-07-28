@@ -14,12 +14,11 @@ final class AppWindowConfigurationTests: XCTestCase {
     }
 
     func testMacOSNativeDelegateOwnsTheWindow() throws {
-        let source = try String(
-            contentsOf: URL(fileURLWithPath: #filePath)
+        let source = try readSourceFileIfAvailable(
+            at: URL(fileURLWithPath: #filePath)
                 .deletingLastPathComponent()
                 .deletingLastPathComponent()
-                .appendingPathComponent("EpubToMp3/App/EpubToMp3App.swift"),
-            encoding: .utf8
+                .appendingPathComponent("EpubToMp3/App/EpubToMp3App.swift")
         )
         XCTAssertTrue(source.contains("NSApplicationDelegate"))
         XCTAssertTrue(source.contains("contentViewController = root"))

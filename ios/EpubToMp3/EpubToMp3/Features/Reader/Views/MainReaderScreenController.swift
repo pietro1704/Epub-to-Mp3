@@ -237,7 +237,7 @@ final class MainReaderScreenController: UIViewController {
         }
         addChild(reader)
         reader.view.translatesAutoresizingMaskIntoConstraints = false
-        view.insertSubview(reader.view, belowSubview: listenButton)
+        view.addSubview(reader.view)
         NSLayoutConstraint.activate([
             reader.view.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             reader.view.trailingAnchor.constraint(equalTo: view.trailingAnchor),

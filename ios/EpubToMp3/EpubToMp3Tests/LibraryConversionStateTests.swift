@@ -3,12 +3,11 @@ import XCTest
 
 final class LibraryConversionStateTests: XCTestCase {
     func testLibraryStoreExposesAConversionStateMutation() throws {
-        let source = try String(
-            contentsOf: URL(fileURLWithPath: #filePath)
+        let source = try readSourceFileIfAvailable(
+            at: URL(fileURLWithPath: #filePath)
                 .deletingLastPathComponent()
                 .deletingLastPathComponent()
-                .appendingPathComponent("EpubToMp3/Features/Library/Services/LibraryStore.swift"),
-            encoding: .utf8
+                .appendingPathComponent("EpubToMp3/Features/Library/Services/LibraryStore.swift")
         )
         XCTAssertTrue(source.contains("func recordConversion(jobId: String, for bookId: String"))
         XCTAssertTrue(source.contains("books[index].lastJobId = jobId"))

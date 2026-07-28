@@ -3,13 +3,12 @@ import XCTest
 
 final class EmbeddedConversionCoordinatorTests: XCTestCase {
     private func source(_ relativePath: String) throws -> String {
-        try String(
-            contentsOf: URL(fileURLWithPath: #filePath)
+        try readSourceFileIfAvailable(
+            at: URL(fileURLWithPath: #filePath)
                 .deletingLastPathComponent()
                 .deletingLastPathComponent()
                 .appendingPathComponent("EpubToMp3")
-                .appendingPathComponent(relativePath),
-            encoding: .utf8
+                .appendingPathComponent(relativePath)
         )
     }
 
@@ -21,31 +20,28 @@ final class EmbeddedConversionCoordinatorTests: XCTestCase {
     }
 
     func testAudioPlayerResolvesEmbeddedFileURLs() throws {
-        let source = try String(
-            contentsOf: URL(fileURLWithPath: #filePath)
+        let source = try readSourceFileIfAvailable(
+            at: URL(fileURLWithPath: #filePath)
                 .deletingLastPathComponent()
                 .deletingLastPathComponent()
-                .appendingPathComponent("EpubToMp3/Features/Playback/Services/AudioPlayer.swift"),
-            encoding: .utf8
+                .appendingPathComponent("EpubToMp3/Features/Playback/Services/AudioPlayer.swift")
         )
         XCTAssertTrue(source.contains("hasPrefix(\"file://\")"))
         XCTAssertTrue(source.contains("URL(fileURLWithPath: path)"))
     }
 
     func testBookDetailUsesEmbeddedConversionWhenTheDeviceProviderIsSelected() throws {
-        let iosSource = try String(
-            contentsOf: URL(fileURLWithPath: #filePath)
+        let iosSource = try readSourceFileIfAvailable(
+            at: URL(fileURLWithPath: #filePath)
                 .deletingLastPathComponent()
                 .deletingLastPathComponent()
-                .appendingPathComponent("EpubToMp3/Features/Library/Views/BookDetailScreenController.swift"),
-            encoding: .utf8
+                .appendingPathComponent("EpubToMp3/Features/Library/Views/BookDetailScreenController.swift")
         )
-        let macSource = try String(
-            contentsOf: URL(fileURLWithPath: #filePath)
+        let macSource = try readSourceFileIfAvailable(
+            at: URL(fileURLWithPath: #filePath)
                 .deletingLastPathComponent()
                 .deletingLastPathComponent()
-                .appendingPathComponent("EpubToMp3/Features/Library/Views/MacBookDetailViewController.swift"),
-            encoding: .utf8
+                .appendingPathComponent("EpubToMp3/Features/Library/Views/MacBookDetailViewController.swift")
         )
         XCTAssertTrue(iosSource.contains("EmbeddedConversionCoordinator.stream"))
         XCTAssertTrue(macSource.contains("EmbeddedConversionCoordinator.stream"))

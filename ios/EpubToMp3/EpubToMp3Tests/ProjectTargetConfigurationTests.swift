@@ -6,7 +6,7 @@ final class ProjectTargetConfigurationTests: XCTestCase {
             .deletingLastPathComponent()
             .deletingLastPathComponent()
             .appendingPathComponent("project.yml")
-        let project = try String(contentsOf: projectURL, encoding: .utf8)
+        let project = try readSourceFileIfAvailable(at: projectURL)
 
         XCTAssertTrue(project.contains("EpubToMp3ShareExtension:"))
         XCTAssertTrue(project.contains("type: app-extension"))
@@ -26,7 +26,7 @@ final class ProjectTargetConfigurationTests: XCTestCase {
             .deletingLastPathComponent()
             .deletingLastPathComponent()
             .appendingPathComponent("EpubToMp3ShareExtension/Info.plist")
-        let info = try String(contentsOf: infoURL, encoding: .utf8)
+        let info = try readSourceFileIfAvailable(at: infoURL)
 
         XCTAssertTrue(info.contains("com.apple.share-services"))
         XCTAssertFalse(info.contains("NSExtensionMainStoryboard"))
@@ -38,7 +38,7 @@ final class ProjectTargetConfigurationTests: XCTestCase {
             .deletingLastPathComponent()
             .deletingLastPathComponent()
             .appendingPathComponent("EpubToMp3ShareExtension/ShareViewController.swift")
-        let source = try String(contentsOf: sourceURL, encoding: .utf8)
+        let source = try readSourceFileIfAvailable(at: sourceURL)
 
         XCTAssertTrue(source.contains("private nonisolated static func copyToTemp"))
         XCTAssertTrue(source.contains("private nonisolated static func tempURL"))
@@ -49,7 +49,7 @@ final class ProjectTargetConfigurationTests: XCTestCase {
             .deletingLastPathComponent()
             .deletingLastPathComponent()
             .appendingPathComponent("EpubToMp3Widget/EpubToMp3Widget.swift")
-        let source = try String(contentsOf: sourceURL, encoding: .utf8)
+        let source = try readSourceFileIfAvailable(at: sourceURL)
 
         XCTAssertTrue(source.contains("private let widgetIntentDarwinNotification = \""))
         XCTAssertFalse(source.contains("= \"com.pietrocode.epubtomp3.widgetIntent\" as CFString"))
@@ -60,7 +60,7 @@ final class ProjectTargetConfigurationTests: XCTestCase {
             .deletingLastPathComponent()
             .deletingLastPathComponent()
             .appendingPathComponent("EpubToMp3/Features/Reader/Views/BookOpenScreenController.swift")
-        let source = try String(contentsOf: sourceURL, encoding: .utf8)
+        let source = try readSourceFileIfAvailable(at: sourceURL)
 
         XCTAssertTrue(source.contains("PythonBridge.shared.parseEpub"))
         XCTAssertFalse(source.contains("EpubFallbackParser.parse"))
@@ -70,25 +70,25 @@ final class ProjectTargetConfigurationTests: XCTestCase {
         let root = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
             .deletingLastPathComponent()
-        let detail = try String(
-            contentsOf: root.appendingPathComponent(
+        let detail = try readSourceFileIfAvailable(
+            at: root.appendingPathComponent(
                 "EpubToMp3/Features/Conversion/Views/JobDetailScreenController.swift"
-            ), encoding: .utf8
+            )
         )
-        let jobs = try String(
-            contentsOf: root.appendingPathComponent(
+        let jobs = try readSourceFileIfAvailable(
+            at: root.appendingPathComponent(
                 "EpubToMp3/Features/Conversion/Views/JobsListScreenController.swift"
-            ), encoding: .utf8
+            )
         )
-        let model = try String(
-            contentsOf: root.appendingPathComponent(
+        let model = try readSourceFileIfAvailable(
+            at: root.appendingPathComponent(
                 "EpubToMp3/Features/Conversion/Services/JobDetailViewModel.swift"
-            ), encoding: .utf8
+            )
         )
-        let list = try String(
-            contentsOf: root.appendingPathComponent(
+        let list = try readSourceFileIfAvailable(
+            at: root.appendingPathComponent(
                 "EpubToMp3/Features/Conversion/Views/JobsListController.swift"
-            ), encoding: .utf8
+            )
         )
 
         XCTAssertTrue(detail.contains("JobDetailViewModel()"))
@@ -101,15 +101,15 @@ final class ProjectTargetConfigurationTests: XCTestCase {
         let root = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
             .deletingLastPathComponent()
-        let state = try String(
-            contentsOf: root.appendingPathComponent(
+        let state = try readSourceFileIfAvailable(
+            at: root.appendingPathComponent(
                 "EpubToMp3/Features/Reader/Services/ReaderSessionState.swift"
-            ), encoding: .utf8
+            )
         )
-        let presentation = try String(
-            contentsOf: root.appendingPathComponent(
+        let presentation = try readSourceFileIfAvailable(
+            at: root.appendingPathComponent(
                 "EpubToMp3/Features/Playback/Services/PlayerPresentation.swift"
-            ), encoding: .utf8
+            )
         )
 
         XCTAssertEqual(state.components(separatedBy: "enum ReaderSessionState").count, 2)
@@ -121,7 +121,7 @@ final class ProjectTargetConfigurationTests: XCTestCase {
             .deletingLastPathComponent()
             .deletingLastPathComponent()
             .appendingPathComponent("project.yml")
-        let project = try String(contentsOf: projectURL, encoding: .utf8)
+        let project = try readSourceFileIfAvailable(at: projectURL)
 
         XCTAssertTrue(project.contains("SWIFT_TREAT_WARNINGS_AS_ERRORS: YES"))
         XCTAssertTrue(project.contains("GCC_TREAT_WARNINGS_AS_ERRORS: YES"))
@@ -132,7 +132,7 @@ final class ProjectTargetConfigurationTests: XCTestCase {
             .deletingLastPathComponent()
             .deletingLastPathComponent()
             .appendingPathComponent("project.yml")
-        let project = try String(contentsOf: projectURL, encoding: .utf8)
+        let project = try readSourceFileIfAvailable(at: projectURL)
 
         XCTAssertTrue(project.contains("SWIFT_VERSION: \"6\""))
         XCTAssertTrue(project.contains("SWIFT_STRICT_CONCURRENCY: complete"))
@@ -150,20 +150,20 @@ final class ProjectTargetConfigurationTests: XCTestCase {
         let root = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
             .deletingLastPathComponent()
-        let widgetSync = try String(
-            contentsOf: root.appendingPathComponent(
+        let widgetSync = try readSourceFileIfAvailable(
+            at: root.appendingPathComponent(
                 "EpubToMp3/Shared/Integrations/WidgetDataSync.swift"
-            ), encoding: .utf8
+            )
         )
-        let zipReader = try String(
-            contentsOf: root.appendingPathComponent(
+        let zipReader = try readSourceFileIfAvailable(
+            at: root.appendingPathComponent(
                 "EpubToMp3/Features/Documents/Services/ZipReader.swift"
-            ), encoding: .utf8
+            )
         )
-        let telemetry = try String(
-            contentsOf: root.appendingPathComponent(
+        let telemetry = try readSourceFileIfAvailable(
+            at: root.appendingPathComponent(
                 "EpubToMp3/Features/Settings/Views/TelemetryScreenController.swift"
-            ), encoding: .utf8
+            )
         )
 
         XCTAssertTrue(widgetSync.contains("private static let lastReadState = LastReadState()"))
@@ -172,29 +172,29 @@ final class ProjectTargetConfigurationTests: XCTestCase {
         XCTAssertTrue(zipReader.contains("let rc = unsafe deflated.withUnsafeBytes"))
         XCTAssertFalse(telemetry.contains("String(format:"))
 
-        let pythonRunner = try String(
-            contentsOf: root.appendingPathComponent(
+        let pythonRunner = try readSourceFileIfAvailable(
+            at: root.appendingPathComponent(
                 "EpubToMp3/Features/Conversion/Services/PythonRunner.swift"
-            ), encoding: .utf8
+            )
         )
-        let importer = try String(
-            contentsOf: root.appendingPathComponent(
+        let importer = try readSourceFileIfAvailable(
+            at: root.appendingPathComponent(
                 "EpubToMp3/Features/Offline/Services/SharedContainerImporter.swift"
-            ), encoding: .utf8
+            )
         )
         XCTAssertTrue(pythonRunner.contains("private final class CompletionGate: @unchecked Sendable"))
         XCTAssertTrue(importer.contains("private static let availabilityState = AvailabilityState()"))
         XCTAssertFalse(importer.contains("nonisolated(unsafe) private static var groupAvailabilityCache"))
 
-        let cacheManager = try String(
-            contentsOf: root.appendingPathComponent(
+        let cacheManager = try readSourceFileIfAvailable(
+            at: root.appendingPathComponent(
                 "EpubToMp3/Features/Offline/Services/ChapterCacheManager.swift"
-            ), encoding: .utf8
+            )
         )
-        let apiClient = try String(
-            contentsOf: root.appendingPathComponent(
+        let apiClient = try readSourceFileIfAvailable(
+            at: root.appendingPathComponent(
                 "EpubToMp3/Features/Conversion/Services/APIClient.swift"
-            ), encoding: .utf8
+            )
         )
         XCTAssertTrue(cacheManager.contains("private final class ObserverState: @unchecked Sendable"))
         XCTAssertTrue(apiClient.contains("final class APIClient: @unchecked Sendable"))
@@ -205,7 +205,7 @@ final class ProjectTargetConfigurationTests: XCTestCase {
             .deletingLastPathComponent()
             .deletingLastPathComponent()
             .appendingPathComponent("EpubToMp3.xcodeproj/project.pbxproj")
-        let projectFile = try String(contentsOf: projectFileURL, encoding: .utf8)
+        let projectFile = try readSourceFileIfAvailable(at: projectFileURL)
 
         XCTAssertTrue(projectFile.contains("path = EpubToMp3;"))
         XCTAssertTrue(projectFile.contains("path = Vendor;"))
@@ -226,7 +226,7 @@ final class ProjectTargetConfigurationTests: XCTestCase {
             .deletingLastPathComponent()
             .deletingLastPathComponent()
             .appendingPathComponent("EpubToMp3.xcodeproj/project.pbxproj")
-        let projectFile = try String(contentsOf: projectFileURL, encoding: .utf8)
+        let projectFile = try readSourceFileIfAvailable(at: projectFileURL)
 
         XCTAssertEqual(projectFile.components(separatedBy: "PrivacyInfo.xcprivacy").count - 1, 18)
         XCTAssertTrue(projectFile.contains("PrivacyInfo.xcprivacy in Resources"))
@@ -252,8 +252,8 @@ final class ProjectTargetConfigurationTests: XCTestCase {
             guard FileManager.default.fileExists(atPath: pair.canonical.path) else { continue }
             if FileManager.default.fileExists(atPath: pair.legacy.path) {
                 XCTAssertEqual(
-                    try String(contentsOf: pair.legacy, encoding: .utf8),
-                    try String(contentsOf: pair.canonical, encoding: .utf8)
+                    try readSourceFileIfAvailable(at: pair.legacy),
+                    try readSourceFileIfAvailable(at: pair.canonical)
                 )
             }
         }

@@ -2,12 +2,11 @@ import XCTest
 
 final class ConvertViewModelRoutingTests: XCTestCase {
     func testMobileConversionUsesMultipartUploadInsteadOfSandboxPath() throws {
-        let source = try String(
-            contentsOf: URL(fileURLWithPath: #filePath)
+        let source = try readSourceFileIfAvailable(
+            at: URL(fileURLWithPath: #filePath)
                 .deletingLastPathComponent()
                 .deletingLastPathComponent()
-                .appendingPathComponent("EpubToMp3/Features/Conversion/Services/ConvertViewModel.swift"),
-            encoding: .utf8
+                .appendingPathComponent("EpubToMp3/Features/Conversion/Services/ConvertViewModel.swift")
         )
         XCTAssertTrue(source.contains("uploadedFile: (data: data, filename: file.lastPathComponent)"))
         XCTAssertTrue(source.contains("#if os(macOS)"))
@@ -17,12 +16,11 @@ final class ConvertViewModelRoutingTests: XCTestCase {
         XCTAssertTrue(source.contains("EmbeddedConversionCoordinator.stream"))
         XCTAssertTrue(source.contains("requiresServerConversion"))
         XCTAssertTrue(source.contains("guard canUseEmbeddedRuntime || client != nil"))
-        let screenSource = try String(
-            contentsOf: URL(fileURLWithPath: #filePath)
+        let screenSource = try readSourceFileIfAvailable(
+            at: URL(fileURLWithPath: #filePath)
                 .deletingLastPathComponent()
                 .deletingLastPathComponent()
-                .appendingPathComponent("EpubToMp3/Features/Conversion/Views/ConvertScreenController.swift"),
-            encoding: .utf8
+                .appendingPathComponent("EpubToMp3/Features/Conversion/Views/ConvertScreenController.swift")
         )
         XCTAssertTrue(screenSource.contains("preselectedBookID: String? = nil"))
     }

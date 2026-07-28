@@ -36,7 +36,10 @@ final class PageTurnFlashUITests: XCTestCase {
         XCTAssertTrue(right.waitForExistence(timeout: 5))
         var guardCount = 0
         while (indicator(app)?.total ?? 0) < 3, guardCount < 30 {
-            right.tap(); usleep(700_000); guardCount += 1
+            let prevTotal = indicator(app)?.total ?? 0
+            right.tap()
+            waitUntil(timeout: 1.0) { (indicator(app)?.total ?? prevTotal) != prevTotal }
+            guardCount += 1
         }
         // Need >=3 pages so we can turn in the MIDDLE (page 1 -> 2), never at
         // a boundary (a boundary turn legitimately resets currentPage to 0 for
@@ -49,7 +52,10 @@ final class PageTurnFlashUITests: XCTestCase {
         XCTAssertTrue(left.waitForExistence(timeout: 5))
         guardCount = 0
         while (indicator(app)?.page ?? 1) > 1, guardCount < 20 {
-            left.tap(); usleep(700_000); guardCount += 1
+            let prevPage = indicator(app)?.page ?? 1
+            left.tap()
+            waitUntil(timeout: 1.0) { (indicator(app)?.page ?? prevPage) != prevPage }
+            guardCount += 1
         }
         return app
     }
@@ -61,7 +67,8 @@ final class PageTurnFlashUITests: XCTestCase {
 
         // Advance to page 2 first so a backward turn has somewhere to go and a
         // forward turn is mid-chapter (page 1 should NEVER reappear).
-        right.tap(); usleep(900_000)
+        right.tap()
+        waitUntil(timeout: 1.5) { indicator(app)?.page == 2 }
         XCTAssertEqual(indicator(app)?.page, 2, "should be on page 2 before the burst")
 
         // Forward turn burst capture (page 2 -> 3).
@@ -77,7 +84,7 @@ final class PageTurnFlashUITests: XCTestCase {
         XCTAssertFalse(pagesSeen.contains(1),
                        "page 1 must not flash during a forward turn; saw pages \(pagesSeen.sorted())")
 
-        usleep(800_000)
+        waitUntil(timeout: 1.5) { indicator(app)?.page == 3 }
         // Backward turn burst capture.
         left.tap()
         var backSeen: Set<Int> = []

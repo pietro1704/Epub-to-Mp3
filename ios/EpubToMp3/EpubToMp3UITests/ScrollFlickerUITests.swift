@@ -21,7 +21,7 @@ final class ScrollFlickerUITests: XCTestCase {
         usleep(1_500_000)
         let r = app.buttons["flicker.probe.reset"].firstMatch
         if r.waitForExistence(timeout: 5) { r.tap() }
-        usleep(300_000)
+        waitUntil(timeout: 1.0) { probeTotal(app) == 0 }
     }
 
     func testScrollUpDownDoesNotReRenderChapters() throws {

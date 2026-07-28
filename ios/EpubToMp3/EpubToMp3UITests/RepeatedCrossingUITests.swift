@@ -65,14 +65,16 @@ final class RepeatedCrossingUITests: XCTestCase {
             // Page to the last page of the current chapter.
             var g = 0
             while let cur = indicator(app), cur.page < cur.total, g < 60 {
-                right.tap(); usleep(200_000); g += 1
+                right.tap()
+                waitUntil(timeout: 1.0) { indicator(app)?.page != cur.page }
+                g += 1
             }
             // Swipe forward off the last page.
             from.press(forDuration: 0.05, thenDragTo: to)
-            usleep(500_000)
+            waitUntil(timeout: 1.0) { chapter(app)?.index == startIndex + 1 }
             if chapter(app)?.index == startIndex {
                 right.tap()
-                usleep(400_000)
+                waitUntil(timeout: 1.0) { chapter(app)?.index == startIndex + 1 }
             }
             let now = chapter(app)?.index
             XCTAssertEqual(now, startIndex + 1,
@@ -91,15 +93,23 @@ final class RepeatedCrossingUITests: XCTestCase {
         guard let start = chapter(app), start.index + 1 < start.total else {
             throw XCTSkip("No room to cross forward.")
         }
-        // Hide chrome.
+        // Hide chrome. `toggleChromeVisibility()` is a synchronous property
+        // set (no animation) that hides the tools bar containing
+        // "reader.search", so its disappearance is a reliable, near-instant
+        // observable signal instead of a fixed guess.
         app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
-        usleep(800_000)
+        waitUntil(timeout: 1.0) { !app.buttons["reader.search"].firstMatch.exists }
 
         // Page to the last page (taps still turn pages with chrome hidden).
         var g = 0
-        while let cur = indicator(app), cur.page < cur.total, g < 60 { right.tap(); usleep(200_000); g += 1 }
+        while let cur = indicator(app), cur.page < cur.total, g < 60 {
+            right.tap()
+            waitUntil(timeout: 1.0) { indicator(app)?.page != cur.page }
+            g += 1
+        }
         // One more forward tap on the last page → must cross chapter.
-        right.tap(); usleep(500_000)
+        right.tap()
+        waitUntil(timeout: 1.0) { chapter(app)?.index == start.index + 1 }
         XCTAssertEqual(chapter(app)?.index, start.index + 1,
                        "forward tap on the last page with chrome HIDDEN must cross to the next chapter, " +
                        "got \(String(describing: chapter(app)))")
@@ -122,12 +132,18 @@ final class RepeatedCrossingUITests: XCTestCase {
         }
         // Forward: page to last, tap once more.
         var g = 0
-        while let cur = indicator(app), cur.page < cur.total, g < 60 { right.tap(); usleep(200_000); g += 1 }
-        right.tap(); usleep(500_000)
+        while let cur = indicator(app), cur.page < cur.total, g < 60 {
+            right.tap()
+            waitUntil(timeout: 1.0) { indicator(app)?.page != cur.page }
+            g += 1
+        }
+        right.tap()
+        waitUntil(timeout: 1.0) { chapter(app)?.index == start.index + 1 }
         XCTAssertEqual(chapter(app)?.index, start.index + 1, "forward tap must advance chapter")
 
         // Backward: from page 1, tap left once.
-        left.tap(); usleep(700_000)
+        left.tap()
+        waitUntil(timeout: 1.0) { chapter(app)?.index == start.index }
         XCTAssertEqual(chapter(app)?.index, start.index,
                        "backward tap from page 1 must return to the previous chapter")
     }
@@ -140,13 +156,20 @@ final class RepeatedCrossingUITests: XCTestCase {
         }
         // Page to the last page of the current chapter.
         var g = 0
-        while let cur = indicator(app), cur.page < cur.total, g < 60 { right.tap(); usleep(600_000); g += 1 }
+        while let cur = indicator(app), cur.page < cur.total, g < 60 {
+            right.tap()
+            waitUntil(timeout: 1.0) { indicator(app)?.page != cur.page }
+            g += 1
+        }
         // Two rapid forward taps with no settle between them: the first
-        // crosses; the second lands inside the swap window.
+        // crosses; the second lands inside the swap window. The 120ms gap is
+        // a deliberate timing probe (not a settle wait) — it must stay a
+        // fixed sleep so the second tap reliably lands mid-swap instead of
+        // waiting for a settled state that would defeat the point of the test.
         right.tap()
         usleep(120_000)
         right.tap()
-        usleep(2_000_000)
+        waitUntil(timeout: 2.0) { chapter(app)?.index == start.index + 1 }
         XCTAssertEqual(chapter(app)?.index, start.index + 1,
                        "a rapid double tap at the boundary must advance exactly ONE chapter, " +
                        "got \(String(describing: chapter(app)))")
@@ -166,19 +189,24 @@ final class RepeatedCrossingUITests: XCTestCase {
         }
         // Cross forward once so there is a previous chapter to return to.
         var g = 0
-        while let cur = indicator(app), cur.page < cur.total, g < 60 { right.tap(); usleep(600_000); g += 1 }
-        right.tap(); usleep(1_500_000)
+        while let cur = indicator(app), cur.page < cur.total, g < 60 {
+            right.tap()
+            waitUntil(timeout: 1.0) { indicator(app)?.page != cur.page }
+            g += 1
+        }
+        right.tap()
+        waitUntil(timeout: 2.0) { chapter(app)?.index == start.index + 1 }
         guard chapter(app)?.index == start.index + 1 else { throw XCTSkip("Forward cross failed.") }
 
         // Zero the probe right before the backward crossing we care about.
         app.buttons["flicker.probe.reset"].firstMatch.tap()
-        usleep(200_000)
+        waitUntil(timeout: 1.0) { flickerTotal(app) == 0 }
 
         // Drag right off page 1. A tap on the fixture's linked text must open
         // that link, so the physical crossing regression uses the edge-pan
         // gesture that users also use to return a chapter.
         backwardFrom.press(forDuration: 0.05, thenDragTo: backwardTo)
-        usleep(2_500_000)
+        waitUntil(timeout: 3.0) { chapter(app)?.index == start.index }
         XCTAssertEqual(chapter(app)?.index, start.index,
                        "backward edge swipe must return to the previous chapter")
         if let ind = indicator(app) {

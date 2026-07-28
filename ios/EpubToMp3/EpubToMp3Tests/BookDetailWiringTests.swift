@@ -8,9 +8,8 @@ final class BookDetailWiringTests: XCTestCase {
         let root = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
             .deletingLastPathComponent()
-        return try String(
-            contentsOf: root.appendingPathComponent("EpubToMp3/\(relativePath)"),
-            encoding: .utf8
+        return try readSourceFileIfAvailable(
+            at: root.appendingPathComponent("EpubToMp3/\(relativePath)")
         )
     }
 

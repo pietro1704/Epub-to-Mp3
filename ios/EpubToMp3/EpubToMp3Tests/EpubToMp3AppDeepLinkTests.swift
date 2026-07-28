@@ -16,8 +16,8 @@ import XCTest
 final class EpubToMp3AppDeepLinkTests: XCTestCase {
 
     private func appSource() throws -> String {
-        try String(
-            contentsOf: URL(fileURLWithPath: #filePath)
+        try readSourceFileIfAvailable(
+            at: URL(fileURLWithPath: #filePath)
                 .deletingLastPathComponent()
                 .deletingLastPathComponent()
                 .appendingPathComponent("EpubToMp3/App/EpubToMp3App.swift")
@@ -25,8 +25,8 @@ final class EpubToMp3AppDeepLinkTests: XCTestCase {
     }
 
     private func widgetSource() throws -> String {
-        try String(
-            contentsOf: URL(fileURLWithPath: #filePath)
+        try readSourceFileIfAvailable(
+            at: URL(fileURLWithPath: #filePath)
                 .deletingLastPathComponent()
                 .deletingLastPathComponent()
                 .appendingPathComponent("EpubToMp3Widget/EpubToMp3Widget.swift")
@@ -34,8 +34,8 @@ final class EpubToMp3AppDeepLinkTests: XCTestCase {
     }
 
     private func widgetBundleSource() throws -> String {
-        try String(
-            contentsOf: URL(fileURLWithPath: #filePath)
+        try readSourceFileIfAvailable(
+            at: URL(fileURLWithPath: #filePath)
                 .deletingLastPathComponent()
                 .deletingLastPathComponent()
                 .appendingPathComponent("EpubToMp3Widget/WidgetBundle.swift")

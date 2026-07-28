@@ -6,18 +6,24 @@ final class PlayerViewConfigurationTests: XCTestCase {
             .deletingLastPathComponent()
             .deletingLastPathComponent()
             .appendingPathComponent("EpubToMp3/Features/Playback/Views/FullPlayerScreenController.swift")
-        let source = try String(contentsOf: sourceURL, encoding: .utf8)
+        let source = try readSourceFileIfAvailable(at: sourceURL)
 
         XCTAssertTrue(source.contains("MPVolumeView"))
         XCTAssertFalse(source.contains("showsRouteButton"))
     }
 
-    func testLegacyPlayerViewWasRemovedAfterUIKitMigration() {
+    func testLegacyPlayerViewWasRemovedAfterUIKitMigration() throws {
         let projectRoot = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
             .deletingLastPathComponent()
         let legacyPlayerURL = projectRoot.appendingPathComponent("EpubToMp3/Features/Playback/Views/PlayerView.swift")
         let nativeURL = projectRoot.appendingPathComponent("EpubToMp3/Features/Playback/Views/FullPlayerScreenController.swift")
+
+        guard FileManager.default.fileExists(atPath: nativeURL.path) else {
+            throw XCTSkip(
+                "Host source file unreachable from this sandbox (likely a physical device run): \(nativeURL.path). Run via Simulator or CI to exercise this contract."
+            )
+        }
 
         XCTAssertFalse(
             FileManager.default.fileExists(atPath: legacyPlayerURL.path),
@@ -31,7 +37,7 @@ final class PlayerViewConfigurationTests: XCTestCase {
             .deletingLastPathComponent()
             .deletingLastPathComponent()
         let sourceURL = projectRoot.appendingPathComponent("EpubToMp3/Features/Playback/Views/PlayerScreenController.swift")
-        let source = try String(contentsOf: sourceURL, encoding: .utf8)
+        let source = try readSourceFileIfAvailable(at: sourceURL)
 
         XCTAssertTrue(source.contains("import Combine"))
         XCTAssertTrue(source.contains("private var cancellables: Set<AnyCancellable> = []"))

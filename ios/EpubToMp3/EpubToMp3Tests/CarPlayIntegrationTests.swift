@@ -6,9 +6,8 @@ final class CarPlayIntegrationTests: XCTestCase {
             .deletingLastPathComponent()
             .deletingLastPathComponent()
             .appendingPathComponent("EpubToMp3")
-        return try String(
-            contentsOf: root.appendingPathComponent(relativePath),
-            encoding: .utf8
+        return try readSourceFileIfAvailable(
+            at: root.appendingPathComponent(relativePath)
         )
     }
 

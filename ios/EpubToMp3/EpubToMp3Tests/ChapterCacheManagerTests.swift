@@ -204,7 +204,7 @@ final class ChapterCacheManagerTests: XCTestCase {
             .deletingLastPathComponent()
             .deletingLastPathComponent()
             .appendingPathComponent("EpubToMp3/Features/Offline/Services/ChapterCacheManager.swift")
-        let source = try String(contentsOf: sourceURL, encoding: .utf8)
+        let source = try readSourceFileIfAvailable(at: sourceURL)
 
         XCTAssertTrue(source.contains("guard let manager = self else { return }"))
         XCTAssertTrue(source.contains("self.clearObserver = nil"))

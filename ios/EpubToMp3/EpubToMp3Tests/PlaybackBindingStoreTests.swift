@@ -159,13 +159,11 @@ final class PlaybackBindingStoreTests: XCTestCase {
         let projectRoot = testFile
             .deletingLastPathComponent()
             .deletingLastPathComponent()
-        let appSource = try String(
-            contentsOf: projectRoot.appendingPathComponent("EpubToMp3/App/EpubToMp3App.swift"),
-            encoding: .utf8
+        let appSource = try readSourceFileIfAvailable(
+            at: projectRoot.appendingPathComponent("EpubToMp3/App/EpubToMp3App.swift")
         )
-        let bookOpenSource = try String(
-            contentsOf: projectRoot.appendingPathComponent("EpubToMp3/Features/Reader/Views/BookOpenScreenController.swift"),
-            encoding: .utf8
+        let bookOpenSource = try readSourceFileIfAvailable(
+            at: projectRoot.appendingPathComponent("EpubToMp3/Features/Reader/Views/BookOpenScreenController.swift")
         )
 
         XCTAssertTrue(appSource.contains("PlaybackBindingStore.setCurrentlyPlaying"))

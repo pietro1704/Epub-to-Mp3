@@ -43,7 +43,7 @@ final class LocalizationParityTests: XCTestCase {
             XCTFail("Could not locate \(locale).lproj/Localizable.strings")
             return [:]
         }
-        let data = try Data(contentsOf: url)
+        let data = try readSourceDataIfAvailable(at: url)
         guard let dict = try PropertyListSerialization.propertyList(
             from: data, options: [], format: nil) as? [String: String]
         else {
