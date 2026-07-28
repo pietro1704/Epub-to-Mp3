@@ -114,6 +114,32 @@ rm -rf flutter_app/build 2>/dev/null || true
 echo "✅ Build artifacts cleaned!"
 """
 
+[tasks."clean:build:if-low"]
+description = "Run clean:build only when free disk is below threshold and no build is active. Invoked every 6h by the com.pietro.epub-to-mp3-disk-guard LaunchAgent (~/bin/epub-to-mp3-disk-guard.sh)."
+run = """
+#!/bin/bash
+set -e
+
+THRESHOLD_GB="${DISK_GUARD_THRESHOLD_GB:-20}"
+AVAIL_GB="$(df -g / | tail -1 | awk '{print $4}')"
+
+echo "Available: ${AVAIL_GB}Gi (threshold: ${THRESHOLD_GB}Gi)"
+
+if [ "$AVAIL_GB" -ge "$THRESHOLD_GB" ]; then
+  echo "Above threshold — nothing to do."
+  exit 0
+fi
+
+# Never delete a build's own output out from under it.
+if pgrep -f xcodebuild >/dev/null 2>&1; then
+  echo "xcodebuild is running — skipping this cycle."
+  exit 0
+fi
+
+echo "Below threshold — running clean:build"
+mise run clean:build
+"""
+
 [tasks.install]
 description = "Install Python and web dependencies (venv + npm)"
 run = """
