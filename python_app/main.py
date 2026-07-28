@@ -858,6 +858,16 @@ class ConverterApplication:
                         except Exception:
                             pass
 
+                # Surface *why* an otherwise-complete run ended up "partial"
+                # (e.g. final cross-validation caught a duration/text
+                # mismatch after every chapter loop-reported success) —
+                # without this, outcome=partial + chapters_failed=0 is
+                # unexplainable from the log alone.
+                _result_errors = result.errors if isinstance(result, ConversionResult) else None
+                _log_extra: dict = {}
+                if _result_errors:
+                    _log_extra["errors"] = list(_result_errors)[:20]
+
                 log_session(
                     book_title=reader.title or Path(args.input_file).stem,
                     book_author=getattr(reader, "author", "") or "",
@@ -876,6 +886,7 @@ class ConverterApplication:
                         conversion_start, tz=timezone.utc
                     ).isoformat(),
                     chapter_details=_chapter_details or None,
+                    extra=_log_extra or None,
                 )
             except Exception:
                 pass  # Never let logging break a conversion

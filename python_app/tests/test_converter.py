@@ -194,6 +194,42 @@ class TestAudioConverter(unittest.IsolatedAsyncioTestCase):
 
         self.assertTrue(self.converter._should_run_initial_validation(output_dir, config))
 
+    async def test_report_results_surfaces_validation_stats_breakdown_on_failure(self):
+        """Final-validation failure must explain *why* in result.errors, not
+        just flip success=False — a run that converts every chapter
+        (chapters_failed=0) but fails the post-hoc cross-validation
+        previously logged as outcome=partial with no way to tell which
+        validate_book bucket (duration_mismatch, missing_mp3, ...) caused
+        it. See LOTR 2026-07-16 session (95/95 converted, outcome=partial)."""
+        output_dir = Path(self.temp_dir)
+        self.converter._last_output_dir = output_dir
+        self.converter._active_config = self.config
+        self.converter._last_chapters_for_text = []
+        self.converter._auto_validate_output = AsyncMock(return_value=False)
+        self.converter._last_validation_stats = {
+            "total_chapters": 95,
+            "perfect": 92,
+            "duration_mismatch": 2,
+            "missing_mp3": 1,
+        }
+
+        result = ConversionResult(
+            success=True,
+            total_chapters=95,
+            converted_chapters=95,
+            output_files=[],
+            errors=[],
+        )
+
+        await self.converter._report_results(result)
+
+        self.assertFalse(result.success)
+        self.assertEqual(len(result.errors), 1)
+        self.assertIn("duration_mismatch=2", result.errors[0])
+        self.assertIn("missing_mp3=1", result.errors[0])
+        self.assertNotIn("perfect=", result.errors[0])
+        self.assertNotIn("total_chapters=", result.errors[0])
+
     def test_duplicate_cleanup_is_opt_in(self):
         config = ConversionConfig(engine="edge")
 

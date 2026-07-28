@@ -6396,6 +6396,11 @@ async def process_conversion(job_id: str) -> None:
                 _ch_done = job.get("chaptersCompleted") or 0
                 _ch_failed = _ch_total - _ch_done
             _chapter_details = _extract_chapter_details(job)
+            # Mirrors the CLI's `errors` trace field (main.py) — the job can
+            # reach "finished" with lingering validationIssues (see the
+            # auto-validate block above), and without this the log can't
+            # explain a "success" outcome that's actually incomplete.
+            _validation_issues = job.get("validationIssues")
             log_session(
                 book_title=job.get("bookTitle", ""),
                 book_author=job.get("bookAuthor", ""),
@@ -6411,6 +6416,7 @@ async def process_conversion(job_id: str) -> None:
                 output_dir=str(job.get("outputDir", "")),
                 started_at=job.get("startedAt", ""),
                 chapter_details=_chapter_details or None,
+                extra={"validationIssues": _validation_issues[:20]} if _validation_issues else None,
             )
         except Exception:
             pass  # Never let logging break a conversion

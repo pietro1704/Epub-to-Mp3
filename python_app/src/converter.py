@@ -301,6 +301,8 @@ class AudioConverter(
         self._checkpoint_interval: int = int(os.getenv("CHECKPOINT_INTERVAL", "5"))
         self._auto_fix_guard: bool = False
         self._final_validation_passed: bool = True
+        self._last_validation_stats: Optional[Dict[str, int]] = None
+        self._last_validation_issues: Optional[List[str]] = None
         self._last_output_dir: Optional[Path] = None
         self.show_tts_output = False  # Only show TTS output in verbose mode
         self._retry_original_texts: Dict[str, str] = {}
@@ -7008,9 +7010,19 @@ class AudioConverter(
         if not final_validation_ok:
             result.success = False
             validation_error = "Final validation failed: conversion is not 100% complete"
+            stats = self._last_validation_stats
+            if stats:
+                bad_buckets = {
+                    key: count
+                    for key, count in stats.items()
+                    if key != "perfect" and key != "total_chapters" and count
+                }
+                if bad_buckets:
+                    breakdown = ", ".join(f"{k}={v}" for k, v in sorted(bad_buckets.items()))
+                    validation_error += f" ({breakdown})"
             if validation_error not in result.errors:
                 result.errors.append(validation_error)
-            print("❌ Final validation failed: conversion is incomplete (not 100%).")
+            print(f"❌ {validation_error}")
 
     def _announce_stage(self, index: int, chapter_name: str, status: str) -> None:
         clean_status = status.strip()

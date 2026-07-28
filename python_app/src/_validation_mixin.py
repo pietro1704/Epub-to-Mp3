@@ -82,6 +82,13 @@ class _ValidationMixin:
             finally:
                 os.environ["SUPPRESS_VALIDATION_ERRORS"] = old_verbose
 
+            # Snapshot the latest validate_book() result on the instance so
+            # the caller (session logging) can explain *why* a run ended up
+            # "partial" instead of just recording that it did — see
+            # `feedback_validation_trace_visibility.md`.
+            self._last_validation_stats = stats
+            self._last_validation_issues = issues
+
             # Check if passed (duration_mismatch also critical)
             has_critical_problems = bool(
                 any(
