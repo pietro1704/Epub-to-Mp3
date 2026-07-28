@@ -50,15 +50,45 @@ def _is_test_process() -> bool:
     )
 
 
+_PROD_LOG_FILE = LOGS_DIR / "conversions.jsonl"
+_PROD_EVENTS_FILE = LOGS_DIR / "events.jsonl"
+_TEST_LOG_FILE = pathlib.Path(tempfile.gettempdir()) / "epub_to_mp3_test_sessions.jsonl"
+_TEST_EVENTS_FILE = pathlib.Path(tempfile.gettempdir()) / "epub_to_mp3_test_events.jsonl"
+
 # During pytest, write to a temp file so tests never pollute the real log.
 if _is_test_process():
-    _LOG_FILE = pathlib.Path(tempfile.gettempdir()) / "epub_to_mp3_test_sessions.jsonl"
-    _EVENTS_FILE = pathlib.Path(tempfile.gettempdir()) / "epub_to_mp3_test_events.jsonl"
+    _LOG_FILE = _TEST_LOG_FILE
+    _EVENTS_FILE = _TEST_EVENTS_FILE
 else:
-    _LOG_FILE = LOGS_DIR / "conversions.jsonl"
-    _EVENTS_FILE = LOGS_DIR / "events.jsonl"
+    _LOG_FILE = _PROD_LOG_FILE
+    _EVENTS_FILE = _PROD_EVENTS_FILE
 
 _EVENTS_LOCK = threading.Lock()
+
+
+def _effective_log_file() -> pathlib.Path:
+    """Resolve the session-log target, re-checking test-mode at call time.
+
+    `_LOG_FILE` is bound once at import for the common case, and existing
+    tests rely on monkeypatching it directly (see test_session_logger.py).
+    But if this module is first imported during pytest *collection* —
+    before `PYTEST_CURRENT_TEST` exists — `_is_test_process()` can still
+    return False at that instant and freeze `_LOG_FILE` on the production
+    path for the rest of the process (see commit 6dfdc811 / ef696eda,
+    which this call-time check was added to fully close). Redirect to the
+    test file ONLY when `_LOG_FILE` still equals the untouched production
+    default — an explicit monkeypatch always wins.
+    """
+    if _LOG_FILE == _PROD_LOG_FILE and _is_test_process():
+        return _TEST_LOG_FILE
+    return _LOG_FILE
+
+
+def _effective_events_file() -> pathlib.Path:
+    """Events-file counterpart of `_effective_log_file()`."""
+    if _EVENTS_FILE == _PROD_EVENTS_FILE and _is_test_process():
+        return _TEST_EVENTS_FILE
+    return _EVENTS_FILE
 
 
 def _detect_mode() -> str:
@@ -120,16 +150,17 @@ def log_session(
 
     line = json.dumps(record, ensure_ascii=False) + "\n"
     with _LOCK:
-        with open(_LOG_FILE, "a", encoding="utf-8") as fh:
+        with open(_effective_log_file(), "a", encoding="utf-8") as fh:
             fh.write(line)
 
 
 def read_sessions(last_n: int = 0) -> list[dict[str, Any]]:
     """Return all (or last N) session records from conversions.jsonl."""
-    if not _LOG_FILE.exists():
+    log_file = _effective_log_file()
+    if not log_file.exists():
         return []
     records = []
-    with open(_LOG_FILE, encoding="utf-8") as fh:
+    with open(log_file, encoding="utf-8") as fh:
         for line in fh:
             line = line.strip()
             if line:
@@ -161,7 +192,7 @@ def log_event(kind: str, **fields: Any) -> None:
     try:
         line = json.dumps(record, ensure_ascii=False, default=str) + "\n"
         with _EVENTS_LOCK:
-            with open(_EVENTS_FILE, "a", encoding="utf-8") as fh:
+            with open(_effective_events_file(), "a", encoding="utf-8") as fh:
                 fh.write(line)
     except Exception:
         pass
@@ -255,10 +286,11 @@ def log_freeze(
 
 def read_events(last_n: int = 0, kind: str = "") -> list[dict[str, Any]]:
     """Return all (or last N) event records, optionally filtered by `kind`."""
-    if not _EVENTS_FILE.exists():
+    events_file = _effective_events_file()
+    if not events_file.exists():
         return []
     records: list[dict[str, Any]] = []
-    with open(_EVENTS_FILE, encoding="utf-8") as fh:
+    with open(events_file, encoding="utf-8") as fh:
         for line in fh:
             line = line.strip()
             if not line:
@@ -277,18 +309,20 @@ def read_events(last_n: int = 0, kind: str = "") -> list[dict[str, Any]]:
 
 def clear_events() -> int:
     """Delete all event records. Returns the count of deleted records."""
-    if not _EVENTS_FILE.exists():
+    events_file = _effective_events_file()
+    if not events_file.exists():
         return 0
     count = len(read_events())
-    _EVENTS_FILE.unlink()
+    events_file.unlink()
     return count
 
 
 def clear_sessions() -> int:
     """Delete all session records. Returns the count of deleted records."""
-    if not _LOG_FILE.exists():
+    log_file = _effective_log_file()
+    if not log_file.exists():
         return 0
     records = read_sessions()
     count = len(records)
-    _LOG_FILE.unlink()
+    log_file.unlink()
     return count

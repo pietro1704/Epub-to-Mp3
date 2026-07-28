@@ -401,3 +401,77 @@ class TestDeleteSessionsEndpoint:
         data = resp.json()
         assert data["sessions"] == []
         assert data["count"] == 0
+
+
+# ---------------------------------------------------------------------------
+# Call-time test-mode re-check (collection-time-import isolation gap)
+# ---------------------------------------------------------------------------
+
+
+class TestEffectiveLogFileFallback:
+    """Regression coverage for the leak fixed in `_effective_log_file()`.
+
+    `_LOG_FILE` is bound once at import based on `_is_test_process()`. If
+    `session_logger` is first imported during pytest *collection* — before
+    `PYTEST_CURRENT_TEST` exists and before "pytest" is guaranteed to be in
+    `sys.modules` from this module's own point of view — `_LOG_FILE` can
+    freeze on the production path for the rest of the process. Real
+    contamination of `.logs/conversions.jsonl` with fixture book titles
+    ("Test Multi Feature Book", "Priority Book") was traced to exactly this
+    class of gap. `_effective_log_file()`/`_effective_events_file()` re-check
+    test-mode at call time and must redirect whenever `_LOG_FILE` still
+    equals the untouched production default.
+    """
+
+    def test_redirects_to_test_file_when_frozen_on_prod_path(self, monkeypatch):
+        import python_app.src.session_logger as sl
+
+        # Simulate the import-time guard having (wrongly) frozen on prod.
+        monkeypatch.setattr(sl, "_LOG_FILE", sl._PROD_LOG_FILE)
+        monkeypatch.setattr(sl, "_is_test_process", lambda: True)
+
+        assert sl._effective_log_file() == sl._TEST_LOG_FILE
+
+    def test_redirects_events_file_when_frozen_on_prod_path(self, monkeypatch):
+        import python_app.src.session_logger as sl
+
+        monkeypatch.setattr(sl, "_EVENTS_FILE", sl._PROD_EVENTS_FILE)
+        monkeypatch.setattr(sl, "_is_test_process", lambda: True)
+
+        assert sl._effective_events_file() == sl._TEST_EVENTS_FILE
+
+    def test_explicit_monkeypatch_of_log_file_still_wins(self, monkeypatch, tmp_path):
+        """An explicit override (as every other test in this file relies
+        on) must never be silently redirected, even in test mode."""
+        import python_app.src.session_logger as sl
+
+        custom = tmp_path / "custom.jsonl"
+        monkeypatch.setattr(sl, "_LOG_FILE", custom)
+        monkeypatch.setattr(sl, "_is_test_process", lambda: True)
+
+        assert sl._effective_log_file() == custom
+
+    def test_prod_path_untouched_outside_test_mode(self, monkeypatch):
+        import python_app.src.session_logger as sl
+
+        monkeypatch.setattr(sl, "_LOG_FILE", sl._PROD_LOG_FILE)
+        monkeypatch.setattr(sl, "_is_test_process", lambda: False)
+
+        assert sl._effective_log_file() == sl._PROD_LOG_FILE
+
+    def test_log_session_actually_writes_through_effective_resolver(self, monkeypatch, tmp_path):
+        """End-to-end: log_session() must use `_effective_log_file()`, not
+        the raw `_LOG_FILE` global, so the redirect actually takes effect."""
+        import python_app.src.session_logger as sl
+
+        redirect_target = tmp_path / "redirected.jsonl"
+        monkeypatch.setattr(sl, "_LOG_FILE", sl._PROD_LOG_FILE)
+        monkeypatch.setattr(sl, "_TEST_LOG_FILE", redirect_target)
+        monkeypatch.setattr(sl, "_is_test_process", lambda: True)
+
+        sl.log_session(book_title="Should Not Pollute Prod Log")
+
+        assert redirect_target.exists()
+        assert not sl._PROD_LOG_FILE.exists() or "Should Not Pollute Prod Log" not in (
+            sl._PROD_LOG_FILE.read_text(encoding="utf-8")
+        )
