@@ -84,6 +84,36 @@ echo "  - book cache (.cache/<book>), models preserved"
 echo "  - .mise-cache"
 """
 
+[tasks."clean:build"]
+description = "Reclaim disk from iOS/macOS/Flutter build artifacts (DerivedData, .build, dist, flutter build/) — run periodically or when disk is low, NOT wired into mac:build itself since mac:run/CI consume its .build output immediately after."
+run = """
+#!/bin/bash
+set -e
+
+echo "🧹 Cleaning build artifacts..."
+
+# xcodebuild -derivedDataPath output for the headless mac:build/ios:build
+# tasks. Not auto-run after mac:build/mac:build:dev — mac:run and other
+# immediate consumers read the just-built .app straight out of here.
+echo "  → Removing ios/EpubToMp3/.build..."
+rm -rf ios/EpubToMp3/.build 2>/dev/null || true
+
+# Xcode.app's own DerivedData for this project, only if Xcode.app was ever
+# opened directly on it (headless builds above never populate this — see
+# "Build Artifact Hygiene" in CLAUDE.md: don't let two build caches for the
+# same project accumulate in parallel).
+echo "  → Removing Xcode DerivedData for EpubToMp3..."
+rm -rf "$HOME/Library/Developer/Xcode/DerivedData"/EpubToMp3-* 2>/dev/null || true
+
+echo "  → Removing PyInstaller sidecar dist/..."
+rm -rf dist 2>/dev/null || true
+
+echo "  → Removing flutter_app/build..."
+rm -rf flutter_app/build 2>/dev/null || true
+
+echo "✅ Build artifacts cleaned!"
+"""
+
 [tasks.install]
 description = "Install Python and web dependencies (venv + npm)"
 run = """

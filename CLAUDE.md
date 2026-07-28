@@ -67,6 +67,14 @@ CLI and web-local automatically share cache because both use `PROJECT_ROOT` as `
   models, and user inputs) unless the task explicitly authorizes cleanup.
 - After a build/test cycle, report what temporary artifacts were retained or
   removed and verify the workspace is clean enough for the next task.
+- `mise run clean:build` reclaims `ios/EpubToMp3/.build`, this project's
+  Xcode `DerivedData`, `dist/`, and `flutter_app/build` in one shot — run it
+  periodically or when disk is low. It's deliberately NOT wired into
+  `mac:build`/`mac:build:dev` themselves, since `mac:run` and other callers
+  consume the just-built `.build/**/EpubToMp3.app` immediately after. The
+  most common leak: opening `EpubToMp3.xcodeproj` directly in Xcode.app
+  grows a second, parallel `~/Library/Developer/Xcode/DerivedData/EpubToMp3-*`
+  cache that the headless `mise run mac:build` never touches or cleans.
 
 ---
 
@@ -547,6 +555,45 @@ These features exist specifically to improve the audiobook listening experience:
 - **Auto-Scaling**: Workers and parallelism auto-scale to available hardware
 - **Progress tracking**: `ProgressTracker` (CLI) with `_active_chapters`, `_active_engine`, ETA hints
 - **Dual path**: Features in `converter.py` must be mirrored in `server.py`
+
+---
+
+## Agent Pipeline & Subagent Workflow
+
+Full contract: `docs/agent-pipeline-prompt-portable.md` (tool-agnostic; also the
+canonical source for the `portable-agent-pipeline` skill installed in Claude
+Code, Codex CLI, and Hermes). Summary:
+
+```
+clarify gate → Planner → Executor → Verifier → Critic/QA → Test-author → Review gate
+```
+
+- **Clarify gate**: ask only when a fact materially changes scope/risk/
+  authorization/acceptance and the repo/conversation/defaults can't resolve
+  it, or before irreversible/costly/remote actions. Otherwise state one
+  assumption and proceed.
+- **Planner → Executor**: skip the plan when it'd be the same length as the
+  diff. Domain work goes to the matching specialist in `.claude/agents/`
+  (see `project_agent_inventory.md` in memory) — there is no generic coder
+  role.
+- **Verifier**: proves the golden path now (run it, show evidence) — never
+  writes permanent tests.
+- **Critic/QA**: adversarial pass after Verifier signs off — edge cases,
+  cross-feature regressions, not a re-check of the happy path.
+- **Test-author**: writes the permanent suite after Verifier + Critic (or
+  alongside, if TDD).
+- **Review gate**: commit → push → PR → CI green → automated/human review
+  before merge; a small self-contained fix may go direct.
+- **Parallel delegation**: only when sub-tasks are genuinely independent,
+  each has pre-assigned file/module ownership, and you state the
+  parallelism explicitly — this repo's default is to fan out via the
+  `Agent` tool per specialist rather than working serially.
+- **Security/perf findings are P0**: checkpoint current work, fix ahead of
+  the rest of the task, add a regression gate (CI/audit/benchmark) so it's
+  caught automatically next time. A perf claim needs a before/after number,
+  not a feeling.
+- Keep the pipeline proportional — a one-line fix doesn't need all six
+  stages named explicitly.
 
 ---
 
