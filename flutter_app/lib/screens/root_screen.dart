@@ -27,6 +27,8 @@ class RootScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final t = AppLocalizations.of(context)!;
     final tabIndex = ref.watch(rootTabIndexProvider);
+    final chromeVisible = ref.watch(readerChromeVisibleProvider);
+    final showShellChrome = tabIndex != 0 || chromeVisible;
 
     return Scaffold(
       body: Column(
@@ -34,41 +36,43 @@ class RootScreen extends ConsumerWidget {
           Expanded(
             child: IndexedStack(index: tabIndex, children: _screens),
           ),
-          if (tabIndex != 0) const MiniPlayerBar(),
+          if (showShellChrome) const MiniPlayerBar(),
         ],
       ),
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: tabIndex,
-        onDestinationSelected: (i) =>
-            ref.read(rootTabIndexProvider.notifier).state = i,
-        destinations: [
-          NavigationDestination(
-            icon: const Icon(Icons.menu_book_outlined),
-            selectedIcon: const Icon(Icons.menu_book),
-            label: t.readerTitle,
-          ),
-          NavigationDestination(
-            icon: const Icon(Icons.library_books_outlined),
-            selectedIcon: const Icon(Icons.library_books),
-            label: t.libraryTitle,
-          ),
-          NavigationDestination(
-            icon: const Icon(Icons.transform_outlined),
-            selectedIcon: const Icon(Icons.transform),
-            label: t.convertTitle,
-          ),
-          NavigationDestination(
-            icon: const Icon(Icons.work_outline),
-            selectedIcon: const Icon(Icons.work),
-            label: t.jobsTitle,
-          ),
-          NavigationDestination(
-            icon: const Icon(Icons.settings_outlined),
-            selectedIcon: const Icon(Icons.settings),
-            label: t.settingsTitle,
-          ),
-        ],
-      ),
+      bottomNavigationBar: showShellChrome
+          ? NavigationBar(
+              selectedIndex: tabIndex,
+              onDestinationSelected: (i) =>
+                  ref.read(rootTabIndexProvider.notifier).state = i,
+              destinations: [
+                NavigationDestination(
+                  icon: const Icon(Icons.menu_book_outlined),
+                  selectedIcon: const Icon(Icons.menu_book),
+                  label: t.readerTitle,
+                ),
+                NavigationDestination(
+                  icon: const Icon(Icons.library_books_outlined),
+                  selectedIcon: const Icon(Icons.library_books),
+                  label: t.libraryTitle,
+                ),
+                NavigationDestination(
+                  icon: const Icon(Icons.transform_outlined),
+                  selectedIcon: const Icon(Icons.transform),
+                  label: t.convertTitle,
+                ),
+                NavigationDestination(
+                  icon: const Icon(Icons.work_outline),
+                  selectedIcon: const Icon(Icons.work),
+                  label: t.jobsTitle,
+                ),
+                NavigationDestination(
+                  icon: const Icon(Icons.settings_outlined),
+                  selectedIcon: const Icon(Icons.settings),
+                  label: t.settingsTitle,
+                ),
+              ],
+            )
+          : null,
     );
   }
 }

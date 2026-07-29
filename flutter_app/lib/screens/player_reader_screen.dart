@@ -43,6 +43,7 @@ class _PlayerReaderScreenState extends ConsumerState<PlayerReaderScreen> {
   @override
   void initState() {
     super.initState();
+    ref.read(readerChromeVisibleProvider.notifier).state = true;
     // Defer subscription setup to after the first frame so that
     // ref.read is available (ConsumerState is fully mounted).
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -121,12 +122,14 @@ class _PlayerReaderScreenState extends ConsumerState<PlayerReaderScreen> {
     // Always restore the system chrome when leaving the reader so
     // other screens are not left in immersive mode.
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+    ref.read(readerChromeVisibleProvider.notifier).state = true;
     super.dispose();
   }
 
   void _setChromeVisible(bool visible) {
     if (_chromeVisible == visible) return;
     setState(() => _chromeVisible = visible);
+    ref.read(readerChromeVisibleProvider.notifier).state = visible;
     SystemChrome.setEnabledSystemUIMode(
       visible ? SystemUiMode.edgeToEdge : SystemUiMode.immersive,
     );

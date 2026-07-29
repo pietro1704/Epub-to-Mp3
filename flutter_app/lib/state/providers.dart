@@ -275,6 +275,10 @@ final localFulltextCacheProvider = Provider<LocalFulltextCache>((ref) {
 /// the reader tab programmatically.
 final rootTabIndexProvider = StateProvider<int>((ref) => 0);
 
+/// Reader chrome visibility shared with the root shell so the persistent
+/// mini-player and navigation bar follow the reader's immersive mode.
+final readerChromeVisibleProvider = StateProvider<bool>((ref) => true);
+
 /// A trivial persisted String? notifier. Reads a SharedPreferences key on
 /// construction and writes on every `set`.
 class _ReaderSessionNotifier extends StateNotifier<String?> {

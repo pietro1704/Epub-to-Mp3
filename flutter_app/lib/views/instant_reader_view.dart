@@ -58,6 +58,7 @@ class _InstantReaderViewState extends ConsumerState<InstantReaderView> {
   @override
   void initState() {
     super.initState();
+    ref.read(readerChromeVisibleProvider.notifier).state = true;
     final settings = ref.read(settingsProvider);
     final bookId = widget.bookId;
     if (bookId != null && widget.initialChapterIndex == 0) {
@@ -108,6 +109,7 @@ class _InstantReaderViewState extends ConsumerState<InstantReaderView> {
     // Always restore the system chrome when leaving the reader so other
     // screens are not left in immersive mode.
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+    ref.read(readerChromeVisibleProvider.notifier).state = true;
     super.dispose();
   }
 
@@ -138,6 +140,7 @@ class _InstantReaderViewState extends ConsumerState<InstantReaderView> {
   void _setChromeVisible(bool visible) {
     if (_chromeVisible == visible) return;
     setState(() => _chromeVisible = visible);
+    ref.read(readerChromeVisibleProvider.notifier).state = visible;
     _applySystemChrome();
   }
 
