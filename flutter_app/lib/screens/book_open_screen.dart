@@ -153,7 +153,7 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen> {
         });
         return;
       }
-      final filePath = book.filePath;
+      final filePath = await library.ensureSupportedBookPath(book);
       final fulltext = await bridge.parseEpub(
         filePath,
         jobId: loadingForBookId,

@@ -87,4 +87,17 @@ void main() {
       ),
     );
   });
+
+  test('ensureSupportedBookPath repairs extensionless Android imports', () async {
+    final prefs = await SharedPreferences.getInstance();
+    final store = LibraryStore(prefs: prefs);
+    final f = await _tempEpub('Documento de Pietro', [0x50, 0x4b, 0x03, 0x04]);
+    final book = await store.importBook(f.path);
+
+    final repaired = await store.ensureSupportedBookPath(book);
+
+    expect(repaired, endsWith('.epub'));
+    expect(await File(repaired).exists(), isTrue);
+    expect(book.filePath, repaired);
+  });
 }

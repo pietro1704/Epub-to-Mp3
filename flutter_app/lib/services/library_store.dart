@@ -150,6 +150,41 @@ class LibraryStore extends ChangeNotifier {
     return book.filePath;
   }
 
+  /// Returns a parser-safe path for legacy Android imports whose provider
+  /// omitted both the filename extension and MIME type. Android file
+  /// pickers commonly materialize these files under `cache/file_picker/...`
+  /// with a display name such as `Documento de Pietro`; the Python reader
+  /// dispatches by suffix and would otherwise report `Unsupported format:`.
+  Future<String> ensureSupportedBookPath(BookEntity book) async {
+    final path = book.filePath;
+    final lower = path.toLowerCase();
+    if (lower.endsWith('.epub') || lower.endsWith('.pdf')) return path;
+
+    final source = File(path);
+    if (!await source.exists()) return path;
+    final header = await source.openRead(0, 8).fold<List<int>>(
+      <int>[],
+      (bytes, chunk) => bytes..addAll(chunk),
+    );
+    final extension = header.length >= 4 &&
+            header[0] == 0x25 &&
+            header[1] == 0x50 &&
+            header[2] == 0x44 &&
+            header[3] == 0x46
+        ? '.pdf'
+        : header.length >= 2 && header[0] == 0x50 && header[1] == 0x4b
+        ? '.epub'
+        : null;
+    if (extension == null) return path;
+
+    final target = File('$path$extension');
+    if (!await target.exists()) await source.copy(target.path);
+    book.filePath = target.path;
+    _persist();
+    notifyListeners();
+    return target.path;
+  }
+
   // ---- Tags ----------------------------------------------------------
 
   /// All distinct tags across the library, sorted alphabetically.
