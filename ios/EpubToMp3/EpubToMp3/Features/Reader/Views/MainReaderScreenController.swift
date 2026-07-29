@@ -11,10 +11,13 @@ final class MainReaderScreenController: UIViewController {
     private let bookmarkStore: BookmarkStore
     private var onBrowseLibrary: (() -> Void)?
     var onReaderChromeVisibilityChanged: ((Bool) -> Void)?
+    var onReaderLoadingChanged: ((Bool) -> Void)?
 
     private var cancellables: Set<AnyCancellable> = []
     private var readerController: BookOpenScreenController?
     private var readerBookID: String?
+    private var readerTopToNavigation: NSLayoutConstraint!
+    private var readerTopToRoot: NSLayoutConstraint!
     /// Mirrors `BookOpenScreenController.onLoadStateChanged` so `render()`
     /// can keep "Ouvir" hidden while the book's content is still loading.
     private var isReaderLoading = false
@@ -67,14 +70,10 @@ final class MainReaderScreenController: UIViewController {
 
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
-        tabBarController?.tabBar.isHidden = true
     }
 
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
-        if isMovingFromParent || navigationController?.topViewController !== self {
-            tabBarController?.tabBar.isHidden = false
-        }
     }
 
     func update(
@@ -164,14 +163,9 @@ final class MainReaderScreenController: UIViewController {
         closeItem.accessibilityIdentifier = "reader.close"
         readerNavigationItem.leftBarButtonItem = closeItem
 
-        let repickButton = UIButton(type: .system)
-        repickButton.setImage(UIImage(systemName: "book.closed"), for: .normal)
-        repickButton.accessibilityLabel = L10n.string("reader.repick")
-        repickButton.accessibilityIdentifier = "reader.repick"
-        repickButton.addTarget(self, action: #selector(repickBookTapped), for: .touchUpInside)
-        repickButton.frame = CGRect(x: 0, y: 0, width: 44, height: 44)
-        repickButton.isHidden = true
-        readerNavigationItem.rightBarButtonItem = UIBarButtonItem(customView: repickButton)
+        // The repick action is intentionally not exposed in the reading
+        // chrome; a hidden custom view still reserves a blank item on iOS 26.
+        readerNavigationItem.rightBarButtonItem = nil
 
         view.addSubview(readerNavigationBar)
         NSLayoutConstraint.activate([
@@ -206,7 +200,6 @@ final class MainReaderScreenController: UIViewController {
     private func showBook(_ book: BookEntity) {
         emptyStateStack.isHidden = true
         readerNavigationBar.isHidden = false
-        onReaderChromeVisibilityChanged?(false)
         readerNavigationItem.title = book.resolvedTitle
         if readerController != nil, readerBookID == book.id {
             // The existing reader already owns this book. Re-loading it on
@@ -214,6 +207,10 @@ final class MainReaderScreenController: UIViewController {
             // loading-state change, which re-enters `render()` indefinitely.
             return
         }
+        // Reset immersive chrome only when creating/opening a different
+        // reader. Playback/title updates during pagination re-enter render()
+        // but must not make the hidden mini player visible again.
+        onReaderChromeVisibilityChanged?(false)
 
         removeReaderControllerIfNeeded()
 
@@ -221,25 +218,48 @@ final class MainReaderScreenController: UIViewController {
             book: book,
             library: library,
             settings: settings,
-            bookmarkStore: bookmarkStore
+            bookmarkStore: bookmarkStore,
+            player: player
         )
         isReaderLoading = true
         reader.onLoadStateChanged = { [weak self] isLoading in
             guard let self else { return }
             self.isReaderLoading = isLoading
             self.listenButton.isHidden = self.currentBook == nil || isLoading
+            self.onReaderLoadingChanged?(isLoading)
         }
         reader.onChromeVisibilityChanged = { [weak self] isHidden in
-            self?.readerNavigationBar.isHidden = isHidden
-            self?.onReaderChromeVisibilityChanged?(isHidden)
+            guard let self else { return }
+            let shouldShow = !isHidden
+            if shouldShow {
+                self.readerNavigationBar.isHidden = false
+                self.readerNavigationBar.alpha = 0
+            }
+            self.readerTopToNavigation?.isActive = shouldShow
+            self.readerTopToRoot?.isActive = isHidden
+            self.onReaderChromeVisibilityChanged?(isHidden)
+            UIView.animate(
+                withDuration: 0.28,
+                delay: 0,
+                options: [.curveEaseInOut, .beginFromCurrentState, .allowUserInteraction]
+            ) {
+                self.readerNavigationBar.alpha = shouldShow ? 1 : 0
+                self.view.layoutIfNeeded()
+            } completion: { _ in
+                if !shouldShow {
+                    self.readerNavigationBar.isHidden = true
+                }
+            }
         }
         addChild(reader)
         reader.view.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(reader.view)
+        readerTopToNavigation = reader.view.topAnchor.constraint(equalTo: readerNavigationBar.bottomAnchor)
+        readerTopToRoot = reader.view.topAnchor.constraint(equalTo: view.topAnchor)
         NSLayoutConstraint.activate([
             reader.view.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             reader.view.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            reader.view.topAnchor.constraint(equalTo: readerNavigationBar.bottomAnchor),
+            readerTopToNavigation,
             reader.view.bottomAnchor.constraint(equalTo: view.bottomAnchor),
         ])
         reader.didMove(toParent: self)

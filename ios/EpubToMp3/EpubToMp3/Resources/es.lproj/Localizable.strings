@@ -229,6 +229,7 @@
 "reader.characters" = "%d caracteres";
 "reader.previousPage" = "Página anterior";
 "reader.nextPage" = "Página siguiente";
+"reader.pageOf" = "%d de %d";
 "reader.toggleControls" = "Alternar controles";
 "reader.followAudio" = "Seguir el audio";
 "reader.followAudioHint" = "Toca dos veces para llevar el lector al capítulo actual del audio";
@@ -364,6 +365,7 @@
 /* === TocDrawer === */
 "toc.charsCount" = "%d caracteres";
 "toc.downloaded" = "descargado";
+"player.downloadChapter" = "Descargar capítulo";
 "toc.textOnly" = "solo texto";
 "toc.currentlyPlaying" = "Reproduciendo ahora";
 "toc.currentlyReading" = "Leyendo ahora";
@@ -527,3 +529,5 @@
 "convert.pickFileFirstHint" = "Elige un libro antes de iniciar la conversión.";
 "convert.startConversionHint" = "Toca dos veces para iniciar la conversión.";
 "jobDetail.actionHint" = "Toca dos veces para realizar esta acción.";
+"toc.removeDownload" = "Eliminar descarga";
+"toc.untitledChapter" = "Capítulo sin título";

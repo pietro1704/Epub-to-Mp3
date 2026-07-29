@@ -104,7 +104,7 @@ final class IOSAppShellController: UITabBarController {
             image: UIImage(systemName: tab.systemImage),
             tag: tab.rawValue
         )
-        tabBarItem.accessibilityIdentifier = "tab.\(tab.title.lowercased())"
+        tabBarItem.accessibilityIdentifier = "tab.\(tab)"
         navigationController.tabBarItem = tabBarItem
         return navigationController
     }

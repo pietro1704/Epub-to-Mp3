@@ -66,7 +66,7 @@ final class ReaderSettingsScreenController: UITableViewController {
         case .font:
             return 2
         case .layout:
-            return settings.readerLayout == .paginated ? 5 : 3
+            return settings.readerLayout == .paginated ? 6 : 4
         }
     }
 
@@ -81,6 +81,11 @@ final class ReaderSettingsScreenController: UITableViewController {
 
     override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
         let cell = tableView.dequeueReusableCell(withIdentifier: "Cell", for: indexPath)
+        // Cells are reused across sections. Remove any slider installed by
+        // the previous row before configuring the current row.
+        cell.contentView.subviews
+            .filter { $0 is UISlider }
+            .forEach { $0.removeFromSuperview() }
         var content = cell.defaultContentConfiguration()
         cell.accessoryType = .none
         guard let section = Section(rawValue: indexPath.section) else { return cell }
@@ -90,6 +95,7 @@ final class ReaderSettingsScreenController: UITableViewController {
             let themes = ReaderTheme.allCases.filter { $0 != .custom }
             let theme = themes[indexPath.row]
             content.text = theme.displayName
+            content.image = Self.themePreviewImage(for: theme)
             cell.accessoryType = settings.readerTheme == theme ? .checkmark : .none
         case .font:
             if indexPath.row == 0 {
@@ -99,11 +105,25 @@ final class ReaderSettingsScreenController: UITableViewController {
             } else {
                 content.text = L10n.string("readerSettings.size")
                 content.secondaryText = "\(Int(settings.readerPointSize))pt"
-                cell.accessoryType = .disclosureIndicator
+                configureSlider(in: cell, value: Float(settings.readerFontSize), min: 0, max: 4, step: 1, identifier: "reader.settings.fontSize")
+                cell.accessoryType = .none
             }
         case .layout:
             layoutCellContent(&content, row: indexPath.row)
             cell.accessoryType = .disclosureIndicator
+            if isSliderLayoutRow(indexPath.row) {
+                let value: Double
+                let range: (Double, Double)
+                if indexPath.row == (settings.readerLayout == .paginated ? 4 : 2) {
+                    value = settings.readerLineSpacing
+                    range = (0, 16)
+                } else {
+                    value = settings.readerMargin
+                    range = (12, 80)
+                }
+                configureSlider(in: cell, value: Float(value), min: Float(range.0), max: Float(range.1), step: indexPath.row == (settings.readerLayout == .paginated ? 4 : 2) ? 2 : 4, identifier: indexPath.row == (settings.readerLayout == .paginated ? 4 : 2) ? "reader.settings.lineSpacing" : "reader.settings.margin")
+                cell.accessoryType = .none
+            }
             if isToggleLayoutRow(indexPath.row) {
                 cell.accessoryType = settings.readerShowPageNumbers ? .checkmark : .none
             }
@@ -111,11 +131,35 @@ final class ReaderSettingsScreenController: UITableViewController {
 
         cell.contentConfiguration = content
         cell.accessibilityLabel = content.text
-        cell.accessibilityValue = content.secondaryText
+        cell.accessibilityValue = content.secondaryText ?? (section == .theme ? themeAccessibilityValue(indexPath.row) : nil)
         cell.accessibilityHint = isToggleLayoutRow(indexPath.row)
             ? L10n.string("readerSettings.toggleHint")
             : L10n.string("readerSettings.chooseOptionHint")
         return cell
+    }
+
+    private func themeAccessibilityValue(_ row: Int) -> String {
+        let themes = ReaderTheme.allCases.filter { $0 != .custom }
+        let theme = themes[row]
+        return settings.readerTheme == theme ? "\(theme.displayName), selected" : theme.displayName
+    }
+
+    private static func themePreviewImage(for theme: ReaderTheme) -> UIImage? {
+        let colors = theme.previewColors
+        let renderer = UIGraphicsImageRenderer(size: CGSize(width: 32, height: 32))
+        return renderer.image { context in
+            let rect = CGRect(x: 1, y: 1, width: 30, height: 30)
+            colors.background.setFill()
+            UIBezierPath(roundedRect: rect, cornerRadius: 8).fill()
+            colors.foreground.setStroke()
+            let line = UIBezierPath()
+            line.move(to: CGPoint(x: 8, y: 12)); line.addLine(to: CGPoint(x: 24, y: 12))
+            line.move(to: CGPoint(x: 8, y: 18)); line.addLine(to: CGPoint(x: 20, y: 18))
+            line.lineWidth = 2
+            line.stroke()
+            UIColor.separator.setStroke()
+            UIBezierPath(roundedRect: rect, cornerRadius: 8).stroke()
+        }
     }
 
     override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
@@ -151,18 +195,24 @@ final class ReaderSettingsScreenController: UITableViewController {
             case 3:
                 content.text = L10n.string("readerSettings.alignment")
                 content.secondaryText = settings.readerTextAlignment.displayName
-            default:
+            case 4:
                 content.text = L10n.string("readerSettings.lineSpacing")
                 content.secondaryText = "\(Int(settings.readerLineSpacing))"
+            default:
+                content.text = L10n.string("readerSettings.margin")
+                content.secondaryText = "\(Int(settings.readerMargin))pt"
             }
         } else {
             switch row {
             case 1:
                 content.text = L10n.string("readerSettings.alignment")
                 content.secondaryText = settings.readerTextAlignment.displayName
-            default:
+            case 2:
                 content.text = L10n.string("readerSettings.lineSpacing")
                 content.secondaryText = "\(Int(settings.readerLineSpacing))"
+            default:
+                content.text = L10n.string("readerSettings.margin")
+                content.secondaryText = "\(Int(settings.readerMargin))pt"
             }
         }
     }
@@ -171,14 +221,60 @@ final class ReaderSettingsScreenController: UITableViewController {
         settings.readerLayout == .paginated && row == 2
     }
 
+    private func isSliderLayoutRow(_ row: Int) -> Bool {
+        row == (settings.readerLayout == .paginated ? 4 : 2)
+            || row == (settings.readerLayout == .paginated ? 5 : 3)
+    }
+
+    private func configureSlider(in cell: UITableViewCell, value: Float, min: Float, max: Float, step: Float, identifier: String) {
+        cell.contentView.subviews
+            .filter { $0 is UISlider }
+            .forEach { $0.removeFromSuperview() }
+        let slider = UISlider()
+        slider.minimumValue = min
+        slider.maximumValue = max
+        slider.value = value
+        let tint = settings.readerTheme.previewColors.foreground
+        slider.minimumTrackTintColor = tint
+        slider.maximumTrackTintColor = tint.withAlphaComponent(0.3)
+        slider.thumbTintColor = tint
+        slider.accessibilityIdentifier = identifier
+        slider.addTarget(self, action: #selector(sliderChanged(_:)), for: .valueChanged)
+        slider.translatesAutoresizingMaskIntoConstraints = false
+        cell.contentView.addSubview(slider)
+        NSLayoutConstraint.activate([
+            slider.leadingAnchor.constraint(equalTo: cell.contentView.layoutMarginsGuide.leadingAnchor, constant: 116),
+            slider.trailingAnchor.constraint(equalTo: cell.contentView.layoutMarginsGuide.trailingAnchor),
+            slider.topAnchor.constraint(equalTo: cell.contentView.topAnchor, constant: 42),
+            slider.bottomAnchor.constraint(equalTo: cell.contentView.bottomAnchor, constant: -8)
+        ])
+        slider.accessibilityValue = "\(Int(value))"
+        slider.tag = Int(step * 1000)
+    }
+
+    @objc private func sliderChanged(_ slider: UISlider) {
+        let step = Float(max(1, slider.tag)) / 1000
+        let snapped = round(slider.value / Float(step)) * Float(step)
+        slider.setValue(snapped, animated: false)
+        slider.accessibilityValue = "\(Int(snapped))"
+        switch slider.accessibilityIdentifier {
+        case "reader.settings.fontSize": settings.readerFontSize = Int(snapped)
+        case "reader.settings.lineSpacing": settings.readerLineSpacing = Double(snapped)
+        case "reader.settings.margin": settings.readerMargin = Double(snapped)
+        default: break
+        }
+        refresh()
+    }
+
     private func handleFontSelection(row: Int) {
         if row == 0 {
             presentChoice(
                 title: L10n.string("readerSettings.family"),
-                options: ReaderFontFamily.allCases.map(\.displayName),
+                options: ReaderFontFamily.allCases.map { "\($0.displayName) — Aa Bb Cc" },
                 selectedIndex: ReaderFontFamily.allCases.firstIndex(of: settings.readerFontFamily) ?? 0
             ) { [weak self] index in
                 self?.settings.readerFontFamily = ReaderFontFamily.allCases[index]
+                self?.settings.readerOverrideFontFamily = true
                 self?.refresh()
             }
         } else {

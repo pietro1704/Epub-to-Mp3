@@ -136,27 +136,25 @@ final class EbookFulltextTests: XCTestCase {
         XCTAssertTrue(chapter.splitSentences().isEmpty)
     }
 
-    // MARK: - cleanTitle / displayTitle
+    // MARK: - displayTitle fidelity
 
-    func testCleanTitleSeparatesGluedRomanNumeral() {
-        // "parteI" → regex inserts space → "parte I"
-        // Not all-lowercase (contains uppercase I) so no .capitalized applied.
+    func testDisplayTitlePreservesPublisherSpelling() {
         let chapter = EbookFulltext.Chapter(
             index: 1, name: "parteI", text: "",
             html: nil, css: nil, charCount: 0, segments: nil
         )
-        XCTAssertEqual(chapter.displayTitle, "parte I")
+        XCTAssertEqual(chapter.displayTitle, "parteI")
     }
 
-    func testCleanTitleSeparatesGluedDigit() {
+    func testDisplayTitlePreservesPublisherDigits() {
         let chapter = EbookFulltext.Chapter(
             index: 3, name: "Chapter3", text: "",
             html: nil, css: nil, charCount: 0, segments: nil
         )
-        XCTAssertEqual(chapter.displayTitle, "Chapter 3")
+        XCTAssertEqual(chapter.displayTitle, "Chapter3")
     }
 
-    func testCleanTitlePreservesAllUppercase() {
+    func testDisplayTitlePreservesAllUppercase() {
         // All-uppercase like "PROLOGUE" should NOT be lowercased — it stays
         // as-is because the condition `result == result.lowercased()` is false.
         let chapter = EbookFulltext.Chapter(
@@ -166,15 +164,15 @@ final class EbookFulltextTests: XCTestCase {
         XCTAssertEqual(chapter.displayTitle, "PROLOGUE")
     }
 
-    func testCleanTitleCapitalizesAllLowercase() {
+    func testDisplayTitlePreservesLowercase() {
         let chapter = EbookFulltext.Chapter(
             index: 2, name: "os primeiros", text: "",
             html: nil, css: nil, charCount: 0, segments: nil
         )
-        XCTAssertEqual(chapter.displayTitle, "Os Primeiros")
+        XCTAssertEqual(chapter.displayTitle, "os primeiros")
     }
 
-    func testCleanTitleLeavesAlreadyCleanUnchanged() {
+    func testDisplayTitleLeavesAlreadyCleanUnchanged() {
         let chapter = EbookFulltext.Chapter(
             index: 1, name: "Chapter 1", text: "",
             html: nil, css: nil, charCount: 0, segments: nil
@@ -182,12 +180,38 @@ final class EbookFulltextTests: XCTestCase {
         XCTAssertEqual(chapter.displayTitle, "Chapter 1")
     }
 
-    func testCleanTitleTrimsWhitespace() {
+    func testDisplayTitleReplacesGeneratedChapterLabelWithEmbeddedHeading() {
+        let chapter = EbookFulltext.Chapter(
+            index: 1,
+            name: "Capítulo 1",
+            text: "A cidade",
+            html: "<h1>A cidade</h1><p>Conteúdo</p>",
+            css: nil,
+            charCount: 10,
+            segments: nil
+        )
+        XCTAssertEqual(chapter.displayTitle, "A cidade")
+    }
+
+    func testDisplayTitleUsesFirstTextHeadingWhenHTMLIsUnavailable() {
+        let chapter = EbookFulltext.Chapter(
+            index: 13,
+            name: "Chapter 13",
+            text: "The Long Road\n\nThe story begins here.",
+            html: nil,
+            css: nil,
+            charCount: 42,
+            segments: nil
+        )
+        XCTAssertEqual(chapter.displayTitle, "The Long Road")
+    }
+
+    func testDisplayTitlePreservesWhitespace() {
         let chapter = EbookFulltext.Chapter(
             index: 1, name: "  Intro  ", text: "",
             html: nil, css: nil, charCount: 0, segments: nil
         )
-        XCTAssertEqual(chapter.displayTitle, "Intro")
+        XCTAssertEqual(chapter.displayTitle, "  Intro  ")
     }
 
     func testDisplayTitleFallbackWhenNameIsNil() {

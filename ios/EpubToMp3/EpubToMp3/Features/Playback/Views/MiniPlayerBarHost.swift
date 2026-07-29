@@ -3,9 +3,8 @@ import Combine
 import UIKit
 
 @MainActor
-final class MiniPlayerBarUIKitView: UIView {
+final class MiniPlayerBarUIKitView: UIView, UIGestureRecognizerDelegate {
     private let materialView = AdaptiveMaterialView()
-    private let progressView = UIProgressView(progressViewStyle: .default)
     private let coverView = UIImageView()
     private let titleLabel = UILabel()
     private let chapterLabel = UILabel()
@@ -22,31 +21,44 @@ final class MiniPlayerBarUIKitView: UIView {
     private var onTap: (() -> Void)?
     private var cancellables: Set<AnyCancellable> = []
 
+    override var intrinsicContentSize: CGSize {
+        CGSize(width: UIView.noIntrinsicMetric, height: 44 + 8 + safeAreaInsets.bottom)
+    }
+
+    override func safeAreaInsetsDidChange() {
+        super.safeAreaInsetsDidChange()
+        invalidateIntrinsicContentSize()
+    }
+
     override init(frame: CGRect) {
         super.init(frame: frame)
         preservesSuperviewLayoutMargins = true
+        directionalLayoutMargins = NSDirectionalEdgeInsets(top: 0, leading: 12, bottom: 0, trailing: 12)
         backgroundColor = .clear
         layer.cornerCurve = .continuous
         clipsToBounds = true
         addSubview(materialView)
+        materialView.layer.cornerRadius = 20
+        materialView.clipsToBounds = true
+        let expandTap = UITapGestureRecognizer(target: self, action: #selector(openTapped))
+        expandTap.delegate = self
+        expandTap.cancelsTouchesInView = false
+        addGestureRecognizer(expandTap)
         NSLayoutConstraint.activate([
-            materialView.leadingAnchor.constraint(equalTo: leadingAnchor),
-            materialView.trailingAnchor.constraint(equalTo: trailingAnchor),
+            materialView.leadingAnchor.constraint(equalTo: layoutMarginsGuide.leadingAnchor),
+            materialView.trailingAnchor.constraint(equalTo: layoutMarginsGuide.trailingAnchor),
             materialView.topAnchor.constraint(equalTo: topAnchor),
-            materialView.bottomAnchor.constraint(equalTo: bottomAnchor),
+            materialView.bottomAnchor.constraint(equalTo: safeAreaLayoutGuide.bottomAnchor),
         ])
-
-        progressView.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(progressView)
 
         coverView.translatesAutoresizingMaskIntoConstraints = false
         coverView.contentMode = .scaleAspectFill
         coverView.clipsToBounds = true
-        coverView.layer.cornerRadius = 6
+        coverView.layer.cornerRadius = 10
         coverView.backgroundColor = .tertiarySystemFill
         NSLayoutConstraint.activate([
-            coverView.widthAnchor.constraint(equalToConstant: 44),
-            coverView.heightAnchor.constraint(equalToConstant: 44),
+            coverView.widthAnchor.constraint(equalToConstant: 36),
+            coverView.heightAnchor.constraint(equalToConstant: 36),
         ])
 
         titleLabel.font = .preferredFont(forTextStyle: .subheadline)
@@ -62,7 +74,6 @@ final class MiniPlayerBarUIKitView: UIView {
         labels.axis = .vertical
         labels.spacing = 2
 
-        openButton.addTarget(self, action: #selector(openTapped), for: .touchUpInside)
         openButton.accessibilityIdentifier = "miniPlayer.open"
         openButton.accessibilityLabel = L10n.string("player.openFullPlayer")
         openButton.accessibilityHint = L10n.string("player.openFullPlayerHint")
@@ -71,9 +82,9 @@ final class MiniPlayerBarUIKitView: UIView {
         openButton.addSubview(labels)
         labels.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
-            coverView.leadingAnchor.constraint(equalTo: openButton.leadingAnchor),
-            coverView.topAnchor.constraint(equalTo: openButton.topAnchor),
-            coverView.bottomAnchor.constraint(equalTo: openButton.bottomAnchor),
+            coverView.leadingAnchor.constraint(equalTo: openButton.leadingAnchor, constant: 8),
+            coverView.topAnchor.constraint(equalTo: openButton.topAnchor, constant: 4),
+            coverView.bottomAnchor.constraint(equalTo: openButton.bottomAnchor, constant: -4),
             labels.leadingAnchor.constraint(equalTo: coverView.trailingAnchor, constant: 12),
             labels.trailingAnchor.constraint(equalTo: openButton.trailingAnchor),
             labels.centerYAnchor.constraint(equalTo: openButton.centerYAnchor),
@@ -118,13 +129,9 @@ final class MiniPlayerBarUIKitView: UIView {
         bringSubviewToFront(chromeStack)
 
         NSLayoutConstraint.activate([
-            progressView.leadingAnchor.constraint(equalTo: leadingAnchor),
-            progressView.trailingAnchor.constraint(equalTo: trailingAnchor),
-            progressView.topAnchor.constraint(equalTo: topAnchor),
             chromeStack.leadingAnchor.constraint(equalTo: layoutMarginsGuide.leadingAnchor),
             chromeStack.trailingAnchor.constraint(equalTo: layoutMarginsGuide.trailingAnchor),
-            chromeStack.topAnchor.constraint(equalTo: progressView.bottomAnchor, constant: 8),
-            chromeStack.bottomAnchor.constraint(equalTo: safeAreaLayoutGuide.bottomAnchor, constant: -6),
+            chromeStack.bottomAnchor.constraint(equalTo: safeAreaLayoutGuide.bottomAnchor, constant: -4),
         ])
     }
 
@@ -162,13 +169,13 @@ final class MiniPlayerBarUIKitView: UIView {
     }
 
     private func render() {
-        guard let player, let playbackClock, let library else { return }
+        guard let player, let library else { return }
         let currentBookID = UserDefaults.standard.string(forKey: AudioPlayer.currentBookIDDefaultsKey)
         let book = currentBookID.flatMap { id in library.books.first(where: { $0.id == id }) }
-        titleLabel.text = book?.resolvedTitle ?? L10n.string("player.audiobookFallback")
-        chapterLabel.text = player.snapshot == nil
+        titleLabel.text = player.snapshot == nil
             ? L10n.string("player.chapter", UserDefaults.standard.integer(forKey: AudioPlayer.currentChapterIndexDefaultsKey) + 1)
             : player.effectiveChapterTitle
+        chapterLabel.text = book?.resolvedTitle ?? L10n.string("player.audiobookFallback")
 
         if let data = book?.coverPNG, let image = UIImage(data: data) {
             coverView.image = image
@@ -177,19 +184,6 @@ final class MiniPlayerBarUIKitView: UIView {
             coverView.tintColor = .tintColor
             coverView.contentMode = .scaleAspectFit
         }
-
-        let progress: Float
-        if player.isConverting {
-            progress = Float(player.conversionProgress ?? 0)
-            progressView.progressTintColor = .systemOrange
-        } else if playbackClock.durationSeconds > 0 {
-            progress = Float(min(1, max(0, playbackClock.positionSeconds / playbackClock.durationSeconds)))
-            progressView.progressTintColor = tintColor
-        } else {
-            progress = 0
-            progressView.progressTintColor = tintColor
-        }
-        progressView.progress = progress
 
         let isLoading = player.isConverting && !player.firstChapterReady
         if isLoading {
@@ -224,6 +218,20 @@ final class MiniPlayerBarUIKitView: UIView {
     @objc
     private func openTapped() {
         onTap?()
+    }
+
+    func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
+        var current: UIView? = touch.view
+        while let view = current {
+            // The whole pill opens the full player. Only the playback
+            // controls remain exempt so tapping play/next/rate keeps its
+            // local action instead of expanding the player.
+            if view === playPauseButton || view === nextButton || view === rateButton {
+                return false
+            }
+            current = view.superview
+        }
+        return true
     }
 
     @objc

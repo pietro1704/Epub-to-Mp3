@@ -1,6 +1,9 @@
 import Foundation
 import Combine
 import os.log
+#if canImport(UIKit)
+import UIKit
+#endif
 
 /// Reader appearance choices surfaced in the native reader toolbar.
 enum ReaderFontFamily: String, CaseIterable, Identifiable {
@@ -52,6 +55,21 @@ enum ReaderTheme: String, CaseIterable, Identifiable {
         case .custom: return nil
         }
     }
+
+    #if canImport(UIKit)
+    var previewColors: (background: UIColor, foreground: UIColor) {
+        switch self {
+        case .auto: return (.systemBackground, .label)
+        case .light: return (.white, .black)
+        case .sepia: return (UIColor(red: 0.96, green: 0.91, blue: 0.80, alpha: 1), UIColor(red: 0.22, green: 0.16, blue: 0.10, alpha: 1))
+        case .parchment: return (UIColor(red: 0.90, green: 0.85, blue: 0.72, alpha: 1), UIColor(red: 0.18, green: 0.14, blue: 0.08, alpha: 1))
+        case .paper: return (UIColor(red: 0.98, green: 0.98, blue: 0.95, alpha: 1), UIColor(red: 0.12, green: 0.12, blue: 0.12, alpha: 1))
+        case .dark: return (UIColor(white: 0.12, alpha: 1), .white)
+        case .black: return (.black, .white)
+        case .custom: return (.systemBackground, .label)
+        }
+    }
+    #endif
 }
 
 enum ReaderColorScheme: Equatable {
@@ -122,6 +140,7 @@ enum ReaderTextAlignment: String, CaseIterable, Identifiable {
 /// gives both Combine publishing and persistence on the same channel.
 final class AppSettings: ObservableObject {
     private let defaults: UserDefaults
+    private var loadingPersistedValues = true
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
@@ -152,17 +171,12 @@ final class AppSettings: ObservableObject {
         self.readerTextAlignment = ReaderTextAlignment(
             rawValue: defaults.string(forKey: "readerTextAlignment") ?? ""
         ) ?? .justified
-        // The first launch after the reader layout migration always starts in
-        // paginated mode. After that, an explicit user choice is preserved.
-        let readerLayoutMigrationKey = "readerLayout.paginatedDefault.v1"
-        if !defaults.bool(forKey: readerLayoutMigrationKey) {
-            self.readerLayout = .paginated
-            defaults.set(true, forKey: readerLayoutMigrationKey)
-        } else {
-            self.readerLayout = ReaderLayout(
-                rawValue: defaults.string(forKey: "readerLayout") ?? ReaderLayout.paginated.rawValue
-            ) ?? .paginated
-        }
+        // A book opens paginated until the user explicitly chooses another
+        // layout. Legacy raw values are not treated as an explicit choice.
+        let layoutWasChosen = defaults.bool(forKey: "readerLayout.userSet.v1")
+        self.readerLayout = layoutWasChosen
+            ? (ReaderLayout(rawValue: defaults.string(forKey: "readerLayout") ?? "") ?? .paginated)
+            : .paginated
         self.readerColumns = max(1, min(4, (defaults.object(forKey: "readerColumns") as? Int) ?? 1))
         // UI tests can pin the reader layout regardless of persisted state,
         // e.g. `-uiTestReaderLayout paginated` / `-uiTestReaderLayout scrolling`.
@@ -198,6 +212,7 @@ final class AppSettings: ObservableObject {
             (defaults.object(forKey: "readerLetterSpacing") as? Double) ?? 0
         self.readerWordSpacing =
             (defaults.object(forKey: "readerWordSpacing") as? Double) ?? 0
+        loadingPersistedValues = false
         self.offlineCacheBudgetBytes =
             (defaults.object(forKey: "offlineCacheBudgetBytes") as? Int64)
             ?? defaultOfflineCacheBudgetBytes
@@ -280,7 +295,11 @@ final class AppSettings: ObservableObject {
     }
 
     @Published var readerLayout: ReaderLayout = .paginated {
-        didSet { defaults.set(readerLayout.rawValue, forKey: "readerLayout") }
+        didSet {
+            guard !loadingPersistedValues else { return }
+            defaults.set(readerLayout.rawValue, forKey: "readerLayout")
+            defaults.set(true, forKey: "readerLayout.userSet.v1")
+        }
     }
 
     /// Number of text columns shown by the desktop reader in paginated mode.

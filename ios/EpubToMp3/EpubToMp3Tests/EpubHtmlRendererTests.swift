@@ -194,6 +194,33 @@ final class EpubHtmlRendererTests: XCTestCase {
         XCTAssertEqual(indents["p1"] ?? .nan, CGFloat(0), accuracy: CGFloat(0.5))
     }
 
+    func testPreservesSemanticBlocksListsAndFigureCaptionText() {
+        let s = makeSettings()
+        let html = """
+        <article>
+          <h2>Chapter heading</h2>
+          <p>Intro <strong>bold</strong> and <em>italic</em>.</p>
+          <blockquote>Quoted paragraph.</blockquote>
+          <figure><img src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEKAAAALAAAAAABAAEAAAICTAEAOw=="/><figcaption>Figure caption</figcaption></figure>
+          <ol><li>First item</li><li>Second item</li></ol>
+        </article>
+        """
+        guard let out = EpubHtmlRenderer.render(html: html, css: nil, settings: s) else {
+            return XCTFail("renderer returned nil")
+        }
+        let n = ns(out)
+        XCTAssertTrue(n.string.contains("Chapter heading"))
+        XCTAssertTrue(n.string.contains("Quoted paragraph."))
+        XCTAssertTrue(n.string.contains("Figure caption"))
+        XCTAssertTrue(n.string.contains("First item"))
+        XCTAssertTrue(n.string.contains("Second item"))
+        var attachmentCount = 0
+        n.enumerateAttribute(.attachment, in: NSRange(location: 0, length: n.length)) { value, _, _ in
+            if value != nil { attachmentCount += 1 }
+        }
+        XCTAssertEqual(attachmentCount, 1)
+    }
+
     /// Content-agnostic guard: a BODY paragraph that merely inherited
     /// `text-align:center` from a wrapping container must NOT stay centred
     /// — only true headings (larger than the body font) keep centring.

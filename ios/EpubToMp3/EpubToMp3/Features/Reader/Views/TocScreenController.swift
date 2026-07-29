@@ -18,6 +18,7 @@ final class TocScreenController: UITableViewController {
     private var readingChapterIndex: Int?
     private var onJump: (Int) -> Void
     private var onDownload: ((Int) -> Void)?
+    private var onRemoveDownload: ((Int) -> Void)?
     private var onDownloadAll: (() -> Void)?
     private var onCancelDownloads: (() -> Void)?
     private var onClearDownloads: (() -> Void)?
@@ -30,6 +31,7 @@ final class TocScreenController: UITableViewController {
         readingChapterIndex: Int?,
         onJump: @escaping (Int) -> Void,
         onDownload: ((Int) -> Void)?,
+        onRemoveDownload: ((Int) -> Void)? = nil,
         onDownloadAll: (() -> Void)?,
         onCancelDownloads: (() -> Void)?,
         onClearDownloads: (() -> Void)?
@@ -40,6 +42,7 @@ final class TocScreenController: UITableViewController {
         self.readingChapterIndex = readingChapterIndex
         self.onJump = onJump
         self.onDownload = onDownload
+        self.onRemoveDownload = onRemoveDownload
         self.onDownloadAll = onDownloadAll
         self.onCancelDownloads = onCancelDownloads
         self.onClearDownloads = onClearDownloads
@@ -65,6 +68,11 @@ final class TocScreenController: UITableViewController {
         refreshDownloaded()
     }
 
+    override func viewWillAppear(_ animated: Bool) {
+        super.viewWillAppear(animated)
+        refreshDownloaded()
+    }
+
     func update(
         fulltext: EbookFulltext?,
         snapshot: JobSnapshot,
@@ -72,6 +80,7 @@ final class TocScreenController: UITableViewController {
         readingChapterIndex: Int?,
         onJump: @escaping (Int) -> Void,
         onDownload: ((Int) -> Void)?,
+        onRemoveDownload: ((Int) -> Void)? = nil,
         onDownloadAll: (() -> Void)?,
         onCancelDownloads: (() -> Void)?,
         onClearDownloads: (() -> Void)?
@@ -82,6 +91,7 @@ final class TocScreenController: UITableViewController {
         self.readingChapterIndex = readingChapterIndex
         self.onJump = onJump
         self.onDownload = onDownload
+        self.onRemoveDownload = onRemoveDownload
         self.onDownloadAll = onDownloadAll
         self.onCancelDownloads = onCancelDownloads
         self.onClearDownloads = onClearDownloads
@@ -112,6 +122,10 @@ final class TocScreenController: UITableViewController {
         cell.contentConfiguration = content
         cell.accessoryType = row.isCurrent ? .checkmark : .none
         cell.accessoryView = makeAccessoryView(for: row)
+        cell.accessibilityLabel = row.title
+        cell.accessibilityValue = row.downloaded
+            ? L10n.string("toc.downloaded")
+            : (row.audioReady ? L10n.string("player.downloadChapter") : L10n.string("toc.textOnly"))
         cell.selectionStyle = .default
         cell.isUserInteractionEnabled = true
         return cell
@@ -129,7 +143,7 @@ final class TocScreenController: UITableViewController {
             return fulltext.chapters.map { chapter in
                 let zeroBased = chapter.index - 1
                 return Row(
-                    title: chapter.displayTitle,
+                    title: chapter.tocTitle ?? L10n.string("toc.untitledChapter"),
                     zeroBasedIndex: zeroBased,
                     charCount: chapter.charCount,
                     isCurrent: isCurrent(zeroBasedIndex: zeroBased),
@@ -205,18 +219,29 @@ final class TocScreenController: UITableViewController {
     private func makeAccessoryView(for row: Row) -> UIView? {
         guard let onDownload else { return nil }
         let button = UIButton(type: .system)
-        button.setImage(UIImage(systemName: "ellipsis.circle"), for: .normal)
+        button.setImage(UIImage(systemName: row.downloaded ? "checkmark.circle.fill" : "arrow.down.circle"), for: .normal)
         button.tintColor = .secondaryLabel
         button.showsMenuAsPrimaryAction = true
-        button.isEnabled = row.audioReady
-        button.menu = UIMenu(children: [
-            UIAction(
-                title: L10n.string("player.downloadAll"),
-                image: UIImage(systemName: "arrow.down.circle")
-            ) { _ in
-                onDownload(row.zeroBasedIndex)
-            }
+        button.isEnabled = row.downloaded ? onRemoveDownload != nil : row.audioReady
+        button.accessibilityLabel = row.downloaded
+            ? L10n.string("toc.removeDownload")
+            : L10n.string("player.downloadChapter")
+        button.accessibilityIdentifier = "reader.toc.download.\(row.zeroBasedIndex)"
+        button.accessibilityValue = row.downloaded ? L10n.string("toc.downloaded") : nil
+        button.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            button.widthAnchor.constraint(equalToConstant: 44),
+            button.heightAnchor.constraint(equalToConstant: 44),
         ])
+        if row.downloaded, let onRemoveDownload {
+            button.menu = UIMenu(children: [UIAction(title: L10n.string("toc.removeDownload"), image: UIImage(systemName: "trash")) { _ in
+                onRemoveDownload(row.zeroBasedIndex)
+            }])
+        } else {
+            button.menu = UIMenu(children: [UIAction(title: L10n.string("player.downloadChapter"), image: UIImage(systemName: "arrow.down.circle")) { _ in
+                onDownload(row.zeroBasedIndex)
+            }])
+        }
         return button
     }
 

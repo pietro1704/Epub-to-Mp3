@@ -3452,9 +3452,6 @@ class EbookReader:
         source_path = (chapter.source_path or "").split("#", 1)[0].strip()
         if not raw_html or not source_path:
             return []
-        refs = re.findall(r"<img\b[^>]*\bsrc\s*=\s*['\"]([^'\"]+)['\"]", raw_html, re.I)
-        if not refs:
-            return []
         try:
             parser = EpubParser(str(self.file_path))
             with zipfile.ZipFile(self.file_path, "r") as archive:
@@ -3465,13 +3462,45 @@ class EbookReader:
                 # "OEBPS/OEBPS/chapter1.xhtml") and every asset lookup below
                 # would silently miss.
                 chapter_dir = posixpath.dirname(source_path)
+                asset_refs: list[tuple[str, str]] = []
+                asset_refs.extend(
+                    (href, chapter_dir)
+                    for href in re.findall(
+                        r"<(?:img|image)\b[^>]*\b(?:src|xlink:href|href)\s*=\s*['\"]([^'\"]+)['\"]",
+                        raw_html,
+                        re.I,
+                    )
+                )
+                asset_refs.extend(
+                    (href, chapter_dir)
+                    for href in re.findall(r"url\(\s*['\"]?([^)'\"\s]+)", raw_html, re.I)
+                )
+                for link in re.findall(r"<link\b[^>]*>", raw_html, re.I):
+                    stylesheet = re.search(r"\bhref\s*=\s*['\"]([^'\"]+)['\"]", link, re.I)
+                    if not stylesheet:
+                        continue
+                    css_path = parser._join_path(chapter_dir, unquote(stylesheet.group(1)))
+                    try:
+                        css = archive.read(css_path).decode("utf-8", errors="replace")
+                    except (KeyError, UnicodeDecodeError):
+                        continue
+                    css_dir = posixpath.dirname(css_path)
+                    asset_refs.extend(
+                        (href, css_dir)
+                        for href in re.findall(r"url\(\s*['\"]?([^)'\"\s]+)", css, re.I)
+                    )
+                if not asset_refs:
+                    return []
                 resources: list[dict[str, str]] = []
-                for href in refs[:32]:
+                seen: set[str] = set()
+                for href, base_dir in asset_refs[:64]:
                     if href.lower().startswith(("data:", "http:", "https:")):
                         continue
-                    asset_path = parser._join_path(
-                        chapter_dir, unquote(href.split("#", 1)[0].split("?", 1)[0])
-                    )
+                    clean_href = href.split("#", 1)[0].split("?", 1)[0]
+                    asset_path = parser._join_path(base_dir, unquote(clean_href))
+                    if asset_path in seen:
+                        continue
+                    seen.add(asset_path)
                     try:
                         data = archive.read(asset_path)
                     except KeyError:

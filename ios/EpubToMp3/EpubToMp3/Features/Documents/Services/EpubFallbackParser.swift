@@ -15,12 +15,9 @@ import Foundation
 /// whole book after a spine misparse) that a plain-text-only parser has
 /// no surface for.
 ///
-/// Strategy: walk the OPF `<spine>` in order, pull each item's HTML out
-/// of the ZIP, strip tags, treat the result as one chapter named
-/// "Chapter N". No TOC names, no CSS, no image resources, no heading-based
-/// titles — those all require the same kind of full-document scanning
-/// that must stay in Python, where `MAX_CHAPTER_CHARS` and friends already
-/// guard against pathological inputs.
+/// Strategy: walk the OPF `<spine>` in order and preserve the source XHTML.
+/// Plain text remains available for search and speech fallback, while the
+/// native reader renders the original markup.
 ///
 /// Never throws: returns an empty `EbookFulltext` (zero chapters) if the
 /// EPUB is truly unreadable. Callers decide whether to surface that as an
@@ -41,8 +38,7 @@ enum EpubFallbackParser {
         let opfInfo = parseOPFForSpine(data: opfData)
         let opfDir = (opfPath as NSString).deletingLastPathComponent
 
-        // 3. Resolve each spine idref to its href, extract, strip to
-        //    plain text. No TOC/CSS/image handling — see type doc.
+        // 3. Resolve each spine idref to its href and preserve source markup.
         var chapters: [EbookFulltext.Chapter] = []
         var index = 1
         for idref in opfInfo.spineOrder {
@@ -54,14 +50,22 @@ enum EpubFallbackParser {
             }
             let text = stripHTML(html).trimmingCharacters(in: .whitespacesAndNewlines)
             guard !text.isEmpty else { continue }
+            let title = firstHeading(in: html) ?? "Chapter \(index)"
+            let css = opfInfo.cssHrefs.compactMap { href -> String? in
+                let path = opfDir.isEmpty ? href : "\(opfDir)/\(href)"
+                guard let data = ZipReader.extract(member: path, from: url) else { return nil }
+                return String(data: data, encoding: .utf8) ?? String(data: data, encoding: .isoLatin1)
+            }.joined(separator: "\n")
+            let resources = imageResources(in: html, chapterPath: chapterPath, archiveURL: url)
             chapters.append(EbookFulltext.Chapter(
                 index: index,
-                name: "Chapter \(index)",
+                name: title,
                 text: text,
-                html: nil,
-                css: nil,
+                html: html,
+                css: css.isEmpty ? nil : css,
                 charCount: text.count,
-                segments: nil
+                segments: nil,
+                resources: resources.isEmpty ? nil : resources
             ))
             index += 1
         }
@@ -74,12 +78,71 @@ enum EpubFallbackParser {
         )
     }
 
+    private static func firstHeading(in html: String) -> String? {
+        guard let match = html.range(of: #"(?is)<h[1-6][^>]*>.*?</h[1-6]>"#, options: .regularExpression) else {
+            return nil
+        }
+        let text = stripHTML(String(html[match])).trimmingCharacters(in: .whitespacesAndNewlines)
+        return text.isEmpty ? nil : text
+    }
+
+    private static func imageResources(
+        in html: String,
+        chapterPath: String,
+        archiveURL: URL
+    ) -> [EbookFulltext.Chapter.Resource] {
+        let pattern = try? NSRegularExpression(
+            pattern: #"(?i)<img\b[^>]*\bsrc\s*=\s*([\"'])([^\"']+)\1[^>]*>"#
+        )
+        let range = NSRange(html.startIndex..., in: html)
+        let chapterDirectory = (chapterPath as NSString).deletingLastPathComponent
+        return (pattern?.matches(in: html, range: range) ?? []).compactMap { match in
+            guard let hrefRange = Range(match.range(at: 2), in: html) else { return nil }
+            let href = String(html[hrefRange])
+            guard !href.lowercased().hasPrefix("data:") else { return nil }
+            let cleanHref = href.split(separator: "#", maxSplits: 1).first.map(String.init) ?? href
+            let path = normalizeZipPath(chapterDirectory.isEmpty ? cleanHref : "\(chapterDirectory)/\(cleanHref)")
+            guard let data = ZipReader.extract(member: path, from: archiveURL),
+                  !data.isEmpty, data.count <= 12 * 1024 * 1024 else { return nil }
+            let mediaType = mimeType(for: path)
+            return EbookFulltext.Chapter.Resource(
+                href: href,
+                mediaType: mediaType,
+                dataBase64: data.base64EncodedString()
+            )
+        }
+    }
+
+    private static func mimeType(for path: String) -> String {
+        switch (path as NSString).pathExtension.lowercased() {
+        case "jpg", "jpeg": return "image/jpeg"
+        case "gif": return "image/gif"
+        case "svg": return "image/svg+xml"
+        case "webp": return "image/webp"
+        default: return "image/png"
+        }
+    }
+
+    private static func normalizeZipPath(_ path: String) -> String {
+        var components: [Substring] = []
+        for component in path.split(separator: "/") {
+            if component == "." { continue }
+            if component == ".." {
+                if !components.isEmpty { components.removeLast() }
+            } else {
+                components.append(component)
+            }
+        }
+        return components.joined(separator: "/")
+    }
+
     // MARK: - OPF spine extraction
 
     fileprivate struct OPFInfo {
         var title: String?
         var author: String?
         var manifest: [String: String] = [:]  // idref → href
+        var cssHrefs: [String] = []
         var spineOrder: [String] = []          // idrefs in reading order
     }
 
@@ -231,6 +294,9 @@ private final class SpineDelegate: NSObject, XMLParserDelegate {
            let id = attributeDict["id"],
            let href = attributeDict["href"] {
             info.manifest[id] = href
+            if attributeDict["media-type"]?.lowercased() == "text/css" || href.lowercased().hasSuffix(".css") {
+                info.cssHrefs.append(href)
+            }
         }
         if tag == "itemref", let idref = attributeDict["idref"] {
             info.spineOrder.append(idref)

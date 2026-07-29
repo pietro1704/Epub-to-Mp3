@@ -133,6 +133,7 @@ final class AudioPlayer: ObservableObject {
     }
 
     @Published private(set) var currentChapterIndex: Int = 0
+    private var readerChapterTitles: [Int: String] = [:]
     @Published private(set) var isPlaying: Bool = false
     @Published private(set) var rate: PlaybackRate = .x100
     /// High-frequency transport state is published by `playbackClock`
@@ -2551,11 +2552,18 @@ final class AudioPlayer: ObservableObject {
         let playing = chapters[currentChapterIndex]
         let progressName = snapshot?.chapterProgress?
             .first(where: { $0.index == playing.index })?.name
+        let readerName = readerChapterTitles[playing.index]
         return Self.preferredChapterTitle(
             primary: playing.name,
-            secondary: progressName,
+            secondary: readerName ?? progressName,
             fallback: playing.displayTitle
         )
+    }
+
+    func updateReaderChapterTitle(_ title: String, for index: Int) {
+        guard !title.isEmpty else { return }
+        readerChapterTitles[index] = title
+        objectWillChange.send()
     }
 
     nonisolated static func preferredChapterTitle(

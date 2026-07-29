@@ -123,42 +123,64 @@ struct EbookFulltext: Codable, Equatable, Sendable {
         var zeroBasedEpubIndex: Int { max(0, index - 1) }
 
         var displayTitle: String {
-            guard let name, !name.isEmpty else { return L10n.string("player.chapter", index) }
-            return Self.cleanTitle(name)
+            if let heading = Self.firstHTMLHeading(in: html) {
+                if let name, !name.isEmpty, !Self.isGeneratedChapterLabel(name) {
+                    return name
+                }
+                return heading
+            }
+            if let name, Self.isGeneratedChapterLabel(name),
+               let textHeading = Self.firstTextHeading(in: text) {
+                return textHeading
+            }
+            if let name, !name.isEmpty { return name }
+            return L10n.string("player.chapter", index)
         }
 
-        private static func cleanTitle(_ raw: String) -> String {
-            var result = raw
-            // Insert space before uppercase run glued to lowercase: "parteI" → "parte I"
-            result = result.replacingOccurrences(
-                of: "([a-záàâãéèêíïóôõúüç])([A-ZÁÀÂÃÉÈÊÍÏÓÔÕÚÜÇ])",
-                with: "$1 $2",
+        var hasGeneratedName: Bool {
+            guard let name, !name.isEmpty else { return true }
+            return Self.isGeneratedChapterLabel(name)
+        }
+
+        var tocTitle: String? {
+            let title = displayTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+            return hasGeneratedName && Self.isGeneratedChapterLabel(title) ? nil : title
+        }
+
+        private static func isGeneratedChapterLabel(_ value: String) -> Bool {
+            value.range(
+                of: #"(?i)^\s*(chapter|cap[ií]tulo|chapitre|kapitel|capitolo)\s*\d+[\s.:\-]*$"#,
                 options: .regularExpression
-            )
-            // Insert space before digit run glued to letters: "Chapter3" → "Chapter 3"
-            result = result.replacingOccurrences(
-                of: "([a-zA-Z])([0-9])",
-                with: "$1 $2",
-                options: .regularExpression
-            )
-            // Only Title-Case when the source is ALL-lowercase. If the
-            // input is mixed-case ("parte I") or all-uppercase
-            // ("PROLOGUE"), the publisher's casing carries semantic
-            // intent — preserve it. Without this guard we'd lose every
-            // case distinction (PROLOGUE → Prologue, parte I → Parte I).
-            if result == result.lowercased() {
-                result = result.capitalized
+            ) != nil
+        }
+
+        private static func firstTextHeading(in text: String) -> String? {
+            for line in text.components(separatedBy: .newlines) {
+                let candidate = line.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !candidate.isEmpty, candidate.count <= 160 else { continue }
+                if candidate.range(of: #"(?i)^(chapter|cap[ií]tulo)\s+\d+[\s.:\-]*$"#, options: .regularExpression) == nil {
+                    return candidate
+                }
             }
-            // Roman numerals are commonly disguised by `.capitalized`
-            // (I → I, II → Ii). Restore them only when the source was
-            // lowercased and capitalized — otherwise the publisher's
-            // intent already preserved the right form.
-            let romans = Set(["I","Ii","Iii","Iv","V","Vi","Vii","Viii","Ix","X",
-                              "Xi","Xii","Xiii","Xiv","Xv","Xvi","Xvii","Xviii","Xix","Xx"])
-            result = result.split(separator: " ").map { word in
-                romans.contains(String(word)) ? String(word).uppercased() : String(word)
-            }.joined(separator: " ")
-            return result.trimmingCharacters(in: .whitespacesAndNewlines)
+            return nil
+        }
+
+        private static func firstHTMLHeading(in html: String?) -> String? {
+            guard let html else { return nil }
+            guard let match = html.range(
+                of: #"(?is)<h[1-6][^>]*>.*?</h[1-6]>"#,
+                options: .regularExpression
+            ) else { return nil }
+            let raw = String(html[match])
+            let withoutTags = raw.replacingOccurrences(of: #"(?is)<[^>]+>"#, with: "", options: .regularExpression)
+            let decoded = withoutTags
+                .replacingOccurrences(of: "&amp;", with: "&")
+                .replacingOccurrences(of: "&quot;", with: "\"")
+                .replacingOccurrences(of: "&#39;", with: "'")
+                .replacingOccurrences(of: "&lt;", with: "<")
+                .replacingOccurrences(of: "&gt;", with: ">")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            return decoded.isEmpty ? nil : decoded
         }
 
         /// Naive sentence splitter — breaks on `.`, `?`, `!` followed by

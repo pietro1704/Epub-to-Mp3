@@ -178,7 +178,7 @@ final class EpubFallbackParserTests: XCTestCase {
     // what caused the multi-GB `stripHTML` regex crash on a pathological
     // chapter. These tests pin the *absence* of that duplicated surface.
 
-    func testChapterNameIsAlwaysGenericNeverDerivedFromHeadings() throws {
+    func testChapterNamePreservesDocumentHeading() throws {
         let url = try EpubFixture.createWithChapter(
             chapterTitle: "My Chapter",
             body: "<h1>My Chapter</h1><p>Body text here.</p>"
@@ -188,11 +188,10 @@ final class EpubFallbackParserTests: XCTestCase {
         let result = EpubFallbackParser.parse(url: url, bookId: "t")
         let name = try XCTUnwrap(result.chapters.first?.name)
 
-        XCTAssertEqual(name, "Chapter 1",
-            "The fallback parser must not scan headings for a title — that's Python's job")
+        XCTAssertEqual(name, "My Chapter")
     }
 
-    func testChapterHasNoHtmlCssOrImageResources() throws {
+    func testChapterPreservesSourceHTMLForFaithfulRendering() throws {
         let url = try EpubFixture.createWithChapter(
             body: "<img src=\"../images/cover.png\"/><p>Body text here.</p>"
         )
@@ -200,9 +199,10 @@ final class EpubFallbackParserTests: XCTestCase {
 
         let chapter = try XCTUnwrap(EpubFallbackParser.parse(url: url, bookId: "image-test").chapters.first)
 
-        XCTAssertNil(chapter.html, "Fallback chapters render as plain text, never HTML")
+        XCTAssertNotNil(chapter.html, "Fallback chapters must retain source markup")
         XCTAssertNil(chapter.css)
-        XCTAssertNil(chapter.resources, "Image extraction stays in Python — this is a text-only safety net")
+        XCTAssertEqual(chapter.resources?.first?.mediaType, "image/png")
+        XCTAssertNotNil(chapter.resources?.first?.dataBase64)
         XCTAssertTrue(chapter.text.contains("Body text here"))
     }
 

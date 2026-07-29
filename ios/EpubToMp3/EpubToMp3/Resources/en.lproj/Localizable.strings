@@ -232,6 +232,7 @@
 "reader.characters" = "%d characters";
 "reader.previousPage" = "Previous page";
 "reader.nextPage" = "Next page";
+"reader.pageOf" = "%d of %d";
 "reader.toggleControls" = "Toggle controls";
 "reader.followAudio" = "Follow audio";
 "reader.followAudioHint" = "Double tap to jump the reader to the audio's current chapter";
@@ -250,7 +251,7 @@
 "layout.paginated" = "Paginated";
 "pageTurn.flip" = "Flip";
 "pageTurn.slide" = "Slide";
-"pageTurn.none" = "None";
+"pageTurn.none" = "Normal";
 "readerSettings.pageTurnStyle" = "Page turn";
 "readerSettings.showPageNumbers" = "Show page numbers";
 "readerSettings.alignment" = "Alignment";
@@ -367,6 +368,7 @@
 /* === TocDrawer === */
 "toc.charsCount" = "%d chars";
 "toc.downloaded" = "downloaded";
+"player.downloadChapter" = "Download chapter";
 "toc.textOnly" = "text only";
 "toc.currentlyPlaying" = "Currently playing";
 "toc.currentlyReading" = "Currently reading";
@@ -526,3 +528,5 @@
 "convert.pickFileFirstHint" = "Choose a book before starting conversion.";
 "convert.startConversionHint" = "Double-tap to start conversion.";
 "jobDetail.actionHint" = "Double-tap to perform this action.";
+"toc.removeDownload" = "Remove download";
+"toc.untitledChapter" = "Untitled chapter";

@@ -1334,6 +1334,38 @@ class TestParseEpubToDict(unittest.TestCase):
         self.assertEqual(resources[0]["mediaType"], "image/png")
         self.assertEqual(resources[0]["dataBase64"], "cG5nLWJ5dGVz")
 
+    def test_extract_chapter_resources_includes_css_background_images(self):
+        path = Path(tempfile.mkdtemp()) / "css-assets.epub"
+        chapter_html = (
+            '<html><head><link rel="stylesheet" href="../styles/book.css"></head>'
+            '<body><p class="cover">Body</p></body></html>'
+        )
+        with zipfile.ZipFile(path, "w") as archive:
+            archive.writestr(
+                "META-INF/container.xml",
+                '<container xmlns="urn:oasis:names:tc:opendocument:xmlns:container"><rootfiles><rootfile full-path="OEBPS/content.opf"/></rootfiles></container>',
+            )
+            archive.writestr(
+                "OEBPS/content.opf",
+                """<package xmlns="http://www.idpf.org/2007/opf"><manifest><item id="c" href="text/chapter.xhtml" media-type="application/xhtml+xml"/></manifest><spine><itemref idref="c"/></spine></package>""",
+            )
+            archive.writestr("OEBPS/text/chapter.xhtml", chapter_html)
+            archive.writestr(
+                "OEBPS/styles/book.css", ".cover { background-image: url('../images/bg.png'); }"
+            )
+            archive.writestr("OEBPS/images/bg.png", b"css-image")
+        chapter = Chapter(
+            index=1,
+            name="Ch",
+            source_path="OEBPS/text/chapter.xhtml",
+            text="x",
+            raw_html=chapter_html,
+        )
+        resources = EbookReader(path).extract_chapter_resources(chapter)
+        self.assertEqual(len(resources), 1)
+        self.assertEqual(resources[0]["href"], "../images/bg.png")
+        self.assertEqual(resources[0]["dataBase64"], "Y3NzLWltYWdl")
+
     def test_extract_chapter_stylesheet_accepts_any_link_attribute_order(self):
         path = Path(tempfile.mkdtemp()) / "styles.epub"
         chapter_html = """

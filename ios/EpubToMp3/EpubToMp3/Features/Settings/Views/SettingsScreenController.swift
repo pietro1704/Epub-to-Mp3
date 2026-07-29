@@ -199,7 +199,7 @@ final class SettingsScreenController: UITableViewController {
         switch indexPath.row {
         case 0:
             content.text = L10n.string("settings.fontSize")
-            content.secondaryText = "\(settings.readerFontSize + 1) of 5"
+            content.secondaryText = L10n.string("settings.fontStep", settings.readerFontSize + 1, 5)
             content.image = UIImage(systemName: "textformat.size")
         case 1:
             content.text = L10n.string("settings.font")
@@ -324,7 +324,7 @@ final class SettingsScreenController: UITableViewController {
         case 0:
             presentChoice(
                 title: L10n.string("settings.fontSize"),
-                options: (0...4).map { ("\($0 + 1) of 5", $0) },
+                options: (0...4).map { (L10n.string("settings.fontStep", $0 + 1, 5), $0) },
                 currentValue: settings.readerFontSize
             ) { [weak self] value in
                 self?.settings.readerFontSize = value

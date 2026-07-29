@@ -29,4 +29,13 @@ final class ReaderTocFootnotesSearchWiringTests: XCTestCase {
         XCTAssertTrue(source.contains("scrollRangeToVisible"))
         XCTAssertFalse(source.contains("accessibilityIdentifier = \"reader.footnotes\""))
     }
+
+    func testSharedTocControllerExposesChapterDownloadControls() throws {
+        let source = try source("Features/Reader/Views/TocScreenController.swift")
+
+        XCTAssertTrue(source.contains("reader.toc.download."))
+        XCTAssertTrue(source.contains("DownloadManager.locallyDownloadedIndices"))
+        XCTAssertTrue(source.contains("enqueueSelected"))
+        XCTAssertTrue(source.contains("enqueueAll"))
+    }
 }

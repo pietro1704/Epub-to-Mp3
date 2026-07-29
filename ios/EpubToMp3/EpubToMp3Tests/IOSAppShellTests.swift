@@ -146,6 +146,28 @@ final class IOSAppShellTests: XCTestCase {
         XCTAssertTrue(source.contains("miniPlayer.playPause"))
     }
 
+    func testMiniPlayerHasExplicitSafeAreaAwareHeightAndEaseInOutTransition() throws {
+        let source = try readSourceFileIfAvailable(
+            at: URL(fileURLWithPath: #filePath)
+                .deletingLastPathComponent()
+                .deletingLastPathComponent()
+                .appendingPathComponent("EpubToMp3/App/IOSRootContainer.swift")
+        )
+
+        XCTAssertTrue(source.contains("miniPlayerController.view.heightAnchor.constraint"))
+        XCTAssertTrue(source.contains("52 + view.safeAreaInsets.bottom"))
+        XCTAssertTrue(source.contains(".curveEaseInOut"))
+
+        let miniSource = try readSourceFileIfAvailable(
+            at: URL(fileURLWithPath: #filePath)
+                .deletingLastPathComponent()
+                .deletingLastPathComponent()
+                .appendingPathComponent("EpubToMp3/Features/Playback/Views/MiniPlayerBarHost.swift")
+        )
+        XCTAssertTrue(miniSource.contains("materialView.bottomAnchor.constraint(equalTo: safeAreaLayoutGuide.bottomAnchor)"))
+        XCTAssertTrue(miniSource.contains("leading: 12"))
+    }
+
     func testMainAppContainsNoSwiftUIScreensOrHostingBridges() throws {
         let appRoot = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()

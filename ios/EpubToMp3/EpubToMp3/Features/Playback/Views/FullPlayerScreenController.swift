@@ -11,6 +11,7 @@ final class FullPlayerScreenController: UIViewController {
     private let playbackClock: PlaybackClock
     private var library: LibraryStore
     private let playerPresentation: PlayerPresentation
+    private let settings: AppSettings
 
     private var cancellables: Set<AnyCancellable> = []
     private var positionTask: Task<Void, Never>?
@@ -56,12 +57,14 @@ final class FullPlayerScreenController: UIViewController {
         player: AudioPlayer,
         playbackClock: PlaybackClock,
         library: LibraryStore,
-        playerPresentation: PlayerPresentation
+        playerPresentation: PlayerPresentation,
+        settings: AppSettings
     ) {
         self.player = player
         self.playbackClock = playbackClock
         self.library = library
         self.playerPresentation = playerPresentation
+        self.settings = settings
         super.init(nibName: nil, bundle: nil)
         modalPresentationCapturesStatusBarAppearance = true
     }
@@ -93,9 +96,12 @@ final class FullPlayerScreenController: UIViewController {
 
     override func viewDidDisappear(_ animated: Bool) {
         super.viewDidDisappear(animated)
-        if view.window == nil {
-            positionTask?.cancel()
-        }
+        positionTask?.cancel()
+        positionTask = nil
+    }
+
+    deinit {
+        positionTask?.cancel()
     }
 
     func refresh(library: LibraryStore) {
@@ -172,7 +178,12 @@ final class FullPlayerScreenController: UIViewController {
 
         configureTransportButton(previousChapterButton, image: "backward.end.fill", action: #selector(previousChapterTapped))
         configureTransportButton(skipBackButton, image: "gobackward.15", action: #selector(skipBackTapped), pointSize: 28)
-        configureTransportButton(playPauseButton, image: "play.circle.fill", action: #selector(playPauseTapped), pointSize: 64)
+        configureTransportButton(playPauseButton, image: "play.fill", action: #selector(playPauseTapped), pointSize: 64)
+        let playWidth = playPauseButton.widthAnchor.constraint(greaterThanOrEqualToConstant: 64)
+        let playHeight = playPauseButton.heightAnchor.constraint(greaterThanOrEqualToConstant: 64)
+        playWidth.priority = .required - 2
+        playHeight.priority = .required - 2
+        NSLayoutConstraint.activate([playWidth, playHeight])
         configureTransportButton(skipForwardButton, image: "goforward.15", action: #selector(skipForwardTapped), pointSize: 28)
         configureTransportButton(nextChapterButton, image: "forward.end.fill", action: #selector(nextChapterTapped))
 
@@ -419,7 +430,7 @@ final class FullPlayerScreenController: UIViewController {
                 if $0 is UIActivityIndicatorView { $0.removeFromSuperview() }
             }
             playPauseButton.setImage(
-                UIImage(systemName: player.isPlaying ? "pause.circle.fill" : "play.circle.fill"),
+                UIImage(systemName: player.isPlaying ? "pause.fill" : "play.fill"),
                 for: .normal
             )
             playPauseButton.imageView?.preferredSymbolConfiguration = UIImage.SymbolConfiguration(pointSize: 64, weight: .regular)
@@ -610,10 +621,19 @@ final class FullPlayerScreenController: UIViewController {
                           let playable = playableChapters.firstIndex(where: { $0.index == epubIndex }) else { return }
                     self.player.play(snapshot: snapshot, startingAt: playable)
                 },
-                onDownload: nil,
-                onDownloadAll: nil,
-                onCancelDownloads: nil,
-                onClearDownloads: nil
+                onDownload: { [weak self] chapterIndex in
+                    guard let self else { return }
+                    Task { await DownloadManager.shared.enqueueSelected(snapshot: snapshot, epubZeroBasedIndices: [chapterIndex], baseURL: self.settings.resolvedBaseURL) }
+                },
+                onRemoveDownload: { chapterIndex in
+                    DownloadManager.deleteChapter(jobId: snapshot.jobId, chapterIndex: chapterIndex)
+                },
+                onDownloadAll: { [weak self] in
+                    guard let self else { return }
+                    Task { await DownloadManager.shared.enqueueAll(snapshot: snapshot, baseURL: self.settings.resolvedBaseURL) }
+                },
+                onCancelDownloads: { Task { await DownloadManager.shared.cancel(jobId: snapshot.jobId) } },
+                onClearDownloads: { Task { await DownloadManager.shared.clearDownloadedBook(jobId: snapshot.jobId) } }
             )
         )
         if let sheet = controller.sheetPresentationController {

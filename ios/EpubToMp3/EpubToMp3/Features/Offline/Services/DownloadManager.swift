@@ -312,6 +312,19 @@ actor DownloadManager {
         try? FileManager.default.removeItem(at: folder)
     }
 
+    nonisolated static func deleteChapter(jobId: String, chapterIndex: Int) {
+        guard var manifest = loadManifest(for: jobId),
+              let entry = manifest.chapters.first(where: { $0.index == chapterIndex }) else { return }
+        let chapterURL = audiobooksRoot()
+            .appendingPathComponent(jobId, isDirectory: true)
+            .appendingPathComponent("chapters", isDirectory: true)
+            .appendingPathComponent(entry.mp3FileName)
+        try? FileManager.default.removeItem(at: chapterURL)
+        manifest.chapters.removeAll { $0.index == chapterIndex }
+        manifest.totalBytes = max(0, manifest.totalBytes - entry.mp3Bytes)
+        try? JSONEncoder().encode(manifest).write(to: manifestURL(for: jobId), options: .atomic)
+    }
+
     /// Sequential download loop with exponential backoff.
     private func downloadSerially(
         snapshot: JobSnapshot,

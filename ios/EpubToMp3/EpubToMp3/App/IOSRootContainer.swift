@@ -38,7 +38,14 @@ final class IOSRootContainerController: UIViewController {
     private var presentedErrorMessage: String?
     private var readerBottomToMiniPlayer: NSLayoutConstraint!
     private var readerBottomToRoot: NSLayoutConstraint!
+    private var miniBottomToRoot: NSLayoutConstraint!
+    private var miniBottomToTabBar: NSLayoutConstraint!
+    private var miniPlayerHeight: NSLayoutConstraint!
     private var isImmersiveReaderMode = false
+    private var isReaderLoading = false
+    private var overlayStateInitialized = false
+    private var readerBottomChromeInitialized = false
+    private var readerBottomChromeHidden = false
 
     init(
         settings: AppSettings,
@@ -84,7 +91,8 @@ final class IOSRootContainerController: UIViewController {
             player: player,
             playbackClock: player.playbackClock,
             library: library,
-            playerPresentation: playerPresentation
+            playerPresentation: playerPresentation,
+            settings: settings
         )
         super.init(nibName: nil, bundle: nil)
     }
@@ -117,9 +125,8 @@ final class IOSRootContainerController: UIViewController {
             readerController.view.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             readerController.view.topAnchor.constraint(equalTo: view.topAnchor),
 
-            miniPlayerController.view.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            miniPlayerController.view.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            miniPlayerController.view.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor),
+        miniPlayerController.view.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+        miniPlayerController.view.trailingAnchor.constraint(equalTo: view.trailingAnchor),
 
             fullPlayerController.view.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             fullPlayerController.view.trailingAnchor.constraint(equalTo: view.trailingAnchor),
@@ -127,11 +134,22 @@ final class IOSRootContainerController: UIViewController {
             fullPlayerController.view.bottomAnchor.constraint(equalTo: view.bottomAnchor),
         ])
 
+        miniPlayerHeight = miniPlayerController.view.heightAnchor.constraint(equalToConstant: 52)
+        miniPlayerHeight.isActive = true
+
+        miniBottomToRoot = miniPlayerController.view.bottomAnchor.constraint(equalTo: view.bottomAnchor)
+        miniBottomToTabBar = miniPlayerController.view.bottomAnchor.constraint(equalTo: shellController.tabBar.topAnchor, constant: -8)
+        miniBottomToRoot.isActive = true
+        miniBottomToTabBar.isActive = false
+
         readerBottomToMiniPlayer = readerController.view.bottomAnchor.constraint(equalTo: miniPlayerController.view.topAnchor)
         readerBottomToRoot = readerController.view.bottomAnchor.constraint(equalTo: view.bottomAnchor)
         readerBottomToMiniPlayer.isActive = true
         readerController.onReaderChromeVisibilityChanged = { [weak self] isHidden in
             self?.setImmersiveReaderMode(isHidden)
+        }
+        readerController.onReaderLoadingChanged = { [weak self] isLoading in
+            self?.setReaderLoadingMode(isLoading)
         }
 
         miniPlayerController.view.backgroundColor = .clear
@@ -142,11 +160,46 @@ final class IOSRootContainerController: UIViewController {
         refreshOverlayState()
     }
 
+    override func viewSafeAreaInsetsDidChange() {
+        super.viewSafeAreaInsetsDidChange()
+        miniPlayerHeight?.constant = 52 + view.safeAreaInsets.bottom
+    }
+
     private func setImmersiveReaderMode(_ isHidden: Bool) {
         isImmersiveReaderMode = isHidden
-        miniPlayerController.view.isHidden = isHidden
-        readerBottomToMiniPlayer.isActive = !isHidden
-        readerBottomToRoot.isActive = isHidden
+        refreshOverlayState()
+        if isHidden {
+            // Keep the external playback chrome in sync with the reader's
+            // immersive state even while a page transition is in progress.
+            animateMiniPlayerVisibility(visible: false)
+        }
+    }
+
+    private func setReaderLoadingMode(_ isLoading: Bool) {
+        isReaderLoading = isLoading
+        refreshOverlayState()
+    }
+
+    private func applyReaderChromeLayout() {
+        let hidesBottomChrome = isReaderLoading || isImmersiveReaderMode
+        readerBottomToMiniPlayer.isActive = !hidesBottomChrome
+        readerBottomToRoot.isActive = hidesBottomChrome
+
+        let changed = !readerBottomChromeInitialized || readerBottomChromeHidden != hidesBottomChrome
+        readerBottomChromeInitialized = true
+        readerBottomChromeHidden = hidesBottomChrome
+        guard changed else { return }
+        guard view.window != nil else {
+            view.layoutIfNeeded()
+            return
+        }
+        UIView.animate(
+            withDuration: 0.28,
+            delay: 0,
+            options: [.curveEaseInOut, .beginFromCurrentState, .allowUserInteraction]
+        ) {
+            self.view.layoutIfNeeded()
+        }
     }
 
     func updateTheme(_ theme: ReaderTheme) {
@@ -162,8 +215,8 @@ final class IOSRootContainerController: UIViewController {
             player: player,
             playbackClock: player.playbackClock,
             library: library,
-            onTap: {
-                self.playerPresentation.showFullPlayer()
+            onTap: { [weak self] in
+                self?.playerPresentation.showFullPlayer()
             }
         )
         fullPlayerController.refresh(library: library)
@@ -194,11 +247,49 @@ final class IOSRootContainerController: UIViewController {
         // The reader owns the full screen while open. The library/settings/
         // conversion tabs must not remain visible underneath its player bar.
         shellController.tabBar.isHidden = readerActive
-        if !readerActive { isImmersiveReaderMode = false }
-        miniPlayerController.view.isHidden = !showMini || isImmersiveReaderMode
+        miniBottomToTabBar.isActive = !readerActive
+        miniBottomToRoot.isActive = readerActive
+        if !readerActive {
+            isImmersiveReaderMode = false
+            isReaderLoading = false
+        }
+        applyReaderChromeLayout()
+        let miniShouldBeVisible = showMini && !isReaderLoading && !isImmersiveReaderMode
+        animateMiniPlayerVisibility(visible: miniShouldBeVisible)
         fullPlayerController.view.isHidden = !playerPresentation.showingFullPlayer
         fullPlayerController.view.alpha = playerPresentation.showingFullPlayer ? 1 : 0
         presentPlayerErrorIfNeeded()
+    }
+
+    private func animateMiniPlayerVisibility(visible: Bool) {
+        let wasVisible = overlayStateInitialized && !miniPlayerController.view.isHidden
+            && miniPlayerController.view.alpha > 0.01
+        let changed = !overlayStateInitialized || wasVisible != visible
+        overlayStateInitialized = true
+        guard changed else { return }
+
+        if visible {
+            miniPlayerController.view.isHidden = false
+            miniPlayerController.view.alpha = 0
+        }
+
+        let animations = {
+            self.miniPlayerController.view.alpha = visible ? 1 : 0
+            self.view.layoutIfNeeded()
+        }
+        let completion: (Bool) -> Void = { _ in
+            if !visible {
+                self.miniPlayerController.view.isHidden = true
+            }
+        }
+
+        UIView.animate(
+            withDuration: 0.28,
+            delay: 0,
+            options: [.curveEaseInOut, .beginFromCurrentState, .allowUserInteraction],
+            animations: animations,
+            completion: completion
+        )
     }
 
     private func bindState() {

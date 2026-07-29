@@ -307,7 +307,7 @@ enum EpubHtmlRenderer {
         unsafe attr.enumerateAttributes(in: fullRange, options: []) { attrs, range, _ in
             // ---- Font ----------------------------------------------
             let baseFont = (attrs[.font] as? PlatformFont)
-                ?? PlatformFont.systemFont(ofSize: targetSize)
+                ?? serifFallbackFont(ofSize: targetSize)
             let cappedSize: CGFloat? = overrideSize
                 ? targetSize
                 : (baseFont.pointSize > maxHeadingSize ? maxHeadingSize : nil)
@@ -395,6 +395,18 @@ enum EpubHtmlRenderer {
             }
             attr.addAttribute(.paragraphStyle, value: mutable, range: range)
         }
+    }
+
+    private static func serifFallbackFont(ofSize size: CGFloat) -> PlatformFont {
+        #if canImport(UIKit)
+        return UIFont(name: "NewYork", size: size)
+            ?? UIFont(name: "Georgia", size: size)
+            ?? UIFont.systemFont(ofSize: size)
+        #else
+        return NSFont(name: "New York", size: size)
+            ?? NSFont(name: "Georgia", size: size)
+            ?? NSFont.systemFont(ofSize: size)
+        #endif
     }
 
     // MARK: Font mutation
