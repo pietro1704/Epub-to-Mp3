@@ -543,7 +543,10 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
                 let cached = LocalFulltextCache.read(bookId: book.id)
                 let payload: EbookFulltext
                 let cachedNeedsTitleRepair = cached?.chapters.contains(where: { $0.hasGeneratedName }) == true
-                if let cached, !cachedNeedsTitleRepair {
+                let titleRepairKey = "reader.titleRepairAttempted.\(book.id)"
+                let shouldRepairCachedTitles = cachedNeedsTitleRepair
+                    && !UserDefaults.standard.bool(forKey: titleRepairKey)
+                if let cached, !shouldRepairCachedTitles {
                     payload = cached
                 } else if book.fileType.requiresServerConversion {
                     guard let baseURL = settings.resolvedBaseURL else {
@@ -557,6 +560,9 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
                 }
                 guard !Task.isCancelled, self.book.id == loadingBookID else { return }
                 LocalFulltextCache.save(payload, bookId: loadingBookID)
+                if cachedNeedsTitleRepair {
+                    UserDefaults.standard.set(true, forKey: titleRepairKey)
+                }
                 fulltext = payload
                 publishReaderChapterTitles(payload)
                 statusLabel.text = nil
