@@ -148,6 +148,12 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
         // view remains a layout container for programmatic offsets, but must
         // not accept free vertical scrolling from the user.
         scrollView.isScrollEnabled = false
+        if isPaginatedMode {
+            scrollView.panGestureRecognizer.isEnabled = false
+            scrollView.alwaysBounceVertical = false
+            scrollView.alwaysBounceHorizontal = false
+            textView.panGestureRecognizer.isEnabled = false
+        }
         let pageTap = UITapGestureRecognizer(target: self, action: #selector(handleReaderTap(_:)))
         pageTap.delegate = self
         scrollView.addGestureRecognizer(pageTap)
