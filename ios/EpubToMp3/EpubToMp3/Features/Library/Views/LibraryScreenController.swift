@@ -49,6 +49,10 @@ final class LibraryScreenController: UIViewController, UIDocumentPickerDelegate,
     override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = .systemBackground
+        let appearance = UINavigationBarAppearance()
+        appearance.configureWithDefaultBackground()
+        navigationController?.navigationBar.standardAppearance = appearance
+        navigationController?.navigationBar.scrollEdgeAppearance = appearance
         configureSearch()
         configureToolbar()
         configureGrid()
@@ -116,6 +120,9 @@ final class LibraryScreenController: UIViewController, UIDocumentPickerDelegate,
                 menu: makeFilterMenu()
             ),
         ]
+        navigationItem.rightBarButtonItems?[0].accessibilityLabel = L10n.string("library.addBook")
+        navigationItem.rightBarButtonItems?[0].accessibilityHint = L10n.string("library.addBookHint")
+        navigationItem.rightBarButtonItems?[1].accessibilityLabel = L10n.string("library.filterBooks")
     }
 
     private func configureGrid() {
@@ -162,6 +169,8 @@ final class LibraryScreenController: UIViewController, UIDocumentPickerDelegate,
         config.imagePadding = 8
         addButton.configuration = config
         addButton.addTarget(self, action: #selector(addTapped), for: .touchUpInside)
+        addButton.accessibilityLabel = L10n.string("library.addBook")
+        addButton.accessibilityHint = L10n.string("library.addBookHint")
         addButton.translatesAutoresizingMaskIntoConstraints = false
 
         view.addSubview(emptyStateLabel)
@@ -233,7 +242,7 @@ final class LibraryScreenController: UIViewController, UIDocumentPickerDelegate,
         }
         return UIMenu(children: [
             UIMenu(title: L10n.string("library.sortBy"), options: .displayInline, children: sortActions),
-            UIMenu(title: "Tags", options: .displayInline, children: tagActions),
+            UIMenu(title: L10n.string("library.tags"), options: .displayInline, children: tagActions),
         ])
     }
 

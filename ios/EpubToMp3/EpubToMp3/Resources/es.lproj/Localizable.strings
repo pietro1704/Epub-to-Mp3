@@ -130,6 +130,7 @@
 "player.divergence.fromWhereStopped" = "Desde donde paré";
 "player.divergence.fromBeginning" = "Desde el principio";
 "common.cancel" = "Cancelar";
+"common.back" = "Volver";
 
 /* BookOpenView — estados de error / vacío / preparando */
 "bookOpen.preparingChapters" = "Preparando capítulos…";
@@ -323,6 +324,19 @@
 
 /* === LibraryView === */
 "library.tagLabel" = "Etiqueta: %@";
+"library.addBookHint" = "Elige uno o más libros EPUB o PDF.";
+"library.filterBooks" = "Ordenar y filtrar libros";
+"library.bookList" = "Biblioteca de libros";
+"library.tags" = "Etiquetas";
+"player.openFullPlayer" = "Abrir reproductor completo";
+"player.openFullPlayerHint" = "Mostrar controles de reproducción ampliados.";
+"app.name" = "Epub-to-Mp3";
+"reader.font" = "Fuente";
+"reader.theme" = "Tema";
+"reader.layout" = "Diseño";
+"reader.margins" = "Márgenes";
+"reader.kerning" = "Espaciado entre letras";
+"reader.columns" = "Columnas";
 
 /* === TagEditorSheet === */
 "tagEditor.tags" = "Etiquetas";
@@ -501,3 +515,15 @@
 "jobs.historyDetailUnavailable" = "Esta sesión no incluye un ID de job en vivo.";
 "common.close" = "Cerrar";
 "reader.settings" = "Ajustes de lectura";
+"reader.retry" = "Intentar de nuevo";
+"settings.autoScrollHint" = "Toca dos veces para alternar el desplazamiento automático.";
+"settings.openOptionHint" = "Toca dos veces para elegir esta configuración.";
+"settings.destructiveActionHint" = "Toca dos veces para eliminar permanentemente el audio descargado.";
+"readerSettings.toggleHint" = "Toca dos veces para alternar esta configuración.";
+"readerSettings.chooseOptionHint" = "Toca dos veces para elegir una opción.";
+"jobs.refreshHint" = "Toca dos veces para actualizar la lista de conversiones.";
+"jobs.openJobHint" = "Toca dos veces para abrir los detalles.";
+"convert.chooseFileHint" = "Toca dos veces para elegir un EPUB o PDF.";
+"convert.pickFileFirstHint" = "Elige un libro antes de iniciar la conversión.";
+"convert.startConversionHint" = "Toca dos veces para iniciar la conversión.";
+"jobDetail.actionHint" = "Toca dos veces para realizar esta acción.";

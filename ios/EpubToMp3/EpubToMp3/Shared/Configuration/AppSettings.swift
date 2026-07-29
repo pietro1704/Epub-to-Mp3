@@ -152,9 +152,17 @@ final class AppSettings: ObservableObject {
         self.readerTextAlignment = ReaderTextAlignment(
             rawValue: defaults.string(forKey: "readerTextAlignment") ?? ""
         ) ?? .justified
-        self.readerLayout = ReaderLayout(
-            rawValue: defaults.string(forKey: "readerLayout") ?? ""
-        ) ?? .paginated
+        // The first launch after the reader layout migration always starts in
+        // paginated mode. After that, an explicit user choice is preserved.
+        let readerLayoutMigrationKey = "readerLayout.paginatedDefault.v1"
+        if !defaults.bool(forKey: readerLayoutMigrationKey) {
+            self.readerLayout = .paginated
+            defaults.set(true, forKey: readerLayoutMigrationKey)
+        } else {
+            self.readerLayout = ReaderLayout(
+                rawValue: defaults.string(forKey: "readerLayout") ?? ReaderLayout.paginated.rawValue
+            ) ?? .paginated
+        }
         self.readerColumns = max(1, min(4, (defaults.object(forKey: "readerColumns") as? Int) ?? 1))
         // UI tests can pin the reader layout regardless of persisted state,
         // e.g. `-uiTestReaderLayout paginated` / `-uiTestReaderLayout scrolling`.

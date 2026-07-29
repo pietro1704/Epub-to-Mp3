@@ -84,4 +84,23 @@ final class ReaderProgressStoreTests: XCTestCase {
         ReaderProgressStore.save(bookId: "b1", chapterIndex: 1, offsetFraction: 0.5, defaults: defaults)
         XCTAssertEqual(ReaderProgressStore.read(bookId: "b1", defaults: defaults)?.chapterIndex, 1)
     }
+
+    func testLegacyEntryWithoutCharacterOffsetStillDecodes() {
+        let defaults = makeDefaults()
+        let legacy = #"{"b1":{"chapterIndex":2,"offsetFraction":0.5}}"#
+        defaults.set(Data(legacy.utf8), forKey: "readerProgress.v1")
+
+        let entry = ReaderProgressStore.read(bookId: "b1", defaults: defaults)
+        XCTAssertEqual(entry?.chapterIndex, 2)
+        XCTAssertEqual(entry?.offsetFraction, 0.5)
+        XCTAssertNil(entry?.characterOffset)
+    }
+
+    func testCharacterOffsetRoundTrips() {
+        let defaults = makeDefaults()
+        ReaderProgressStore.save(bookId: "b1", chapterIndex: 1, offsetFraction: 0.25,
+                                 characterOffset: 123, defaults: defaults)
+
+        XCTAssertEqual(ReaderProgressStore.read(bookId: "b1", defaults: defaults)?.characterOffset, 123)
+    }
 }

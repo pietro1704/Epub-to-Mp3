@@ -4,6 +4,7 @@ import UIKit
 
 @MainActor
 final class MiniPlayerBarUIKitView: UIView {
+    private let materialView = AdaptiveMaterialView()
     private let progressView = UIProgressView(progressViewStyle: .default)
     private let coverView = UIImageView()
     private let titleLabel = UILabel()
@@ -24,8 +25,16 @@ final class MiniPlayerBarUIKitView: UIView {
     override init(frame: CGRect) {
         super.init(frame: frame)
         preservesSuperviewLayoutMargins = true
-        backgroundColor = UIColor.secondarySystemBackground.withAlphaComponent(0.92)
+        backgroundColor = .clear
         layer.cornerCurve = .continuous
+        clipsToBounds = true
+        addSubview(materialView)
+        NSLayoutConstraint.activate([
+            materialView.leadingAnchor.constraint(equalTo: leadingAnchor),
+            materialView.trailingAnchor.constraint(equalTo: trailingAnchor),
+            materialView.topAnchor.constraint(equalTo: topAnchor),
+            materialView.bottomAnchor.constraint(equalTo: bottomAnchor),
+        ])
 
         progressView.translatesAutoresizingMaskIntoConstraints = false
         addSubview(progressView)
@@ -55,6 +64,8 @@ final class MiniPlayerBarUIKitView: UIView {
 
         openButton.addTarget(self, action: #selector(openTapped), for: .touchUpInside)
         openButton.accessibilityIdentifier = "miniPlayer.open"
+        openButton.accessibilityLabel = L10n.string("player.openFullPlayer")
+        openButton.accessibilityHint = L10n.string("player.openFullPlayerHint")
         openButton.translatesAutoresizingMaskIntoConstraints = false
         openButton.addSubview(coverView)
         openButton.addSubview(labels)
@@ -71,10 +82,13 @@ final class MiniPlayerBarUIKitView: UIView {
 
         playPauseButton.tintColor = .label
         playPauseButton.accessibilityIdentifier = "miniPlayer.playPause"
+        playPauseButton.accessibilityLabel = L10n.string("player.play")
         nextButton.tintColor = .label
         nextButton.accessibilityIdentifier = "miniPlayer.next"
+        nextButton.accessibilityLabel = L10n.string("player.nextChapter")
         rateButton.tintColor = .label
         rateButton.accessibilityIdentifier = "miniPlayer.rate"
+        rateButton.accessibilityLabel = L10n.string("player.speed")
         playPauseButton.addTarget(self, action: #selector(playPauseTapped), for: .touchUpInside)
         nextButton.addTarget(self, action: #selector(nextTapped), for: .touchUpInside)
         for button in [playPauseButton, nextButton, rateButton] {
@@ -101,6 +115,7 @@ final class MiniPlayerBarUIKitView: UIView {
         chromeStack.addArrangedSubview(openButton)
         chromeStack.addArrangedSubview(trailingStack)
         addSubview(chromeStack)
+        bringSubviewToFront(chromeStack)
 
         NSLayoutConstraint.activate([
             progressView.leadingAnchor.constraint(equalTo: leadingAnchor),
@@ -187,6 +202,9 @@ final class MiniPlayerBarUIKitView: UIView {
 
         let playPauseName = player.isPlaying ? "pause.fill" : "play.fill"
         playPauseButton.setImage(UIImage(systemName: playPauseName), for: .normal)
+        playPauseButton.accessibilityLabel = player.isPlaying
+            ? L10n.string("player.pause")
+            : L10n.string("player.play")
         rateButton.setTitle(player.rate.shortLabel, for: .normal)
         accessibilityIdentifier = "miniPlayer.bar"
     }

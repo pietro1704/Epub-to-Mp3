@@ -92,6 +92,7 @@ final class LibraryGridController: UICollectionViewController {
         super.viewDidLoad()
         collectionView.backgroundColor = .clear
         collectionView.alwaysBounceVertical = true
+        collectionView.accessibilityLabel = L10n.string("library.bookList")
 
         if ProcessInfo.processInfo.arguments.contains("-uiTestFixture") {
             let longPress = UILongPressGestureRecognizer(target: self, action: #selector(uiTestLongPress(_:)))

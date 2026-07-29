@@ -35,6 +35,10 @@ final class ReaderSettingsScreenController: UITableViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
+        tableView.cellLayoutMarginsFollowReadableWidth = true
+        tableView.rowHeight = UITableView.automaticDimension
+        tableView.estimatedRowHeight = 56
+        tableView.accessibilityLabel = L10n.string("readerSettings.title")
         tableView.register(UITableViewCell.self, forCellReuseIdentifier: "Cell")
         navigationItem.rightBarButtonItem = UIBarButtonItem(
             title: L10n.string("readerSettings.done"),
@@ -106,11 +110,16 @@ final class ReaderSettingsScreenController: UITableViewController {
         }
 
         cell.contentConfiguration = content
+        cell.accessibilityLabel = content.text
+        cell.accessibilityValue = content.secondaryText
+        cell.accessibilityHint = isToggleLayoutRow(indexPath.row)
+            ? L10n.string("readerSettings.toggleHint")
+            : L10n.string("readerSettings.chooseOptionHint")
         return cell
     }
 
     override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
-        defer { tableView.deselectRow(at: indexPath, animated: true) }
+        defer { tableView.deselectRow(at: indexPath, animated: !UIAccessibility.isReduceMotionEnabled) }
         guard let section = Section(rawValue: indexPath.section) else { return }
         switch section {
         case .theme:
@@ -255,7 +264,7 @@ final class ReaderSettingsScreenController: UITableViewController {
             popover.sourceView = tableView
             popover.sourceRect = tableView.rectForRow(at: selected)
         }
-        present(alert, animated: true)
+        present(alert, animated: !UIAccessibility.isReduceMotionEnabled)
     }
 
     @objc

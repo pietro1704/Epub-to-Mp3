@@ -113,8 +113,7 @@ class _TagEditorContentState extends State<_TagEditorContent> {
             const SizedBox(height: 16),
 
             // Current tags section
-            Text(t.tagsSection,
-                style: Theme.of(context).textTheme.titleSmall),
+            Text(t.tagsSection, style: Theme.of(context).textTheme.titleSmall),
             const SizedBox(height: 8),
             if (tags.isNotEmpty)
               Wrap(
@@ -148,18 +147,17 @@ class _TagEditorContentState extends State<_TagEditorContent> {
                   ),
                 ),
                 const SizedBox(width: 8),
-                FilledButton.tonal(
-                  onPressed: _addTag,
-                  child: Text(t.add),
-                ),
+                FilledButton.tonal(onPressed: _addTag, child: Text(t.add)),
               ],
             ),
 
             // Suggestions
             if (suggestions.isNotEmpty) ...[
               const SizedBox(height: 24),
-              Text(t.existingTags,
-                  style: Theme.of(context).textTheme.titleSmall),
+              Text(
+                t.existingTags,
+                style: Theme.of(context).textTheme.titleSmall,
+              ),
               const SizedBox(height: 8),
               Wrap(
                 spacing: 8,

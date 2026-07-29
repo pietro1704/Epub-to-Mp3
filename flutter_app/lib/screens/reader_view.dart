@@ -30,12 +30,17 @@ class _ReaderViewState extends ConsumerState<ReaderView> {
   Widget build(BuildContext context) {
     final settings = ref.watch(settingsProvider);
     final spans = widget.chapter.splitSentences();
-    final activeId =
-        ref.watch(currentSentenceProvider(widget.jobId)).valueOrNull;
-    final bg = ReaderThemeColors.background(settings.readerTheme,
-        custom: settings.readerCustomColors);
-    final fg = ReaderThemeColors.foreground(settings.readerTheme,
-        custom: settings.readerCustomColors);
+    final activeId = ref
+        .watch(currentSentenceProvider(widget.jobId))
+        .valueOrNull;
+    final bg = ReaderThemeColors.background(
+      settings.readerTheme,
+      custom: settings.readerCustomColors,
+    );
+    final fg = ReaderThemeColors.foreground(
+      settings.readerTheme,
+      custom: settings.readerCustomColors,
+    );
     final fontSize = settings.readerPointSize;
     final lineSpacing = settings.readerLineSpacing;
     final margin = settings.readerMargin.clamp(16.0, 80.0);
@@ -70,14 +75,16 @@ class _ReaderViewState extends ConsumerState<ReaderView> {
                       ),
                     ),
                   ),
-                ...spans.map((span) => _Sentence(
-                      key: _spanKeys.putIfAbsent(span.id, () => GlobalKey()),
-                      span: span,
-                      fontSize: fontSize,
-                      lineHeight: 1.4 + (lineSpacing / 20.0),
-                      isActive: span.id == activeId,
-                      textColor: fg,
-                    )),
+                ...spans.map(
+                  (span) => _Sentence(
+                    key: _spanKeys.putIfAbsent(span.id, () => GlobalKey()),
+                    span: span,
+                    fontSize: fontSize,
+                    lineHeight: 1.4 + (lineSpacing / 20.0),
+                    isActive: span.id == activeId,
+                    textColor: fg,
+                  ),
+                ),
               ],
             ),
           ),

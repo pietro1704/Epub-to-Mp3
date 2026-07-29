@@ -48,6 +48,7 @@
 "reader.close" = "Close book";
 "reader.toc" = "TOC";
 "reader.settings" = "Reader settings";
+"reader.retry" = "Try again";
 "library.openBook" = "Open book";
 "jobs.book" = "Book";
 "jobs.status" = "Status";
@@ -132,6 +133,7 @@
 "player.divergence.fromWhereStopped" = "Continue playback";
 "player.divergence.fromBeginning" = "From the beginning";
 "common.cancel" = "Cancel";
+"common.back" = "Back";
 
 /* BookOpenView — error / empty / preparing states */
 "bookOpen.preparingChapters" = "Preparing chapters…";
@@ -325,6 +327,19 @@
 
 /* === LibraryView === */
 "library.tagLabel" = "Tag: %@";
+"library.addBookHint" = "Choose one or more EPUB or PDF books.";
+"library.filterBooks" = "Sort and filter books";
+"library.bookList" = "Book library";
+"library.tags" = "Tags";
+"player.openFullPlayer" = "Open full player";
+"player.openFullPlayerHint" = "Show expanded playback controls.";
+"app.name" = "Epub-to-Mp3";
+"reader.font" = "Font";
+"reader.theme" = "Theme";
+"reader.layout" = "Layout";
+"reader.margins" = "Margins";
+"reader.kerning" = "Letter spacing";
+"reader.columns" = "Columns";
 
 /* === TagEditorSheet === */
 "tagEditor.tags" = "Tags";
@@ -500,3 +515,14 @@
 "settings.clearAllDownloadsConfirmTitle" = "Clear all downloads?";
 "settings.clearAllDownloadsConfirmMessage" = "All offline MP3s and generated chapter audio caches will be deleted.";
 "jobs.historyDetailUnavailable" = "This session does not include a live job ID.";
+"settings.autoScrollHint" = "Double-tap to toggle automatic scrolling.";
+"settings.openOptionHint" = "Double-tap to choose this setting.";
+"settings.destructiveActionHint" = "Double-tap to permanently delete downloaded audio.";
+"readerSettings.toggleHint" = "Double-tap to toggle this setting.";
+"readerSettings.chooseOptionHint" = "Double-tap to choose an option.";
+"jobs.refreshHint" = "Double-tap to refresh the conversion list.";
+"jobs.openJobHint" = "Double-tap to open job details.";
+"convert.chooseFileHint" = "Double-tap to choose an EPUB or PDF.";
+"convert.pickFileFirstHint" = "Choose a book before starting conversion.";
+"convert.startConversionHint" = "Double-tap to start conversion.";
+"jobDetail.actionHint" = "Double-tap to perform this action.";

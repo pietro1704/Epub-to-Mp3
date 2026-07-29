@@ -22,6 +22,13 @@ import 'state/providers.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   final prefs = await SharedPreferences.getInstance();
+
+  // Match the native reader's default without changing the shared settings
+  // model: existing explicit choices remain untouched, while new installs
+  // open books in paginated mode.
+  if (!prefs.containsKey('readerLayout')) {
+    await prefs.setString('readerLayout', 'paginated');
+  }
   final deepLinkStream = defaultTargetPlatform == TargetPlatform.android
       ? const EventChannel(
           'epub_to_mp3/deep_links',
@@ -115,7 +122,10 @@ class _EpubToMp3AppState extends ConsumerState<EpubToMp3App> {
     }
     final bookId = link.bookId;
     if (bookId == null ||
-        !ref.read(libraryStoreProvider).books.any((book) => book.id == bookId)) {
+        !ref
+            .read(libraryStoreProvider)
+            .books
+            .any((book) => book.id == bookId)) {
       return;
     }
     if (link.action == AppDeepLinkAction.open) {

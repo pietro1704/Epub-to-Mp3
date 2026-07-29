@@ -58,9 +58,11 @@ class ReaderView extends ConsumerStatefulWidget {
   final void Function(SentenceSpan)? onJumpToSentence;
   final ChapterStepCallback? onAdvanceChapter;
   final ChapterStepCallback? onPreviousChapter;
+
   /// Called when the user taps the center zone of the reader. Used by
   /// the hosting screen to toggle chrome visibility (AppBar + player bar).
   final VoidCallback? onCenterTap;
+
   /// Called whenever the user turns a page (tap zone, keyboard, or
   /// swipe). The host screen should dim its chrome (AppBar, player
   /// bar, status bar) for an immersive reading experience. Mirrors
@@ -190,10 +192,14 @@ class _ReaderViewState extends ConsumerState<ReaderView> {
   @override
   Widget build(BuildContext context) {
     final settings = ref.watch(settingsProvider);
-    final bg = ReaderThemeColors.background(settings.readerTheme,
-        custom: settings.readerCustomColors);
-    final fg = ReaderThemeColors.foreground(settings.readerTheme,
-        custom: settings.readerCustomColors);
+    final bg = ReaderThemeColors.background(
+      settings.readerTheme,
+      custom: settings.readerCustomColors,
+    );
+    final fg = ReaderThemeColors.foreground(
+      settings.readerTheme,
+      custom: settings.readerCustomColors,
+    );
     final fontSize = settings.readerPointSize;
     final lineSpacing = settings.readerLineSpacing;
     final margin = settings.readerMargin.clamp(16.0, 80.0);
@@ -219,11 +225,23 @@ class _ReaderViewState extends ConsumerState<ReaderView> {
 
     if (settings.readerLayout == ReaderLayout.scrolling) {
       return _scrollingLayout(
-        context, settings, bg, fg, bodyStyle, headingStyle, margin,
+        context,
+        settings,
+        bg,
+        fg,
+        bodyStyle,
+        headingStyle,
+        margin,
       );
     }
     return _paginatedLayout(
-      context, settings, bg, fg, bodyStyle, headingStyle, margin,
+      context,
+      settings,
+      bg,
+      fg,
+      bodyStyle,
+      headingStyle,
+      margin,
     );
   }
 
@@ -291,8 +309,7 @@ class _ReaderViewState extends ConsumerState<ReaderView> {
             ),
             child: hasHtml
                 ? _htmlBody(html, settings, bg, fg, bodyStyle, headingStyle)
-                : _spanBody(
-                    settings, fg, bodyStyle, headingStyle, activeId),
+                : _spanBody(settings, fg, bodyStyle, headingStyle, activeId),
           ),
         ),
       ),
@@ -379,8 +396,7 @@ class _ReaderViewState extends ConsumerState<ReaderView> {
               onTap: () => widget.onJumpToSentence?.call(s),
               child: Container(
                 width: double.infinity,
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(6),
                   color: isActive
@@ -481,22 +497,22 @@ class _ReaderViewState extends ConsumerState<ReaderView> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        if (pageIndex == 0)
-                          _chapterHeader(headingStyle, fg),
-                        ...page.spans.map((s) => Padding(
-                              padding:
-                                  const EdgeInsets.symmetric(vertical: 2),
-                              child: GestureDetector(
-                                onTap: () =>
-                                    widget.onJumpToSentence?.call(s),
-                                child: Text(
-                                  s.text,
-                                  style: bodyStyle,
-                                  textAlign: flutterTextAlign(
-                                      settings.readerTextAlignment),
+                        if (pageIndex == 0) _chapterHeader(headingStyle, fg),
+                        ...page.spans.map(
+                          (s) => Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 2),
+                            child: GestureDetector(
+                              onTap: () => widget.onJumpToSentence?.call(s),
+                              child: Text(
+                                s.text,
+                                style: bodyStyle,
+                                textAlign: flutterTextAlign(
+                                  settings.readerTextAlignment,
                                 ),
                               ),
-                            )),
+                            ),
+                          ),
+                        ),
                       ],
                     ),
                   ),
@@ -535,7 +551,9 @@ class _ReaderViewState extends ConsumerState<ReaderView> {
                   child: Center(
                     child: Container(
                       padding: const EdgeInsets.symmetric(
-                          horizontal: 8, vertical: 3),
+                        horizontal: 8,
+                        vertical: 3,
+                      ),
                       decoration: BoxDecoration(
                         borderRadius: BorderRadius.circular(10),
                         color: fg.withValues(alpha: 0.1),
@@ -545,9 +563,7 @@ class _ReaderViewState extends ConsumerState<ReaderView> {
                         style: TextStyle(
                           fontSize: 11,
                           color: fg.withValues(alpha: 0.5),
-                          fontFeatures: const [
-                            FontFeature.tabularFigures()
-                          ],
+                          fontFeatures: const [FontFeature.tabularFigures()],
                         ),
                       ),
                     ),

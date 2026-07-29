@@ -10,6 +10,7 @@ final class MainReaderScreenController: UIViewController {
     private let playerPresentation: PlayerPresentation
     private let bookmarkStore: BookmarkStore
     private var onBrowseLibrary: (() -> Void)?
+    var onReaderChromeVisibilityChanged: ((Bool) -> Void)?
 
     private var cancellables: Set<AnyCancellable> = []
     private var readerController: BookOpenScreenController?
@@ -23,10 +24,8 @@ final class MainReaderScreenController: UIViewController {
     private let emptyDescriptionLabel = UILabel()
     private let browseButton = UIButton(type: .system)
     private let listenButton = UIButton(type: .system)
-    private let readerToolbar = UIStackView()
-    private let readerTitleLabel = UILabel()
-    private let closeReaderButton = UIButton(type: .system)
-    private let repickBookButton = UIButton(type: .system)
+    private let readerNavigationBar = UINavigationBar()
+    private let readerNavigationItem = UINavigationItem()
 
     private var currentBook: BookEntity? {
         guard let id = UserDefaults.standard.string(forKey: ReaderSessionState.currentlyReadingBookIDKey),
@@ -59,7 +58,7 @@ final class MainReaderScreenController: UIViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = .systemBackground
-        configureReaderToolbar()
+        configureReaderNavigationBar()
         configureEmptyState()
         configureListenButton()
         bind()
@@ -149,42 +148,36 @@ final class MainReaderScreenController: UIViewController {
         listenButton.addTarget(self, action: #selector(listenTapped), for: .touchUpInside)
     }
 
-    private func configureReaderToolbar() {
-        readerToolbar.axis = .horizontal
-        readerToolbar.alignment = .center
-        readerToolbar.spacing = 8
-        readerToolbar.isLayoutMarginsRelativeArrangement = true
-        readerToolbar.directionalLayoutMargins = NSDirectionalEdgeInsets(top: 4, leading: 12, bottom: 4, trailing: 12)
-        readerToolbar.translatesAutoresizingMaskIntoConstraints = false
+    private func configureReaderNavigationBar() {
+        readerNavigationBar.translatesAutoresizingMaskIntoConstraints = false
+        readerNavigationBar.isTranslucent = true
+        readerNavigationBar.prefersLargeTitles = false
+        readerNavigationBar.items = [readerNavigationItem]
 
-        var closeConfiguration = UIButton.Configuration.plain()
-        closeConfiguration.image = UIImage(systemName: "xmark")
-        closeConfiguration.contentInsets = .zero
-        closeReaderButton.configuration = closeConfiguration
-        closeReaderButton.accessibilityLabel = L10n.string("player.close")
-        closeReaderButton.accessibilityIdentifier = "reader.close"
-        closeReaderButton.addTarget(self, action: #selector(closeReaderTapped), for: .touchUpInside)
+        let closeItem = UIBarButtonItem(
+            image: UIImage(systemName: "chevron.left"),
+            style: .plain,
+            target: self,
+            action: #selector(closeReaderTapped)
+        )
+        closeItem.accessibilityLabel = L10n.string("common.back")
+        closeItem.accessibilityIdentifier = "reader.close"
+        readerNavigationItem.leftBarButtonItem = closeItem
 
-        readerTitleLabel.font = .preferredFont(forTextStyle: .headline)
-        readerTitleLabel.textAlignment = .center
-        readerTitleLabel.lineBreakMode = .byTruncatingMiddle
-        readerTitleLabel.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        let repickButton = UIButton(type: .system)
+        repickButton.setImage(UIImage(systemName: "book.closed"), for: .normal)
+        repickButton.accessibilityLabel = L10n.string("reader.repick")
+        repickButton.accessibilityIdentifier = "reader.repick"
+        repickButton.addTarget(self, action: #selector(repickBookTapped), for: .touchUpInside)
+        repickButton.frame = CGRect(x: 0, y: 0, width: 44, height: 44)
+        repickButton.isHidden = true
+        readerNavigationItem.rightBarButtonItem = UIBarButtonItem(customView: repickButton)
 
-        repickBookButton.isHidden = true
-        repickBookButton.accessibilityIdentifier = "reader.repick"
-        repickBookButton.addTarget(self, action: #selector(repickBookTapped), for: .touchUpInside)
-
-        readerToolbar.addArrangedSubview(closeReaderButton)
-        readerToolbar.addArrangedSubview(readerTitleLabel)
-        readerToolbar.addArrangedSubview(repickBookButton)
-        view.addSubview(readerToolbar)
+        view.addSubview(readerNavigationBar)
         NSLayoutConstraint.activate([
-            readerToolbar.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            readerToolbar.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            readerToolbar.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
-            readerToolbar.heightAnchor.constraint(greaterThanOrEqualToConstant: 52),
-            closeReaderButton.widthAnchor.constraint(equalToConstant: 44),
-            repickBookButton.heightAnchor.constraint(greaterThanOrEqualToConstant: 44),
+            readerNavigationBar.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            readerNavigationBar.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            readerNavigationBar.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
         ])
     }
 
@@ -207,13 +200,14 @@ final class MainReaderScreenController: UIViewController {
         removeReaderControllerIfNeeded()
         emptyStateStack.isHidden = false
         listenButton.isHidden = true
-        readerToolbar.isHidden = true
+        readerNavigationBar.isHidden = true
     }
 
     private func showBook(_ book: BookEntity) {
         emptyStateStack.isHidden = true
-        readerToolbar.isHidden = false
-        readerTitleLabel.text = book.resolvedTitle
+        readerNavigationBar.isHidden = false
+        onReaderChromeVisibilityChanged?(false)
+        readerNavigationItem.title = book.resolvedTitle
         if readerController != nil, readerBookID == book.id {
             // The existing reader already owns this book. Re-loading it on
             // every library notification causes `loadBook()` to publish a
@@ -235,18 +229,27 @@ final class MainReaderScreenController: UIViewController {
             self.isReaderLoading = isLoading
             self.listenButton.isHidden = self.currentBook == nil || isLoading
         }
+        reader.onChromeVisibilityChanged = { [weak self] isHidden in
+            self?.readerNavigationBar.isHidden = isHidden
+            self?.onReaderChromeVisibilityChanged?(isHidden)
+        }
         addChild(reader)
         reader.view.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(reader.view)
         NSLayoutConstraint.activate([
             reader.view.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             reader.view.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            reader.view.topAnchor.constraint(equalTo: readerToolbar.bottomAnchor),
+            reader.view.topAnchor.constraint(equalTo: readerNavigationBar.bottomAnchor),
             reader.view.bottomAnchor.constraint(equalTo: view.bottomAnchor),
         ])
         reader.didMove(toParent: self)
+        view.bringSubviewToFront(readerNavigationBar)
         readerController = reader
         readerBookID = book.id
+        PlaybackBindingStore.setCurrentlyPlaying(
+            bookID: book.id,
+            chapterIndex: ReaderProgressStore.read(bookId: book.id)?.chapterIndex ?? 0
+        )
 
         // Do not mutate the library while rendering. `library.update` emits
         // `objectWillChange`, which calls `render()` again; updating

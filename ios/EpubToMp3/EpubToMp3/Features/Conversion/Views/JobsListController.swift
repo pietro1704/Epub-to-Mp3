@@ -16,6 +16,9 @@ final class JobsListController: UIViewController, UITableViewDataSource, UITable
         tableView.dataSource = self
         tableView.delegate = self
         tableView.register(UITableViewCell.self, forCellReuseIdentifier: "Job")
+        tableView.cellLayoutMarginsFollowReadableWidth = true
+        tableView.rowHeight = UITableView.automaticDimension
+        tableView.estimatedRowHeight = 64
     }
 
     func apply(sessions: [SessionRecord], animated: Bool) {
@@ -39,6 +42,9 @@ final class JobsListController: UIViewController, UITableViewDataSource, UITable
         content.secondaryTextProperties.numberOfLines = 2
         cell.contentConfiguration = content
         cell.accessoryType = .disclosureIndicator
+        cell.accessibilityLabel = row.title
+        cell.accessibilityValue = row.detailText
+        cell.accessibilityHint = L10n.string("jobs.openJobHint")
         return cell
     }
 

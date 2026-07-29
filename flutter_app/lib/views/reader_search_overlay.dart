@@ -59,13 +59,10 @@ class _ReaderSearchOverlayState extends State<ReaderSearchOverlay>
       vsync: this,
       duration: const Duration(milliseconds: 250),
     );
-    _slideAnimation = Tween<Offset>(
-      begin: const Offset(0, -1),
-      end: Offset.zero,
-    ).animate(CurvedAnimation(
-      parent: _animController,
-      curve: Curves.easeOutCubic,
-    ));
+    _slideAnimation =
+        Tween<Offset>(begin: const Offset(0, -1), end: Offset.zero).animate(
+          CurvedAnimation(parent: _animController, curve: Curves.easeOutCubic),
+        );
     _animController.forward();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _focusNode.requestFocus();
@@ -103,8 +100,11 @@ class _ReaderSearchOverlayState extends State<ReaderSearchOverlay>
         // Build context snippet: 40 chars before and after.
         final snippetStart = (idx - 40).clamp(0, text.length);
         final snippetEnd = (idx + lowered.length + 40).clamp(0, text.length);
-        final raw = text.substring(snippetStart, snippetEnd).replaceAll('\n', ' ');
-        final snippet = '${snippetStart > 0 ? '...' : ''}'
+        final raw = text
+            .substring(snippetStart, snippetEnd)
+            .replaceAll('\n', ' ');
+        final snippet =
+            '${snippetStart > 0 ? '...' : ''}'
             '$raw'
             '${snippetEnd < text.length ? '...' : ''}';
 
@@ -112,13 +112,15 @@ class _ReaderSearchOverlayState extends State<ReaderSearchOverlay>
         final prefixLen = snippetStart > 0 ? 3 : 0; // '...' length
         final matchInSnippet = idx - snippetStart + prefixLen;
 
-        found.add(_SearchResult(
-          chapterIndex: ch.index,
-          chapterTitle: ch.displayTitle,
-          snippet: snippet,
-          matchStart: matchInSnippet,
-          matchLength: lowered.length,
-        ));
+        found.add(
+          _SearchResult(
+            chapterIndex: ch.index,
+            chapterTitle: ch.displayTitle,
+            snippet: snippet,
+            matchStart: matchInSnippet,
+            matchLength: lowered.length,
+          ),
+        );
 
         searchStart = idx + lowered.length;
         if (found.length >= _maxResults) break;
@@ -192,10 +194,7 @@ class _ReaderSearchOverlayState extends State<ReaderSearchOverlay>
                           onPressed: _clear,
                           tooltip: t.cancel,
                         ),
-                      TextButton(
-                        onPressed: _close,
-                        child: Text(t.done),
-                      ),
+                      TextButton(onPressed: _close, child: Text(t.done)),
                     ],
                   ),
                 ),
@@ -218,9 +217,7 @@ class _ReaderSearchOverlayState extends State<ReaderSearchOverlay>
                                 padding: const EdgeInsets.all(8),
                                 child: Text(
                                   t.searchResultsCapped,
-                                  style: Theme.of(context)
-                                      .textTheme
-                                      .bodySmall
+                                  style: Theme.of(context).textTheme.bodySmall
                                       ?.copyWith(color: cs.onSurfaceVariant),
                                 ),
                               ),
@@ -314,17 +311,19 @@ class _HighlightedSnippet extends StatelessWidget {
     }
 
     return Text.rich(
-      TextSpan(children: [
-        TextSpan(text: snippet.substring(0, safeStart)),
-        TextSpan(
-          text: snippet.substring(safeStart, safeEnd),
-          style: TextStyle(
-            backgroundColor: cs.primaryContainer,
-            fontWeight: FontWeight.w600,
+      TextSpan(
+        children: [
+          TextSpan(text: snippet.substring(0, safeStart)),
+          TextSpan(
+            text: snippet.substring(safeStart, safeEnd),
+            style: TextStyle(
+              backgroundColor: cs.primaryContainer,
+              fontWeight: FontWeight.w600,
+            ),
           ),
-        ),
-        TextSpan(text: snippet.substring(safeEnd)),
-      ]),
+          TextSpan(text: snippet.substring(safeEnd)),
+        ],
+      ),
       style: style,
       maxLines: 3,
       overflow: TextOverflow.ellipsis,

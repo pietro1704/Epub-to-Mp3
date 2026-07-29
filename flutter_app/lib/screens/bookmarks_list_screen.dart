@@ -32,10 +32,10 @@ class _BookmarksListScreenState extends ConsumerState<BookmarksListScreen> {
   _Filter _filter = _Filter.all;
 
   List<Bookmark> _filtered(List<Bookmark> all) => switch (_filter) {
-        _Filter.all => all,
-        _Filter.bookmarks => all.where((b) => !b.isHighlight).toList(),
-        _Filter.highlights => all.where((b) => b.isHighlight).toList(),
-      };
+    _Filter.all => all,
+    _Filter.bookmarks => all.where((b) => !b.isHighlight).toList(),
+    _Filter.highlights => all.where((b) => b.isHighlight).toList(),
+  };
 
   void _showNoteEditor(Bookmark bm) {
     showModalBottomSheet(
@@ -81,9 +81,7 @@ class _BookmarksListScreenState extends ConsumerState<BookmarksListScreen> {
     final items = _filtered(all);
 
     return Scaffold(
-      appBar: AppBar(
-        title: Text(t.bookmarksTitle),
-      ),
+      appBar: AppBar(title: Text(t.bookmarksTitle)),
       body: Column(
         children: [
           Padding(
@@ -92,10 +90,13 @@ class _BookmarksListScreenState extends ConsumerState<BookmarksListScreen> {
               segments: [
                 ButtonSegment(value: _Filter.all, label: Text(t.filterAll)),
                 ButtonSegment(
-                    value: _Filter.bookmarks, label: Text(t.filterBookmarks)),
+                  value: _Filter.bookmarks,
+                  label: Text(t.filterBookmarks),
+                ),
                 ButtonSegment(
-                    value: _Filter.highlights,
-                    label: Text(t.filterHighlights)),
+                  value: _Filter.highlights,
+                  label: Text(t.filterHighlights),
+                ),
               ],
               selected: {_filter},
               onSelectionChanged: (v) => setState(() => _filter = v.first),
@@ -126,7 +127,8 @@ class _BookmarksListScreenState extends ConsumerState<BookmarksListScreen> {
                         },
                         child: _BookmarkTile(
                           bookmark: bm,
-                          onTap: () => widget.onJumpToChapter?.call(bm.chapterIndex),
+                          onTap: () =>
+                              widget.onJumpToChapter?.call(bm.chapterIndex),
                           onEdit: () => _showNoteEditor(bm),
                         ),
                       );
@@ -144,23 +146,19 @@ class _BookmarksListScreenState extends ConsumerState<BookmarksListScreen> {
 // ---------------------------------------------------------------------------
 
 class _BookmarkTile extends StatelessWidget {
-  const _BookmarkTile({
-    required this.bookmark,
-    this.onTap,
-    this.onEdit,
-  });
+  const _BookmarkTile({required this.bookmark, this.onTap, this.onEdit});
 
   final Bookmark bookmark;
   final VoidCallback? onTap;
   final VoidCallback? onEdit;
 
   Color _highlightColor(HighlightColor c) => switch (c) {
-        HighlightColor.yellow => Colors.yellow,
-        HighlightColor.blue => Colors.blue,
-        HighlightColor.green => Colors.green,
-        HighlightColor.pink => Colors.pink,
-        HighlightColor.orange => Colors.orange,
-      };
+    HighlightColor.yellow => Colors.yellow,
+    HighlightColor.blue => Colors.blue,
+    HighlightColor.green => Colors.green,
+    HighlightColor.pink => Colors.pink,
+    HighlightColor.orange => Colors.orange,
+  };
 
   @override
   Widget build(BuildContext context) {
@@ -258,8 +256,8 @@ class _EmptyState extends StatelessWidget {
               t.noBookmarksHint,
               textAlign: TextAlign.center,
               style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  ),
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
             ),
           ),
         ],
@@ -273,10 +271,7 @@ class _EmptyState extends StatelessWidget {
 // ---------------------------------------------------------------------------
 
 class _NoteEditorSheet extends StatefulWidget {
-  const _NoteEditorSheet({
-    required this.bookmark,
-    required this.bookmarkStore,
-  });
+  const _NoteEditorSheet({required this.bookmark, required this.bookmarkStore});
 
   final Bookmark bookmark;
   final BookmarkStore bookmarkStore;
@@ -301,12 +296,12 @@ class _NoteEditorSheetState extends State<_NoteEditorSheet> {
   }
 
   Color _highlightColor(HighlightColor c) => switch (c) {
-        HighlightColor.yellow => Colors.yellow,
-        HighlightColor.blue => Colors.blue,
-        HighlightColor.green => Colors.green,
-        HighlightColor.pink => Colors.pink,
-        HighlightColor.orange => Colors.orange,
-      };
+    HighlightColor.yellow => Colors.yellow,
+    HighlightColor.blue => Colors.blue,
+    HighlightColor.green => Colors.green,
+    HighlightColor.pink => Colors.pink,
+    HighlightColor.orange => Colors.orange,
+  };
 
   @override
   Widget build(BuildContext context) {
@@ -369,14 +364,11 @@ class _NoteEditorSheetState extends State<_NoteEditorSheet> {
               maxLines: 3,
               overflow: TextOverflow.ellipsis,
               style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  ),
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
             ),
             const SizedBox(height: 12),
-            Text(
-              t.colorLabel,
-              style: Theme.of(context).textTheme.labelMedium,
-            ),
+            Text(t.colorLabel, style: Theme.of(context).textTheme.labelMedium),
             const SizedBox(height: 8),
             Row(
               children: HighlightColor.values.map((c) {
@@ -392,7 +384,11 @@ class _NoteEditorSheetState extends State<_NoteEditorSheet> {
                       radius: 16,
                       backgroundColor: _highlightColor(c),
                       child: isSelected
-                          ? const Icon(Icons.check, size: 16, color: Colors.white)
+                          ? const Icon(
+                              Icons.check,
+                              size: 16,
+                              color: Colors.white,
+                            )
                           : null,
                     ),
                   ),

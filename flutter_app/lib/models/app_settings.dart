@@ -34,10 +34,10 @@ enum ReaderFontFamily { serif, sans, mono }
 extension ReaderFontFamilyX on ReaderFontFamily {
   String get rawValue => name;
   String get displayName => switch (this) {
-        ReaderFontFamily.serif => 'Serif',
-        ReaderFontFamily.sans => 'Sans',
-        ReaderFontFamily.mono => 'Mono',
-      };
+    ReaderFontFamily.serif => 'Serif',
+    ReaderFontFamily.sans => 'Sans',
+    ReaderFontFamily.mono => 'Mono',
+  };
   static ReaderFontFamily fromRaw(String? s) => ReaderFontFamily.values
       .firstWhere((e) => e.rawValue == s, orElse: () => ReaderFontFamily.serif);
 }
@@ -47,17 +47,19 @@ enum ReaderTheme { auto, light, sepia, parchment, paper, dark, black, custom }
 extension ReaderThemeX on ReaderTheme {
   String get rawValue => name;
   String get displayName => switch (this) {
-        ReaderTheme.auto => 'Auto',
-        ReaderTheme.light => 'Light',
-        ReaderTheme.sepia => 'Sepia',
-        ReaderTheme.parchment => 'Parchment',
-        ReaderTheme.paper => 'Paper',
-        ReaderTheme.dark => 'Dark',
-        ReaderTheme.black => 'Black',
-        ReaderTheme.custom => 'Custom',
-      };
-  static ReaderTheme fromRaw(String? s) => ReaderTheme.values
-      .firstWhere((e) => e.rawValue == s, orElse: () => ReaderTheme.auto);
+    ReaderTheme.auto => 'Auto',
+    ReaderTheme.light => 'Light',
+    ReaderTheme.sepia => 'Sepia',
+    ReaderTheme.parchment => 'Parchment',
+    ReaderTheme.paper => 'Paper',
+    ReaderTheme.dark => 'Dark',
+    ReaderTheme.black => 'Black',
+    ReaderTheme.custom => 'Custom',
+  };
+  static ReaderTheme fromRaw(String? s) => ReaderTheme.values.firstWhere(
+    (e) => e.rawValue == s,
+    orElse: () => ReaderTheme.auto,
+  );
 }
 
 enum ReaderLayout { scrolling, paginated }
@@ -65,11 +67,13 @@ enum ReaderLayout { scrolling, paginated }
 extension ReaderLayoutX on ReaderLayout {
   String get rawValue => name;
   String get displayName => switch (this) {
-        ReaderLayout.scrolling => 'Scrolling',
-        ReaderLayout.paginated => 'Paginated',
-      };
-  static ReaderLayout fromRaw(String? s) => ReaderLayout.values
-      .firstWhere((e) => e.rawValue == s, orElse: () => ReaderLayout.scrolling);
+    ReaderLayout.scrolling => 'Scrolling',
+    ReaderLayout.paginated => 'Paginated',
+  };
+  static ReaderLayout fromRaw(String? s) => ReaderLayout.values.firstWhere(
+    (e) => e.rawValue == s,
+    orElse: () => ReaderLayout.scrolling,
+  );
 }
 
 /// Horizontal alignment for reader body text. The default `.justified`
@@ -82,9 +86,9 @@ enum ReaderTextAlignment { justified, left }
 extension ReaderTextAlignmentX on ReaderTextAlignment {
   String get rawValue => name;
   String get displayName => switch (this) {
-        ReaderTextAlignment.justified => 'Justified',
-        ReaderTextAlignment.left => 'Left',
-      };
+    ReaderTextAlignment.justified => 'Justified',
+    ReaderTextAlignment.left => 'Left',
+  };
   static ReaderTextAlignment fromRaw(String? s) =>
       ReaderTextAlignment.values.firstWhere(
         (e) => e.rawValue == s,
@@ -129,6 +133,7 @@ class CustomReaderColors {
 class MirrorAppSettings {
   MirrorAppSettings(this._prefs) {
     migrateLegacyKeysIfNeeded();
+    migrateReaderLayoutDefaultIfNeeded();
   }
 
   final SharedPreferences _prefs;
@@ -158,10 +163,14 @@ class MirrorAppSettings {
       // Bucket raw point size into the 0..4 step. The Swift side keys
       // off step, not point size, so we coerce.
       final pt = legacyFontSize;
-      final step = pt <= 14 ? 0
-          : pt <= 17 ? 1
-          : pt <= 20 ? 2
-          : pt <= 24 ? 3
+      final step = pt <= 14
+          ? 0
+          : pt <= 17
+          ? 1
+          : pt <= 20
+          ? 2
+          : pt <= 24
+          ? 3
           : 4;
       _prefs.setInt('readerFontSize', step);
     }
@@ -176,6 +185,19 @@ class MirrorAppSettings {
     // `wpm` and `audioRate` keep the same key; no rename needed.
 
     _prefs.setBool('_settingsMigratedV1', true);
+  }
+
+  /// Makes paginated reading the default without overwriting an explicit
+  /// choice made by an existing user. The sentinel keeps this migration
+  /// idempotent across provider rebuilds and app launches.
+  void migrateReaderLayoutDefaultIfNeeded() {
+    const migrationKey = '_readerLayoutPaginatedDefaultV1';
+    if (_prefs.getBool(migrationKey) == true) return;
+
+    if (_prefs.getString('readerLayout') == null) {
+      _prefs.setString('readerLayout', ReaderLayout.paginated.rawValue);
+    }
+    _prefs.setBool(migrationKey, true);
   }
 
   // backendURL ----------------------------------------------------------
@@ -198,10 +220,14 @@ class MirrorAppSettings {
   // bidirectionally converted to/from the integer step bucket.
   double get fontSize => readerPointSize;
   Future<void> setFontSize(double pt) async {
-    final step = pt <= 14 ? 0
-        : pt <= 17 ? 1
-        : pt <= 20 ? 2
-        : pt <= 24 ? 3
+    final step = pt <= 14
+        ? 0
+        : pt <= 17
+        ? 1
+        : pt <= 20
+        ? 2
+        : pt <= 24
+        ? 3
         : 4;
     await setReaderFontSize(step);
   }
@@ -249,8 +275,9 @@ class MirrorAppSettings {
   Future<void> setReaderAutoScroll(bool v) =>
       _prefs.setBool('readerAutoScroll', v);
 
-  ReaderLayout get readerLayout =>
-      ReaderLayoutX.fromRaw(_prefs.getString('readerLayout'));
+  ReaderLayout get readerLayout => ReaderLayoutX.fromRaw(
+    _prefs.getString('readerLayout') ?? ReaderLayout.paginated.rawValue,
+  );
   Future<void> setReaderLayout(ReaderLayout v) =>
       _prefs.setString('readerLayout', v.rawValue);
 
@@ -301,8 +328,7 @@ class MirrorAppSettings {
 
   CustomReaderColors get readerCustomColors {
     final raw = _prefs.getString('readerCustomColors') ?? '1,1,1,0,0,0';
-    final parts =
-        raw.split(',').map((s) => double.tryParse(s.trim())).toList();
+    final parts = raw.split(',').map((s) => double.tryParse(s.trim())).toList();
     if (parts.length != 6 || parts.any((e) => e == null)) {
       return CustomReaderColors.fallback;
     }
@@ -330,7 +356,8 @@ class MirrorAppSettings {
 
   /// Maximum on-device audiobook cache budget (bytes). Default 2 GB.
   int get offlineCacheBudgetBytes =>
-      _prefs.getInt('offlineCacheBudgetBytes') ?? kDefaultOfflineCacheBudgetBytes;
+      _prefs.getInt('offlineCacheBudgetBytes') ??
+      kDefaultOfflineCacheBudgetBytes;
   Future<void> setOfflineCacheBudgetBytes(int v) =>
       _prefs.setInt('offlineCacheBudgetBytes', v);
 
@@ -346,8 +373,7 @@ class MirrorAppSettings {
   Future<void> saveChapterIndex(int index, String bookId) =>
       _prefs.setInt('readPos_ch_$bookId', index);
 
-  int savedPageIndex(String bookId) =>
-      _prefs.getInt('readPos_pg_$bookId') ?? 0;
+  int savedPageIndex(String bookId) => _prefs.getInt('readPos_pg_$bookId') ?? 0;
   Future<void> savePageIndex(int index, String bookId) =>
       _prefs.setInt('readPos_pg_$bookId', index);
 

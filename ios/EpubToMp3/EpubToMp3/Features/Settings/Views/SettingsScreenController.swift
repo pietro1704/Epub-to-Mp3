@@ -46,6 +46,10 @@ final class SettingsScreenController: UITableViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
+        tableView.cellLayoutMarginsFollowReadableWidth = true
+        tableView.rowHeight = UITableView.automaticDimension
+        tableView.estimatedRowHeight = 64
+        tableView.accessibilityLabel = L10n.string("settings.title")
         tableView.register(UITableViewCell.self, forCellReuseIdentifier: "Cell")
         tableView.register(IOSInlineTextFieldCell.self, forCellReuseIdentifier: "TextField")
         tableView.register(IOSSwitchCell.self, forCellReuseIdentifier: "Switch")
@@ -223,6 +227,11 @@ final class SettingsScreenController: UITableViewController {
             content.image = UIImage(systemName: "arrow.down.to.line")
         }
         cell.contentConfiguration = content
+        cell.accessibilityLabel = content.text
+        cell.accessibilityValue = content.secondaryText
+        cell.accessibilityHint = indexPath.row == 6
+            ? L10n.string("settings.autoScrollHint")
+            : L10n.string("settings.openOptionHint")
         if indexPath.row == 6 {
             cell.accessoryType = settings.readerAutoScroll ? .checkmark : .none
         }

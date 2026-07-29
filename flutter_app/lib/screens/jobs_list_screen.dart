@@ -19,9 +19,9 @@ class JobsListScreen extends ConsumerWidget {
         actions: [
           IconButton(
             icon: const Icon(Icons.settings),
-            onPressed: () => Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const SettingsScreen()),
-            ),
+            onPressed: () => Navigator.of(
+              context,
+            ).push(MaterialPageRoute(builder: (_) => const SettingsScreen())),
           ),
         ],
       ),
@@ -30,15 +30,11 @@ class JobsListScreen extends ConsumerWidget {
         child: sessions.when(
           loading: () => const Center(child: CircularProgressIndicator()),
           error: (e, _) => ListView(
-            children: [
-              ListTile(title: Text(t.errorWithMessage('$e'))),
-            ],
+            children: [ListTile(title: Text(t.errorWithMessage('$e')))],
           ),
           data: (list) {
             if (list.isEmpty) {
-              return ListView(
-                children: [ListTile(title: Text(t.noJobs))],
-              );
+              return ListView(children: [ListTile(title: Text(t.noJobs))]);
             }
             return ListView.separated(
               itemCount: list.length,
@@ -49,11 +45,14 @@ class JobsListScreen extends ConsumerWidget {
                 return ListTile(
                   title: Text(s.bookTitle),
                   subtitle: Text(
-                      '${s.engine ?? '-'} • ${s.outcome ?? '-'} • ${s.timestamp}'),
+                    '${s.engine ?? '-'} • ${s.outcome ?? '-'} • ${s.timestamp}',
+                  ),
                   onTap: () {
-                    Navigator.of(context).push(MaterialPageRoute(
-                      builder: (_) => JobDetailScreen(session: s),
-                    ));
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => JobDetailScreen(session: s),
+                      ),
+                    );
                   },
                 );
               },

@@ -223,9 +223,9 @@ const _currentlyReadingKey = 'currentlyReadingBookId';
 
 /// The book currently open in the Reader tab. Persisted across launches.
 final currentlyReadingBookIdProvider =
-    StateNotifierProvider<_PersistedStringNotifier, String?>((ref) {
+    StateNotifierProvider<_ReaderSessionNotifier, String?>((ref) {
       final prefs = ref.watch(sharedPrefsProvider);
-      return _PersistedStringNotifier(prefs, _currentlyReadingKey);
+      return _ReaderSessionNotifier(prefs, _currentlyReadingKey, ref);
     });
 
 /// The book whose audio is actively playing/paused. Ephemeral (not persisted).
@@ -263,12 +263,13 @@ final rootTabIndexProvider = StateProvider<int>((ref) => 0);
 
 /// A trivial persisted String? notifier. Reads a SharedPreferences key on
 /// construction and writes on every `set`.
-class _PersistedStringNotifier extends StateNotifier<String?> {
-  _PersistedStringNotifier(this._prefs, this._key)
+class _ReaderSessionNotifier extends StateNotifier<String?> {
+  _ReaderSessionNotifier(this._prefs, this._key, this._ref)
     : super(_prefs.getString(_key));
 
   final SharedPreferences _prefs;
   final String _key;
+  final Ref _ref;
 
   void set(String? value) {
     state = value;
@@ -277,5 +278,10 @@ class _PersistedStringNotifier extends StateNotifier<String?> {
     } else {
       _prefs.setString(_key, value);
     }
+
+    // Opening a book is also the reader's mini-player context switch. This
+    // keeps both surfaces bound to the same book even when navigation is
+    // initiated by a deep link, document import, or a restored session.
+    _ref.read(currentlyPlayingBookIdProvider.notifier).state = value;
   }
 }

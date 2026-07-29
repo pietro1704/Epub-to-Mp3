@@ -3,6 +3,25 @@ import Combine
 import UIKit
 
 @MainActor
+final class AdaptiveMaterialView: UIVisualEffectView {
+    init() {
+        if #available(iOS 26.0, *) {
+            super.init(effect: UIGlassEffect(style: .regular))
+        } else {
+            super.init(effect: UIBlurEffect(style: .systemMaterial))
+        }
+        translatesAutoresizingMaskIntoConstraints = false
+        isUserInteractionEnabled = false
+        accessibilityElementsHidden = true
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+}
+
+@MainActor
 final class IOSRootContainerController: UIViewController {
     private let settings: AppSettings
     private let library: LibraryStore
@@ -17,6 +36,9 @@ final class IOSRootContainerController: UIViewController {
 
     private var cancellables: Set<AnyCancellable> = []
     private var presentedErrorMessage: String?
+    private var readerBottomToMiniPlayer: NSLayoutConstraint!
+    private var readerBottomToRoot: NSLayoutConstraint!
+    private var isImmersiveReaderMode = false
 
     init(
         settings: AppSettings,
@@ -94,7 +116,6 @@ final class IOSRootContainerController: UIViewController {
             readerController.view.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             readerController.view.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             readerController.view.topAnchor.constraint(equalTo: view.topAnchor),
-            readerController.view.bottomAnchor.constraint(equalTo: miniPlayerController.view.topAnchor),
 
             miniPlayerController.view.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             miniPlayerController.view.trailingAnchor.constraint(equalTo: view.trailingAnchor),
@@ -106,12 +127,26 @@ final class IOSRootContainerController: UIViewController {
             fullPlayerController.view.bottomAnchor.constraint(equalTo: view.bottomAnchor),
         ])
 
+        readerBottomToMiniPlayer = readerController.view.bottomAnchor.constraint(equalTo: miniPlayerController.view.topAnchor)
+        readerBottomToRoot = readerController.view.bottomAnchor.constraint(equalTo: view.bottomAnchor)
+        readerBottomToMiniPlayer.isActive = true
+        readerController.onReaderChromeVisibilityChanged = { [weak self] isHidden in
+            self?.setImmersiveReaderMode(isHidden)
+        }
+
         miniPlayerController.view.backgroundColor = .clear
         fullPlayerController.view.backgroundColor = .clear
 
         bindState()
         updateTheme(settings.readerTheme)
         refreshOverlayState()
+    }
+
+    private func setImmersiveReaderMode(_ isHidden: Bool) {
+        isImmersiveReaderMode = isHidden
+        miniPlayerController.view.isHidden = isHidden
+        readerBottomToMiniPlayer.isActive = !isHidden
+        readerBottomToRoot.isActive = isHidden
     }
 
     func updateTheme(_ theme: ReaderTheme) {
@@ -159,7 +194,8 @@ final class IOSRootContainerController: UIViewController {
         // The reader owns the full screen while open. The library/settings/
         // conversion tabs must not remain visible underneath its player bar.
         shellController.tabBar.isHidden = readerActive
-        miniPlayerController.view.isHidden = !showMini
+        if !readerActive { isImmersiveReaderMode = false }
+        miniPlayerController.view.isHidden = !showMini || isImmersiveReaderMode
         fullPlayerController.view.isHidden = !playerPresentation.showingFullPlayer
         fullPlayerController.view.alpha = playerPresentation.showingFullPlayer ? 1 : 0
         presentPlayerErrorIfNeeded()

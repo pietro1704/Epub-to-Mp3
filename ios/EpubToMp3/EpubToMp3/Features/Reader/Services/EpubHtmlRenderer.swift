@@ -285,7 +285,11 @@ enum EpubHtmlRenderer {
         let suppressItalic = settings.readerSuppressItalic
         let letterSpacing = settings.readerLetterSpacing
 
+        #if canImport(UIKit)
+        let targetSize = UIFontMetrics(forTextStyle: .body).scaledValue(for: settings.readerPointSize)
+        #else
         let targetSize = settings.readerPointSize
+        #endif
         let targetFamily = familyName(for: settings.readerFontFamily)
         let targetFG = resolvedForeground(for: settings)
         let targetBG = resolvedBackground(for: settings)

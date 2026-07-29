@@ -22,20 +22,19 @@ class TocDrawer extends StatelessWidget {
     final progress = snapshot?.chapterProgress;
     if (progress == null) return null;
     return progress.cast<ChapterProgress?>().firstWhere(
-          (c) => c!.index == index,
-          orElse: () => null,
-        );
+      (c) => c!.index == index,
+      orElse: () => null,
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    final chapters = fulltext?.chapters ??
+    final chapters =
+        fulltext?.chapters ??
         snapshot?.chapterProgress
-            ?.map((c) => FulltextChapter(
-                  index: c.index,
-                  name: c.name,
-                  text: '',
-                ))
+            ?.map(
+              (c) => FulltextChapter(index: c.index, name: c.name, text: ''),
+            )
             .toList() ??
         const <FulltextChapter>[];
 
@@ -50,9 +49,9 @@ class TocDrawer extends StatelessWidget {
               padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
               child: Text(
                 AppLocalizations.of(context)?.tocTitle ?? 'Chapters',
-                style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                      fontWeight: FontWeight.bold,
-                    ),
+                style: Theme.of(
+                  context,
+                ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
               ),
             ),
             const Divider(height: 1),
@@ -72,7 +71,9 @@ class TocDrawer extends StatelessWidget {
                     liveRegion: isCurrent,
                     child: ListTile(
                       selected: isCurrent,
-                      selectedTileColor: cs.primaryContainer.withValues(alpha: 0.3),
+                      selectedTileColor: cs.primaryContainer.withValues(
+                        alpha: 0.3,
+                      ),
                       leading: _buildLeading(
                         context,
                         isCurrent: isCurrent,
@@ -84,19 +85,24 @@ class TocDrawer extends StatelessWidget {
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
-                          fontWeight: isCurrent ? FontWeight.w600 : FontWeight.normal,
+                          fontWeight: isCurrent
+                              ? FontWeight.w600
+                              : FontWeight.normal,
                         ),
                       ),
                       subtitle: charCount > 0
                           ? Text(
                               _formatCharCount(charCount),
-                              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                    color: cs.onSurfaceVariant,
-                                  ),
+                              style: Theme.of(context).textTheme.bodySmall
+                                  ?.copyWith(color: cs.onSurfaceVariant),
                             )
                           : null,
                       trailing: hasAudio
-                          ? Icon(Icons.check_circle, size: 18, color: cs.primary)
+                          ? Icon(
+                              Icons.check_circle,
+                              size: 18,
+                              color: cs.primary,
+                            )
                           : null,
                       onTap: () {
                         Navigator.of(context).pop();
@@ -127,10 +133,7 @@ class TocDrawer extends StatelessWidget {
       return SizedBox(
         width: 24,
         height: 24,
-        child: CircularProgressIndicator(
-          strokeWidth: 2,
-          color: cs.primary,
-        ),
+        child: CircularProgressIndicator(strokeWidth: 2, color: cs.primary),
       );
     }
     return Icon(

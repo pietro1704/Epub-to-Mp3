@@ -18,7 +18,7 @@ import '../views/reader_search_overlay.dart';
 import '../views/reader_settings_sheet.dart';
 import '../views/reader_theme_colors.dart';
 import 'bookmarks_list_screen.dart';
-import 'reader_view.dart' as scroll_reader;
+import '../views/reader_view.dart' as reader_ui;
 import 'toc_drawer.dart';
 
 class PlayerReaderScreen extends ConsumerStatefulWidget {
@@ -26,8 +26,7 @@ class PlayerReaderScreen extends ConsumerStatefulWidget {
   final String jobId;
 
   @override
-  ConsumerState<PlayerReaderScreen> createState() =>
-      _PlayerReaderScreenState();
+  ConsumerState<PlayerReaderScreen> createState() => _PlayerReaderScreenState();
 }
 
 class _PlayerReaderScreenState extends ConsumerState<PlayerReaderScreen> {
@@ -107,8 +106,9 @@ class _PlayerReaderScreenState extends ConsumerState<PlayerReaderScreen> {
     // truth for engine identity: it ref.watches the provider and
     // re-binds the coordinator when settings change. Here we just
     // need the position subscription wired up.
-    _sentenceSync ??=
-        SentenceSyncCoordinator(ref.read(syncEngineProvider(widget.jobId)));
+    _sentenceSync ??= SentenceSyncCoordinator(
+      ref.read(syncEngineProvider(widget.jobId)),
+    );
     _positionSub = player.position.listen((pos) {
       if (!mounted) return;
       _sentenceSync?.updatePosition(pos.inMilliseconds / 1000.0);
@@ -145,7 +145,8 @@ class _PlayerReaderScreenState extends ConsumerState<PlayerReaderScreen> {
     final player = ref.read(audioPlayerProvider(widget.jobId));
     // Prefer the live SSE snapshot; fall back to the one-shot fetch.
     final streamSnap = ref.read(jobStreamProvider(widget.jobId));
-    final job = streamSnap.valueOrNull ??
+    final job =
+        streamSnap.valueOrNull ??
         ref.read(jobSnapshotProvider(widget.jobId)).valueOrNull;
     showModalBottomSheet(
       context: context,
@@ -173,7 +174,8 @@ class _PlayerReaderScreenState extends ConsumerState<PlayerReaderScreen> {
   void _toggleBookmark() {
     final t = AppLocalizations.of(context)!;
     final store = ref.read(bookmarkStoreProvider);
-    final snapshot = ref.read(jobStreamProvider(widget.jobId)).valueOrNull ??
+    final snapshot =
+        ref.read(jobStreamProvider(widget.jobId)).valueOrNull ??
         ref.read(jobSnapshotProvider(widget.jobId)).valueOrNull;
     final chapters = snapshot?.playableChapters ?? [];
     final chTitle = _currentChapterIndex < chapters.length
@@ -188,18 +190,20 @@ class _PlayerReaderScreenState extends ConsumerState<PlayerReaderScreen> {
     final router = BookmarkAxisRouter(playableChapters: chapters);
     final existing = store
         .bookmarksForBook(widget.jobId)
-        .where((b) =>
-            !b.isHighlight &&
-            router.matchesCurrentPosition(
-              bookmark: b,
-              currentPlayerIndex: _currentChapterIndex,
-            ))
+        .where(
+          (b) =>
+              !b.isHighlight &&
+              router.matchesCurrentPosition(
+                bookmark: b,
+                currentPlayerIndex: _currentChapterIndex,
+              ),
+        )
         .firstOrNull;
     if (existing != null) {
       store.remove(existing.id);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(t.bookmarkRemoved)),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(t.bookmarkRemoved)));
     } else {
       final epubIdx = router.saveValueForPlayerIndex(_currentChapterIndex);
       if (epubIdx == null) return;
@@ -208,9 +212,9 @@ class _PlayerReaderScreenState extends ConsumerState<PlayerReaderScreen> {
         chapterIndex: epubIdx,
         chapterTitle: chTitle,
       );
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(t.bookmarkAdded)),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(t.bookmarkAdded)));
     }
   }
 
@@ -230,14 +234,15 @@ class _PlayerReaderScreenState extends ConsumerState<PlayerReaderScreen> {
             // entries may still be on the playable axis. The router
             // tries EPUB first, then falls back, returning the
             // playable-axis position the audio queue should land on.
-            final snap = ref
-                    .read(jobStreamProvider(widget.jobId))
-                    .valueOrNull ??
+            final snap =
+                ref.read(jobStreamProvider(widget.jobId)).valueOrNull ??
                 ref.read(jobSnapshotProvider(widget.jobId)).valueOrNull;
             final router = BookmarkAxisRouter(
-                playableChapters: snap?.playableChapters ?? const []);
-            final playable =
-                router.targetPlayerIndexForStoredValue(storedValue);
+              playableChapters: snap?.playableChapters ?? const [],
+            );
+            final playable = router.targetPlayerIndexForStoredValue(
+              storedValue,
+            );
             if (playable != null) {
               setState(() => _currentChapterIndex = playable);
             }
@@ -263,14 +268,14 @@ class _PlayerReaderScreenState extends ConsumerState<PlayerReaderScreen> {
         filename: zip.name,
       );
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(t.downloadComplete)),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(t.downloadComplete)));
     } catch (_) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(t.downloadFailed)),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(t.downloadFailed)));
     } finally {
       if (mounted) setState(() => _downloading = false);
     }
@@ -288,8 +293,10 @@ class _PlayerReaderScreenState extends ConsumerState<PlayerReaderScreen> {
 
     final fulltext = ref.watch(fulltextProvider(widget.jobId));
     final settings = ref.watch(settingsProvider);
-    final bg = ReaderThemeColors.background(settings.readerTheme,
-        custom: settings.readerCustomColors);
+    final bg = ReaderThemeColors.background(
+      settings.readerTheme,
+      custom: settings.readerCustomColors,
+    );
 
     final snapshot = job.valueOrNull;
     final hasZip = snapshot?.outputs?.any((o) => o.isZip) ?? false;
@@ -326,8 +333,7 @@ class _PlayerReaderScreenState extends ConsumerState<PlayerReaderScreen> {
                           child: SizedBox(
                             width: 24,
                             height: 24,
-                            child:
-                                CircularProgressIndicator(strokeWidth: 2),
+                            child: CircularProgressIndicator(strokeWidth: 2),
                           ),
                         )
                       : IconButton(
@@ -350,19 +356,22 @@ class _PlayerReaderScreenState extends ConsumerState<PlayerReaderScreen> {
                     // so the bookmark icon stays accurate for both modern
                     // EPUB-axis saves and legacy playable-axis entries.
                     final router = BookmarkAxisRouter(
-                        playableChapters:
-                            snapshot?.playableChapters ?? const []);
+                      playableChapters: snapshot?.playableChapters ?? const [],
+                    );
                     final hasIt = store
                         .bookmarksForBook(widget.jobId)
-                        .any((b) =>
-                            !b.isHighlight &&
-                            router.matchesCurrentPosition(
-                              bookmark: b,
-                              currentPlayerIndex: _currentChapterIndex,
-                            ));
+                        .any(
+                          (b) =>
+                              !b.isHighlight &&
+                              router.matchesCurrentPosition(
+                                bookmark: b,
+                                currentPlayerIndex: _currentChapterIndex,
+                              ),
+                        );
                     return IconButton(
                       icon: Icon(
-                          hasIt ? Icons.bookmark : Icons.bookmark_border),
+                        hasIt ? Icons.bookmark : Icons.bookmark_border,
+                      ),
                       onPressed: _toggleBookmark,
                       tooltip: t.addBookmark,
                     );
@@ -391,9 +400,9 @@ class _PlayerReaderScreenState extends ConsumerState<PlayerReaderScreen> {
         onJump: (epubIdx) {
           final playable =
               TocNavigationCoordinator.targetPlayableIndexForTocTap(
-            tappedEpubIndex: epubIdx,
-            playableChapters: snapshot?.playableChapters ?? const [],
-          );
+                tappedEpubIndex: epubIdx,
+                playableChapters: snapshot?.playableChapters ?? const [],
+              );
           if (playable != null) {
             setState(() => _currentChapterIndex = playable);
           }
@@ -418,20 +427,20 @@ class _PlayerReaderScreenState extends ConsumerState<PlayerReaderScreen> {
                 onExpandPlayer: _showFullPlayer,
               );
               if (wide) {
-                return Row(children: [
-                  Expanded(child: reader),
-                  const VerticalDivider(width: 1),
-                  if (_chromeVisible)
-                    SizedBox(width: 320, child: controls),
-                ]);
+                return Row(
+                  children: [
+                    Expanded(child: reader),
+                    const VerticalDivider(width: 1),
+                    if (_chromeVisible) SizedBox(width: 320, child: controls),
+                  ],
+                );
               }
-              return Column(children: [
-                Expanded(child: reader),
-                if (_chromeVisible) ...[
-                  const Divider(height: 1),
-                  controls,
+              return Column(
+                children: [
+                  Expanded(child: reader),
+                  if (_chromeVisible) ...[const Divider(height: 1), controls],
                 ],
-              ]);
+              );
             },
           ),
           if (_searchVisible)
@@ -444,9 +453,9 @@ class _PlayerReaderScreenState extends ConsumerState<PlayerReaderScreen> {
                 // unchanged.
                 final playable =
                     TocNavigationCoordinator.targetPlayableIndexForTocTap(
-                  tappedEpubIndex: epubIdx,
-                  playableChapters: snapshot?.playableChapters ?? const [],
-                );
+                      tappedEpubIndex: epubIdx,
+                      playableChapters: snapshot?.playableChapters ?? const [],
+                    );
                 setState(() {
                   if (playable != null) _currentChapterIndex = playable;
                   _searchVisible = false;
@@ -460,7 +469,7 @@ class _PlayerReaderScreenState extends ConsumerState<PlayerReaderScreen> {
   }
 }
 
-class _Reader extends StatelessWidget {
+class _Reader extends ConsumerWidget {
   const _Reader({
     required this.fulltext,
     required this.chapterIndex,
@@ -478,7 +487,7 @@ class _Reader extends StatelessWidget {
   final VoidCallback? onCenterTap;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     return fulltext.when(
       loading: () => Center(child: Text(t.loadingFulltext)),
       error: (e, _) {
@@ -499,11 +508,15 @@ class _Reader extends StatelessWidget {
           playableChapters: playableChapters,
           playableIndex: chapterIndex,
         );
-        final chapter = resolved ??
+        final chapter =
+            resolved ??
             data.chapters[chapterIndex.clamp(0, data.chapters.length - 1)];
-        return scroll_reader.ReaderView(
-          jobId: jobId,
+        return reader_ui.ReaderView(
           chapter: chapter,
+          spans: chapter.splitSentences(),
+          currentSentenceId: ref
+              .watch(currentSentenceProvider(jobId))
+              .valueOrNull,
           onCenterTap: onCenterTap,
         );
       },
@@ -535,8 +548,7 @@ class _PlayerControls extends ConsumerWidget {
       final total = snap.chaptersTotal ?? 0;
       final done = snap.chaptersCompleted ?? 0;
       if (total > 0) {
-        statusText =
-            '${snap.state} • ${t.chaptersConverted(done, total)}';
+        statusText = '${snap.state} • ${t.chaptersConverted(done, total)}';
       } else {
         statusText =
             '${snap.state} • ${(snap.progressPercent ?? 0).toStringAsFixed(1)}%';
@@ -562,7 +574,8 @@ class _PlayerControls extends ConsumerWidget {
                     return IconButton(
                       iconSize: 48,
                       icon: Icon(
-                          playing ? Icons.pause_circle : Icons.play_circle),
+                        playing ? Icons.pause_circle : Icons.play_circle,
+                      ),
                       onPressed: () async {
                         final j = snapshot;
                         if (j != null && player.chapters.isEmpty) {

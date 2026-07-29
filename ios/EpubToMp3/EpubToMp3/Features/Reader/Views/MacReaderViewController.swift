@@ -155,6 +155,7 @@ final class MacReaderViewController: NSViewController, NSTableViewDataSource, NS
         let appearance = NSButton(title: "Aa", target: self, action: #selector(showSettings(_:)))
         appearance.bezelStyle = .texturedRounded
         appearance.toolTip = L10n.string("reader.settings")
+        appearance.setAccessibilityLabel(L10n.string("reader.settings"))
         appearance.setAccessibilityIdentifier("reader.settings")
 
         bookTitleLabel.font = .systemFont(ofSize: 13, weight: .semibold)
@@ -288,20 +289,27 @@ final class MacReaderViewController: NSViewController, NSTableViewDataSource, NS
         columns.target = self
         columns.action = #selector(columnsChanged(_:))
 
-        let stack = NSStackView(views: [label("Fonte"), font, sizeButtons, label("Tema"), theme, label("Layout"), layout, label("Margens"), margin, label("Kerning"), kerning, label("Colunas"), columns])
+        let stack = NSStackView(views: [label("reader.font"), font, sizeButtons, label("reader.theme"), theme, label("reader.layout"), layout, label("reader.margins"), margin, label("reader.kerning"), kerning, label("reader.columns"), columns])
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.spacing = 8
         stack.edgeInsets = NSEdgeInsets(top: 14, left: 14, bottom: 14, right: 14)
+        let scrollView = NSScrollView()
+        scrollView.hasVerticalScroller = true
+        scrollView.autohidesScrollers = true
+        scrollView.documentView = stack
+        scrollView.drawsBackground = false
         let controller = NSViewController()
-        controller.view = stack
+        controller.view = scrollView
         settingsPopover.contentViewController = controller
-        settingsPopover.contentSize = NSSize(width: 220, height: 360)
+        settingsPopover.contentSize = NSSize(width: 260, height: 420)
         settingsPopover.behavior = .transient
     }
 
-    private func label(_ value: String) -> NSTextField {
-        NSTextField(labelWithString: value)
+    private func label(_ key: String) -> NSTextField {
+        let field = NSTextField(labelWithString: L10n.string(key))
+        field.setAccessibilityRole(.staticText)
+        return field
     }
 
     @objc private func showSettings(_ sender: NSButton) {

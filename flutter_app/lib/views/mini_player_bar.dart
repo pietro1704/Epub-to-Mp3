@@ -28,40 +28,49 @@ class MiniPlayerBar extends ConsumerWidget {
 
     final library = ref.watch(libraryStoreProvider);
     final book = library.books.cast().firstWhere(
-          (b) => b.id == playingBookId,
-          orElse: () => null,
-        );
+      (b) => b.id == playingBookId,
+      orElse: () => null,
+    );
     if (book == null) return const SizedBox.shrink();
 
     final player = ref.watch(globalAudioPlayerProvider);
     final backgroundHandler = ref.watch(backgroundAudioHandlerProvider);
     if (backgroundHandler != null) {
       final chapterIndex = player.currentIndexValue;
-      final chapter = chapterIndex != null &&
+      final chapter =
+          chapterIndex != null &&
               chapterIndex >= 0 &&
               chapterIndex < player.chapters.length
           ? player.chapters[chapterIndex]
           : null;
-      unawaited(backgroundHandler.setMetadata(background_audio.BackgroundAudioMetadata(
-        bookId: book.id,
-        bookTitle: book.resolvedTitle,
-        author: book.author,
-        chapterTitle: chapter?.displayTitle,
-        chapterIndex: chapter?.index,
-      )));
+      unawaited(
+        backgroundHandler.setMetadata(
+          background_audio.BackgroundAudioMetadata(
+            bookId: book.id,
+            bookTitle: book.resolvedTitle,
+            author: book.author,
+            chapterTitle: chapter?.displayTitle,
+            chapterIndex: chapter?.index,
+          ),
+        ),
+      );
     }
     final cs = Theme.of(context).colorScheme;
     final Uint8List? coverArt = _decodeCover(book.coverBase64);
 
     return GestureDetector(
-      onTap: () => _showFullPlayer(context, player, book.resolvedTitle,
-          book.author, coverArt, playingBookId),
+      onTap: () => _showFullPlayer(
+        context,
+        player,
+        book.resolvedTitle,
+        book.author,
+        coverArt,
+        playingBookId,
+      ),
       child: Container(
         decoration: BoxDecoration(
           color: cs.surfaceContainerHighest,
-          border: Border(
-            top: BorderSide(color: cs.outlineVariant, width: 0.5),
-          ),
+          border: Border(top: BorderSide(color: cs.outlineVariant, width: 0.5)),
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -70,11 +79,9 @@ class MiniPlayerBar extends ConsumerWidget {
             StreamBuilder<Duration>(
               stream: player.position,
               builder: (context, snap) {
-                final pos =
-                    (snap.data?.inMilliseconds ?? 0) / 1000.0;
+                final pos = (snap.data?.inMilliseconds ?? 0) / 1000.0;
                 final dur = player.durationSeconds;
-                final fraction =
-                    dur > 0 ? (pos / dur).clamp(0.0, 1.0) : 0.0;
+                final fraction = dur > 0 ? (pos / dur).clamp(0.0, 1.0) : 0.0;
                 return LinearProgressIndicator(
                   value: fraction,
                   minHeight: 2,
@@ -84,8 +91,7 @@ class MiniPlayerBar extends ConsumerWidget {
               },
             ),
             Padding(
-              padding: const EdgeInsets.symmetric(
-                  horizontal: 12, vertical: 6),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
               child: Row(
                 children: [
                   // Cover art 44x44 — decorative, excluded from semantics
@@ -107,8 +113,11 @@ class MiniPlayerBar extends ConsumerWidget {
                               borderRadius: BorderRadius.circular(6),
                               color: cs.primaryContainer,
                             ),
-                            child: Icon(Icons.headphones,
-                                color: cs.onPrimaryContainer, size: 22),
+                            child: Icon(
+                              Icons.headphones,
+                              color: cs.onPrimaryContainer,
+                              size: 22,
+                            ),
                           ),
                   ),
                   const SizedBox(width: 10),
@@ -125,9 +134,7 @@ class MiniPlayerBar extends ConsumerWidget {
                             book.resolvedTitle,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: Theme.of(context)
-                                .textTheme
-                                .bodyMedium
+                            style: Theme.of(context).textTheme.bodyMedium
                                 ?.copyWith(fontWeight: FontWeight.w600),
                           ),
                           if (book.author != null)
@@ -135,9 +142,7 @@ class MiniPlayerBar extends ConsumerWidget {
                               book.author!,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style: Theme.of(context)
-                                  .textTheme
-                                  .bodySmall
+                              style: Theme.of(context).textTheme.bodySmall
                                   ?.copyWith(color: cs.onSurfaceVariant),
                             ),
                         ],
@@ -186,17 +191,19 @@ class MiniPlayerBar extends ConsumerWidget {
                     tooltip: 'Playback speed',
                     padding: EdgeInsets.zero,
                     itemBuilder: (_) => [0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0]
-                        .map((s) => PopupMenuItem(
-                              value: s,
-                              child: Text(
-                                '${s}x',
-                                style: TextStyle(
-                                  fontWeight: player.speed == s
-                                      ? FontWeight.bold
-                                      : FontWeight.normal,
-                                ),
+                        .map(
+                          (s) => PopupMenuItem(
+                            value: s,
+                            child: Text(
+                              '${s}x',
+                              style: TextStyle(
+                                fontWeight: player.speed == s
+                                    ? FontWeight.bold
+                                    : FontWeight.normal,
                               ),
-                            ))
+                            ),
+                          ),
+                        )
                         .toList(),
                     child: Semantics(
                       label: 'Speed ${player.speed}x',
@@ -205,9 +212,7 @@ class MiniPlayerBar extends ConsumerWidget {
                         padding: const EdgeInsets.symmetric(horizontal: 4),
                         child: Text(
                           '${player.speed}x',
-                          style: Theme.of(context)
-                              .textTheme
-                              .labelSmall
+                          style: Theme.of(context).textTheme.labelSmall
                               ?.copyWith(fontWeight: FontWeight.w600),
                         ),
                       ),
@@ -233,12 +238,15 @@ class MiniPlayerBar extends ConsumerWidget {
                           ),
                           onPressed: () {
                             const presets = [
-                              0.0, 900.0, 1800.0, 2700.0, 3600.0
+                              0.0,
+                              900.0,
+                              1800.0,
+                              2700.0,
+                              3600.0,
                             ];
                             final current = player.sleepTimerRemaining;
-                            final next = presets
-                                    .where((p) => p > current)
-                                    .firstOrNull ??
+                            final next =
+                                presets.where((p) => p > current).firstOrNull ??
                                 0.0;
                             player.setSleepTimer(seconds: next);
                           },

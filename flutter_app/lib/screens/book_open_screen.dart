@@ -473,14 +473,19 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen> {
             voice: voice,
             outputPath: mp3Path,
           );
-          if (!queued) throw StateError('Could not enqueue background conversion');
+          if (!queued)
+            throw StateError('Could not enqueue background conversion');
           final deadline = DateTime.now().add(const Duration(minutes: 30));
-          while (!await File(mp3Path).exists() && DateTime.now().isBefore(deadline)) {
+          while (!await File(mp3Path).exists() &&
+              DateTime.now().isBefore(deadline)) {
             await Future<void>.delayed(const Duration(seconds: 1));
           }
           result = await File(mp3Path).exists()
               ? <String, dynamic>{'ok': true, 'path': mp3Path}
-              : <String, dynamic>{'ok': false, 'error': 'Background conversion timed out'};
+              : <String, dynamic>{
+                  'ok': false,
+                  'error': 'Background conversion timed out',
+                };
         } else {
           result = await bridge.convertChapter(
             text: ch.text,

@@ -57,6 +57,10 @@ final class JobDetailScreenController: UITableViewController {
         super.viewDidLoad()
         tableView.register(UITableViewCell.self, forCellReuseIdentifier: "Cell")
         tableView.register(UITableViewCell.self, forCellReuseIdentifier: "Subtitle")
+        tableView.cellLayoutMarginsFollowReadableWidth = true
+        tableView.rowHeight = UITableView.automaticDimension
+        tableView.estimatedRowHeight = 64
+        tableView.accessibilityLabel = L10n.string("jobDetail.title")
         viewModelObserver = viewModel.objectWillChange.sink { [weak self] _ in
             DispatchQueue.main.async {
                 self?.tableView.reloadData()
@@ -210,6 +214,8 @@ final class JobDetailScreenController: UITableViewController {
         content.secondaryTextProperties.numberOfLines = 3
         cell.contentConfiguration = content
         cell.selectionStyle = .none
+        cell.accessibilityLabel = content.text
+        cell.accessibilityValue = content.secondaryText
         return cell
     }
 
@@ -287,6 +293,8 @@ final class JobDetailScreenController: UITableViewController {
         content.imageProperties.tintColor = .systemRed
         cell.contentConfiguration = content
         cell.selectionStyle = .none
+        cell.accessibilityLabel = content.text
+        cell.accessibilityValue = content.secondaryText
         return cell
     }
 

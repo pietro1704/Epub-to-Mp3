@@ -130,6 +130,7 @@
 "player.divergence.fromWhereStopped" = "Continuar reprodução";
 "player.divergence.fromBeginning" = "Do início";
 "common.cancel" = "Cancelar";
+"common.back" = "Voltar";
 
 /* BookOpenView — estados de erro / vazio / preparando */
 "bookOpen.preparingChapters" = "Preparando capítulos…";
@@ -323,6 +324,19 @@
 
 /* === LibraryView === */
 "library.tagLabel" = "Tag: %@";
+"library.addBookHint" = "Escolha um ou mais livros EPUB ou PDF.";
+"library.filterBooks" = "Ordenar e filtrar livros";
+"library.bookList" = "Biblioteca de livros";
+"library.tags" = "Tags";
+"player.openFullPlayer" = "Abrir player completo";
+"player.openFullPlayerHint" = "Mostrar controles de reprodução ampliados.";
+"app.name" = "Epub-to-Mp3";
+"reader.font" = "Fonte";
+"reader.theme" = "Tema";
+"reader.layout" = "Layout";
+"reader.margins" = "Margens";
+"reader.kerning" = "Espaçamento entre letras";
+"reader.columns" = "Colunas";
 
 /* === TagEditorSheet === */
 "tagEditor.tags" = "Tags";
@@ -500,3 +514,15 @@
 "jobs.historyDetailUnavailable" = "Esta sessão não inclui um ID de job ao vivo.";
 "common.close" = "Fechar";
 "reader.settings" = "Ajustes de leitura";
+"reader.retry" = "Tentar novamente";
+"settings.autoScrollHint" = "Toque duas vezes para alternar a rolagem automática.";
+"settings.openOptionHint" = "Toque duas vezes para escolher esta configuração.";
+"settings.destructiveActionHint" = "Toque duas vezes para apagar permanentemente o áudio baixado.";
+"readerSettings.toggleHint" = "Toque duas vezes para alternar esta configuração.";
+"readerSettings.chooseOptionHint" = "Toque duas vezes para escolher uma opção.";
+"jobs.refreshHint" = "Toque duas vezes para atualizar a lista de conversões.";
+"jobs.openJobHint" = "Toque duas vezes para abrir os detalhes.";
+"convert.chooseFileHint" = "Toque duas vezes para escolher um EPUB ou PDF.";
+"convert.pickFileFirstHint" = "Escolha um livro antes de iniciar a conversão.";
+"convert.startConversionHint" = "Toque duas vezes para iniciar a conversão.";
+"jobDetail.actionHint" = "Toque duas vezes para executar esta ação.";

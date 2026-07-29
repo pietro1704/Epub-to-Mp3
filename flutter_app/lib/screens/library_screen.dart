@@ -45,9 +45,9 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
         await store.importBook(path);
       } on LibraryStoreException catch (e) {
         if (!context.mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(e.message)),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(e.message)));
       }
     }
   }
@@ -58,7 +58,10 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
   }
 
   void _showBookActions(
-      BuildContext context, LibraryStore store, BookEntity book) {
+    BuildContext context,
+    LibraryStore store,
+    BookEntity book,
+  ) {
     final t = AppLocalizations.of(context)!;
     showModalBottomSheet(
       context: context,
@@ -71,19 +74,18 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
               title: Text(t.editTags),
               onTap: () {
                 Navigator.pop(context);
-                showTagEditorSheet(
-                  context: context,
-                  book: book,
-                  store: store,
-                );
+                showTagEditorSheet(context: context, book: book, store: store);
               },
             ),
             ListTile(
-              leading: Icon(Icons.delete_outline,
-                  color: Theme.of(context).colorScheme.error),
-              title: Text(t.removeFromLibrary,
-                  style: TextStyle(
-                      color: Theme.of(context).colorScheme.error)),
+              leading: Icon(
+                Icons.delete_outline,
+                color: Theme.of(context).colorScheme.error,
+              ),
+              title: Text(
+                t.removeFromLibrary,
+                style: TextStyle(color: Theme.of(context).colorScheme.error),
+              ),
               onTap: () {
                 Navigator.pop(context);
                 _confirmRemove(context, store, book);
@@ -96,7 +98,10 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
   }
 
   void _confirmRemove(
-      BuildContext context, LibraryStore store, BookEntity book) {
+    BuildContext context,
+    LibraryStore store,
+    BookEntity book,
+  ) {
     final t = AppLocalizations.of(context)!;
     showDialog(
       context: context,
@@ -142,9 +147,11 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
           return bDate.compareTo(aDate);
         });
       case _SortMode.title:
-        base.sort((a, b) => a.resolvedTitle
-            .toLowerCase()
-            .compareTo(b.resolvedTitle.toLowerCase()));
+        base.sort(
+          (a, b) => a.resolvedTitle.toLowerCase().compareTo(
+            b.resolvedTitle.toLowerCase(),
+          ),
+        );
       case _SortMode.dateAdded:
         base.sort((a, b) => b.addedAt.compareTo(a.addedAt));
     }
@@ -188,8 +195,10 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
               children: [
                 // Search bar
                 Padding(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 8,
+                  ),
                   child: SearchBar(
                     hintText: t.searchLibrary,
                     leading: const Icon(Icons.search),
@@ -229,8 +238,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                               label: Text(tag),
                               selected: _selectedTag == tag,
                               onSelected: (_) => setState(() {
-                                _selectedTag =
-                                    _selectedTag == tag ? null : tag;
+                                _selectedTag = _selectedTag == tag ? null : tag;
                               }),
                             ),
                           ),
@@ -265,8 +273,11 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
       child: Row(
         children: [
           if (_sortMode == mode)
-            Icon(Icons.check,
-                size: 18, color: Theme.of(context).colorScheme.primary)
+            Icon(
+              Icons.check,
+              size: 18,
+              color: Theme.of(context).colorScheme.primary,
+            )
           else
             const SizedBox(width: 18),
           const SizedBox(width: 8),
@@ -403,30 +414,30 @@ class _BookCard extends StatelessWidget {
                   ],
                 ),
               ),
-            Padding(
-              padding: const EdgeInsets.all(8),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    book.resolvedTitle,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: Theme.of(context).textTheme.labelLarge,
-                  ),
-                  if (book.author != null)
+              Padding(
+                padding: const EdgeInsets.all(8),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
                     Text(
-                      book.author!,
-                      maxLines: 1,
+                      book.resolvedTitle,
+                      maxLines: 2,
                       overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.bodySmall,
+                      style: Theme.of(context).textTheme.labelLarge,
                     ),
-                ],
+                    if (book.author != null)
+                      Text(
+                        book.author!,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                  ],
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
-      ),
       ),
     );
   }
@@ -434,10 +445,7 @@ class _BookCard extends StatelessWidget {
   Widget _cover(ColorScheme cs) {
     if (book.coverBase64 != null) {
       try {
-        return Image.memory(
-          base64Decode(book.coverBase64!),
-          fit: BoxFit.cover,
-        );
+        return Image.memory(base64Decode(book.coverBase64!), fit: BoxFit.cover);
       } catch (_) {
         // Fall through to placeholder
       }
@@ -465,20 +473,16 @@ class _StatusBadge extends StatelessWidget {
     final t = AppLocalizations.of(context)!;
     final (icon, label, color) = switch (status) {
       LibraryStatus.offlineReady => (
-          Icons.check_circle,
-          t.offlineReady,
-          Colors.green,
-        ),
+        Icons.check_circle,
+        t.offlineReady,
+        Colors.green,
+      ),
       LibraryStatus.caching => (
-          Icons.cloud_download,
-          t.cachingLabel,
-          Colors.orange,
-        ),
-      LibraryStatus.textOnly => (
-          Icons.book,
-          '',
-          Colors.transparent,
-        ),
+        Icons.cloud_download,
+        t.cachingLabel,
+        Colors.orange,
+      ),
+      LibraryStatus.textOnly => (Icons.book, '', Colors.transparent),
     };
 
     return Container(
@@ -495,10 +499,10 @@ class _StatusBadge extends StatelessWidget {
           Text(
             label,
             style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                  color: color,
-                  fontWeight: FontWeight.w600,
-                  fontSize: 10,
-                ),
+              color: color,
+              fontWeight: FontWeight.w600,
+              fontSize: 10,
+            ),
           ),
         ],
       ),

@@ -149,7 +149,7 @@ final class MacAppKitRootController: NSSplitViewController {
         toggle.bezelStyle = .texturedRounded
         toggle.toolTip = L10n.string("nav.toggleSidebar")
         toggle.setAccessibilityLabel(L10n.string("nav.toggleSidebar"))
-        let title = NSTextField(labelWithString: "Epub-to-Mp3")
+        let title = NSTextField(labelWithString: L10n.string("app.name"))
         title.font = .boldSystemFont(ofSize: 16)
         let menu = NSStackView()
         menu.orientation = .vertical
@@ -396,13 +396,19 @@ private final class MacPlayerBarViewController: NSViewController {
         playButton.bezelStyle = .texturedRounded
         playButton.target = self
         playButton.action = #selector(togglePlayback)
+        playButton.setAccessibilityLabel(L10n.string("player.play"))
+        playButton.toolTip = L10n.string("player.play")
         nextButton.image = NSImage(systemSymbolName: "forward.end.fill", accessibilityDescription: L10n.string("player.nextChapter"))
         nextButton.bezelStyle = .texturedRounded
         nextButton.target = self
         nextButton.action = #selector(nextChapter)
+        nextButton.setAccessibilityLabel(L10n.string("player.nextChapter"))
+        nextButton.toolTip = L10n.string("player.nextChapter")
         rateButton.bezelStyle = .texturedRounded
         rateButton.target = self
         rateButton.action = #selector(showRateMenu)
+        rateButton.setAccessibilityLabel(L10n.string("player.speed"))
+        rateButton.toolTip = L10n.string("player.speed")
         let labels = NSStackView(views: [titleLabel, chapterLabel, etaLabel])
         labels.orientation = .vertical
         labels.spacing = 2
@@ -413,6 +419,8 @@ private final class MacPlayerBarViewController: NSViewController {
         openButton.isBordered = false
         openButton.target = self
         openButton.action = #selector(showFullPlayer)
+        openButton.setAccessibilityLabel(L10n.string("player.openFullPlayer"))
+        openButton.toolTip = L10n.string("player.openFullPlayer")
         openButton.addSubview(info)
         info.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([

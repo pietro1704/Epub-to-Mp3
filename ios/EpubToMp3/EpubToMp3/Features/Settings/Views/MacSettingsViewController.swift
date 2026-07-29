@@ -59,7 +59,13 @@ final class MacSettingsViewController: NSViewController {
                                    action: #selector(clearDownloads))
         let refreshButton = NSButton(title: L10n.string("settings.refreshStorage"),
                                      target: self,
-                                     action: #selector(refreshStorage))
+                                   action: #selector(refreshStorage))
+        fontSizeStepper.setAccessibilityLabel(L10n.string("settings.fontSize"))
+        fontPopup.setAccessibilityLabel(L10n.string("settings.font"))
+        themePopup.setAccessibilityLabel(L10n.string("settings.theme"))
+        layoutPopup.setAccessibilityLabel(L10n.string("settings.layout"))
+        clearButton.setAccessibilityLabel(L10n.string("settings.clearAllDownloads"))
+        refreshButton.setAccessibilityLabel(L10n.string("settings.refreshStorage"))
         func row(_ label: String, _ control: NSView) -> NSStackView {
             let title = NSTextField(labelWithString: label)
             title.setContentHuggingPriority(.required, for: .horizontal)
@@ -84,11 +90,22 @@ final class MacSettingsViewController: NSViewController {
         form.alignment = .leading
         form.spacing = 10
         form.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(form)
+        let scrollView = NSScrollView()
+        scrollView.hasVerticalScroller = true
+        scrollView.autohidesScrollers = true
+        scrollView.drawsBackground = false
+        scrollView.documentView = form
+        scrollView.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(scrollView)
         NSLayoutConstraint.activate([
-            form.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 32),
-            form.trailingAnchor.constraint(lessThanOrEqualTo: view.trailingAnchor, constant: -32),
-            form.topAnchor.constraint(equalTo: view.topAnchor, constant: 24),
+            scrollView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            scrollView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            scrollView.topAnchor.constraint(equalTo: view.topAnchor),
+            scrollView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            form.leadingAnchor.constraint(equalTo: scrollView.contentView.leadingAnchor, constant: 32),
+            form.trailingAnchor.constraint(equalTo: scrollView.contentView.trailingAnchor, constant: -32),
+            form.topAnchor.constraint(equalTo: scrollView.contentView.topAnchor, constant: 24),
+            form.bottomAnchor.constraint(equalTo: scrollView.contentView.bottomAnchor, constant: -24),
             form.widthAnchor.constraint(equalToConstant: 620),
         ])
     }

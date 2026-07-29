@@ -10,6 +10,22 @@ enum ReaderProgressStore {
     struct Entry: Codable, Equatable {
         let chapterIndex: Int
         let offsetFraction: Double
+        let characterOffset: Int?
+
+        private enum CodingKeys: String, CodingKey { case chapterIndex, offsetFraction, characterOffset }
+
+        init(chapterIndex: Int, offsetFraction: Double, characterOffset: Int? = nil) {
+            self.chapterIndex = chapterIndex
+            self.offsetFraction = offsetFraction
+            self.characterOffset = characterOffset
+        }
+
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            chapterIndex = try container.decode(Int.self, forKey: .chapterIndex)
+            offsetFraction = try container.decode(Double.self, forKey: .offsetFraction)
+            characterOffset = try container.decodeIfPresent(Int.self, forKey: .characterOffset)
+        }
     }
 
     private static let storageKey = "readerProgress.v1"
@@ -34,12 +50,14 @@ enum ReaderProgressStore {
         bookId: String,
         chapterIndex: Int,
         offsetFraction: Double,
+        characterOffset: Int? = nil,
         defaults: UserDefaults = .standard
     ) {
         var entries = load(defaults: defaults)
         entries[bookId] = Entry(
             chapterIndex: chapterIndex,
-            offsetFraction: min(max(offsetFraction, 0), 1)
+            offsetFraction: min(max(offsetFraction, 0), 1),
+            characterOffset: characterOffset
         )
         save(entries, defaults: defaults)
     }

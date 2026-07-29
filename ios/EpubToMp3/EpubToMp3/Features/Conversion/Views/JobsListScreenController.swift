@@ -42,6 +42,8 @@ final class JobsListScreenController: UIViewController {
             target: self,
             action: #selector(reloadTapped)
         )
+        navigationItem.rightBarButtonItem?.accessibilityLabel = L10n.string("jobs.refresh")
+        navigationItem.rightBarButtonItem?.accessibilityHint = L10n.string("jobs.refreshHint")
 
         messageLabel.numberOfLines = 0
         messageLabel.textAlignment = .center
@@ -63,7 +65,7 @@ final class JobsListScreenController: UIViewController {
             controller.view.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor),
             controller.view.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor),
             controller.view.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
-            controller.view.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            controller.view.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor),
             loadingView.centerXAnchor.constraint(equalTo: view.centerXAnchor),
             loadingView.centerYAnchor.constraint(equalTo: view.centerYAnchor),
             messageLabel.leadingAnchor.constraint(equalTo: view.layoutMarginsGuide.leadingAnchor),

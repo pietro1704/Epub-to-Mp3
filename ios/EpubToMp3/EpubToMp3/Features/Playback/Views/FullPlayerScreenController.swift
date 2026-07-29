@@ -104,8 +104,7 @@ final class FullPlayerScreenController: UIViewController {
     }
 
     private func buildUI() {
-        let background = UIVisualEffectView(effect: UIBlurEffect(style: .systemUltraThinMaterial))
-        background.translatesAutoresizingMaskIntoConstraints = false
+        let background = AdaptiveMaterialView()
         view.addSubview(background)
         NSLayoutConstraint.activate([
             background.leadingAnchor.constraint(equalTo: view.leadingAnchor),
@@ -192,10 +191,12 @@ final class FullPlayerScreenController: UIViewController {
         rateButton.configuration = rateConfig
         rateButton.translatesAutoresizingMaskIntoConstraints = false
         rateButton.accessibilityIdentifier = "fullPlayer.playbackRateButton"
+        rateButton.accessibilityLabel = L10n.string("player.speed")
         rateButton.showsMenuAsPrimaryAction = true
 
         configureSecondaryButton(tocButton, image: "list.bullet", title: nil, action: #selector(tocTapped))
         configureSecondaryButton(sleepButton, image: "moon.zzz", title: nil, action: nil)
+        tocButton.accessibilityLabel = L10n.string("reader.toc")
         sleepButton.showsMenuAsPrimaryAction = true
 
         airPlayView.translatesAutoresizingMaskIntoConstraints = false
@@ -254,6 +255,9 @@ final class FullPlayerScreenController: UIViewController {
         stackView.addArrangedSubview(volumeView)
         stackView.addArrangedSubview(secondary)
         view.addSubview(stackView)
+        view.bringSubviewToFront(dragHandle)
+        view.bringSubviewToFront(closeButton)
+        view.bringSubviewToFront(stackView)
 
         NSLayoutConstraint.activate([
             dragHandle.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 8),

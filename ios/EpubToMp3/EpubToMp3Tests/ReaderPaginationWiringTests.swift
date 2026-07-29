@@ -22,6 +22,10 @@ final class ReaderPaginationWiringTests: XCTestCase {
         XCTAssertTrue(source.contains("settings.readerLayout == .paginated"))
         XCTAssertTrue(source.contains("ReaderProgressStore.save("))
         XCTAssertTrue(source.contains("ReaderProgressStore.read(bookId:"))
+        XCTAssertTrue(source.contains("layoutManager.usedRect"))
+        XCTAssertFalse(source.contains("/ 1200.0"))
+        XCTAssertTrue(source.contains("return false"))
+        XCTAssertTrue(source.contains("gestureRecognizerShouldBegin"))
     }
 
     func testMacReaderViewControllerSnapsAndPersistsProgress() throws {

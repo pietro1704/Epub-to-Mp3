@@ -61,6 +61,10 @@ final class ConvertScreenController: UITableViewController, UIDocumentPickerDele
 
     override func viewDidLoad() {
         super.viewDidLoad()
+        tableView.cellLayoutMarginsFollowReadableWidth = true
+        tableView.rowHeight = UITableView.automaticDimension
+        tableView.estimatedRowHeight = 64
+        tableView.accessibilityLabel = L10n.string("convert.title")
         if let preselectedFileURL {
             viewModel.selectedFile = preselectedFileURL
         }
@@ -172,6 +176,9 @@ final class ConvertScreenController: UITableViewController, UIDocumentPickerDele
             cell.accessoryType = .disclosureIndicator
         }
         cell.contentConfiguration = content
+        cell.accessibilityLabel = content.text
+        cell.accessibilityValue = content.secondaryText
+        if indexPath.row == 1 { cell.accessibilityHint = L10n.string("convert.chooseFileHint") }
         return cell
     }
 
@@ -296,6 +303,11 @@ final class ConvertScreenController: UITableViewController, UIDocumentPickerDele
             cell.accessoryView = nil
         }
         cell.contentConfiguration = content
+        cell.accessibilityLabel = content.text
+        cell.accessibilityTraits = viewModel.isSubmitting ? .notEnabled : .button
+        cell.accessibilityHint = viewModel.selectedFile == nil
+            ? L10n.string("convert.pickFileFirstHint")
+            : L10n.string("convert.startConversionHint")
         cell.selectionStyle = (viewModel.selectedFile == nil || viewModel.isSubmitting) ? .none : .default
         return cell
     }

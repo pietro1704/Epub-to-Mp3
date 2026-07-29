@@ -7,15 +7,22 @@ class ReaderThemeColors {
   /// Resolve `.auto` to `.light` or `.dark` based on platform brightness.
   /// Accepts an optional [platformBrightness]; when null, queries the
   /// scheduler binding (works outside of widget tree).
-  static ReaderTheme resolveAuto(ReaderTheme theme, {Brightness? platformBrightness}) {
+  static ReaderTheme resolveAuto(
+    ReaderTheme theme, {
+    Brightness? platformBrightness,
+  }) {
     if (theme != ReaderTheme.auto) return theme;
-    final brightness = platformBrightness ??
+    final brightness =
+        platformBrightness ??
         SchedulerBinding.instance.platformDispatcher.platformBrightness;
     return brightness == Brightness.dark ? ReaderTheme.dark : ReaderTheme.light;
   }
 
-  static Color background(ReaderTheme theme,
-      {CustomReaderColors? custom, Brightness? platformBrightness}) {
+  static Color background(
+    ReaderTheme theme, {
+    CustomReaderColors? custom,
+    Brightness? platformBrightness,
+  }) {
     final resolved = resolveAuto(theme, platformBrightness: platformBrightness);
     switch (resolved) {
       case ReaderTheme.auto:
@@ -44,8 +51,11 @@ class ReaderThemeColors {
     }
   }
 
-  static Color foreground(ReaderTheme theme,
-      {CustomReaderColors? custom, Brightness? platformBrightness}) {
+  static Color foreground(
+    ReaderTheme theme, {
+    CustomReaderColors? custom,
+    Brightness? platformBrightness,
+  }) {
     final resolved = resolveAuto(theme, platformBrightness: platformBrightness);
     switch (resolved) {
       case ReaderTheme.auto:
@@ -73,7 +83,10 @@ class ReaderThemeColors {
     }
   }
 
-  static Color previewColor(ReaderTheme theme, {Brightness? platformBrightness}) {
+  static Color previewColor(
+    ReaderTheme theme, {
+    Brightness? platformBrightness,
+  }) {
     final resolved = resolveAuto(theme, platformBrightness: platformBrightness);
     switch (resolved) {
       case ReaderTheme.auto:
@@ -95,7 +108,10 @@ class ReaderThemeColors {
     }
   }
 
-  static Brightness brightness(ReaderTheme theme, {Brightness? platformBrightness}) {
+  static Brightness brightness(
+    ReaderTheme theme, {
+    Brightness? platformBrightness,
+  }) {
     final resolved = resolveAuto(theme, platformBrightness: platformBrightness);
     switch (resolved) {
       case ReaderTheme.auto:

@@ -40,6 +40,7 @@ final class PlayerScreenController: UIViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = .systemBackground
+        navigationController?.navigationBar.scrollEdgeAppearance = Self.navigationBarAppearance()
         navigationItem.leftBarButtonItem = UIBarButtonItem(
             title: L10n.string("player.close"),
             style: .plain,
@@ -53,6 +54,12 @@ final class PlayerScreenController: UIViewController {
             player.play(snapshot: snapshot, startingAt: 0)
         }
         render()
+    }
+
+    private static func navigationBarAppearance() -> UINavigationBarAppearance {
+        let appearance = UINavigationBarAppearance()
+        appearance.configureWithDefaultBackground()
+        return appearance
     }
 
     func update(snapshot: JobSnapshot, backendBaseURL: URL?) {

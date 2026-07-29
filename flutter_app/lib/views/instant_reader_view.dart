@@ -286,7 +286,21 @@ class _InstantReaderViewState extends ConsumerState<InstantReaderView> {
                     bottom: false,
                     child: Row(
                       children: [
-                        const Spacer(),
+                        Expanded(
+                          child: Semantics(
+                            header: true,
+                            child: Text(
+                              widget.fulltext.bookTitle ?? '',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: Theme.of(context).textTheme.titleMedium
+                                  ?.copyWith(
+                                    color: fg,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                            ),
+                          ),
+                        ),
                         IconButton(
                           icon: Icon(
                             Icons.text_format,
@@ -294,6 +308,10 @@ class _InstantReaderViewState extends ConsumerState<InstantReaderView> {
                           ),
                           onPressed: _showReaderSettings,
                           tooltip: 'Reader settings',
+                          constraints: const BoxConstraints(
+                            minWidth: 48,
+                            minHeight: 48,
+                          ),
                         ),
                       ],
                     ),

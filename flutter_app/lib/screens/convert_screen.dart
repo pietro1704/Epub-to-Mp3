@@ -29,11 +29,7 @@ class ConversionRequest {
 typedef ConversionStarter = Future<String> Function(ConversionRequest request);
 
 class ConvertScreen extends ConsumerStatefulWidget {
-  const ConvertScreen({
-    super.key,
-    this.initialFilePath,
-    this.startConversion,
-  });
+  const ConvertScreen({super.key, this.initialFilePath, this.startConversion});
 
   final String? initialFilePath;
   final ConversionStarter? startConversion;
@@ -90,8 +86,11 @@ class _ConvertScreenState extends ConsumerState<ConvertScreen> {
         includeCover: _includeCover,
         normalizeAudio: _normalizeAudio,
       );
-      final starter = widget.startConversion ??
-          (request) => ref.read(apiClientProvider).uploadAndConvert(
+      final starter =
+          widget.startConversion ??
+          (request) => ref
+              .read(apiClientProvider)
+              .uploadAndConvert(
                 request.filePath,
                 engine: request.engine,
                 voice: request.voice,
@@ -143,9 +142,18 @@ class _ConvertScreenState extends ConsumerState<ConvertScreen> {
             initialValue: _voice,
             decoration: const InputDecoration(labelText: 'Voice'),
             items: const [
-              DropdownMenuItem(value: 'pt-BR-AntonioNeural', child: Text('Antonio (pt-BR)')),
-              DropdownMenuItem(value: 'en-US-GuyNeural', child: Text('Guy (en-US)')),
-              DropdownMenuItem(value: 'es-MX-JorgeNeural', child: Text('Jorge (es-MX)')),
+              DropdownMenuItem(
+                value: 'pt-BR-AntonioNeural',
+                child: Text('Antonio (pt-BR)'),
+              ),
+              DropdownMenuItem(
+                value: 'en-US-GuyNeural',
+                child: Text('Guy (en-US)'),
+              ),
+              DropdownMenuItem(
+                value: 'es-MX-JorgeNeural',
+                child: Text('Jorge (es-MX)'),
+              ),
             ],
             onChanged: (v) => setState(() => _voice = v ?? _voice),
           ),
@@ -160,16 +168,41 @@ class _ConvertScreenState extends ConsumerState<ConvertScreen> {
             onChanged: (v) => setState(() => _language = v ?? _language),
           ),
           const SizedBox(height: 12),
-          const Text('Chapter range', style: TextStyle(fontWeight: FontWeight.bold)),
-          Row(children: [
-            Expanded(child: TextField(controller: _startController, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'From'))),
-            const SizedBox(width: 12),
-            Expanded(child: TextField(controller: _endController, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'To'))),
-          ]),
+          const Text(
+            'Chapter range',
+            style: TextStyle(fontWeight: FontWeight.bold),
+          ),
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _startController,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(labelText: 'From'),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: TextField(
+                  controller: _endController,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(labelText: 'To'),
+                ),
+              ),
+            ],
+          ),
           const SizedBox(height: 12),
           const Text('Options', style: TextStyle(fontWeight: FontWeight.bold)),
-          SwitchListTile(title: const Text('Include cover'), value: _includeCover, onChanged: (v) => setState(() => _includeCover = v)),
-          SwitchListTile(title: const Text('Normalize audio'), value: _normalizeAudio, onChanged: (v) => setState(() => _normalizeAudio = v)),
+          SwitchListTile(
+            title: const Text('Include cover'),
+            value: _includeCover,
+            onChanged: (v) => setState(() => _includeCover = v),
+          ),
+          SwitchListTile(
+            title: const Text('Normalize audio'),
+            value: _normalizeAudio,
+            onChanged: (v) => setState(() => _normalizeAudio = v),
+          ),
           if (_submitting) const LinearProgressIndicator(),
           if (jobId != null) ...[
             const SizedBox(height: 12),
@@ -177,18 +210,29 @@ class _ConvertScreenState extends ConsumerState<ConvertScreen> {
             StreamBuilder(
               stream: ref.read(apiClientProvider).jobStream(jobId),
               builder: (context, snapshot) {
-                if (snapshot.hasError) return Text('Progress error: ${snapshot.error}');
+                if (snapshot.hasError)
+                  return Text('Progress error: ${snapshot.error}');
                 final value = snapshot.data;
                 final progress = value?.progressPercent;
-                return Column(children: [
-                  LinearProgressIndicator(value: progress == null ? null : progress / 100),
-                  if (value != null) Text('${value.state} ${progress?.toStringAsFixed(0) ?? ''}%'),
-                ]);
+                return Column(
+                  children: [
+                    LinearProgressIndicator(
+                      value: progress == null ? null : progress / 100,
+                    ),
+                    if (value != null)
+                      Text(
+                        '${value.state} ${progress?.toStringAsFixed(0) ?? ''}%',
+                      ),
+                  ],
+                );
               },
             ),
           ],
           if (_error != null) ...[
-            Text(_error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
+            Text(
+              _error!,
+              style: TextStyle(color: Theme.of(context).colorScheme.error),
+            ),
             TextButton(onPressed: _submit, child: const Text('Retry')),
           ],
           const SizedBox(height: 12),
