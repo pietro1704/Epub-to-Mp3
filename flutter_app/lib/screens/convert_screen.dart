@@ -210,8 +210,9 @@ class _ConvertScreenState extends ConsumerState<ConvertScreen> {
             StreamBuilder(
               stream: ref.read(apiClientProvider).jobStream(jobId),
               builder: (context, snapshot) {
-                if (snapshot.hasError)
+                if (snapshot.hasError) {
                   return Text('Progress error: ${snapshot.error}');
+                }
                 final value = snapshot.data;
                 final progress = value?.progressPercent;
                 return Column(
