@@ -122,7 +122,6 @@ class _PlayerReaderScreenState extends ConsumerState<PlayerReaderScreen> {
     // Always restore the system chrome when leaving the reader so
     // other screens are not left in immersive mode.
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
-    ref.read(readerChromeVisibleProvider.notifier).state = true;
     super.dispose();
   }
 
