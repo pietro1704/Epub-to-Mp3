@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -15,6 +16,15 @@ import '../services/fulltext_store.dart';
 import '../services/local_fulltext_cache.dart';
 import '../services/resume_store.dart';
 import '../services/sync_engine.dart';
+
+class AudioStartupState extends ChangeNotifier {
+  BackgroundAudioHandler? handler;
+
+  void attach(BackgroundAudioHandler value) {
+    handler = value;
+    notifyListeners();
+  }
+}
 
 /// `SharedPreferences` is asynchronously initialised once at app start.
 final sharedPrefsProvider = Provider<SharedPreferences>(
@@ -242,8 +252,12 @@ final globalAudioPlayerProvider = Provider<AudioPlayerInterface>((ref) {
 });
 
 /// Android MediaSession adapter. Null on desktop/iOS and in host tests.
+final audioStartupStateProvider = ChangeNotifierProvider<AudioStartupState>(
+  (ref) => AudioStartupState(),
+);
+
 final backgroundAudioHandlerProvider = Provider<BackgroundAudioHandler?>(
-  (ref) => null,
+  (ref) => ref.watch(audioStartupStateProvider).handler,
 );
 
 /// Android offline TTS fallback. The default adapter is a no-op on iOS,

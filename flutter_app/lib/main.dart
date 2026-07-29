@@ -35,27 +35,10 @@ Future<void> main() async {
         ).receiveBroadcastStream().map((event) => Uri.parse(event as String))
       : const Stream<Uri>.empty();
   final deepLinks = AppDeepLinkService(deepLinkStream);
-  BackgroundAudioHandler? backgroundHandler;
-  if (defaultTargetPlatform == TargetPlatform.android) {
-    final player = AudioPlayerService(
-      backendBase: MirrorAppSettings(prefs).backendURL,
-    );
-    final initialized = await AudioService.init(
-      builder: () => BackgroundAudioHandler(
-        player,
-        snapshotStore: WidgetPlaybackSnapshotStore(prefs),
-      ),
-      config: AudioServiceConfig(
-        androidNotificationChannelId: 'com.pietrocode.epubtomp3.audio',
-        androidNotificationChannelName: 'Audiobook playback',
-        androidNotificationOngoing: true,
-        androidStopForegroundOnPause: false,
-        androidNotificationClickStartsActivity: true,
-        androidResumeOnClick: true,
-      ),
-    );
-    backgroundHandler = initialized;
-  }
+  final audioStartup = AudioStartupState();
+  final sharedPlayer = defaultTargetPlatform == TargetPlatform.android
+      ? AudioPlayerService(backendBase: MirrorAppSettings(prefs).backendURL)
+      : null;
 
   // Run LRU+TTL eviction on every app launch (background, best-effort).
   unawaited(OfflineCacheEviction.runEviction());
@@ -64,14 +47,53 @@ Future<void> main() async {
     ProviderScope(
       overrides: [
         sharedPrefsProvider.overrideWithValue(prefs),
-        if (backgroundHandler != null)
-          globalAudioPlayerProvider.overrideWithValue(backgroundHandler.player),
-        if (backgroundHandler != null)
-          backgroundAudioHandlerProvider.overrideWithValue(backgroundHandler),
+        audioStartupStateProvider.overrideWith((ref) => audioStartup),
+        if (sharedPlayer != null)
+          globalAudioPlayerProvider.overrideWithValue(sharedPlayer),
       ],
       child: EpubToMp3App(deepLinks: deepLinks),
     ),
   );
+
+  if (sharedPlayer != null) {
+    unawaited(_initializeAndroidAudio(sharedPlayer, prefs, audioStartup));
+  }
+}
+
+/// Starts Android's MediaSession after the first Flutter frame is allowed to
+/// render. A broken or slow platform service must never block the library and
+/// reader UI; both the service and the UI keep using [player].
+Future<void> _initializeAndroidAudio(
+  AudioPlayerService player,
+  SharedPreferences prefs,
+  AudioStartupState state,
+) async {
+  try {
+    final handler = await Future.any<BackgroundAudioHandler?>([
+      AudioService.init(
+        builder: () => BackgroundAudioHandler(
+          player,
+          snapshotStore: WidgetPlaybackSnapshotStore(prefs),
+        ),
+        config: AudioServiceConfig(
+          androidNotificationChannelId: 'com.pietrocode.epubtomp3.audio',
+          androidNotificationChannelName: 'Audiobook playback',
+          androidNotificationOngoing: true,
+          androidStopForegroundOnPause: true,
+          androidNotificationClickStartsActivity: true,
+          androidResumeOnClick: true,
+        ),
+      ),
+      Future<BackgroundAudioHandler?>.delayed(
+        const Duration(seconds: 2),
+        () => null,
+      ),
+    ]);
+    if (handler != null) state.attach(handler);
+  } catch (_) {
+    // MediaSession is an enhancement. The in-app player remains available
+    // when Android rejects or cannot start the background service.
+  }
 }
 
 class EpubToMp3App extends ConsumerStatefulWidget {

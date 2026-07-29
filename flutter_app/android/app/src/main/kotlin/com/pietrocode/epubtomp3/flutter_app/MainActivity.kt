@@ -299,12 +299,15 @@ class MainActivity : FlutterActivity() {
             ?: uri.lastPathSegment?.substringAfterLast('/')
             ?: "shared_document"
         val lowerName = sourceName.lowercase(Locale.US)
-        val extension = when {
+        var extension = when {
             lowerName.endsWith(".pdf") -> ".pdf"
             lowerName.endsWith(".epub") -> ".epub"
             mimeType == "application/pdf" -> ".pdf"
             mimeType == "application/epub+zip" -> ".epub"
-            else -> return null
+            else -> null
+        }
+        if (extension == null) {
+            extension = detectDocumentExtension(uri) ?: return null
         }
         val safeBase = sourceName.substringBeforeLast('.', sourceName)
             .replace(Regex("[^A-Za-z0-9._-]"), "_")
@@ -325,6 +328,27 @@ class MainActivity : FlutterActivity() {
                 } ?: return null
             }
             target.absolutePath to displayName
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    /** Infer common book formats when Android omits the filename extension/MIME. */
+    private fun detectDocumentExtension(uri: Uri): String? {
+        return try {
+            val header = if (uri.scheme == "file") {
+                File(uri.path ?: return null).inputStream().use { it.readNBytes(8) }
+            } else {
+                contentResolver.openInputStream(uri)?.use { it.readNBytes(8) }
+            } ?: return null
+            when {
+                header.size >= 4 && header[0] == '%'.code.toByte() &&
+                    header[1] == 'P'.code.toByte() && header[2] == 'D'.code.toByte() &&
+                    header[3] == 'F'.code.toByte() -> ".pdf"
+                header.size >= 2 && header[0] == 'P'.code.toByte() &&
+                    header[1] == 'K'.code.toByte() -> ".epub"
+                else -> null
+            }
         } catch (_: Exception) {
             null
         }
