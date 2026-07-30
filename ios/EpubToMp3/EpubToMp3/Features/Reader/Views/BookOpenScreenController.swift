@@ -40,6 +40,9 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
     private var textWidthConstraint: NSLayoutConstraint!
     private var paginatedTextHeightConstraint: NSLayoutConstraint!
     private var uiTestPageNumber: Int?
+    /// Prevents overlapping page renders/snapshots when the user taps the
+    /// reader edges repeatedly while a page transition is still running.
+    private var isPageTransitioning = false
 
     private var isPaginatedMode: Bool {
         let arguments = ProcessInfo.processInfo.arguments
@@ -775,38 +778,10 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
             toggleChromeVisibility()
             return
         }
-        guard isPaginatedMode,
-              let fulltext,
-              fulltext.chapters[safe: selectedChapter] != nil else { return }
+        guard isPaginatedMode else { return }
         let point = gesture.location(in: scrollView)
-        let pageHeight = max(scrollView.bounds.height, 1)
-        let estimatedTotal = measuredPageCount
-        let current = uiTestPageNumber ?? max(1, Int(round(scrollView.contentOffset.y / pageHeight)) + 1)
         let forward = point.x >= scrollView.bounds.width * 0.5
-        if forward, current >= estimatedTotal, selectedChapter + 1 < fulltext.chapters.count {
-            persistReadingProgress()
-            selectedChapter += 1
-            showChapter(selectedChapter)
-            scrollView.setContentOffset(.zero, animated: false)
-            updatePageIndicator()
-            return
-        }
-        if !forward, current <= 1, selectedChapter > 0 {
-            persistReadingProgress()
-            selectedChapter -= 1
-            showChapter(selectedChapter)
-            let previousTotal = measuredPageCount
-            if ProcessInfo.processInfo.arguments.contains("-uiTestFixture") {
-                uiTestPageNumber = previousTotal
-            }
-            scrollView.setContentOffset(CGPoint(x: 0, y: CGFloat(previousTotal - 1) * pageHeight), animated: false)
-            updatePageIndicator()
-            return
-        }
-        let next = min(estimatedTotal, max(1, current + (forward ? 1 : -1)))
-        setPageOffset(CGPoint(x: 0, y: CGFloat(next - 1) * pageHeight), forward: forward)
-        updatePageIndicator()
-        persistReadingProgress()
+        navigatePage(forward: forward)
     }
 
     @objc private func toggleChromeVisibility() {
@@ -1007,14 +982,17 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
     }
 
     private func navigatePage(forward: Bool) {
+        guard !isPageTransitioning else { return }
         guard let fulltext, fulltext.chapters[safe: selectedChapter] != nil else { return }
+        isPageTransitioning = true
         view.layoutIfNeeded()
         let pageHeight = max(scrollView.bounds.height, 1)
         let estimatedTotal = measuredPageCount
         let current = max(1, Int(round(scrollView.contentOffset.y / pageHeight)) + 1)
         if forward, current >= estimatedTotal, selectedChapter + 1 < fulltext.chapters.count {
             persistReadingProgress(); selectedChapter += 1; showChapter(selectedChapter)
-            scrollView.setContentOffset(.zero, animated: false); updatePageIndicator(); return
+            scrollView.setContentOffset(.zero, animated: false); updatePageIndicator()
+            finishChapterTransition(); return
         }
         if !forward, current <= 1, selectedChapter > 0 {
             persistReadingProgress(); selectedChapter -= 1; showChapter(selectedChapter)
@@ -1023,7 +1001,11 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
                 uiTestPageNumber = previousTotal
             }
             scrollView.setContentOffset(CGPoint(x: 0, y: CGFloat(previousTotal - 1) * pageHeight), animated: false)
-            updatePageIndicator(); return
+            updatePageIndicator(); finishChapterTransition(); return
+        }
+        if (forward && current >= estimatedTotal) || (!forward && current <= 1) {
+            isPageTransitioning = false
+            return
         }
         let next = min(estimatedTotal, max(1, current + (forward ? 1 : -1)))
         if ProcessInfo.processInfo.arguments.contains("-uiTestFixture") {
@@ -1033,10 +1015,20 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
         updatePageIndicator(); persistReadingProgress()
     }
 
+    private func finishChapterTransition() {
+        // Chapter rendering and layout can be expensive for EPUBs with many
+        // short sections. Keep the input serialized for one run-loop turn so
+        // another edge tap cannot observe half-rendered text metrics.
+        DispatchQueue.main.async { [weak self] in
+            self?.isPageTransitioning = false
+        }
+    }
+
     private func setPageOffset(_ offset: CGPoint, forward: Bool) {
         switch settings.pageTurnStyle {
         case .none:
             scrollView.setContentOffset(offset, animated: false)
+            isPageTransitioning = false
         case .slide, .flip:
             // Paginated mode is a page transition, not a vertical scroll.
             // Keep the scroll view as a layout container, move its offset
@@ -1046,7 +1038,10 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
             let oldPage = scrollView.snapshotView(afterScreenUpdates: false)
             let frame = scrollView.convert(scrollView.bounds, to: view)
             scrollView.setContentOffset(offset, animated: false)
-            guard let oldPage else { return }
+            guard let oldPage else {
+                isPageTransitioning = false
+                return
+            }
             oldPage.frame = frame
             view.addSubview(oldPage)
             scrollView.transform = CGAffineTransform(translationX: forward ? frame.width : -frame.width, y: 0)
@@ -1056,6 +1051,7 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
                 self.scrollView.transform = .identity
             } completion: { _ in
                 oldPage.removeFromSuperview()
+                self.isPageTransitioning = false
             }
         }
     }
