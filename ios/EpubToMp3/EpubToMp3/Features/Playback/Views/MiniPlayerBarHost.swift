@@ -74,9 +74,7 @@ final class MiniPlayerBarUIKitView: UIView, UIGestureRecognizerDelegate {
             materialView.leadingAnchor.constraint(equalTo: layoutMarginsGuide.leadingAnchor),
             materialView.trailingAnchor.constraint(equalTo: layoutMarginsGuide.trailingAnchor),
             materialView.topAnchor.constraint(equalTo: topAnchor),
-            materialView.bottomAnchor.constraint(
-                equalTo: usesSystemManagedBottomInset ? bottomAnchor : safeAreaLayoutGuide.bottomAnchor
-            ),
+            materialView.bottomAnchor.constraint(equalTo: bottomAnchor),
         ])
 
         coverView.translatesAutoresizingMaskIntoConstraints = false
@@ -106,6 +104,7 @@ final class MiniPlayerBarUIKitView: UIView, UIGestureRecognizerDelegate {
         openButton.accessibilityLabel = L10n.string("player.openFullPlayer")
         openButton.accessibilityHint = L10n.string("player.openFullPlayerHint")
         openButton.translatesAutoresizingMaskIntoConstraints = false
+        openButton.addTarget(self, action: #selector(openTapped), for: .touchUpInside)
         openButton.addSubview(coverView)
         openButton.addSubview(labels)
         labels.translatesAutoresizingMaskIntoConstraints = false
@@ -159,10 +158,15 @@ final class MiniPlayerBarUIKitView: UIView, UIGestureRecognizerDelegate {
         NSLayoutConstraint.activate([
             chromeStack.leadingAnchor.constraint(equalTo: layoutMarginsGuide.leadingAnchor),
             chromeStack.trailingAnchor.constraint(equalTo: layoutMarginsGuide.trailingAnchor),
-            chromeStack.centerYAnchor.constraint(equalTo: materialView.centerYAnchor),
+            chromeStack.centerYAnchor.constraint(
+                equalTo: usesSystemManagedBottomInset
+                    ? materialView.centerYAnchor
+                    : safeAreaLayoutGuide.centerYAnchor
+            ),
             chromeStack.topAnchor.constraint(greaterThanOrEqualTo: materialView.topAnchor, constant: 4),
             chromeStack.bottomAnchor.constraint(lessThanOrEqualTo: materialView.bottomAnchor, constant: -4),
         ])
+        updateTypographyForContentSizeCategory()
     }
 
     @available(*, unavailable)
@@ -206,6 +210,10 @@ final class MiniPlayerBarUIKitView: UIView, UIGestureRecognizerDelegate {
             ? L10n.string("player.chapter", UserDefaults.standard.integer(forKey: AudioPlayer.currentChapterIndexDefaultsKey) + 1)
             : player.effectiveChapterTitle
         chapterLabel.text = book?.resolvedTitle ?? L10n.string("player.audiobookFallback")
+        openButton.accessibilityValue = [titleLabel.text, chapterLabel.text]
+            .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+            .joined(separator: ", ")
 
         if let data = book?.coverPNG, let image = UIImage(data: data) {
             coverView.image = image
@@ -256,7 +264,7 @@ final class MiniPlayerBarUIKitView: UIView, UIGestureRecognizerDelegate {
             // The whole pill opens the full player. Only the playback
             // controls remain exempt so tapping play/next/rate keeps its
             // local action instead of expanding the player.
-            if view === playPauseButton || view === nextButton || view === rateButton {
+            if view === openButton || view === playPauseButton || view === nextButton || view === rateButton {
                 return false
             }
             current = view.superview
@@ -274,6 +282,21 @@ final class MiniPlayerBarUIKitView: UIView, UIGestureRecognizerDelegate {
     private func nextTapped() {
         player?.nextChapter()
         render()
+    }
+
+    override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {
+        super.traitCollectionDidChange(previousTraitCollection)
+        guard previousTraitCollection?.preferredContentSizeCategory != traitCollection.preferredContentSizeCategory else {
+            return
+        }
+        updateTypographyForContentSizeCategory()
+    }
+
+    private func updateTypographyForContentSizeCategory() {
+        // The global player must stay compact. At accessibility sizes the
+        // primary chapter title remains visible while VoiceOver still exposes
+        // the complete chapter and book metadata through the open button.
+        chapterLabel.isHidden = traitCollection.preferredContentSizeCategory.isAccessibilityCategory
     }
 }
 #endif
