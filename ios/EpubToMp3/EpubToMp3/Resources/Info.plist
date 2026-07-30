@@ -9,12 +9,6 @@
 		<key>NSAllowsLocalNetworking</key>
 		<true/>
 	</dict>
-	<!-- Custom launch storyboard. Build setting
-	     INFOPLIST_KEY_UILaunchStoryboardName already injects this, but we
-	     also pin it in the merged plist to make the launch sequence
-	     deterministic across xcodebuild / Xcode IDE / archive flows. -->
-	<key>UILaunchStoryboardName</key>
-	<string>LaunchScreen</string>
 	<!-- Edge-TTS conversion is network-intensive; this hints iOS to keep
 	     Wi-Fi awake during long jobs instead of dropping the radio. -->
 	<key>UIRequiresPersistentWiFi</key>
