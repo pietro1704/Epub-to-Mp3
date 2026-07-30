@@ -1037,13 +1037,25 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
         switch settings.pageTurnStyle {
         case .none:
             scrollView.setContentOffset(offset, animated: false)
-        case .slide:
-            scrollView.setContentOffset(offset, animated: true)
-        case .flip:
-            // Apple Books-style horizontal page advance: move exactly one
-            // viewport at a time without rotating the page around the Y axis.
-            UIView.animate(withDuration: 0.35, delay: 0, options: [.curveEaseInOut, .beginFromCurrentState, .allowUserInteraction]) {
-                self.scrollView.setContentOffset(offset, animated: false)
+        case .slide, .flip:
+            // Paginated mode is a page transition, not a vertical scroll.
+            // Keep the scroll view as a layout container, move its offset
+            // synchronously, and animate a snapshot horizontally. This also
+            // prevents UIKit from exposing the intermediate vertical offset
+            // when the reader is opened with everything else hidden.
+            let oldPage = scrollView.snapshotView(afterScreenUpdates: false)
+            let frame = scrollView.convert(scrollView.bounds, to: view)
+            scrollView.setContentOffset(offset, animated: false)
+            guard let oldPage else { return }
+            oldPage.frame = frame
+            view.addSubview(oldPage)
+            scrollView.transform = CGAffineTransform(translationX: forward ? frame.width : -frame.width, y: 0)
+            UIView.animate(withDuration: 0.35, delay: 0,
+                           options: [.curveEaseInOut, .beginFromCurrentState, .allowUserInteraction]) {
+                oldPage.transform = CGAffineTransform(translationX: forward ? -frame.width : frame.width, y: 0)
+                self.scrollView.transform = .identity
+            } completion: { _ in
+                oldPage.removeFromSuperview()
             }
         }
     }
