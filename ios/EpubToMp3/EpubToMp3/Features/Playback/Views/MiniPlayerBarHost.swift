@@ -2,6 +2,14 @@
 import Combine
 import UIKit
 
+enum MiniPlayerLayoutMetrics {
+    static let contentHeight: CGFloat = 52
+    static let maximumBottomSafeAreaInset: CGFloat = 44
+    /// Keeps the overlay compact while allowing the 52-point controls and a
+    /// large iPhone bottom safe-area inset.
+    static let maximumOverlayHeight = contentHeight + maximumBottomSafeAreaInset
+}
+
 @MainActor
 final class MiniPlayerBarUIKitView: UIView, UIGestureRecognizerDelegate {
     private let materialView = AdaptiveMaterialView()
@@ -20,9 +28,16 @@ final class MiniPlayerBarUIKitView: UIView, UIGestureRecognizerDelegate {
     private var library: LibraryStore?
     private var onTap: (() -> Void)?
     private var cancellables: Set<AnyCancellable> = []
+    private let usesSystemManagedBottomInset: Bool
 
     override var intrinsicContentSize: CGSize {
-        CGSize(width: UIView.noIntrinsicMetric, height: 44 + 8 + safeAreaInsets.bottom)
+        CGSize(
+            width: UIView.noIntrinsicMetric,
+            height: MiniPlayerLayoutMetrics.contentHeight
+                + (usesSystemManagedBottomInset
+                    ? 0
+                    : min(safeAreaInsets.bottom, MiniPlayerLayoutMetrics.maximumBottomSafeAreaInset))
+        )
     }
 
     override func safeAreaInsetsDidChange() {
@@ -31,7 +46,18 @@ final class MiniPlayerBarUIKitView: UIView, UIGestureRecognizerDelegate {
     }
 
     override init(frame: CGRect) {
+        usesSystemManagedBottomInset = false
         super.init(frame: frame)
+        configureView()
+    }
+
+    init(usesSystemManagedBottomInset: Bool) {
+        self.usesSystemManagedBottomInset = usesSystemManagedBottomInset
+        super.init(frame: .zero)
+        configureView()
+    }
+
+    private func configureView() {
         preservesSuperviewLayoutMargins = true
         directionalLayoutMargins = NSDirectionalEdgeInsets(top: 0, leading: 12, bottom: 0, trailing: 12)
         backgroundColor = .clear
@@ -48,7 +74,9 @@ final class MiniPlayerBarUIKitView: UIView, UIGestureRecognizerDelegate {
             materialView.leadingAnchor.constraint(equalTo: layoutMarginsGuide.leadingAnchor),
             materialView.trailingAnchor.constraint(equalTo: layoutMarginsGuide.trailingAnchor),
             materialView.topAnchor.constraint(equalTo: topAnchor),
-            materialView.bottomAnchor.constraint(equalTo: safeAreaLayoutGuide.bottomAnchor),
+            materialView.bottomAnchor.constraint(
+                equalTo: usesSystemManagedBottomInset ? bottomAnchor : safeAreaLayoutGuide.bottomAnchor
+            ),
         ])
 
         coverView.translatesAutoresizingMaskIntoConstraints = false
@@ -131,7 +159,9 @@ final class MiniPlayerBarUIKitView: UIView, UIGestureRecognizerDelegate {
         NSLayoutConstraint.activate([
             chromeStack.leadingAnchor.constraint(equalTo: layoutMarginsGuide.leadingAnchor),
             chromeStack.trailingAnchor.constraint(equalTo: layoutMarginsGuide.trailingAnchor),
-            chromeStack.bottomAnchor.constraint(equalTo: safeAreaLayoutGuide.bottomAnchor, constant: -4),
+            chromeStack.centerYAnchor.constraint(equalTo: materialView.centerYAnchor),
+            chromeStack.topAnchor.constraint(greaterThanOrEqualTo: materialView.topAnchor, constant: 4),
+            chromeStack.bottomAnchor.constraint(lessThanOrEqualTo: materialView.bottomAnchor, constant: -4),
         ])
     }
 

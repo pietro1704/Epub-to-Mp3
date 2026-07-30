@@ -67,8 +67,26 @@ final class JobDetailScreenController: UITableViewController {
             }
         }
         viewModel.onSnapshot = { [weak self] snapshot in
+            guard let self else { return }
+            if self.player.snapshot?.jobId == snapshot.jobId {
+                self.player.updateSnapshot(snapshot)
+                return
+            }
+            guard !snapshot.isTerminal, let baseURL = self.settings.resolvedBaseURL else { return }
+            _ = self.player.beginRemoteStreaming(snapshot: snapshot, backendBaseURL: baseURL)
+        }
+        viewModel.onStreamChunk = { [weak self] data, chapterIndex, segmentIndex in
+            guard let self, self.player.snapshot?.jobId == self.jobId else { return }
+            self.player.enqueueSegment(
+                data: data,
+                chapterIndex: chapterIndex,
+                segmentIndex: segmentIndex,
+                sentenceId: nil
+            )
+        }
+        viewModel.onStreamFinished = { [weak self] snapshot in
             guard let self, self.player.snapshot?.jobId == snapshot.jobId else { return }
-            self.player.updateSnapshot(snapshot)
+            self.player.finishStreaming(snapshot: snapshot)
         }
     }
 

@@ -87,6 +87,32 @@ final class EpubHtmlRendererTests: XCTestCase {
         XCTAssertEqual(attachmentCount, 1)
     }
 
+    func testPreservesFragmentAndRelativeEPUBLinksForNativeRouting() {
+        let s = makeSettings()
+        let html = "<p><a href=\"#footnote_1\">*</a> <a href=\"chapter-2.xhtml#part\">Chapter Two</a></p>"
+        guard let out = EpubHtmlRenderer.render(html: html, css: nil, settings: s) else {
+            return XCTFail("renderer returned nil")
+        }
+        let n = ns(out)
+        var targets: [String] = []
+        n.enumerateAttribute(.link, in: NSRange(location: 0, length: n.length)) { value, _, _ in
+            if let url = value as? URL {
+                targets.append(url.absoluteString)
+            } else if let url = value as? NSURL {
+                targets.append((url as URL).absoluteString)
+            }
+        }
+
+        XCTAssertEqual(targets.count, 2)
+        let decodedTargets = targets.compactMap { URLComponents(string: $0)?
+            .queryItems?
+            .first(where: { $0.name == "target" })?
+            .value
+        }
+        XCTAssertEqual(Set(decodedTargets), Set(["#footnote_1", "chapter-2.xhtml#part"]))
+        XCTAssertTrue(targets.allSatisfy { $0.hasPrefix("epub-link://open?") })
+    }
+
     func testLargeInlineImageIsDownsampled() throws {
         let s = makeSettings()
         let bigPNG = try Self.makeSolidPNGBase64(width: 2000, height: 2000)
@@ -159,6 +185,30 @@ final class EpubHtmlRendererTests: XCTestCase {
         }
         XCTAssertTrue(titleCentered, "EPUB-declared centred title alignment must be preserved")
         XCTAssertTrue(bodyNotCentered, "body paragraph must follow the user's alignment, not inherit center")
+    }
+
+    func testAppliesReaderLineSpacingToRenderedParagraphs() {
+        let settings = makeSettings()
+        settings.readerLineSpacing = 12
+        guard let output = EpubHtmlRenderer.render(
+            html: "<p>First line.</p><p>Second line.</p>",
+            css: nil,
+            settings: settings
+        ) else {
+            return XCTFail("renderer returned nil")
+        }
+
+        var lineSpacings: [CGFloat] = []
+        ns(output).enumerateAttribute(
+            .paragraphStyle,
+            in: NSRange(location: 0, length: ns(output).length)
+        ) { value, _, _ in
+            if let style = value as? NSParagraphStyle {
+                lineSpacings.append(style.lineSpacing)
+            }
+        }
+        XCTAssertFalse(lineSpacings.isEmpty)
+        XCTAssertTrue(lineSpacings.allSatisfy { abs($0 - 12) < 0.01 })
     }
 
     func testPreservesLordOfTheRingsParagraphIndentClasses() {

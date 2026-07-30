@@ -71,6 +71,9 @@ struct EbookFulltext: Codable, Equatable, Sendable {
 
         let index: Int
         let name: String?
+        /// Zip-root-relative EPUB document path, retained so a reader can
+        /// resolve a relative `<a href>` to the chapter that owns it.
+        let sourcePath: String?
         let text: String
         let html: String?
         let css: String?
@@ -89,6 +92,7 @@ struct EbookFulltext: Codable, Equatable, Sendable {
         init(
             index: Int,
             name: String?,
+            sourcePath: String? = nil,
             text: String,
             html: String?,
             css: String?,
@@ -100,6 +104,7 @@ struct EbookFulltext: Codable, Equatable, Sendable {
         ) {
             self.index = index
             self.name = name
+            self.sourcePath = sourcePath
             self.text = text
             self.html = html
             self.css = css

@@ -21,7 +21,7 @@ struct JobSnapshot: Codable, Equatable, Identifiable {
     /// recovery path in `server.py::_restore_job_from_outputs`.
     struct Chapter: Codable, Equatable, Hashable, Identifiable {
         let index: Int
-        let name: String?
+        var name: String?
         let status: String?
         let downloadUrl: String?
         let chars: Int?
@@ -69,7 +69,7 @@ struct JobSnapshot: Codable, Equatable, Identifiable {
     let progressPercent: Double?
     let chaptersTotal: Int?
     let chaptersCompleted: Int?
-    let chapterProgress: [Chapter]?
+    var chapterProgress: [Chapter]?
     let outputs: [OutputAsset]?
     let logUrl: String?
     let error: String?

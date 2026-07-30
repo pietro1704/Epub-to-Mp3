@@ -207,6 +207,14 @@ final class MacLibraryViewController: NSViewController, NSSearchFieldDelegate,
         }
     }
 
+    func importBooks() {
+        addTapped()
+    }
+
+    func focusSearch() {
+        view.window?.makeFirstResponder(searchField)
+    }
+
     private func presentImportError(_ error: Error) {
         let alert = NSAlert(error: error)
         alert.runModal()

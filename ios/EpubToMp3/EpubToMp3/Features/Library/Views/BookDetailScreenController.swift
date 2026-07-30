@@ -140,6 +140,10 @@ final class BookDetailScreenController: UIViewController {
     }
 
     @objc private func tapListen() {
+        PlaybackBindingStore.setCurrentlyPlaying(
+            bookID: book.id,
+            chapterIndex: ReaderProgressStore.read(bookId: book.id)?.chapterIndex ?? 0
+        )
         if settings.useEmbeddedRuntime && !book.fileType.requiresServerConversion {
             guard let url = try? library.openBookFile(id: book.id) else { return }
             Task { [weak self] in
@@ -148,11 +152,13 @@ final class BookDetailScreenController: UIViewController {
                     let snapshot = try await EmbeddedConversionCoordinator.stream(
                         bookURL: url,
                         bookID: book.id,
-                        player: self.player
+                        player: self.player,
+                        onStreamingStarted: { [weak self] in
+                            self?.playerPresentation.showFullPlayer()
+                        }
                     )
                     self.book.lastJobId = snapshot.jobId
                     self.library.recordConversion(jobId: snapshot.jobId, for: self.book.id)
-                    self.playerPresentation.showFullPlayer()
                 } catch {
                     let alert = UIAlertController(
                         title: L10n.string("bookDetail.listenStart"),
@@ -163,6 +169,20 @@ final class BookDetailScreenController: UIViewController {
                     present(alert, animated: true)
                 }
             }
+            return
+        }
+        if let jobId = book.lastJobId,
+           jobId.hasPrefix("embedded-"),
+           let snapshot = EmbeddedConversionCoordinator.loadSnapshot(bookID: book.id) {
+            navigationController?.pushViewController(
+                PlayerScreenController(
+                    snapshot: snapshot,
+                    backendBaseURL: nil,
+                    player: player,
+                    playbackClock: player.playbackClock
+                ),
+                animated: true
+            )
             return
         }
         if let jobId = book.lastJobId {
@@ -195,6 +215,13 @@ final class BookDetailScreenController: UIViewController {
             )
             alert.addAction(UIAlertAction(title: L10n.string("common.ok"), style: .default))
             present(alert, animated: true)
+            return
+        }
+        if jobId.hasPrefix("embedded-"),
+           let snapshot = EmbeddedConversionCoordinator.loadSnapshot(bookID: book.id) {
+            Task {
+                await DownloadManager.shared.enqueueAll(snapshot: snapshot, baseURL: nil)
+            }
             return
         }
         if let snapshot = player.snapshot, snapshot.jobId == jobId {

@@ -1124,9 +1124,10 @@ class TestParseEpubToDict(unittest.TestCase):
         self.assertGreater(len(payload["chapters"]), 0)
         first = payload["chapters"][0]
         # Keys expected by EbookFulltext.Chapter (Swift Codable).
-        for key in ("index", "name", "text", "html", "css", "charCount", "segments"):
+        for key in ("index", "name", "sourcePath", "text", "html", "css", "charCount", "segments"):
             self.assertIn(key, first)
         self.assertIsInstance(first["index"], int)
+        self.assertIsInstance(first["sourcePath"], str)
         self.assertIsInstance(first["text"], str)
         self.assertIsInstance(first["charCount"], int)
         self.assertEqual(first["charCount"], len(first["text"]))
@@ -1235,6 +1236,7 @@ class TestParseEpubToDict(unittest.TestCase):
         chapters = payload["chapters"]
         self.assertEqual(len(chapters), 2)
         self.assertEqual(chapters[0]["resources"][0]["href"], "images/pic.png")
+        self.assertEqual(chapters[0]["sourcePath"], "OEBPS/chapter1.xhtml")
         self.assertEqual(chapters[0]["resources"][0]["mediaType"], "image/png")
         self.assertIsNone(chapters[1]["resources"])
 

@@ -86,6 +86,7 @@ final class ReaderSettingsScreenController: UITableViewController {
         cell.contentView.subviews
             .filter { $0 is UISlider }
             .forEach { $0.removeFromSuperview() }
+        cell.accessibilityIdentifier = nil
         var content = cell.defaultContentConfiguration()
         cell.accessoryType = .none
         guard let section = Section(rawValue: indexPath.section) else { return cell }
@@ -110,6 +111,7 @@ final class ReaderSettingsScreenController: UITableViewController {
             }
         case .layout:
             layoutCellContent(&content, row: indexPath.row)
+            cell.accessibilityIdentifier = layoutAccessibilityIdentifier(for: indexPath.row)
             cell.accessoryType = .disclosureIndicator
             if isSliderLayoutRow(indexPath.row) {
                 let value: Double
@@ -119,7 +121,10 @@ final class ReaderSettingsScreenController: UITableViewController {
                     range = (0, 16)
                 } else {
                     value = settings.readerMargin
-                    range = (12, 80)
+                    range = (
+                        ReaderLayoutMetrics.minimumHorizontalMargin,
+                        ReaderLayoutMetrics.maximumHorizontalMargin
+                    )
                 }
                 configureSlider(in: cell, value: Float(value), min: Float(range.0), max: Float(range.1), step: indexPath.row == (settings.readerLayout == .paginated ? 4 : 2) ? 2 : 4, identifier: indexPath.row == (settings.readerLayout == .paginated ? 4 : 2) ? "reader.settings.lineSpacing" : "reader.settings.margin")
                 cell.accessoryType = .none
@@ -221,6 +226,20 @@ final class ReaderSettingsScreenController: UITableViewController {
         settings.readerLayout == .paginated && row == 2
     }
 
+    private func layoutAccessibilityIdentifier(for row: Int) -> String {
+        let paginated = settings.readerLayout == .paginated
+        switch row {
+        case 0:
+            return "reader.settings.mode"
+        case paginated ? 4 : 2:
+            return "reader.settings.lineSpacing.row"
+        case paginated ? 5 : 3:
+            return "reader.settings.margin.row"
+        default:
+            return "reader.settings.layout.row.\(row)"
+        }
+    }
+
     private func isSliderLayoutRow(_ row: Int) -> Bool {
         row == (settings.readerLayout == .paginated ? 4 : 2)
             || row == (settings.readerLayout == .paginated ? 5 : 3)
@@ -234,16 +253,22 @@ final class ReaderSettingsScreenController: UITableViewController {
         slider.minimumValue = min
         slider.maximumValue = max
         slider.value = value
+        slider.isContinuous = true
         let tint = settings.readerTheme.previewColors.foreground
         slider.minimumTrackTintColor = tint
         slider.maximumTrackTintColor = tint.withAlphaComponent(0.3)
         slider.thumbTintColor = tint
         slider.accessibilityIdentifier = identifier
         slider.addTarget(self, action: #selector(sliderChanged(_:)), for: .valueChanged)
+        slider.addTarget(
+            self,
+            action: #selector(sliderEditingDidEnd(_:)),
+            for: [.touchUpInside, .touchUpOutside, .touchCancel]
+        )
         slider.translatesAutoresizingMaskIntoConstraints = false
         cell.contentView.addSubview(slider)
         NSLayoutConstraint.activate([
-            slider.leadingAnchor.constraint(equalTo: cell.contentView.layoutMarginsGuide.leadingAnchor, constant: 116),
+            slider.leadingAnchor.constraint(equalTo: cell.contentView.layoutMarginsGuide.leadingAnchor),
             slider.trailingAnchor.constraint(equalTo: cell.contentView.layoutMarginsGuide.trailingAnchor),
             slider.topAnchor.constraint(equalTo: cell.contentView.topAnchor, constant: 42),
             slider.bottomAnchor.constraint(equalTo: cell.contentView.bottomAnchor, constant: -8)
@@ -257,12 +282,28 @@ final class ReaderSettingsScreenController: UITableViewController {
         let snapped = round(slider.value / Float(step)) * Float(step)
         slider.setValue(snapped, animated: false)
         slider.accessibilityValue = "\(Int(snapped))"
+        let didChange: Bool
         switch slider.accessibilityIdentifier {
-        case "reader.settings.fontSize": settings.readerFontSize = Int(snapped)
-        case "reader.settings.lineSpacing": settings.readerLineSpacing = Double(snapped)
-        case "reader.settings.margin": settings.readerMargin = Double(snapped)
-        default: break
+        case "reader.settings.fontSize":
+            didChange = settings.readerFontSize != Int(snapped)
+            if didChange { settings.readerFontSize = Int(snapped) }
+        case "reader.settings.lineSpacing":
+            didChange = settings.readerLineSpacing != Double(snapped)
+            if didChange { settings.readerLineSpacing = Double(snapped) }
+        case "reader.settings.margin":
+            didChange = settings.readerMargin != Double(snapped)
+            if didChange { settings.readerMargin = Double(snapped) }
+        default:
+            didChange = false
         }
+        guard didChange else { return }
+        // Reloading the table on every valueChanged destroys the slider that
+        // is currently being dragged. Notify the reader directly, then
+        // refresh the labels once the gesture ends.
+        onChange?()
+    }
+
+    @objc private func sliderEditingDidEnd(_ slider: UISlider) {
         refresh()
     }
 

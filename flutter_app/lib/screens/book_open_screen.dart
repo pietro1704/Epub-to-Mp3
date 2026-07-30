@@ -64,6 +64,7 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen> {
   StreamSubscription<JobSnapshot>? _sseSubscription;
   StreamSubscription<Duration>? _positionSub;
   Timer? _resumeSaveTimer;
+  Future<void> _snapshotWork = Future.value();
 
   @override
   void initState() {
@@ -235,25 +236,34 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen> {
 
     ref.read(currentlyPlayingBookIdProvider.notifier).state = widget.bookId;
 
-    // Try backend streaming first
-    try {
-      await _startBackendConversion();
+    final settings = ref.read(settingsProvider);
+    final bridge = PythonBridge();
+    if (settings.useEmbeddedRuntime) {
+      if (!bridge.isSupported) {
+        setState(() {
+          _isConverting = false;
+          _conversionError =
+              'Local Python runtime is not available on this device';
+        });
+        return;
+      }
+      await _startLocalConversion(bridge);
       return;
-    } catch (_) {
-      if (!mounted) return;
     }
 
-    // Fall back to on-device PythonBridge
-    final bridge = PythonBridge();
-    if (!bridge.isSupported) {
+    // The external backend is an explicit settings opt-in. Do not silently
+    // fall back to it after a local conversion error because that would send
+    // the book off-device against the selected provider policy.
+    try {
+      await _startBackendConversion();
+    } catch (error) {
+      if (!mounted) return;
       unawaited(_speakCurrentChapterOffline());
       setState(() {
         _isConverting = false;
-        _conversionError = 'Backend unreachable and local Python not available';
+        _conversionError = error.toString();
       });
-      return;
     }
-    await _startLocalConversion(bridge);
   }
 
   Future<void> _startBackendConversion() async {
@@ -275,7 +285,7 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen> {
     _sseSubscription?.cancel();
     _sseSubscription = SseSubscriptionLifecycle.listen(
       api.jobStream(jobId),
-      onData: _handleSnapshot,
+      onData: _enqueueSnapshot,
       onError: (Object e) {
         _sseSubscription = null;
         if (!mounted) return;
@@ -292,7 +302,24 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen> {
     );
   }
 
-  void _handleSnapshot(JobSnapshot snapshot) {
+  void _enqueueSnapshot(JobSnapshot snapshot) {
+    // SSE can deliver the next chapter before asynchronous queue updates for
+    // the previous one complete. Process snapshots in order so each update
+    // appends to the same audio queue instead of racing a replacement.
+    _snapshotWork = _snapshotWork.then((_) async {
+      try {
+        await _handleSnapshot(snapshot);
+      } catch (error) {
+        if (!mounted) return;
+        setState(() {
+          _isConverting = false;
+          _conversionError = error.toString();
+        });
+      }
+    });
+  }
+
+  Future<void> _handleSnapshot(JobSnapshot snapshot) async {
     if (!mounted) return;
 
     final playable = snapshot.playableChapters;
@@ -301,24 +328,21 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen> {
         .toList();
 
     if (newChapters.isNotEmpty) {
+      final isFirstPlayableBatch = _playableChapters.isEmpty;
       _playableChapters.addAll(newChapters);
       _playableChapters.sort((a, b) => a.index.compareTo(b.index));
 
       final player = ref.read(globalAudioPlayerProvider);
       _setCoverOnPlayer(player);
-      player.setQueue(List.of(_playableChapters));
-      // No auto-play. Loading the queue is intentional, but playback
-      // only starts when the user taps Play (UI / lock screen /
-      // media notification). Mirrors iOS no-autoplay parity.
-      // Slice 32: retry the resume restore on every batch until the
-      // saved chapter actually lands in the queue. The guard latches
-      // after the first successful seek so we never jump backwards
-      // if more chapters arrive after the user pressed play.
-      if (!player.isPlaying) {
-        _restoreResumePosition(player);
-        if (newChapters.length == _playableChapters.length) {
-          _startResumeListener(player);
-        }
+      await player.setQueue(List.of(_playableChapters));
+      if (!mounted) return;
+      if (isFirstPlayableBatch) {
+        await _restoreResumePosition(player);
+        _startResumeListener(player);
+        // Starting a conversion is explicit user intent. Begin once the
+        // first playable chapter is available; later SSE updates append to
+        // the queue without resetting the current audio item.
+        await player.play();
       }
     }
 
@@ -439,6 +463,9 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen> {
       _playableChapters.sort((a, b) => a.index.compareTo(b.index));
       if (_playableChapters.isNotEmpty) {
         await player.setQueue(List.of(_playableChapters));
+        await _restoreResumePosition(player);
+        _startResumeListener(player);
+        await player.play();
       }
 
       for (var i = 0; i < ft.chapters.length; i++) {
@@ -510,14 +537,16 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen> {
           chars: ch.text.length,
           progressRatio: 1.0,
         );
+        final isFirstPlayableChapter = _playableChapters.isEmpty;
         if (!_playableChapters.any((c) => c.index == cp.index)) {
           _playableChapters.add(cp);
           _playableChapters.sort((a, b) => a.index.compareTo(b.index));
         }
         await player.setQueue(List.of(_playableChapters));
-        if (_playableChapters.length == 1 && !player.isPlaying) {
+        if (isFirstPlayableChapter) {
           await _restoreResumePosition(player);
           _startResumeListener(player);
+          await player.play();
         }
         job = await coordinator.completeChapter(job, ch.index, mp3Path);
         _localJob = job;

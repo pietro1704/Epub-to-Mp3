@@ -17,7 +17,9 @@ import Foundation
 ///
 /// Strategy: walk the OPF `<spine>` in order and preserve the source XHTML.
 /// Plain text remains available for search and speech fallback, while the
-/// native reader renders the original markup.
+/// native reader renders the original markup with its safe default CSS.
+/// EPUB stylesheet rules are intentionally excluded: this safety net cannot
+/// validate viewport-bound `height` or `overflow` rules that would clip text.
 ///
 /// Never throws: returns an empty `EbookFulltext` (zero chapters) if the
 /// EPUB is truly unreadable. Callers decide whether to surface that as an
@@ -51,21 +53,19 @@ enum EpubFallbackParser {
             let text = stripHTML(html).trimmingCharacters(in: .whitespacesAndNewlines)
             guard !text.isEmpty else { continue }
             let title = firstHeading(in: html) ?? "Chapter \(index)"
-            let css = opfInfo.cssHrefs.compactMap { href -> String? in
-                let path = opfDir.isEmpty ? href : "\(opfDir)/\(href)"
-                guard let data = ZipReader.extract(member: path, from: url) else { return nil }
-                return String(data: data, encoding: .utf8) ?? String(data: data, encoding: .isoLatin1)
-            }.joined(separator: "\n")
             let resources = imageResources(in: html, chapterPath: chapterPath, archiveURL: url)
+            let footnotes = linkedFootnotes(in: html, chapterPath: chapterPath, archiveURL: url)
             chapters.append(EbookFulltext.Chapter(
                 index: index,
                 name: title,
+                sourcePath: chapterPath,
                 text: text,
                 html: html,
-                css: css.isEmpty ? nil : css,
+                css: nil,
                 charCount: text.count,
                 segments: nil,
-                resources: resources.isEmpty ? nil : resources
+                resources: resources.isEmpty ? nil : resources,
+                footnotes: footnotes.isEmpty ? nil : footnotes
             ))
             index += 1
         }
@@ -111,6 +111,69 @@ enum EpubFallbackParser {
                 dataBase64: data.base64EncodedString()
             )
         }
+    }
+
+    /// Extracts only explicitly-linked footnote bodies, with strict per-file
+    /// bounds. This keeps a fallback payload navigable without duplicating
+    /// the canonical parser's general TOC and note extraction logic.
+    private static func linkedFootnotes(
+        in html: String,
+        chapterPath: String,
+        archiveURL: URL
+    ) -> [EbookFulltext.Footnote] {
+        let anchorPattern = try? NSRegularExpression(
+            pattern: #"(?is)<a\b[^>]*\bhref\s*=\s*([\"'])([^\"']+)\1[^>]*>(.*?)</a\s*>"#
+        )
+        let range = NSRange(html.startIndex..., in: html)
+        let chapterDirectory = (chapterPath as NSString).deletingLastPathComponent
+        var notes: [EbookFulltext.Footnote] = []
+        var seen = Set<String>()
+        for match in anchorPattern?.matches(in: html, range: range) ?? [] {
+            guard let hrefRange = Range(match.range(at: 2), in: html),
+                  let labelRange = Range(match.range(at: 3), in: html) else { continue }
+            let href = String(html[hrefRange])
+            let parts = href.split(separator: "#", maxSplits: 1, omittingEmptySubsequences: false)
+            guard parts.count == 2 else { continue }
+            let targetPath = String(parts[0])
+            let fragment = String(parts[1]).removingPercentEncoding ?? String(parts[1])
+            let marker = "\(targetPath)#\(fragment)".lowercased()
+            guard marker.contains("foot") || marker.contains("note") else { continue }
+            let path: String
+            if targetPath.isEmpty {
+                path = chapterPath
+            } else {
+                path = normalizeZipPath(
+                    chapterDirectory.isEmpty ? targetPath : "\(chapterDirectory)/\(targetPath)"
+                )
+            }
+            guard let data = ZipReader.extract(member: path, from: archiveURL),
+                  !data.isEmpty, data.count <= 2 * 1024 * 1024,
+                  let targetHTML = String(data: data, encoding: .utf8)
+                    ?? String(data: data, encoding: .isoLatin1),
+                  let body = elementBody(withID: fragment, in: targetHTML) else { continue }
+            let text = stripHTML(body).trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !text.isEmpty else { continue }
+            let number = stripHTML(String(html[labelRange]))
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            let key = "\(number)|\(text)"
+            guard seen.insert(key).inserted else { continue }
+            notes.append(.init(number: number.isEmpty ? nil : number, text: text))
+        }
+        return notes
+    }
+
+    private static func elementBody(withID identifier: String, in html: String) -> String? {
+        let escaped = NSRegularExpression.escapedPattern(for: identifier)
+        let pattern = #"(?is)<([a-z][\w:-]*)\b[^>]*(?:xml:)?id\s*=\s*([\"'])"#
+            + escaped
+            + #"\2[^>]*>(.*?)</\1\s*>"#
+        guard let expression = try? NSRegularExpression(pattern: pattern),
+              let match = expression.firstMatch(
+                in: html,
+                range: NSRange(html.startIndex..., in: html)
+              ),
+              let range = Range(match.range(at: 3), in: html) else { return nil }
+        return String(html[range])
     }
 
     private static func mimeType(for path: String) -> String {

@@ -23,6 +23,19 @@ final class ReaderModesUITests: XCTestCase {
         return app
     }
 
+    private func launchForLiveSettings() -> XCUIApplication {
+        XCUIDevice.shared.orientation = .portrait
+        let app = XCUIApplication()
+        app.launchArguments += [
+            "-uiTestFixture",
+            "-uiTestResetReaderPosition",
+            "-AppleLanguages", "(en)",
+            "-AppleLocale", "en_US",
+        ]
+        app.launch()
+        return app
+    }
+
     private func openBook(_ app: XCUIApplication) throws {
         let firstBook = app.descendants(matching: .any).matching(
             NSPredicate(format: "identifier BEGINSWITH %@", "library.bookTile.")
@@ -54,6 +67,121 @@ final class ReaderModesUITests: XCTestCase {
         let parts = label.split(separator: "/").map(String.init)
         guard parts.count == 2, let index = Int(parts[0]), let total = Int(parts[1]) else { return nil }
         return (index, total)
+    }
+
+    private func openReaderSettings(_ app: XCUIApplication) throws {
+        let settings = app.buttons["reader.settings.toggle"].firstMatch
+        XCTAssertTrue(settings.waitForExistence(timeout: 10), "Reader settings button must be available.")
+        settings.tap()
+        XCTAssertTrue(
+            app.cells["reader.settings.mode"].firstMatch.waitForExistence(timeout: 5),
+            "The settings sheet must expose its reader-mode control through a stable identifier."
+        )
+    }
+
+    private func chooseLayout(_ name: String, in app: XCUIApplication) throws {
+        let mode = app.cells["reader.settings.mode"].firstMatch
+        XCTAssertTrue(mode.exists, "Reader mode control must remain visible while the sheet is open.")
+        if (mode.value as? String) == name { return }
+        mode.tap()
+        let choice = app.buttons[name].firstMatch
+        XCTAssertTrue(choice.waitForExistence(timeout: 5), "The \(name) mode option must be selectable.")
+        choice.tap()
+        XCTAssertTrue(mode.waitForExistence(timeout: 5), "The settings sheet must remain open after changing the reader mode.")
+    }
+
+    private func waitForExistence(
+        _ element: XCUIElement,
+        equals expected: Bool,
+        timeout: TimeInterval = 3
+    ) -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if element.exists == expected { return true }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+        }
+        return element.exists == expected
+    }
+
+    func testChangingLayoutReconfiguresTheOpenReaderImmediately() throws {
+        let app = launchForLiveSettings()
+        try openBook(app)
+        try openReaderSettings(app)
+
+        try chooseLayout("Paginated", in: app)
+        let pageIndicator = app.staticTexts["reader.pageIndicator"].firstMatch
+        XCTAssertTrue(pageIndicator.waitForExistence(timeout: 3), "Paginated mode must show the page indicator.")
+
+        try chooseLayout("Scrolling", in: app)
+        XCTAssertTrue(
+            waitForExistence(pageIndicator, equals: false),
+            "Switching to scrolling must hide pagination chrome before the settings sheet is dismissed."
+        )
+
+        try chooseLayout("Paginated", in: app)
+        XCTAssertTrue(
+            pageIndicator.waitForExistence(timeout: 3),
+            "Switching back to paginated must restore pagination chrome without reopening the book."
+        )
+    }
+
+    func testMarginSliderChangesTheOpenTextViewportDuringEditing() throws {
+        let app = launchForLiveSettings()
+        try openBook(app)
+        try openReaderSettings(app)
+        try chooseLayout("Paginated", in: app)
+
+        let marginRow = app.cells["reader.settings.margin.row"].firstMatch
+        let slider = app.sliders["reader.settings.margin"].firstMatch
+        let viewport = app.scrollViews["reader.viewport"].firstMatch
+        let content = app.textViews["reader.content"].firstMatch
+        XCTAssertTrue(marginRow.waitForExistence(timeout: 3), "Margin must remain a visible setting row.")
+        XCTAssertTrue(slider.waitForExistence(timeout: 3), "Margin must use the native continuous slider.")
+        XCTAssertTrue(viewport.exists && content.exists, "The open reader must remain mounted behind its settings sheet.")
+        XCTAssertGreaterThanOrEqual(
+            slider.frame.width,
+            marginRow.frame.width - 40,
+            "The slider must use the row's available width rather than sit in a narrow middle column."
+        )
+
+        slider.adjust(toNormalizedSliderPosition: 0)
+        sleep(1)
+        let minimum = content.frame
+        XCTAssertEqual(
+            minimum.minX - viewport.frame.minX,
+            8,
+            accuracy: 1,
+            "The minimum slider position must put the text viewport 8 pt from the reader viewport."
+        )
+        XCTAssertEqual(
+            viewport.frame.maxX - minimum.maxX,
+            8,
+            accuracy: 1,
+            "The minimum reader margin must be symmetric."
+        )
+
+        slider.adjust(toNormalizedSliderPosition: 0.5)
+        sleep(1)
+        let expanded = content.frame
+        XCTAssertGreaterThan(
+            expanded.minX,
+            minimum.minX + 20,
+            "Changing the slider must move the text viewport while the sheet remains open."
+        )
+        XCTAssertLessThan(
+            expanded.width,
+            minimum.width - 40,
+            "A larger margin must immediately narrow the visible text viewport."
+        )
+
+        slider.adjust(toNormalizedSliderPosition: 0)
+        sleep(1)
+        XCTAssertEqual(
+            content.frame.minX,
+            minimum.minX,
+            accuracy: 1,
+            "Returning the slider to its minimum must restore the 8 pt viewport immediately."
+        )
     }
 
     // MARK: - 1) Paginated, chrome hidden

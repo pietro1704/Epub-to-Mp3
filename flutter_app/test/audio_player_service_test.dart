@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:flutter_app/models/job_snapshot.dart';
 import 'package:flutter_app/services/audio_player_service.dart';
 
 void main() {
@@ -96,6 +97,18 @@ void main() {
       await player.setQueue([]);
       expect(player.chapters, isEmpty);
     });
+
+    test(
+      'setQueue exposes the first chapter for now-playing metadata',
+      () async {
+        await player.setQueue([
+          const ChapterProgress(index: 4, name: 'A Real Chapter'),
+        ]);
+
+        expect(player.currentIndexValue, 0);
+        expect(player.chapters.single.displayTitle, 'A Real Chapter');
+      },
+    );
 
     test('skipForward advances position', () async {
       final values = <Duration>[];

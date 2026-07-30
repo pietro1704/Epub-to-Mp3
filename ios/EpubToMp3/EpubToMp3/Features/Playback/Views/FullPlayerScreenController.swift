@@ -167,6 +167,18 @@ final class FullPlayerScreenController: UIViewController {
         chapterLabel.numberOfLines = 2
         chapterLabel.textAlignment = .center
 
+        // Keep the book and chapter metadata visible on compact iPhone
+        // heights. Without explicit vertical priorities, the stack can
+        // compress these labels to zero while preserving the cover and
+        // transport controls.
+        titleLabel.setContentHuggingPriority(.required, for: .vertical)
+        titleLabel.setContentCompressionResistancePriority(.required, for: .vertical)
+        chapterLabel.setContentHuggingPriority(.required, for: .vertical)
+        chapterLabel.setContentCompressionResistancePriority(.required, for: .vertical)
+        titleLabel.heightAnchor.constraint(greaterThanOrEqualToConstant: 26).isActive = true
+        chapterLabel.heightAnchor.constraint(greaterThanOrEqualToConstant: 20).isActive = true
+        authorLabel.heightAnchor.constraint(greaterThanOrEqualToConstant: 18).isActive = true
+
         slider.addTarget(self, action: #selector(scrubBegan), for: .touchDown)
         slider.addTarget(self, action: #selector(scrubChanged), for: .valueChanged)
         slider.addTarget(self, action: #selector(scrubEnded), for: [.touchUpInside, .touchUpOutside, .touchCancel])

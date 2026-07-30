@@ -74,7 +74,9 @@ enum EpubFixture {
     /// metadata-only fixture other tests rely on.
     static func createWithChapter(
         chapterTitle: String = "Chapter 1",
-        body: String = "This is a short chapter used for end to end testing."
+        body: String = "This is a short chapter used for end to end testing.",
+        stylesheet: String? = nil,
+        footnote: (reference: String, text: String)? = nil
     ) throws -> URL {
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("fixture-\(UUID().uuidString).epub")
@@ -83,6 +85,12 @@ enum EpubFixture {
         // minimal — `EbookReader` strips boilerplate and reads the text
         // node, so anything we add beyond a paragraph just slows the
         // parser without helping the test.
+        let footnoteReference = footnote?.reference ?? ""
+        let footnoteIsInChapter = footnoteReference.hasPrefix("#")
+        let footnoteHref = footnoteIsInChapter ? footnoteReference : "notes.xhtml#note1"
+        let chapterFootnoteBody = footnoteIsInChapter ? """
+            <aside id="note1">\(footnote?.text ?? "")</aside>
+        """ : ""
         let chapterXHTML = """
         <?xml version="1.0" encoding="UTF-8"?>
         <!DOCTYPE html>
@@ -90,11 +98,18 @@ enum EpubFixture {
           <head><title>\(chapterTitle)</title></head>
           <body>
             <h1>\(chapterTitle)</h1>
-            <p>\(body)</p>
+            <p>\(body)\(footnote.map { " <a href=\"\(footnoteHref)\">\($0.reference)</a>" } ?? "")</p>
+            \(chapterFootnoteBody)
           </body>
         </html>
         """.data(using: .utf8)!
 
+        let stylesheetManifest = stylesheet == nil ? "" : """
+            <item id="style" href="styles/book.css" media-type="text/css"/>
+        """
+        let footnoteManifest = footnote == nil || footnoteIsInChapter ? "" : """
+            <item id="notes" href="text/notes.xhtml" media-type="application/xhtml+xml"/>
+        """
         let withSpineOPF = """
         <?xml version="1.0" encoding="UTF-8"?>
         <package xmlns="http://www.idpf.org/2007/opf" version="3.0" \
@@ -111,6 +126,8 @@ enum EpubFixture {
         properties="cover-image"/>
             <item id="ch1" href="text/chapter1.xhtml" \
         media-type="application/xhtml+xml"/>
+        \(stylesheetManifest)
+        \(footnoteManifest)
           </manifest>
           <spine>
             <itemref idref="ch1"/>
@@ -118,13 +135,26 @@ enum EpubFixture {
         </package>
         """.data(using: .utf8)!
 
-        let archive = try buildArchive(members: [
+        var members: [Member] = [
             .stored("mimetype", Data("application/epub+zip".utf8)),
             .deflated("META-INF/container.xml", containerXML),
             .deflated("OEBPS/content.opf", withSpineOPF),
             .deflated("OEBPS/text/chapter1.xhtml", chapterXHTML),
             .stored("OEBPS/images/cover.png", coverPNG),
-        ])
+        ]
+        if let stylesheet {
+            members.append(.deflated("OEBPS/styles/book.css", Data(stylesheet.utf8)))
+        }
+        if let footnote, !footnoteIsInChapter {
+            let notesXHTML = """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <html xmlns="http://www.w3.org/1999/xhtml"><body>
+            <p id="note1">\(footnote.text)</p>
+            </body></html>
+            """
+            members.append(.deflated("OEBPS/text/notes.xhtml", Data(notesXHTML.utf8)))
+        }
+        let archive = try buildArchive(members: members)
         try archive.write(to: url)
         return url
     }

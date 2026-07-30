@@ -35,6 +35,10 @@ final class IOSAppShellController: UITabBarController {
     private let player: AudioPlayer
     private let playerPresentation: PlayerPresentation
     private let bookmarkStore: BookmarkStore
+    private var miniPlayerAccessoryView: MiniPlayerBarUIKitView?
+    private var miniPlayerAccessory: NSObject?
+
+    private(set) var usesSystemBottomAccessory = false
 
     init(
         settings: AppSettings,
@@ -57,6 +61,28 @@ final class IOSAppShellController: UITabBarController {
         fatalError("init(coder:) has not been implemented")
     }
 
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        configureNavigationMode(
+            for: UIDevice.current.userInterfaceIdiom,
+            horizontalSizeClass: traitCollection.horizontalSizeClass
+        )
+    }
+
+    override func viewWillTransition(
+        to size: CGSize,
+        with coordinator: any UIViewControllerTransitionCoordinator
+    ) {
+        super.viewWillTransition(to: size, with: coordinator)
+        coordinator.animate(alongsideTransition: nil) { [weak self] _ in
+            guard let self else { return }
+            self.configureNavigationMode(
+                for: UIDevice.current.userInterfaceIdiom,
+                horizontalSizeClass: self.traitCollection.horizontalSizeClass
+            )
+        }
+    }
+
     func applyTheme(_ theme: ReaderTheme) {
         switch theme.preferredColorScheme {
         case .dark:
@@ -68,6 +94,78 @@ final class IOSAppShellController: UITabBarController {
         @unknown default:
             overrideUserInterfaceStyle = .unspecified
         }
+    }
+
+    func configureMiniPlayerAccessory(
+        player: AudioPlayer,
+        playbackClock: PlaybackClock,
+        library: LibraryStore,
+        onTap: @escaping () -> Void
+    ) {
+        guard #available(iOS 26.0, *) else { return }
+        let miniPlayerView = MiniPlayerBarUIKitView(usesSystemManagedBottomInset: true)
+        miniPlayerView.configure(
+            player: player,
+            playbackClock: playbackClock,
+            library: library,
+            onTap: onTap
+        )
+        miniPlayerAccessoryView = miniPlayerView
+    }
+
+    func setSystemMiniPlayerVisible(_ visible: Bool, animated: Bool) {
+        setMiniPlayerAccessoryContent(
+            miniPlayerAccessoryView,
+            visible: visible,
+            animated: animated
+        )
+    }
+
+    func setReaderTabBarHidden(_ hidden: Bool, animated: Bool) {
+        if #available(iOS 18.0, *) {
+            setTabBarHidden(hidden, animated: animated)
+        } else {
+            tabBar.isHidden = hidden
+        }
+    }
+
+    func configureNavigationMode(
+        for interfaceIdiom: UIUserInterfaceIdiom,
+        horizontalSizeClass: UIUserInterfaceSizeClass = .regular
+    ) {
+        guard #available(iOS 18.0, *) else { return }
+        mode = interfaceIdiom == .pad && horizontalSizeClass == .regular
+            ? .tabSidebar
+            : .tabBar
+    }
+
+    func setMiniPlayerAccessoryContent(
+        _ contentView: UIView?,
+        visible: Bool,
+        animated: Bool
+    ) {
+        guard #available(iOS 26.0, *) else {
+            usesSystemBottomAccessory = false
+            return
+        }
+
+        guard visible, let contentView else {
+            setBottomAccessory(nil, animated: animated)
+            miniPlayerAccessory = nil
+            usesSystemBottomAccessory = false
+            return
+        }
+
+        let accessory = miniPlayerAccessory as? UITabAccessory
+        let resolvedAccessory: UITabAccessory
+        if let accessory, accessory.contentView === contentView {
+            resolvedAccessory = accessory
+        } else {
+            resolvedAccessory = UITabAccessory(contentView: contentView)
+            miniPlayerAccessory = resolvedAccessory
+        }
+        setBottomAccessory(resolvedAccessory, animated: animated)
+        usesSystemBottomAccessory = true
     }
 
     private func makeNavigationController(for tab: IOSAppShellTab) -> UINavigationController {

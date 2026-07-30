@@ -106,18 +106,35 @@ final class IOSAppShellTests: XCTestCase {
         XCTAssertTrue(navigationControllers?[2].viewControllers.first is ConvertScreenController)
     }
 
-    func testMiniPlayerIsAnchoredAboveTheTabBar() throws {
-        let source = try readSourceFileIfAvailable(
-            at: URL(fileURLWithPath: #filePath)
-                .deletingLastPathComponent()
-                .deletingLastPathComponent()
-                .appendingPathComponent("EpubToMp3/App/IOSRootContainer.swift")
+    @available(iOS 18.0, *)
+    func testIPadUsesNativeTabSidebarWhileIPhoneKeepsTabBar() {
+        let controller = makeShellController()
+
+        controller.configureNavigationMode(for: .pad)
+        XCTAssertEqual(controller.mode, .tabSidebar)
+
+        controller.configureNavigationMode(for: .phone)
+        XCTAssertEqual(controller.mode, .tabBar)
+    }
+
+    @available(iOS 26.0, *)
+    func testSystemBottomAccessoryHostsTheMiniPlayerOutsideTheReader() {
+        let controller = makeShellController()
+        let miniPlayerContent = UIView()
+
+        controller.setMiniPlayerAccessoryContent(
+            miniPlayerContent,
+            visible: true,
+            animated: false
         )
 
-        XCTAssertTrue(
-            source.contains("miniPlayerController.view.bottomAnchor.constraint(equalTo: shellController.tabBar.topAnchor)"),
-            "The mini-player must sit above the tab bar, not cover it."
-        )
+        XCTAssertTrue(controller.usesSystemBottomAccessory)
+        XCTAssertTrue(controller.bottomAccessory?.contentView === miniPlayerContent)
+
+        controller.setMiniPlayerAccessoryContent(nil, visible: false, animated: false)
+
+        XCTAssertFalse(controller.usesSystemBottomAccessory)
+        XCTAssertNil(controller.bottomAccessory)
     }
 
     func testReaderOverlayRemainsOpaqueAboveTheLibrary() throws {
@@ -144,28 +161,6 @@ final class IOSAppShellTests: XCTestCase {
 
         XCTAssertTrue(source.contains("miniPlayer.bar"))
         XCTAssertTrue(source.contains("miniPlayer.playPause"))
-    }
-
-    func testMiniPlayerHasExplicitSafeAreaAwareHeightAndEaseInOutTransition() throws {
-        let source = try readSourceFileIfAvailable(
-            at: URL(fileURLWithPath: #filePath)
-                .deletingLastPathComponent()
-                .deletingLastPathComponent()
-                .appendingPathComponent("EpubToMp3/App/IOSRootContainer.swift")
-        )
-
-        XCTAssertTrue(source.contains("miniPlayerController.view.heightAnchor.constraint"))
-        XCTAssertTrue(source.contains("52 + view.safeAreaInsets.bottom"))
-        XCTAssertTrue(source.contains(".curveEaseInOut"))
-
-        let miniSource = try readSourceFileIfAvailable(
-            at: URL(fileURLWithPath: #filePath)
-                .deletingLastPathComponent()
-                .deletingLastPathComponent()
-                .appendingPathComponent("EpubToMp3/Features/Playback/Views/MiniPlayerBarHost.swift")
-        )
-        XCTAssertTrue(miniSource.contains("materialView.bottomAnchor.constraint(equalTo: safeAreaLayoutGuide.bottomAnchor)"))
-        XCTAssertTrue(miniSource.contains("leading: 12"))
     }
 
     func testMainAppContainsNoSwiftUIScreensOrHostingBridges() throws {
@@ -200,6 +195,16 @@ final class IOSAppShellTests: XCTestCase {
         XCTAssertTrue(source.contains("player: player"))
         XCTAssertTrue(source.contains("playbackClock: player.playbackClock"))
         XCTAssertTrue(source.contains("ConvertScreenController("))
+    }
+
+    private func makeShellController() -> IOSAppShellController {
+        IOSAppShellController(
+            settings: AppSettings(),
+            library: LibraryStore(),
+            player: AudioPlayer(),
+            playerPresentation: PlayerPresentation(),
+            bookmarkStore: BookmarkStore()
+        )
     }
 }
 #endif

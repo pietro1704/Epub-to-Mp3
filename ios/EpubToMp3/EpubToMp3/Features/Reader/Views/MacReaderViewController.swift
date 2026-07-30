@@ -14,12 +14,21 @@ final class MacReaderViewController: NSViewController, NSTableViewDataSource, NS
     private let textView = MacReaderTextView()
     private let comicPageImageView = NSImageView()
     private let contentScrollView = NSScrollView()
+    private let toolbar = NSStackView()
     private let bookTitleLabel = NSTextField(labelWithString: "")
     private let chapterTitleLabel = NSTextField(labelWithString: "")
     private let statusLabel = NSTextField(labelWithString: "")
+    private let loadingOverlay = NSVisualEffectView()
+    private let loadingCoverView = NSImageView()
+    private let loadingSpinner = NSProgressIndicator()
+    private let loadingTitleLabel = NSTextField(labelWithString: "")
+    private let loadingStatusLabel = NSTextField(labelWithString: "")
+    private let loadingRetryButton = NSButton()
     private let tocPopover = NSPopover()
     private let settingsPopover = NSPopover()
     private var settingsCancellables: Set<AnyCancellable> = []
+    private var loadTask: Task<Void, Never>?
+    private var loadGeneration = UUID()
     private var pdfView: PDFView?
     private var fulltext: EbookFulltext?
     private var selectedChapter = 0
@@ -47,6 +56,7 @@ final class MacReaderViewController: NSViewController, NSTableViewDataSource, NS
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
     deinit {
+        loadTask?.cancel()
         NotificationCenter.default.removeObserver(self)
     }
 
@@ -170,7 +180,10 @@ final class MacReaderViewController: NSViewController, NSTableViewDataSource, NS
         leadingSpacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
         let trailingSpacer = NSView()
         trailingSpacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
-        let toolbar = NSStackView(views: [leadingControls, leadingSpacer, bookTitleLabel, trailingSpacer])
+        toolbar.addArrangedSubview(leadingControls)
+        toolbar.addArrangedSubview(leadingSpacer)
+        toolbar.addArrangedSubview(bookTitleLabel)
+        toolbar.addArrangedSubview(trailingSpacer)
         toolbar.orientation = .horizontal
         toolbar.alignment = .centerY
         toolbar.edgeInsets = NSEdgeInsets(top: 10, left: 16, bottom: 10, right: 16)
@@ -186,6 +199,9 @@ final class MacReaderViewController: NSViewController, NSTableViewDataSource, NS
         statusLabel.setAccessibilityIdentifier("reader.status")
         textView.isEditable = false
         textView.isSelectable = true
+        textView.onLinkClick = { [weak self] url, linkText in
+            self?.handleReaderLink(url, linkText: linkText) ?? true
+        }
         textView.setAccessibilityIdentifier("reader.content")
         textView.font = .systemFont(ofSize: settings.readerPointSize)
         textView.textContainerInset = NSSize(width: 32, height: 24)
@@ -220,6 +236,7 @@ final class MacReaderViewController: NSViewController, NSTableViewDataSource, NS
             contentScrollView.topAnchor.constraint(equalTo: statusLabel.bottomAnchor, constant: 8),
             contentScrollView.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -22),
         ])
+        configureLoadingOverlay()
         textView.onKeyDown = { [weak self] event in
             self?.handleKeyboardEvent(event) ?? false
         }
@@ -230,6 +247,101 @@ final class MacReaderViewController: NSViewController, NSTableViewDataSource, NS
         textView.onBuildSelectionMenu = { [weak self] range in
             self?.buildSelectionMenuItems(range: range) ?? []
         }
+    }
+
+    private func configureLoadingOverlay() {
+        loadingOverlay.material = .contentBackground
+        loadingOverlay.blendingMode = .withinWindow
+        loadingOverlay.state = .active
+        loadingOverlay.isHidden = true
+        loadingOverlay.setAccessibilityIdentifier("reader.loadingOverlay")
+        loadingOverlay.translatesAutoresizingMaskIntoConstraints = false
+
+        loadingCoverView.imageScaling = .scaleProportionallyUpOrDown
+        loadingCoverView.wantsLayer = true
+        loadingCoverView.layer?.cornerRadius = 12
+        loadingCoverView.layer?.masksToBounds = true
+        loadingCoverView.translatesAutoresizingMaskIntoConstraints = false
+
+        loadingSpinner.style = .spinning
+        loadingSpinner.controlSize = .regular
+        loadingSpinner.isIndeterminate = true
+        loadingSpinner.translatesAutoresizingMaskIntoConstraints = false
+
+        loadingTitleLabel.font = .systemFont(ofSize: 18, weight: .semibold)
+        loadingTitleLabel.alignment = .center
+        loadingTitleLabel.lineBreakMode = .byTruncatingTail
+        loadingStatusLabel.textColor = .secondaryLabelColor
+        loadingStatusLabel.alignment = .center
+        loadingStatusLabel.setAccessibilityIdentifier("reader.loadingStatus")
+        loadingRetryButton.title = L10n.string("reader.retry")
+        loadingRetryButton.bezelStyle = .rounded
+        loadingRetryButton.target = self
+        loadingRetryButton.action = #selector(retryLoadingBook)
+        loadingRetryButton.isHidden = true
+
+        let stack = NSStackView(views: [
+            loadingCoverView,
+            loadingSpinner,
+            loadingTitleLabel,
+            loadingStatusLabel,
+            loadingRetryButton,
+        ])
+        stack.orientation = .vertical
+        stack.alignment = .centerX
+        stack.spacing = 14
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        loadingOverlay.addSubview(stack)
+        view.addSubview(loadingOverlay)
+
+        let preferredCoverWidth = loadingCoverView.widthAnchor.constraint(
+            equalTo: loadingOverlay.widthAnchor,
+            multiplier: 0.28
+        )
+        preferredCoverWidth.priority = .defaultHigh
+        NSLayoutConstraint.activate([
+            loadingOverlay.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            loadingOverlay.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            loadingOverlay.topAnchor.constraint(equalTo: view.topAnchor),
+            loadingOverlay.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            stack.centerXAnchor.constraint(equalTo: loadingOverlay.centerXAnchor),
+            stack.centerYAnchor.constraint(equalTo: loadingOverlay.centerYAnchor),
+            stack.leadingAnchor.constraint(greaterThanOrEqualTo: loadingOverlay.leadingAnchor, constant: 32),
+            stack.trailingAnchor.constraint(lessThanOrEqualTo: loadingOverlay.trailingAnchor, constant: -32),
+            preferredCoverWidth,
+            loadingCoverView.widthAnchor.constraint(lessThanOrEqualToConstant: 240),
+            loadingCoverView.heightAnchor.constraint(equalTo: loadingCoverView.widthAnchor, multiplier: 1.5),
+            loadingCoverView.heightAnchor.constraint(lessThanOrEqualTo: loadingOverlay.heightAnchor, multiplier: 0.45),
+        ])
+        // The reader toolbar remains available for closing the book while
+        // parsing continues underneath the loading surface.
+        view.addSubview(toolbar, positioned: .above, relativeTo: loadingOverlay)
+    }
+
+    private func showLoading(for book: BookEntity) {
+        loadingCoverView.image = book.coverPNG.flatMap(NSImage.init(data:))
+            ?? NSImage(systemSymbolName: "book.closed", accessibilityDescription: nil)
+        loadingTitleLabel.stringValue = book.resolvedTitle
+        loadingStatusLabel.stringValue = L10n.string("reader.loading")
+        loadingRetryButton.isHidden = true
+        loadingOverlay.isHidden = false
+        loadingSpinner.startAnimation(nil)
+    }
+
+    private func showLoadingError(_ error: Error) {
+        loadingStatusLabel.stringValue = error.localizedDescription
+        loadingRetryButton.isHidden = false
+        loadingOverlay.isHidden = false
+        loadingSpinner.stopAnimation(nil)
+    }
+
+    private func hideLoading() {
+        loadingSpinner.stopAnimation(nil)
+        loadingOverlay.isHidden = true
+    }
+
+    private func isActiveLoad(_ generation: UUID, bookID: String) -> Bool {
+        !Task.isCancelled && loadGeneration == generation && currentBookId == bookID
     }
 
     private func configureTOCPopover() {
@@ -346,6 +458,9 @@ final class MacReaderViewController: NSViewController, NSTableViewDataSource, NS
 
     private func loadCurrentBook() {
         guard isViewLoaded else { return }
+        loadTask?.cancel()
+        let generation = UUID()
+        loadGeneration = generation
         contentScrollView.documentView = textView
         let id = UserDefaults.standard.string(forKey: ReaderSessionState.currentlyReadingBookIDKey)
         guard let book = library.books.first(where: { $0.id == id }) else {
@@ -356,21 +471,30 @@ final class MacReaderViewController: NSViewController, NSTableViewDataSource, NS
             statusLabel.stringValue = L10n.string("reader.selectBook")
             textView.string = ""
             chaptersTable.reloadData()
+            hideLoading()
             return
         }
         if currentBookId != book.id {
             currentBookId = book.id
             hasRestoredInitialPosition = false
         }
+        fulltext = nil
+        textView.string = ""
+        comicPageImageView.image = nil
+        chaptersTable.reloadData()
         bookTitleLabel.stringValue = book.resolvedTitle
         chapterTitleLabel.stringValue = ""
         statusLabel.stringValue = L10n.string("reader.loading")
-        Task { [weak self] in
+        showLoading(for: book)
+        loadTask = Task { [weak self] in
             guard let self else { return }
             do {
-                let fileURL = try library.openBookFile(id: book.id)
+                let fileURL = try await library.openBookFileAsync(id: book.id)
+                guard self.isActiveLoad(generation, bookID: book.id) else { return }
                 if book.fileType == .pdf {
                     await showPDF(fileURL)
+                    guard self.isActiveLoad(generation, bookID: book.id) else { return }
+                    self.hideLoading()
                     return
                 }
                 let cachedPayload = LocalFulltextCache.read(bookId: book.id)
@@ -387,6 +511,7 @@ final class MacReaderViewController: NSViewController, NSTableViewDataSource, NS
                 } else {
                     payload = try await MacEpubParser.parse(at: fileURL, bookId: book.id)
                 }
+                guard self.isActiveLoad(generation, bookID: book.id) else { return }
                 LocalFulltextCache.save(payload, bookId: book.id)
                 fulltext = payload
                 statusLabel.stringValue = L10n.string("reader.chapterCount", payload.chapters.count)
@@ -405,11 +530,18 @@ final class MacReaderViewController: NSViewController, NSTableViewDataSource, NS
                 }
                 showChapter(selectedChapter)
                 restoreReadingProgressIfNeeded(bookId: book.id)
+                hideLoading()
             } catch {
+                guard self.isActiveLoad(generation, bookID: book.id) else { return }
                 statusLabel.stringValue = error.localizedDescription
                 textView.string = ""
+                showLoadingError(error)
             }
         }
+    }
+
+    @objc private func retryLoadingBook() {
+        loadCurrentBook()
     }
 
     private func showChapter(_ index: Int, scrollToEnd: Bool = false) {
@@ -445,6 +577,32 @@ final class MacReaderViewController: NSViewController, NSTableViewDataSource, NS
             }
         }
         UserDefaults.standard.set(index, forKey: AudioPlayer.readerCurrentChapterIndexDefaultsKey)
+    }
+
+    private func handleReaderLink(_ url: URL, linkText: String) -> Bool {
+        guard let fulltext, let chapter = fulltext.chapters[safe: selectedChapter] else {
+            return true
+        }
+        switch ReaderLinkResolver.destination(
+            for: url,
+            linkText: linkText,
+            currentChapter: chapter,
+            chapters: fulltext.chapters
+        ) {
+        case .chapter(let index):
+            guard fulltext.chapters.indices.contains(index) else { return true }
+            persistReadingProgress()
+            selectedChapter = index
+            showChapter(index)
+            return true
+        case .footnote(let footnote):
+            showFootnote(footnote)
+            return true
+        case .external:
+            return false
+        case .unresolved:
+            return true
+        }
     }
 
     // MARK: - Selection → bookmark/highlight/note
@@ -662,6 +820,19 @@ final class MacReaderViewController: NSViewController, NSTableViewDataSource, NS
         alert.runModal()
     }
 
+    private func showFootnote(_ footnote: EbookFulltext.Footnote) {
+        let alert = NSAlert()
+        alert.messageText = L10n.string("reader.footnotes.title")
+        let numberPrefix = footnote.number.map { "\($0)\n\n" } ?? ""
+        alert.informativeText = numberPrefix + footnote.text
+        alert.addButton(withTitle: L10n.string("common.ok"))
+        if let window = view.window {
+            alert.beginSheetModal(for: window)
+        } else {
+            alert.runModal()
+        }
+    }
+
     // MARK: - In-chapter search
 
     @objc private func promptSearch() {
@@ -729,10 +900,23 @@ private final class MacReaderSurfaceView: NSView {
     }
 }
 
-private final class MacReaderTextView: NSTextView {
+final class MacReaderTextView: NSTextView, NSTextViewDelegate {
     var onKeyDown: ((NSEvent) -> Bool)?
     var onPageTap: ((Bool) -> Bool)?
     var onBuildSelectionMenu: ((NSRange) -> [NSMenuItem])?
+    var onLinkClick: ((URL, String) -> Bool)?
+
+    convenience init() {
+        self.init(frame: .zero, textContainer: nil)
+    }
+
+    override init(frame frameRect: NSRect, textContainer container: NSTextContainer?) {
+        super.init(frame: frameRect, textContainer: container)
+        delegate = self
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
     override func keyDown(with event: NSEvent) {
         guard onKeyDown?(event) == true else {
@@ -743,6 +927,10 @@ private final class MacReaderTextView: NSTextView {
 
     override func mouseUp(with event: NSEvent) {
         let location = convert(event.locationInWindow, from: nil)
+        if let characterIndex = characterIndex(at: location), shouldDeferMouseUpToTextSystem(at: characterIndex) {
+            super.mouseUp(with: event)
+            return
+        }
         let forward = location.x >= bounds.midX
         if onPageTap?(forward) != true { super.mouseUp(with: event) }
     }
@@ -759,6 +947,49 @@ private final class MacReaderTextView: NSTextView {
         }
         menu.insertItem(.separator(), at: extra.count)
         return menu
+    }
+
+    func textView(_ textView: NSTextView, clickedOnLink link: Any, at charIndex: Int) -> Bool {
+        guard let url = Self.url(from: link),
+              charIndex != NSNotFound,
+              charIndex >= 0,
+              charIndex < string.utf16.count else {
+            return false
+        }
+        var linkRange = NSRange(location: charIndex, length: 0)
+        textStorage?.attribute(.link, at: charIndex, effectiveRange: &linkRange)
+        let linkText = (string as NSString).substring(with: linkRange)
+        return onLinkClick?(url, linkText) ?? false
+    }
+
+    func shouldDeferMouseUpToTextSystem(at characterIndex: Int) -> Bool {
+        guard characterIndex != NSNotFound,
+              characterIndex >= 0,
+              characterIndex < string.utf16.count else {
+            return false
+        }
+        return textStorage?.attribute(.link, at: characterIndex, effectiveRange: nil) != nil
+    }
+
+    private func characterIndex(at point: NSPoint) -> Int? {
+        guard let layoutManager, let textContainer else { return nil }
+        let textContainerPoint = NSPoint(
+            x: point.x - textContainerOrigin.x,
+            y: point.y - textContainerOrigin.y
+        )
+        let index = layoutManager.characterIndex(
+            for: textContainerPoint,
+            in: textContainer,
+            fractionOfDistanceBetweenInsertionPoints: nil
+        )
+        return index == NSNotFound ? nil : index
+    }
+
+    private static func url(from link: Any) -> URL? {
+        if let url = link as? URL { return url }
+        if let url = link as? NSURL { return url as URL }
+        if let value = link as? String { return URL(string: value) }
+        return nil
     }
 }
 

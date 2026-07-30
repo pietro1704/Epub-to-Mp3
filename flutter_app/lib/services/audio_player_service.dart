@@ -40,8 +40,8 @@ abstract class AudioPlayerInterface {
 
 class AudioPlayerService implements AudioPlayerInterface {
   AudioPlayerService({String? backendBase, AudioPlayer? player})
-      : _baseUrl = backendBase,
-        _player = player ?? AudioPlayer();
+    : _baseUrl = backendBase,
+      _player = player ?? AudioPlayer();
 
   final AudioPlayer _player;
   final String? _baseUrl;
@@ -93,37 +93,61 @@ class AudioPlayerService implements AudioPlayerInterface {
 
   /// Persistent source for segment-mode appending.
   ConcatenatingAudioSource? _segmentSource;
+  ConcatenatingAudioSource? _chapterSource;
+  List<Uri> _chapterQueueURLs = const [];
 
   @override
   Future<void> setQueue(List<ChapterProgress> chapters) async {
-    _chapters = chapters;
     final base = _baseUrl ?? '';
     final children = <AudioSource>[];
     final map = <int>[];
+    final urls = <Uri>[];
     for (var i = 0; i < chapters.length; i++) {
       final c = chapters[i];
       if (c.downloadUrl != null) {
-        children.add(AudioSource.uri(_resolve(base, c.downloadUrl!)));
+        final url = _resolve(base, c.downloadUrl!);
+        children.add(AudioSource.uri(url));
+        urls.add(url);
         map.add(i);
       }
     }
+    final keepsExistingQueue =
+        _chapterSource != null &&
+        urls.length >= _chapterQueueURLs.length &&
+        _chapterQueueURLs.asMap().entries.every(
+          (entry) => urls[entry.key] == entry.value,
+        );
+    _chapters = chapters;
     _playableMap = map;
     if (children.isEmpty) return;
+
+    if (keepsExistingQueue) {
+      for (
+        var index = _chapterQueueURLs.length;
+        index < children.length;
+        index++
+      ) {
+        await _chapterSource!.add(children[index]);
+      }
+      _chapterQueueURLs = urls;
+      return;
+    }
+
     _isSegmentMode = false;
     _segmentSource = null;
-    await _player.setAudioSource(
-      ConcatenatingAudioSource(children: children),
-      preload: false,
-    );
+    _chapterSource = ConcatenatingAudioSource(children: children);
+    _chapterQueueURLs = urls;
+    await _player.setAudioSource(_chapterSource!, preload: false);
   }
 
   @override
-  void enqueueSegment(Uri uri,
-      {String? sentenceId, int chapterIndex = 0}) {
+  void enqueueSegment(Uri uri, {String? sentenceId, int chapterIndex = 0}) {
     if (chapterIndex != _segmentChapterIndex) {
       _segmentChapterIndex = chapterIndex;
       _segmentSentenceIds.clear();
       _segmentSource = ConcatenatingAudioSource(children: []);
+      _chapterSource = null;
+      _chapterQueueURLs = const [];
       _player.setAudioSource(_segmentSource!, preload: false);
     }
     if (sentenceId != null) {
@@ -156,8 +180,9 @@ class AudioPlayerService implements AudioPlayerInterface {
     if (urlOrPath.startsWith('http') || urlOrPath.startsWith('file:')) {
       return Uri.parse(urlOrPath);
     }
-    final cleanBase =
-        base.endsWith('/') ? base.substring(0, base.length - 1) : base;
+    final cleanBase = base.endsWith('/')
+        ? base.substring(0, base.length - 1)
+        : base;
     final cleanPath = urlOrPath.startsWith('/') ? urlOrPath : '/$urlOrPath';
     return Uri.parse('$cleanBase$cleanPath');
   }
@@ -225,8 +250,7 @@ class AudioPlayerService implements AudioPlayerInterface {
   }
 
   @override
-  double get positionSeconds =>
-      _player.position.inMilliseconds / 1000.0;
+  double get positionSeconds => _player.position.inMilliseconds / 1000.0;
 
   @override
   double get durationSeconds =>
@@ -274,6 +298,7 @@ class FakeAudioPlayerService implements AudioPlayerInterface {
   double _sleepTimerRemaining = 0;
   bool _playing = false;
   List<ChapterProgress> _chapters = const [];
+  int? _currentIndex;
   Duration _position = Duration.zero;
   final Duration _duration = Duration.zero;
 
@@ -292,7 +317,7 @@ class FakeAudioPlayerService implements AudioPlayerInterface {
   @override
   Stream<int?> get currentIndex => _indexController.stream;
   @override
-  int? get currentIndexValue => null;
+  int? get currentIndexValue => _currentIndex;
   @override
   Stream<String?> get activeSentenceStream => _sentenceController.stream;
   @override
@@ -311,11 +336,12 @@ class FakeAudioPlayerService implements AudioPlayerInterface {
   @override
   Future<void> setQueue(List<ChapterProgress> chapters) async {
     _chapters = chapters;
+    _currentIndex = chapters.isEmpty ? null : 0;
+    _indexController.add(_currentIndex);
   }
 
   @override
-  void enqueueSegment(Uri uri,
-      {String? sentenceId, int chapterIndex = 0}) {
+  void enqueueSegment(Uri uri, {String? sentenceId, int chapterIndex = 0}) {
     if (sentenceId != null) {
       activeSentenceId = sentenceId;
       _sentenceController.add(sentenceId);
@@ -338,6 +364,10 @@ class FakeAudioPlayerService implements AudioPlayerInterface {
   Future<void> seek(Duration position, {int? index}) async {
     _position = position;
     _positionController.add(position);
+    if (index != null) {
+      _currentIndex = index;
+      _indexController.add(index);
+    }
   }
 
   @override

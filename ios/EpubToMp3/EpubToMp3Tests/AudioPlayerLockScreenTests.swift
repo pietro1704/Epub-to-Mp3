@@ -191,7 +191,7 @@ final class AudioPlayerLockScreenTests: XCTestCase {
         player.stop()
         XCTAssertNil(player.snapshot, "stop() must drop the active snapshot")
         XCTAssertEqual(player.makeNowPlayingInfo()[MPMediaItemPropertyTitle] as? String,
-            "Chapter",
+            L10n.string("player.chapter", 1),
             "After stop() the Now Playing dict must not retain stale metadata")
     }
 
@@ -254,6 +254,63 @@ final class AudioPlayerLockScreenTests: XCTestCase {
             player.makeNowPlayingInfo()[MPMediaItemPropertyAlbumTitle] as? String,
             "Foundation",
             "Now Playing album metadata should retain the book title")
+    }
+
+    func testRemoteStreamingUsesReaderHeadingBeforeAnyChapterMP3IsComplete() {
+        let snapshot = JobSnapshot(
+            jobId: "remote-streaming-job",
+            state: "running",
+            bookTitle: "The Lord of the Rings",
+            bookAuthor: "J.R.R. Tolkien",
+            coverUrl: nil,
+            coverMimeType: nil,
+            engine: "edge",
+            voice: nil,
+            language: "en",
+            progressPercent: 0,
+            chaptersTotal: 1,
+            chaptersCompleted: 0,
+            chapterProgress: [
+                .init(
+                    index: 1,
+                    name: "Chapter 1",
+                    status: "processing",
+                    downloadUrl: nil,
+                    chars: 100,
+                    charsProcessed: 10,
+                    progressRatio: 0.1,
+                    durationSeconds: nil,
+                    startedAt: nil,
+                    completedAt: nil
+                )
+            ],
+            outputs: nil,
+            logUrl: nil,
+            error: nil,
+            lastActivityAt: nil
+        )
+        let player = AudioPlayer()
+
+        XCTAssertTrue(
+            player.beginRemoteStreaming(
+                snapshot: snapshot,
+                backendBaseURL: URL(string: "https://example.com")!
+            )
+        )
+        player.updateReaderChapterTitle("The Fellowship of the Ring", for: 0)
+
+        let info = player.makeNowPlayingInfo()
+        XCTAssertEqual(info[MPMediaItemPropertyTitle] as? String, "The Fellowship of the Ring")
+        XCTAssertEqual(info[MPMediaItemPropertyAlbumTitle] as? String, "The Lord of the Rings")
+    }
+
+    func testPlaybackURLResolvesBackendRelativeOutputPath() {
+        let url = AudioPlayer.playbackURL(
+            forDownloadPath: "/api/outputs/job-1/chapter.mp3",
+            backendBaseURL: URL(string: "https://example.com:8443")
+        )
+
+        XCTAssertEqual(url?.absoluteString, "https://example.com:8443/api/outputs/job-1/chapter.mp3")
     }
 }
 #endif

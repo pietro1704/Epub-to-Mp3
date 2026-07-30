@@ -158,10 +158,12 @@ final class MacBookDetailViewController: NSViewController {
                     let snapshot = try await EmbeddedConversionCoordinator.stream(
                         bookURL: url,
                         bookID: book.id,
-                        player: self.player
+                        player: self.player,
+                        onStreamingStarted: { [weak self] in
+                            self?.playerPresentation.showFullPlayer()
+                        }
                     )
                     self.library.recordConversion(jobId: snapshot.jobId, for: self.book.id)
-                    self.playerPresentation.showFullPlayer()
                 } catch {
                     let alert = NSAlert()
                     alert.messageText = L10n.string("bookDetail.listenStart")

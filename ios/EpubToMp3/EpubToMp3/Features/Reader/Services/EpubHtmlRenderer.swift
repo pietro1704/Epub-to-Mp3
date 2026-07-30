@@ -72,7 +72,11 @@ enum EpubHtmlRenderer {
         guard !trimmed.isEmpty else { return nil }
 
         let body = extractBodyContent(trimmed)
-        let resolvedBody = resolveResourceImageSources(body, resources: resources ?? [])
+        // Cocoa's HTML importer drops fragment-only `href="#note"` links.
+        // Rewrite every EPUB-local target to an app-owned URL first so both
+        // fragment and cross-document destinations survive as `.link` runs.
+        let linkedBody = rewriteInternalLinkHrefs(body)
+        let resolvedBody = resolveResourceImageSources(linkedBody, resources: resources ?? [])
         let (placeholderBody, images) = extractDataURIImages(resolvedBody)
         let cleanedCSS: String = {
             let sourceCSS = css ?? ""
@@ -114,6 +118,38 @@ enum EpubHtmlRenderer {
         )
         applyOverrides(to: mutated, settings: settings, bodyFontSize: bodyFontSize)
         return AttributedString(mutated)
+    }
+
+    /// Converts a raw EPUB-local href into a stable URL that the native
+    /// reader handles itself. Public web/mail/phone links deliberately keep
+    /// their original scheme so UIKit can hand them to the system.
+    static func readerLinkURL(for rawHref: String) -> URL? {
+        let trimmed = rawHref.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        if let url = URL(string: trimmed), let scheme = url.scheme?.lowercased(),
+           ["http", "https", "mailto", "tel"].contains(scheme) {
+            return url
+        }
+        var components = URLComponents()
+        components.scheme = "epub-link"
+        components.host = "open"
+        components.queryItems = [URLQueryItem(name: "target", value: trimmed)]
+        return components.url
+    }
+
+    private static func rewriteInternalLinkHrefs(_ html: String) -> String {
+        let pattern = try! NSRegularExpression(
+            pattern: "(?i)(<a\\b[^>]*\\bhref\\s*=\\s*)([\\\"'])([^\\\"']*)(\\2)"
+        )
+        var rewritten = html
+        for match in pattern.matches(in: html, range: NSRange(html.startIndex..., in: html)).reversed() {
+            guard let rawRange = Range(match.range(at: 3), in: html),
+                  let url = readerLinkURL(for: String(html[rawRange])) else { continue }
+            let replacement = url.absoluteString
+            guard let replacementRange = Range(match.range(at: 3), in: rewritten) else { continue }
+            rewritten.replaceSubrange(replacementRange, with: replacement)
+        }
+        return rewritten
     }
 
     private static func applyStructuralParagraphStyles(
@@ -368,6 +404,7 @@ enum EpubHtmlRenderer {
             if mutable.paragraphSpacingBefore > maxSpacing {
                 mutable.paragraphSpacingBefore = maxSpacing
             }
+            mutable.lineSpacing = CGFloat(settings.readerLineSpacing)
             // Some EPUBs set firstLineHeadIndent for drop-cap
             // styling; that interacts badly with paginated
             // layout. Clamp to 0..targetSize (one em).

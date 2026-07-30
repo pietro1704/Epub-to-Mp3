@@ -152,6 +152,24 @@ def test_streaming_emits_multiple_segments_for_long_text(tmp_path: Path, _counti
     assert indices == list(range(len(segments))), f"non-consecutive indices: {indices}"
 
 
+def test_streaming_matches_shared_prepared_chunk_sequence(tmp_path: Path, _counting_transport):
+    """Streaming keeps the same chunk contract exposed to the native bridge."""
+    os.environ["EDGE_FIRST_CHUNK_CHARS"] = "30"
+    os.environ["IOS_EDGE_CHUNK_CHARS"] = "50"
+    text = "First sentence is deliberately long. Second sentence follows. Third sentence ends."
+    prepared = ios_entrypoints.prepare_chunks(text, voice="auto", streaming=True)
+
+    ios_entrypoints.synthesize_chapter_streaming(
+        text,
+        "auto",
+        str(tmp_path / "ch.mp3"),
+        on_segment=lambda _data, _index, _total: None,
+    )
+
+    assert [chunk for chunk, _voice in _counting_transport] == prepared["chunks"]
+    assert {voice for _chunk, voice in _counting_transport} == {prepared["voice"]}
+
+
 def test_streaming_first_chunk_uses_small_size(tmp_path: Path, _counting_transport):
     """First chunk is bounded by ``EDGE_FIRST_CHUNK_CHARS`` (default 500).
     Subsequent chunks use ``IOS_EDGE_CHUNK_CHARS``. We override both to

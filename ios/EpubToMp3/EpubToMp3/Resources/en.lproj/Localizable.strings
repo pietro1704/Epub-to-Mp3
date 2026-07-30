@@ -1,5 +1,22 @@
 /* English (base) — EpubToMp3 localisation */
 "common.close" = "Close";
+"menu.about" = "About Epub-to-Mp3";
+"menu.file" = "File";
+"menu.edit" = "Edit";
+"menu.view" = "View";
+"menu.window" = "Window";
+"menu.help" = "Help";
+"menu.importBook" = "Import Book…";
+"menu.searchLibrary" = "Search Library";
+"menu.undo" = "Undo";
+"menu.redo" = "Redo";
+"menu.cut" = "Cut";
+"menu.copy" = "Copy";
+"menu.paste" = "Paste";
+"menu.selectAll" = "Select All";
+"menu.minimize" = "Minimize";
+"menu.zoom" = "Zoom";
+"menu.quitApp" = "Quit %@";
 
 /* MainReaderView */
 "mainReader.pickBook" = "Pick a book to read";

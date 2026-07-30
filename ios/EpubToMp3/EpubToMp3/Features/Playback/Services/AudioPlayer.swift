@@ -658,6 +658,48 @@ final class AudioPlayer: ObservableObject {
         updateNowPlayingInfo()
     }
 
+    /// Bind an active remote conversion before its first completed chapter
+    /// exists. This gives progressive media chunks a stable player owner
+    /// without interrupting another book that is already playing.
+    @discardableResult
+    func beginRemoteStreaming(snapshot incomingSnapshot: JobSnapshot, backendBaseURL: URL) -> Bool {
+        let isSameJob = snapshot?.jobId == incomingSnapshot.jobId
+        guard isSameJob || (player == nil && !isPlaying && !isUsingSpeechFallback) else {
+            return false
+        }
+
+        if !isSameJob {
+            clearConversionState()
+            readerChapterTitles.removeAll()
+            playbackChapters.removeAll()
+            currentChapterIndex = 0
+            isSegmentMode = false
+            segmentCumulativeBase = 0
+            segmentChapterDuration = 0
+            segmentEstimatedDuration = 0
+            segmentEstimatedChapterIndex = -1
+            segmentChapterIndex = -1
+            segmentSentenceIds = []
+            segmentPlayedCount = 0
+            activeSentenceId = nil
+            pendingSnapshotStartIndex = 0
+            pendingAutoPlay = false
+            pendingSegmentResumePosition = nil
+            lastError = nil
+        }
+
+        self.backendBaseURL = backendBaseURL
+        self.snapshot = incomingSnapshot
+        isConverting = !incomingSnapshot.isTerminal
+        if let total = incomingSnapshot.chaptersTotal, total > 0 {
+            conversionProgress = Double(incomingSnapshot.chaptersCompleted ?? 0) / Double(total)
+        } else {
+            conversionProgress = nil
+        }
+        updateNowPlayingInfo()
+        return true
+    }
+
     nonisolated static func segmentPosition(
         durations: [TimeInterval],
         segmentIndex: Int,
@@ -691,13 +733,30 @@ final class AudioPlayer: ObservableObject {
         chapterIndex: Int,
         chapterProgress: [JobSnapshot.Chapter]
     ) -> String {
-        let chapter = chapterProgress.first { $0.index == chapterIndex + 1 }
-            ?? chapterProgress.first { $0.index == chapterIndex }
+        let chapter = chapterProgressEntry(
+            forSegmentIndex: chapterIndex,
+            chapterProgress: chapterProgress
+        )
         return preferredChapterTitle(
             primary: chapter?.name,
             secondary: nil,
             fallback: L10n.string("player.chapter", chapterIndex + 1)
         )
+    }
+
+    /// Server chapter indexes are one-based while some older embedded
+    /// snapshots are zero-based. Detect the persisted convention instead of
+    /// guessing from the playback cursor, so title and queue reconciliation
+    /// identify the same chapter on both paths.
+    private nonisolated static func chapterProgressEntry(
+        forSegmentIndex segmentIndex: Int,
+        chapterProgress: [JobSnapshot.Chapter]
+    ) -> JobSnapshot.Chapter? {
+        let usesZeroBasedIndexes = chapterProgress.contains { $0.index == 0 }
+        let preferredIndex = usesZeroBasedIndexes ? segmentIndex : segmentIndex + 1
+        let alternateIndex = usesZeroBasedIndexes ? segmentIndex + 1 : segmentIndex
+        return chapterProgress.first { $0.index == preferredIndex }
+            ?? chapterProgress.first { $0.index == alternateIndex }
     }
 
     func setSegmentChapterEstimate(_ duration: TimeInterval, forChapterIndex chapterIndex: Int) {
@@ -966,6 +1025,17 @@ final class AudioPlayer: ObservableObject {
             return
         }
 
+        // Segment streaming owns the live queue until the conversion reaches
+        // its terminal snapshot. Appending a newly-complete chapter MP3 here
+        // would replay audio that has already been queued segment-by-segment.
+        // `finishStreaming(snapshot:)` performs the one deliberate handoff
+        // to canonical chapter files once all segments are complete.
+        if isSegmentMode {
+            self.snapshot = newSnapshot
+            updateNowPlayingInfo()
+            return
+        }
+
         let oldChapters = playbackChapters.isEmpty ? (self.snapshot?.playableChapters ?? []) : playbackChapters
         let newChapters = newSnapshot.playableChapters
         self.snapshot = newSnapshot
@@ -1007,20 +1077,24 @@ final class AudioPlayer: ObservableObject {
         updateNowPlayingInfo()
     }
 
-    /// Publish the completed manifest for an embedded segment session without
-    /// replacing the live segment queue with duplicate full-chapter MP3s.
-    /// The queue already contains every segment in playback order; the final
-    /// URLs are retained for resume/offline metadata only.
-    func finishEmbeddedStreaming(snapshot: JobSnapshot) {
+    /// Publish a completed manifest for a segment-streaming session without
+    /// leaving playback tied to temporary MP3 files. The final chapter URLs
+    /// restore standard seeking, resume, and offline playback.
+    func finishStreaming(snapshot: JobSnapshot) {
         guard isSegmentMode, player != nil else {
             isConverting = false
             updateSnapshot(snapshot)
             return
         }
-        let activeEPUBIndex = currentChapterIndex + 1
+        let activeChapterID = Self.chapterProgressEntry(
+            forSegmentIndex: currentChapterIndex,
+            chapterProgress: snapshot.chapterProgress ?? []
+        )?.index
         let activePosition = max(0, positionSeconds - segmentCumulativeBase)
         let wasPlaying = isPlaying
-        let target = snapshot.playableChapters.firstIndex { $0.index == activeEPUBIndex } ?? 0
+        let target = activeChapterID.flatMap { chapterID in
+            snapshot.playableChapters.firstIndex { $0.index == chapterID }
+        } ?? 0
         isConverting = false
         // Once every full chapter file exists, replace the segment queue with
         // the canonical chapter queue. This restores normal previous/next,
@@ -1029,6 +1103,11 @@ final class AudioPlayer: ObservableObject {
         play(snapshot: snapshot, startingAt: target)
         if activePosition > 0 { seek(to: activePosition) }
         if wasPlaying { resume() }
+    }
+
+    /// Compatibility spelling for existing embedded-runtime callers.
+    func finishEmbeddedStreaming(snapshot: JobSnapshot) {
+        finishStreaming(snapshot: snapshot)
     }
 
     /// Chapters present in `new` but absent from `old`, keyed by the EPUB-side
@@ -2417,8 +2496,10 @@ final class AudioPlayer: ObservableObject {
             : 0
         let chapters = snapshot?.playableChapters ?? []
         let currentIndex = max(0, min(currentChapterIndex, max(chapters.count - 1, 0)))
-        let chapterName = currentChapterValue?.displayTitle
-            ?? (chapters.indices.contains(currentIndex) ? chapters[currentIndex].displayTitle : nil)
+        // Keep the widget on the same canonical title as the mini player and
+        // Now Playing metadata. `currentChapterValue.displayTitle` can still
+        // be the generated fallback when the reader has the real TOC title.
+        let chapterName = effectiveChapterTitle
         let totalChapters = chapters.isEmpty ? nil : chapters.count
         let chapterRemaining = Self.rateAdjustedDuration(
             seconds: max(0, durationSeconds - positionSeconds), rate: rate
@@ -2542,17 +2623,37 @@ final class AudioPlayer: ObservableObject {
     /// expanded player, Now Playing, lock screen and widget.
     var effectiveChapterTitle: String {
         if isSegmentMode {
-            return Self.segmentChapterTitle(
+            let streamedTitle = Self.segmentChapterTitle(
                 chapterIndex: currentChapterIndex,
                 chapterProgress: snapshot?.chapterProgress ?? []
             )
+            return Self.preferredChapterTitle(
+                primary: streamedTitle,
+                secondary: readerChapterTitles[currentChapterIndex],
+                fallback: streamedTitle
+            )
         }
         let chapters = playbackChapters.isEmpty ? (snapshot?.playableChapters ?? []) : playbackChapters
-        guard chapters.indices.contains(currentChapterIndex) else { return "Chapter" }
+        guard chapters.indices.contains(currentChapterIndex) else {
+            let pending = Self.chapterProgressEntry(
+                forSegmentIndex: currentChapterIndex,
+                chapterProgress: snapshot?.chapterProgress ?? []
+            )
+            return Self.preferredChapterTitle(
+                primary: pending?.name,
+                secondary: readerChapterTitles[currentChapterIndex],
+                fallback: pending?.displayTitle ?? L10n.string("player.chapter", currentChapterIndex + 1)
+            )
+        }
         let playing = chapters[currentChapterIndex]
         let progressName = snapshot?.chapterProgress?
             .first(where: { $0.index == playing.index })?.name
+        // Reader fulltext indexes are zero-based while remote JobSnapshot
+        // chapter indexes are one-based. Embedded snapshots use the former;
+        // prefer the exact queue index and then the zero-based counterpart so
+        // a real TOC title is not lost behind "Capítulo N".
         let readerName = readerChapterTitles[playing.index]
+            ?? readerChapterTitles[playing.index - 1]
         return Self.preferredChapterTitle(
             primary: playing.name,
             secondary: readerName ?? progressName,
@@ -2563,6 +2664,21 @@ final class AudioPlayer: ObservableObject {
     func updateReaderChapterTitle(_ title: String, for index: Int) {
         guard !title.isEmpty else { return }
         readerChapterTitles[index] = title
+        objectWillChange.send()
+    }
+
+    /// Installs every canonical TOC title as soon as the book is parsed.
+    /// Conversion and playback can start before a reader controller exists,
+    /// so this must not depend on a chapter becoming visible in the reader.
+    func updateReaderChapterTitles(_ chapters: [EbookFulltext.Chapter]) {
+        var titles: [Int: String] = [:]
+        for chapter in chapters {
+            let title = chapter.displayTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !title.isEmpty else { continue }
+            titles[chapter.zeroBasedEpubIndex] = title
+        }
+        guard !titles.isEmpty else { return }
+        readerChapterTitles.merge(titles, uniquingKeysWith: { _, canonical in canonical })
         objectWillChange.send()
     }
 
@@ -2578,7 +2694,7 @@ final class AudioPlayer: ObservableObject {
         return candidates.first ?? fallback
     }
 
-    private nonisolated static func isGenericChapterTitle(_ title: String) -> Bool {
+    nonisolated static func isGenericChapterTitle(_ title: String) -> Bool {
         let normalized = title.lowercased()
             .replacingOccurrences(of: "á", with: "a")
             .replacingOccurrences(of: "í", with: "i")
@@ -2699,24 +2815,29 @@ final class AudioPlayer: ObservableObject {
         )
     }
 
-    /// Resolve a backend-relative download path (e.g. `/api/outputs/<jobId>/<file>.mp3`)
-    /// to an absolute URL the iOS player can fetch. If `path` is already
-    /// absolute (starts with `http`), use it as-is.
+    /// Resolve a remote API path or local cached path to an audio URL.
+    /// Backend paths must remain network URLs — treating `/api/...` as a
+    /// filesystem path makes completed remote chapters silently unplayable.
+    nonisolated static func playbackURL(forDownloadPath path: String?, backendBaseURL: URL?) -> URL? {
+        guard let path, !path.isEmpty else { return nil }
+        if let absolute = URL(string: path), absolute.scheme != nil {
+            return absolute
+        }
+        if path == "/api" || path.hasPrefix("/api/") {
+            return backendBaseURL.flatMap { URL(string: path, relativeTo: $0)?.absoluteURL }
+        }
+        if path.hasPrefix("/") {
+            return URL(fileURLWithPath: path)
+        }
+        return backendBaseURL.flatMap { URL(string: path, relativeTo: $0)?.absoluteURL }
+    }
+
     private func absoluteURL(forDownloadPath path: String?, jobId: String? = nil, chapterIndex: Int? = nil) -> URL? {
         if let jobId, let chapterIndex,
            let local = DownloadManager.localAudioURL(jobId: jobId, chapterIndex: chapterIndex) {
             return local
         }
-        guard let path, !path.isEmpty else { return nil }
-        if path.lowercased().hasPrefix("file://") {
-            return URL(string: path)
-        }
-        if path.hasPrefix("/") {
-            return URL(fileURLWithPath: path)
-        }
-        if path.lowercased().hasPrefix("http") { return URL(string: path) }
-        guard let baseURL = backendBaseURL else { return nil }
-        return URL(string: path, relativeTo: baseURL)?.absoluteURL
+        return Self.playbackURL(forDownloadPath: path, backendBaseURL: backendBaseURL)
     }
 
     /// Embedded-runtime restart hook. Teardown the live AVQueuePlayer
@@ -2772,6 +2893,7 @@ final class AudioPlayer: ObservableObject {
     func testHook_setSnapshot(_ snap: JobSnapshot) { self.snapshot = snap }
     func testHook_setCurrentChapterIndex(_ idx: Int) { self.currentChapterIndex = idx }
     func testHook_setDurationSeconds(_ value: Double) { self.durationSeconds = value }
+    func testHook_playbackChapterCount() -> Int { playbackChapters.count }
     func testHook_setPendingProportionalSeek(_ ratio: Double?) {
         if let ratio {
             self.pendingProportionalSeek = .init(

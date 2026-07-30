@@ -18,10 +18,9 @@ enum LocalFulltextCache {
             appropriateFor: nil,
             create: true
         ) else { return nil }
-        // v2: the on-device parser started emitting `html`/`css` per
-        // chapter. Renamed so books cached under v1 (html/css always nil)
-        // are re-parsed instead of permanently serving plain text.
-        let dir = base.appendingPathComponent("fulltext-v2", isDirectory: true)
+        // v4: reader payloads now retain EPUB source paths so relative links
+        // and footnote destinations resolve after a cold fallback parse.
+        let dir = base.appendingPathComponent("fulltext-v4", isDirectory: true)
         try? FileManager.default.createDirectory(
             at: dir, withIntermediateDirectories: true
         )

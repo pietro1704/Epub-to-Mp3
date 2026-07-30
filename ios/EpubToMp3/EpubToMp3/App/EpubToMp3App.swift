@@ -79,7 +79,8 @@ final class EpubToMp3App: NSObject, PlatformApplicationDelegate {
             chaptersCompleted: 1, chapterProgress: [chapter], outputs: nil,
             logUrl: nil, error: nil, lastActivityAt: nil
         )
-        PlaybackBindingStore.setCurrentlyPlaying(bookID: "ui-test-book", chapterIndex: 0)
+        let fixtureBookID = library.books.first?.id ?? "ui-test-book"
+        PlaybackBindingStore.setCurrentlyPlaying(bookID: fixtureBookID, chapterIndex: 0)
         player.play(snapshot: snapshot)
     }
 
@@ -99,19 +100,28 @@ final class EpubToMp3App: NSObject, PlatformApplicationDelegate {
         let delegate = EpubToMp3App()
         macOSDelegate = delegate
         application.setActivationPolicy(.regular)
-        application.mainMenu = makeMainMenu()
         application.delegate = delegate
+        application.mainMenu = makeMainMenu(target: delegate)
         delegate.configureMainWindowIfNeeded()
         application.finishLaunching()
         application.run()
     }
 
-    private static func makeMainMenu() -> NSMenu {
+    static func makeMainMenu(target: EpubToMp3App? = nil) -> NSMenu {
         let mainMenu = NSMenu()
+
         let appMenuItem = NSMenuItem()
-        let appMenu = NSMenu(title: "Epub-to-Mp3")
+        let appMenu = NSMenu(title: L10n.string("app.name"))
+        let about = NSMenuItem(
+            title: L10n.string("menu.about"),
+            action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)),
+            keyEquivalent: ""
+        )
+        about.target = NSApplication.shared
+        appMenu.addItem(about)
+        appMenu.addItem(.separator())
         let quit = NSMenuItem(
-            title: "Quit Epub-to-Mp3",
+            title: L10n.string("menu.quitApp", L10n.string("app.name")),
             action: #selector(NSApplication.terminate(_:)),
             keyEquivalent: "q"
         )
@@ -119,6 +129,84 @@ final class EpubToMp3App: NSObject, PlatformApplicationDelegate {
         appMenu.addItem(quit)
         appMenuItem.submenu = appMenu
         mainMenu.addItem(appMenuItem)
+
+        let fileMenu = NSMenu(title: L10n.string("menu.file"))
+        let importBook = NSMenuItem(
+            title: L10n.string("menu.importBook"),
+            action: #selector(EpubToMp3App.importBooks(_:)),
+            keyEquivalent: "o"
+        )
+        importBook.target = target
+        fileMenu.addItem(importBook)
+        fileMenu.addItem(.separator())
+        fileMenu.addItem(
+            NSMenuItem(
+                title: L10n.string("common.close"),
+                action: #selector(NSWindow.performClose(_:)),
+                keyEquivalent: "w"
+            )
+        )
+        let fileMenuItem = NSMenuItem()
+        fileMenuItem.submenu = fileMenu
+        mainMenu.addItem(fileMenuItem)
+
+        let editMenu = NSMenu(title: L10n.string("menu.edit"))
+        editMenu.addItem(NSMenuItem(title: L10n.string("menu.undo"), action: Selector(("undo:")), keyEquivalent: "z"))
+        editMenu.addItem(NSMenuItem(title: L10n.string("menu.redo"), action: Selector(("redo:")), keyEquivalent: "Z"))
+        editMenu.addItem(.separator())
+        editMenu.addItem(NSMenuItem(title: L10n.string("menu.cut"), action: #selector(NSText.cut(_:)), keyEquivalent: "x"))
+        editMenu.addItem(NSMenuItem(title: L10n.string("menu.copy"), action: #selector(NSText.copy(_:)), keyEquivalent: "c"))
+        editMenu.addItem(NSMenuItem(title: L10n.string("menu.paste"), action: #selector(NSText.paste(_:)), keyEquivalent: "v"))
+        editMenu.addItem(NSMenuItem(title: L10n.string("menu.selectAll"), action: #selector(NSText.selectAll(_:)), keyEquivalent: "a"))
+        let editMenuItem = NSMenuItem()
+        editMenuItem.submenu = editMenu
+        mainMenu.addItem(editMenuItem)
+
+        let viewMenu = NSMenu(title: L10n.string("menu.view"))
+        let toggleSidebar = NSMenuItem(
+            title: L10n.string("nav.toggleSidebar"),
+            action: #selector(EpubToMp3App.toggleNavigationSidebar(_:)),
+            keyEquivalent: "s"
+        )
+        toggleSidebar.keyEquivalentModifierMask = [.command, .control]
+        toggleSidebar.target = target
+        viewMenu.addItem(toggleSidebar)
+        let searchLibrary = NSMenuItem(
+            title: L10n.string("menu.searchLibrary"),
+            action: #selector(EpubToMp3App.focusLibrarySearch(_:)),
+            keyEquivalent: "f"
+        )
+        searchLibrary.target = target
+        viewMenu.addItem(searchLibrary)
+        let viewMenuItem = NSMenuItem()
+        viewMenuItem.submenu = viewMenu
+        mainMenu.addItem(viewMenuItem)
+
+        let windowMenu = NSMenu(title: L10n.string("menu.window"))
+        windowMenu.addItem(
+            NSMenuItem(
+                title: L10n.string("menu.minimize"),
+                action: #selector(NSWindow.performMiniaturize(_:)),
+                keyEquivalent: "m"
+            )
+        )
+        windowMenu.addItem(NSMenuItem(title: L10n.string("menu.zoom"), action: #selector(NSWindow.performZoom(_:)), keyEquivalent: ""))
+        let windowMenuItem = NSMenuItem()
+        windowMenuItem.submenu = windowMenu
+        mainMenu.addItem(windowMenuItem)
+        NSApplication.shared.windowsMenu = windowMenu
+
+        let helpMenu = NSMenu(title: L10n.string("menu.help"))
+        let aboutHelp = NSMenuItem(
+            title: L10n.string("menu.about"),
+            action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)),
+            keyEquivalent: ""
+        )
+        aboutHelp.target = NSApplication.shared
+        helpMenu.addItem(aboutHelp)
+        let helpMenuItem = NSMenuItem()
+        helpMenuItem.submenu = helpMenu
+        mainMenu.addItem(helpMenuItem)
         return mainMenu
     }
 
@@ -195,6 +283,18 @@ final class EpubToMp3App: NSObject, PlatformApplicationDelegate {
         for url in urls { handleIncomingURL(url) }
     }
 
+    @objc private func importBooks(_ sender: Any?) {
+        rootController?.importBooks(sender)
+    }
+
+    @objc private func toggleNavigationSidebar(_ sender: Any?) {
+        rootController?.toggleNavigationSidebar(sender)
+    }
+
+    @objc private func focusLibrarySearch(_ sender: Any?) {
+        rootController?.focusLibrarySearch(sender)
+    }
+
     private func bootstrapEmbeddedRuntime() {
         guard !Self.isRunningUnderXCTest() else { return }
         Task {
@@ -218,14 +318,9 @@ final class EpubToMp3App: NSObject, PlatformApplicationDelegate {
             // otherwise a previous test's reader session wins at launch.
             ReaderSessionState.setCurrentlyReading(bookID: nil)
         }
-        // The scene delegate owns the visible window on iOS. Keep this
-        // callback for shared initialization and legacy launch paths.
-        if application.connectedScenes.isEmpty {
-            let window = UIWindow(frame: UIScreen.main.bounds)
-            window.rootViewController = makeIOSRootController()
-            window.makeKeyAndVisible()
-            self.window = window
-        }
+        // The scene manifest always declares IOSSceneDelegate. It is the sole
+        // owner of the visible window; creating a fallback UIWindow here races
+        // the scene connection and unbalances root appearance transitions.
         return true
     }
 

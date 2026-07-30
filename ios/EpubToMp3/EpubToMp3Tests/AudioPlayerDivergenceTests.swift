@@ -12,7 +12,7 @@ final class AudioPlayerDivergenceTests: XCTestCase {
 
     private func makePlayer() -> AudioPlayer { AudioPlayer() }
 
-    private func snapshotWithChapters(_ count: Int) -> JobSnapshot {
+    private func snapshotWithChapters(_ count: Int, jobID: String = "test-job") -> JobSnapshot {
         let chapters: [JobSnapshot.Chapter] = (0..<count).map { idx in
             JobSnapshot.Chapter(
                 index: idx,
@@ -28,7 +28,7 @@ final class AudioPlayerDivergenceTests: XCTestCase {
             )
         }
         return JobSnapshot(
-            jobId: "test-job",
+            jobId: jobID,
             state: "done",
             bookTitle: "Test Book",
             bookAuthor: "Author",
@@ -219,6 +219,35 @@ final class AudioPlayerDivergenceTests: XCTestCase {
             player.playTapDecision(readerChapterIndex: 99),
             .resume,
             "Any reader chapter index must still resume — there's no playable list to compare against"
+        )
+    }
+
+    func testSegmentStreamDoesNotAppendCompletedChapterAudioTwice() {
+        let player = makePlayer()
+        let pending = JobSnapshot(
+            jobId: "streaming-job", state: "running",
+            bookTitle: "B", bookAuthor: nil,
+            coverUrl: nil, coverMimeType: nil,
+            engine: nil, voice: nil, language: nil,
+            progressPercent: 0, chaptersTotal: 1, chaptersCompleted: 0,
+            chapterProgress: [
+                .init(
+                    index: 0, name: "Chapter 1", status: "processing",
+                    downloadUrl: nil, chars: 1, charsProcessed: 0,
+                    progressRatio: 0, durationSeconds: nil,
+                    startedAt: nil, completedAt: nil
+                )
+            ],
+            outputs: nil, logUrl: nil, error: nil, lastActivityAt: nil
+        )
+        player.testHook_setSnapshot(pending)
+        player.testHook_simulateSegmentMode()
+
+        player.updateSnapshot(snapshotWithChapters(1, jobID: "streaming-job"))
+
+        XCTAssertEqual(
+            player.testHook_playbackChapterCount(), 0,
+            "A completed chapter must not be appended while its segments already own the queue"
         )
     }
 

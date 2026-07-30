@@ -64,6 +64,17 @@ final class AudioPlayerStreamingTests: XCTestCase {
             "enqueueSegment must NOT auto-start playback — only resume()/togglePlayPause() may")
     }
 
+    /// A Listen action is explicit media intent even when the conversion has
+    /// not produced its first segment yet. The queued intent must carry over
+    /// so the first arriving segment starts without a second tap.
+    func testResumeBeforeFirstSegmentStartsStreamingPlayback() {
+        let player = AudioPlayer()
+        player.resume()
+        player.enqueueSegment(data: fakeMP3(), chapterIndex: 0, segmentIndex: 0)
+        XCTAssertTrue(player.isPlaying,
+                      "A queued explicit Listen action must start the first streamed segment")
+    }
+
     /// Regression: `play(snapshot:startingAt:)` used to call `queue.play()`
     /// unconditionally. Now it only sets up the queue; playback only starts
     /// on explicit user intent.

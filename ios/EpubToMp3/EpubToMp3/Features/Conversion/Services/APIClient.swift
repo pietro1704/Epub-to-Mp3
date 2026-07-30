@@ -21,6 +21,16 @@ enum APIError: LocalizedError {
     }
 }
 
+/// Operations needed by the job-detail streaming coordinator. Keeping this
+/// narrow lets the coordinator be verified with deterministic media events
+/// while the production app continues to use the concrete HTTP client.
+protocol JobStreamingClient: Sendable {
+    func fetchJob(id: String) async throws -> JobSnapshot
+    func fetchChapterStream(jobId: String, chapterIndex: Int) async throws -> APIClient.ChapterStreamManifest
+    func fetchChapterStreamChunk(jobId: String, chapterIndex: Int, chunkId: String) async throws -> Data
+    func eventStream(jobId: String) -> AsyncThrowingStream<JobEvent, Error>
+}
+
 /// Thin Foundation-only API client.
 ///
 /// Mirrors the contract used by `web/src/services/ConversionService.ts`:
@@ -37,6 +47,17 @@ enum APIError: LocalizedError {
 /// delegate retain) on every call — and tore the session down mid-flight
 /// during SSE iteration.
 final class APIClient: @unchecked Sendable {
+    struct StreamChunk: Decodable, Sendable {
+        let id: String
+        let index: Int
+        let url: String
+        let text: String?
+    }
+
+    struct ChapterStreamManifest: Decodable, Sendable {
+        let chapterIndex: Int
+        let chunks: [StreamChunk]
+    }
     let baseURL: URL
 
     /// Shared session for unary requests. Configured once; reused for
@@ -56,22 +77,38 @@ final class APIClient: @unchecked Sendable {
 
     private static let logger = Logger(subsystem: "com.pietrop.epubtomp3", category: "api")
 
-    init(baseURL: URL) {
+    convenience init(baseURL: URL) {
+        self.init(baseURL: baseURL, session: nil, streamingSession: nil)
+    }
+
+    init(
+        baseURL: URL,
+        session: URLSession?,
+        streamingSession: URLSession?
+    ) {
         self.baseURL = baseURL
 
-        let unary = URLSessionConfiguration.default
-        unary.waitsForConnectivity = true
-        unary.timeoutIntervalForRequest = 30
-        unary.timeoutIntervalForResource = 600
-        self.session = URLSession(configuration: unary)
+        if let session {
+            self.session = session
+        } else {
+            let unary = URLSessionConfiguration.default
+            unary.waitsForConnectivity = true
+            unary.timeoutIntervalForRequest = 30
+            unary.timeoutIntervalForResource = 600
+            self.session = URLSession(configuration: unary)
+        }
 
-        let streaming = URLSessionConfiguration.default
-        streaming.waitsForConnectivity = true
-        streaming.timeoutIntervalForRequest = 60
-        // SSE streams have no natural end — we rely on cancellation,
-        // not resource timeout.
-        streaming.timeoutIntervalForResource = .infinity
-        self.streamingSession = URLSession(configuration: streaming)
+        if let streamingSession {
+            self.streamingSession = streamingSession
+        } else {
+            let streaming = URLSessionConfiguration.default
+            streaming.waitsForConnectivity = true
+            streaming.timeoutIntervalForRequest = 60
+            // SSE streams have no natural end — we rely on cancellation,
+            // not resource timeout.
+            streaming.timeoutIntervalForResource = .infinity
+            self.streamingSession = URLSession(configuration: streaming)
+        }
 
         self.decoder = JSONDecoder()
     }
@@ -125,6 +162,44 @@ final class APIClient: @unchecked Sendable {
             throw APIError.decoding(decErr)
         } catch {
             Self.logger.error("fetchJob(\(id, privacy: .public)) transport failed: \(error.localizedDescription, privacy: .public)")
+            throw APIError.transport(error)
+        }
+    }
+
+    /// Fetch the chunks already synthesized for one chapter. Chunks are
+    /// deliberately requested independently from the job SSE: the SSE
+    /// carries progress metadata, while this endpoint is the media contract.
+    func fetchChapterStream(jobId: String, chapterIndex: Int) async throws -> ChapterStreamManifest {
+        let url = baseURL.appendingPathComponent(
+            "api/streams/\(jobId)/chapters/\(chapterIndex)"
+        )
+        do {
+            let (data, response) = try await session.data(from: url)
+            try Self.assertOK(response: response, data: data)
+            return try decoder.decode(ChapterStreamManifest.self, from: data)
+        } catch let error as APIError {
+            throw error
+        } catch let error as DecodingError {
+            throw APIError.decoding(error)
+        } catch {
+            throw APIError.transport(error)
+        }
+    }
+
+    /// Download one synthesized stream chunk into memory so the player can
+    /// enqueue it immediately, before the complete chapter MP3 exists.
+    func fetchChapterStreamChunk(jobId: String, chapterIndex: Int, chunkId: String) async throws -> Data {
+        let url = baseURL.appendingPathComponent(
+            "api/streams/\(jobId)/chapters/\(chapterIndex)/chunks/\(chunkId)"
+        )
+        do {
+            let (data, response) = try await session.data(from: url)
+            try Self.assertOK(response: response, data: data)
+            guard !data.isEmpty else { throw APIError.http(status: 502, body: "Empty audio chunk") }
+            return data
+        } catch let error as APIError {
+            throw error
+        } catch {
             throw APIError.transport(error)
         }
     }
@@ -448,3 +523,5 @@ final class APIClient: @unchecked Sendable {
         }
     }
 }
+
+extension APIClient: JobStreamingClient {}

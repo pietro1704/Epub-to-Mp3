@@ -354,26 +354,9 @@ def synthesize_chapter_streaming(
     if not text:
         raise RuntimeError("ios_entrypoints: empty input text")
 
-    if (voice or "auto").strip().lower() == "auto":
-        voice = _resolve_auto_voice(text)
-
-    first_size = _first_chunk_chars()
-    normal_size = _chunk_chars()
-
-    # Build chunk list: first chunk is intentionally small for fast
-    # time-to-first-byte; remainder uses the normal chunk size.
-    if len(text) <= first_size:
-        chunks: List[str] = [text]
-    else:
-        first_chunk = text[:first_size]
-        # Back up to the last whitespace boundary so we don't split
-        # mid-word, matching the paragraph-aware logic in _split_into_chunks.
-        last_space = first_chunk.rfind(" ")
-        if last_space > first_size // 2:
-            first_chunk = first_chunk[:last_space]
-        remainder = text[len(first_chunk) :].lstrip()
-        rest_chunks = _split_into_chunks(remainder, normal_size) if remainder else []
-        chunks = [first_chunk] + rest_chunks
+    prepared = prepare_chunks(text, voice=voice, streaming=True)
+    voice = str(prepared["voice"])
+    chunks = list(prepared["chunks"])
 
     piper_available = (
         piper_fallback_lang is not None and _piper_transport.get_transport() is not None

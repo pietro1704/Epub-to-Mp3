@@ -3782,6 +3782,7 @@ def parse_epub_to_dict(file_path: str, book_id: str = "") -> dict:
             {
                 "index": out_index,
                 "name": chapter.name,
+                "sourcePath": chapter.source_path or None,
                 "text": text,
                 "html": html_raw or None,
                 "css": css_raw or None,

@@ -11,8 +11,9 @@ def test_device_build_targets_a_connected_device_without_simulator_guard() -> No
     end = mise.index('[tasks."ios:simulator:run"]', start)
     task = mise[start:end]
 
-    assert '-destination "id=$DEVICE"' in task
+    assert '-destination "id=$XCODE_DEVICE"' in task
     assert "IOS_DEVICE_ID" in task
+    assert "IOS_XCODE_DEVICE_ID" in task
     assert "guard_ios_simulator_resources.py" not in task
 
 

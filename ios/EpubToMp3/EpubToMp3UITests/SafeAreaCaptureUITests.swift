@@ -4,10 +4,9 @@ import XCTest
 /// bars are hidden". With chrome hidden the page text must still clear the
 /// status bar / notch at the top and the home indicator at the bottom.
 ///
-/// We can't inspect glyph positions, but the hosted page text view is a
-/// queryable element. We assert its frame stays inside the window's safe
-/// region (approximated by a conservative top inset) in BOTH chrome states,
-/// and attach screenshots for manual confirmation.
+/// A test-only probe exposes the first visible glyph's actual window position
+/// and page range. This catches a sibling navigation bar overlapping text,
+/// which the outer UITextView frame cannot reveal on its own.
 @MainActor
 final class SafeAreaCaptureUITests: XCTestCase {
     override func setUpWithError() throws { continueAfterFailure = false }
@@ -19,7 +18,10 @@ final class SafeAreaCaptureUITests: XCTestCase {
         // Pin paginated mode: this test inspects a single page's text frame.
         // In scroll mode the whole book is rendered, so enumerating every text
         // element takes minutes and the run times out.
-        app.launchArguments += ["-uiTestResetReaderPosition", "-uiTestReaderLayout", "paginated"]
+        app.launchArguments += [
+            "-uiTestResetReaderPosition", "-uiTestReaderLayout", "paginated",
+            "-uiTestPaginationProbe",
+        ]
         app.launch()
 
         let firstBook = app.descendants(matching: .any).matching(
@@ -35,40 +37,48 @@ final class SafeAreaCaptureUITests: XCTestCase {
         sleep(2)
         attach(app, "01-chrome-shown")
 
-        // The reading text view: the largest text element in the reader.
         let window = app.windows.firstMatch
-        let winFrame = window.frame
-        // Conservative portrait status-bar/notch height. The first line of
-        // text must start below this on a notched phone in BOTH chrome states.
-        let statusBarFloor: CGFloat = 44
+        let probe = app.staticTexts["reader.paginationProbe"].firstMatch
+        XCTAssertTrue(probe.waitForExistence(timeout: 10), "reader must expose glyph geometry for this test")
 
-        func topMostTextMinY() -> CGFloat? {
-            // UITextView surfaces as a textView (and/or staticText) element.
-            let texts = app.textViews.allElementsBoundByIndex
-                + app.staticTexts.allElementsBoundByIndex
-            let onScreen = texts
-                .filter { $0.exists && $0.frame.height > 8 && $0.frame.width > 40 }
-                // Ignore the hidden probe overlay and tiny chrome labels.
-                .filter { $0.frame.minY > 1 && $0.frame.maxY < winFrame.height }
-            return onScreen.map(\.frame.minY).min()
+        func values() -> [String: Int] {
+            Dictionary(uniqueKeysWithValues: probe.label.split(separator: ";").compactMap { item in
+                let pair = item.split(separator: "=", maxSplits: 1)
+                guard pair.count == 2, let value = Int(pair[1]) else { return nil }
+                return (String(pair[0]), value)
+            })
         }
 
-        if let shownMinY = topMostTextMinY() {
-            XCTAssertGreaterThanOrEqual(shownMinY, statusBarFloor,
-                "chrome shown: text must start below the status bar (minY=\(shownMinY))")
-        }
+        let shown = values()
+        XCTAssertGreaterThan(shown["total"] ?? 0, 1, "long fixture must produce multiple reachable pages")
+        XCTAssertGreaterThanOrEqual(shown["firstY"] ?? 0, Int(window.frame.minY),
+            "chrome shown: first glyph must be in the window")
+        let close = app.buttons["reader.close"].firstMatch
+        XCTAssertTrue(close.exists, "chrome shown: host navigation bar must be visible")
+        XCTAssertGreaterThanOrEqual(shown["firstY"] ?? 0, Int(close.frame.maxY.rounded()),
+            "chrome shown: no glyph may render behind the host navigation bar")
 
         // Hide chrome.
         app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
         sleep(1)
         attach(app, "02-chrome-hidden")
+        XCTAssertFalse(close.exists, "chrome hidden: the host navigation bar must be removed")
 
-        // The critical assertion: with chrome hidden, text MUST still clear
-        // the status bar — this is the exact bug the user reported.
-        if let hiddenMinY = topMostTextMinY() {
-            XCTAssertGreaterThanOrEqual(hiddenMinY, statusBarFloor,
-                "chrome HIDDEN: text must STILL clear the status bar / notch (minY=\(hiddenMinY))")
-        }
+        // Turn a page to persist reading progress. This triggers the host's
+        // UserDefaults-driven render path that previously resurrected the
+        // navigation bar above the immersive reader.
+        let nextPage = app.buttons["reader.pageTurn.right"].firstMatch
+        XCTAssertTrue(nextPage.waitForExistence(timeout: 5))
+        nextPage.tap()
+        sleep(1)
+
+        let hidden = values()
+        XCTAssertFalse(close.exists, "a host re-render must not restore navigation over immersive text")
+        XCTAssertGreaterThanOrEqual(hidden["firstY"] ?? 0, hidden["safeTop"] ?? 0,
+            "chrome hidden: the first glyph must clear the real safe area")
+        XCTAssertGreaterThan(hidden["first"] ?? 0, shown["first"] ?? -1,
+            "next page must advance the visible character range")
+        XCTAssertGreaterThan(hidden["total"] ?? 0, 1, "page count must remain valid after re-render")
     }
 
     private func attach(_ app: XCUIApplication, _ name: String) {

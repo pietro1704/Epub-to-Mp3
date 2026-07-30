@@ -3,7 +3,8 @@ import AppKit
 import Combine
 
 @MainActor
-final class MacAppKitRootController: NSSplitViewController {
+final class MacAppKitRootController: NSSplitViewController, NSToolbarDelegate {
+    static let sidebarToolbarItemIdentifier = NSToolbarItem.Identifier("app.toggleSidebar")
     private enum Destination: Int, CaseIterable {
         case library, jobs, settings
         var title: String {
@@ -55,13 +56,13 @@ final class MacAppKitRootController: NSSplitViewController {
         }, onShowFullPlayer: { [weak playerPresentation] in
             playerPresentation?.showFullPlayer()
         })
+        let sidebar = NSSplitViewItem(sidebarWithViewController: makeSidebar())
+        sidebar.minimumThickness = 190
+        sidebar.maximumThickness = 280
         splitViewItems = [
-            NSSplitViewItem(viewController: makeSidebar()),
+            sidebar,
             NSSplitViewItem(viewController: detailContainer),
         ]
-        splitViewItems[0].minimumThickness = 190
-        splitViewItems[0].maximumThickness = 280
-        splitViewItems[0].canCollapse = true
     }
 
     @available(*, unavailable)
@@ -91,9 +92,6 @@ final class MacAppKitRootController: NSSplitViewController {
 
     override func viewDidAppear() {
         super.viewDidAppear()
-        guard let contentView = view.window?.contentView else { return }
-        view.frame = contentView.bounds
-        view.autoresizingMask = [.width, .height]
         ensureApplicationFocus()
     }
 
@@ -109,46 +107,57 @@ final class MacAppKitRootController: NSSplitViewController {
     }
 
     func configureWindowToolbar(_ window: NSWindow) {
-        let accessory = NSTitlebarAccessoryViewController()
-        accessory.layoutAttribute = .leading
-        let button = NSButton(
-            image: NSImage(
-                systemSymbolName: "sidebar.left",
-                accessibilityDescription: L10n.string("nav.toggleSidebar")
-            ) ?? NSImage(),
-            target: self,
-            action: #selector(toggleNavigationSidebar)
-        )
-        button.bezelStyle = .texturedRounded
-        button.toolTip = L10n.string("nav.toggleSidebar")
-        button.setAccessibilityLabel(L10n.string("nav.toggleSidebar"))
-        button.translatesAutoresizingMaskIntoConstraints = false
-        let container = NSView()
-        container.translatesAutoresizingMaskIntoConstraints = false
-        container.addSubview(button)
-        NSLayoutConstraint.activate([
-            button.leadingAnchor.constraint(equalTo: container.leadingAnchor),
-            button.trailingAnchor.constraint(equalTo: container.trailingAnchor),
-            button.topAnchor.constraint(equalTo: container.topAnchor),
-            button.bottomAnchor.constraint(equalTo: container.bottomAnchor),
-            container.widthAnchor.constraint(equalToConstant: 28),
-            container.heightAnchor.constraint(equalToConstant: 28),
-        ])
-        accessory.view = container
-        window.addTitlebarAccessoryViewController(accessory)
+        let toolbar = NSToolbar(identifier: "app.window.toolbar")
+        toolbar.delegate = self
+        toolbar.displayMode = .iconOnly
+        toolbar.allowsUserCustomization = false
+        toolbar.autosavesConfiguration = false
+        window.toolbar = toolbar
+        window.toolbarStyle = .unified
     }
 
-    @objc private func toggleNavigationSidebar() {
-        let sidebarItem = splitViewItems[0]
-        sidebarItem.isCollapsed.toggle()
+    func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
+        [Self.sidebarToolbarItemIdentifier]
+    }
+
+    func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
+        [Self.sidebarToolbarItemIdentifier]
+    }
+
+    func toolbar(
+        _ toolbar: NSToolbar,
+        itemForItemIdentifier itemIdentifier: NSToolbarItem.Identifier,
+        willBeInsertedIntoToolbar flag: Bool
+    ) -> NSToolbarItem? {
+        guard itemIdentifier == Self.sidebarToolbarItemIdentifier else { return nil }
+        let item = NSToolbarItem(itemIdentifier: itemIdentifier)
+        item.label = L10n.string("nav.toggleSidebar")
+        item.toolTip = L10n.string("nav.toggleSidebar")
+        item.image = NSImage(
+            systemSymbolName: "sidebar.left",
+            accessibilityDescription: L10n.string("nav.toggleSidebar")
+        )
+        item.target = self
+        item.action = #selector(toggleNavigationSidebar)
+        return item
+    }
+
+    @objc func toggleNavigationSidebar(_ sender: Any?) {
+        toggleSidebar(sender)
+    }
+
+    @objc func importBooks(_ sender: Any?) {
+        show(.library)
+        (controllers[.library] as? MacLibraryViewController)?.importBooks()
+    }
+
+    @objc func focusLibrarySearch(_ sender: Any?) {
+        show(.library)
+        (controllers[.library] as? MacLibraryViewController)?.focusSearch()
     }
 
     private func makeSidebar() -> NSViewController {
         let controller = NSViewController()
-        let toggle = NSButton(image: NSImage(systemSymbolName: "sidebar.left", accessibilityDescription: L10n.string("nav.toggleSidebar")) ?? NSImage(), target: self, action: #selector(toggleNavigationSidebar))
-        toggle.bezelStyle = .texturedRounded
-        toggle.toolTip = L10n.string("nav.toggleSidebar")
-        toggle.setAccessibilityLabel(L10n.string("nav.toggleSidebar"))
         let title = NSTextField(labelWithString: L10n.string("app.name"))
         title.font = .boldSystemFont(ofSize: 16)
         let menu = NSStackView()
@@ -172,7 +181,7 @@ final class MacAppKitRootController: NSSplitViewController {
         }
         let spacer = NSView()
         spacer.setContentHuggingPriority(.defaultLow, for: .vertical)
-        let stack = NSStackView(views: [toggle, title, menu, spacer])
+        let stack = NSStackView(views: [title, menu, spacer])
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.edgeInsets = NSEdgeInsets(top: 18, left: 12, bottom: 12, right: 8)
@@ -306,7 +315,10 @@ final class MacAppKitRootController: NSSplitViewController {
                 let snapshot = try await EmbeddedConversionCoordinator.stream(
                     bookURL: url,
                     bookID: book.id,
-                    player: player
+                    player: player,
+                    onStreamingStarted: { [weak self] in
+                        self?.playerPresentation.showFullPlayer()
+                    }
                 )
                 library.recordConversion(jobId: snapshot.jobId, for: book.id)
             } catch {
@@ -343,7 +355,7 @@ final class MacAppKitRootController: NSSplitViewController {
             || UserDefaults.standard.string(forKey: ReaderSessionState.currentlyReadingBookIDKey) != nil
             || library.books.contains { $0.lastOpenedAt != nil }
         playerBar.view.isHidden = !hasReadingContext
-        playerBarHeightConstraint?.constant = hasReadingContext ? 76 : 0
+        playerBarHeightConstraint?.constant = hasReadingContext ? 60 : 0
     }
 }
 
@@ -357,7 +369,6 @@ private final class MacPlayerBarViewController: NSViewController {
     private let chapterLabel = NSTextField(labelWithString: "")
     private let etaLabel = NSTextField(labelWithString: "")
     private let coverView = NSImageView()
-    private let progress = NSProgressIndicator()
     private let playButton = NSButton()
     private let nextButton = NSButton()
     private let rateButton = NSButton()
@@ -388,10 +399,6 @@ private final class MacPlayerBarViewController: NSViewController {
         etaLabel.textColor = .secondaryLabelColor
         etaLabel.font = .systemFont(ofSize: 10)
         titleLabel.font = .systemFont(ofSize: 13, weight: .semibold)
-        progress.isIndeterminate = false
-        progress.style = .bar
-        progress.controlSize = .small
-        progress.maxValue = 1
         playButton.imagePosition = .imageOnly
         playButton.bezelStyle = .texturedRounded
         playButton.target = self
@@ -416,6 +423,7 @@ private final class MacPlayerBarViewController: NSViewController {
         info.orientation = .horizontal
         info.spacing = 10
         let openButton = NSButton()
+        openButton.title = ""
         openButton.isBordered = false
         openButton.target = self
         openButton.action = #selector(showFullPlayer)
@@ -436,21 +444,15 @@ private final class MacPlayerBarViewController: NSViewController {
         stack.spacing = 8
         stack.edgeInsets = NSEdgeInsets(top: 8, left: 14, bottom: 8, right: 14)
         background.addSubview(stack)
-        background.addSubview(progress)
         stack.translatesAutoresizingMaskIntoConstraints = false
-        progress.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
             stack.leadingAnchor.constraint(equalTo: background.leadingAnchor),
             stack.trailingAnchor.constraint(equalTo: background.trailingAnchor),
             stack.topAnchor.constraint(equalTo: background.topAnchor),
-            stack.bottomAnchor.constraint(equalTo: background.bottomAnchor, constant: -5),
+            stack.bottomAnchor.constraint(equalTo: background.bottomAnchor),
             info.widthAnchor.constraint(greaterThanOrEqualToConstant: 220),
             coverView.widthAnchor.constraint(equalToConstant: 44),
             coverView.heightAnchor.constraint(equalToConstant: 44),
-            progress.leadingAnchor.constraint(equalTo: background.leadingAnchor),
-            progress.trailingAnchor.constraint(equalTo: background.trailingAnchor),
-            progress.topAnchor.constraint(equalTo: background.topAnchor),
-            progress.heightAnchor.constraint(equalToConstant: 3),
         ])
         openButton.setContentHuggingPriority(.defaultLow, for: .horizontal)
         openButton.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
@@ -489,14 +491,13 @@ private final class MacPlayerBarViewController: NSViewController {
         let currentBookID = UserDefaults.standard.string(forKey: AudioPlayer.currentBookIDDefaultsKey)
             ?? UserDefaults.standard.string(forKey: ReaderSessionState.currentlyReadingBookIDKey)
         let book = currentBookID.flatMap { id in library.books.first(where: { $0.id == id }) }
-        titleLabel.stringValue = book?.resolvedTitle ?? player.snapshot?.bookTitle ?? L10n.string("player.nothingPlaying")
-        chapterLabel.stringValue = player.snapshot == nil ? "" : player.effectiveChapterTitle
+        let bookTitle = book?.resolvedTitle ?? player.snapshot?.bookTitle ?? L10n.string("player.nothingPlaying")
+        titleLabel.stringValue = player.snapshot == nil ? bookTitle : player.effectiveChapterTitle
+        chapterLabel.stringValue = player.snapshot == nil ? "" : bookTitle
         etaLabel.stringValue = player.durationSeconds > 0
             ? L10n.string("player.remaining", formatTime(player.playbackDurationSeconds - player.playbackPositionSeconds))
             : ""
         coverView.image = book?.coverPNG.flatMap(NSImage.init(data:)) ?? NSImage(systemSymbolName: "book.closed", accessibilityDescription: nil)
-        let fraction = player.durationSeconds > 0 ? player.positionSeconds / player.durationSeconds : 0
-        progress.doubleValue = min(1, max(0, fraction))
         playButton.image = NSImage(systemSymbolName: player.isPlaying ? "pause.fill" : "play.fill", accessibilityDescription: nil)
         rateButton.title = player.rate.shortLabel
         playButton.isEnabled = player.snapshot != nil || currentBookID != nil

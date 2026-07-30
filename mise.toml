@@ -582,6 +582,19 @@ if [[ -z "$DEVICE" ]]; then
   echo "Find it with: xcrun devicectl list devices" >&2
   exit 2
 fi
+# CoreDevice uses a stable device identifier while xcodebuild expects the
+# traditional hardware UDID. Resolve the latter from the paired CoreDevice so
+# callers can use the same IOS_DEVICE_ID for build, install, and launch.
+XCODE_DEVICE="${IOS_XCODE_DEVICE_ID:-}"
+if [[ -z "$XCODE_DEVICE" ]]; then
+  XCODE_DEVICE=$(xcrun devicectl device info details --device "$DEVICE" 2>/dev/null \
+    | awk -F': ' '/• udid:/ { print $2 }')
+fi
+if [[ -z "$XCODE_DEVICE" ]]; then
+  echo "ios:device:build error: could not resolve xcodebuild UDID for device $DEVICE." >&2
+  echo "Set IOS_XCODE_DEVICE_ID to the physical device UDID from xcrun xctrace list devices." >&2
+  exit 2
+fi
 xcodegen generate
 "${MISE_PROJECT_ROOT:-../..}/scripts/verify_widget_embedded.sh"
 BUILD_LOG="${TMPDIR:-/tmp}/epub-to-mp3-ios-device-build.log"
@@ -589,7 +602,7 @@ if ! xcodebuild \\
        -project EpubToMp3.xcodeproj \\
        -scheme EpubToMp3 \\
        -configuration Debug \\
-       -destination "id=$DEVICE" \\
+       -destination "id=$XCODE_DEVICE" \\
        -derivedDataPath ./.build-device \\
        -showBuildTimingSummary \\
        build >"${BUILD_LOG}" 2>&1; then
@@ -805,7 +818,17 @@ fi
 xcodegen generate
 # Constrained Intel Macs panic under concurrent load — serialize this and warn.
 python3 ../../scripts/guard_ios_simulator_resources.py --device-test || exit $?
-DEVICE="${IOS_DEVICE_ID:-00008140-001128A022BA801C}"
+DEVICE="${IOS_XCODE_DEVICE_ID:-${IOS_DEVICE_ID:-00008140-001128A022BA801C}}"
+# `devicectl` accepts either the CoreDevice identifier or hardware UDID, while
+# `xcodebuild` only accepts the latter. Keep the test task aligned with the
+# build task so the one device identifier works consistently across the iOS
+# workflow.
+if [[ -z "${IOS_XCODE_DEVICE_ID:-}" ]]; then
+  RESOLVED_DEVICE=$(xcrun devicectl device info details --device "$DEVICE" 2>/dev/null | awk -F': ' '/• udid:/ { print $2 }')
+  if [[ -n "$RESOLVED_DEVICE" ]]; then
+    DEVICE="$RESOLVED_DEVICE"
+  fi
+fi
 DD="./.build"
 ONLY=""
 if [[ -n "${IOS_TESTS:-}" ]]; then

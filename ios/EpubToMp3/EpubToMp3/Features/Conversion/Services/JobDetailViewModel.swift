@@ -16,11 +16,14 @@ final class JobDetailViewModel: ObservableObject {
     /// is already attached to this job can append newly completed chapters
     /// without coupling this view model to UIKit or AppKit.
     var onSnapshot: ((JobSnapshot) -> Void)?
+    var onStreamChunk: ((Data, Int, Int) -> Void)?
+    var onStreamFinished: ((JobSnapshot) -> Void)?
 
     private var streamTask: Task<Void, Never>?
     private var progressTask: Task<Void, Never>?
+    private var remoteStreamTask: Task<Void, Never>?
 
-    func start(client: APIClient?, jobId: String) {
+    func start(client: (any JobStreamingClient)?, jobId: String) {
         stop()
         guard let client else {
             errorMessage = APIError.invalidBaseURL.localizedDescription
@@ -32,6 +35,7 @@ final class JobDetailViewModel: ObservableObject {
                 guard let self, !Task.isCancelled else { return }
                 self.snapshot = initial
                 self.onSnapshot?(initial)
+                self.startRemoteStream(client: client, initial: initial)
                 self.errorMessage = nil
                 self.isStreaming = true
                 for try await event in client.eventStream(jobId: jobId) {
@@ -65,9 +69,58 @@ final class JobDetailViewModel: ObservableObject {
     func stop() {
         streamTask?.cancel()
         progressTask?.cancel()
+        remoteStreamTask?.cancel()
         streamTask = nil
         progressTask = nil
+        remoteStreamTask = nil
         isStreaming = false
+    }
+
+    private func startRemoteStream(client: any JobStreamingClient, initial: JobSnapshot) {
+        remoteStreamTask?.cancel()
+        remoteStreamTask = Task { [weak self] in
+            var seen = Set<String>()
+            var snapshot = initial
+            while !Task.isCancelled {
+                let chapters = snapshot.chapterProgress ?? []
+                for chapter in chapters {
+                    let status = chapter.status?.lowercased()
+                    guard status == "processing" || chapter.isCompleted else { continue }
+                    do {
+                        let manifest = try await client.fetchChapterStream(
+                            jobId: snapshot.jobId, chapterIndex: chapter.index
+                        )
+                        for chunk in manifest.chunks.sorted(by: { $0.index < $1.index }) {
+                            let key = "\(chapter.index):\(chunk.id)"
+                            guard !seen.contains(key) else { continue }
+                            let data = try await client.fetchChapterStreamChunk(
+                                jobId: snapshot.jobId,
+                                chapterIndex: chapter.index,
+                                chunkId: chunk.id
+                            )
+                            guard let self, !Task.isCancelled else { return }
+                            seen.insert(key)
+                            // API chapter indexes are 1-based; AudioPlayer's
+                            // segment queue is explicitly 0-based.
+                            self.onStreamChunk?(data, max(0, chapter.index - 1), chunk.index)
+                        }
+                    } catch {
+                        // The manifest may not exist until synthesis starts;
+                        // SSE remains authoritative for job errors/completion.
+                    }
+                }
+                if snapshot.isTerminal {
+                    guard let self, !Task.isCancelled else { return }
+                    self.onStreamFinished?(snapshot)
+                    return
+                }
+                try? await Task.sleep(nanoseconds: 700_000_000)
+                guard !Task.isCancelled else { return }
+                if let next = try? await client.fetchJob(id: snapshot.jobId) {
+                    snapshot = next
+                }
+            }
+        }
     }
 
     func downloadAll(baseURL: URL?) {

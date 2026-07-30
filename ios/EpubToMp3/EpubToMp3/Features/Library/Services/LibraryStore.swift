@@ -316,17 +316,14 @@ final class LibraryStore: ObservableObject {
 
     func installUITestFixtureIfRequested(arguments: [String] = ProcessInfo.processInfo.arguments) {
         guard arguments.contains("-uiTestFixture") else { return }
-        books = [
-            BookEntity(
-                id: "ui-test-book",
-                title: "UI Test Book",
-                author: "Test Author",
-                bookmark: Data(),
-                displayFilename: "ui-test-book.epub",
-                addedAt: .now
-            )
-        ]
-        persist()
+        guard let fixtureURL = Bundle.main.url(
+            forResource: "sample_multilang", withExtension: "epub"
+        ) else { return }
+        do {
+            _ = try importBook(from: fixtureURL)
+        } catch {
+            assertionFailure("Failed to install Python EPUB fixture: \(error)")
+        }
     }
 
     /// Resolve the bookmark to a file URL the caller can read. Marks
@@ -403,6 +400,77 @@ final class LibraryStore: ObservableObject {
         return url
     }
 
+    /// Async variant of `openBookFile(id:)` for reader flows. Bookmark
+    /// resolution can wait for iCloud I/O, so that non-cancellable system
+    /// call must never occupy the main actor while the reader is showing its
+    /// loading state.
+    @MainActor
+    func openBookFileAsync(id: String) async throws -> URL {
+        guard let initialIndex = books.firstIndex(where: { $0.id == id }) else {
+            throw NSError(domain: "LibraryStore", code: 404,
+                          userInfo: [NSLocalizedDescriptionKey: "Book not found in library"])
+        }
+        let bookmark = books[initialIndex].bookmark
+        guard !bookmark.isEmpty else {
+            throw NSError(
+                domain: "LibraryStore",
+                code: 410,
+                userInfo: [NSLocalizedDescriptionKey:
+                    "This book has no security-scoped bookmark (re-import \(books[initialIndex].displayFilename) from the file picker to restore access)."]
+            )
+        }
+
+        var stale = false
+        var url: URL
+        #if os(macOS)
+        if let scoped = try? await Self.resolveBookmarkWithTimeoutAsync(
+            bookmark, options: [.withSecurityScope]
+        ) {
+            url = scoped.url
+            stale = scoped.stale
+        } else {
+            let resolved = try await Self.resolveBookmarkWithTimeoutAsync(
+                bookmark, options: []
+            )
+            url = resolved.url
+            stale = resolved.stale
+        }
+        #else
+        let resolved = try await Self.resolveBookmarkWithTimeoutAsync(
+            bookmark, options: []
+        )
+        url = resolved.url
+        stale = resolved.stale
+        #endif
+
+        guard let currentIndex = books.firstIndex(where: { $0.id == id }) else {
+            throw NSError(domain: "LibraryStore", code: 404,
+                          userInfo: [NSLocalizedDescriptionKey: "Book was removed from library while opening"])
+        }
+        #if os(macOS)
+        if !Self.isAppOwnedLibraryURL(url) {
+            let started = url.startAccessingSecurityScopedResource()
+            defer { if started { url.stopAccessingSecurityScopedResource() } }
+            let durableURL = try Self.persistImportedFileForLibrary(
+                originalURL: url,
+                id: books[currentIndex].id,
+                fileType: books[currentIndex].fileType
+            )
+            books[currentIndex].bookmark = try Self.makeBookmark(for: durableURL)
+            url = durableURL
+        } else if stale, let fresh = try? Self.makeBookmark(for: url) {
+            books[currentIndex].bookmark = fresh
+        }
+        #else
+        if stale, let fresh = try? Self.makeBookmark(for: url) {
+            books[currentIndex].bookmark = fresh
+        }
+        #endif
+        books[currentIndex].lastOpenedAt = Date()
+        persist()
+        return url
+    }
+
     /// `URL(resolvingBookmarkData:)` is a synchronous, non-cancellable
     /// system call. For a bookmark pointing at an iCloud-backed file that
     /// isn't downloaded locally, resolution can stall for a long time (or
@@ -419,7 +487,7 @@ final class LibraryStore: ObservableObject {
         _ bookmark: Data,
         options: URL.BookmarkResolutionOptions,
         timeout: TimeInterval = 10
-    ) throws -> (url: URL, stale: Bool) {
+    ) throws -> BookmarkResolution {
         let semaphore = DispatchSemaphore(value: 0)
         let box = ResolveResultBox()
         DispatchQueue.global(qos: .userInitiated).async {
@@ -431,7 +499,7 @@ final class LibraryStore: ObservableObject {
                     relativeTo: nil,
                     bookmarkDataIsStale: &stale
                 )
-                box.result = .success((url, stale))
+                box.result = .success(BookmarkResolution(url: url, stale: stale))
             } catch {
                 box.result = .failure(error)
             }
@@ -453,6 +521,20 @@ final class LibraryStore: ObservableObject {
         case .success(let value): return value
         case .failure(let error): throw error
         }
+    }
+
+    private static func resolveBookmarkWithTimeoutAsync(
+        _ bookmark: Data,
+        options: URL.BookmarkResolutionOptions,
+        timeout: TimeInterval = 10
+    ) async throws -> BookmarkResolution {
+        try await Task.detached(priority: .userInitiated) {
+            try Self.resolveBookmarkWithTimeout(
+                bookmark,
+                options: options,
+                timeout: timeout
+            )
+        }.value
     }
 
     // MARK: - Tags
@@ -728,8 +810,13 @@ final class LibraryStore: ObservableObject {
 /// Cross-thread result box for `resolveBookmarkWithTimeout` — the
 /// resolution work runs on `DispatchQueue.global()` while the caller waits
 /// on a semaphore, so the result needs a `Sendable` carrier between them.
+private struct BookmarkResolution: Sendable {
+    let url: URL
+    let stale: Bool
+}
+
 private final class ResolveResultBox: @unchecked Sendable {
-    var result: Result<(URL, Bool), Error>?
+    var result: Result<BookmarkResolution, Error>?
 }
 
 #if DEBUG

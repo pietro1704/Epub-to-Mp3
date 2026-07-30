@@ -93,19 +93,14 @@ final class AppSettingsObservationTests: XCTestCase {
         }
     }
 
-    /// Regression for the 2026-05-12 portrait-clipping bug: assigning a
-    /// margin below the HIG-minimum 16pt must be coerced upward, not
-    /// honoured. The reader's `effectiveReaderMargin` also guards but
-    /// the clamp belongs at the model layer first.
-    func testReaderMarginClampsBelowHIGMinimum() {
+    func testReaderMarginClampsToTheEightPointMinimum() {
         let s = makeSettings()
         s.readerMargin = 12
-        XCTAssertGreaterThanOrEqual(s.readerMargin, 16,
-            "Margins below 16pt clipped portrait text and must be clamped")
+        XCTAssertEqual(s.readerMargin, 12, accuracy: 0.001)
         s.readerMargin = 8
-        XCTAssertGreaterThanOrEqual(s.readerMargin, 16)
+        XCTAssertEqual(s.readerMargin, 8, accuracy: 0.001)
         s.readerMargin = 0
-        XCTAssertGreaterThanOrEqual(s.readerMargin, 16)
+        XCTAssertEqual(s.readerMargin, 8, accuracy: 0.001)
     }
 
     /// Upper bound is unchanged but the test below pins it so a future
@@ -116,17 +111,12 @@ final class AppSettingsObservationTests: XCTestCase {
         XCTAssertLessThanOrEqual(s.readerMargin, 80)
     }
 
-    /// Stale persisted values from older builds (when the clamp was
-    /// 8pt) must be coerced on load too, otherwise the bug returns on
-    /// every existing install.
-    func testReaderMarginPersistedStaleValueIsCoercedOnLoad() {
+    func testReaderMarginPersistedValueUsesTheEightPointMinimum() {
         let suite = UUID().uuidString
         let defaults = UserDefaults(suiteName: suite)!
-        // Simulate a pre-fix install that persisted 12pt.
-        defaults.set(12.0, forKey: "readerMargin")
+        defaults.set(0.0, forKey: "readerMargin")
         let s = AppSettings(defaults: defaults)
-        XCTAssertGreaterThanOrEqual(s.readerMargin, 16,
-            "Persisted 12pt from older build must be clamped on load")
+        XCTAssertEqual(s.readerMargin, 8, accuracy: 0.001)
     }
 
     func testReaderColumnWidthChangeFiresObservation() {

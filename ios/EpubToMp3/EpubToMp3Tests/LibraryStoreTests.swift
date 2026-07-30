@@ -96,6 +96,23 @@ final class LibraryStoreTests: XCTestCase {
         XCTAssertTrue(store.books.isEmpty)
     }
 
+    @MainActor
+    func testAsyncOpenResolvesAnImportedBook() async throws {
+        let (store, defaults, suite) = ephemeralStore()
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        let file = FileManager.default.temporaryDirectory
+            .appendingPathComponent("library-async-open-\(UUID().uuidString).epub")
+        try Data("async-open-fixture".utf8).write(to: file)
+        defer { try? FileManager.default.removeItem(at: file) }
+
+        let book = try store.importBook(from: file)
+        let resolved = try await store.openBookFileAsync(id: book.id)
+
+        XCTAssertTrue(FileManager.default.fileExists(atPath: resolved.path))
+        XCTAssertNotNil(store.books.first?.lastOpenedAt)
+    }
+
     func testImportSameFileTwiceDeduplicates() throws {
         let (store, defaults, suite) = ephemeralStore()
         defer { defaults.removePersistentDomain(forName: suite) }

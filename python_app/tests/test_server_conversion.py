@@ -24,6 +24,29 @@ from src.telemetry import TelemetryRecorder
 from python_app import server
 from python_app.src import _server_audio_helpers as server_audio_helpers
 
+
+def test_chapter_display_name_recovers_real_heading_from_generic_name():
+    assert (
+        server._chapter_display_name(
+            "Chapter 1",
+            "<html><body><h1>The Fellowship of the Ring</h1><p>Text</p></body></html>",
+            1,
+        )
+        == "The Fellowship of the Ring"
+    )
+
+
+def test_chapter_display_name_preserves_substantive_toc_name():
+    assert (
+        server._chapter_display_name(
+            "The Council of Elrond",
+            "<h1>Different body heading</h1>",
+            2,
+        )
+        == "The Council of Elrond"
+    )
+
+
 FIXTURE_BOOK = Path(__file__).resolve().parents[2] / "web" / "public" / "sample.epub"
 MINIMAL_MP3 = (
     bytes(
@@ -393,6 +416,8 @@ def test_job_fulltext_uses_file_path_when_input_file_is_missing(tmp_path, monkey
     assert payload["chapters"][0]["index"] == 1
     assert "html" in payload["chapters"][0]
     assert "css" in payload["chapters"][0]
+    assert "sourcePath" in payload["chapters"][0]
+    assert "footnotes" in payload["chapters"][0]
 
     server.jobs.pop(job_id, None)
 
@@ -450,10 +475,12 @@ def test_job_fulltext_prefers_cached_chapters(tmp_path, monkeypatch):
         {
             "index": 1,
             "name": "Cached Chapter",
+            "sourcePath": None,
             "text": "Cached text body.",
             "html": '<p class="chapter">Cached text body.</p>',
             "css": ".chapter { font-style: italic; }",
             "resources": [],
+            "footnotes": None,
             "charCount": len("Cached text body."),
         }
     ]
@@ -1030,6 +1057,104 @@ def test_stream_endpoints_serve_manifest_and_chunk_from_job_stream_dir(tmp_path,
     chunk_response = client.get(f"/api/streams/{job_id}/chapters/1/chunks/0")
     assert chunk_response.status_code == 200
     assert chunk_response.content == MINIMAL_MP3
+
+
+def test_streams_are_isolated_for_jobs_sharing_one_book_output_dir(tmp_path, monkeypatch):
+    """A second conversion of the same title must not expose the first job's chunks."""
+    _configure_server_paths(tmp_path, monkeypatch)
+    first_job_id = str(uuid4())
+    second_job_id = str(uuid4())
+    output_book_dir = tmp_path / "Shared Streaming Book"
+
+    for job_id in (first_job_id, second_job_id):
+        server.jobs[job_id] = {
+            "jobId": job_id,
+            "state": "finished",
+            "outputDir": str(output_book_dir),
+        }
+
+    first_stream_dir = server._job_stream_dir(first_job_id, ensure=True)
+    second_stream_dir = server._job_stream_dir(second_job_id, ensure=True)
+    assert first_stream_dir != second_stream_dir
+
+    first_chunk = first_stream_dir / "first.mp3"
+    second_chunk = second_stream_dir / "second.mp3"
+    first_chunk.write_bytes(b"FIRST" + MINIMAL_MP3)
+    second_chunk.write_bytes(b"SECOND" + MINIMAL_MP3)
+
+    for job_id, chunk in ((first_job_id, first_chunk), (second_job_id, second_chunk)):
+        server._save_stream_index(
+            job_id,
+            {
+                "jobId": job_id,
+                "chapters": {
+                    "1": {
+                        "chapterIndex": 1,
+                        "chunks": [
+                            {
+                                "id": "0",
+                                "index": 0,
+                                "file": chunk.name,
+                                "url": f"/api/streams/{job_id}/chapters/1/chunks/0",
+                            }
+                        ],
+                    }
+                },
+            },
+        )
+
+    client = TestClient(server.app)
+    for job_id, expected in ((first_job_id, b"FIRST"), (second_job_id, b"SECOND")):
+        manifest = client.get(f"/api/streams/{job_id}/chapters/1")
+        assert manifest.status_code == 200
+        assert manifest.json()["chunks"][0]["url"] == f"/api/streams/{job_id}/chapters/1/chunks/0"
+        chunk = client.get(f"/api/streams/{job_id}/chapters/1/chunks/0")
+        assert chunk.status_code == 200
+        assert chunk.content.startswith(expected)
+
+
+def test_legacy_shared_stream_manifest_never_leaks_to_another_job(tmp_path, monkeypatch):
+    """Old title-level manifests remain readable only by their owning job."""
+    _configure_server_paths(tmp_path, monkeypatch)
+    owner_job_id = str(uuid4())
+    other_job_id = str(uuid4())
+    output_book_dir = tmp_path / "Legacy Shared Streaming Book"
+    legacy_stream_dir = output_book_dir / "streams"
+    legacy_stream_dir.mkdir(parents=True, exist_ok=True)
+
+    for job_id in (owner_job_id, other_job_id):
+        server.jobs[job_id] = {
+            "jobId": job_id,
+            "state": "finished",
+            "outputDir": str(output_book_dir),
+        }
+
+    chunk_path = legacy_stream_dir / "owner.mp3"
+    chunk_path.write_bytes(b"OWNER" + MINIMAL_MP3)
+    (legacy_stream_dir / "index.json").write_text(
+        json.dumps(
+            {
+                "jobId": owner_job_id,
+                "chapters": {
+                    "1": {
+                        "chapterIndex": 1,
+                        "chunks": [{"id": "0", "index": 0, "file": chunk_path.name}],
+                    }
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    client = TestClient(server.app)
+    owner_manifest = client.get(f"/api/streams/{owner_job_id}/chapters/1")
+    assert owner_manifest.status_code == 200
+    assert owner_manifest.json()["chunks"][0]["file"] == chunk_path.name
+
+    other_manifest = client.get(f"/api/streams/{other_job_id}/chapters/1")
+    assert other_manifest.status_code == 200
+    assert other_manifest.json()["chunks"] == []
+    assert client.get(f"/api/streams/{other_job_id}/chapters/1/chunks/0").status_code == 404
 
 
 def test_stream_chunk_rejects_path_traversal_in_manifest_file_field(tmp_path, monkeypatch):

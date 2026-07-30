@@ -50,7 +50,7 @@ from src.benchmark_profile import recommend_parallel_slots
 from src.cache_manager import CacheManager
 from src.chapter_utils import deduplicate_chapters_by_content
 from src.config import CACHE_DIR, ConversionConfig
-from src.ebook_reader import EbookReader
+from src.ebook_reader import EbookReader, TextProcessor
 from src.engine_pool import JobEnginePool, ResourceSnapshot
 from src.error_classifier import classify_error
 from src.hardware_detector import HardwareDetector
@@ -71,6 +71,23 @@ from src.tts.edge_engine import reset_adaptive_settings
 from src.tts.factory import TTSFactory
 from src.tts.piper_guard import is_piper_supported_environment
 from src.utils import AudioProcessor, FileManager, TextValidator, TimeFormatter
+
+
+def _chapter_display_name(name: Optional[str], html: Optional[str], index: int) -> str:
+    """Return the canonical TOC/heading title emitted to every client surface."""
+    candidate = TextProcessor.clean_chapter_title((name or "").strip())
+    normalized = re.sub(r"\s+", " ", candidate).strip().casefold()
+    generic = normalized in {"chapter", "capitulo", "capítulo"} or bool(
+        re.fullmatch(r"(?:chapter|cap[ií]tulo)\s+\d+", normalized)
+    )
+    if not generic and candidate:
+        return candidate
+    heading = TextProcessor.extract_first_heading(html)
+    if heading:
+        heading = TextProcessor.clean_chapter_title(heading)
+        if heading:
+            return heading
+    return candidate or f"Chapter {index}"
 
 
 def _detect_test_environment() -> bool:
@@ -611,9 +628,28 @@ def _job_output_dir(job_id: str, job: Optional[dict] = None, ensure: bool = Fals
 
 def _job_stream_dir(job_id: str, ensure: bool = False) -> Path:
     base = _job_output_dir(job_id, ensure=ensure)
-    target = _resolve_relative_path_within_root(base, Path("streams"), must_exist=False)
+    streams_root = _resolve_relative_path_within_root(base, Path("streams"), must_exist=False)
+    target = _resolve_relative_path_within_root(streams_root, Path(job_id), must_exist=False)
     if ensure:
         target.mkdir(parents=True, exist_ok=True)
+        return target
+
+    if target.exists():
+        return target
+
+    # Streams created before per-job isolation lived directly in
+    # `<book-output>/streams`. Keep those readable only when the legacy
+    # manifest explicitly belongs to this job; sharing a book title must
+    # never make one job publish another job's audio chunks.
+    legacy_index = streams_root / "index.json"
+    if legacy_index.exists():
+        try:
+            legacy_payload = json.loads(legacy_index.read_text(encoding="utf-8"))
+        except Exception:
+            legacy_payload = None
+        if isinstance(legacy_payload, dict) and legacy_payload.get("jobId") == job_id:
+            return streams_root
+
     return target
 
 
@@ -675,6 +711,12 @@ def _save_stream_index(job_id: str, payload: dict) -> None:
         index_path,
         json.dumps(payload, ensure_ascii=False, indent=2),
     )
+
+
+# Parallel chapter conversion performs read-modify-write updates to one
+# per-job manifest. Serialize those updates so chapters cannot erase each
+# other's published chunks.
+_stream_manifest_lock = threading.Lock()
 
 
 def _load_cover_cache() -> Dict[str, dict]:
@@ -2890,20 +2932,23 @@ async def stream_chunk(job_id: str, chapter_index: int, chunk_id: str):
 
 
 def _build_fulltext_chapters_from_cache(cached: dict) -> list[dict]:
-    return [
-        {
-            "index": idx,
-            "name": ch.get("title") or f"Chapter {idx}",
-            "text": ch.get("text") or "",
-            "html": sanitize_reader_html(
-                ch.get("html") or chapter_html_fallback(ch.get("text") or "")
-            ),
-            "css": sanitize_reader_css(ch.get("css") or ""),
-            "resources": ch.get("resources") or [],
-            "charCount": len(ch.get("text") or ""),
-        }
-        for idx, ch in enumerate(cached.get("chapters") or [], 1)
-    ]
+    result = []
+    for idx, ch in enumerate(cached.get("chapters") or [], 1):
+        html = sanitize_reader_html(ch.get("html") or chapter_html_fallback(ch.get("text") or ""))
+        result.append(
+            {
+                "index": idx,
+                "name": _chapter_display_name(ch.get("title"), html, idx),
+                "sourcePath": ch.get("sourcePath"),
+                "text": ch.get("text") or "",
+                "html": html,
+                "css": sanitize_reader_css(ch.get("css") or ""),
+                "resources": ch.get("resources") or [],
+                "footnotes": ch.get("footnotes") or None,
+                "charCount": len(ch.get("text") or ""),
+            }
+        )
+    return result
 
 
 @app.get("/api/jobs/{job_id}/fulltext")
@@ -3004,11 +3049,13 @@ async def get_job_fulltext(job_id: str) -> dict:
             chapters.append(
                 {
                     "index": idx,
-                    "name": chapter.name or f"Chapter {idx}",
+                    "name": _chapter_display_name(chapter.name, chapter_html, idx),
+                    "sourcePath": getattr(chapter, "source_path", None) or None,
                     "text": clean_text,
                     "html": chapter_html,
                     "css": chapter_css,
                     "resources": chapter_resources,
+                    "footnotes": list(getattr(chapter, "footnotes", None) or []) or None,
                     "charCount": len(clean_text),
                 }
             )
@@ -3037,10 +3084,12 @@ async def get_job_fulltext(job_id: str) -> dict:
                     "chapters": [
                         {
                             "title": chapter["name"],
+                            "sourcePath": chapter["sourcePath"],
                             "text": chapter["text"],
                             "html": chapter["html"],
                             "css": chapter["css"],
                             "resources": chapter["resources"],
+                            "footnotes": chapter["footnotes"],
                         }
                         for chapter in chapters
                     ],
@@ -4305,7 +4354,11 @@ async def process_conversion(job_id: str) -> None:
 
         chapter_progress_entries: list[dict] = []
         for idx, chapter in enumerate(chapters, 1):
-            chapter_name = getattr(chapter, "name", f"Chapter {idx}")
+            chapter_name = _chapter_display_name(
+                getattr(chapter, "name", None),
+                getattr(chapter, "raw_html", None),
+                idx,
+            )
             chapter_text = (
                 getattr(chapter, "speech_text", None) or getattr(chapter, "text", "") or ""
             )
@@ -4972,15 +5025,19 @@ async def process_conversion(job_id: str) -> None:
                 stream_index = _load_stream_index(job_id)
                 chapter_key = str(idx)
                 try:
-                    previous_chapter = stream_index.get("chapters", {}).get(chapter_key) or {}
-                    for chunk in previous_chapter.get("chunks") or []:
-                        old_name = _safe_leaf_name(str(chunk.get("file") or ""), field_name="chunk")
-                        old_path = _resolve_relative_path_within_root(
-                            stream_dir, old_name, must_exist=False
-                        )
-                        old_path.unlink(missing_ok=True)
-                    stream_index.setdefault("chapters", {}).pop(chapter_key, None)
-                    _save_stream_index(job_id, stream_index)
+                    with _stream_manifest_lock:
+                        stream_index = _load_stream_index(job_id)
+                        previous_chapter = stream_index.get("chapters", {}).get(chapter_key) or {}
+                        for chunk in previous_chapter.get("chunks") or []:
+                            old_name = _safe_leaf_name(
+                                str(chunk.get("file") or ""), field_name="chunk"
+                            )
+                            old_path = _resolve_relative_path_within_root(
+                                stream_dir, old_name, must_exist=False
+                            )
+                            old_path.unlink(missing_ok=True)
+                        stream_index.setdefault("chapters", {}).pop(chapter_key, None)
+                        _save_stream_index(job_id, stream_index)
                 except Exception:
                     pass
 
@@ -5007,16 +5064,18 @@ async def process_conversion(job_id: str) -> None:
                         if segment_text:
                             chunk_entry["text"] = segment_text
                         _manifest_chunks[segment_index] = chunk_entry
-                        stream_index.setdefault("jobId", job_id)
-                        stream_index.setdefault("chapters", {})[chapter_key] = {
-                            "chapterIndex": idx,
-                            "chunks": sorted(
-                                _manifest_chunks.values(), key=lambda x: x.get("index", 0)
-                            ),
-                            "updatedAt": time.time(),
-                            "baseUrl": f"/api/streams/{job_id}/chapters/{idx}",
-                        }
-                        _save_stream_index(job_id, stream_index)
+                        with _stream_manifest_lock:
+                            stream_index = _load_stream_index(job_id)
+                            stream_index.setdefault("jobId", job_id)
+                            stream_index.setdefault("chapters", {})[chapter_key] = {
+                                "chapterIndex": idx,
+                                "chunks": sorted(
+                                    _manifest_chunks.values(), key=lambda x: x.get("index", 0)
+                                ),
+                                "updatedAt": time.time(),
+                                "baseUrl": f"/api/streams/{job_id}/chapters/{idx}",
+                            }
+                            _save_stream_index(job_id, stream_index)
                     except Exception as exc:
                         logger.debug("Chunk callback error for segment %d: %s", segment_index, exc)
 

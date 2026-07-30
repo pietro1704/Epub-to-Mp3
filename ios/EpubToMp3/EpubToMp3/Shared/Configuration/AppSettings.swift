@@ -91,6 +91,15 @@ enum ReaderLayout: String, CaseIterable, Identifiable {
     }
 }
 
+enum ReaderLayoutMetrics {
+    static let minimumHorizontalMargin: Double = 8
+    static let maximumHorizontalMargin: Double = 80
+
+    static func clampedMargin(_ value: Double) -> Double {
+        max(minimumHorizontalMargin, min(maximumHorizontalMargin, value))
+    }
+}
+
 /// Page-turn animation style for paginated mode. Persisted via
 /// `AppSettings.pageTurnStyle`. Default is `.flip` (Apple Books curl).
 enum PageTurnStyle: String, CaseIterable, Identifiable {
@@ -144,6 +153,15 @@ final class AppSettings: ObservableObject {
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
+        let launchBackendURL: String? = {
+            let arguments = ProcessInfo.processInfo.arguments
+            guard let index = arguments.firstIndex(of: "-backendURL"),
+                  arguments.indices.contains(arguments.index(after: index)) else {
+                return nil
+            }
+            let value = arguments[arguments.index(after: index)].trimmingCharacters(in: .whitespacesAndNewlines)
+            return value.isEmpty ? nil : value
+        }()
         // Load persisted values. `??` falls back to the @Published
         // initial-value defaults if the key was never set.
         // Default backend URL is empty on iOS device (no localhost server
@@ -153,9 +171,9 @@ final class AppSettings: ObservableObject {
         // Settings if they actually want to point at a remote backend.
         // macOS keeps the historical localhost value for remote-only tools.
         #if os(macOS)
-        self.backendURL = defaults.string(forKey: "backendURL") ?? "http://localhost:8000"
+        self.backendURL = launchBackendURL ?? defaults.string(forKey: "backendURL") ?? "http://localhost:8000"
         #else
-        self.backendURL = defaults.string(forKey: "backendURL") ?? ""
+        self.backendURL = launchBackendURL ?? defaults.string(forKey: "backendURL") ?? ""
         #endif
         // The Apple clients use the bundled Python runtime in-process.
         self.useEmbeddedRuntime = defaults.object(forKey: "useEmbeddedRuntime") as? Bool ?? true
@@ -189,12 +207,11 @@ final class AppSettings: ObservableObject {
             rawValue: defaults.string(forKey: "pageTurnStyle") ?? ""
         ) ?? .flip
         self.readerLineSpacing = (defaults.object(forKey: "readerLineSpacing") as? Double) ?? 6
-        // Coerce stale persisted values from older builds (clamp was 8pt
-        // pre-2026-05-12, now 16pt to match Apple HIG portrait minimum).
-        // Default 16pt (was 24pt) — maximises text silhouette per user
-        // request. Floor lowered to 12pt to match `effectiveReaderMargin`.
+        // The reader keeps an 8pt minimum inside the safe-area content
+        // boundary. This leaves a visible gutter without unnecessarily
+        // narrowing the reading column on compact iPhones.
         let persistedMargin = (defaults.object(forKey: "readerMargin") as? Double) ?? 16
-        self.readerMargin = max(12, min(80, persistedMargin))
+        self.readerMargin = ReaderLayoutMetrics.clampedMargin(persistedMargin)
         self.readerColumnWidth = (defaults.object(forKey: "readerColumnWidth") as? Double) ?? 720
         self.storedReaderCustomColors =
             defaults.string(forKey: "readerCustomColors") ?? "1,1,1,0,0,0"
@@ -334,17 +351,12 @@ final class AppSettings: ObservableObject {
 
     /// Horizontal text margin inside the reading column (px).
     ///
-    /// Lower bound clamped to **16pt** to match Apple HIG (Books app uses
-    /// 16pt minimum on iPhone portrait). Values below this caused the
-    /// first/last glyphs to clip into the screen edge in portrait — bug
-    /// reported 2026-05-12 when the slider allowed 8-12pt and rendered
-    /// text outside the safe content area. The minimum is enforced at
-    /// the model layer; the consuming Views ALSO guard with
-    /// `max(16, settings.readerMargin)` so stale persisted values from
-    /// older builds get coerced on first render.
+    /// The safe-area boundary remains outside this value; an 8pt reader
+    /// gutter is therefore safe on compact iPhones while honouring the
+    /// user's narrowest selectable margin.
     @Published var readerMargin: Double = 24 {
         didSet {
-            let clamped = max(16, min(80, readerMargin))
+            let clamped = ReaderLayoutMetrics.clampedMargin(readerMargin)
             if clamped != readerMargin {
                 readerMargin = clamped
                 return

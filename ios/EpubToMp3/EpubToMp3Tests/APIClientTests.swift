@@ -62,4 +62,19 @@ final class APIClientTests: XCTestCase {
         let b = APIClient(baseURL: URL(string: "http://127.0.0.1:8000")!)
         XCTAssertFalse(a.session === b.session)
     }
+
+    func testChapterStreamManifestDecodesChunkContract() throws {
+        let json = #"{"chapterIndex":3,"chunks":[{"id":"7","index":7,"url":"/api/streams/job/chapters/3/chunks/7","text":"A sentence"}]}"#.data(using: .utf8)!
+        let manifest = try JSONDecoder().decode(APIClient.ChapterStreamManifest.self, from: json)
+        XCTAssertEqual(manifest.chapterIndex, 3)
+        XCTAssertEqual(manifest.chunks.map(\.index), [7])
+        XCTAssertEqual(manifest.chunks.first?.url, "/api/streams/job/chapters/3/chunks/7")
+        XCTAssertEqual(manifest.chunks.first?.text, "A sentence")
+    }
+
+    func testChapterStreamManifestAllowsEmptyInProgressChunkList() throws {
+        let json = #"{"chapterIndex":0,"chunks":[]}"#.data(using: .utf8)!
+        let manifest = try JSONDecoder().decode(APIClient.ChapterStreamManifest.self, from: json)
+        XCTAssertTrue(manifest.chunks.isEmpty)
+    }
 }

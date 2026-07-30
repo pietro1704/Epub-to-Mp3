@@ -10,21 +10,31 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
     private let settings: AppSettings
     private let bookmarkStore: BookmarkStore
     private let player: AudioPlayer
-    private let titleLabel = UILabel()
     private let textView = UITextView()
     private let comicPageImageView = UIImageView()
     private let scrollView = UIScrollView()
-    private let statusLabel = UILabel()
     private let pageIndicator = UILabel()
     private let flickerChapterLabel = UILabel()
     private let flickerSummaryLabel = UILabel()
     private let flickerResetButton = UIButton(type: .system)
     private let scrollProbeLabel = UILabel()
+    private let paginationProbeLabel = UILabel()
+    private lazy var pageTap = UITapGestureRecognizer(
+        target: self,
+        action: #selector(handleReaderTap(_:))
+    )
+    private lazy var forwardChapterSwipe = UISwipeGestureRecognizer(
+        target: self,
+        action: #selector(swipeChapterForward(_:))
+    )
+    private lazy var backwardChapterSwipe = UISwipeGestureRecognizer(
+        target: self,
+        action: #selector(swipeChapterBackward(_:))
+    )
     private var flickerStaleCount = 0
     private var flickerSpuriousCount = 0
     private var flickerEmptyCount = 0
-    private var toolsBar = UIStackView()
-    private var readerChromeButtons: [UIButton] = []
+    private let testProbeStack = UIStackView()
     private let loadingContainer = UIView()
     private let loadingCoverView = UIImageView()
     private let loadingSpinner = UIActivityIndicatorView(style: .large)
@@ -39,24 +49,32 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
     private var textTrailingConstraint: NSLayoutConstraint!
     private var textWidthConstraint: NSLayoutConstraint!
     private var paginatedTextHeightConstraint: NSLayoutConstraint!
+    private var scrollingTextHeightConstraint: NSLayoutConstraint!
+    private var scrollBottomToPageIndicator: NSLayoutConstraint!
+    private var scrollBottomToSafeArea: NSLayoutConstraint!
+    private var paginatedPageOffsets: [CGFloat] = [0]
+    private var lastPaginatedViewportSize: CGSize = .zero
+    private var lastScrollingViewportSize: CGSize = .zero
+    private var settingsUpdateWorkItem: DispatchWorkItem?
+    private var lastRenderedTextSettings: ReaderTextSettings?
     private var uiTestPageNumber: Int?
     /// Prevents overlapping page renders/snapshots when the user taps the
     /// reader edges repeatedly while a page transition is still running.
     private var isPageTransitioning = false
 
     private var isPaginatedMode: Bool {
-        let arguments = ProcessInfo.processInfo.arguments
-        if let index = arguments.firstIndex(of: "-uiTestReaderLayout"), index + 1 < arguments.count {
-            return arguments[index + 1] == "paginated"
-        }
-        // The base UI fixture passes the marker without a value. Its
-        // deterministic reader contract is paginated; only tests that need
-        // scrolling pass the explicit "scrolling" value above.
-        if arguments.contains("-uiTestReaderLayout") {
-            return true
-        }
         return settings.readerLayout == .paginated
     }
+
+    private var isUITestFixture: Bool {
+        ProcessInfo.processInfo.arguments.contains("-uiTestFixture")
+    }
+
+    private struct ReadingAnchor {
+        let offsetFraction: CGFloat
+        let characterOffset: Int?
+    }
+    private var lastInlineImageViewportWidth: CGFloat?
     private var pdfView: PDFView?
     /// Guards against re-seeking the scroll position on every manual
     /// chapter tap — restoration only makes sense once, right after the
@@ -69,6 +87,31 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
     var onLoadStateChanged: ((Bool) -> Void)?
 
     var onChromeVisibilityChanged: ((Bool) -> Void)?
+
+    private lazy var tocNavigationItem = makeNavigationItem(
+        symbol: "list.bullet.indent",
+        identifier: "reader.toc.toggle",
+        label: L10n.string("reader.toc"),
+        action: #selector(presentTOC)
+    )
+    private lazy var readerSettingsNavigationItem = makeNavigationItem(
+        symbol: "textformat.size",
+        identifier: "reader.settings.toggle",
+        label: L10n.string("reader.settings"),
+        action: #selector(presentReaderSettings)
+    )
+    private lazy var searchNavigationItem = makeNavigationItem(
+        symbol: "magnifyingglass",
+        identifier: "reader.search",
+        label: L10n.string("reader.search"),
+        action: #selector(promptSearch)
+    )
+
+    /// The host owns the iPhone navigation bar. Reader actions live there so
+    /// the reading surface never creates a second toolbar below it.
+    var navigationBarButtonItems: [UIBarButtonItem] {
+        [tocNavigationItem, readerSettingsNavigationItem, searchNavigationItem]
+    }
 
     private static let reimportTypes: [UTType] = SupportedImportTypes.all
 
@@ -103,22 +146,15 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
     }
 
     private func configureNativeReader() {
-        titleLabel.text = book.resolvedTitle
-        titleLabel.accessibilityIdentifier = "reader.title"
-        titleLabel.font = .preferredFont(forTextStyle: .title2)
-        titleLabel.numberOfLines = 2
-        statusLabel.textColor = .secondaryLabel
-        statusLabel.accessibilityIdentifier = "reader.status"
-        statusLabel.numberOfLines = 0
         pageIndicator.accessibilityIdentifier = "reader.pageIndicator"
         pageIndicator.accessibilityLabel = L10n.string("reader.contents")
-        pageIndicator.isHidden = !isPaginatedMode
+        pageIndicator.isHidden = !isPaginatedMode || !settings.readerShowPageNumbers
         pageIndicator.textAlignment = .center
         pageIndicator.textColor = .secondaryLabel
         pageIndicator.font = .preferredFont(forTextStyle: .footnote)
         textView.isEditable = false
         textView.isSelectable = true
-        textView.isScrollEnabled = !isPaginatedMode
+        textView.isScrollEnabled = false
         textView.delegate = self
         textView.font = UIFontMetrics(forTextStyle: .body).scaledFont(for: .systemFont(ofSize: settings.readerPointSize))
         textView.adjustsFontForContentSizeCategory = true
@@ -145,110 +181,81 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
                 scrollProbeLabel.heightAnchor.constraint(equalToConstant: 1),
             ])
         }
-        textView.textContainerInset = UIEdgeInsets(top: 20, left: 20, bottom: 32, right: 20)
-        scrollView.delegate = self
-        // Paginated mode advances only by whole viewport pages. The scroll
-        // view remains a layout container for programmatic offsets, but must
-        // not accept free vertical scrolling from the user.
-        scrollView.isScrollEnabled = false
-        if isPaginatedMode {
-            scrollView.panGestureRecognizer.isEnabled = false
-            scrollView.alwaysBounceVertical = false
-            scrollView.alwaysBounceHorizontal = false
-            textView.panGestureRecognizer.isEnabled = false
+        if ProcessInfo.processInfo.arguments.contains("-uiTestPaginationProbe") {
+            paginationProbeLabel.accessibilityIdentifier = "reader.paginationProbe"
+            paginationProbeLabel.alpha = 0.01
+            paginationProbeLabel.isAccessibilityElement = true
+            paginationProbeLabel.textColor = .clear
+            paginationProbeLabel.translatesAutoresizingMaskIntoConstraints = false
+            view.addSubview(paginationProbeLabel)
+            NSLayoutConstraint.activate([
+                paginationProbeLabel.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+                paginationProbeLabel.topAnchor.constraint(equalTo: view.topAnchor),
+                paginationProbeLabel.widthAnchor.constraint(equalToConstant: 1),
+                paginationProbeLabel.heightAnchor.constraint(equalToConstant: 1),
+            ])
         }
-        let pageTap = UITapGestureRecognizer(target: self, action: #selector(handleReaderTap(_:)))
+        // Horizontal gutters belong to the reader's margin setting. Keeping
+        // the text container horizontal inset at zero makes the selected
+        // value map directly to the visible reading column.
+        textView.textContainerInset = UIEdgeInsets(top: 20, left: 0, bottom: 32, right: 0)
+        textView.textContainer.lineFragmentPadding = 0
+        scrollView.delegate = self
         pageTap.delegate = self
-        scrollView.addGestureRecognizer(pageTap)
+        pageTap.cancelsTouchesInView = false
+        // Own reader gestures at the reader surface, not inside its scroll
+        // view. UITextView and image chapters install their own recognizers;
+        // attaching here guarantees that a deliberate centre tap always
+        // reaches the immersive-reader action.
+        view.addGestureRecognizer(pageTap)
         let horizontalSwipe = UIPanGestureRecognizer(target: self, action: #selector(handleHorizontalSwipe(_:)))
         horizontalSwipe.delegate = self
         horizontalSwipe.cancelsTouchesInView = false
         // Attach to the controller view so the swipe remains detectable over
         // the transparent page-turn hit regions and the text view.
         view.addGestureRecognizer(horizontalSwipe)
+        forwardChapterSwipe.direction = .left
+        backwardChapterSwipe.direction = .right
+        view.addGestureRecognizer(forwardChapterSwipe)
+        view.addGestureRecognizer(backwardChapterSwipe)
         scrollView.addSubview(textView)
         comicPageImageView.contentMode = .scaleAspectFit
         comicPageImageView.isHidden = true
         scrollView.addSubview(comicPageImageView)
+        comicPageImageView.clipsToBounds = true
+        comicPageImageView.backgroundColor = .clear
         textView.translatesAutoresizingMaskIntoConstraints = false
         comicPageImageView.translatesAutoresizingMaskIntoConstraints = false
         scrollView.translatesAutoresizingMaskIntoConstraints = false
 
-        let tocButton = UIButton(type: .system)
-        tocButton.accessibilityIdentifier = "reader.toc.toggle"
-        tocButton.setImage(UIImage(systemName: "list.bullet.indent"), for: .normal)
-        tocButton.accessibilityLabel = L10n.string("reader.toc")
-        tocButton.addTarget(self, action: #selector(presentTOC), for: .touchUpInside)
-        let searchButton = UIButton(type: .system)
-        searchButton.accessibilityIdentifier = "reader.search"
-        searchButton.setImage(UIImage(systemName: "magnifyingglass"), for: .normal)
-        searchButton.accessibilityLabel = L10n.string("reader.search")
-        searchButton.addTarget(self, action: #selector(promptSearch), for: .touchUpInside)
-        let aaButton = UIButton(type: .system)
-        aaButton.accessibilityIdentifier = "reader.settings.toggle"
-        aaButton.setImage(UIImage(systemName: "textformat.size"), for: .normal)
-        aaButton.accessibilityLabel = L10n.string("reader.settings")
-        aaButton.addTarget(self, action: #selector(presentReaderSettings), for: .touchUpInside)
-        // Leading flexible spacer pushes all three icon buttons together at
-        // the trailing edge (matches the old SwiftUI toolbar layout).
-        toolsBar.addArrangedSubview(UIView())
-        toolsBar.addArrangedSubview(searchButton)
-        toolsBar.addArrangedSubview(aaButton)
-        toolsBar.addArrangedSubview(tocButton)
         if ProcessInfo.processInfo.arguments.contains("-uiTestFlickerProbe") {
             flickerChapterLabel.accessibilityIdentifier = "flicker.probe.chapter"
             flickerSummaryLabel.accessibilityIdentifier = "flicker.probe.summary"
             flickerResetButton.accessibilityIdentifier = "flicker.probe.reset"
             flickerResetButton.setTitle("Reset", for: .normal)
             flickerResetButton.addTarget(self, action: #selector(resetFlickerProbe), for: .touchUpInside)
-            toolsBar.addArrangedSubview(flickerChapterLabel)
-            toolsBar.addArrangedSubview(flickerSummaryLabel)
-            toolsBar.addArrangedSubview(flickerResetButton)
+            testProbeStack.addArrangedSubview(flickerChapterLabel)
+            testProbeStack.addArrangedSubview(flickerSummaryLabel)
+            testProbeStack.addArrangedSubview(flickerResetButton)
             updateFlickerProbe()
         }
-        toolsBar.axis = .horizontal
-        toolsBar.alignment = .center
-        toolsBar.spacing = 12
-        for button in [searchButton, aaButton, tocButton] {
-            button.translatesAutoresizingMaskIntoConstraints = false
-            NSLayoutConstraint.activate([
-                button.widthAnchor.constraint(greaterThanOrEqualToConstant: 44),
-                button.heightAnchor.constraint(greaterThanOrEqualToConstant: 44),
-            ])
-        }
-        readerChromeButtons = [searchButton, aaButton, tocButton]
-        applyReaderChromeButtonColor()
-
-        // The book title belongs to the host navigation bar. Keeping the
-        // chapter title here duplicated the top chrome with values such as
-        // “Chapter 3”, unlike the native iPhone reading pattern.
-        // Status is used only by PDF/error states. It must not be an arranged
-        // child of the reader stack: an empty multiline UILabel has no stable
-        // intrinsic height and can push the toolbar and page indicator into
-        // the middle/bottom of the screen on iOS 26.
-        toolsBar.translatesAutoresizingMaskIntoConstraints = false
         pageIndicator.translatesAutoresizingMaskIntoConstraints = false
-        toolsBar.setContentHuggingPriority(.required, for: .vertical)
-        toolsBar.setContentCompressionResistancePriority(.required, for: .vertical)
         pageIndicator.setContentHuggingPriority(.required, for: .vertical)
         pageIndicator.setContentCompressionResistancePriority(.required, for: .vertical)
-        view.addSubview(toolsBar)
         view.addSubview(pageIndicator)
         view.addSubview(scrollView)
         NSLayoutConstraint.activate([
-            toolsBar.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor, constant: 12),
-            toolsBar.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor, constant: -12),
-            toolsBar.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 12),
-            toolsBar.heightAnchor.constraint(equalToConstant: 56),
-            pageIndicator.leadingAnchor.constraint(equalTo: toolsBar.leadingAnchor),
-            pageIndicator.trailingAnchor.constraint(equalTo: toolsBar.trailingAnchor),
+            pageIndicator.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor, constant: 12),
+            pageIndicator.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor, constant: -12),
             pageIndicator.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -8),
-            pageIndicator.heightAnchor.constraint(equalToConstant: 24),
-            scrollView.leadingAnchor.constraint(equalTo: toolsBar.leadingAnchor),
-            scrollView.trailingAnchor.constraint(equalTo: toolsBar.trailingAnchor),
-            scrollView.topAnchor.constraint(equalTo: toolsBar.bottomAnchor, constant: 8),
-            scrollView.bottomAnchor.constraint(equalTo: pageIndicator.topAnchor, constant: -8),
+            scrollView.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor),
+            scrollView.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor),
+            scrollView.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 8),
         ])
+        scrollView.accessibilityIdentifier = "reader.viewport"
+        scrollBottomToPageIndicator = scrollView.bottomAnchor.constraint(equalTo: pageIndicator.topAnchor, constant: -8)
+        scrollBottomToSafeArea = scrollView.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -8)
+        configureTestProbeIfNeeded()
 
         if ProcessInfo.processInfo.arguments.contains("-uiTestChromeToggle") {
             let chromeToggle = UIButton(type: .system)
@@ -315,15 +322,8 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
             }
         }
 
-        if !isPaginatedMode {
-            let forwardSwipe = UISwipeGestureRecognizer(target: self, action: #selector(swipeChapterForward(_:)))
-            forwardSwipe.direction = .left
-            let backwardSwipe = UISwipeGestureRecognizer(target: self, action: #selector(swipeChapterBackward(_:)))
-            backwardSwipe.direction = .right
-            view.addGestureRecognizer(forwardSwipe)
-            view.addGestureRecognizer(backwardSwipe)
-
-            if ProcessInfo.processInfo.arguments.contains("-uiTestChromeToggle") {
+        if !isPaginatedMode,
+           ProcessInfo.processInfo.arguments.contains("-uiTestChromeToggle") {
                 for (identifier, action, trailing) in [
                     ("reader.scrollChapter.previous", #selector(uiTestPreviousChapter), false),
                     ("reader.scrollChapter.next", #selector(uiTestNextChapter), true),
@@ -341,7 +341,6 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
                     ])
                     view.bringSubviewToFront(button)
                 }
-            }
         }
 
         // Loading overlay: cover + spinner, shown in place of the chooser/
@@ -419,13 +418,76 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
             comicPageImageView.widthAnchor.constraint(equalTo: scrollView.frameLayoutGuide.widthAnchor),
             comicPageImageView.heightAnchor.constraint(equalTo: scrollView.frameLayoutGuide.heightAnchor),
         ])
-        if isPaginatedMode {
-            paginatedTextHeightConstraint = textView.heightAnchor.constraint(equalTo: scrollView.frameLayoutGuide.heightAnchor)
-            paginatedTextHeightConstraint.isActive = true
-            textView.textContainer.heightTracksTextView = false
-        } else {
-            textView.heightAnchor.constraint(greaterThanOrEqualTo: scrollView.frameLayoutGuide.heightAnchor).isActive = true
-        }
+        // The two height constraints are retained so switching the reader
+        // mode while the settings sheet is open is a layout update, not a
+        // book reload.
+        paginatedTextHeightConstraint = textView.heightAnchor.constraint(equalToConstant: 1)
+        scrollingTextHeightConstraint = textView.heightAnchor.constraint(equalToConstant: 1)
+        applyReaderLayoutMode()
+    }
+
+    private func applyReaderLayoutMode() {
+        let configuration = ReaderViewportConfiguration.resolve(
+            layout: settings.readerLayout,
+            chromeHidden: chromeHidden,
+            showsPageNumbers: settings.readerShowPageNumbers
+        )
+        scrollView.isScrollEnabled = configuration.allowsVerticalScrolling
+        scrollView.panGestureRecognizer.isEnabled = configuration.allowsVerticalScrolling
+        scrollView.alwaysBounceVertical = configuration.allowsVerticalScrolling
+        scrollView.alwaysBounceHorizontal = false
+        textView.isScrollEnabled = false
+        textView.panGestureRecognizer.isEnabled = false
+        textView.textContainer.widthTracksTextView = !configuration.usesPaginatedTextHeight
+        textView.textContainer.heightTracksTextView = false
+        paginatedTextHeightConstraint.isActive = configuration.usesPaginatedTextHeight
+        scrollingTextHeightConstraint.isActive = !configuration.usesPaginatedTextHeight
+        scrollBottomToPageIndicator.isActive = configuration.showsPageIndicator
+        scrollBottomToSafeArea.isActive = !configuration.showsPageIndicator
+        forwardChapterSwipe.isEnabled = configuration.allowsChapterSwipes
+        backwardChapterSwipe.isEnabled = configuration.allowsChapterSwipes
+        pageIndicator.isHidden = !configuration.showsPageIndicator
+        pageIndicator.alpha = configuration.showsPageIndicator ? 1 : 0
+        lastPaginatedViewportSize = .zero
+        lastScrollingViewportSize = .zero
+    }
+
+    private func applyReaderMargins() {
+        let margin = CGFloat(ReaderLayoutMetrics.clampedMargin(settings.readerMargin))
+        textLeadingConstraint?.constant = margin
+        textTrailingConstraint?.constant = -margin
+        textWidthConstraint?.constant = -2 * margin
+    }
+
+    private func makeNavigationItem(
+        symbol: String,
+        identifier: String,
+        label: String,
+        action: Selector
+    ) -> UIBarButtonItem {
+        let item = UIBarButtonItem(
+            image: UIImage(systemName: symbol),
+            style: .plain,
+            target: self,
+            action: action
+        )
+        item.accessibilityIdentifier = identifier
+        item.accessibilityLabel = label
+        return item
+    }
+
+    private func configureTestProbeIfNeeded() {
+        guard ProcessInfo.processInfo.arguments.contains("-uiTestFlickerProbe") else { return }
+        testProbeStack.axis = .horizontal
+        testProbeStack.alignment = .center
+        testProbeStack.spacing = 8
+        testProbeStack.alpha = 0.02
+        testProbeStack.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(testProbeStack)
+        NSLayoutConstraint.activate([
+            testProbeStack.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor),
+            testProbeStack.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
+        ])
     }
 
     override func viewWillDisappear(_ animated: Bool) {
@@ -435,18 +497,55 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
 
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
-        let margin = CGFloat(max(12, settings.readerMargin))
-        textLeadingConstraint?.constant = margin
-        textTrailingConstraint?.constant = -margin
-        textWidthConstraint?.constant = -2 * margin
+        applyReaderMargins()
+        fitInlineImagesToTextViewport()
+        if isPaginatedMode {
+            let viewportSize = scrollView.bounds.size
+            if viewportSize.width > 0, viewportSize.height > 0,
+               viewportSize != lastPaginatedViewportSize {
+                lastPaginatedViewportSize = viewportSize
+                updatePaginatedTextHeight()
+            }
+            updatePageIndicator()
+            updatePaginationProbe()
+        } else {
+            let viewportSize = scrollView.bounds.size
+            if viewportSize.width > 0, viewportSize.height > 0,
+               viewportSize != lastScrollingViewportSize {
+                lastScrollingViewportSize = viewportSize
+                updateScrollingTextHeight()
+            }
+        }
+    }
+
+    /// Keeps inline EPUB images proportional while constraining them to the
+    /// actual readable viewport in both portrait and landscape orientations.
+    private func fitInlineImagesToTextViewport() {
+        guard !textView.isHidden, textView.bounds.width > 0 else { return }
+        let availableWidth = max(
+            1,
+            textView.bounds.width - textView.textContainerInset.left - textView.textContainerInset.right
+        )
+        let displayScale = view.window?.screen.scale ?? UIScreen.main.scale
+        let viewportWidth = (availableWidth * displayScale).rounded() / displayScale
+        guard lastInlineImageViewportWidth != viewportWidth else { return }
+        lastInlineImageViewportWidth = viewportWidth
+        guard let fitted = ReaderInlineImageLayout.fitting(
+            textView.attributedText,
+            maximumWidth: viewportWidth
+        ) else { return }
+        textView.attributedText = fitted
+        if isPaginatedMode {
+            DispatchQueue.main.async { [weak self] in
+                self?.updatePaginatedTextHeight()
+            }
+        }
     }
 
     // MARK: - Pagination (viewport snap) + progress restoration
 
-    /// In `.paginated` mode, rounds the scroll destination to the nearest
-    /// multiple of the viewport height so a fling lands on a "page"
-    /// boundary instead of an arbitrary mid-line offset. `.scrolling` mode
-    /// is untouched (free continuous scroll).
+    /// In `.paginated` mode, snaps a scroll destination to the nearest
+    /// TextKit line-aligned page boundary. `.scrolling` mode is untouched.
     func scrollViewWillEndDragging(
         _ scrollView: UIScrollView,
         withVelocity velocity: CGPoint,
@@ -464,11 +563,7 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
             }
             return
         }
-        let pageHeight = scrollView.bounds.height
-        guard pageHeight > 0 else { return }
-        let page = (targetContentOffset.pointee.y / pageHeight).rounded()
-        let maxY = max(0, scrollView.contentSize.height - pageHeight)
-        targetContentOffset.pointee.y = min(max(page * pageHeight, 0), maxY)
+        targetContentOffset.pointee.y = pageOffset(for: pageNumber(at: targetContentOffset.pointee.y))
     }
 
     func scrollViewDidEndDecelerating(_ scrollView: UIScrollView) {
@@ -484,8 +579,18 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
     }
 
     private func persistReadingProgress() {
+        let anchor = captureReadingAnchor()
+        ReaderProgressStore.save(
+            bookId: book.id,
+            chapterIndex: selectedChapter,
+            offsetFraction: Double(anchor.offsetFraction),
+            characterOffset: anchor.characterOffset
+        )
+    }
+
+    private func captureReadingAnchor() -> ReadingAnchor {
         let scrollable = max(scrollView.contentSize.height - scrollView.bounds.height, 1)
-        let fraction = scrollView.contentOffset.y / scrollable
+        let fraction = min(max(scrollView.contentOffset.y / scrollable, 0), 1)
         let characterOffset: Int? = {
             guard textView.attributedText.length > 0 else { return nil }
             let point = CGPoint(x: textView.textContainerInset.left + 1,
@@ -493,8 +598,26 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
             let glyph = textView.layoutManager.glyphIndex(for: point, in: textView.textContainer)
             return textView.layoutManager.characterIndexForGlyph(at: glyph)
         }()
-        ReaderProgressStore.save(bookId: book.id, chapterIndex: selectedChapter,
-                                 offsetFraction: fraction, characterOffset: characterOffset)
+        return ReadingAnchor(offsetFraction: fraction, characterOffset: characterOffset)
+    }
+
+    private func restoreReadingAnchor(_ anchor: ReadingAnchor) {
+        let scrollable = max(scrollView.contentSize.height - scrollView.bounds.height, 0)
+        guard scrollable > 0 else { return }
+        let target: CGFloat
+        if let characterOffset = anchor.characterOffset, textView.attributedText.length > 0 {
+            let safeOffset = min(characterOffset, textView.attributedText.length - 1)
+            let glyph = textView.layoutManager.glyphIndexForCharacter(at: safeOffset)
+            let rect = textView.layoutManager.boundingRect(
+                forGlyphRange: NSRange(location: glyph, length: 1), in: textView.textContainer
+            )
+            let glyphOffset = max(0, rect.minY - textView.textContainerInset.top)
+            target = isPaginatedMode ? pageOffset(for: pageNumber(at: glyphOffset)) : glyphOffset
+        } else {
+            let fractionOffset = anchor.offsetFraction * scrollable
+            target = isPaginatedMode ? pageOffset(for: pageNumber(at: fractionOffset)) : fractionOffset
+        }
+        scrollView.setContentOffset(CGPoint(x: 0, y: min(max(0, target), scrollable)), animated: false)
     }
 
     /// Called once, right after a fresh `loadBook()`, to jump back to the
@@ -506,20 +629,9 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
         guard let entry = ReaderProgressStore.read(bookId: book.id) else { return }
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
-            let scrollable = max(self.scrollView.contentSize.height - self.scrollView.bounds.height, 0)
-            guard scrollable > 0 else { return }
-            if let characterOffset = entry.characterOffset, self.textView.attributedText.length > 0 {
-                let safeOffset = min(characterOffset, self.textView.attributedText.length - 1)
-                let glyph = self.textView.layoutManager.glyphIndexForCharacter(at: safeOffset)
-                let rect = self.textView.layoutManager.boundingRect(
-                    forGlyphRange: NSRange(location: glyph, length: 1), in: self.textView.textContainer
-                )
-                self.scrollView.setContentOffset(CGPoint(x: 0, y: max(0, rect.minY)), animated: false)
-            } else {
-                self.scrollView.setContentOffset(
-                    CGPoint(x: 0, y: entry.offsetFraction * scrollable), animated: false
-                )
-            }
+            self.restoreReadingAnchor(
+                ReadingAnchor(offsetFraction: CGFloat(entry.offsetFraction), characterOffset: entry.characterOffset)
+            )
             self.updatePageIndicator()
         }
     }
@@ -529,8 +641,6 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
         loadTask?.cancel()
         loadTask = nil
         let loadingBookID = book.id
-        titleLabel.text = book.resolvedTitle
-        statusLabel.text = L10n.string("reader.loading")
         showLoadingOverlay()
         if ProcessInfo.processInfo.arguments.contains("-uiTestFixture") {
             showUITestFixture()
@@ -540,16 +650,15 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
         loadTask = Task { [weak self] in
             guard let self else { return }
             do {
-                let url = try library.openBookFile(id: book.id)
+                let url = try await library.openBookFileAsync(id: book.id)
                 if book.fileType == .pdf {
                     showPDF(url)
                     hideLoadingOverlay()
                     return
                 }
-                if registeredFontURLs.isEmpty {
-                    registeredFontURLs = EpubFontManager.registerFonts(from: url)
-                }
-                let cached = LocalFulltextCache.read(bookId: book.id)
+                let cached = await Task.detached(priority: .userInitiated) {
+                    LocalFulltextCache.read(bookId: loadingBookID)
+                }.value
                 let payload: EbookFulltext
                 let cachedNeedsTitleRepair = cached?.chapters.contains(where: { $0.hasGeneratedName }) == true
                 let titleRepairKey = "reader.titleRepairAttempted.\(book.id)"
@@ -568,13 +677,19 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
                     payload = try await PythonBridge.shared.parseEpub(at: url, bookId: book.id)
                 }
                 guard !Task.isCancelled, self.book.id == loadingBookID else { return }
-                LocalFulltextCache.save(payload, bookId: loadingBookID)
+                if registeredFontURLs.isEmpty {
+                    registeredFontURLs = await Task.detached(priority: .userInitiated) {
+                        EpubFontManager.registerFonts(from: url)
+                    }.value
+                }
+                Task.detached(priority: .utility) {
+                    LocalFulltextCache.save(payload, bookId: loadingBookID)
+                }
                 if cachedNeedsTitleRepair {
                     UserDefaults.standard.set(true, forKey: titleRepairKey)
                 }
                 fulltext = payload
                 publishReaderChapterTitles(payload)
-                statusLabel.text = nil
                 if !hasRestoredInitialPosition, let entry = ReaderProgressStore.read(bookId: book.id) {
                     selectedChapter = entry.chapterIndex
                 }
@@ -583,7 +698,6 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
                 hideLoadingOverlay()
             } catch {
                 guard !Task.isCancelled, self.book.id == loadingBookID else { return }
-                statusLabel.text = error.localizedDescription
                 textView.text = ""
                 showLoadingError(error.localizedDescription)
             }
@@ -648,13 +762,12 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
         )
         fulltext = payload
         publishReaderChapterTitles(payload)
-        statusLabel.text = nil
         showChapter(0)
     }
 
     private func showChapter(_ index: Int) {
         guard let chapter = fulltext?.chapters[safe: index] else { return }
-        titleLabel.text = chapter.displayTitle
+        lastInlineImageViewportWidth = nil
         player.updateReaderChapterTitle(chapter.displayTitle, for: chapter.zeroBasedEpubIndex)
         synchronizeChromeVisibility()
 
@@ -690,21 +803,16 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
                             ?? UIFont.systemFont(ofSize: settings.readerPointSize))
                 textView.font = UIFontMetrics(forTextStyle: .body).scaledFont(for: font)
             }
-            if ProcessInfo.processInfo.arguments.contains("-uiTestFixture"), !isPaginatedMode {
-                textView.layoutIfNeeded()
-                let contentWidth = max(textView.bounds.width, 1)
-                let contentHeight = max(textView.bounds.height + 2400, 2400)
-                textView.contentSize = CGSize(width: contentWidth, height: contentHeight)
-                DispatchQueue.main.async { [weak self] in
-                    guard let self else { return }
-                    self.textView.contentSize = CGSize(width: contentWidth, height: contentHeight)
-                }
-            }
-            updatePaginatedTextHeight()
+            updateTextHeightForCurrentLayout()
             repaintSavedHighlights(chapterIndex: index)
         }
         UserDefaults.standard.set(index, forKey: AudioPlayer.readerCurrentChapterIndexDefaultsKey)
-        uiTestPageNumber = 1
+        if isUITestFixture {
+            uiTestPageNumber = 1
+        } else {
+            uiTestPageNumber = nil
+        }
+        lastRenderedTextSettings = ReaderTextSettings(settings: settings)
         updatePageIndicator()
         updateFlickerProbe()
     }
@@ -719,16 +827,13 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
     /// snapshot the reader hierarchy. Re-apply the user's chrome preference
     /// so navigation never changes whether the controls are visible.
     private func synchronizeChromeVisibility() {
-        let shouldShow = !chromeHidden
-        toolsBar.isHidden = !shouldShow
-        titleLabel.isHidden = !shouldShow
-        statusLabel.isHidden = !shouldShow
-        pageIndicator.isHidden = !shouldShow && isPaginatedMode || !isPaginatedMode
-        let alpha: CGFloat = shouldShow ? 1 : 0
-        toolsBar.alpha = alpha
-        titleLabel.alpha = alpha
-        statusLabel.alpha = alpha
-        pageIndicator.alpha = isPaginatedMode ? alpha : 0
+        let configuration = ReaderViewportConfiguration.resolve(
+            layout: settings.readerLayout,
+            chromeHidden: chromeHidden,
+            showsPageNumbers: settings.readerShowPageNumbers
+        )
+        pageIndicator.isHidden = !configuration.showsPageIndicator
+        pageIndicator.alpha = configuration.showsPageIndicator ? 1 : 0
     }
 
     @objc private func resetFlickerProbe() {
@@ -750,10 +855,9 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
             pageIndicator.text = L10n.string("reader.pageOf", 1, 1)
             return
         }
-        let pageHeight = max(scrollView.bounds.height, 1)
-        let measuredTotal = Int(ceil(scrollView.contentSize.height / pageHeight))
-        let total = max(1, measuredTotal)
-        let page = min(total, max(1, uiTestPageNumber ?? (Int(round(scrollView.contentOffset.y / pageHeight)) + 1)))
+        let total = max(1, paginatedPageOffsets.count)
+        let testPage = isUITestFixture ? uiTestPageNumber : nil
+        let page = min(total, max(1, testPage ?? pageNumber(at: scrollView.contentOffset.y)))
         let value = L10n.string("reader.pageOf", page, total)
         if pageIndicator.text != value { pageIndicator.text = value }
         pageIndicator.accessibilityValue = value
@@ -761,40 +865,154 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
 
     private func updatePaginatedTextHeight() {
         guard isPaginatedMode, let heightConstraint = paginatedTextHeightConstraint else { return }
+        let horizontalInset = textView.textContainerInset.left + textView.textContainerInset.right
+        let verticalInset = textView.textContainerInset.top + textView.textContainerInset.bottom
+        let textWidth = textView.bounds.width - horizontalInset
+        let pageHeight = scrollView.bounds.height
+        // Deferring until the real viewport exists prevents TextKit from
+        // measuring a long chapter against its transient one-point container.
+        // That stale measurement was able to leave a 40K-character chapter
+        // with a single reported page after the first layout pass.
+        guard textWidth > 1, pageHeight > verticalInset + 1 else { return }
+        textView.textContainer.size = CGSize(width: textWidth, height: .greatestFiniteMagnitude)
+        textView.layoutManager.invalidateLayout(forCharacterRange: NSRange(location: 0, length: textView.textStorage.length), actualCharacterRange: nil)
         textView.layoutManager.ensureLayout(for: textView.textContainer)
-        let usedHeight = textView.layoutManager.usedRect(for: textView.textContainer).height
-            + textView.textContainerInset.top + textView.textContainerInset.bottom
-        let pageHeight = max(scrollView.bounds.height, 1)
-        heightConstraint.constant = max(pageHeight, ceil(usedHeight))
+        heightConstraint.constant = ReaderPaginatedTextLayout.measuredContentHeight(
+            layoutManager: textView.layoutManager,
+            textContainer: textView.textContainer,
+            verticalInset: verticalInset,
+            pageHeight: pageHeight
+        )
+        paginatedPageOffsets = ReaderPaginatedTextLayout.pageOffsets(
+            layoutManager: textView.layoutManager,
+            textContainer: textView.textContainer,
+            verticalInset: verticalInset,
+            pageHeight: pageHeight
+        )
         textView.contentSize.height = heightConstraint.constant
         view.layoutIfNeeded()
+        updatePaginationProbe()
+    }
+
+    private func updateScrollingTextHeight() {
+        guard !isPaginatedMode, let heightConstraint = scrollingTextHeightConstraint else { return }
+        let horizontalInset = textView.textContainerInset.left + textView.textContainerInset.right
+        let verticalInset = textView.textContainerInset.top + textView.textContainerInset.bottom
+        let textWidth = textView.bounds.width - horizontalInset
+        let viewportHeight = scrollView.bounds.height
+        guard textWidth > 1, viewportHeight > 1 else { return }
+        textView.textContainer.size = CGSize(width: textWidth, height: .greatestFiniteMagnitude)
+        textView.layoutManager.invalidateLayout(
+            forCharacterRange: NSRange(location: 0, length: textView.textStorage.length),
+            actualCharacterRange: nil
+        )
+        textView.layoutManager.ensureLayout(for: textView.textContainer)
+        let measuredHeight = max(
+            viewportHeight,
+            ceil(textView.layoutManager.usedRect(for: textView.textContainer).height) + verticalInset
+        )
+        heightConstraint.constant = measuredHeight
+        textView.contentSize = CGSize(width: max(textView.bounds.width, 1), height: measuredHeight)
+        paginatedPageOffsets = [0]
+    }
+
+    private func updateTextHeightForCurrentLayout() {
+        if isPaginatedMode {
+            updatePaginatedTextHeight()
+        } else {
+            updateScrollingTextHeight()
+        }
+    }
+
+    /// Exposes visual pagination facts only in XCTest builds. UI tests need
+    /// real glyph positions rather than the outer UITextView frame: the latter
+    /// remains safely placed even when a sibling navigation bar overlaps text.
+    private func updatePaginationProbe() {
+        guard ProcessInfo.processInfo.arguments.contains("-uiTestPaginationProbe"),
+              let window = view.window,
+              textView.attributedText.length > 0,
+              textView.layoutManager.numberOfGlyphs > 0 else { return }
+
+        let inset = textView.textContainerInset
+        let visibleRect = CGRect(
+            x: 0,
+            y: max(0, scrollView.contentOffset.y - inset.top),
+            width: textView.textContainer.size.width,
+            height: scrollView.bounds.height
+        )
+        let glyphRange = textView.layoutManager.glyphRange(
+            forBoundingRect: visibleRect,
+            in: textView.textContainer
+        )
+        guard glyphRange.length > 0 else { return }
+        let firstGlyph = glyphRange.location
+        let lastGlyph = NSMaxRange(glyphRange) - 1
+        let firstRect = textView.layoutManager.boundingRect(
+            forGlyphRange: NSRange(location: firstGlyph, length: 1),
+            in: textView.textContainer
+        )
+        let lastRect = textView.layoutManager.boundingRect(
+            forGlyphRange: NSRange(location: lastGlyph, length: 1),
+            in: textView.textContainer
+        )
+        let firstPoint = textView.convert(
+            CGPoint(x: firstRect.minX + inset.left, y: firstRect.minY + inset.top),
+            to: window
+        )
+        let lastPoint = textView.convert(
+            CGPoint(x: lastRect.maxX + inset.left, y: lastRect.maxY + inset.top),
+            to: window
+        )
+        let safeTop = view.convert(
+            CGPoint(x: 0, y: view.safeAreaLayoutGuide.layoutFrame.minY),
+            to: window
+        ).y
+        paginationProbeLabel.text = [
+            "first=\(textView.layoutManager.characterIndexForGlyph(at: firstGlyph))",
+            "last=\(textView.layoutManager.characterIndexForGlyph(at: lastGlyph))",
+            "firstY=\(Int(firstPoint.y.rounded()))",
+            "lastY=\(Int(lastPoint.y.rounded()))",
+            "safeTop=\(Int(safeTop.rounded()))",
+            "page=\(pageNumber(at: scrollView.contentOffset.y))",
+            "total=\(paginatedPageOffsets.count)",
+        ].joined(separator: ";")
+    }
+
+    private func pageNumber(at offset: CGFloat) -> Int {
+        guard paginatedPageOffsets.count > 1 else { return 1 }
+        let epsilon: CGFloat = 0.5
+        let index = paginatedPageOffsets.lastIndex(where: { $0 <= offset + epsilon }) ?? 0
+        return index + 1
+    }
+
+    private func pageOffset(for page: Int) -> CGFloat {
+        let index = min(max(0, page - 1), max(0, paginatedPageOffsets.count - 1))
+        return paginatedPageOffsets[index]
     }
 
     @objc private func handleReaderTap(_ gesture: UITapGestureRecognizer) {
         guard gesture.state == .ended else { return }
         let pointInView = gesture.location(in: view)
-        let centerRect = view.bounds.insetBy(dx: view.bounds.width * 0.3, dy: view.bounds.height * 0.3)
-        if centerRect.contains(pointInView) {
+        switch ReaderTapAction.resolve(
+            point: pointInView,
+            in: view.bounds,
+            isPaginated: isPaginatedMode
+        ) {
+        case .toggleChrome:
             toggleChromeVisibility()
+        case let .turnPage(forward):
+            navigatePage(forward: forward)
+        case .none:
             return
         }
-        guard isPaginatedMode else { return }
-        let point = gesture.location(in: scrollView)
-        let forward = point.x >= scrollView.bounds.width * 0.5
-        navigatePage(forward: forward)
     }
 
     @objc private func toggleChromeVisibility() {
         chromeHidden.toggle()
         let shouldShow = !chromeHidden
-        if shouldShow {
-            toolsBar.isHidden = false
-            titleLabel.isHidden = false
-            statusLabel.isHidden = false
-            pageIndicator.isHidden = !isPaginatedMode
-            toolsBar.alpha = 0
-            titleLabel.alpha = 0
-            statusLabel.alpha = 0
+        let shouldShowPageIndicator = shouldShow && isPaginatedMode && settings.readerShowPageNumbers
+        if shouldShowPageIndicator {
+            pageIndicator.isHidden = false
             pageIndicator.alpha = 0
         }
         textView.accessibilityHint = L10n.string("reader.toggleControls")
@@ -805,19 +1023,13 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
             options: [.curveEaseInOut, .beginFromCurrentState, .allowUserInteraction]
         ) {
             let alpha: CGFloat = shouldShow ? 1 : 0
-            self.toolsBar.alpha = alpha
-            self.titleLabel.alpha = alpha
-            self.statusLabel.alpha = alpha
-            self.pageIndicator.alpha = self.isPaginatedMode ? alpha : 0
+            self.pageIndicator.alpha = shouldShowPageIndicator ? alpha : 0
             self.view.layoutIfNeeded()
         } completion: { _ in
-            if !shouldShow {
-                self.toolsBar.isHidden = true
-                self.titleLabel.isHidden = true
-                self.statusLabel.isHidden = true
+            if !shouldShowPageIndicator {
                 self.pageIndicator.isHidden = true
             }
-            UIAccessibility.post(notification: .layoutChanged, argument: shouldShow ? self.toolsBar : self.textView)
+            UIAccessibility.post(notification: .layoutChanged, argument: self.textView)
         }
     }
 
@@ -880,34 +1092,45 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
     @objc private func presentReaderSettings() {
         let controller = ReaderSettingsScreenController(settings: settings)
         controller.onChange = { [weak self] in
-            guard let self, self.fulltext != nil else { return }
-            self.applyReaderSettingsImmediately()
+            self?.scheduleReaderSettingsUpdate()
         }
         present(UINavigationController(rootViewController: controller), animated: true)
     }
 
+    private func scheduleReaderSettingsUpdate() {
+        guard fulltext != nil else { return }
+        settingsUpdateWorkItem?.cancel()
+        let workItem = DispatchWorkItem { [weak self] in
+            self?.applyReaderSettingsImmediately()
+        }
+        settingsUpdateWorkItem = workItem
+        // UISlider can emit many values in one drag. Coalesce them to a
+        // display-friendly cadence so typography updates stay live without
+        // making the control itself lose its gesture.
+        DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(50), execute: workItem)
+    }
+
     private func applyReaderSettingsImmediately() {
-        let pageHeight = max(scrollView.bounds.height, 1)
-        let currentPage = max(1, Int(round(scrollView.contentOffset.y / pageHeight)) + 1)
+        let readingAnchor = captureReadingAnchor()
+        let nextTextSettings = ReaderTextSettings(settings: settings)
+        let needsTextRerender = lastRenderedTextSettings != nextTextSettings
         let colors = settings.readerTheme.previewColors
         view.backgroundColor = colors.background
         scrollView.backgroundColor = colors.background
         textView.backgroundColor = colors.background
-        statusLabel.textColor = colors.foreground.withAlphaComponent(0.7)
         pageIndicator.textColor = colors.foreground.withAlphaComponent(0.7)
-        applyReaderChromeButtonColor()
-        showChapter(selectedChapter)
-        let page = min(currentPage, measuredPageCount)
-        scrollView.setContentOffset(CGPoint(x: 0, y: CGFloat(page - 1) * pageHeight), animated: false)
-        updatePageIndicator()
-    }
-
-    private func applyReaderChromeButtonColor() {
-        let foreground = settings.readerTheme.previewColors.foreground
-        readerChromeButtons.forEach { button in
-            button.tintColor = foreground
-            button.setTitleColor(foreground, for: .normal)
+        applyReaderLayoutMode()
+        applyReaderMargins()
+        view.setNeedsLayout()
+        view.layoutIfNeeded()
+        if needsTextRerender {
+            showChapter(selectedChapter)
+        } else {
+            updateTextHeightForCurrentLayout()
         }
+        view.layoutIfNeeded()
+        restoreReadingAnchor(readingAnchor)
+        updatePageIndicator()
     }
 
     @objc private func turnPageLeft() { turnPage(forward: false) }
@@ -925,27 +1148,55 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
         false
     }
 
+    func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer,
+                           shouldReceive touch: UITouch) -> Bool {
+        guard gestureRecognizer === pageTap else { return true }
+        let point = touch.location(in: textView)
+        return !isLink(at: point)
+    }
+
     func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
         guard let pan = gestureRecognizer as? UIPanGestureRecognizer else { return true }
         let velocity = pan.velocity(in: view)
         return isPaginatedMode && abs(velocity.x) > abs(velocity.y) && abs(velocity.x) > 20
     }
 
+    private func isLink(at point: CGPoint) -> Bool {
+        guard textView.bounds.contains(point), let attributed = textView.attributedText,
+              attributed.length > 0 else { return false }
+        let containerPoint = CGPoint(
+            x: point.x - textView.textContainerInset.left,
+            y: point.y - textView.textContainerInset.top
+        )
+        let glyph = textView.layoutManager.glyphIndex(
+            for: containerPoint,
+            in: textView.textContainer,
+            fractionOfDistanceThroughGlyph: nil
+        )
+        guard glyph < textView.layoutManager.numberOfGlyphs else { return false }
+        let glyphRange = NSRange(location: glyph, length: 1)
+        guard textView.layoutManager.boundingRect(
+            forGlyphRange: glyphRange,
+            in: textView.textContainer
+        ).contains(containerPoint) else { return false }
+        let character = textView.layoutManager.characterIndexForGlyph(at: glyph)
+        guard character < attributed.length else { return false }
+        return attributed.attribute(.link, at: character, effectiveRange: nil) != nil
+    }
+
     private var measuredPageCount: Int {
-        view.layoutIfNeeded()
-        textView.layoutManager.ensureLayout(for: textView.textContainer)
-        let pageHeight = max(scrollView.bounds.height, 1)
-        let usedHeight = textView.layoutManager.usedRect(for: textView.textContainer).height
-            + textView.textContainerInset.top + textView.textContainerInset.bottom
-        let contentHeight = max(usedHeight, textView.contentSize.height, textView.bounds.height)
-        return max(1, Int(ceil(contentHeight / pageHeight)))
+        max(1, paginatedPageOffsets.count)
     }
 
     func scrollViewDidScroll(_ scrollView: UIScrollView) {
+        if isPaginatedMode {
+            updatePageIndicator()
+        }
         guard ProcessInfo.processInfo.arguments.contains("-uiTestReaderLayout") else { return }
         let offset = scrollView === textView ? textView.contentOffset.y : scrollView.contentOffset.y
         textView.accessibilityValue = "offset=\(Int(offset.rounded()))"
         scrollProbeLabel.text = "offset=\(Int(offset.rounded()))"
+        updatePaginationProbe()
     }
 
     private func turnPage(forward: Bool) {
@@ -986,9 +1237,8 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
         guard let fulltext, fulltext.chapters[safe: selectedChapter] != nil else { return }
         isPageTransitioning = true
         view.layoutIfNeeded()
-        let pageHeight = max(scrollView.bounds.height, 1)
         let estimatedTotal = measuredPageCount
-        let current = max(1, Int(round(scrollView.contentOffset.y / pageHeight)) + 1)
+        let current = pageNumber(at: scrollView.contentOffset.y)
         if forward, current >= estimatedTotal, selectedChapter + 1 < fulltext.chapters.count {
             persistReadingProgress(); selectedChapter += 1; showChapter(selectedChapter)
             scrollView.setContentOffset(.zero, animated: false); updatePageIndicator()
@@ -1000,7 +1250,7 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
             if ProcessInfo.processInfo.arguments.contains("-uiTestFixture") {
                 uiTestPageNumber = previousTotal
             }
-            scrollView.setContentOffset(CGPoint(x: 0, y: CGFloat(previousTotal - 1) * pageHeight), animated: false)
+            scrollView.setContentOffset(CGPoint(x: 0, y: pageOffset(for: previousTotal)), animated: false)
             updatePageIndicator(); finishChapterTransition(); return
         }
         if (forward && current >= estimatedTotal) || (!forward && current <= 1) {
@@ -1011,7 +1261,7 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
         if ProcessInfo.processInfo.arguments.contains("-uiTestFixture") {
             uiTestPageNumber = next
         }
-        setPageOffset(CGPoint(x: 0, y: CGFloat(next - 1) * pageHeight), forward: forward)
+        setPageOffset(CGPoint(x: 0, y: pageOffset(for: next)), forward: forward)
         updatePageIndicator(); persistReadingProgress()
     }
 
@@ -1076,6 +1326,42 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
             mutable.addAttribute(.backgroundColor, value: bookmark.color.platformColor, range: range)
         }
         textView.attributedText = mutable
+    }
+
+    func textView(
+        _ textView: UITextView,
+        shouldInteractWith url: URL,
+        in characterRange: NSRange,
+        interaction: UITextItemInteraction
+    ) -> Bool {
+        guard let fulltext, let chapter = fulltext.chapters[safe: selectedChapter],
+              characterRange.location != NSNotFound,
+              NSMaxRange(characterRange) <= textView.attributedText.length else {
+            return false
+        }
+        let linkedText = (textView.attributedText.string as NSString).substring(with: characterRange)
+        switch ReaderLinkResolver.destination(
+            for: url,
+            linkText: linkedText,
+            currentChapter: chapter,
+            chapters: fulltext.chapters
+        ) {
+        case .chapter(let index):
+            guard fulltext.chapters.indices.contains(index) else { return false }
+            persistReadingProgress()
+            selectedChapter = index
+            showChapter(index)
+            scrollView.setContentOffset(.zero, animated: false)
+            return false
+        case .footnote(let footnote):
+            let sheet = FootnotesSheetController(footnotes: [footnote])
+            present(UINavigationController(rootViewController: sheet), animated: true)
+            return false
+        case .external:
+            return true
+        case .unresolved:
+            return false
+        }
     }
 
     @available(iOS 16.0, *)
@@ -1191,7 +1477,6 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
             view.leadingAnchor.constraint(equalTo: self.view.leadingAnchor), view.trailingAnchor.constraint(equalTo: self.view.trailingAnchor),
             view.topAnchor.constraint(equalTo: self.view.safeAreaLayoutGuide.topAnchor), view.bottomAnchor.constraint(equalTo: self.view.bottomAnchor)
         ])
-        statusLabel.text = L10n.string("reader.pdf")
     }
 
     func presentDocumentPicker() {
@@ -1212,6 +1497,76 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
             alert.addAction(UIAlertAction(title: L10n.string("common.ok"), style: .default))
             present(alert, animated: true)
         }
+    }
+}
+
+enum ReaderTapAction: Equatable {
+    case toggleChrome
+    case turnPage(forward: Bool)
+    case none
+
+    static func resolve(point: CGPoint, in bounds: CGRect, isPaginated: Bool) -> ReaderTapAction {
+        guard bounds.contains(point) else { return .none }
+        let centre = bounds.insetBy(
+            dx: bounds.width * 0.3,
+            dy: bounds.height * 0.3
+        )
+        if centre.contains(point) {
+            return .toggleChrome
+        }
+        guard isPaginated else { return .none }
+        return .turnPage(forward: point.x >= bounds.midX)
+    }
+}
+
+struct ReaderViewportConfiguration: Equatable {
+    let allowsVerticalScrolling: Bool
+    let allowsChapterSwipes: Bool
+    let usesPaginatedTextHeight: Bool
+    let showsPageIndicator: Bool
+
+    static func resolve(
+        layout: ReaderLayout,
+        chromeHidden: Bool,
+        showsPageNumbers: Bool
+    ) -> ReaderViewportConfiguration {
+        let paginated = layout == .paginated
+        return ReaderViewportConfiguration(
+            allowsVerticalScrolling: !paginated,
+            allowsChapterSwipes: !paginated,
+            usesPaginatedTextHeight: paginated,
+            showsPageIndicator: paginated && !chromeHidden && showsPageNumbers
+        )
+    }
+}
+
+private struct ReaderTextSettings: Equatable {
+    let fontSize: Int
+    let fontFamily: ReaderFontFamily
+    let theme: ReaderTheme
+    let lineSpacing: Double
+    let alignment: ReaderTextAlignment
+    let overridesFontFamily: Bool
+    let overridesFontSize: Bool
+    let overridesColours: Bool
+    let boldOverride: Bool
+    let suppressesItalic: Bool
+    let letterSpacing: Double
+    let wordSpacing: Double
+
+    init(settings: AppSettings) {
+        fontSize = settings.readerFontSize
+        fontFamily = settings.readerFontFamily
+        theme = settings.readerTheme
+        lineSpacing = settings.readerLineSpacing
+        alignment = settings.readerTextAlignment
+        overridesFontFamily = settings.readerOverrideFontFamily
+        overridesFontSize = settings.readerOverrideFontSize
+        overridesColours = settings.readerOverrideColours
+        boldOverride = settings.readerBoldOverride
+        suppressesItalic = settings.readerSuppressItalic
+        letterSpacing = settings.readerLetterSpacing
+        wordSpacing = settings.readerWordSpacing
     }
 }
 
