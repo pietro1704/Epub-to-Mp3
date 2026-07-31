@@ -27,6 +27,8 @@ final class MainReaderScreenController: UIViewController {
     /// can keep "Ouvir" hidden while the book's content is still loading.
     private var isReaderLoading = false
 
+    var isLoadingBookContent: Bool { isReaderLoading }
+
     private let emptyStateStack = UIStackView()
     private let emptyTitleLabel = UILabel()
     private let emptyDescriptionLabel = UILabel()

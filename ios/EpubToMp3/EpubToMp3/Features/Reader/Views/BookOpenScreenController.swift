@@ -688,12 +688,22 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
                 if cachedNeedsTitleRepair {
                     UserDefaults.standard.set(true, forKey: titleRepairKey)
                 }
+                guard !payload.chapters.isEmpty else {
+                    throw ReaderLoadError.noReadableContent
+                }
                 fulltext = payload
                 publishReaderChapterTitles(payload)
                 if !hasRestoredInitialPosition, let entry = ReaderProgressStore.read(bookId: book.id) {
                     selectedChapter = entry.chapterIndex
                 }
-                showChapter(min(selectedChapter, max(0, payload.chapters.count - 1)))
+                guard let selectedChapter = ReaderInitialChapter.index(
+                    selectedChapter: selectedChapter,
+                    chapterCount: payload.chapters.count
+                ) else {
+                    throw ReaderLoadError.noReadableContent
+                }
+                self.selectedChapter = selectedChapter
+                showChapter(selectedChapter)
                 restoreReadingProgressIfNeeded()
                 hideLoadingOverlay()
             } catch {
@@ -741,6 +751,17 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
         loadingStatusLabel.text = message
         loadingRetryButton.isHidden = false
         onLoadStateChanged?(false)
+    }
+
+    private enum ReaderLoadError: LocalizedError {
+        case noReadableContent
+
+        var errorDescription: String? {
+            switch self {
+            case .noReadableContent:
+                L10n.string("reader.noReadableContent")
+            }
+        }
     }
 
     @objc private func retryLoadingBook() {

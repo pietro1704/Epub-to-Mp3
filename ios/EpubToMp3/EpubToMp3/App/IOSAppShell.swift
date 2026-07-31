@@ -121,6 +121,20 @@ final class IOSAppShellController: UITabBarController {
         )
     }
 
+    func refreshMiniPlayerAccessory(
+        player: AudioPlayer,
+        playbackClock: PlaybackClock,
+        library: LibraryStore,
+        onTap: @escaping () -> Void
+    ) {
+        miniPlayerAccessoryView?.configure(
+            player: player,
+            playbackClock: playbackClock,
+            library: library,
+            onTap: onTap
+        )
+    }
+
     func setReaderTabBarHidden(_ hidden: Bool, animated: Bool) {
         if #available(iOS 18.0, *) {
             setTabBarHidden(hidden, animated: animated)

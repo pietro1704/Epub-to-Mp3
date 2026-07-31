@@ -158,6 +158,7 @@
 "bookOpen.retry" = "Tentar de novo";
 "bookOpen.repick" = "Escolher arquivo";
 "reader.loading" = "Carregando livro…";
+"reader.noReadableContent" = "Este livro não tem conteúdo legível.";
 "reader.chapter" = "Capítulo %d";
 
 "player.error.title" = "Problema na reprodução";

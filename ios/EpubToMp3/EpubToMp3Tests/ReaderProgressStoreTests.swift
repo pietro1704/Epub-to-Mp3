@@ -32,6 +32,23 @@ final class ReaderProgressStoreTests: XCTestCase {
         XCTAssertEqual(ReaderProgressStore.read(bookId: "b2", defaults: defaults)?.offsetFraction, 0.0)
     }
 
+    func testNegativeChapterIndexIsClampedForNewAndLegacyProgress() {
+        let defaults = makeDefaults()
+        let legacy = #"{"legacy":{"chapterIndex":-4,"offsetFraction":0.5}}"#
+        defaults.set(Data(legacy.utf8), forKey: "readerProgress.v1")
+
+        XCTAssertEqual(ReaderProgressStore.read(bookId: "legacy", defaults: defaults)?.chapterIndex, 0)
+
+        ReaderProgressStore.save(bookId: "new", chapterIndex: -2, offsetFraction: 0.5, defaults: defaults)
+        XCTAssertEqual(ReaderProgressStore.read(bookId: "new", defaults: defaults)?.chapterIndex, 0)
+    }
+
+    func testInitialChapterSelectionRejectsEmptyContentAndClampsProgress() {
+        XCTAssertNil(ReaderInitialChapter.index(selectedChapter: 0, chapterCount: 0))
+        XCTAssertEqual(ReaderInitialChapter.index(selectedChapter: -3, chapterCount: 4), 0)
+        XCTAssertEqual(ReaderInitialChapter.index(selectedChapter: 99, chapterCount: 4), 3)
+    }
+
     func testSaveOverwritesPreviousEntryForSameBook() {
         let defaults = makeDefaults()
         ReaderProgressStore.save(bookId: "b1", chapterIndex: 1, offsetFraction: 0.1, defaults: defaults)

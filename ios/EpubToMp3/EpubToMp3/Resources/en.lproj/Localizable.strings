@@ -161,6 +161,7 @@
 "bookOpen.retry" = "Retry";
 "bookOpen.repick" = "Choose file";
 "reader.loading" = "Loading book…";
+"reader.noReadableContent" = "This book has no readable content.";
 "reader.chapter" = "Chapter %d";
 
 "player.error.title" = "Playback issue";

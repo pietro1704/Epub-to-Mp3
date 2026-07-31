@@ -15,14 +15,14 @@ enum ReaderProgressStore {
         private enum CodingKeys: String, CodingKey { case chapterIndex, offsetFraction, characterOffset }
 
         init(chapterIndex: Int, offsetFraction: Double, characterOffset: Int? = nil) {
-            self.chapterIndex = chapterIndex
+            self.chapterIndex = max(0, chapterIndex)
             self.offsetFraction = offsetFraction
             self.characterOffset = characterOffset
         }
 
         init(from decoder: Decoder) throws {
             let container = try decoder.container(keyedBy: CodingKeys.self)
-            chapterIndex = try container.decode(Int.self, forKey: .chapterIndex)
+            chapterIndex = max(0, try container.decode(Int.self, forKey: .chapterIndex))
             offsetFraction = try container.decode(Double.self, forKey: .offsetFraction)
             characterOffset = try container.decodeIfPresent(Int.self, forKey: .characterOffset)
         }
@@ -85,5 +85,15 @@ enum ReaderProgressStore {
         guard removed > 0 else { return 0 }
         save(kept, defaults: defaults)
         return removed
+    }
+}
+
+enum ReaderInitialChapter {
+    /// Resolves persisted reader progress against the payload that was just
+    /// loaded. An EPUB with no readable chapters is an error state, never a
+    /// blank reader surface.
+    static func index(selectedChapter: Int, chapterCount: Int) -> Int? {
+        guard chapterCount > 0 else { return nil }
+        return min(max(selectedChapter, 0), chapterCount - 1)
     }
 }

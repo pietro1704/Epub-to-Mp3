@@ -22,7 +22,7 @@ final class MiniPlayerBarLayoutTests: XCTestCase {
         XCTAssertEqual(miniPlayer.bounds.height, miniPlayer.intrinsicContentSize.height, accuracy: 0.5)
     }
 
-    func testContentStackCentersWithinExtendedOverlay() throws {
+    func testContentStackCentersWithinPill() throws {
         let host = UIView(frame: CGRect(x: 0, y: 0, width: 390, height: 844))
         let miniPlayer = MiniPlayerBarUIKitView()
         miniPlayer.translatesAutoresizingMaskIntoConstraints = false
@@ -36,9 +36,7 @@ final class MiniPlayerBarLayoutTests: XCTestCase {
         ])
         host.layoutIfNeeded()
 
-        let materialView = try XCTUnwrap(
-            miniPlayer.subviews.first(where: { $0 is AdaptiveMaterialView })
-        )
+        let materialView = try XCTUnwrap(pillMaterial(in: miniPlayer))
         let contentStack = try XCTUnwrap(
             miniPlayer.subviews.first(where: { $0 is UIStackView })
         )
@@ -54,7 +52,7 @@ final class MiniPlayerBarLayoutTests: XCTestCase {
         XCTAssertEqual(contentCenter.y, materialCenter.y, accuracy: 0.5)
     }
 
-    func testOverlayMaterialExtendsThroughBottomSafeArea() throws {
+    func testOverlayKeepsThePillAboveTheBottomSafeAreaWhileFillingTheScreenEdge() throws {
         let hostController = UIViewController()
         let window = UIWindow(frame: UIScreen.main.bounds)
         window.rootViewController = hostController
@@ -76,17 +74,26 @@ final class MiniPlayerBarLayoutTests: XCTestCase {
         hostController.view.layoutIfNeeded()
 
         XCTAssertGreaterThan(miniPlayer.safeAreaInsets.bottom, 0)
-        let materialView = try XCTUnwrap(
-            miniPlayer.subviews.first(where: { $0 is AdaptiveMaterialView })
+        let materialView = try XCTUnwrap(pillMaterial(in: miniPlayer))
+        let bottomFill = try XCTUnwrap(bottomSafeAreaFill(in: miniPlayer))
+        XCTAssertEqual(
+            materialView.frame.maxY,
+            miniPlayer.safeAreaLayoutGuide.layoutFrame.maxY,
+            accuracy: 0.5
         )
-        XCTAssertEqual(materialView.frame.maxY, miniPlayer.bounds.maxY, accuracy: 0.5)
+        XCTAssertEqual(
+            bottomFill.frame.minY,
+            miniPlayer.safeAreaLayoutGuide.layoutFrame.maxY,
+            accuracy: 0.5
+        )
+        XCTAssertEqual(bottomFill.frame.maxY, miniPlayer.bounds.maxY, accuracy: 0.5)
 
         let contentStack = try XCTUnwrap(
             miniPlayer.subviews.first(where: { $0 is UIStackView })
         )
         XCTAssertEqual(
             contentStack.frame.midY,
-            miniPlayer.safeAreaLayoutGuide.layoutFrame.midY,
+            materialView.frame.midY,
             accuracy: 0.5
         )
     }
@@ -119,6 +126,61 @@ final class MiniPlayerBarLayoutTests: XCTestCase {
         XCTAssertEqual(miniPlayer.intrinsicContentSize.height, 52, accuracy: 0.5)
     }
 
+    func testActiveBookIDUsesTheReaderContextWhenPlaybackHasNotStarted() throws {
+        let suite = "mini-player.context.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        defaults.set("reader-book", forKey: ReaderSessionState.currentlyReadingBookIDKey)
+
+        XCTAssertEqual(MiniPlayerBarUIKitView.activeBookID(defaults: defaults), "reader-book")
+
+        defaults.set("playing-book", forKey: AudioPlayer.currentBookIDDefaultsKey)
+
+        XCTAssertEqual(MiniPlayerBarUIKitView.activeBookID(defaults: defaults), "playing-book")
+    }
+
+    func testReaderContextRendersBookMetadataWithoutPlayback() throws {
+        let librarySuite = "mini-player.metadata.\(UUID().uuidString)"
+        let libraryDefaults = try XCTUnwrap(UserDefaults(suiteName: librarySuite))
+        defer { libraryDefaults.removePersistentDomain(forName: librarySuite) }
+        let book = BookEntity(
+            id: "reader-book",
+            title: "Reader Book",
+            bookmark: Data([1]),
+            displayFilename: "reader-book.epub",
+            addedAt: .now
+        )
+        libraryDefaults.set(try JSONEncoder().encode([book]), forKey: "books")
+        let library = LibraryStore(defaults: libraryDefaults, defaultsKey: "books")
+        XCTAssertEqual(library.books.map(\.id), [book.id])
+
+        let defaults = UserDefaults.standard
+        let playbackID = defaults.object(forKey: AudioPlayer.currentBookIDDefaultsKey)
+        let readerID = defaults.object(forKey: ReaderSessionState.currentlyReadingBookIDKey)
+        defer {
+            restore(defaults, key: AudioPlayer.currentBookIDDefaultsKey, value: playbackID)
+            restore(defaults, key: ReaderSessionState.currentlyReadingBookIDKey, value: readerID)
+        }
+        defaults.removeObject(forKey: AudioPlayer.currentBookIDDefaultsKey)
+        defaults.removeObject(forKey: ReaderSessionState.currentlyReadingBookIDKey)
+
+        let player = AudioPlayer()
+        let miniPlayer = MiniPlayerBarUIKitView()
+        miniPlayer.configure(player: player, playbackClock: player.playbackClock, library: library, onTap: {})
+        let openButton = try XCTUnwrap(button(in: miniPlayer, identifier: "miniPlayer.open"))
+        XCTAssertFalse(openButton.accessibilityValue?.contains(book.title) ?? false)
+
+        defaults.set(book.id, forKey: ReaderSessionState.currentlyReadingBookIDKey)
+        XCTAssertEqual(MiniPlayerBarUIKitView.activeBookID(), book.id)
+        miniPlayer.refresh()
+
+        XCTAssertTrue(
+            openButton.accessibilityValue?.contains(book.title) ?? false,
+            "Expected reader context to render \(book.title), got \(openButton.accessibilityValue ?? "nil")"
+        )
+    }
+
     func testOverlayMaximumHeightPreservesCompactControlsAndLargeSafeArea() {
         XCTAssertEqual(MiniPlayerLayoutMetrics.contentHeight, 52, accuracy: 0.5)
         XCTAssertEqual(MiniPlayerLayoutMetrics.maximumBottomSafeAreaInset, 44, accuracy: 0.5)
@@ -140,6 +202,26 @@ final class MiniPlayerBarLayoutTests: XCTestCase {
             }
         }
         return nil
+    }
+
+    private func pillMaterial(in view: UIView) -> AdaptiveMaterialView? {
+        view.subviews.first {
+            $0.accessibilityIdentifier == "miniPlayer.pillMaterial"
+        } as? AdaptiveMaterialView
+    }
+
+    private func bottomSafeAreaFill(in view: UIView) -> AdaptiveMaterialView? {
+        view.subviews.first {
+            $0.accessibilityIdentifier == "miniPlayer.bottomSafeAreaFill"
+        } as? AdaptiveMaterialView
+    }
+
+    private func restore(_ defaults: UserDefaults, key: String, value: Any?) {
+        if let value {
+            defaults.set(value, forKey: key)
+        } else {
+            defaults.removeObject(forKey: key)
+        }
     }
 }
 #endif

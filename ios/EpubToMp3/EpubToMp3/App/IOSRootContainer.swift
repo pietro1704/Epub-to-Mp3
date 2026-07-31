@@ -153,6 +153,10 @@ final class IOSRootContainerController: UIViewController {
         readerController.onReaderLoadingChanged = { [weak self] isLoading in
             self?.setReaderLoadingMode(isLoading)
         }
+        // Embedding the reader can synchronously start its book load before
+        // the root's callbacks exist. Synchronize after every constraint is
+        // installed so the initial loading cover owns the whole reader area.
+        isReaderLoading = readerController.isLoadingBookContent
 
         miniPlayerController.view.backgroundColor = .clear
         fullPlayerController.view.backgroundColor = .clear
@@ -183,6 +187,25 @@ final class IOSRootContainerController: UIViewController {
     private func setReaderLoadingMode(_ isLoading: Bool) {
         isReaderLoading = isLoading
         refreshOverlayState()
+    }
+
+    private func refreshMiniPlayerContent() {
+        miniPlayerController.update(
+            player: player,
+            playbackClock: player.playbackClock,
+            library: library,
+            onTap: { [weak self] in
+                self?.playerPresentation.showFullPlayer()
+            }
+        )
+        shellController.refreshMiniPlayerAccessory(
+            player: player,
+            playbackClock: player.playbackClock,
+            library: library,
+            onTap: { [weak self] in
+                self?.playerPresentation.showFullPlayer()
+            }
+        )
     }
 
     private func applyReaderChromeLayout() {
@@ -216,14 +239,7 @@ final class IOSRootContainerController: UIViewController {
                 ReaderSessionState.setCurrentlyReading(bookID: nil)
             }
         )
-        miniPlayerController.update(
-            player: player,
-            playbackClock: player.playbackClock,
-            library: library,
-            onTap: { [weak self] in
-                self?.playerPresentation.showFullPlayer()
-            }
-        )
+        refreshMiniPlayerContent()
         fullPlayerController.refresh(library: library)
         switch theme.preferredColorScheme {
         case .dark:
@@ -248,6 +264,7 @@ final class IOSRootContainerController: UIViewController {
     }
 
     func refreshOverlayState() {
+        refreshMiniPlayerContent()
         let currentBookID = UserDefaults.standard.string(forKey: AudioPlayer.currentBookIDDefaultsKey)
         let currentlyReadingBookID = UserDefaults.standard.string(forKey: ReaderSessionState.currentlyReadingBookIDKey)
         let availableBookIDs = Set(library.books.map(\.id))

@@ -12,6 +12,9 @@ enum MiniPlayerLayoutMetrics {
 
 @MainActor
 final class MiniPlayerBarUIKitView: UIView, UIGestureRecognizerDelegate {
+    /// Extends the bottom material through the home-indicator region without
+    /// stretching the interactive pill or moving its controls upward.
+    private let bottomSafeAreaFill = AdaptiveMaterialView()
     private let materialView = AdaptiveMaterialView()
     private let coverView = UIImageView()
     private let titleLabel = UILabel()
@@ -63,7 +66,11 @@ final class MiniPlayerBarUIKitView: UIView, UIGestureRecognizerDelegate {
         backgroundColor = .clear
         layer.cornerCurve = .continuous
         clipsToBounds = true
+        bottomSafeAreaFill.accessibilityIdentifier = "miniPlayer.bottomSafeAreaFill"
+        bottomSafeAreaFill.isHidden = usesSystemManagedBottomInset
+        addSubview(bottomSafeAreaFill)
         addSubview(materialView)
+        materialView.accessibilityIdentifier = "miniPlayer.pillMaterial"
         materialView.layer.cornerRadius = 20
         materialView.clipsToBounds = true
         let expandTap = UITapGestureRecognizer(target: self, action: #selector(openTapped))
@@ -71,10 +78,16 @@ final class MiniPlayerBarUIKitView: UIView, UIGestureRecognizerDelegate {
         expandTap.cancelsTouchesInView = false
         addGestureRecognizer(expandTap)
         NSLayoutConstraint.activate([
+            bottomSafeAreaFill.leadingAnchor.constraint(equalTo: leadingAnchor),
+            bottomSafeAreaFill.trailingAnchor.constraint(equalTo: trailingAnchor),
+            bottomSafeAreaFill.topAnchor.constraint(equalTo: safeAreaLayoutGuide.bottomAnchor),
+            bottomSafeAreaFill.bottomAnchor.constraint(equalTo: bottomAnchor),
             materialView.leadingAnchor.constraint(equalTo: layoutMarginsGuide.leadingAnchor),
             materialView.trailingAnchor.constraint(equalTo: layoutMarginsGuide.trailingAnchor),
             materialView.topAnchor.constraint(equalTo: topAnchor),
-            materialView.bottomAnchor.constraint(equalTo: bottomAnchor),
+            materialView.bottomAnchor.constraint(
+                equalTo: usesSystemManagedBottomInset ? bottomAnchor : safeAreaLayoutGuide.bottomAnchor
+            ),
         ])
 
         coverView.translatesAutoresizingMaskIntoConstraints = false
@@ -158,11 +171,7 @@ final class MiniPlayerBarUIKitView: UIView, UIGestureRecognizerDelegate {
         NSLayoutConstraint.activate([
             chromeStack.leadingAnchor.constraint(equalTo: layoutMarginsGuide.leadingAnchor),
             chromeStack.trailingAnchor.constraint(equalTo: layoutMarginsGuide.trailingAnchor),
-            chromeStack.centerYAnchor.constraint(
-                equalTo: usesSystemManagedBottomInset
-                    ? materialView.centerYAnchor
-                    : safeAreaLayoutGuide.centerYAnchor
-            ),
+            chromeStack.centerYAnchor.constraint(equalTo: materialView.centerYAnchor),
             chromeStack.topAnchor.constraint(greaterThanOrEqualTo: materialView.topAnchor, constant: 4),
             chromeStack.bottomAnchor.constraint(lessThanOrEqualTo: materialView.bottomAnchor, constant: -4),
         ])
@@ -202,9 +211,14 @@ final class MiniPlayerBarUIKitView: UIView, UIGestureRecognizerDelegate {
             .store(in: &cancellables)
     }
 
+    static func activeBookID(defaults: UserDefaults = .standard) -> String? {
+        defaults.string(forKey: AudioPlayer.currentBookIDDefaultsKey)
+            ?? defaults.string(forKey: ReaderSessionState.currentlyReadingBookIDKey)
+    }
+
     private func render() {
         guard let player, let library else { return }
-        let currentBookID = UserDefaults.standard.string(forKey: AudioPlayer.currentBookIDDefaultsKey)
+        let currentBookID = Self.activeBookID()
         let book = currentBookID.flatMap { id in library.books.first(where: { $0.id == id }) }
         titleLabel.text = player.snapshot == nil
             ? L10n.string("player.chapter", UserDefaults.standard.integer(forKey: AudioPlayer.currentChapterIndexDefaultsKey) + 1)
@@ -239,6 +253,10 @@ final class MiniPlayerBarUIKitView: UIView, UIGestureRecognizerDelegate {
             : L10n.string("player.play")
         rateButton.setTitle(player.rate.shortLabel, for: .normal)
         accessibilityIdentifier = "miniPlayer.bar"
+    }
+
+    func refresh() {
+        render()
     }
 
     private func rebuildRateMenu(player: AudioPlayer) {
