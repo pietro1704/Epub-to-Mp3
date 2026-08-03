@@ -561,7 +561,18 @@ fi
 echo "ios:device:run → device: $DEVICE"
 echo "ios:device:run → app: $APP_PATH"
 xcrun devicectl device install app --device "$DEVICE" "$APP_PATH"
-xcrun devicectl device process launch --device "$DEVICE" --terminate-existing "$BUNDLE_ID"
+LAUNCH_ARGS=()
+if [[ "${IOS_DEVELOPMENT_SEED_BOOK:-1}" != "0" ]]; then
+  if python3 ../../scripts/seed_ios_development_book.py --target device --identifier "$DEVICE"; then
+    LAUNCH_ARGS=(-developmentSeedBook)
+  else
+    SEED_STATUS=$?
+    if [[ "$SEED_STATUS" -ne 3 ]]; then
+      exit "$SEED_STATUS"
+    fi
+  fi
+fi
+xcrun devicectl device process launch --device "$DEVICE" --terminate-existing "$BUNDLE_ID" "${LAUNCH_ARGS[@]}"
 """
 
 [tasks."ios:device:build"]
@@ -690,7 +701,18 @@ echo "ios:simulator:run → app: $APP_PATH"
 xcrun simctl boot "$UDID" >/dev/null 2>&1 || true
 xcrun simctl bootstatus "$UDID" -b
 xcrun simctl install "$UDID" "$APP_PATH"
-xcrun simctl launch "$UDID" com.pietrocode.epubtomp3
+LAUNCH_ARGS=()
+if [[ "${IOS_DEVELOPMENT_SEED_BOOK:-1}" != "0" ]]; then
+  if python3 ../../scripts/seed_ios_development_book.py --target simulator --identifier "$UDID"; then
+    LAUNCH_ARGS=(-developmentSeedBook)
+  else
+    SEED_STATUS=$?
+    if [[ "$SEED_STATUS" -ne 3 ]]; then
+      exit "$SEED_STATUS"
+    fi
+  fi
+fi
+xcrun simctl launch "$UDID" com.pietrocode.epubtomp3 "${LAUNCH_ARGS[@]}"
 """
 
 [tasks."ios:simulator:test"]

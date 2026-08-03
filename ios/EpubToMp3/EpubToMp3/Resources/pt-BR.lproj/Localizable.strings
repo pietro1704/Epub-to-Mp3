@@ -70,6 +70,8 @@
 "settings.audioEngine" = "Motor de áudio";
 "settings.useBuiltInEngine" = "Usar motor de áudio integrado";
 "settings.useBuiltInEngineDescription" = "Sintetiza capítulos neste dispositivo. Sem necessidade de backend.";
+"settings.allowCellularAudio" = "Permitir conversão de áudio por dados móveis";
+"settings.allowCellularAudioDescription" = "Por padrão, a conversão de capítulos aguarda Wi-Fi.";
 "settings.audioEngineFooter" = "A leitura funciona offline de qualquer forma — isso afeta apenas como os capítulos são convertidos em áudio. Desative apenas para forçar o modo legacy de backend remoto.";
 "settings.remoteBackend" = "Backend remoto";
 "settings.urlNotValid" = "URL inválida";
@@ -214,6 +216,7 @@
 "player.downloading" = "Baixando…";
 "player.downloaded" = "Baixado";
 "player.downloadFailed" = "Falha no download";
+"player.exportAudio" = "Compartilhar áudio disponível";
 "player.sleepTimer" = "Timer de sono";
 "player.sleepTimerOption.off" = "Desligado";
 "player.sleepTimerOption.5" = "5 minutos";
@@ -383,6 +386,10 @@
 /* === TocDrawer === */
 "toc.charsCount" = "%d caracteres";
 "toc.downloaded" = "baixado";
+"toc.audioPreparing" = "Preparando áudio";
+"toc.waitingForWiFi" = "Aguardando Wi-Fi";
+"toc.audioQueued" = "Na fila";
+"toc.retryFailed" = "Tentar novamente os capítulos com falha";
 "player.downloadChapter" = "Baixar capítulo";
 "toc.textOnly" = "apenas texto";
 "toc.currentlyPlaying" = "Tocando agora";
@@ -523,10 +530,13 @@
 "chapterList.clearTextCacheMessage" = "O cache de texto dos capítulos deste livro será apagado.";
 "settings.storage" = "Armazenamento";
 "settings.storageUsage" = "Espaço usado";
-"settings.offlineAudio" = "MP3s offline dos audiolivros";
-"settings.ttsCache" = "Cache TTS dos capítulos";
+"settings.offlineAudio" = "Áudio baixado de audiolivros";
+"settings.ttsCache" = "Áudio temporário gerado";
 "settings.storageTotal" = "Total";
 "settings.refreshStorage" = "Atualizar uso de espaço";
+"settings.clearTemporaryAudio" = "Limpar áudio temporário gerado";
+"settings.clearTemporaryAudioConfirmTitle" = "Limpar áudio temporário?";
+"settings.clearTemporaryAudioConfirmMessage" = "O áudio gerado que não foi baixado será removido. O áudio baixado dos audiolivros permanecerá.";
 "settings.storageFooter" = "A barra inclui MP3s offline e cache TTS gerado. O limite padrão é 2 GB.";
 "settings.clearAllDownloads" = "Limpar todos os downloads dos livros";
 "settings.clearAllDownloadsConfirmTitle" = "Limpar todos os downloads?";
@@ -547,4 +557,5 @@
 "convert.startConversionHint" = "Toque duas vezes para iniciar a conversão.";
 "jobDetail.actionHint" = "Toque duas vezes para executar esta ação.";
 "toc.removeDownload" = "Remover download";
+"toc.removeDownloadMessage" = "Remover o MP3 baixado de \"%@\"? Você poderá baixá-lo novamente depois.";
 "toc.untitledChapter" = "Capítulo sem título";

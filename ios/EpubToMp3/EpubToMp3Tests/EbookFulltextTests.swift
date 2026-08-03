@@ -44,6 +44,25 @@ final class EbookFulltextTests: XCTestCase {
         XCTAssertEqual(payload.chapters.first?.segments?.first?.endMs, 1500)
     }
 
+    func testDecodesOptionalCanonicalSpeechTextWithoutChangingReaderText() throws {
+        let json = """
+        {
+          "jobId": "j",
+          "chapters": [{
+            "index": 1,
+            "name": "Ch",
+            "text": "Reader text",
+            "speechText": "Chapter one...\\n\\nNarration"
+          }]
+        }
+        """.data(using: .utf8)!
+
+        let payload = try JSONDecoder().decode(EbookFulltext.self, from: json)
+
+        XCTAssertEqual(payload.chapters.first?.text, "Reader text")
+        XCTAssertEqual(payload.chapters.first?.speechText, "Chapter one...\n\nNarration")
+    }
+
     func testIgnoresUnknownFields() throws {
         let json = """
         {"jobId": "j", "chapters": [], "futureField": 42}
@@ -246,6 +265,19 @@ final class EbookFulltextTests: XCTestCase {
                 "\(relative) must localize the chapter fallback via L10n, not a hardcoded literal"
             )
         }
+    }
+
+    func testCachedChapterWithoutBodyIsNotReadable() {
+        let empty = EbookFulltext.Chapter(
+            index: 1, name: "Chapter 1", text: "   ",
+            html: "\n", css: nil, charCount: 0, segments: nil
+        )
+        let plain = EbookFulltext.Chapter(
+            index: 1, name: "Chapter 1", text: "Readable text",
+            html: nil, css: nil, charCount: 13, segments: nil
+        )
+        XCTAssertFalse(empty.hasReadableContent)
+        XCTAssertTrue(plain.hasReadableContent)
     }
 
     // MARK: - Round-trip encoding

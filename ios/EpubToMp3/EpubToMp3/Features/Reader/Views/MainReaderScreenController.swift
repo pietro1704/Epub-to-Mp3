@@ -16,12 +16,13 @@ final class MainReaderScreenController: UIViewController {
     private var cancellables: Set<AnyCancellable> = []
     private var readerController: BookOpenScreenController?
     private var readerBookID: String?
+    private var readerNavigationHeight: NSLayoutConstraint!
     private var readerTopToNavigation: NSLayoutConstraint!
     private var readerTopToRoot: NSLayoutConstraint!
-    /// This is the single source of truth for the host navigation bar and
-    /// the child reader's top constraint. A render can be triggered by a
-    /// persisted reading position while the reader is immersive, so deriving
-    /// this state from the bar's transient animation properties is unsafe.
+    /// This is the single source of truth for the host navigation bar. A
+    /// render can be triggered by a persisted reading position while the
+    /// reader is immersive, so deriving this state from a transient alpha is
+    /// unsafe.
     private var isReaderChromeHidden = false
     /// Mirrors `BookOpenScreenController.onLoadStateChanged` so `render()`
     /// can keep "Ouvir" hidden while the book's content is still loading.
@@ -34,7 +35,7 @@ final class MainReaderScreenController: UIViewController {
     private let emptyDescriptionLabel = UILabel()
     private let browseButton = UIButton(type: .system)
     private let listenButton = UIButton(type: .system)
-    private let readerNavigationBackground = UIVisualEffectView(effect: UIBlurEffect(style: .systemMaterial))
+    private let readerNavigationBackground = AdaptiveMaterialView()
     private let readerNavigationBar = UINavigationBar()
     private let readerNavigationItem = UINavigationItem()
 
@@ -74,6 +75,11 @@ final class MainReaderScreenController: UIViewController {
         configureListenButton()
         bind()
         render()
+    }
+
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        updateReaderNavigationHeightIfNeeded()
     }
 
     override func viewWillAppear(_ animated: Bool) {
@@ -158,6 +164,9 @@ final class MainReaderScreenController: UIViewController {
     private func configureReaderNavigationBar() {
         readerNavigationBar.translatesAutoresizingMaskIntoConstraints = false
         readerNavigationBackground.translatesAutoresizingMaskIntoConstraints = false
+        readerNavigationBar.accessibilityIdentifier = "reader.navigationBar"
+        readerNavigationBar.setContentHuggingPriority(.required, for: .vertical)
+        readerNavigationBar.setContentCompressionResistancePriority(.required, for: .vertical)
         readerNavigationBar.isTranslucent = true
         readerNavigationBar.prefersLargeTitles = false
         readerNavigationBar.items = [readerNavigationItem]
@@ -178,8 +187,6 @@ final class MainReaderScreenController: UIViewController {
         closeItem.accessibilityIdentifier = "reader.close"
         readerNavigationItem.leftBarButtonItem = closeItem
 
-        // The repick action is intentionally not exposed in the reading
-        // chrome; a hidden custom view still reserves a blank item on iOS 26.
         readerNavigationItem.rightBarButtonItem = nil
 
         // A standalone UINavigationBar starts below the sensor area. Its
@@ -196,6 +203,10 @@ final class MainReaderScreenController: UIViewController {
             readerNavigationBar.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             readerNavigationBar.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
         ])
+        readerNavigationHeight = readerNavigationBar.heightAnchor.constraint(
+            equalToConstant: ReaderNavigationLayoutMetrics.initialBarHeight
+        )
+        readerNavigationHeight.isActive = true
     }
 
     private func render() {
@@ -211,6 +222,18 @@ final class MainReaderScreenController: UIViewController {
         // open screen only ever shows cover+spinner, never chrome layered
         // on top of a blank/loading book.
         listenButton.isHidden = currentBook == nil || isReaderLoading
+    }
+
+    private func updateReaderNavigationHeightIfNeeded() {
+        guard view.bounds.width > 0 else { return }
+        let fittedHeight = readerNavigationBar.sizeThatFits(
+            CGSize(width: view.bounds.width, height: .greatestFiniteMagnitude)
+        ).height
+        guard fittedHeight > 0,
+              abs(readerNavigationHeight.constant - fittedHeight) > .ulpOfOne else {
+            return
+        }
+        readerNavigationHeight.constant = fittedHeight
     }
 
     private func showEmptyState() {
@@ -232,6 +255,7 @@ final class MainReaderScreenController: UIViewController {
             applyReaderNavigationLayout(animated: false)
             return
         }
+        replaceActivePlaybackIfNeeded(for: book)
         // Reset immersive chrome only when creating/opening a different
         // reader. Playback/title updates during pagination re-enter render()
         // but must not make the hidden mini player visible again.
@@ -261,13 +285,16 @@ final class MainReaderScreenController: UIViewController {
         reader.onChromeVisibilityChanged = { [weak self] isHidden in
             guard let self else { return }
             self.isReaderChromeHidden = isHidden
-            self.onReaderChromeVisibilityChanged?(isHidden)
             self.applyReaderNavigationLayout(animated: true)
+            self.onReaderChromeVisibilityChanged?(isHidden)
         }
         addChild(reader)
         reader.view.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(reader.view)
-        readerTopToNavigation = reader.view.topAnchor.constraint(equalTo: readerNavigationBar.bottomAnchor)
+        readerTopToNavigation = reader.view.topAnchor.constraint(
+            equalTo: readerNavigationBar.bottomAnchor,
+            constant: ReaderNavigationLayoutMetrics.readerContentTopSpacing
+        )
         readerTopToRoot = reader.view.topAnchor.constraint(equalTo: view.topAnchor)
         NSLayoutConstraint.activate([
             reader.view.leadingAnchor.constraint(equalTo: view.leadingAnchor),
@@ -276,6 +303,7 @@ final class MainReaderScreenController: UIViewController {
             reader.view.bottomAnchor.constraint(equalTo: view.bottomAnchor),
         ])
         reader.didMove(toParent: self)
+        view.bringSubviewToFront(readerNavigationBackground)
         view.bringSubviewToFront(readerNavigationBar)
         readerController = reader
         readerBookID = book.id
@@ -291,13 +319,47 @@ final class MainReaderScreenController: UIViewController {
         // leaves the app at 100% CPU when a book is opened from the grid.
     }
 
-    /// Keeps the host navigation bar and the child reader mutually exclusive:
-    /// when immersive controls are hidden, the child reaches the root and the
-    /// host bar cannot be left above its glyphs by a later `render()` call.
+    /// Opening a different book is a deliberate playback-context change.
+    /// Keep the mini player, its queue, and the reader on one book instead
+    /// of leaving an old AVQueuePlayer behind while the new reader updates
+    /// the persisted book pointer.
+    private func replaceActivePlaybackIfNeeded(for book: BookEntity) {
+        let activeBookID = UserDefaults.standard.string(forKey: AudioPlayer.currentBookIDDefaultsKey)
+        let hasActivePlayback = player.snapshot != nil || player.hasLoadedAudioQueue || player.isConverting
+        guard Self.shouldReplaceActivePlayback(
+            activeBookID: activeBookID,
+            incomingBookID: book.id,
+            hasActivePlayback: hasActivePlayback
+        ) else {
+            return
+        }
+
+        EmbeddedConversionCoordinator.cancelActiveStream()
+        player.stop()
+        player.clearConversionState()
+    }
+
+    static func shouldReplaceActivePlayback(
+        activeBookID: String?,
+        incomingBookID: String,
+        hasActivePlayback: Bool
+    ) -> Bool {
+        hasActivePlayback && activeBookID != incomingBookID
+    }
+
+    /// Keeps reader chrome visually independent from the paginated surface.
+    /// Hiding chrome moves the reading surface to the screen edge. The child
+    /// reader captures its visible text anchor before that reflow so the
+    /// expanded page does not jump to a different passage.
     private func applyReaderNavigationLayout(animated: Bool) {
         let shouldShow = !isReaderChromeHidden
-        readerTopToNavigation?.isActive = shouldShow
-        readerTopToRoot?.isActive = !shouldShow
+        if let readerTopToNavigation,
+           let readerTopToRoot,
+           readerTopToNavigation.isActive != shouldShow {
+            readerController?.prepareForViewportTransition()
+            readerTopToNavigation.isActive = shouldShow
+            readerTopToRoot.isActive = !shouldShow
+        }
 
         if shouldShow {
             readerNavigationBar.isHidden = false
@@ -321,9 +383,9 @@ final class MainReaderScreenController: UIViewController {
             return
         }
         UIView.animate(
-            withDuration: 0.28,
+            withDuration: ReaderChromeTransitionMetrics.duration,
             delay: 0,
-            options: [.curveEaseInOut, .beginFromCurrentState, .allowUserInteraction],
+            options: ReaderChromeTransitionMetrics.animationOptions,
             animations: changes
         ) { [weak self] _ in
             guard let self, !shouldShow, self.isReaderChromeHidden else { return }
@@ -339,6 +401,8 @@ final class MainReaderScreenController: UIViewController {
         readerController.removeFromParent()
         self.readerController = nil
         self.readerBookID = nil
+        readerTopToNavigation = nil
+        readerTopToRoot = nil
         readerNavigationItem.rightBarButtonItems = nil
     }
 
@@ -369,6 +433,17 @@ final class MainReaderScreenController: UIViewController {
     // no longer sits between the library grid and the reader).
     @objc
     private func listenTapped() {
+        startListening(presentsFullPlayer: true)
+    }
+
+    /// The compact player's play button starts local conversion for a newly
+    /// opened book. It deliberately keeps the reader visible; tapping the
+    /// mini player's content remains the explicit route to the full player.
+    func startListeningFromMiniPlayer() {
+        startListening(presentsFullPlayer: false)
+    }
+
+    private func startListening(presentsFullPlayer: Bool) {
         guard let book = currentBook else { return }
         if settings.useEmbeddedRuntime && !book.fileType.requiresServerConversion {
             guard let url = try? library.openBookFile(id: book.id) else { return }
@@ -378,9 +453,17 @@ final class MainReaderScreenController: UIViewController {
                     let snapshot = try await EmbeddedConversionCoordinator.stream(
                         bookURL: url,
                         bookID: book.id,
+                        requiresWiFi: !self.settings.allowCellularAudioConversion,
+                        priorityChapterIndices: [
+                            self.readerController?.currentReaderChapterIndex
+                                ?? ReaderProgressStore.read(bookId: book.id)?.chapterIndex
+                                ?? 0
+                        ],
                         player: self.player,
                         onStreamingStarted: { [weak self] in
-                            self?.playerPresentation.showFullPlayer()
+                            if presentsFullPlayer {
+                                self?.playerPresentation.showFullPlayer()
+                            }
                         }
                     )
                     self.library.recordConversion(jobId: snapshot.jobId, for: book.id)
@@ -416,5 +499,12 @@ final class MainReaderScreenController: UIViewController {
             animated: true
         )
     }
+}
+
+private enum ReaderNavigationLayoutMetrics {
+    /// Keeps glyphs and selection handles clear of iOS's floating navigation
+    /// controls while preserving the bar's intrinsic platform height.
+    static let initialBarHeight: CGFloat = 44
+    static let readerContentTopSpacing: CGFloat = 12
 }
 #endif

@@ -43,26 +43,16 @@ final class AudioPlayerDurationTests: XCTestCase {
         XCTAssertTrue(AudioPlayer.shouldDrainSegmentBacklog(queueCount: 0, maxQueueAhead: 5))
     }
 
-    func testSegmentChapterDurationDoesNotResetForEverySegment() throws {
-        let source = try sourceFile(named: "AudioPlayer.swift")
-        XCTAssertTrue(source.contains("chapterIndex != segmentChapterIndex"))
-        XCTAssertTrue(source.contains("queuedChapter == self.segmentChapterIndex"))
-        XCTAssertTrue(source.contains("snapshotDuration"))
-    }
+    @MainActor
+    func testBufferedChapterDoesNotResetActiveChapterEstimate() {
+        let player = AudioPlayer()
+        player.enqueueSegment(data: Data([0xFF, 0xFB, 0x90, 0x00]), chapterIndex: 0, segmentIndex: 0)
+        player.setSegmentChapterEstimate(123, forChapterIndex: 0)
 
-    func testAudioPlayerObservesItemStatusAndDurationForEarlyScrubberDuration() throws {
-        let source = try sourceFile(named: "AudioPlayer.swift")
+        player.enqueueSegment(data: Data([0xFF, 0xFB, 0x90, 0x00]), chapterIndex: 1, segmentIndex: 0)
 
-        XCTAssertTrue(source.contains("publisher(for: \\.status)"))
-        XCTAssertTrue(source.contains("publisher(for: \\.duration)"))
-    }
-
-    private func sourceFile(named name: String) throws -> String {
-        let projectRoot = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-        return try readSourceFileIfAvailable(
-            at: projectRoot.appendingPathComponent("EpubToMp3/Features/Playback/Services/\(name)")
-        )
+        XCTAssertEqual(player.currentChapterIndex, 0)
+        XCTAssertEqual(player.durationSeconds, 123,
+            "Buffered chapter metadata must not reset the duration of audible audio")
     }
 }

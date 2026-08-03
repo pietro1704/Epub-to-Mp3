@@ -46,6 +46,29 @@ final class LibraryStoreTests: XCTestCase {
         XCTAssertEqual(store.books.first?.title, "UI Test Book")
     }
 
+    func testDevelopmentSeedBookImportsOnlyWhenRequestedAndDeduplicates() throws {
+        let (store, defaults, suite) = ephemeralStore()
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let seed = try EpubFixture.create()
+        defer { try? FileManager.default.removeItem(at: seed) }
+
+        XCTAssertFalse(store.installDevelopmentSeedBookIfRequested(seedURL: seed))
+        XCTAssertTrue(
+            store.installDevelopmentSeedBookIfRequested(
+                arguments: ["-developmentSeedBook"],
+                seedURL: seed
+            )
+        )
+        XCTAssertEqual(store.books.map(\.title), [EpubFixture.title])
+        XCTAssertTrue(
+            store.installDevelopmentSeedBookIfRequested(
+                arguments: ["-developmentSeedBook"],
+                seedURL: seed
+            )
+        )
+        XCTAssertEqual(store.books.count, 1)
+    }
+
     func testContentHashIsStableAcrossInvocations() throws {
         // Write a deterministic file and ensure the SHA-256-based id is
         // identical across invocations — required for the de-dup path.

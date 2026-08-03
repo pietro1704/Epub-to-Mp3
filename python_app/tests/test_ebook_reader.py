@@ -1126,6 +1126,7 @@ class TestParseEpubToDict(unittest.TestCase):
         # Keys expected by EbookFulltext.Chapter (Swift Codable).
         for key in ("index", "name", "sourcePath", "text", "html", "css", "charCount", "segments"):
             self.assertIn(key, first)
+        self.assertIn("speechText", first)
         self.assertIsInstance(first["index"], int)
         self.assertIsInstance(first["sourcePath"], str)
         self.assertIsInstance(first["text"], str)
@@ -1138,6 +1139,39 @@ class TestParseEpubToDict(unittest.TestCase):
         if first["css"] is not None:
             self.assertIsInstance(first["css"], str)
         self.assertIsNone(first["segments"])
+
+    @patch.object(EpubParser, "parse")
+    def test_parse_epub_to_dict_exposes_optional_canonical_speech_text(self, mock_parse):
+        """The reader payload keeps visual text and canonical TTS text separate."""
+        speech_text = "Chapter one...\n\nNarration with _inline markdown_."
+        chapter = Chapter(
+            index=1,
+            name="Chapter one",
+            source_path="ch1.xhtml",
+            text="Reader text without the announced chapter title.",
+            speech_text=speech_text,
+        )
+        mock_parse.return_value = Book("Book", "Author", [chapter])
+        with tempfile.TemporaryDirectory() as tmp:
+            epub_path = Path(tmp) / "book.epub"
+            epub_path.write_text("dummy")
+            payload = parse_epub_to_dict(str(epub_path))
+
+        first = payload["chapters"][0]
+        self.assertEqual(first["text"], "Reader text without the announced chapter title.")
+        self.assertEqual(first["speechText"], speech_text)
+
+    @patch.object(EpubParser, "parse")
+    def test_parse_epub_to_dict_uses_null_for_missing_speech_text(self, mock_parse):
+        """Older parser outputs remain decodable through the optional field."""
+        chapter = Chapter(index=1, name="Ch1", source_path="ch1.xhtml", text="Reader text")
+        mock_parse.return_value = Book("Book", "Author", [chapter])
+        with tempfile.TemporaryDirectory() as tmp:
+            epub_path = Path(tmp) / "book.epub"
+            epub_path.write_text("dummy")
+            payload = parse_epub_to_dict(str(epub_path))
+
+        self.assertIsNone(payload["chapters"][0]["speechText"])
 
     @patch.object(EpubParser, "parse")
     def test_parse_epub_to_dict_emits_sanitized_html(self, mock_parse):

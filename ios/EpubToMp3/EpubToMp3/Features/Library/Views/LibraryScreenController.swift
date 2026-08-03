@@ -16,7 +16,6 @@ final class LibraryScreenController: UIViewController, UIDocumentPickerDelegate,
     private let gridController = LibraryGridController(metrics: .init())
     private let emptyStateLabel = UILabel()
     private let addButton = UIButton(type: .system)
-    private var uiTestSearchBar: UISearchBar?
 
     private static let acceptedTypes: [UTType] = SupportedImportTypes.all
 
@@ -76,34 +75,17 @@ final class LibraryScreenController: UIViewController, UIDocumentPickerDelegate,
         searchController.searchResultsUpdater = self
         searchController.searchBar.placeholder = L10n.string("library.searchPlaceholder")
         searchController.searchBar.accessibilityIdentifier = "library.searchBar"
+        searchController.searchBar.searchTextField.accessibilityIdentifier = "library.searchField"
         navigationItem.searchController = searchController
         navigationItem.hidesSearchBarWhenScrolling = false
 
-        // Keep the real UIKit search surface materialized in the deterministic
-        // UI-test fixture.  UISearchController otherwise remains only in the
-        // navigation item's collapsed search presentation and XCUITest cannot
-        // interact with its search field reliably on a cold simulator launch.
+        // Keep the native UIKit search surface materialized in the deterministic
+        // UI-test fixture. Do not add a second search bar: it changes the
+        // production layout being exercised and can conceal Auto Layout defects.
         if ProcessInfo.processInfo.arguments.contains("-uiTestFixture") {
             definesPresentationContext = true
             searchController.isActive = true
-
-            let fixtureBar = UISearchBar()
-            fixtureBar.placeholder = searchController.searchBar.placeholder
-            fixtureBar.accessibilityIdentifier = "library.searchBar"
-            fixtureBar.accessibilityValue = "visible"
-            fixtureBar.delegate = self
-            fixtureBar.translatesAutoresizingMaskIntoConstraints = false
-            view.addSubview(fixtureBar)
-            NSLayoutConstraint.activate([
-                fixtureBar.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor),
-                fixtureBar.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor),
-                fixtureBar.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
-                fixtureBar.heightAnchor.constraint(equalToConstant: 56),
-            ])
-            uiTestSearchBar = fixtureBar
-            let pan = UIPanGestureRecognizer(target: self, action: #selector(uiTestLibraryPan(_:)))
-            pan.cancelsTouchesInView = false
-            view.addGestureRecognizer(pan)
+            searchController.searchBar.accessibilityValue = "visible"
         }
     }
 
@@ -146,7 +128,7 @@ final class LibraryScreenController: UIViewController, UIDocumentPickerDelegate,
         NSLayoutConstraint.activate([
             gridController.view.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor),
             gridController.view.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor),
-            gridController.view.topAnchor.constraint(equalTo: uiTestSearchBar?.bottomAnchor ?? view.safeAreaLayoutGuide.topAnchor),
+            gridController.view.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
             gridController.view.bottomAnchor.constraint(equalTo: view.bottomAnchor),
         ])
         gridController.didMove(toParent: self)
@@ -277,14 +259,6 @@ final class LibraryScreenController: UIViewController, UIDocumentPickerDelegate,
     func searchBar(_ searchBar: UISearchBar, textDidChange searchText: String) {
         searchQuery = searchText
         reloadGrid(animated: false)
-    }
-
-    @objc
-    private func uiTestLibraryPan(_ gesture: UIPanGestureRecognizer) {
-        guard gesture.state == .ended, let bar = uiTestSearchBar else { return }
-        let velocity = gesture.velocity(in: view).y
-        guard abs(velocity) > 100 else { return }
-        bar.accessibilityValue = velocity < 0 ? "hidden" : "visible"
     }
 
     private func presentRemoveAlert(for book: BookEntity) {

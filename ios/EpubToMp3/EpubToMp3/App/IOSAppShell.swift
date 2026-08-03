@@ -40,6 +40,13 @@ final class IOSAppShellController: UITabBarController {
 
     private(set) var usesSystemBottomAccessory = false
 
+    var supportsSystemBottomAccessory: Bool {
+#if compiler(>=6.2)
+        if #available(iOS 26.0, *) { return true }
+#endif
+        return false
+    }
+
     init(
         settings: AppSettings,
         library: LibraryStore,
@@ -100,17 +107,21 @@ final class IOSAppShellController: UITabBarController {
         player: AudioPlayer,
         playbackClock: PlaybackClock,
         library: LibraryStore,
-        onTap: @escaping () -> Void
+        onTap: @escaping () -> Void,
+        onPlayRequested: @escaping () -> Void
     ) {
+#if compiler(>=6.2)
         guard #available(iOS 26.0, *) else { return }
         let miniPlayerView = MiniPlayerBarUIKitView(usesSystemManagedBottomInset: true)
         miniPlayerView.configure(
             player: player,
             playbackClock: playbackClock,
             library: library,
-            onTap: onTap
+            onTap: onTap,
+            onPlayRequested: onPlayRequested
         )
         miniPlayerAccessoryView = miniPlayerView
+#endif
     }
 
     func setSystemMiniPlayerVisible(_ visible: Bool, animated: Bool) {
@@ -125,13 +136,15 @@ final class IOSAppShellController: UITabBarController {
         player: AudioPlayer,
         playbackClock: PlaybackClock,
         library: LibraryStore,
-        onTap: @escaping () -> Void
+        onTap: @escaping () -> Void,
+        onPlayRequested: @escaping () -> Void
     ) {
         miniPlayerAccessoryView?.configure(
             player: player,
             playbackClock: playbackClock,
             library: library,
-            onTap: onTap
+            onTap: onTap,
+            onPlayRequested: onPlayRequested
         )
     }
 
@@ -158,6 +171,7 @@ final class IOSAppShellController: UITabBarController {
         visible: Bool,
         animated: Bool
     ) {
+#if compiler(>=6.2)
         guard #available(iOS 26.0, *) else {
             usesSystemBottomAccessory = false
             return
@@ -180,6 +194,9 @@ final class IOSAppShellController: UITabBarController {
         }
         setBottomAccessory(resolvedAccessory, animated: animated)
         usesSystemBottomAccessory = true
+#else
+        usesSystemBottomAccessory = false
+#endif
     }
 
     private func makeNavigationController(for tab: IOSAppShellTab) -> UINavigationController {

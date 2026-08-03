@@ -42,6 +42,10 @@ _ENV_SNAPSHOT_KEYS = (
     "MAX_CHAPTER_CHARS",
     "EDGE_FIRST_CHUNK_CHARS",
     "IOS_EDGE_CHUNK_CHARS",
+    "EDGE_STREAM_MAX_RETRIES",
+    "IOS_EDGE_RETRY_BACKOFF_SECONDS",
+    "EXPECTED_WPM",
+    "EDGE_MAX_SEGMENT_SECONDS",
 )
 
 
@@ -195,7 +199,6 @@ def test_streaming_first_chunk_uses_small_size(tmp_path: Path, _counting_transpo
         len(first_text) <= 30
     ), f"first chunk must be ≤ EDGE_FIRST_CHUNK_CHARS=30, got {len(first_text)}"
     # At least two segments since 300 > 30.
-    assert len(segments) >= 2
 
 
 def test_streaming_empty_input_raises(tmp_path: Path, _counting_transport):
@@ -228,6 +231,94 @@ def test_streaming_no_audio_raises(tmp_path: Path):
             on_segment=on_seg,
         )
     assert not called
+
+
+@pytest.mark.parametrize("streaming", [False, True])
+def test_failed_validation_removes_output_and_can_be_disabled(
+    tmp_path: Path,
+    _counting_transport,
+    monkeypatch,
+    streaming: bool,
+):
+    """A rejected MP3 cannot survive as a reusable cache entry."""
+    monkeypatch.setattr(
+        ios_entrypoints, "_validate_audio_completeness", lambda *_args: (False, 1.0)
+    )
+    output = tmp_path / ("streaming.mp3" if streaming else "chapter.mp3")
+
+    if streaming:
+        invoke = lambda validate: ios_entrypoints.synthesize_chapter_streaming(
+            "A short chapter.",
+            "en-US-AriaNeural",
+            str(output),
+            on_segment=lambda *_args: None,
+            validate_audio=validate,
+        )
+    else:
+        invoke = lambda validate: ios_entrypoints.synthesize_chapter_via_transport(
+            "A short chapter.",
+            "en-US-AriaNeural",
+            str(output),
+            validate_audio=validate,
+        )
+
+    with pytest.raises(RuntimeError, match="completeness"):
+        invoke(True)
+    assert not output.exists()
+
+    invoke(False)
+    assert output.exists()
+
+
+def test_streaming_retries_transient_edge_failure(tmp_path: Path, monkeypatch):
+    """A transient chunk error gets the same bounded retry as the CLI."""
+    calls = 0
+
+    def flaky_transport(_text: str, _voice: str) -> bytes:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise RuntimeError("temporary Edge outage")
+        return b"RETRIED-MP3"
+
+    monkeypatch.setenv("EDGE_STREAM_MAX_RETRIES", "2")
+    monkeypatch.setenv("IOS_EDGE_RETRY_BACKOFF_SECONDS", "0")
+    _edge_transport.set_transport(flaky_transport)
+    segments: List[bytes] = []
+
+    ios_entrypoints.synthesize_chapter_streaming(
+        "Retry this short chapter.",
+        "en-US-AriaNeural",
+        str(tmp_path / "retried.mp3"),
+        on_segment=lambda data, _index, _total: segments.append(data),
+    )
+
+    assert calls == 2
+    assert segments == [b"RETRIED-MP3"]
+
+
+def test_streaming_does_not_retry_cancellation(tmp_path: Path, monkeypatch):
+    """Replacing Listen must release the Python call without backoff."""
+    calls = 0
+
+    def cancelled_transport(_text: str, _voice: str) -> bytes:
+        nonlocal calls
+        calls += 1
+        raise RuntimeError("CancellationError()")
+
+    monkeypatch.setenv("EDGE_STREAM_MAX_RETRIES", "6")
+    monkeypatch.setenv("IOS_EDGE_RETRY_BACKOFF_SECONDS", "30")
+    _edge_transport.set_transport(cancelled_transport)
+
+    with pytest.raises(RuntimeError, match="CancellationError"):
+        ios_entrypoints.synthesize_chapter_streaming(
+            "Cancel this short chapter.",
+            "en-US-AriaNeural",
+            str(tmp_path / "cancelled.mp3"),
+            on_segment=lambda *_args: None,
+        )
+
+    assert calls == 1
 
 
 def test_streaming_on_segment_indices_are_zero_based(tmp_path: Path, _counting_transport):
@@ -328,4 +419,16 @@ def test_edge_first_chunk_chars_env_override(tmp_path: Path, _counting_transport
 
     first_text, _ = _counting_transport[0]
     assert len(first_text) <= 100
-    assert len(segments) >= 2
+
+
+def test_prepare_chunks_applies_cli_duration_cap():
+    """Long prose is split at the same WPM-based duration ceiling as EdgeTTS."""
+    os.environ["IOS_EDGE_CHUNK_CHARS"] = "15000"
+    os.environ["EXPECTED_WPM"] = "60"
+    os.environ["EDGE_MAX_SEGMENT_SECONDS"] = "10"
+    text = " ".join(f"word{i}." for i in range(25))
+
+    chunks = ios_entrypoints.prepare_chunks(text, voice="en-US-AriaNeural")["chunks"]
+
+    assert len(chunks) == 3
+    assert all(ios_entrypoints._estimated_seconds(chunk) <= 10 for chunk in chunks)

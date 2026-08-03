@@ -212,7 +212,7 @@ enum EpubFallbackParser {
     fileprivate static func parseOPFForSpine(data: Data) -> OPFInfo {
         let delegate = SpineDelegate()
         let parser = XMLParser(data: data)
-        unsafe parser.delegate = delegate
+        parser.delegate = delegate
         _ = parser.parse()
         return delegate.info
     }

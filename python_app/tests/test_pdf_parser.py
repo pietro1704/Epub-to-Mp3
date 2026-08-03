@@ -75,6 +75,7 @@ class TestPdfParser(unittest.TestCase):
         self.assertEqual(chapter1.name, "Página 1")
         self.assertEqual(chapter1.text, "Content of page 1.")
         self.assertEqual(chapter1.source_path, "page_1")
+        self.assertEqual(chapter1.speech_text, "Página 1.\nContent of page 1.")
 
         # Check second page/chapter
         chapter2 = book.chapters[1]

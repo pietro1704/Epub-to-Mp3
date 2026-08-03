@@ -75,13 +75,13 @@ final class SettingsScreenController: UITableViewController {
         guard let section = Section(rawValue: section) else { return 0 }
         switch section {
         case .runtime:
-            return 1
+            return 2
         case .backend:
             return 2
         case .reader:
             return 7
         case .storage:
-            return 6
+            return 7
         case .advanced:
             return 3
         case .about:
@@ -129,6 +129,19 @@ final class SettingsScreenController: UITableViewController {
         guard let section = Section(rawValue: indexPath.section) else { return UITableViewCell() }
         switch section {
         case .runtime:
+            if indexPath.row == 1 {
+                let cell = tableView.dequeueReusableCell(withIdentifier: "Switch", for: indexPath) as! IOSSwitchCell
+                cell.configure(
+                    title: L10n.string("settings.allowCellularAudio"),
+                    subtitle: L10n.string("settings.allowCellularAudioDescription"),
+                    isOn: settings.allowCellularAudioConversion
+                )
+                cell.onValueChanged = { [weak self] isOn in
+                    self?.settings.allowCellularAudioConversion = isOn
+                    LocalAudioConversionScheduler.shared.setAllowsCellularConversion(isOn)
+                }
+                return cell
+            }
             let cell = tableView.dequeueReusableCell(withIdentifier: "Switch", for: indexPath) as! IOSSwitchCell
             cell.configure(
                 title: L10n.string("settings.useBuiltInEngine"),
@@ -263,6 +276,10 @@ final class SettingsScreenController: UITableViewController {
         case 4:
             content.text = L10n.string("settings.refreshStorage")
             content.image = UIImage(systemName: "arrow.clockwise")
+        case 5:
+            content.text = L10n.string("settings.clearTemporaryAudio")
+            content.image = UIImage(systemName: "trash")
+            content.textProperties.color = .systemRed
         default:
             content.text = L10n.string("settings.clearAllDownloads")
             content.image = UIImage(systemName: "trash")
@@ -381,6 +398,14 @@ final class SettingsScreenController: UITableViewController {
             tableView.reloadSections(IndexSet(integer: Section.storage.rawValue), with: .none)
         } else if row == 5 {
             presentDestructiveAlert(
+                title: L10n.string("settings.clearTemporaryAudioConfirmTitle"),
+                message: L10n.string("settings.clearTemporaryAudioConfirmMessage"),
+                buttonTitle: L10n.string("settings.clearCacheConfirmButton")
+            ) { [weak self] in
+                self?.clearTemporaryAudio()
+            }
+        } else if row == 6 {
+            presentDestructiveAlert(
                 title: L10n.string("settings.clearAllDownloadsConfirmTitle"),
                 message: L10n.string("settings.clearAllDownloadsConfirmMessage"),
                 buttonTitle: L10n.string("settings.clearCacheConfirmButton")
@@ -428,14 +453,28 @@ final class SettingsScreenController: UITableViewController {
     }
 
     private func clearAllDownloads() {
-        Task { await DownloadManager.shared.cancelAll() }
-        StorageUsageScanner.clearAllDownloads()
-        for var book in library.books where book.cachedOffline {
-            book.cachedOffline = false
-            library.update(book)
+        Task { [weak self] in
+            guard let self else { return }
+            await DownloadManager.shared.cancelAll()
+            try? await LocalAudioArtifactStore.shared.clearAllAudio()
+            StorageUsageScanner.clearAllDownloads()
+            for var book in self.library.books where book.cachedOffline {
+                book.cachedOffline = false
+                self.library.update(book)
+            }
+            self.refreshStorageUsage()
+            self.tableView.reloadSections(IndexSet(integer: Section.storage.rawValue), with: .none)
         }
-        refreshStorageUsage()
-        tableView.reloadSections(IndexSet(integer: Section.storage.rawValue), with: .none)
+    }
+
+    private func clearTemporaryAudio() {
+        Task { [weak self] in
+            StorageUsageScanner.clearLegacyTemporaryAudio()
+            try? await LocalAudioArtifactStore.shared.clearTemporaryAudio()
+            guard let self else { return }
+            self.refreshStorageUsage()
+            self.tableView.reloadSections(IndexSet(integer: Section.storage.rawValue), with: .none)
+        }
     }
 
     private func formatBytes(_ bytes: Int64) -> String {

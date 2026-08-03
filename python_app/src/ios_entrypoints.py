@@ -35,6 +35,7 @@ import os
 import re
 import shutil
 import sys
+import time
 from pathlib import Path
 from typing import Any, Callable, Dict, Iterable, List, Optional
 
@@ -60,6 +61,8 @@ _DEFAULT_IOS_CHUNK_CHARS = 12_000
 # Default: 500 chars (~1–2 sentences, typically 4–8 s of audio at
 # 200 WPM neural voice). Range: [100, 2000].
 _DEFAULT_FIRST_CHUNK_CHARS = 500
+_DEFAULT_MAX_SEGMENT_SECONDS = 85.0
+_DEFAULT_EXPECTED_WPM = 200.0
 
 
 def _chunk_chars() -> int:
@@ -88,6 +91,156 @@ def _first_chunk_chars() -> int:
     except ValueError:
         return _DEFAULT_FIRST_CHUNK_CHARS
     return max(10, min(value, 2_000))
+
+
+def _expected_wpm() -> float:
+    try:
+        return max(1.0, float(os.environ.get("EXPECTED_WPM", _DEFAULT_EXPECTED_WPM)))
+    except ValueError:
+        return _DEFAULT_EXPECTED_WPM
+
+
+def _max_segment_seconds() -> float:
+    try:
+        return max(
+            1.0, float(os.environ.get("EDGE_MAX_SEGMENT_SECONDS", _DEFAULT_MAX_SEGMENT_SECONDS))
+        )
+    except ValueError:
+        return _DEFAULT_MAX_SEGMENT_SECONDS
+
+
+def _estimated_seconds(text: str) -> float:
+    return len(re.findall(r"\S+", text or "")) / _expected_wpm() * 60.0
+
+
+def _split_duration_bound(text: str, max_seconds: float) -> List[str]:
+    """Split text at sentence/word boundaries to match EdgeTTS duration caps."""
+    sentences = [part.strip() for part in re.split(r"(?<=[.!?])\s+", text) if part.strip()]
+    if not sentences:
+        return []
+    segments: List[str] = []
+    buffer: List[str] = []
+    for sentence in sentences:
+        candidate = " ".join(buffer + [sentence])
+        if buffer and _estimated_seconds(candidate) > max_seconds:
+            segments.append(" ".join(buffer))
+            buffer = [sentence]
+        else:
+            buffer.append(sentence)
+    if buffer:
+        segments.append(" ".join(buffer))
+
+    result: List[str] = []
+    max_words = max(1, int(max_seconds / 60.0 * _expected_wpm()))
+    for segment in segments:
+        words = segment.split()
+        if len(words) <= max_words:
+            result.append(segment)
+            continue
+        result.extend(
+            " ".join(words[start : start + max_words]) for start in range(0, len(words), max_words)
+        )
+    return [segment for segment in result if segment]
+
+
+def _validate_audio_completeness(path: Path, text_length: int) -> tuple[bool, float]:
+    """Apply the CLI's duration-based completeness check to an MP3 output."""
+    if not path.exists():
+        return False, 0.0
+    if text_length < 1500:
+        return True, 100.0
+    try:
+        from mutagen.mp3 import MP3
+
+        duration_seconds = float(MP3(str(path)).info.length)
+        expected_wpm = _expected_wpm()
+        coverage = (duration_seconds / 60.0 * expected_wpm * 5.0 / text_length) * 100.0
+        threshold = float(os.environ.get("TRUNCATION_THRESHOLD_PERCENT", "10"))
+        return (100.0 - coverage) <= threshold, coverage
+    except Exception:
+        # Match the CLI: an unavailable MP3 parser must not reject otherwise
+        # playable output; byte-level transport checks remain authoritative.
+        return True, 100.0
+
+
+def _should_validate_audio(validate_audio: bool) -> bool:
+    """Respect the caller's validation choice and the iOS runtime override."""
+    if not validate_audio:
+        return False
+    return os.environ.get("IOS_VALIDATE_AUDIO", "1").strip().lower() not in {
+        "0",
+        "false",
+        "no",
+        "off",
+    }
+
+
+def _edge_stream_max_retries() -> int:
+    """Return the total Edge attempts allowed for one text chunk.
+
+    The default matches ``edge_tts``'s ``EDGE_STREAM_MAX_RETRIES`` policy.
+    Keep the bound finite: an iOS conversion must remain cancellable and must
+    never turn a transient service failure into an infinite Python call.
+    """
+    raw = os.environ.get("EDGE_STREAM_MAX_RETRIES", "1")
+    try:
+        return max(1, min(int(raw), 6))
+    except ValueError:
+        return 1
+
+
+def _edge_retry_delay(attempt: int) -> float:
+    """Return bounded exponential backoff for the next Edge attempt."""
+    raw = os.environ.get("IOS_EDGE_RETRY_BACKOFF_SECONDS", "2")
+    try:
+        base = max(0.0, min(float(raw), 30.0))
+    except ValueError:
+        base = 2.0
+    return min(30.0, base * (2 ** max(0, attempt)))
+
+
+def _synthesize_edge_chunk(
+    chunk: str,
+    voice: str,
+    *,
+    piper_fallback_lang: Optional[str] = None,
+) -> bytes:
+    """Synthesize one chunk with the CLI-compatible Edge retry policy."""
+    attempts = _edge_stream_max_retries()
+    last_error: Optional[Exception] = None
+    for attempt in range(attempts):
+        try:
+            result = _edge_transport.synthesize_chunk(chunk, voice)
+            if result:
+                return bytes(result)
+            last_error = RuntimeError("Edge transport returned no audio")
+        except Exception as edge_error:  # noqa: BLE001 - classify at the boundary
+            # Swift cancellation is bridged as a Python exception. Never
+            # sleep or retry after the user has replaced/cancelled Listen.
+            if "cancel" in str(edge_error).lower():
+                raise
+            last_error = edge_error
+
+        if attempt + 1 < attempts:
+            time.sleep(_edge_retry_delay(attempt))
+
+    if piper_fallback_lang is not None and _piper_transport.get_transport() is not None:
+        try:
+            fallback = _piper_transport.synthesize_chunk(
+                chunk,
+                piper_fallback_lang,
+            )
+            if fallback:
+                return bytes(fallback)
+        except Exception as piper_error:  # noqa: BLE001 - preserve both causes
+            raise RuntimeError(
+                "ios_entrypoints: edge failed and piper fallback failed: "
+                f"edge={last_error!r} piper={piper_error!r}"
+            ) from piper_error
+
+    if last_error is not None:
+        raise last_error
+    return b""
 
 
 def _resolve_auto_voice(text: str) -> str:
@@ -126,6 +279,35 @@ def _resolve_auto_voice(text: str) -> str:
     return "en-US-AriaNeural"
 
 
+def prepare_audible_speech_text(speech_text: str) -> str:
+    """Return the final TTS payload for parser-prepared ``speech_text``.
+
+    This deliberately mirrors ``AudioConverter._prepare_payload``'s
+    populated-``speech_text`` branch.  The parser has already applied
+    formatting cues and structural chapter-title pauses, so this function
+    must not rebuild the text from raw formatting segments.  It only resolves
+    any residual ``[[fmt:...]]`` markers or removes inline Markdown before
+    handing the text to the Swift-owned Edge transport.
+
+    The formatter import stays local: basic iOS synthesis must retain its
+    existing import safety and avoid importing optional pipeline modules until
+    the caller explicitly prepares text for speech.
+    """
+    raw_speech = speech_text or ""
+    if not raw_speech:
+        return ""
+
+    try:
+        from .text_formatting import TextFormattingProcessor
+    except ImportError:
+        return raw_speech
+
+    formatter = TextFormattingProcessor()
+    if "[[fmt" in raw_speech:
+        return formatter.to_audible_text(raw_speech, None) or ""
+    return formatter.strip_inline_markdown(raw_speech) or ""
+
+
 def _split_into_chunks(text: str, max_chars: int) -> List[str]:
     """Paragraph-aware char-bounded chunker. Splits on double newlines
     first, then on sentence boundaries, then hard-wraps as a last
@@ -140,7 +322,9 @@ def _split_into_chunks(text: str, max_chars: int) -> List[str]:
     if not text:
         return []
     if len(text) <= max_chars:
-        return [text]
+        if _estimated_seconds(text) <= _max_segment_seconds():
+            return [text]
+        return _split_duration_bound(text, _max_segment_seconds())
 
     chunks: List[str] = []
     buffer = ""
@@ -176,7 +360,13 @@ def _split_into_chunks(text: str, max_chars: int) -> List[str]:
                 buffer = piece
     if buffer:
         chunks.append(buffer)
-    return chunks
+    bounded: List[str] = []
+    for chunk in chunks:
+        if _estimated_seconds(chunk) <= _max_segment_seconds():
+            bounded.append(chunk)
+        else:
+            bounded.extend(_split_duration_bound(chunk, _max_segment_seconds()))
+    return bounded
 
 
 def prepare_chunks(
@@ -232,6 +422,7 @@ def synthesize_chapter_via_transport(
     voice: str,
     out_path: str,
     piper_fallback_lang: Optional[str] = None,
+    validate_audio: bool = True,
 ) -> str:
     """iOS entrypoint. Chunks ``text``, synthesizes each chunk via the
     currently-installed Edge transport in
@@ -269,36 +460,11 @@ def synthesize_chapter_via_transport(
 
     audio = bytearray()
     for chunk in chunks:
-        mp3: bytes = b""
-        try:
-            mp3 = _edge_transport.synthesize_chunk(chunk, voice)
-        except Exception as edge_exc:  # noqa: BLE001 - any edge failure is a fallback trigger
-            if not piper_available:
-                raise
-            try:
-                mp3 = _piper_transport.synthesize_chunk(
-                    chunk,
-                    piper_fallback_lang,  # type: ignore[arg-type]
-                )
-            except Exception as piper_exc:  # noqa: BLE001
-                raise RuntimeError(
-                    "ios_entrypoints: edge failed and piper fallback failed: "
-                    f"edge={edge_exc!r} piper={piper_exc!r}"
-                ) from piper_exc
-        else:
-            # Edge returned empty bytes -- treat as a soft failure and
-            # try Piper if available (matches the Edge segment-integrity
-            # tolerance pattern in the desktop path).
-            if not mp3 and piper_available:
-                try:
-                    mp3 = _piper_transport.synthesize_chunk(
-                        chunk,
-                        piper_fallback_lang,  # type: ignore[arg-type]
-                    )
-                except Exception:  # noqa: BLE001
-                    # Piper failed too -- keep going; the no-audio check
-                    # below will raise if every chunk yielded nothing.
-                    mp3 = b""
+        mp3 = _synthesize_edge_chunk(
+            chunk,
+            voice,
+            piper_fallback_lang=piper_fallback_lang if piper_available else None,
+        )
         if mp3:
             audio.extend(mp3)
 
@@ -308,6 +474,13 @@ def synthesize_chapter_via_transport(
     destination = Path(out_path)
     destination.parent.mkdir(parents=True, exist_ok=True)
     destination.write_bytes(bytes(audio))
+    if _should_validate_audio(validate_audio):
+        audio_complete, coverage = _validate_audio_completeness(destination, len(text))
+        if not audio_complete:
+            destination.unlink(missing_ok=True)
+            raise RuntimeError(
+                "audio completeness below CLI threshold: " f"{coverage:.1f}% coverage"
+            )
     return str(destination)
 
 
@@ -317,6 +490,7 @@ def synthesize_chapter_streaming(
     out_path: str,
     on_segment: Callable[[bytes, int, int], None],
     piper_fallback_lang: Optional[str] = None,
+    validate_audio: bool = True,
 ) -> str:
     """Segment-streaming iOS entrypoint.
 
@@ -364,31 +538,11 @@ def synthesize_chapter_streaming(
 
     audio = bytearray()
     for segment_index, chunk in enumerate(chunks):
-        mp3: bytes = b""
-        try:
-            mp3 = _edge_transport.synthesize_chunk(chunk, voice)
-        except Exception as edge_exc:  # noqa: BLE001
-            if not piper_available:
-                raise
-            try:
-                mp3 = _piper_transport.synthesize_chunk(
-                    chunk,
-                    piper_fallback_lang,  # type: ignore[arg-type]
-                )
-            except Exception as piper_exc:  # noqa: BLE001
-                raise RuntimeError(
-                    "ios_entrypoints: edge failed and piper fallback failed: "
-                    f"edge={edge_exc!r} piper={piper_exc!r}"
-                ) from piper_exc
-        else:
-            if not mp3 and piper_available:
-                try:
-                    mp3 = _piper_transport.synthesize_chunk(
-                        chunk,
-                        piper_fallback_lang,  # type: ignore[arg-type]
-                    )
-                except Exception:  # noqa: BLE001
-                    mp3 = b""
+        mp3 = _synthesize_edge_chunk(
+            chunk,
+            voice,
+            piper_fallback_lang=piper_fallback_lang if piper_available else None,
+        )
 
         if mp3:
             audio.extend(mp3)
@@ -402,6 +556,13 @@ def synthesize_chapter_streaming(
     destination = Path(out_path)
     destination.parent.mkdir(parents=True, exist_ok=True)
     destination.write_bytes(bytes(audio))
+    if _should_validate_audio(validate_audio):
+        audio_complete, coverage = _validate_audio_completeness(destination, len(text))
+        if not audio_complete:
+            destination.unlink(missing_ok=True)
+            raise RuntimeError(
+                "audio completeness below CLI threshold: " f"{coverage:.1f}% coverage"
+            )
     return str(destination)
 
 
@@ -692,7 +853,12 @@ def convert_epub(
     normalised_fallback = (fallback_engine or "none").strip().lower()
     piper_fallback_requested = False
     if normalised_fallback in {"", "none"}:
-        piper_fallback_requested = False
+        # ``engine_chain_fallback`` is the CLI's explicit opt-in for the
+        # ranked offline tier. Keep the default Edge-only, but honor that
+        # switch when a native Piper transport is actually installed.
+        piper_fallback_requested = bool(
+            engine_chain_fallback and _piper_transport.get_transport() is not None
+        )
     elif normalised_fallback == "piper":
         if _piper_transport.get_transport() is None:
             raise RuntimeError(
@@ -803,11 +969,15 @@ def convert_epub(
     manifest: List[Dict[str, Any]] = []
     outputs: List[str] = []
     errors: List[str] = []
+    should_validate_audio = bool(validate_audio and not no_validate)
 
     for ch in selected:
         index_str = str(getattr(ch, "index", ""))
         name = str(getattr(ch, "name", "") or f"chapter_{index_str}")
-        text = getattr(ch, "speech_text", None) or getattr(ch, "text", "") or ""
+        raw_speech = getattr(ch, "speech_text", None)
+        text = (
+            prepare_audible_speech_text(raw_speech) if raw_speech else getattr(ch, "text", "") or ""
+        )
         char_count = len(text)
 
         entry: Dict[str, Any] = {
@@ -850,10 +1020,17 @@ def convert_epub(
                 voice_id,
                 str(out_path),
                 piper_fallback_lang=piper_lang,
+                validate_audio=should_validate_audio,
             )
+            audio_complete, coverage = _validate_audio_completeness(out_path, char_count)
+            if should_validate_audio and not audio_complete:
+                raise RuntimeError(
+                    "audio completeness below CLI threshold: " f"{coverage:.1f}% coverage"
+                )
             entry["status"] = "completed"
             entry["output_path"] = str(out_path)
             entry["voice"] = voice_id
+            entry["audio_coverage_percent"] = coverage
             if piper_lang is not None:
                 entry["piper_fallback_lang"] = piper_lang
             manifest.append(entry)
@@ -980,6 +1157,7 @@ def _collected_options(scope: Dict[str, Any]) -> Dict[str, Any]:
 
 
 __all__ = [
+    "prepare_audible_speech_text",
     "prepare_chunks",
     "synthesize_chapter_via_transport",
     "synthesize_chapter_streaming",

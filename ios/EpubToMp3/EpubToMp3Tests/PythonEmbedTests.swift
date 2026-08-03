@@ -7,17 +7,39 @@
 import XCTest
 @testable import EpubToMp3
 
-final class PythonEmbedTests: XCTestCase {
-    func testPythonTransportSynchronizesDetachedResults() throws {
-        let sourceURL = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()
-            .deletingLastPathComponent()
-            .appendingPathComponent("EpubToMp3/Features/Conversion/Services/PythonEmbed.swift")
-        let source = try readSourceFileIfAvailable(at: sourceURL)
+@MainActor
+private final class StreamingSegmentRecorder {
+    private(set) var segments: [(chapterIndex: Int, segmentIndex: Int, byteCount: Int)] = []
 
-        XCTAssertTrue(source.contains("private final class LockedValue<Value>: @unchecked Sendable"))
-        XCTAssertTrue(source.contains("let outcome = LockedValue<Result<Data, Error>>"))
-        XCTAssertFalse(source.contains("var outcome: Result<Data, Error>"))
+    func append(data: Data, chapterIndex: Int, segmentIndex: Int) {
+        segments.append((chapterIndex, segmentIndex, data.count))
+    }
+}
+
+final class PythonEmbedTests: XCTestCase {
+    func testPythonTransportGateKeepsItsFirstResult() throws {
+        let gate = EdgeSynthesisGate()
+        gate.resolve(.success(Data([1, 2, 3])))
+        gate.resolve(.failure(EdgeTTSBridgeError.timeout))
+
+        XCTAssertEqual(try gate.wait().get(), Data([1, 2, 3]))
+    }
+
+    func testCancelledBridgeFailsBeforeOpeningANetworkConnection() async {
+        let bridge = EdgeTTSBridge()
+        bridge.cancel()
+
+        do {
+            _ = try await bridge.synthesize(
+                text: "Cancelled before network request.",
+                voice: "en-US-AriaNeural"
+            )
+            XCTFail("A cancelled bridge must not begin synthesis.")
+        } catch is CancellationError {
+            // Expected: register(socket:) observes the cancellation before resume.
+        } catch {
+            XCTFail("Expected CancellationError, received \(error)")
+        }
     }
 
     private func requireNetworkTTS(_ testName: String = #function) throws {
@@ -72,6 +94,43 @@ final class PythonEmbedTests: XCTestCase {
         let size = (attrs[.size] as? NSNumber)?.intValue ?? 0
         XCTAssertGreaterThan(size, 5_000,
                              "MP3 too small (\(size) bytes) — Edge probably didn't synth")
+    }
+
+    /// Isolates the native WSS protocol from CPython so a live failure can
+    /// distinguish a transport regression from embedded-runtime setup.
+    func testNativeEdgeBridgeReceivesAudio() async throws {
+        try requireNetworkTTS()
+
+        let audio = try await EdgeTTSBridge().synthesize(
+            text: "This verifies the native Edge WebSocket bridge.",
+            voice: "en-US-AriaNeural"
+        )
+
+        XCTAssertGreaterThan(audio.count, 5_000)
+        XCTAssertTrue(
+            audio.starts(with: Data([0x49, 0x44, 0x33]))
+                || audio.starts(with: Data([0xFF])),
+            "Edge response did not begin with an MP3 frame"
+        )
+    }
+
+    func testNativeEdgeBridgeSplitsProtocolSizedTextBeforeSSMLEscaping() {
+        let text = String(repeating: "<&> ", count: 1_500)
+        let chunks = EdgeTTSBridge.protocolTextChunks(from: text)
+
+        XCTAssertGreaterThan(chunks.count, 1)
+        for chunk in chunks {
+            let escaped = chunk
+                .replacingOccurrences(of: "&", with: "&amp;")
+                .replacingOccurrences(of: "<", with: "&lt;")
+                .replacingOccurrences(of: ">", with: "&gt;")
+            XCTAssertLessThanOrEqual(escaped.lengthOfBytes(using: .utf8), 4_096)
+            XCTAssertTrue(
+                EdgeTTSBridge.makeSSML(text: chunk, voice: "en-US-AriaNeural")
+                    .contains("&lt;&amp;&gt;")
+            )
+        }
+        XCTAssertEqual(chunks.joined(separator: " "), text.trimmingCharacters(in: .whitespaces))
     }
 
     func testBootstrapIsIdempotent() throws {
@@ -164,6 +223,54 @@ final class PythonEmbedTests: XCTestCase {
         XCTAssertGreaterThan(entry.charCount, 0)
     }
 
+    /// Runs the exact streaming boundary used by Listen: bundled Python
+    /// prepares the speech text, Swift performs the Edge WebSocket request,
+    /// and every emitted MP3 segment crosses back through PythonKit in order.
+    @MainActor
+    func testStreamingPythonPipelineDeliversOrderedSegments() async throws {
+        try requireEmbeddedPipeline()
+        try requireNetworkTTS()
+        try await PythonBridge.shared.preflightRuntime()
+
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("streaming-pipeline-test-\(UUID().uuidString)",
+                                    isDirectory: true)
+        let output = root.appendingPathComponent("chapter-7.mp3")
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        // Deliberately exceeds the normal 12K Edge chunk target so this test
+        // exercises more than one callback on a device with default settings.
+        let text = String(repeating: "This is an ordered streaming audio segment. ", count: 420)
+        let recorder = StreamingSegmentRecorder()
+
+        let result = try await PythonBridge.shared.convertChapterStreaming(
+            text: text,
+            voice: "en-US-AriaNeural",
+            outputURL: output,
+            chapterIndex: 7,
+            onSegment: { data, chapterIndex, segmentIndex in
+                recorder.append(
+                    data: data,
+                    chapterIndex: chapterIndex,
+                    segmentIndex: segmentIndex
+                )
+                return true
+            }
+        )
+
+        let segments = recorder.segments
+        XCTAssertEqual(result, output)
+        XCTAssertGreaterThanOrEqual(segments.count, 2,
+                                    "expected multiple streamed MP3 segments")
+        XCTAssertEqual(segments.map(\.chapterIndex), Array(repeating: 7, count: segments.count))
+        XCTAssertEqual(segments.map(\.segmentIndex), Array(0..<segments.count))
+        XCTAssertTrue(segments.allSatisfy { $0.byteCount > 5_000 })
+
+        let attributes = try FileManager.default.attributesOfItem(atPath: output.path)
+        let byteCount = (attributes[.size] as? NSNumber)?.intValue ?? 0
+        XCTAssertGreaterThan(byteCount, 10_000, "streaming pipeline wrote an unexpectedly small MP3")
+    }
+
     /// Engine-gate regression: asking for Piper must produce a clear
     /// error, not a silent fallback. Mirrors
     /// `test_convert_epub_invalid_engine_raises` in pytest so both
@@ -204,6 +311,23 @@ final class PythonEmbedTests: XCTestCase {
             // "must not succeed".
             XCTAssertNotNil(error)
         }
+    }
+
+    func testParallelEdgeRetryPolicyIsBoundedAndExponential() {
+        let environment = [
+            "EDGE_STREAM_MAX_RETRIES": "9",
+            "IOS_EDGE_RETRY_BACKOFF_SECONDS": "2"
+        ]
+        XCTAssertEqual(PythonBridge.edgeStreamRetryCount(environment: environment), 6)
+        XCTAssertEqual(PythonBridge.edgeRetryDelay(attempt: 0, environment: environment), 2)
+        XCTAssertEqual(PythonBridge.edgeRetryDelay(attempt: 3, environment: environment), 16)
+        XCTAssertEqual(
+            PythonBridge.edgeRetryDelay(
+                attempt: 5,
+                environment: ["IOS_EDGE_RETRY_BACKOFF_SECONDS": "20"]
+            ),
+            30
+        )
     }
 }
 

@@ -189,30 +189,30 @@ enum ZipReader {
         var dst = Data(count: dstCap)
         var produced = 0
 
-        let rc = unsafe deflated.withUnsafeBytes { srcRaw -> Int32 in
+        let rc = deflated.withUnsafeBytes { srcRaw -> Int32 in
             guard let srcPtr = srcRaw.baseAddress else { return Z_STREAM_ERROR }
-            return unsafe dst.withUnsafeMutableBytes { dstRaw -> Int32 in
+            return dst.withUnsafeMutableBytes { dstRaw -> Int32 in
                 guard let dstPtr = dstRaw.baseAddress else { return Z_STREAM_ERROR }
 
-                var strm = unsafe z_stream()
-                unsafe strm.next_in   = UnsafeMutablePointer<Bytef>(
-                    mutating: unsafe srcPtr.assumingMemoryBound(to: Bytef.self)
+                var strm = z_stream()
+                strm.next_in   = UnsafeMutablePointer<Bytef>(
+                    mutating: srcPtr.assumingMemoryBound(to: Bytef.self)
                 )
-                unsafe strm.avail_in  = uInt(deflated.count)
-                unsafe strm.next_out  = dstPtr.assumingMemoryBound(to: Bytef.self)
+                strm.avail_in  = uInt(deflated.count)
+                strm.next_out  = dstPtr.assumingMemoryBound(to: Bytef.self)
                 // Use the pre-captured capacity — accessing `dst.count`
                 // here would be a second simultaneous access to `dst`
                 // (Swift exclusive-access violation).
-                unsafe strm.avail_out = uInt(dstCap)
+                strm.avail_out = uInt(dstCap)
 
                 // windowBits = -15 → raw DEFLATE (no zlib header/trailer).
-                guard unsafe inflateInit2_(&strm, -15,
+                guard inflateInit2_(&strm, -15,
                                            ZLIB_VERSION, Int32(MemoryLayout<z_stream>.size)) == Z_OK
                 else { return Z_STREAM_ERROR }
 
-                let result = unsafe zlib.inflate(&strm, Z_FINISH)
-                unsafe produced = Int(strm.total_out)
-                unsafe inflateEnd(&strm)
+                let result = zlib.inflate(&strm, Z_FINISH)
+                produced = Int(strm.total_out)
+                inflateEnd(&strm)
                 return result
             }
         }

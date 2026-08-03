@@ -5,15 +5,39 @@ import XCTest
 final class ReaderTapActionTests: XCTestCase {
     private let readerBounds = CGRect(x: 0, y: 0, width: 390, height: 760)
 
-    func testCenterTapAlwaysTogglesReaderChrome() {
-        XCTAssertEqual(
-            ReaderTapAction.resolve(
-                point: CGPoint(x: 195, y: 380),
-                in: readerBounds,
-                isPaginated: true
-            ),
-            .toggleChrome
+    func testReaderNavigationIsBlockedUntilLoadingOverlayIsGone() {
+        XCTAssertFalse(
+            BookOpenScreenController.allowsReaderNavigation(
+                isDeferringReaderGestures: true,
+                isLoadingOverlayHidden: false
+            )
         )
+        XCTAssertFalse(
+            BookOpenScreenController.allowsReaderNavigation(
+                isDeferringReaderGestures: false,
+                isLoadingOverlayHidden: false
+            )
+        )
+        XCTAssertTrue(
+            BookOpenScreenController.allowsReaderNavigation(
+                isDeferringReaderGestures: false,
+                isLoadingOverlayHidden: true
+            )
+        )
+    }
+
+    func testCenterTapAlwaysTogglesReaderChrome() {
+        for y in [20, 380, 740] {
+            XCTAssertEqual(
+                ReaderTapAction.resolve(
+                    point: CGPoint(x: 195, y: CGFloat(y)),
+                    in: readerBounds,
+                    isPaginated: true
+                ),
+                .toggleChrome,
+                "The middle reading column must toggle chrome at every vertical position."
+            )
+        }
     }
 
     func testSideTapsTurnOnlyPaginatedPages() {

@@ -136,7 +136,6 @@ final class ProjectTargetConfigurationTests: XCTestCase {
 
         XCTAssertTrue(project.contains("SWIFT_VERSION: \"6\""))
         XCTAssertTrue(project.contains("SWIFT_STRICT_CONCURRENCY: complete"))
-        XCTAssertTrue(project.contains("SWIFT_STRICT_MEMORY_SAFETY: YES"))
         XCTAssertTrue(project.contains("SWIFT_STRICT_MEMORY_SAFETY: NO"))
         XCTAssertTrue(project.contains("SWIFT_ENFORCE_EXCLUSIVE_ACCESS: full"))
         XCTAssertTrue(project.contains("SWIFT_COMPILATION_MODE: incremental"))
@@ -169,7 +168,7 @@ final class ProjectTargetConfigurationTests: XCTestCase {
         XCTAssertTrue(widgetSync.contains("private static let lastReadState = LastReadState()"))
         XCTAssertFalse(widgetSync.contains("nonisolated(unsafe) private static var pendingLastRead"))
         XCTAssertFalse(widgetSync.contains("nonisolated(unsafe) private static var lastReadFlushTask"))
-        XCTAssertTrue(zipReader.contains("let rc = unsafe deflated.withUnsafeBytes"))
+        XCTAssertTrue(zipReader.contains("let rc = deflated.withUnsafeBytes"))
         XCTAssertFalse(telemetry.contains("String(format:"))
 
         let pythonRunner = try readSourceFileIfAvailable(

@@ -18,6 +18,8 @@ final class ReaderModesUITests: XCTestCase {
             "-uiTestFlickerProbe",
             "-uiTestReaderLayout", layout,
             "-uiTestChromeToggle",
+            "-uiTestNoPageTurnOverlay",
+            "-uiTestPaginationProbe",
         ]
         app.launch()
         return app
@@ -41,6 +43,15 @@ final class ReaderModesUITests: XCTestCase {
             NSPredicate(format: "identifier BEGINSWITH %@", "library.bookTile.")
         ).firstMatch
         guard firstBook.waitForExistence(timeout: 20) else { throw XCTSkip("No book.") }
+        if !firstBook.isHittable {
+            let closeReader = app.buttons["reader.close"].firstMatch
+            guard closeReader.waitForExistence(timeout: 5) else {
+                throw XCTSkip("Library is covered by an unknown surface.")
+            }
+            closeReader.tap()
+            XCTAssertTrue(firstBook.waitForExistence(timeout: 5) && firstBook.isHittable,
+                          "Closing a restored reader must reveal the fixture library.")
+        }
         firstBook.tap()
         guard app.buttons["reader.search"].firstMatch.waitForExistence(timeout: 20) else {
             throw XCTSkip("Reader did not open.")
@@ -60,6 +71,12 @@ final class ReaderModesUITests: XCTestCase {
         app.buttons["reader.search"].firstMatch.exists
     }
 
+    private func toggleReaderChrome(in app: XCUIApplication) {
+        let viewport = app.scrollViews["reader.viewport"].firstMatch
+        XCTAssertTrue(viewport.waitForExistence(timeout: 5), "The reader viewport must be available.")
+        viewport.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+    }
+
     private func chapter(_ app: XCUIApplication) -> (index: Int, total: Int)? {
         let element = app.staticTexts["flicker.probe.chapter"].firstMatch
         guard element.waitForExistence(timeout: 2) else { return nil }
@@ -67,6 +84,16 @@ final class ReaderModesUITests: XCTestCase {
         let parts = label.split(separator: "/").map(String.init)
         guard parts.count == 2, let index = Int(parts[0]), let total = Int(parts[1]) else { return nil }
         return (index, total)
+    }
+
+    private func paginationMetrics(_ app: XCUIApplication) -> [String: Int] {
+        let probe = app.staticTexts["reader.paginationProbe"].firstMatch
+        guard probe.waitForExistence(timeout: 5) else { return [:] }
+        return Dictionary(uniqueKeysWithValues: probe.label.split(separator: ";").compactMap { item in
+            let pair = item.split(separator: "=", maxSplits: 1)
+            guard pair.count == 2, let value = Int(pair[1]) else { return nil }
+            return (String(pair[0]), value)
+        })
     }
 
     private func openReaderSettings(_ app: XCUIApplication) throws {
@@ -194,7 +221,7 @@ final class ReaderModesUITests: XCTestCase {
         }
 
         // Hide chrome (center tap).
-        app.buttons["reader.chrome.toggle"].tap()
+        toggleReaderChrome(in: app)
         sleep(1)
         XCTAssertFalse(chromeVisible(app), "center tap must hide chrome")
 
@@ -208,7 +235,7 @@ final class ReaderModesUITests: XCTestCase {
         sleep(1)
         // Reveal the indicator before reading it; hidden UIKit labels may
         // retain their last accessibility snapshot while chrome is hidden.
-        app.buttons["reader.chrome.toggle"].tap()
+        toggleReaderChrome(in: app)
         sleep(1)
         let after = indicator(app)?.page ?? before
         XCTAssertGreaterThan(after, before,
@@ -222,16 +249,72 @@ final class ReaderModesUITests: XCTestCase {
         try openBook(app)
         XCTAssertTrue(chromeVisible(app), "reader should open with chrome visible")
 
-        // The fixture exposes the same chrome state transition through a
-        // deterministic control; the page-turn overlay otherwise owns the
-        // center hit target in paginated mode.
-        app.buttons["reader.chrome.toggle"].tap()
+        // Use the actual center hit target instead of a test-only button.
+        toggleReaderChrome(in: app)
         sleep(1)
         XCTAssertFalse(chromeVisible(app), "center tap must hide paginated chrome")
 
-        app.buttons["reader.chrome.toggle"].tap()
+        toggleReaderChrome(in: app)
         sleep(1)
         XCTAssertTrue(chromeVisible(app), "second center tap must restore paginated chrome")
+    }
+
+    func testPaginatedChromeToggleExpandsTheViewportWithoutChangingThePage() throws {
+        let app = launch(layout: "paginated")
+        try openBook(app)
+
+        let viewport = app.scrollViews["reader.viewport"].firstMatch
+        let content = app.textViews["reader.content"].firstMatch
+        XCTAssertTrue(viewport.waitForExistence(timeout: 5), "The reader viewport must be available.")
+        XCTAssertTrue(content.exists, "The paginated text surface must remain mounted.")
+
+        let pageBeforeToggle = indicator(app)
+        let viewportBeforeToggle = viewport.frame
+
+        toggleReaderChrome(in: app)
+        sleep(1)
+        XCTAssertFalse(chromeVisible(app), "The first center tap must hide reader chrome.")
+        XCTAssertLessThan(viewport.frame.minY, viewportBeforeToggle.minY,
+                          "Immersive reading must reclaim the navigation-bar height.")
+        XCTAssertGreaterThan(viewport.frame.height, viewportBeforeToggle.height,
+                             "Immersive reading must reclaim the bottom chrome height.")
+        XCTAssertTrue(content.exists, "The paginated text surface must remain mounted.")
+        XCTAssertGreaterThan(content.frame.height, 0)
+
+        toggleReaderChrome(in: app)
+        sleep(1)
+        XCTAssertTrue(chromeVisible(app), "The second center tap must restore reader chrome.")
+        XCTAssertEqual(viewport.frame, viewportBeforeToggle,
+                       "Restoring chrome must restore the original viewport.")
+        XCTAssertEqual(
+            indicator(app)?.page,
+            pageBeforeToggle?.page,
+            "A chrome toggle must not change the current paginated page."
+        )
+    }
+
+    func testPaginatedPageTurnAppliesTheMeasuredTextHeight() throws {
+        let app = launch(layout: "paginated")
+        try openBook(app)
+
+        let nextPage = app.buttons["reader.pageTurn.right"].firstMatch
+        XCTAssertTrue(nextPage.waitForExistence(timeout: 5), "The next-page target must be available.")
+        nextPage.tap()
+        sleep(1)
+
+        let metrics = paginationMetrics(app)
+        let measured = metrics["measuredTextHeight"] ?? 0
+        let frame = metrics["textFrameHeight"] ?? 0
+        let viewport = metrics["viewportHeight"] ?? 0
+        let paginatedHeightActive = metrics["paginatedHeightActive"] ?? 0
+        let scrollingHeightActive = metrics["scrollingHeightActive"] ?? 0
+        XCTAssertGreaterThan(measured, viewport * 2, "The fixture must span multiple paginated viewports.")
+        XCTAssertEqual(
+            frame,
+            measured,
+            accuracy: 1,
+            "A paginated page turn must lay out the text to its measured height instead of clipping it to one viewport (paginated active: \(paginatedHeightActive), scrolling active: \(scrollingHeightActive))."
+        )
     }
 
     // MARK: - 2) Continuous scroll mode
@@ -246,12 +329,12 @@ final class ReaderModesUITests: XCTestCase {
                        "scroll mode must NOT show a page indicator")
 
         // A single tap toggles chrome off…
-        app.buttons["reader.chrome.toggle"].tap()
+        toggleReaderChrome(in: app)
         sleep(1)
         XCTAssertFalse(chromeVisible(app), "single tap in scroll mode must hide chrome")
 
         // …and back on.
-        app.buttons["reader.chrome.toggle"].tap()
+        toggleReaderChrome(in: app)
         sleep(1)
         XCTAssertTrue(chromeVisible(app), "single tap in scroll mode must restore chrome")
 

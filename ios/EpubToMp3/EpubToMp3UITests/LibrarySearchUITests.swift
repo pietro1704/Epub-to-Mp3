@@ -8,30 +8,26 @@ final class LibrarySearchUITests: XCTestCase {
 
     func testSearchBarFiltersAndClears() throws {
         let app = launchedApp()
-        let searchBar = try searchBar(in: app)
-        let field = searchBar.searchFields.firstMatch
-        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        let field = try searchField(in: app)
 
         field.tap()
         field.typeText("zzzz-no-match")
         XCTAssertEqual(field.value as? String, "zzzz-no-match")
 
-        let clear = searchBar.buttons.firstMatch
-        XCTAssertTrue(clear.waitForExistence(timeout: 5))
-        clear.tap()
+        field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: "zzzz-no-match".count))
         XCTAssertNotEqual(field.value as? String, "zzzz-no-match")
     }
 
     func testSearchBarRemainsAvailableWhileScrolling() throws {
         let app = launchedApp()
-        let searchBar = try searchBar(in: app)
-        XCTAssertEqual(searchBar.value as? String, "visible")
+        let field = try searchField(in: app)
+        XCTAssertTrue(field.isHittable)
 
         let scrollSurface = app.collectionViews.firstMatch
         XCTAssertTrue(scrollSurface.waitForExistence(timeout: 5))
         scrollSurface.swipeUp(velocity: .fast)
         scrollSurface.swipeDown(velocity: .fast)
-        XCTAssertEqual(searchBar.value as? String, "visible")
+        XCTAssertTrue(field.exists)
     }
 
 
@@ -51,10 +47,10 @@ final class LibrarySearchUITests: XCTestCase {
         return app
     }
 
-    private func searchBar(in app: XCUIApplication) throws -> XCUIElement {
-        let element = app.descendants(matching: .any)["library.searchBar"].firstMatch
+    private func searchField(in app: XCUIApplication) throws -> XCUIElement {
+        let element = app.searchFields["library.searchField"]
         guard element.waitForExistence(timeout: 5) else {
-            throw XCTSkip("No imported book; LibraryView search surface is not rendered.")
+            throw XCTSkip("Native Library search field is not rendered.")
         }
         return element
     }

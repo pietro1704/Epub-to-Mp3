@@ -152,6 +152,8 @@ final class BookDetailScreenController: UIViewController {
                     let snapshot = try await EmbeddedConversionCoordinator.stream(
                         bookURL: url,
                         bookID: book.id,
+                        requiresWiFi: !self.settings.allowCellularAudioConversion,
+                        priorityChapterIndices: [ReaderProgressStore.read(bookId: self.book.id)?.chapterIndex ?? 0],
                         player: self.player,
                         onStreamingStarted: { [weak self] in
                             self?.playerPresentation.showFullPlayer()
@@ -207,6 +209,57 @@ final class BookDetailScreenController: UIViewController {
     }
 
     @objc private func tapDownload() {
+        if settings.useEmbeddedRuntime && !book.fileType.requiresServerConversion {
+            guard let url = try? library.openBookFile(id: book.id) else { return }
+            let bookID = book.id
+            Task { [weak self] in
+                guard let self else { return }
+                do {
+                    let snapshot = try await EmbeddedConversionCoordinator.stream(
+                        bookURL: url,
+                        bookID: bookID,
+                        autoPlay: false,
+                        requiresWiFi: !self.settings.allowCellularAudioConversion,
+                        drivesPlayer: false,
+                        player: self.player,
+                        onChapterAvailable: { chapter in
+                            Task {
+                                try? await LocalAudioArtifactStore.shared.promote(
+                                    bookID: bookID,
+                                    chapterIndex: chapter.index
+                                )
+                            }
+                        }
+                    )
+                    self.book.lastJobId = snapshot.jobId
+                    for chapter in snapshot.playableChapters {
+                        try? await LocalAudioArtifactStore.shared.promote(
+                            bookID: bookID,
+                            chapterIndex: chapter.index
+                        )
+                    }
+                    let isCompleteDownload = (try? await LocalAudioArtifactStore.shared.hasCompleteDownloadedAudio(
+                        bookID: bookID
+                    )) ?? false
+                    self.book.cachedOffline = isCompleteDownload
+                    self.library.recordConversion(
+                        jobId: snapshot.jobId,
+                        for: bookID,
+                        cachedOffline: isCompleteDownload
+                    )
+                    self.render()
+                } catch {
+                    let alert = UIAlertController(
+                        title: L10n.string("bookDetail.download"),
+                        message: error.localizedDescription,
+                        preferredStyle: .alert
+                    )
+                    alert.addAction(UIAlertAction(title: L10n.string("common.ok"), style: .default))
+                    self.present(alert, animated: true)
+                }
+            }
+            return
+        }
         guard let jobId = book.lastJobId else {
             let alert = UIAlertController(
                 title: L10n.string("bookDetail.download"),
@@ -215,13 +268,6 @@ final class BookDetailScreenController: UIViewController {
             )
             alert.addAction(UIAlertAction(title: L10n.string("common.ok"), style: .default))
             present(alert, animated: true)
-            return
-        }
-        if jobId.hasPrefix("embedded-"),
-           let snapshot = EmbeddedConversionCoordinator.loadSnapshot(bookID: book.id) {
-            Task {
-                await DownloadManager.shared.enqueueAll(snapshot: snapshot, baseURL: nil)
-            }
             return
         }
         if let snapshot = player.snapshot, snapshot.jobId == jobId {

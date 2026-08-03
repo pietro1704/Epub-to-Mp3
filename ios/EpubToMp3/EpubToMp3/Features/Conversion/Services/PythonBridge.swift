@@ -41,6 +41,59 @@ enum PythonBridgeError: Error, LocalizedError {
 
 import PythonKit
 
+/// Buffers parallel Edge responses until the next source-order segment is
+/// ready. The actor keeps the reorder state independent from the task group,
+/// so a fast later WebSocket response can never overtake the first audible
+/// segment in AVQueuePlayer.
+private actor OrderedSegmentDelivery {
+    private var pending: [Data?]
+    private var nextIndex = 0
+
+    init(count: Int) {
+        pending = [Data?](repeating: nil, count: count)
+    }
+
+    func insert(_ data: Data, at index: Int) -> [(index: Int, data: Data)] {
+        guard pending.indices.contains(index) else { return [] }
+        pending[index] = data
+        var ready: [(index: Int, data: Data)] = []
+        while nextIndex < pending.count, let next = pending[nextIndex] {
+            ready.append((nextIndex, next))
+            nextIndex += 1
+        }
+        return ready
+    }
+}
+
+/// The embedded Python callback is synchronous, while queue backpressure is
+/// asynchronous on the main actor. Returning `false` cancels the Python
+/// conversion instead of allowing a stale stream to keep writing segments.
+typealias SegmentHandler = @MainActor @Sendable (Data, Int, Int) async -> Bool
+
+private final class SegmentDeliveryGate: @unchecked Sendable {
+    private let lock = NSLock()
+    private let semaphore = DispatchSemaphore(value: 0)
+    private var result: Bool?
+
+    func resolve(_ accepted: Bool) {
+        lock.lock()
+        guard result == nil else {
+            lock.unlock()
+            return
+        }
+        result = accepted
+        lock.unlock()
+        semaphore.signal()
+    }
+
+    func wait() -> Bool {
+        semaphore.wait()
+        lock.lock()
+        defer { lock.unlock() }
+        return result ?? false
+    }
+}
+
 /// Synchronisation gate around in-process Python calls. PythonKit
 /// surfaces CPython through a single interpreter, which is not
 /// thread-safe; we serialise calls on a dedicated dispatch queue so
@@ -84,6 +137,64 @@ final class PythonBridge: @unchecked Sendable {
     }
 
     private init() {}
+
+    /// Cancels the Swift-owned WebSocket currently blocked inside the Python
+    /// transport callback. PythonRunner itself is deliberately serial, so
+    /// this must happen before cancelling the outer conversion task.
+    func cancelActiveSynthesis() {
+        PythonEmbed.shared.cancelActiveEdgeSynthesis()
+    }
+
+    // MARK: - Runtime readiness
+
+    /// Proves that the embedded interpreter can prepare canonical speech
+    /// text before a user starts a conversion. The probe deliberately does
+    /// not open a WebSocket or synthesize audio: warmup must validate the
+    /// bundled Python runtime and transport wiring without consuming network
+    /// quota or interrupting another audio app.
+    func preflightRuntime() async throws {
+        guard !Self.interpreterWedged else {
+            throw PythonBridgeError.bootstrapFailed(
+                "The embedded interpreter is unavailable for this app session."
+            )
+        }
+
+        do {
+            try await runner.callAsync(timeout: 15, label: "Python audio bootstrap") {
+                try PythonEmbed.shared.bootstrap()
+                guard PythonEmbed.shared.isBootstrapComplete else {
+                    throw PythonBridgeError.bootstrapFailed("interpreter did not finish bootstrapping")
+                }
+                guard PythonEmbed.shared.isParserAvailable else {
+                    let reason = PythonEmbed.shared.parserImportFailure ?? "unknown import failure"
+                    throw PythonBridgeError.bootstrapFailed(
+                        "canonical EPUB parser is unavailable: \(reason)"
+                    )
+                }
+                guard PythonEmbed.shared.edgeTransport != nil else {
+                    throw PythonBridgeError.bootstrapFailed("Swift Edge transport is unavailable")
+                }
+
+                let entry = try PythonEmbed.shared.ensureIosEntrypoints()
+                let prepared = try self.prepareAudibleSpeechTextSync(
+                    "Embedded audio readiness probe.",
+                    entry: entry
+                )
+                let probe = try entry.prepare_chunks.throwing.dynamicallyCall(
+                    withArguments: [prepared, "auto", false]
+                )
+                guard let chunks = Array<String>(probe["chunks"]), !chunks.isEmpty else {
+                    throw PythonBridgeError.bootstrapFailed("canonical chunk preparation returned no chunks")
+                }
+            }
+        } catch is TimeoutError {
+            // A timed-out PythonRunner block keeps the dedicated interpreter
+            // thread occupied. Refuse later conversions instead of accepting
+            // a tap that will wait forever behind that stuck operation.
+            Self.interpreterWedged = true
+            throw PythonBridgeError.bootstrapFailed("embedded interpreter timed out during audio warmup")
+        }
+    }
 
     // MARK: - EPUB parse
 
@@ -240,9 +351,11 @@ final class PythonBridge: @unchecked Sendable {
             )
         }
 
+        let audibleText = try prepareAudibleSpeechTextSync(text, entry: entry)
+
         do {
             _ = try entry.synthesize_chapter_via_transport.throwing.dynamicallyCall(
-                withArguments: [text, voice, outURL.path]
+                withArguments: [audibleText, voice, outURL.path]
             )
         } catch {
             throw PythonBridgeError.convertFailed(
@@ -266,6 +379,20 @@ final class PythonBridge: @unchecked Sendable {
     /// connections per host, so 6 is the practical ceiling.
     private static let maxChunkConcurrency = 6
 
+    static func edgeStreamRetryCount(environment: [String: String] = ProcessInfo.processInfo.environment) -> Int {
+        let raw = environment["EDGE_STREAM_MAX_RETRIES"] ?? "1"
+        return max(1, min(Int(raw) ?? 1, 6))
+    }
+
+    static func edgeRetryDelay(
+        attempt: Int,
+        environment: [String: String] = ProcessInfo.processInfo.environment
+    ) -> Double {
+        let raw = environment["IOS_EDGE_RETRY_BACKOFF_SECONDS"] ?? "2"
+        let base = max(0, Double(raw) ?? 2)
+        return min(30, base * pow(2, Double(max(0, attempt))))
+    }
+
     /// Synthesises one chapter with chunk-level parallelism.
     ///
     /// Instead of the serial Python loop (one chunk at a time via the
@@ -283,8 +410,9 @@ final class PythonBridge: @unchecked Sendable {
         text: String,
         voice: String,
         outputDir: URL,
+        outputURL: URL? = nil,
         chapterIndex: Int,
-        onSegment: (@MainActor @Sendable (Data, Int, Int) -> Void)? = nil
+        onSegment: SegmentHandler? = nil
     ) async throws -> URL {
         guard PythonEmbed.shared.isBootstrapComplete else {
             throw PythonBridgeError.bootstrapFailed("interpreter not ready yet")
@@ -299,11 +427,11 @@ final class PythonBridge: @unchecked Sendable {
             throw PythonBridgeError.emptyResult
         }
 
-        let outURL = outputDir.appendingPathComponent(
+        let outURL = outputURL ?? outputDir.appendingPathComponent(
             "edge_par_\(UUID().uuidString).mp3"
         )
         try FileManager.default.createDirectory(
-            at: outputDir, withIntermediateDirectories: true
+            at: outURL.deletingLastPathComponent(), withIntermediateDirectories: true
         )
 
         // Step 2: Synthesize chunks in parallel with bounded concurrency.
@@ -337,7 +465,8 @@ final class PythonBridge: @unchecked Sendable {
                 "import python_app.src.ios_entrypoints: \(error)"
             )
         }
-        let result = entry.prepare_chunks(text, voice, streaming)
+        let audibleText = try prepareAudibleSpeechTextSync(text, entry: entry)
+        let result = entry.prepare_chunks(audibleText, voice, streaming)
         guard let chunkList = Array<String>(result["chunks"]) else {
             throw PythonBridgeError.decodeFailed("prepare_chunks: can't decode chunks")
         }
@@ -345,14 +474,45 @@ final class PythonBridge: @unchecked Sendable {
         return (chunkList, resolved)
     }
 
+    /// Finalize parser-prepared speech text with the same populated
+    /// `speech_text` branch the CLI uses. This preserves structural title
+    /// announcements and pauses while resolving only residual formatting
+    /// markers before the Swift-owned Edge transport receives the text.
+    private func prepareAudibleSpeechTextSync(
+        _ text: String,
+        entry: PythonObject
+    ) throws -> String {
+        do {
+            let prepared = try entry.prepare_audible_speech_text.throwing.dynamicallyCall(
+                withArguments: [text]
+            )
+            guard let audibleText = String(prepared) else {
+                throw PythonBridgeError.decodeFailed(
+                    "prepare_audible_speech_text returned a non-string value"
+                )
+            }
+            guard !audibleText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                throw PythonBridgeError.emptyResult
+            }
+            return audibleText
+        } catch let error as PythonBridgeError {
+            throw error
+        } catch {
+            throw PythonBridgeError.convertFailed(
+                "prepare_audible_speech_text: \(error)"
+            )
+        }
+    }
+
     private func synthesizeChunksParallel(
         chunks: [String],
         voice: String,
         chapterIndex: Int,
-        onSegment: (@MainActor @Sendable (Data, Int, Int) -> Void)?
+        onSegment: SegmentHandler?
     ) async throws -> [Data] {
-        // Pre-allocate result array to maintain order.
+        // Pre-allocate result array to maintain audio and callback order.
         var results = [Data?](repeating: nil, count: chunks.count)
+        let delivery = OrderedSegmentDelivery(count: chunks.count)
 
         try await withThrowingTaskGroup(of: (Int, Data).self) { group in
             var launched = 0
@@ -362,12 +522,11 @@ final class PythonBridge: @unchecked Sendable {
                 if launched >= Self.maxChunkConcurrency {
                     if let (idx, data) = try await group.next() {
                         results[idx] = data
-                        if let cb = onSegment {
-                            let capturedIdx = chapterIndex
-                            let capturedSeg = idx
-                            let capturedData = data
-                            Task { @MainActor in
-                                cb(capturedData, capturedIdx, capturedSeg)
+                        let ready = await delivery.insert(data, at: idx)
+                        for segment in ready {
+                            if let onSegment,
+                               !(await onSegment(segment.data, chapterIndex, segment.index)) {
+                                throw CancellationError()
                             }
                         }
                     }
@@ -376,14 +535,35 @@ final class PythonBridge: @unchecked Sendable {
                 let chunkText = chunk
                 group.addTask {
                     let bridge = EdgeTTSBridge()
-                    let mp3 = try await withTimeout(
-                        seconds: 60, label: "Edge chunk \(index)"
-                    ) {
-                        try await bridge.synthesize(
-                            text: chunkText, voice: voice
-                        )
+                    var lastError: Error?
+                    let maxRetries = Self.edgeStreamRetryCount()
+                    for attempt in 0..<maxRetries {
+                        do {
+                            try Task.checkCancellation()
+                            let mp3 = try await withTimeout(
+                                seconds: 60, label: "Edge chunk \(index)"
+                            ) {
+                                try await bridge.synthesize(
+                                    text: chunkText, voice: voice
+                                )
+                            }
+                            guard !mp3.isEmpty else {
+                                throw EdgeTTSBridgeError.noAudioReceived
+                            }
+                            return (index, mp3)
+                        } catch is CancellationError {
+                            throw CancellationError()
+                        } catch {
+                            lastError = error
+                            guard attempt + 1 < Self.edgeStreamRetryCount() else { break }
+                            let delay = Self.edgeRetryDelay(attempt: attempt)
+                            if delay > 0 {
+                                let nanos = UInt64(delay * 1_000_000_000)
+                                try await Task.sleep(nanoseconds: nanos)
+                            }
+                        }
                     }
-                    return (index, mp3)
+                    throw lastError ?? EdgeTTSBridgeError.noAudioReceived
                 }
                 launched += 1
             }
@@ -391,12 +571,11 @@ final class PythonBridge: @unchecked Sendable {
             // Drain remaining.
             while let (idx, data) = try await group.next() {
                 results[idx] = data
-                if let cb = onSegment {
-                    let capturedIdx = chapterIndex
-                    let capturedSeg = idx
-                    let capturedData = data
-                    Task { @MainActor in
-                        cb(capturedData, capturedIdx, capturedSeg)
+                let ready = await delivery.insert(data, at: idx)
+                for segment in ready {
+                    if let onSegment,
+                       !(await onSegment(segment.data, chapterIndex, segment.index)) {
+                        throw CancellationError()
                     }
                 }
             }
@@ -424,17 +603,18 @@ final class PythonBridge: @unchecked Sendable {
     /// - Parameters:
     ///   - text: Chapter plain text (pre-processed, ready for TTS).
     ///   - voice: Edge-TTS voice name (e.g. `"pt-BR-FranciscaNeural"`).
-    ///   - outputDir: Directory where the final chapter MP3 is written.
+    ///   - outputURL: Stable destination of the final chapter MP3.
     ///   - chapterIndex: Zero-based index passed through to ``onSegment``.
     ///   - onSegment: Called on the *main actor* for each segment that
-    ///     produces audio. Arguments: `(mp3Data, chapterIndex, segmentIndex)`.
+    ///     produces audio. Returning `false` stops the stream. Arguments:
+    ///     `(mp3Data, chapterIndex, segmentIndex)`.
     /// - Returns: URL of the completed (full) chapter MP3.
     func convertChapterStreaming(
         text: String,
         voice: String,
-        outputDir: URL,
+        outputURL: URL,
         chapterIndex: Int,
-        onSegment: @MainActor @escaping (Data, Int, Int) -> Void
+        onSegment: @escaping SegmentHandler
     ) async throws -> URL {
         guard PythonEmbed.shared.isBootstrapComplete else {
             throw PythonBridgeError.bootstrapFailed("interpreter not ready yet")
@@ -443,7 +623,7 @@ final class PythonBridge: @unchecked Sendable {
             try self.convertChapterStreamingSync(
                 text: text,
                 voice: voice,
-                outputDir: outputDir,
+                outputURL: outputURL,
                 chapterIndex: chapterIndex,
                 onSegment: onSegment
             )
@@ -453,15 +633,12 @@ final class PythonBridge: @unchecked Sendable {
     private func convertChapterStreamingSync(
         text: String,
         voice: String,
-        outputDir: URL,
+        outputURL: URL,
         chapterIndex: Int,
-        onSegment: @MainActor @escaping (Data, Int, Int) -> Void
+        onSegment: @escaping SegmentHandler
     ) throws -> URL {
-        let outURL = outputDir.appendingPathComponent(
-            "edge_stream_\(UUID().uuidString).mp3"
-        )
         try FileManager.default.createDirectory(
-            at: outputDir, withIntermediateDirectories: true
+            at: outputURL.deletingLastPathComponent(), withIntermediateDirectories: true
         )
 
         // ``PythonEmbed.bootstrap()`` pre-imports
@@ -480,12 +657,14 @@ final class PythonBridge: @unchecked Sendable {
         }
         _iosEntrypointsModule = entry
 
+        let audibleText = try prepareAudibleSpeechTextSync(text, entry: entry)
+
         // Build a Python callable that Swift will receive per segment.
         // PythonKit lets us pass a Swift closure as a Python callable via
         // `PythonFunction`. We bridge the bytes back to `Data` and hop
         // onto the main actor so `AudioPlayer.enqueueSegment` runs on
         // the right thread.
-        let callback = PythonFunction { args in
+        let callback = PythonFunction { args throws -> PythonObject in
             // args: (mp3_bytes: bytes, segment_index: int, total: int)
             guard args.count >= 2 else { return Python.None }
             let pyBytes = args[0]
@@ -497,8 +676,16 @@ final class PythonBridge: @unchecked Sendable {
             if let byteArray = [UInt8](pyBytes) {
                 let raw = Data(byteArray)
                 let capturedIdx = chapterIndex
+                // Python emits callbacks serially on PythonRunner. Wait for
+                // each MainActor delivery before returning to Python so two
+                // unstructured tasks cannot reorder segment identities in
+                // AVQueuePlayer under a fast network response burst.
+                let delivered = SegmentDeliveryGate()
                 Task { @MainActor in
-                    onSegment(raw, capturedIdx, segIdx)
+                    delivered.resolve(await onSegment(raw, capturedIdx, segIdx))
+                }
+                guard delivered.wait() else {
+                    throw CancellationError()
                 }
             }
             return Python.None
@@ -506,7 +693,7 @@ final class PythonBridge: @unchecked Sendable {
 
         do {
             _ = try entry.synthesize_chapter_streaming.throwing.dynamicallyCall(
-                withArguments: [text, voice, outURL.path, callback.pythonObject]
+                withArguments: [audibleText, voice, outputURL.path, callback.pythonObject]
             )
         } catch {
             throw PythonBridgeError.convertFailed(
@@ -514,12 +701,12 @@ final class PythonBridge: @unchecked Sendable {
             )
         }
 
-        guard FileManager.default.fileExists(atPath: outURL.path) else {
+        guard FileManager.default.fileExists(atPath: outputURL.path) else {
             throw PythonBridgeError.parseFailed(
-                "ios_entrypoints did not write \(outURL.path)"
+                "ios_entrypoints did not write \(outputURL.path)"
             )
         }
-        return outURL
+        return outputURL
     }
 
     // MARK: - Full-pipeline conversion (CLI superset)

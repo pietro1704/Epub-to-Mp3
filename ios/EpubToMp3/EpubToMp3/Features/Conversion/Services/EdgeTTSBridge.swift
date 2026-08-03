@@ -44,6 +44,13 @@ enum EdgeTTSBridgeError: Error, LocalizedError {
 /// not reuse across calls.
 final class EdgeTTSBridge: NSObject, URLSessionWebSocketDelegate, @unchecked Sendable {
 
+    /// The transport has one socket per synthesis. Keep a synchronized
+    /// reference so a replacement Listen request can interrupt a stalled
+    /// receive immediately instead of waiting for its networking timeout.
+    private let stateLock = NSLock()
+    private var activeSocket: URLSessionWebSocketTask?
+    private var wasCancelled = false
+
     // MARK: - Constants (mirrors edge_tts/constants.py)
 
     private static let trustedClientToken = "6A5AA1D4EAFF4E9FB37E23D68491D6F4"
@@ -56,6 +63,7 @@ final class EdgeTTSBridge: NSObject, URLSessionWebSocketDelegate, @unchecked Sen
         " (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36" +
         " Edg/143.0.0.0"
     private static let outputFormat = "audio-24khz-48kbitrate-mono-mp3"
+    private static let protocolTextByteLimit = 4_096
 
     // MARK: - Public API
 
@@ -69,12 +77,44 @@ final class EdgeTTSBridge: NSObject, URLSessionWebSocketDelegate, @unchecked Sen
         pitch: String = "+0Hz",
         timeout: TimeInterval = 60
     ) async throws -> Data {
-        let ssml = Self.makeSSML(text: text, voice: voice, rate: rate, volume: volume, pitch: pitch)
-        return try await synthesize(ssml: ssml, timeout: timeout)
+        var audio = Data()
+        for chunk in Self.protocolTextChunks(from: text) {
+            try Task.checkCancellation()
+            let ssml = Self.makeSSML(
+                text: chunk,
+                voice: voice,
+                rate: rate,
+                volume: volume,
+                pitch: pitch
+            )
+            audio.append(try await synthesize(ssml: ssml, timeout: timeout))
+        }
+        return audio
     }
 
     /// Synthesizes a pre-built SSML envelope.
     func synthesize(ssml: String, timeout: TimeInterval = 60) async throws -> Data {
+        try await withTaskCancellationHandler(operation: {
+            try Task.checkCancellation()
+            return try await synthesizeRequest(ssml: ssml, timeout: timeout)
+        }, onCancel: { [weak self] in
+            self?.cancel()
+        })
+    }
+
+    /// Cancels the in-flight WebSocket, if any. This method is safe to call
+    /// from the main actor while the synthesis is awaiting a receive on a
+    /// URLSession delegate queue.
+    func cancel() {
+        stateLock.lock()
+        wasCancelled = true
+        let socket = activeSocket
+        activeSocket = nil
+        stateLock.unlock()
+        socket?.cancel(with: .goingAway, reason: nil)
+    }
+
+    private func synthesizeRequest(ssml: String, timeout: TimeInterval) async throws -> Data {
         let connectionId = Self.uuidHex()
         let requestId = Self.uuidHex()
         let secMSGEC = Self.generateSecMSGEC()
@@ -110,7 +150,13 @@ final class EdgeTTSBridge: NSObject, URLSessionWebSocketDelegate, @unchecked Sen
         defer { session.invalidateAndCancel() }
 
         let task = session.webSocketTask(with: request)
+        try register(socket: task)
+        defer {
+            clear(socket: task)
+            session.invalidateAndCancel()
+        }
         task.resume()
+        try Task.checkCancellation()
 
         // 1. speech.config
         let timestamp = Self.dateString()
@@ -154,6 +200,9 @@ final class EdgeTTSBridge: NSObject, URLSessionWebSocketDelegate, @unchecked Sen
                 task.cancel(with: .abnormalClosure, reason: nil)
                 throw EdgeTTSBridgeError.timeout
             } catch {
+                if isCancelled {
+                    throw CancellationError()
+                }
                 throw EdgeTTSBridgeError.webSocketFailed("\(error)")
             }
 
@@ -192,7 +241,81 @@ final class EdgeTTSBridge: NSObject, URLSessionWebSocketDelegate, @unchecked Sen
         throw EdgeTTSBridgeError.timeout
     }
 
+    private var isCancelled: Bool {
+        stateLock.lock()
+        defer { stateLock.unlock() }
+        return wasCancelled
+    }
+
+    private func register(socket: URLSessionWebSocketTask) throws {
+        stateLock.lock()
+        defer { stateLock.unlock() }
+        guard !wasCancelled else {
+            socket.cancel(with: .goingAway, reason: nil)
+            throw CancellationError()
+        }
+        activeSocket = socket
+    }
+
+    private func clear(socket: URLSessionWebSocketTask) {
+        stateLock.lock()
+        if activeSocket === socket {
+            activeSocket = nil
+        }
+        stateLock.unlock()
+    }
+
     // MARK: - SSML
+
+    /// Matches the Edge client's 4K-byte request boundary. The Python CLI
+    /// reaches that boundary inside `edge_tts.Communicate`; the native bridge
+    /// owns the WebSocket, so it must enforce it before building SSML.
+    static func protocolTextChunks(from text: String) -> [String] {
+        let words = text.split(whereSeparator: { $0.isWhitespace }).map(String.init)
+        guard !words.isEmpty else { return [] }
+
+        var chunks: [String] = []
+        var current = ""
+        for word in words {
+            let candidate = current.isEmpty ? word : "\(current) \(word)"
+            if escapedUTF8Count(candidate) <= protocolTextByteLimit {
+                current = candidate
+                continue
+            }
+
+            if !current.isEmpty {
+                chunks.append(current)
+                current = ""
+            }
+            appendOversizedWord(word, to: &chunks, current: &current)
+        }
+        if !current.isEmpty {
+            chunks.append(current)
+        }
+        return chunks
+    }
+
+    private static func appendOversizedWord(
+        _ word: String,
+        to chunks: inout [String],
+        current: inout String
+    ) {
+        var fragment = ""
+        for character in word {
+            let candidate = fragment + String(character)
+            if !fragment.isEmpty && escapedUTF8Count(candidate) > protocolTextByteLimit {
+                chunks.append(fragment)
+                fragment = String(character)
+            } else {
+                fragment = candidate
+            }
+        }
+        current = fragment
+    }
+
+    private static func escapedUTF8Count(_ text: String) -> Int {
+        xmlEscape(text).lengthOfBytes(using: .utf8)
+    }
 
     static func makeSSML(text: String,
                          voice: String,
@@ -236,7 +359,7 @@ final class EdgeTTSBridge: NSObject, URLSessionWebSocketDelegate, @unchecked Sen
         let intTicks = UInt64(ticks100ns)
         let strToHash = "\(intTicks)\(trustedClientToken)"
         let hash = SHA256.hash(data: Data(strToHash.utf8))
-        return hash.map { unsafe String(format: "%02X", $0) }.joined()
+        return hash.map { String(format: "%02X", $0) }.joined()
     }
 
     private static func uuidHex() -> String {
@@ -245,8 +368,8 @@ final class EdgeTTSBridge: NSObject, URLSessionWebSocketDelegate, @unchecked Sen
 
     private static func muidHex() -> String {
         var bytes = [UInt8](repeating: 0, count: 16)
-        _ = unsafe SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes)
-        return bytes.map { unsafe String(format: "%02X", $0) }.joined()
+        _ = SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes)
+        return bytes.map { String(format: "%02X", $0) }.joined()
     }
 
     private static func dateString() -> String {

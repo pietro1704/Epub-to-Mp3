@@ -10,6 +10,8 @@ final class TocScreenController: UITableViewController {
         let isCurrent: Bool
         let audioReady: Bool
         let downloaded: Bool
+        let artifactState: LocalAudioArtifactStore.ArtifactState?
+        let schedulerState: LocalAudioConversionScheduler.WorkState?
     }
 
     private var fulltext: EbookFulltext?
@@ -22,7 +24,12 @@ final class TocScreenController: UITableViewController {
     private var onDownloadAll: (() -> Void)?
     private var onCancelDownloads: (() -> Void)?
     private var onClearDownloads: (() -> Void)?
+    private var onRetryFailed: (() -> Void)?
+    private var onExport: (() -> Void)?
     private var locallyDownloaded: Set<Int> = []
+    private var localArtifactStates: [Int: LocalAudioArtifactStore.ArtifactState] = [:]
+    private var artifactObserver: NSObjectProtocol?
+    private var schedulerObserver: NSObjectProtocol?
 
     init(
         fulltext: EbookFulltext?,
@@ -34,7 +41,9 @@ final class TocScreenController: UITableViewController {
         onRemoveDownload: ((Int) -> Void)? = nil,
         onDownloadAll: (() -> Void)?,
         onCancelDownloads: (() -> Void)?,
-        onClearDownloads: (() -> Void)?
+        onClearDownloads: (() -> Void)?,
+        onRetryFailed: (() -> Void)? = nil,
+        onExport: (() -> Void)? = nil
     ) {
         self.fulltext = fulltext
         self.snapshot = snapshot
@@ -46,6 +55,8 @@ final class TocScreenController: UITableViewController {
         self.onDownloadAll = onDownloadAll
         self.onCancelDownloads = onCancelDownloads
         self.onClearDownloads = onClearDownloads
+        self.onRetryFailed = onRetryFailed
+        self.onExport = onExport
         super.init(style: .plain)
         title = L10n.string("player.chapters")
     }
@@ -65,7 +76,18 @@ final class TocScreenController: UITableViewController {
             action: #selector(doneTapped)
         )
         configureMoreMenu()
+        observeLocalAudioArtifacts()
+        observeConversionScheduler()
         refreshDownloaded()
+    }
+
+    deinit {
+        if let artifactObserver {
+            NotificationCenter.default.removeObserver(artifactObserver)
+        }
+        if let schedulerObserver {
+            NotificationCenter.default.removeObserver(schedulerObserver)
+        }
     }
 
     override func viewWillAppear(_ animated: Bool) {
@@ -83,7 +105,9 @@ final class TocScreenController: UITableViewController {
         onRemoveDownload: ((Int) -> Void)? = nil,
         onDownloadAll: (() -> Void)?,
         onCancelDownloads: (() -> Void)?,
-        onClearDownloads: (() -> Void)?
+        onClearDownloads: (() -> Void)?,
+        onRetryFailed: (() -> Void)? = nil,
+        onExport: (() -> Void)? = nil
     ) {
         self.fulltext = fulltext
         self.snapshot = snapshot
@@ -95,6 +119,8 @@ final class TocScreenController: UITableViewController {
         self.onDownloadAll = onDownloadAll
         self.onCancelDownloads = onCancelDownloads
         self.onClearDownloads = onClearDownloads
+        self.onRetryFailed = onRetryFailed
+        self.onExport = onExport
         configureMoreMenu()
         tableView.reloadData()
     }
@@ -114,6 +140,14 @@ final class TocScreenController: UITableViewController {
         }
         if row.downloaded {
             secondary.append(L10n.string("toc.downloaded"))
+        } else if let status = artifactStatusText(for: row.artifactState) {
+            secondary.append(status)
+        } else if Self.usesSchedulerStatus(
+            artifactState: row.artifactState,
+            schedulerState: row.schedulerState
+        ),
+                  let status = schedulerStatusText(for: row.schedulerState) {
+            secondary.append(status)
         } else if !row.audioReady {
             secondary.append(L10n.string("toc.textOnly"))
         }
@@ -125,7 +159,12 @@ final class TocScreenController: UITableViewController {
         cell.accessibilityLabel = row.title
         cell.accessibilityValue = row.downloaded
             ? L10n.string("toc.downloaded")
-            : (row.audioReady ? L10n.string("player.downloadChapter") : L10n.string("toc.textOnly"))
+            : (artifactStatusText(for: row.artifactState)
+                ?? (Self.usesSchedulerStatus(
+                    artifactState: row.artifactState,
+                    schedulerState: row.schedulerState
+                ) ? schedulerStatusText(for: row.schedulerState) : nil)
+                ?? (row.audioReady ? L10n.string("player.downloadChapter") : L10n.string("toc.textOnly")))
         cell.selectionStyle = .default
         cell.isUserInteractionEnabled = true
         return cell
@@ -139,6 +178,10 @@ final class TocScreenController: UITableViewController {
     }
 
     private var rows: [Row] {
+        let usesEmbeddedAudio = EmbeddedConversionCoordinator.embeddedBookID(from: snapshot.jobId) != nil
+        let schedulerState = EmbeddedConversionCoordinator.embeddedBookID(from: snapshot.jobId).flatMap {
+            LocalAudioConversionScheduler.shared.state(for: $0)
+        }
         if let fulltext, !fulltext.chapters.isEmpty {
             return fulltext.chapters.map { chapter in
                 let zeroBased = chapter.index - 1
@@ -147,10 +190,12 @@ final class TocScreenController: UITableViewController {
                     zeroBasedIndex: zeroBased,
                     charCount: chapter.charCount,
                     isCurrent: isCurrent(zeroBasedIndex: zeroBased),
-                    audioReady: snapshot.playableChapters.contains {
+                    audioReady: usesEmbeddedAudio || snapshot.playableChapters.contains {
                         $0.index == zeroBased && $0.downloadUrl != nil
                     },
-                    downloaded: locallyDownloaded.contains(zeroBased)
+                    downloaded: locallyDownloaded.contains(zeroBased),
+                    artifactState: localArtifactStates[zeroBased],
+                    schedulerState: schedulerState
                 )
             }
         }
@@ -160,8 +205,10 @@ final class TocScreenController: UITableViewController {
                 zeroBasedIndex: chapter.index,
                 charCount: chapter.chars,
                 isCurrent: isCurrent(zeroBasedIndex: chapter.index),
-                audioReady: chapter.downloadUrl != nil,
-                downloaded: locallyDownloaded.contains(chapter.index)
+                audioReady: usesEmbeddedAudio || chapter.downloadUrl != nil,
+                downloaded: locallyDownloaded.contains(chapter.index),
+                artifactState: localArtifactStates[chapter.index],
+                schedulerState: schedulerState
             )
         }
     }
@@ -176,19 +223,86 @@ final class TocScreenController: UITableViewController {
         return readingMatch
     }
 
+    /// A chapter-specific state always wins. A pending manifest entry has no
+    /// active conversion of its own, so it may surface the book's FIFO or
+    /// Wi-Fi wait state without falsely presenting every pending row as the
+    /// chapter currently being generated.
+    static func usesSchedulerStatus(
+        artifactState: LocalAudioArtifactStore.ArtifactState?,
+        schedulerState: LocalAudioConversionScheduler.WorkState?
+    ) -> Bool {
+        switch artifactState {
+        case .none:
+            return schedulerState != nil
+        case .pending:
+            return schedulerState == .queued || schedulerState == .waitingForWiFi
+        case .generating, .waitingForWiFi, .available, .failed:
+            return false
+        }
+    }
+
     private func refreshDownloaded() {
         // `Task.detached` does not inherit the enclosing `@MainActor`
         // isolation, so `snapshot` (a MainActor-isolated property) must be
         // captured into a plain local before crossing into the detached
         // closure — referencing `self.snapshot` directly from inside it is
         // both a capture-semantics error and an actor-isolation violation.
-        let jobId = snapshot.jobId
-        Task { @MainActor [weak self] in
+        let jobID = snapshot.jobId
+        let embeddedBookID = EmbeddedConversionCoordinator.embeddedBookID(from: jobID)
+        Task { [weak self] in
+            let downloaded: Set<Int>
+            let states: [Int: LocalAudioArtifactStore.ArtifactState]
+            if let embeddedBookID {
+                let manifest = try? await LocalAudioArtifactStore.shared.manifest(bookID: embeddedBookID)
+                downloaded = Set(manifest?.chapters.compactMap { artifact in
+                    guard artifact.retention == .downloaded, artifact.state == .available else { return nil }
+                    return artifact.index
+                } ?? [])
+                states = Dictionary(
+                    uniqueKeysWithValues: (manifest?.chapters ?? []).map { ($0.index, $0.state) }
+                )
+            } else {
+                downloaded = await Task.detached(priority: .utility) {
+                    DownloadManager.locallyDownloadedIndices(for: jobID)
+                }.value
+                states = [:]
+            }
             guard let self else { return }
-            self.locallyDownloaded = await Task.detached(priority: .utility) {
-                DownloadManager.locallyDownloadedIndices(for: jobId)
-            }.value
+            self.locallyDownloaded = downloaded
+            self.localArtifactStates = states
+            self.configureMoreMenu()
             self.tableView.reloadData()
+        }
+    }
+
+    private func observeLocalAudioArtifacts() {
+        guard let embeddedBookID = EmbeddedConversionCoordinator.embeddedBookID(from: snapshot.jobId) else { return }
+        artifactObserver = NotificationCenter.default.addObserver(
+            forName: LocalAudioArtifactStore.didChangeNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            if let changedBookID = notification.userInfo?["bookID"] as? String,
+               changedBookID != embeddedBookID {
+                return
+            }
+            Task { @MainActor [weak self] in
+                self?.refreshDownloaded()
+            }
+        }
+    }
+
+    private func observeConversionScheduler() {
+        guard let embeddedBookID = EmbeddedConversionCoordinator.embeddedBookID(from: snapshot.jobId) else { return }
+        schedulerObserver = NotificationCenter.default.addObserver(
+            forName: LocalAudioConversionScheduler.didChangeNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            guard notification.userInfo?["bookID"] as? String == embeddedBookID else { return }
+            Task { @MainActor [weak self] in
+                self?.refreshDownloaded()
+            }
         }
     }
 
@@ -205,7 +319,17 @@ final class TocScreenController: UITableViewController {
                 }
             },
             onClearDownloads.map { action in
-                UIAction(title: L10n.string("chapterList.removeDownloads"), image: UIImage(systemName: "trash"), attributes: .destructive) { _ in
+                UIAction(title: L10n.string("chapterList.removeDownloads"), image: UIImage(systemName: "trash"), attributes: .destructive) { [weak self] _ in
+                    self?.confirmRemovingAllDownloads(action)
+                }
+            },
+            localArtifactStates.values.contains(.failed) ? onRetryFailed.map { action in
+                UIAction(title: L10n.string("toc.retryFailed"), image: UIImage(systemName: "arrow.clockwise")) { _ in
+                    action()
+                }
+            } : nil,
+            onExport.map { action in
+                UIAction(title: L10n.string("player.exportAudio"), image: UIImage(systemName: "square.and.arrow.up")) { _ in
                     action()
                 }
             }
@@ -219,10 +343,34 @@ final class TocScreenController: UITableViewController {
     private func makeAccessoryView(for row: Row) -> UIView? {
         guard let onDownload else { return nil }
         let button = UIButton(type: .system)
-        button.setImage(UIImage(systemName: row.downloaded ? "checkmark.circle.fill" : "arrow.down.circle"), for: .normal)
+        let usesSchedulerStatus = Self.usesSchedulerStatus(
+            artifactState: row.artifactState,
+            schedulerState: row.schedulerState
+        )
+        let isWorking = row.artifactState == .generating
+            || row.artifactState == .waitingForWiFi
+            || (usesSchedulerStatus && row.schedulerState == .waitingForWiFi)
+        let imageName: String
+        if row.downloaded {
+            imageName = "checkmark.circle.fill"
+        } else if row.artifactState == .generating {
+            imageName = "arrow.triangle.2.circlepath.circle"
+        } else if row.artifactState == .waitingForWiFi {
+            imageName = "wifi"
+        } else if usesSchedulerStatus, row.schedulerState == .waitingForWiFi {
+            imageName = "wifi"
+        } else if usesSchedulerStatus, row.schedulerState == .queued {
+            imageName = "clock"
+        } else if usesSchedulerStatus, row.schedulerState == .generating {
+            imageName = "arrow.triangle.2.circlepath.circle"
+        } else if row.artifactState == .failed {
+            imageName = "arrow.clockwise.circle"
+        } else {
+            imageName = "arrow.down.circle"
+        }
+        button.setImage(UIImage(systemName: imageName), for: .normal)
         button.tintColor = .secondaryLabel
-        button.showsMenuAsPrimaryAction = true
-        button.isEnabled = row.downloaded ? onRemoveDownload != nil : row.audioReady
+        button.isEnabled = !isWorking && (row.downloaded ? onRemoveDownload != nil : row.audioReady)
         button.accessibilityLabel = row.downloaded
             ? L10n.string("toc.removeDownload")
             : L10n.string("player.downloadChapter")
@@ -233,16 +381,88 @@ final class TocScreenController: UITableViewController {
             button.widthAnchor.constraint(equalToConstant: 44),
             button.heightAnchor.constraint(equalToConstant: 44),
         ])
-        if row.downloaded, let onRemoveDownload {
-            button.menu = UIMenu(children: [UIAction(title: L10n.string("toc.removeDownload"), image: UIImage(systemName: "trash")) { _ in
-                onRemoveDownload(row.zeroBasedIndex)
-            }])
+        if isWorking {
+            button.accessibilityValue = artifactStatusText(for: row.artifactState)
+                ?? (usesSchedulerStatus ? schedulerStatusText(for: row.schedulerState) : nil)
+        } else if row.downloaded, let onRemoveDownload {
+            button.showsMenuAsPrimaryAction = true
+            button.menu = UIMenu(children: [
+                UIAction(
+                    title: L10n.string("toc.removeDownload"),
+                    image: UIImage(systemName: "trash"),
+                    attributes: .destructive
+                ) { [weak self] _ in
+                    self?.confirmRemovingDownload(
+                        chapterIndex: row.zeroBasedIndex,
+                        title: row.title,
+                        action: onRemoveDownload
+                    )
+                }
+            ])
         } else {
-            button.menu = UIMenu(children: [UIAction(title: L10n.string("player.downloadChapter"), image: UIImage(systemName: "arrow.down.circle")) { _ in
+            button.addAction(UIAction { _ in
                 onDownload(row.zeroBasedIndex)
-            }])
+            }, for: .touchUpInside)
         }
         return button
+    }
+
+    private func confirmRemovingDownload(
+        chapterIndex: Int,
+        title: String,
+        action: @escaping (Int) -> Void
+    ) {
+        let alert = UIAlertController(
+            title: L10n.string("toc.removeDownload"),
+            message: L10n.string("toc.removeDownloadMessage", title),
+            preferredStyle: .alert
+        )
+        alert.addAction(UIAlertAction(title: L10n.string("common.cancel"), style: .cancel))
+        alert.addAction(UIAlertAction(title: L10n.string("common.remove"), style: .destructive) { _ in
+            action(chapterIndex)
+        })
+        present(alert, animated: true)
+    }
+
+    private func confirmRemovingAllDownloads(_ action: @escaping () -> Void) {
+        let alert = UIAlertController(
+            title: L10n.string("chapterList.removeDownloads"),
+            message: L10n.string("chapterList.removeDownloadsMessage"),
+            preferredStyle: .alert
+        )
+        alert.addAction(UIAlertAction(title: L10n.string("common.cancel"), style: .cancel))
+        alert.addAction(UIAlertAction(title: L10n.string("common.remove"), style: .destructive) { _ in
+            action()
+        })
+        present(alert, animated: true)
+    }
+
+    private func artifactStatusText(for state: LocalAudioArtifactStore.ArtifactState?) -> String? {
+        switch state {
+        case .generating:
+            return L10n.string("toc.audioPreparing")
+        case .waitingForWiFi:
+            return L10n.string("toc.waitingForWiFi")
+        case .failed:
+            return L10n.string("player.downloadFailed")
+        case .pending, .available, .none:
+            return nil
+        }
+    }
+
+    private func schedulerStatusText(for state: LocalAudioConversionScheduler.WorkState?) -> String? {
+        switch state {
+        case .generating:
+            return L10n.string("toc.audioPreparing")
+        case .waitingForWiFi:
+            return L10n.string("toc.waitingForWiFi")
+        case .failed:
+            return L10n.string("player.downloadFailed")
+        case .queued:
+            return L10n.string("toc.audioQueued")
+        case .finished, .none:
+            return nil
+        }
     }
 
     @objc

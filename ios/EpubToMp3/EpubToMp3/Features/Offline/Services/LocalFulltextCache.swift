@@ -18,9 +18,11 @@ enum LocalFulltextCache {
             appropriateFor: nil,
             create: true
         ) else { return nil }
-        // v4: reader payloads now retain EPUB source paths so relative links
+        // v5: discard legacy payloads that retained cover/image-only entries
+        // as the first text chapter after the parser tightened empty-chapter
+        // filtering.
         // and footnote destinations resolve after a cold fallback parse.
-        let dir = base.appendingPathComponent("fulltext-v4", isDirectory: true)
+        let dir = base.appendingPathComponent("fulltext-v5", isDirectory: true)
         try? FileManager.default.createDirectory(
             at: dir, withIntermediateDirectories: true
         )

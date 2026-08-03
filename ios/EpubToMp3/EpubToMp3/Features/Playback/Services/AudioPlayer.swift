@@ -376,13 +376,25 @@ final class AudioPlayer: ObservableObject {
     private var segmentChapterIndex: Int = -1
     private var segmentCumulativeBase: TimeInterval = 0
     private var segmentChapterDuration: TimeInterval = 0
-    private var segmentEstimatedDuration: TimeInterval = 0
-    private var segmentEstimatedChapterIndex: Int = -1
-    /// Maps segment queue position → sentence ID. When non-empty,
-    /// `activeSentenceId` tracks which sentence is playing by counting
-    /// AVPlayerItemDidPlayToEndTime firings.
-    private var segmentSentenceIds: [String] = []
-    private var segmentPlayedCount: Int = 0
+    /// Estimates are kept per chapter. A later buffered chapter must never
+    /// overwrite the audible chapter's duration while it is still playing.
+    private var segmentEstimatedDurations: [Int: TimeInterval] = [:]
+    /// Segment metadata is keyed by producer identity rather than arrival
+    /// order. Python callbacks may cross MainActor turns; the currently
+    /// playing AVPlayerItem remains the source of truth for active state.
+    private var segmentSentenceIDs: [SegmentBacklog.Identity: String] = [:]
+    private var segmentFiles: [SegmentBacklog.Identity: URL] = [:]
+    private var activeSegmentIdentity: SegmentBacklog.Identity?
+    /// AVQueuePlayer removes a finished item before it posts the end
+    /// notification. Keep the identities registered at insertion time so the
+    /// end handler can filter unrelated players without missing our own
+    /// buffer-drain event.
+    private var ownedPlayerItemIDs: Set<ObjectIdentifier> = []
+    /// Producers wait here when the file-backed deferred queue reaches its
+    /// bounded capacity. The continuations resume as AVQueuePlayer accepts
+    /// deferred items, so conversion pauses without deleting audio or
+    /// accumulating an unbounded number of temporary files.
+    private var segmentCapacityWaiters: [CheckedContinuation<Bool, Never>] = []
     /// Requested playable-list index from the last `play(snapshot:)`
     /// call that arrived before any MP3 URL existed. When the first
     /// playable snapshot lands via SSE, `updateSnapshot` uses this to
@@ -396,9 +408,10 @@ final class AudioPlayer: ObservableObject {
     /// the actual append order of the live queue.
     private var playbackChapters: [JobSnapshot.Chapter] = []
 
-    private static let maxQueueAhead = 5
-    /// Deferred-segments backlog with eviction + empty-streak
-    /// detection. Extracted as a value-type so the policy is
+    nonisolated private static let maxQueueAhead = 5
+    /// Deferred file-backed segments. Entries are never evicted: they are
+    /// retained until AVQueuePlayer accepts them or the session is torn down.
+    /// The value type keeps ordering + empty-streak behavior
     /// unit-testable without an AVPlayer mock — see
     /// `Services/SegmentBacklog.swift`.
     private var backlog = SegmentBacklog()
@@ -493,8 +506,11 @@ final class AudioPlayer: ObservableObject {
         // Explicitly tear down AVQueuePlayer resources before ARC releases
         // the object. Leaving failed/test items queued can keep AVFoundation
         // worker threads alive and prevent XCTest from terminating cleanly.
-        player?.pause()
-        player?.removeAllItems()
+        let queuedPlayer = player
+        Task { @MainActor [queuedPlayer] in
+            queuedPlayer?.pause()
+            queuedPlayer?.removeAllItems()
+        }
         if let endObserver { NotificationCenter.default.removeObserver(endObserver) }
         currentItemObserver?.invalidate()
         for token in audioSessionObserverTokens {
@@ -676,11 +692,11 @@ final class AudioPlayer: ObservableObject {
             isSegmentMode = false
             segmentCumulativeBase = 0
             segmentChapterDuration = 0
-            segmentEstimatedDuration = 0
-            segmentEstimatedChapterIndex = -1
+            segmentEstimatedDurations.removeAll()
             segmentChapterIndex = -1
-            segmentSentenceIds = []
-            segmentPlayedCount = 0
+            segmentSentenceIDs.removeAll()
+            segmentFiles.removeAll()
+            activeSegmentIdentity = nil
             activeSentenceId = nil
             pendingSnapshotStartIndex = 0
             pendingAutoPlay = false
@@ -761,8 +777,7 @@ final class AudioPlayer: ObservableObject {
 
     func setSegmentChapterEstimate(_ duration: TimeInterval, forChapterIndex chapterIndex: Int) {
         guard duration.isFinite, duration > 0 else { return }
-        segmentEstimatedDuration = duration
-        segmentEstimatedChapterIndex = chapterIndex
+        segmentEstimatedDurations[chapterIndex] = duration
         if isSegmentMode, segmentChapterIndex == chapterIndex {
             segmentChapterDuration = max(segmentChapterDuration, duration)
             durationSeconds = segmentChapterDuration
@@ -858,14 +873,27 @@ final class AudioPlayer: ObservableObject {
     /// authoritative chapter identity while `AVQueuePlayer` advances through
     /// streamed segments, because embedded snapshots have no download URLs.
     nonisolated static func chapterIndexForSegmentItem(_ url: URL) -> Int? {
+        segmentIdentityForSegmentItem(url)?.chapterIndex
+    }
+
+    /// Decode the stable producer identity from both legacy
+    /// `ch<N>-seg<M>.mp3` names and collision-safe session filenames such as
+    /// `stream-<uuid>-ch<N>-seg<M>-<uuid>.mp3`.
+    nonisolated static func segmentIdentityForSegmentItem(_ url: URL) -> SegmentBacklog.Identity? {
         let name = url.deletingPathExtension().lastPathComponent
-        let parts = name.split(separator: "-", maxSplits: 1)
-        guard parts.count == 2,
-              parts[0].hasPrefix("ch"),
-              parts[1].hasPrefix("seg"),
-              let chapter = Int(parts[0].dropFirst(2)),
-              Int(parts[1].dropFirst(3)) != nil else { return nil }
-        return chapter
+        let parts = name.split(separator: "-")
+        guard parts.count >= 2 else { return nil }
+        for index in parts.indices.dropLast() {
+            let chapterPart = parts[index]
+            let segmentPart = parts[parts.index(after: index)]
+            guard chapterPart.hasPrefix("ch"), segmentPart.hasPrefix("seg"),
+                  let chapter = Int(chapterPart.dropFirst(2)),
+                  let segment = Int(segmentPart.dropFirst(3)) else {
+                continue
+            }
+            return SegmentBacklog.Identity(chapterIndex: chapter, segmentIndex: segment)
+        }
+        return nil
     }
 
     /// Build the AVQueuePlayer for `snapshot` starting at `chapterIndex`, but
@@ -930,8 +958,8 @@ final class AudioPlayer: ObservableObject {
         isSegmentMode = false
         segmentCumulativeBase = 0
         segmentChapterDuration = 0
-        segmentSentenceIds = []
-        segmentPlayedCount = 0
+        segmentChapterIndex = -1
+        activeSegmentIdentity = nil
         activeSentenceId = nil
         playbackChapters = []
         self.snapshot = snapshot
@@ -968,6 +996,7 @@ final class AudioPlayer: ObservableObject {
         let queue = AVQueuePlayer(items: items)
         queue.actionAtItemEnd = .advance
         self.player = queue
+        ownedPlayerItemIDs = Set(items.map { ObjectIdentifier($0) })
         self.currentChapterIndex = safeIndex
 
         attachObservers()
@@ -1071,6 +1100,7 @@ final class AudioPlayer: ObservableObject {
             let item = AVPlayerItem(url: absolute)
             if queue.canInsert(item, after: nil) {
                 queue.insert(item, after: nil)
+                ownedPlayerItemIDs.insert(ObjectIdentifier(item))
                 playbackChapters.append(chapter)
             }
         }
@@ -1090,7 +1120,10 @@ final class AudioPlayer: ObservableObject {
             forSegmentIndex: currentChapterIndex,
             chapterProgress: snapshot.chapterProgress ?? []
         )?.index
-        let activePosition = max(0, positionSeconds - segmentCumulativeBase)
+        // `positionSeconds` is chapter-relative in segment mode. The periodic
+        // observer has already added `segmentCumulativeBase`, so subtracting
+        // it here rewound the full-file handoff to an earlier segment.
+        let activePosition = max(0, positionSeconds)
         let wasPlaying = isPlaying
         let target = activeChapterID.flatMap { chapterID in
             snapshot.playableChapters.firstIndex { $0.index == chapterID }
@@ -1169,8 +1202,10 @@ final class AudioPlayer: ObservableObject {
         let anchor = items[queueOffset - 1]
         let fresh = AVPlayerItem(url: absolute)
         queue.remove(stale)
+        ownedPlayerItemIDs.remove(ObjectIdentifier(stale))
         if queue.canInsert(fresh, after: anchor) {
             queue.insert(fresh, after: anchor)
+            ownedPlayerItemIDs.insert(ObjectIdentifier(fresh))
         }
     }
 
@@ -1589,11 +1624,10 @@ final class AudioPlayer: ObservableObject {
             while safety > 0 {
                 player.advanceToNextItem()
                 safety -= 1
-                if let nextChapter = chapterIndexFromCurrentItem(of: player),
-                   nextChapter != startChapter {
-                    currentChapterIndex = nextChapter
-                    segmentCumulativeBase = 0
-                    segmentChapterDuration = 0
+                if let asset = player.currentItem?.asset as? AVURLAsset,
+                   let identity = Self.segmentIdentityForSegmentItem(asset.url),
+                   identity.chapterIndex != startChapter {
+                    _ = activateSegmentIdentity(identity)
                     positionSeconds = 0
                     publishCurrentChapter(auto: false)
                     updateNowPlayingInfo()
@@ -1658,24 +1692,34 @@ final class AudioPlayer: ObservableObject {
         }
     }
 
-    /// Parse the chapter index out of an AVQueuePlayer's current item
-    /// URL. `enqueueSegment` writes segments as `ch<N>-seg<M>.mp3` and
-    /// The native reader's chapter synthesis writes whole-chapter cache
-    /// files as `chapter_<N>.mp3` (used when a segment-callback path
-    /// promotes the entire chapter into the queue). Returns nil for
-    /// URLs that don't match either layout.
-    private func chapterIndexFromCurrentItem(of player: AVQueuePlayer) -> Int? {
-        guard let asset = player.currentItem?.asset as? AVURLAsset else { return nil }
-        let name = asset.url.deletingPathExtension().lastPathComponent
-        if name.hasPrefix("ch"), let dash = name.firstIndex(of: "-") {
-            let digits = name[name.index(after: name.startIndex)..<dash]
-            return Int(digits)
+    /// Adopt the AVQueuePlayer item that is actually audible. Buffered
+    /// producer activity must never call this method: only queue creation,
+    /// KVO, or an explicit queue advance are allowed to change the visible
+    /// chapter cursor and sentence state.
+    @discardableResult
+    private func activateSegmentIdentity(_ identity: SegmentBacklog.Identity) -> Bool {
+        let chapterChanged = segmentChapterIndex != identity.chapterIndex
+        if chapterChanged {
+            segmentChapterIndex = identity.chapterIndex
+            segmentCumulativeBase = 0
+            segmentChapterDuration = 0
+            durationSeconds = max(0, segmentEstimatedDurations[identity.chapterIndex] ?? 0)
+            activeSentenceId = nil
         }
-        if name.hasPrefix("chapter_") {
-            let digits = name.dropFirst("chapter_".count)
-            return Int(digits)
+        activeSegmentIdentity = identity
+        currentChapterIndex = identity.chapterIndex
+        activeSentenceId = segmentSentenceIDs[identity]
+        return chapterChanged
+    }
+
+    @discardableResult
+    private func activateCurrentSegmentItem() -> Bool {
+        guard let player,
+              let asset = player.currentItem?.asset as? AVURLAsset,
+              let identity = Self.segmentIdentityForSegmentItem(asset.url) else {
+            return false
         }
-        return nil
+        return activateSegmentIdentity(identity)
     }
 
     /// Host-supplied callback that rebuilds the segment queue starting
@@ -1754,12 +1798,13 @@ final class AudioPlayer: ObservableObject {
     ///   - segmentIndex: Zero-based segment index within the chapter.
     ///
     /// Behaviour:
-    /// 1. Writes `data` to a numbered temp file so `AVPlayerItem` can
+    /// 1. Writes `data` to a collision-safe temp file so `AVPlayerItem` can
     ///    reference a stable URL (AVFoundation requires file-backed URLs
     ///    for local MP3; it does not accept in-memory `Data`).
     /// 2. Creates an `AVPlayerItem` and inserts it at the end of the queue.
-    /// 3. If this is the first segment ever, starts playback automatically
-    ///    and sets `firstSegmentReady = true`.
+    /// 3. If this is the first segment ever, creates a paused queue and sets
+    ///    `firstSegmentReady = true`. It starts only after explicit user
+    ///    playback intent has been recorded.
     ///
     /// Thread-safety: must be called on the main actor (same as all other
     /// AudioPlayer methods).
@@ -1790,6 +1835,17 @@ final class AudioPlayer: ObservableObject {
         }
         backlog.resetEmptyStreak()
 
+        let identity = SegmentBacklog.Identity(
+            chapterIndex: chapterIndex,
+            segmentIndex: segmentIndex
+        )
+        // Retried callbacks must not overwrite a URL that AVFoundation may
+        // already be reading, nor enqueue a spoken passage twice.
+        guard segmentFiles[identity] == nil else {
+            audioLog.notice("[enqueueSegment] duplicate ignored ch=\(chapterIndex) seg=\(segmentIndex)")
+            return
+        }
+
         // Ensure a temp directory exists for this session. Bail
         // explicitly when createDirectory fails — without this, every
         // subsequent `data.write` would fail and we'd publish
@@ -1810,8 +1866,12 @@ final class AudioPlayer: ObservableObject {
         }
         guard let tmpDir = segmentTempDir else { return }
 
+        // Segment indexes reset for every chapter and a conversion can be
+        // restarted before an old AVURLAsset has released its file handle.
+        // The session directory plus a per-write UUID prevents an incoming
+        // retry or another stream from replacing an item already queued.
         let segFile = tmpDir.appendingPathComponent(
-            "ch\(chapterIndex)-seg\(segmentIndex).mp3"
+            "stream-\(UUID().uuidString)-ch\(chapterIndex)-seg\(segmentIndex)-\(UUID().uuidString).mp3"
         )
         do {
             try data.write(to: segFile)
@@ -1826,26 +1886,9 @@ final class AudioPlayer: ObservableObject {
         }
 
         isSegmentMode = true
-        // Do not reset the current chapter's clock when conversion buffers a
-        // later chapter ahead of playback. The queue may contain segments
-        // from several chapters, but segmentCumulativeBase belongs to the
-        // audible chapter only.
-        if player == nil || chapterIndex != segmentChapterIndex {
-            segmentCumulativeBase = 0
-            segmentChapterDuration = 0
-            if segmentEstimatedChapterIndex != chapterIndex {
-                segmentEstimatedDuration = 0
-            }
-            segmentChapterIndex = chapterIndex
-            segmentSentenceIds = []
-            segmentPlayedCount = 0
-            // Buffer-ahead synthesis can enqueue later chapters long before
-            // they are audible. The playback cursor is updated exclusively
-            // from AVQueuePlayer.currentItem in the observer below.
-        }
+        segmentFiles[identity] = segFile
         if let sentenceId {
-            segmentSentenceIds.append(sentenceId)
-            if segmentSentenceIds.count == 1 { activeSentenceId = sentenceId }
+            segmentSentenceIDs[identity] = sentenceId
         }
 
         if player == nil {
@@ -1853,7 +1896,8 @@ final class AudioPlayer: ObservableObject {
             let queue = AVQueuePlayer(items: [item])
             queue.actionAtItemEnd = .advance
             self.player = queue
-            self.currentChapterIndex = chapterIndex
+            ownedPlayerItemIDs = [ObjectIdentifier(item)]
+            _ = activateSegmentIdentity(identity)
             if let resume = pendingSegmentResumePosition, resume > 0 {
                 queue.seek(to: CMTime(seconds: resume, preferredTimescale: 600))
                 positionSeconds = resume
@@ -1882,33 +1926,28 @@ final class AudioPlayer: ObservableObject {
             publishCurrentChapter()
             updateNowPlayingInfo()
         } else if let queue = player {
-            let queueCount = queue.items().count
-            if Self.shouldDrainSegmentBacklog(queueCount: queueCount, maxQueueAhead: Self.maxQueueAhead) {
-                let item = AVPlayerItem(url: segFile)
-                if queue.canInsert(item, after: nil) {
-                    queue.insert(item, after: nil)
-                    audioLog.debug("[enqueueSegment] appended to queue, total=\(queue.items().count)")
-                } else {
-                    // A queue can transiently reject insertion while its
-                    // current item is advancing. Keep the segment pending
-                    // instead of silently dropping spoken audio.
-                    if let evicted = backlog.append(
-                        url: segFile, chapterIndex: chapterIndex, segmentIndex: segmentIndex
-                    ) {
-                        try? FileManager.default.removeItem(at: evicted)
-                    }
-                    audioLog.warning("[enqueueSegment] queue rejected insert; deferred segment \(segmentIndex)")
-                }
-            } else {
-                // Append + receive the evicted URL (if any). Eviction
-                // policy + cap is owned by SegmentBacklog so it's
-                // unit-testable in isolation.
-                if let evicted = backlog.append(url: segFile, chapterIndex: chapterIndex, segmentIndex: segmentIndex) {
-                    try? FileManager.default.removeItem(at: evicted)
-                    audioLog.warning("[enqueueSegment] backlog cap hit (\(SegmentBacklog.capacity)); evicted oldest entry")
-                }
-                audioLog.debug("[enqueueSegment] deferred ch=\(chapterIndex) seg=\(segmentIndex), pending=\(self.backlog.count)")
+            let accepted = backlog.append(
+                url: segFile,
+                chapterIndex: chapterIndex,
+                segmentIndex: segmentIndex,
+                sentenceId: sentenceId
+            )
+            guard accepted else {
+                segmentFiles.removeValue(forKey: identity)
+                segmentSentenceIDs.removeValue(forKey: identity)
+                try? FileManager.default.removeItem(at: segFile)
+                audioLog.notice("[enqueueSegment] duplicate backlog entry ignored ch=\(chapterIndex) seg=\(segmentIndex)")
+                return
             }
+            if backlog.count == SegmentBacklog.advisoryHighWaterMark {
+                audioLog.notice("[enqueueSegment] deferred audio reached \(SegmentBacklog.advisoryHighWaterMark) segments; preserving file-backed backlog until playback drains it")
+                conversionStatus.record(
+                    .info,
+                    "Playback is buffering ahead; audio remains queued until it can play."
+                )
+            }
+            drainPendingSegments()
+            audioLog.debug("[enqueueSegment] deferred ch=\(chapterIndex) seg=\(segmentIndex), pending=\(self.backlog.count), queue=\(queue.items().count)")
         }
 
         if !firstSegmentReady {
@@ -1922,17 +1961,49 @@ final class AudioPlayer: ObservableObject {
 
     private func drainPendingSegments() {
         guard let queue = player, !backlog.isEmpty else { return }
-        while queue.items().count < Self.maxQueueAhead, let next = backlog.peekNext() {
+        while Self.shouldDrainSegmentBacklog(
+            queueCount: queue.items().count,
+            maxQueueAhead: Self.maxQueueAhead
+        ), let next = backlog.peekNext() {
             let item = AVPlayerItem(url: next.url)
             if queue.canInsert(item, after: nil) {
                 _ = backlog.drainNext()
                 queue.insert(item, after: nil)
+                ownedPlayerItemIDs.insert(ObjectIdentifier(item))
                 audioLog.debug("[drainPending] enqueued ch=\(next.chapterIndex) seg=\(next.segmentIndex), queue=\(queue.items().count) pending=\(self.backlog.count)")
             } else {
                 // Leave the entry at the front for the next item-end/KVO
                 // opportunity. Never consume a segment before insertion.
                 break
             }
+        }
+        resumeSegmentCapacityWaitersIfPossible()
+    }
+
+    /// Wait until another segment can be accepted without allowing the
+    /// deferred file queue to grow without bound. The embedded conversion
+    /// bridge calls this before it writes a new temporary MP3.
+    func waitForSegmentCapacity() async -> Bool {
+        guard backlog.count >= SegmentBacklog.maximumDeferredSegmentCount else {
+            return true
+        }
+        return await withCheckedContinuation { continuation in
+            segmentCapacityWaiters.append(continuation)
+        }
+    }
+
+    private func resumeSegmentCapacityWaitersIfPossible() {
+        while backlog.count < SegmentBacklog.maximumDeferredSegmentCount,
+              !segmentCapacityWaiters.isEmpty {
+            segmentCapacityWaiters.removeFirst().resume(returning: true)
+        }
+    }
+
+    private func cancelSegmentCapacityWaiters() {
+        let waiters = segmentCapacityWaiters
+        segmentCapacityWaiters.removeAll()
+        for waiter in waiters {
+            waiter.resume(returning: false)
         }
     }
 
@@ -2067,7 +2138,6 @@ final class AudioPlayer: ObservableObject {
             }
             queue.seek(to: .zero)
             segmentCumulativeBase = 0
-            segmentPlayedCount = 0
             positionSeconds = 0
             queue.rate = isPlaying ? rate.rawValue : 0
         } else {
@@ -2112,8 +2182,7 @@ final class AudioPlayer: ObservableObject {
                         self.segmentChapterDuration = max(
                             self.segmentChapterDuration,
                             observed,
-                            self.segmentEstimatedChapterIndex == self.segmentChapterIndex
-                                ? self.segmentEstimatedDuration : 0,
+                            self.segmentEstimatedDurations[self.segmentChapterIndex] ?? 0,
                             snapshotDuration.isFinite ? snapshotDuration : 0
                         )
                         self.durationSeconds = self.segmentChapterDuration
@@ -2145,65 +2214,9 @@ final class AudioPlayer: ObservableObject {
             object: nil,
             queue: .main
         ) { [weak self] notification in
-            let finishedID = (notification.object as AnyObject?).map(ObjectIdentifier.init)
-            let finishedDuration = (notification.object as? AVPlayerItem)?.duration.seconds
+            guard let finishedItem = notification.object as? AVPlayerItem else { return }
             MainActor.assumeIsolated {
-                guard let self else { return }
-                // `object: nil` above subscribes us to *every* AVPlayerItem
-                // ending in the process — share extensions / preview
-                // players / other AVPlayers in the same app would
-                // trigger this handler with their own items. Filter to
-                // items currently owned by OUR queue so we never advance
-                // chapters on an unrelated item-end.
-                guard let finishedID else { return }
-                // items() is empty after the last item ends — the finished item
-                // is already dequeued. Accept that case too so the last chapter's
-                // end is handled and isPlaying is set to false correctly.
-                let ownedByUs = self.player?.items().contains {
-                    ObjectIdentifier($0) == finishedID
-                } == true
-                    || (self.player != nil && self.player?.items().isEmpty == true)
-                guard ownedByUs else { return }
-
-                if self.isSegmentMode {
-                    let dur = finishedDuration ?? 0
-                    if dur.isFinite { self.segmentCumulativeBase += dur }
-                    self.segmentPlayedCount += 1
-                    if self.segmentPlayedCount < self.segmentSentenceIds.count {
-                        self.activeSentenceId = self.segmentSentenceIds[self.segmentPlayedCount]
-                    } else {
-                        self.activeSentenceId = nil
-                    }
-                }
-
-                self.drainPendingSegments()
-                guard let snapshot = self.snapshot else { return }
-                let totalChapters = self.isSegmentMode
-                    ? (snapshot.chapterProgress?.count ?? 0)
-                    : (self.playbackChapters.isEmpty ? snapshot.playableChapters.count : self.playbackChapters.count)
-                if !self.isSegmentMode, self.currentChapterIndex + 1 < totalChapters {
-                    // Snapshot the index BEFORE reconciling. reconcile() returns
-                    // false in two distinct cases: (a) URL not found, and (b)
-                    // index already correct — case (b) is exactly when the KVO
-                    // observer already advanced us on a fast device. Comparing
-                    // before/after lets us distinguish the two: if the index
-                    // changed during reconcile, KVO did the work; if it's the
-                    // same AND reconcile returned false, we must +1 ourselves.
-                    let indexBefore = self.currentChapterIndex
-                    let _ = self.reconcileChapterIndexFromCurrentItem()
-                    if self.currentChapterIndex == indexBefore {
-                        self.currentChapterIndex += 1
-                        self.positionSeconds = 0
-                    }
-                    // `auto: true` — this is the natural end-of-item
-                    // auto-advance, so VoiceOver should announce the
-                    // new chapter title.
-                    self.publishCurrentChapter(auto: true)
-                    self.updateNowPlayingInfo()
-                } else if !self.isSegmentMode {
-                    self.isPlaying = false
-                    self.updateNowPlayingInfo()
-                }
+                self?.handleFinishedItem(finishedItem)
             }
         }
         // KVO on `currentItem` catches auto-advance transitions that happen
@@ -2240,7 +2253,59 @@ final class AudioPlayer: ObservableObject {
         }
     }
 
+    /// Handles a natural AVPlayerItem completion. This is intentionally
+    /// separate from NotificationCenter wiring so queue ownership and
+    /// backpressure are testable without relying on AVFoundation timing.
+    private func handleFinishedItem(_ finishedItem: AVPlayerItem) {
+        let finishedID = ObjectIdentifier(finishedItem)
+        let finishedDuration = finishedItem.duration.seconds
+        let finishedIdentity: SegmentBacklog.Identity?
+        if let asset = finishedItem.asset as? AVURLAsset {
+            finishedIdentity = Self.segmentIdentityForSegmentItem(asset.url)
+        } else {
+            finishedIdentity = nil
+        }
+
+        // `object: nil` subscribes to every AVPlayerItem in the process. A
+        // queue normally dequeues its finished current item before posting
+        // the notification, so `items()` cannot establish ownership here.
+        guard ownedPlayerItemIDs.remove(finishedID) != nil else { return }
+
+        if isSegmentMode,
+           finishedIdentity?.chapterIndex == segmentChapterIndex,
+           finishedDuration.isFinite {
+            // Notifications may arrive after KVO already promoted a later
+            // chapter. Only the audible chapter's completed item can advance
+            // its cumulative clock.
+            segmentCumulativeBase += finishedDuration
+        }
+
+        drainPendingSegments()
+        _ = activateCurrentSegmentItem()
+        guard let snapshot else { return }
+        let totalChapters = isSegmentMode
+            ? (snapshot.chapterProgress?.count ?? 0)
+            : (playbackChapters.isEmpty ? snapshot.playableChapters.count : playbackChapters.count)
+        if !isSegmentMode, currentChapterIndex + 1 < totalChapters {
+            // Snapshot the index BEFORE reconciling. `reconcile...` returns
+            // false both when the URL is not found and when the index is
+            // already correct after KVO promoted the next item.
+            let indexBefore = currentChapterIndex
+            _ = reconcileChapterIndexFromCurrentItem()
+            if currentChapterIndex == indexBefore {
+                currentChapterIndex += 1
+                positionSeconds = 0
+            }
+            publishCurrentChapter(auto: true)
+            updateNowPlayingInfo()
+        } else if !isSegmentMode {
+            isPlaying = false
+            updateNowPlayingInfo()
+        }
+    }
+
     private func teardownPlayer() {
+        cancelSegmentCapacityWaiters()
         if let token = timeObserverToken { player?.removeTimeObserver(token) }
         timeObserverToken = nil
         if let endObserver { NotificationCenter.default.removeObserver(endObserver) }
@@ -2250,6 +2315,19 @@ final class AudioPlayer: ObservableObject {
         itemObservationCancellables.removeAll()
         player?.pause()
         player = nil
+        ownedPlayerItemIDs.removeAll()
+        // A segment is retained until it has been inserted into the queue or
+        // this session ends. Teardown is the one intentional discard point:
+        // no AVURLAsset from this player can still consume these files.
+        _ = backlog.clear()
+        segmentFiles.removeAll()
+        segmentSentenceIDs.removeAll()
+        segmentEstimatedDurations.removeAll()
+        activeSegmentIdentity = nil
+        segmentChapterIndex = -1
+        segmentCumulativeBase = 0
+        segmentChapterDuration = 0
+        activeSentenceId = nil
         // Remove segment temp files from the previous session. Best-effort:
         // if the OS already cleaned /tmp, the removeItem call is a no-op.
         if let tmpDir = segmentTempDir {
@@ -2399,11 +2477,12 @@ final class AudioPlayer: ObservableObject {
             let urlAsset = item.asset as? AVURLAsset
         else { return false }
         if isSegmentMode {
-            guard let idx = Self.chapterIndexForSegmentItem(urlAsset.url),
-                  idx != currentChapterIndex else { return false }
-            currentChapterIndex = idx
-            positionSeconds = 0
-            return true
+            guard let identity = Self.segmentIdentityForSegmentItem(urlAsset.url) else {
+                return false
+            }
+            let didChange = activateSegmentIdentity(identity)
+            if didChange { positionSeconds = 0 }
+            return didChange
         }
         guard let snapshot else { return false }
         let chapters = playbackChapters.isEmpty ? snapshot.playableChapters : playbackChapters
@@ -2622,6 +2701,23 @@ final class AudioPlayer: ObservableObject {
     /// Canonical chapter title for every playback surface: mini player,
     /// expanded player, Now Playing, lock screen and widget.
     var effectiveChapterTitle: String {
+        // Before an audio queue exists, the compact player represents the
+        // page the reader is showing, not the queue's default index zero.
+        // This matters for books whose first readable EPUB entry is not the
+        // first chapter the reader restores (for example, a table of contents
+        // after an epigraph).
+        if snapshot == nil,
+           playbackChapters.isEmpty,
+           let readerIndex = UserDefaults.standard.object(
+               forKey: Self.readerCurrentChapterIndexDefaultsKey
+           ) as? Int,
+           let readerTitle = readerChapterTitles[readerIndex] {
+            return Self.preferredChapterTitle(
+                primary: readerTitle,
+                secondary: nil,
+                fallback: L10n.string("player.chapter", readerIndex + 1)
+            )
+        }
         if isSegmentMode {
             let streamedTitle = Self.segmentChapterTitle(
                 chapterIndex: currentChapterIndex,
@@ -2855,8 +2951,7 @@ final class AudioPlayer: ObservableObject {
         segmentCumulativeBase = 0
         segmentChapterDuration = 0
         segmentChapterIndex = -1
-        segmentSentenceIds = []
-        segmentPlayedCount = 0
+        activeSegmentIdentity = nil
         activeSentenceId = nil
         pendingAutoPlay = true
         pendingSegmentResumePosition = resumePosition
@@ -2909,6 +3004,55 @@ final class AudioPlayer: ObservableObject {
     }
     func testHook_sentenceTimingMap(forChapterIndex idx: Int) -> [String: Int]? {
         sentenceTimingByChapter[idx]
+    }
+    func testHook_activeSegmentIdentity() -> SegmentBacklog.Identity? {
+        activeSegmentIdentity
+    }
+    func testHook_deferredSegmentCount() -> Int { backlog.count }
+    func testHook_retainedSegmentCount() -> Int { segmentFiles.count }
+    func testHook_segmentURL(chapterIndex: Int, segmentIndex: Int) -> URL? {
+        segmentFiles[.init(chapterIndex: chapterIndex, segmentIndex: segmentIndex)]
+    }
+    func testHook_activateSegment(chapterIndex: Int, segmentIndex: Int) {
+        _ = activateSegmentIdentity(
+            .init(chapterIndex: chapterIndex, segmentIndex: segmentIndex)
+        )
+    }
+    func testHook_segmentChapterIndex() -> Int { segmentChapterIndex }
+    func testHook_activeSegmentSentenceCount() -> Int {
+        segmentFiles.keys.filter { $0.chapterIndex == segmentChapterIndex }.count
+    }
+    func testHook_activateSegmentChapter(_ chapterIndex: Int) {
+        guard let identity = segmentFiles.keys
+            .filter({ $0.chapterIndex == chapterIndex })
+            .min() else { return }
+        _ = activateSegmentIdentity(identity)
+    }
+    func testHook_bufferedSegmentChapterCount() -> Int {
+        segmentFiles.keys.filter { $0.chapterIndex == segmentChapterIndex }.count
+    }
+    func testHook_completeSegmentTiming(chapterIndex: Int) {
+        guard chapterIndex == segmentChapterIndex else { return }
+        segmentCumulativeBase = max(segmentCumulativeBase, positionSeconds)
+    }
+    func testHook_registerOwnedSegmentItem(_ item: AVPlayerItem) {
+        ownedPlayerItemIDs.insert(ObjectIdentifier(item))
+    }
+    func testHook_isOwnedSegmentItem(_ item: AVPlayerItem) -> Bool {
+        ownedPlayerItemIDs.contains(ObjectIdentifier(item))
+    }
+    func testHook_removeOwnedSegmentItem(_ item: AVPlayerItem) {
+        ownedPlayerItemIDs.remove(ObjectIdentifier(item))
+    }
+    func testHook_backlogCount() -> Int { backlog.count }
+    func testHook_segmentCapacityWaiterCount() -> Int { segmentCapacityWaiters.count }
+    nonisolated static func testHook_maxQueueAhead() -> Int { maxQueueAhead }
+    func testHook_teardownPlayer() { teardownPlayer() }
+    func testHook_finishCurrentSegment() -> Bool {
+        guard let queue = player, let item = queue.currentItem else { return false }
+        queue.advanceToNextItem()
+        handleFinishedItem(item)
+        return true
     }
     /// Simulate the post-`enqueueSegment` state in the embedded-runtime
     /// path: a live AVQueuePlayer carrying a synthesised MP3 with no

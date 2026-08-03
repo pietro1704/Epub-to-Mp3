@@ -498,6 +498,22 @@ final class EpubHtmlRendererTests: XCTestCase {
         XCTAssertNil(EpubHtmlRenderer.render(html: "   \n  ", css: nil, settings: s))
     }
 
+    func testMarkupWithoutReadableTextReturnsNilSoCallerFallsBackToPlain() {
+        let s = makeSettings()
+        XCTAssertNil(EpubHtmlRenderer.render(
+            html: "<html><head><style>body { color: red; }</style></head><body><br/></body></html>",
+            css: nil,
+            settings: s
+        ))
+    }
+
+    func testPlainTextFallbackExtractsReadableHTMLContent() {
+        XCTAssertEqual(
+            EpubHtmlRenderer.plainText(from: "<h1>Chapter</h1><p>Hello&nbsp;world &amp; friends.</p>"),
+            "Chapter Hello world & friends."
+        )
+    }
+
     /// Canary, not a regression guard: documents that the rendered
     /// AttributedString's plain-text projection is NOT guaranteed to be
     /// character-identical to `chapter.text`. `chapter.text` goes through

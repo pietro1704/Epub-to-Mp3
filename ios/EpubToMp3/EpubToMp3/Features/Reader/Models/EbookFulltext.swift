@@ -75,6 +75,11 @@ struct EbookFulltext: Codable, Equatable, Sendable {
         /// resolve a relative `<a href>` to the chapter that owns it.
         let sourcePath: String?
         let text: String
+        /// Canonical parser-prepared payload for TTS. This is deliberately
+        /// separate from reader-facing `text`, because it includes structural
+        /// speech cues and may retain formatting markers until the conversion
+        /// pipeline resolves them. Absent from older backend payloads.
+        let speechText: String?
         let html: String?
         let css: String?
         let charCount: Int?
@@ -89,11 +94,21 @@ struct EbookFulltext: Codable, Equatable, Sendable {
 
         var isImageOnly: Bool { contentKind == "images" }
 
+        /// A cached chapter is usable only when it contains something the
+        /// native reader can render (or an image page). This rejects stale
+        /// parser caches that contain titles but no body payload.
+        var hasReadableContent: Bool {
+            if isImageOnly { return true }
+            return !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                || !(html?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
+        }
+
         init(
             index: Int,
             name: String?,
             sourcePath: String? = nil,
             text: String,
+            speechText: String? = nil,
             html: String?,
             css: String?,
             charCount: Int?,
@@ -106,6 +121,7 @@ struct EbookFulltext: Codable, Equatable, Sendable {
             self.name = name
             self.sourcePath = sourcePath
             self.text = text
+            self.speechText = speechText
             self.html = html
             self.css = css
             self.charCount = charCount

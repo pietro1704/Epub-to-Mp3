@@ -23,9 +23,23 @@ final class ReaderImmersiveModeTests: XCTestCase {
     func testRootExpandsReaderWhenImmersiveChromeIsHidden() throws {
         let source = try source("App/IOSRootContainer.swift")
 
-        XCTAssertTrue(source.contains("readerBottomToMiniPlayer.isActive = !isHidden"))
-        XCTAssertTrue(source.contains("readerBottomToRoot.isActive = isHidden"))
-        XCTAssertTrue(source.contains("miniPlayerController.view.isHidden = !showMini || isImmersiveReaderMode"))
+        XCTAssertTrue(source.contains("let hidesBottomChrome = isReaderLoading || isImmersiveReaderMode"))
+        XCTAssertTrue(source.contains("readerBottomToMiniPlayer.isActive = !hidesBottomChrome"))
+        XCTAssertTrue(source.contains("readerBottomToRoot.isActive = hidesBottomChrome"))
+        XCTAssertTrue(source.contains("let miniShouldBeVisible = showMini && !isReaderLoading && !isImmersiveReaderMode"))
+    }
+
+    func testImmersiveReaderHidesSystemChromeAndUsesScreenEdges() throws {
+        let rootSource = try source("App/IOSRootContainer.swift")
+        let hostSource = try source("Features/Reader/Views/MainReaderScreenController.swift")
+        let readerSource = try source("Features/Reader/Views/BookOpenScreenController.swift")
+
+        XCTAssertTrue(rootSource.contains("override var prefersStatusBarHidden"))
+        XCTAssertTrue(rootSource.contains("setNeedsStatusBarAppearanceUpdate()"))
+        XCTAssertTrue(hostSource.contains("private var readerTopToRoot: NSLayoutConstraint!"))
+        XCTAssertTrue(hostSource.contains("readerTopToRoot.isActive = !shouldShow"))
+        XCTAssertTrue(readerSource.contains("func prepareForViewportTransition()"))
+        XCTAssertTrue(readerSource.contains("restorePendingViewportAnchorIfNeeded()"))
     }
 
     func testOpeningBookBindsItToTheMiniPlayerWithoutStartingPlayback() throws {

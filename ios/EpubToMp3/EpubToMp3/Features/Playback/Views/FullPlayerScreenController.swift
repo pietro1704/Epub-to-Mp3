@@ -51,6 +51,7 @@ final class FullPlayerScreenController: UIViewController {
     // slider like MPVolumeView required.
     private let airPlayView = AVRoutePickerView(frame: .zero)
     private let volumeView = MPVolumeView(frame: .zero)
+    private let contentScrollView = UIScrollView()
     private let stackView = UIStackView()
 
     init(
@@ -143,7 +144,7 @@ final class FullPlayerScreenController: UIViewController {
         coverContainer.backgroundColor = UIColor.tintColor.withAlphaComponent(0.15)
 
         coverImageView.translatesAutoresizingMaskIntoConstraints = false
-        coverImageView.contentMode = .scaleAspectFill
+        coverImageView.contentMode = .scaleAspectFit
         coverImageView.image = UIImage(systemName: "headphones")
         coverImageView.tintColor = .tintColor
         coverContainer.addSubview(coverImageView)
@@ -266,7 +267,7 @@ final class FullPlayerScreenController: UIViewController {
         coverRow.addSubview(coverContainer)
 
         stackView.axis = .vertical
-        stackView.spacing = 20
+        stackView.spacing = 12
         stackView.translatesAutoresizingMaskIntoConstraints = false
         stackView.addArrangedSubview(coverRow)
         stackView.addArrangedSubview(titleLabel)
@@ -277,11 +278,20 @@ final class FullPlayerScreenController: UIViewController {
         stackView.addArrangedSubview(transport)
         stackView.addArrangedSubview(volumeView)
         stackView.addArrangedSubview(secondary)
-        view.addSubview(stackView)
+        contentScrollView.translatesAutoresizingMaskIntoConstraints = false
+        contentScrollView.alwaysBounceVertical = false
+        contentScrollView.showsVerticalScrollIndicator = false
+        contentScrollView.contentInsetAdjustmentBehavior = .never
+        view.addSubview(contentScrollView)
+        contentScrollView.addSubview(stackView)
         view.bringSubviewToFront(dragHandle)
         view.bringSubviewToFront(closeButton)
-        view.bringSubviewToFront(stackView)
 
+        let preferredCoverWidth = coverContainer.widthAnchor.constraint(
+            equalTo: coverRow.widthAnchor,
+            multiplier: 0.7
+        )
+        preferredCoverWidth.priority = .defaultHigh
         NSLayoutConstraint.activate([
             dragHandle.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 8),
             dragHandle.centerXAnchor.constraint(equalTo: view.centerXAnchor),
@@ -293,13 +303,23 @@ final class FullPlayerScreenController: UIViewController {
             closeButton.widthAnchor.constraint(equalToConstant: 44),
             closeButton.heightAnchor.constraint(equalToConstant: 44),
 
-            stackView.leadingAnchor.constraint(equalTo: view.layoutMarginsGuide.leadingAnchor, constant: 12),
-            stackView.trailingAnchor.constraint(equalTo: view.layoutMarginsGuide.trailingAnchor, constant: -12),
-            stackView.topAnchor.constraint(equalTo: closeButton.bottomAnchor, constant: 8),
-            stackView.bottomAnchor.constraint(lessThanOrEqualTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -16),
+            contentScrollView.leadingAnchor.constraint(equalTo: view.layoutMarginsGuide.leadingAnchor, constant: 12),
+            contentScrollView.trailingAnchor.constraint(equalTo: view.layoutMarginsGuide.trailingAnchor, constant: -12),
+            contentScrollView.topAnchor.constraint(equalTo: closeButton.bottomAnchor, constant: 8),
+            contentScrollView.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -16),
 
-            coverContainer.widthAnchor.constraint(equalTo: coverRow.widthAnchor, multiplier: 0.7),
+            stackView.leadingAnchor.constraint(equalTo: contentScrollView.contentLayoutGuide.leadingAnchor),
+            stackView.trailingAnchor.constraint(equalTo: contentScrollView.contentLayoutGuide.trailingAnchor),
+            stackView.topAnchor.constraint(equalTo: contentScrollView.contentLayoutGuide.topAnchor),
+            stackView.bottomAnchor.constraint(equalTo: contentScrollView.contentLayoutGuide.bottomAnchor),
+            stackView.widthAnchor.constraint(equalTo: contentScrollView.frameLayoutGuide.widthAnchor),
+
+            preferredCoverWidth,
             coverContainer.heightAnchor.constraint(equalTo: coverContainer.widthAnchor, multiplier: 1.5),
+            coverContainer.heightAnchor.constraint(
+                lessThanOrEqualTo: contentScrollView.frameLayoutGuide.heightAnchor,
+                multiplier: 0.34
+            ),
             coverContainer.topAnchor.constraint(equalTo: coverRow.topAnchor),
             coverContainer.bottomAnchor.constraint(equalTo: coverRow.bottomAnchor),
             coverContainer.centerXAnchor.constraint(equalTo: coverRow.centerXAnchor),
@@ -399,7 +419,7 @@ final class FullPlayerScreenController: UIViewController {
 
         if let data = currentBook?.coverPNG, let image = UIImage(data: data) {
             coverImageView.image = image
-            coverImageView.contentMode = .scaleAspectFill
+            coverImageView.contentMode = .scaleAspectFit
         } else {
             coverImageView.image = UIImage(systemName: "headphones")
             coverImageView.contentMode = .scaleAspectFit
@@ -635,17 +655,54 @@ final class FullPlayerScreenController: UIViewController {
                 },
                 onDownload: { [weak self] chapterIndex in
                     guard let self else { return }
-                    Task { await DownloadManager.shared.enqueueSelected(snapshot: snapshot, epubZeroBasedIndices: [chapterIndex], baseURL: self.settings.resolvedBaseURL) }
+                    self.requestAudioDownload(snapshot: snapshot, chapterIndex: chapterIndex)
                 },
                 onRemoveDownload: { chapterIndex in
-                    DownloadManager.deleteChapter(jobId: snapshot.jobId, chapterIndex: chapterIndex)
+                    if let embeddedBookID = EmbeddedConversionCoordinator.embeddedBookID(from: snapshot.jobId) {
+                        Task { try? await LocalAudioArtifactStore.shared.removeDownloadedAudio(
+                            bookID: embeddedBookID,
+                            chapterIndex: chapterIndex
+                        ) }
+                    } else {
+                        DownloadManager.deleteChapter(jobId: snapshot.jobId, chapterIndex: chapterIndex)
+                    }
                 },
                 onDownloadAll: { [weak self] in
                     guard let self else { return }
-                    Task { await DownloadManager.shared.enqueueAll(snapshot: snapshot, baseURL: self.settings.resolvedBaseURL) }
+                    self.requestAudioDownload(snapshot: snapshot, chapterIndex: nil)
                 },
-                onCancelDownloads: { Task { await DownloadManager.shared.cancel(jobId: snapshot.jobId) } },
-                onClearDownloads: { Task { await DownloadManager.shared.clearDownloadedBook(jobId: snapshot.jobId) } }
+                onCancelDownloads: EmbeddedConversionCoordinator.embeddedBookID(from: snapshot.jobId) == nil
+                    ? { Task { await DownloadManager.shared.cancel(jobId: snapshot.jobId) } }
+                    : nil,
+                onClearDownloads: {
+                    if let embeddedBookID = EmbeddedConversionCoordinator.embeddedBookID(from: snapshot.jobId) {
+                        Task { try? await LocalAudioArtifactStore.shared.clearDownloadedAudio(bookID: embeddedBookID) }
+                    } else {
+                        Task { await DownloadManager.shared.clearDownloadedBook(jobId: snapshot.jobId) }
+                    }
+                },
+                onRetryFailed: EmbeddedConversionCoordinator.embeddedBookID(from: snapshot.jobId).map { _ in
+                    { [weak self] in
+                        guard let self,
+                              let embeddedBookID = EmbeddedConversionCoordinator.embeddedBookID(from: snapshot.jobId) else {
+                            return
+                        }
+                        Task { @MainActor [weak self] in
+                            let failed = (try? await LocalAudioArtifactStore.shared.failedIndices(
+                                bookID: embeddedBookID
+                            )) ?? []
+                            for chapterIndex in failed {
+                                self?.requestAudioDownload(snapshot: snapshot, chapterIndex: chapterIndex)
+                            }
+                        }
+                    }
+                },
+                onExport: EmbeddedConversionCoordinator.embeddedBookID(from: snapshot.jobId).map { bookID in
+                    { [weak self] in
+                        guard let self else { return }
+                        LocalAudiobookShareCoordinator.exportAndPresent(bookID: bookID, from: self)
+                    }
+                }
             )
         )
         if let sheet = controller.sheetPresentationController {
@@ -659,14 +716,73 @@ final class FullPlayerScreenController: UIViewController {
         present(controller, animated: true)
     }
 
+    private func requestAudioDownload(snapshot: JobSnapshot, chapterIndex: Int?) {
+        guard let embeddedBookID = EmbeddedConversionCoordinator.embeddedBookID(from: snapshot.jobId) else {
+            Task {
+                if let chapterIndex {
+                    await DownloadManager.shared.enqueueSelected(
+                        snapshot: snapshot,
+                        epubZeroBasedIndices: [chapterIndex],
+                        baseURL: settings.resolvedBaseURL
+                    )
+                } else {
+                    await DownloadManager.shared.enqueueAll(snapshot: snapshot, baseURL: settings.resolvedBaseURL)
+                }
+            }
+            return
+        }
+        guard let url = try? library.openBookFile(id: embeddedBookID) else { return }
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                let completed = try await EmbeddedConversionCoordinator.stream(
+                    bookURL: url,
+                    bookID: embeddedBookID,
+                    autoPlay: false,
+                    requiresWiFi: !self.settings.allowCellularAudioConversion,
+                    priorityChapterIndices: chapterIndex.map { [$0] } ?? [],
+                    requestedChapterIndices: chapterIndex.map { [$0] },
+                    drivesPlayer: false,
+                    player: self.player,
+                    onChapterAvailable: { chapter in
+                        guard chapterIndex == nil || chapter.index == chapterIndex else { return }
+                        Task {
+                            try? await LocalAudioArtifactStore.shared.promote(
+                                bookID: embeddedBookID,
+                                chapterIndex: chapter.index
+                            )
+                        }
+                    }
+                )
+                for chapter in completed.playableChapters
+                    where chapterIndex == nil || chapter.index == chapterIndex {
+                    try? await LocalAudioArtifactStore.shared.promote(
+                        bookID: embeddedBookID,
+                        chapterIndex: chapter.index
+                    )
+                }
+                let isCompleteDownload = (try? await LocalAudioArtifactStore.shared.hasCompleteDownloadedAudio(
+                    bookID: embeddedBookID
+                )) ?? false
+                self.library.recordConversion(
+                    jobId: completed.jobId,
+                    for: embeddedBookID,
+                    cachedOffline: isCompleteDownload
+                )
+            } catch {
+                // The artifact manifest retains the retryable chapter state.
+            }
+        }
+    }
+
     private func formatTime(_ seconds: TimeInterval) -> String {
         guard seconds.isFinite, seconds >= 0 else { return "0:00" }
         let total = Int(seconds)
         let h = total / 3600
         let m = (total % 3600) / 60
         let s = total % 60
-        if h > 0 { return unsafe String(format: "%d:%02d:%02d", h, m, s) }
-        return unsafe String(format: "%d:%02d", m, s)
+        if h > 0 { return String(format: "%d:%02d:%02d", h, m, s) }
+        return String(format: "%d:%02d", m, s)
     }
 }
 

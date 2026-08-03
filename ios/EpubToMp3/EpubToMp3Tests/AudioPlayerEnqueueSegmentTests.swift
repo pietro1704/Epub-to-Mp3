@@ -222,6 +222,69 @@ final class AudioPlayerEnqueueSegmentTests: XCTestCase {
         )
     }
 
+    func testSegmentProducerWaitsAtBoundedBacklogUntilQueueAdvances() async {
+        let player = AudioPlayer()
+        let total = AudioPlayer.testHook_maxQueueAhead()
+            + SegmentBacklog.maximumDeferredSegmentCount
+        for segmentIndex in 0..<total {
+            player.enqueueSegment(
+                data: fakeMP3(),
+                chapterIndex: 0,
+                segmentIndex: segmentIndex
+            )
+        }
+        XCTAssertEqual(
+            player.testHook_backlogCount(),
+            SegmentBacklog.maximumDeferredSegmentCount
+        )
+
+        let resumed = expectation(description: "segment capacity resumed")
+        let waiting = expectation(description: "segment producer is waiting")
+        Task { @MainActor in
+            waiting.fulfill()
+            if await player.waitForSegmentCapacity() {
+                resumed.fulfill()
+            }
+        }
+        await fulfillment(of: [waiting], timeout: 1)
+        XCTAssertEqual(
+            player.testHook_backlogCount(),
+            SegmentBacklog.maximumDeferredSegmentCount,
+            "The producer must remain paused while the deferred backlog is full"
+        )
+        XCTAssertEqual(player.testHook_segmentCapacityWaiterCount(), 1)
+
+        XCTAssertTrue(player.testHook_finishCurrentSegment())
+        await fulfillment(of: [resumed], timeout: 1)
+    }
+
+    func testTeardownCancelsAProducerWaitingForSegmentCapacity() async {
+        let player = AudioPlayer()
+        let total = AudioPlayer.testHook_maxQueueAhead()
+            + SegmentBacklog.maximumDeferredSegmentCount
+        for segmentIndex in 0..<total {
+            player.enqueueSegment(
+                data: fakeMP3(),
+                chapterIndex: 0,
+                segmentIndex: segmentIndex
+            )
+        }
+
+        let cancelled = expectation(description: "segment capacity cancelled")
+        let waiting = expectation(description: "segment producer is waiting")
+        Task { @MainActor in
+            waiting.fulfill()
+            if !(await player.waitForSegmentCapacity()) {
+                cancelled.fulfill()
+            }
+        }
+        await fulfillment(of: [waiting], timeout: 1)
+        XCTAssertEqual(player.testHook_segmentCapacityWaiterCount(), 1)
+
+        player.testHook_teardownPlayer()
+        await fulfillment(of: [cancelled], timeout: 1)
+    }
+
     // MARK: No crash on empty data
 
     func testEmptySegmentDataIsGracefullyIgnored() {

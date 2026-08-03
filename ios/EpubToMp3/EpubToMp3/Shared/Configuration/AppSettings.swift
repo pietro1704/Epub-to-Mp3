@@ -177,6 +177,10 @@ final class AppSettings: ObservableObject {
         #endif
         // The Apple clients use the bundled Python runtime in-process.
         self.useEmbeddedRuntime = defaults.object(forKey: "useEmbeddedRuntime") as? Bool ?? true
+        // Edge is the only network dependency of on-device conversion. Keep
+        // it on Wi-Fi by default; the user may opt into cellular explicitly.
+        self.allowCellularAudioConversion =
+            defaults.object(forKey: "allowCellularAudioConversion") as? Bool ?? false
         self.readerFontSize = (defaults.object(forKey: "readerFontSize") as? Int) ?? 3
         self.readerFontFamily = ReaderFontFamily(
             rawValue: defaults.string(forKey: "readerFontFamily") ?? ""
@@ -202,6 +206,9 @@ final class AppSettings: ObservableObject {
         if let i = args.firstIndex(of: "-uiTestReaderLayout"), i + 1 < args.count,
            let forced = ReaderLayout(rawValue: args[i + 1]) {
             self.readerLayout = forced
+        }
+        if args.contains("-uiTestReaderShowPageNumbers") {
+            self.readerShowPageNumbers = true
         }
         self.pageTurnStyle = PageTurnStyle(
             rawValue: defaults.string(forKey: "pageTurnStyle") ?? ""
@@ -254,6 +261,12 @@ final class AppSettings: ObservableObject {
     /// "remote-only" mode from the debug toggle in Settings.
     @Published var useEmbeddedRuntime: Bool = true {
         didSet { defaults.set(useEmbeddedRuntime, forKey: "useEmbeddedRuntime") }
+    }
+
+    /// Whether the embedded Edge voice provider may use cellular data.
+    /// Defaults to false so local audiobook generation waits for Wi-Fi.
+    @Published var allowCellularAudioConversion: Bool = false {
+        didSet { defaults.set(allowCellularAudioConversion, forKey: "allowCellularAudioConversion") }
     }
 
     /// True iff the reader and library can render the current book

@@ -1,8 +1,8 @@
 import XCTest
 @testable import EpubToMp3
 
-/// Pure-value-type tests for `SegmentBacklog`. Verifies the eviction
-/// + empty-streak policy in isolation (no AVPlayer mock needed).
+/// Pure-value-type tests for `SegmentBacklog`. Verifies lossless ordering
+/// and empty-streak behavior in isolation (no AVPlayer mock needed).
 final class SegmentBacklogTests: XCTestCase {
 
     private func url(_ idx: Int) -> URL {
@@ -13,8 +13,8 @@ final class SegmentBacklogTests: XCTestCase {
 
     func testAppendThenDrainReturnsEntriesInOrder() {
         var backlog = SegmentBacklog()
-        XCTAssertNil(backlog.append(url: url(0), chapterIndex: 0, segmentIndex: 0))
-        XCTAssertNil(backlog.append(url: url(1), chapterIndex: 0, segmentIndex: 1))
+        XCTAssertTrue(backlog.append(url: url(0), chapterIndex: 0, segmentIndex: 0))
+        XCTAssertTrue(backlog.append(url: url(1), chapterIndex: 0, segmentIndex: 1))
         XCTAssertEqual(backlog.count, 2)
 
         XCTAssertEqual(backlog.drainNext()?.segmentIndex, 0)
@@ -33,19 +33,45 @@ final class SegmentBacklogTests: XCTestCase {
         XCTAssertEqual(backlog.drainNext()?.segmentIndex, 7)
     }
 
-    func testCapacityCapsBacklogAndEvictsOldest() {
+    func testBacklogRetainsEveryEntryPastAdvisoryHighWaterMark() {
         var backlog = SegmentBacklog()
-        for i in 0..<SegmentBacklog.capacity {
-            XCTAssertNil(backlog.append(url: url(i), chapterIndex: 0, segmentIndex: i),
-                "No eviction until the cap is reached")
+        let total = SegmentBacklog.advisoryHighWaterMark + 1
+        for i in 0..<total {
+            XCTAssertTrue(backlog.append(url: url(i), chapterIndex: 0, segmentIndex: i))
         }
-        // One more — must evict the oldest (seg 0).
-        let evicted = backlog.append(url: url(99), chapterIndex: 1, segmentIndex: 99)
-        XCTAssertEqual(evicted, url(0))
-        XCTAssertEqual(backlog.count, SegmentBacklog.capacity)
-        // The first remaining entry should now be seg 1 (the original
-        // second entry), not seg 0.
-        XCTAssertEqual(backlog.drainNext()?.segmentIndex, 1)
+        XCTAssertEqual(backlog.count, total,
+            "Deferred audio must never be discarded when playback falls behind conversion")
+        XCTAssertTrue(backlog.exceedsAdvisoryHighWaterMark)
+        XCTAssertEqual(backlog.highWaterMark, total)
+        XCTAssertEqual(backlog.drainNext()?.segmentIndex, 0,
+            "The oldest speech remains available after the advisory threshold")
+    }
+
+    func testBacklogSortsOutOfOrderArrivalsByProducerIdentity() {
+        var backlog = SegmentBacklog()
+        XCTAssertTrue(backlog.append(url: url(20), chapterIndex: 2, segmentIndex: 0))
+        XCTAssertTrue(backlog.append(url: url(1), chapterIndex: 1, segmentIndex: 1))
+        XCTAssertTrue(backlog.append(url: url(0), chapterIndex: 1, segmentIndex: 0))
+
+        XCTAssertEqual(
+            [backlog.drainNext(), backlog.drainNext(), backlog.drainNext()]
+                .compactMap { $0 }
+                .map(\.identity),
+            [
+                .init(chapterIndex: 1, segmentIndex: 0),
+                .init(chapterIndex: 1, segmentIndex: 1),
+                .init(chapterIndex: 2, segmentIndex: 0),
+            ]
+        )
+    }
+
+    func testDuplicateIdentityIsRejectedWithoutReplacingOriginalFile() {
+        var backlog = SegmentBacklog()
+        XCTAssertTrue(backlog.append(url: url(0), chapterIndex: 0, segmentIndex: 0))
+        XCTAssertFalse(backlog.append(url: url(99), chapterIndex: 0, segmentIndex: 0))
+
+        XCTAssertEqual(backlog.count, 1)
+        XCTAssertEqual(backlog.drainNext()?.url, url(0))
     }
 
     // MARK: empty-streak detector

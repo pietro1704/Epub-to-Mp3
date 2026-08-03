@@ -55,6 +55,34 @@ private final class LockedValue<Value>: @unchecked Sendable {
     }
 }
 
+/// Delivers exactly one result from an async Edge call to the synchronous
+/// Python transport callback. Cancellation may resolve the gate before the
+/// URLSession task has finished unwinding, so duplicate completion signals
+/// must be ignored.
+final class EdgeSynthesisGate: @unchecked Sendable {
+    private let lock = NSLock()
+    private let semaphore = DispatchSemaphore(value: 0)
+    private var outcome: Result<Data, Error>?
+
+    func resolve(_ result: Result<Data, Error>) {
+        lock.lock()
+        guard outcome == nil else {
+            lock.unlock()
+            return
+        }
+        outcome = result
+        lock.unlock()
+        semaphore.signal()
+    }
+
+    func wait() -> Result<Data, Error> {
+        semaphore.wait()
+        lock.lock()
+        defer { lock.unlock() }
+        return outcome ?? .failure(EdgeTTSBridgeError.webSocketFailed("missing synthesis result"))
+    }
+}
+
 /// Thin wrapper around an in-process CPython interpreter loaded from
 /// Python.xcframework. Use `PythonEmbed.shared.convertWithEdgeTTS(...)`
 /// to synthesize a chunk; the wrapper handles one-time bootstrap on
@@ -76,15 +104,9 @@ final class PythonEmbed: @unchecked Sendable {
     /// Holding the closure here for the interpreter's lifetime is
     /// cheap (one slot) and keeps the bridge alive.
     private(set) var edgeTransport: PythonObject?
-    /// Strong reference to the Piper transport closure, same lifetime
-    /// rationale as ``edgeTransport`` — see comment above. The
-    /// transport always throws ``PiperBridgeError.notImplemented`` in
-    /// slice 1b; it is installed anyway so the Python pipeline can
-    /// observe the seam exists and so the wiring is exercised every
-    /// time the app boots (catches regressions early when the real
-    /// implementation lands).
-    private var piperTransport: PythonObject?
-
+    private let edgeInvocationLock = NSLock()
+    private var activeEdgeBridge: EdgeTTSBridge?
+    private var activeEdgeGate: EdgeSynthesisGate?
     /// Pre-imported `python_app.src.ios_entrypoints` module handle. We
     /// pin this during ``bootstrap()`` so the first chapter synthesis is
     /// a `sys.modules` cache hit instead of a fresh
@@ -107,10 +129,22 @@ final class PythonEmbed: @unchecked Sendable {
     /// error or keep the cached fulltext instead of switching to a
     /// separate Swift parser.
     var isParserAvailable: Bool { ebookReader != nil }
+    private(set) var parserImportFailure: String?
 
     private init() {}
 
     // MARK: - Bootstrap
+
+    /// Finds the loaded bundle that owns the embedded runtime. `Bundle.main`
+    /// is the app in production, but direct XCTest execution makes it the
+    /// `xctest` host while the app bundle remains loaded separately.
+    private func runtimeBundle() -> Bundle? {
+        let candidates = [Bundle.main] + Bundle.allBundles + Bundle.allFrameworks
+        return candidates.first { bundle in
+            bundle.url(forResource: "python-stdlib", withExtension: nil) != nil
+                && bundle.url(forResource: "site-packages", withExtension: nil) != nil
+        }
+    }
 
     /// Idempotent. Initializes CPython with PYTHONHOME / PYTHONPATH
     /// pointing at the bundled stdlib + site-packages.
@@ -119,7 +153,9 @@ final class PythonEmbed: @unchecked Sendable {
         defer { lock.unlock() }
         guard !initialized else { return }
 
-        let bundle = Bundle.main
+        guard let bundle = runtimeBundle() else {
+            throw PythonEmbedError.stdlibMissing
+        }
 
         guard let stdlib = bundle.path(forResource: "python-stdlib", ofType: nil) else {
             throw PythonEmbedError.stdlibMissing
@@ -130,29 +166,32 @@ final class PythonEmbed: @unchecked Sendable {
 
         // PYTHONHOME must point at a directory containing `lib/python3.X`
         // OR be set alongside PYTHONPATH that explicitly lists the stdlib.
-        // Beeware ships python-stdlib as the stdlib root, so we set
-        // PYTHONPATH = stdlib:site-packages and PYTHONHOME = stdlib.
-        unsafe setenv("PYTHONHOME", stdlib, 1)
-        unsafe setenv("PYTHONPATH", "\(stdlib):\(sitePackages)", 1)
+        // Beeware ships python-stdlib as the stdlib root. Because this is
+        // not CPython's usual `lib/python3.X` layout, add `lib-dynload`
+        // explicitly as well so built-in stdlib extensions such as `_struct`
+        // and `zlib` resolve from the target-matched bundle slice.
+        let dynamicModules = (stdlib as NSString).appendingPathComponent("lib-dynload")
+        setenv("PYTHONHOME", stdlib, 1)
+        setenv("PYTHONPATH", "\(stdlib):\(dynamicModules):\(sitePackages)", 1)
         // Beeware recommendations: keep things deterministic + isolated.
-        unsafe setenv("PYTHONDONTWRITEBYTECODE", "1", 1)
-        unsafe setenv("PYTHONUNBUFFERED", "1", 1)
-        unsafe setenv("PYTHONNOUSERSITE", "1", 1)
+        setenv("PYTHONDONTWRITEBYTECODE", "1", 1)
+        setenv("PYTHONUNBUFFERED", "1", 1)
+        setenv("PYTHONNOUSERSITE", "1", 1)
         #if os(macOS)
         let supportRoot = FileManager.default.urls(for: .applicationSupportDirectory,
                                                     in: .userDomainMask)[0]
             .appendingPathComponent("EpubToMp3", isDirectory: true)
         try? FileManager.default.createDirectory(at: supportRoot,
                                                    withIntermediateDirectories: true)
-        unsafe setenv("PERSISTENT_ROOT", supportRoot.path, 1)
+        setenv("PERSISTENT_ROOT", supportRoot.path, 1)
         #endif
 
         // PythonKit lazy-loads libpython via dlopen. If the framework
         // is missing (simulator without bootstrap), dlopen returns NULL
         // and PythonKit traps. Guard with a dlopen probe first so we
         // throw a recoverable error instead of crashing.
-        let alreadyLoaded = unsafe dlopen("Python.framework/Python", RTLD_NOLOAD) != nil
-        let loadedFromRPath = unsafe dlopen("@rpath/Python.framework/Python", RTLD_LAZY) != nil
+        let alreadyLoaded = dlopen("Python.framework/Python", RTLD_NOLOAD) != nil
+        let loadedFromRPath = dlopen("@rpath/Python.framework/Python", RTLD_LAZY) != nil
         guard alreadyLoaded || loadedFromRPath else {
             throw PythonEmbedError.pythonInitFailed(
                 "libpython not loadable — Python.xcframework missing from bundle"
@@ -162,7 +201,6 @@ final class PythonEmbed: @unchecked Sendable {
         _ = sys.version
 
         installEdgeTransport()
-        installPiperTransport()
         preloadHotModules()
 
         initialized = true
@@ -188,7 +226,10 @@ final class PythonEmbed: @unchecked Sendable {
         if ebookReader == nil {
             do {
                 ebookReader = try Python.attemptImport("python_app.src.ebook_reader")
-            } catch {}
+                parserImportFailure = nil
+            } catch {
+                parserImportFailure = String(describing: error)
+            }
         }
     }
 
@@ -209,6 +250,41 @@ final class PythonEmbed: @unchecked Sendable {
         let module = try Python.attemptImport("python_app.src.ebook_reader")
         ebookReader = module
         return module
+    }
+
+    /// Interrupts the WebSocket currently servicing the synchronous Python
+    /// transport callback. Resolving its gate releases PythonRunner at once,
+    /// which lets a replacement Listen request proceed instead of queuing
+    /// behind the cancelled chapter.
+    func cancelActiveEdgeSynthesis() {
+        edgeInvocationLock.lock()
+        let bridge = activeEdgeBridge
+        let gate = activeEdgeGate
+        activeEdgeBridge = nil
+        activeEdgeGate = nil
+        edgeInvocationLock.unlock()
+
+        bridge?.cancel()
+        gate?.resolve(.failure(CancellationError()))
+    }
+
+    private func registerActiveEdgeSynthesis(
+        bridge: EdgeTTSBridge,
+        gate: EdgeSynthesisGate
+    ) {
+        edgeInvocationLock.lock()
+        activeEdgeBridge = bridge
+        activeEdgeGate = gate
+        edgeInvocationLock.unlock()
+    }
+
+    private func clearActiveEdgeSynthesis(for bridge: EdgeTTSBridge) {
+        edgeInvocationLock.lock()
+        if activeEdgeBridge === bridge {
+            activeEdgeBridge = nil
+            activeEdgeGate = nil
+        }
+        edgeInvocationLock.unlock()
     }
 
     // MARK: - Edge-TTS transport wiring
@@ -251,31 +327,26 @@ final class PythonEmbed: @unchecked Sendable {
         // sync (see `_edge_transport.synthesize_chunk`). Blocking one
         // Python thread per chunk is fine — chapter parallelism happens
         // at a higher level in `converter.py`, not inside a chunk.
-        let bridge = EdgeTTSBridge()
         let fn = PythonFunction { args throws -> PythonObject in
             let text = String(args[0]) ?? ""
             let voice = String(args[1]) ?? ""
-            let sem = DispatchSemaphore(value: 0)
-            let outcome = LockedValue<Result<Data, Error>>(.failure(
-                EdgeTTSBridgeError.webSocketFailed("uninitialised")
-            ))
+            let bridge = EdgeTTSBridge()
+            let gate = EdgeSynthesisGate()
+            self.registerActiveEdgeSynthesis(bridge: bridge, gate: gate)
+            defer { self.clearActiveEdgeSynthesis(for: bridge) }
             Task.detached(priority: .userInitiated) {
                 do {
-                    let mp3 = try await withTimeout(
-                        seconds: 30, label: "Edge chunk"
-                    ) {
-                        try await bridge.synthesize(
-                            text: text, voice: voice
-                        )
-                    }
-                    outcome.set(.success(mp3))
+                    // `EdgeTTSBridge` owns the request deadline (60 s) and
+                    // its 15 s no-frame watchdog. A second 30 s deadline
+                    // here cancelled healthy 12K-character chunks while
+                    // they were still streaming audio.
+                    let mp3 = try await bridge.synthesize(text: text, voice: voice)
+                    gate.resolve(.success(mp3))
                 } catch {
-                    outcome.set(.failure(error))
+                    gate.resolve(.failure(error))
                 }
-                sem.signal()
             }
-            sem.wait()
-            switch outcome.get() {
+            switch gate.wait() {
             case .success(let data):
                 return Python.bytes(Python.list(Array(data)))
             case .failure(let err):
@@ -292,76 +363,6 @@ final class PythonEmbed: @unchecked Sendable {
         let pyFn = fn.pythonObject
 
         edgeTransport = pyFn
-        _ = transportModule.set_transport(pyFn)
-    }
-
-    // MARK: - Piper transport wiring (stub-only — slice 1b)
-
-    /// Registers ``PiperBridge`` as the active Piper transport on the
-    /// Python side via
-    /// ``python_app.src.tts._piper_transport.set_transport``.
-    ///
-    /// In slice 1b the bridge always throws
-    /// ``PiperBridgeError.notImplemented`` (onnxruntime / espeak-ng /
-    /// lame are not yet cross-compiled for iOS). Installing the
-    /// transport anyway is intentional: it proves the Python ↔ Swift
-    /// seam is wired correctly, and the ``convert_epub`` gate (
-    /// "piper fallback requested but no piper transport installed")
-    /// distinguishes between "operator forgot to enable it" and
-    /// "bring-up not done" — a critical signal when the real engine
-    /// lands and an integration breaks.
-    ///
-    /// Failures are swallowed for the same reason as
-    /// ``installEdgeTransport``: an older bundle without the
-    /// ``_piper_transport`` module should not crash the app at launch.
-    private func installPiperTransport() {
-        let transportModule: PythonObject
-        do {
-            transportModule = try Python.attemptImport(
-                "python_app.src.tts._piper_transport"
-            )
-        } catch {
-            // Bundle predates slice 1b — Edge still works fine on its
-            // own; no need to throw.
-            return
-        }
-
-        let bridge = PiperBridge()
-        let fn = PythonFunction { args throws -> PythonObject in
-            let text = String(args[0]) ?? ""
-            let lang = String(args[1]) ?? ""
-            let sem = DispatchSemaphore(value: 0)
-            let outcome = LockedValue<Result<Data, Error>>(.failure(
-                PiperBridgeError.notImplemented
-            ))
-            Task.detached(priority: .userInitiated) {
-                do {
-                    let mp3 = try await bridge.synthesize(
-                        text: text, language: lang
-                    )
-                    outcome.set(.success(mp3))
-                } catch {
-                    outcome.set(.failure(error))
-                }
-                sem.signal()
-            }
-            sem.wait()
-            switch outcome.get() {
-            case .success(let data):
-                return Python.bytes(Python.list(Array(data)))
-            case .failure(let err):
-                // Throw — same rationale as installEdgeTransport: returning
-                // a RuntimeError instance leaks into Python as if it were
-                // bytes. Throwing surfaces the failure as a real Python
-                // exception with the PiperBridgeError message preserved.
-                throw PythonEmbedError.edgeSynthFailed(
-                    "PiperBridge: \(err.localizedDescription)"
-                )
-            }
-        }
-        let pyFn = fn.pythonObject
-
-        piperTransport = pyFn
         _ = transportModule.set_transport(pyFn)
     }
 

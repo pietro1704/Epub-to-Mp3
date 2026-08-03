@@ -274,8 +274,9 @@ targets:
         ENABLE_HARDENED_RUNTIME: YES
         # AVFoundation exposes legacy non-Sendable handles and the player
         # intentionally isolates them behind locked nonisolated storage.
-        # Keep Swift 6 concurrency checking and warnings-as-errors enabled;
-        # strict memory-safety auditing remains enabled for extensions.
+        # Keep Swift 6 concurrency checking and warnings-as-errors enabled.
+        # Xcode 16 does not support the newer strict-memory-safety compiler
+        # flag, so extensions must remain compatible with both toolchains.
         SWIFT_STRICT_MEMORY_SAFETY: NO
         # PythonKit dlopens libpython at runtime. iOS places embedded
         # frameworks beside the executable, while native macOS places them
@@ -331,11 +332,10 @@ targets:
           STRIP_INSTALLED_PRODUCT: YES
     preBuildScripts:
       - name: "Bootstrap Python.xcframework"
-        # Runs before Compile Sources / Link. If Vendor/Python/Python.xcframework
-        # already exists this is a fast no-op (echo + exit). Otherwise it invokes
-        # the canonical bootstrap script which downloads the Beeware Python-Apple-
-        # support tarball, splices iOS+macOS slices, and seeds Vendor/python-stdlib
-        # plus Vendor/site-packages/python_app. Idempotent and safe to re-run.
+        # Runs before Compile Sources / Link. The expensive runtime bootstrap only
+        # runs when Python.xcframework is missing. The lightweight source sync runs
+        # on every build so the bundled python_app never falls behind its canonical
+        # repository source after an incremental Swift/Xcode build.
         # `basedOnDependencyAnalysis: false` forces Xcode to evaluate the script
         # every build (the existence check below handles the no-op fast path).
         shell: /bin/bash
@@ -350,12 +350,19 @@ targets:
         script: |
           set -euo pipefail
           XCF="${SRCROOT}/Vendor/Python/Python.xcframework"
-          if [ -d "${XCF}" ]; then
-            echo "==> Python.xcframework already vendored — skipping bootstrap"
-            exit 0
+          if [ ! -d "${XCF}" ]; then
+            echo "==> Python.xcframework missing — running bootstrap"
+            bash "${SRCROOT}/scripts/bootstrap-ios-python.sh"
           fi
-          echo "==> Python.xcframework missing — running bootstrap"
-          bash "${SRCROOT}/scripts/bootstrap-ios-python.sh"
+          bash "${SRCROOT}/scripts/sync-embedded-python.sh"
+    postBuildScripts:
+      - name: "Select CPython binary modules"
+        shell: /bin/bash
+        basedOnDependencyAnalysis: false
+        alwaysOutOfDate: true
+        script: |
+          set -euo pipefail
+          bash "${SRCROOT}/scripts/sync-embedded-python-runtime.sh"
   EpubToMp3Tests:
     type: bundle.unit-test
     supportedDestinations: [iOS, macOS]
@@ -420,7 +427,7 @@ targets:
     settings:
       base:
         SUPPORTED_PLATFORMS: "iphoneos iphonesimulator"
-        SWIFT_STRICT_MEMORY_SAFETY: YES
+        SWIFT_STRICT_MEMORY_SAFETY: NO
         PRODUCT_BUNDLE_IDENTIFIER: com.pietrocode.epubtomp3.uitests
         TEST_TARGET_NAME: EpubToMp3
         GENERATE_INFOPLIST_FILE: YES
@@ -447,7 +454,7 @@ targets:
     settings:
       base:
         SUPPORTED_PLATFORMS: "iphoneos iphonesimulator"
-        SWIFT_STRICT_MEMORY_SAFETY: YES
+        SWIFT_STRICT_MEMORY_SAFETY: NO
         IPHONEOS_DEPLOYMENT_TARGET: "15.0"
         PRODUCT_BUNDLE_IDENTIFIER: com.pietrocode.epubtomp3.share
         INFOPLIST_FILE: EpubToMp3ShareExtension/Info.plist

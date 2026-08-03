@@ -3217,9 +3217,17 @@ class PdfParser:
                 if not cleaned:
                     continue
                 cleaned = TextProcessor.add_pause_before_dash(cleaned)
+                page_title = f"Página {idx}"
                 chapters.append(
                     Chapter(
-                        index=idx, name=f"Página {idx}", source_path=f"page_{idx}", text=cleaned
+                        index=idx,
+                        name=page_title,
+                        source_path=f"page_{idx}",
+                        text=cleaned,
+                        speech_text=TextProcessor.apply_structural_speech_cues(
+                            cleaned,
+                            chapter_title=page_title,
+                        ),
                     )
                 )
 
@@ -3778,12 +3786,17 @@ def parse_epub_to_dict(file_path: str, book_id: str = "") -> dict:
             except Exception:
                 css_raw = ""
         footnotes = list(chapter.footnotes) if chapter.footnotes else None
+        # ``speech_text`` is the canonical TTS payload prepared during parsing.
+        # Keep the reader-facing ``text`` untouched and expose the audio-specific
+        # value separately so older clients can continue decoding the payload.
+        speech_text = (chapter.speech_text or "").strip() or None
         chapters.append(
             {
                 "index": out_index,
                 "name": chapter.name,
                 "sourcePath": chapter.source_path or None,
                 "text": text,
+                "speechText": speech_text,
                 "html": html_raw or None,
                 "css": css_raw or None,
                 "charCount": len(text),

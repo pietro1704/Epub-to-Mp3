@@ -1,6 +1,11 @@
-# In-Process Python on iOS — Spike
+# In-Process Python on iOS
 
-Branch: `feat/ios-python-embed`. Status: **proof-of-concept, simulator-only**.
+Status: the app uses an in-process Python conversion boundary and a native
+Swift Edge transport. The macOS live streaming test and signed iPhone arm64
+bundle installation pass; real-device playback remains required before a
+release, and the current adapter is not yet full CLI-policy parity. See
+[`docs/ios-in-process-edge-audio-architecture-research-2026-07-30.md`](../docs/ios-in-process-edge-audio-architecture-research-2026-07-30.md)
+for the current Apple-platform design and acceptance evidence.
 
 ## Why
 
@@ -17,7 +22,7 @@ runtime.
 +----------------------------------------------------+
 | EpubToMp3.app  (iOS / iOS Simulator)              |
 |                                                    |
-|   SwiftUI views                                    |
+|   UIKit views                                      |
 |        |                                           |
 |        +----> EdgeTTSBridge.swift   (network I/O) |
 |        |          URLSession + URLSessionWebSocketTask
@@ -29,7 +34,7 @@ runtime.
 |        |  dlopen / @rpath                          |
 |        v                                           |
 |   Python.xcframework  (Beeware build, libpython3.13)
-|        + python-stdlib/        (in .app/Resources) |
+|        + python-stdlib/        (target-matched binary modules) |
 |        + site-packages/        (empty placeholder) |
 +----------------------------------------------------+
 ```
@@ -40,16 +45,16 @@ Swift owns **all** networking. Python stays in-process for the
 shared with the macOS sidecar and the HF Spaces backend. The iOS app
 imports them via `PythonBridge.swift` so there is exactly one EPUB
 parser in the codebase, not a Swift reimplementation racing the
-Python one. Python never imports `socket`, `ssl`, `aiohttp`, or any
-other module that needs a C-extension we can't dlopen on iOS;
-synthesis bytes come from `EdgeTTSBridge` on the Swift side.
+Python one. Swift owns networking; synthesis bytes come from
+`EdgeTTSBridge`. CPython binary modules used by EPUB parsing are copied
+from the exact device, simulator, or macOS `Python.xcframework` slice
+during the Xcode build.
 
-This is the production-shippable shape — `aiohttp` and the rest of the
-TCP/TLS chain are gone, so we don't need cibuildwheel cross-compiles to
-ship a real-device build for the Edge-TTS path. (Bundling more Python
-libraries later still requires the lib-dynload framework-wrap work for
-modules that *do* need `_socket`/`_ssl`, but that's optional for the
-current pipeline.)
+This is the production-targeted shape — `aiohttp` and the rest of the
+TCP/TLS chain are gone, so Edge network I/O remains entirely inside the
+public URLSession API. The bundled CPython support package supplies the
+standard library's target-specific dynamically loaded modules, including
+the modules required to read compressed EPUB containers.
 
 macOS keeps using the sidecar binary (`SidecarManager.swift`,
 `epub-to-mp3-server`); all new code is wrapped in
@@ -67,11 +72,13 @@ have to invoke the shell script directly:
    before `xcodebuild` runs. The task uses mise's `sources`/`outputs`
    incremental cache, so it's a near-instant no-op once the framework is on
    disk.
-2. **Xcode pre-build run-script phase** — the EpubToMp3 target has a
-   "Bootstrap Python.xcframework" phase as the first entry in `buildPhases`
-   (before Compile Sources). Opening the project in Xcode and pressing
-   Cmd+B fires the same script if `Vendor/Python/Python.xcframework` is
-   missing; otherwise it prints `already vendored` and exits 0.
+2. **Xcode build-script phases** — the EpubToMp3 target runs
+   "Bootstrap Python.xcframework" before compilation and syncs the canonical
+   `python_app` source tree. A post-build phase then runs
+   `sync-embedded-python-runtime.sh` against the built app bundle, selecting
+   `lib-dynload` from the matching device, simulator, or macOS XCFramework
+   slice. This keeps simultaneous macOS and iPhone builds from overwriting
+   each other's binary Python modules.
 
 Manual override (force a re-bootstrap or run on a fresh clone before opening
 Xcode):
@@ -93,7 +100,11 @@ The script:
   [beeware/Python-Apple-support](https://github.com/beeware/Python-Apple-support).
 - Caches the tarball at `~/.cache/epub-to-mp3/python-apple-support/`.
 - Extracts `Python.xcframework` + `python-stdlib/` into
-  `ios/EpubToMp3/EpubToMp3/Vendor/Python/` (gitignored, ~150 MB).
+  `ios/EpubToMp3/Vendor/` (gitignored, ~150 MB).
+- During each Xcode build, copies `lib-dynload` from the matching
+  `Python.xcframework` slice. An iPhone build therefore receives arm64
+  `*-iphoneos.so` modules, while the simulator and macOS receive their own
+  binaries.
 - Copies `python_app/src/` into
   `ios/EpubToMp3/EpubToMp3/Vendor/site-packages/python_app/` so the
   Swift bridge can `Python.import("python_app.src.ebook_reader")` and
@@ -134,29 +145,28 @@ The test `XCTSkip`s itself if the bootstrap hasn't been run.
 
 | Limit | Why | Unblock |
 |---|---|---|
-| **Simulator-validated only** (real-device pending separate test) | The Swift bridge uses first-class iOS APIs (URLSession, URLSessionWebSocketTask) that work identically on device. Python's `lib-dynload/*.so` files still can't be `dlopen`'d outside `.framework` bundles on device, but the current pipeline doesn't import any of them. | Regenerate the bootstrap on an iOS-device-targeted run and ship. Wrapping each `lib-dynload/*.so` in its own framework is an independent task only required if future Python code adds a TCP-dependent stdlib import. |
+| **Physical-device runtime validation pending** | The iPhone arm64 build selects CPython binary modules from the exact XCFramework slice and installs successfully. The equivalent macOS live test completes the PythonKit → Swift Edge WSS stream, but the connected device is locked before the iPhone can prove playback. | Unlock the connected iPhone, then run the local Edge streaming XCTest and manual Listen flow. |
 | **pt-BR only** | Test only exercises one voice. | Edge supports every locale already; no further work. |
 | **Edge-TTS only** | Piper is the offline fallback in production. ONNX Runtime ships an iOS pod but is not wired here. | Add `onnxruntime` iOS pod, embed Piper ONNX models, port `tts/piper_engine.py` minimal surface. |
-| **One-shot synth** | `Communicate.save()` blocks until the whole MP3 is on disk. No SSE / streaming chapters. | Wire `Communicate.stream()` async generator into an `AsyncStream<Data>` to match the existing `AudioPlayer.updateSnapshot` contract. |
-| **No `server.py`** | The HTTP server isn't running inside the app. | Two paths: (a) stand up `Hypercorn`-in-process listening on `127.0.0.1`, or (b) write a Swift shim that translates `APIClient` calls directly into Python function calls — skips HTTP entirely. |
+| **CLI policy parity** | The streaming adapter invokes `ios_entrypoints.synthesize_chapter_streaming`, not `AudioConverter`; retry, fallback, validation, telemetry, and adaptive concurrency policies are not all shared yet. | Extract the portable conversion policy behind an injected chunk transport and compare deterministic CLI/iOS contract fixtures. |
+| **No `server.py`** | The HTTP server isn't running inside the app. | Keep the direct PythonKit bridge; a loopback HTTP server adds lifecycle and background failure modes without improving the local contract. |
 
-## Runtime validation gap (slice: converter.py driving iOS synth)
+## Runtime validation gap
 
 The transport seam (`python_app/src/tts/_edge_transport.py`) and the iOS
-entrypoint (`python_app/src/ios_entrypoints.py`) are fully covered by
-the Python test suite: `pytest python_app/tests/test_edge_transport_swap.py`
-exercises the swap, the chunker, the byte concatenation, the no-audio
-error path, and the env-var clamping. 13 tests, all green; full suite
-now 1654 passed / 2 skipped.
+entrypoint (`python_app/src/ios_entrypoints.py`) have Python-side regression
+coverage for transport swapping, chunking, byte concatenation, no-audio
+errors, and environment clamping. A macOS live XCTest now proves the embedded
+PythonKit → Swift WebSocket round trip with ordered streamed MP3 segments and
+the final MP3 file. It is not evidence that an actual iPhone can complete
+playback through `AVQueuePlayer`.
 
 The Swift side -- `PythonEmbed.installEdgeTransport()` registering an
 `EdgeTTSBridge`-backed `PythonFunction` via PythonKit, and
 `PythonBridge.convertChapter` routing through
-`ios_entrypoints.synthesize_chapter_via_transport` -- **cannot be
-validated without a real iOS device or simulator runtime**. The Xcode
-26.3 SDK on this build host has no iOS slice. Even
-`swiftc -typecheck` against the macOS SDK would not be conclusive
-because:
+`ios_entrypoints.synthesize_chapter_via_transport` -- is covered by the
+macOS live stream test, but still requires a real iPhone playback smoke. A
+successful iPhone compilation alone would not be conclusive because:
 
 * `PythonKit`'s `PythonFunction` initializer signature and the
   `Python.bytes(...)` / `Python.list(...)` bridges behave subtly
@@ -167,30 +177,31 @@ because:
   Python callable can deadlock if the calling thread already owns
   the semaphore -- needs a real run to verify the
   `Task.detached(priority: .userInitiated)` escape hatch is enough.
-* `Python.import("builtins").RuntimeError(msg)` returns a
-  *constructed* exception object; we currently *return* it instead of
-  raising it. PythonKit may need an explicit `throw` shape (e.g.
-  `PythonError.exception`) for the Python side to see it as a real
-  exception. First device run will tell us.
+* The synchronous Python transport callback must release immediately when a
+  Listen request is replaced. The bridge now cancels the active WebSocket and
+  resolves its one-shot gate, but a physical-device smoke still has to prove
+  the complete cancellation/restart path under real network timing.
 
-Followups before declaring this slice production-ready:
+Followups before declaring this slice release-ready:
 
-1. Run a new `EpubToMp3Tests/PythonBridgeChapterTests` on a real iOS
-   simulator that includes `Python.xcframework`.
-2. Confirm the `RuntimeError` return-vs-throw path actually surfaces a
-   Python exception that `synthesize_chapter_via_transport` doesn't
-   swallow.
-3. Measure latency overhead of the Swift-to-Python-to-Swift hop per
-   chunk vs the direct `EdgeTTSBridge.synthesize` path used in the
-   previous slice.
+1. On a physical iPhone, import an EPUB, start local Edge conversion, and
+   verify the first local MP3 segment plays while later segments convert.
+2. Verify the same session across Lock Screen controls, an interruption,
+   and a headphone-disconnect route change.
+3. Run a deterministic CLI/iOS conversion-contract fixture that compares
+   prepared text, ordered bytes, cache decisions, retry outcome, and errors.
+4. Measure latency overhead of the Swift-to-Python-to-Swift hop per chunk
+   versus direct `EdgeTTSBridge.synthesize`.
 
-## Next steps (post-spike, if approved)
+## Next steps
 
-1. Confirm real-device build via cibuildwheel cross-compile of `aiohttp`,
-   `multidict`, `yarl`, `frozenlist`, `propcache`, `charset-normalizer`.
-2. Embed Piper via `onnxruntime` iOS pod; ship pt-BR + en-US models.
-3. Decide on the in-process server vs direct-bridge architecture for
-   `APIClient` to keep the rest of SwiftUI agnostic.
+1. Extract shared conversion policy with an injected Edge chunk transport;
+   do not introduce a loopback server just to call Python in the same process.
+2. Embed Piper via `onnxruntime` iOS pod if offline parity becomes a product
+   requirement; ship the required language models with the app.
+3. Keep local conversion checkpoints in app-managed storage and resume only
+   when foreground execution is available; background audio must not promise
+   indefinite WebSocket conversion.
 4. App size budget: Python.xcframework (~80 MB) + stdlib (~30 MB) + slim
    site-packages (~10 MB) ≈ 120 MB before App Thinning. Audit
    `python-stdlib/` and drop unused submodules (`tkinter`, `test/`,

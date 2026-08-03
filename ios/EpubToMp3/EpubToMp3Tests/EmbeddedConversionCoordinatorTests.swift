@@ -2,6 +2,12 @@ import XCTest
 @testable import EpubToMp3
 
 final class EmbeddedConversionCoordinatorTests: XCTestCase {
+    private enum WarmupProbeError: LocalizedError {
+        case unavailable
+
+        var errorDescription: String? { "Embedded audio probe unavailable" }
+    }
+
     private func source(_ relativePath: String) throws -> String {
         try readSourceFileIfAvailable(
             at: URL(fileURLWithPath: #filePath)
@@ -17,6 +23,217 @@ final class EmbeddedConversionCoordinatorTests: XCTestCase {
             EmbeddedConversionCoordinator.jobID(for: "book-hash"),
             "embedded-book-hash"
         )
+    }
+
+    func testLocalCachePolicyHonorsClearAndForceReprocess() {
+        XCTAssertEqual(
+            EmbeddedConversionCoordinator.localCacheAction(
+                clearCache: false,
+                forceReprocess: false
+            ),
+            .reuse
+        )
+        XCTAssertEqual(
+            EmbeddedConversionCoordinator.localCacheAction(
+                clearCache: false,
+                forceReprocess: true
+            ),
+            .regenerateOutputs
+        )
+        XCTAssertEqual(
+            EmbeddedConversionCoordinator.localCacheAction(
+                clearCache: true,
+                forceReprocess: false
+            ),
+            .clearBook
+        )
+        XCTAssertEqual(
+            EmbeddedConversionCoordinator.localCacheAction(
+                clearCache: true,
+                forceReprocess: true
+            ),
+            .clearBook,
+            "Clear cache must win because it removes both prepared text and output."
+        )
+    }
+
+    func testMaxPerformanceSelectsOrderedParallelStreaming() {
+        XCTAssertEqual(
+            EmbeddedConversionCoordinator.streamingMode(maxPerformance: false),
+            .lowestLatencySerial
+        )
+        XCTAssertEqual(
+            EmbeddedConversionCoordinator.streamingMode(maxPerformance: true),
+            .orderedParallel,
+            "High-performance streaming must use the bounded parallel transport with its reorder barrier."
+        )
+    }
+
+    func testEmbeddedChapterRetriesHaveABoundedAutomaticLimit() {
+        XCTAssertEqual(EmbeddedConversionCoordinator.maximumAutomaticChapterAttempts, 2)
+    }
+
+    func testRequestedChapterDownloadsUseIndependentSchedulingKeys() {
+        XCTAssertEqual(
+            EmbeddedConversionCoordinator.localSchedulingKey(
+                drivesPlayer: false,
+                requestedChapterIndices: [3]
+            ),
+            "download-chapters-3"
+        )
+        XCTAssertEqual(
+            EmbeddedConversionCoordinator.localSchedulingKey(
+                drivesPlayer: false,
+                requestedChapterIndices: [5]
+            ),
+            "download-chapters-5"
+        )
+        XCTAssertEqual(
+            EmbeddedConversionCoordinator.localSchedulingKey(
+                drivesPlayer: false,
+                requestedChapterIndices: nil
+            ),
+            "download-all"
+        )
+        XCTAssertEqual(
+            EmbeddedConversionCoordinator.localSchedulingKey(
+                drivesPlayer: true,
+                requestedChapterIndices: [3]
+            ),
+            "playback"
+        )
+    }
+
+    func testPriorityChapterOrderStartsAtTheRequestedChapterAndPreservesBookOrderAfterward() {
+        XCTAssertEqual(
+            EmbeddedConversionCoordinator.prioritizedChapterIndices(
+                source: [0, 1, 2, 3, 4],
+                priorities: [3, 1, 99, 3]
+            ),
+            [3, 1, 0, 2, 4]
+        )
+    }
+
+    func testReusableSnapshotRejectsAFinishedButPartialChapterRequest() {
+        let snapshot = JobSnapshot(
+            jobId: "embedded-book",
+            state: "finished",
+            bookTitle: "Book",
+            bookAuthor: nil,
+            coverUrl: nil,
+            coverMimeType: nil,
+            engine: "edge",
+            voice: nil,
+            language: nil,
+            progressPercent: 50,
+            chaptersTotal: 2,
+            chaptersCompleted: 1,
+            chapterProgress: [
+                .init(index: 1, name: "Downloaded chapter", status: "completed", downloadUrl: "file:///chapter.mp3", chars: 10, charsProcessed: 10, progressRatio: 1, durationSeconds: nil, startedAt: nil, completedAt: nil)
+            ],
+            outputs: nil,
+            logUrl: nil,
+            error: nil,
+            lastActivityAt: nil
+        )
+
+        XCTAssertFalse(EmbeddedConversionCoordinator.isReusableCompletedSnapshot(snapshot))
+    }
+
+    func testCanonicalSpeechTextRequiresThePythonPreparedPayload() {
+        let canonical = EbookFulltext(
+            jobId: "book",
+            bookTitle: "Book",
+            bookAuthor: nil,
+            chapters: [
+                .init(
+                    index: 1,
+                    name: "Chapter One",
+                    text: "Reader-facing text",
+                    speechText: "Chapter One. ... Canonical audible text.",
+                    html: nil,
+                    css: nil,
+                    charCount: 20,
+                    segments: nil
+                )
+            ]
+        )
+        let legacy = EbookFulltext(
+            jobId: "book",
+            bookTitle: "Book",
+            bookAuthor: nil,
+            chapters: [
+                .init(
+                    index: 1,
+                    name: "Chapter One",
+                    text: "Reader-facing text",
+                    html: nil,
+                    css: nil,
+                    charCount: 20,
+                    segments: nil
+                )
+            ]
+        )
+
+        XCTAssertTrue(EmbeddedConversionCoordinator.hasCanonicalSpeechText(canonical))
+        XCTAssertFalse(
+            EmbeddedConversionCoordinator.hasCanonicalSpeechText(legacy),
+            "A pre-speech cache must be reparsed instead of silently narrating reader text."
+        )
+    }
+
+    func testReusableAudioRejectsPartialAndNonMP3Files() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("reusable-audio-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let partial = root.appendingPathComponent("partial.mp3")
+        try Data([0xFF, 0xFB, 0x90, 0x00]).write(to: partial)
+        XCTAssertFalse(EmbeddedConversionCoordinator.isReusableAudio(at: partial))
+
+        let response = root.appendingPathComponent("response.mp3")
+        try Data(repeating: 0x3C, count: 1_024).write(to: response)
+        XCTAssertFalse(EmbeddedConversionCoordinator.isReusableAudio(at: response))
+
+        let valid = root.appendingPathComponent("valid.mp3")
+        var bytes = Data([0xFF, 0xFB, 0x90, 0x00])
+        bytes.append(Data(repeating: 0, count: 1_020))
+        try bytes.write(to: valid)
+        XCTAssertTrue(EmbeddedConversionCoordinator.isReusableAudio(at: valid))
+    }
+
+    @MainActor
+    func testAudioWarmupRunsTheReadinessProbeOnlyOnceAfterSuccess() async {
+        var calls = 0
+        let warmup = AudioEngineWarmup {
+            calls += 1
+        }
+
+        let first = await warmup.start()
+        let second = await warmup.start()
+
+        XCTAssertTrue(first)
+        XCTAssertTrue(second)
+        XCTAssertEqual(calls, 1)
+        XCTAssertEqual(warmup.state, .ready)
+        XCTAssertEqual(warmup.progress, 1)
+    }
+
+    @MainActor
+    func testAudioWarmupSurfacesPreflightFailureInsteadOfReportingReady() async {
+        let warmup = AudioEngineWarmup {
+            throw WarmupProbeError.unavailable
+        }
+
+        let isReady = await warmup.start()
+
+        XCTAssertFalse(isReady)
+        XCTAssertEqual(warmup.progress, 0)
+        guard case .failed(let message) = warmup.state else {
+            return XCTFail("Warmup must expose a failed state when the Python preflight fails.")
+        }
+        XCTAssertEqual(message, "Embedded audio probe unavailable")
     }
 
     func testReconciledSnapshotUsesCachedTOCTitleForGenericEmbeddedChapter() {
@@ -156,15 +373,14 @@ final class EmbeddedConversionCoordinatorTests: XCTestCase {
         XCTAssertEqual(snapshot.playableChapters.map(\.index), [1])
     }
 
-    func testAudioPlayerResolvesEmbeddedFileURLs() throws {
-        let source = try readSourceFileIfAvailable(
-            at: URL(fileURLWithPath: #filePath)
-                .deletingLastPathComponent()
-                .deletingLastPathComponent()
-                .appendingPathComponent("EpubToMp3/Features/Playback/Services/AudioPlayer.swift")
+    func testAudioPlayerResolvesEmbeddedFileURLs() {
+        let resolved = AudioPlayer.playbackURL(
+            forDownloadPath: "file:///private/var/mobile/chapter-1.mp3",
+            backendBaseURL: nil
         )
-        XCTAssertTrue(source.contains("hasPrefix(\"file://\")"))
-        XCTAssertTrue(source.contains("URL(fileURLWithPath: path)"))
+
+        XCTAssertEqual(resolved?.isFileURL, true)
+        XCTAssertEqual(resolved?.path, "/private/var/mobile/chapter-1.mp3")
     }
 
     func testBookDetailUsesEmbeddedConversionWhenTheDeviceProviderIsSelected() throws {

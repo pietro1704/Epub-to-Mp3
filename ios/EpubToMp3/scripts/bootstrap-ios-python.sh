@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Bootstrap Python.xcframework + stdlib + minimal site-packages for the
-# iOS embedded-Python spike (branch: feat/ios-python-embed).
+# native Apple embedded-Python runtime.
 #
 # Caches the Beeware tarball under ~/.cache/epub-to-mp3/python-apple-support/
 # so repeated invocations (CI, local rebuilds) don't redownload ~80 MB.
@@ -39,10 +39,9 @@ download_if_missing() {
     echo "==> Using cached $path"
   fi
 }
-download_if_missing "${IOS_URL}" "${CACHE_DIR}/${IOS_TARBALL}"
-download_if_missing "${MACOS_URL}" "${CACHE_DIR}/${MACOS_TARBALL}"
-
 if [[ ! -d "${VENDOR_DIR}/Python.xcframework" ]]; then
+  download_if_missing "${IOS_URL}" "${CACHE_DIR}/${IOS_TARBALL}"
+  download_if_missing "${MACOS_URL}" "${CACHE_DIR}/${MACOS_TARBALL}"
   echo "==> Building Python.xcframework with iOS + macOS slices"
   tmp_extract="$(mktemp -d)"
   mkdir -p "${tmp_extract}/ios" "${tmp_extract}/macos"
@@ -74,13 +73,6 @@ data["AvailableLibraries"].append({
 p.write_bytes(plistlib.dumps(data))
 print("==> Patched Info.plist with macOS slice")
 PYEOF
-  # b13+ packs the stdlib INSIDE the xcframework under
-  #   ios-arm64/lib-arm64/python3.13/
-  # and (for the simulator slice)
-  #   ios-arm64_x86_64-simulator/lib-arm64_x86_64-simulator/python3.13/
-  # We mirror the arm64-device stdlib to VENDOR_DIR/python-stdlib so the
-  # Swift bundle has a single PYTHONHOME-friendly path. The simulator slice
-  # reads from the framework directly at runtime.
   # Real Python stdlib (os.py, encodings/, json/, etc.) lives at
   # Python.xcframework/lib/python3.X/ — arch-independent .py files.
   STDLIB_SRC="${VENDOR_DIR}/Python.xcframework/lib/python${PY_VERSION}"
@@ -89,19 +81,6 @@ PYEOF
   else
     echo "error: stdlib not found at expected path ${STDLIB_SRC}" >&2
     echo "       tarball layout may have changed; inspect ${tmp_extract}" >&2
-    exit 1
-  fi
-  # Native .so extensions (_socket, _ssl, _hashlib, _asyncio, etc.) are
-  # arch-specific. For the spike we bundle the host-matching simulator
-  # arch. Real device + universal build needs a fat lib-dynload merged
-  # from both arm64 + arm64_simulator slices via lipo, but that's the
-  # next phase.
-  HOST_ARCH="$(uname -m)"  # arm64 on Apple Silicon, x86_64 on Intel
-  DYNLOAD_SRC="${VENDOR_DIR}/Python.xcframework/ios-arm64_x86_64-simulator/lib-${HOST_ARCH}/python${PY_VERSION}/lib-dynload"
-  if [[ -d "${DYNLOAD_SRC}" ]]; then
-    cp -R "${DYNLOAD_SRC}" "${STDLIB_OUT}/lib-dynload"
-  else
-    echo "error: lib-dynload not found at ${DYNLOAD_SRC}" >&2
     exit 1
   fi
   rm -rf "${tmp_extract}"
@@ -160,13 +139,10 @@ if [[ -d "${PYAPP_SRC}" ]]; then
   find "${PYAPP_DEST}" -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
 fi
 
-# NOTE: we deliberately leave lib-dynload/*.so in place. iOS refuses to
-# `dlopen` them outside a .framework, but CPython only triggers that dlopen
-# when an `import` actually references the module. Since the Swift bridge
-# owns all networking we never `import socket` / `_socket` / `_ssl` from
-# Python, so the broken .so files sit harmlessly on disk. Real-device
-# universal builds will need to wrap each .so in its own framework, but
-# that's an orthogonal piece of work tracked in PYTHON-EMBED.md.
+# The build phase `sync-embedded-python-runtime.sh` copies the matching
+# `lib-dynload` directory from the device, simulator, or macOS XCFramework
+# slice. Never seed it from the host architecture here: an Intel Mac's
+# simulator modules cannot load on an arm64 iPhone.
 # A placeholder file inside the site-packages dir so xcodegen's folder-ref
 # stays valid (an empty dir gets pruned by some Xcode setups).
 echo "# Edge-TTS now uses the Swift bridge; this dir is intentionally empty." \
@@ -177,4 +153,4 @@ echo "==> Done. Vendor sizes:"
 du -sh "${VENDOR_DIR}/Python.xcframework" "${STDLIB_OUT}" "${SITE_PACKAGES_DIR}" 2>/dev/null || true
 echo ""
 echo "Next: run 'mise exec -- xcodegen' inside ios/EpubToMp3/, then build/test"
-echo "with the EpubToMp3 scheme on an iOS Simulator destination."
+echo "with the EpubToMp3 scheme on the desired Apple platform."

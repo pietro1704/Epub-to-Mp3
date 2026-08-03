@@ -5,11 +5,15 @@ import UIKit
 @MainActor
 final class AdaptiveMaterialView: UIVisualEffectView {
     init() {
+#if compiler(>=6.2)
         if #available(iOS 26.0, *) {
             super.init(effect: UIGlassEffect(style: .regular))
         } else {
             super.init(effect: UIBlurEffect(style: .systemMaterial))
         }
+#else
+        super.init(effect: UIBlurEffect(style: .systemMaterial))
+#endif
         translatesAutoresizingMaskIntoConstraints = false
         isUserInteractionEnabled = false
         accessibilityElementsHidden = true
@@ -19,6 +23,15 @@ final class AdaptiveMaterialView: UIVisualEffectView {
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
     }
+}
+
+enum ReaderChromeTransitionMetrics {
+    static let duration: TimeInterval = 0.28
+    static let animationOptions: UIView.AnimationOptions = [
+        .curveEaseInOut,
+        .beginFromCurrentState,
+        .allowUserInteraction,
+    ]
 }
 
 @MainActor
@@ -46,6 +59,12 @@ final class IOSRootContainerController: UIViewController {
     private var overlayStateInitialized = false
     private var readerBottomChromeInitialized = false
     private var readerBottomChromeHidden = false
+
+    override var prefersStatusBarHidden: Bool {
+        isImmersiveReaderMode && !isReaderLoading
+    }
+
+    override var preferredStatusBarUpdateAnimation: UIStatusBarAnimation { .fade }
 
     init(
         settings: AppSettings,
@@ -165,7 +184,10 @@ final class IOSRootContainerController: UIViewController {
             playbackClock: player.playbackClock,
             library: library,
             onTap: { [weak self] in
-                self?.playerPresentation.showFullPlayer()
+                self?.showFullPlayer()
+            },
+            onPlayRequested: { [weak self] in
+                self?.readerController.startListeningFromMiniPlayer()
             }
         )
 
@@ -175,17 +197,16 @@ final class IOSRootContainerController: UIViewController {
     }
 
     private func setImmersiveReaderMode(_ isHidden: Bool) {
+        guard isImmersiveReaderMode != isHidden else { return }
         isImmersiveReaderMode = isHidden
+        setNeedsStatusBarAppearanceUpdate()
         refreshOverlayState()
-        if isHidden {
-            // Keep the external playback chrome in sync with the reader's
-            // immersive state even while a page transition is in progress.
-            animateMiniPlayerVisibility(visible: false)
-        }
     }
 
     private func setReaderLoadingMode(_ isLoading: Bool) {
+        guard isReaderLoading != isLoading else { return }
         isReaderLoading = isLoading
+        setNeedsStatusBarAppearanceUpdate()
         refreshOverlayState()
     }
 
@@ -195,7 +216,10 @@ final class IOSRootContainerController: UIViewController {
             playbackClock: player.playbackClock,
             library: library,
             onTap: { [weak self] in
-                self?.playerPresentation.showFullPlayer()
+                self?.showFullPlayer()
+            },
+            onPlayRequested: { [weak self] in
+                self?.readerController.startListeningFromMiniPlayer()
             }
         )
         shellController.refreshMiniPlayerAccessory(
@@ -203,12 +227,18 @@ final class IOSRootContainerController: UIViewController {
             playbackClock: player.playbackClock,
             library: library,
             onTap: { [weak self] in
-                self?.playerPresentation.showFullPlayer()
+                self?.showFullPlayer()
+            },
+            onPlayRequested: { [weak self] in
+                self?.readerController.startListeningFromMiniPlayer()
             }
         )
     }
 
     private func applyReaderChromeLayout() {
+        // Immersive reading removes every bottom accessory from layout, not
+        // only from sight. This gives the text surface the reclaimed height
+        // while the reader preserves its visible character anchor.
         let hidesBottomChrome = isReaderLoading || isImmersiveReaderMode
         readerBottomToMiniPlayer.isActive = !hidesBottomChrome
         readerBottomToRoot.isActive = hidesBottomChrome
@@ -217,20 +247,30 @@ final class IOSRootContainerController: UIViewController {
         readerBottomChromeInitialized = true
         readerBottomChromeHidden = hidesBottomChrome
         guard changed else { return }
-        guard view.window != nil else {
-            view.layoutIfNeeded()
-            return
-        }
-        UIView.animate(
-            withDuration: 0.28,
-            delay: 0,
-            options: [.curveEaseInOut, .beginFromCurrentState, .allowUserInteraction]
-        ) {
+        let applyLayout = {
             self.view.layoutIfNeeded()
+        }
+        if view.window != nil, !isReaderLoading {
+            UIView.animate(
+                withDuration: ReaderChromeTransitionMetrics.duration,
+                delay: 0,
+                options: ReaderChromeTransitionMetrics.animationOptions,
+                animations: applyLayout
+            )
+        } else {
+            UIView.performWithoutAnimation(applyLayout)
         }
     }
 
+    private func showFullPlayer() {
+        playerPresentation.showFullPlayer()
+        refreshOverlayState()
+    }
+
     func updateTheme(_ theme: ReaderTheme) {
+        let colors = theme.previewColors
+        view.backgroundColor = colors.background
+        miniPlayerController.applyReaderBackground(colors.background)
         shellController.applyTheme(theme)
         readerController.update(
             library: library,
@@ -257,8 +297,8 @@ final class IOSRootContainerController: UIViewController {
     /// Restore its TOC titles from the local parsed-book cache so every
     /// playback surface has canonical metadata immediately after launch.
     private func hydrateCachedChapterTitles() {
-        let bookID = UserDefaults.standard.string(forKey: AudioPlayer.currentBookIDDefaultsKey)
-            ?? UserDefaults.standard.string(forKey: ReaderSessionState.currentlyReadingBookIDKey)
+        let bookID = UserDefaults.standard.string(forKey: ReaderSessionState.currentlyReadingBookIDKey)
+            ?? UserDefaults.standard.string(forKey: AudioPlayer.currentBookIDDefaultsKey)
         guard let bookID, let fulltext = LocalFulltextCache.read(bookId: bookID) else { return }
         player.updateReaderChapterTitles(fulltext.chapters)
     }
@@ -285,12 +325,16 @@ final class IOSRootContainerController: UIViewController {
         miniBottomToTabBar.isActive = !readerActive
         miniBottomToRoot.isActive = readerActive
         if !readerActive {
+            let wasImmersive = isImmersiveReaderMode
             isImmersiveReaderMode = false
             isReaderLoading = false
+            if wasImmersive {
+                setNeedsStatusBarAppearanceUpdate()
+            }
         }
         applyReaderChromeLayout()
         let miniShouldBeVisible = showMini && !isReaderLoading && !isImmersiveReaderMode
-        if #available(iOS 26.0, *), !readerActive {
+        if shellController.supportsSystemBottomAccessory, !readerActive {
             shellController.setSystemMiniPlayerVisible(miniShouldBeVisible, animated: true)
             hideOverlayMiniPlayerImmediately()
         } else {
@@ -316,7 +360,6 @@ final class IOSRootContainerController: UIViewController {
 
         let animations = {
             self.miniPlayerController.view.alpha = visible ? 1 : 0
-            self.view.layoutIfNeeded()
         }
         let completion: (Bool) -> Void = { _ in
             if !visible {
@@ -325,9 +368,9 @@ final class IOSRootContainerController: UIViewController {
         }
 
         UIView.animate(
-            withDuration: 0.28,
+            withDuration: ReaderChromeTransitionMetrics.duration,
             delay: 0,
-            options: [.curveEaseInOut, .beginFromCurrentState, .allowUserInteraction],
+            options: ReaderChromeTransitionMetrics.animationOptions,
             animations: animations,
             completion: completion
         )
@@ -341,7 +384,8 @@ final class IOSRootContainerController: UIViewController {
     }
 
     private func bindState() {
-        playerPresentation.objectWillChange
+        playerPresentation.$showingFullPlayer
+            .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in self?.refreshOverlayState() }
             .store(in: &cancellables)
         library.objectWillChange
@@ -421,14 +465,20 @@ private final class MiniPlayerContainerController: UIViewController {
         player: AudioPlayer,
         playbackClock: PlaybackClock,
         library: LibraryStore,
-        onTap: @escaping () -> Void
+        onTap: @escaping () -> Void,
+        onPlayRequested: @escaping () -> Void
     ) {
         miniPlayerView.configure(
             player: player,
             playbackClock: playbackClock,
             library: library,
-            onTap: onTap
+            onTap: onTap,
+            onPlayRequested: onPlayRequested
         )
+    }
+
+    func applyReaderBackground(_ color: UIColor) {
+        miniPlayerView.applyReaderBackground(color)
     }
 }
 #endif

@@ -25,6 +25,7 @@ import AppKit
 final class LibraryStore: ObservableObject {
     private let persistenceQueue = DispatchQueue(label: "com.epubtomp3.library-persistence", qos: .utility)
     private static let applicationSupportFolderName = "EpubToMp3"
+    private static let developmentSeedBookFilename = "EpubToMp3DevelopmentSeed.epub"
 
     @Published private(set) var books: [BookEntity] = []
     @Published private(set) var loadError: String?
@@ -316,14 +317,63 @@ final class LibraryStore: ObservableObject {
 
     func installUITestFixtureIfRequested(arguments: [String] = ProcessInfo.processInfo.arguments) {
         guard arguments.contains("-uiTestFixture") else { return }
-        guard let fixtureURL = Bundle.main.url(
-            forResource: "sample_multilang", withExtension: "epub"
-        ) else { return }
-        do {
-            _ = try importBook(from: fixtureURL)
-        } catch {
-            assertionFailure("Failed to install Python EPUB fixture: \(error)")
+        // The reader replaces this metadata-only entry with an in-memory
+        // payload before attempting bookmark resolution. Keeping the fixture
+        // in code avoids coupling every UI test to a binary EPUB resource in
+        // the app bundle, which previously made the entire suite silently
+        // skip when that resource was not packaged.
+        books = [
+            BookEntity(
+                id: "ui-test-book",
+                title: "UI Test Book",
+                author: "UI Test Author",
+                bookmark: Data(),
+                displayFilename: "ui-test-book.epub",
+                addedAt: .distantPast,
+                fileType: .epub
+            )
+        ]
+        loadError = nil
+    }
+
+    /// Imports a book staged by the local development launch commands. The
+    /// book never ships in the app bundle and this path only runs when the
+    /// explicit launch argument is present.
+    @discardableResult
+    func installDevelopmentSeedBookIfRequested(
+        arguments: [String] = ProcessInfo.processInfo.arguments,
+        seedURL: URL? = nil,
+        fileManager: FileManager = .default
+    ) -> Bool {
+        guard arguments.contains("-developmentSeedBook") else { return false }
+        let resolvedURL = seedURL ?? Self.developmentSeedBookURL(fileManager: fileManager)
+        guard let resolvedURL,
+              fileManager.isReadableFile(atPath: resolvedURL.path) else {
+            return false
         }
+
+        do {
+            let id = try Self.contentHash(of: resolvedURL)
+            if !books.contains(where: { $0.id == id }) {
+                _ = try importBook(from: resolvedURL)
+            }
+            return true
+        } catch {
+            print("Failed to install development seed book: \(error)")
+            return false
+        }
+    }
+
+    private static func developmentSeedBookURL(fileManager: FileManager) -> URL? {
+        guard let documents = try? fileManager.url(
+            for: .documentDirectory,
+            in: .userDomainMask,
+            appropriateFor: nil,
+            create: true
+        ) else {
+            return nil
+        }
+        return documents.appendingPathComponent(developmentSeedBookFilename)
     }
 
     /// Resolve the bookmark to a file URL the caller can read. Marks
@@ -700,7 +750,7 @@ final class LibraryStore: ObservableObject {
         var hasher = SHA256()
         hasher.update(data: data)
         let digest = hasher.finalize()
-        return digest.compactMap { unsafe String(format: "%02x", $0) }.joined().prefix(32).description
+        return digest.compactMap { String(format: "%02x", $0) }.joined().prefix(32).description
     }
 
     private static func titleFromFilename(_ name: String) -> String {

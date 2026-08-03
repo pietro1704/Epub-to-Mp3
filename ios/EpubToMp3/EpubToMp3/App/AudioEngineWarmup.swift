@@ -8,6 +8,13 @@ final class AudioEngineWarmup: ObservableObject {
     @Published private(set) var progress: Double = 0
     @Published private(set) var message: String = ""
     private var task: Task<Bool, Never>?
+    private let preflight: @MainActor () async throws -> Void
+
+    init(preflight: @escaping @MainActor () async throws -> Void = {
+        try await PythonBridge.shared.preflightRuntime()
+    }) {
+        self.preflight = preflight
+    }
 
     var isVisible: Bool {
         if case .warming = state { return true }
@@ -31,13 +38,31 @@ final class AudioEngineWarmup: ObservableObject {
         if case .ready = state { return true }
         if let task { return await task.value }
         state = .warming
+        progress = 0
         message = L10n.string("audioWarmup.loading")
         let task = Task<Bool, Never> { @MainActor [weak self] in
-            self?.progress = 1
-            self?.message = L10n.string("audioWarmup.ready")
-            self?.state = .ready
-            self?.task = nil
-            return true
+            guard let self else { return false }
+            do {
+                self.progress = 0.15
+                try await self.preflight()
+                guard !Task.isCancelled else {
+                    self.state = .idle
+                    self.progress = 0
+                    self.task = nil
+                    return false
+                }
+                self.progress = 1
+                self.message = L10n.string("audioWarmup.ready")
+                self.state = .ready
+                self.task = nil
+                return true
+            } catch {
+                self.progress = 0
+                self.message = error.localizedDescription
+                self.state = .failed(error.localizedDescription)
+                self.task = nil
+                return false
+            }
         }
         self.task = task
         return await task.value

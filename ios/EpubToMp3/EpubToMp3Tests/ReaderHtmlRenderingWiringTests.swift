@@ -20,7 +20,7 @@ final class ReaderHtmlRenderingWiringTests: XCTestCase {
 
         XCTAssertTrue(source.contains("EpubHtmlRenderer.render("))
         XCTAssertTrue(source.contains("textView.attributedText = NSAttributedString(rendered)"))
-        XCTAssertTrue(source.contains("textView.text = chapter.text"))
+        XCTAssertTrue(source.contains("textView.text = fallbackText"))
     }
 
     func testMacReaderViewControllerRendersHtmlWithPlainTextFallback() throws {
@@ -35,8 +35,8 @@ final class ReaderHtmlRenderingWiringTests: XCTestCase {
         let source = try source("Features/Offline/Services/LocalFulltextCache.swift")
 
         XCTAssertTrue(
-            source.contains(#"appendingPathComponent("fulltext-v2""#),
-            "Cache directory must be bumped so pre-slice-1 cached payloads (html: nil) are re-parsed instead of served stale."
+            source.contains(#"appendingPathComponent("fulltext-v5""#),
+            "Cache directory must be bumped so legacy cover/image-only payloads are re-parsed instead of served stale."
         )
     }
 }

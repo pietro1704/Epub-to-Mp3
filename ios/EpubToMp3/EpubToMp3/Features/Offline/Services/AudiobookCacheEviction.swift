@@ -62,11 +62,13 @@ struct StorageUsageSnapshot: Equatable, Sendable {
 
 enum StorageUsageScanner {
     static func current(budgetBytes: Int64 = defaultOfflineCacheBudgetBytes) -> StorageUsageSnapshot {
-        let offline = directorySize(DownloadManager.audiobooksRoot())
+        let legacyOffline = directorySize(DownloadManager.audiobooksRoot())
         let ttsRoot = FileManager.default
             .urls(for: .cachesDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("epub2mp3-tts", isDirectory: true)
-        let tts = directorySize(ttsRoot)
+        let artifacts = LocalAudioArtifactStore.storageUsage()
+        let offline = legacyOffline + artifacts.downloadedBytes
+        let tts = directorySize(ttsRoot) + artifacts.temporaryBytes
         return StorageUsageSnapshot(
             offlineAudioBytes: offline,
             ttsCacheBytes: tts,
@@ -77,11 +79,16 @@ enum StorageUsageScanner {
 
     static func clearAllDownloads() {
         AudiobookCacheEviction.deleteAllAudiobooks()
+        clearLegacyTemporaryAudio()
+        Task { try? await LocalAudioArtifactStore.shared.clearAllAudio() }
+        NotificationCenter.default.post(name: ChapterCacheManager.clearAllNotification, object: nil)
+    }
+
+    static func clearLegacyTemporaryAudio() {
         let ttsRoot = FileManager.default
             .urls(for: .cachesDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("epub2mp3-tts", isDirectory: true)
         try? FileManager.default.removeItem(at: ttsRoot)
-        NotificationCenter.default.post(name: ChapterCacheManager.clearAllNotification, object: nil)
     }
 
     private static func directorySize(_ root: URL) -> Int64 {

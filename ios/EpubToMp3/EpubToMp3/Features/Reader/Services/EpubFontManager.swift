@@ -56,11 +56,11 @@ enum EpubFontManager {
             let fontURL = tmpDir.appendingPathComponent(filename)
             guard (try? data.write(to: fontURL)) != nil else { continue }
             var err: Unmanaged<CFError>?
-            if unsafe CTFontManagerRegisterFontsForURL(
+            if CTFontManagerRegisterFontsForURL(
                 fontURL as CFURL, .process, &err
             ) {
                 registered.append(fontURL)
-            } else if let cfErr = unsafe err?.takeRetainedValue(),
+            } else if let cfErr = err?.takeRetainedValue(),
                       CFErrorGetCode(cfErr) == 105 {
                 // kCTFontManagerErrorAlreadyRegistered — silently skip
                 registered.append(fontURL)
@@ -74,7 +74,7 @@ enum EpubFontManager {
         guard !urls.isEmpty else { return }
         for url in urls {
             var err: Unmanaged<CFError>?
-            unsafe CTFontManagerUnregisterFontsForURL(url as CFURL, .process, &err)
+            CTFontManagerUnregisterFontsForURL(url as CFURL, .process, &err)
         }
         if let first = urls.first {
             let dir = first.deletingLastPathComponent()

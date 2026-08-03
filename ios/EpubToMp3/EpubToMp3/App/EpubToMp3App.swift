@@ -32,6 +32,7 @@ final class EpubToMp3App: NSObject, PlatformApplicationDelegate {
         super.init()
 #if os(iOS)
         library.installUITestFixtureIfRequested()
+        library.installDevelopmentSeedBookIfRequested()
         installUITestPlaybackFixtureIfRequested()
 #endif
         Self.registerWidgetIntentObserver()
@@ -315,8 +316,9 @@ final class EpubToMp3App: NSObject, PlatformApplicationDelegate {
         library.installUITestFixtureIfRequested()
         if ProcessInfo.processInfo.arguments.contains("-uiTestFixture") {
             // Each UI test must start at the deterministic library surface;
-            // otherwise a previous test's reader session wins at launch.
+            // otherwise a previous reader or full-player presentation wins at launch.
             ReaderSessionState.setCurrentlyReading(bookID: nil)
+            playerPresentation.dismissFullPlayer()
         }
         // The scene manifest always declares IOSSceneDelegate. It is the sole
         // owner of the visible window; creating a fallback UIWindow here races
@@ -365,6 +367,11 @@ final class EpubToMp3App: NSObject, PlatformApplicationDelegate {
 
     func activateRuntimeForScene() {
         Task { await audioWarmup.start() }
+        EmbeddedConversionCoordinator.resumePendingWork(
+            library: library,
+            settings: settings,
+            player: player
+        )
         activateRuntime()
     }
 
@@ -465,7 +472,7 @@ final class EpubToMp3App: NSObject, PlatformApplicationDelegate {
 
     private static func registerWidgetIntentObserver() {
         guard !isRunningUnderXCTest() else { return }
-        unsafe CFNotificationCenterAddObserver(
+        CFNotificationCenterAddObserver(
             CFNotificationCenterGetDarwinNotifyCenter(),
             nil,
             { _, _, _, _, _ in
@@ -492,25 +499,9 @@ final class EpubToMp3App: NSObject, PlatformApplicationDelegate {
     }
 
     private func runCacheEviction() {
-        let budget = settings.offlineCacheBudgetBytes
-        let ttl = settings.offlineCacheTTLSeconds
-        var activeIDs: Set<String> = []
-        if let jobID = player.snapshot?.jobId { activeIDs.insert(jobID) }
-        let evictionTask = Task.detached(priority: .background) {
-            AudiobookCacheEviction.runEviction(
-                budgetBytes: budget,
-                ttlSeconds: ttl,
-                activeJobIds: activeIDs
-            )
-        }
-        Task { @MainActor [weak self] in
-            _ = await evictionTask.value
-            guard let self else { return }
-            for id in AudiobookCacheEviction.staleOfflineBookIds(books: self.library.books) {
-                guard var book = self.library.books.first(where: { $0.id == id }) else { continue }
-                book.cachedOffline = false
-                self.library.update(book)
-            }
+        let budget = LocalAudioArtifactStore.temporaryCacheBudgetBytes()
+        Task {
+            _ = try? await LocalAudioArtifactStore.shared.evictTemporaryAudio(toMaximumBytes: budget)
         }
     }
 

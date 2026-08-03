@@ -73,6 +73,8 @@
 "settings.audioEngine" = "Audio engine";
 "settings.useBuiltInEngine" = "Use built-in audio engine";
 "settings.useBuiltInEngineDescription" = "Synthesises chapters on this device. No backend needed.";
+"settings.allowCellularAudio" = "Allow cellular audio conversion";
+"settings.allowCellularAudioDescription" = "By default, chapter conversion waits for Wi-Fi.";
 "settings.audioEngineFooter" = "Reading works offline either way — this only affects how chapters are converted to audio. Turn off only to force the legacy remote-backend mode.";
 "settings.remoteBackend" = "Remote backend";
 "settings.urlNotValid" = "URL is not valid";
@@ -217,6 +219,7 @@
 "player.downloading" = "Downloading…";
 "player.downloaded" = "Downloaded";
 "player.downloadFailed" = "Download failed";
+"player.exportAudio" = "Share available audio";
 "player.sleepTimer" = "Sleep timer";
 "player.sleepTimerOption.off" = "Off";
 "player.sleepTimerOption.5" = "5 minutes";
@@ -386,6 +389,10 @@
 /* === TocDrawer === */
 "toc.charsCount" = "%d chars";
 "toc.downloaded" = "downloaded";
+"toc.audioPreparing" = "Preparing audio";
+"toc.waitingForWiFi" = "Waiting for Wi-Fi";
+"toc.audioQueued" = "Queued";
+"toc.retryFailed" = "Retry failed chapters";
 "player.downloadChapter" = "Download chapter";
 "toc.textOnly" = "text only";
 "toc.currentlyPlaying" = "Currently playing";
@@ -526,10 +533,13 @@
 "chapterList.clearTextCacheMessage" = "Cached chapter text for this book will be cleared.";
 "settings.storage" = "Storage";
 "settings.storageUsage" = "Storage used";
-"settings.offlineAudio" = "Offline audiobook MP3s";
-"settings.ttsCache" = "TTS chapter cache";
+"settings.offlineAudio" = "Downloaded audiobook audio";
+"settings.ttsCache" = "Temporary generated audio";
 "settings.storageTotal" = "Total";
 "settings.refreshStorage" = "Refresh storage usage";
+"settings.clearTemporaryAudio" = "Clear temporary generated audio";
+"settings.clearTemporaryAudioConfirmTitle" = "Clear temporary audio?";
+"settings.clearTemporaryAudioConfirmMessage" = "Generated audio that was not downloaded will be removed. Downloaded audiobook audio will remain.";
 "settings.storageFooter" = "The bar includes offline MP3s and generated TTS cache. The budget is 2 GB by default.";
 "settings.clearAllDownloads" = "Clear all book downloads";
 "settings.clearAllDownloadsConfirmTitle" = "Clear all downloads?";
@@ -547,4 +557,5 @@
 "convert.startConversionHint" = "Double-tap to start conversion.";
 "jobDetail.actionHint" = "Double-tap to perform this action.";
 "toc.removeDownload" = "Remove download";
+"toc.removeDownloadMessage" = "Remove the downloaded MP3 for \"%@\"? You can download it again later.";
 "toc.untitledChapter" = "Untitled chapter";

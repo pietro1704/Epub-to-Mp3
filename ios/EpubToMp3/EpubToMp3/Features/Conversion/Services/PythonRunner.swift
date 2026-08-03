@@ -32,18 +32,19 @@ final class PythonRunner: @unchecked Sendable {
     private var pending: [() -> Void] = []
     private var running = true
     private let thread: Thread
+    private let bootstrap: Bootstrap
 
     private init() {
         let bootstrap = Bootstrap()
-        let t = Thread { [weak bootstrap] in
-            bootstrap?.runLoop()
+        self.bootstrap = bootstrap
+        let t = Thread { [bootstrap] in
+            bootstrap.runLoop()
         }
         t.name = "epub2mp3.python-runner"
         t.qualityOfService = .userInitiated
         self.thread = t
-        // Bootstrap holds a strong ref back to the runner so the
-        // loop drains `self.pending`; the runner keeps the bootstrap
-        // alive via `t`'s closure capture.
+        // The runner and Thread both retain the loop object. `owner` stays
+        // weak so this does not form a retain cycle through the singleton.
         bootstrap.owner = self
         t.start()
     }

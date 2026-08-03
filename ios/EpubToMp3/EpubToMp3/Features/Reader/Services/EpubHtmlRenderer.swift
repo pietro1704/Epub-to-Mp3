@@ -101,9 +101,16 @@ enum EpubHtmlRenderer {
             .documentType: NSAttributedString.DocumentType.html,
             .characterEncoding: String.Encoding.utf8.rawValue,
         ]
-        guard let imported = try? unsafe NSAttributedString(
+        guard let imported = try? NSAttributedString(
             data: data, options: options, documentAttributes: nil
         ) else {
+            return nil
+        }
+        // The Foundation HTML importer can succeed with an empty attributed
+        // string for malformed/fragment-only EPUB documents. Treat that as a
+        // failed render so the reader can use the parser's plain-text payload
+        // instead of displaying a blank page.
+        guard !imported.string.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             return nil
         }
 
@@ -118,6 +125,21 @@ enum EpubHtmlRenderer {
         )
         applyOverrides(to: mutated, settings: settings, bodyFontSize: bodyFontSize)
         return AttributedString(mutated)
+    }
+
+    /// Conservative fallback for EPUB fragments that Foundation's HTML
+    /// importer cannot render. It keeps readable text visible even when the
+    /// parser supplied HTML but omitted the parallel plain-text field.
+    static func plainText(from html: String) -> String {
+        let withoutTags = html.replacingOccurrences(of: "<[^>]+>", with: " ", options: .regularExpression)
+        return withoutTags
+            .replacingOccurrences(of: "&nbsp;", with: " ")
+            .replacingOccurrences(of: "&amp;", with: "&")
+            .replacingOccurrences(of: "&lt;", with: "<")
+            .replacingOccurrences(of: "&gt;", with: ">")
+            .components(separatedBy: .whitespacesAndNewlines)
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
     }
 
     /// Converts a raw EPUB-local href into a stable URL that the native
@@ -195,7 +217,7 @@ enum EpubHtmlRenderer {
             }
 
             let range = paragraphRanges[index]
-            let style = (unsafe attr.attribute(.paragraphStyle, at: range.location, effectiveRange: nil) as? NSParagraphStyle)?.mutableCopy() as? NSMutableParagraphStyle
+            let style = (attr.attribute(.paragraphStyle, at: range.location, effectiveRange: nil) as? NSParagraphStyle)?.mutableCopy() as? NSMutableParagraphStyle
                 ?? NSMutableParagraphStyle()
             if let value = merged["text-indent"] {
                 style.firstLineHeadIndent = cssLength(value, bodyFontSize: bodyFontSize)
@@ -281,7 +303,7 @@ enum EpubHtmlRenderer {
     private static func modalBodyFontSize(in attr: NSAttributedString) -> CGFloat {
         guard attr.length > 0 else { return 0 }
         var histogram: [CGFloat: Int] = [:]
-        unsafe attr.enumerateAttribute(.font, in: NSRange(location: 0, length: attr.length)) { value, range, _ in
+        attr.enumerateAttribute(.font, in: NSRange(location: 0, length: attr.length)) { value, range, _ in
             guard let f = value as? PlatformFont else { return }
             // Weight by character count so a long body dominates over a
             // short heading even if there are several headings.
@@ -340,7 +362,7 @@ enum EpubHtmlRenderer {
         // without breaking pagination.
         let maxHeadingSize = targetSize * 1.5
 
-        unsafe attr.enumerateAttributes(in: fullRange, options: []) { attrs, range, _ in
+        attr.enumerateAttributes(in: fullRange, options: []) { attrs, range, _ in
             // ---- Font ----------------------------------------------
             let baseFont = (attrs[.font] as? PlatformFont)
                 ?? serifFallbackFont(ofSize: targetSize)

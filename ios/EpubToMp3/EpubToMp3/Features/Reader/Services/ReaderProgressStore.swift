@@ -96,4 +96,10 @@ enum ReaderInitialChapter {
         guard chapterCount > 0 else { return nil }
         return min(max(selectedChapter, 0), chapterCount - 1)
     }
+
+    /// Skips cover/title boilerplate on a first open while retaining the
+    /// persisted index for returning readers.
+    static func firstSubstantiveIndex(in chapters: [EbookFulltext.Chapter]) -> Int {
+        chapters.firstIndex { ($0.charCount ?? $0.text.count) >= 1_000 } ?? 0
+    }
 }

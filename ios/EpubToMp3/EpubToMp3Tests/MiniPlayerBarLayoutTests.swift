@@ -120,13 +120,67 @@ final class MiniPlayerBarLayoutTests: XCTestCase {
         XCTAssertEqual(openCount, 1)
     }
 
+    func testReaderChapterTitleIsUsedBeforeAudioPlaybackStarts() throws {
+        let player = AudioPlayer()
+        player.updateReaderChapterTitle("Chapter One", for: 0)
+        let miniPlayer = MiniPlayerBarUIKitView()
+        miniPlayer.configure(
+            player: player,
+            playbackClock: player.playbackClock,
+            library: LibraryStore(),
+            onTap: {}
+        )
+
+        let openButton = try XCTUnwrap(button(in: miniPlayer, identifier: "miniPlayer.open"))
+        XCTAssertTrue(openButton.accessibilityValue?.contains("Chapter One") ?? false)
+    }
+
+    func testReaderCurrentChapterTitleOverridesDefaultAudioCursorBeforePlayback() {
+        let defaults = UserDefaults.standard
+        let previousReaderIndex = defaults.object(forKey: AudioPlayer.readerCurrentChapterIndexDefaultsKey)
+        defer {
+            restore(
+                defaults,
+                key: AudioPlayer.readerCurrentChapterIndexDefaultsKey,
+                value: previousReaderIndex
+            )
+        }
+
+        let player = AudioPlayer()
+        player.updateReaderChapterTitle("Epigraph", for: 0)
+        player.updateReaderChapterTitle("Contents", for: 1)
+        defaults.set(1, forKey: AudioPlayer.readerCurrentChapterIndexDefaultsKey)
+
+        XCTAssertEqual(player.effectiveChapterTitle, "Contents")
+    }
+
+    func testPlayButtonRequestsLocalConversionWhenNoAudioQueueExists() throws {
+        let player = AudioPlayer()
+        let library = LibraryStore()
+        let miniPlayer = MiniPlayerBarUIKitView()
+        var requests = 0
+        miniPlayer.configure(
+            player: player,
+            playbackClock: player.playbackClock,
+            library: library,
+            onTap: {},
+            onPlayRequested: { requests += 1 }
+        )
+
+        let playButton = try XCTUnwrap(button(in: miniPlayer, identifier: "miniPlayer.playPause"))
+        playButton.sendActions(for: .touchUpInside)
+
+        XCTAssertEqual(requests, 1)
+        XCTAssertFalse(player.isPlaying)
+    }
+
     func testSystemAccessoryExcludesAnAdditionalBottomSafeAreaInset() {
         let miniPlayer = MiniPlayerBarUIKitView(usesSystemManagedBottomInset: true)
 
         XCTAssertEqual(miniPlayer.intrinsicContentSize.height, 52, accuracy: 0.5)
     }
 
-    func testActiveBookIDUsesTheReaderContextWhenPlaybackHasNotStarted() throws {
+    func testActiveBookIDPrefersTheCurrentlyOpenReaderBook() throws {
         let suite = "mini-player.context.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
@@ -137,7 +191,31 @@ final class MiniPlayerBarLayoutTests: XCTestCase {
 
         defaults.set("playing-book", forKey: AudioPlayer.currentBookIDDefaultsKey)
 
-        XCTAssertEqual(MiniPlayerBarUIKitView.activeBookID(defaults: defaults), "playing-book")
+        XCTAssertEqual(MiniPlayerBarUIKitView.activeBookID(defaults: defaults), "reader-book")
+    }
+
+    func testOpeningAnotherBookReplacesAnActivePlaybackSession() {
+        XCTAssertTrue(
+            MainReaderScreenController.shouldReplaceActivePlayback(
+                activeBookID: "previous-book",
+                incomingBookID: "next-book",
+                hasActivePlayback: true
+            )
+        )
+        XCTAssertFalse(
+            MainReaderScreenController.shouldReplaceActivePlayback(
+                activeBookID: "same-book",
+                incomingBookID: "same-book",
+                hasActivePlayback: true
+            )
+        )
+        XCTAssertFalse(
+            MainReaderScreenController.shouldReplaceActivePlayback(
+                activeBookID: "previous-book",
+                incomingBookID: "next-book",
+                hasActivePlayback: false
+            )
+        )
     }
 
     func testReaderContextRendersBookMetadataWithoutPlayback() throws {

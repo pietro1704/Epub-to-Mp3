@@ -30,6 +30,7 @@ final class MiniPlayerBarUIKitView: UIView, UIGestureRecognizerDelegate {
     private var playbackClock: PlaybackClock?
     private var library: LibraryStore?
     private var onTap: (() -> Void)?
+    private var onPlayRequested: (() -> Void)?
     private var cancellables: Set<AnyCancellable> = []
     private let usesSystemManagedBottomInset: Bool
 
@@ -66,6 +67,12 @@ final class MiniPlayerBarUIKitView: UIView, UIGestureRecognizerDelegate {
         backgroundColor = .clear
         layer.cornerCurve = .continuous
         clipsToBounds = true
+        // The root container pins the player only by its bottom edge while
+        // the reader owns the remaining space. Make this view's intrinsic
+        // content height non-negotiable so the reader cannot compress the
+        // 44-point controls below the screen edge.
+        setContentHuggingPriority(.required, for: .vertical)
+        setContentCompressionResistancePriority(.required, for: .vertical)
         bottomSafeAreaFill.accessibilityIdentifier = "miniPlayer.bottomSafeAreaFill"
         bottomSafeAreaFill.isHidden = usesSystemManagedBottomInset
         addSubview(bottomSafeAreaFill)
@@ -187,15 +194,22 @@ final class MiniPlayerBarUIKitView: UIView, UIGestureRecognizerDelegate {
         player: AudioPlayer,
         playbackClock: PlaybackClock,
         library: LibraryStore,
-        onTap: @escaping () -> Void
+        onTap: @escaping () -> Void,
+        onPlayRequested: @escaping () -> Void = {}
     ) {
         self.player = player
         self.playbackClock = playbackClock
         self.library = library
         self.onTap = onTap
+        self.onPlayRequested = onPlayRequested
         bindIfNeeded(player: player, playbackClock: playbackClock, library: library)
         rebuildRateMenu(player: player)
         render()
+    }
+
+    func applyReaderBackground(_ color: UIColor) {
+        backgroundColor = color
+        bottomSafeAreaFill.backgroundColor = color
     }
 
     private func bindIfNeeded(player: AudioPlayer, playbackClock: PlaybackClock, library: LibraryStore) {
@@ -212,17 +226,19 @@ final class MiniPlayerBarUIKitView: UIView, UIGestureRecognizerDelegate {
     }
 
     static func activeBookID(defaults: UserDefaults = .standard) -> String? {
-        defaults.string(forKey: AudioPlayer.currentBookIDDefaultsKey)
-            ?? defaults.string(forKey: ReaderSessionState.currentlyReadingBookIDKey)
+        // The reader is the user's newest explicit book selection. It must
+        // win over a persisted playback pointer so the compact player does
+        // not keep showing a previously opened book while the reader is
+        // already displaying a different one.
+        defaults.string(forKey: ReaderSessionState.currentlyReadingBookIDKey)
+            ?? defaults.string(forKey: AudioPlayer.currentBookIDDefaultsKey)
     }
 
     private func render() {
         guard let player, let library else { return }
         let currentBookID = Self.activeBookID()
         let book = currentBookID.flatMap { id in library.books.first(where: { $0.id == id }) }
-        titleLabel.text = player.snapshot == nil
-            ? L10n.string("player.chapter", UserDefaults.standard.integer(forKey: AudioPlayer.currentChapterIndexDefaultsKey) + 1)
-            : player.effectiveChapterTitle
+        titleLabel.text = player.effectiveChapterTitle
         chapterLabel.text = book?.resolvedTitle ?? L10n.string("player.audiobookFallback")
         openButton.accessibilityValue = [titleLabel.text, chapterLabel.text]
             .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
@@ -282,7 +298,7 @@ final class MiniPlayerBarUIKitView: UIView, UIGestureRecognizerDelegate {
             // The whole pill opens the full player. Only the playback
             // controls remain exempt so tapping play/next/rate keeps its
             // local action instead of expanding the player.
-            if view === openButton || view === playPauseButton || view === nextButton || view === rateButton {
+            if view === playPauseButton || view === nextButton || view === rateButton {
                 return false
             }
             current = view.superview
@@ -292,7 +308,15 @@ final class MiniPlayerBarUIKitView: UIView, UIGestureRecognizerDelegate {
 
     @objc
     private func playPauseTapped() {
-        player?.togglePlayPause()
+        guard let player else { return }
+        // A newly opened reader intentionally has no AVQueuePlayer yet.
+        // Its play control must begin the local conversion instead of merely
+        // arming an intent that no producer will ever consume.
+        if player.hasLoadedAudioQueue || player.isConverting || player.snapshot?.playableChapters.isEmpty == false {
+            player.togglePlayPause()
+        } else {
+            onPlayRequested?()
+        }
         render()
     }
 
