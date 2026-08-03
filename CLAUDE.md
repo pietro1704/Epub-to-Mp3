@@ -653,3 +653,13 @@ Rules:
 - Tasks: `mise run flutter:run`, `flutter:test`, `flutter:analyze`, `flutter:build-apk`.
 - Models use freezed + json_serializable. Regenerate with `mise exec -- dart run build_runner build --delete-conflicting-outputs` after editing any class under `flutter_app/lib/models/`.
 - Wire format mirrors iOS slice 3: `JobSnapshot` / `EbookFulltext` are camelCase; `SessionRecord` is snake_case (legacy session log).
+
+## Agent skills
+
+### Issue tracker
+
+Issues and PRDs live in this repository's GitHub Issues. See `docs/agents/issue-tracker.md`.
+
+### Domain docs
+
+This repository uses a single-context domain-doc layout. See `docs/agents/domain.md`.
