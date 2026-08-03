@@ -179,6 +179,14 @@ def test_resolve_relative_path_within_root_rejects_absolute_candidate(tmp_path, 
         server._resolve_relative_path_within_root(tmp_path, "/tmp/escape", must_exist=False)
 
 
+@pytest.mark.parametrize("job_id", ["../escape", "folder/child", r"folder\\child", ".", ".."])
+def test_job_stream_dir_rejects_non_component_job_ids(tmp_path, monkeypatch, job_id):
+    _configure_server_paths(tmp_path, monkeypatch)
+
+    with pytest.raises(ValueError, match="Invalid job_id"):
+        server._job_stream_dir(job_id, ensure=True)
+
+
 def test_cleanup_does_not_expose_filesystem_exceptions(tmp_path, monkeypatch):
     _configure_server_paths(tmp_path, monkeypatch)
     expired_dir = tmp_path / "expired-job"

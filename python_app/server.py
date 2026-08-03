@@ -627,6 +627,11 @@ def _job_output_dir(job_id: str, job: Optional[dict] = None, ensure: bool = Fals
 
 
 def _job_stream_dir(job_id: str, ensure: bool = False) -> Path:
+    # This value is supplied by the request route and is used as one path
+    # component below. Keep the separator guard local to this filesystem
+    # access so both the runtime and static analysis can prove containment.
+    if "/" in job_id or "\\" in job_id or job_id == "." or job_id == "..":
+        raise ValueError(f"Invalid job_id: {job_id!r}")
     base = _job_output_dir(job_id, ensure=ensure)
     streams_root = _resolve_relative_path_within_root(base, Path("streams"), must_exist=False)
     target = _resolve_relative_path_within_root(streams_root, Path(job_id), must_exist=False)

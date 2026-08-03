@@ -41,22 +41,28 @@ jobs:
       matrix:
         alert: ${{ fromJSON(needs.detect.outputs.alerts) }}
     steps:
-      - name: Skip alerts already assigned to a remediation issue
-        id: dedupe
+      - name: Determine remediation status
+        id: remediation
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           ALERT: ${{ toJSON(matrix.alert) }}
         run: |
           set -euo pipefail
           NUMBER=$(jq -r .number <<< "$ALERT")
+          BRANCH="bot/code-scanning-${NUMBER}"
           if gh issue list --repo "$GITHUB_REPOSITORY" --state all --search "[code-scanning-bot] alert #${NUMBER} in:title" --json number --jq 'length > 0' | grep -qx true; then
+            echo 'tracking_exists=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'tracking_exists=false' >> "$GITHUB_OUTPUT"
+          fi
+          if gh pr list --repo "$GITHUB_REPOSITORY" --state open --head "$BRANCH" --json number --jq 'length > 0' | grep -qx true; then
             echo 'skip=true' >> "$GITHUB_OUTPUT"
           else
             echo 'skip=false' >> "$GITHUB_OUTPUT"
           fi
 
       - name: Create alert tracking issue
-        if: steps.dedupe.outputs.skip != 'true'
+        if: steps.remediation.outputs.tracking_exists != 'true'
         id: issue
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -72,7 +78,7 @@ jobs:
           echo "url=$ISSUE" >> "$GITHUB_OUTPUT"
 
       - name: Notify Telegram
-        if: steps.dedupe.outputs.skip != 'true'
+        if: steps.remediation.outputs.tracking_exists != 'true'
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
@@ -88,13 +94,13 @@ jobs:
             --data-urlencode "text=$TEXT" "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage"
 
       - uses: actions/checkout@v7
-        if: steps.dedupe.outputs.skip != 'true'
+        if: steps.remediation.outputs.skip != 'true'
         with:
           ref: master
           fetch-depth: 0
 
       - name: Repair alert with Codex
-        if: steps.dedupe.outputs.skip != 'true'
+        if: steps.remediation.outputs.skip != 'true'
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           ALERT: ${{ toJSON(matrix.alert) }}
@@ -109,7 +115,7 @@ jobs:
           Run focused tests. Leave changes uncommitted.'
 
       - name: Commit, open PR, and enable auto-merge
-        if: steps.dedupe.outputs.skip != 'true'
+        if: steps.remediation.outputs.skip != 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           ALERT: ${{ toJSON(matrix.alert) }}

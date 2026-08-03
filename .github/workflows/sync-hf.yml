@@ -13,7 +13,6 @@ on:
 
 permissions:
   contents: read
-  issues: write
 
 concurrency:
   group: sync-hf
@@ -30,7 +29,9 @@ jobs:
         with:
           fetch-depth: 2
           lfs: false
-          ref: ${{ github.event.workflow_run.head_sha || github.ref }}
+          # `workflow_run` has a write-capable token. Check out only the
+          # protected branch after the event filter below, never its SHA.
+          ref: master
 
       - name: Detect Space-relevant changes
         id: paths
@@ -69,7 +70,8 @@ jobs:
           fetch-depth: 0
           # Avoid LFS fetch (budget exceeded)
           lfs: false
-          ref: ${{ github.event.workflow_run.head_sha || github.ref }}
+          # The job only syncs trusted master after a successful push CI.
+          ref: master
 
       - name: Build HF-only repo snapshot
         run: |
