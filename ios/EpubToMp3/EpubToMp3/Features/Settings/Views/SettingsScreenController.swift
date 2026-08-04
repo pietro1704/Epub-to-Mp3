@@ -81,7 +81,7 @@ final class SettingsScreenController: UITableViewController {
         case .reader:
             return 7
         case .storage:
-            return 7
+            return 8
         case .advanced:
             return 3
         case .about:
@@ -140,6 +140,7 @@ final class SettingsScreenController: UITableViewController {
                     self?.settings.allowCellularAudioConversion = isOn
                     LocalAudioConversionScheduler.shared.setAllowsCellularConversion(isOn)
                 }
+                cell.accessibilityIdentifier = "settings.allowCellularAudio"
                 return cell
             }
             let cell = tableView.dequeueReusableCell(withIdentifier: "Switch", for: indexPath) as! IOSSwitchCell
@@ -255,6 +256,8 @@ final class SettingsScreenController: UITableViewController {
         let cell = tableView.dequeueReusableCell(withIdentifier: "Cell", for: indexPath)
         var content = cell.defaultContentConfiguration()
         cell.accessoryType = .none
+        cell.selectionStyle = .default
+        cell.accessibilityIdentifier = nil
         switch indexPath.row {
         case 0:
             content.text = L10n.string("settings.storageUsage")
@@ -274,9 +277,15 @@ final class SettingsScreenController: UITableViewController {
             content.secondaryText = formatBytes(storageUsage.totalBytes)
             cell.selectionStyle = .none
         case 4:
+            content.text = L10n.string("settings.manageDownloads")
+            content.secondaryText = L10n.string("settings.manageDownloadsDescription")
+            content.image = UIImage(systemName: "books.vertical")
+            cell.accessoryType = .disclosureIndicator
+            cell.accessibilityIdentifier = "settings.manageDownloads"
+        case 5:
             content.text = L10n.string("settings.refreshStorage")
             content.image = UIImage(systemName: "arrow.clockwise")
-        case 5:
+        case 6:
             content.text = L10n.string("settings.clearTemporaryAudio")
             content.image = UIImage(systemName: "trash")
             content.textProperties.color = .systemRed
@@ -394,9 +403,14 @@ final class SettingsScreenController: UITableViewController {
 
     private func handleStorageSelection(row: Int) {
         if row == 4 {
+            navigationController?.pushViewController(
+                LocalAudioDownloadsScreenController(library: library),
+                animated: true
+            )
+        } else if row == 5 {
             refreshStorageUsage()
             tableView.reloadSections(IndexSet(integer: Section.storage.rawValue), with: .none)
-        } else if row == 5 {
+        } else if row == 6 {
             presentDestructiveAlert(
                 title: L10n.string("settings.clearTemporaryAudioConfirmTitle"),
                 message: L10n.string("settings.clearTemporaryAudioConfirmMessage"),

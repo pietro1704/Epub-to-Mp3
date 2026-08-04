@@ -180,6 +180,34 @@ final class LocalAudioArtifactStoreTests: XCTestCase {
         XCTAssertTrue(isComplete)
     }
 
+    func testDownloadedBooksSummarizeOnlyProtectedAvailableAudio() async throws {
+        let store = LocalAudioArtifactStore(root: root)
+        for bookID in ["temporary-book", "downloaded-book"] {
+            try await store.prepare(
+                bookID: bookID,
+                bookTitle: bookID == "downloaded-book" ? "Downloaded Book" : "Temporary Book",
+                author: "Author",
+                chapters: [.init(index: 0, title: "Chapter")]
+            )
+            let url = try await store.canonicalURL(bookID: bookID, chapterIndex: 0)
+            try Data(repeating: 0xA1, count: 256).write(to: url)
+            try await store.markAvailable(bookID: bookID, chapterIndex: 0)
+        }
+        try await store.promote(bookID: "downloaded-book", chapterIndex: 0)
+
+        let books = try await store.downloadedBooks()
+
+        XCTAssertEqual(books, [
+            .init(
+                bookID: "downloaded-book",
+                title: "Downloaded Book",
+                author: "Author",
+                chapterCount: 1,
+                byteCount: 256
+            )
+        ])
+    }
+
     func testStorageUsageSeparatesTemporaryFromDownloadedAudio() async throws {
         let store = LocalAudioArtifactStore(root: root)
         try await store.prepare(

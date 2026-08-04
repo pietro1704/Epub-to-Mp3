@@ -533,6 +533,13 @@
 "settings.offlineAudio" = "Áudio baixado de audiolivros";
 "settings.ttsCache" = "Áudio temporário gerado";
 "settings.storageTotal" = "Total";
+"settings.manageDownloads" = "Gerenciar downloads dos livros";
+"settings.manageDownloadsDescription" = "Veja ou remova o áudio baixado por livro";
+"settings.noDownloadedBooks" = "Nenhum livro baixado";
+"settings.downloadedChapters" = "%d capítulos baixados";
+"settings.removeBookDownload" = "Remover download";
+"settings.removeBookDownloadConfirmTitle" = "Remover áudio baixado?";
+"settings.removeBookDownloadConfirmMessage" = "O áudio baixado de %@ será removido deste dispositivo.";
 "settings.refreshStorage" = "Atualizar uso de espaço";
 "settings.clearTemporaryAudio" = "Limpar áudio temporário gerado";
 "settings.clearTemporaryAudioConfirmTitle" = "Limpar áudio temporário?";
