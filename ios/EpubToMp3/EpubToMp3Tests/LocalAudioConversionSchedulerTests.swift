@@ -5,14 +5,21 @@ import XCTest
 final class LocalAudioConversionSchedulerTests: XCTestCase {
     private actor Gate {
         private var continuation: CheckedContinuation<Void, Never>?
+        private var isOpen = false
 
         func wait() async {
+            guard !isOpen else { return }
             await withCheckedContinuation { continuation in
-                self.continuation = continuation
+                if isOpen {
+                    continuation.resume()
+                } else {
+                    self.continuation = continuation
+                }
             }
         }
 
         func open() {
+            isOpen = true
             continuation?.resume()
             continuation = nil
         }

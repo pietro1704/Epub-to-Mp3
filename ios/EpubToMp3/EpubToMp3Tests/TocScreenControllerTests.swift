@@ -33,6 +33,32 @@ final class TocScreenControllerTests: XCTestCase {
         XCTAssertEqual(requestedChapter, 4)
     }
 
+    func testDownloadAccessoryUsesCellManagedLayout() {
+        let controller = TocScreenController(
+            fulltext: nil,
+            snapshot: snapshot(),
+            currentChapterIndex: -1,
+            readingChapterIndex: nil,
+            onJump: { _ in },
+            onDownload: { _ in },
+            onDownloadAll: nil,
+            onCancelDownloads: nil,
+            onClearDownloads: nil
+        )
+
+        controller.loadViewIfNeeded()
+        let cell = controller.tableView(
+            controller.tableView,
+            cellForRowAt: IndexPath(row: 0, section: 0)
+        )
+        let button = try? XCTUnwrap(cell.accessoryView as? UIButton)
+
+        XCTAssertTrue(
+            button?.translatesAutoresizingMaskIntoConstraints == true,
+            "UITableViewCell must position chapter download accessories in its trailing accessory slot."
+        )
+    }
+
     func testExportAffordanceAppearsInTheSharedTocMenu() {
         let controller = TocScreenController(
             fulltext: nil,

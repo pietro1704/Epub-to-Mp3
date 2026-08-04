@@ -229,6 +229,22 @@ actor LocalAudioArtifactStore {
         }
     }
 
+    /// Promotes already-created playable audio before a new conversion request
+    /// is enqueued. This keeps a user-selected chapter from waiting behind an
+    /// active streaming conversion just to become a durable download.
+    func promoteAvailable(bookID: String, chapterIndices: Set<Int>? = nil) throws -> Set<Int> {
+        guard let manifest = try loadManifest(bookID: bookID) else { return [] }
+        let available = manifest.chapters.filter { artifact in
+            artifact.state == .available
+                && (chapterIndices == nil || chapterIndices?.contains(artifact.index) == true)
+                && hasAudioFile(bookID: bookID, artifact: artifact)
+        }
+        for artifact in available where artifact.retention != .downloaded {
+            try promote(bookID: bookID, chapterIndex: artifact.index)
+        }
+        return Set(available.map(\.index))
+    }
+
     func artifact(bookID: String, chapterIndex: Int) throws -> ChapterArtifact? {
         guard let manifest = try loadManifest(bookID: bookID) else { return nil }
         return manifest.chapters.first { $0.index == chapterIndex }

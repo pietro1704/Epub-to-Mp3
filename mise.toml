@@ -561,10 +561,10 @@ fi
 echo "ios:device:run → device: $DEVICE"
 echo "ios:device:run → app: $APP_PATH"
 xcrun devicectl device install app --device "$DEVICE" "$APP_PATH"
-LAUNCH_ARGS=()
+SEED_LAUNCH=0
 if [[ "${IOS_DEVELOPMENT_SEED_BOOK:-1}" != "0" ]]; then
   if python3 ../../scripts/seed_ios_development_book.py --target device --identifier "$DEVICE"; then
-    LAUNCH_ARGS=(-developmentSeedBook)
+    SEED_LAUNCH=1
   else
     SEED_STATUS=$?
     if [[ "$SEED_STATUS" -ne 3 ]]; then
@@ -572,7 +572,11 @@ if [[ "${IOS_DEVELOPMENT_SEED_BOOK:-1}" != "0" ]]; then
     fi
   fi
 fi
-xcrun devicectl device process launch --device "$DEVICE" --terminate-existing "$BUNDLE_ID" "${LAUNCH_ARGS[@]}"
+if [[ "$SEED_LAUNCH" == "1" ]]; then
+  xcrun devicectl device process launch --device "$DEVICE" --terminate-existing "$BUNDLE_ID" -developmentSeedBook
+else
+  xcrun devicectl device process launch --device "$DEVICE" --terminate-existing "$BUNDLE_ID"
+fi
 """
 
 [tasks."ios:device:build"]
@@ -701,10 +705,10 @@ echo "ios:simulator:run → app: $APP_PATH"
 xcrun simctl boot "$UDID" >/dev/null 2>&1 || true
 xcrun simctl bootstatus "$UDID" -b
 xcrun simctl install "$UDID" "$APP_PATH"
-LAUNCH_ARGS=()
+SEED_LAUNCH=0
 if [[ "${IOS_DEVELOPMENT_SEED_BOOK:-1}" != "0" ]]; then
   if python3 ../../scripts/seed_ios_development_book.py --target simulator --identifier "$UDID"; then
-    LAUNCH_ARGS=(-developmentSeedBook)
+    SEED_LAUNCH=1
   else
     SEED_STATUS=$?
     if [[ "$SEED_STATUS" -ne 3 ]]; then
@@ -712,7 +716,11 @@ if [[ "${IOS_DEVELOPMENT_SEED_BOOK:-1}" != "0" ]]; then
     fi
   fi
 fi
-xcrun simctl launch "$UDID" com.pietrocode.epubtomp3 "${LAUNCH_ARGS[@]}"
+if [[ "$SEED_LAUNCH" == "1" ]]; then
+  xcrun simctl launch "$UDID" com.pietrocode.epubtomp3 -developmentSeedBook
+else
+  xcrun simctl launch "$UDID" com.pietrocode.epubtomp3
+fi
 """
 
 [tasks."ios:simulator:resume"]
@@ -807,19 +815,25 @@ run_simulator_tests() {
     xcodebuild -project EpubToMp3.xcodeproj -scheme EpubToMp3 -configuration Debug \
       -destination "$DEST" -derivedDataPath "$DD" build-for-testing
   fi
+  if [[ -n "${IOS_TESTS:-}" ]]; then
+    xcodebuild -project EpubToMp3.xcodeproj -scheme EpubToMp3 -configuration Debug \
+      -destination "$DEST" -derivedDataPath "$DD" -parallel-testing-enabled NO \
+      test-without-building "${only[@]}"
+    return
+  fi
   if [[ "${IOS_TEST_SHARDS:-4}" =~ ^[1-9][0-9]*$ ]]; then
     local shard_count="${IOS_TEST_SHARDS:-4}"
     local shard_index
     local -a unit_classes=()
     local -a ui_classes=()
-    if [[ -z "${IOS_TESTS:-}" || "${IOS_TESTS}" == EpubToMp3Tests* ]]; then
+    if [[ -z "${IOS_TESTS:-}" ]]; then
       while IFS= read -r -d '' file; do
         while read -r class_name; do
           [[ -n "$class_name" ]] && unit_classes+=("EpubToMp3Tests/$class_name")
         done < <(sed -nE 's/^[[:space:]]*(final[[:space:]]+)?class[[:space:]]+([A-Za-z0-9_]+):[[:space:]]*XCTestCase.*/\\2/p' "$file")
       done < <(find EpubToMp3Tests -maxdepth 1 -name '*.swift' -print0 | sort -z)
     fi
-    if [[ -z "${IOS_TESTS:-}" || "${IOS_TESTS}" == EpubToMp3UITests* ]]; then
+    if [[ -z "${IOS_TESTS:-}" ]]; then
       while IFS= read -r -d '' file; do
         while read -r class_name; do
           [[ -n "$class_name" ]] && ui_classes+=("EpubToMp3UITests/$class_name")
@@ -866,7 +880,7 @@ run_simulator_tests() {
 
 export DEST DD IOS_SKIP_BUILD
 export -f run_simulator_tests
-python3 ../../scripts/heavy_job_guard.py ios:simulator:test -- bash -c run_simulator_tests
+python3 ../../scripts/heavy_job_guard.py ios:simulator:test -- bash -e -c run_simulator_tests
 """
 
 [tasks."ios:device:test"]

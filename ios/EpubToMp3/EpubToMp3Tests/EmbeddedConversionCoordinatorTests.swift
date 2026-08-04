@@ -399,7 +399,7 @@ final class EmbeddedConversionCoordinatorTests: XCTestCase {
         XCTAssertTrue(iosSource.contains("EmbeddedConversionCoordinator.stream"))
         XCTAssertTrue(iosSource.contains("jobId.hasPrefix(\"embedded-\")"))
         XCTAssertTrue(iosSource.contains("backendBaseURL: nil"))
-        XCTAssertTrue(iosSource.contains("DownloadManager.shared.enqueueAll(snapshot: snapshot, baseURL: nil)"))
+        XCTAssertTrue(iosSource.contains("baseURL: settings.resolvedBaseURL"))
         XCTAssertTrue(macSource.contains("EmbeddedConversionCoordinator.stream"))
         XCTAssertTrue(macSource.contains("startRemoteConversion"))
         XCTAssertTrue(macSource.contains("recordConversion(jobId: response.jobId"))
@@ -412,7 +412,7 @@ final class EmbeddedConversionCoordinatorTests: XCTestCase {
         let playerSource = try source("Features/Playback/Services/AudioPlayer.swift")
         XCTAssertTrue(coordinatorSource.contains("static func stream("))
         XCTAssertTrue(coordinatorSource.contains("convertChapterStreaming"))
-        XCTAssertTrue(coordinatorSource.contains("player.enqueueSegment"))
+        XCTAssertTrue(coordinatorSource.contains("activePlayer.enqueueSegment"))
         XCTAssertTrue(playerSource.contains("finishEmbeddedStreaming"))
         XCTAssertTrue(playerSource.contains("canonical chapter queue"))
     }

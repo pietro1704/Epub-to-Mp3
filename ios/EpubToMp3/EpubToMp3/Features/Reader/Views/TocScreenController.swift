@@ -385,11 +385,9 @@ final class TocScreenController: UITableViewController {
             : L10n.string("player.downloadChapter")
         button.accessibilityIdentifier = "reader.toc.download.\(row.zeroBasedIndex)"
         button.accessibilityValue = row.downloaded ? L10n.string("toc.downloaded") : nil
-        button.translatesAutoresizingMaskIntoConstraints = false
-        NSLayoutConstraint.activate([
-            button.widthAnchor.constraint(equalToConstant: 44),
-            button.heightAnchor.constraint(equalToConstant: 44),
-        ])
+        // UITableViewCell owns the frame of its accessoryView. Constraints on
+        // the button make it escape the trailing accessory slot on iOS 18.
+        button.frame.size = CGSize(width: 44, height: 44)
         if isWorking {
             button.accessibilityValue = artifactStatusText(for: row.artifactState)
                 ?? (usesSchedulerStatus ? schedulerStatusText(for: row.schedulerState) : nil)

@@ -16,7 +16,10 @@ MISSING_SOURCE_EXIT = 3
 
 
 def development_book_source() -> Path | None:
-    configured = os.environ.get("IOS_DEVELOPMENT_SEED_BOOK", "").strip()
+    configured = os.environ.get("IOS_DEVELOPMENT_SEED_SOURCE", "").strip()
+    legacy_configured = os.environ.get("IOS_DEVELOPMENT_SEED_BOOK", "").strip()
+    if not configured and legacy_configured not in {"", "0", "1"}:
+        configured = legacy_configured
     candidates = (
         [Path(configured).expanduser()]
         if configured

@@ -1382,6 +1382,23 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
         Task { [weak self] in
             guard let self else { return }
             do {
+                let requestedIndices = chapterIndex.map { Set([$0]) }
+                let promoted = try await LocalAudioArtifactStore.shared.promoteAvailable(
+                    bookID: embeddedBookID,
+                    chapterIndices: requestedIndices
+                )
+                if let chapterIndex, promoted.contains(chapterIndex) {
+                    let isCompleteDownload = (try? await LocalAudioArtifactStore.shared.hasCompleteDownloadedAudio(
+                        bookID: embeddedBookID
+                    )) ?? false
+                    self.book.cachedOffline = isCompleteDownload
+                    self.library.recordConversion(
+                        jobId: snapshot.jobId,
+                        for: embeddedBookID,
+                        cachedOffline: isCompleteDownload
+                    )
+                    return
+                }
                 let completed = try await EmbeddedConversionCoordinator.stream(
                     bookURL: url,
                     bookID: embeddedBookID,

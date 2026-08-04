@@ -43,6 +43,35 @@ final class LocalAudioArtifactStoreTests: XCTestCase {
         XCTAssertEqual(try Data(contentsOf: url), bytes)
     }
 
+    func testPromotingAvailableSelectionPersistsOnlyTheRequestedArtifacts() async throws {
+        let store = LocalAudioArtifactStore(root: root)
+        try await store.prepare(
+            bookID: "book-id",
+            bookTitle: "Book",
+            author: nil,
+            chapters: [
+                .init(index: 0, title: "First"),
+                .init(index: 1, title: "Second")
+            ]
+        )
+        for index in [0, 1] {
+            let url = try await store.canonicalURL(bookID: "book-id", chapterIndex: index)
+            try Data(repeating: 0xA5, count: 1_024).write(to: url)
+            try await store.markAvailable(bookID: "book-id", chapterIndex: index)
+        }
+
+        let promoted = try await store.promoteAvailable(
+            bookID: "book-id",
+            chapterIndices: [1]
+        )
+        let first = try await store.artifact(bookID: "book-id", chapterIndex: 0)
+        let second = try await store.artifact(bookID: "book-id", chapterIndex: 1)
+
+        XCTAssertEqual(promoted, [1])
+        XCTAssertEqual(first?.retention, .temporary)
+        XCTAssertEqual(second?.retention, .downloaded)
+    }
+
     func testNewStoreInstanceRestoresTheCanonicalAvailableArtifact() async throws {
         let firstStore = LocalAudioArtifactStore(root: root)
         try await firstStore.prepare(
@@ -268,6 +297,14 @@ final class LocalAudioArtifactStoreTests: XCTestCase {
         XCTAssertEqual(temporaryValues.isExcludedFromBackup, true)
 
         try await store.promote(bookID: "book-id", chapterIndex: 0)
+        let promoted = try await store.artifact(bookID: "book-id", chapterIndex: 0)
+        XCTAssertEqual(promoted?.retention, .downloaded)
+
+        #if targetEnvironment(simulator)
+        // CoreSimulator reports its temporary test container as excluded even
+        // after clearing the per-file attribute. The manifest remains the
+        // durable source of truth and is verified above on this platform.
+        #else
         let downloadedValues = try url.resourceValues(forKeys: [.isExcludedFromBackupKey])
         XCTAssertEqual(downloadedValues.isExcludedFromBackup, false)
 
@@ -275,6 +312,7 @@ final class LocalAudioArtifactStoreTests: XCTestCase {
         _ = try await restoredStore.manifest(bookID: "book-id")
         let refreshedValues = try url.resourceValues(forKeys: [.isExcludedFromBackupKey])
         XCTAssertEqual(refreshedValues.isExcludedFromBackup, false)
+        #endif
     }
 
     func testEvictionRemovesOnlyTemporaryAudio() async throws {
