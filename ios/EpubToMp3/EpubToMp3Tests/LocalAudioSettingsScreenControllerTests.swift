@@ -3,7 +3,6 @@ import UIKit
 import XCTest
 @testable import EpubToMp3
 
-@MainActor
 final class LocalAudioSettingsScreenControllerTests: XCTestCase {
     private var root: URL!
     private var defaults: UserDefaults!
@@ -25,6 +24,7 @@ final class LocalAudioSettingsScreenControllerTests: XCTestCase {
         defaultsSuiteName = nil
     }
 
+    @MainActor
     func testSettingsExposesWiFiPolicyAndPerBookDownloadManagement() {
         let settings = AppSettings(defaults: defaults)
         let controller = makeSettingsController(settings: settings)
@@ -48,6 +48,7 @@ final class LocalAudioSettingsScreenControllerTests: XCTestCase {
         XCTAssertTrue(navigation.topViewController is LocalAudioDownloadsScreenController)
     }
 
+    @MainActor
     func testDownloadedBookRemovalRequiresConfirmation() async throws {
         let store = LocalAudioArtifactStore(root: root)
         try await store.prepare(
@@ -84,6 +85,7 @@ final class LocalAudioSettingsScreenControllerTests: XCTestCase {
         XCTAssertTrue(alert.actions.contains { $0.style == .destructive })
     }
 
+    @MainActor
     private func makeSettingsController(settings: AppSettings) -> SettingsScreenController {
         SettingsScreenController(
             settings: settings,

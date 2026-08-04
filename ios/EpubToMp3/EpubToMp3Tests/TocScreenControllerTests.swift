@@ -76,9 +76,33 @@ final class TocScreenControllerTests: XCTestCase {
         )
     }
 
-    private func snapshot() -> JobSnapshot {
+    func testEmbeddedTocReleasesItsNotificationObservers() async {
+        weak var releasedController: TocScreenController?
+
+        autoreleasepool {
+            let controller = TocScreenController(
+                fulltext: nil,
+                snapshot: snapshot(jobID: "embedded-book-id"),
+                currentChapterIndex: -1,
+                readingChapterIndex: nil,
+                onJump: { _ in },
+                onDownload: nil,
+                onDownloadAll: nil,
+                onCancelDownloads: nil,
+                onClearDownloads: nil
+            )
+            controller.loadViewIfNeeded()
+            releasedController = controller
+        }
+
+        await Task.yield()
+
+        XCTAssertNil(releasedController)
+    }
+
+    private func snapshot(jobID: String = "remote-job") -> JobSnapshot {
         JobSnapshot(
-            jobId: "remote-job",
+            jobId: jobID,
             state: "finished",
             bookTitle: "Book",
             bookAuthor: nil,

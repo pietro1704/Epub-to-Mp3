@@ -23,9 +23,11 @@ final class ChapterCacheManagerTests: XCTestCase {
 
     // MARK: - Helpers
 
-    private var tempDirs: [URL] = []
+    // XCTest invokes lifecycle hooks outside the MainActor but serially for a
+    // test case; this fixture bridges that documented boundary only.
+    nonisolated(unsafe) private var tempDirs: [URL] = []
 
-    override func tearDown() async throws {
+    nonisolated override func tearDown() async throws {
         for dir in tempDirs {
             try? FileManager.default.removeItem(at: dir)
         }

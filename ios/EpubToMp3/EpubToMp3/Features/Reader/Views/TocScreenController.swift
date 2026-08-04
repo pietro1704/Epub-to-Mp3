@@ -1,6 +1,23 @@
 #if os(iOS)
 import UIKit
 
+/// Keeps NotificationCenter tokens outside the view controller's MainActor
+/// isolation so cleanup remains valid even when ARC releases the controller
+/// from a nonisolated context.
+private final class TocNotificationObserverBag {
+    private var observers: [NSObjectProtocol] = []
+
+    func append(_ observer: NSObjectProtocol) {
+        observers.append(observer)
+    }
+
+    deinit {
+        observers.forEach { observer in
+            NotificationCenter.default.removeObserver(observer)
+        }
+    }
+}
+
 @MainActor
 final class TocScreenController: UITableViewController {
     private struct Row {
@@ -28,8 +45,7 @@ final class TocScreenController: UITableViewController {
     private var onExport: (() -> Void)?
     private var locallyDownloaded: Set<Int> = []
     private var localArtifactStates: [Int: LocalAudioArtifactStore.ArtifactState] = [:]
-    private var artifactObserver: NSObjectProtocol?
-    private var schedulerObserver: NSObjectProtocol?
+    private let notificationObservers = TocNotificationObserverBag()
 
     init(
         fulltext: EbookFulltext?,
@@ -79,15 +95,6 @@ final class TocScreenController: UITableViewController {
         observeLocalAudioArtifacts()
         observeConversionScheduler()
         refreshDownloaded()
-    }
-
-    deinit {
-        if let artifactObserver {
-            NotificationCenter.default.removeObserver(artifactObserver)
-        }
-        if let schedulerObserver {
-            NotificationCenter.default.removeObserver(schedulerObserver)
-        }
     }
 
     override func viewWillAppear(_ animated: Bool) {
@@ -277,7 +284,7 @@ final class TocScreenController: UITableViewController {
 
     private func observeLocalAudioArtifacts() {
         guard let embeddedBookID = EmbeddedConversionCoordinator.embeddedBookID(from: snapshot.jobId) else { return }
-        artifactObserver = NotificationCenter.default.addObserver(
+        let observer = NotificationCenter.default.addObserver(
             forName: LocalAudioArtifactStore.didChangeNotification,
             object: nil,
             queue: .main
@@ -290,11 +297,12 @@ final class TocScreenController: UITableViewController {
                 self?.refreshDownloaded()
             }
         }
+        notificationObservers.append(observer)
     }
 
     private func observeConversionScheduler() {
         guard let embeddedBookID = EmbeddedConversionCoordinator.embeddedBookID(from: snapshot.jobId) else { return }
-        schedulerObserver = NotificationCenter.default.addObserver(
+        let observer = NotificationCenter.default.addObserver(
             forName: LocalAudioConversionScheduler.didChangeNotification,
             object: nil,
             queue: .main
@@ -304,6 +312,7 @@ final class TocScreenController: UITableViewController {
                 self?.refreshDownloaded()
             }
         }
+        notificationObservers.append(observer)
     }
 
     private func configureMoreMenu() {

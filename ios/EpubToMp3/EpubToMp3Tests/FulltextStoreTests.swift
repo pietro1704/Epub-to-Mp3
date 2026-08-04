@@ -78,11 +78,13 @@ private final class StubProtocol: URLProtocol {
 @MainActor
 final class FulltextStoreTests: XCTestCase {
 
-    private var session: URLSession!
-    private var storageRoot: URL!
+    // XCTest invokes lifecycle hooks outside the MainActor but serially for a
+    // test case; these fixtures bridge that documented boundary only.
+    nonisolated(unsafe) private var session: URLSession!
+    nonisolated(unsafe) private var storageRoot: URL!
     private let base = URL(string: "http://stub.local")!
 
-    override func setUp() async throws {
+    nonisolated override func setUp() async throws {
         try await super.setUp()
         StubProtocol.reset()
         let config = URLSessionConfiguration.ephemeral
@@ -96,7 +98,7 @@ final class FulltextStoreTests: XCTestCase {
         try? FileManager.default.createDirectory(at: storageRoot, withIntermediateDirectories: true)
     }
 
-    override func tearDown() async throws {
+    nonisolated override func tearDown() async throws {
         session.invalidateAndCancel()
         session = nil
         if let storageRoot { try? FileManager.default.removeItem(at: storageRoot) }

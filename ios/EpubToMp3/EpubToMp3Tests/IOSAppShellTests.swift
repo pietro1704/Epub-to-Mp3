@@ -117,6 +117,7 @@ final class IOSAppShellTests: XCTestCase {
         XCTAssertEqual(controller.mode, .tabBar)
     }
 
+#if compiler(>=6.2)
     @available(iOS 26.0, *)
     func testSystemBottomAccessoryHostsTheMiniPlayerOutsideTheReader() {
         let controller = makeShellController()
@@ -136,6 +137,7 @@ final class IOSAppShellTests: XCTestCase {
         XCTAssertFalse(controller.usesSystemBottomAccessory)
         XCTAssertNil(controller.bottomAccessory)
     }
+#endif
 
     func testReaderOverlayRemainsOpaqueAboveTheLibrary() throws {
         let source = try readSourceFileIfAvailable(

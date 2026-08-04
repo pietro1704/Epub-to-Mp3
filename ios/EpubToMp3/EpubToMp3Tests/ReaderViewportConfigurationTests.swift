@@ -40,6 +40,7 @@ final class ReaderViewportConfigurationTests: XCTestCase {
         XCTAssertFalse(configuration.showsPageIndicator)
     }
 
+    @MainActor
     func testImmersiveReaderAlwaysHidesTheStatusBar() {
         XCTAssertTrue(
             IOSRootContainerController.shouldHideStatusBar(immersiveReaderMode: true)

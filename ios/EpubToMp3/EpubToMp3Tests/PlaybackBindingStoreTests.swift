@@ -5,16 +5,18 @@ import MediaPlayer
 @MainActor
 final class PlaybackBindingStoreTests: XCTestCase {
 
-    private var defaults: UserDefaults!
-    private let suite = "playback.binding.tests.\(UUID().uuidString)"
+    // XCTest invokes lifecycle hooks outside the MainActor but serially for a
+    // test case; these fixtures bridge that documented boundary only.
+    nonisolated(unsafe) private var defaults: UserDefaults!
+    nonisolated(unsafe) private var suite = "playback.binding.tests.\(UUID().uuidString)"
 
-    override func setUp() async throws {
+    nonisolated override func setUp() async throws {
         try await super.setUp()
         defaults = UserDefaults(suiteName: suite)
         defaults.removePersistentDomain(forName: suite)
     }
 
-    override func tearDown() async throws {
+    nonisolated override func tearDown() async throws {
         defaults.removePersistentDomain(forName: suite)
         defaults = nil
         try await super.tearDown()
