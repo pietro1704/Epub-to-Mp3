@@ -627,14 +627,17 @@ def _job_output_dir(job_id: str, job: Optional[dict] = None, ensure: bool = Fals
 
 
 def _job_stream_dir(job_id: str, ensure: bool = False) -> Path:
-    # This value is supplied by the request route and is used as one path
-    # component below. Keep the separator guard local to this filesystem
-    # access so both the runtime and static analysis can prove containment.
-    if "/" in job_id or "\\" in job_id or job_id == "." or job_id == "..":
+    # Use a standard-library path-component sanitizer at the filesystem
+    # boundary. The allow-list remains the runtime policy; basename makes the
+    # containment proof explicit to static analysis as well.
+    _validate_job_id(job_id)
+    safe_job_id = os.path.basename(job_id)
+    if safe_job_id != job_id:
         raise ValueError(f"Invalid job_id: {job_id!r}")
-    base = _job_output_dir(job_id, ensure=ensure)
+
+    base = _job_output_dir(safe_job_id, ensure=ensure)
     streams_root = _resolve_relative_path_within_root(base, Path("streams"), must_exist=False)
-    target = _resolve_relative_path_within_root(streams_root, Path(job_id), must_exist=False)
+    target = _resolve_relative_path_within_root(streams_root, Path(safe_job_id), must_exist=False)
     if ensure:
         target.mkdir(parents=True, exist_ok=True)
         return target
@@ -652,7 +655,7 @@ def _job_stream_dir(job_id: str, ensure: bool = False) -> Path:
             legacy_payload = json.loads(legacy_index.read_text(encoding="utf-8"))
         except Exception:
             legacy_payload = None
-        if isinstance(legacy_payload, dict) and legacy_payload.get("jobId") == job_id:
+        if isinstance(legacy_payload, dict) and legacy_payload.get("jobId") == safe_job_id:
             return streams_root
 
     return target
