@@ -28,5 +28,25 @@ final class ReaderViewportConfigurationTests: XCTestCase {
         XCTAssertFalse(configuration.usesPaginatedTextHeight)
         XCTAssertFalse(configuration.showsPageIndicator)
     }
+
+    func testHiddenChromeUsesTheFullReaderSurfaceWithoutPageChrome() {
+        let configuration = ReaderViewportConfiguration.resolve(
+            layout: .paginated,
+            chromeHidden: true,
+            showsPageNumbers: true
+        )
+
+        XCTAssertTrue(configuration.usesScreenEdges)
+        XCTAssertFalse(configuration.showsPageIndicator)
+    }
+
+    func testImmersiveReaderAlwaysHidesTheStatusBar() {
+        XCTAssertTrue(
+            IOSRootContainerController.shouldHideStatusBar(immersiveReaderMode: true)
+        )
+        XCTAssertFalse(
+            IOSRootContainerController.shouldHideStatusBar(immersiveReaderMode: false)
+        )
+    }
 }
 #endif

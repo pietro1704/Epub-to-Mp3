@@ -672,7 +672,7 @@ enum EmbeddedConversionCoordinator {
                 if let completedChapter = completed.last {
                     onChapterAvailable(completedChapter)
                 }
-                let live = publishLiveSnapshot(
+                _ = publishLiveSnapshot(
                     bookID: bookID,
                     title: payload.bookTitle,
                     author: payload.bookAuthor,
@@ -696,7 +696,7 @@ enum EmbeddedConversionCoordinator {
                 )
                 errors.append("Chapter \(chapter.index): \(error.localizedDescription)")
                 guard isActive(lease) else { throw CancellationError() }
-                let live = publishLiveSnapshot(
+                _ = publishLiveSnapshot(
                     bookID: bookID,
                     title: payload.bookTitle,
                     author: payload.bookAuthor,
@@ -1036,7 +1036,7 @@ enum EmbeddedConversionCoordinator {
         if clearCache || forceReprocess {
             try await artifactStore.clearTemporaryAudio(bookID: bookID)
         }
-        LocalAudioConversionScheduler.shared.markInitialCacheActionHandled(bookID: bookID)
+        await LocalAudioConversionScheduler.shared.markInitialCacheActionHandled(bookID: bookID)
 
         let manifestsByFilename = Dictionary(
             result.manifest.enumerated().compactMap { offset, manifest -> (String, (Int, PythonBridge.ChapterEntry))? in

@@ -19,6 +19,22 @@ def test_run_tasks_use_debug_development_paths() -> None:
     assert 'flutter run -d "$DEVICE"' in mise
 
 
+def test_simulator_resume_task_launches_only_an_installed_app() -> None:
+    """A legacy simulator may run an installed build without being buildable."""
+    mise = (ROOT / "mise.toml").read_text(encoding="utf-8")
+    start = mise.index('[tasks."ios:simulator:resume"]')
+    end = mise.index('[tasks."ios:simulator:test"]', start)
+    task = mise[start:end]
+
+    assert "guard_ios_simulator_resources.py" in task
+    assert "simctl bootstatus" in task
+    assert "simctl get_app_container" in task
+    assert "simctl launch" in task
+    assert "simctl install" not in task
+    assert "mise run ios:build" not in task
+    assert "xcodebuild" not in task
+
+
 def test_vscode_exposes_debug_run_tasks() -> None:
     tasks = (ROOT / ".vscode" / "tasks.json").read_text(encoding="utf-8")
 

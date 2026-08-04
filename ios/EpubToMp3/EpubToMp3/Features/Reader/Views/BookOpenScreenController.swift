@@ -52,8 +52,11 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
     private var comicContentConstraints: [NSLayoutConstraint] = []
     private var paginatedTextHeightConstraint: NSLayoutConstraint!
     private var scrollingTextHeightConstraint: NSLayoutConstraint!
+    private var scrollTopToSafeArea: NSLayoutConstraint!
+    private var scrollTopToRoot: NSLayoutConstraint!
     private var scrollBottomToPageIndicator: NSLayoutConstraint!
     private var scrollBottomToSafeArea: NSLayoutConstraint!
+    private var scrollBottomToRoot: NSLayoutConstraint!
     private var paginatedPageOffsets: [CGFloat] = [0]
     private var lastPaginatedViewportSize: CGSize = .zero
     private var lastScrollingViewportSize: CGSize = .zero
@@ -269,11 +272,16 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
             pageIndicator.heightAnchor.constraint(greaterThanOrEqualToConstant: pageIndicator.font.lineHeight),
             scrollView.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor),
             scrollView.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor),
-            scrollView.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 8),
         ])
         scrollView.accessibilityIdentifier = "reader.viewport"
+        scrollTopToSafeArea = scrollView.topAnchor.constraint(
+            equalTo: view.safeAreaLayoutGuide.topAnchor,
+            constant: 8
+        )
+        scrollTopToRoot = scrollView.topAnchor.constraint(equalTo: view.topAnchor)
         scrollBottomToPageIndicator = scrollView.bottomAnchor.constraint(equalTo: pageIndicator.topAnchor, constant: -8)
         scrollBottomToSafeArea = scrollView.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -8)
+        scrollBottomToRoot = scrollView.bottomAnchor.constraint(equalTo: view.bottomAnchor)
         configureTestProbeIfNeeded()
 
         if ProcessInfo.processInfo.arguments.contains("-uiTestChromeToggle") {
@@ -493,8 +501,11 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
         textView.textContainer.heightTracksTextView = false
         paginatedTextHeightConstraint.isActive = !isDisplayingImageChapter && configuration.usesPaginatedTextHeight
         scrollingTextHeightConstraint.isActive = !isDisplayingImageChapter && !configuration.usesPaginatedTextHeight
+        scrollTopToSafeArea.isActive = !configuration.usesScreenEdges
+        scrollTopToRoot.isActive = configuration.usesScreenEdges
         scrollBottomToPageIndicator.isActive = configuration.showsPageIndicator
-        scrollBottomToSafeArea.isActive = !configuration.showsPageIndicator
+        scrollBottomToSafeArea.isActive = !configuration.showsPageIndicator && !configuration.usesScreenEdges
+        scrollBottomToRoot.isActive = configuration.usesScreenEdges
         forwardChapterSwipe.isEnabled = configuration.allowsChapterSwipes
         backwardChapterSwipe.isEnabled = configuration.allowsChapterSwipes
         pageIndicator.isHidden = !configuration.showsPageIndicator
@@ -1890,6 +1901,7 @@ struct ReaderViewportConfiguration: Equatable {
     let allowsChapterSwipes: Bool
     let usesPaginatedTextHeight: Bool
     let showsPageIndicator: Bool
+    let usesScreenEdges: Bool
 
     static func resolve(
         layout: ReaderLayout,
@@ -1901,7 +1913,8 @@ struct ReaderViewportConfiguration: Equatable {
             allowsVerticalScrolling: !paginated,
             allowsChapterSwipes: !paginated,
             usesPaginatedTextHeight: paginated,
-            showsPageIndicator: paginated && !chromeHidden && showsPageNumbers
+            showsPageIndicator: paginated && !chromeHidden && showsPageNumbers,
+            usesScreenEdges: chromeHidden
         )
     }
 }

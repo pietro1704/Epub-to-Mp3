@@ -61,10 +61,14 @@ final class IOSRootContainerController: UIViewController {
     private var readerBottomChromeHidden = false
 
     override var prefersStatusBarHidden: Bool {
-        isImmersiveReaderMode && !isReaderLoading
+        Self.shouldHideStatusBar(immersiveReaderMode: isImmersiveReaderMode)
     }
 
     override var preferredStatusBarUpdateAnimation: UIStatusBarAnimation { .fade }
+
+    static func shouldHideStatusBar(immersiveReaderMode: Bool) -> Bool {
+        immersiveReaderMode
+    }
 
     init(
         settings: AppSettings,

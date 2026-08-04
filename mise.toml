@@ -715,6 +715,53 @@ fi
 xcrun simctl launch "$UDID" com.pietrocode.epubtomp3 "${LAUNCH_ARGS[@]}"
 """
 
+[tasks."ios:simulator:resume"]
+description = "Launch the EpubToMp3 app already installed in a selected Simulator; never builds or installs an artifact"
+run = """
+#!/bin/bash
+set -euo pipefail
+
+# This task is deliberately distinct from `ios:run`: it is useful when a
+# legacy simulator can boot an already-installed build but the selected Xcode
+# cannot compile current source for that runtime.
+python3 "${MISE_PROJECT_ROOT:-.}/scripts/guard_ios_simulator_resources.py"
+cd ios/EpubToMp3
+
+BUNDLE_ID="com.pietrocode.epubtomp3"
+if [[ -n "${IOS_SIMULATOR_UDID:-}" ]]; then
+  UDID="$IOS_SIMULATOR_UDID"
+  DEST="id=$UDID"
+else
+  DEST="${IOS_DEST:-$(python3 ../../scripts/select_ios_simulator.py)}"
+  UDID="${DEST##*id=}"
+fi
+if [[ -z "$UDID" || "$UDID" == "$DEST" ]]; then
+  echo "ios:simulator:resume error: could not resolve a simulator UDID." >&2
+  exit 2
+fi
+
+echo "ios:simulator:resume → device: $UDID"
+xcrun simctl boot "$UDID" >/dev/null 2>&1 || true
+xcrun simctl bootstatus "$UDID" -b
+
+APP_PATH=$(xcrun simctl get_app_container "$UDID" "$BUNDLE_ID" app 2>/dev/null) || {
+  echo "ios:simulator:resume error: $BUNDLE_ID is not installed on $UDID." >&2
+  echo "Use a build-capable simulator with `mise run ios:run`, or install an existing app with `mise run ios:simulator:run`." >&2
+  exit 2
+}
+if [[ ! -d "$APP_PATH" ]]; then
+  echo "ios:simulator:resume error: installed app container is missing: $APP_PATH" >&2
+  exit 2
+fi
+
+BUILT_WITH_XCODE=$(/usr/libexec/PlistBuddy -c 'Print :DTXcode' "$APP_PATH/Info.plist" 2>/dev/null || true)
+if [[ -n "$BUILT_WITH_XCODE" ]]; then
+  echo "ios:simulator:resume warning: launching installed build made with Xcode $BUILT_WITH_XCODE; current source was not rebuilt."
+fi
+open -a Simulator
+xcrun simctl launch "$UDID" "$BUNDLE_ID"
+"""
+
 [tasks."ios:simulator:test"]
 description = "Build and run iOS XCTest/UI tests on a selected Simulator. Set IOS_TESTS=Target/Class or Target/Class/test."
 depends = ["vendor:python"]
