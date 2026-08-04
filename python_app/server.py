@@ -627,17 +627,20 @@ def _job_output_dir(job_id: str, job: Optional[dict] = None, ensure: bool = Fals
 
 
 def _job_stream_dir(job_id: str, ensure: bool = False) -> Path:
-    # Use a standard-library path-component sanitizer at the filesystem
-    # boundary. The allow-list remains the runtime policy; basename makes the
-    # containment proof explicit to static analysis as well.
+    # Keep the allow-list as the product policy, then normalize and verify the
+    # concrete filesystem paths at this boundary. The explicit checks also
+    # protect against a pre-existing symlink that points outside the job root.
     _validate_job_id(job_id)
-    safe_job_id = os.path.basename(job_id)
-    if safe_job_id != job_id:
+    base = _job_output_dir(job_id, ensure=ensure)
+    base_path = os.path.realpath(os.fspath(base))
+    streams_root_path = os.path.realpath(os.path.join(base_path, "streams"))
+    if not streams_root_path.startswith(f"{base_path}{os.sep}"):
         raise ValueError(f"Invalid job_id: {job_id!r}")
-
-    base = _job_output_dir(safe_job_id, ensure=ensure)
-    streams_root = _resolve_relative_path_within_root(base, Path("streams"), must_exist=False)
-    target = _resolve_relative_path_within_root(streams_root, Path(safe_job_id), must_exist=False)
+    target_path = os.path.realpath(os.path.join(streams_root_path, job_id))
+    if not target_path.startswith(f"{streams_root_path}{os.sep}"):
+        raise ValueError(f"Invalid job_id: {job_id!r}")
+    target = Path(target_path)
+    streams_root = target.parent
     if ensure:
         target.mkdir(parents=True, exist_ok=True)
         return target
@@ -655,7 +658,7 @@ def _job_stream_dir(job_id: str, ensure: bool = False) -> Path:
             legacy_payload = json.loads(legacy_index.read_text(encoding="utf-8"))
         except Exception:
             legacy_payload = None
-        if isinstance(legacy_payload, dict) and legacy_payload.get("jobId") == safe_job_id:
+        if isinstance(legacy_payload, dict) and legacy_payload.get("jobId") == job_id:
             return streams_root
 
     return target
