@@ -6,8 +6,6 @@ npm = "latest"
 # Runtimes required by the cargo:git-cliff and cocoapods backends below.
 rust = "stable"
 ruby = "3.3.6"
-# Xcode project generator used by every native Apple build task.
-"aqua:yonaskolb/XcodeGen" = "2.46.0"
 # Changelog generator (conventional commits → CHANGELOG.md)
 "cargo:git-cliff" = "latest"
 # Flutter SDK for the cross-platform companion app under flutter_app/.

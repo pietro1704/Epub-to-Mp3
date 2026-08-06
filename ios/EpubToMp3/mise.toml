@@ -1,0 +1,4 @@
+[tools]
+# Native Apple project generator. XcodeGen only distributes macOS binaries,
+# so keep it scoped to the iOS project rather than the cross-platform root.
+"aqua:yonaskolb/XcodeGen" = "2.46.0"
