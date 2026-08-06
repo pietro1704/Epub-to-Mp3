@@ -1,6 +1,11 @@
 name: iOS TestFlight
 
 on:
+  push:
+    branches:
+      - master
+    paths:
+      - 'ios/**'
   workflow_dispatch:
     inputs:
       upload_to_testflight:
@@ -141,7 +146,7 @@ jobs:
           if-no-files-found: error
 
       - name: Upload to TestFlight
-        if: inputs.upload_to_testflight
+        if: github.event_name == 'push' || inputs.upload_to_testflight
         uses: apple-actions/upload-testflight-build@v5
         with:
           app-path: ${{ env.EXPORT_PATH }}/EpubToMp3.ipa
