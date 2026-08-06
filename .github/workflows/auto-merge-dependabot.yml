@@ -1,4 +1,4 @@
-name: Auto-merge Dependabot
+name: Auto-merge eligible pull requests
 
 on:
   pull_request_target:
@@ -10,37 +10,13 @@ permissions:
 
 jobs:
   auto-merge:
-    name: Enable auto-merge for dependabot PRs
+    name: Enable auto-merge after required checks
     runs-on: ubuntu-latest
     if: >
-      github.event.pull_request.user.login == 'dependabot[bot]' &&
-      github.event.pull_request.draft == false
+      github.event.pull_request.draft == false &&
+      github.event.pull_request.head.repo.full_name == github.repository
     steps:
-      - name: Skip major bumps
-        id: classify
-        env:
-          TITLE: ${{ github.event.pull_request.title }}
-        run: |
-          from=$(echo "$TITLE" | grep -oE 'from [0-9]+' | grep -oE '[0-9]+' | head -1)
-          to=$(echo "$TITLE" | grep -oE 'to [0-9]+' | grep -oE '[0-9]+' | head -1)
-          if [ -n "$from" ] && [ -n "$to" ] && [ "$from" != "$to" ]; then
-            echo "major=true" >> "$GITHUB_OUTPUT"
-            echo "Skipping major bump: $TITLE"
-            exit 0
-          fi
-
-          echo "major=false" >> "$GITHUB_OUTPUT"
-
-      - name: Approve PR
-        if: steps.classify.outputs.major == 'false'
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          REPO: ${{ github.repository }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-        run: gh pr review "$PR_NUMBER" --repo "$REPO" --approve || true
-
       - name: Enable auto-merge
-        if: steps.classify.outputs.major == 'false'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
