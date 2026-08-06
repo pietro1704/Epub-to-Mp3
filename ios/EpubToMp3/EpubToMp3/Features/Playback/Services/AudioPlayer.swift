@@ -2157,7 +2157,7 @@ final class AudioPlayer: ObservableObject {
         }
         let interval = CMTime(seconds: 0.25, preferredTimescale: 600)
         timeObserverToken = player.addPeriodicTimeObserver(forInterval: interval, queue: .main) { [weak self] time in
-            Task { @MainActor in
+            Task { @MainActor [weak self] in
                 guard let self else { return }
                 let rawTime = time.seconds.isFinite ? time.seconds : 0
                 self.positionSeconds = self.isSegmentMode
@@ -2235,7 +2235,7 @@ final class AudioPlayer: ObservableObject {
         // to the chapter the caller intended at `startFromReaderPage`
         // time, never carry over a chapter boundary.
         currentItemObserver = player.observe(\.currentItem, options: [.new]) { [weak self] _, _ in
-            Task { @MainActor in
+            Task { @MainActor [weak self] in
                 guard let self else { return }
                 self.pendingProportionalSeek = nil
                 if let item = self.player?.currentItem {

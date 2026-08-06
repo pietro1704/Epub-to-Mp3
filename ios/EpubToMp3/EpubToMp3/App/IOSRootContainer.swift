@@ -292,8 +292,6 @@ final class IOSRootContainerController: UIViewController {
             overrideUserInterfaceStyle = .light
         case nil:
             overrideUserInterfaceStyle = .unspecified
-        @unknown default:
-            overrideUserInterfaceStyle = .unspecified
         }
     }
 

@@ -486,7 +486,7 @@ private func postWidgetIntentNotification() {
 @available(iOS 16.0, *)
 struct TogglePlayPauseIntent: AppIntent {
     static let title: LocalizedStringResource = "Play / Pause"
-    static let description = IntentDescription("Toggles audio playback.")
+    static var description: IntentDescription { IntentDescription("Toggles audio playback.") }
     static let openAppWhenRun = true
 
     func perform() async throws -> some IntentResult {
@@ -501,7 +501,7 @@ struct TogglePlayPauseIntent: AppIntent {
 @available(iOS 16.0, *)
 struct SkipForward30Intent: AppIntent {
     static let title: LocalizedStringResource = "Skip Forward 30s"
-    static let description = IntentDescription("Skips forward 30 seconds in the audiobook.")
+    static var description: IntentDescription { IntentDescription("Skips forward 30 seconds in the audiobook.") }
     static let openAppWhenRun = true
 
     func perform() async throws -> some IntentResult {

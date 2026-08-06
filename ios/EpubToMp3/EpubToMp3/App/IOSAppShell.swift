@@ -98,8 +98,6 @@ final class IOSAppShellController: UITabBarController {
             overrideUserInterfaceStyle = .light
         case nil:
             overrideUserInterfaceStyle = .unspecified
-        @unknown default:
-            overrideUserInterfaceStyle = .unspecified
         }
     }
 
@@ -149,21 +147,27 @@ final class IOSAppShellController: UITabBarController {
     }
 
     func setReaderTabBarHidden(_ hidden: Bool, animated: Bool) {
+#if compiler(>=6.0)
         if #available(iOS 18.0, *) {
             setTabBarHidden(hidden, animated: animated)
         } else {
             tabBar.isHidden = hidden
         }
+#else
+        tabBar.isHidden = hidden
+#endif
     }
 
     func configureNavigationMode(
         for interfaceIdiom: UIUserInterfaceIdiom,
         horizontalSizeClass: UIUserInterfaceSizeClass = .regular
     ) {
+#if compiler(>=6.0)
         guard #available(iOS 18.0, *) else { return }
         mode = interfaceIdiom == .pad && horizontalSizeClass == .regular
             ? .tabSidebar
             : .tabBar
+#endif
     }
 
     func setMiniPlayerAccessoryContent(

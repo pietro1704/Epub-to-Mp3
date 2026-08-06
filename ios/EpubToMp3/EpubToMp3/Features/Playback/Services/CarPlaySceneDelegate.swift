@@ -1,5 +1,5 @@
 #if os(iOS)
-import CarPlay
+@preconcurrency import CarPlay
 import UIKit
 
 /// CarPlay owns presentation only. Playback remains in the application's
@@ -9,10 +9,25 @@ import UIKit
 final class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate {
     private weak var interfaceController: CPInterfaceController?
 
-    func templateApplicationScene(
+    nonisolated func templateApplicationScene(
         _ templateApplicationScene: CPTemplateApplicationScene,
         didConnect interfaceController: CPInterfaceController
     ) {
+        Task { @MainActor [weak self] in
+            self?.connect(interfaceController)
+        }
+    }
+
+    nonisolated func templateApplicationScene(
+        _ templateApplicationScene: CPTemplateApplicationScene,
+        didDisconnectInterfaceController interfaceController: CPInterfaceController
+    ) {
+        Task { @MainActor [weak self] in
+            self?.disconnect(interfaceController)
+        }
+    }
+
+    private func connect(_ interfaceController: CPInterfaceController) {
         self.interfaceController = interfaceController
         let nowPlaying = CPNowPlayingTemplate.shared
         let library = makeLibraryTemplate()
@@ -20,10 +35,7 @@ final class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegat
         interfaceController.setRootTemplate(tabs, animated: false) { _, _ in }
     }
 
-    func templateApplicationScene(
-        _ templateApplicationScene: CPTemplateApplicationScene,
-        didDisconnectInterfaceController interfaceController: CPInterfaceController
-    ) {
+    private func disconnect(_ interfaceController: CPInterfaceController) {
         if self.interfaceController === interfaceController {
             self.interfaceController = nil
         }

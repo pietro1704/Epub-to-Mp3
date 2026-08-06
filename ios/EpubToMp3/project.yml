@@ -7,17 +7,16 @@ options:
   createIntermediateGroups: true
   developmentLanguage: en
   knownRegions: [en, pt-BR, es]
-  # Xcode 26 reads `attributes.LastUpgradeCheck` to decide whether
-  # the project has been audited against the current recommended-
-  # settings list. Stale values (e.g. 1430 = Xcode 14.3) trigger the
-  # "Update to recommended settings" dialog on every open. Bump to
-  # 2630 (Xcode 26.3) so xcodegen regeneration writes a fresh value
-  # and the dialog disappears.
-  xcodeVersion: "2630"
+  # XcodeGen maps this semantic version to Xcode 15's compatible project format.
+  xcodeVersion: "15.4"
+  # XcodeGen 2.46 defaults to Xcode 16 (objectVersion 77), which Xcode 15.4
+  # cannot open. Explicitly emit the newest project format supported by it.
+  projectFormat: xcode15_3
 
 settings:
   base:
-    SWIFT_VERSION: "6"
+    # Xcode 15.4 provides Swift 5.10; use the Swift 5 language mode.
+    SWIFT_VERSION: "5.0"
     PRODUCT_BUNDLE_IDENTIFIER: com.pietrocode.epubtomp3
     MARKETING_VERSION: "0.3.0"
     CURRENT_PROJECT_VERSION: "1"
@@ -53,13 +52,13 @@ settings:
     # and simulator without the simulator runtime check.
     ENABLE_ON_DEMAND_RESOURCES: NO
     GCC_TREAT_WARNINGS_AS_ERRORS: YES
-    # Swift 5 migration stage: diagnose all actor isolation and Sendable
-    # crossings before enabling Swift 6 language mode. Warnings remain errors
-    # so unsafe crossings cannot silently accumulate.
-    SWIFT_STRICT_CONCURRENCY: complete
+    # Xcode 15.4 compiles Swift Package dependencies (notably PythonKit) with
+    # this target's concurrency mode. `complete` turns their Swift-6 migration
+    # warnings into errors under our warnings-as-errors policy; retain the
+    # Xcode 15-compatible baseline until dependencies can be audited upstream.
+    SWIFT_STRICT_CONCURRENCY: minimal
     # The main app contains AVFoundation/Objective-C handles whose lifetime
-    # is intentionally controlled by AudioPlayer. Extensions remain strict
-    # below; the app keeps Swift 6 concurrency and warning checks enabled.
+    # is intentionally controlled by AudioPlayer.
     SWIFT_STRICT_MEMORY_SAFETY: NO
     SWIFT_ENFORCE_EXCLUSIVE_ACCESS: full
     # Custom launch storyboard (was UILaunchScreen_Generation=YES auto).
@@ -189,9 +188,11 @@ packages:
   PythonKit:
     url: https://github.com/pvieito/PythonKit.git
     from: "0.4.0"
+  # 2.x uses Swift 6-only syntax (`@retroactive`), which Xcode 15.4 cannot
+  # parse. 1.6.1 exposes the same InjectionNext product under Swift 5.4.
   InjectionNext:
     url: https://github.com/johnno1962/InjectionNext.git
-    from: "2.0.1"
+    from: "1.6.1"
 
 targets:
   EpubToMp3:
@@ -460,7 +461,7 @@ targets:
         INFOPLIST_FILE: EpubToMp3ShareExtension/Info.plist
         CODE_SIGN_ENTITLEMENTS: EpubToMp3ShareExtension/ShareExtension.entitlements
         TARGETED_DEVICE_FAMILY: "1,2"
-        SWIFT_VERSION: "6"
+        SWIFT_VERSION: "5.0"
         APPLICATION_EXTENSION_API_ONLY: YES
         ENABLE_USER_SCRIPT_SANDBOXING: YES
       configs:
@@ -510,7 +511,7 @@ targets:
         INFOPLIST_FILE: EpubToMp3Widget/Info.plist
         CODE_SIGN_ENTITLEMENTS: EpubToMp3Widget/Resources/EpubToMp3Widget.entitlements
         TARGETED_DEVICE_FAMILY: "1,2"
-        SWIFT_VERSION: "6"
+        SWIFT_VERSION: "5.0"
         # Widget extensions must not import UIKit directly. WidgetKit and
         # SwiftUI provides the only rendering surface for this target.
         ENABLE_USER_SCRIPT_SANDBOXING: YES

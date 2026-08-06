@@ -3,6 +3,11 @@ python = "3.12.10"
 # Node LTS for frontend (Vite 8.x requires >=20.19.0)
 node = "lts"
 npm = "latest"
+# Runtimes required by the cargo:git-cliff and cocoapods backends below.
+rust = "stable"
+ruby = "3.3.6"
+# Xcode project generator used by every native Apple build task.
+"aqua:yonaskolb/XcodeGen" = "2.46.0"
 # Changelog generator (conventional commits → CHANGELOG.md)
 "cargo:git-cliff" = "latest"
 # Flutter SDK for the cross-platform companion app under flutter_app/.
@@ -339,9 +344,9 @@ set -euo pipefail
 
 [tasks."vendor:python"]
 description = "Download + splice Beeware Python.xcframework into ios/EpubToMp3/Vendor (idempotent; iOS embed)"
-# `sources` + `outputs` let mise skip re-running when the xcframework is
-# already present and the bootstrap script itself hasn't changed.
-sources = ["ios/EpubToMp3/scripts/bootstrap-ios-python.sh"]
+# Re-run the inexpensive source sync when the canonical Python package or its
+# sync script changes; bootstrap itself avoids re-downloading an existing runtime.
+sources = ["ios/EpubToMp3/scripts/bootstrap-ios-python.sh", "ios/EpubToMp3/scripts/sync-embedded-python.sh", "python_app/**"]
 outputs = ["ios/EpubToMp3/Vendor/Python/Python.xcframework/Info.plist"]
 run = "bash ios/EpubToMp3/scripts/bootstrap-ios-python.sh"
 

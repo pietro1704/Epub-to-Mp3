@@ -847,13 +847,29 @@ class TextProcessor:
 
             processed_targets.append(fragment)
 
+        # `Tag.extract()` maintains BeautifulSoup's parent/sibling links. Group
+        # direct children by parent and remove them from back to front so each
+        # list deletion is at the end of its parent's remaining child list.
+        cleanup_by_parent: Dict[int, Tuple[any, set[int]]] = {}
         for fragment in set(processed_targets):
             node = cleanup_targets.get(fragment) or _soup_id_index.get(fragment)
-            if node is not None:
-                try:
-                    node.decompose()
-                except Exception:
-                    pass
+            parent = getattr(node, "parent", None) if node is not None else None
+            if parent is not None:
+                parent_id = id(parent)
+                if parent_id not in cleanup_by_parent:
+                    cleanup_by_parent[parent_id] = (parent, set())
+                cleanup_by_parent[parent_id][1].add(id(node))
+
+        for parent, node_ids in cleanup_by_parent.values():
+            direct_targets = [
+                (index, child)
+                for index, child in enumerate(parent.contents)
+                if id(child) in node_ids
+            ]
+            for index, node in reversed(direct_targets):
+                # `extract` updates BeautifulSoup's tree bookkeeping; providing
+                # the known index avoids a second linear lookup per footnote.
+                node.extract(_self_index=index)
 
         return str(soup), footnotes
 

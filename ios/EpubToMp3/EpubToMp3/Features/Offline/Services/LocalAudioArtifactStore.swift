@@ -89,9 +89,9 @@ actor LocalAudioArtifactStore {
     private let root: URL
     private let fileManager: FileManager
 
-    init(root: URL = LocalAudioArtifactStore.defaultRoot(), fileManager: FileManager = .default) {
+    init(root: URL = LocalAudioArtifactStore.defaultRoot()) {
         self.root = root.standardizedFileURL
-        self.fileManager = fileManager
+        self.fileManager = .default
     }
 
     nonisolated static func defaultRoot() -> URL {
