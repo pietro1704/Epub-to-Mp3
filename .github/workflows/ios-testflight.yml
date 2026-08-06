@@ -35,7 +35,7 @@ jobs:
 
     steps:
       - name: Check out source
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       # iOS 27 devices require a current Xcode toolchain. The app is built on
       # GitHub's macOS runner, so developers do not need Xcode locally.
@@ -164,7 +164,7 @@ jobs:
             -allowProvisioningUpdates
 
       - name: Upload IPA artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: EpubToMp3-iOS-IPA
           path: ${{ env.EXPORT_PATH }}/*.ipa
