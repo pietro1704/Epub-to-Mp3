@@ -51,8 +51,8 @@ jobs:
           echo "number=$(jq -r '.number' <<< "$PR_JSON")" >> "$GITHUB_OUTPUT"
           echo "sha=$HEAD_SHA" >> "$GITHUB_OUTPUT"
 
-      - name: Dispatch repair or merge worker
-        if: steps.resolve.outputs.number != ''
+      - name: Dispatch repair worker
+        if: steps.resolve.outputs.number != '' && github.event.workflow_run.conclusion == 'failure'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ steps.resolve.outputs.number }}
@@ -60,11 +60,9 @@ jobs:
           CONCLUSION: ${{ github.event.workflow_run.conclusion }}
         run: |
           set -euo pipefail
-          MODE=merge
-          [[ "$CONCLUSION" == failure ]] && MODE=fix
           gh workflow run pr-autofix-worker.yml \
             --repo "$GITHUB_REPOSITORY" \
             --ref master \
             -f pr_number="$PR_NUMBER" \
             -f head_sha="$HEAD_SHA" \
-            -f mode="$MODE"
+            -f mode=fix

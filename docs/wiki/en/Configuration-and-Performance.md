@@ -8,6 +8,9 @@ The project is optimized for throughput and aggressive CPU/RAM usage.
 
 ### Edge-TTS
 
+These supported overrides are examples for a local environment. The runtime
+selects different safe values for Hugging Face Spaces and available hardware.
+
 ```bash
 EDGE_CHUNK_CHARS=12000
 EDGE_MAX_CONCURRENCY=12
@@ -20,7 +23,7 @@ CHAPTER_PARALLEL_COUNT=0
 ```bash
 EDGE_MIN_CHARS_PER_SECOND=45
 EDGE_SLOW_RATIO_THRESHOLD=2.5
-_CHAPTER_TIMEOUT_MAX=300
+
 ```
 
 ### Large chapter handling
@@ -32,7 +35,6 @@ MAX_CHAPTER_CHARS=0
 ### Local engines
 
 ```bash
-KOKORO_MAX_WORKERS=0
 PIPER_MAX_PROCS=0
 ```
 

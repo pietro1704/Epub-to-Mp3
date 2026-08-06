@@ -533,8 +533,12 @@ schemes:
         EpubToMp3Tests: [test]
     run:
       config: Debug
+      environmentVariables:
+        IDEPreferLogStreaming: YES
     test:
       config: Debug
+      environmentVariables:
+        IDEPreferLogStreaming: YES
       targets:
         - EpubToMp3Tests
         - EpubToMp3UITests
@@ -591,7 +595,11 @@ schemes:
         EpubToMp3Tests: [test]
     run:
       config: Debug
+      environmentVariables:
+        IDEPreferLogStreaming: YES
     test:
       config: Debug
+      environmentVariables:
+        IDEPreferLogStreaming: YES
       targets:
         - EpubToMp3Tests

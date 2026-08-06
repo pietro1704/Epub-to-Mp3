@@ -15,7 +15,7 @@ Practical rules:
 mise run test
 mise run test:unit
 mise run test:web
-mise run test:desktop
+mise run test
 ```
 
 ## Recommended flow
@@ -30,7 +30,7 @@ mise run test:desktop
 
 See also:
 
-- [SECURITY.md](/Users/pietropugliesi/Developer/Epub-to-Mp3/SECURITY.md)
+- [SECURITY.md](https://github.com/pietro1704/Epub-to-Mp3/blob/master/SECURITY.md)
 
 Key points:
 

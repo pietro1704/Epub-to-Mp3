@@ -58,7 +58,7 @@ python -m python_app.main convert livro1.epub livro2.pdf --batch ~/pasta/
 Subir backend:
 
 ```bash
-mise run web
+mise run dev
 ```
 
 Ou diretamente:

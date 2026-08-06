@@ -6,6 +6,16 @@ import AppKit
 
 @MainActor
 final class MacAppKitRootControllerTests: XCTestCase {
+    func testPlayerBarIsCollapsedWhenThereIsNoReadingContext() {
+        XCTAssertFalse(
+            MacAppKitRootController.shouldShowPlayerBar(
+                hasSnapshot: false,
+                hasCurrentBook: false,
+                hasPreviouslyOpenedBook: false
+            )
+        )
+    }
+
     func testMainMenuProvidesNativeFileEditViewWindowAndHelpMenus() throws {
         let mainMenu = EpubToMp3App.makeMainMenu()
         let menuTitles = mainMenu.items.compactMap { $0.submenu?.title }

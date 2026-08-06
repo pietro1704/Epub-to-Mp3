@@ -35,9 +35,8 @@ across restarts.
 
 ## Optional permanent storage
 
-For external object storage, see:
-
-- [docs/R2_SETUP.md](/Users/pietropugliesi/Developer/Epub-to-Mp3/docs/R2_SETUP.md)
+External object storage is not configured by this repository. Keep deployment
+documentation repository-relative and do not publish machine-local paths.
 
 ## Automated workflows
 

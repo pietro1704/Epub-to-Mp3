@@ -6,7 +6,7 @@ O projeto é dividido em quatro camadas:
 
 1. `python_app/`: backend e pipeline de conversão
 2. `web/`: frontend React/TypeScript
-3. `ios/EpubToMp3/`: cliente SwiftUI (macOS · iPadOS · iOS) com sidecar PyInstaller embutido no macOS
+3. `ios/EpubToMp3/`: cliente UIKit/AppKit (macOS · iPadOS · iOS) com runtime Python embutido no macOS
 4. `flutter_app/`: cliente Flutter (Linux · Windows · Android)
 
 ## Dois pipelines de conversão
@@ -41,9 +41,9 @@ Arquivos principais:
 
 ## Clientes nativos
 
-- `ios/EpubToMp3/project.yml`: descritor xcodegen; o post-build script `Embed Python sidecar (macOS only)` copia `dist/epub-to-mp3-server` para os Resources do `.app`
+- `ios/EpubToMp3/project.yml`: descritor XcodeGen do cliente Apple nativo e do runtime Python embutido
 - `flutter_app/lib/`: código do cliente Flutter (Linux · Windows · Android)
-- `desktop.spec`: spec do PyInstaller para o binário sidecar gerado por `mise run sidecar:build`
+
 
 ## Persistência
 
@@ -62,13 +62,11 @@ CLI:
 
 - Edge multilíngue
 - Edge monolíngue
-- Kokoro
 - Piper
 
 Web:
 
 - Edge
-- Kokoro
 - Piper
 
 ## Fluxo de runtime

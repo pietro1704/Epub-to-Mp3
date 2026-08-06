@@ -773,6 +773,9 @@ enum EmbeddedConversionCoordinator {
         let narratable = payload.chapters.filter {
             !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         }
+        guard PythonBridge.usesEmbeddedRuntime else {
+            return !narratable.isEmpty
+        }
         return !narratable.isEmpty && narratable.allSatisfy {
             !($0.speechText ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         }

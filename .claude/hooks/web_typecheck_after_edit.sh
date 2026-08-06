@@ -22,7 +22,8 @@ fi
 echo "$NOW" > "$STAMP"
 
 LOG="/tmp/claude-web-typecheck.log"
-cd /Users/pietropugliesi/Developer/Epub-to-Mp3/web || exit 0
+PROJECT_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
+cd "$PROJECT_DIR/web" || exit 0
 {
     echo "=== $(date) :: edited $FILE"
     npx tsc --noEmit -p tsconfig.build.json 2>&1 | tail -20

@@ -38,15 +38,15 @@ platform family:
 
 | Surface | Platforms | Where | Status |
 |---|---|---|---|
-| **SwiftUI native** | macOS · iPadOS · iOS | `ios/EpubToMp3/` | **Official Apple client** — Library-first reader, embedded Python sidecar on macOS, streaming TTS chapter-by-chapter |
-| **Flutter native** | Linux · Windows · Android | `flutter_app/` | **Official non-Apple client** — single codebase, calls the same FastAPI backend. macOS/iOS are handled by SwiftUI, not Flutter. |
+| **UIKit/AppKit native** | macOS · iPadOS · iOS | `ios/EpubToMp3/` | **Official Apple client** — Library-first reader, embedded Python runtime on macOS, streaming TTS chapter-by-chapter |
+| **Flutter native** | Linux · Windows · Android | `flutter_app/` | **Official non-Apple client** — single codebase, calls the same FastAPI backend. macOS/iOS are handled by UIKit/AppKit, not Flutter. |
 
-### SwiftUI app (Apple)
+### UIKit/AppKit app (Apple)
 
 Headless build (no Xcode UI needed):
 
 ```bash
-mise run mac:build      # builds sidecar + .app, opens path at end
+mise run mac:build      # builds the app with its embedded Python runtime
 ```
 
 Or open the project in Xcode:
@@ -57,8 +57,8 @@ xcodegen generate
 open EpubToMp3.xcodeproj
 ```
 
-The `mise run sidecar:build` task builds the embedded Python server
-that the macOS build copies inside the `.app`'s Resources.
+The macOS build embeds the versioned Python runtime directly; there is no
+separate `sidecar:build` task or PyInstaller artifact.
 
 #### Build artifact hygiene
 
@@ -114,7 +114,7 @@ mise run flutter:build-apk          # Android (release)
 ```bash
 git clone https://github.com/pietro1704/Epub-to-Mp3.git
 cd Epub-to-Mp3
-mise run install        # Sets up Python 3.11 venv + npm + Piper binary
+mise run install        # Sets up the Python 3.12.10 venv, npm, and Piper binary
 ```
 
 ### Manual
@@ -169,7 +169,7 @@ Tab-completes `.epub`/`.pdf` file paths and `--engine` values.
 ## Web Server
 
 ```bash
-mise run web                            # Recommended
+mise run dev                            # Starts backend and frontend together
 uvicorn python_app.server:app --port 8000   # Direct
 python hf_app.py                        # HF Spaces entry (port 7860)
 ```
@@ -219,9 +219,8 @@ CHAPTER_PARALLEL_COUNT=0         # 0 = auto-detect from CPU cores
 ### Engine Fallback Thresholds
 
 ```bash
-EDGE_MIN_CHARS_PER_SECOND=45     # Slow-mode trigger (HF: 100)
-EDGE_SLOW_RATIO_THRESHOLD=2.5    # Elapsed/estimated ratio trigger (HF: 1.5)
-_CHAPTER_TIMEOUT_MAX=300         # Max timeout per chapter (HF: 120s)
+EDGE_MIN_CHARS_PER_SECOND=45     # Example local slow-mode trigger (HF differs)
+EDGE_SLOW_RATIO_THRESHOLD=2.5    # Example local elapsed/estimated ratio (HF differs)
 ```
 
 ### Oversized Chapter Handling
@@ -321,7 +320,7 @@ The Space runs via Docker. GitHub CI syncs code → HF rebuilds the image.
 
 Key auto-applied settings when `SPACE_ID` is set:
 - `EDGE_MAX_CONCURRENCY=1`, `CHAPTER_PARALLEL_MAX=1` (shared CPU)
-- `EDGE_MIN_CHARS_PER_SECOND=100`, `_CHAPTER_TIMEOUT_MAX=120s`
+- `EDGE_MIN_CHARS_PER_SECOND=100`; timeout behavior is selected by the HF runtime profile
 - `COMPLETED_JOB_TTL_HOURS=48` (outputs survive overnight on `/data`)
 
 Persistent storage at `/data/epub-to-mp3/` survives Space restarts.

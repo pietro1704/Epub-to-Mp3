@@ -77,7 +77,7 @@ analyse_lines = []
 try:
     project_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(log_file))))
     proc = subprocess.run(
-        ["python", os.path.join(project_dir, "scripts", "analyze_logs.py"), "--book", title],
+        [sys.executable, os.path.join(project_dir, "scripts", "analyze_logs.py"), "--book", title],
         capture_output=True, text=True, timeout=30, cwd=project_dir,
     )
     if proc.returncode == 0 and proc.stdout:

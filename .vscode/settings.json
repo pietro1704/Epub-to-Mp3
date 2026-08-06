@@ -1,6 +1,9 @@
 {
   "python.defaultInterpreterPath": "${workspaceFolder}/.venv/bin/python",
   "python.terminal.activateEnvironment": true,
+  "sweetpad.build.xcodeWorkspacePath": "ios/EpubToMp3/EpubToMp3.xcodeproj",
+  "sweetpad.build.scheme": "EpubToMp3",
+  "sweetpad.build.configuration": "Debug",
   "files.associations": {
     "*.swift": "swift"
   },

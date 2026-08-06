@@ -22,7 +22,8 @@ fi
 echo "$NOW" > "$STAMP"
 
 LOG="/tmp/claude-swift-test.log"
-cd /Users/pietropugliesi/Developer/Epub-to-Mp3/ios/EpubToMp3 || exit 0
+PROJECT_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
+cd "$PROJECT_DIR/ios/EpubToMp3" || exit 0
 {
     echo "=== $(date) :: edited $FILE"
     swift test 2>&1 | tail -5

@@ -37,6 +37,14 @@ final class MacAppKitRootController: NSSplitViewController, NSToolbarDelegate {
     private var controllers: [Destination: NSViewController] = [:]
     private var sidebarButtons: [Destination: NSButton] = [:]
 
+    static func shouldShowPlayerBar(
+        hasSnapshot: Bool,
+        hasCurrentBook: Bool,
+        hasPreviouslyOpenedBook: Bool
+    ) -> Bool {
+        hasSnapshot || hasCurrentBook || hasPreviouslyOpenedBook
+    }
+
     init(
         settings: AppSettings,
         library: LibraryStore,
@@ -351,11 +359,18 @@ final class MacAppKitRootController: NSSplitViewController, NSToolbarDelegate {
     }
 
     private func refreshPlayerBar() {
-        let hasReadingContext = player.snapshot != nil
-            || UserDefaults.standard.string(forKey: ReaderSessionState.currentlyReadingBookIDKey) != nil
-            || library.books.contains { $0.lastOpenedAt != nil }
-        playerBar.view.isHidden = !hasReadingContext
-        playerBarHeightConstraint?.constant = hasReadingContext ? 60 : 0
+        let hasReadingContext = Self.shouldShowPlayerBar(
+            hasSnapshot: player.snapshot != nil,
+            hasCurrentBook: UserDefaults.standard.string(forKey: ReaderSessionState.currentlyReadingBookIDKey) != nil,
+            hasPreviouslyOpenedBook: library.books.contains { $0.lastOpenedAt != nil }
+        )
+        if hasReadingContext {
+            playerBarHeightConstraint?.constant = 60
+            playerBar.setCollapsed(false)
+        } else {
+            playerBar.setCollapsed(true)
+            playerBarHeightConstraint?.constant = 0
+        }
     }
 }
 
@@ -373,6 +388,8 @@ private final class MacPlayerBarViewController: NSViewController {
     private let nextButton = NSButton()
     private let rateButton = NSButton()
     private var cancellable: AnyCancellable?
+    private var contentEdgeConstraints: [NSLayoutConstraint] = []
+    private var isCollapsed = true
 
     init(player: AudioPlayer, library: LibraryStore, onStartPlayback: @escaping () -> Void, onShowFullPlayer: @escaping () -> Void) {
         self.player = player
@@ -445,15 +462,20 @@ private final class MacPlayerBarViewController: NSViewController {
         stack.edgeInsets = NSEdgeInsets(top: 8, left: 14, bottom: 8, right: 14)
         background.addSubview(stack)
         stack.translatesAutoresizingMaskIntoConstraints = false
-        NSLayoutConstraint.activate([
+        contentEdgeConstraints = [
             stack.leadingAnchor.constraint(equalTo: background.leadingAnchor),
             stack.trailingAnchor.constraint(equalTo: background.trailingAnchor),
             stack.topAnchor.constraint(equalTo: background.topAnchor),
             stack.bottomAnchor.constraint(equalTo: background.bottomAnchor),
+        ]
+        NSLayoutConstraint.activate([
             info.widthAnchor.constraint(greaterThanOrEqualToConstant: 220),
             coverView.widthAnchor.constraint(equalToConstant: 44),
             coverView.heightAnchor.constraint(equalToConstant: 44),
         ])
+        if !isCollapsed {
+            NSLayoutConstraint.activate(contentEdgeConstraints)
+        }
         openButton.setContentHuggingPriority(.defaultLow, for: .horizontal)
         openButton.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         for button in [playButton, nextButton, rateButton] {
@@ -463,6 +485,16 @@ private final class MacPlayerBarViewController: NSViewController {
         view = background
         cancellable = player.objectWillChange.sink { [weak self] _ in self?.refresh() }
         refresh()
+    }
+
+    func setCollapsed(_ collapsed: Bool) {
+        isCollapsed = collapsed
+        view.isHidden = collapsed
+        if collapsed {
+            NSLayoutConstraint.deactivate(contentEdgeConstraints)
+        } else {
+            NSLayoutConstraint.activate(contentEdgeConstraints)
+        }
     }
 
     @objc private func togglePlayback() {

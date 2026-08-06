@@ -28,14 +28,30 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          set +e
+          set -euo pipefail
           RUN_ID="${{ github.event.workflow_run.id }}"
           # Capture failed-job names + last 80 lines of the first failing
-          # step's log. Trimmed to fit a single PR comment.
+          # step's log. GitHub can expose workflow completion before logs are
+          # available, so retry before creating a diagnostic with no evidence.
           gh run view "$RUN_ID" --json jobs \
             -q '.jobs[] | select(.conclusion=="failure") | "- " + .name + " (id=" + (.databaseId|tostring) + ")"' \
-            > failed_jobs.txt
-          FAILED_LOG=$(gh run view "$RUN_ID" --log-failed 2>/dev/null | tail -n 80 | head -n 80)
+            > failed_jobs.txt || true
+
+          FAILED_LOG=""
+          for attempt in 1 2 3; do
+            FAILED_LOG=$(gh run view "$RUN_ID" --log-failed 2>/dev/null | tail -n 80 | head -n 80 || true)
+            [[ -n "$FAILED_LOG" ]] && break
+            if [[ "$attempt" -lt 3 ]]; then
+              sleep $((attempt * 10))
+            fi
+          done
+
+          if [[ -z "$FAILED_LOG" ]]; then
+            FAILED_LOG="GitHub Actions logs were unavailable after three attempts. Open the full run and retry the diagnostic after logs finish processing."
+          fi
+          if [[ ! -s failed_jobs.txt ]]; then
+            printf '%s\n' '- Failed job names were unavailable; see the full run.' > failed_jobs.txt
+          fi
           {
             echo "log<<DIAG_EOF"
             echo "$FAILED_LOG"
@@ -54,10 +70,10 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          set +e
+          set -euo pipefail
           # workflow_run gives us the head SHA — find any PR with that head.
           SHA="${{ github.event.workflow_run.head_sha }}"
-          PR_NUMBER=$(gh api "repos/${{ github.repository }}/commits/$SHA/pulls" -q '.[0].number' 2>/dev/null)
+          PR_NUMBER=$(gh api "repos/${{ github.repository }}/commits/$SHA/pulls" -q '.[0].number' 2>/dev/null || true)
           echo "number=${PR_NUMBER:-}" >> "$GITHUB_OUTPUT"
 
       - name: Comment on PR

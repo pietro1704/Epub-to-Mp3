@@ -23,3 +23,11 @@ def test_vscode_exposes_device_build_and_launch_tasks() -> None:
     assert '"iOS: Build physical device"' in tasks
     assert '"mise run ios:device:build"' in tasks
     assert '"mise run ios:device:run"' in tasks
+
+
+def test_sweetpad_is_pinned_to_the_nested_ios_project() -> None:
+    settings = (ROOT / ".vscode" / "settings.json").read_text(encoding="utf-8")
+
+    assert '"sweetpad.build.xcodeWorkspacePath": "ios/EpubToMp3/EpubToMp3.xcodeproj"' in settings
+    assert '"sweetpad.build.scheme": "EpubToMp3"' in settings
+    assert '"sweetpad.build.configuration": "Debug"' in settings

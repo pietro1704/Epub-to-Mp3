@@ -58,7 +58,7 @@ python -m python_app.main convert book1.epub book2.pdf --batch ~/folder/
 Start the backend:
 
 ```bash
-mise run web
+mise run dev
 ```
 
 Or directly:

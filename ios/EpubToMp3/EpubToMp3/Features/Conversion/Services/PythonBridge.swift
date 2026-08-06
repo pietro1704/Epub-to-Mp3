@@ -101,6 +101,18 @@ private final class SegmentDeliveryGate: @unchecked Sendable {
 final class PythonBridge: @unchecked Sendable {
     static let shared = PythonBridge()
 
+    /// PythonKit + the bundled CPython 3.13 runtime crash on macOS during
+    /// PythonObject attribute access, even when calls remain on one Thread.
+    /// macOS has native EPUB parsing and Swift Edge-TTS transport, so keep the
+    /// embedded interpreter limited to the iOS runtime that requires it.
+    static var usesEmbeddedRuntime: Bool {
+        #if os(macOS)
+        false
+        #else
+        true
+        #endif
+    }
+
     /// Single-threaded executor for every PythonKit call. Pins every
     /// Python call to a dedicated kernel thread for the process lifetime
     /// (actors can't do this — they guarantee mutual exclusion, not
@@ -153,6 +165,7 @@ final class PythonBridge: @unchecked Sendable {
     /// bundled Python runtime and transport wiring without consuming network
     /// quota or interrupting another audio app.
     func preflightRuntime() async throws {
+        guard Self.usesEmbeddedRuntime else { return }
         guard !Self.interpreterWedged else {
             throw PythonBridgeError.bootstrapFailed(
                 "The embedded interpreter is unavailable for this app session."
@@ -212,6 +225,15 @@ final class PythonBridge: @unchecked Sendable {
     /// - Throws: `PythonBridgeError` if bootstrap, parse, or JSON
     ///   decode fails.
     func parseEpub(at fileURL: URL, bookId: String) async throws -> EbookFulltext {
+        guard Self.usesEmbeddedRuntime else {
+            let fallback = await Task.detached(priority: .userInitiated) {
+                EpubFallbackParser.parse(url: fileURL, bookId: bookId)
+            }.value
+            guard !fallback.chapters.isEmpty else {
+                throw PythonBridgeError.emptyResult
+            }
+            return fallback
+        }
         guard !Self.interpreterWedged else {
             let fallback = await Task.detached(priority: .userInitiated) {
                 EpubFallbackParser.parse(url: fileURL, bookId: bookId)
@@ -414,13 +436,18 @@ final class PythonBridge: @unchecked Sendable {
         chapterIndex: Int,
         onSegment: SegmentHandler? = nil
     ) async throws -> URL {
-        guard PythonEmbed.shared.isBootstrapComplete else {
-            throw PythonBridgeError.bootstrapFailed("interpreter not ready yet")
-        }
-
-        // Step 1: Get chunks from Python (runs on Python thread, fast).
-        let (chunks, resolvedVoice) = try await runner.callAsync {
-            try self.prepareChunksSync(text: text, voice: voice, streaming: onSegment != nil)
+        let chunks: [String]
+        let resolvedVoice: String
+        if Self.usesEmbeddedRuntime {
+            guard PythonEmbed.shared.isBootstrapComplete else {
+                throw PythonBridgeError.bootstrapFailed("interpreter not ready yet")
+            }
+            (chunks, resolvedVoice) = try await runner.callAsync {
+                try self.prepareChunksSync(text: text, voice: voice, streaming: onSegment != nil)
+            }
+        } else {
+            chunks = EdgeTTSBridge.protocolTextChunks(from: text)
+            resolvedVoice = voice
         }
 
         guard !chunks.isEmpty else {
@@ -616,6 +643,16 @@ final class PythonBridge: @unchecked Sendable {
         chapterIndex: Int,
         onSegment: @escaping SegmentHandler
     ) async throws -> URL {
+        guard Self.usesEmbeddedRuntime else {
+            return try await convertChapterParallel(
+                text: text,
+                voice: voice,
+                outputDir: outputURL.deletingLastPathComponent(),
+                outputURL: outputURL,
+                chapterIndex: chapterIndex,
+                onSegment: onSegment
+            )
+        }
         guard PythonEmbed.shared.isBootstrapComplete else {
             throw PythonBridgeError.bootstrapFailed("interpreter not ready yet")
         }
