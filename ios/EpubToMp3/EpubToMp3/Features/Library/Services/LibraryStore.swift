@@ -160,10 +160,21 @@ final class LibraryStore: ObservableObject {
         let started = url.startAccessingSecurityScopedResource()
         defer { if started { url.stopAccessingSecurityScopedResource() } }
 
+        // Apple Books can expose a book as an expanded `.epub` directory.
+        // Materialise it while the security scope is active, then let the
+        // regular import path own a normal archive just like any other EPUB.
+        let materialized = try EpubDirectoryArchiver.materializeIfNeeded(at: url)
+        defer {
+            if materialized.isTemporary {
+                try? fileManager.removeItem(at: materialized.url)
+            }
+        }
+        let importURL = materialized.url
+
         // Verify we can actually read the file before touching disk
         // for the bookmark — this gives the user a clearer error than
         // the generic "couldn't be opened" surfaced by the system.
-        guard FileManager.default.isReadableFile(atPath: url.path) else {
+        guard fileManager.isReadableFile(atPath: importURL.path) else {
             throw NSError(
                 domain: "LibraryStore",
                 code: 1,
@@ -176,7 +187,7 @@ final class LibraryStore: ObservableObject {
 
         let id: String
         do {
-            id = try Self.contentHash(of: url)
+            id = try Self.contentHash(of: importURL)
         } catch {
             throw NSError(
                 domain: "LibraryStore",
@@ -204,7 +215,7 @@ final class LibraryStore: ObservableObject {
         // future launches can read the book without reopening the user's
         // Documents/Downloads permission scope.
         let libraryURL = try Self.persistImportedFileForLibrary(
-            originalURL: url,
+            originalURL: importURL,
             id: id,
             fileType: fileType
         )

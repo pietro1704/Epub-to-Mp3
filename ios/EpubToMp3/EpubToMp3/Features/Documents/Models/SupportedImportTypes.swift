@@ -15,7 +15,10 @@ import UniformTypeIdentifiers
 /// Info.plist is required for this to work.
 enum SupportedImportTypes {
     static let all: [UTType] = {
-        var types: [UTType] = [.epub, .pdf]
+        // Apple Books may materialise an EPUB as a directory whose name still
+        // ends in `.epub`. Accept folders so the importer can package a valid
+        // expanded EPUB before storing it in the library.
+        var types: [UTType] = [.epub, .pdf, .folder]
         if let zip = UTType("org.idpf.epub-container") { types.append(zip) }
         for ext in ["fb2", "docx", "cbz", "cbr", "mobi", "azw", "azw3", "prc"] {
             if let type = UTType(filenameExtension: ext) {

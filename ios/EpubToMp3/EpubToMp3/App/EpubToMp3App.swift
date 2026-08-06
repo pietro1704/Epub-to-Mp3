@@ -397,6 +397,7 @@ final class EpubToMp3App: NSObject, PlatformApplicationDelegate {
     private func activateRuntime() {
         Self.sharedPlayerForWidgetIntents = player
         drainSharedInbox()
+        importDocumentsBooks()
         drainPendingIntent()
         drainWidgetIntents()
         WidgetDataSync.reloadAll()
@@ -430,7 +431,16 @@ final class EpubToMp3App: NSObject, PlatformApplicationDelegate {
 #endif
     }
 
-    private func handleIncomingURL(_ url: URL) {
+    private func importDocumentsBooks() {
+#if os(iOS)
+        let outcomes = DocumentsBookImporter.importPending(into: library)
+        for outcome in outcomes where outcome.error != nil {
+            print("[DocumentsImport] failed \(outcome.url.lastPathComponent): \(outcome.error!)")
+        }
+#endif
+    }
+
+    func handleIncomingURL(_ url: URL) {
         if url.isFileURL {
             if let book = try? library.importBook(from: url) {
                 UserDefaults.standard.set(book.id, forKey: ReaderSessionState.currentlyReadingBookIDKey)

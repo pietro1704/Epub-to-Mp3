@@ -1,4 +1,5 @@
 import XCTest
+import UniformTypeIdentifiers
 @testable import EpubToMp3
 
 /// The Share Extension drops EPUB/PDF payloads into a folder shared
@@ -65,6 +66,23 @@ final class SharedContainerImporterTests: XCTestCase {
         XCTAssertEqual(pending.count, 1)
     }
 
+    func testImportTypesIncludeFoldersForExpandedEpubPackages() {
+        XCTAssertTrue(SupportedImportTypes.all.contains(.folder))
+    }
+
+    func testPendingFilesIncludesValidExpandedEpubDirectoryOnly() throws {
+        let expanded = try makeExpandedEpubDirectory(named: "Expanded.epub")
+        let ordinaryDirectory = tempDir.appendingPathComponent("NotABook.epub", isDirectory: true)
+        try FileManager.default.createDirectory(at: ordinaryDirectory, withIntermediateDirectories: true)
+        let pdf = tempDir.appendingPathComponent("document.pdf")
+        try Data("pdf".utf8).write(to: pdf)
+
+        let pending = SharedContainerImporter.pendingFiles(in: tempDir)
+
+        XCTAssertEqual(Set(pending.map(\.lastPathComponent)), ["Expanded.epub", "document.pdf"])
+        XCTAssertTrue(FileManager.default.fileExists(atPath: expanded.path))
+    }
+
     // MARK: - drain → LibraryStore
 
     func testDrainImportsIntoLibraryAndDeletesSource() throws {
@@ -107,6 +125,61 @@ final class SharedContainerImporterTests: XCTestCase {
         XCTAssertNotNil(outcomes[0].error, "missing file should produce an error outcome")
         XCTAssertNil(outcomes[0].importedBookID)
         XCTAssertEqual(library.books.count, 0)
+    }
+
+    func testDrainRepackagesExpandedEpubDirectoryAndImportsIt() throws {
+        let source = try makeExpandedEpubDirectory(named: "Expanded.epub")
+        let library = makeLibrary()
+
+        let outcomes = SharedContainerImporter.drain(urls: [source], into: library)
+
+        XCTAssertEqual(outcomes.count, 1)
+        XCTAssertNil(outcomes[0].error)
+        let id = try XCTUnwrap(outcomes[0].importedBookID)
+        let importedURL = try library.openBookFile(id: id)
+        XCTAssertTrue(FileManager.default.isReadableFile(atPath: importedURL.path))
+        XCTAssertEqual(importedURL.pathExtension.lowercased(), "epub")
+        let metadata = try EpubMetadataReader.readMetadata(from: importedURL)
+        XCTAssertEqual(metadata.title, EpubFixture.title)
+        XCTAssertEqual(metadata.author, EpubFixture.author)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: source.path))
+    }
+
+    func testDrainRejectsInvalidExpandedEpubDirectory() throws {
+        let source = try makeExpandedEpubDirectory(named: "Broken.epub", includeOPF: false)
+        let library = makeLibrary()
+
+        let outcomes = SharedContainerImporter.drain(urls: [source], into: library)
+
+        XCTAssertEqual(outcomes.count, 1)
+        XCTAssertNil(outcomes[0].importedBookID)
+        XCTAssertNotNil(outcomes[0].error)
+        XCTAssertTrue(library.books.isEmpty)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: source.path))
+    }
+
+    func testDocumentsImporterRepackagesAndPreservesExpandedEpubDirectory() throws {
+        let source = try makeExpandedEpubDirectory(named: "Finder.epub")
+        let library = makeLibrary()
+        let suite = "documents-import.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defaults.removePersistentDomain(forName: suite)
+        addTeardownBlock { defaults.removePersistentDomain(forName: suite) }
+
+        let outcomes = DocumentsBookImporter.importPending(
+            in: tempDir,
+            into: library,
+            defaults: defaults
+        )
+
+        XCTAssertEqual(outcomes.count, 1)
+        let id = try XCTUnwrap(outcomes.first?.importedBookID)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: source.path))
+        XCTAssertTrue(FileManager.default.isReadableFile(atPath: try library.openBookFile(id: id).path))
+        XCTAssertTrue(
+            DocumentsBookImporter.importPending(in: tempDir, into: library, defaults: defaults).isEmpty,
+            "an unchanged file in Documents must not be re-imported on each foreground activation"
+        )
     }
 
     // MARK: - dropIntoInbox (collision handling)
@@ -159,5 +232,31 @@ final class SharedContainerImporterTests: XCTestCase {
         if let url {
             XCTAssertTrue(url.path.contains("Inbox"))
         }
+    }
+
+    private func makeLibrary() -> LibraryStore {
+        let suite = "library.share-test.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defaults.removePersistentDomain(forName: suite)
+        addTeardownBlock { defaults.removePersistentDomain(forName: suite) }
+        return LibraryStore(defaults: defaults, defaultsKey: "library.books.v1")
+    }
+
+    private func makeExpandedEpubDirectory(
+        named name: String,
+        includeOPF: Bool = true
+    ) throws -> URL {
+        let directory = tempDir.appendingPathComponent(name, isDirectory: true)
+        let metaInf = directory.appendingPathComponent("META-INF", isDirectory: true)
+        let oebps = directory.appendingPathComponent("OEBPS", isDirectory: true)
+        try FileManager.default.createDirectory(at: metaInf, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: oebps, withIntermediateDirectories: true)
+        try Data("application/epub+zip".utf8).write(to: directory.appendingPathComponent("mimetype"))
+        try EpubFixture.containerXML.write(to: metaInf.appendingPathComponent("container.xml"))
+        if includeOPF {
+            try EpubFixture.opfXML.write(to: oebps.appendingPathComponent("content.opf"))
+            try EpubFixture.coverPNG.write(to: oebps.appendingPathComponent("cover.png"))
+        }
+        return directory
     }
 }

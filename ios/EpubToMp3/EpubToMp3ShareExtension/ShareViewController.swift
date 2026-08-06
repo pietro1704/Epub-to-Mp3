@@ -29,6 +29,7 @@ final class ShareViewController: UIViewController {
     static let acceptedTypeIdentifiers: [String] = [
         UTType.epub.identifier,
         "org.idpf.epub-container",
+        "com.apple.ibooks.epub",
         UTType.pdf.identifier,
     ]
 

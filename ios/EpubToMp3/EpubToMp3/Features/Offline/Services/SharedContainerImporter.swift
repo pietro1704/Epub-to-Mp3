@@ -128,7 +128,12 @@ enum SharedContainerImporter {
             options: [.skipsHiddenFiles]
         ) else { return [] }
         return entries
-            .filter { allowed.contains($0.pathExtension.lowercased()) }
+            .filter { url in
+                guard allowed.contains(url.pathExtension.lowercased()) else { return false }
+                let values = try? url.resourceValues(forKeys: [.isRegularFileKey, .isDirectoryKey])
+                if values?.isRegularFile == true { return true }
+                return values?.isDirectory == true && EpubDirectoryArchiver.isValidPackage(at: url, fileManager: fileManager)
+            }
             .sorted { $0.lastPathComponent < $1.lastPathComponent }
     }
 

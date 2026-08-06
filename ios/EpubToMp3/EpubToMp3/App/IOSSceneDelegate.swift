@@ -19,6 +19,9 @@ final class IOSSceneDelegate: UIResponder, UIWindowSceneDelegate {
         window.makeKeyAndVisible()
         self.window = window
         appDelegate.window = window
+        for context in connectionOptions.urlContexts {
+            appDelegate.handleIncomingURL(context.url)
+        }
     }
 
     func sceneDidBecomeActive(_ scene: UIScene) {
@@ -27,6 +30,13 @@ final class IOSSceneDelegate: UIResponder, UIWindowSceneDelegate {
 
     func sceneDidEnterBackground(_ scene: UIScene) {
         (UIApplication.shared.delegate as? EpubToMp3App)?.deactivateRuntimeForScene()
+    }
+
+    func scene(_ scene: UIScene, openURLContexts URLContexts: Set<UIOpenURLContext>) {
+        guard let appDelegate = UIApplication.shared.delegate as? EpubToMp3App else { return }
+        for context in URLContexts {
+            appDelegate.handleIncomingURL(context.url)
+        }
     }
 }
 #endif
