@@ -63,6 +63,31 @@ jobs:
         working-directory: ios/EpubToMp3
         run: mise exec -- xcodegen generate
 
+      - name: Validate TestFlight credentials
+        env:
+          APPSTORE_ISSUER_ID: ${{ secrets.APPSTORE_ISSUER_ID }}
+          APPSTORE_KEY_ID: ${{ secrets.APPSTORE_KEY_ID }}
+          APPSTORE_PRIVATE_KEY: ${{ secrets.APPSTORE_PRIVATE_KEY }}
+          IOS_DISTRIBUTION_CERTIFICATE_BASE64: ${{ secrets.IOS_DISTRIBUTION_CERTIFICATE_BASE64 }}
+          IOS_DISTRIBUTION_CERTIFICATE_PASSWORD: ${{ secrets.IOS_DISTRIBUTION_CERTIFICATE_PASSWORD }}
+        run: |
+          set -euo pipefail
+          required=(
+            APPSTORE_ISSUER_ID
+            APPSTORE_KEY_ID
+            APPSTORE_PRIVATE_KEY
+            IOS_DISTRIBUTION_CERTIFICATE_BASE64
+            IOS_DISTRIBUTION_CERTIFICATE_PASSWORD
+          )
+          missing=()
+          for name in "${required[@]}"; do
+            [[ -n "${!name}" ]] || missing+=("$name")
+          done
+          if ((${#missing[@]})); then
+            printf '::error::Missing GitHub Actions secrets: %s\n' "${missing[*]}"
+            exit 1
+          fi
+
       # The API key must be an App Store Connect key with access to Certificates,
       # Identifiers & Profiles. Each target needs a profile for its own explicit
       # App ID and App Group entitlement.
