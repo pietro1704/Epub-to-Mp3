@@ -42,13 +42,13 @@ final class MacAppKitRootController: NSSplitViewController, NSToolbarDelegate {
         library: LibraryStore,
         player: AudioPlayer,
         bookmarkStore: BookmarkStore,
-        playerPresentation: PlayerPresentation = PlayerPresentation()
+        playerPresentation: PlayerPresentation? = nil
     ) {
         self.settings = settings
         self.library = library
         self.player = player
         self.bookmarkStore = bookmarkStore
-        self.playerPresentation = playerPresentation
+        self.playerPresentation = playerPresentation ?? PlayerPresentation()
         self.playerPresentation.dismissFullPlayer()
         super.init(nibName: nil, bundle: nil)
         self.playerBar = MacPlayerBarViewController(player: player, library: library, onStartPlayback: { [weak self] in

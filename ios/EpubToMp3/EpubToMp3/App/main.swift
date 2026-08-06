@@ -1,13 +1,15 @@
 #if os(macOS)
 import AppKit
 
-if EpubToMp3App.isRunningUnderXCTest() {
-    while NSApp == nil {
-        RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.1))
+MainActor.assumeIsolated {
+    if EpubToMp3App.isRunningUnderXCTest() {
+        while NSApp == nil {
+            RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.1))
+        }
+        NSApp?.run()
+    } else {
+        EpubToMp3App.runApp()
     }
-    NSApp?.run()
-} else {
-    EpubToMp3App.runApp()
 }
 #else
 import UIKit

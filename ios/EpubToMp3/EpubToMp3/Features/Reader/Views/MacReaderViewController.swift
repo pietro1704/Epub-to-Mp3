@@ -525,7 +525,7 @@ final class MacReaderViewController: NSViewController, NSTableViewDataSource, NS
                     selectedChapter = min(max(selectedChapter, firstReadableChapter), max(0, payload.chapters.count - 1))
                 }
                 selectedChapter = min(max(selectedChapter, 0), max(0, payload.chapters.count - 1))
-                if let row = tocRows.firstIndex(where: { $0.chapterIndex == selectedChapter }) {
+                if let row = self.tocRows.firstIndex(where: { $0.chapterIndex == self.selectedChapter }) {
                     chaptersTable.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
                 }
                 showChapter(selectedChapter)
