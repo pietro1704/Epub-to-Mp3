@@ -3,6 +3,9 @@ name: Auto-merge eligible pull requests
 on:
   pull_request_target:
     types: [opened, reopened, synchronize, ready_for_review]
+  schedule:
+    - cron: "17 * * * *"
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -12,13 +15,21 @@ jobs:
   auto-merge:
     name: Enable auto-merge after required checks
     runs-on: ubuntu-latest
-    if: >
-      github.event.pull_request.draft == false &&
-      github.event.pull_request.head.repo.full_name == github.repository
     steps:
-      - name: Enable auto-merge
+      - name: Enable squash auto-merge for eligible internal pull requests
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
+          EVENT_NAME: ${{ github.event_name }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
-        run: gh pr merge "$PR_NUMBER" --repo "$REPO" --auto --squash --delete-branch
+        run: |
+          set -euo pipefail
+          if [[ "$EVENT_NAME" == "pull_request_target" ]]; then
+            prs="$PR_NUMBER"
+          else
+            prs=$(gh pr list --repo "$REPO" --state open --json number,isDraft,headRepository | \
+              jq -r --arg owner "${REPO%%/*}" '.[] | select(.isDraft | not) | select(.headRepository.owner.login == $owner) | .number')
+          fi
+          for pr in $prs; do
+            gh pr merge "$pr" --repo "$REPO" --auto --squash --delete-branch || true
+          done
