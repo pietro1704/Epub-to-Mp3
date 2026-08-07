@@ -12,7 +12,6 @@
 import XCTest
 @testable import EpubToMp3
 
-@MainActor
 final class AudioPlayerCachedBookChapterProgressTests: XCTestCase {
 
     private func snapshot(chapters: [(index: Int, status: String, chars: Int, url: String?)]) -> JobSnapshot {
@@ -31,11 +30,13 @@ final class AudioPlayerCachedBookChapterProgressTests: XCTestCase {
         )
     }
 
+    @MainActor
     func testNilByDefault() {
         let player = AudioPlayer()
         XCTAssertNil(player.cachedBookChapterProgress)
     }
 
+    @MainActor
     func testPopulatedWhenSnapshotHasChapterProgress() {
         let player = AudioPlayer()
         player.testHook_setSnapshot(snapshot(chapters: [(0, "completed", 100, "a.mp3")]))
@@ -43,12 +44,14 @@ final class AudioPlayerCachedBookChapterProgressTests: XCTestCase {
         XCTAssertEqual(player.cachedBookChapterProgress?.chapters.count, 1)
     }
 
+    @MainActor
     func testNilWhenChapterProgressEmpty() {
         let player = AudioPlayer()
         player.testHook_setSnapshot(snapshot(chapters: []))
         XCTAssertNil(player.cachedBookChapterProgress)
     }
 
+    @MainActor
     func testUpdatesWhenSnapshotIsReassigned() {
         let player = AudioPlayer()
         player.testHook_setSnapshot(snapshot(chapters: [(0, "running", 100, "a.mp3")]))
@@ -61,6 +64,7 @@ final class AudioPlayerCachedBookChapterProgressTests: XCTestCase {
     /// The whole point of the cache: reading it repeatedly without
     /// reassigning `snapshot` must return the same identity-equal value,
     /// not rebuild `BookChapterProgress` (sort + map + reduce) each time.
+    @MainActor
     func testRepeatedReadsWithoutReassignmentReturnEqualValueWithoutRebuilding() {
         let player = AudioPlayer()
         player.testHook_setSnapshot(snapshot(chapters: [(0, "completed", 100, "a.mp3")]))

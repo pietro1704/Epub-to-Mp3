@@ -9,7 +9,6 @@ import AppKit
 /// flag is on. NSAttributedString's HTML importer is single-threaded
 /// and requires the main thread, so we mark the whole suite
 /// MainActor-isolated.
-@MainActor
 final class EpubHtmlRendererTests: XCTestCase {
 
     private func makeSettings() -> AppSettings {
@@ -24,6 +23,7 @@ final class EpubHtmlRendererTests: XCTestCase {
         NSAttributedString(attr)
     }
 
+    @MainActor
     func testRendersBoldAndItalic() {
         let s = makeSettings()
         let html = "<p><b>hi</b> <i>there</i></p>"
@@ -51,6 +51,7 @@ final class EpubHtmlRendererTests: XCTestCase {
         #endif
     }
 
+    @MainActor
     func testPreservesInlineDataURIImages() {
         let s = makeSettings()
         // Full valid 1x1 transparent GIF (header + image data + trailer) — a
@@ -68,6 +69,7 @@ final class EpubHtmlRendererTests: XCTestCase {
             "inline data: URI images must survive HTML sanitisation so the importer can create attachments")
     }
 
+    @MainActor
     func testResolvesRelativeAndPercentEncodedImageResources() {
         let s = makeSettings()
         let resource = EbookFulltext.Chapter.Resource(
@@ -87,6 +89,7 @@ final class EpubHtmlRendererTests: XCTestCase {
         XCTAssertEqual(attachmentCount, 1)
     }
 
+    @MainActor
     func testPreservesFragmentAndRelativeEPUBLinksForNativeRouting() {
         let s = makeSettings()
         let html = "<p><a href=\"#footnote_1\">*</a> <a href=\"chapter-2.xhtml#part\">Chapter Two</a></p>"
@@ -113,6 +116,7 @@ final class EpubHtmlRendererTests: XCTestCase {
         XCTAssertTrue(targets.allSatisfy { $0.hasPrefix("epub-link://open?") })
     }
 
+    @MainActor
     func testLargeInlineImageIsDownsampled() throws {
         let s = makeSettings()
         let bigPNG = try Self.makeSolidPNGBase64(width: 2000, height: 2000)
@@ -164,6 +168,7 @@ final class EpubHtmlRendererTests: XCTestCase {
     /// title (Pinocchio's "Come andò che Maestro Ciliegia…") must survive
     /// the override pipeline — the user's body alignment choice only
     /// governs body paragraphs, not centred titles / headings.
+    @MainActor
     func testPreservesEpubCentredTitleAlignment() {
         let s = makeSettings()
         s.readerTextAlignment = .justified // body would otherwise justify everything
@@ -187,6 +192,7 @@ final class EpubHtmlRendererTests: XCTestCase {
         XCTAssertTrue(bodyNotCentered, "body paragraph must follow the user's alignment, not inherit center")
     }
 
+    @MainActor
     func testAppliesReaderLineSpacingToRenderedParagraphs() {
         let settings = makeSettings()
         settings.readerLineSpacing = 12
@@ -211,6 +217,7 @@ final class EpubHtmlRendererTests: XCTestCase {
         XCTAssertTrue(lineSpacings.allSatisfy { abs($0 - 12) < 0.01 })
     }
 
+    @MainActor
     func testPreservesLordOfTheRingsParagraphIndentClasses() {
         let s = makeSettings()
         let html = """
@@ -244,6 +251,7 @@ final class EpubHtmlRendererTests: XCTestCase {
         XCTAssertEqual(indents["p1"] ?? .nan, CGFloat(0), accuracy: CGFloat(0.5))
     }
 
+    @MainActor
     func testPreservesSemanticBlocksListsAndFigureCaptionText() {
         let s = makeSettings()
         let html = """
@@ -275,6 +283,7 @@ final class EpubHtmlRendererTests: XCTestCase {
     /// `text-align:center` from a wrapping container must NOT stay centred
     /// — only true headings (larger than the body font) keep centring.
     /// Detection keys on the EPUB's own font sizing, never on text length.
+    @MainActor
     func testCentredBodyParagraphIsNotPreserved() {
         let s = makeSettings()
         s.readerTextAlignment = .left
@@ -301,6 +310,7 @@ final class EpubHtmlRendererTests: XCTestCase {
     /// (`<h2>`) may be centred. The user reported "tudo centralizado";
     /// this pins the body to non-centre so a regression can't recur, using
     /// the book's real markup rather than a synthetic fixture.
+    @MainActor
     func testPinocchioRealChapterBodyIsNotCentred() {
         let s = makeSettings()
         s.readerTextAlignment = .justified
@@ -334,6 +344,7 @@ final class EpubHtmlRendererTests: XCTestCase {
     /// chapter, so we can see exactly what the importer + override pipeline
     /// produce. Keeps the assertion loose (just prints) — used to pin down
     /// the "tudo centralizado" report.
+    @MainActor
     func testPinocchioAlignmentHistogram() {
         let s = makeSettings()
         s.readerTextAlignment = .justified
@@ -353,6 +364,7 @@ final class EpubHtmlRendererTests: XCTestCase {
         XCTAssertFalse(counts.isEmpty)
     }
 
+    @MainActor
     func testOverrideFontFamilyAppliesToAllRuns() {
         let s = makeSettings()
         s.readerOverrideFontFamily = true
@@ -380,6 +392,7 @@ final class EpubHtmlRendererTests: XCTestCase {
         #endif
     }
 
+    @MainActor
     func testOverrideForegroundColourBeatsCSS() {
         let s = makeSettings()
         s.readerOverrideColours = true
@@ -405,6 +418,7 @@ final class EpubHtmlRendererTests: XCTestCase {
         #endif
     }
 
+    @MainActor
     func testRestoreOriginalReinstatesCSSColour() {
         let s = makeSettings()
         s.readerOverrideColours = true
@@ -434,6 +448,7 @@ final class EpubHtmlRendererTests: XCTestCase {
         #endif
     }
 
+    @MainActor
     func testBoldOverridePushesEveryRunBold() {
         let s = makeSettings()
         s.readerBoldOverride = true
@@ -457,6 +472,7 @@ final class EpubHtmlRendererTests: XCTestCase {
         #endif
     }
 
+    @MainActor
     func testItalicSuppressStripsSlant() {
         let s = makeSettings()
         s.readerSuppressItalic = true
@@ -475,6 +491,7 @@ final class EpubHtmlRendererTests: XCTestCase {
         #endif
     }
 
+    @MainActor
     func testLetterSpacingAppliesAsKern() {
         let s = makeSettings()
         s.readerLetterSpacing = 2
@@ -492,12 +509,14 @@ final class EpubHtmlRendererTests: XCTestCase {
         XCTAssertTrue(sawKern, "kern=2 should be applied to every run")
     }
 
+    @MainActor
     func testEmptyHtmlReturnsNilSoCallerFallsBackToPlain() {
         let s = makeSettings()
         XCTAssertNil(EpubHtmlRenderer.render(html: "", css: nil, settings: s))
         XCTAssertNil(EpubHtmlRenderer.render(html: "   \n  ", css: nil, settings: s))
     }
 
+    @MainActor
     func testMarkupWithoutReadableTextReturnsNilSoCallerFallsBackToPlain() {
         let s = makeSettings()
         XCTAssertNil(EpubHtmlRenderer.render(
@@ -507,6 +526,7 @@ final class EpubHtmlRendererTests: XCTestCase {
         ))
     }
 
+    @MainActor
     func testPlainTextFallbackExtractsReadableHTMLContent() {
         XCTAssertEqual(
             EpubHtmlRenderer.plainText(from: "<h1>Chapter</h1><p>Hello&nbsp;world &amp; friends.</p>"),
@@ -522,6 +542,7 @@ final class EpubHtmlRendererTests: XCTestCase {
     /// bookmark/highlight feature must not assume a rendered-view NSRange
     /// can be used directly as a `chapter.text` char offset. See the
     /// "Known limitations" doc comment on `EpubHtmlRenderer.render`.
+    @MainActor
     func testRenderedPlainTextIsNotGuaranteedToMatchChapterText() {
         let s = makeSettings()
         let html = "<p>Paragraph one.</p><p>Paragraph two.</p>"

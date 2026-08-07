@@ -565,7 +565,7 @@ final class AudioPlayer: ObservableObject {
             try session.setCategory(
                 .playback, mode: .spokenAudio,
                 policy: .longFormAudio,
-                options: [.allowBluetoothA2DP, .allowAirPlay]
+                options: []
             )
             if #available(iOS 17.0, *) {
                 try session.setPrefersInterruptionOnRouteDisconnect(true)
@@ -2105,17 +2105,23 @@ final class AudioPlayer: ObservableObject {
     }
 
     /// Skip forward by `seconds` (default 15 s). Clamped to [0, duration].
-    func skipForward(seconds: Double = 15) {
-        skip(by: seconds)
+    func skipForward(seconds: Double? = nil) {
+        skip(by: seconds ?? Self.configuredSkipInterval(forKey: AppSettings.playbackForwardSecondsKey))
     }
 
     /// Skip backward by `seconds` (default 15 s). Clamped to [0, duration].
-    func skipBackward(seconds: Double = 15) {
+    func skipBackward(seconds: Double? = nil) {
+        let seconds = seconds ?? Self.configuredSkipInterval(forKey: AppSettings.playbackBackwardSecondsKey)
         guard seconds > 0, positionSeconds <= seconds else {
             skip(by: -seconds)
             return
         }
         rewindToCurrentChapterStart()
+    }
+
+    private static func configuredSkipInterval(forKey key: String) -> Double {
+        let value = UserDefaults.standard.object(forKey: key) as? Double
+        return AppSettings.playbackSkipIntervals.contains(value ?? 15) ? (value ?? 15) : 15
     }
 
     private func rewindToCurrentChapterStart() {
@@ -2378,8 +2384,8 @@ final class AudioPlayer: ObservableObject {
         remoteCommandRemovers.append { center.changePlaybackPositionCommand.removeTarget(positionTarget) }
 
         // Skip ±N seconds (Control Center, AirPods double-tap, lock-screen
-        // arrow buttons). 15 / 30 are the standard audiobook intervals.
-        center.skipForwardCommand.preferredIntervals = [30]
+        // arrow buttons). Both directions start at the product default.
+        center.skipForwardCommand.preferredIntervals = [NSNumber(value: Self.configuredSkipInterval(forKey: AppSettings.playbackForwardSecondsKey))]
         let skipForwardTarget = center.skipForwardCommand.addTarget { [weak self] event in
             guard let e = event as? MPSkipIntervalCommandEvent else { return .commandFailed }
             Task { @MainActor in self?.skip(by: e.interval) }
@@ -2387,7 +2393,7 @@ final class AudioPlayer: ObservableObject {
         }
         remoteCommandRemovers.append { center.skipForwardCommand.removeTarget(skipForwardTarget) }
 
-        center.skipBackwardCommand.preferredIntervals = [15]
+        center.skipBackwardCommand.preferredIntervals = [NSNumber(value: Self.configuredSkipInterval(forKey: AppSettings.playbackBackwardSecondsKey))]
         let skipBackwardTarget = center.skipBackwardCommand.addTarget { [weak self] event in
             guard let e = event as? MPSkipIntervalCommandEvent else { return .commandFailed }
             Task { @MainActor in self?.skip(by: -e.interval) }

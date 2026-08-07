@@ -2,8 +2,8 @@
 import XCTest
 @testable import EpubToMp3
 
-@MainActor
 final class TocScreenControllerTests: XCTestCase {
+    @MainActor
     func testAvailableChapterUsesDirectDownloadAccessoryAction() {
         var requestedChapter: Int?
         let controller = TocScreenController(
@@ -33,6 +33,7 @@ final class TocScreenControllerTests: XCTestCase {
         XCTAssertEqual(requestedChapter, 4)
     }
 
+    @MainActor
     func testDownloadAccessoryUsesCellManagedLayout() {
         let controller = TocScreenController(
             fulltext: nil,
@@ -59,6 +60,7 @@ final class TocScreenControllerTests: XCTestCase {
         )
     }
 
+    @MainActor
     func testExportAffordanceAppearsInTheSharedTocMenu() {
         let controller = TocScreenController(
             fulltext: nil,
@@ -81,6 +83,7 @@ final class TocScreenControllerTests: XCTestCase {
         XCTAssertTrue(actions.contains { $0.title == L10n.string("player.exportAudio") })
     }
 
+    @MainActor
     func testPendingArtifactUsesTheBookLevelQueueStatus() {
         XCTAssertTrue(
             TocScreenController.usesSchedulerStatus(
@@ -102,6 +105,7 @@ final class TocScreenControllerTests: XCTestCase {
         )
     }
 
+    @MainActor
     func testEmbeddedTocReleasesItsNotificationObservers() async {
         weak var releasedController: TocScreenController?
 

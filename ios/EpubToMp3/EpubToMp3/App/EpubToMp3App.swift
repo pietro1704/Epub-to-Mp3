@@ -476,7 +476,7 @@ final class EpubToMp3App: NSObject, PlatformApplicationDelegate {
         }
         if group.bool(forKey: "widget.intent.skipForward30") {
             group.removeObject(forKey: "widget.intent.skipForward30")
-            player.skipForward(seconds: 30)
+            player.skipForward()
         }
     }
 
@@ -504,7 +504,7 @@ final class EpubToMp3App: NSObject, PlatformApplicationDelegate {
         }
         if group.bool(forKey: "widget.intent.skipForward30") {
             group.removeObject(forKey: "widget.intent.skipForward30")
-            player.skipForward(seconds: 30)
+            player.skipForward()
         }
     }
 

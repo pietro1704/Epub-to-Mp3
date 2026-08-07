@@ -6,6 +6,7 @@ import UIKit
 #endif
 
 final class IOSMiniPlayerPolicyTests: XCTestCase {
+    @MainActor
     func testMiniPlayerShowsWhenPlayableBookExistsOutsideReader() {
         let visible = IOSMiniPlayerPolicy.shouldShow(
             currentBookID: "book-1",
@@ -19,6 +20,7 @@ final class IOSMiniPlayerPolicyTests: XCTestCase {
     /// The mini player is the reader's only "listen" trigger (no separate
     /// "Ouvir" button) — it must stay visible even while its book matches
     /// the one being read, not just before/after.
+    @MainActor
     func testMiniPlayerShowsWhileReadingEvenIfItOwnsCurrentBook() {
         let visible = IOSMiniPlayerPolicy.shouldShow(
             currentBookID: "book-1",
@@ -29,6 +31,7 @@ final class IOSMiniPlayerPolicyTests: XCTestCase {
         XCTAssertTrue(visible)
     }
 
+    @MainActor
     func testMiniPlayerShowsWhileReadingBeforeAnyPlaybackStarted() {
         let visible = IOSMiniPlayerPolicy.shouldShow(
             currentBookID: nil,
@@ -39,6 +42,7 @@ final class IOSMiniPlayerPolicyTests: XCTestCase {
         XCTAssertTrue(visible)
     }
 
+    @MainActor
     func testMiniPlayerHidesWhenCurrentBookIsMissingFromLibrary() {
         let visible = IOSMiniPlayerPolicy.shouldShow(
             currentBookID: "book-1",
@@ -51,8 +55,8 @@ final class IOSMiniPlayerPolicyTests: XCTestCase {
 }
 
 #if os(iOS)
-@MainActor
 final class IOSAppShellTests: XCTestCase {
+    @MainActor
     func testIOSAppShellFileKeepsOnlyUIKitControllerEntryPoint() throws {
         let source = try readSourceFileIfAvailable(
             at: URL(fileURLWithPath: #filePath)
@@ -65,6 +69,7 @@ final class IOSAppShellTests: XCTestCase {
         XCTAssertTrue(source.contains("final class IOSAppShellController: UITabBarController"))
     }
 
+    @MainActor
     func testUIKitShellTabOrderMatchesAppContract() {
         XCTAssertEqual(IOSAppShellTab.allCases, [.library, .settings, .convert])
         XCTAssertEqual(IOSAppShellTab.allCases.map(\.systemImage), [
@@ -74,6 +79,7 @@ final class IOSAppShellTests: XCTestCase {
         ])
     }
 
+    @MainActor
     func testUIKitShellBuildsOneNavigationControllerPerTab() {
         let controller = IOSAppShellController(
             settings: AppSettings(),
@@ -91,6 +97,7 @@ final class IOSAppShellTests: XCTestCase {
         )
     }
 
+    @MainActor
     func testUIKitShellUsesUIKitRootControllersForMainTabs() {
         let controller = IOSAppShellController(
             settings: AppSettings(),
@@ -106,7 +113,9 @@ final class IOSAppShellTests: XCTestCase {
         XCTAssertTrue(navigationControllers?[2].viewControllers.first is ConvertScreenController)
     }
 
+#if compiler(>=6.2)
     @available(iOS 18.0, *)
+    @MainActor
     func testIPadUsesNativeTabSidebarWhileIPhoneKeepsTabBar() {
         let controller = makeShellController()
 
@@ -116,9 +125,11 @@ final class IOSAppShellTests: XCTestCase {
         controller.configureNavigationMode(for: .phone)
         XCTAssertEqual(controller.mode, .tabBar)
     }
+#endif
 
 #if compiler(>=6.2)
     @available(iOS 26.0, *)
+    @MainActor
     func testSystemBottomAccessoryHostsTheMiniPlayerOutsideTheReader() {
         let controller = makeShellController()
         let miniPlayerContent = UIView()
@@ -139,6 +150,7 @@ final class IOSAppShellTests: XCTestCase {
     }
 #endif
 
+    @MainActor
     func testReaderOverlayRemainsOpaqueAboveTheLibrary() throws {
         let source = try readSourceFileIfAvailable(
             at: URL(fileURLWithPath: #filePath)
@@ -153,6 +165,7 @@ final class IOSAppShellTests: XCTestCase {
         )
     }
 
+    @MainActor
     func testMiniPlayerExposesAutomationIdentifiers() throws {
         let source = try readSourceFileIfAvailable(
             at: URL(fileURLWithPath: #filePath)
@@ -165,6 +178,7 @@ final class IOSAppShellTests: XCTestCase {
         XCTAssertTrue(source.contains("miniPlayer.playPause"))
     }
 
+    @MainActor
     func testMainAppContainsNoSwiftUIScreensOrHostingBridges() throws {
         let appRoot = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
@@ -185,6 +199,7 @@ final class IOSAppShellTests: XCTestCase {
         }
     }
 
+    @MainActor
     func testUIKitShellThreadsPlaybackDependenciesIntoSettingsFlow() throws {
         let source = try readSourceFileIfAvailable(
             at: URL(fileURLWithPath: #filePath)
@@ -199,6 +214,7 @@ final class IOSAppShellTests: XCTestCase {
         XCTAssertTrue(source.contains("ConvertScreenController("))
     }
 
+    @MainActor
     private func makeShellController() -> IOSAppShellController {
         IOSAppShellController(
             settings: AppSettings(),

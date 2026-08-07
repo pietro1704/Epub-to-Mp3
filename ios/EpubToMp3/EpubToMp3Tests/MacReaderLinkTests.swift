@@ -4,8 +4,8 @@ import XCTest
 #if os(macOS)
 import AppKit
 
-@MainActor
 final class MacReaderLinkTests: XCTestCase {
+    @MainActor
     func testFootnoteEPUBLinkIsHandledBeforeAppKitCanOpenItExternally() throws {
         let url = try XCTUnwrap(
             EpubHtmlRenderer.readerLinkURL(for: "LordoftheRings_foot-1.xhtml#ref52")
@@ -30,6 +30,7 @@ final class MacReaderLinkTests: XCTestCase {
         XCTAssertEqual(handledText, "52")
     }
 
+    @MainActor
     func testFootnoteLinkDefersMouseUpToTheTextSystemInsteadOfPaginating() throws {
         let url = try XCTUnwrap(EpubHtmlRenderer.readerLinkURL(for: "notes.xhtml#note-1"))
         let textView = MacReaderTextView()

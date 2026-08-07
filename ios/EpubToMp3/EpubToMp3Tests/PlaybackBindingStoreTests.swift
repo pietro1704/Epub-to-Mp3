@@ -2,7 +2,6 @@ import XCTest
 import MediaPlayer
 @testable import EpubToMp3
 
-@MainActor
 final class PlaybackBindingStoreTests: XCTestCase {
 
     // XCTest invokes lifecycle hooks outside the MainActor but serially for a
@@ -22,6 +21,7 @@ final class PlaybackBindingStoreTests: XCTestCase {
         try await super.tearDown()
     }
 
+    @MainActor
     func testSetCurrentlyPlayingPersistsBookAndChapter() {
         PlaybackBindingStore.setCurrentlyPlaying(
             bookID: "book-123",
@@ -38,6 +38,7 @@ final class PlaybackBindingStoreTests: XCTestCase {
         )
     }
 
+    @MainActor
     func testSetCurrentlyPlayingClearsBookWhenNil() {
         defaults.set("seed", forKey: AudioPlayer.currentBookIDDefaultsKey)
         defaults.set(7, forKey: AudioPlayer.currentChapterIndexDefaultsKey)
@@ -51,6 +52,7 @@ final class PlaybackBindingStoreTests: XCTestCase {
         XCTAssertNil(defaults.object(forKey: AudioPlayer.currentChapterIndexDefaultsKey))
     }
 
+    @MainActor
     func testSetCurrentlyPlayingClampsNegativeChapterIndexToZero() {
         PlaybackBindingStore.setCurrentlyPlaying(
             bookID: "book-x",
@@ -63,6 +65,7 @@ final class PlaybackBindingStoreTests: XCTestCase {
         )
     }
 
+    @MainActor
     func testSetCurrentlyPlayingTreatsEmptyStringAsNil() {
         defaults.set("seed", forKey: AudioPlayer.currentBookIDDefaultsKey)
 
@@ -74,6 +77,7 @@ final class PlaybackBindingStoreTests: XCTestCase {
         XCTAssertNil(defaults.string(forKey: AudioPlayer.currentBookIDDefaultsKey))
     }
 
+    @MainActor
     func testSetCurrentlyPlayingNeverClaimsWidgetIsPlaying() {
         let appGroupID = WidgetDataSync.appGroupID
         guard let groupDefaults = UserDefaults(suiteName: appGroupID) else {
@@ -105,6 +109,7 @@ final class PlaybackBindingStoreTests: XCTestCase {
         XCTAssertEqual(groupDefaults.bool(forKey: "widget.nowPlayingIsPlaying"), false)
     }
 
+    @MainActor
     func testNowPlayingChapterTitleStripsGenericChapterPrefix() {
         XCTAssertEqual(
             AudioPlayer.preferredChapterTitle(
@@ -116,6 +121,7 @@ final class PlaybackBindingStoreTests: XCTestCase {
         )
     }
 
+    @MainActor
     func testNowPlayingMetadataUsesChapterAsTitleAndBookAsAlbum() {
         let chapter = JobSnapshot.Chapter(
             index: 11,
@@ -156,6 +162,7 @@ final class PlaybackBindingStoreTests: XCTestCase {
         XCTAssertEqual(info[MPMediaItemPropertyAlbumTitle] as? String, "The Lord of the Rings")
     }
 
+    @MainActor
     func testPlaybackBindingStoreReplacesLegacyNowPlayingViewHelper() throws {
         let testFile = URL(fileURLWithPath: #filePath)
         let projectRoot = testFile

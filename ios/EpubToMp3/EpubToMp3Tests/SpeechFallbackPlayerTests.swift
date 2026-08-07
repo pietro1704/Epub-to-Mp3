@@ -11,7 +11,6 @@ import AVFoundation
 /// state machine, audio-session handling, and language fallback; they
 /// do NOT exercise real speech synthesis or activate the system audio
 /// session — both are stubbed via dependency-injected fakes.
-@MainActor
 final class SpeechFallbackPlayerTests: XCTestCase {
 
     // MARK: Fakes
@@ -83,6 +82,7 @@ final class SpeechFallbackPlayerTests: XCTestCase {
 
     // MARK: Helpers
 
+    @MainActor
     private func makePlayer() -> (SpeechFallbackPlayer, FakeSynthesizer, FakeSpeechAudioSession) {
         let synth = FakeSynthesizer()
         let session = FakeSpeechAudioSession()
@@ -92,11 +92,13 @@ final class SpeechFallbackPlayerTests: XCTestCase {
 
     // MARK: Tests
 
+    @MainActor
     func test_initialState_isIdle() {
         let (player, _, _) = makePlayer()
         XCTAssertEqual(player.state, .idle)
     }
 
+    @MainActor
     func test_init_doesNotActivateAudioSession() {
         let (_, _, session) = makePlayer()
         XCTAssertEqual(
@@ -105,6 +107,7 @@ final class SpeechFallbackPlayerTests: XCTestCase {
         )
     }
 
+    @MainActor
     func test_speak_enqueuesChapterTextAndSwitchesToSpeaking() {
         let (player, synth, _) = makePlayer()
         player.speak(text: "Once upon a time.", languageCode: "en-US")
@@ -113,6 +116,7 @@ final class SpeechFallbackPlayerTests: XCTestCase {
         XCTAssertEqual(player.state, .speaking)
     }
 
+    @MainActor
     func test_speak_configuresPlaybackSpokenAudioSession() {
         let (player, _, session) = makePlayer()
         player.speak(text: "Hello.", languageCode: "en-US")
@@ -121,6 +125,7 @@ final class SpeechFallbackPlayerTests: XCTestCase {
         XCTAssertEqual(session.lastMode, "spokenAudio")
     }
 
+    @MainActor
     func test_speak_emptyText_isNoOp() {
         let (player, synth, session) = makePlayer()
         player.speak(text: "", languageCode: "en-US")
@@ -129,6 +134,7 @@ final class SpeechFallbackPlayerTests: XCTestCase {
         XCTAssertEqual(player.state, .idle)
     }
 
+    @MainActor
     func test_speak_unknownLanguage_fallsBackSafely() {
         let (player, synth, _) = makePlayer()
         // Bogus BCP-47 tag — no matching voice. The player should still
@@ -139,6 +145,7 @@ final class SpeechFallbackPlayerTests: XCTestCase {
         XCTAssertEqual(player.state, .speaking)
     }
 
+    @MainActor
     func test_pauseThenResume_doesNotReenqueueUtterance() {
         let (player, synth, _) = makePlayer()
         player.speak(text: "A long passage.", languageCode: "en-US")
@@ -157,6 +164,7 @@ final class SpeechFallbackPlayerTests: XCTestCase {
         )
     }
 
+    @MainActor
     func test_stop_clearsQueueAndReturnsIdle() {
         let (player, synth, _) = makePlayer()
         player.speak(text: "Hello.", languageCode: "en-US")
@@ -166,6 +174,7 @@ final class SpeechFallbackPlayerTests: XCTestCase {
         XCTAssertTrue(synth.spoken.isEmpty)
     }
 
+    @MainActor
     func test_delegateFinish_returnsToIdle() {
         let (player, synth, _) = makePlayer()
         player.speak(text: "Hello.", languageCode: "en-US")

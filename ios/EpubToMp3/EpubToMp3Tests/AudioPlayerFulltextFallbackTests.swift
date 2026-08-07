@@ -13,11 +13,11 @@ import AVFoundation
 /// Reuses the `FakeSynthesizer` / `FakeSpeechAudioSession` fakes from
 /// `SpeechFallbackPlayerTests`; injects the fallback via the AudioPlayer
 /// init so no real AV or audio-session call ever fires.
-@MainActor
 final class AudioPlayerFulltextFallbackTests: XCTestCase {
 
     // MARK: - Helpers
 
+    @MainActor
     private func makeAudioPlayer() -> (
         AudioPlayer,
         SpeechFallbackPlayerTests.FakeSynthesizer,
@@ -87,6 +87,7 @@ final class AudioPlayerFulltextFallbackTests: XCTestCase {
 
     // MARK: - MP3 is primary
 
+    @MainActor
     func test_playOrFallback_routesMP3_whenChapterIsPlayable() {
         let (player, synth, session) = makeAudioPlayer()
         let snap = snapshot(chapters: [playableChapter(index: 0)])
@@ -107,6 +108,7 @@ final class AudioPlayerFulltextFallbackTests: XCTestCase {
         XCTAssertEqual(player.currentChapterIndex, 0)
     }
 
+    @MainActor
     func test_playOrFallback_routesMP3_evenWhenTextIsEmpty() {
         let (player, synth, _) = makeAudioPlayer()
         let snap = snapshot(chapters: [playableChapter(index: 0)])
@@ -121,6 +123,7 @@ final class AudioPlayerFulltextFallbackTests: XCTestCase {
         XCTAssertEqual(synth.spoken.count, 0)
     }
 
+    @MainActor
     func test_playOrFallback_routesMP3_atRequestedIndex_whenMultiplePlayable() {
         let (player, _, _) = makeAudioPlayer()
         let snap = snapshot(chapters: [
@@ -141,6 +144,7 @@ final class AudioPlayerFulltextFallbackTests: XCTestCase {
 
     // MARK: - Speech fallback when MP3 not ready
 
+    @MainActor
     func test_playOrFallback_routesSpeech_whenChapterPending_andTextExists() {
         let (player, synth, session) = makeAudioPlayer()
         let snap = snapshot(chapters: [pendingChapter(index: 0)])
@@ -159,6 +163,7 @@ final class AudioPlayerFulltextFallbackTests: XCTestCase {
         XCTAssertEqual(session.configureCalls, 1)
     }
 
+    @MainActor
     func test_playOrFallback_routesSpeech_whenRequestedChapterIsPending_andOtherChaptersPlayable() {
         let (player, synth, _) = makeAudioPlayer()
         // Chapter 0 finished; user asked for chapter 1 which is still pending.
@@ -174,6 +179,7 @@ final class AudioPlayerFulltextFallbackTests: XCTestCase {
         XCTAssertEqual(synth.spoken.first?.speechString, "Chapter two body.")
     }
 
+    @MainActor
     func test_playOrFallback_routesSpeech_whenSnapshotNil_andTextExists() {
         let (player, synth, _) = makeAudioPlayer()
         let result = player.playOrFallback(
@@ -187,6 +193,7 @@ final class AudioPlayerFulltextFallbackTests: XCTestCase {
         XCTAssertEqual(synth.spoken.count, 1)
     }
 
+    @MainActor
     func test_playOrFallback_propagatesLanguageCode_toSpeechFallback() {
         let (player, synth, _) = makeAudioPlayer()
         let result = player.playOrFallback(
@@ -202,6 +209,7 @@ final class AudioPlayerFulltextFallbackTests: XCTestCase {
 
     // MARK: - No-op when neither route is viable
 
+    @MainActor
     func test_playOrFallback_returnsNoOp_whenChapterPending_andTextMissing() {
         let (player, synth, session) = makeAudioPlayer()
         let snap = snapshot(chapters: [pendingChapter(index: 0)])
@@ -219,6 +227,7 @@ final class AudioPlayerFulltextFallbackTests: XCTestCase {
         XCTAssertEqual(session.configureCalls, 0)
     }
 
+    @MainActor
     func test_playOrFallback_returnsNoOp_whenSnapshotNil_andTextEmpty() {
         let (player, synth, _) = makeAudioPlayer()
         let result = player.playOrFallback(
@@ -232,6 +241,7 @@ final class AudioPlayerFulltextFallbackTests: XCTestCase {
         XCTAssertEqual(synth.spoken.count, 0)
     }
 
+    @MainActor
     func test_playOrFallback_returnsNoOp_whenTextIsWhitespaceOnly() {
         let (player, synth, _) = makeAudioPlayer()
         let result = player.playOrFallback(
@@ -248,6 +258,7 @@ final class AudioPlayerFulltextFallbackTests: XCTestCase {
 
     // MARK: - No-flicker invariant: MP3 takeover from fallback
 
+    @MainActor
     func test_playOrFallback_mp3TakeoverFromActiveFallback_stopsFallback() {
         let (player, synth, _) = makeAudioPlayer()
         // First call: no MP3 yet → fallback engages.

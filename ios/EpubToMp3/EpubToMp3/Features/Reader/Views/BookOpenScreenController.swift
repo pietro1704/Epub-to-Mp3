@@ -10,7 +10,7 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
     private let settings: AppSettings
     private let bookmarkStore: BookmarkStore
     private let player: AudioPlayer
-    private let textView = UITextView()
+    private let textView = ReaderTextViewFactory.make()
     private let comicPageImageView = UIImageView()
     private let scrollView = UIScrollView()
     private let pageIndicator = UILabel()
@@ -501,11 +501,20 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
         textView.textContainer.heightTracksTextView = false
         paginatedTextHeightConstraint.isActive = !isDisplayingImageChapter && configuration.usesPaginatedTextHeight
         scrollingTextHeightConstraint.isActive = !isDisplayingImageChapter && !configuration.usesPaginatedTextHeight
-        scrollTopToSafeArea.isActive = !configuration.usesScreenEdges
-        scrollTopToRoot.isActive = configuration.usesScreenEdges
-        scrollBottomToPageIndicator.isActive = configuration.showsPageIndicator
-        scrollBottomToSafeArea.isActive = !configuration.showsPageIndicator && !configuration.usesScreenEdges
-        scrollBottomToRoot.isActive = configuration.usesScreenEdges
+        NSLayoutConstraint.deactivate([
+            scrollTopToSafeArea,
+            scrollTopToRoot,
+            scrollBottomToPageIndicator,
+            scrollBottomToSafeArea,
+            scrollBottomToRoot,
+        ])
+        if configuration.usesScreenEdges {
+            NSLayoutConstraint.activate([scrollTopToRoot, scrollBottomToRoot])
+        } else if configuration.showsPageIndicator {
+            NSLayoutConstraint.activate([scrollTopToSafeArea, scrollBottomToPageIndicator])
+        } else {
+            NSLayoutConstraint.activate([scrollTopToSafeArea, scrollBottomToSafeArea])
+        }
         forwardChapterSwipe.isEnabled = configuration.allowsChapterSwipes
         backwardChapterSwipe.isEnabled = configuration.allowsChapterSwipes
         pageIndicator.isHidden = !configuration.showsPageIndicator
@@ -1933,6 +1942,20 @@ struct ReaderViewportConfiguration: Equatable {
             showsPageIndicator: paginated && !chromeHidden && showsPageNumbers,
             usesScreenEdges: chromeHidden
         )
+    }
+}
+
+enum ReaderTextViewFactory {
+    /// The reader intentionally uses NSLayoutManager for pagination, glyph
+    /// positions, and page-boundary calculations. Build it with TextKit 1 so
+    /// those accesses do not force UIKit to switch a TextKit 2 view at runtime.
+    static func make() -> UITextView {
+        let storage = NSTextStorage()
+        let layoutManager = NSLayoutManager()
+        let textContainer = NSTextContainer(size: .zero)
+        storage.addLayoutManager(layoutManager)
+        layoutManager.addTextContainer(textContainer)
+        return UITextView(frame: .zero, textContainer: textContainer)
     }
 }
 

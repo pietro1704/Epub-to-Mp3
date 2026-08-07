@@ -354,11 +354,13 @@ final class MainReaderScreenController: UIViewController {
     private func applyReaderNavigationLayout(animated: Bool) {
         let shouldShow = !isReaderChromeHidden
         if let readerTopToNavigation,
-           let readerTopToRoot,
-           readerTopToNavigation.isActive != shouldShow {
-            readerController?.prepareForViewportTransition()
-            readerTopToNavigation.isActive = shouldShow
-            readerTopToRoot.isActive = !shouldShow
+           let readerTopToRoot {
+            let layoutChanged = readerTopToNavigation.isActive != shouldShow
+            if layoutChanged {
+                readerController?.prepareForViewportTransition()
+            }
+            NSLayoutConstraint.deactivate([readerTopToNavigation, readerTopToRoot])
+            (shouldShow ? readerTopToNavigation : readerTopToRoot).isActive = true
         }
 
         if shouldShow {

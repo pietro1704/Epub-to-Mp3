@@ -147,7 +147,7 @@ final class IOSAppShellController: UITabBarController {
     }
 
     func setReaderTabBarHidden(_ hidden: Bool, animated: Bool) {
-#if compiler(>=6.0)
+#if compiler(>=6.2)
         if #available(iOS 18.0, *) {
             setTabBarHidden(hidden, animated: animated)
         } else {
@@ -162,7 +162,7 @@ final class IOSAppShellController: UITabBarController {
         for interfaceIdiom: UIUserInterfaceIdiom,
         horizontalSizeClass: UIUserInterfaceSizeClass = .regular
     ) {
-#if compiler(>=6.0)
+#if compiler(>=6.2)
         guard #available(iOS 18.0, *) else { return }
         mode = interfaceIdiom == .pad && horizontalSizeClass == .regular
             ? .tabSidebar

@@ -10,13 +10,14 @@ import MediaPlayer
 /// These tests run on the macOS host (no iOS device required). Because
 /// AVQueuePlayer cannot load remote URLs in a unit-test sandbox, we
 /// verify observable state rather than actual audio output.
-@MainActor
 final class AudioPlayerUXTests: XCTestCase {
 
     // MARK: - Helpers
 
+    @MainActor
     private func makePlayer() -> AudioPlayer { AudioPlayer() }
 
+    @MainActor
     func testPlayingResumeRewindsFifteenSeconds() {
         XCTAssertEqual(
             AudioPlayer.resumePositionForPersistedState(positionSeconds: 120, wasPlaying: true),
@@ -24,6 +25,7 @@ final class AudioPlayerUXTests: XCTestCase {
         )
     }
 
+    @MainActor
     func testPausedResumeKeepsExactPosition() {
         XCTAssertEqual(
             AudioPlayer.resumePositionForPersistedState(positionSeconds: 120, wasPlaying: false),
@@ -31,6 +33,7 @@ final class AudioPlayerUXTests: XCTestCase {
         )
     }
 
+    @MainActor
     func testEmbeddedChapterDurationUsesChapterEstimateNotOneSegment() {
         XCTAssertEqual(
             AudioPlayer.estimatedChapterDurationSeconds(wordCount: 400, wordsPerMinute: 200),
@@ -39,6 +42,7 @@ final class AudioPlayerUXTests: XCTestCase {
         )
     }
 
+    @MainActor
     func testEmbeddedChapterTitleUsesEpubChapterIndex() {
         let title = AudioPlayer.segmentChapterTitle(
             chapterIndex: 1,
@@ -60,11 +64,13 @@ final class AudioPlayerUXTests: XCTestCase {
         XCTAssertEqual(title, "The Shadow of the Past")
     }
 
+    @MainActor
     func testSeekAtChapterEndIsRecognizedWithSmallTolerance() {
         XCTAssertTrue(AudioPlayer.shouldAdvanceAtSeekEnd(position: 599.5, duration: 600))
         XCTAssertFalse(AudioPlayer.shouldAdvanceAtSeekEnd(position: 590, duration: 600))
     }
 
+    @MainActor
     func testPlaybackEstimateScalesWithRateImmediately() {
         XCTAssertEqual(
             AudioPlayer.rateAdjustedDuration(seconds: 600, rate: .x150),
@@ -73,6 +79,7 @@ final class AudioPlayerUXTests: XCTestCase {
         )
     }
 
+    @MainActor
     func testNowPlayingUsesBookAuthorAsArtistIdentity() {
         let player = makePlayer()
         player.updateSnapshot(JobSnapshot.previewSample)
@@ -83,6 +90,7 @@ final class AudioPlayerUXTests: XCTestCase {
         )
     }
 
+    @MainActor
     func testAudioQueueIsNotReportedReadyBeforeFirstItemExists() {
         XCTAssertFalse(makePlayer().hasLoadedAudioQueue)
     }
@@ -91,6 +99,7 @@ final class AudioPlayerUXTests: XCTestCase {
 
     /// `startSleepTimer(minutes:)` must set `sleepTimerRemaining` to the
     /// correct number of seconds.
+    @MainActor
     func testStartSleepTimerSetsRemaining() {
         let player = makePlayer()
         player.startSleepTimer(minutes: 5)
@@ -99,6 +108,7 @@ final class AudioPlayerUXTests: XCTestCase {
     }
 
     /// `cancelSleepTimer()` must zero out remaining time.
+    @MainActor
     func testCancelSleepTimerZerosRemaining() {
         let player = makePlayer()
         player.startSleepTimer(minutes: 30)
@@ -108,6 +118,7 @@ final class AudioPlayerUXTests: XCTestCase {
     }
 
     /// `setSleepTimer(seconds: 0)` is equivalent to cancel.
+    @MainActor
     func testSetSleepTimerZeroActsAsCancel() {
         let player = makePlayer()
         player.startSleepTimer(minutes: 15)
@@ -116,6 +127,7 @@ final class AudioPlayerUXTests: XCTestCase {
     }
 
     /// Calling `startSleepTimer` a second time overwrites the first schedule.
+    @MainActor
     func testRestartingTimerOverwritesPrevious() {
         let player = makePlayer()
         player.startSleepTimer(minutes: 60)
@@ -129,6 +141,7 @@ final class AudioPlayerUXTests: XCTestCase {
     /// surface for "timer cancelled / expired" — the internal tick fires
     /// only via AVPlayer's periodic observer which requires a real audio
     /// session, so we test the cancel path instead.
+    @MainActor
     func testSleepTimerCancelDropsRemainingToZero() {
         let player = makePlayer()
         player.setSleepTimer(seconds: 300)
@@ -141,6 +154,7 @@ final class AudioPlayerUXTests: XCTestCase {
 
     // MARK: - availableRates
 
+    @MainActor
     func testAvailableRatesContainsExpectedValues() {
         let player = makePlayer()
         let expected: [Float] = [0.8, 1.0, 1.3, 1.5, 1.8, 3.0]
@@ -151,6 +165,7 @@ final class AudioPlayerUXTests: XCTestCase {
 
     /// Starting at 1x, successive `cycleRate()` calls should advance
     /// through the ordered list and wrap around from 3x back to 0.8x.
+    @MainActor
     func testCycleRateAdvancesThroughAllCases() {
         let player = makePlayer()
         // Default rate is 1.0.
@@ -166,6 +181,7 @@ final class AudioPlayerUXTests: XCTestCase {
     }
 
     /// After a full loop (6 cycles from 1.0), the rate must return to 1.0.
+    @MainActor
     func testCycleRateWrapsAroundToStart() {
         let player = makePlayer()
         let cycleCount = player.availableRates.count
@@ -176,6 +192,7 @@ final class AudioPlayerUXTests: XCTestCase {
 
     // MARK: - PlaybackRate.shortLabel
 
+    @MainActor
     func testShortLabelForCommonRates() {
         XCTAssertEqual(PlaybackRate.x100.shortLabel, "1x")
         XCTAssertEqual(PlaybackRate.x130.shortLabel, "1.3x")
@@ -189,6 +206,7 @@ final class AudioPlayerUXTests: XCTestCase {
     /// 0 and `durationSeconds` at 0. `skip(by:)` clamps to [0, duration],
     /// so skipForward is clamped to 0. We verify the clamp logic rather
     /// than actual seek success (which requires a real audio file).
+    @MainActor
     func testSkipForwardClampedAtDuration() {
         let player = makePlayer()
         // No item loaded; duration == 0 → any skip forward clamps to 0.
@@ -197,6 +215,7 @@ final class AudioPlayerUXTests: XCTestCase {
             "Skip forward with no audio loaded should stay at 0 (clamped)")
     }
 
+    @MainActor
     func testSkipBackwardClampedAtZero() {
         let player = makePlayer()
         player.skipBackward(seconds: 15)
@@ -207,6 +226,7 @@ final class AudioPlayerUXTests: XCTestCase {
     /// When `positionSeconds` is known (simulate via `seek`), `skipForward`
     /// should add the delta. We fake durationSeconds via a snapshot-less
     /// seek so we can verify the arithmetic.
+    @MainActor
     func testSkipForwardAddsSeconds() {
         let player = makePlayer()
         // Seek to 30 s without a real player item (seek clamps to 0 since
@@ -225,6 +245,7 @@ final class AudioPlayerUXTests: XCTestCase {
     /// this flag to prevent an idle player at chapter 0 from forcing
     /// the reader back to the TOC/index chapter on every position
     /// update — the "1→index→2→index" regression (bcfebf3 → fix).
+    @MainActor
     func testIdlePlayerWithSnapshotIsNotPlaying() {
         let player = makePlayer()
         XCTAssertFalse(player.isPlaying,
@@ -235,6 +256,7 @@ final class AudioPlayerUXTests: XCTestCase {
     /// calling `play`. The position-loop chapter-sync must therefore
     /// skip the reader-chapter assignment, leaving the reader wherever
     /// the user navigated to.
+    @MainActor
     func testLoadingSnapshotAloneDoesNotSetIsPlaying() {
         let player = makePlayer()
         let snap = JobSnapshot.previewSample

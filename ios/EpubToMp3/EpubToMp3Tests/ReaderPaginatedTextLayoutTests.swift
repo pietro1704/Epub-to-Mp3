@@ -8,8 +8,8 @@ import AppKit
 
 @testable import EpubToMp3
 
-@MainActor
 final class ReaderPaginatedTextLayoutTests: XCTestCase {
+    @MainActor
     func testMeasuresBeyondTheViewportForALongChapter() {
         let storage = NSTextStorage(string: String(repeating: "A long line of reader text. ", count: 400))
         let layoutManager = NSLayoutManager()
@@ -28,6 +28,7 @@ final class ReaderPaginatedTextLayoutTests: XCTestCase {
         XCTAssertEqual(container.size.height, .greatestFiniteMagnitude)
     }
 
+    @MainActor
     func testPageOffsetsStartEachSubsequentPageAtALineBoundary() {
         let storage = NSTextStorage(string: String(repeating: "Reader line boundary regression text. ", count: 80))
         let layoutManager = NSLayoutManager()

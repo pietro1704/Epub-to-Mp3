@@ -595,7 +595,7 @@ final class FullPlayerScreenController: UIViewController {
 
     @objc
     private func skipBackTapped() {
-        player.skipBackward(seconds: 15)
+        player.skipBackward()
         render()
     }
 
@@ -607,7 +607,7 @@ final class FullPlayerScreenController: UIViewController {
 
     @objc
     private func skipForwardTapped() {
-        player.skipForward(seconds: 15)
+        player.skipForward()
         render()
     }
 

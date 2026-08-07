@@ -7,9 +7,9 @@ import AVFoundation
 /// `AudioPlayer`: chapter-index translation, decision matrix,
 /// sentence-level seek lookup, ratio fallback, and the pending-seek
 /// queue that survives the AVPlayer asset-prepare gap.
-@MainActor
 final class AudioPlayerDivergenceTests: XCTestCase {
 
+    @MainActor
     private func makePlayer() -> AudioPlayer { AudioPlayer() }
 
     private func snapshotWithChapters(_ count: Int, jobID: String = "test-job") -> JobSnapshot {
@@ -50,6 +50,7 @@ final class AudioPlayerDivergenceTests: XCTestCase {
 
     // MARK: playTapDecision
 
+    @MainActor
     func testEffectiveChapterTitleUsesAudioCursor() {
         let player = makePlayer()
         player.testHook_setSnapshot(snapshotWithChapters(3))
@@ -60,12 +61,14 @@ final class AudioPlayerDivergenceTests: XCTestCase {
 
     /// With no snapshot loaded, every tap is a plain resume — no
     /// divergence detection is possible.
+    @MainActor
     func testDecisionWithoutSnapshotIsResume() {
         let player = makePlayer()
         XCTAssertEqual(player.playTapDecision(readerChapterIndex: 5), .resume)
     }
 
     /// Audio playing → always pause, regardless of divergence.
+    @MainActor
     func testDecisionWhilePlayingIsPause() {
         let player = makePlayer()
         // Force the isPlaying flag for the decision check; we don't
@@ -75,6 +78,7 @@ final class AudioPlayerDivergenceTests: XCTestCase {
     }
 
     /// Same chapter on both sides → resume (no dialog).
+    @MainActor
     func testDecisionWithMatchingChaptersIsResume() {
         let player = makePlayer()
         player.testHook_setSnapshot(snapshotWithChapters(5))
@@ -83,6 +87,7 @@ final class AudioPlayerDivergenceTests: XCTestCase {
     }
 
     /// Reader on a different chapter → offerStartChoice (dialog).
+    @MainActor
     func testDecisionWithDivergentChaptersOffersDialog() {
         let player = makePlayer()
         player.testHook_setSnapshot(snapshotWithChapters(5))
@@ -97,6 +102,7 @@ final class AudioPlayerDivergenceTests: XCTestCase {
     /// before comparing. Reader at EPUB index 2, audio at playable
     /// index 1 (which IS EPUB index 2 when index 1 is unplayable)
     /// — should be `.resume`, NOT `.offerStartChoice`.
+    @MainActor
     func testDecisionTranslatesEpubToPlayableSpace() {
         let player = makePlayer()
         // Playable chapters: EPUB 0, 2, 3 (EPUB 1 is unplayable, e.g. footnotes).
@@ -157,6 +163,7 @@ final class AudioPlayerDivergenceTests: XCTestCase {
 
     /// Same chapter always resumes directly, even when the reader page and
     /// paused audio position differ. The chooser is only for another chapter.
+    @MainActor
     func testDecisionWithSameChapterButDifferentPageResumesDirectly() {
         let player = makePlayer()
         player.testHook_setSnapshot(snapshotWithChapters(5))
@@ -172,6 +179,7 @@ final class AudioPlayerDivergenceTests: XCTestCase {
 
     /// Tiny ratio jitter should not trigger the floater when the reader is
     /// effectively on the same page the audio left off.
+    @MainActor
     func testDecisionWithSameChapterAndNearbyPageResumes() {
         let player = makePlayer()
         player.testHook_setSnapshot(snapshotWithChapters(5))
@@ -195,6 +203,7 @@ final class AudioPlayerDivergenceTests: XCTestCase {
     /// symptom: "diz que baixou todos os caps mas não toca nada (pede
     /// pra baixar)". Now the decision short-circuits to `.resume` when
     /// segment mode is live, so the existing queue plays.
+    @MainActor
     func testDecisionInSegmentModeWithEmptyPlayableChaptersIsResume() {
         let player = makePlayer()
         // Empty snapshot — `playableChapters` is [].
@@ -222,6 +231,7 @@ final class AudioPlayerDivergenceTests: XCTestCase {
         )
     }
 
+    @MainActor
     func testSegmentStreamDoesNotAppendCompletedChapterAudioTwice() {
         let player = makePlayer()
         let pending = JobSnapshot(
@@ -256,6 +266,7 @@ final class AudioPlayerDivergenceTests: XCTestCase {
     /// Embedded playback queues files named `ch<N>-seg<M>.mp3`. The chapter
     /// shown by the player must follow AVQueuePlayer.currentItem, not the
     /// most recently enqueued buffer-ahead segment.
+    @MainActor
     func testSegmentItemURLResolvesItsChapterIndex() {
         XCTAssertEqual(
             AudioPlayer.chapterIndexForSegmentItem(URL(fileURLWithPath: "/tmp/ch12-seg3.mp3")),
@@ -272,6 +283,7 @@ final class AudioPlayerDivergenceTests: XCTestCase {
     /// remaining list keeps the original EPUB-side `.index` field so
     /// downstream surfaces can translate between the two index spaces.
     /// Regression guard for the source-of-truth bug fixed 2026-05-18.
+    @MainActor
     func testPlayableChaptersFiltersUnplayableAndPreservesIndex() {
         let playable = JobSnapshot.Chapter(
             index: 0, name: "Intro", status: "completed",
@@ -318,6 +330,7 @@ final class AudioPlayerDivergenceTests: XCTestCase {
     /// Injecting timing then reading via `startFromReaderPage` should
     /// route to the precise sentence offset (preferred over the
     /// ratio).
+    @MainActor
     func testSentenceTimingCacheStoresMostRecentChapters() {
         let player = makePlayer()
         // Populate beyond the cache size (8) — the oldest must be
@@ -337,6 +350,7 @@ final class AudioPlayerDivergenceTests: XCTestCase {
     }
 
     /// Setting an empty map clears the entry.
+    @MainActor
     func testSentenceTimingClearWithEmptyMap() {
         let player = makePlayer()
         player.setSentenceTiming(["a": 100], forChapterIndex: 3)
@@ -346,6 +360,7 @@ final class AudioPlayerDivergenceTests: XCTestCase {
 
     /// Re-injecting a chapter's map should refresh LRU position (so
     /// the chapter doesn't get evicted on the very next insert).
+    @MainActor
     func testSentenceTimingReinjectionRefreshesLRU() {
         let player = makePlayer()
         // Fill the cache exactly.
@@ -370,6 +385,7 @@ final class AudioPlayerDivergenceTests: XCTestCase {
 
     /// A ratio passed to `startFromReaderPage` before duration lands
     /// must be queued and applied once duration is known.
+    @MainActor
     func testPendingProportionalSeekAppliedOnceDurationLands() {
         let player = makePlayer()
         player.testHook_setPendingProportionalSeek(0.5)
@@ -396,6 +412,7 @@ final class AudioPlayerDivergenceTests: XCTestCase {
     /// regression that leaves `currentChapterIndex` correct but
     /// breaks the EPUB↔playable mapping at construction time gets
     /// caught here.
+    @MainActor
     func testPlayThenDecideRespectsTranslatedIndex() {
         let player = makePlayer()
         // EPUB chapters 0..4; index 1 (Footnotes) and 3 (Images) are
@@ -482,6 +499,7 @@ final class AudioPlayerDivergenceTests: XCTestCase {
         )
     }
 
+    @MainActor
     func testSentenceWordOffsetAdvancesWithinSentenceTimingWindow() {
         XCTAssertEqual(
             AudioPlayer.sentenceStartMs(

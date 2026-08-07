@@ -1,7 +1,6 @@
 import XCTest
 @testable import EpubToMp3
 
-@MainActor
 final class ReaderLinkResolverTests: XCTestCase {
     private func chapter(
         index: Int,
@@ -22,6 +21,7 @@ final class ReaderLinkResolverTests: XCTestCase {
         )
     }
 
+    @MainActor
     func testResolvesRelativeEPUBLinkToItsChapter() throws {
         let contents = chapter(index: 1, name: "Contents", sourcePath: "OEBPS/text/toc.xhtml")
         let target = chapter(index: 2, name: "Chapter Five", sourcePath: "OEBPS/text/chapter-5.xhtml")
@@ -38,6 +38,7 @@ final class ReaderLinkResolverTests: XCTestCase {
         )
     }
 
+    @MainActor
     func testResolvesLinkedFootnoteByReferenceMarker() throws {
         let note = EbookFulltext.Footnote(number: "*", text: "A footnote body.")
         let current = chapter(
@@ -59,6 +60,7 @@ final class ReaderLinkResolverTests: XCTestCase {
         )
     }
 
+    @MainActor
     func testResolvesSameDocumentFootnoteBeforeCurrentChapter() throws {
         let note = EbookFulltext.Footnote(number: "1", text: "Same-document footnote.")
         let current = chapter(
@@ -80,6 +82,7 @@ final class ReaderLinkResolverTests: XCTestCase {
         )
     }
 
+    @MainActor
     func testLeavesExternalURLsForTheSystem() throws {
         let current = chapter(index: 1, name: "Chapter One", sourcePath: "OEBPS/text/chapter-1.xhtml")
         let url = try XCTUnwrap(EpubHtmlRenderer.readerLinkURL(for: "https://example.com/guide"))
@@ -90,6 +93,7 @@ final class ReaderLinkResolverTests: XCTestCase {
         )
     }
 
+    @MainActor
     func testDoesNotOpenAnUnresolvedArchivePath() throws {
         let current = chapter(index: 1, name: "Chapter One", sourcePath: "OEBPS/text/chapter-1.xhtml")
         let url = try XCTUnwrap(EpubHtmlRenderer.readerLinkURL(for: "missing.xhtml#target"))

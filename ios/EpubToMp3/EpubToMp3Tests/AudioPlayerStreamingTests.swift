@@ -8,7 +8,6 @@ import XCTest
 ///
 /// No real audio session or Edge-TTS calls are made — we feed synthetic
 /// MP3 stubs and verify state transitions. Runs on the macOS host.
-@MainActor
 final class AudioPlayerStreamingTests: XCTestCase {
 
     // MARK: - Helpers
@@ -27,12 +26,14 @@ final class AudioPlayerStreamingTests: XCTestCase {
 
     // MARK: - firstSegmentReady
 
+    @MainActor
     func testFirstSegmentReadyFalseInitially() {
         let player = AudioPlayer()
         XCTAssertFalse(player.firstSegmentReady,
             "firstSegmentReady must be false before any segment arrives")
     }
 
+    @MainActor
     func testFirstSegmentReadyTrueAfterFirstEnqueue() {
         let player = AudioPlayer()
         let mp3 = fakeMP3()
@@ -41,6 +42,7 @@ final class AudioPlayerStreamingTests: XCTestCase {
             "firstSegmentReady must flip to true after the first enqueueSegment call")
     }
 
+    @MainActor
     func testFirstSegmentReadyIsLatch() {
         let player = AudioPlayer()
         player.enqueueSegment(data: fakeMP3(), chapterIndex: 0, segmentIndex: 0)
@@ -56,6 +58,7 @@ final class AudioPlayerStreamingTests: XCTestCase {
     /// even though the user had never tapped Play. Media must never
     /// auto-start without explicit user intent (in-app Play button,
     /// lock-screen, or widget remote command).
+    @MainActor
     func testEnqueueSegmentDoesNotAutoStartPlayback() {
         let player = AudioPlayer()
         XCTAssertFalse(player.isPlaying, "fresh AudioPlayer must be paused")
@@ -67,6 +70,7 @@ final class AudioPlayerStreamingTests: XCTestCase {
     /// A Listen action is explicit media intent even when the conversion has
     /// not produced its first segment yet. The queued intent must carry over
     /// so the first arriving segment starts without a second tap.
+    @MainActor
     func testResumeBeforeFirstSegmentStartsStreamingPlayback() {
         let player = AudioPlayer()
         player.resume()
@@ -78,6 +82,7 @@ final class AudioPlayerStreamingTests: XCTestCase {
     /// Regression: `play(snapshot:startingAt:)` used to call `queue.play()`
     /// unconditionally. Now it only sets up the queue; playback only starts
     /// on explicit user intent.
+    @MainActor
     func testPlaySnapshotPreparesWithoutAutoStart() {
         let player = AudioPlayer()
         XCTAssertFalse(player.isPlaying)
@@ -89,6 +94,7 @@ final class AudioPlayerStreamingTests: XCTestCase {
 
     // MARK: - firstChapterReady co-advancement
 
+    @MainActor
     func testFirstChapterReadyAlsoSetAfterFirstSegment() {
         let player = AudioPlayer()
         XCTAssertFalse(player.firstChapterReady)
@@ -99,6 +105,7 @@ final class AudioPlayerStreamingTests: XCTestCase {
 
     // MARK: - isLoading respects firstSegmentReady
 
+    @MainActor
     func testIsLoadingFalseAfterFirstSegmentArrives() {
         let player = AudioPlayer()
         player.isConverting = true
@@ -111,6 +118,7 @@ final class AudioPlayerStreamingTests: XCTestCase {
 
     // MARK: - Empty data ignored
 
+    @MainActor
     func testEmptyDataIsIgnored() {
         let player = AudioPlayer()
         player.enqueueSegment(data: Data(), chapterIndex: 0, segmentIndex: 0)
@@ -120,6 +128,7 @@ final class AudioPlayerStreamingTests: XCTestCase {
 
     // MARK: - Multiple segments enqueued
 
+    @MainActor
     func testMultipleSegmentsQueued() {
         let player = AudioPlayer()
         for i in 0..<4 {
@@ -133,6 +142,7 @@ final class AudioPlayerStreamingTests: XCTestCase {
             "Streaming segments must never auto-start playback")
     }
 
+    @MainActor
     func testDeferredSegmentsRemainRetainedPastAdvisoryHighWaterMark() {
         let player = AudioPlayer()
         let total = SegmentBacklog.advisoryHighWaterMark + 4
@@ -153,6 +163,7 @@ final class AudioPlayerStreamingTests: XCTestCase {
         XCTAssertNotNil(player.testHook_segmentURL(chapterIndex: 0, segmentIndex: total - 1))
     }
 
+    @MainActor
     func testBufferedLaterChapterDoesNotOverwriteAudibleSegmentState() {
         let player = AudioPlayer()
         player.enqueueSegment(
@@ -177,6 +188,7 @@ final class AudioPlayerStreamingTests: XCTestCase {
         XCTAssertEqual(player.activeSentenceId, "chapter-1")
     }
 
+    @MainActor
     func testSameSegmentIdentityUsesDifferentTempFileInNewStreamSession() {
         let player = AudioPlayer()
         player.enqueueSegment(data: fakeMP3(), chapterIndex: 0, segmentIndex: 0)
@@ -197,6 +209,7 @@ final class AudioPlayerStreamingTests: XCTestCase {
             "Restarted streams must never overwrite the AVFoundation asset from a prior session")
     }
 
+    @MainActor
     func testSessionTeardownIsTheOnlyDeferredSegmentDiscardPoint() {
         let player = AudioPlayer()
         for segmentIndex in 0..<(SegmentBacklog.advisoryHighWaterMark + 1) {
@@ -219,6 +232,7 @@ final class AudioPlayerStreamingTests: XCTestCase {
 
     // MARK: - clearConversionState resets firstSegmentReady
 
+    @MainActor
     func testClearConversionStateResetsFirstSegmentReady() {
         let player = AudioPlayer()
         player.enqueueSegment(data: fakeMP3(), chapterIndex: 0, segmentIndex: 0)
@@ -241,6 +255,7 @@ final class AudioPlayerStreamingTests: XCTestCase {
 
     /// Verifies that calling `play(snapshot:)` after segments were
     /// enqueued via streaming replaces the queue cleanly (teardown + rebuild).
+    @MainActor
     func testPlaySnapshotAfterStreamingTeardownSegments() {
         let player = AudioPlayer()
         player.enqueueSegment(data: fakeMP3(), chapterIndex: 0, segmentIndex: 0)
@@ -262,6 +277,7 @@ final class AudioPlayerStreamingTests: XCTestCase {
 
     // MARK: - SSE snapshot streaming
 
+    @MainActor
     func testUpdateSnapshotBuildsQueueWhenFirstPlayableChapterArrives() {
         let player = AudioPlayer(backendBaseURL: URL(string: "https://example.com")!)
         let pending = snapshot(chapters: [chapter(index: 0, url: nil)], state: "running")
@@ -277,6 +293,7 @@ final class AudioPlayerStreamingTests: XCTestCase {
             "The first playable SSE snapshot must create an AVQueuePlayer so a normal Play tap can start audio without reopening the reader.")
     }
 
+    @MainActor
     func testResumeBeforeFirstPlayableChapterAutoplaysWhenSnapshotArrives() {
         let player = AudioPlayer(backendBaseURL: URL(string: "https://example.com")!)
         let pending = snapshot(chapters: [chapter(index: 2, url: nil)], state: "running")
@@ -293,6 +310,7 @@ final class AudioPlayerStreamingTests: XCTestCase {
             "If the user tapped Play while waiting for streaming audio, the first playable chapter should start as soon as the queue is built.")
     }
 
+    @MainActor
     func testChaptersToAppendUsesChapterIdentityForPriorityWraparound() {
         let old = [chapter(index: 10, url: "/audio/ch10.mp3"),
                    chapter(index: 11, url: "/audio/ch11.mp3")]

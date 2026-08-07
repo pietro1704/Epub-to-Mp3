@@ -9,7 +9,6 @@ import AVFoundation
 /// They exercise the AVQueuePlayer queue-count behaviour, multi-chapter
 /// ordering, and the embedded-TTS bootstrap state flags that were broken
 /// when no backend URL was configured on a real iPhone.
-@MainActor
 final class AudioPlayerEnqueueSegmentTests: XCTestCase {
 
     // MARK: - Helpers
@@ -30,6 +29,7 @@ final class AudioPlayerEnqueueSegmentTests: XCTestCase {
     /// playback — the user must tap Play explicitly. The first
     /// segment only flips the "ready" latches so the Play button
     /// enables in the UI.
+    @MainActor
     func testThreeSegmentsEnqueuedItemCount() {
         let player = AudioPlayer()
         for i in 0..<3 {
@@ -45,6 +45,7 @@ final class AudioPlayerEnqueueSegmentTests: XCTestCase {
     }
 
     /// Segments from different chapters are all accepted without crashing.
+    @MainActor
     func testMultiChapterSegmentsAccepted() {
         let player = AudioPlayer()
         // Chapter 0, segment 0 — creates the queue.
@@ -63,6 +64,7 @@ final class AudioPlayerEnqueueSegmentTests: XCTestCase {
 
     // MARK: - firstSegmentReady is a session latch
 
+    @MainActor
     func testFirstSegmentReadyLatchSurvivesClearConversionState() {
         let player = AudioPlayer()
         player.enqueueSegment(data: fakeMP3(), chapterIndex: 0, segmentIndex: 0)
@@ -85,6 +87,7 @@ final class AudioPlayerEnqueueSegmentTests: XCTestCase {
 
     /// The MiniPlayerBar spinner must disappear as soon as the first
     /// segment lands — regardless of whether isConverting is still true.
+    @MainActor
     func testIsLoadingDropsAfterFirstSegment() {
         let player = AudioPlayer()
         player.isConverting = true
@@ -106,6 +109,7 @@ final class AudioPlayerEnqueueSegmentTests: XCTestCase {
     /// every chapter. A follow-mode reader observing the player then followed
     /// that runaway and re-rendered ~60×/s (device log: 86 ReaderView.init on
     /// a stationary chapter). A paused player MUST keep its cursor put.
+    @MainActor
     func testBackgroundEnqueueDoesNotMoveCursorWhilePaused() {
         let player = AudioPlayer()
         XCTAssertFalse(player.isPlaying)
@@ -125,6 +129,7 @@ final class AudioPlayerEnqueueSegmentTests: XCTestCase {
 
     /// Buffered chapters must not pull the reader/Now Playing cursor ahead of
     /// the item AVQueuePlayer is actually playing.
+    @MainActor
     func testBufferingAheadWhilePlayingDoesNotMoveCurrentChapter() {
         let player = AudioPlayer()
         player.testHook_setIsPlaying(true)
@@ -139,6 +144,7 @@ final class AudioPlayerEnqueueSegmentTests: XCTestCase {
     /// Future chapter segments may be buffered while chapter 0 is audible,
     /// but they must not replace the active chapter's sentence timing state
     /// before AVQueuePlayer advances to that chapter.
+    @MainActor
     func testBufferingAheadPreservesActiveSegmentTimingChapter() {
         let player = AudioPlayer()
         player.enqueueSegment(data: fakeMP3(), chapterIndex: 0, segmentIndex: 0, sentenceId: "ch0-s0")
@@ -148,6 +154,7 @@ final class AudioPlayerEnqueueSegmentTests: XCTestCase {
         XCTAssertEqual(player.testHook_activeSegmentSentenceCount(), 1)
     }
 
+    @MainActor
     func testSegmentsWithoutSentenceIDsPreserveTimingAlignment() {
         let player = AudioPlayer()
         player.enqueueSegment(data: fakeMP3(), chapterIndex: 0, segmentIndex: 0)
@@ -160,6 +167,7 @@ final class AudioPlayerEnqueueSegmentTests: XCTestCase {
         )
     }
 
+    @MainActor
     func testActivatingNewChapterDiscardsPlayedChapterSentenceMetadata() {
         let player = AudioPlayer()
         player.enqueueSegment(data: fakeMP3(), chapterIndex: 0, segmentIndex: 0, sentenceId: "ch0-s0")
@@ -171,6 +179,7 @@ final class AudioPlayerEnqueueSegmentTests: XCTestCase {
         XCTAssertEqual(player.activeSentenceId, "ch1-s0")
     }
 
+    @MainActor
     func testDelayedCompletionFromPreviousChapterDoesNotAdvanceNewChapterCursor() {
         let player = AudioPlayer()
         player.enqueueSegment(data: fakeMP3(), chapterIndex: 0, segmentIndex: 0, sentenceId: "ch0-s0")
@@ -184,6 +193,7 @@ final class AudioPlayerEnqueueSegmentTests: XCTestCase {
         XCTAssertEqual(player.testHook_activeSegmentSentenceCount(), 2)
     }
 
+    @MainActor
     func testOwnedSegmentItemRequiresSameInstanceAndCanBeRemovedWhenSkipped() {
         let player = AudioPlayer()
         let owned = AVPlayerItem(url: URL(fileURLWithPath: "/tmp/owned-segment.mp3"))
@@ -199,6 +209,7 @@ final class AudioPlayerEnqueueSegmentTests: XCTestCase {
         XCTAssertFalse(player.testHook_isOwnedSegmentItem(owned))
     }
 
+    @MainActor
     func testTeardownClearsDeferredSegmentsBeforeDeletingSessionDirectory() {
         let player = AudioPlayer()
 
@@ -222,6 +233,7 @@ final class AudioPlayerEnqueueSegmentTests: XCTestCase {
         )
     }
 
+    @MainActor
     func testSegmentProducerWaitsAtBoundedBacklogUntilQueueAdvances() async {
         let player = AudioPlayer()
         let total = AudioPlayer.testHook_maxQueueAhead()
@@ -258,6 +270,7 @@ final class AudioPlayerEnqueueSegmentTests: XCTestCase {
         await fulfillment(of: [resumed], timeout: 1)
     }
 
+    @MainActor
     func testTeardownCancelsAProducerWaitingForSegmentCapacity() async {
         let player = AudioPlayer()
         let total = AudioPlayer.testHook_maxQueueAhead()
@@ -287,6 +300,7 @@ final class AudioPlayerEnqueueSegmentTests: XCTestCase {
 
     // MARK: No crash on empty data
 
+    @MainActor
     func testEmptySegmentDataIsGracefullyIgnored() {
         let player = AudioPlayer()
         // Must not crash; firstSegmentReady stays false.
@@ -303,6 +317,7 @@ final class AudioPlayerEnqueueSegmentTests: XCTestCase {
     /// Updated contract: no auto-play. We verify a new player was
     /// created by observing `firstSegmentReady` flipping back to true
     /// after `clearConversionState()` reset it.
+    @MainActor
     func testReenqueueAfterStopCreatesNewPlayer() {
         let player = AudioPlayer()
         player.enqueueSegment(data: fakeMP3(), chapterIndex: 0, segmentIndex: 0)

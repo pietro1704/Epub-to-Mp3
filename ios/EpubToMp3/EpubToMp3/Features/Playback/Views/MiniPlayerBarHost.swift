@@ -12,8 +12,8 @@ enum MiniPlayerLayoutMetrics {
 
 @MainActor
 final class MiniPlayerBarUIKitView: UIView, UIGestureRecognizerDelegate {
-    /// Extends the bottom material through the home-indicator region without
-    /// stretching the interactive pill or moving its controls upward.
+    /// Reserved only for system-managed accessories. The reader's safe area
+    /// must keep its own background beneath the floating mini-player pill.
     private let bottomSafeAreaFill = AdaptiveMaterialView()
     private let materialView = AdaptiveMaterialView()
     private let coverView = UIImageView()
@@ -25,6 +25,7 @@ final class MiniPlayerBarUIKitView: UIView, UIGestureRecognizerDelegate {
     private let rateButton = UIButton(type: .system)
     private let spinner = UIActivityIndicatorView(style: .medium)
     private let chromeStack = UIStackView()
+    private var minimumHeightConstraint: NSLayoutConstraint?
 
     private var player: AudioPlayer?
     private var playbackClock: PlaybackClock?
@@ -46,6 +47,7 @@ final class MiniPlayerBarUIKitView: UIView, UIGestureRecognizerDelegate {
 
     override func safeAreaInsetsDidChange() {
         super.safeAreaInsetsDidChange()
+        minimumHeightConstraint?.constant = intrinsicContentSize.height
         invalidateIntrinsicContentSize()
     }
 
@@ -73,8 +75,12 @@ final class MiniPlayerBarUIKitView: UIView, UIGestureRecognizerDelegate {
         // 44-point controls below the screen edge.
         setContentHuggingPriority(.required, for: .vertical)
         setContentCompressionResistancePriority(.required, for: .vertical)
+        let minimumHeight = heightAnchor.constraint(greaterThanOrEqualToConstant: intrinsicContentSize.height)
+        minimumHeight.priority = .required
+        minimumHeight.isActive = true
+        minimumHeightConstraint = minimumHeight
         bottomSafeAreaFill.accessibilityIdentifier = "miniPlayer.bottomSafeAreaFill"
-        bottomSafeAreaFill.isHidden = usesSystemManagedBottomInset
+        bottomSafeAreaFill.isHidden = true
         addSubview(bottomSafeAreaFill)
         addSubview(materialView)
         materialView.accessibilityIdentifier = "miniPlayer.pillMaterial"

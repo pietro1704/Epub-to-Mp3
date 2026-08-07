@@ -1,7 +1,6 @@
 import XCTest
 @testable import EpubToMp3
 
-@MainActor
 final class LocalAudioConversionSchedulerTests: XCTestCase {
     private actor Gate {
         private var continuation: CheckedContinuation<Void, Never>?
@@ -25,6 +24,7 @@ final class LocalAudioConversionSchedulerTests: XCTestCase {
         }
     }
 
+    @MainActor
     func testRunsDifferentBooksInFirstInFirstOutOrder() async throws {
         let scheduler = LocalAudioConversionScheduler(
             initialConnectivity: .wifi,
@@ -56,6 +56,7 @@ final class LocalAudioConversionSchedulerTests: XCTestCase {
         XCTAssertEqual(started, ["first", "second"])
     }
 
+    @MainActor
     func testWiFiOnlyWorkWaitsForWiFiAndResumesWithoutCancellation() async throws {
         let scheduler = LocalAudioConversionScheduler(
             initialConnectivity: .cellular,
@@ -80,6 +81,7 @@ final class LocalAudioConversionSchedulerTests: XCTestCase {
         XCTAssertEqual(scheduler.state(for: "book"), .finished)
     }
 
+    @MainActor
     func testAllowingCellularResumesWaitingWorkAtTheNextChapterBoundary() async throws {
         let scheduler = LocalAudioConversionScheduler(
             initialConnectivity: .cellular,
@@ -104,6 +106,7 @@ final class LocalAudioConversionSchedulerTests: XCTestCase {
         XCTAssertEqual(scheduler.state(for: "book"), .finished)
     }
 
+    @MainActor
     func testPriorityChapterIsSelectedBeforeNormalBookOrder() {
         let scheduler = LocalAudioConversionScheduler(
             initialConnectivity: .wifi,
@@ -130,6 +133,7 @@ final class LocalAudioConversionSchedulerTests: XCTestCase {
         )
     }
 
+    @MainActor
     func testPriorityAddedForAQueuedSameBookJobSurvivesThePreviousJobFinishing() async throws {
         let scheduler = LocalAudioConversionScheduler(
             initialConnectivity: .wifi,
@@ -170,6 +174,7 @@ final class LocalAudioConversionSchedulerTests: XCTestCase {
         XCTAssertEqual(nextChapter, 3)
     }
 
+    @MainActor
     func testPendingWorkKeepsActiveThenQueuedFIFOOrderAfterSchedulerRecreation() async throws {
         let suiteName = "LocalAudioConversionSchedulerTests.\(UUID().uuidString)"
         guard let persistence = UserDefaults(suiteName: suiteName) else {
@@ -250,6 +255,7 @@ final class LocalAudioConversionSchedulerTests: XCTestCase {
         _ = try await secondTask.value
     }
 
+    @MainActor
     func testHandledCacheActionIsNotRepeatedAfterSchedulerRestoration() async throws {
         let suiteName = "LocalAudioConversionSchedulerTests.\(UUID().uuidString)"
         guard let persistence = UserDefaults(suiteName: suiteName) else {

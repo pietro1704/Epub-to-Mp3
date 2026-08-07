@@ -17,7 +17,6 @@
 import XCTest
 @testable import EpubToMp3
 
-@MainActor
 final class ConversionWatchdogTests: XCTestCase {
 
     /// Mutable clock the watchdog will read on every `tick` / heartbeat.
@@ -31,6 +30,7 @@ final class ConversionWatchdogTests: XCTestCase {
 
     // MARK: - Heartbeat semantics
 
+    @MainActor
     func testHeartbeatPreventsStallCallback() {
         let clock = Clock()
         let wd = ConversionWatchdog(
@@ -49,6 +49,7 @@ final class ConversionWatchdogTests: XCTestCase {
         wd.stop()
     }
 
+    @MainActor
     func testSilenceBeyondThresholdFiresStall() {
         let clock = Clock()
         let wd = ConversionWatchdog(
@@ -66,6 +67,7 @@ final class ConversionWatchdogTests: XCTestCase {
         wd.stop()
     }
 
+    @MainActor
     func testHeartbeatResetsSilenceClock() {
         let clock = Clock()
         let wd = ConversionWatchdog(
@@ -87,6 +89,7 @@ final class ConversionWatchdogTests: XCTestCase {
 
     // MARK: - Escalation
 
+    @MainActor
     func testEscalatesToGaveUpAfterMaxRetries() {
         let clock = Clock()
         let wd = ConversionWatchdog(
@@ -112,6 +115,7 @@ final class ConversionWatchdogTests: XCTestCase {
             "watchdog must stop itself after onGaveUp so it doesn't spam")
     }
 
+    @MainActor
     func testGaveUpStopsAutoSoNoFurtherFires() {
         let clock = Clock()
         let wd = ConversionWatchdog(
@@ -128,6 +132,7 @@ final class ConversionWatchdogTests: XCTestCase {
         XCTAssertEqual(gaveUpCount, 1)
     }
 
+    @MainActor
     func testHeartbeatAfterStallResetsRetryCounter() {
         let clock = Clock()
         let wd = ConversionWatchdog(
@@ -155,6 +160,7 @@ final class ConversionWatchdogTests: XCTestCase {
 
     // MARK: - Lifecycle
 
+    @MainActor
     func testStopIsIdempotent() {
         let wd = ConversionWatchdog()
         wd.start()
@@ -164,6 +170,7 @@ final class ConversionWatchdogTests: XCTestCase {
         XCTAssertEqual(wd.consecutiveStalls, 0)
     }
 
+    @MainActor
     func testStartIsNoopWhenAlreadyRunning() {
         let wd = ConversionWatchdog(stallSeconds: 5, pollSeconds: 60)
         wd.start()
@@ -173,6 +180,7 @@ final class ConversionWatchdogTests: XCTestCase {
         wd.stop()
     }
 
+    @MainActor
     func testTickIsNoopWhenNotRunning() {
         let clock = Clock()
         let wd = ConversionWatchdog(
@@ -201,6 +209,7 @@ final class ConversionWatchdogTests: XCTestCase {
     /// "conversion failed" signal the BookOpenView uses to call
     /// endConversionActivity(failed: true). Verify the stopped state is
     /// stable so the view can safely call end once.
+    @MainActor
     func testIsRunningFalseAfterGaveUp() {
         let clock = Clock()
         let wd = ConversionWatchdog(
@@ -216,6 +225,7 @@ final class ConversionWatchdogTests: XCTestCase {
 
     /// After stop(), consecutiveStalls is zero — the view should not carry
     /// over a stale "failed" signal into the next startConversionActivity.
+    @MainActor
     func testStopClearsRetryCounter() {
         let clock = Clock()
         let wd = ConversionWatchdog(

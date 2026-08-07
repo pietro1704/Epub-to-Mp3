@@ -11,17 +11,18 @@ import XCTest
 ///
 /// We verify the state machine rather than the actual AVQueuePlayer volume
 /// because the player under test has no real audio session (macOS CI runner).
-@MainActor
 final class AudioPlayerSleepTimerTests: XCTestCase {
 
     // MARK: - setSleepTimer state
 
+    @MainActor
     func testSetSleepTimerPositiveSetsRemaining() {
         let player = AudioPlayer()
         player.setSleepTimer(seconds: 120)
         XCTAssertEqual(player.sleepTimerRemaining, 120, accuracy: 0.5)
     }
 
+    @MainActor
     func testSetSleepTimerZeroCancels() {
         let player = AudioPlayer()
         player.setSleepTimer(seconds: 60)
@@ -29,6 +30,7 @@ final class AudioPlayerSleepTimerTests: XCTestCase {
         XCTAssertEqual(player.sleepTimerRemaining, 0)
     }
 
+    @MainActor
     func testCancelSleepTimerResetsRemaining() {
         let player = AudioPlayer()
         player.setSleepTimer(seconds: 300)
@@ -36,12 +38,14 @@ final class AudioPlayerSleepTimerTests: XCTestCase {
         XCTAssertEqual(player.sleepTimerRemaining, 0)
     }
 
+    @MainActor
     func testStartSleepTimerMinutesConvertsCorrectly() {
         let player = AudioPlayer()
         player.startSleepTimer(minutes: 5)
         XCTAssertEqual(player.sleepTimerRemaining, 300, accuracy: 1.0)
     }
 
+    @MainActor
     func testStartSleepTimerZeroMinutesCancels() {
         let player = AudioPlayer()
         player.startSleepTimer(minutes: 10)
@@ -53,6 +57,7 @@ final class AudioPlayerSleepTimerTests: XCTestCase {
 
     /// Cancelling the timer mid-fade must set `sleepTimerCancelled = true`
     /// so the in-progress `performSleepTimerFadeOut` loop aborts early.
+    @MainActor
     func testCancelDuringFadeSetsCancelledFlag() async {
         let player = AudioPlayer()
         // Arm the timer so a fade task would be spawned.
@@ -74,6 +79,7 @@ final class AudioPlayerSleepTimerTests: XCTestCase {
     ///
     /// We test the observable outcome: `sleepTimerRemaining` drops to 0 and
     /// `sleepTimerExpiresAt` is cleared — the fade task owns the pause call.
+    @MainActor
     func testTickSleepTimerArmsTaskWhenExpired() {
         let audioPlayer = AudioPlayer()
         // The timer observer is driven by AVPlayer in production. This test
@@ -89,6 +95,7 @@ final class AudioPlayerSleepTimerTests: XCTestCase {
     /// White-box: creates an AudioPlayer with no snapshot, calls the public
     /// `setSleepTimer` + `cancelSleepTimer` round-trip, and confirms remaining
     /// goes back to 0 (i.e. the cancel path doesn't crash or leave stale state).
+    @MainActor
     func testFadeOutCancelledMidWayDoesNotCrash() async throws {
         let audioPlayer = AudioPlayer()
         audioPlayer.setSleepTimer(seconds: 60)

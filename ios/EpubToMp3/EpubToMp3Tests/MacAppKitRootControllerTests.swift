@@ -4,8 +4,8 @@ import XCTest
 #if os(macOS)
 import AppKit
 
-@MainActor
 final class MacAppKitRootControllerTests: XCTestCase {
+    @MainActor
     func testMainMenuProvidesNativeFileEditViewWindowAndHelpMenus() throws {
         let mainMenu = EpubToMp3App.makeMainMenu()
         let menuTitles = mainMenu.items.compactMap { $0.submenu?.title }
@@ -30,6 +30,7 @@ final class MacAppKitRootControllerTests: XCTestCase {
         XCTAssertTrue(viewMenu.items.contains { $0.title == L10n.string("menu.searchLibrary") && $0.keyEquivalent == "f" })
     }
 
+    @MainActor
     func testToolbarSidebarItemCollapsesAndRestoresSidebarWithoutDetachingDetail() throws {
         let suiteName = "MacAppKitRootControllerTests.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))

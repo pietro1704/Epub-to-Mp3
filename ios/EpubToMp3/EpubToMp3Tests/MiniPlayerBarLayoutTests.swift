@@ -4,8 +4,8 @@ import XCTest
 #if os(iOS)
 import UIKit
 
-@MainActor
 final class MiniPlayerBarLayoutTests: XCTestCase {
+    @MainActor
     func testOverlayMiniPlayerUsesItsIntrinsicContentHeight() {
         let host = UIView(frame: CGRect(x: 0, y: 0, width: 390, height: 844))
         let miniPlayer = MiniPlayerBarUIKitView()
@@ -22,6 +22,7 @@ final class MiniPlayerBarLayoutTests: XCTestCase {
         XCTAssertEqual(miniPlayer.bounds.height, miniPlayer.intrinsicContentSize.height, accuracy: 0.5)
     }
 
+    @MainActor
     func testContentStackCentersWithinPill() throws {
         let host = UIView(frame: CGRect(x: 0, y: 0, width: 390, height: 844))
         let miniPlayer = MiniPlayerBarUIKitView()
@@ -52,6 +53,7 @@ final class MiniPlayerBarLayoutTests: XCTestCase {
         XCTAssertEqual(contentCenter.y, materialCenter.y, accuracy: 0.5)
     }
 
+    @MainActor
     func testOverlayKeepsThePillAboveTheBottomSafeAreaWhileFillingTheScreenEdge() throws {
         let hostController = UIViewController()
         let window = UIWindow(frame: UIScreen.main.bounds)
@@ -98,6 +100,27 @@ final class MiniPlayerBarLayoutTests: XCTestCase {
         )
     }
 
+    @MainActor
+    func testOverlayHasRoomForItsControlsAboveTheSafeArea() throws {
+        let host = UIView(frame: CGRect(x: 0, y: 0, width: 390, height: 844))
+        let miniPlayer = MiniPlayerBarUIKitView()
+        miniPlayer.translatesAutoresizingMaskIntoConstraints = false
+        host.addSubview(miniPlayer)
+        NSLayoutConstraint.activate([
+            miniPlayer.leadingAnchor.constraint(equalTo: host.leadingAnchor),
+            miniPlayer.trailingAnchor.constraint(equalTo: host.trailingAnchor),
+            miniPlayer.bottomAnchor.constraint(equalTo: host.bottomAnchor),
+        ])
+        host.layoutIfNeeded()
+
+        let materialView = try XCTUnwrap(pillMaterial(in: miniPlayer))
+        XCTAssertGreaterThanOrEqual(
+            materialView.bounds.height,
+            MiniPlayerLayoutMetrics.contentHeight
+        )
+    }
+
+    @MainActor
     func testOpenButtonActivatesFullPlayerAndAnnouncesDisplayedMetadata() throws {
         let suite = "mini-player.layout.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
@@ -120,6 +143,7 @@ final class MiniPlayerBarLayoutTests: XCTestCase {
         XCTAssertEqual(openCount, 1)
     }
 
+    @MainActor
     func testReaderChapterTitleIsUsedBeforeAudioPlaybackStarts() throws {
         let player = AudioPlayer()
         player.updateReaderChapterTitle("Chapter One", for: 0)
@@ -135,6 +159,7 @@ final class MiniPlayerBarLayoutTests: XCTestCase {
         XCTAssertTrue(openButton.accessibilityValue?.contains("Chapter One") ?? false)
     }
 
+    @MainActor
     func testReaderCurrentChapterTitleOverridesDefaultAudioCursorBeforePlayback() {
         let defaults = UserDefaults.standard
         let previousReaderIndex = defaults.object(forKey: AudioPlayer.readerCurrentChapterIndexDefaultsKey)
@@ -154,6 +179,7 @@ final class MiniPlayerBarLayoutTests: XCTestCase {
         XCTAssertEqual(player.effectiveChapterTitle, "Contents")
     }
 
+    @MainActor
     func testPlayButtonRequestsLocalConversionWhenNoAudioQueueExists() throws {
         let player = AudioPlayer()
         let library = LibraryStore()
@@ -174,12 +200,14 @@ final class MiniPlayerBarLayoutTests: XCTestCase {
         XCTAssertFalse(player.isPlaying)
     }
 
+    @MainActor
     func testSystemAccessoryExcludesAnAdditionalBottomSafeAreaInset() {
         let miniPlayer = MiniPlayerBarUIKitView(usesSystemManagedBottomInset: true)
 
         XCTAssertEqual(miniPlayer.intrinsicContentSize.height, 52, accuracy: 0.5)
     }
 
+    @MainActor
     func testActiveBookIDPrefersTheCurrentlyOpenReaderBook() throws {
         let suite = "mini-player.context.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
@@ -194,6 +222,7 @@ final class MiniPlayerBarLayoutTests: XCTestCase {
         XCTAssertEqual(MiniPlayerBarUIKitView.activeBookID(defaults: defaults), "reader-book")
     }
 
+    @MainActor
     func testOpeningAnotherBookReplacesAnActivePlaybackSession() {
         XCTAssertTrue(
             MainReaderScreenController.shouldReplaceActivePlayback(
@@ -218,6 +247,7 @@ final class MiniPlayerBarLayoutTests: XCTestCase {
         )
     }
 
+    @MainActor
     func testReaderContextRendersBookMetadataWithoutPlayback() throws {
         let librarySuite = "mini-player.metadata.\(UUID().uuidString)"
         let libraryDefaults = try XCTUnwrap(UserDefaults(suiteName: librarySuite))
@@ -259,6 +289,7 @@ final class MiniPlayerBarLayoutTests: XCTestCase {
         )
     }
 
+    @MainActor
     func testOverlayMaximumHeightPreservesCompactControlsAndLargeSafeArea() {
         XCTAssertEqual(MiniPlayerLayoutMetrics.contentHeight, 52, accuracy: 0.5)
         XCTAssertEqual(MiniPlayerLayoutMetrics.maximumBottomSafeAreaInset, 44, accuracy: 0.5)

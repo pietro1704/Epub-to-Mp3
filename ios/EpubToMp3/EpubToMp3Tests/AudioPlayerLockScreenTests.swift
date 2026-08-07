@@ -15,7 +15,6 @@ import MediaPlayer
 /// client.  The tests below only verify the *registration* side (isEnabled,
 /// nowPlayingInfo dict) — they do not attempt to synthesise remote events
 /// end-to-end.
-@MainActor
 final class AudioPlayerLockScreenTests: XCTestCase {
 
     // MARK: - Helpers
@@ -65,6 +64,7 @@ final class AudioPlayerLockScreenTests: XCTestCase {
     /// the system shows the correct buttons. Command setup is lazy
     /// (deferred to first playback), so the test drives it explicitly
     /// via `ensureRemoteCommands()`.
+    @MainActor
     func testRemoteCommandsRegisteredAfterConfiguration() {
         let player = AudioPlayer()
         player.ensureRemoteCommands()
@@ -89,16 +89,17 @@ final class AudioPlayerLockScreenTests: XCTestCase {
         XCTAssertNotNil(center.previousTrackCommand)
     }
 
-    /// `skipForwardCommand` and `skipBackwardCommand` should use the
-    /// standard audiobook intervals (30 s forward / 15 s back). Command
-    /// setup is lazy, so the test drives `ensureRemoteCommands()` —
-    /// without it the shared `MPRemoteCommandCenter` keeps the system
-    /// default and the test becomes order-dependent.
-    func testSkipIntervalsAreAudiobookStandard() {
+    /// The initial transport preference must use the product default of
+    /// 15 seconds in both directions. Command setup is lazy, so the test
+    /// drives `ensureRemoteCommands()` — without it the shared
+    /// `MPRemoteCommandCenter` keeps the system default and the test becomes
+    /// order-dependent.
+    @MainActor
+    func testSkipIntervalsDefaultToFifteenSecondsInBothDirections() {
         let player = AudioPlayer()
         player.ensureRemoteCommands()
         let center = MPRemoteCommandCenter.shared()
-        XCTAssertEqual(center.skipForwardCommand.preferredIntervals, [30])
+        XCTAssertEqual(center.skipForwardCommand.preferredIntervals, [15])
         XCTAssertEqual(center.skipBackwardCommand.preferredIntervals, [15])
     }
 
@@ -116,6 +117,7 @@ final class AudioPlayerLockScreenTests: XCTestCase {
     /// — the live-stream path used by `PlayerReaderView` — the Now
     /// Playing dict must carry the current chapter as primary title, the
     /// book as secondary album metadata, author and media type.
+    @MainActor
     func testNowPlayingInfoPopulatedOnUpdateSnapshot() {
         let player = AudioPlayer()
         player.updateSnapshot(makeSnapshot(title: "Foundation", author: "Isaac Asimov"))
@@ -135,6 +137,7 @@ final class AudioPlayerLockScreenTests: XCTestCase {
 
     /// Elapsed time, duration, and playback-rate fields must be present
     /// so the lock-screen scrubber is functional.
+    @MainActor
     func testNowPlayingInfoContainsElapsedAndRateFields() {
         let player = AudioPlayer()
         player.updateSnapshot(makeSnapshot())
@@ -152,6 +155,7 @@ final class AudioPlayerLockScreenTests: XCTestCase {
 
     /// When `coverArtData` holds valid image bytes, the Now Playing
     /// dict must carry `MPMediaItemPropertyArtwork`.
+    @MainActor
     func testArtworkAppearsInNowPlayingInfoWhenCoverDataIsSet() throws {
 #if targetEnvironment(simulator)
         throw XCTSkip("MPMediaItemArtwork is not stable in the iOS Simulator media service.")
@@ -182,6 +186,7 @@ final class AudioPlayerLockScreenTests: XCTestCase {
     /// `stop()` must drop the active book so the lock screen no longer
     /// shows stale metadata — `snapshot` goes nil and the Now Playing
     /// dict falls back to the app-name placeholder.
+    @MainActor
     func testStopClearsNowPlayingInfo() {
         let player = AudioPlayer()
         player.updateSnapshot(makeSnapshot(title: "Foundation"))
@@ -197,6 +202,7 @@ final class AudioPlayerLockScreenTests: XCTestCase {
 
     /// After a stop/restart cycle a new snapshot must repopulate the
     /// Now Playing metadata — the widget must never stay blank.
+    @MainActor
     func testNowPlayingInfoRepopulatedAfterStop() {
         let player = AudioPlayer()
         player.updateSnapshot(makeSnapshot(title: "Dune", author: "Frank Herbert"))
@@ -214,6 +220,7 @@ final class AudioPlayerLockScreenTests: XCTestCase {
     /// Playback rate must be 0 when nothing is playing so the
     /// lock-screen scrubber does not animate phantom progress before
     /// audio starts.
+    @MainActor
     func testPlaybackRateIsZeroWhenNotPlaying() {
         let player = AudioPlayer()
         player.updateSnapshot(makeSnapshot())
@@ -223,6 +230,7 @@ final class AudioPlayerLockScreenTests: XCTestCase {
             "Playback rate must be 0 when not playing so the lock-screen scrubber does not animate")
     }
 
+    @MainActor
     func testNowPlayingPrefersRealChapterNameOverGenericProgressName() {
         XCTAssertEqual(
             AudioPlayer.preferredChapterTitle(
@@ -242,6 +250,7 @@ final class AudioPlayerLockScreenTests: XCTestCase {
         )
     }
 
+    @MainActor
     func testNowPlayingPrimaryTitleIsCurrentChapter() {
         let player = AudioPlayer()
         player.updateSnapshot(makeSnapshot(title: "Foundation"))
@@ -256,6 +265,7 @@ final class AudioPlayerLockScreenTests: XCTestCase {
             "Now Playing album metadata should retain the book title")
     }
 
+    @MainActor
     func testRemoteStreamingUsesReaderHeadingBeforeAnyChapterMP3IsComplete() {
         let snapshot = JobSnapshot(
             jobId: "remote-streaming-job",
@@ -304,6 +314,7 @@ final class AudioPlayerLockScreenTests: XCTestCase {
         XCTAssertEqual(info[MPMediaItemPropertyAlbumTitle] as? String, "The Lord of the Rings")
     }
 
+    @MainActor
     func testPlaybackURLResolvesBackendRelativeOutputPath() {
         let url = AudioPlayer.playbackURL(
             forDownloadPath: "/api/outputs/job-1/chapter.mp3",

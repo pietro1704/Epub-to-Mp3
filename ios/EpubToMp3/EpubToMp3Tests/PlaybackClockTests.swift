@@ -1,8 +1,8 @@
 import XCTest
 @testable import EpubToMp3
 
-@MainActor
 final class PlaybackClockTests: XCTestCase {
+    @MainActor
     func testUpdatesPublishAsOneSnapshot() {
         let clock = PlaybackClock()
         XCTAssertEqual(clock.snapshot, .zero)
@@ -19,6 +19,7 @@ final class PlaybackClockTests: XCTestCase {
         )
     }
 
+    @MainActor
     func testPartialUpdatePreservesOtherFields() {
         let clock = PlaybackClock()
         clock.update(positionSeconds: 12, durationSeconds: 120, sleepTimerRemaining: 300)
@@ -30,6 +31,7 @@ final class PlaybackClockTests: XCTestCase {
         XCTAssertEqual(clock.sleepTimerRemaining, 300)
     }
 
+    @MainActor
     func testResetReturnsToZero() {
         let clock = PlaybackClock()
         clock.update(positionSeconds: 24, durationSeconds: 120, sleepTimerRemaining: 300)

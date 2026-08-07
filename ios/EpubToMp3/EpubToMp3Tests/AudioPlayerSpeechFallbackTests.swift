@@ -19,11 +19,11 @@ import AVFoundation
 /// declared in `SpeechFallbackPlayerTests`. The fallback player is
 /// injected into the AudioPlayer's init so neither AV nor the system
 /// audio session are touched during the run.
-@MainActor
 final class AudioPlayerSpeechFallbackTests: XCTestCase {
 
     // MARK: - Helpers
 
+    @MainActor
     private func makeAudioPlayer() -> (
         AudioPlayer,
         SpeechFallbackPlayerTests.FakeSynthesizer,
@@ -96,6 +96,7 @@ final class AudioPlayerSpeechFallbackTests: XCTestCase {
 
     // MARK: - Initial state
 
+    @MainActor
     func test_init_doesNotEnterSpeechFallback() {
         let (player, synth, session) = makeAudioPlayer()
         XCTAssertFalse(player.isUsingSpeechFallback,
@@ -107,6 +108,7 @@ final class AudioPlayerSpeechFallbackTests: XCTestCase {
 
     // MARK: - shouldUseSpeechFallback decision
 
+    @MainActor
     func test_shouldUseSpeechFallback_trueWhenNoSnapshot() {
         let (player, _, _) = makeAudioPlayer()
         XCTAssertTrue(
@@ -115,6 +117,7 @@ final class AudioPlayerSpeechFallbackTests: XCTestCase {
         )
     }
 
+    @MainActor
     func test_shouldUseSpeechFallback_trueWhenPlayableChaptersEmpty() {
         let (player, _, _) = makeAudioPlayer()
         let snap = snapshot(chapters: [pendingChapter(index: 0)])
@@ -126,6 +129,7 @@ final class AudioPlayerSpeechFallbackTests: XCTestCase {
         )
     }
 
+    @MainActor
     func test_shouldUseSpeechFallback_falseWhenChapterIsPlayable() {
         let (player, _, _) = makeAudioPlayer()
         let snap = snapshot(chapters: [playableChapter(index: 0), playableChapter(index: 1)])
@@ -139,6 +143,7 @@ final class AudioPlayerSpeechFallbackTests: XCTestCase {
         )
     }
 
+    @MainActor
     func test_shouldUseSpeechFallback_trueWhenChapterIndexOutOfRange() {
         let (player, _, _) = makeAudioPlayer()
         let snap = snapshot(chapters: [playableChapter(index: 0)])
@@ -148,6 +153,7 @@ final class AudioPlayerSpeechFallbackTests: XCTestCase {
         )
     }
 
+    @MainActor
     func test_shouldUseSpeechFallback_trueWhenChapterAtIndexIsPending() {
         let (player, _, _) = makeAudioPlayer()
         // Chapter 0 is done but chapter 1 still has no MP3 — caller asks
@@ -161,6 +167,7 @@ final class AudioPlayerSpeechFallbackTests: XCTestCase {
 
     // MARK: - playFallbackSpeech
 
+    @MainActor
     func test_playFallbackSpeech_speaksTextAndEntersFallbackMode() {
         let (player, synth, session) = makeAudioPlayer()
         player.playFallbackSpeech(text: "Once upon a time.", languageCode: "en-US")
@@ -174,6 +181,7 @@ final class AudioPlayerSpeechFallbackTests: XCTestCase {
             "only the speech audio-session category should be configured — no MP3 session")
     }
 
+    @MainActor
     func test_playFallbackSpeech_emptyText_isNoOp() {
         let (player, synth, session) = makeAudioPlayer()
         player.playFallbackSpeech(text: "", languageCode: "en-US")
@@ -185,6 +193,7 @@ final class AudioPlayerSpeechFallbackTests: XCTestCase {
 
     // MARK: - Transport delegation while fallback is active
 
+    @MainActor
     func test_pause_delegatesToSpeechFallbackWhenActive() {
         let (player, synth, _) = makeAudioPlayer()
         player.playFallbackSpeech(text: "Hello there.", languageCode: "en-US")
@@ -196,6 +205,7 @@ final class AudioPlayerSpeechFallbackTests: XCTestCase {
             "pausing while in fallback must NOT exit fallback mode")
     }
 
+    @MainActor
     func test_resume_delegatesToSpeechFallbackWhenActive() {
         let (player, synth, _) = makeAudioPlayer()
         player.playFallbackSpeech(text: "Hello.", languageCode: "en-US")
@@ -209,6 +219,7 @@ final class AudioPlayerSpeechFallbackTests: XCTestCase {
             "resume must NOT re-enqueue a fresh utterance")
     }
 
+    @MainActor
     func test_stop_exitsFallbackMode() {
         let (player, synth, _) = makeAudioPlayer()
         player.playFallbackSpeech(text: "Hello.", languageCode: "en-US")
@@ -221,6 +232,7 @@ final class AudioPlayerSpeechFallbackTests: XCTestCase {
 
     // MARK: - MP3 takeover stops fallback (no flicker / no broken state)
 
+    @MainActor
     func test_playSnapshotWithPlayableChapters_stopsFallback() {
         let (player, synth, _) = makeAudioPlayer()
         player.playFallbackSpeech(text: "Holding the place for chapter 1.", languageCode: "en-US")
@@ -235,6 +247,7 @@ final class AudioPlayerSpeechFallbackTests: XCTestCase {
             "the speech synthesizer must be stopped so MP3 and TTS never play simultaneously")
     }
 
+    @MainActor
     func test_playFallbackSpeech_doesNotStartMP3Player() {
         let (player, _, _) = makeAudioPlayer()
         player.playFallbackSpeech(text: "Hello.", languageCode: "en-US")

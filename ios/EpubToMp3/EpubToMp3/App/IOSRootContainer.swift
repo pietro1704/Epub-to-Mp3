@@ -163,8 +163,7 @@ final class IOSRootContainerController: UIViewController {
         miniPlayerMaximumHeight = miniPlayerController.view.heightAnchor.constraint(
             lessThanOrEqualToConstant: MiniPlayerLayoutMetrics.maximumOverlayHeight
         )
-        miniBottomToRoot.isActive = true
-        miniBottomToTabBar.isActive = false
+        setMiniPlayerBottomAnchor(readerActive: true)
         miniPlayerMaximumHeight.isActive = true
 
         readerBottomToMiniPlayer = readerController.view.bottomAnchor.constraint(equalTo: miniPlayerController.view.topAnchor)
@@ -324,8 +323,7 @@ final class IOSRootContainerController: UIViewController {
             shellController.setSystemMiniPlayerVisible(false, animated: false)
         }
         shellController.setReaderTabBarHidden(readerActive, animated: true)
-        miniBottomToTabBar.isActive = !readerActive
-        miniBottomToRoot.isActive = readerActive
+        setMiniPlayerBottomAnchor(readerActive: readerActive)
         if !readerActive {
             let wasImmersive = isImmersiveReaderMode
             isImmersiveReaderMode = false
@@ -376,6 +374,14 @@ final class IOSRootContainerController: UIViewController {
             animations: animations,
             completion: completion
         )
+    }
+
+    /// The overlay has exactly one vertical owner. Keeping both anchors active
+    /// during a tab-bar transition collapses the mini player to the tab bar's
+    /// height and forces UIKit to break its content constraints.
+    private func setMiniPlayerBottomAnchor(readerActive: Bool) {
+        NSLayoutConstraint.deactivate([miniBottomToRoot, miniBottomToTabBar])
+        (readerActive ? miniBottomToRoot : miniBottomToTabBar).isActive = true
     }
 
     private func hideOverlayMiniPlayerImmediately() {

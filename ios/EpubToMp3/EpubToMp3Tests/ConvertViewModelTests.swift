@@ -1,8 +1,8 @@
 import XCTest
 @testable import EpubToMp3
 
-@MainActor
 final class ConvertViewModelTests: XCTestCase {
+    @MainActor
     func testMissingClientAndFileProduceActionableErrors() async {
         let model = ConvertViewModel()
 
@@ -16,6 +16,7 @@ final class ConvertViewModelTests: XCTestCase {
     }
 
 #if os(macOS)
+    @MainActor
     func testImportForConversionCopiesIntoOwnedInbox() throws {
         let fileManager = FileManager.default
         let root = fileManager.temporaryDirectory

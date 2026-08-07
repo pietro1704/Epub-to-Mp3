@@ -41,6 +41,14 @@ final class ReaderViewportConfigurationTests: XCTestCase {
     }
 
     @MainActor
+    func testReaderTextViewUsesTheTextKitOneLayoutObjectsRequiredForPagination() {
+        let textView = ReaderTextViewFactory.make()
+
+        XCTAssertNotNil(textView.textStorage.layoutManagers.first)
+        XCTAssertTrue(textView.textStorage.layoutManagers.first === textView.layoutManager)
+    }
+
+    @MainActor
     func testImmersiveReaderAlwaysHidesTheStatusBar() {
         XCTAssertTrue(
             IOSRootContainerController.shouldHideStatusBar(immersiveReaderMode: true)

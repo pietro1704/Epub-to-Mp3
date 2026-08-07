@@ -148,6 +148,9 @@ enum ReaderTextAlignment: String, CaseIterable, Identifiable {
 /// Plain `@Published` stored properties + `didSet { UserDefaults... }`
 /// gives both Combine publishing and persistence on the same channel.
 final class AppSettings: ObservableObject {
+    static let playbackForwardSecondsKey = "playbackForwardSeconds"
+    static let playbackBackwardSecondsKey = "playbackBackwardSeconds"
+    static let playbackSkipIntervals: Set<Double> = [15, 30, 45, 60]
     private let defaults: UserDefaults
     private var loadingPersistedValues = true
 
@@ -181,6 +184,12 @@ final class AppSettings: ObservableObject {
         // it on Wi-Fi by default; the user may opt into cellular explicitly.
         self.allowCellularAudioConversion =
             defaults.object(forKey: "allowCellularAudioConversion") as? Bool ?? false
+        self.playbackForwardSeconds = Self.validPlaybackSkipInterval(
+            defaults.object(forKey: Self.playbackForwardSecondsKey) as? Double
+        )
+        self.playbackBackwardSeconds = Self.validPlaybackSkipInterval(
+            defaults.object(forKey: Self.playbackBackwardSecondsKey) as? Double
+        )
         self.readerFontSize = (defaults.object(forKey: "readerFontSize") as? Int) ?? 3
         self.readerFontFamily = ReaderFontFamily(
             rawValue: defaults.string(forKey: "readerFontFamily") ?? ""
@@ -267,6 +276,33 @@ final class AppSettings: ObservableObject {
     /// Defaults to false so local audiobook generation waits for Wi-Fi.
     @Published var allowCellularAudioConversion: Bool = false {
         didSet { defaults.set(allowCellularAudioConversion, forKey: "allowCellularAudioConversion") }
+    }
+
+    @Published var playbackForwardSeconds: Double = 15 {
+        didSet {
+            let valid = Self.validPlaybackSkipInterval(playbackForwardSeconds)
+            if valid != playbackForwardSeconds {
+                playbackForwardSeconds = valid
+                return
+            }
+            defaults.set(playbackForwardSeconds, forKey: Self.playbackForwardSecondsKey)
+        }
+    }
+
+    @Published var playbackBackwardSeconds: Double = 15 {
+        didSet {
+            let valid = Self.validPlaybackSkipInterval(playbackBackwardSeconds)
+            if valid != playbackBackwardSeconds {
+                playbackBackwardSeconds = valid
+                return
+            }
+            defaults.set(playbackBackwardSeconds, forKey: Self.playbackBackwardSecondsKey)
+        }
+    }
+
+    private static func validPlaybackSkipInterval(_ value: Double?) -> Double {
+        guard let value, playbackSkipIntervals.contains(value) else { return 15 }
+        return value
     }
 
     /// True iff the reader and library can render the current book
