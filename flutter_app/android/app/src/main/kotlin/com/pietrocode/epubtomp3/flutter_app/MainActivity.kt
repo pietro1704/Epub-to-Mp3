@@ -319,6 +319,8 @@ class MainActivity : FlutterActivity() {
         val target = File(File(filesDir, DOCUMENT_DIR), "${safeBase}_$sourceKey$extension")
         target.parentFile?.mkdirs()
         return try {
+            // codeql[java/android/unsafe-content-uri-resolution]: `uri` passed
+            // `isTrustedContentUri` before any ContentResolver access.
             contentResolver.openInputStream(uri)?.use { input ->
                 target.outputStream().use { output -> input.copyTo(output) }
             } ?: return null
@@ -332,6 +334,8 @@ class MainActivity : FlutterActivity() {
     private fun detectDocumentExtension(uri: Uri): String? {
         if (!isTrustedContentUri(uri)) return null
         return try {
+            // codeql[java/android/unsafe-content-uri-resolution]: `uri` passed
+            // `isTrustedContentUri` before any ContentResolver access.
             val header = contentResolver.openInputStream(uri)?.use { it.readNBytes(8) } ?: return null
             when {
                 header.size >= 4 && header[0] == '%'.code.toByte() &&

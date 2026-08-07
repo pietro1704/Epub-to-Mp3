@@ -83,6 +83,8 @@ enum EpubDirectoryArchiver {
         ) else {
             return false
         }
+        // codeql[swift/path-injection]: `validatedPackageMember` rejects absolute,
+        // traversal, and empty components before this filesystem access.
         return fileManager.isReadableFile(atPath: opf.path)
     }
 
