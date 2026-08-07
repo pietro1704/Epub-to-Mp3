@@ -40,6 +40,7 @@ made after commits `362da680` and `7dcd4ed9`.
 | Incident | Evidence | Control |
 | --- | --- | --- |
 | TestFlight could not download XcodeGen | Run `31188966559`: mise had no recognized GitHub token and reached the unauthenticated API limit. | Pass `MISE_GITHUB_TOKEN` and pin XcodeGen `2.46.0`. |
+| TestFlight ran without signing credentials | Run `31198985302` passed the XcodeGen install but found five absent App Store/certificate secrets. | Check credentials before the macOS archive job and skip the signed archive when they are absent. |
 | Swift CodeQL could not install XcodeGen | Runs `31187846643`, `31188534458`, and `31189078892`: CodeQL tracing made Homebrew run under Rosetta. | Install with `arch -arm64` before CodeQL initialization and use the authenticated Homebrew API token. |
 | Main CI read an obsolete Apple project contract from Python | Run `31189078928`: `test_injection_next_project_config.py` expected removed InjectionNext text. | Remove the cross-boundary test; Apple behavior belongs in XCTest. |
 | Scheduled remediation ran without a Codex credential | Runs `31191096485` and `31196095686` failed because `OPENAI_API_KEY` was absent. | Detect the optional credential first and skip remediation when unavailable. |
