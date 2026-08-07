@@ -20,7 +20,20 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       alerts: ${{ steps.alerts.outputs.alerts }}
+      codex_available: ${{ steps.credentials.outputs.codex_available }}
     steps:
+      - name: Check optional Codex credentials
+        id: credentials
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: |
+          if [[ -n "$OPENAI_API_KEY" ]]; then
+            echo 'codex_available=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'codex_available=false' >> "$GITHUB_OUTPUT"
+            echo 'OPENAI_API_KEY is not configured; automated remediation will be skipped.'
+          fi
+
       - id: alerts
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -34,7 +47,7 @@ jobs:
 
   remediate:
     needs: detect
-    if: needs.detect.outputs.alerts != '[]'
+    if: needs.detect.outputs.alerts != '[]' && needs.detect.outputs.codex_available == 'true'
     runs-on: ubuntu-latest
     strategy:
       max-parallel: 1

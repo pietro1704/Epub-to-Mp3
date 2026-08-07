@@ -1,5 +1,29 @@
 # Git Workflow - Branches e Deploy
 
+## Regra de Integridade
+
+Antes de qualquer push para `master`, reconcilie o repositório local com o remoto:
+
+```bash
+git fetch origin
+git status -sb
+git log --oneline HEAD..origin/master
+```
+
+Se houver commits remotos, integre-os com `git pull --rebase origin master` ou faça
+um merge deliberado. Nunca faça force-push em `origin/master`.
+
+Depois de cada push para o GitHub, acompanhe os checks até terminarem:
+
+```bash
+gh run list --branch master --limit 10
+gh run view <run-id> --log-failed
+```
+
+Uma alteração não está concluída enquanto os workflows obrigatórios não estiverem
+verdes. Workflows opcionais que dependem de segredos devem ser ignorados quando o
+segredo não estiver configurado, nunca falhar de propósito.
+
 ## Status Atual
 
 ### Branches Configuradas
@@ -82,9 +106,11 @@ git config --local --add remote.huggingface.push '+refs/heads/master:refs/heads/
 
 ### Branch Dessincronizada
 
-Forçar sincronização:
+Reconcilie primeiro a branch remota e use force-push somente se uma recuperação
+do Space exigir isso explicitamente:
 ```bash
-git push huggingface master:main --force
+git fetch huggingface main
+git push huggingface master:main
 ```
 
 ### HF Space Não Atualiza

@@ -101,14 +101,16 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v7
 
+      - name: Install XcodeGen
+        env:
+          HOMEBREW_GITHUB_API_TOKEN: ${{ github.token }}
+        run: arch -arm64 brew install xcodegen
+
       - name: Initialize CodeQL
         uses: github/codeql-action/init@v4
         with:
           languages: swift
           build-mode: manual
-
-      - name: Install XcodeGen
-        run: brew install xcodegen
 
       - name: Bootstrap embedded Python runtime
         run: bash ios/EpubToMp3/scripts/bootstrap-ios-python.sh

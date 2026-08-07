@@ -173,6 +173,8 @@ jobs:
           ref: ${{ env.RELEASE_REF }}
 
       - name: Install xcodegen
+        env:
+          HOMEBREW_GITHUB_API_TOKEN: ${{ github.token }}
         run: brew install xcodegen
 
       - name: Setup Python

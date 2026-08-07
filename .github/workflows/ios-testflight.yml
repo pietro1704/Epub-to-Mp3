@@ -52,11 +52,12 @@ jobs:
 
       - name: Install XcodeGen through mise
         env:
+          MISE_GITHUB_TOKEN: ${{ github.token }}
           GITHUB_TOKEN: ${{ github.token }}
         run: |
           curl https://mise.run | sh
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
-          "$HOME/.local/bin/mise" install aqua:yonaskolb/XcodeGen
+          "$HOME/.local/bin/mise" install aqua:yonaskolb/XcodeGen@2.46.0
 
       - name: Bootstrap embedded Python runtime
         run: bash ios/EpubToMp3/scripts/bootstrap-ios-python.sh

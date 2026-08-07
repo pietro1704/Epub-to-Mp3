@@ -32,10 +32,12 @@ jobs:
           git checkout --force FETCH_HEAD
 
       - name: Install mise
-        run: |
-          curl https://mise.run | sh
-          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
-          "$HOME/.local/bin/mise" install
+        uses: jdx/mise-action@v4.2.4
+
+      - name: Install toolchain
+        env:
+          MISE_GITHUB_TOKEN: ${{ github.token }}
+        run: mise install
 
       - name: Cache pip
         uses: actions/cache@v6
@@ -102,10 +104,12 @@ jobs:
           git checkout --force FETCH_HEAD
 
       - name: Install mise
-        run: |
-          curl https://mise.run | sh
-          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
-          "$HOME/.local/bin/mise" install
+        uses: jdx/mise-action@v4.2.4
+
+      - name: Install toolchain
+        env:
+          MISE_GITHUB_TOKEN: ${{ github.token }}
+        run: mise install
 
       - name: Cache npm
         uses: actions/cache@v6
@@ -145,10 +149,12 @@ jobs:
           git checkout --force FETCH_HEAD
 
       - name: Install mise
-        run: |
-          curl https://mise.run | sh
-          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
-          "$HOME/.local/bin/mise" install
+        uses: jdx/mise-action@v4.2.4
+
+      - name: Install toolchain
+        env:
+          MISE_GITHUB_TOKEN: ${{ github.token }}
+        run: mise install
 
       - name: Run Flutter tests
         working-directory: flutter_app
