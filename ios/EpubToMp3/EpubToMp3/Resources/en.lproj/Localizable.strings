@@ -566,3 +566,8 @@
 "toc.removeDownload" = "Remove download";
 "toc.removeDownloadMessage" = "Remove the downloaded MP3 for \"%@\"? You can download it again later.";
 "toc.untitledChapter" = "Untitled chapter";
+"settings.playback" = "Playback";
+"settings.playbackFooter" = "These intervals apply to the mini player, full player, widget, Control Center, and Lock Screen.";
+"settings.skipForward" = "Skip forward";
+"settings.skipBackward" = "Skip backward";
+"settings.seconds" = "%d seconds";

@@ -567,3 +567,8 @@
 "toc.removeDownload" = "Eliminar descarga";
 "toc.removeDownloadMessage" = "¿Eliminar el MP3 descargado de \"%@\"? Podrás descargarlo de nuevo más tarde.";
 "toc.untitledChapter" = "Capítulo sin título";
+"settings.playback" = "Reproducción";
+"settings.playbackFooter" = "Estos intervalos se aplican al minirreproductor, reproductor completo, widget, Centro de control y pantalla bloqueada.";
+"settings.skipForward" = "Avanzar";
+"settings.skipBackward" = "Retroceder";
+"settings.seconds" = "%d segundos";

@@ -566,3 +566,8 @@
 "toc.removeDownload" = "Remover download";
 "toc.removeDownloadMessage" = "Remover o MP3 baixado de \"%@\"? Você poderá baixá-lo novamente depois.";
 "toc.untitledChapter" = "Capítulo sem título";
+"settings.playback" = "Reprodução";
+"settings.playbackFooter" = "Estes intervalos valem para mini player, player completo, widget, Central de Controle e tela bloqueada.";
+"settings.skipForward" = "Avançar";
+"settings.skipBackward" = "Voltar";
+"settings.seconds" = "%d segundos";

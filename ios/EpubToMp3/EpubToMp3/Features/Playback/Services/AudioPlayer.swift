@@ -2124,6 +2124,13 @@ final class AudioPlayer: ObservableObject {
         return AppSettings.playbackSkipIntervals.contains(value ?? 15) ? (value ?? 15) : 15
     }
 
+    /// Refreshes Control Center and Lock Screen intervals after a Settings change.
+    func refreshRemoteSkipIntervals() {
+        let center = MPRemoteCommandCenter.shared()
+        center.skipForwardCommand.preferredIntervals = [NSNumber(value: Self.configuredSkipInterval(forKey: AppSettings.playbackForwardSecondsKey))]
+        center.skipBackwardCommand.preferredIntervals = [NSNumber(value: Self.configuredSkipInterval(forKey: AppSettings.playbackBackwardSecondsKey))]
+    }
+
     private func rewindToCurrentChapterStart() {
         guard let queue = player else { return }
         if isSegmentMode {

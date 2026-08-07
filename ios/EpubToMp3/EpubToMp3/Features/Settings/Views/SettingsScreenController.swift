@@ -13,6 +13,7 @@ final class SettingsScreenController: UITableViewController {
     private enum Section: Int, CaseIterable {
         case runtime
         case backend
+        case playback
         case reader
         case storage
         case advanced
@@ -78,6 +79,8 @@ final class SettingsScreenController: UITableViewController {
             return 2
         case .backend:
             return 2
+        case .playback:
+            return 2
         case .reader:
             return 7
         case .storage:
@@ -96,6 +99,8 @@ final class SettingsScreenController: UITableViewController {
             return L10n.string("settings.audioEngine")
         case .backend:
             return L10n.string("settings.remoteBackend")
+        case .playback:
+            return L10n.string("settings.playback")
         case .reader:
             return L10n.string("settings.reader")
         case .storage:
@@ -114,6 +119,8 @@ final class SettingsScreenController: UITableViewController {
             return L10n.string("settings.audioEngineFooter")
         case .backend:
             return settings.remoteBackendControlsEnabled ? L10n.string("settings.remoteBackendFooterIOS") : nil
+        case .playback:
+            return L10n.string("settings.playbackFooter")
         case .reader:
             return L10n.string("settings.readerFooter")
         case .storage:
@@ -180,6 +187,8 @@ final class SettingsScreenController: UITableViewController {
             return cell
         case .reader:
             return readerCell(for: indexPath)
+        case .playback:
+            return playbackCell(for: indexPath)
         case .storage:
             return storageCell(for: indexPath)
         case .advanced:
@@ -195,6 +204,8 @@ final class SettingsScreenController: UITableViewController {
         switch section {
         case .reader:
             handleReaderSelection(row: indexPath.row)
+        case .playback:
+            handlePlaybackSelection(row: indexPath.row)
         case .storage:
             handleStorageSelection(row: indexPath.row)
         case .advanced:
@@ -203,6 +214,39 @@ final class SettingsScreenController: UITableViewController {
             handleAboutSelection(row: indexPath.row)
         case .runtime, .backend:
             break
+        }
+    }
+
+    private func playbackCell(for indexPath: IndexPath) -> UITableViewCell {
+        let cell = tableView.dequeueReusableCell(withIdentifier: "Cell", for: indexPath)
+        var content = cell.defaultContentConfiguration()
+        content.text = indexPath.row == 0
+            ? L10n.string("settings.skipForward")
+            : L10n.string("settings.skipBackward")
+        let seconds = indexPath.row == 0 ? settings.playbackForwardSeconds : settings.playbackBackwardSeconds
+        content.secondaryText = L10n.string("settings.seconds", Int(seconds))
+        content.image = UIImage(systemName: indexPath.row == 0 ? "goforward" : "gobackward")
+        cell.contentConfiguration = content
+        cell.accessoryType = .disclosureIndicator
+        cell.accessibilityIdentifier = indexPath.row == 0 ? "settings.skipForward" : "settings.skipBackward"
+        return cell
+    }
+
+    private func handlePlaybackSelection(row: Int) {
+        let forward = row == 0
+        presentChoice(
+            title: forward ? L10n.string("settings.skipForward") : L10n.string("settings.skipBackward"),
+            options: [15, 30, 45, 60].map { (L10n.string("settings.seconds", $0), Double($0)) },
+            currentValue: forward ? settings.playbackForwardSeconds : settings.playbackBackwardSeconds
+        ) { [weak self] value in
+            guard let self else { return }
+            if forward {
+                self.settings.playbackForwardSeconds = value
+            } else {
+                self.settings.playbackBackwardSeconds = value
+            }
+            self.player.refreshRemoteSkipIntervals()
+            self.tableView.reloadSections(IndexSet(integer: Section.playback.rawValue), with: .none)
         }
     }
 
