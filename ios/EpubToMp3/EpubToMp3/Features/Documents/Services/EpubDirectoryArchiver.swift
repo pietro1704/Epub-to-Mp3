@@ -77,9 +77,25 @@ enum EpubDirectoryArchiver {
               let range = Range(match.range(at: 1), in: containerXML) else {
             return false
         }
-        let opf = url.appendingPathComponent(String(containerXML[range])).standardizedFileURL
-        return opf.path.hasPrefix(url.standardizedFileURL.path + "/")
-            && fileManager.isReadableFile(atPath: opf.path)
+        guard let opf = validatedPackageMember(
+            String(containerXML[range]),
+            packageDirectory: url
+        ) else {
+            return false
+        }
+        return fileManager.isReadableFile(atPath: opf.path)
+    }
+
+    private static func validatedPackageMember(_ relativePath: String, packageDirectory: URL) -> URL? {
+        let components = relativePath.split(separator: "/", omittingEmptySubsequences: false)
+        guard !relativePath.hasPrefix("/"),
+              !components.contains(".."),
+              !components.contains(where: { $0.isEmpty || $0 == "." }) else {
+            return nil
+        }
+        return components.reduce(packageDirectory) { partial, component in
+            partial.appendingPathComponent(String(component), isDirectory: false)
+        }
     }
 
     private static func archive(

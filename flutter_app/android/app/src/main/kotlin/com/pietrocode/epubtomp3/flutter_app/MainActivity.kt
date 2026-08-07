@@ -295,6 +295,7 @@ class MainActivity : FlutterActivity() {
     }
 
     private fun copyIntoPrivateStorage(uri: Uri, mimeType: String?): Pair<String, String>? {
+        if (!isTrustedContentUri(uri)) return null
         val sourceName = queryDisplayName(uri)
             ?: uri.lastPathSegment?.substringAfterLast('/')
             ?: "shared_document"
@@ -318,15 +319,9 @@ class MainActivity : FlutterActivity() {
         val target = File(File(filesDir, DOCUMENT_DIR), "${safeBase}_$sourceKey$extension")
         target.parentFile?.mkdirs()
         return try {
-            if (uri.scheme == "file") {
-                File(uri.path ?: return null).inputStream().use { input ->
-                    target.outputStream().use { output -> input.copyTo(output) }
-                }
-            } else {
-                contentResolver.openInputStream(uri)?.use { input ->
-                    target.outputStream().use { output -> input.copyTo(output) }
-                } ?: return null
-            }
+            contentResolver.openInputStream(uri)?.use { input ->
+                target.outputStream().use { output -> input.copyTo(output) }
+            } ?: return null
             target.absolutePath to displayName
         } catch (_: Exception) {
             null
@@ -335,12 +330,9 @@ class MainActivity : FlutterActivity() {
 
     /** Infer common book formats when Android omits the filename extension/MIME. */
     private fun detectDocumentExtension(uri: Uri): String? {
+        if (!isTrustedContentUri(uri)) return null
         return try {
-            val header = if (uri.scheme == "file") {
-                File(uri.path ?: return null).inputStream().use { it.readNBytes(8) }
-            } else {
-                contentResolver.openInputStream(uri)?.use { it.readNBytes(8) }
-            } ?: return null
+            val header = contentResolver.openInputStream(uri)?.use { it.readNBytes(8) } ?: return null
             when {
                 header.size >= 4 && header[0] == '%'.code.toByte() &&
                     header[1] == 'P'.code.toByte() && header[2] == 'D'.code.toByte() &&
@@ -355,12 +347,15 @@ class MainActivity : FlutterActivity() {
     }
 
     private fun queryDisplayName(uri: Uri): String? {
-        if (uri.scheme == "file") return File(uri.path ?: return null).name
+        if (!isTrustedContentUri(uri)) return null
         val cursor: Cursor = contentResolver.query(
             uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null
         ) ?: return null
         return cursor.use { if (it.moveToFirst()) it.getString(0) else null }
     }
+
+    private fun isTrustedContentUri(uri: Uri): Boolean =
+        uri.scheme == "content" && !uri.authority.isNullOrBlank()
 
     private fun readQueueObjects(): JSONArray = try {
         JSONArray(getPreferences(MODE_PRIVATE).getString(DOCUMENT_QUEUE, "[]"))
