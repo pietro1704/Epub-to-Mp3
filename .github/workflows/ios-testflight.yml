@@ -51,6 +51,8 @@ jobs:
           xcrun --sdk iphoneos --show-sdk-version
 
       - name: Install XcodeGen through mise
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           curl https://mise.run | sh
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
