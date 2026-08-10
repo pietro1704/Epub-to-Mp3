@@ -47,7 +47,7 @@ requests>=2.34.2,<3.0.0
 
 # CLI
 tqdm
-argcomplete>=3.7.0
+argcomplete>=3.7.2
 
 # HF
 huggingface_hub>=1.27.0
