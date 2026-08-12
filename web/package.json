@@ -43,7 +43,7 @@
     "@typescript-eslint/eslint-plugin": "^8.66.0",
     "@typescript-eslint/parser": "^8.66.0",
     "@vitejs/plugin-react": "^6.0.5",
-    "baseline-browser-mapping": "^2.11.12",
+    "baseline-browser-mapping": "^2.11.13",
     "eslint": "^10.8.1",
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-react-hooks": "^7.1.1",
