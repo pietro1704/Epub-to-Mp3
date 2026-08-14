@@ -188,6 +188,13 @@ message.
 
 **After every `git push`, monitor GitHub CI and fix failures before stopping.**
 
+**Implementation completion is an inferred gate.** At the end of every feature
+or bug fix, independently run the delivery-hygiene loop in
+`docs/implementation-completion-spec.md`: clean worktree, Actions green, no
+untriaged PRs/issues, and no Code Scanning or Dependabot alerts. Never wait for
+the user to ask for these checks; a security finding is P0 and is fixed and
+rescanned before the task is called complete.
+
 1. After pushing, the `ci_watch.sh` hook (async PostToolUse) auto-watches the run and injects the result.
 2. If CI fails, immediately diagnose via `gh run view <run_id> --log-failed` and push a fix.
 3. Do not consider a task done until CI passes green.

@@ -26,36 +26,19 @@ fi
 # Wait a moment for GitHub to register the push
 sleep 8
 
-# Get the latest run ID for master CI triggered by push
-RUN_ID=$(gh run list --branch master --workflow CI --event push --limit 1 --json databaseId -q '.[0].databaseId' 2>/dev/null)
-if [[ -z "$RUN_ID" ]]; then
-    echo '{"additionalContext": "## CI Monitor\nCould not find a CI run after push. Check GitHub Actions manually."}'
+SHA=$(git rev-parse HEAD 2>/dev/null || true)
+if [[ -z "$SHA" ]]; then
     exit 0
 fi
 
-# Wait for the run to finish (up to 12 minutes)
-gh run watch "$RUN_ID" --exit-status >/dev/null 2>&1
-EXIT_CODE=$?
-
-# Fetch result
-RESULT=$(gh run view "$RUN_ID" --json conclusion,name,status,url -q '"CI " + .conclusion + " — " + .url' 2>/dev/null)
-
-if [[ $EXIT_CODE -eq 0 ]]; then
+if OUTPUT=$("$(dirname "$0")/../../scripts/post_implementation_audit.sh" --wait "$SHA" 2>&1); then
     python3 -c "
 import json, sys
-msg = sys.argv[1]
-print(json.dumps({'additionalContext': '## CI result\n✅ ' + msg}))
-" "$RESULT"
+print(json.dumps({'additionalContext': '## Delivery hygiene\n✅ ' + sys.argv[1]}))
+" "$OUTPUT"
 else
-    # Fetch the failing step + first error line
-    FAIL_LOG=$(gh run view "$RUN_ID" --log-failed 2>/dev/null \
-        | grep -E "error|Error|FAILED|##\[error\]" \
-        | grep -v "^test.*PASSED" \
-        | head -20)
     python3 -c "
 import json, sys
-result, log = sys.argv[1], sys.argv[2]
-msg = '## CI result\n❌ ' + result + '\n\n### Failing output\n' + ''.join(log.splitlines(keepends=True)[:20])
-print(json.dumps({'additionalContext': msg}))
-" "$RESULT" "$FAIL_LOG"
+print(json.dumps({'additionalContext': '## Delivery hygiene\n❌ ' + sys.argv[1]}))
+" "$OUTPUT"
 fi

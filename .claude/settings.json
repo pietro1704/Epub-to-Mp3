@@ -49,7 +49,7 @@
           {
             "type": "command",
             "command": "/Users/pietropugliesi/Developer/Epub-to-Mp3/.claude/hooks/ci_watch.sh",
-            "timeout": 900,
+            "timeout": 1800,
             "async": true,
             "if": "Bash(git push*)",
             "statusMessage": "Watching CI run..."
