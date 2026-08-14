@@ -54,15 +54,14 @@ final class IOSRootContainerController: UIViewController {
     private var miniBottomToRoot: NSLayoutConstraint!
     private var miniBottomToTabBar: NSLayoutConstraint!
     private var miniPlayerMaximumHeight: NSLayoutConstraint!
-    private var isImmersiveReaderMode = false
-    private var isReaderLoading = false
+    private var readerPresentationState = ReaderPresentationState()
+    private let readerViewportTransition = ReaderViewportTransition()
     private var overlayStateInitialized = false
     private var readerBottomChromeInitialized = false
     private var readerBottomChromeHidden = false
-    private var readerChromeLayoutGeneration = 0
 
     override var prefersStatusBarHidden: Bool {
-        Self.shouldHideStatusBar(immersiveReaderMode: isImmersiveReaderMode)
+        Self.shouldHideStatusBar(immersiveReaderMode: readerPresentationState.isChromeHidden)
     }
 
     override var preferredStatusBarUpdateAnimation: UIStatusBarAnimation { .fade }
@@ -187,7 +186,7 @@ final class IOSRootContainerController: UIViewController {
         // Embedding the reader can synchronously start its book load before
         // the root's callbacks exist. Synchronize after every constraint is
         // installed so the initial loading cover owns the whole reader area.
-        isReaderLoading = readerController.isLoadingBookContent
+        readerPresentationState.isLoading = readerController.isLoadingBookContent
 
         miniPlayerController.view.backgroundColor = .clear
         fullPlayerController.view.backgroundColor = .clear
@@ -209,15 +208,16 @@ final class IOSRootContainerController: UIViewController {
     }
 
     private func setImmersiveReaderMode(_ isHidden: Bool) {
-        guard isImmersiveReaderMode != isHidden else { return }
-        isImmersiveReaderMode = isHidden
+        guard readerPresentationState.isChromeHidden != isHidden else { return }
+        let token = readerViewportTransition.begin(to: isHidden, captureAnchor: {})
+        readerPresentationState.isChromeHidden = isHidden
         setNeedsStatusBarAppearanceUpdate()
-        refreshOverlayState()
+        refreshOverlayState(viewportTransition: token)
     }
 
     private func setReaderLoadingMode(_ isLoading: Bool) {
-        guard isReaderLoading != isLoading else { return }
-        isReaderLoading = isLoading
+        guard readerPresentationState.isLoading != isLoading else { return }
+        readerPresentationState.isLoading = isLoading
         setNeedsStatusBarAppearanceUpdate()
         refreshOverlayState()
     }
@@ -247,11 +247,13 @@ final class IOSRootContainerController: UIViewController {
         )
     }
 
-    private func applyReaderChromeLayout() {
+    private func applyReaderChromeLayout(
+        viewportTransition: ReaderViewportTransition.Token? = nil
+    ) {
         // Immersive reading removes every bottom accessory from layout, not
         // only from sight. This gives the text surface the reclaimed height
         // while the reader preserves its visible character anchor.
-        let hidesBottomChrome = isReaderLoading || isImmersiveReaderMode
+        let hidesBottomChrome = readerPresentationState.hidesBottomChrome
         // Switching these one constraint at a time briefly pins the reader
         // both to the root bottom and to the mini player's top. Because the
         // mini player has a required positive height, UIKit must break a
@@ -263,23 +265,28 @@ final class IOSRootContainerController: UIViewController {
         let changed = !readerBottomChromeInitialized || readerBottomChromeHidden != hidesBottomChrome
         readerBottomChromeInitialized = true
         readerBottomChromeHidden = hidesBottomChrome
-        guard changed else { return }
-        readerChromeLayoutGeneration &+= 1
-        let generation = readerChromeLayoutGeneration
-        let applyLayout = {
-            self.view.layoutIfNeeded()
-        }
-        let finishViewportTransition = {
-            guard generation == self.readerChromeLayoutGeneration else { return }
-            self.readerController.completeReaderChromeLayoutTransition()
-        }
         // A frozen scroll snapshot has no safe way to shrink with this
         // viewport: clipping it produces a visibly cut text line. Commit the
         // reader geometry atomically, then let TextKit render one final page.
         // Chrome may fade independently, but the text viewport never passes
         // through an intermediate height.
-        UIView.performWithoutAnimation(applyLayout)
-        finishViewportTransition()
+        let commitLayout = {
+            UIView.performWithoutAnimation {
+                self.view.layoutIfNeeded()
+            }
+        }
+        if let viewportTransition {
+            _ = readerViewportTransition.commit(
+                viewportTransition,
+                applyFinalGeometry: commitLayout,
+                restoreViewport: { [weak self] in
+                    self?.readerController.completeReaderChromeLayoutTransition()
+                }
+            )
+        } else if changed {
+            commitLayout()
+            readerController.completeReaderChromeLayoutTransition()
+        }
     }
 
     private func showFullPlayer() {
@@ -364,7 +371,9 @@ final class IOSRootContainerController: UIViewController {
         }
     }
 
-    func refreshOverlayState() {
+    func refreshOverlayState(
+        viewportTransition: ReaderViewportTransition.Token? = nil
+    ) {
         refreshMiniPlayerContent()
         let currentBookID = UserDefaults.standard.string(forKey: AudioPlayer.currentBookIDDefaultsKey)
         let currentlyReadingBookID = UserDefaults.standard.string(forKey: ReaderSessionState.currentlyReadingBookIDKey)
@@ -376,6 +385,7 @@ final class IOSRootContainerController: UIViewController {
             availableBookIDs: availableBookIDs
         )
 
+        readerPresentationState.isReaderActive = readerActive
         readerController.view.isHidden = !readerActive
         // The reader owns the full screen while open. The library/settings/
         // conversion tabs must not remain visible underneath its player bar.
@@ -385,15 +395,16 @@ final class IOSRootContainerController: UIViewController {
         shellController.setReaderTabBarHidden(readerActive, animated: true)
         setMiniPlayerBottomAnchor(readerActive: readerActive)
         if !readerActive {
-            let wasImmersive = isImmersiveReaderMode
-            isImmersiveReaderMode = false
-            isReaderLoading = false
+            let wasImmersive = readerPresentationState.isChromeHidden
+            readerPresentationState.resetForInactiveReader()
             if wasImmersive {
                 setNeedsStatusBarAppearanceUpdate()
             }
         }
-        applyReaderChromeLayout()
-        let miniShouldBeVisible = showMini && !isReaderLoading && !isImmersiveReaderMode
+        applyReaderChromeLayout(viewportTransition: viewportTransition)
+        let miniShouldBeVisible = readerActive
+            ? readerPresentationState.showsMiniPlayer(bookHasPlayback: showMini)
+            : showMini
         if shellController.supportsSystemBottomAccessory, !readerActive {
             shellController.setSystemMiniPlayerVisible(miniShouldBeVisible, animated: true)
             hideOverlayMiniPlayerImmediately()

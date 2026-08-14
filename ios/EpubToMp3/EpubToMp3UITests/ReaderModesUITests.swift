@@ -10,22 +10,14 @@ final class ReaderModesUITests: XCTestCase {
     override func setUpWithError() throws { continueAfterFailure = false }
 
     private func launch(layout: String, smallFont: Bool = false) -> XCUIApplication {
-        XCUIDevice.shared.orientation = .portrait
-        let app = XCUIApplication()
-        app.launchArguments += ["-uiTestFixture"]
-        app.launchArguments += [
-            "-uiTestResetReaderPosition",
-            "-uiTestFlickerProbe",
-            "-uiTestReaderLayout", layout,
-            "-uiTestChromeToggle",
-            "-uiTestNoPageTurnOverlay",
-            "-uiTestPaginationProbe",
-        ]
-        if smallFont {
-            app.launchArguments += ["-uiTestReaderFontSize", "0", "-uiTestReaderOverrideFontSize"]
-        }
-        app.launch()
-        return app
+        ReaderModesHarness().launch(.init(
+            source: .fixture,
+            layout: layout,
+            smallFont: smallFont,
+            chromeToggleEnabled: true,
+            paginationProbeEnabled: true,
+            flickerProbeEnabled: true
+        ))
     }
 
     private func launchForLiveSettings() -> XCUIApplication {
@@ -42,38 +34,11 @@ final class ReaderModesUITests: XCTestCase {
     }
 
     private func launchNativeLOTR() -> XCUIApplication {
-        XCUIDevice.shared.orientation = .portrait
-        let app = XCUIApplication()
-        app.launchArguments += [
-            "-developmentSeedBook",
-            "-uiTestPlaybackFixture",
-            "-uiTestReaderLayout", "paginated",
-            "-uiTestChromeToggle",
-            "-uiTestNoPageTurnOverlay",
-            "-uiTestPaginationProbe",
-        ]
-        app.launch()
-        return app
+        ReaderModesHarness().launch(.paginatedNativeLOTR)
     }
 
     private func openBook(_ app: XCUIApplication) throws {
-        let firstBook = app.descendants(matching: .any).matching(
-            NSPredicate(format: "identifier BEGINSWITH %@", "library.bookTile.")
-        ).firstMatch
-        guard firstBook.waitForExistence(timeout: 20) else { throw XCTSkip("No book.") }
-        if !firstBook.isHittable {
-            let closeReader = app.buttons["reader.close"].firstMatch
-            guard closeReader.waitForExistence(timeout: 5) else {
-                throw XCTSkip("Library is covered by an unknown surface.")
-            }
-            closeReader.tap()
-            XCTAssertTrue(firstBook.waitForExistence(timeout: 5) && firstBook.isHittable,
-                          "Closing a restored reader must reveal the fixture library.")
-        }
-        firstBook.tap()
-        guard app.buttons["reader.search"].firstMatch.waitForExistence(timeout: 20) else {
-            throw XCTSkip("Reader did not open.")
-        }
+        try ReaderModesHarness(app: app).openBook()
     }
 
     private func indicator(_ app: XCUIApplication) -> (page: Int, total: Int)? {
@@ -88,13 +53,11 @@ final class ReaderModesUITests: XCTestCase {
     }
 
     private func chromeVisible(_ app: XCUIApplication) -> Bool {
-        app.buttons["reader.search"].firstMatch.exists
+        ReaderModesHarness(app: app).chromeIsVisible
     }
 
     private func toggleReaderChrome(in app: XCUIApplication) {
-        let viewport = app.scrollViews["reader.viewport"].firstMatch
-        XCTAssertTrue(viewport.waitForExistence(timeout: 5), "The reader viewport must be available.")
-        viewport.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        ReaderModesHarness(app: app).toggleChrome()
     }
 
     private func chapter(_ app: XCUIApplication) -> (index: Int, total: Int)? {
@@ -107,13 +70,7 @@ final class ReaderModesUITests: XCTestCase {
     }
 
     private func paginationMetrics(_ app: XCUIApplication) -> [String: Int] {
-        let probe = app.staticTexts["reader.paginationProbe"].firstMatch
-        guard probe.waitForExistence(timeout: 5) else { return [:] }
-        return Dictionary(uniqueKeysWithValues: probe.label.split(separator: ";").compactMap { item in
-            let pair = item.split(separator: "=", maxSplits: 1)
-            guard pair.count == 2, let value = Int(pair[1]) else { return nil }
-            return (String(pair[0]), value)
-        })
+        ReaderModesHarness(app: app).paginationMetrics?.values ?? [:]
     }
 
     private func assertNoClippedPageLines(
@@ -122,32 +79,7 @@ final class ReaderModesUITests: XCTestCase {
         file: StaticString = #filePath,
         line: UInt = #line
     ) {
-        let metrics = paginationMetrics(app)
-        guard let firstY = metrics["firstCompleteY"],
-              let lastY = metrics["lastCompleteY"],
-              let clippedLineCount = metrics["clippedLineCount"],
-              let viewportTop = metrics["viewportTop"],
-              let viewportBottom = metrics["viewportBottom"] else {
-            return XCTFail("\(scenario): pagination probe is incomplete", file: file, line: line)
-        }
-        XCTAssertGreaterThanOrEqual(
-            firstY, viewportTop - 1,
-            "\(scenario): the first visible line is cut above the viewport (\(metrics))",
-            file: file,
-            line: line
-        )
-        XCTAssertLessThanOrEqual(
-            lastY, viewportBottom + 1,
-            "\(scenario): the last visible line is cut below the viewport (\(metrics))",
-            file: file,
-            line: line
-        )
-        XCTAssertEqual(
-            clippedLineCount, 0,
-            "\(scenario): a TextKit line fragment is cut by the viewport (\(metrics))",
-            file: file,
-            line: line
-        )
+        ReaderModesHarness(app: app).assertNoClippedLines(scenario: scenario, file: file, line: line)
     }
 
     private func openReaderSettings(_ app: XCUIApplication) throws {

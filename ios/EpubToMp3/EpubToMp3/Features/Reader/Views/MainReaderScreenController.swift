@@ -11,7 +11,6 @@ final class MainReaderScreenController: UIViewController {
     private let bookmarkStore: BookmarkStore
     private var onBrowseLibrary: (() -> Void)?
     var onReaderChromeVisibilityChanged: ((Bool) -> Void)?
-    private var chromeTransitionGeneration = 0
     var onReaderLoadingChanged: ((Bool) -> Void)?
 
     private var cancellables: Set<AnyCancellable> = []
@@ -24,10 +23,17 @@ final class MainReaderScreenController: UIViewController {
     /// render can be triggered by a persisted reading position while the
     /// reader is immersive, so deriving this state from a transient alpha is
     /// unsafe.
-    private var isReaderChromeHidden = false
+    private var readerPresentationState = ReaderPresentationState()
+    private var isReaderChromeHidden: Bool {
+        get { readerPresentationState.isChromeHidden }
+        set { readerPresentationState.isChromeHidden = newValue }
+    }
     /// Mirrors `BookOpenScreenController.onLoadStateChanged` so `render()`
     /// can keep "Ouvir" hidden while the book's content is still loading.
-    private var isReaderLoading = false
+    private var isReaderLoading: Bool {
+        get { readerPresentationState.isLoading }
+        set { readerPresentationState.isLoading = newValue }
+    }
 
     var isLoadingBookContent: Bool { isReaderLoading }
 
@@ -241,13 +247,14 @@ final class MainReaderScreenController: UIViewController {
         removeReaderControllerIfNeeded()
         emptyStateStack.isHidden = false
         listenButton.isHidden = true
-        isReaderChromeHidden = false
+        readerPresentationState.resetForInactiveReader()
         readerNavigationBar.isHidden = true
         readerNavigationBackground.isHidden = true
     }
 
     private func showBook(_ book: BookEntity) {
         emptyStateStack.isHidden = true
+        readerPresentationState.isReaderActive = true
         readerNavigationItem.title = book.resolvedTitle
         if readerController != nil, readerBookID == book.id {
             // The existing reader already owns this book. Re-loading it on
@@ -286,11 +293,10 @@ final class MainReaderScreenController: UIViewController {
         reader.onChromeVisibilityChanged = { [weak self] isHidden in
             guard let self else { return }
             self.isReaderChromeHidden = isHidden
-            self.chromeTransitionGeneration &+= 1
             // The root owns the only animated layout pass. Installing our
             // top constraint before notifying it makes root.layoutIfNeeded()
             // resolve navigation, text viewport and mini player together.
-            self.applyReaderNavigationLayout(animated: false, completesViewportTransition: false)
+            self.applyReaderNavigationLayout(animated: false, commitsLayout: false)
             self.onReaderChromeVisibilityChanged?(isHidden)
         }
         addChild(reader)
@@ -356,14 +362,10 @@ final class MainReaderScreenController: UIViewController {
     /// Hiding chrome moves the reading surface to the screen edge. The child
     /// reader captures its visible text anchor before that reflow so the
     /// expanded page does not jump to a different passage.
-    private func applyReaderNavigationLayout(animated: Bool, completesViewportTransition: Bool = true) {
-        let shouldShow = !isReaderChromeHidden
+    private func applyReaderNavigationLayout(animated: Bool, commitsLayout: Bool = true) {
+        let shouldShow = readerPresentationState.showsReaderNavigation
         if let readerTopToNavigation,
            let readerTopToRoot {
-            let layoutChanged = readerTopToNavigation.isActive != shouldShow
-            if layoutChanged {
-                readerController?.prepareForViewportTransition()
-            }
             NSLayoutConstraint.deactivate([readerTopToNavigation, readerTopToRoot])
             (shouldShow ? readerTopToNavigation : readerTopToRoot).isActive = true
         }
@@ -386,9 +388,8 @@ final class MainReaderScreenController: UIViewController {
             self.view.layoutIfNeeded()
         }
         guard animated else {
-            changes()
-            if completesViewportTransition {
-                readerController?.completeViewportTransition()
+            if commitsLayout {
+                changes()
             }
             return
         }
@@ -399,9 +400,6 @@ final class MainReaderScreenController: UIViewController {
             animations: changes
         ) { [weak self] _ in
             guard let self else { return }
-            if completesViewportTransition {
-                self.readerController?.completeViewportTransition()
-            }
             guard !shouldShow, self.isReaderChromeHidden else { return }
             self.readerNavigationBar.isHidden = true
             self.readerNavigationBackground.isHidden = true

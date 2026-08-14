@@ -1,5 +1,4 @@
 #if os(iOS)
-import PDFKit
 import UIKit
 import UniformTypeIdentifiers
 
@@ -34,6 +33,10 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
     private let player: AudioPlayer
     private let textView = ReaderTextViewFactory.make()
     private let comicPageImageView = UIImageView()
+    private lazy var contentSurface = ReaderContentSurface(
+        textView: textView,
+        comicPageImageView: comicPageImageView
+    )
     private let scrollView = UIScrollView()
     private let pageIndicator = UILabel()
     private let pageOverflowGuard = UIView()
@@ -81,6 +84,10 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
     private var scrollBottomToSafeArea: NSLayoutConstraint!
     private var scrollBottomToRoot: NSLayoutConstraint!
     private var paginatedPageOffsets: [CGFloat] = [0]
+    /// The single glyph-aware pagination decision for the final viewport.
+    /// Keep the legacy offset array while callers migrate, but never derive a
+    /// second set of boundaries from the controller's own TextKit traversal.
+    private var paginatedLayoutResult: ReaderPaginatedTextLayout.Result?
     private var lastPaginatedViewportSize: CGSize = .zero
     private var lastScrollingViewportSize: CGSize = .zero
     private var settingsUpdateWorkItem: DispatchWorkItem?
@@ -137,7 +144,6 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
     /// viewport resize. Serializing input avoids splitting TextKit lines.
     private var isViewportTransitioning = false
     private var lastInlineImageViewportWidth: CGFloat?
-    private var pdfView: PDFView?
     /// Guards against re-seeking the scroll position on every manual
     /// chapter tap — restoration only makes sense once, right after the
     /// book is (re)loaded.
@@ -551,7 +557,7 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
             chromeHidden: chromeHidden,
             showsPageNumbers: settings.readerShowPageNumbers
         )
-        let isDisplayingImageChapter = !comicPageImageView.isHidden
+        let isDisplayingImageChapter = contentSurface.isDisplayingComic
         let allowsTextScrolling = configuration.allowsVerticalScrolling && !isDisplayingImageChapter
         scrollView.isScrollEnabled = allowsTextScrolling
         scrollView.panGestureRecognizer.isEnabled = allowsTextScrolling
@@ -1179,6 +1185,7 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
     private func showChapter(_ index: Int) {
         guard let chapter = fulltext?.chapters[safe: index] else { return }
         rememberedViewportOffsets.removeAll()
+        paginatedLayoutResult = nil
         let textSettings = ReaderTextSettings(settings: settings)
         lastInlineImageViewportWidth = nil
         UserDefaults.standard.set(index, forKey: AudioPlayer.readerCurrentChapterIndexDefaultsKey)
@@ -1186,11 +1193,12 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
         synchronizeChromeVisibility()
 
         if chapter.isImageOnly {
-            NSLayoutConstraint.deactivate(textContentConstraints)
-            NSLayoutConstraint.activate(comicContentConstraints)
-            comicPageImageView.isHidden = false
-            textView.isHidden = true
+            contentSurface.mountComic(
+                textConstraints: textContentConstraints,
+                comicConstraints: comicContentConstraints
+            )
             paginatedPageOffsets = [0]
+            paginatedLayoutResult = nil
             applyReaderLayoutMode()
             if let base64 = chapter.resources?.first?.dataBase64,
                let data = Data(base64Encoded: base64),
@@ -1202,10 +1210,10 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
                 return
             }
         } else {
-            NSLayoutConstraint.deactivate(comicContentConstraints)
-            NSLayoutConstraint.activate(textContentConstraints)
-            comicPageImageView.isHidden = true
-            textView.isHidden = false
+            contentSurface.mountText(
+                textConstraints: textContentConstraints,
+                comicConstraints: comicContentConstraints
+            )
             applyReaderLayoutMode()
             if let warmChapter = Self.warmRenderedChapters.object(forKey: book.id as NSString),
                warmChapter.chapterIndex == index,
@@ -1312,7 +1320,7 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
             pageIndicator.text = L10n.string("reader.pageOf", 1, 1)
             return
         }
-        let total = max(1, paginatedPageOffsets.count)
+        let total = max(1, paginatedLayoutResult?.canonicalPageOffsets.count ?? paginatedPageOffsets.count)
         let testPage = isUITestFixture ? uiTestPageNumber : nil
         let page = min(total, max(1, testPage ?? pageNumber(at: scrollView.contentOffset.y)))
         let value = L10n.string("reader.pageOf", page, total)
@@ -1343,20 +1351,16 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
         textView.textContainer.size = CGSize(width: textWidth, height: .greatestFiniteMagnitude)
         textView.layoutManager.invalidateLayout(forCharacterRange: NSRange(location: 0, length: textView.textStorage.length), actualCharacterRange: nil)
         textView.layoutManager.ensureLayout(for: textView.textContainer)
-        heightConstraint.constant = ReaderPaginatedTextLayout.measuredContentHeight(
+        let result = ReaderPaginatedTextLayout.layout(.init(
             layoutManager: textView.layoutManager,
             textContainer: textView.textContainer,
-            verticalInset: verticalInset,
             topInset: textView.textContainerInset.top,
+            bottomInset: textView.textContainerInset.bottom,
             pageHeight: pageHeight
-        )
-        paginatedPageOffsets = ReaderPaginatedTextLayout.pageOffsets(
-            layoutManager: textView.layoutManager,
-            textContainer: textView.textContainer,
-            verticalInset: verticalInset,
-            topInset: textView.textContainerInset.top,
-            pageHeight: pageHeight
-        )
+        ))
+        heightConstraint.constant = result.contentHeight
+        paginatedLayoutResult = result
+        paginatedPageOffsets = result.canonicalPageOffsets
         textView.contentSize.height = heightConstraint.constant
         updatePaginationProbe()
         return true
@@ -1374,35 +1378,18 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
             pageOverflowGuard.isHidden = true
             return
         }
-        let inset = textView.textContainerInset
         let viewport = scrollView.convert(scrollView.bounds, to: view)
-        let glyphRange = textView.layoutManager.glyphRange(for: textView.textContainer)
-        var lastCompleteBottom: CGFloat?
-        var hasPartialBottomLine = false
-        textView.layoutManager.enumerateLineFragments(forGlyphRange: glyphRange) { lineRect, _, _, lineGlyphRange, _ in
-            let glyphRect = self.textView.layoutManager.boundingRect(
-                forGlyphRange: lineGlyphRange,
-                in: self.textView.textContainer
-            )
-            let protectedRect = lineRect.union(glyphRect)
-            let rendered = self.textView.convert(
-                CGRect(
-                    x: protectedRect.minX + inset.left,
-                    y: protectedRect.minY + inset.top,
-                    width: protectedRect.width,
-                    height: protectedRect.height
-                ),
-                to: self.view
-            )
-            guard rendered.intersects(viewport) else { return }
-            if viewport.contains(rendered) {
-                lastCompleteBottom = max(lastCompleteBottom ?? rendered.maxY, rendered.maxY)
-            } else if rendered.maxY > viewport.maxY {
-                hasPartialBottomLine = true
-            }
+        guard let maskRange = paginatedLayoutResult?.bottomOverflowMaskRange(
+            at: scrollView.contentOffset.y
+        ) else {
+            pageOverflowGuard.isHidden = true
+            return
         }
-        guard hasPartialBottomLine, let bottom = lastCompleteBottom,
-              bottom < viewport.maxY - 0.5 else {
+        let bottom = textView.convert(
+            CGPoint(x: textView.bounds.minX, y: maskRange.lowerBound),
+            to: view
+        ).y
+        guard bottom > viewport.minY + 0.5, bottom < viewport.maxY - 0.5 else {
             pageOverflowGuard.isHidden = true
             return
         }
@@ -1439,6 +1426,7 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
         heightConstraint.constant = measuredHeight
         textView.contentSize = CGSize(width: max(textView.bounds.width, 1), height: measuredHeight)
         paginatedPageOffsets = [0]
+        paginatedLayoutResult = nil
         return true
     }
 
@@ -1464,28 +1452,23 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
               textView.attributedText.length > 0,
               textView.layoutManager.numberOfGlyphs > 0 else { return }
 
-        let inset = textView.textContainerInset
         let glyphRange = textView.layoutManager.glyphRange(for: textView.textContainer)
         guard glyphRange.length > 0 else { return }
-        var completeLineRects: [CGRect] = []
-        var clippedLineCount = 0
-        textView.layoutManager.enumerateLineFragments(forGlyphRange: glyphRange) { lineRect, _, _, _, _ in
-            let renderedRect = self.textView.convert(
-                CGRect(
-                    x: lineRect.minX + inset.left,
-                    y: lineRect.minY + inset.top,
-                    width: lineRect.width,
-                    height: lineRect.height
-                ),
-                to: self.scrollView
-            )
-            guard renderedRect.intersects(self.scrollView.bounds) else { return }
-            if self.scrollView.bounds.contains(renderedRect) {
-                completeLineRects.append(lineRect)
-            } else {
-                clippedLineCount += 1
-            }
+        let layoutResult = paginatedLayoutResult
+        let protectedFragments = layoutResult?.protectedFragments ?? []
+        var completeFragmentRects: [CGRect] = []
+        let clippedLineCount: Int
+        if let layoutResult {
+            let report = layoutResult.clippingReport(at: scrollView.contentOffset.y)
+            clippedLineCount = report.clippedLineCount
+            completeFragmentRects = report.intersectingFragments
+                .filter { !report.clippedFragments.contains($0) }
+                .map(\.contentRect)
+        } else {
+            clippedLineCount = 0
+            completeFragmentRects = protectedFragments.map(\.contentRect)
         }
+        let inset = textView.textContainerInset
         let firstGlyph = glyphRange.location
         let lastGlyph = NSMaxRange(glyphRange) - 1
         let firstRect = textView.layoutManager.boundingRect(
@@ -1504,16 +1487,16 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
             CGPoint(x: lastRect.maxX + inset.left, y: lastRect.maxY + inset.top),
             to: window
         )
+        let firstCompleteY = completeFragmentRects.first.map {
+            textView.convert(CGPoint(x: $0.minX + inset.left, y: $0.minY), to: window).y
+        }
+        let lastCompleteY = completeFragmentRects.last.map {
+            textView.convert(CGPoint(x: $0.maxX + inset.left, y: $0.maxY), to: window).y
+        }
         let safeTop = view.convert(
             CGPoint(x: 0, y: view.safeAreaLayoutGuide.layoutFrame.minY),
             to: window
         ).y
-        let firstCompleteY = completeLineRects.first.map {
-            textView.convert(CGPoint(x: $0.minX + inset.left, y: $0.minY + inset.top), to: window).y
-        }
-        let lastCompleteY = completeLineRects.last.map {
-            textView.convert(CGPoint(x: $0.maxX + inset.left, y: $0.maxY + inset.top), to: window).y
-        }
         let safeBottom = view.convert(
             CGPoint(x: 0, y: view.safeAreaLayoutGuide.layoutFrame.maxY),
             to: window
@@ -1536,7 +1519,7 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
             "viewportBottom=\(Int(viewportBottom.rounded()))",
             "offset=\(Int(scrollView.contentOffset.y.rounded()))",
             "page=\(pageNumber(at: scrollView.contentOffset.y))",
-            "total=\(paginatedPageOffsets.count)",
+            "total=\(paginatedLayoutResult?.canonicalPageOffsets.count ?? paginatedPageOffsets.count)",
             "textFrameHeight=\(Int(textView.bounds.height.rounded()))",
             "measuredTextHeight=\(Int(paginatedTextHeightConstraint.constant.rounded()))",
             "viewportHeight=\(Int(scrollView.bounds.height.rounded()))",
@@ -1547,13 +1530,19 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
     }
 
     private func pageNumber(at offset: CGFloat) -> Int {
-        guard paginatedPageOffsets.count > 1 else { return 1 }
+        let offsets = paginatedLayoutResult?.canonicalPageOffsets ?? paginatedPageOffsets
+        guard offsets.count > 1 else { return 1 }
         let epsilon: CGFloat = 0.5
-        let index = paginatedPageOffsets.lastIndex(where: { $0 <= offset + epsilon }) ?? 0
+        let index = paginatedLayoutResult?.pageIndex(at: offset)
+            ?? offsets.lastIndex(where: { $0 <= offset + epsilon })
+            ?? 0
         return index + 1
     }
 
     private func pageOffset(for page: Int) -> CGFloat {
+        if let paginatedLayoutResult {
+            return paginatedLayoutResult.pageOffset(for: page - 1)
+        }
         let index = min(max(0, page - 1), max(0, paginatedPageOffsets.count - 1))
         return paginatedPageOffsets[index]
     }
@@ -1897,7 +1886,7 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
     }
 
     private var measuredPageCount: Int {
-        max(1, paginatedPageOffsets.count)
+        max(1, paginatedLayoutResult?.canonicalPageOffsets.count ?? paginatedPageOffsets.count)
     }
 
     func scrollViewDidScroll(_ scrollView: UIScrollView) {
@@ -2231,17 +2220,7 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
     }
 
     private func showPDF(_ url: URL) {
-        let view = PDFView()
-        view.autoScales = true
-        view.document = PDFDocument(url: url)
-        pdfView = view
-        textView.removeFromSuperview()
-        self.view.addSubview(view)
-        view.translatesAutoresizingMaskIntoConstraints = false
-        NSLayoutConstraint.activate([
-            view.leadingAnchor.constraint(equalTo: self.view.leadingAnchor), view.trailingAnchor.constraint(equalTo: self.view.trailingAnchor),
-            view.topAnchor.constraint(equalTo: self.view.safeAreaLayoutGuide.topAnchor), view.bottomAnchor.constraint(equalTo: self.view.bottomAnchor)
-        ])
+        contentSurface.mountPDF(at: url, in: view)
     }
 
     func presentDocumentPicker() {

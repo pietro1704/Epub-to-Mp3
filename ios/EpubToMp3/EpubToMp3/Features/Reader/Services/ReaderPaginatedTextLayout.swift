@@ -14,6 +14,196 @@ import AppKit
 /// Layout constraint.
 @MainActor
 enum ReaderPaginatedTextLayout {
+    /// The complete, glyph-safe pagination decision for one final viewport.
+    /// Presentation code may apply this result, but must not recreate page
+    /// boundaries by re-enumerating TextKit line fragments.
+    struct Input {
+        let layoutManager: NSLayoutManager
+        let textContainer: NSTextContainer
+        let topInset: CGFloat
+        let bottomInset: CGFloat
+        let pageHeight: CGFloat
+
+        init(
+            layoutManager: NSLayoutManager,
+            textContainer: NSTextContainer,
+            topInset: CGFloat,
+            bottomInset: CGFloat,
+            pageHeight: CGFloat
+        ) {
+            self.layoutManager = layoutManager
+            self.textContainer = textContainer
+            self.topInset = max(0, topInset)
+            self.bottomInset = max(0, bottomInset)
+            self.pageHeight = max(0, pageHeight)
+        }
+
+        var verticalInset: CGFloat { topInset + bottomInset }
+    }
+
+    /// One TextKit line made safe for every glyph it renders. `contentRect`
+    /// is expressed in scroll-content coordinates, after the UITextView top
+    /// inset has been applied; `containerRect` remains in TextKit's native
+    /// container coordinates for callers that need its glyph range.
+    struct ProtectedFragment: Equatable {
+        let glyphRange: NSRange
+        let containerRect: CGRect
+        let contentRect: CGRect
+    }
+
+    struct ClippingReport {
+        let intersectingFragments: [ProtectedFragment]
+        let clippedFragments: [ProtectedFragment]
+
+        var clippedLineCount: Int { clippedFragments.count }
+    }
+
+    struct Result {
+        let contentHeight: CGFloat
+        let canonicalPageOffsets: [CGFloat]
+        let protectedFragments: [ProtectedFragment]
+        /// A fragment taller than the usable page cannot satisfy normal
+        /// pagination. The caller must use its explicit non-clipping fallback
+        /// instead of pretending a canonical page boundary is valid.
+        let oversizedFragment: ProtectedFragment?
+        let pageHeight: CGFloat
+
+        func pageIndex(at contentOffset: CGFloat) -> Int {
+            guard canonicalPageOffsets.count > 1 else { return 0 }
+            let epsilon: CGFloat = 0.5
+            return canonicalPageOffsets.lastIndex(where: { $0 <= contentOffset + epsilon }) ?? 0
+        }
+
+        func pageOffset(for pageIndex: Int) -> CGFloat {
+            canonicalPageOffsets[min(max(0, pageIndex), canonicalPageOffsets.count - 1)]
+        }
+
+        func clippingReport(at contentOffset: CGFloat) -> ClippingReport {
+            let viewport = CGRect(x: 0, y: contentOffset, width: .greatestFiniteMagnitude, height: pageHeight)
+            let intersecting = protectedFragments.filter { $0.contentRect.intersects(viewport) }
+            return ClippingReport(
+                intersectingFragments: intersecting,
+                clippedFragments: intersecting.filter { !viewport.contains($0.contentRect) }
+            )
+        }
+
+        /// The bottom slice of the viewport which must be covered as a
+        /// defense-in-depth presentation measure when a non-canonical offset
+        /// exposes part of the following protected fragment. This is never a
+        /// substitute for a clean `clippingReport` on a canonical page.
+        func bottomOverflowMaskRange(at contentOffset: CGFloat) -> ClosedRange<CGFloat>? {
+            let viewport = CGRect(x: 0, y: contentOffset, width: .greatestFiniteMagnitude, height: pageHeight)
+            let report = clippingReport(at: contentOffset)
+            guard report.clippedFragments.contains(where: { $0.contentRect.maxY > viewport.maxY }) else {
+                return nil
+            }
+            guard let lastCompleteBottom = report.intersectingFragments
+                .filter({ viewport.contains($0.contentRect) })
+                .map(\.contentRect.maxY)
+                .max(), lastCompleteBottom < viewport.maxY - 0.5 else {
+                return nil
+            }
+            return lastCompleteBottom...viewport.maxY
+        }
+    }
+
+    /// Calculates all pagination facts from one TextKit pass. The caller must
+    /// invoke this only after the viewport has final, committed geometry.
+    static func layout(_ input: Input) -> Result {
+        let textContainer = input.textContainer
+        let currentSize = textContainer.size
+        textContainer.size = CGSize(
+            width: max(currentSize.width, 1),
+            height: .greatestFiniteMagnitude
+        )
+        input.layoutManager.ensureLayout(for: textContainer)
+        let glyphRange = input.layoutManager.glyphRange(for: textContainer)
+        guard glyphRange.length > 0 else {
+            return Result(
+                contentHeight: max(input.pageHeight, 1),
+                canonicalPageOffsets: [0],
+                protectedFragments: [],
+                oversizedFragment: nil,
+                pageHeight: input.pageHeight
+            )
+        }
+
+        var fragments: [ProtectedFragment] = []
+        input.layoutManager.enumerateLineFragments(forGlyphRange: glyphRange) { lineRect, _, _, lineGlyphRange, _ in
+            let glyphRect = input.layoutManager.boundingRect(forGlyphRange: lineGlyphRange, in: textContainer)
+            let containerRect = lineRect.union(glyphRect)
+            guard containerRect.height > 0 else { return }
+            fragments.append(ProtectedFragment(
+                glyphRange: lineGlyphRange,
+                containerRect: containerRect,
+                contentRect: containerRect.offsetBy(dx: 0, dy: input.topInset)
+            ))
+        }
+        guard let lastFragment = fragments.last else {
+            return Result(
+                contentHeight: max(input.pageHeight, 1),
+                canonicalPageOffsets: [0],
+                protectedFragments: [],
+                oversizedFragment: nil,
+                pageHeight: input.pageHeight
+            )
+        }
+
+        let usableHeight = max(0, input.pageHeight - input.verticalInset)
+        let naturalHeight = ceil(lastFragment.containerRect.maxY + input.verticalInset)
+        // Reserve a full final viewport from the final protected-fragment
+        // start, so UIScrollView cannot clamp that canonical start into the
+        // previous line.
+        let boundaryHeight = ceil(lastFragment.contentRect.minY + input.pageHeight)
+        let contentHeight = max(input.pageHeight, max(naturalHeight, boundaryHeight))
+        let oversized = fragments.first(where: { $0.containerRect.height > usableHeight + 0.5 })
+
+        guard input.pageHeight > input.verticalInset, !fragments.isEmpty else {
+            return Result(
+                contentHeight: contentHeight,
+                canonicalPageOffsets: [0],
+                protectedFragments: fragments,
+                oversizedFragment: oversized,
+                pageHeight: input.pageHeight
+            )
+        }
+
+        var offsets: [CGFloat] = [0]
+        var pageStart: CGFloat = 0
+        var firstFragment = 0
+        let epsilon: CGFloat = 0.5
+        while firstFragment < fragments.count {
+            while firstFragment < fragments.count,
+                  fragments[firstFragment].contentRect.maxY <= pageStart + epsilon {
+                firstFragment += 1
+            }
+            guard firstFragment < fragments.count else { break }
+
+            let pageLimit = pageStart + input.pageHeight - input.bottomInset
+            var nextFragment = firstFragment
+            while nextFragment < fragments.count,
+                  fragments[nextFragment].contentRect.maxY <= pageLimit + epsilon {
+                nextFragment += 1
+            }
+            guard nextFragment < fragments.count else { break }
+
+            let nextOffset = fragments[nextFragment].contentRect.minY
+            let safeOffset = nextOffset > pageStart + epsilon
+                ? nextOffset
+                : pageStart + input.pageHeight
+            offsets.append(safeOffset)
+            pageStart = safeOffset
+            firstFragment = nextFragment
+        }
+        return Result(
+            contentHeight: contentHeight,
+            canonicalPageOffsets: offsets,
+            protectedFragments: fragments,
+            oversizedFragment: oversized,
+            pageHeight: input.pageHeight
+        )
+    }
+
     static func measuredContentHeight(
         layoutManager: NSLayoutManager,
         textContainer: NSTextContainer,
@@ -21,31 +211,13 @@ enum ReaderPaginatedTextLayout {
         topInset: CGFloat = 0,
         pageHeight: CGFloat
     ) -> CGFloat {
-        let currentSize = textContainer.size
-        textContainer.size = CGSize(
-            width: max(currentSize.width, 1),
-            height: .greatestFiniteMagnitude
-        )
-        layoutManager.ensureLayout(for: textContainer)
-        let glyphRange = layoutManager.glyphRange(for: textContainer)
-        var lastLineStart: CGFloat = 0
-        var lastLineBottom: CGFloat = 0
-        layoutManager.enumerateLineFragments(forGlyphRange: glyphRange) { lineRect, _, _, lineGlyphRange, _ in
-            let glyphRect = layoutManager.boundingRect(forGlyphRange: lineGlyphRange, in: textContainer)
-            let protectedRect = lineRect.union(glyphRect)
-            lastLineStart = max(lastLineStart, protectedRect.minY)
-            lastLineBottom = max(lastLineBottom, protectedRect.maxY)
-        }
-        // A final page may start at the last complete line fragment. Reserve
-        // the remaining viewport as trailing whitespace so UIKit never clamps
-        // that offset into the middle of the preceding line.
-        let naturalHeight = ceil(lastLineBottom + verticalInset)
-        // TextKit line coordinates start inside UITextView's top inset,
-        // whereas UIScrollView offsets start at the view's content edge.
-        // Reserve that translation for the final page too, otherwise UIKit
-        // clamps its final offset into the last rendered line.
-        let boundaryHeight = ceil(lastLineStart + topInset + pageHeight)
-        return max(pageHeight, max(naturalHeight, boundaryHeight))
+        layout(Input(
+            layoutManager: layoutManager,
+            textContainer: textContainer,
+            topInset: topInset,
+            bottomInset: max(0, verticalInset - topInset),
+            pageHeight: pageHeight
+        )).contentHeight
     }
 
     /// Scroll offsets that begin each viewport on a full TextKit line
@@ -58,65 +230,12 @@ enum ReaderPaginatedTextLayout {
         topInset: CGFloat = 0,
         pageHeight: CGFloat
     ) -> [CGFloat] {
-        guard pageHeight > verticalInset else { return [0] }
-        layoutManager.ensureLayout(for: textContainer)
-        let glyphRange = layoutManager.glyphRange(for: textContainer)
-        guard glyphRange.length > 0 else { return [0] }
-
-        var lines: [CGRect] = []
-        layoutManager.enumerateLineFragments(forGlyphRange: glyphRange) { lineRect, _, _, lineGlyphRange, _ in
-            // `usedRect` excludes part of a line's typographic leading for
-            // some fonts. Paging from it can put the next line a few points
-            // above the viewport, visibly cutting its glyphs. Page against
-            // the complete line fragment instead.
-            let glyphRect = layoutManager.boundingRect(forGlyphRange: lineGlyphRange, in: textContainer)
-            let protectedRect = lineRect.union(glyphRect)
-            guard protectedRect.height > 0 else { return }
-            lines.append(protectedRect)
-        }
-        guard !lines.isEmpty else { return [0] }
-
-        // Reserve the text view's top/bottom padding when choosing the last
-        // line for a page so the next line does not enter the bottom inset.
-        let resolvedTopInset = min(max(0, topInset), verticalInset)
-        let usableHeight = pageHeight - verticalInset
-        var offsets: [CGFloat] = [0]
-        var pageStart: CGFloat = 0
-        var firstLine = 0
-        let epsilon: CGFloat = 0.5
-
-        while firstLine < lines.count {
-            let visibleTextStart = pageStart - resolvedTopInset
-            while firstLine < lines.count, lines[firstLine].maxY <= visibleTextStart + epsilon {
-                firstLine += 1
-            }
-            guard firstLine < lines.count else { break }
-
-            let pageLimit = pageStart + usableHeight
-            var nextLine = firstLine
-            while nextLine < lines.count, lines[nextLine].maxY <= pageLimit + epsilon {
-                nextLine += 1
-            }
-            guard nextLine < lines.count else { break }
-
-            // Convert from TextKit's container coordinate to the scroll
-            // coordinate. Without the top inset here, the preceding line
-            // remains partially visible at the top and a line is cut at the
-            // bottom of each subsequent page.
-            let nextOffset = lines[nextLine].minY + resolvedTopInset
-            // Every page begins at a complete line. Do not replace the final
-            // boundary with an arbitrary maximum scroll offset: that can land
-            // inside a line fragment and visibly crop its glyphs.
-            // A single oversized accessibility line cannot fit into one
-            // viewport. Advance normally in that exceptional case rather
-            // than looping forever or skipping its text.
-            let safeOffset = nextOffset > pageStart + epsilon
-                ? nextOffset
-                : pageStart + pageHeight
-            offsets.append(safeOffset)
-            pageStart = safeOffset
-            firstLine = nextLine
-        }
-        return offsets
+        layout(Input(
+            layoutManager: layoutManager,
+            textContainer: textContainer,
+            topInset: topInset,
+            bottomInset: max(0, verticalInset - topInset),
+            pageHeight: pageHeight
+        )).canonicalPageOffsets
     }
 }

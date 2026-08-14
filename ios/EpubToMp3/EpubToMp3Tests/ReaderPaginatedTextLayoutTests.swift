@@ -10,6 +10,60 @@ import AppKit
 
 final class ReaderPaginatedTextLayoutTests: XCTestCase {
     @MainActor
+    func testLayoutResultKeepsGlyphBoundsInsideEveryCanonicalPage() {
+        let font = UIFont(name: "TimesNewRomanPS-ItalicMT", size: 23) ?? .italicSystemFont(ofSize: 23)
+        let storage = NSTextStorage(
+            string: String(repeating: "A café with emoji 😀 and descenders gyq. ", count: 180),
+            attributes: [.font: font]
+        )
+        let layoutManager = NSLayoutManager()
+        let container = NSTextContainer(size: CGSize(width: 180, height: 220))
+        storage.addLayoutManager(layoutManager)
+        layoutManager.addTextContainer(container)
+
+        let result = ReaderPaginatedTextLayout.layout(.init(
+            layoutManager: layoutManager,
+            textContainer: container,
+            topInset: 20,
+            bottomInset: 32,
+            pageHeight: 220
+        ))
+
+        XCTAssertGreaterThan(result.contentHeight, 220)
+        XCTAssertFalse(result.protectedFragments.isEmpty)
+        XCTAssertNil(result.oversizedFragment)
+        for offset in result.canonicalPageOffsets {
+            XCTAssertEqual(
+                result.clippingReport(at: offset).clippedLineCount,
+                0,
+                "canonical offset \(offset) must contain every protected glyph fragment"
+            )
+        }
+    }
+
+    @MainActor
+    func testLayoutResultReportsAnOversizedProtectedFragment() {
+        let storage = NSTextStorage(
+            string: "Oversized accessibility line",
+            attributes: [.font: UIFont.systemFont(ofSize: 160)]
+        )
+        let layoutManager = NSLayoutManager()
+        let container = NSTextContainer(size: CGSize(width: 180, height: 120))
+        storage.addLayoutManager(layoutManager)
+        layoutManager.addTextContainer(container)
+
+        let result = ReaderPaginatedTextLayout.layout(.init(
+            layoutManager: layoutManager,
+            textContainer: container,
+            topInset: 16,
+            bottomInset: 24,
+            pageHeight: 120
+        ))
+
+        XCTAssertNotNil(result.oversizedFragment)
+    }
+
+    @MainActor
     func testMeasuresBeyondTheViewportForALongChapter() {
         let storage = NSTextStorage(string: String(repeating: "A long line of reader text. ", count: 400))
         let layoutManager = NSLayoutManager()
