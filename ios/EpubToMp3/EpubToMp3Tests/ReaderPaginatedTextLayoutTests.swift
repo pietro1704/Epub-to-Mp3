@@ -135,27 +135,21 @@ final class ReaderPaginatedTextLayoutTests: XCTestCase {
         layoutManager.addTextContainer(container)
 
         let pageHeight: CGFloat = 220
-        let offsets = ReaderPaginatedTextLayout.pageOffsets(
+        let result = ReaderPaginatedTextLayout.layout(.init(
             layoutManager: layoutManager,
             textContainer: container,
-            verticalInset: 52,
+            topInset: 0,
+            bottomInset: 52,
             pageHeight: pageHeight
-        )
-        let glyphRange = layoutManager.glyphRange(for: container)
-        var lineRects: [CGRect] = []
-        layoutManager.enumerateLineFragments(forGlyphRange: glyphRange) { lineRect, _, _, _, _ in
-            lineRects.append(lineRect)
-        }
+        ))
 
-        XCTAssertFalse(offsets.isEmpty)
-        for offset in offsets {
-            let viewport = CGRect(x: 0, y: offset, width: container.size.width, height: pageHeight)
-            for lineRect in lineRects where lineRect.intersects(viewport) {
-                XCTAssertTrue(
-                    viewport.contains(lineRect),
-                    "page at \(offset) must not display a partial TextKit line \(lineRect)"
-                )
-            }
+        XCTAssertFalse(result.canonicalPageOffsets.isEmpty)
+        for offset in result.canonicalPageOffsets {
+            XCTAssertEqual(
+                result.clippingReport(at: offset).clippedLineCount,
+                0,
+                "page at \(offset) must not display a partial protected fragment"
+            )
         }
     }
 
@@ -188,9 +182,9 @@ final class ReaderPaginatedTextLayoutTests: XCTestCase {
         for offset in offsets {
             let visibleTextRect = CGRect(
                 x: 0,
-                y: offset - topInset,
+                y: offset,
                 width: container.size.width,
-                height: 220
+                height: 220 - topInset - bottomInset
             )
             for lineRect in lineRects where lineRect.intersects(visibleTextRect) {
                 XCTAssertTrue(

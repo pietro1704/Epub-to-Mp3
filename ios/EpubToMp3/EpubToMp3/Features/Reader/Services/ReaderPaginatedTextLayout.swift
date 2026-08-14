@@ -67,6 +67,8 @@ enum ReaderPaginatedTextLayout {
         /// instead of pretending a canonical page boundary is valid.
         let oversizedFragment: ProtectedFragment?
         let pageHeight: CGFloat
+        let topInset: CGFloat
+        let bottomInset: CGFloat
 
         /// The caller must present this chapter continuously because a whole
         /// protected fragment cannot fit in the physical paginated viewport.
@@ -83,7 +85,7 @@ enum ReaderPaginatedTextLayout {
         }
 
         func clippingReport(at contentOffset: CGFloat) -> ClippingReport {
-            let viewport = CGRect(x: 0, y: contentOffset, width: .greatestFiniteMagnitude, height: pageHeight)
+            let viewport = readingViewport(at: contentOffset)
             let intersecting = protectedFragments.filter { $0.contentRect.intersects(viewport) }
             return ClippingReport(
                 intersectingFragments: intersecting,
@@ -96,7 +98,7 @@ enum ReaderPaginatedTextLayout {
         /// exposes part of the following protected fragment. This is never a
         /// substitute for a clean `clippingReport` on a canonical page.
         func bottomOverflowMaskRange(at contentOffset: CGFloat) -> ClosedRange<CGFloat>? {
-            let viewport = CGRect(x: 0, y: contentOffset, width: .greatestFiniteMagnitude, height: pageHeight)
+            let viewport = readingViewport(at: contentOffset)
             let report = clippingReport(at: contentOffset)
             guard report.clippedFragments.contains(where: { $0.contentRect.maxY > viewport.maxY }) else {
                 return nil
@@ -108,6 +110,15 @@ enum ReaderPaginatedTextLayout {
                 return nil
             }
             return lastCompleteBottom...viewport.maxY
+        }
+
+        private func readingViewport(at contentOffset: CGFloat) -> CGRect {
+            CGRect(
+                x: 0,
+                y: contentOffset + topInset,
+                width: .greatestFiniteMagnitude,
+                height: max(0, pageHeight - topInset - bottomInset)
+            )
         }
     }
 
@@ -128,7 +139,9 @@ enum ReaderPaginatedTextLayout {
                 canonicalPageOffsets: [0],
                 protectedFragments: [],
                 oversizedFragment: nil,
-                pageHeight: input.pageHeight
+                pageHeight: input.pageHeight,
+                topInset: input.topInset,
+                bottomInset: input.bottomInset
             )
         }
 
@@ -149,7 +162,9 @@ enum ReaderPaginatedTextLayout {
                 canonicalPageOffsets: [0],
                 protectedFragments: [],
                 oversizedFragment: nil,
-                pageHeight: input.pageHeight
+                pageHeight: input.pageHeight,
+                topInset: input.topInset,
+                bottomInset: input.bottomInset
             )
         }
 
@@ -158,7 +173,7 @@ enum ReaderPaginatedTextLayout {
         // Reserve a full final viewport from the final protected-fragment
         // start, so UIScrollView cannot clamp that canonical start into the
         // previous line.
-        let boundaryHeight = ceil(lastFragment.contentRect.minY + input.pageHeight)
+        let boundaryHeight = ceil(lastFragment.contentRect.minY - input.topInset + input.pageHeight)
         let contentHeight = max(input.pageHeight, max(naturalHeight, boundaryHeight))
         let oversized = fragments.first(where: { $0.containerRect.height > usableHeight + 0.5 })
 
@@ -168,7 +183,9 @@ enum ReaderPaginatedTextLayout {
                 canonicalPageOffsets: [0],
                 protectedFragments: fragments,
                 oversizedFragment: oversized,
-                pageHeight: input.pageHeight
+                pageHeight: input.pageHeight,
+                topInset: input.topInset,
+                bottomInset: input.bottomInset
             )
         }
 
@@ -178,7 +195,7 @@ enum ReaderPaginatedTextLayout {
         let epsilon: CGFloat = 0.5
         while firstFragment < fragments.count {
             while firstFragment < fragments.count,
-                  fragments[firstFragment].contentRect.maxY <= pageStart + epsilon {
+                  fragments[firstFragment].contentRect.maxY <= pageStart + input.topInset + epsilon {
                 firstFragment += 1
             }
             guard firstFragment < fragments.count else { break }
@@ -191,7 +208,7 @@ enum ReaderPaginatedTextLayout {
             }
             guard nextFragment < fragments.count else { break }
 
-            let nextOffset = fragments[nextFragment].contentRect.minY
+            let nextOffset = fragments[nextFragment].contentRect.minY - input.topInset
             let safeOffset = nextOffset > pageStart + epsilon
                 ? nextOffset
                 : pageStart + input.pageHeight
@@ -204,7 +221,9 @@ enum ReaderPaginatedTextLayout {
             canonicalPageOffsets: offsets,
             protectedFragments: fragments,
             oversizedFragment: oversized,
-            pageHeight: input.pageHeight
+            pageHeight: input.pageHeight,
+            topInset: input.topInset,
+            bottomInset: input.bottomInset
         )
     }
 
