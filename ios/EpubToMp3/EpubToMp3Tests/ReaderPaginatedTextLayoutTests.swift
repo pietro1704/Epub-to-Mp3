@@ -61,6 +61,7 @@ final class ReaderPaginatedTextLayoutTests: XCTestCase {
         ))
 
         XCTAssertNotNil(result.oversizedFragment)
+        XCTAssertTrue(result.requiresScrollingFallback)
     }
 
     @MainActor

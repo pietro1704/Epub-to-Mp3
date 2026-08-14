@@ -68,6 +68,10 @@ enum ReaderPaginatedTextLayout {
         let oversizedFragment: ProtectedFragment?
         let pageHeight: CGFloat
 
+        /// The caller must present this chapter continuously because a whole
+        /// protected fragment cannot fit in the physical paginated viewport.
+        var requiresScrollingFallback: Bool { oversizedFragment != nil }
+
         func pageIndex(at contentOffset: CGFloat) -> Int {
             guard canonicalPageOffsets.count > 1 else { return 0 }
             let epsilon: CGFloat = 0.5

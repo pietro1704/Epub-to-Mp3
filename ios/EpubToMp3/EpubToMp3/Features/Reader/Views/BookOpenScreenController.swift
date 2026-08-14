@@ -1203,6 +1203,9 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
         guard let chapter = fulltext?.chapters[safe: index] else { return }
         rememberedViewportOffsets.removeAll()
         paginatedLayoutResult = nil
+        // The fallback belongs to a single measured chapter and viewport.
+        // A new chapter must always be allowed to attempt canonical paging.
+        forcesScrollingForOversizedFragment = false
         let textSettings = ReaderTextSettings(settings: settings)
         lastInlineImageViewportWidth = nil
         UserDefaults.standard.set(index, forKey: AudioPlayer.readerCurrentChapterIndexDefaultsKey)
@@ -1375,7 +1378,7 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
             bottomInset: textView.textContainerInset.bottom,
             pageHeight: pageHeight
         ))
-        guard result.oversizedFragment == nil else {
+        guard !result.requiresScrollingFallback else {
             // A fragment taller than the physical page cannot be presented
             // paginated without clipping. Fall back for this chapter instead
             // of manufacturing a partial page boundary.
@@ -1807,6 +1810,9 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
     private func applyReaderSettingsImmediately() {
         let readingAnchor = captureReadingAnchor()
         rememberedViewportOffsets.removeAll()
+        // Typography and margins can make a formerly oversized protected
+        // fragment fit again. Re-evaluate against the final new viewport.
+        forcesScrollingForOversizedFragment = false
         let nextTextSettings = ReaderTextSettings(settings: settings)
         let needsTextRerender = lastRenderedTextSettings != nextTextSettings
         let colors = settings.readerTheme.previewColors
