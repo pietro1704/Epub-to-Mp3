@@ -398,6 +398,25 @@ final class ReaderModesUITests: XCTestCase {
         }
     }
 
+    func testNativeLOTRLandscapePaginationKeepsEveryGlyphVisible() throws {
+        defer { XCUIDevice.shared.orientation = .portrait }
+        let app = launchNativeLOTR()
+        try openBook(app)
+        let viewport = app.scrollViews["reader.viewport"].firstMatch
+        XCTAssertTrue(viewport.waitForExistence(timeout: 30), "The native LOTR reader must open.")
+
+        XCUIDevice.shared.orientation = .landscapeLeft
+        XCTAssertTrue(viewport.waitForExistence(timeout: 10), "The reader viewport must survive rotation.")
+        usleep(900_000)
+        assertNoClippedPageLines(app, scenario: "native LOTR landscape initial page")
+
+        let right = app.buttons["reader.pageTurn.right"].firstMatch
+        XCTAssertTrue(right.waitForExistence(timeout: 5))
+        right.tap()
+        usleep(700_000)
+        assertNoClippedPageLines(app, scenario: "native LOTR landscape advanced page")
+    }
+
     func testRapidChromeTogglesAndPageTurnsNeverClipLines() throws {
         let app = launch(layout: "paginated")
         try openBook(app)

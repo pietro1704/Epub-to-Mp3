@@ -225,4 +225,36 @@ final class ReaderPaginatedTextLayoutTests: XCTestCase {
 
         XCTAssertNotNil(result.oversizedFragment)
     }
+
+    @MainActor
+    func testCJKAndInlineAttachmentKeepProtectedFragmentsWhole() {
+        let attachment = NSTextAttachment()
+        attachment.bounds = CGRect(x: 0, y: -4, width: 18, height: 22)
+        let text = NSMutableAttributedString(
+            string: String(repeating: "日本語と中文的段落。", count: 80),
+            attributes: [.font: UIFont.systemFont(ofSize: 18)]
+        )
+        text.insert(NSAttributedString(attachment: attachment), at: 24)
+        let storage = NSTextStorage(attributedString: text)
+        let layoutManager = NSLayoutManager()
+        let container = NSTextContainer(size: CGSize(width: 180, height: 220))
+        storage.addLayoutManager(layoutManager)
+        layoutManager.addTextContainer(container)
+
+        let result = ReaderPaginatedTextLayout.layout(.init(
+            layoutManager: layoutManager,
+            textContainer: container,
+            topInset: 16,
+            bottomInset: 24,
+            pageHeight: 220
+        ))
+
+        XCTAssertFalse(result.requiresScrollingFallback)
+        XCTAssertTrue(result.protectedFragments.contains {
+            $0.glyphRange.location <= 24 && NSMaxRange($0.glyphRange) > 24
+        })
+        for offset in result.canonicalPageOffsets {
+            XCTAssertEqual(result.clippingReport(at: offset).clippedLineCount, 0)
+        }
+    }
 }
