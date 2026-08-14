@@ -429,6 +429,10 @@ targets:
     settings:
       base:
         SUPPORTED_PLATFORMS: "iphoneos iphonesimulator"
+        SWIFT_VERSION: "5.0"
+        SWIFT_STRICT_CONCURRENCY: minimal
+        SWIFT_TREAT_WARNINGS_AS_ERRORS: "NO"
+        GCC_TREAT_WARNINGS_AS_ERRORS: "NO"
         SWIFT_STRICT_MEMORY_SAFETY: NO
         PRODUCT_BUNDLE_IDENTIFIER: com.pietrocode.epubtomp3.uitests
         TEST_TARGET_NAME: EpubToMp3

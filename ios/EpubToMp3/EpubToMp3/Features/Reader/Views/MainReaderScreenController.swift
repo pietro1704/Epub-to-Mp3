@@ -11,6 +11,7 @@ final class MainReaderScreenController: UIViewController {
     private let bookmarkStore: BookmarkStore
     private var onBrowseLibrary: (() -> Void)?
     var onReaderChromeVisibilityChanged: ((Bool) -> Void)?
+    private var chromeTransitionGeneration = 0
     var onReaderLoadingChanged: ((Bool) -> Void)?
 
     private var cancellables: Set<AnyCancellable> = []
@@ -285,7 +286,11 @@ final class MainReaderScreenController: UIViewController {
         reader.onChromeVisibilityChanged = { [weak self] isHidden in
             guard let self else { return }
             self.isReaderChromeHidden = isHidden
-            self.applyReaderNavigationLayout(animated: true)
+            self.chromeTransitionGeneration &+= 1
+            // The root owns the only animated layout pass. Installing our
+            // top constraint before notifying it makes root.layoutIfNeeded()
+            // resolve navigation, text viewport and mini player together.
+            self.applyReaderNavigationLayout(animated: false, completesViewportTransition: false)
             self.onReaderChromeVisibilityChanged?(isHidden)
         }
         addChild(reader)
@@ -351,7 +356,7 @@ final class MainReaderScreenController: UIViewController {
     /// Hiding chrome moves the reading surface to the screen edge. The child
     /// reader captures its visible text anchor before that reflow so the
     /// expanded page does not jump to a different passage.
-    private func applyReaderNavigationLayout(animated: Bool) {
+    private func applyReaderNavigationLayout(animated: Bool, completesViewportTransition: Bool = true) {
         let shouldShow = !isReaderChromeHidden
         if let readerTopToNavigation,
            let readerTopToRoot {
@@ -382,6 +387,9 @@ final class MainReaderScreenController: UIViewController {
         }
         guard animated else {
             changes()
+            if completesViewportTransition {
+                readerController?.completeViewportTransition()
+            }
             return
         }
         UIView.animate(
@@ -390,10 +398,20 @@ final class MainReaderScreenController: UIViewController {
             options: ReaderChromeTransitionMetrics.animationOptions,
             animations: changes
         ) { [weak self] _ in
-            guard let self, !shouldShow, self.isReaderChromeHidden else { return }
+            guard let self else { return }
+            if completesViewportTransition {
+                self.readerController?.completeViewportTransition()
+            }
+            guard !shouldShow, self.isReaderChromeHidden else { return }
             self.readerNavigationBar.isHidden = true
             self.readerNavigationBackground.isHidden = true
         }
+    }
+
+    /// Called by the root constraint coordinator after its single animation
+    /// reaches final geometry. TextKit must only repaginate at this point.
+    func completeReaderChromeLayoutTransition() {
+        readerController?.completeViewportTransition()
     }
 
     private func removeReaderControllerIfNeeded() {
@@ -448,19 +466,43 @@ final class MainReaderScreenController: UIViewController {
     private func startListening(presentsFullPlayer: Bool) {
         guard let book = currentBook else { return }
         if settings.useEmbeddedRuntime && !book.fileType.requiresServerConversion {
-            guard let url = try? library.openBookFile(id: book.id) else { return }
             Task { [weak self] in
                 guard let self else { return }
                 do {
+                    let priorityChapterIndex = self.readerController?.currentReaderChapterIndex
+                        ?? ReaderProgressStore.read(bookId: book.id)?.chapterIndex
+                        ?? 0
+                    if let localSnapshot = await EmbeddedConversionCoordinator.resumeLocalPlaybackIfAvailable(
+                        bookID: book.id,
+                        priorityChapterIndices: [priorityChapterIndex],
+                        player: self.player
+                    ) {
+                        if presentsFullPlayer {
+                            self.playerPresentation.showFullPlayer()
+                        }
+                        if localSnapshot.state == "finished" {
+                            self.library.recordConversion(jobId: localSnapshot.jobId, for: book.id)
+                            return
+                        }
+
+                        let url = try await self.library.openBookFileAsync(id: book.id)
+                        let snapshot = try await EmbeddedConversionCoordinator.continuePartialLocalPlayback(
+                            bookURL: url,
+                            bookID: book.id,
+                            requiresWiFi: !self.settings.allowCellularAudioConversion,
+                            priorityChapterIndices: [priorityChapterIndex],
+                            player: self.player
+                        )
+                        self.library.recordConversion(jobId: snapshot.jobId, for: book.id)
+                        return
+                    }
+
+                    let url = try await self.library.openBookFileAsync(id: book.id)
                     let snapshot = try await EmbeddedConversionCoordinator.stream(
                         bookURL: url,
                         bookID: book.id,
                         requiresWiFi: !self.settings.allowCellularAudioConversion,
-                        priorityChapterIndices: [
-                            self.readerController?.currentReaderChapterIndex
-                                ?? ReaderProgressStore.read(bookId: book.id)?.chapterIndex
-                                ?? 0
-                        ],
+                        priorityChapterIndices: [priorityChapterIndex],
                         player: self.player,
                         onStreamingStarted: { [weak self] in
                             if presentsFullPlayer {

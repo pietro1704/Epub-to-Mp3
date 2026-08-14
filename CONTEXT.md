@@ -35,8 +35,29 @@ explicitly downloaded. It is retained so playback remains available offline,
 including when a listener completes a book through progressive playback without
 requesting a separate full download.
 
-A chapter enters this cache when playback of its first streamed segment starts;
-its incoming segments are assembled into the chapter's final audio file.
+A chapter enters this cache when playback of its first streamed segment becomes
+audible; its incoming segments are assembled into the chapter's final audio
+file. If conversion is interrupted after that point, the durable-retention
+intent persists until a valid final file is available or the listener removes
+the download.
+
+## Warm book open
+
+Reopening an imported book whose reader content and playback state have already
+been prepared. A warm open restores readable content, the saved reading
+position, and usable audio controls without reparsing the source document or
+reconstructing the playback session.
+
+Warm opens persist across app relaunches until the listener removes the book.
+They are an Apple-client contract for iPhone, iPad, and macOS. The target is a
+perceptually instant open: readable content and audio controls within 200 ms.
+
+## Cold book open
+
+The first open of an imported book, when the source document has not yet been
+prepared for the reader. Cold-open work may continue in the background after
+the reader becomes usable, but it must establish the assets required by later
+warm opens.
 
 ## Navigation seek
 
@@ -56,3 +77,13 @@ A requested seek or chapter transition whose target audio is not yet available
 during progressive playback. The request is retained, the target becomes the
 highest conversion priority, and playback starts automatically when its first
 segment is available.
+
+## Chrome-stable reader viewport
+
+Showing or hiding reader chrome changes only the viewport height. It must preserve
+the reader's exact `contentOffset` for the active text surface; it must not round
+that offset to a paginated boundary or replace it from the paginated-offset cache.
+Those boundaries depend on viewport height and cause repeated chrome toggles to
+move the book backward or forward. During a chrome transition, the raw viewport
+offset is the source of truth. Pagination boundaries remain for explicit page turns
+only, and glyph-aware layout must ensure no partially rendered line is shown.

@@ -86,6 +86,10 @@ final class MacAppKitRootController: NSSplitViewController, NSToolbarDelegate {
         playerPresentation.objectWillChange
             .sink { [weak self] _ in self?.refreshFullPlayer() }
             .store(in: &cancellables)
+        restoreLocalPlaybackControls()
+        Task.detached(priority: .utility) {
+            LocalFulltextCache.prewarmRecentBooks()
+        }
         show(.library)
         refreshPlayerBar()
     }
@@ -93,6 +97,40 @@ final class MacAppKitRootController: NSSplitViewController, NSToolbarDelegate {
     override func viewDidAppear() {
         super.viewDidAppear()
         ensureApplicationFocus()
+    }
+
+    /// Rebuild the paused local queue after launch without reopening the
+    /// source EPUB or auto-starting audio.
+    private func restoreLocalPlaybackControls() {
+        let bookID = UserDefaults.standard.string(forKey: AudioPlayer.currentBookIDDefaultsKey)
+            ?? UserDefaults.standard.string(forKey: ReaderSessionState.currentlyReadingBookIDKey)
+        guard let bookID else { return }
+        let epubChapterIndex = UserDefaults.standard.object(
+            forKey: AudioPlayer.readerCurrentChapterIndexDefaultsKey
+        ) as? Int ?? 0
+        Task { [weak self] in
+            guard let self else { return }
+            let embeddedSnapshot = try? await LocalAudioArtifactStore.shared.playableSnapshot(
+                bookID: bookID,
+                engine: "edge",
+                voice: "auto",
+                language: nil
+            )
+            let remoteSnapshot = library.books.first(where: { $0.id == bookID })?.lastJobId
+                .flatMap(DownloadManager.localPlaybackSnapshot(jobId:))
+            guard let snapshot = embeddedSnapshot ?? remoteSnapshot else {
+                return
+            }
+            player.play(
+                snapshot: snapshot,
+                startingAt: AudioPlayer.restoredPlayableChapterOffset(
+                    snapshot: snapshot,
+                    persistedEpubChapterIndex: epubChapterIndex
+                ),
+                restoreAutoplay: false
+            )
+            refreshPlayerBar()
+        }
     }
 
     /// AppKit can leave the window visible but inactive after a build,
@@ -307,11 +345,33 @@ final class MacAppKitRootController: NSSplitViewController, NSToolbarDelegate {
     private func startPlaybackForCurrentBook() {
         playerPresentation.dismissFullPlayer()
         guard let bookID = UserDefaults.standard.string(forKey: ReaderSessionState.currentlyReadingBookIDKey),
-              let book = library.books.first(where: { $0.id == bookID }),
-              let url = try? library.openBookFile(id: bookID) else { return }
+              let book = library.books.first(where: { $0.id == bookID }) else { return }
         Task { [weak self] in
             guard let self else { return }
             do {
+                let priorityChapterIndex = ReaderProgressStore.read(bookId: book.id)?.chapterIndex ?? 0
+                if let localSnapshot = await EmbeddedConversionCoordinator.resumeLocalPlaybackIfAvailable(
+                    bookID: book.id,
+                    priorityChapterIndices: [priorityChapterIndex],
+                    player: player
+                ) {
+                    self.playerPresentation.showFullPlayer()
+                    if localSnapshot.state == "finished" {
+                        library.recordConversion(jobId: localSnapshot.jobId, for: book.id)
+                        return
+                    }
+                    let url = try await library.openBookFileAsync(id: book.id)
+                    let snapshot = try await EmbeddedConversionCoordinator.continuePartialLocalPlayback(
+                        bookURL: url,
+                        bookID: book.id,
+                        priorityChapterIndices: [priorityChapterIndex],
+                        player: player
+                    )
+                    library.recordConversion(jobId: snapshot.jobId, for: book.id)
+                    return
+                }
+
+                let url = try await library.openBookFileAsync(id: book.id)
                 let snapshot = try await EmbeddedConversionCoordinator.stream(
                     bookURL: url,
                     bookID: book.id,

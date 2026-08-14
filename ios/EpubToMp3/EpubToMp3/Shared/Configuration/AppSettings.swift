@@ -212,6 +212,10 @@ final class AppSettings: ObservableObject {
         // UI tests can pin the reader layout regardless of persisted state,
         // e.g. `-uiTestReaderLayout paginated` / `-uiTestReaderLayout scrolling`.
         let args = ProcessInfo.processInfo.arguments
+        if let i = args.firstIndex(of: "-uiTestReaderFontSize"), i + 1 < args.count,
+           let forcedSize = Int(args[i + 1]) {
+            self.readerFontSize = max(0, min(4, forcedSize))
+        }
         if let i = args.firstIndex(of: "-uiTestReaderLayout"), i + 1 < args.count,
            let forced = ReaderLayout(rawValue: args[i + 1]) {
             self.readerLayout = forced
@@ -222,6 +226,10 @@ final class AppSettings: ObservableObject {
         self.pageTurnStyle = PageTurnStyle(
             rawValue: defaults.string(forKey: "pageTurnStyle") ?? ""
         ) ?? .flip
+        if let i = args.firstIndex(of: "-uiTestPageTurnStyle"), i + 1 < args.count,
+           let forced = PageTurnStyle(rawValue: args[i + 1]) {
+            self.pageTurnStyle = forced
+        }
         self.readerLineSpacing = (defaults.object(forKey: "readerLineSpacing") as? Double) ?? 6
         // The reader keeps an 8pt minimum inside the safe-area content
         // boundary. This leaves a visible gutter without unnecessarily
@@ -235,6 +243,9 @@ final class AppSettings: ObservableObject {
             defaults.object(forKey: "readerOverrideFontFamily") as? Bool ?? false
         self.readerOverrideFontSize =
             defaults.object(forKey: "readerOverrideFontSize") as? Bool ?? false
+        if args.contains("-uiTestReaderOverrideFontSize") {
+            self.readerOverrideFontSize = true
+        }
         self.readerOverrideColours =
             defaults.object(forKey: "readerOverrideColours") as? Bool ?? false
         self.readerBoldOverride =

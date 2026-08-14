@@ -46,6 +46,7 @@ final class TocScreenController: UITableViewController {
     private var locallyDownloaded: Set<Int> = []
     private var localArtifactStates: [Int: LocalAudioArtifactStore.ArtifactState] = [:]
     private let notificationObservers = TocNotificationObserverBag()
+    private var hasScrolledToInitialFocus = false
 
     init(
         fulltext: EbookFulltext?,
@@ -99,6 +100,8 @@ final class TocScreenController: UITableViewController {
 
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
+        view.layoutIfNeeded()
+        scrollToInitialFocusIfNeeded()
         refreshDownloaded()
     }
 
@@ -139,6 +142,10 @@ final class TocScreenController: UITableViewController {
     override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
         let cell = tableView.dequeueReusableCell(withIdentifier: "Cell", for: indexPath)
         let row = rows[indexPath.row]
+        let isFocused = Self.initialFocusChapterIndex(
+            currentChapterIndex: currentChapterIndex,
+            readingChapterIndex: readingChapterIndex
+        ) == row.zeroBasedIndex
         var content = cell.defaultContentConfiguration()
         content.text = row.title
         var secondary: [String] = []
@@ -160,7 +167,13 @@ final class TocScreenController: UITableViewController {
         }
         content.secondaryText = secondary.joined(separator: " · ")
         content.secondaryTextProperties.numberOfLines = 2
+        content.textProperties.font = .preferredFont(forTextStyle: isFocused ? .headline : .body)
+        content.textProperties.color = isFocused ? view.tintColor : .label
+        content.secondaryTextProperties.color = isFocused ? view.tintColor : .secondaryLabel
         cell.contentConfiguration = content
+        var background = UIBackgroundConfiguration.listPlainCell()
+        background.backgroundColor = isFocused ? view.tintColor.withAlphaComponent(0.12) : .clear
+        cell.backgroundConfiguration = background
         cell.accessoryType = row.isCurrent ? .checkmark : .none
         cell.accessoryView = makeAccessoryView(for: row)
         cell.accessibilityLabel = row.title
@@ -174,6 +187,7 @@ final class TocScreenController: UITableViewController {
                 ?? (row.audioReady ? L10n.string("player.downloadChapter") : L10n.string("toc.textOnly")))
         cell.selectionStyle = .default
         cell.isUserInteractionEnabled = true
+        cell.accessibilityTraits = row.isCurrent ? [.button, .selected] : .button
         return cell
     }
 
@@ -228,6 +242,33 @@ final class TocScreenController: UITableViewController {
             return audioMatch || readingMatch
         }
         return readingMatch
+    }
+
+    /// The active audio chapter is the listener's immediate context. When
+    /// audio has not selected a chapter yet, preserve the reader's location.
+    static func initialFocusChapterIndex(
+        currentChapterIndex: Int,
+        readingChapterIndex: Int?
+    ) -> Int? {
+        currentChapterIndex >= 0 ? currentChapterIndex : readingChapterIndex
+    }
+
+    private func scrollToInitialFocusIfNeeded() {
+        guard !hasScrolledToInitialFocus,
+              let chapterIndex = Self.initialFocusChapterIndex(
+                  currentChapterIndex: currentChapterIndex,
+                  readingChapterIndex: readingChapterIndex
+              ),
+              let rowIndex = rows.firstIndex(where: { $0.zeroBasedIndex == chapterIndex }) else {
+            return
+        }
+        hasScrolledToInitialFocus = true
+        tableView.layoutIfNeeded()
+        tableView.scrollToRow(
+            at: IndexPath(row: rowIndex, section: 0),
+            at: .middle,
+            animated: false
+        )
     }
 
     /// A chapter-specific state always wins. A pending manifest entry has no

@@ -74,11 +74,15 @@ final class SafeAreaCaptureUITests: XCTestCase {
 
         let hidden = values()
         XCTAssertFalse(close.exists, "a host re-render must not restore navigation over immersive text")
-        XCTAssertGreaterThanOrEqual(hidden["firstY"] ?? 0, hidden["safeTop"] ?? 0,
-            "chrome hidden: the first glyph must clear the real safe area")
+        XCTAssertEqual(hidden["viewportTop"], hidden["safeTop"],
+            "chrome hidden: the text viewport must begin at the real safe area")
+        XCTAssertEqual(hidden["viewportBottom"], hidden["safeBottom"],
+            "chrome hidden: the text viewport must end at the home-indicator safe area")
         XCTAssertGreaterThan(hidden["first"] ?? 0, shown["first"] ?? -1,
             "next page must advance the visible character range")
         XCTAssertGreaterThan(hidden["total"] ?? 0, 1, "page count must remain valid after re-render")
+        XCTAssertNotEqual(hidden["viewportHeight"], shown["viewportHeight"],
+            "chrome transition must recalculate the paginated viewport")
     }
 
     private func attach(_ app: XCUIApplication, _ name: String) {

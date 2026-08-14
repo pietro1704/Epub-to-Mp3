@@ -286,6 +286,13 @@ final class LibraryScreenController: UIViewController, UIDocumentPickerDelegate,
     private func remove(book: BookEntity) {
         bookmarkStore.removeAll(for: book.id)
         LocalFulltextCache.evict(bookId: book.id)
+        EpubFontManager.evictCachedFonts(bookID: book.id)
+        Task {
+            try? await LocalAudioArtifactStore.shared.removeAllAudio(bookID: book.id)
+            if let jobID = book.lastJobId {
+                await DownloadManager.shared.clearDownloadedBook(jobId: jobID)
+            }
+        }
         if let jobId = book.lastJobId {
             FulltextStore.evict(jobId: jobId)
         }

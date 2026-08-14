@@ -161,30 +161,36 @@ final class PythonBridge: @unchecked Sendable {
 
         do {
             try await runner.callAsync(timeout: 15, label: "Python audio bootstrap") {
-                try PythonEmbed.shared.bootstrap()
-                guard PythonEmbed.shared.isBootstrapComplete else {
-                    throw PythonBridgeError.bootstrapFailed("interpreter did not finish bootstrapping")
-                }
-                guard PythonEmbed.shared.isParserAvailable else {
-                    let reason = PythonEmbed.shared.parserImportFailure ?? "unknown import failure"
-                    throw PythonBridgeError.bootstrapFailed(
-                        "canonical EPUB parser is unavailable: \(reason)"
-                    )
-                }
-                guard PythonEmbed.shared.edgeTransport != nil else {
-                    throw PythonBridgeError.bootstrapFailed("Swift Edge transport is unavailable")
-                }
+                do {
+                    try PythonEmbed.shared.bootstrap()
+                    guard PythonEmbed.shared.isBootstrapComplete else {
+                        throw PythonBridgeError.bootstrapFailed("interpreter did not finish bootstrapping")
+                    }
+                    guard PythonEmbed.shared.isParserAvailable else {
+                        let reason = PythonEmbed.shared.parserImportFailure ?? "unknown import failure"
+                        throw PythonBridgeError.bootstrapFailed(
+                            "canonical EPUB parser is unavailable: \(reason)"
+                        )
+                    }
+                    guard PythonEmbed.shared.edgeTransport != nil else {
+                        throw PythonBridgeError.bootstrapFailed("Swift Edge transport is unavailable")
+                    }
 
-                let entry = try PythonEmbed.shared.ensureIosEntrypoints()
-                let prepared = try self.prepareAudibleSpeechTextSync(
-                    "Embedded audio readiness probe.",
-                    entry: entry
-                )
-                let probe = try entry.prepare_chunks.throwing.dynamicallyCall(
-                    withArguments: [prepared, "auto", false]
-                )
-                guard let chunks = Array<String>(probe["chunks"]), !chunks.isEmpty else {
-                    throw PythonBridgeError.bootstrapFailed("canonical chunk preparation returned no chunks")
+                    let entry = try PythonEmbed.shared.ensureIosEntrypoints()
+                    let prepared = try self.prepareAudibleSpeechTextSync(
+                        "Embedded audio readiness probe.",
+                        entry: entry
+                    )
+                    let probe = try entry.prepare_chunks.throwing.dynamicallyCall(
+                        withArguments: [prepared, "auto", false]
+                    )
+                    guard let chunks = Array<String>(probe["chunks"]), !chunks.isEmpty else {
+                        throw PythonBridgeError.bootstrapFailed("canonical chunk preparation returned no chunks")
+                    }
+                } catch let error as PythonBridgeError {
+                    throw error
+                } catch {
+                    throw PythonBridgeError.bootstrapFailed("Python audio bootstrap: \(error)")
                 }
             }
         } catch is TimeoutError {
@@ -271,7 +277,18 @@ final class PythonBridge: @unchecked Sendable {
             )
         }
 
-        let pyResult = reader.parse_epub_to_dict(path, bookId)
+        // Calling PythonKit's dynamic member directly turns a Python
+        // exception into a Swift fatal error. Keep it throwing so
+        // `parseEpub(at:bookId:)` can use the native fallback parser for
+        // malformed or unusually structured EPUBs instead of crashing.
+        let pyResult: PythonObject
+        do {
+            pyResult = try reader.parse_epub_to_dict.throwing.dynamicallyCall(
+                withArguments: [path, bookId]
+            )
+        } catch {
+            throw PythonBridgeError.parseFailed("parse_epub_to_dict: \(error)")
+        }
 
         // Cross the Swift boundary as JSON. The Python helper already
         // emits keys that match `EbookFulltext`'s `Codable` shape; we
@@ -466,7 +483,14 @@ final class PythonBridge: @unchecked Sendable {
             )
         }
         let audibleText = try prepareAudibleSpeechTextSync(text, entry: entry)
-        let result = entry.prepare_chunks(audibleText, voice, streaming)
+        let result: PythonObject
+        do {
+            result = try entry.prepare_chunks.throwing.dynamicallyCall(
+                withArguments: [audibleText, voice, streaming]
+            )
+        } catch {
+            throw PythonBridgeError.convertFailed("prepare_chunks: \(error)")
+        }
         guard let chunkList = Array<String>(result["chunks"]) else {
             throw PythonBridgeError.decodeFailed("prepare_chunks: can't decode chunks")
         }

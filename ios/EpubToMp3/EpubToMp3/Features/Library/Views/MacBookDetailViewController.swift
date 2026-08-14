@@ -148,13 +148,32 @@ final class MacBookDetailViewController: NSViewController {
     /// provider use the same API/SSE contract as iOS.
     @objc private func tapListen() {
         if settings.useEmbeddedRuntime && !book.fileType.requiresServerConversion {
-            guard let url = try? library.openBookFile(id: book.id) else {
-                onShowJobs()
-                return
-            }
             Task { [weak self] in
                 guard let self else { return }
                 do {
+                    let priorityChapterIndex = ReaderProgressStore.read(bookId: self.book.id)?.chapterIndex ?? 0
+                    if let localSnapshot = await EmbeddedConversionCoordinator.resumeLocalPlaybackIfAvailable(
+                        bookID: self.book.id,
+                        priorityChapterIndices: [priorityChapterIndex],
+                        player: self.player
+                    ) {
+                        self.playerPresentation.showFullPlayer()
+                        if localSnapshot.state == "finished" {
+                            self.library.recordConversion(jobId: localSnapshot.jobId, for: self.book.id)
+                            return
+                        }
+                        let url = try await self.library.openBookFileAsync(id: self.book.id)
+                        let snapshot = try await EmbeddedConversionCoordinator.continuePartialLocalPlayback(
+                            bookURL: url,
+                            bookID: self.book.id,
+                            priorityChapterIndices: [priorityChapterIndex],
+                            player: self.player
+                        )
+                        self.library.recordConversion(jobId: snapshot.jobId, for: self.book.id)
+                        return
+                    }
+
+                    let url = try await self.library.openBookFileAsync(id: self.book.id)
                     let snapshot = try await EmbeddedConversionCoordinator.stream(
                         bookURL: url,
                         bookID: book.id,

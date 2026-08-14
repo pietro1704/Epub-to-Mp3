@@ -79,6 +79,95 @@ enum EmbeddedConversionCoordinator {
 
     @MainActor private static var activeStream: StreamLease?
 
+    /// Starts the requested chapter from the canonical local artifact store
+    /// without resolving the EPUB bookmark or booting Python. `nil` means the
+    /// requested chapter is not local and the regular conversion path should
+    /// run. A partial snapshot keeps the player ready while its missing
+    /// chapters continue converting in the background.
+    @MainActor
+    static func resumeLocalPlaybackIfAvailable(
+        bookID: String,
+        engine: String = "edge",
+        voice: String = "auto",
+        language: String? = nil,
+        priorityChapterIndices: [Int],
+        autoPlay: Bool = true,
+        player: AudioPlayer
+    ) async -> JobSnapshot? {
+        guard let snapshot = try? await LocalAudioArtifactStore.shared.playableSnapshot(
+            bookID: bookID,
+            engine: engine,
+            voice: voice,
+            language: language
+        ), let startingAt = snapshot.playableChapters.firstIndex(where: {
+            priorityChapterIndices.contains($0.index)
+        }) else {
+            return nil
+        }
+        player.stop()
+        player.clearConversionState()
+        player.isConverting = snapshot.state == "partial"
+        player.play(snapshot: snapshot, startingAt: startingAt)
+        if autoPlay { player.resume() }
+        return snapshot
+    }
+
+    /// Continues a partially local audiobook without replacing the queue that
+    /// is already playing. Each generated chapter is projected from the
+    /// canonical artifact manifest and appended by `AudioPlayer`.
+    @MainActor
+    static func continuePartialLocalPlayback(
+        bookURL: URL,
+        bookID: String,
+        engine: String = "edge",
+        voice: String = "auto",
+        language: String? = nil,
+        clearCache: Bool = false,
+        forceReprocess: Bool = false,
+        maxPerformance: Bool = false,
+        requiresWiFi: Bool = true,
+        priorityChapterIndices: [Int],
+        requestedChapterIndices: [Int]? = nil,
+        player: AudioPlayer,
+        resumeRequest: LocalAudioConversionScheduler.ResumeRequest? = nil,
+        onChapterAvailable: @MainActor @escaping (JobSnapshot.Chapter) -> Void = { _ in }
+    ) async throws -> JobSnapshot {
+        defer { player.isConverting = false }
+        let completed = try await stream(
+            bookURL: bookURL,
+            bookID: bookID,
+            engine: engine,
+            voice: voice,
+            language: language,
+            clearCache: clearCache,
+            forceReprocess: forceReprocess,
+            maxPerformance: maxPerformance,
+            autoPlay: false,
+            requiresWiFi: requiresWiFi,
+            priorityChapterIndices: priorityChapterIndices,
+            requestedChapterIndices: requestedChapterIndices,
+            drivesPlayer: false,
+            player: player,
+            resumeRequest: resumeRequest,
+            onStreamingStarted: {},
+            onChapterAvailable: { chapter in
+                onChapterAvailable(chapter)
+                Task { @MainActor in
+                    if let refreshed = try? await LocalAudioArtifactStore.shared.playableSnapshot(
+                        bookID: bookID,
+                        engine: engine,
+                        voice: voice,
+                        language: language
+                    ) {
+                        player.updateSnapshot(refreshed)
+                    }
+                }
+            }
+        )
+        player.updateSnapshot(completed)
+        return completed
+    }
+
     @MainActor
     static func stream(
         bookURL: URL,
@@ -99,6 +188,48 @@ enum EmbeddedConversionCoordinator {
         onStreamingStarted: @MainActor @escaping () -> Void = {},
         onChapterAvailable: @MainActor @escaping (JobSnapshot.Chapter) -> Void = { _ in }
     ) async throws -> JobSnapshot {
+        // Do not make a listener wait for Python startup, fulltext recovery,
+        // or the remaining conversion when the chapter they asked for already
+        // has a canonical local MP3. Start that chapter immediately, then run
+        // the unfinished work as a background stream and append each newly
+        // available artifact to the same player queue.
+        if drivesPlayer,
+           !clearCache,
+           !forceReprocess,
+           let locallyPlayable = await resumeLocalPlaybackIfAvailable(
+                bookID: bookID,
+                engine: engine,
+                voice: voice,
+                language: language,
+                priorityChapterIndices: priorityChapterIndices,
+                autoPlay: autoPlay,
+                player: player
+           ) {
+            onStreamingStarted()
+            guard locallyPlayable.state == "partial" else {
+                return locallyPlayable
+            }
+
+            return try await continuePartialLocalPlayback(
+                bookURL: bookURL,
+                bookID: bookID,
+                engine: engine,
+                voice: voice,
+                language: language,
+                clearCache: clearCache,
+                forceReprocess: forceReprocess,
+                maxPerformance: maxPerformance,
+                requiresWiFi: requiresWiFi,
+                priorityChapterIndices: priorityChapterIndices,
+                requestedChapterIndices: requestedChapterIndices,
+                player: player,
+                resumeRequest: resumeRequest,
+                onChapterAvailable: { chapter in
+                    onChapterAvailable(chapter)
+                }
+            )
+        }
+
         // A whole-book download may already be converting this same book.
         // Do not cancel it or make the user wait for every remaining chapter:
         // at the next chapter boundary we attach the reader's player and move

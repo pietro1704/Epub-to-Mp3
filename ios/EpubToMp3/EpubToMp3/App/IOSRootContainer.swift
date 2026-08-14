@@ -59,6 +59,7 @@ final class IOSRootContainerController: UIViewController {
     private var overlayStateInitialized = false
     private var readerBottomChromeInitialized = false
     private var readerBottomChromeHidden = false
+    private var readerChromeLayoutGeneration = 0
 
     override var prefersStatusBarHidden: Bool {
         Self.shouldHideStatusBar(immersiveReaderMode: isImmersiveReaderMode)
@@ -66,8 +67,12 @@ final class IOSRootContainerController: UIViewController {
 
     override var preferredStatusBarUpdateAnimation: UIStatusBarAnimation { .fade }
 
-    static func shouldHideStatusBar(immersiveReaderMode: Bool) -> Bool {
-        immersiveReaderMode
+    static func shouldHideStatusBar(immersiveReaderMode _: Bool) -> Bool {
+        // Fullscreen reader mode hides app chrome, not system safe-area
+        // protection. Keeping the status bar visible gives the child reader
+        // a stable top safe area and prevents text from being clipped under
+        // the notch during chrome transitions.
+        false
     }
 
     init(
@@ -129,6 +134,10 @@ final class IOSRootContainerController: UIViewController {
         super.viewDidLoad()
         view.backgroundColor = .systemBackground
         hydrateCachedChapterTitles()
+        restoreLocalPlaybackControls()
+        Task.detached(priority: .utility) {
+            LocalFulltextCache.prewarmRecentBooks()
+        }
         embed(shellController)
         embed(readerController)
         embed(miniPlayerController)
@@ -243,26 +252,34 @@ final class IOSRootContainerController: UIViewController {
         // only from sight. This gives the text surface the reclaimed height
         // while the reader preserves its visible character anchor.
         let hidesBottomChrome = isReaderLoading || isImmersiveReaderMode
-        readerBottomToMiniPlayer.isActive = !hidesBottomChrome
-        readerBottomToRoot.isActive = hidesBottomChrome
+        // Switching these one constraint at a time briefly pins the reader
+        // both to the root bottom and to the mini player's top. Because the
+        // mini player has a required positive height, UIKit must break a
+        // constraint during that transient layout pass. Swap the vertical
+        // owner atomically instead.
+        NSLayoutConstraint.deactivate([readerBottomToMiniPlayer, readerBottomToRoot])
+        (hidesBottomChrome ? readerBottomToRoot : readerBottomToMiniPlayer).isActive = true
 
         let changed = !readerBottomChromeInitialized || readerBottomChromeHidden != hidesBottomChrome
         readerBottomChromeInitialized = true
         readerBottomChromeHidden = hidesBottomChrome
         guard changed else { return }
+        readerChromeLayoutGeneration &+= 1
+        let generation = readerChromeLayoutGeneration
         let applyLayout = {
             self.view.layoutIfNeeded()
         }
-        if view.window != nil, !isReaderLoading {
-            UIView.animate(
-                withDuration: ReaderChromeTransitionMetrics.duration,
-                delay: 0,
-                options: ReaderChromeTransitionMetrics.animationOptions,
-                animations: applyLayout
-            )
-        } else {
-            UIView.performWithoutAnimation(applyLayout)
+        let finishViewportTransition = {
+            guard generation == self.readerChromeLayoutGeneration else { return }
+            self.readerController.completeReaderChromeLayoutTransition()
         }
+        // A frozen scroll snapshot has no safe way to shrink with this
+        // viewport: clipping it produces a visibly cut text line. Commit the
+        // reader geometry atomically, then let TextKit render one final page.
+        // Chrome may fade independently, but the text viewport never passes
+        // through an intermediate height.
+        UIView.performWithoutAnimation(applyLayout)
+        finishViewportTransition()
     }
 
     private func showFullPlayer() {
@@ -300,8 +317,51 @@ final class IOSRootContainerController: UIViewController {
     private func hydrateCachedChapterTitles() {
         let bookID = UserDefaults.standard.string(forKey: ReaderSessionState.currentlyReadingBookIDKey)
             ?? UserDefaults.standard.string(forKey: AudioPlayer.currentBookIDDefaultsKey)
-        guard let bookID, let fulltext = LocalFulltextCache.read(bookId: bookID) else { return }
-        player.updateReaderChapterTitles(fulltext.chapters)
+        guard let bookID else { return }
+        Task { [weak self] in
+            let fulltext = await Task.detached(priority: .utility) {
+                LocalFulltextCache.read(bookId: bookID)
+            }.value
+            guard let fulltext else { return }
+            self?.player.updateReaderChapterTitles(fulltext.chapters)
+        }
+    }
+
+    /// Rebuilds a paused local queue from the durable artifact manifest. This
+    /// makes the mini player, expanded player, widget and lock-screen controls
+    /// useful immediately after a relaunch without restarting conversion or
+    /// claiming the user's audio session.
+    private func restoreLocalPlaybackControls() {
+        let bookID = UserDefaults.standard.string(forKey: AudioPlayer.currentBookIDDefaultsKey)
+            ?? UserDefaults.standard.string(forKey: ReaderSessionState.currentlyReadingBookIDKey)
+        guard let bookID else { return }
+        let epubChapterIndex = UserDefaults.standard.object(
+            forKey: AudioPlayer.readerCurrentChapterIndexDefaultsKey
+        ) as? Int ?? 0
+        Task { [weak self] in
+            guard let self else { return }
+            let embeddedSnapshot = try? await LocalAudioArtifactStore.shared.playableSnapshot(
+                bookID: bookID,
+                engine: "edge",
+                voice: "auto",
+                language: nil
+            )
+            let remoteSnapshot = library.books.first(where: { $0.id == bookID })?.lastJobId
+                .flatMap(DownloadManager.localPlaybackSnapshot(jobId:))
+            guard let snapshot = embeddedSnapshot ?? remoteSnapshot else {
+                return
+            }
+            let queueOffset = AudioPlayer.restoredPlayableChapterOffset(
+                snapshot: snapshot,
+                persistedEpubChapterIndex: epubChapterIndex
+            )
+            player.play(
+                snapshot: snapshot,
+                startingAt: queueOffset,
+                restoreAutoplay: false
+            )
+            refreshOverlayState()
+        }
     }
 
     func refreshOverlayState() {

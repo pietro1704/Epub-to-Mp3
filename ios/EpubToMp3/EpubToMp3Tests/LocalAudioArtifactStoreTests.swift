@@ -369,6 +369,50 @@ final class LocalAudioArtifactStoreTests: XCTestCase {
         XCTAssertEqual(snapshot.playableChapters.map(\.displayTitle), ["First", "Second"])
     }
 
+    func testPlayableSnapshotRestoresLocalChaptersBeforeTheBookIsComplete() async throws {
+        let store = LocalAudioArtifactStore(root: root)
+        try await store.prepare(
+            bookID: "book-id",
+            bookTitle: "Book",
+            author: "Author",
+            chapters: [.init(index: 0, title: "First"), .init(index: 1, title: "Second")]
+        )
+        let firstURL = try await store.canonicalURL(bookID: "book-id", chapterIndex: 0)
+        try Data(repeating: 0xD1, count: 32).write(to: firstURL)
+        try await store.markAvailable(bookID: "book-id", chapterIndex: 0)
+
+        let snapshot = try await store.playableSnapshot(
+            bookID: "book-id",
+            engine: "edge",
+            voice: "voice",
+            language: "en"
+        )
+
+        XCTAssertEqual(snapshot?.state, "partial")
+        XCTAssertEqual(snapshot?.chaptersTotal, 2)
+        XCTAssertEqual(snapshot?.chaptersCompleted, 1)
+        XCTAssertEqual(snapshot?.playableChapters.map(\.index), [0])
+    }
+
+    func testRemovingBookAudioDeletesItsManifestAndChapters() async throws {
+        let store = LocalAudioArtifactStore(root: root)
+        try await store.prepare(
+            bookID: "book-id",
+            bookTitle: "Book",
+            author: nil,
+            chapters: [.init(index: 0, title: "First")]
+        )
+        let chapterURL = try await store.canonicalURL(bookID: "book-id", chapterIndex: 0)
+        try Data(repeating: 0xD1, count: 32).write(to: chapterURL)
+        try await store.markAvailable(bookID: "book-id", chapterIndex: 0)
+
+        try await store.removeAllAudio(bookID: "book-id")
+
+        let manifest = try await store.manifest(bookID: "book-id")
+        XCTAssertNil(manifest)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: chapterURL.path))
+    }
+
     func testCanonicalURLStaysInsideTheStoreForUnsafeBookIdentifiers() async throws {
         let store = LocalAudioArtifactStore(root: root)
         let bookID = "../Book / with symbols"

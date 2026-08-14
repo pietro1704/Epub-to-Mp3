@@ -18,6 +18,7 @@ enum ReaderPaginatedTextLayout {
         layoutManager: NSLayoutManager,
         textContainer: NSTextContainer,
         verticalInset: CGFloat,
+        topInset: CGFloat = 0,
         pageHeight: CGFloat
     ) -> CGFloat {
         let currentSize = textContainer.size
@@ -26,8 +27,25 @@ enum ReaderPaginatedTextLayout {
             height: .greatestFiniteMagnitude
         )
         layoutManager.ensureLayout(for: textContainer)
-        let textHeight = layoutManager.usedRect(for: textContainer).height
-        return max(pageHeight, ceil(textHeight + verticalInset))
+        let glyphRange = layoutManager.glyphRange(for: textContainer)
+        var lastLineStart: CGFloat = 0
+        var lastLineBottom: CGFloat = 0
+        layoutManager.enumerateLineFragments(forGlyphRange: glyphRange) { lineRect, _, _, lineGlyphRange, _ in
+            let glyphRect = layoutManager.boundingRect(forGlyphRange: lineGlyphRange, in: textContainer)
+            let protectedRect = lineRect.union(glyphRect)
+            lastLineStart = max(lastLineStart, protectedRect.minY)
+            lastLineBottom = max(lastLineBottom, protectedRect.maxY)
+        }
+        // A final page may start at the last complete line fragment. Reserve
+        // the remaining viewport as trailing whitespace so UIKit never clamps
+        // that offset into the middle of the preceding line.
+        let naturalHeight = ceil(lastLineBottom + verticalInset)
+        // TextKit line coordinates start inside UITextView's top inset,
+        // whereas UIScrollView offsets start at the view's content edge.
+        // Reserve that translation for the final page too, otherwise UIKit
+        // clamps its final offset into the last rendered line.
+        let boundaryHeight = ceil(lastLineStart + topInset + pageHeight)
+        return max(pageHeight, max(naturalHeight, boundaryHeight))
     }
 
     /// Scroll offsets that begin each viewport on a full TextKit line
@@ -37,6 +55,7 @@ enum ReaderPaginatedTextLayout {
         layoutManager: NSLayoutManager,
         textContainer: NSTextContainer,
         verticalInset: CGFloat,
+        topInset: CGFloat = 0,
         pageHeight: CGFloat
     ) -> [CGFloat] {
         guard pageHeight > verticalInset else { return [0] }
@@ -45,22 +64,30 @@ enum ReaderPaginatedTextLayout {
         guard glyphRange.length > 0 else { return [0] }
 
         var lines: [CGRect] = []
-        layoutManager.enumerateLineFragments(forGlyphRange: glyphRange) { _, usedRect, _, _, _ in
-            guard usedRect.height > 0 else { return }
-            lines.append(usedRect)
+        layoutManager.enumerateLineFragments(forGlyphRange: glyphRange) { lineRect, _, _, lineGlyphRange, _ in
+            // `usedRect` excludes part of a line's typographic leading for
+            // some fonts. Paging from it can put the next line a few points
+            // above the viewport, visibly cutting its glyphs. Page against
+            // the complete line fragment instead.
+            let glyphRect = layoutManager.boundingRect(forGlyphRange: lineGlyphRange, in: textContainer)
+            let protectedRect = lineRect.union(glyphRect)
+            guard protectedRect.height > 0 else { return }
+            lines.append(protectedRect)
         }
         guard !lines.isEmpty else { return [0] }
 
+        // Reserve the text view's top/bottom padding when choosing the last
+        // line for a page so the next line does not enter the bottom inset.
+        let resolvedTopInset = min(max(0, topInset), verticalInset)
         let usableHeight = pageHeight - verticalInset
-        let contentHeight = ceil(layoutManager.usedRect(for: textContainer).height + verticalInset)
-        let maximumScrollOffset = max(0, contentHeight - pageHeight)
         var offsets: [CGFloat] = [0]
         var pageStart: CGFloat = 0
         var firstLine = 0
         let epsilon: CGFloat = 0.5
 
         while firstLine < lines.count {
-            while firstLine < lines.count, lines[firstLine].maxY <= pageStart + epsilon {
+            let visibleTextStart = pageStart - resolvedTopInset
+            while firstLine < lines.count, lines[firstLine].maxY <= visibleTextStart + epsilon {
                 firstLine += 1
             }
             guard firstLine < lines.count else { break }
@@ -72,17 +99,14 @@ enum ReaderPaginatedTextLayout {
             }
             guard nextLine < lines.count else { break }
 
-            let nextOffset = lines[nextLine].minY
-            // The outer scroll view cannot go beyond its content height. Keep
-            // a final reachable offset instead of publishing an offset that
-            // UIKit will silently clamp, which used to make the final reader
-            // page appear as a blank or a repeated earlier page.
-            if nextOffset >= maximumScrollOffset - epsilon {
-                if maximumScrollOffset > pageStart + epsilon {
-                    offsets.append(maximumScrollOffset)
-                }
-                break
-            }
+            // Convert from TextKit's container coordinate to the scroll
+            // coordinate. Without the top inset here, the preceding line
+            // remains partially visible at the top and a line is cut at the
+            // bottom of each subsequent page.
+            let nextOffset = lines[nextLine].minY + resolvedTopInset
+            // Every page begins at a complete line. Do not replace the final
+            // boundary with an arbitrary maximum scroll offset: that can land
+            // inside a line fragment and visibly crop its glyphs.
             // A single oversized accessibility line cannot fit into one
             // viewport. Advance normally in that exceptional case rather
             // than looping forever or skipping its text.

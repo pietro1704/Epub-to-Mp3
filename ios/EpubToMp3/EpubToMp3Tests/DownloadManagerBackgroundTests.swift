@@ -147,6 +147,11 @@ final class DownloadManagerBackgroundTests: XCTestCase {
             expectedChapterIndices: [0, 4]
         ))
 
+        let restored = try XCTUnwrap(DownloadManager.localPlaybackSnapshot(jobId: jobId))
+        XCTAssertEqual(restored.state, "finished")
+        XCTAssertEqual(restored.playableChapters.map(\.index), [0, 4])
+        XCTAssertTrue(restored.playableChapters.allSatisfy { $0.downloadUrl?.hasPrefix("file:") == true })
+
         let localURL = try XCTUnwrap(DownloadManager.localAudioURL(jobId: jobId, chapterIndex: 4))
         let route = PlaybackRouter.route(
             chapter: snapshot.playableChapters[1],

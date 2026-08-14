@@ -5,6 +5,28 @@ import UniformTypeIdentifiers
 
 @MainActor
 final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate, UIScrollViewDelegate, UITextViewDelegate, UIGestureRecognizerDelegate {
+    /// The current rendered chapter for each of the two warm books. NSCache
+    /// releases these automatically under memory pressure, while avoiding a
+    /// repeat HTML/CSS render when the listener returns to a book in-process.
+    private final class WarmRenderedChapter: NSObject {
+        let chapterIndex: Int
+        let settings: ReaderTextSettings
+        let attributedText: NSAttributedString
+
+        init(chapterIndex: Int, settings: ReaderTextSettings, attributedText: NSAttributedString) {
+            self.chapterIndex = chapterIndex
+            self.settings = settings
+            self.attributedText = attributedText
+        }
+    }
+
+    private static let warmRenderedChapters: NSCache<NSString, WarmRenderedChapter> = {
+        let cache = NSCache<NSString, WarmRenderedChapter>()
+        cache.countLimit = 2
+        cache.name = "com.pietrocode.epubtomp3.warm-reader-chapters"
+        return cache
+    }()
+
     private var book: BookEntity
     private let library: LibraryStore
     private let settings: AppSettings
@@ -14,6 +36,7 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
     private let comicPageImageView = UIImageView()
     private let scrollView = UIScrollView()
     private let pageIndicator = UILabel()
+    private let pageOverflowGuard = UIView()
     private let flickerChapterLabel = UILabel()
     private let flickerSummaryLabel = UILabel()
     private let flickerResetButton = UIButton(type: .system)
@@ -86,8 +109,33 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
     private struct ReadingAnchor {
         let offsetFraction: CGFloat
         let characterOffset: Int?
+        /// The chrome transition only changes viewport height. Preserve its
+        /// exact vertical origin instead of reinterpreting it as a different
+        /// paginated boundary.
+        let viewportOffset: CGFloat?
+
+        init(offsetFraction: CGFloat, characterOffset: Int?, viewportOffset: CGFloat? = nil) {
+            self.offsetFraction = offsetFraction
+            self.characterOffset = characterOffset
+            self.viewportOffset = viewportOffset
+        }
     }
+
+    /// A paginated page boundary depends on the complete viewport geometry.
+    /// Keep the exact offset a reader saw for each chrome state so an
+    /// on/off round trip returns to that same page instead of re-rounding the
+    /// passage to a nearby page boundary on every reflow.
+    private struct ViewportAnchorKey: Hashable {
+        let chromeHidden: Bool
+        let width: Int
+        let height: Int
+    }
+
     private var pendingViewportAnchor: ReadingAnchor?
+    private var rememberedViewportOffsets: [ViewportAnchorKey: (character: Int, offset: CGFloat)] = [:]
+    /// Page offsets are invalid while the host is animating a chrome-driven
+    /// viewport resize. Serializing input avoids splitting TextKit lines.
+    private var isViewportTransitioning = false
     private var lastInlineImageViewportWidth: CGFloat?
     private var pdfView: PDFView?
     /// Guards against re-seeking the scroll position on every manual
@@ -221,6 +269,10 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
         // value map directly to the visible reading column.
         textView.textContainerInset = UIEdgeInsets(top: 20, left: 0, bottom: 32, right: 0)
         textView.textContainer.lineFragmentPadding = 0
+        // The viewport is constrained to the safe area explicitly. Automatic
+        // scroll-view adjustment applies a second inset during chrome
+        // transitions and can place the first line above that safe area.
+        scrollView.contentInsetAdjustmentBehavior = .never
         scrollView.delegate = self
         pageTap.delegate = self
         pageTap.cancelsTouchesInView = false
@@ -274,6 +326,12 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
             scrollView.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor),
         ])
         scrollView.accessibilityIdentifier = "reader.viewport"
+        pageOverflowGuard.isUserInteractionEnabled = false
+        pageOverflowGuard.accessibilityElementsHidden = true
+        pageOverflowGuard.backgroundColor = settings.readerTheme.previewColors.background
+        pageOverflowGuard.isHidden = true
+        view.addSubview(pageOverflowGuard)
+        view.bringSubviewToFront(pageIndicator)
         scrollTopToSafeArea = scrollView.topAnchor.constraint(
             equalTo: view.safeAreaLayoutGuide.topAnchor,
             constant: 8
@@ -396,6 +454,10 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
         loadingStack.translatesAutoresizingMaskIntoConstraints = false
         loadingContainer.translatesAutoresizingMaskIntoConstraints = false
         loadingContainer.backgroundColor = .systemBackground
+        // A process-warm payload is rendered before `loadBook()` presents a
+        // loading state. Keep the overlay hidden by default so that first
+        // frame is the saved chapter rather than a flash of the cover.
+        loadingContainer.isHidden = true
         loadingContainer.addSubview(loadingStack)
         loadingContainer.accessibilityIdentifier = "reader.loadingOverlay"
         view.addSubview(loadingContainer)
@@ -501,6 +563,12 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
         textView.textContainer.heightTracksTextView = false
         paginatedTextHeightConstraint.isActive = !isDisplayingImageChapter && configuration.usesPaginatedTextHeight
         scrollingTextHeightConstraint.isActive = !isDisplayingImageChapter && !configuration.usesPaginatedTextHeight
+        // Text container padding already provides the reading gutter. Keep
+        // the scroll viewport on the safe-area edge in both chrome states so
+        // the first line can never be clipped by an outer 8pt gap.
+        scrollTopToSafeArea.constant = 0
+        scrollBottomToPageIndicator.constant = -8
+        scrollBottomToSafeArea.constant = chromeHidden ? 0 : -8
         NSLayoutConstraint.deactivate([
             scrollTopToSafeArea,
             scrollTopToRoot,
@@ -580,8 +648,10 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
                 }
             }
             updatePageIndicator()
+            updatePageOverflowGuard()
             updatePaginationProbe()
         } else {
+            pageOverflowGuard.isHidden = true
             let viewportSize = scrollView.bounds.size
             if viewportSize.width > 0, viewportSize.height > 0,
                (needsTextLayoutRefresh || viewportSize != lastScrollingViewportSize) {
@@ -653,6 +723,7 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
 
     private func persistReadingProgress() {
         let anchor = captureReadingAnchor()
+        rememberViewportOffset(for: anchor)
         ReaderProgressStore.save(
             bookId: book.id,
             chapterIndex: selectedChapter,
@@ -663,34 +734,127 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
 
     private func captureReadingAnchor() -> ReadingAnchor {
         let scrollable = max(scrollView.contentSize.height - scrollView.bounds.height, 1)
-        let fraction = min(max(scrollView.contentOffset.y / scrollable, 0), 1)
-        let characterOffset: Int? = {
+        // A chrome restore can intentionally start on a TextKit line that is
+        // not one of the global page-turn boundaries. Replacing that visible
+        // offset with the preceding global boundary makes every subsequent
+        // chrome tap capture an earlier passage and progressively walk the
+        // reader backwards.
+        let visibleOffset = scrollView.contentOffset.y
+        let fraction = min(max(visibleOffset / scrollable, 0), 1)
+        let characterOffset: Int? = { () -> Int? in
             guard textView.attributedText.length > 0 else { return nil }
-            let point = CGPoint(x: textView.textContainerInset.left + 1,
-                                y: scrollView.contentOffset.y + textView.textContainerInset.top + 1)
-            let glyph = textView.layoutManager.glyphIndex(for: point, in: textView.textContainer)
-            return textView.layoutManager.characterIndexForGlyph(at: glyph)
+            if isPaginatedMode {
+                // Capture the first complete line at or below the actual
+                // viewport edge. The viewport may have a line-based restore
+                // offset rather than a global page-turn boundary.
+                let fullRange = textView.layoutManager.glyphRange(for: textView.textContainer)
+                var character: Int?
+                let epsilon: CGFloat = 0.5
+                textView.layoutManager.enumerateLineFragments(forGlyphRange: fullRange) {
+                    lineRect, _, _, glyphRange, stop in
+                    guard glyphRange.length > 0,
+                          lineRect.minY >= visibleOffset - self.textView.textContainerInset.top - epsilon else { return }
+                    character = self.textView.layoutManager.characterIndexForGlyph(at: glyphRange.location)
+                    stop.pointee = true
+                }
+                return character
+            }
+            let visibleRect = CGRect(
+                x: 0,
+                y: max(0, visibleOffset),
+                width: textView.textContainer.size.width,
+                height: scrollView.bounds.height
+            )
+            let glyphRange = textView.layoutManager.glyphRange(
+                forBoundingRect: visibleRect,
+                in: textView.textContainer
+            )
+            guard glyphRange.length > 0 else { return nil }
+            return textView.layoutManager.characterIndexForGlyph(at: glyphRange.location)
         }()
-        return ReadingAnchor(offsetFraction: fraction, characterOffset: characterOffset)
+        return ReadingAnchor(
+            offsetFraction: fraction,
+            characterOffset: characterOffset,
+            viewportOffset: visibleOffset
+        )
     }
 
-    private func restoreReadingAnchor(_ anchor: ReadingAnchor) {
+    private func restoreReadingAnchor(_ anchor: ReadingAnchor, preservingViewportOffset: Bool = false) {
         let scrollable = max(scrollView.contentSize.height - scrollView.bounds.height, 0)
         guard scrollable > 0 else { return }
-        let target: CGFloat
-        if let characterOffset = anchor.characterOffset, textView.attributedText.length > 0 {
+        let candidate: CGFloat
+        if preservingViewportOffset, let viewportOffset = anchor.viewportOffset {
+            candidate = viewportOffset
+        } else if let characterOffset = anchor.characterOffset, textView.attributedText.length > 0 {
             let safeOffset = min(characterOffset, textView.attributedText.length - 1)
             let glyph = textView.layoutManager.glyphIndexForCharacter(at: safeOffset)
-            let rect = textView.layoutManager.boundingRect(
-                forGlyphRange: NSRange(location: glyph, length: 1), in: textView.textContainer
+            let lineRect = textView.layoutManager.lineFragmentRect(
+                forGlyphAt: glyph,
+                effectiveRange: nil
             )
-            let glyphOffset = max(0, rect.minY - textView.textContainerInset.top)
-            target = isPaginatedMode ? pageOffset(for: pageNumber(at: glyphOffset)) : glyphOffset
+            // A glyph's bounding box excludes the line's leading. Restoring
+            // to that smaller rect leaves the top of the first rendered line
+            // above the viewport after a chrome reflow. Use the complete
+            // TextKit line fragment, preserving the passage without clipping.
+            candidate = max(0, lineRect.minY + textView.textContainerInset.top)
         } else {
-            let fractionOffset = anchor.offsetFraction * scrollable
-            target = isPaginatedMode ? pageOffset(for: pageNumber(at: fractionOffset)) : fractionOffset
+            candidate = anchor.offsetFraction * scrollable
         }
-        scrollView.setContentOffset(CGPoint(x: 0, y: min(max(0, target), scrollable)), animated: false)
+        // A saved glyph anchor is not necessarily a valid paginated page
+        // boundary. Snap it to the layout-generated page start; restoring to
+        // an arbitrary line only protects the top edge and can crop the last
+        // visible line after chrome or safe-area reflow.
+        let target: CGFloat
+        if !preservingViewportOffset,
+           isPaginatedMode,
+           let characterOffset = anchor.characterOffset,
+           let remembered = rememberedViewportOffsets[viewportAnchorKey()],
+           remembered.character == characterOffset {
+            // This exact chrome geometry has already displayed this passage.
+            // Reusing its measured page start makes a chrome round trip
+            // perfectly reversible instead of progressively rounding back.
+            target = remembered.offset
+        } else {
+            // The visible TextKit line is the reading anchor. Global page
+            // boundaries differ between chrome geometries, so rounding this
+            // line down moves backwards and rounding it up moves forwards on
+            // every toggle. Keep the line itself at the viewport top; the
+            // glyph-aware overflow guard suppresses only an incomplete final
+            // line, never the anchored passage.
+            target = candidate
+        }
+        let appliedOffset = min(max(0, target), scrollable)
+        scrollView.setContentOffset(CGPoint(x: 0, y: appliedOffset), animated: false)
+        // `target` may be the preceding canonical boundary when a line that
+        // was first in the old viewport no longer starts a page in the new
+        // geometry. Cache the anchor that is actually on screen, never the
+        // requested one: associating the old character with that preceding
+        // offset poisons later chrome round trips and walks the reader back.
+        rememberViewportOffset(for: captureReadingAnchor())
+        // `setContentOffset` does not reliably produce a layout pass. Refresh
+        // the XCTest-only probe after the restore so it reports the page that
+        // is actually on screen rather than the page from before reflow.
+        updatePaginationProbe()
+    }
+
+    private func viewportAnchorKey() -> ViewportAnchorKey {
+        let scale = view.window?.screen.scale ?? UIScreen.main.scale
+        return ViewportAnchorKey(
+            chromeHidden: chromeHidden,
+            width: Int((scrollView.bounds.width * scale).rounded()),
+            height: Int((scrollView.bounds.height * scale).rounded())
+        )
+    }
+
+    private func rememberViewportOffset(for anchor: ReadingAnchor) {
+        guard isPaginatedMode,
+              let character = anchor.characterOffset,
+              scrollView.bounds.width > 0,
+              scrollView.bounds.height > 0 else { return }
+        rememberedViewportOffsets[viewportAnchorKey()] = (
+            character: character,
+            offset: pageOffset(for: pageNumber(at: scrollView.contentOffset.y))
+        )
     }
 
     /// The parent reader changes its top and bottom anchors while entering
@@ -699,16 +863,36 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
     func prepareForViewportTransition() {
         guard loadingContainer.isHidden,
               scrollView.bounds.height > 0 else { return }
-        pendingViewportAnchor = captureReadingAnchor()
+        // Both the reader and its host prepare the same constraint change.
+        // The host call happens after the child has swapped its local
+        // constraints, when UIKit may already have clamped the scroll view.
+        // Preserve the first (pre-mutation) anchor for this transaction.
+        if pendingViewportAnchor == nil {
+            pendingViewportAnchor = captureReadingAnchor()
+        }
+        isViewportTransitioning = true
         requestTextLayoutRefresh()
     }
 
-    private func restorePendingViewportAnchorIfNeeded() {
+    private func restorePendingViewportAnchorIfNeeded(preservingViewportOffset: Bool = false) {
         guard let anchor = pendingViewportAnchor,
-              scrollView.bounds.height > 0 else { return }
+              scrollView.bounds.height > 0,
+              !isViewportTransitioning else { return }
         pendingViewportAnchor = nil
-        restoreReadingAnchor(anchor)
+        restoreReadingAnchor(anchor, preservingViewportOffset: preservingViewportOffset)
         updatePageIndicator()
+    }
+
+    /// The parent invokes this after its navigation-bar animation reaches
+    /// final geometry. Only then are the current page offsets safe to use.
+    func completeViewportTransition() {
+        guard isViewportTransitioning else { return }
+        view.setNeedsLayout()
+        view.layoutIfNeeded()
+        updateTextHeightForCurrentLayout()
+        isViewportTransitioning = false
+        restorePendingViewportAnchorIfNeeded(preservingViewportOffset: true)
+        UIAccessibility.post(notification: .layoutChanged, argument: textView)
     }
 
     /// Called once, right after a fresh `loadBook()`, to jump back to the
@@ -735,6 +919,17 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
         let loadingID = UUID()
         activeLoadingID = loadingID
         pendingLoadingCompletionID = nil
+
+        // A process-warm book already has the reader payload and fonts from
+        // its last visit. Paint its saved chapter synchronously, before the
+        // first loading frame, instead of reopening the security-scoped EPUB.
+        if let warmPayload = LocalFulltextCache.inMemoryPayload(bookId: loadingBookID),
+           !warmPayload.chapters.isEmpty {
+            registeredFontURLs = EpubFontManager.registerCachedFonts(bookID: loadingBookID)
+            displayPreparedPayload(warmPayload, loadingID: loadingID)
+            return
+        }
+
         showLoadingOverlay()
         if ProcessInfo.processInfo.arguments.contains("-uiTestFixture") {
             loadUITestFixture(after: uiTestLoadingDelay)
@@ -743,13 +938,6 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
         loadTask = Task { [weak self] in
             guard let self else { return }
             do {
-                let url = try await library.openBookFileAsync(id: book.id)
-                if book.fileType == .pdf {
-                    showPDF(url)
-                    guard self.isCurrentLoad(loadingID, bookID: loadingBookID) else { return }
-                    hideLoadingOverlay()
-                    return
-                }
                 let cached = await Task.detached(priority: .userInitiated) {
                     LocalFulltextCache.read(bookId: loadingBookID)
                 }.value
@@ -761,21 +949,33 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
                     && !UserDefaults.standard.bool(forKey: titleRepairKey)
                 if let cached, !shouldRepairCachedTitles, cachedHasReadableContent {
                     payload = cached
-                } else if book.fileType.requiresServerConversion {
-                    guard let baseURL = settings.resolvedBaseURL else {
-                        throw APIError.invalidBaseURL
-                    }
-                    let client = APIClient(baseURL: baseURL)
-                    let uploadID = try await client.uploadBook(at: url)
-                    payload = try await client.fetchUploadedFulltext(uploadID: uploadID)
                 } else {
-                    payload = try await PythonBridge.shared.parseEpub(at: url, bookId: book.id)
+                    let url = try await library.openBookFileAsync(id: book.id)
+                    if book.fileType == .pdf {
+                        showPDF(url)
+                        guard self.isCurrentLoad(loadingID, bookID: loadingBookID) else { return }
+                        hideLoadingOverlay()
+                        return
+                    }
+                    if book.fileType.requiresServerConversion {
+                        guard let baseURL = settings.resolvedBaseURL else {
+                            throw APIError.invalidBaseURL
+                        }
+                        let client = APIClient(baseURL: baseURL)
+                        let uploadID = try await client.uploadBook(at: url)
+                        payload = try await client.fetchUploadedFulltext(uploadID: uploadID)
+                    } else {
+                        payload = try await PythonBridge.shared.parseEpub(at: url, bookId: book.id)
+                    }
+                    if registeredFontURLs.isEmpty {
+                        registeredFontURLs = await Task.detached(priority: .userInitiated) {
+                            EpubFontManager.registerFonts(from: url, bookID: loadingBookID)
+                        }.value
+                    }
                 }
                 guard !Task.isCancelled, self.isCurrentLoad(loadingID, bookID: loadingBookID) else { return }
                 if registeredFontURLs.isEmpty {
-                    registeredFontURLs = await Task.detached(priority: .userInitiated) {
-                        EpubFontManager.registerFonts(from: url)
-                    }.value
+                    registeredFontURLs = EpubFontManager.registerCachedFonts(bookID: loadingBookID)
                 }
                 Task.detached(priority: .utility) {
                     LocalFulltextCache.save(payload, bookId: loadingBookID)
@@ -783,35 +983,44 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
                 if cachedNeedsTitleRepair {
                     UserDefaults.standard.set(true, forKey: titleRepairKey)
                 }
-                guard !payload.chapters.isEmpty else {
-                    throw ReaderLoadError.noReadableContent
-                }
-                fulltext = payload
-                publishReaderChapterTitles(payload)
-                if !hasRestoredInitialPosition, let entry = ReaderProgressStore.read(bookId: book.id) {
-                    selectedChapter = entry.chapterIndex
-                } else if !hasRestoredInitialPosition, selectedChapter == 0 {
-                    // Many EPUBs put a cover, title page, and contents page
-                    // before the first readable passage. Open at the first
-                    // substantive chapter so the reader never looks blank
-                    // on a fresh import; saved progress still wins above.
-                    selectedChapter = ReaderInitialChapter.firstSubstantiveIndex(in: payload.chapters)
-                }
-                guard let selectedChapter = ReaderInitialChapter.index(
-                    selectedChapter: selectedChapter,
-                    chapterCount: payload.chapters.count
-                ) else {
-                    throw ReaderLoadError.noReadableContent
-                }
-                self.selectedChapter = selectedChapter
-                showChapter(selectedChapter)
-                finishLoadingAfterStableTextLayout(loadingID)
+                displayPreparedPayload(payload, loadingID: loadingID)
             } catch {
                 guard !Task.isCancelled, self.isCurrentLoad(loadingID, bookID: loadingBookID) else { return }
                 textView.text = ""
                 showLoadingError(error.localizedDescription)
             }
         }
+    }
+
+    /// Applies prepared reader content after either a warm-cache hit or a
+    /// cold parse. Keeping this path shared makes saved-position restoration
+    /// identical in both cases while allowing the warm path to skip file I/O.
+    private func displayPreparedPayload(_ payload: EbookFulltext, loadingID: UUID) {
+        guard isCurrentLoad(loadingID, bookID: book.id) else { return }
+        guard !payload.chapters.isEmpty else {
+            showLoadingError(ReaderLoadError.noReadableContent.localizedDescription)
+            return
+        }
+        fulltext = payload
+        LocalFulltextCache.recordWarmOpen(bookId: book.id)
+        publishReaderChapterTitles(payload)
+        if !hasRestoredInitialPosition, let entry = ReaderProgressStore.read(bookId: book.id) {
+            selectedChapter = entry.chapterIndex
+        } else if !hasRestoredInitialPosition, selectedChapter == 0 {
+            // Many EPUBs put a cover, title page, and contents page before
+            // the first readable passage. Saved progress still wins.
+            selectedChapter = ReaderInitialChapter.firstSubstantiveIndex(in: payload.chapters)
+        }
+        guard let selectedChapter = ReaderInitialChapter.index(
+            selectedChapter: selectedChapter,
+            chapterCount: payload.chapters.count
+        ) else {
+            showLoadingError(ReaderLoadError.noReadableContent.localizedDescription)
+            return
+        }
+        self.selectedChapter = selectedChapter
+        showChapter(selectedChapter)
+        finishLoadingAfterStableTextLayout(loadingID)
     }
 
     deinit {
@@ -969,6 +1178,8 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
 
     private func showChapter(_ index: Int) {
         guard let chapter = fulltext?.chapters[safe: index] else { return }
+        rememberedViewportOffsets.removeAll()
+        let textSettings = ReaderTextSettings(settings: settings)
         lastInlineImageViewportWidth = nil
         UserDefaults.standard.set(index, forKey: AudioPlayer.readerCurrentChapterIndexDefaultsKey)
         player.updateReaderChapterTitle(chapter.displayTitle, for: chapter.zeroBasedEpubIndex)
@@ -996,7 +1207,11 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
             comicPageImageView.isHidden = true
             textView.isHidden = false
             applyReaderLayoutMode()
-            if let html = chapter.html,
+            if let warmChapter = Self.warmRenderedChapters.object(forKey: book.id as NSString),
+               warmChapter.chapterIndex == index,
+               warmChapter.settings == textSettings {
+                textView.attributedText = NSAttributedString(attributedString: warmChapter.attributedText)
+            } else if let html = chapter.html,
                let rendered = EpubHtmlRenderer.render(
                    html: html,
                    css: chapter.css,
@@ -1013,6 +1228,14 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
                     )
                 }
                 textView.attributedText = visible
+                Self.warmRenderedChapters.setObject(
+                    WarmRenderedChapter(
+                        chapterIndex: index,
+                        settings: textSettings,
+                        attributedText: visible
+                    ),
+                    forKey: book.id as NSString
+                )
             } else {
                 let fallbackText = chapter.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                     ? EpubHtmlRenderer.plainText(from: chapter.html ?? "")
@@ -1027,6 +1250,16 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
                             ?? UIFont(name: "Georgia", size: settings.readerPointSize)
                             ?? UIFont.systemFont(ofSize: settings.readerPointSize))
                 textView.font = UIFontMetrics(forTextStyle: .body).scaledFont(for: font)
+                if let attributedText = textView.attributedText {
+                    Self.warmRenderedChapters.setObject(
+                        WarmRenderedChapter(
+                            chapterIndex: index,
+                            settings: textSettings,
+                            attributedText: attributedText
+                        ),
+                        forKey: book.id as NSString
+                    )
+                }
             }
             requestTextLayoutRefresh()
             repaintSavedHighlights(chapterIndex: index)
@@ -1114,17 +1347,74 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
             layoutManager: textView.layoutManager,
             textContainer: textView.textContainer,
             verticalInset: verticalInset,
+            topInset: textView.textContainerInset.top,
             pageHeight: pageHeight
         )
         paginatedPageOffsets = ReaderPaginatedTextLayout.pageOffsets(
             layoutManager: textView.layoutManager,
             textContainer: textView.textContainer,
             verticalInset: verticalInset,
+            topInset: textView.textContainerInset.top,
             pageHeight: pageHeight
         )
         textView.contentSize.height = heightConstraint.constant
         updatePaginationProbe()
         return true
+    }
+
+
+    /// TextKit can only start a page on a line boundary; a variable-height
+    /// paragraph can still leave the next line crossing the physical bottom
+    /// edge. Cover exactly that incomplete remainder, preserving every glyph
+    /// on the next page instead of ever showing a chopped line.
+    private func updatePageOverflowGuard() {
+        guard isPaginatedMode,
+              !textView.isHidden,
+              scrollView.bounds.height > 0 else {
+            pageOverflowGuard.isHidden = true
+            return
+        }
+        let inset = textView.textContainerInset
+        let viewport = scrollView.convert(scrollView.bounds, to: view)
+        let glyphRange = textView.layoutManager.glyphRange(for: textView.textContainer)
+        var lastCompleteBottom: CGFloat?
+        var hasPartialBottomLine = false
+        textView.layoutManager.enumerateLineFragments(forGlyphRange: glyphRange) { lineRect, _, _, lineGlyphRange, _ in
+            let glyphRect = self.textView.layoutManager.boundingRect(
+                forGlyphRange: lineGlyphRange,
+                in: self.textView.textContainer
+            )
+            let protectedRect = lineRect.union(glyphRect)
+            let rendered = self.textView.convert(
+                CGRect(
+                    x: protectedRect.minX + inset.left,
+                    y: protectedRect.minY + inset.top,
+                    width: protectedRect.width,
+                    height: protectedRect.height
+                ),
+                to: self.view
+            )
+            guard rendered.intersects(viewport) else { return }
+            if viewport.contains(rendered) {
+                lastCompleteBottom = max(lastCompleteBottom ?? rendered.maxY, rendered.maxY)
+            } else if rendered.maxY > viewport.maxY {
+                hasPartialBottomLine = true
+            }
+        }
+        guard hasPartialBottomLine, let bottom = lastCompleteBottom,
+              bottom < viewport.maxY - 0.5 else {
+            pageOverflowGuard.isHidden = true
+            return
+        }
+        pageOverflowGuard.backgroundColor = settings.readerTheme.previewColors.background
+        pageOverflowGuard.frame = CGRect(
+            x: viewport.minX,
+            y: bottom,
+            width: viewport.width,
+            height: viewport.maxY - bottom
+        ).integral
+        pageOverflowGuard.isHidden = false
+        view.bringSubviewToFront(pageIndicator)
     }
 
     private func updateScrollingTextHeight() -> Bool {
@@ -1175,17 +1465,27 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
               textView.layoutManager.numberOfGlyphs > 0 else { return }
 
         let inset = textView.textContainerInset
-        let visibleRect = CGRect(
-            x: 0,
-            y: max(0, scrollView.contentOffset.y - inset.top),
-            width: textView.textContainer.size.width,
-            height: scrollView.bounds.height
-        )
-        let glyphRange = textView.layoutManager.glyphRange(
-            forBoundingRect: visibleRect,
-            in: textView.textContainer
-        )
+        let glyphRange = textView.layoutManager.glyphRange(for: textView.textContainer)
         guard glyphRange.length > 0 else { return }
+        var completeLineRects: [CGRect] = []
+        var clippedLineCount = 0
+        textView.layoutManager.enumerateLineFragments(forGlyphRange: glyphRange) { lineRect, _, _, _, _ in
+            let renderedRect = self.textView.convert(
+                CGRect(
+                    x: lineRect.minX + inset.left,
+                    y: lineRect.minY + inset.top,
+                    width: lineRect.width,
+                    height: lineRect.height
+                ),
+                to: self.scrollView
+            )
+            guard renderedRect.intersects(self.scrollView.bounds) else { return }
+            if self.scrollView.bounds.contains(renderedRect) {
+                completeLineRects.append(lineRect)
+            } else {
+                clippedLineCount += 1
+            }
+        }
         let firstGlyph = glyphRange.location
         let lastGlyph = NSMaxRange(glyphRange) - 1
         let firstRect = textView.layoutManager.boundingRect(
@@ -1208,17 +1508,39 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
             CGPoint(x: 0, y: view.safeAreaLayoutGuide.layoutFrame.minY),
             to: window
         ).y
+        let firstCompleteY = completeLineRects.first.map {
+            textView.convert(CGPoint(x: $0.minX + inset.left, y: $0.minY + inset.top), to: window).y
+        }
+        let lastCompleteY = completeLineRects.last.map {
+            textView.convert(CGPoint(x: $0.maxX + inset.left, y: $0.maxY + inset.top), to: window).y
+        }
+        let safeBottom = view.convert(
+            CGPoint(x: 0, y: view.safeAreaLayoutGuide.layoutFrame.maxY),
+            to: window
+        ).y
+        let viewportTop = scrollView.convert(scrollView.bounds.origin, to: window).y
+        let viewportBottom = scrollView.convert(
+            CGPoint(x: scrollView.bounds.minX, y: scrollView.bounds.maxY),
+            to: window
+        ).y
         paginationProbeLabel.text = [
             "first=\(textView.layoutManager.characterIndexForGlyph(at: firstGlyph))",
             "last=\(textView.layoutManager.characterIndexForGlyph(at: lastGlyph))",
             "firstY=\(Int(firstPoint.y.rounded()))",
             "lastY=\(Int(lastPoint.y.rounded()))",
+            "firstCompleteY=\(Int((firstCompleteY ?? firstPoint.y).rounded()))",
+            "lastCompleteY=\(Int((lastCompleteY ?? lastPoint.y).rounded()))",
             "safeTop=\(Int(safeTop.rounded()))",
+            "safeBottom=\(Int(safeBottom.rounded()))",
+            "viewportTop=\(Int(viewportTop.rounded()))",
+            "viewportBottom=\(Int(viewportBottom.rounded()))",
+            "offset=\(Int(scrollView.contentOffset.y.rounded()))",
             "page=\(pageNumber(at: scrollView.contentOffset.y))",
             "total=\(paginatedPageOffsets.count)",
             "textFrameHeight=\(Int(textView.bounds.height.rounded()))",
             "measuredTextHeight=\(Int(paginatedTextHeightConstraint.constant.rounded()))",
             "viewportHeight=\(Int(scrollView.bounds.height.rounded()))",
+            "clippedLineCount=\(clippedLineCount)",
             "paginatedHeightActive=\(paginatedTextHeightConstraint.isActive ? 1 : 0)",
             "scrollingHeightActive=\(scrollingTextHeightConstraint.isActive ? 1 : 0)",
         ].joined(separator: ";")
@@ -1256,28 +1578,16 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
     }
 
     @objc private func toggleChromeVisibility() {
+        // The host owns the whole constraint transaction (navigation, reader
+        // viewport and mini player). A second chrome tap is accepted as a new
+        // target state; page turns remain blocked until that host transaction
+        // has supplied final geometry.
+        guard !isPageTransitioning else { return }
         prepareForViewportTransition()
         chromeHidden.toggle()
-        let shouldShow = !chromeHidden
-        let shouldShowPageIndicator = shouldShow && isPaginatedMode && settings.readerShowPageNumbers
         applyReaderLayoutMode()
-        if shouldShowPageIndicator {
-            pageIndicator.isHidden = false
-            pageIndicator.alpha = 0
-        }
         textView.accessibilityHint = L10n.string("reader.toggleControls")
         onChromeVisibilityChanged?(chromeHidden)
-        UIView.animate(
-            withDuration: 0.28,
-            delay: 0,
-            options: [.curveEaseInOut, .beginFromCurrentState, .allowUserInteraction]
-        ) {
-            let alpha: CGFloat = shouldShow ? 1 : 0
-            self.pageIndicator.alpha = shouldShowPageIndicator ? alpha : 0
-            self.view.layoutIfNeeded()
-        } completion: { _ in
-            UIAccessibility.post(notification: .layoutChanged, argument: self.textView)
-        }
     }
 
     @objc private func toggleChromeAccessibilityAction(_ action: UIAccessibilityCustomAction) -> Bool {
@@ -1352,10 +1662,11 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
                 }
             )
             let nav = UINavigationController(rootViewController: controller)
+            configureTOCSheetPresentation(nav)
             present(nav, animated: true)
             return
         }
-        let sheet = TocSheetController(rows: tocRows) { [weak self] chapterIndex in
+        let sheet = TocSheetController(rows: tocRows, initialChapterIndex: selectedChapter) { [weak self] chapterIndex in
             guard let self else { return }
             self.persistReadingProgress()
             self.selectedChapter = chapterIndex
@@ -1363,12 +1674,19 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
             self.scrollView.setContentOffset(.zero, animated: false)
         }
         let nav = UINavigationController(rootViewController: sheet)
-        if let presentationSheet = nav.sheetPresentationController {
-            if #available(iOS 16.0, *) {
-                presentationSheet.detents = [.medium(), .large()]
-            }
-        }
+        configureTOCSheetPresentation(nav)
         present(nav, animated: true)
+    }
+
+    /// Keeps the chapter index as a native large sheet: it reaches the top
+    /// safe area while preserving the system grabber and swipe-to-dismiss
+    /// gesture rather than imitating either with custom layout.
+    private func configureTOCSheetPresentation(_ navigationController: UINavigationController) {
+        navigationController.modalPresentationStyle = .pageSheet
+        guard let sheet = navigationController.sheetPresentationController else { return }
+        sheet.detents = [.large()]
+        sheet.selectedDetentIdentifier = .large
+        sheet.prefersGrabberVisible = true
     }
 
     private func requestAudioDownload(snapshot: JobSnapshot, chapterIndex: Int?) {
@@ -1476,6 +1794,7 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
 
     private func applyReaderSettingsImmediately() {
         let readingAnchor = captureReadingAnchor()
+        rememberedViewportOffsets.removeAll()
         let nextTextSettings = ReaderTextSettings(settings: settings)
         let needsTextRerender = lastRenderedTextSettings != nextTextSettings
         let colors = settings.readerTheme.previewColors
@@ -1483,6 +1802,7 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
         scrollView.backgroundColor = colors.background
         textView.backgroundColor = colors.background
         pageIndicator.textColor = colors.foreground.withAlphaComponent(0.7)
+        pageOverflowGuard.backgroundColor = colors.background
         applyReaderLayoutMode()
         applyReaderMargins()
         view.setNeedsLayout()
@@ -1563,15 +1883,17 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
     private var canNavigateReader: Bool {
         Self.allowsReaderNavigation(
             isDeferringReaderGestures: isDeferringReaderGestures,
-            isLoadingOverlayHidden: loadingContainer.isHidden
+            isLoadingOverlayHidden: loadingContainer.isHidden,
+            isViewportTransitioning: isViewportTransitioning
         )
     }
 
     nonisolated static func allowsReaderNavigation(
         isDeferringReaderGestures: Bool,
-        isLoadingOverlayHidden: Bool
+        isLoadingOverlayHidden: Bool,
+        isViewportTransitioning: Bool = false
     ) -> Bool {
-        !isDeferringReaderGestures && isLoadingOverlayHidden
+        !isDeferringReaderGestures && isLoadingOverlayHidden && !isViewportTransitioning
     }
 
     private var measuredPageCount: Int {
@@ -1581,6 +1903,7 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
     func scrollViewDidScroll(_ scrollView: UIScrollView) {
         if isPaginatedMode {
             updatePageIndicator()
+            updatePageOverflowGuard()
         }
         guard ProcessInfo.processInfo.arguments.contains("-uiTestReaderLayout") else { return }
         let offset = scrollView === textView ? textView.contentOffset.y : scrollView.contentOffset.y
@@ -1671,7 +1994,7 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
         case .none:
             scrollView.setContentOffset(offset, animated: false)
             isPageTransitioning = false
-        case .slide, .flip:
+        case .slide:
             // Paginated mode is a page transition, not a vertical scroll.
             // Keep the scroll view as a layout container, move its offset
             // synchronously, and animate a snapshot horizontally. This also
@@ -1695,6 +2018,56 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
                 oldPage.removeFromSuperview()
                 self.isPageTransitioning = false
             }
+        case .flip:
+            performHorizontalPageCurl(to: offset, forward: forward)
+        }
+    }
+
+    /// A horizontal page fold around the vertical reading edge. UIKit's
+    /// built-in curl only travels vertically and `transitionFlip…` rotates
+    /// like a card, so neither represents turning a book page.
+    private func performHorizontalPageCurl(to offset: CGPoint, forward: Bool) {
+        guard !UIAccessibility.isReduceMotionEnabled,
+              !ProcessInfo.processInfo.arguments.contains("-uiTestReduceMotion"),
+              let outgoingPage = scrollView.snapshotView(afterScreenUpdates: false) else {
+            scrollView.setContentOffset(offset, animated: false)
+            isPageTransitioning = false
+            return
+        }
+
+        let frame = scrollView.convert(scrollView.bounds, to: view)
+        scrollView.setContentOffset(offset, animated: false)
+        outgoingPage.frame = frame
+        outgoingPage.accessibilityIdentifier = "reader.pageCurl"
+        outgoingPage.isAccessibilityElement = true
+        outgoingPage.accessibilityLabel = "Page turning"
+        outgoingPage.layer.isDoubleSided = false
+        outgoingPage.layer.anchorPoint = CGPoint(x: forward ? 1 : 0, y: 0.5)
+        outgoingPage.layer.position = CGPoint(x: forward ? frame.maxX : frame.minX, y: frame.midY)
+
+        let foldShadow = CAGradientLayer()
+        foldShadow.frame = outgoingPage.bounds
+        foldShadow.colors = forward
+            ? [UIColor.black.withAlphaComponent(0.30).cgColor, UIColor.clear.cgColor]
+            : [UIColor.clear.cgColor, UIColor.black.withAlphaComponent(0.30).cgColor]
+        foldShadow.startPoint = CGPoint(x: forward ? 1 : 0, y: 0.5)
+        foldShadow.endPoint = CGPoint(x: forward ? 0 : 1, y: 0.5)
+        outgoingPage.layer.addSublayer(foldShadow)
+        view.addSubview(outgoingPage)
+
+        var fold = CATransform3DIdentity
+        fold.m34 = -1 / 900
+        fold = CATransform3DRotate(fold, forward ? -.pi / 2 : .pi / 2, 0, 1, 0)
+        UIView.animate(
+            withDuration: 0.35,
+            delay: 0,
+            options: [.curveEaseInOut, .beginFromCurrentState, .allowUserInteraction]
+        ) {
+            outgoingPage.layer.transform = fold
+            outgoingPage.alpha = 0.92
+        } completion: { _ in
+            outgoingPage.removeFromSuperview()
+            self.isPageTransitioning = false
         }
     }
 
@@ -1940,7 +2313,10 @@ struct ReaderViewportConfiguration: Equatable {
             allowsChapterSwipes: !paginated,
             usesPaginatedTextHeight: paginated,
             showsPageIndicator: paginated && !chromeHidden && showsPageNumbers,
-            usesScreenEdges: chromeHidden
+            // Immersive mode removes reader chrome, not the system safe
+            // area. Keeping text inside it prevents content from extending
+            // under the status bar or home indicator during a reflow.
+            usesScreenEdges: false
         )
     }
 }
@@ -2000,10 +2376,17 @@ private extension Array {
 /// sheet pattern below.
 private final class TocSheetController: UITableViewController {
     private let rows: [ReaderTocRow]
+    private let initialChapterIndex: Int
     private let onSelect: (Int) -> Void
+    private var hasScrolledToInitialFocus = false
 
-    init(rows: [ReaderTocRow], onSelect: @escaping (Int) -> Void) {
+    init(
+        rows: [ReaderTocRow],
+        initialChapterIndex: Int,
+        onSelect: @escaping (Int) -> Void
+    ) {
         self.rows = rows
+        self.initialChapterIndex = initialChapterIndex
         self.onSelect = onSelect
         super.init(style: .plain)
         title = L10n.string("player.chapters")
@@ -2020,6 +2403,22 @@ private final class TocSheetController: UITableViewController {
         )
     }
 
+    override func viewWillAppear(_ animated: Bool) {
+        super.viewWillAppear(animated)
+        guard !hasScrolledToInitialFocus,
+              let rowIndex = rows.firstIndex(where: { $0.chapterIndex == initialChapterIndex }) else {
+            return
+        }
+        hasScrolledToInitialFocus = true
+        view.layoutIfNeeded()
+        tableView.layoutIfNeeded()
+        tableView.scrollToRow(
+            at: IndexPath(row: rowIndex, section: 0),
+            at: .middle,
+            animated: false
+        )
+    }
+
     @objc private func dismissSelf() { dismiss(animated: true) }
 
     override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int { rows.count }
@@ -2027,11 +2426,19 @@ private final class TocSheetController: UITableViewController {
     override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
         let cell = tableView.dequeueReusableCell(withIdentifier: "chapter") ?? UITableViewCell(style: .default, reuseIdentifier: "chapter")
         let row = rows[indexPath.row]
+        let isFocused = row.chapterIndex == initialChapterIndex
         var content = cell.defaultContentConfiguration()
         content.text = row.title
         content.secondaryText = row.chapterIndex.map { L10n.string("reader.chapter", $0 + 1) }
+        content.textProperties.font = .preferredFont(forTextStyle: isFocused ? .headline : .body)
+        content.textProperties.color = isFocused ? view.tintColor : .label
+        content.secondaryTextProperties.color = isFocused ? view.tintColor : .secondaryLabel
         cell.contentConfiguration = content
+        var background = UIBackgroundConfiguration.listPlainCell()
+        background.backgroundColor = isFocused ? view.tintColor.withAlphaComponent(0.12) : .clear
+        cell.backgroundConfiguration = background
         cell.indentationLevel = row.level
+        cell.accessibilityTraits = isFocused ? [.button, .selected] : .button
         return cell
     }
 

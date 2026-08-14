@@ -239,9 +239,11 @@ final class AudioPlayer: ObservableObject {
     /// `true` while the player is buffering / waiting for the current
     /// chapter's audio to become ready. Used by native player controllers
     /// to show a spinner in place of play/pause.
-    /// Derived from `isConverting` + `firstChapterReady` so it costs
-    /// no extra KVO wiring.
-    var isLoading: Bool { isConverting && !firstChapterReady }
+    /// Includes an in-flight seek so scrubbing never leaves a stale
+    /// play/pause affordance while AVFoundation moves the timeline.
+    @Published private(set) var isSeeking = false
+    private var activeSeekID: UUID?
+    var isLoading: Bool { isSeeking || (isConverting && !firstChapterReady) }
 
     /// Optional cover art bytes (PNG/JPEG). Surfaced to the system
     /// Now Playing widget so lock screen / Control Center / AirPods
@@ -906,7 +908,11 @@ final class AudioPlayer: ObservableObject {
     /// `isPlaying = true`, which meant every view-appear path (reader open,
     /// player sheet, instant reader) silently kicked off audio. That violated
     /// the principle that media should never auto-start without user intent.
-    func play(snapshot: JobSnapshot, startingAt chapterIndex: Int = 0) {
+    func play(
+        snapshot: JobSnapshot,
+        startingAt chapterIndex: Int = 0,
+        restoreAutoplay: Bool = true
+    ) {
         ensureRemoteCommands()
         // MP3 takeover: if the speech fallback was holding the place,
         // shut it down BEFORE we set up the AVQueuePlayer so the user
@@ -1015,7 +1021,7 @@ final class AudioPlayer: ObservableObject {
         // If the previous snapshot was already playing (e.g. user jumped to a
         // new chapter while listening), or the user tapped Play while waiting
         // for the first streamed MP3 URL, preserve that intent.
-        if wasPlaying || pendingAutoPlay || (resumeMarker?.wasPlaying == true) {
+        if wasPlaying || pendingAutoPlay || (restoreAutoplay && resumeMarker?.wasPlaying == true) {
             queue.rate = rate.rawValue
             isPlaying = true
             pendingAutoPlay = false
@@ -1027,6 +1033,17 @@ final class AudioPlayer: ObservableObject {
         #endif
         publishCurrentChapter()
         updateNowPlayingInfo()
+    }
+
+    /// Converts the durable EPUB chapter identity into the temporary queue
+    /// offset used by a partial local snapshot. Missing chapters are omitted
+    /// from that queue, so using the EPUB index directly would resume the
+    /// wrong audio after a relaunch.
+    nonisolated static func restoredPlayableChapterOffset(
+        snapshot: JobSnapshot,
+        persistedEpubChapterIndex: Int
+    ) -> Int {
+        snapshot.playableChapters.firstIndex { $0.index == persistedEpubChapterIndex } ?? 0
     }
 
     /// Live-update the snapshot. Used by the native reader's SSE
@@ -1234,6 +1251,7 @@ final class AudioPlayer: ObservableObject {
             isPlaying = true
             return
         }
+        requestRetentionForAudibleChapter()
         guard let player else {
             pendingAutoPlay = true
             if let snapshot, !snapshot.playableChapters.isEmpty {
@@ -1250,6 +1268,40 @@ final class AudioPlayer: ObservableObject {
         player.rate = rate.rawValue
         isPlaying = true
         updateNowPlayingInfo()
+    }
+
+    private func requestRetentionForAudibleChapter() {
+        guard let snapshot,
+              let target = Self.playbackRetentionTarget(
+                snapshot: snapshot,
+                playableChapterOffset: currentChapterIndex
+              ) else {
+            return
+        }
+        requestPlaybackRetention(bookID: target.bookID, chapterIndex: target.chapterIndex)
+    }
+
+    /// Resolves a player queue offset back to the canonical embedded-book
+    /// artifact. A partial snapshot contains only available chapters, so the
+    /// queue offset is not necessarily the EPUB chapter index.
+    nonisolated static func playbackRetentionTarget(
+        snapshot: JobSnapshot,
+        playableChapterOffset: Int
+    ) -> (bookID: String, chapterIndex: Int)? {
+        guard let bookID = EmbeddedConversionCoordinator.embeddedBookID(from: snapshot.jobId),
+              snapshot.playableChapters.indices.contains(playableChapterOffset) else {
+            return nil
+        }
+        return (bookID, snapshot.playableChapters[playableChapterOffset].index)
+    }
+
+    private func requestPlaybackRetention(bookID: String, chapterIndex: Int) {
+        Task {
+            try? await LocalAudioArtifactStore.shared.requestPlaybackRetention(
+                bookID: bookID,
+                chapterIndex: chapterIndex
+            )
+        }
     }
 
     /// True only after an AV queue exists. A snapshot may arrive before its
@@ -1603,10 +1655,30 @@ final class AudioPlayer: ObservableObject {
             updateNowPlayingInfo()
             return
         }
-        player?.seek(to: CMTime(seconds: target, preferredTimescale: 600))
         positionSeconds = target
         broadcastPosition()
         updateNowPlayingInfo()
+        guard let player else { return }
+
+        let seekID = UUID()
+        activeSeekID = seekID
+        isSeeking = true
+        player.seek(
+            to: CMTime(seconds: target, preferredTimescale: 600),
+            toleranceBefore: .zero,
+            toleranceAfter: .zero
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                guard let self, self.activeSeekID == seekID else { return }
+                self.activeSeekID = nil
+                self.isSeeking = false
+                // Keep the user-selected target visible until the first
+                // periodic AVPlayer tick reports the new timeline position.
+                self.positionSeconds = target
+                self.broadcastPosition()
+                self.updateNowPlayingInfo()
+            }
+        }
     }
 
     func nextChapter() {
@@ -1916,6 +1988,14 @@ final class AudioPlayer: ObservableObject {
                 queue.rate = rate.rawValue
                 isPlaying = true
                 pendingAutoPlay = false
+                // A streamed first segment can become audible before the
+                // completed chapter file is committed. Record the listener's
+                // intent against the raw embedded book now; `markAvailable`
+                // promotes that canonical chapter when it lands.
+                if let snapshot,
+                   let bookID = EmbeddedConversionCoordinator.embeddedBookID(from: snapshot.jobId) {
+                    requestPlaybackRetention(bookID: bookID, chapterIndex: chapterIndex)
+                }
             } else {
                 queue.rate = 0
             }
@@ -2173,9 +2253,11 @@ final class AudioPlayer: ObservableObject {
             Task { @MainActor [weak self] in
                 guard let self else { return }
                 let rawTime = time.seconds.isFinite ? time.seconds : 0
-                self.positionSeconds = self.isSegmentMode
-                    ? self.segmentCumulativeBase + rawTime
-                    : rawTime
+                if !self.isSeeking {
+                    self.positionSeconds = self.isSegmentMode
+                        ? self.segmentCumulativeBase + rawTime
+                        : rawTime
+                }
                 if let item = player.currentItem,
                    let dur = Self.validatedDurationSeconds(item.duration.seconds, isReadyToPlay: true) {
                     if self.isSegmentMode {
@@ -2318,6 +2400,8 @@ final class AudioPlayer: ObservableObject {
     }
 
     private func teardownPlayer() {
+        activeSeekID = nil
+        isSeeking = false
         cancelSegmentCapacityWaiters()
         if let token = timeObserverToken { player?.removeTimeObserver(token) }
         timeObserverToken = nil

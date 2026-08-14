@@ -32,6 +32,7 @@ actor LocalAudioArtifactStore {
         var title: String
         var state: ArtifactState
         var retention: Retention
+        var playbackRetentionRequested: Bool? = nil
         let relativePath: String
         var byteCount: Int64
         var retryCount: Int
@@ -186,17 +187,31 @@ actor LocalAudioArtifactStore {
         guard size > 0 else {
             throw StoreError.invalidAudioFile(url)
         }
-        switch artifact.retention {
-        case .temporary:
-            try applyTemporaryFilePolicy(to: url)
-        case .downloaded:
+        let shouldRetain = artifact.retention == .downloaded || artifact.playbackRetentionRequested == true
+        switch shouldRetain {
+        case true:
             try applyDownloadedFilePolicy(to: url)
+        case false:
+            try applyTemporaryFilePolicy(to: url)
         }
         try updateArtifact(bookID: bookID, chapterIndex: chapterIndex) { artifact in
             artifact.state = .available
+            if artifact.playbackRetentionRequested == true {
+                artifact.retention = .downloaded
+            }
             artifact.byteCount = size
             artifact.lastError = nil
         }
+    }
+
+    /// Records durable-retention intent only after a chapter has become audible.
+    /// A completed file is promoted immediately; an in-flight conversion is
+    /// promoted by `markAvailable` when its canonical MP3 arrives.
+    func requestPlaybackRetention(bookID: String, chapterIndex: Int) throws {
+        try updateArtifact(bookID: bookID, chapterIndex: chapterIndex) { artifact in
+            artifact.playbackRetentionRequested = true
+        }
+        _ = try promoteAvailable(bookID: bookID, chapterIndices: [chapterIndex])
     }
 
     func markFailed(
@@ -256,11 +271,12 @@ actor LocalAudioArtifactStore {
         return manifest
     }
 
-    /// Produces the player-compatible representation of a fully available
-    /// local book. The manifest remains the durable source of truth; this
-    /// projection is recreated when the app launches instead of persisted as
-    /// a second, competing record.
-    func completedSnapshot(
+    /// Produces the player-compatible representation of every playable local
+    /// chapter, even while the rest of the book is still converting. The
+    /// manifest remains the durable source of truth; this projection is
+    /// recreated when the app launches instead of persisted as a second,
+    /// competing record.
+    func playableSnapshot(
         bookID: String,
         engine: String,
         voice: String,
@@ -271,12 +287,13 @@ actor LocalAudioArtifactStore {
         }
         try repairFilePolicies(for: manifest)
         let chapters = manifest.chapters.sorted { $0.index < $1.index }
-        guard chapters.allSatisfy({
+        let available = chapters.filter {
             $0.state == .available && hasAudioFile(bookID: bookID, artifact: $0)
-        }) else {
+        }
+        guard !available.isEmpty else {
             return nil
         }
-        let chapterProgress = chapters.map { artifact in
+        let chapterProgress = available.map { artifact in
             JobSnapshot.Chapter(
                 index: artifact.index,
                 name: artifact.title,
@@ -294,7 +311,7 @@ actor LocalAudioArtifactStore {
         }
         return JobSnapshot(
             jobId: "embedded-\(bookID)",
-            state: "finished",
+            state: available.count == chapters.count ? "finished" : "partial",
             bookTitle: manifest.bookTitle,
             bookAuthor: manifest.author,
             coverUrl: nil,
@@ -302,8 +319,8 @@ actor LocalAudioArtifactStore {
             engine: engine,
             voice: voice,
             language: language,
-            progressPercent: 100,
-            chaptersTotal: chapterProgress.count,
+            progressPercent: Double(available.count) / Double(chapters.count) * 100,
+            chaptersTotal: chapters.count,
             chaptersCompleted: chapterProgress.count,
             chapterProgress: chapterProgress,
             outputs: nil,
@@ -311,6 +328,25 @@ actor LocalAudioArtifactStore {
             error: nil,
             lastActivityAt: manifest.updatedAt.timeIntervalSince1970
         )
+    }
+
+    /// Returns a snapshot only when every chapter is local and playable.
+    /// Callers that can continue conversion use `playableSnapshot` instead.
+    func completedSnapshot(
+        bookID: String,
+        engine: String,
+        voice: String,
+        language: String?
+    ) throws -> JobSnapshot? {
+        guard let snapshot = try playableSnapshot(
+            bookID: bookID,
+            engine: engine,
+            voice: voice,
+            language: language
+        ), snapshot.state == "finished" else {
+            return nil
+        }
+        return snapshot
     }
 
     func temporaryBookIDsEligibleForEviction() throws -> [String] {
@@ -441,6 +477,16 @@ actor LocalAudioArtifactStore {
         for artifact in manifest.chapters where artifact.retention == .downloaded {
             try removeDownloadedAudio(bookID: bookID, chapterIndex: artifact.index)
         }
+    }
+
+    /// Removes every local artifact for a book when that book leaves the
+    /// library. This is intentionally broader than cache eviction: the user
+    /// chose to remove the source itself, so no generated audio may survive.
+    func removeAllAudio(bookID: String) throws {
+        let directory = bookDirectory(bookID: bookID)
+        guard fileManager.fileExists(atPath: directory.path) else { return }
+        try fileManager.removeItem(at: directory)
+        NotificationCenter.default.post(name: Self.didChangeNotification, object: nil)
     }
 
     /// Evicts only recreatable generated audio. User-promoted downloads are

@@ -180,6 +180,49 @@ actor DownloadManager {
         return url
     }
 
+    /// Reconstructs a player snapshot from already-downloaded remote audio.
+    /// This keeps a remote-backed book usable after relaunch without asking
+    /// the server for a job snapshot before the listener can press Play.
+    nonisolated static func localPlaybackSnapshot(jobId: String) -> JobSnapshot? {
+        guard let manifest = loadManifest(for: jobId) else { return nil }
+        let chapters = manifest.chapters.compactMap { entry -> JobSnapshot.Chapter? in
+            guard let url = localAudioURL(jobId: jobId, chapterIndex: entry.index) else { return nil }
+            return JobSnapshot.Chapter(
+                index: entry.index,
+                name: entry.title,
+                status: "completed",
+                downloadUrl: url.absoluteString,
+                chars: nil,
+                charsProcessed: nil,
+                progressRatio: 1,
+                durationSeconds: nil,
+                startedAt: nil,
+                completedAt: entry.downloadedAt.timeIntervalSince1970
+            )
+        }
+        guard !chapters.isEmpty else { return nil }
+        let completed = manifest.completedAt != nil
+        return JobSnapshot(
+            jobId: jobId,
+            state: completed ? "finished" : "partial",
+            bookTitle: manifest.bookTitle,
+            bookAuthor: nil,
+            coverUrl: nil,
+            coverMimeType: nil,
+            engine: "remote",
+            voice: "remote",
+            language: nil,
+            progressPercent: completed ? 100 : 0,
+            chaptersTotal: max(chapters.count, manifest.chapters.count),
+            chaptersCompleted: chapters.count,
+            chapterProgress: chapters,
+            outputs: nil,
+            logUrl: nil,
+            error: nil,
+            lastActivityAt: manifest.completedAt?.timeIntervalSince1970
+        )
+    }
+
     nonisolated static func reusableDownloadedEntry(
         chapterIndex: Int,
         manifestEntry: AudiobookManifest.ChapterEntry?,

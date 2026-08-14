@@ -1,6 +1,17 @@
 import XCTest
 
 final class PlayerViewConfigurationTests: XCTestCase {
+    func testExpandedPlayerUsesEightPointSpacingAndSitsAtTheBottomSafeArea() throws {
+        let sourceURL = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("EpubToMp3/Features/Playback/Views/FullPlayerScreenController.swift")
+        let source = try readSourceFileIfAvailable(at: sourceURL)
+
+        XCTAssertTrue(source.contains("static let elementSpacing: CGFloat = 8"))
+        XCTAssertTrue(source.contains("static let bottomInset: CGFloat = 0"))
+    }
+
     func testSystemVolumeControlDoesNotUseDeprecatedRouteButtonAPI() throws {
         let sourceURL = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()

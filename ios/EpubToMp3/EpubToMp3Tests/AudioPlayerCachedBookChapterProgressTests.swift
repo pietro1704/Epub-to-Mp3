@@ -73,4 +73,77 @@ final class AudioPlayerCachedBookChapterProgressTests: XCTestCase {
             XCTAssertEqual(player.cachedBookChapterProgress, first)
         }
     }
+
+    func testEmbeddedSnapshotUsesRawBookAndEpubChapterForRetention() {
+        let snapshot = JobSnapshot(
+            jobId: "embedded-book-id",
+            state: "partial",
+            bookTitle: "Book",
+            bookAuthor: nil,
+            coverUrl: nil,
+            coverMimeType: nil,
+            engine: "edge",
+            voice: "voice",
+            language: nil,
+            progressPercent: 50,
+            chaptersTotal: 4,
+            chaptersCompleted: 1,
+            chapterProgress: [
+                .init(
+                    index: 7,
+                    name: "Seven",
+                    status: "completed",
+                    downloadUrl: "file:///chapter-7.mp3",
+                    chars: nil,
+                    charsProcessed: nil,
+                    progressRatio: 1,
+                    durationSeconds: nil,
+                    startedAt: nil,
+                    completedAt: nil
+                )
+            ],
+            outputs: nil,
+            logUrl: nil,
+            error: nil,
+            lastActivityAt: nil
+        )
+
+        let target = AudioPlayer.playbackRetentionTarget(
+            snapshot: snapshot,
+            playableChapterOffset: 0
+        )
+
+        XCTAssertEqual(target?.bookID, "book-id")
+        XCTAssertEqual(target?.chapterIndex, 7)
+    }
+
+    func testRestoredPlaybackUsesPersistedEpubChapterInPartialSnapshot() {
+        let snapshot = JobSnapshot(
+            jobId: "embedded-book-id",
+            state: "partial",
+            bookTitle: "Book",
+            bookAuthor: nil,
+            coverUrl: nil,
+            coverMimeType: nil,
+            engine: "edge",
+            voice: "voice",
+            language: nil,
+            progressPercent: 50,
+            chaptersTotal: 5,
+            chaptersCompleted: 2,
+            chapterProgress: [
+                .init(index: 1, name: "One", status: "completed", downloadUrl: "file:///one.mp3", chars: nil, charsProcessed: nil, progressRatio: 1, durationSeconds: nil, startedAt: nil, completedAt: nil),
+                .init(index: 4, name: "Four", status: "completed", downloadUrl: "file:///four.mp3", chars: nil, charsProcessed: nil, progressRatio: 1, durationSeconds: nil, startedAt: nil, completedAt: nil),
+            ],
+            outputs: nil,
+            logUrl: nil,
+            error: nil,
+            lastActivityAt: nil
+        )
+
+        XCTAssertEqual(
+            AudioPlayer.restoredPlayableChapterOffset(snapshot: snapshot, persistedEpubChapterIndex: 4),
+            1
+        )
+    }
 }

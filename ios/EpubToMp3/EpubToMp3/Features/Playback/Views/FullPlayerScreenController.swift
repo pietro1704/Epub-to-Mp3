@@ -5,6 +5,11 @@ import Combine
 import MediaPlayer
 import UIKit
 
+enum FullPlayerLayoutMetrics {
+    static let elementSpacing: CGFloat = 8
+    static let bottomInset: CGFloat = 0
+}
+
 @MainActor
 final class FullPlayerScreenController: UIViewController {
     private let player: AudioPlayer
@@ -206,7 +211,7 @@ final class FullPlayerScreenController: UIViewController {
         transport.axis = .horizontal
         transport.alignment = .center
         transport.distribution = .equalSpacing
-        transport.spacing = 12
+        transport.spacing = FullPlayerLayoutMetrics.elementSpacing
 
         var rateConfig = UIButton.Configuration.plain()
         rateConfig.contentInsets = .init(top: 8, leading: 12, bottom: 8, trailing: 12)
@@ -245,7 +250,8 @@ final class FullPlayerScreenController: UIViewController {
         let secondary = UIStackView(arrangedSubviews: [rateButton, UIView(), tocButton, sleepButton, airPlayContainer])
         secondary.axis = .horizontal
         secondary.alignment = .center
-        secondary.spacing = 16
+        secondary.spacing = FullPlayerLayoutMetrics.elementSpacing
+        secondary.translatesAutoresizingMaskIntoConstraints = false
 
         volumeView.showsVolumeSlider = true
         volumeView.translatesAutoresizingMaskIntoConstraints = false
@@ -253,6 +259,14 @@ final class FullPlayerScreenController: UIViewController {
         let timeRow = UIStackView(arrangedSubviews: [elapsedLabel, UIView(), remainingLabel])
         timeRow.axis = .horizontal
         timeRow.alignment = .fill
+
+        let playbackControls = UIStackView(arrangedSubviews: [
+            slider, timeRow, transport, volumeView
+        ])
+        playbackControls.axis = .vertical
+        playbackControls.alignment = .fill
+        playbackControls.spacing = FullPlayerLayoutMetrics.elementSpacing
+        playbackControls.translatesAutoresizingMaskIntoConstraints = false
 
         // `coverContainer` must NOT be an arranged subview directly: the
         // vertical stack's default `.fill` alignment pins every arranged
@@ -267,22 +281,31 @@ final class FullPlayerScreenController: UIViewController {
         coverRow.addSubview(coverContainer)
 
         stackView.axis = .vertical
-        stackView.spacing = 12
+        stackView.spacing = FullPlayerLayoutMetrics.elementSpacing
         stackView.translatesAutoresizingMaskIntoConstraints = false
         stackView.addArrangedSubview(coverRow)
-        stackView.addArrangedSubview(titleLabel)
-        stackView.addArrangedSubview(authorLabel)
-        stackView.addArrangedSubview(chapterLabel)
-        stackView.addArrangedSubview(slider)
-        stackView.addArrangedSubview(timeRow)
-        stackView.addArrangedSubview(transport)
-        stackView.addArrangedSubview(volumeView)
-        stackView.addArrangedSubview(secondary)
+
+        let metadata = UIStackView(arrangedSubviews: [titleLabel, authorLabel, chapterLabel])
+        metadata.axis = .vertical
+        metadata.alignment = .fill
+        metadata.spacing = FullPlayerLayoutMetrics.elementSpacing
+        metadata.translatesAutoresizingMaskIntoConstraints = false
+
+        // Keep all non-cover elements in one bottom-anchored group. This
+        // leaves the flexible area only between the cover and the metadata,
+        // while every visible player control remains eight points apart.
+        let bottomContent = UIStackView(arrangedSubviews: [metadata, playbackControls, secondary])
+        bottomContent.axis = .vertical
+        bottomContent.alignment = .fill
+        bottomContent.spacing = FullPlayerLayoutMetrics.elementSpacing
+        bottomContent.translatesAutoresizingMaskIntoConstraints = false
+
         contentScrollView.translatesAutoresizingMaskIntoConstraints = false
         contentScrollView.alwaysBounceVertical = false
         contentScrollView.showsVerticalScrollIndicator = false
         contentScrollView.contentInsetAdjustmentBehavior = .never
         view.addSubview(contentScrollView)
+        view.addSubview(bottomContent)
         contentScrollView.addSubview(stackView)
         view.bringSubviewToFront(dragHandle)
         view.bringSubviewToFront(closeButton)
@@ -306,7 +329,18 @@ final class FullPlayerScreenController: UIViewController {
             contentScrollView.leadingAnchor.constraint(equalTo: view.layoutMarginsGuide.leadingAnchor, constant: 12),
             contentScrollView.trailingAnchor.constraint(equalTo: view.layoutMarginsGuide.trailingAnchor, constant: -12),
             contentScrollView.topAnchor.constraint(equalTo: closeButton.bottomAnchor, constant: 8),
-            contentScrollView.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -16),
+            contentScrollView.bottomAnchor.constraint(
+                equalTo: bottomContent.topAnchor,
+                constant: -FullPlayerLayoutMetrics.elementSpacing
+            ),
+
+            bottomContent.leadingAnchor.constraint(equalTo: view.layoutMarginsGuide.leadingAnchor, constant: 12),
+            bottomContent.trailingAnchor.constraint(equalTo: view.layoutMarginsGuide.trailingAnchor, constant: -12),
+            bottomContent.bottomAnchor.constraint(
+                equalTo: view.safeAreaLayoutGuide.bottomAnchor,
+                constant: -FullPlayerLayoutMetrics.bottomInset
+            ),
+            secondary.heightAnchor.constraint(greaterThanOrEqualToConstant: 44),
 
             stackView.leadingAnchor.constraint(equalTo: contentScrollView.contentLayoutGuide.leadingAnchor),
             stackView.trailingAnchor.constraint(equalTo: contentScrollView.contentLayoutGuide.trailingAnchor),
@@ -318,7 +352,7 @@ final class FullPlayerScreenController: UIViewController {
             coverContainer.heightAnchor.constraint(equalTo: coverContainer.widthAnchor, multiplier: 1.5),
             coverContainer.heightAnchor.constraint(
                 lessThanOrEqualTo: contentScrollView.frameLayoutGuide.heightAnchor,
-                multiplier: 0.34
+                multiplier: 0.70
             ),
             coverContainer.topAnchor.constraint(equalTo: coverRow.topAnchor),
             coverContainer.bottomAnchor.constraint(equalTo: coverRow.bottomAnchor),
@@ -433,11 +467,12 @@ final class FullPlayerScreenController: UIViewController {
 
     private func renderPlaybackPosition() {
         slider.maximumValue = Float(max(playbackClock.durationSeconds, 1))
-        if !isScrubbing {
-            slider.value = Float(playbackClock.positionSeconds)
+        let position = player.isSeeking ? player.positionSeconds : playbackClock.positionSeconds
+        if !isScrubbing && !player.isSeeking {
+            slider.value = Float(position)
         }
-        elapsedLabel.text = formatTime(playbackClock.positionSeconds)
-        let remaining = max(0, playbackClock.durationSeconds - playbackClock.positionSeconds)
+        elapsedLabel.text = formatTime(position)
+        let remaining = max(0, playbackClock.durationSeconds - position)
         let rateAdjusted = remaining / Double(player.rate.rawValue)
         remainingLabel.text = "-" + formatTime(rateAdjusted)
     }

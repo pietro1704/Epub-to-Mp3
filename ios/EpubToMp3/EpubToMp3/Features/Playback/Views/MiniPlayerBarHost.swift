@@ -259,7 +259,7 @@ final class MiniPlayerBarUIKitView: UIView, UIGestureRecognizerDelegate {
             coverView.contentMode = .scaleAspectFit
         }
 
-        let isLoading = player.isConverting && !player.firstChapterReady
+        let isLoading = player.isLoading
         if isLoading {
             spinner.startAnimating()
             playPauseButton.isHidden = true

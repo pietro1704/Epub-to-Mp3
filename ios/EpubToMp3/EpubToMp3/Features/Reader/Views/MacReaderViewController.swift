@@ -478,6 +478,29 @@ final class MacReaderViewController: NSViewController, NSTableViewDataSource, NS
             currentBookId = book.id
             hasRestoredInitialPosition = false
         }
+        // Process-warm reader opens must not clear the visible chapter or
+        // show the loading cover. The last two prepared books are retained
+        // in memory precisely so this route can paint immediately.
+        if let warmPayload = LocalFulltextCache.inMemoryPayload(bookId: book.id),
+           !warmPayload.chapters.isEmpty {
+            fulltext = warmPayload
+            LocalFulltextCache.recordWarmOpen(bookId: book.id)
+            bookTitleLabel.stringValue = book.resolvedTitle
+            chapterTitleLabel.stringValue = ""
+            statusLabel.stringValue = L10n.string("reader.chapterCount", warmPayload.chapters.count)
+            chaptersTable.reloadData()
+            if !hasRestoredInitialPosition, let entry = ReaderProgressStore.read(bookId: book.id) {
+                selectedChapter = entry.chapterIndex
+            }
+            selectedChapter = min(max(selectedChapter, 0), max(0, warmPayload.chapters.count - 1))
+            if let row = tocRows.firstIndex(where: { $0.chapterIndex == selectedChapter }) {
+                chaptersTable.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
+            }
+            showChapter(selectedChapter)
+            restoreReadingProgressIfNeeded(bookId: book.id)
+            hideLoading()
+            return
+        }
         fulltext = nil
         textView.string = ""
         comicPageImageView.image = nil
@@ -489,30 +512,35 @@ final class MacReaderViewController: NSViewController, NSTableViewDataSource, NS
         loadTask = Task { [weak self] in
             guard let self else { return }
             do {
-                let fileURL = try await library.openBookFileAsync(id: book.id)
-                guard self.isActiveLoad(generation, bookID: book.id) else { return }
-                if book.fileType == .pdf {
-                    await showPDF(fileURL)
-                    guard self.isActiveLoad(generation, bookID: book.id) else { return }
-                    self.hideLoading()
-                    return
-                }
-                let cachedPayload = LocalFulltextCache.read(bookId: book.id)
+                let cachedPayload = await Task.detached(priority: .userInitiated) {
+                    LocalFulltextCache.read(bookId: book.id)
+                }.value
                 let payload: EbookFulltext
                 if let cachedPayload {
                     payload = cachedPayload
-                } else if book.fileType.requiresServerConversion {
-                    guard let baseURL = settings.resolvedBaseURL else {
-                        throw APIError.invalidBaseURL
-                    }
-                    let client = APIClient(baseURL: baseURL)
-                    let uploadID = try await client.uploadBook(at: fileURL)
-                    payload = try await client.fetchUploadedFulltext(uploadID: uploadID)
                 } else {
-                    payload = try await MacEpubParser.parse(at: fileURL, bookId: book.id)
+                    let fileURL = try await library.openBookFileAsync(id: book.id)
+                    guard self.isActiveLoad(generation, bookID: book.id) else { return }
+                    if book.fileType == .pdf {
+                        await showPDF(fileURL)
+                        guard self.isActiveLoad(generation, bookID: book.id) else { return }
+                        self.hideLoading()
+                        return
+                    }
+                    if book.fileType.requiresServerConversion {
+                        guard let baseURL = settings.resolvedBaseURL else {
+                            throw APIError.invalidBaseURL
+                        }
+                        let client = APIClient(baseURL: baseURL)
+                        let uploadID = try await client.uploadBook(at: fileURL)
+                        payload = try await client.fetchUploadedFulltext(uploadID: uploadID)
+                    } else {
+                        payload = try await MacEpubParser.parse(at: fileURL, bookId: book.id)
+                    }
                 }
                 guard self.isActiveLoad(generation, bookID: book.id) else { return }
                 LocalFulltextCache.save(payload, bookId: book.id)
+                LocalFulltextCache.recordWarmOpen(bookId: book.id)
                 fulltext = payload
                 statusLabel.stringValue = L10n.string("reader.chapterCount", payload.chapters.count)
                 chaptersTable.reloadData()

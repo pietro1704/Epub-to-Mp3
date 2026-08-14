@@ -268,9 +268,17 @@ final class MacLibraryViewController: NSViewController, NSSearchFieldDelegate,
     @objc
     private func removeSelectedBook(_ sender: NSMenuItem) {
         guard let id = sender.representedObject as? String else { return }
+        let jobID = library.books.first(where: { $0.id == id })?.lastJobId
         bookmarkStore.removeAll(for: id)
         LocalFulltextCache.evict(bookId: id)
-        if let jobID = library.books.first(where: { $0.id == id })?.lastJobId {
+        EpubFontManager.evictCachedFonts(bookID: id)
+        Task {
+            try? await LocalAudioArtifactStore.shared.removeAllAudio(bookID: id)
+            if let jobID {
+                await DownloadManager.shared.clearDownloadedBook(jobId: jobID)
+            }
+        }
+        if let jobID {
             FulltextStore.evict(jobId: jobID)
         }
         library.remove(id: id)
