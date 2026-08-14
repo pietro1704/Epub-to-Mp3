@@ -94,9 +94,19 @@ jobs:
           category: /language:java-kotlin
 
   swift:
-    name: CodeQL · swift
+    name: CodeQL · swift (${{ matrix.platform }})
     runs-on: macos-latest
     timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macOS
+            destination: generic/platform=macOS
+            derived_data: .build-codeql-macos
+          - platform: iOS
+            destination: generic/platform=iOS
+            derived_data: .build-codeql-ios
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
@@ -119,27 +129,19 @@ jobs:
         working-directory: ios/EpubToMp3
         run: xcodegen generate
 
-      - name: Build macOS and iOS Swift targets
+      - name: Build Swift target
         working-directory: ios/EpubToMp3
         run: |
           xcodebuild \
             -project EpubToMp3.xcodeproj \
             -scheme EpubToMp3 \
-            -destination 'generic/platform=macOS' \
+            -destination '${{ matrix.destination }}' \
             -configuration Debug \
-            -derivedDataPath .build-codeql \
-            CODE_SIGNING_ALLOWED=NO \
-            build
-          xcodebuild \
-            -project EpubToMp3.xcodeproj \
-            -scheme EpubToMp3 \
-            -destination 'generic/platform=iOS' \
-            -configuration Debug \
-            -derivedDataPath .build-codeql-ios \
+            -derivedDataPath '${{ matrix.derived_data }}' \
             CODE_SIGNING_ALLOWED=NO \
             build
 
       - name: Analyze
         uses: github/codeql-action/analyze@v4
         with:
-          category: /language:swift
+          category: /language:swift/platform:${{ matrix.platform }}
