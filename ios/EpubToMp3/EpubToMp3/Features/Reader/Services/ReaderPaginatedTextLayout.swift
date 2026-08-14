@@ -67,7 +67,6 @@ enum ReaderPaginatedTextLayout {
         /// instead of pretending a canonical page boundary is valid.
         let oversizedFragment: ProtectedFragment?
         let pageHeight: CGFloat
-        let topInset: CGFloat
         let bottomInset: CGFloat
 
         /// The caller must present this chapter continuously because a whole
@@ -86,10 +85,17 @@ enum ReaderPaginatedTextLayout {
 
         func clippingReport(at contentOffset: CGFloat) -> ClippingReport {
             let viewport = readingViewport(at: contentOffset)
-            let intersecting = protectedFragments.filter { $0.contentRect.intersects(viewport) }
+            let epsilon: CGFloat = 0.5
+            let intersecting = protectedFragments.filter {
+                $0.contentRect.maxY > viewport.minY + epsilon
+                    && $0.contentRect.minY < viewport.maxY - epsilon
+            }
             return ClippingReport(
                 intersectingFragments: intersecting,
-                clippedFragments: intersecting.filter { !viewport.contains($0.contentRect) }
+                clippedFragments: intersecting.filter {
+                    $0.contentRect.minY < viewport.minY - epsilon
+                        || $0.contentRect.maxY > viewport.maxY + epsilon
+                }
             )
         }
 
@@ -100,11 +106,11 @@ enum ReaderPaginatedTextLayout {
         func bottomOverflowMaskRange(at contentOffset: CGFloat) -> ClosedRange<CGFloat>? {
             let viewport = readingViewport(at: contentOffset)
             let report = clippingReport(at: contentOffset)
-            guard report.clippedFragments.contains(where: { $0.contentRect.maxY > viewport.maxY }) else {
+            guard report.clippedFragments.contains(where: { $0.contentRect.maxY > viewport.maxY + 0.5 }) else {
                 return nil
             }
             guard let lastCompleteBottom = report.intersectingFragments
-                .filter({ viewport.contains($0.contentRect) })
+                .filter({ $0.contentRect.minY >= viewport.minY - 0.5 && $0.contentRect.maxY <= viewport.maxY + 0.5 })
                 .map(\.contentRect.maxY)
                 .max(), lastCompleteBottom < viewport.maxY - 0.5 else {
                 return nil
@@ -112,14 +118,34 @@ enum ReaderPaginatedTextLayout {
             return lastCompleteBottom...viewport.maxY
         }
 
+        /// A raw chrome-transition offset can begin in the middle of a line.
+        /// Preserve that exact offset, but conceal the incomplete leading
+        /// slice until the first whole line rather than ever rendering a
+        /// chopped glyph at the top edge.
+        func topOverflowMaskRange(at contentOffset: CGFloat) -> ClosedRange<CGFloat>? {
+            let viewport = readingViewport(at: contentOffset)
+            let report = clippingReport(at: contentOffset)
+            guard report.clippedFragments.contains(where: { $0.contentRect.minY < viewport.minY - 0.5 }) else {
+                return nil
+            }
+            guard let firstCompleteTop = report.intersectingFragments
+                .filter({ $0.contentRect.minY >= viewport.minY - 0.5 && $0.contentRect.maxY <= viewport.maxY + 0.5 })
+                .map(\.contentRect.minY)
+                .min(), firstCompleteTop > viewport.minY + 0.5 else {
+                return nil
+            }
+            return viewport.minY...firstCompleteTop
+        }
+
         private func readingViewport(at contentOffset: CGFloat) -> CGRect {
             CGRect(
                 x: 0,
-                y: contentOffset + topInset,
-                width: .greatestFiniteMagnitude,
-                height: max(0, pageHeight - topInset - bottomInset)
+                y: contentOffset,
+                width: 1,
+                height: max(0, pageHeight - bottomInset)
             )
         }
+
     }
 
     /// Calculates all pagination facts from one TextKit pass. The caller must
@@ -140,7 +166,6 @@ enum ReaderPaginatedTextLayout {
                 protectedFragments: [],
                 oversizedFragment: nil,
                 pageHeight: input.pageHeight,
-                topInset: input.topInset,
                 bottomInset: input.bottomInset
             )
         }
@@ -163,18 +188,13 @@ enum ReaderPaginatedTextLayout {
                 protectedFragments: [],
                 oversizedFragment: nil,
                 pageHeight: input.pageHeight,
-                topInset: input.topInset,
                 bottomInset: input.bottomInset
             )
         }
 
         let usableHeight = max(0, input.pageHeight - input.verticalInset)
         let naturalHeight = ceil(lastFragment.containerRect.maxY + input.verticalInset)
-        // Reserve a full final viewport from the final protected-fragment
-        // start, so UIScrollView cannot clamp that canonical start into the
-        // previous line.
-        let boundaryHeight = ceil(lastFragment.contentRect.minY - input.topInset + input.pageHeight)
-        let contentHeight = max(input.pageHeight, max(naturalHeight, boundaryHeight))
+        let contentHeight = max(input.pageHeight, naturalHeight)
         let oversized = fragments.first(where: { $0.containerRect.height > usableHeight + 0.5 })
 
         guard input.pageHeight > input.verticalInset, !fragments.isEmpty else {
@@ -184,7 +204,6 @@ enum ReaderPaginatedTextLayout {
                 protectedFragments: fragments,
                 oversizedFragment: oversized,
                 pageHeight: input.pageHeight,
-                topInset: input.topInset,
                 bottomInset: input.bottomInset
             )
         }
@@ -195,7 +214,7 @@ enum ReaderPaginatedTextLayout {
         let epsilon: CGFloat = 0.5
         while firstFragment < fragments.count {
             while firstFragment < fragments.count,
-                  fragments[firstFragment].contentRect.maxY <= pageStart + input.topInset + epsilon {
+                  fragments[firstFragment].contentRect.maxY <= pageStart + epsilon {
                 firstFragment += 1
             }
             guard firstFragment < fragments.count else { break }
@@ -203,12 +222,12 @@ enum ReaderPaginatedTextLayout {
             let pageLimit = pageStart + input.pageHeight - input.bottomInset
             var nextFragment = firstFragment
             while nextFragment < fragments.count,
-                  fragments[nextFragment].contentRect.maxY <= pageLimit + epsilon {
+                  fragments[nextFragment].contentRect.maxY <= pageLimit {
                 nextFragment += 1
             }
             guard nextFragment < fragments.count else { break }
 
-            let nextOffset = fragments[nextFragment].contentRect.minY - input.topInset
+            let nextOffset = fragments[nextFragment].contentRect.minY
             let safeOffset = nextOffset > pageStart + epsilon
                 ? nextOffset
                 : pageStart + input.pageHeight
@@ -216,13 +235,25 @@ enum ReaderPaginatedTextLayout {
             pageStart = safeOffset
             firstFragment = nextFragment
         }
+        // A line-boundary start can leave a very large blank footer on the
+        // final page, especially at small font sizes. Finish at the real
+        // reachable content offset instead. If that offset starts inside a
+        // line, the top overflow guard hides only that incomplete slice and
+        // keeps the full line visible on the preceding page.
+        let finalOffset = max(0, contentHeight - input.pageHeight)
+        if let lastOffset = offsets.last {
+            if finalOffset > lastOffset + epsilon {
+                offsets.append(finalOffset)
+            } else if finalOffset < lastOffset - epsilon {
+                offsets[offsets.count - 1] = finalOffset
+            }
+        }
         return Result(
             contentHeight: contentHeight,
             canonicalPageOffsets: offsets,
             protectedFragments: fragments,
             oversizedFragment: oversized,
             pageHeight: input.pageHeight,
-            topInset: input.topInset,
             bottomInset: input.bottomInset
         )
     }

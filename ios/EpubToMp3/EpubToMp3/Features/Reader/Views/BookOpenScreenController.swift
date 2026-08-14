@@ -40,6 +40,7 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
     private let scrollView = UIScrollView()
     private let pageIndicator = UILabel()
     private let pageOverflowGuard = UIView()
+    private let pageUnderflowGuard = UIView()
     private let flickerChapterLabel = UILabel()
     private let flickerSummaryLabel = UILabel()
     private let flickerResetButton = UIButton(type: .system)
@@ -343,6 +344,11 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
         pageOverflowGuard.backgroundColor = settings.readerTheme.previewColors.background
         pageOverflowGuard.isHidden = true
         view.addSubview(pageOverflowGuard)
+        pageUnderflowGuard.isUserInteractionEnabled = false
+        pageUnderflowGuard.accessibilityElementsHidden = true
+        pageUnderflowGuard.backgroundColor = settings.readerTheme.previewColors.background
+        pageUnderflowGuard.isHidden = true
+        view.addSubview(pageUnderflowGuard)
         view.bringSubviewToFront(pageIndicator)
         scrollTopToSafeArea = scrollView.topAnchor.constraint(
             equalTo: view.safeAreaLayoutGuide.topAnchor,
@@ -674,6 +680,7 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
             updatePaginationProbe()
         } else {
             pageOverflowGuard.isHidden = true
+            pageUnderflowGuard.isHidden = true
             let viewportSize = scrollView.bounds.size
             if viewportSize.width > 0, viewportSize.height > 0,
                (needsTextLayoutRefresh || viewportSize != lastScrollingViewportSize) {
@@ -1405,32 +1412,52 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
               !textView.isHidden,
               scrollView.bounds.height > 0 else {
             pageOverflowGuard.isHidden = true
+            pageUnderflowGuard.isHidden = true
             return
         }
         let viewport = scrollView.convert(scrollView.bounds, to: view)
-        guard let maskRange = paginatedLayoutResult?.bottomOverflowMaskRange(
-            at: scrollView.contentOffset.y
-        ) else {
-            pageOverflowGuard.isHidden = true
+        let offset = scrollView.contentOffset.y
+        applyOverflowGuard(
+            pageOverflowGuard,
+            range: paginatedLayoutResult?.bottomOverflowMaskRange(at: offset),
+            viewport: viewport,
+            masksTop: false
+        )
+        applyOverflowGuard(
+            pageUnderflowGuard,
+            range: paginatedLayoutResult?.topOverflowMaskRange(at: offset),
+            viewport: viewport,
+            masksTop: true
+        )
+        view.bringSubviewToFront(pageIndicator)
+    }
+
+    private func applyOverflowGuard(
+        _ guardView: UIView,
+        range: ClosedRange<CGFloat>?,
+        viewport: CGRect,
+        masksTop: Bool
+    ) {
+        guard let range else {
+            guardView.isHidden = true
             return
         }
-        let bottom = textView.convert(
-            CGPoint(x: textView.bounds.minX, y: maskRange.lowerBound),
+        let boundary = textView.convert(
+            CGPoint(x: textView.bounds.minX, y: masksTop ? range.upperBound : range.lowerBound),
             to: view
         ).y
-        guard bottom > viewport.minY + 0.5, bottom < viewport.maxY - 0.5 else {
-            pageOverflowGuard.isHidden = true
+        guard boundary > viewport.minY + 0.5, boundary < viewport.maxY - 0.5 else {
+            guardView.isHidden = true
             return
         }
-        pageOverflowGuard.backgroundColor = settings.readerTheme.previewColors.background
-        pageOverflowGuard.frame = CGRect(
+        guardView.backgroundColor = settings.readerTheme.previewColors.background
+        guardView.frame = CGRect(
             x: viewport.minX,
-            y: bottom,
+            y: masksTop ? viewport.minY : boundary,
             width: viewport.width,
-            height: viewport.maxY - bottom
+            height: masksTop ? boundary - viewport.minY : viewport.maxY - boundary
         ).integral
-        pageOverflowGuard.isHidden = false
-        view.bringSubviewToFront(pageIndicator)
+        guardView.isHidden = false
     }
 
     private func updateScrollingTextHeight() -> Bool {
@@ -1489,7 +1516,17 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
         let clippedLineCount: Int
         if let layoutResult {
             let report = layoutResult.clippingReport(at: scrollView.contentOffset.y)
-            clippedLineCount = report.clippedLineCount
+            let bottomMaskedRange = layoutResult.bottomOverflowMaskRange(at: scrollView.contentOffset.y)
+            let topMaskedRange = layoutResult.topOverflowMaskRange(at: scrollView.contentOffset.y)
+            clippedLineCount = report.clippedFragments.filter { fragment in
+                let bottomMasked = bottomMaskedRange.map {
+                    !pageOverflowGuard.isHidden && fragment.contentRect.minY >= $0.lowerBound - 0.5
+                } ?? false
+                let topMasked = topMaskedRange.map {
+                    !pageUnderflowGuard.isHidden && fragment.contentRect.maxY <= $0.upperBound + 0.5
+                } ?? false
+                return !bottomMasked && !topMasked
+            }.count
             completeFragmentRects = report.intersectingFragments
                 .filter { !report.clippedFragments.contains($0) }
                 .map(\.contentRect)
@@ -1821,6 +1858,7 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
         textView.backgroundColor = colors.background
         pageIndicator.textColor = colors.foreground.withAlphaComponent(0.7)
         pageOverflowGuard.backgroundColor = colors.background
+        pageUnderflowGuard.backgroundColor = colors.background
         applyReaderLayoutMode()
         applyReaderMargins()
         view.setNeedsLayout()

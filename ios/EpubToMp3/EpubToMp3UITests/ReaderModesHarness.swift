@@ -14,6 +14,7 @@ final class ReaderModesHarness {
         let chromeToggleEnabled: Bool
         let paginationProbeEnabled: Bool
         let flickerProbeEnabled: Bool
+        let showsPageTurnOverlay: Bool
         let additionalArguments: [String]
 
         init(
@@ -23,6 +24,7 @@ final class ReaderModesHarness {
             chromeToggleEnabled: Bool,
             paginationProbeEnabled: Bool,
             flickerProbeEnabled: Bool = false,
+            showsPageTurnOverlay: Bool = false,
             additionalArguments: [String] = []
         ) {
             self.source = source
@@ -31,6 +33,7 @@ final class ReaderModesHarness {
             self.chromeToggleEnabled = chromeToggleEnabled
             self.paginationProbeEnabled = paginationProbeEnabled
             self.flickerProbeEnabled = flickerProbeEnabled
+            self.showsPageTurnOverlay = showsPageTurnOverlay
             self.additionalArguments = additionalArguments
         }
 
@@ -84,7 +87,9 @@ final class ReaderModesHarness {
         if configuration.flickerProbeEnabled {
             app.launchArguments += ["-uiTestFlickerProbe"]
         }
-        app.launchArguments += ["-uiTestNoPageTurnOverlay"]
+        if !configuration.showsPageTurnOverlay {
+            app.launchArguments += ["-uiTestNoPageTurnOverlay"]
+        }
         if configuration.smallFont {
             app.launchArguments += ["-uiTestReaderFontSize", "0", "-uiTestReaderOverrideFontSize"]
         }
@@ -101,14 +106,15 @@ final class ReaderModesHarness {
             throw XCTSkip("No book is available for the reader test.")
         }
         if !firstBook.isHittable {
-            let closeReader = app.buttons["reader.close"].firstMatch
-            guard closeReader.waitForExistence(timeout: 5) else {
-                throw XCTSkip("The library is covered by an unknown surface.")
-            }
-            closeReader.tap()
+            // XCTest can retain the prior test's foreground scene even after
+            // a fresh `XCUIApplication` is created. Relaunch with the
+            // fixture arguments instead of depending on that scene's chrome
+            // state; the fixture contract is a deterministic library start.
+            app.terminate()
+            app.launch()
             XCTAssertTrue(
-                firstBook.waitForExistence(timeout: 5) && firstBook.isHittable,
-                "Closing a restored reader must reveal the fixture library."
+                firstBook.waitForExistence(timeout: 10) && firstBook.isHittable,
+                "Fixture relaunch must reveal a hittable library book."
             )
         }
         firstBook.tap()
@@ -153,11 +159,12 @@ final class ReaderModesHarness {
     var paginationMetrics: PaginationMetrics? {
         let probe = app.staticTexts["reader.paginationProbe"].firstMatch
         guard probe.waitForExistence(timeout: 5) else { return nil }
-        let values = Dictionary(uniqueKeysWithValues: probe.label.split(separator: ";").compactMap { item in
+        let pairs: [(String, Int)] = probe.label.split(separator: ";").compactMap { item in
             let pair = item.split(separator: "=", maxSplits: 1)
             guard pair.count == 2, let value = Int(pair[1]) else { return nil }
             return (String(pair[0]), value)
-        })
+        }
+        let values = Dictionary(uniqueKeysWithValues: pairs)
         return PaginationMetrics(values: values)
     }
 

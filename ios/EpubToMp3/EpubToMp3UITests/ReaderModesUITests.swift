@@ -9,14 +9,21 @@ import XCTest
 final class ReaderModesUITests: XCTestCase {
     override func setUpWithError() throws { continueAfterFailure = false }
 
-    private func launch(layout: String, smallFont: Bool = false) -> XCUIApplication {
+    private func launch(
+        layout: String,
+        smallFont: Bool = false,
+        showsPageTurnOverlay: Bool = false,
+        additionalArguments: [String] = []
+    ) -> XCUIApplication {
         ReaderModesHarness().launch(.init(
             source: .fixture,
             layout: layout,
             smallFont: smallFont,
             chromeToggleEnabled: true,
             paginationProbeEnabled: true,
-            flickerProbeEnabled: true
+            flickerProbeEnabled: true,
+            showsPageTurnOverlay: showsPageTurnOverlay,
+            additionalArguments: additionalArguments
         ))
     }
 
@@ -507,7 +514,11 @@ final class ReaderModesUITests: XCTestCase {
     }
 
     func testHorizontalCurlAppearsForForwardAndBackwardTurns() throws {
-        let app = launch(layout: "paginated")
+        let app = launch(
+            layout: "paginated",
+            showsPageTurnOverlay: true,
+            additionalArguments: ["-uiTestPageTurnStyle", "flip"]
+        )
         try openBook(app)
         let right = app.buttons["reader.pageTurn.right"].firstMatch
         let left = app.buttons["reader.pageTurn.left"].firstMatch

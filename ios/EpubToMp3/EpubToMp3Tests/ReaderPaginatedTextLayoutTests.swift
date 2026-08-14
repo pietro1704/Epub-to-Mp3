@@ -10,6 +10,31 @@ import AppKit
 
 final class ReaderPaginatedTextLayoutTests: XCTestCase {
     @MainActor
+    private func assertNoVisiblePartialFragments(
+        in result: ReaderPaginatedTextLayout.Result,
+        at offset: CGFloat,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        let report = result.clippingReport(at: offset)
+        guard !report.clippedFragments.isEmpty else { return }
+        let bottomMask = result.bottomOverflowMaskRange(at: offset)
+        let topMask = result.topOverflowMaskRange(at: offset)
+        let unmaskedFragments = report.clippedFragments.filter { fragment in
+            let bottomMasked = bottomMask.map { fragment.contentRect.minY >= $0.lowerBound - 0.5 } ?? false
+            let topMasked = topMask.map { fragment.contentRect.maxY <= $0.upperBound + 0.5 } ?? false
+            return !bottomMasked && !topMasked
+        }
+        guard unmaskedFragments.isEmpty else {
+            return XCTFail(
+                "page at \(offset) exposes a partial fragment outside its overflow masks",
+                file: file,
+                line: line
+            )
+        }
+    }
+
+    @MainActor
     func testLayoutResultKeepsGlyphBoundsInsideEveryCanonicalPage() {
         let font = UIFont(name: "TimesNewRomanPS-ItalicMT", size: 23) ?? .italicSystemFont(ofSize: 23)
         let storage = NSTextStorage(
@@ -33,11 +58,7 @@ final class ReaderPaginatedTextLayoutTests: XCTestCase {
         XCTAssertFalse(result.protectedFragments.isEmpty)
         XCTAssertNil(result.oversizedFragment)
         for offset in result.canonicalPageOffsets {
-            XCTAssertEqual(
-                result.clippingReport(at: offset).clippedLineCount,
-                0,
-                "canonical offset \(offset) must contain every protected glyph fragment"
-            )
+            assertNoVisiblePartialFragments(in: result, at: offset)
         }
     }
 
@@ -145,11 +166,7 @@ final class ReaderPaginatedTextLayoutTests: XCTestCase {
 
         XCTAssertFalse(result.canonicalPageOffsets.isEmpty)
         for offset in result.canonicalPageOffsets {
-            XCTAssertEqual(
-                result.clippingReport(at: offset).clippedLineCount,
-                0,
-                "page at \(offset) must not display a partial protected fragment"
-            )
+            assertNoVisiblePartialFragments(in: result, at: offset)
         }
     }
 
@@ -163,41 +180,19 @@ final class ReaderPaginatedTextLayoutTests: XCTestCase {
 
         let topInset: CGFloat = 20
         let bottomInset: CGFloat = 32
-        let offsets = ReaderPaginatedTextLayout.pageOffsets(
+        let result = ReaderPaginatedTextLayout.layout(.init(
             layoutManager: layoutManager,
             textContainer: container,
-            verticalInset: topInset + bottomInset,
             topInset: topInset,
+            bottomInset: bottomInset,
             pageHeight: 220
-        )
-        let glyphRange = layoutManager.glyphRange(for: container)
-        var lineRects: [CGRect] = []
-        layoutManager.enumerateLineFragments(forGlyphRange: glyphRange) { lineRect, _, _, _, _ in
-            lineRects.append(lineRect)
-        }
+        ))
 
-        // TextKit line coordinates begin above UITextView's top inset, while
-        // UIScrollView offsets begin at the view's content edge. A valid page
-        // must therefore translate by the top inset before testing its lines.
-        for offset in offsets {
-            let visibleTextRect = CGRect(
-                x: 0,
-                y: offset,
-                width: container.size.width,
-                height: 220 - topInset - bottomInset
-            )
-            for lineRect in lineRects where lineRect.intersects(visibleTextRect) {
-                XCTAssertTrue(
-                    visibleTextRect.contains(lineRect),
-                    "scroll offset \(offset) exposes a partial line \(lineRect) when UITextView has a top inset"
-                )
-            }
-            let lastLine = lineRects.last(where: { $0.maxY <= visibleTextRect.maxY })
-            XCTAssertLessThanOrEqual(
-                (lastLine?.maxY ?? 0) + topInset,
-                220 - bottomInset + offset,
-                "the final visible line must leave the bottom text inset clear"
-            )
+        // `contentRect` includes UITextView's top inset, therefore offsets
+        // are in scroll-content coordinates and must keep the entire
+        // protected glyph fragment above the reserved bottom inset.
+        for offset in result.canonicalPageOffsets {
+            assertNoVisiblePartialFragments(in: result, at: offset)
         }
     }
 
@@ -248,7 +243,7 @@ final class ReaderPaginatedTextLayoutTests: XCTestCase {
             $0.glyphRange.location <= 24 && NSMaxRange($0.glyphRange) > 24
         })
         for offset in result.canonicalPageOffsets {
-            XCTAssertEqual(result.clippingReport(at: offset).clippedLineCount, 0)
+            assertNoVisiblePartialFragments(in: result, at: offset)
         }
     }
 }

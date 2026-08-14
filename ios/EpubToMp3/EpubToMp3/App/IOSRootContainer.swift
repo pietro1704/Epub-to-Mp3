@@ -122,6 +122,13 @@ final class IOSRootContainerController: UIViewController {
             settings: settings
         )
         super.init(nibName: nil, bundle: nil)
+        readerController.update(
+            library: library,
+            settings: settings,
+            onBrowseLibrary: { [weak self] in
+                self?.dismissReaderToLibrary()
+            }
+        )
     }
 
     @available(*, unavailable)
@@ -305,9 +312,7 @@ final class IOSRootContainerController: UIViewController {
         readerController.update(
             library: library,
             settings: settings,
-            onBrowseLibrary: {
-                ReaderSessionState.setCurrentlyReading(bookID: nil)
-            }
+            onBrowseLibrary: { [weak self] in self?.dismissReaderToLibrary() }
         )
         refreshMiniPlayerContent()
         fullPlayerController.refresh(library: library)
@@ -467,6 +472,11 @@ final class IOSRootContainerController: UIViewController {
         miniPlayerController.view.alpha = 0
         miniPlayerController.view.isHidden = true
         overlayStateInitialized = true
+    }
+
+    private func dismissReaderToLibrary() {
+        ReaderSessionState.setCurrentlyReading(bookID: nil)
+        refreshOverlayState()
     }
 
     private func bindState() {
