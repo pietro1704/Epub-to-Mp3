@@ -412,6 +412,12 @@ final class MainReaderScreenController: UIViewController {
         readerController?.completeViewportTransition()
     }
 
+    /// The root transition coordinator captures the viewport before any host
+    /// constraint changes. Main remains an adapter, not a second owner.
+    func captureReaderViewportTransition() {
+        readerController?.prepareForViewportTransition()
+    }
+
     private func removeReaderControllerIfNeeded() {
         guard let readerController else { return }
         readerController.willMove(toParent: nil)

@@ -88,6 +88,7 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
     /// Keep the legacy offset array while callers migrate, but never derive a
     /// second set of boundaries from the controller's own TextKit traversal.
     private var paginatedLayoutResult: ReaderPaginatedTextLayout.Result?
+    private var forcesScrollingForOversizedFragment = false
     private var lastPaginatedViewportSize: CGSize = .zero
     private var lastScrollingViewportSize: CGSize = .zero
     private var settingsUpdateWorkItem: DispatchWorkItem?
@@ -106,7 +107,7 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
     private var isPageTransitioning = false
 
     private var isPaginatedMode: Bool {
-        return settings.readerLayout == .paginated
+        return settings.readerLayout == .paginated && !forcesScrollingForOversizedFragment
     }
 
     private var isUITestFixture: Bool {
@@ -1358,6 +1359,15 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
             bottomInset: textView.textContainerInset.bottom,
             pageHeight: pageHeight
         ))
+        guard result.oversizedFragment == nil else {
+            // A fragment taller than the physical page cannot be presented
+            // paginated without clipping. Fall back for this chapter instead
+            // of manufacturing a partial page boundary.
+            forcesScrollingForOversizedFragment = true
+            paginatedLayoutResult = nil
+            return updateScrollingTextHeight()
+        }
+        forcesScrollingForOversizedFragment = false
         heightConstraint.constant = result.contentHeight
         paginatedLayoutResult = result
         paginatedPageOffsets = result.canonicalPageOffsets
@@ -1572,7 +1582,6 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
         // target state; page turns remain blocked until that host transaction
         // has supplied final geometry.
         guard !isPageTransitioning else { return }
-        prepareForViewportTransition()
         chromeHidden.toggle()
         applyReaderLayoutMode()
         textView.accessibilityHint = L10n.string("reader.toggleControls")

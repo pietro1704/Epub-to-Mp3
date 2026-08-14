@@ -205,4 +205,23 @@ final class ReaderPaginatedTextLayoutTests: XCTestCase {
             )
         }
     }
+
+    @MainActor
+    func testOversizedFragmentIsReportedForTheReaderScrollingFallback() {
+        let storage = NSTextStorage(string: "Oversized")
+        let layoutManager = NSLayoutManager()
+        let container = NSTextContainer(size: CGSize(width: 180, height: 40))
+        storage.addLayoutManager(layoutManager)
+        layoutManager.addTextContainer(container)
+
+        let result = ReaderPaginatedTextLayout.layout(.init(
+            layoutManager: layoutManager,
+            textContainer: container,
+            topInset: 0,
+            bottomInset: 0,
+            pageHeight: 1
+        ))
+
+        XCTAssertNotNil(result.oversizedFragment)
+    }
 }
