@@ -30,22 +30,29 @@ enum EpubDirectoryArchiver {
         at source: URL,
         fileManager: FileManager = .default
     ) throws -> MaterializedArchive {
+        // Only file URLs supplied by the document importer can represent an
+        // expanded package. Do not turn an arbitrary URL into a filesystem
+        // path.
+        guard source.isFileURL else {
+            return .init(url: source, isTemporary: false)
+        }
+        let packageDirectory = canonicalFileURL(source)
         var isDirectory: ObjCBool = false
-        guard fileManager.fileExists(atPath: source.path, isDirectory: &isDirectory) else {
+        guard fileManager.fileExists(atPath: packageDirectory.path, isDirectory: &isDirectory) else {
             return .init(url: source, isTemporary: false)
         }
         guard isDirectory.boolValue else {
             return .init(url: source, isTemporary: false)
         }
-        guard source.pathExtension.caseInsensitiveCompare("epub") == .orderedSame,
-              isValidPackage(at: source, fileManager: fileManager) else {
+        guard packageDirectory.pathExtension.caseInsensitiveCompare("epub") == .orderedSame,
+              isValidPackage(at: packageDirectory, fileManager: fileManager) else {
             throw ArchiveError.invalidPackage(source)
         }
 
         let temporaryURL = fileManager.temporaryDirectory
             .appendingPathComponent(UUID().uuidString)
             .appendingPathExtension("epub")
-        try archive(packageDirectory: source, to: temporaryURL, fileManager: fileManager)
+        try archive(packageDirectory: packageDirectory, to: temporaryURL, fileManager: fileManager)
         return .init(url: temporaryURL, isTemporary: true)
     }
 
@@ -53,18 +60,30 @@ enum EpubDirectoryArchiver {
         at url: URL,
         fileManager: FileManager = .default
     ) -> Bool {
-        guard url.pathExtension.caseInsensitiveCompare("epub") == .orderedSame else {
+        guard url.isFileURL else {
+            return false
+        }
+        let packageDirectory = canonicalFileURL(url)
+        guard packageDirectory.pathExtension.caseInsensitiveCompare("epub") == .orderedSame else {
             return false
         }
         var isDirectory: ObjCBool = false
-        guard fileManager.fileExists(atPath: url.path, isDirectory: &isDirectory),
+        guard fileManager.fileExists(atPath: packageDirectory.path, isDirectory: &isDirectory),
               isDirectory.boolValue else {
             return false
         }
-        let mimetype = url.appendingPathComponent("mimetype")
-        let container = url.appendingPathComponent("META-INF/container.xml")
-        guard fileManager.isReadableFile(atPath: mimetype.path),
-              fileManager.isReadableFile(atPath: container.path),
+        guard let mimetype = validatedPackageMember(
+            "mimetype",
+            packageDirectory: packageDirectory,
+            fileManager: fileManager
+        ),
+        let container = validatedPackageMember(
+            "META-INF/container.xml",
+            packageDirectory: packageDirectory,
+            fileManager: fileManager
+        ),
+        fileManager.isReadableFile(atPath: mimetype.path),
+        fileManager.isReadableFile(atPath: container.path),
               (try? String(contentsOf: mimetype, encoding: .utf8)
                 .trimmingCharacters(in: .whitespacesAndNewlines)) == "application/epub+zip",
               let containerXML = try? String(contentsOf: container, encoding: .utf8),
@@ -79,25 +98,40 @@ enum EpubDirectoryArchiver {
         }
         guard let opf = validatedPackageMember(
             String(containerXML[range]),
-            packageDirectory: url
+            packageDirectory: packageDirectory,
+            fileManager: fileManager
         ) else {
             return false
         }
-        // codeql[swift/path-injection]: `validatedPackageMember` rejects absolute,
-        // traversal, and empty components before this filesystem access.
         return fileManager.isReadableFile(atPath: opf.path)
     }
 
-    private static func validatedPackageMember(_ relativePath: String, packageDirectory: URL) -> URL? {
+    /// Resolves a package member only when it is a regular, non-symlinked file
+    /// contained by the canonical EPUB directory. This blocks both `..`
+    /// traversal in OPF metadata and symlinks that escape the imported package.
+    private static func validatedPackageMember(
+        _ relativePath: String,
+        packageDirectory: URL,
+        fileManager: FileManager
+    ) -> URL? {
         let components = relativePath.split(separator: "/", omittingEmptySubsequences: false)
         guard !relativePath.hasPrefix("/"),
               !components.contains(".."),
               !components.contains(where: { $0.isEmpty || $0 == "." }) else {
             return nil
         }
-        return components.reduce(packageDirectory) { partial, component in
+        let candidate = components.reduce(packageDirectory) { partial, component in
             partial.appendingPathComponent(String(component), isDirectory: false)
         }
+        let resolved = canonicalFileURL(candidate)
+        guard isDescendant(resolved, of: packageDirectory),
+              let values = try? candidate.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey]),
+              values.isRegularFile == true,
+              values.isSymbolicLink != true,
+              fileManager.isReadableFile(atPath: resolved.path) else {
+            return nil
+        }
+        return resolved
     }
 
     private static func archive(
@@ -105,9 +139,10 @@ enum EpubDirectoryArchiver {
         to destination: URL,
         fileManager: FileManager
     ) throws {
+        let canonicalPackageDirectory = canonicalFileURL(packageDirectory)
         let keys: Set<URLResourceKey> = [.isRegularFileKey, .isSymbolicLinkKey]
         guard let enumerator = fileManager.enumerator(
-            at: packageDirectory,
+            at: canonicalPackageDirectory,
             includingPropertiesForKeys: Array(keys),
             options: [.skipsHiddenFiles]
         ) else {
@@ -118,9 +153,11 @@ enum EpubDirectoryArchiver {
         for case let url as URL in enumerator {
             let values = try url.resourceValues(forKeys: keys)
             guard values.isRegularFile == true, values.isSymbolicLink != true else { continue }
-            let relative = url.path.replacingOccurrences(of: packageDirectory.path + "/", with: "")
+            let resolved = canonicalFileURL(url)
+            guard isDescendant(resolved, of: canonicalPackageDirectory) else { continue }
+            let relative = String(resolved.path.dropFirst(canonicalPackageDirectory.path.count + 1))
             guard !relative.isEmpty else { continue }
-            let data = try Data(contentsOf: url, options: [.mappedIfSafe])
+            let data = try Data(contentsOf: resolved, options: [.mappedIfSafe])
             members.append(try Member(
                 name: relative,
                 data: data,
@@ -136,6 +173,15 @@ enum EpubDirectoryArchiver {
 
         let archive = try ZipArchive(members: members).encoded()
         try archive.write(to: destination, options: .atomic)
+    }
+
+    private static func canonicalFileURL(_ url: URL) -> URL {
+        url.standardizedFileURL.resolvingSymlinksInPath()
+    }
+
+    private static func isDescendant(_ url: URL, of directory: URL) -> Bool {
+        let directoryPath = directory.path.hasSuffix("/") ? directory.path : directory.path + "/"
+        return url.path.hasPrefix(directoryPath)
     }
 
     private enum CompressionMethod: UInt16 {
