@@ -8,7 +8,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "/Users/pietropugliesi/Developer/Epub-to-Mp3/.claude/hooks/session_start.sh",
+            "command": "ROOT=\"$(git rev-parse --show-toplevel)\" && \"$ROOT/.claude/hooks/session_start.sh\"",
             "timeout": 10,
             "async": true,
             "statusMessage": "Loading conversion history..."
@@ -21,7 +21,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "/Users/pietropugliesi/Developer/Epub-to-Mp3/.claude/hooks/prompt_context.sh",
+            "command": "ROOT=\"$(git rev-parse --show-toplevel)\" && \"$ROOT/.claude/hooks/prompt_context.sh\"",
             "timeout": 8,
             "statusMessage": "Checking conversion status..."
           }
@@ -34,21 +34,21 @@
         "hooks": [
           {
             "type": "command",
-            "command": "/Users/pietropugliesi/Developer/Epub-to-Mp3/.claude/hooks/bash_conversion.sh",
+            "command": "ROOT=\"$(git rev-parse --show-toplevel)\" && \"$ROOT/.claude/hooks/bash_conversion.sh\"",
             "timeout": 10,
             "async": true,
             "if": "Bash(python*)"
           },
           {
             "type": "command",
-            "command": "/Users/pietropugliesi/Developer/Epub-to-Mp3/.claude/hooks/bash_conversion.sh",
+            "command": "ROOT=\"$(git rev-parse --show-toplevel)\" && \"$ROOT/.claude/hooks/bash_conversion.sh\"",
             "timeout": 10,
             "async": true,
             "if": "Bash(mise run*)"
           },
           {
             "type": "command",
-            "command": "/Users/pietropugliesi/Developer/Epub-to-Mp3/.claude/hooks/ci_watch.sh",
+            "command": "ROOT=\"$(git rev-parse --show-toplevel)\" && \"$ROOT/.claude/hooks/ci_watch.sh\"",
             "timeout": 1800,
             "async": true,
             "if": "Bash(git push*)",
@@ -61,26 +61,26 @@
         "hooks": [
           {
             "type": "command",
-            "command": "/Users/pietropugliesi/Developer/Epub-to-Mp3/.claude/hooks/swift_test_after_edit.sh",
+            "command": "ROOT=\"$(git rev-parse --show-toplevel)\" && \"$ROOT/.claude/hooks/swift_test_after_edit.sh\"",
             "timeout": 120,
             "async": true,
             "statusMessage": "Re-running Swift tests after edit..."
           },
           {
             "type": "command",
-            "command": "/Users/pietropugliesi/Developer/Epub-to-Mp3/.claude/hooks/web_typecheck_after_edit.sh",
+            "command": "ROOT=\"$(git rev-parse --show-toplevel)\" && \"$ROOT/.claude/hooks/web_typecheck_after_edit.sh\"",
             "timeout": 60,
             "async": true,
             "statusMessage": "Re-running web typecheck after edit..."
           },
           {
             "type": "command",
-            "command": "/Users/pietropugliesi/Developer/Epub-to-Mp3/.claude/hooks/flutter_mirror_after_swift.sh",
+            "command": "ROOT=\"$(git rev-parse --show-toplevel)\" && \"$ROOT/.claude/hooks/flutter_mirror_after_swift.sh\"",
             "timeout": 5
           },
           {
             "type": "command",
-            "command": "cd /Users/pietropugliesi/Developer/Epub-to-Mp3 && pytest -q || true",
+            "command": "cd \"$(git rev-parse --show-toplevel)\" && pytest -q || true",
             "timeout": 120,
             "async": true,
             "statusMessage": "Running pytest after edit..."
@@ -93,24 +93,24 @@
         "hooks": [
           {
             "type": "command",
-            "command": "/Users/pietropugliesi/Developer/Epub-to-Mp3/.claude/hooks/stop_status.sh",
+            "command": "ROOT=\"$(git rev-parse --show-toplevel)\" && \"$ROOT/.claude/hooks/stop_status.sh\"",
             "timeout": 8
           },
           {
             "type": "command",
-            "command": "/Users/pietropugliesi/Developer/Epub-to-Mp3/.claude/hooks/test_coverage_gate.sh",
+            "command": "ROOT=\"$(git rev-parse --show-toplevel)\" && \"$ROOT/.claude/hooks/test_coverage_gate.sh\"",
             "timeout": 15
           },
           {
             "type": "command",
-            "command": "/Users/pietropugliesi/Developer/Epub-to-Mp3/.claude/hooks/xcode_build_smoke.sh",
+            "command": "ROOT=\"$(git rev-parse --show-toplevel)\" && \"$ROOT/.claude/hooks/xcode_build_smoke.sh\"",
             "timeout": 240,
             "async": true,
             "statusMessage": "Smoke build (xcodebuild macOS Debug)..."
           },
           {
             "type": "command",
-            "command": "/Users/pietropugliesi/Developer/Epub-to-Mp3/.claude/hooks/disk_pressure_check.sh",
+            "command": "ROOT=\"$(git rev-parse --show-toplevel)\" && \"$ROOT/.claude/hooks/disk_pressure_check.sh\"",
             "timeout": 5
           }
         ]

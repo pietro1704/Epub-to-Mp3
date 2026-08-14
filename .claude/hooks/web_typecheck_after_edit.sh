@@ -22,7 +22,8 @@ fi
 echo "$NOW" > "$STAMP"
 
 LOG="/tmp/claude-web-typecheck.log"
-cd /Users/pietropugliesi/Developer/Epub-to-Mp3/web || exit 0
+ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || exit 0
+cd "$ROOT/web" || exit 0
 {
     echo "=== $(date) :: edited $FILE"
     npx tsc --noEmit -p tsconfig.build.json 2>&1 | tail -20
