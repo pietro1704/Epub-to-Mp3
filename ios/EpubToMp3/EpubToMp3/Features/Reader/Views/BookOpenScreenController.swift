@@ -102,6 +102,7 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
     private var activeLoadingID: UUID?
     private var pendingLoadingCompletionID: UUID?
     private var isDeferringReaderGestures = false
+    private var isLoadingContent = false
     /// Prevents overlapping page renders/snapshots when the user taps the
     /// reader edges repeatedly while a page transition is still running.
     private var isPageTransitioning = false
@@ -154,6 +155,10 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
     /// fulltext), so the host screen (`MainReaderScreenController`) can
     /// hide chrome like the "Ouvir" button until content is ready.
     var onLoadStateChanged: ((Bool) -> Void)?
+
+    /// The host owns presentation state; it only needs this content fact
+    /// while it synchronizes the initial loading cover into its final viewport.
+    var isLoadingBookContent: Bool { isLoadingContent }
 
     var onChromeVisibilityChanged: ((Bool) -> Void)?
 
@@ -598,6 +603,16 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
         lastScrollingViewportSize = .zero
     }
 
+    /// Applies the root-owned chrome snapshot locally. The reader never
+    /// chooses this state: it only updates its own safe-area constraints.
+    @discardableResult
+    func applyChromeVisibility(_ isHidden: Bool) -> Bool {
+        guard chromeHidden != isHidden else { return false }
+        chromeHidden = isHidden
+        applyReaderLayoutMode()
+        return true
+    }
+
     private func applyReaderMargins() {
         let margin = CGFloat(ReaderLayoutMetrics.clampedMargin(settings.readerMargin))
         textLeadingConstraint?.constant = margin
@@ -1038,6 +1053,7 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
     /// wall. Tapping a book must show that book, not a chooser; this
     /// overlay sits full-screen above everything else until content lands.
     private func showLoadingOverlay() {
+        isLoadingContent = true
         isDeferringReaderGestures = true
         pageTap.isEnabled = false
         scrollView.isScrollEnabled = false
@@ -1065,8 +1081,7 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
         // being embedded. Always present freshly loaded content with chrome
         // visible; the first intentional reader tap can then enter immersive
         // mode without stealing the book-opening gesture.
-        chromeHidden = false
-        applyReaderLayoutMode()
+        isLoadingContent = false
         synchronizeChromeVisibility()
         onChromeVisibilityChanged?(false)
         onLoadStateChanged?(false)
@@ -1090,6 +1105,7 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
         loadingSpinner.stopAnimating()
         loadingStatusLabel.text = message
         loadingRetryButton.isHidden = false
+        isLoadingContent = false
         onLoadStateChanged?(false)
     }
 
@@ -1582,10 +1598,8 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
         // target state; page turns remain blocked until that host transaction
         // has supplied final geometry.
         guard !isPageTransitioning else { return }
-        chromeHidden.toggle()
-        applyReaderLayoutMode()
         textView.accessibilityHint = L10n.string("reader.toggleControls")
-        onChromeVisibilityChanged?(chromeHidden)
+        onChromeVisibilityChanged?(!chromeHidden)
     }
 
     @objc private func toggleChromeAccessibilityAction(_ action: UIAccessibilityCustomAction) -> Bool {

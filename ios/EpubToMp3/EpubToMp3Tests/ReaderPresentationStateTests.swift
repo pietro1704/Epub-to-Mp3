@@ -34,4 +34,12 @@ final class ReaderPresentationStateTests: XCTestCase {
         XCTAssertEqual(state, ReaderPresentationState())
         XCTAssertFalse(state.showsMiniPlayer(bookHasPlayback: true))
     }
+
+    func testLoadingSnapshotKeepsNavigationWhileReservingBottomChrome() {
+        let state = ReaderPresentationState(isReaderActive: true, isLoading: true)
+
+        XCTAssertTrue(state.showsReaderNavigation)
+        XCTAssertTrue(state.hidesBottomChrome)
+        XCTAssertFalse(state.showsMiniPlayer(bookHasPlayback: true))
+    }
 }

@@ -19,23 +19,8 @@ final class MainReaderScreenController: UIViewController {
     private var readerNavigationHeight: NSLayoutConstraint!
     private var readerTopToNavigation: NSLayoutConstraint!
     private var readerTopToRoot: NSLayoutConstraint!
-    /// This is the single source of truth for the host navigation bar. A
-    /// render can be triggered by a persisted reading position while the
-    /// reader is immersive, so deriving this state from a transient alpha is
-    /// unsafe.
-    private var readerPresentationState = ReaderPresentationState()
-    private var isReaderChromeHidden: Bool {
-        get { readerPresentationState.isChromeHidden }
-        set { readerPresentationState.isChromeHidden = newValue }
-    }
-    /// Mirrors `BookOpenScreenController.onLoadStateChanged` so `render()`
-    /// can keep "Ouvir" hidden while the book's content is still loading.
-    private var isReaderLoading: Bool {
-        get { readerPresentationState.isLoading }
-        set { readerPresentationState.isLoading = newValue }
-    }
-
-    var isLoadingBookContent: Bool { isReaderLoading }
+    /// Loading is a reader-content fact, not duplicated presentation state.
+    var isLoadingBookContent: Bool { readerController?.isLoadingBookContent ?? false }
 
     private let emptyStateStack = UIStackView()
     private let emptyTitleLabel = UILabel()
@@ -228,7 +213,7 @@ final class MainReaderScreenController: UIViewController {
         // Hidden while `BookOpenScreenController` is still parsing so the
         // open screen only ever shows cover+spinner, never chrome layered
         // on top of a blank/loading book.
-        listenButton.isHidden = currentBook == nil || isReaderLoading
+        listenButton.isHidden = currentBook == nil || isLoadingBookContent
     }
 
     private func updateReaderNavigationHeightIfNeeded() {
@@ -247,20 +232,17 @@ final class MainReaderScreenController: UIViewController {
         removeReaderControllerIfNeeded()
         emptyStateStack.isHidden = false
         listenButton.isHidden = true
-        readerPresentationState.resetForInactiveReader()
         readerNavigationBar.isHidden = true
         readerNavigationBackground.isHidden = true
     }
 
     private func showBook(_ book: BookEntity) {
         emptyStateStack.isHidden = true
-        readerPresentationState.isReaderActive = true
         readerNavigationItem.title = book.resolvedTitle
         if readerController != nil, readerBookID == book.id {
             // The existing reader already owns this book. Re-loading it on
             // every library notification causes `loadBook()` to publish a
             // loading-state change, which re-enters `render()` indefinitely.
-            applyReaderNavigationLayout(animated: false)
             return
         }
         replaceActivePlaybackIfNeeded(for: book)
@@ -268,7 +250,6 @@ final class MainReaderScreenController: UIViewController {
         // reader. Playback/title updates during pagination re-enter render()
         // but must not make the hidden mini player visible again.
         onReaderChromeVisibilityChanged?(false)
-        isReaderChromeHidden = false
         readerNavigationBar.isHidden = false
         readerNavigationBar.alpha = 1
         readerNavigationBackground.isHidden = false
@@ -283,20 +264,13 @@ final class MainReaderScreenController: UIViewController {
             bookmarkStore: bookmarkStore,
             player: player
         )
-        isReaderLoading = true
         reader.onLoadStateChanged = { [weak self] isLoading in
             guard let self else { return }
-            self.isReaderLoading = isLoading
             self.listenButton.isHidden = self.currentBook == nil || isLoading
             self.onReaderLoadingChanged?(isLoading)
         }
         reader.onChromeVisibilityChanged = { [weak self] isHidden in
             guard let self else { return }
-            self.isReaderChromeHidden = isHidden
-            // The root owns the only animated layout pass. Installing our
-            // top constraint before notifying it makes root.layoutIfNeeded()
-            // resolve navigation, text viewport and mini player together.
-            self.applyReaderNavigationLayout(animated: false, commitsLayout: false)
             self.onReaderChromeVisibilityChanged?(isHidden)
         }
         addChild(reader)
@@ -362,8 +336,25 @@ final class MainReaderScreenController: UIViewController {
     /// Hiding chrome moves the reading surface to the screen edge. The child
     /// reader captures its visible text anchor before that reflow so the
     /// expanded page does not jump to a different passage.
-    private func applyReaderNavigationLayout(animated: Bool, commitsLayout: Bool = true) {
-        let shouldShow = readerPresentationState.showsReaderNavigation
+    /// Root owns the mutable presentation state. Main only applies this
+    /// immutable snapshot to its navigation constraints.
+    @discardableResult
+    func applyReaderPresentation(_ state: ReaderPresentationState) -> Bool {
+        let chromeChanged = readerController?.applyChromeVisibility(state.isChromeHidden) ?? false
+        let navigationChanged = (readerTopToNavigation?.isActive ?? false) != state.showsReaderNavigation
+        applyReaderNavigationLayout(
+            shouldShow: state.showsReaderNavigation,
+            animated: false,
+            commitsLayout: false
+        )
+        return chromeChanged || navigationChanged
+    }
+
+    private func applyReaderNavigationLayout(
+        shouldShow: Bool,
+        animated: Bool,
+        commitsLayout: Bool = true
+    ) {
         if let readerTopToNavigation,
            let readerTopToRoot {
             NSLayoutConstraint.deactivate([readerTopToNavigation, readerTopToRoot])
@@ -400,7 +391,7 @@ final class MainReaderScreenController: UIViewController {
             animations: changes
         ) { [weak self] _ in
             guard let self else { return }
-            guard !shouldShow, self.isReaderChromeHidden else { return }
+            guard !shouldShow else { return }
             self.readerNavigationBar.isHidden = true
             self.readerNavigationBackground.isHidden = true
         }

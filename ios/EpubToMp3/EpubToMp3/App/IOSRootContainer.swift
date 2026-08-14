@@ -250,7 +250,8 @@ final class IOSRootContainerController: UIViewController {
     }
 
     private func applyReaderChromeLayout(
-        viewportTransition: ReaderViewportTransition.Token? = nil
+        viewportTransition: ReaderViewportTransition.Token? = nil,
+        needsFinalLayout: Bool = false
     ) {
         // Immersive reading removes every bottom accessory from layout, not
         // only from sight. This gives the text surface the reclaimed height
@@ -285,7 +286,7 @@ final class IOSRootContainerController: UIViewController {
                     self?.readerController.completeReaderChromeLayoutTransition()
                 }
             )
-        } else if changed {
+        } else if changed || needsFinalLayout {
             commitLayout()
             readerController.completeReaderChromeLayoutTransition()
         }
@@ -403,7 +404,11 @@ final class IOSRootContainerController: UIViewController {
                 setNeedsStatusBarAppearanceUpdate()
             }
         }
-        applyReaderChromeLayout(viewportTransition: viewportTransition)
+        let needsFinalReaderLayout = readerController.applyReaderPresentation(readerPresentationState)
+        applyReaderChromeLayout(
+            viewportTransition: viewportTransition,
+            needsFinalLayout: needsFinalReaderLayout
+        )
         let miniShouldBeVisible = readerActive
             ? readerPresentationState.showsMiniPlayer(bookHasPlayback: showMini)
             : showMini
