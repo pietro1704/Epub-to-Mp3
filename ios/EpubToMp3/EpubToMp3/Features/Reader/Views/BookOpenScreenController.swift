@@ -2249,7 +2249,12 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
     }
 
     private func showPDF(_ url: URL) {
-        contentSurface.mountPDF(at: url, in: view)
+        contentSurface.mountPDF(
+            at: url,
+            in: view,
+            textConstraints: textContentConstraints,
+            comicConstraints: comicContentConstraints
+        )
     }
 
     func presentDocumentPicker() {

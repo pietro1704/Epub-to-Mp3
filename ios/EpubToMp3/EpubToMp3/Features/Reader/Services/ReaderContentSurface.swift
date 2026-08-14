@@ -55,8 +55,14 @@ final class ReaderContentSurface {
         kind = .comic
     }
 
-    func mountPDF(at url: URL, in container: UIView) {
+    func mountPDF(
+        at url: URL,
+        in container: UIView,
+        textConstraints: [NSLayoutConstraint],
+        comicConstraints: [NSLayoutConstraint]
+    ) {
         removePDFIfNeeded()
+        NSLayoutConstraint.deactivate(textConstraints + comicConstraints)
         textView.isHidden = true
         textView.isUserInteractionEnabled = false
         comicPageImageView.isHidden = true
