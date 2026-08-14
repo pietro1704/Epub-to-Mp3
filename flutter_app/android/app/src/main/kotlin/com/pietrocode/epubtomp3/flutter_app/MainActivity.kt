@@ -21,6 +21,7 @@ import io.flutter.plugin.common.MethodChannel
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
+import java.io.InputStream
 import java.util.Locale
 
 /**
@@ -319,9 +320,7 @@ class MainActivity : FlutterActivity() {
         val target = File(File(filesDir, DOCUMENT_DIR), "${safeBase}_$sourceKey$extension")
         target.parentFile?.mkdirs()
         return try {
-            // codeql[java/android/unsafe-content-uri-resolution]: `uri` passed
-            // `isTrustedContentUri` before any ContentResolver access.
-            contentResolver.openInputStream(uri)?.use { input ->
+            openTrustedInputStream(uri)?.use { input ->
                 target.outputStream().use { output -> input.copyTo(output) }
             } ?: return null
             target.absolutePath to displayName
@@ -334,9 +333,7 @@ class MainActivity : FlutterActivity() {
     private fun detectDocumentExtension(uri: Uri): String? {
         if (!isTrustedContentUri(uri)) return null
         return try {
-            // codeql[java/android/unsafe-content-uri-resolution]: `uri` passed
-            // `isTrustedContentUri` before any ContentResolver access.
-            val header = contentResolver.openInputStream(uri)?.use { it.readNBytes(8) } ?: return null
+            val header = openTrustedInputStream(uri)?.use { it.readNBytes(8) } ?: return null
             when {
                 header.size >= 4 && header[0] == '%'.code.toByte() &&
                     header[1] == 'P'.code.toByte() && header[2] == 'D'.code.toByte() &&
@@ -369,6 +366,17 @@ class MainActivity : FlutterActivity() {
             return false
         }
         return !normalizedPath.startsWith("/data/")
+    }
+
+    private fun openTrustedInputStream(uri: Uri): InputStream? {
+        if (uri.scheme != "content" || uri.authority.isNullOrBlank()) return null
+        return try {
+            val normalizedPath = File(uri.path ?: return null).canonicalPath
+            if (normalizedPath.startsWith("/data/")) return null
+            contentResolver.openInputStream(uri)
+        } catch (_: Exception) {
+            null
+        }
     }
 
     private fun readQueueObjects(): JSONArray = try {
