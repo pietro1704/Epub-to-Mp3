@@ -358,8 +358,18 @@ class MainActivity : FlutterActivity() {
         return cursor.use { if (it.moveToFirst()) it.getString(0) else null }
     }
 
-    private fun isTrustedContentUri(uri: Uri): Boolean =
-        uri.scheme == "content" && !uri.authority.isNullOrBlank()
+    private fun isTrustedContentUri(uri: Uri): Boolean {
+        if (uri.scheme != "content" || uri.authority.isNullOrBlank()) return false
+
+        // A caller controls the content URI. Normalize its path before resolving it so
+        // a provider cannot make this activity read the app's private /data storage.
+        val normalizedPath = try {
+            File(uri.path ?: return false).canonicalPath
+        } catch (_: Exception) {
+            return false
+        }
+        return !normalizedPath.startsWith("/data/")
+    }
 
     private fun readQueueObjects(): JSONArray = try {
         JSONArray(getPreferences(MODE_PRIVATE).getString(DOCUMENT_QUEUE, "[]"))
