@@ -300,7 +300,7 @@ description = "Harvest conversion + CI logs, surface anomalies (slow chapters, f
 run = "python scripts/analyze_logs.py"
 
 [tasks."hooks-test"]
-description = "Validate Claude Code hook scripts are syntactically valid and executable"
+description = "Validate repository and Claude Code hook scripts"
 run = """
 #!/bin/bash
 set -euo pipefail
@@ -308,7 +308,8 @@ set -euo pipefail
 HOOKS_DIR=".claude/hooks"
 ok=0
 fail=0
-for script in "$HOOKS_DIR"/*.sh; do
+for script in "$HOOKS_DIR"/*.sh .githooks/* scripts/reader-change-check.sh; do
+    [[ -e "$script" ]] || continue
     name=$(basename "$script")
     if [[ ! -x "$script" ]]; then
         echo "❌ $name: not executable"
@@ -324,10 +325,26 @@ for script in "$HOOKS_DIR"/*.sh; do
         ((fail++)) || true
     fi
 done
+./scripts/test_reader_change_check.sh
 echo ""
 echo "Result: $ok OK, $fail failed"
 [[ $fail -eq 0 ]]
 """
+
+[tasks."hooks:install"]
+description = "Install versioned repository Git hooks"
+run = """
+#!/bin/bash
+set -euo pipefail
+
+chmod +x .githooks/pre-commit .githooks/post-commit scripts/reader-change-check.sh scripts/test_reader_change_check.sh
+git config core.hooksPath .githooks
+echo "Installed repository hooks from .githooks."
+"""
+
+[tasks."hooks:reader-check"]
+description = "Check native reader changes against their native test pairing"
+run = "./scripts/reader-change-check.sh --cached"
 
 [tasks."benchmark:check"]
 description = "Compare live telemetry throughput against benchmarks/baseline.json"

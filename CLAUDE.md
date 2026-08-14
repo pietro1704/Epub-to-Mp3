@@ -573,9 +573,9 @@ clarify gate → Planner → Executor → Verifier → Critic/QA → Test-author
   it, or before irreversible/costly/remote actions. Otherwise state one
   assumption and proceed.
 - **Planner → Executor**: skip the plan when it'd be the same length as the
-  diff. Domain work goes to the matching specialist in `.claude/agents/`
-  (see `project_agent_inventory.md` in memory) — there is no generic coder
-  role.
+  diff. Domain work goes to the matching specialist in
+  `docs/agents/reader-specialists.md` when it touches the native reader;
+  there is no generic coder role.
 - **Verifier**: proves the golden path now (run it, show evidence) — never
   writes permanent tests.
 - **Critic/QA**: adversarial pass after Verifier signs off — edge cases,
@@ -594,6 +594,13 @@ clarify gate → Planner → Executor → Verifier → Critic/QA → Test-author
   not a feeling.
 - Keep the pipeline proportional — a one-line fix doesn't need all six
   stages named explicitly.
+
+## Native Reader Dispatch
+
+For native reader, pagination, chrome, safe-area, page-turn, EPUB/PDF-open,
+or expanded-player changes, read `ios/EpubToMp3/AGENTS.md` and use the
+`native-reader-regression` skill. The reader's behavioral invariants live in
+`CONTEXT.md`; architecture decisions live in `docs/adr/`.
 
 ---
 

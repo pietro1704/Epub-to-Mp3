@@ -7,6 +7,8 @@ How engineering skills should consume this repository's domain documentation whe
 - `CONTEXT.md` at the repository root, or
 - `CONTEXT-MAP.md` at the repository root if it exists; it points to one `CONTEXT.md` per context.
 - `docs/adr/` for ADRs that affect the area being changed.
+- A nested `AGENTS.md` for the affected product surface. Native reader work
+  must read `ios/EpubToMp3/AGENTS.md`.
 
 If these files do not exist, proceed silently. Do not create them preemptively; domain-modeling work creates them when terminology or decisions are actually resolved.
 
