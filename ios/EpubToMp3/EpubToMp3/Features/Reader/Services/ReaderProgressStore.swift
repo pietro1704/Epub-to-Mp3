@@ -72,6 +72,12 @@ enum ReaderProgressStore {
         save(entries, defaults: defaults)
     }
 
+    /// XCTest uses this to make a seeded native book start from a known
+    /// passage without deleting the imported book itself.
+    static func clearAll(defaults: UserDefaults = .standard) {
+        defaults.removeObject(forKey: storageKey)
+    }
+
     /// Drop any stored progress whose `bookId` is not in `validBookIds`.
     /// Mirrors `BookmarkStore.pruneOrphans(validBookIds:)` /
     /// `LocalFulltextCache.pruneOrphans(validBookIds:)` so a re-imported

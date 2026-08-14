@@ -75,7 +75,10 @@ final class ReaderModesHarness {
         case .fixture:
             app.launchArguments += ["-uiTestFixture", "-uiTestResetReaderPosition"]
         case .seededLOTR:
-            app.launchArguments += ["-developmentSeedBook", "-uiTestPlaybackFixture"]
+            // The native regression must exercise the staged EPUB itself.
+            // `-uiTestFixture` intentionally replaces reader content with a
+            // synthetic payload, so it must not be present on this path.
+            app.launchArguments += ["-uiTestResetReaderPosition", "-developmentSeedBook", "-uiTestPlaybackFixture"]
         }
         app.launchArguments += ["-uiTestReaderLayout", configuration.layout]
         if configuration.chromeToggleEnabled {
@@ -98,26 +101,26 @@ final class ReaderModesHarness {
         return app
     }
 
-    func openBook(timeout: TimeInterval = 20) throws {
-        let firstBook = app.descendants(matching: .any).matching(
+    func openBook(titleContaining title: String? = nil, timeout: TimeInterval = 20) throws {
+        var books = app.descendants(matching: .any).matching(
             NSPredicate(format: "identifier BEGINSWITH %@", "library.bookTile.")
-        ).firstMatch
+        )
+        if let title {
+            books = books.matching(NSPredicate(format: "label CONTAINS[c] %@", title))
+        }
+        let firstBook = books.firstMatch
         guard firstBook.waitForExistence(timeout: timeout) else {
-            throw XCTSkip("No book is available for the reader test.")
+            throw XCTSkip("No matching book is available for the reader test.")
         }
         if !firstBook.isHittable {
-            // XCTest can retain the prior test's foreground scene even after
-            // a fresh `XCUIApplication` is created. Relaunch with the
-            // fixture arguments instead of depending on that scene's chrome
-            // state; the fixture contract is a deterministic library start.
-            app.terminate()
-            app.launch()
-            XCTAssertTrue(
-                firstBook.waitForExistence(timeout: 10) && firstBook.isHittable,
-                "Fixture relaunch must reveal a hittable library book."
-            )
+            // A native collection-cell accessibility element can be exposed
+            // before XCTest refreshes its hittability flag. Tapping its
+            // resolved centre exercises the same visible card without
+            // replacing a real EPUB test with the synthetic fixture.
+            firstBook.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        } else {
+            firstBook.tap()
         }
-        firstBook.tap()
         XCTAssertTrue(
             app.buttons["reader.search"].firstMatch.waitForExistence(timeout: timeout),
             "The selected book must open in the native reader."
@@ -127,7 +130,10 @@ final class ReaderModesHarness {
     func toggleChrome() {
         let viewport = app.scrollViews["reader.viewport"].firstMatch
         XCTAssertTrue(viewport.waitForExistence(timeout: 5), "The reader viewport must be available.")
-        viewport.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        // Stay in the central reader column but below the typical EPUB
+        // navigation/footnote link cluster. A link intentionally wins over
+        // chrome, so the automation must exercise a normal reading tap.
+        viewport.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.78)).tap()
     }
 
     func toggleChromeAndSettle(visible: Bool, timeout: TimeInterval = 3) {
@@ -153,7 +159,12 @@ final class ReaderModesHarness {
     }
 
     var chromeIsVisible: Bool {
-        app.buttons["reader.search"].firstMatch.exists
+        if let hidden = paginationMetrics?.values["chromeHidden"] {
+            return hidden == 0
+        }
+        let search = app.buttons["reader.search"].firstMatch
+        let close = app.buttons["reader.close"].firstMatch
+        return (search.exists && search.isHittable) || (close.exists && close.isHittable)
     }
 
     var paginationMetrics: PaginationMetrics? {

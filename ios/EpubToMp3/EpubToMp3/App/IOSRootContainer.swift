@@ -215,7 +215,6 @@ final class IOSRootContainerController: UIViewController {
     }
 
     private func setImmersiveReaderMode(_ isHidden: Bool) {
-        guard readerPresentationState.isChromeHidden != isHidden else { return }
         let token = readerViewportTransition.begin(to: isHidden) { [weak self] in
             self?.readerController.captureReaderViewportTransition()
         }

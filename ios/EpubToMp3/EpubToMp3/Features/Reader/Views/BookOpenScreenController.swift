@@ -142,6 +142,8 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
     }
 
     private var pendingViewportAnchor: ReadingAnchor?
+    private var rawViewportOffsets: [ViewportAnchorKey: CGFloat] = [:]
+    private var chromeVisibleRawViewportOffset: CGFloat?
     private var rememberedViewportOffsets: [ViewportAnchorKey: (character: Int, offset: CGFloat)] = [:]
     /// Page offsets are invalid while the host is animating a chrome-driven
     /// viewport resize. Serializing input avoids splitting TextKit lines.
@@ -161,7 +163,11 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
     /// while it synchronizes the initial loading cover into its final viewport.
     var isLoadingBookContent: Bool { isLoadingContent }
 
-    var onChromeVisibilityChanged: ((Bool) -> Void)?
+    /// Hosts apply explicit presentation snapshots through
+    /// `applyChromeVisibility`. The content surface only requests a state
+    /// reset after loading or a user-driven toggle; it never derives the
+    /// next state from its local layout cache.
+    var onChromeVisibilityRequested: ((Bool) -> Void)?
 
     /// The reader's in-memory chapter is more current than persisted progress
     /// while the user is turning pages, so playback scheduling uses this
@@ -289,11 +295,18 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
         scrollView.delegate = self
         pageTap.delegate = self
         pageTap.cancelsTouchesInView = false
-        // Own reader gestures at the reader surface, not inside its scroll
-        // view. UITextView and image chapters install their own recognizers;
-        // attaching here guarantees that a deliberate centre tap always
-        // reaches the immersive-reader action.
-        view.addGestureRecognizer(pageTap)
+        // A text view owns several private single-tap recognizers. Make them
+        // wait for the reader gesture so a repeated centre tap can always
+        // restore chrome. `shouldReceive` rejects links, allowing their
+        // native recognizer to proceed without delay.
+        for gesture in textView.gestureRecognizers ?? [] where gesture is UITapGestureRecognizer {
+            gesture.require(toFail: pageTap)
+        }
+        // Own reader gestures on the scrolling reading surface. UIKit only
+        // arbitrates a descendant touch against recognizers installed on its
+        // scroll-view ancestors; placing this on the outer controller view
+        // lets UITextView's private taps swallow a centre tap after reflow.
+        scrollView.addGestureRecognizer(pageTap)
         let horizontalSwipe = UIPanGestureRecognizer(target: self, action: #selector(handleHorizontalSwipe(_:)))
         horizontalSwipe.delegate = self
         horizontalSwipe.cancelsTouchesInView = false
@@ -762,7 +775,10 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
     }
 
     private func captureReadingAnchor() -> ReadingAnchor {
-        let scrollable = max(scrollView.contentSize.height - scrollView.bounds.height, 1)
+        let scrollable = max(
+            scrollView.contentSize.height + scrollView.contentInset.bottom - scrollView.bounds.height,
+            1
+        )
         // A chrome restore can intentionally start on a TextKit line that is
         // not one of the global page-turn boundaries. Replacing that visible
         // offset with the preceding global boundary makes every subsequent
@@ -809,7 +825,10 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
     }
 
     private func restoreReadingAnchor(_ anchor: ReadingAnchor, preservingViewportOffset: Bool = false) {
-        let scrollable = max(scrollView.contentSize.height - scrollView.bounds.height, 0)
+        let scrollable = max(
+            scrollView.contentSize.height + scrollView.contentInset.bottom - scrollView.bounds.height,
+            0
+        )
         guard scrollable > 0 else { return }
         let candidate: CGFloat
         if preservingViewportOffset, let viewportOffset = anchor.viewportOffset {
@@ -896,8 +915,13 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
         // The host call happens after the child has swapped its local
         // constraints, when UIKit may already have clamped the scroll view.
         // Preserve the first (pre-mutation) anchor for this transaction.
-        if pendingViewportAnchor == nil {
-            pendingViewportAnchor = captureReadingAnchor()
+        // The root transition coordinator has already deduplicated requests.
+        // A stale child anchor must never suppress the fresh raw capture for a
+        // new chrome transaction; doing so restores an earlier clamped page.
+        pendingViewportAnchor = captureReadingAnchor()
+        rawViewportOffsets[viewportAnchorKey()] = scrollView.contentOffset.y
+        if !chromeHidden {
+            chromeVisibleRawViewportOffset = scrollView.contentOffset.y
         }
         isViewportTransitioning = true
         requestTextLayoutRefresh()
@@ -919,6 +943,31 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
         view.setNeedsLayout()
         view.layoutIfNeeded()
         updateTextHeightForCurrentLayout()
+        // The root has committed its constraints, but UIKit can still expose
+        // the previous child-scroll bounds until the next main-loop layout.
+        // Restoring a raw offset against that stale height clamps it and makes
+        // a later chrome round trip walk backward.
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.isViewportTransitioning else { return }
+            self.view.setNeedsLayout()
+            self.view.layoutIfNeeded()
+            self.updateTextHeightForCurrentLayout()
+            self.finishViewportTransitionRestore()
+        }
+    }
+
+    private func finishViewportTransitionRestore() {
+        if let anchor = pendingViewportAnchor,
+           let rawOffset = !chromeHidden
+                ? chromeVisibleRawViewportOffset
+                : rawViewportOffsets[viewportAnchorKey()]
+                    ?? rawViewportOffsets.first(where: { $0.key.chromeHidden == chromeHidden })?.value {
+            pendingViewportAnchor = ReadingAnchor(
+                offsetFraction: anchor.offsetFraction,
+                characterOffset: anchor.characterOffset,
+                viewportOffset: rawOffset
+            )
+        }
         isViewportTransitioning = false
         restorePendingViewportAnchorIfNeeded(preservingViewportOffset: true)
         UIAccessibility.post(notification: .layoutChanged, argument: textView)
@@ -1090,7 +1139,7 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
         // mode without stealing the book-opening gesture.
         isLoadingContent = false
         synchronizeChromeVisibility()
-        onChromeVisibilityChanged?(false)
+        onChromeVisibilityRequested?(false)
         onLoadStateChanged?(false)
         DispatchQueue.main.async { [weak self] in
             guard let self,
@@ -1394,10 +1443,20 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
             return updateScrollingTextHeight()
         }
         forcesScrollingForOversizedFragment = false
-        heightConstraint.constant = result.contentHeight
+        // A chrome transition preserves the raw visual offset, including on
+        // the final short page. Reserve just enough trailing extent while
+        // applying the final TextKit measurement so UIScrollView cannot
+        // clamp that offset when the immersive viewport becomes taller.
+        let contentHeight = result.contentHeight
+        let naturalScrollableHeight = max(0, contentHeight - pageHeight)
+        let requiredTrailingInset = (isViewportTransitioning
+            ? pendingViewportAnchor?.viewportOffset.map { max(0, $0 - naturalScrollableHeight) }
+            : nil) ?? 0
+        scrollView.contentInset.bottom = requiredTrailingInset
+        heightConstraint.constant = contentHeight
         paginatedLayoutResult = result
         paginatedPageOffsets = result.canonicalPageOffsets
-        textView.contentSize.height = heightConstraint.constant
+        textView.contentSize.height = contentHeight
         updatePaginationProbe()
         return true
     }
@@ -1590,6 +1649,7 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
             "measuredTextHeight=\(Int(paginatedTextHeightConstraint.constant.rounded()))",
             "viewportHeight=\(Int(scrollView.bounds.height.rounded()))",
             "clippedLineCount=\(clippedLineCount)",
+            "chromeHidden=\(chromeHidden ? 1 : 0)",
             "paginatedHeightActive=\(paginatedTextHeightConstraint.isActive ? 1 : 0)",
             "scrollingHeightActive=\(scrollingTextHeightConstraint.isActive ? 1 : 0)",
         ].joined(separator: ";")
@@ -1637,9 +1697,9 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
         // viewport and mini player). A second chrome tap is accepted as a new
         // target state; page turns remain blocked until that host transaction
         // has supplied final geometry.
-        guard !isPageTransitioning else { return }
         textView.accessibilityHint = L10n.string("reader.toggleControls")
-        onChromeVisibilityChanged?(!chromeHidden)
+        prepareForViewportTransition()
+        onChromeVisibilityRequested?(!chromeHidden)
     }
 
     @objc private func toggleChromeAccessibilityAction(_ action: UIAccessibilityCustomAction) -> Bool {
@@ -1885,18 +1945,21 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
 
     func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer,
                            shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer) -> Bool {
-        false
+        // UITextView installs its own single-tap recognizers for selectable
+        // text. Let the reader's non-link tap reach the immersive action too;
+        // long-press selection and link handling keep their native behavior.
+        gestureRecognizer === pageTap || otherGestureRecognizer === pageTap
     }
 
     func gestureRecognizer(
         _ gestureRecognizer: UIGestureRecognizer,
         shouldBeRequiredToFailBy otherGestureRecognizer: UIGestureRecognizer
     ) -> Bool {
-        guard gestureRecognizer === pageTap else { return false }
-        // A normal tap on selectable text must still turn a page. Links are
-        // excluded in `shouldReceive`, so their native text interaction keeps
-        // priority without making the rest of the reading surface inert.
-        return otherGestureRecognizer.view?.isDescendant(of: textView) == true
+        // A centre tap is the reader's primary action. Waiting for UITextView
+        // recognizers makes native EPUB typography swallow that tap before the
+        // reader can hide chrome. Links are excluded in `shouldReceive`, and
+        // text selection remains available through its long-press gesture.
+        false
     }
 
     func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer,
@@ -1907,6 +1970,12 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
     }
 
     func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+        // Chrome requests are latest-wins. They must be accepted while a
+        // previous viewport transaction is committing, whereas page turns
+        // still wait for that final geometry.
+        if gestureRecognizer === pageTap {
+            return !isDeferringReaderGestures && loadingContainer.isHidden
+        }
         guard canNavigateReader else { return false }
         guard let pan = gestureRecognizer as? UIPanGestureRecognizer else { return true }
         let velocity = pan.velocity(in: view)

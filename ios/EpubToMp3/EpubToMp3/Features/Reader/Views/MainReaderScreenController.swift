@@ -269,7 +269,7 @@ final class MainReaderScreenController: UIViewController {
             self.listenButton.isHidden = self.currentBook == nil || isLoading
             self.onReaderLoadingChanged?(isLoading)
         }
-        reader.onChromeVisibilityChanged = { [weak self] isHidden in
+        reader.onChromeVisibilityRequested = { [weak self] isHidden in
             guard let self else { return }
             self.onReaderChromeVisibilityChanged?(isHidden)
         }

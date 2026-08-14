@@ -241,6 +241,8 @@ final class BookGridCell: UICollectionViewCell {
 
     override init(frame: CGRect) {
         super.init(frame: frame)
+        isAccessibilityElement = true
+        accessibilityTraits = .button
         cover.contentMode = .scaleAspectFill
         cover.clipsToBounds = true
         cover.layer.cornerRadius = 8
@@ -278,6 +280,10 @@ final class BookGridCell: UICollectionViewCell {
         author.text = book.author
         author.isHidden = (book.author?.isEmpty ?? true)
         accessibilityIdentifier = "library.bookTile.\(book.id)"
+        accessibilityLabel = [book.resolvedTitle, book.author]
+            .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+            .joined(separator: ", ")
 
         let token = UUID()
         configurationToken = token
