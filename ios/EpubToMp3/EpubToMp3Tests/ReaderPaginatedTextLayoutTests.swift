@@ -2,8 +2,10 @@ import XCTest
 
 #if canImport(UIKit)
 import UIKit
+private typealias ReaderTestFont = UIFont
 #else
 import AppKit
+private typealias ReaderTestFont = NSFont
 #endif
 
 @testable import EpubToMp3
@@ -36,7 +38,8 @@ final class ReaderPaginatedTextLayoutTests: XCTestCase {
 
     @MainActor
     func testLayoutResultKeepsGlyphBoundsInsideEveryCanonicalPage() {
-        let font = UIFont(name: "TimesNewRomanPS-ItalicMT", size: 23) ?? .italicSystemFont(ofSize: 23)
+        let font = ReaderTestFont(name: "TimesNewRomanPS-ItalicMT", size: 23)
+            ?? ReaderTestFont.systemFont(ofSize: 23)
         let storage = NSTextStorage(
             string: String(repeating: "A café with emoji 😀 and descenders gyq. ", count: 180),
             attributes: [.font: font]
@@ -66,7 +69,7 @@ final class ReaderPaginatedTextLayoutTests: XCTestCase {
     func testLayoutResultReportsAnOversizedProtectedFragment() {
         let storage = NSTextStorage(
             string: "Oversized accessibility line",
-            attributes: [.font: UIFont.systemFont(ofSize: 160)]
+            attributes: [.font: ReaderTestFont.systemFont(ofSize: 160)]
         )
         let layoutManager = NSLayoutManager()
         let container = NSTextContainer(size: CGSize(width: 180, height: 120))
@@ -147,7 +150,8 @@ final class ReaderPaginatedTextLayoutTests: XCTestCase {
 
     @MainActor
     func testPageOffsetsNeverSplitAFragmentAcrossPages() {
-        let font = UIFont(name: "TimesNewRomanPS-ItalicMT", size: 23) ?? .italicSystemFont(ofSize: 23)
+        let font = ReaderTestFont(name: "TimesNewRomanPS-ItalicMT", size: 23)
+            ?? ReaderTestFont.systemFont(ofSize: 23)
         let text = String(repeating: "A café with emoji 😀 and diacritics naïve coöperate. ", count: 180)
         let storage = NSTextStorage(string: text, attributes: [.font: font])
         let layoutManager = NSLayoutManager()
@@ -221,7 +225,7 @@ final class ReaderPaginatedTextLayoutTests: XCTestCase {
         attachment.bounds = CGRect(x: 0, y: -4, width: 18, height: 22)
         let text = NSMutableAttributedString(
             string: String(repeating: "日本語と中文的段落。", count: 80),
-            attributes: [.font: UIFont.systemFont(ofSize: 18)]
+            attributes: [.font: ReaderTestFont.systemFont(ofSize: 18)]
         )
         text.insert(NSAttributedString(attachment: attachment), at: 24)
         let storage = NSTextStorage(attributedString: text)
