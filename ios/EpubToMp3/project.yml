@@ -367,17 +367,6 @@ targets:
       macOS: "14.0"
     sources:
       - path: EpubToMp3Tests
-        excludes:
-          # References 10 `testHook_*` methods (segmentChapterIndex,
-          # activeSegmentSentenceCount, activateSegmentChapter,
-          # bufferedSegmentChapterCount, ownedSegmentItem tracking,
-          # backlogCount, teardownPlayer) that have never existed on
-          # AudioPlayer (confirmed via `git log -S`) — a buffer-ahead
-          # chapter/sentence-timing fix left mid-TDD-red, predating and
-          # unrelated to the 2026-07-23 UIKit migration. Re-include once
-          # the corresponding AudioPlayer implementation lands; until
-          # then it blocks the whole test target from compiling.
-          - "AudioPlayerEnqueueSegmentTests.swift"
     dependencies:
       - target: EpubToMp3
     settings:

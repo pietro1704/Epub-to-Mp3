@@ -80,6 +80,11 @@ jobs:
           flutter-version: 3.41.9
           cache: true
 
+      - name: Report Kotlin coverage scope
+        run: |
+          printf 'Kotlin source files compiled by the Android app target: '
+          find flutter_app/android/app/src -type f -name '*.kt' | wc -l
+
       - name: Build Android app
         working-directory: flutter_app
         env:
@@ -94,19 +99,46 @@ jobs:
           category: /language:java-kotlin
 
   swift:
-    name: CodeQL · swift (${{ matrix.platform }})
+    name: CodeQL · swift (${{ matrix.coverage }} · ${{ matrix.platform }})
     runs-on: macos-latest
     timeout-minutes: 40
     strategy:
       fail-fast: false
       matrix:
         include:
-          - platform: macOS
+          # The production macOS build reaches every shared source that is
+          # conditionally compiled for AppKit.
+          - coverage: app
+            platform: macOS
             destination: generic/platform=macOS
             derived_data: .build-codeql-macos
-          - platform: iOS
+            scheme: EpubToMp3
+            action: build
+          # `build-for-testing` compiles the app and every XCTest source. We
+          # keep it in its own CodeQL database so the additional test source
+          # extraction cannot consume the app build's 40-minute budget.
+          - coverage: unit-tests
+            platform: macOS
+            destination: generic/platform=macOS
+            derived_data: .build-codeql-macos-tests
+            scheme: EpubToMp3-UnitTests
+            action: build-for-testing
+          # The iOS unit-test compilation includes the app, both iOS-only
+          # extensions, and the complete unit-test target.
+          - coverage: unit-tests
+            platform: iOS
             destination: generic/platform=iOS
-            derived_data: .build-codeql-ios
+            derived_data: .build-codeql-ios-tests
+            scheme: EpubToMp3-UnitTests
+            action: build-for-testing
+          # UI tests live in a distinct target and therefore need their own
+          # compile pass to be present in the Swift CodeQL database.
+          - coverage: ui-tests
+            platform: iOS
+            destination: generic/platform=iOS
+            derived_data: .build-codeql-ios-ui-tests
+            scheme: EpubToMp3-UITests
+            action: build-for-testing
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
@@ -129,19 +161,30 @@ jobs:
         working-directory: ios/EpubToMp3
         run: xcodegen generate
 
+      - name: Report Swift coverage scope
+        working-directory: ios/EpubToMp3
+        run: |
+          printf 'Production Swift files: '
+          find EpubToMp3 EpubToMp3ShareExtension EpubToMp3Widget -type f -name '*.swift' | wc -l
+          printf 'Unit-test Swift files: '
+          find EpubToMp3Tests -type f -name '*.swift' | wc -l
+          printf 'UI-test Swift files: '
+          find EpubToMp3UITests -type f -name '*.swift' | wc -l
+          xcodebuild -project EpubToMp3.xcodeproj -scheme '${{ matrix.scheme }}' -showBuildSettings >/dev/null
+
       - name: Build Swift target
         working-directory: ios/EpubToMp3
         run: |
           xcodebuild \
             -project EpubToMp3.xcodeproj \
-            -scheme EpubToMp3 \
+            -scheme '${{ matrix.scheme }}' \
             -destination '${{ matrix.destination }}' \
             -configuration Debug \
             -derivedDataPath '${{ matrix.derived_data }}' \
             CODE_SIGNING_ALLOWED=NO \
-            build
+            ${{ matrix.action }}
 
       - name: Analyze
         uses: github/codeql-action/analyze@v4
         with:
-          category: /language:swift/platform:${{ matrix.platform }}
+          category: /language:swift/coverage:${{ matrix.coverage }}/platform:${{ matrix.platform }}
