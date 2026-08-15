@@ -170,7 +170,6 @@ jobs:
           find EpubToMp3Tests -type f -name '*.swift' | wc -l
           printf 'UI-test Swift files: '
           find EpubToMp3UITests -type f -name '*.swift' | wc -l
-          xcodebuild -project EpubToMp3.xcodeproj -scheme '${{ matrix.scheme }}' -showBuildSettings >/dev/null
 
       - name: Build Swift target
         working-directory: ios/EpubToMp3
