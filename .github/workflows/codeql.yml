@@ -16,7 +16,9 @@ permissions:
 
 concurrency:
   group: codeql-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  # A cancelled CodeQL run uploads an unsuccessful SARIF and leaves a
+  # configuration error in code scanning. Queue newer pushes instead.
+  cancel-in-progress: false
 
 jobs:
   static-analysis:
