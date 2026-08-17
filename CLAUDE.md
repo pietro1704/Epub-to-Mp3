@@ -601,6 +601,8 @@ clarify gate → Planner → Executor → Verifier → Critic/QA → Test-author
   not a feeling.
 - Keep the pipeline proportional — a one-line fix doesn't need all six
   stages named explicitly.
+- For AI-assisted task framing, delegation, experimentation, and verification,
+  follow `docs/ai-assisted-development-akita-research-2026-08-17.md`.
 
 ## Native Reader Dispatch
 

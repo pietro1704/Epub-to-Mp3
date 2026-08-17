@@ -6,6 +6,7 @@ Operational notes for collaborating on this repository with the owner.
 
 - Respond in concise pt-BR and act on bug reports immediately.
 - For non-trivial work, use the portable agent pipeline: inspect, plan, implement, verify, critic pass, then test.
+- For AI-assisted work, use the objective/scope/invariants/done-signal brief and operational checklist in `docs/ai-assisted-development-akita-research-2026-08-17.md`.
 - Scope changes explicitly. The current request often targets UIKit/iOS only; do not touch Flutter unless requested.
 - After every iOS code batch, build with the existing Xcode cache, install on the real iPhone, launch in the foreground, and attach LLDB.
 - Do not use an iOS Simulator on the Intel Mac. Physical-device validation is preferred.
