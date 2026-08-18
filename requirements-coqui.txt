@@ -3,5 +3,5 @@
 # Requires: CUDA GPU recommended; CPU works but is very slow
 
 TTS>=0.22.0,<0.23.0
-numba==0.66.0
-llvmlite==0.48.0
+numba==0.67.0
+llvmlite==0.49.0
