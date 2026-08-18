@@ -15,7 +15,7 @@ soundfile>=0.14.0
 # Ebook processing
 beautifulsoup4>=4.15.0
 ebooklib>=0.20
-pypdf>=6.15.0
+pypdf>=6.16.1
 lxml>=6.1.1
 mobi>=0.4.1  # MOBI/AZW3 unpacking — server/CLI only, never embedded on-device
 rarfile>=4.5  # CBR visual reading — server/CLI only, requires a RAR backend
