@@ -2056,6 +2056,17 @@ class AudioConverter(
         if duplicates_removed:
             print(f"  🧹 Removed {duplicates_removed} duplicate chapter(s) automatically")
 
+        if not chapters:
+            empty_result = ConversionResult(
+                success=False,
+                total_chapters=0,
+                converted_chapters=0,
+                output_files=[],
+                errors=[f"No readable chapters were extracted from {reader.title}"],
+            )
+            await self._report_results(empty_result)
+            return empty_result
+
         chapter_stats = self._analyze_chapter_stats(chapters)
         self._chapter_stats = chapter_stats
         self._apply_chapter_engine_preferences(config, chapter_stats)
@@ -2330,8 +2341,14 @@ class AudioConverter(
                 edge_cap=0,
                 output_dir=temp_dir,
             )
-            empty_result = ConversionResult(True, 0, 0, [], [])
-            self._report_results(empty_result)
+            empty_result = ConversionResult(
+                False,
+                0,
+                0,
+                [],
+                [f"No readable chapters were extracted from {reader.title}"],
+            )
+            await self._report_results(empty_result)
             return empty_result
 
         # Fast-path cache check before heavy prep (uses existing text/cache index if present)

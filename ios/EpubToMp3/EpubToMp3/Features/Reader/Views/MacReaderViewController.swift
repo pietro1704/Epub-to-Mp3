@@ -900,11 +900,19 @@ final class MacReaderViewController: NSViewController, NSTableViewDataSource, NS
     private func showPDF(_ url: URL) async {
         let view = PDFView()
         view.autoScales = true
-        view.document = PDFDocument(url: url)
+        view.displayMode = .singlePageContinuous
+        view.displayDirection = .vertical
+        view.displaysPageBreaks = true
+        view.pageShadowsEnabled = true
         pdfView = view
         statusLabel.stringValue = L10n.string("reader.pdf")
         chapterTitleLabel.stringValue = ""
         contentScrollView.documentView = view
+        let normalized = await Task.detached(priority: .userInitiated) {
+            PdfReadingPageNormalizer.normalizedDocument(from: url)
+        }.value
+        guard pdfView === view else { return }
+        view.document = normalized ?? PDFDocument(url: url)
     }
 }
 

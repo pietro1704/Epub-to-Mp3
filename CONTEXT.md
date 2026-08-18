@@ -87,3 +87,9 @@ Those boundaries depend on viewport height and cause repeated chrome toggles to
 move the book backward or forward. During a chrome transition, the raw viewport
 offset is the source of truth. Pagination boundaries remain for explicit page turns
 only, and glyph-aware layout must ensure no partially rendered line is shown.
+
+## Reader text viewport
+
+The final visible text presentation for one committed reader geometry. It
+preserves the reading anchor while exposing page, clipping, and fallback facts
+for the active text surface.

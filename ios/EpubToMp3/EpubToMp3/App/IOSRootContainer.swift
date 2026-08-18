@@ -49,19 +49,14 @@ final class IOSRootContainerController: UIViewController {
 
     private var cancellables: Set<AnyCancellable> = []
     private var presentedErrorMessage: String?
-    private var readerBottomToMiniPlayer: NSLayoutConstraint!
-    private var readerBottomToRoot: NSLayoutConstraint!
     private var miniBottomToRoot: NSLayoutConstraint!
     private var miniBottomToTabBar: NSLayoutConstraint!
     private var miniPlayerMaximumHeight: NSLayoutConstraint!
-    private var readerPresentationState = ReaderPresentationState()
-    private let readerViewportTransition = ReaderViewportTransition()
+    private let readerPresentationCoordinator = ReaderRootPresentationCoordinator()
     private var overlayStateInitialized = false
-    private var readerBottomChromeInitialized = false
-    private var readerBottomChromeHidden = false
 
     override var prefersStatusBarHidden: Bool {
-        Self.shouldHideStatusBar(immersiveReaderMode: readerPresentationState.isChromeHidden)
+        Self.shouldHideStatusBar(immersiveReaderMode: readerPresentationCoordinator.state.isChromeHidden)
     }
 
     override var preferredStatusBarUpdateAnimation: UIStatusBarAnimation { .fade }
@@ -181,9 +176,14 @@ final class IOSRootContainerController: UIViewController {
         setMiniPlayerBottomAnchor(readerActive: true)
         miniPlayerMaximumHeight.isActive = true
 
-        readerBottomToMiniPlayer = readerController.view.bottomAnchor.constraint(equalTo: miniPlayerController.view.topAnchor)
-        readerBottomToRoot = readerController.view.bottomAnchor.constraint(equalTo: view.bottomAnchor)
+        let readerBottomToMiniPlayer = readerController.view.bottomAnchor.constraint(equalTo: miniPlayerController.view.topAnchor)
+        let readerBottomToRoot = readerController.view.bottomAnchor.constraint(equalTo: view.bottomAnchor)
         readerBottomToMiniPlayer.isActive = true
+        readerPresentationCoordinator.configureChromeLayout(
+            rootView: view,
+            readerBottomToMiniPlayer: readerBottomToMiniPlayer,
+            readerBottomToRoot: readerBottomToRoot
+        )
         readerController.onReaderChromeVisibilityChanged = { [weak self] isHidden in
             self?.setImmersiveReaderMode(isHidden)
         }
@@ -193,7 +193,7 @@ final class IOSRootContainerController: UIViewController {
         // Embedding the reader can synchronously start its book load before
         // the root's callbacks exist. Synchronize after every constraint is
         // installed so the initial loading cover owns the whole reader area.
-        readerPresentationState.isLoading = readerController.isLoadingBookContent
+        _ = readerPresentationCoordinator.setLoading(readerController.isLoadingBookContent)
 
         miniPlayerController.view.backgroundColor = .clear
         fullPlayerController.view.backgroundColor = .clear
@@ -215,17 +215,15 @@ final class IOSRootContainerController: UIViewController {
     }
 
     private func setImmersiveReaderMode(_ isHidden: Bool) {
-        let token = readerViewportTransition.begin(to: isHidden) { [weak self] in
+        let token = readerPresentationCoordinator.beginChromeTransition(to: isHidden) { [weak self] in
             self?.readerController.captureReaderViewportTransition()
         }
-        readerPresentationState.isChromeHidden = isHidden
         setNeedsStatusBarAppearanceUpdate()
         refreshOverlayState(viewportTransition: token)
     }
 
     private func setReaderLoadingMode(_ isLoading: Bool) {
-        guard readerPresentationState.isLoading != isLoading else { return }
-        readerPresentationState.isLoading = isLoading
+        guard readerPresentationCoordinator.setLoading(isLoading) else { return }
         setNeedsStatusBarAppearanceUpdate()
         refreshOverlayState()
     }
@@ -259,43 +257,11 @@ final class IOSRootContainerController: UIViewController {
         viewportTransition: ReaderViewportTransition.Token? = nil,
         needsFinalLayout: Bool = false
     ) {
-        // Immersive reading removes every bottom accessory from layout, not
-        // only from sight. This gives the text surface the reclaimed height
-        // while the reader preserves its visible character anchor.
-        let hidesBottomChrome = readerPresentationState.hidesBottomChrome
-        // Switching these one constraint at a time briefly pins the reader
-        // both to the root bottom and to the mini player's top. Because the
-        // mini player has a required positive height, UIKit must break a
-        // constraint during that transient layout pass. Swap the vertical
-        // owner atomically instead.
-        NSLayoutConstraint.deactivate([readerBottomToMiniPlayer, readerBottomToRoot])
-        (hidesBottomChrome ? readerBottomToRoot : readerBottomToMiniPlayer).isActive = true
-
-        let changed = !readerBottomChromeInitialized || readerBottomChromeHidden != hidesBottomChrome
-        readerBottomChromeInitialized = true
-        readerBottomChromeHidden = hidesBottomChrome
-        // A frozen scroll snapshot has no safe way to shrink with this
-        // viewport: clipping it produces a visibly cut text line. Commit the
-        // reader geometry atomically, then let TextKit render one final page.
-        // Chrome may fade independently, but the text viewport never passes
-        // through an intermediate height.
-        let commitLayout = {
-            UIView.performWithoutAnimation {
-                self.view.layoutIfNeeded()
-            }
-        }
-        if let viewportTransition {
-            _ = readerViewportTransition.commit(
-                viewportTransition,
-                applyFinalGeometry: commitLayout,
-                restoreViewport: { [weak self] in
-                    self?.readerController.completeReaderChromeLayoutTransition()
-                }
-            )
-        } else if changed || needsFinalLayout {
-            commitLayout()
-            readerController.completeReaderChromeLayoutTransition()
-        }
+        readerPresentationCoordinator.applyChromeLayout(
+            transition: viewportTransition,
+            needsFinalLayout: needsFinalLayout,
+            restoreViewport: { [weak self] in self?.readerController.completeReaderChromeLayoutTransition() }
+        )
     }
 
     private func showFullPlayer() {
@@ -392,7 +358,8 @@ final class IOSRootContainerController: UIViewController {
             availableBookIDs: availableBookIDs
         )
 
-        readerPresentationState.isReaderActive = readerActive
+        let wasImmersive = readerPresentationCoordinator.state.isChromeHidden
+        readerPresentationCoordinator.setReaderActive(readerActive)
         readerController.view.isHidden = !readerActive
         // The reader owns the full screen while open. The library/settings/
         // conversion tabs must not remain visible underneath its player bar.
@@ -402,19 +369,17 @@ final class IOSRootContainerController: UIViewController {
         shellController.setReaderTabBarHidden(readerActive, animated: true)
         setMiniPlayerBottomAnchor(readerActive: readerActive)
         if !readerActive {
-            let wasImmersive = readerPresentationState.isChromeHidden
-            readerPresentationState.resetForInactiveReader()
             if wasImmersive {
                 setNeedsStatusBarAppearanceUpdate()
             }
         }
-        let needsFinalReaderLayout = readerController.applyReaderPresentation(readerPresentationState)
+        let needsFinalReaderLayout = readerController.applyReaderPresentation(readerPresentationCoordinator.state)
         applyReaderChromeLayout(
             viewportTransition: viewportTransition,
             needsFinalLayout: needsFinalReaderLayout
         )
         let miniShouldBeVisible = readerActive
-            ? readerPresentationState.showsMiniPlayer(bookHasPlayback: showMini)
+            ? readerPresentationCoordinator.state.showsMiniPlayer(bookHasPlayback: showMini)
             : showMini
         if shellController.supportsSystemBottomAccessory, !readerActive {
             shellController.setSystemMiniPlayerVisible(miniShouldBeVisible, animated: true)

@@ -152,6 +152,15 @@ class TestTextIntegrityValidator(unittest.TestCase):
         self.assertEqual(report.invalid_chapters, 0)
         self.assertFalse(report.has_cache_corruption)
 
+    def test_validate_all_chapters_empty_input_is_invalid(self):
+        """An empty parser result must never validate as a complete book."""
+        report = self.validator.validate_all_chapters([], show_progress=False)
+
+        self.assertEqual(report.total_chapters, 0)
+        self.assertTrue(report.has_cache_corruption)
+        self.assertEqual(report.invalid_chapters, 1)
+        self.assertEqual(report.errors, ["No readable chapters were provided for validation"])
+
     def test_validate_all_chapters_with_corruption(self):
         """Test validating all chapters when cache is corrupted"""
         chapters = [

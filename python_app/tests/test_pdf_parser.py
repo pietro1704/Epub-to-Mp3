@@ -6,6 +6,7 @@ Unit tests for PdfParser class
 import os
 import tempfile
 import unittest
+from pathlib import Path
 from unittest.mock import Mock, patch
 
 from src.ebook_reader import Book, PdfParser
@@ -177,6 +178,136 @@ class TestPdfParser(unittest.TestCase):
         # Check page numbering is preserved
         self.assertEqual(book.chapters[0].index, 1)
         self.assertEqual(book.chapters[1].index, 4)
+
+    @patch("src.ebook_reader.CacheManager")
+    @patch("src.ebook_reader.PdfScanOcr")
+    @patch("src.ebook_reader.PDF_AVAILABLE", True)
+    @patch("src.ebook_reader.pypdf")
+    def test_parse_scanned_two_up_pdf_uses_ocr_in_reading_order(
+        self, mock_pypdf, mock_ocr_type, mock_cache_manager_type
+    ):
+        """Scanned spreads should become ordered, independently playable pages."""
+        mock_page = Mock()
+        mock_page.extract_text.return_value = ""
+        mock_reader = Mock()
+        mock_reader.pages = [mock_page]
+        mock_reader.metadata = {"Title": "Scanned Book"}
+        mock_pypdf.PdfReader.return_value = mock_reader
+
+        mock_ocr = mock_ocr_type.return_value
+        mock_ocr.extract.return_value = [
+            Mock(source_page_index=1, part_index=1, text="First scanned page."),
+            Mock(source_page_index=1, part_index=2, text="Second scanned page."),
+        ]
+
+        book = PdfParser(self.sample_pdf_path).parse()
+
+        mock_ocr.extract.assert_called_once_with(Path(self.sample_pdf_path), [1])
+        self.assertEqual(book.source_format, "pdf_scan_ocr")
+        self.assertEqual([chapter.index for chapter in book.chapters], ["1.1", "1.2"])
+        self.assertEqual([chapter.name for chapter in book.chapters], ["Página 1.1", "Página 1.2"])
+        self.assertEqual(
+            [chapter.source_path for chapter in book.chapters],
+            ["page_1_part_1", "page_1_part_2"],
+        )
+        self.assertEqual(
+            [chapter.text for chapter in book.chapters],
+            ["First scanned page.", "Second scanned page."],
+        )
+        mock_cache_manager_type.return_value.save_chapters_to_cache.assert_called_once()
+
+    @patch("src.ebook_reader.CacheManager")
+    @patch("src.ebook_reader.PdfScanOcr")
+    @patch("src.ebook_reader.PDF_AVAILABLE", True)
+    @patch("src.ebook_reader.pypdf")
+    def test_parse_pdf_uses_ocr_when_all_text_extractions_raise(
+        self, mock_pypdf, mock_ocr_type, mock_cache_manager_type
+    ):
+        """Parser extraction failures must still receive the scan fallback."""
+        mock_page = Mock()
+        mock_page.extract_text.side_effect = RuntimeError("Broken text layer")
+        mock_reader = Mock()
+        mock_reader.pages = [mock_page]
+        mock_reader.metadata = {"Title": "Damaged Scan"}
+        mock_pypdf.PdfReader.return_value = mock_reader
+        mock_ocr_type.return_value.extract.return_value = [
+            Mock(source_page_index=1, part_index=1, text="Recovered after parser failure."),
+        ]
+
+        book = PdfParser(self.sample_pdf_path).parse()
+
+        mock_ocr_type.return_value.extract.assert_called_once_with(Path(self.sample_pdf_path), [1])
+        self.assertEqual(book.source_format, "pdf_scan_ocr")
+        self.assertEqual(
+            [chapter.text for chapter in book.chapters], ["Recovered after parser failure."]
+        )
+        self.assertEqual([chapter.name for chapter in book.chapters], ["Página 1.1"])
+        mock_cache_manager_type.return_value.save_chapters_to_cache.assert_called_once()
+
+    @patch("src.ebook_reader.PdfScanOcr")
+    @patch("src.ebook_reader.CacheManager")
+    @patch("src.ebook_reader.PDF_AVAILABLE", True)
+    @patch("src.ebook_reader.pypdf")
+    def test_parse_scanned_pdf_reuses_valid_ocr_cache(
+        self, mock_pypdf, mock_cache_manager_type, mock_ocr_type
+    ):
+        """A repeated scan must reuse the complete OCR cache without Vision."""
+        mock_page = Mock()
+        mock_page.extract_text.return_value = ""
+        mock_reader = Mock()
+        mock_reader.pages = [mock_page]
+        mock_reader.metadata = {"Title": "Scanned Book"}
+        mock_pypdf.PdfReader.return_value = mock_reader
+        mock_cache_manager_type.return_value.get_cached_chapters.return_value = {
+            "title": "Scanned Book",
+            "author": "",
+            "source_format": "pdf_scan_ocr",
+            "chapters": [
+                {
+                    "index": "1.1",
+                    "title": "Página 1.1",
+                    "source_path": "page_1_part_1",
+                    "text": "Recovered text.",
+                    "speech_text": "Recovered text.",
+                }
+            ],
+        }
+
+        book = PdfParser(self.sample_pdf_path).parse()
+
+        mock_ocr_type.return_value.extract.assert_not_called()
+        self.assertEqual(book.title, "Scanned Book")
+        self.assertEqual(book.source_format, "pdf_scan_ocr")
+        self.assertEqual(book.chapters[0].index, "1.1")
+        self.assertEqual(book.chapters[0].text, "Recovered text.")
+
+    @patch("src.ebook_reader.PdfScanOcr")
+    @patch("src.ebook_reader.CacheManager")
+    @patch("src.ebook_reader.PDF_AVAILABLE", True)
+    @patch("src.ebook_reader.pypdf")
+    def test_parse_scanned_pdf_legacy_cache_drops_display_labels(
+        self, mock_pypdf, mock_cache_manager_type, mock_ocr_type
+    ):
+        """Legacy structure caches must not reuse display text as chapter names."""
+        mock_page = Mock()
+        mock_page.extract_text.return_value = ""
+        mock_reader = Mock()
+        mock_reader.pages = [mock_page]
+        mock_reader.metadata = {"Title": "Scanned Book"}
+        mock_pypdf.PdfReader.return_value = mock_reader
+        mock_cache_manager_type.return_value.get_cached_chapters.return_value = {
+            "title": "Scanned Book",
+            "author": "",
+            "source_format": "pdf_scan_ocr",
+            "chapters": [{"title": "1.0 - Page preview", "text": "Recovered text."}],
+        }
+
+        book = PdfParser(self.sample_pdf_path).parse()
+
+        mock_ocr_type.return_value.extract.assert_not_called()
+        self.assertEqual(book.chapters[0].index, 1)
+        self.assertEqual(book.chapters[0].name, "Página 1")
+        self.assertEqual(book.chapters[0].text, "Recovered text.")
 
     @patch("src.ebook_reader.PDF_AVAILABLE", True)
     @patch("src.ebook_reader.pypdf")

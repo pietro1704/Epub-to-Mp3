@@ -210,6 +210,7 @@ class CacheManager:
             metadata = {
                 "title": chapters_data.get("title", "Unknown"),
                 "author": chapters_data.get("author", "Unknown"),
+                "source_format": chapters_data.get("source_format"),
                 "chapters": chapters_data.get("chapters", []),
                 "chapters_count": len(chapters),
                 "cached_at": datetime.now().isoformat(),

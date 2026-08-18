@@ -227,6 +227,19 @@ class TextIntegrityValidator:
         self, chapters: List[Chapter], show_progress: bool = True
     ) -> TextIntegrityReport:
         """Validate all chapters and detect cache corruption"""
+        if not chapters:
+            error = "No readable chapters were provided for validation"
+            if show_progress:
+                print(f"\n❌ {error}.")
+            return TextIntegrityReport(
+                total_chapters=0,
+                valid_chapters=0,
+                invalid_chapters=1,
+                chapters_with_issues=[],
+                has_cache_corruption=True,
+                cache_engine_mismatch=False,
+                errors=[error],
+            )
         if show_progress:
             print("\n" + "=" * 70)
             print("🔍 TEXT INTEGRITY VALIDATION")

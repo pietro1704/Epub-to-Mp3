@@ -3631,6 +3631,8 @@ class ConverterApplication:
             "author": reader.author or "Unknown",
             "chapters": [],
         }
+        if getattr(getattr(reader, "book", None), "source_format", None) == "pdf_scan_ocr":
+            chapters_data["source_format"] = "pdf_scan_ocr"
 
         for item in structure_items:
             cleaned_text = str(item.text_override or "")

@@ -51,6 +51,8 @@ except ImportError:
 
 from xml.etree import ElementTree as ET
 
+from .cache_manager import CacheManager
+from .pdf_scan_ocr import PdfOcrPage, PdfScanOcr
 from .reader_sanitizer import chapter_html_fallback, sanitize_reader_css, sanitize_reader_html
 from .text_formatting import FormattingSegment, TextFormattingProcessor
 
@@ -146,6 +148,7 @@ class Book:
     chapters: List[Chapter]
     toc: List[TocItem] = field(default_factory=list)
     language: Optional[str] = None  # ISO language code from EPUB metadata (e.g., 'en', 'pt')
+    source_format: Optional[str] = None
 
 
 @dataclass(slots=True)
@@ -3195,7 +3198,7 @@ class EpubParser:
 
 
 class PdfParser:
-    """Very small PDF parser that extracts each page as a chapter."""
+    """Extract PDF text, using local OCR when a scan has no text layer."""
 
     def __init__(self, file_path: str | Path) -> None:
         self.file_path = str(file_path)
@@ -3212,19 +3215,13 @@ class PdfParser:
             title = metadata.get("/Title") or metadata.get("Title") or self.path.stem
             author = metadata.get("/Author") or metadata.get("Author") or ""
 
-            chapters: List[Chapter] = []
+            extracted_pages: dict[int, str] = {}
+            extraction_error_pages: set[int] = set()
             for idx, page in enumerate(reader.pages, start=1):
                 try:
                     raw_text = page.extract_text() or ""
                 except Exception:
-                    chapters.append(
-                        Chapter(
-                            index=idx,
-                            name=f"Página {idx} (erro)",
-                            source_path=f"page_{idx}",
-                            text="",
-                        )
-                    )
+                    extraction_error_pages.add(idx)
                     continue
 
                 # First join broken lines, then normalize whitespace
@@ -3233,21 +3230,136 @@ class PdfParser:
                 if not cleaned:
                     continue
                 cleaned = TextProcessor.add_pause_before_dash(cleaned)
-                page_title = f"Página {idx}"
+                extracted_pages[idx] = cleaned
+
+            page_count = len(reader.pages)
+
+        pages_needing_recovery = [
+            index for index in range(1, page_count + 1) if index not in extracted_pages
+        ]
+        scanned_pages: dict[int, list[PdfOcrPage]] = {}
+        should_ocr = bool(pages_needing_recovery) and (
+            not extracted_pages or len(pages_needing_recovery) * 4 >= page_count * 3
+        )
+        if should_ocr:
+            cached_book = self._load_scanned_pdf_cache()
+            if cached_book is not None:
+                return cached_book
+            for recovered in PdfScanOcr().extract(self.path, pages_needing_recovery):
+                scanned_pages.setdefault(recovered.source_page_index, []).append(recovered)
+
+        chapters: List[Chapter] = []
+        for idx in range(1, page_count + 1):
+            native_text = extracted_pages.get(idx)
+            if native_text:
+                chapters.append(self._make_chapter(idx, native_text))
+                continue
+            recovered_pages = sorted(scanned_pages.get(idx, []), key=lambda page: page.part_index)
+            for recovered in recovered_pages:
+                chapters.append(
+                    self._make_chapter(
+                        f"{idx}.{recovered.part_index}",
+                        recovered.text,
+                        source_path=f"page_{idx}_part_{recovered.part_index}",
+                    )
+                )
+            if idx in extraction_error_pages and not recovered_pages:
                 chapters.append(
                     Chapter(
                         index=idx,
-                        name=page_title,
+                        name=f"Página {idx} (erro)",
                         source_path=f"page_{idx}",
-                        text=cleaned,
-                        speech_text=TextProcessor.apply_structural_speech_cues(
-                            cleaned,
-                            chapter_title=page_title,
-                        ),
+                        text="",
                     )
                 )
 
-        return Book(title=str(title), author=str(author), chapters=chapters)
+        if page_count and not chapters:
+            raise RuntimeError("No readable text could be extracted from the PDF")
+        book = Book(
+            title=str(title),
+            author=str(author),
+            chapters=chapters,
+            source_format="pdf_scan_ocr" if scanned_pages else None,
+        )
+        if scanned_pages:
+            self._save_scanned_pdf_cache(book)
+        return book
+
+    def _load_scanned_pdf_cache(self) -> Book | None:
+        """Return valid OCR output without rasterizing the same PDF twice."""
+        cached = CacheManager().get_cached_chapters(self.path)
+        if not cached or cached.get("source_format") != "pdf_scan_ocr":
+            return None
+        cached_chapters = cached.get("chapters")
+        if not isinstance(cached_chapters, list) or not cached_chapters:
+            return None
+
+        chapters: list[Chapter] = []
+        for position, payload in enumerate(cached_chapters, start=1):
+            if not isinstance(payload, dict):
+                return None
+            text = str(payload.get("text") or "").strip()
+            if not text:
+                return None
+            has_raw_identity = "source_path" in payload
+            index = payload.get("index", position) if has_raw_identity else position
+            name = (
+                str(payload.get("title") or f"Página {index}")
+                if has_raw_identity
+                else f"Página {index}"
+            )
+            source_path = str(payload.get("source_path") or f"cached_page_{index}")
+            speech_text = str(payload.get("speech_text") or text)
+            chapters.append(
+                Chapter(
+                    index=index,
+                    name=name,
+                    source_path=source_path,
+                    text=text,
+                    speech_text=speech_text,
+                )
+            )
+        return Book(
+            title=str(cached.get("title") or self.path.stem),
+            author=str(cached.get("author") or ""),
+            chapters=chapters,
+            source_format="pdf_scan_ocr",
+        )
+
+    def _save_scanned_pdf_cache(self, book: Book) -> None:
+        """Persist raw OCR chapters once the complete scan was recovered."""
+        CacheManager().save_chapters_to_cache(
+            self.path,
+            {
+                "title": book.title,
+                "author": book.author,
+                "source_format": "pdf_scan_ocr",
+                "chapters": [
+                    {
+                        "index": chapter.index,
+                        "title": chapter.name,
+                        "source_path": chapter.source_path,
+                        "text": chapter.text,
+                        "speech_text": chapter.speech_text,
+                    }
+                    for chapter in book.chapters
+                ],
+            },
+        )
+
+    @staticmethod
+    def _make_chapter(index: int | str, text: str, source_path: str | None = None) -> Chapter:
+        page_title = f"Página {index}"
+        return Chapter(
+            index=index,
+            name=page_title,
+            source_path=source_path or f"page_{index}",
+            text=text,
+            speech_text=TextProcessor.apply_structural_speech_cues(
+                text,
+                chapter_title=page_title,
+            ),
+        )
 
 
 class EbookReader:

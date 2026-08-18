@@ -1,5 +1,15 @@
+import CoreImage
+import CryptoKit
 import Foundation
+import ImageIO
 import PDFKit
+import Vision
+
+#if canImport(UIKit)
+import UIKit
+#else
+import AppKit
+#endif
 
 /// Extracts plain text from a PDF and groups it into pseudo-chapters
 /// so the reader / TTS pipeline can consume it through the same
@@ -29,7 +39,7 @@ enum PdfTextExtractor {
             case .encrypted(let name):
                 return "\(name) is password-protected."
             case .noTextRecovered(let name):
-                return "\(name) appears to be a scanned image PDF — no selectable text. OCR is not supported in-app yet."
+                return "\(name) appears to be a scanned image PDF — no selectable text is available locally."
             }
         }
     }
@@ -355,11 +365,306 @@ enum PdfTextExtractor {
     }
 }
 
-// MARK: - Platform font alias
-//
-// `PlatformFont` is defined module-wide in `EpubHtmlRenderer.swift`.
-#if canImport(UIKit)
-import UIKit
-#else
-import AppKit
-#endif
+/// Converts scanned two-page spreads into upright, independently navigable PDF pages.
+///
+/// This is deliberately visual-only: text extraction and TTS retain their own
+/// source pipeline. The reader receives a PDFKit document with the same
+/// content, but each facing scan is a separate page in normal reading order.
+enum PdfReadingPageNormalizer {
+    struct RecognizedLine {
+        let bounds: CGRect
+        let characterCount: Int
+        let confidence: Float
+    }
+
+    private static let splitBoundary: CGFloat = 0.48
+    private static let oppositeSplitBoundary: CGFloat = 0.52
+    private static let imageContext = CIContext(options: [.cacheIntermediates: false])
+    private static let cacheSchemaVersion = "3"
+
+    /// Returns a replacement document only when the source is a sideways,
+    /// scanned two-page spread. Normal PDFs keep their original PDFKit pages.
+    static func normalizedDocument(from url: URL) -> PDFDocument? {
+        if let cached = cachedDocument(for: url) {
+            return cached
+        }
+        guard let document = PDFDocument(url: url) else { return nil }
+        guard let normalized = normalizedDocument(from: document) else { return nil }
+        cache(normalized, for: url)
+        return normalized
+    }
+
+    static func normalizedDocument(from document: PDFDocument) -> PDFDocument? {
+        guard document.pageCount > 0,
+              hasNoSelectableText(in: document),
+              let orientation = spreadOrientation(in: document)
+        else {
+            return nil
+        }
+        return separatedDocument(from: document, orientation: orientation)
+    }
+
+    /// Splits every physical source page after applying a known sideways scan
+    /// orientation. This preserves the source's visual pagination, including
+    /// intentionally blank logical pages. Kept internal so deterministic image
+    /// geometry has a narrow XCTest seam independent of Vision OCR.
+    static func separatedDocument(
+        from document: PDFDocument,
+        orientation: CGImagePropertyOrientation
+    ) -> PDFDocument? {
+        guard orientation == .left || orientation == .right else { return nil }
+        let result = PDFDocument()
+        for index in 0..<document.pageCount {
+            guard let sourcePage = document.page(at: index),
+                  let rendered = render(sourcePage),
+                  let logicalPages = split(rendered, orientation: orientation),
+                  logicalPages.count == 2
+            else {
+                return nil
+            }
+            for image in logicalPages {
+                guard let page = makePDFPage(image: image) else { return nil }
+                result.insert(page, at: result.pageCount)
+            }
+        }
+        return result.pageCount == document.pageCount * 2 ? result : nil
+    }
+
+    static func isTwoUpSpread(_ lines: [RecognizedLine]) -> Bool {
+        let left = lines.filter { $0.bounds.maxX < splitBoundary }
+        let right = lines.filter { $0.bounds.minX > oppositeSplitBoundary }
+        let middleCount = lines.count - left.count - right.count
+        let splitThreshold = max(4, max(left.count, right.count) / 3)
+        return left.count >= 6 && right.count >= 6 && middleCount <= splitThreshold
+    }
+
+    private static func spreadOrientation(in document: PDFDocument) -> CGImagePropertyOrientation? {
+        let positions = [0, document.pageCount / 3, (document.pageCount * 2) / 3, document.pageCount - 1]
+        let sampleIndexes = Array(Set(positions)).sorted()
+        let orientations: [CGImagePropertyOrientation] = [.right, .left]
+        var spreadCounts: [UInt32: Int] = [:]
+        var scores: [UInt32: Double] = [:]
+
+        for index in sampleIndexes {
+            guard let page = document.page(at: index) else { continue }
+            let bounds = page.bounds(for: .mediaBox)
+            guard bounds.height > bounds.width, let image = render(page) else { continue }
+            for orientation in orientations {
+                guard let lines = recognize(image, orientation: orientation) else { continue }
+                let rawValue = orientation.rawValue
+                scores[rawValue, default: 0] += recognitionScore(lines)
+                if isTwoUpSpread(lines) {
+                    spreadCounts[rawValue, default: 0] += 1
+                }
+            }
+        }
+
+        return orientations
+            .filter { (spreadCounts[$0.rawValue] ?? 0) > 0 }
+            .max { left, right in
+                (scores[left.rawValue] ?? 0) < (scores[right.rawValue] ?? 0)
+            }
+    }
+
+    private static func hasNoSelectableText(in document: PDFDocument) -> Bool {
+        let positions = [0, document.pageCount / 2, document.pageCount - 1]
+        for index in Set(positions) {
+            let text = document.page(at: index)?.string?.trimmingCharacters(in: .whitespacesAndNewlines)
+            if let text, !text.isEmpty {
+                return false
+            }
+        }
+        return true
+    }
+
+    private static func recognize(
+        _ image: CGImage,
+        orientation: CGImagePropertyOrientation
+    ) -> [RecognizedLine]? {
+        let request = VNRecognizeTextRequest()
+        request.recognitionLevel = .fast
+        request.recognitionLanguages = ["pt-PT", "en-US"]
+        request.usesLanguageCorrection = false
+        do {
+            try VNImageRequestHandler(cgImage: image, orientation: orientation).perform([request])
+        } catch {
+            return nil
+        }
+        return (request.results ?? []).compactMap { observation in
+            guard let candidate = observation.topCandidates(1).first,
+                  !candidate.string.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            else {
+                return nil
+            }
+            return RecognizedLine(
+                bounds: observation.boundingBox,
+                characterCount: candidate.string.count,
+                confidence: candidate.confidence
+            )
+        }
+    }
+
+    private static func recognitionScore(_ lines: [RecognizedLine]) -> Double {
+        lines.reduce(0) { partial, line in
+            partial + Double(line.confidence) * Double(min(line.characterCount, 160))
+        }
+    }
+
+    private static func split(
+        _ image: CGImage,
+        orientation: CGImagePropertyOrientation
+    ) -> [CGImage]? {
+        guard let normalized = normalizedImage(image, orientation: orientation) else {
+            return nil
+        }
+        let extent = normalized.extent.integral
+        guard extent.width > extent.height, extent.width >= 2, extent.height > 0 else {
+            return nil
+        }
+        let halfWidth = floor(extent.width / 2)
+        let leftRect = CGRect(x: extent.minX, y: extent.minY, width: halfWidth, height: extent.height)
+        let rightRect = CGRect(
+            x: extent.minX + halfWidth,
+            y: extent.minY,
+            width: extent.width - halfWidth,
+            height: extent.height
+        )
+        guard let left = imageContext.createCGImage(normalized.cropped(to: leftRect), from: leftRect),
+              let right = imageContext.createCGImage(normalized.cropped(to: rightRect), from: rightRect)
+        else {
+            return nil
+        }
+        return [left, right]
+    }
+
+    private static func normalizedImage(
+        _ image: CGImage,
+        orientation: CGImagePropertyOrientation
+    ) -> CIImage? {
+        let oriented = CIImage(cgImage: image)
+            .oriented(forExifOrientation: Int32(orientation.rawValue))
+        let normalized = oriented.transformed(
+            by: CGAffineTransform(
+                translationX: -oriented.extent.minX,
+                y: -oriented.extent.minY
+            )
+        )
+        return normalized.extent.width > 0 && normalized.extent.height > 0 ? normalized : nil
+    }
+
+    private static func render(_ page: PDFPage) -> CGImage? {
+        let bounds = page.bounds(for: .mediaBox)
+        guard bounds.width > 0, bounds.height > 0 else { return nil }
+        let size = CGSize(width: ceil(bounds.width), height: ceil(bounds.height))
+        #if canImport(UIKit)
+        let renderer = UIGraphicsImageRenderer(size: size)
+        return renderer.image { context in
+            UIColor.white.setFill()
+            context.fill(CGRect(origin: .zero, size: size))
+            context.cgContext.saveGState()
+            context.cgContext.translateBy(x: 0, y: size.height)
+            context.cgContext.scaleBy(x: 1, y: -1)
+            let scaleX = size.width / bounds.width
+            let scaleY = size.height / bounds.height
+            context.cgContext.scaleBy(x: scaleX, y: scaleY)
+            page.draw(with: .mediaBox, to: context.cgContext)
+            context.cgContext.restoreGState()
+        }.cgImage
+        #else
+        let image = NSImage(size: size, flipped: true) { rect in
+            NSColor.white.setFill()
+            rect.fill()
+            guard let context = NSGraphicsContext.current?.cgContext else { return false }
+            context.saveGState()
+            let scaleX = size.width / bounds.width
+            let scaleY = size.height / bounds.height
+            context.scaleBy(x: scaleX, y: scaleY)
+            page.draw(with: .mediaBox, to: context)
+            context.restoreGState()
+            return true
+        }
+        return image.cgImage(forProposedRect: nil, context: nil, hints: nil)
+        #endif
+    }
+
+    private static func makePDFPage(image: CGImage) -> PDFPage? {
+        #if canImport(UIKit)
+        PDFPage(image: UIImage(cgImage: image))
+        #else
+        PDFPage(
+            image: NSImage(
+                cgImage: image,
+                size: NSSize(width: image.width, height: image.height)
+            )
+        )
+        #endif
+    }
+
+    /// Scanned books can have hundreds of physical pages. Persist the visual
+    /// derivative so a warm open loads the already upright logical pages
+    /// without repeating Vision sampling and rasterization.
+    private static func cachedDocument(for sourceURL: URL) -> PDFDocument? {
+        guard let cacheURL = cacheURL(for: sourceURL),
+              let document = PDFDocument(url: cacheURL),
+              document.pageCount > 0
+        else {
+            return nil
+        }
+        return document
+    }
+
+    private static func cache(_ document: PDFDocument, for sourceURL: URL) {
+        guard let cacheURL = cacheURL(for: sourceURL) else { return }
+        let directory = cacheURL.deletingLastPathComponent()
+        do {
+            try FileManager.default.createDirectory(
+                at: directory,
+                withIntermediateDirectories: true
+            )
+            let temporaryURL = directory.appendingPathComponent(
+                "\(cacheURL.deletingPathExtension().lastPathComponent)-\(UUID().uuidString).tmp"
+            )
+            defer { try? FileManager.default.removeItem(at: temporaryURL) }
+            guard document.write(to: temporaryURL) else { return }
+            if FileManager.default.fileExists(atPath: cacheURL.path) {
+                _ = try FileManager.default.replaceItemAt(
+                    cacheURL,
+                    withItemAt: temporaryURL,
+                    backupItemName: nil,
+                    options: [.usingNewMetadataOnly]
+                )
+            } else {
+                try FileManager.default.moveItem(at: temporaryURL, to: cacheURL)
+            }
+        } catch {
+            // Cache persistence is an optimization. The normalized in-memory
+            // document remains valid when a storage provider rejects a write.
+        }
+    }
+
+    private static func cacheURL(for sourceURL: URL) -> URL? {
+        let values = try? sourceURL.resourceValues(forKeys: [
+            .fileSizeKey,
+            .contentModificationDateKey,
+        ])
+        let sourceIdentity = [
+            sourceURL.standardizedFileURL.path,
+            cacheSchemaVersion,
+            values?.fileSize.map(String.init) ?? "unknown-size",
+            values?.contentModificationDate?.timeIntervalSince1970.description ?? "unknown-date",
+        ].joined(separator: "|")
+        let digest = SHA256.hash(data: Data(sourceIdentity.utf8))
+            .map { String(format: "%02x", $0) }
+            .joined()
+        guard let caches = FileManager.default.urls(
+            for: .cachesDirectory,
+            in: .userDomainMask
+        ).first else {
+            return nil
+        }
+        return caches
+            .appendingPathComponent("EpubToMp3", isDirectory: true)
+            .appendingPathComponent("NormalizedPDF", isDirectory: true)
+            .appendingPathComponent("\(digest).pdf", isDirectory: false)
+    }
+}

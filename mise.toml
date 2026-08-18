@@ -198,7 +198,7 @@ if [ ! -x ".venv/bin/python" ]; then
   mise run install
 fi
 
-.venv/bin/python -m pytest python_app/tests test_ambiguous_languages.py test_new_features.py -k "not benchmark"
+.venv/bin/python -m pytest --ignore=.ai-jail python_app/tests test_ambiguous_languages.py test_new_features.py -k "not benchmark"
 """
 
 [tasks."test:integration"]
@@ -211,7 +211,7 @@ if [ ! -x ".venv/bin/python" ]; then
   mise run install
 fi
 
-.venv/bin/python -m pytest python_app/tests -k "benchmark"
+.venv/bin/python -m pytest --ignore=.ai-jail python_app/tests -k "benchmark"
 """
 
 [tasks."trim-log"]

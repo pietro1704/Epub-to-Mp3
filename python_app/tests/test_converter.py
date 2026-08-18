@@ -2629,6 +2629,24 @@ class TestAudioConverter(unittest.IsolatedAsyncioTestCase):
             )
             mock_report.assert_called_once_with(expected_result)
 
+    async def test_convert_rejects_an_empty_parser_result(self):
+        """A parser returning no chapters must fail rather than report success."""
+        empty_reader = SimpleNamespace(
+            title="Empty PDF",
+            author="",
+            file_path=Path(self.temp_dir) / "empty.pdf",
+            get_chapter_structure=lambda preserve_all=True: [],
+        )
+
+        with patch.object(self.converter, "_report_results", new_callable=AsyncMock) as report:
+            result = await self.converter.convert(empty_reader, self.config)
+
+        self.assertFalse(result.success)
+        self.assertEqual(result.total_chapters, 0)
+        self.assertEqual(result.converted_chapters, 0)
+        self.assertEqual(result.errors, ["No readable chapters were extracted from Empty PDF"])
+        report.assert_awaited_once_with(result)
+
     async def test_convert_auto_e2e_edge_dns_failure_falls_back_offline(self):
         """E2E: auto mode should recover from Edge DNS failure by switching offline."""
         chapter_text = "conteudo de teste " * 600
