@@ -22,7 +22,7 @@ soundfile>=0.14.0
 pandas>=3.0.3,<4.0.0
 
 # Offline fallback (fast, small)
-piper-tts>=1.6.0
+piper-tts>=1.6.1
 
 # Ebook Processing
 ebooklib>=0.20

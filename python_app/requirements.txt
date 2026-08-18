@@ -3,7 +3,7 @@
 
 # Core TTS engines
 edge-tts>=7.2.8
-piper-tts>=1.6.0
+piper-tts>=1.6.1
 
 # PyTorch + audio (Piper)
 # torch and torchaudio are optional GPU-acceleration dependencies — install
