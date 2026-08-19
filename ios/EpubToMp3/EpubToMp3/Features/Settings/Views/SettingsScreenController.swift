@@ -86,7 +86,7 @@ final class SettingsScreenController: UITableViewController {
         case .storage:
             return 8
         case .advanced:
-            return 3
+            return 4
         case .about:
             return 3
         }
@@ -346,6 +346,7 @@ final class SettingsScreenController: UITableViewController {
         let cell = tableView.dequeueReusableCell(withIdentifier: "Cell", for: indexPath)
         var content = cell.defaultContentConfiguration()
         cell.accessoryType = .disclosureIndicator
+        cell.accessibilityIdentifier = nil
         switch indexPath.row {
         case 0:
             content.text = L10n.string("settings.recentJobs")
@@ -355,6 +356,11 @@ final class SettingsScreenController: UITableViewController {
             content.text = L10n.string("settings.telemetry")
             content.secondaryText = L10n.string("settings.telemetryDescription")
             content.image = UIImage(systemName: "speedometer")
+        case 2:
+            content.text = L10n.string("settings.exportPerformanceDiagnostics")
+            content.secondaryText = L10n.string("settings.exportPerformanceDiagnosticsDescription")
+            content.image = UIImage(systemName: "square.and.arrow.up")
+            cell.accessibilityIdentifier = "settings.exportPerformanceDiagnostics"
         default:
             content.text = L10n.string("settings.clearCache")
             content.secondaryText = L10n.string("settings.clearCacheDescription")
@@ -489,6 +495,8 @@ final class SettingsScreenController: UITableViewController {
                 TelemetryScreenController(settings: settings),
                 animated: true
             )
+        } else if row == 2 {
+            exportPerformanceDiagnostics()
         } else {
             presentDestructiveAlert(
                 title: L10n.string("settings.clearCacheConfirmTitle"),
@@ -498,6 +506,23 @@ final class SettingsScreenController: UITableViewController {
                 self?.clearAllDownloads()
                 self?.presentInfoAlert(title: L10n.string("settings.clearCacheDone"))
             }
+        }
+    }
+
+    private func exportPerformanceDiagnostics() {
+        do {
+            let url = try LatencyObservationStore.shared.writeDiagnosticExport()
+            let controller = UIActivityViewController(activityItems: [url], applicationActivities: nil)
+            if let popover = controller.popoverPresentationController {
+                popover.sourceView = view
+                popover.sourceRect = view.bounds
+            }
+            present(controller, animated: true)
+        } catch {
+            presentInfoAlert(
+                title: L10n.string("settings.exportPerformanceDiagnostics"),
+                message: L10n.string("settings.exportPerformanceDiagnosticsError")
+            )
         }
     }
 
@@ -539,8 +564,8 @@ final class SettingsScreenController: UITableViewController {
         ByteCountFormatter.string(fromByteCount: max(0, bytes), countStyle: .file)
     }
 
-    private func presentInfoAlert(title: String) {
-        let alert = UIAlertController(title: title, message: nil, preferredStyle: .alert)
+    private func presentInfoAlert(title: String, message: String? = nil) {
+        let alert = UIAlertController(title: title, message: message, preferredStyle: .alert)
         alert.addAction(UIAlertAction(title: L10n.string("library.ok"), style: .default))
         present(alert, animated: true)
     }

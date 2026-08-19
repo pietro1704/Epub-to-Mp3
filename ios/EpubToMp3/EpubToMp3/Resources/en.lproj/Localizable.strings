@@ -551,6 +551,9 @@
 "settings.clearAllDownloads" = "Clear all book downloads";
 "settings.clearAllDownloadsConfirmTitle" = "Clear all downloads?";
 "settings.clearAllDownloadsConfirmMessage" = "All offline MP3s and generated chapter audio caches will be deleted.";
+"settings.exportPerformanceDiagnostics" = "Export performance diagnostics";
+"settings.exportPerformanceDiagnosticsDescription" = "Share private local timing observations for support.";
+"settings.exportPerformanceDiagnosticsError" = "Performance diagnostics could not be exported.";
 "jobs.historyDetailUnavailable" = "This session does not include a live job ID.";
 "settings.autoScrollHint" = "Double-tap to toggle automatic scrolling.";
 "settings.openOptionHint" = "Double-tap to choose this setting.";

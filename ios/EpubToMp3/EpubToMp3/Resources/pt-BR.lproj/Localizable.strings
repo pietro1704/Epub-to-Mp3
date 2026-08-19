@@ -548,6 +548,9 @@
 "settings.clearAllDownloads" = "Limpar todos os downloads dos livros";
 "settings.clearAllDownloadsConfirmTitle" = "Limpar todos os downloads?";
 "settings.clearAllDownloadsConfirmMessage" = "Todos os MP3s offline e caches de áudio gerados dos capítulos serão apagados.";
+"settings.exportPerformanceDiagnostics" = "Exportar diagnósticos de desempenho";
+"settings.exportPerformanceDiagnosticsDescription" = "Compartilhe observações locais e privadas de tempo para suporte.";
+"settings.exportPerformanceDiagnosticsError" = "Não foi possível exportar os diagnósticos de desempenho.";
 "jobs.historyDetailUnavailable" = "Esta sessão não inclui um ID de job ao vivo.";
 "common.close" = "Fechar";
 "reader.settings" = "Ajustes de leitura";

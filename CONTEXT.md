@@ -33,13 +33,27 @@ conversion, without waiting for the complete book.
 The durable local collection of audio chapters that have been played or
 explicitly downloaded. It is retained so playback remains available offline,
 including when a listener completes a book through progressive playback without
-requesting a separate full download.
+requesting a separate full download. It is protected from automatic TTL and LRU
+eviction; only the listener removes it.
 
 A chapter enters this cache when playback of its first streamed segment becomes
 audible; its incoming segments are assembled into the chapter's final audio
 file. If conversion is interrupted after that point, the durable-retention
 intent persists until a valid final file is available or the listener removes
 the download.
+
+## Rebuildable performance cache
+
+Derived reader text, normalized PDF pages, partial audio buffers, and completed
+conversion artifacts that reduce latency but can be reconstructed. It has its
+own bounded LRU-and-TTL budget and never evicts Offline listening cache content.
+
+## Playback-first resource policy
+
+The rule that reading, a pending navigation, and audible playback take priority
+over conversion throughput. Conversion yields under interaction, low-power,
+memory-pressure, or thermal conditions, then resumes aggressive use only after
+the listener-visible path is stable.
 
 ## Warm book open
 
@@ -58,6 +72,21 @@ The first open of an imported book, when the source document has not yet been
 prepared for the reader. Cold-open work may continue in the background after
 the reader becomes usable, but it must establish the assets required by later
 warm opens.
+
+## Performance program
+
+A cross-client effort to improve observable application speed through explicit
+latency budgets. It sequences the Apple client and conversion backend before
+the web and Flutter clients, and prioritizes perceived readiness and playback
+stability. Conversion may use available CPU and memory aggressively only while
+it does not degrade reading or playback responsiveness.
+
+## Latency observation
+
+A monotonic, correlated record of one listener-visible transition: the
+initiating gesture, the relevant ready state, and the elapsed time between
+them. The same vocabulary applies across clients; for streaming playback it
+keeps audio queued and audio audible as distinct ready states.
 
 ## Navigation seek
 

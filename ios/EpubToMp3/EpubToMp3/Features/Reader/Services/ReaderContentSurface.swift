@@ -36,6 +36,7 @@ final class ReaderContentSurface {
 
     var isDisplayingText: Bool { kind == .text }
     var isDisplayingComic: Bool { kind == .comic }
+    var onPDFPageReady: ((Bool) -> Void)?
 
     init(
         readerView: UIView,
@@ -175,6 +176,16 @@ final class ReaderContentSurface {
             self.pdfLoadingIndicator?.stopAnimating()
             self.pdfLoadingIndicator?.removeFromSuperview()
             self.pdfLoadingIndicator = nil
+            DispatchQueue.main.async { [weak self, weak pdfView] in
+                guard let self,
+                      self.pdfMountGeneration == generation,
+                      self.pdfView === pdfView,
+                      pdfView?.document?.pageCount ?? 0 > 0
+                else {
+                    return
+                }
+                self.onPDFPageReady?(normalized != nil)
+            }
         }
     }
 

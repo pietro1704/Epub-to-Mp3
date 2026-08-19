@@ -29,6 +29,10 @@ final class MacReaderViewController: NSViewController, NSTableViewDataSource, NS
     private var settingsCancellables: Set<AnyCancellable> = []
     private var loadTask: Task<Void, Never>?
     private var loadGeneration = UUID()
+    private var activeBookOpenJourneyID: UUID?
+    private var pendingPDFPageJourneyID: UUID?
+    private var firstPDFPageReadyJourneyID: UUID?
+    private var controlsReadyJourneyID: UUID?
     private var pdfView: PDFView?
     private var fulltext: EbookFulltext?
     private var selectedChapter = 0
@@ -57,6 +61,7 @@ final class MacReaderViewController: NSViewController, NSTableViewDataSource, NS
 
     deinit {
         loadTask?.cancel()
+        cancelActiveBookOpenJourney()
         NotificationCenter.default.removeObserver(self)
     }
 
@@ -329,6 +334,7 @@ final class MacReaderViewController: NSViewController, NSTableViewDataSource, NS
     }
 
     private func showLoadingError(_ error: Error) {
+        cancelActiveBookOpenJourney()
         loadingStatusLabel.stringValue = error.localizedDescription
         loadingRetryButton.isHidden = false
         loadingOverlay.isHidden = false
@@ -459,6 +465,7 @@ final class MacReaderViewController: NSViewController, NSTableViewDataSource, NS
     private func loadCurrentBook() {
         guard isViewLoaded else { return }
         loadTask?.cancel()
+        cancelActiveBookOpenJourney()
         let generation = UUID()
         loadGeneration = generation
         contentScrollView.documentView = textView
@@ -478,11 +485,16 @@ final class MacReaderViewController: NSViewController, NSTableViewDataSource, NS
             currentBookId = book.id
             hasRestoredInitialPosition = false
         }
+        let journeyID = LatencyObservationStore.shared.beginBookOpen(
+            documentKind: Self.documentKind(for: book)
+        )
+        activeBookOpenJourneyID = journeyID
         // Process-warm reader opens must not clear the visible chapter or
         // show the loading cover. The last two prepared books are retained
         // in memory precisely so this route can paint immediately.
         if let warmPayload = LocalFulltextCache.inMemoryPayload(bookId: book.id),
            !warmPayload.chapters.isEmpty {
+            LatencyObservationStore.shared.classifyCache(.inMemoryWarm, for: journeyID)
             fulltext = warmPayload
             LocalFulltextCache.recordWarmOpen(bookId: book.id)
             bookTitleLabel.stringValue = book.resolvedTitle
@@ -498,7 +510,9 @@ final class MacReaderViewController: NSViewController, NSTableViewDataSource, NS
             }
             showChapter(selectedChapter)
             restoreReadingProgressIfNeeded(bookId: book.id)
+            recordReadableContent()
             hideLoading()
+            recordControlsUsable()
             return
         }
         fulltext = nil
@@ -517,14 +531,19 @@ final class MacReaderViewController: NSViewController, NSTableViewDataSource, NS
                 }.value
                 let payload: EbookFulltext
                 if let cachedPayload {
+                    LatencyObservationStore.shared.classifyCache(.preparedDisk, for: journeyID)
                     payload = cachedPayload
                 } else {
+                    LatencyObservationStore.shared.classifyCache(.cold, for: journeyID)
                     let fileURL = try await library.openBookFileAsync(id: book.id)
                     guard self.isActiveLoad(generation, bookID: book.id) else { return }
                     if book.fileType == .pdf {
-                        await showPDF(fileURL)
+                        pendingPDFPageJourneyID = journeyID
+                        guard let wasNormalized = await showPDF(fileURL) else { return }
                         guard self.isActiveLoad(generation, bookID: book.id) else { return }
+                        recordFirstPDFPage(wasNormalized: wasNormalized)
                         self.hideLoading()
+                        recordControlsUsable()
                         return
                     }
                     if book.fileType.requiresServerConversion {
@@ -558,7 +577,9 @@ final class MacReaderViewController: NSViewController, NSTableViewDataSource, NS
                 }
                 showChapter(selectedChapter)
                 restoreReadingProgressIfNeeded(bookId: book.id)
+                recordReadableContent()
                 hideLoading()
+                recordControlsUsable()
             } catch {
                 guard self.isActiveLoad(generation, bookID: book.id) else { return }
                 statusLabel.stringValue = error.localizedDescription
@@ -897,7 +918,65 @@ final class MacReaderViewController: NSViewController, NSTableViewDataSource, NS
         alert.runModal()
     }
 
-    private func showPDF(_ url: URL) async {
+    private static func documentKind(for book: BookEntity) -> LatencyObservation.DocumentKind {
+        book.fileType == .pdf ? .selectableTextPDF : .epub
+    }
+
+    private func recordReadableContent() {
+        guard let journeyID = activeBookOpenJourneyID else { return }
+        _ = LatencyObservationStore.shared.record(.readableContent, for: journeyID)
+    }
+
+    private func recordFirstPDFPage(wasNormalized: Bool) {
+        guard let journeyID = pendingPDFPageJourneyID,
+              journeyID == activeBookOpenJourneyID
+        else {
+            return
+        }
+        if wasNormalized {
+            LatencyObservationStore.shared.classifyDocument(.normalizedScannedPDF, for: journeyID)
+        }
+        _ = LatencyObservationStore.shared.record(.readableContent, for: journeyID)
+        _ = LatencyObservationStore.shared.record(.firstPDFPage, for: journeyID)
+        firstPDFPageReadyJourneyID = journeyID
+        finishPDFJourneyIfReady(journeyID)
+    }
+
+    private func recordControlsUsable() {
+        guard let journeyID = activeBookOpenJourneyID else { return }
+        _ = LatencyObservationStore.shared.record(.controlsUsable, for: journeyID)
+        if pendingPDFPageJourneyID == journeyID {
+            controlsReadyJourneyID = journeyID
+            finishPDFJourneyIfReady(journeyID)
+        } else {
+            LatencyObservationStore.shared.finish(journeyID)
+            activeBookOpenJourneyID = nil
+        }
+    }
+
+    private func finishPDFJourneyIfReady(_ journeyID: UUID) {
+        guard firstPDFPageReadyJourneyID == journeyID,
+              controlsReadyJourneyID == journeyID
+        else {
+            return
+        }
+        LatencyObservationStore.shared.finish(journeyID)
+        activeBookOpenJourneyID = nil
+        pendingPDFPageJourneyID = nil
+        firstPDFPageReadyJourneyID = nil
+        controlsReadyJourneyID = nil
+    }
+
+    private func cancelActiveBookOpenJourney() {
+        guard let journeyID = activeBookOpenJourneyID else { return }
+        _ = LatencyObservationStore.shared.cancel(journeyID)
+        activeBookOpenJourneyID = nil
+        pendingPDFPageJourneyID = nil
+        firstPDFPageReadyJourneyID = nil
+        controlsReadyJourneyID = nil
+    }
+
+    private func showPDF(_ url: URL) async -> Bool? {
         let view = PDFView()
         view.autoScales = true
         view.displayMode = .singlePageContinuous
@@ -911,8 +990,9 @@ final class MacReaderViewController: NSViewController, NSTableViewDataSource, NS
         let normalized = await Task.detached(priority: .userInitiated) {
             PdfReadingPageNormalizer.normalizedDocument(from: url)
         }.value
-        guard pdfView === view else { return }
+        guard pdfView === view else { return nil }
         view.document = normalized ?? PDFDocument(url: url)
+        return normalized != nil
     }
 }
 

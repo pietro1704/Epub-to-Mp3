@@ -1,5 +1,6 @@
 #if os(macOS)
 import AppKit
+import UniformTypeIdentifiers
 
 @MainActor
 final class MacSettingsViewController: NSViewController {
@@ -60,12 +61,18 @@ final class MacSettingsViewController: NSViewController {
         let refreshButton = NSButton(title: L10n.string("settings.refreshStorage"),
                                      target: self,
                                    action: #selector(refreshStorage))
+        let exportDiagnosticsButton = NSButton(
+            title: L10n.string("settings.exportPerformanceDiagnostics"),
+            target: self,
+            action: #selector(exportPerformanceDiagnostics)
+        )
         fontSizeStepper.setAccessibilityLabel(L10n.string("settings.fontSize"))
         fontPopup.setAccessibilityLabel(L10n.string("settings.font"))
         themePopup.setAccessibilityLabel(L10n.string("settings.theme"))
         layoutPopup.setAccessibilityLabel(L10n.string("settings.layout"))
         clearButton.setAccessibilityLabel(L10n.string("settings.clearAllDownloads"))
         refreshButton.setAccessibilityLabel(L10n.string("settings.refreshStorage"))
+        exportDiagnosticsButton.setAccessibilityLabel(L10n.string("settings.exportPerformanceDiagnostics"))
         func row(_ label: String, _ control: NSView) -> NSStackView {
             let title = NSTextField(labelWithString: label)
             title.setContentHuggingPriority(.required, for: .horizontal)
@@ -84,6 +91,7 @@ final class MacSettingsViewController: NSViewController {
             row(L10n.string("settings.layout"), layoutPopup),
             row(L10n.string("settings.storageUsage"), storageLabel),
             row("", refreshButton),
+            row("", exportDiagnosticsButton),
             row("", clearButton),
         ])
         form.orientation = .vertical
@@ -149,6 +157,22 @@ final class MacSettingsViewController: NSViewController {
     }
 
     @objc private func refreshStorage() { refresh() }
+
+    @objc private func exportPerformanceDiagnostics() {
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [.json]
+        panel.nameFieldStringValue = "performance-diagnostics.json"
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        do {
+            try LatencyObservationStore.shared.exportData().write(to: url, options: .atomic)
+        } catch {
+            let alert = NSAlert()
+            alert.messageText = L10n.string("settings.exportPerformanceDiagnostics")
+            alert.informativeText = L10n.string("settings.exportPerformanceDiagnosticsError")
+            alert.addButton(withTitle: L10n.string("common.ok"))
+            alert.runModal()
+        }
+    }
 
     @objc private func clearDownloads() {
         Task { await DownloadManager.shared.cancelAll() }

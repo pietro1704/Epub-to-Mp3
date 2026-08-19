@@ -109,6 +109,10 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
     private var needsTextLayoutRefresh = false
     private var activeLoadingID: UUID?
     private var pendingLoadingCompletionID: UUID?
+    private var activeBookOpenJourneyID: UUID?
+    private var pendingPDFPageJourneyID: UUID?
+    private var firstPDFPageReadyJourneyID: UUID?
+    private var controlsReadyJourneyID: UUID?
     private var isDeferringReaderGestures = false
     private var isLoadingContent = false
     /// Prevents overlapping page renders/snapshots when the user taps the
@@ -549,6 +553,9 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
         ])
 
         contentSurface.install()
+        contentSurface.onPDFPageReady = { [weak self] wasNormalized in
+            self?.recordFirstPDFPage(wasNormalized: wasNormalized)
+        }
         paginatedTextHeightConstraint = contentSurface.paginatedTextHeightConstraint
         scrollingTextHeightConstraint = contentSurface.scrollingTextHeightConstraint
         applyReaderLayoutMode()
@@ -969,16 +976,22 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
         guard isViewLoaded else { return }
         loadTask?.cancel()
         loadTask = nil
+        cancelActiveBookOpenJourney()
         let loadingBookID = book.id
         let loadingID = UUID()
         activeLoadingID = loadingID
         pendingLoadingCompletionID = nil
+        let journeyID = LatencyObservationStore.shared.beginBookOpen(
+            documentKind: Self.documentKind(for: book)
+        )
+        activeBookOpenJourneyID = journeyID
 
         // A process-warm book already has the reader payload and fonts from
         // its last visit. Paint its saved chapter synchronously, before the
         // first loading frame, instead of reopening the security-scoped EPUB.
         if let warmPayload = LocalFulltextCache.inMemoryPayload(bookId: loadingBookID),
            !warmPayload.chapters.isEmpty {
+            LatencyObservationStore.shared.classifyCache(.inMemoryWarm, for: journeyID)
             registeredFontURLs = EpubFontManager.registerCachedFonts(bookID: loadingBookID)
             displayPreparedPayload(warmPayload, loadingID: loadingID)
             return
@@ -986,6 +999,7 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
 
         showLoadingOverlay()
         if ProcessInfo.processInfo.arguments.contains("-uiTestFixture") {
+            LatencyObservationStore.shared.classifyCache(.cold, for: journeyID)
             loadUITestFixture(after: uiTestLoadingDelay)
             return
         }
@@ -1002,10 +1016,13 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
                 let shouldRepairCachedTitles = cachedNeedsTitleRepair
                     && !UserDefaults.standard.bool(forKey: titleRepairKey)
                 if let cached, !shouldRepairCachedTitles, cachedHasReadableContent {
+                    LatencyObservationStore.shared.classifyCache(.preparedDisk, for: journeyID)
                     payload = cached
                 } else {
+                    LatencyObservationStore.shared.classifyCache(.cold, for: journeyID)
                     let url = try await library.openBookFileAsync(id: book.id)
                     if book.fileType == .pdf {
+                        pendingPDFPageJourneyID = journeyID
                         showPDF(url)
                         guard self.isCurrentLoad(loadingID, bookID: loadingBookID) else { return }
                         hideLoadingOverlay()
@@ -1079,6 +1096,7 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
 
     deinit {
         loadTask?.cancel()
+        cancelActiveBookOpenJourney()
     }
 
     /// Cover + spinner only — no TOC, footnotes, search, or "loading" text
@@ -1124,6 +1142,7 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
             self.isDeferringReaderGestures = false
             self.pageTap.isEnabled = true
             self.applyReaderLayoutMode()
+            self.recordControlsUsable()
         }
     }
 
@@ -1132,6 +1151,7 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
     /// an error is a terminal state, never an infinite spinner — and show
     /// the reason under the cover instead of leaving the loading screen.
     private func showLoadingError(_ message: String) {
+        cancelActiveBookOpenJourney()
         activeLoadingID = nil
         pendingLoadingCompletionID = nil
         loadingSpinner.stopAnimating()
@@ -1175,6 +1195,59 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
         }
     }
 
+    private static func documentKind(for book: BookEntity) -> LatencyObservation.DocumentKind {
+        book.fileType == .pdf ? .selectableTextPDF : .epub
+    }
+
+    private func recordFirstPDFPage(wasNormalized: Bool) {
+        guard let journeyID = pendingPDFPageJourneyID,
+              journeyID == activeBookOpenJourneyID
+        else {
+            return
+        }
+        if wasNormalized {
+            LatencyObservationStore.shared.classifyDocument(.normalizedScannedPDF, for: journeyID)
+        }
+        _ = LatencyObservationStore.shared.record(.readableContent, for: journeyID)
+        _ = LatencyObservationStore.shared.record(.firstPDFPage, for: journeyID)
+        firstPDFPageReadyJourneyID = journeyID
+        finishPDFJourneyIfReady(journeyID)
+    }
+
+    private func recordControlsUsable() {
+        guard let journeyID = activeBookOpenJourneyID else { return }
+        _ = LatencyObservationStore.shared.record(.controlsUsable, for: journeyID)
+        if pendingPDFPageJourneyID == journeyID {
+            controlsReadyJourneyID = journeyID
+            finishPDFJourneyIfReady(journeyID)
+        } else {
+            LatencyObservationStore.shared.finish(journeyID)
+            activeBookOpenJourneyID = nil
+        }
+    }
+
+    private func finishPDFJourneyIfReady(_ journeyID: UUID) {
+        guard firstPDFPageReadyJourneyID == journeyID,
+              controlsReadyJourneyID == journeyID
+        else {
+            return
+        }
+        LatencyObservationStore.shared.finish(journeyID)
+        activeBookOpenJourneyID = nil
+        pendingPDFPageJourneyID = nil
+        firstPDFPageReadyJourneyID = nil
+        controlsReadyJourneyID = nil
+    }
+
+    private func cancelActiveBookOpenJourney() {
+        guard let journeyID = activeBookOpenJourneyID else { return }
+        _ = LatencyObservationStore.shared.cancel(journeyID)
+        activeBookOpenJourneyID = nil
+        pendingPDFPageJourneyID = nil
+        firstPDFPageReadyJourneyID = nil
+        controlsReadyJourneyID = nil
+    }
+
     private func isCurrentLoad(_ loadingID: UUID, bookID: String) -> Bool {
         activeLoadingID == loadingID && book.id == bookID
     }
@@ -1195,6 +1268,9 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
         }
         pendingLoadingCompletionID = nil
         restoreReadingProgressIfNeeded()
+        if let journeyID = activeBookOpenJourneyID {
+            _ = LatencyObservationStore.shared.record(.readableContent, for: journeyID)
+        }
         hideLoadingOverlay()
     }
 
