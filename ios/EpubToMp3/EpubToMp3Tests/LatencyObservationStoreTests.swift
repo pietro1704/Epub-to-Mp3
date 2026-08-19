@@ -47,6 +47,19 @@ final class LatencyObservationStoreTests: XCTestCase {
         XCTAssertEqual(journey.records.map(\.elapsedNanoseconds), [0, 50])
     }
 
+    func testFinishedJourneyRejectsLateCancellation() throws {
+        let store = LatencyObservationStore(clock: { 100 })
+        let journeyID = store.beginBookOpen(documentKind: .epub)
+
+        store.finish(journeyID)
+
+        XCTAssertFalse(store.cancel(journeyID))
+        XCTAssertEqual(
+            try XCTUnwrap(store.snapshot().first).records.map(\.transition),
+            [.openRequested]
+        )
+    }
+
     func testPreparedPDFJourneyReclassifiesNormalizedDocument() throws {
         var now: UInt64 = 10
         let store = LatencyObservationStore(clock: { now })

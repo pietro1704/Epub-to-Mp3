@@ -61,7 +61,9 @@ final class MacReaderViewController: NSViewController, NSTableViewDataSource, NS
 
     deinit {
         loadTask?.cancel()
-        cancelActiveBookOpenJourney()
+        if let journeyID = activeBookOpenJourneyID {
+            _ = LatencyObservationStore.shared.cancel(journeyID)
+        }
         NotificationCenter.default.removeObserver(self)
     }
 

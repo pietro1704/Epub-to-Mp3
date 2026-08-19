@@ -1096,7 +1096,9 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
 
     deinit {
         loadTask?.cancel()
-        cancelActiveBookOpenJourney()
+        if let journeyID = activeBookOpenJourneyID {
+            _ = LatencyObservationStore.shared.cancel(journeyID)
+        }
     }
 
     /// Cover + spinner only — no TOC, footnotes, search, or "loading" text
