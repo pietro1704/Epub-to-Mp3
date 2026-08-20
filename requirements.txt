@@ -70,7 +70,7 @@ setuptools>=84.0.0  # PYSEC-2022-43012, PYSEC-2025-49, CVE-2024-6345
 virtualenv>=21.7.4 # CVE-2026-22702 (via pre-commit)
 
 # Additional security pins surfaced by `mise run audit` (OSV)
-python-dotenv>=1.2.2  # CVE-2026-28684
+python-dotenv>=1.2.3  # CVE-2026-28684
 python-multipart>=0.0.26  # CVE-2026-40347 (already pinned via direct dep above; redundant safeguard)
 
 # Testing (dev only)
