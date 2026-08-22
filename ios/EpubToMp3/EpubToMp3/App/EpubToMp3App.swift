@@ -26,6 +26,10 @@ final class EpubToMp3App: NSObject, PlatformApplicationDelegate {
     let playerPresentation = PlayerPresentation()
     let bookmarkStore = BookmarkStore()
 
+    #if os(macOS)
+    private let sidecar = SidecarManager()
+    #endif
+
     private static var sharedPlayerForWidgetIntents: AudioPlayer?
 
     override init() {
@@ -258,7 +262,7 @@ final class EpubToMp3App: NSObject, PlatformApplicationDelegate {
         window.makeKeyAndOrderFront(nil)
         self.window = window
         NSApplication.shared.activate(ignoringOtherApps: true)
-        bootstrapEmbeddedRuntime()
+        startEmbeddedSidecar()
         activateRuntime()
     }
 
@@ -296,13 +300,18 @@ final class EpubToMp3App: NSObject, PlatformApplicationDelegate {
         rootController?.focusLibrarySearch(sender)
     }
 
-    private func bootstrapEmbeddedRuntime() {
+    private func startEmbeddedSidecar() {
         guard !Self.isRunningUnderXCTest() else { return }
-        Task {
-            do {
-                try PythonEmbed.shared.bootstrap()
-            } catch {
-                print("[EmbeddedRuntime] bootstrap failed: \(error)")
+        sidecar.onSidecarDied = { [weak self] in
+            guard let self else { return }
+            self.settings.sidecarURL = nil
+            self.startEmbeddedSidecar()
+        }
+        Task { [weak self] in
+            guard let self else { return }
+            let state = await self.sidecar.start()
+            if case .running(let url) = state {
+                self.settings.sidecarURL = url
             }
         }
     }

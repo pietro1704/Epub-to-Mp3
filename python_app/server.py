@@ -64,6 +64,7 @@ from src.paths import (
     SOURCE_BACKUPS_DIR,
     UPLOADS_DIR,
 )
+from src.progressive_playback_observation import ProgressivePlaybackObservationStore
 from src.reader_sanitizer import chapter_html_fallback, sanitize_reader_css, sanitize_reader_html
 from src.telemetry import TelemetryRecorder
 from src.text_formatting import TextFormattingProcessor
@@ -106,6 +107,7 @@ def _detect_test_environment() -> bool:
 _IS_TEST_ENV = _detect_test_environment()
 
 logger = logging.getLogger(__name__)
+progressive_playback_observations = ProgressivePlaybackObservationStore(clock=time.monotonic_ns)
 
 
 @contextlib.asynccontextmanager
@@ -3228,6 +3230,14 @@ async def stream_job_status(job_id: str, request: Request):
     if job_id not in jobs and not job_manager.load_job(job_id):
         raise HTTPException(status_code=404, detail=f"Job {job_id} not found")
 
+    journey_id = request.query_params.get("journey_id")
+    if journey_id:
+        try:
+            uuid.UUID(journey_id)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail="journey_id must be a UUID") from exc
+        progressive_playback_observations.record(job_id, journey_id, "stream_connected")
+
     # Create queue for this client
     client_queue: asyncio.Queue[dict] = asyncio.Queue(maxsize=50)
 
@@ -5087,6 +5097,9 @@ async def process_conversion(job_id: str) -> None:
                                 "baseUrl": f"/api/streams/{job_id}/chapters/{idx}",
                             }
                             _save_stream_index(job_id, stream_index)
+                        progressive_playback_observations.record_for_job(
+                            job_id, "segment_available"
+                        )
                     except Exception as exc:
                         logger.debug("Chunk callback error for segment %d: %s", segment_index, exc)
 

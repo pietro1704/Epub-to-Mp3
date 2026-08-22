@@ -4,6 +4,7 @@ import Foundation
 enum LatencyObservation {
     enum JourneyKind: String, Codable, Equatable {
         case bookOpen = "book_open"
+        case progressivePlayback = "progressive_playback"
     }
 
     enum Transition: String, Codable, Equatable {
@@ -11,10 +12,16 @@ enum LatencyObservation {
         case readableContent = "readable_content"
         case controlsUsable = "controls_usable"
         case firstPDFPage = "first_pdf_page"
+        case playRequested = "play_requested"
+        case audioQueued = "audio_queued"
+        case audioAudible = "audio_audible"
+        case seekRequested = "seek_requested"
+        case seekTargetReached = "seek_target_reached"
         case cancelled
     }
 
     enum DocumentKind: String, Codable, Equatable {
+        case unknown
         case epub
         case selectableTextPDF = "selectable_text_pdf"
         case normalizedScannedPDF = "normalized_scanned_pdf"
@@ -40,6 +47,7 @@ enum LatencyObservation {
     struct Journey: Codable, Equatable {
         let id: UUID
         let kind: JourneyKind
+        let correlationID: UUID?
         var context: Context
         var records: [Record]
     }
@@ -80,8 +88,30 @@ final class LatencyObservationStore {
         let journey = LatencyObservation.Journey(
             id: id,
             kind: .bookOpen,
+            correlationID: nil,
             context: .init(documentKind: documentKind, cacheClass: .unknown),
             records: [.init(transition: .openRequested, elapsedNanoseconds: 0)]
+        )
+        lock.lock()
+        activeJourneys[id] = ActiveJourney(
+            startedAtNanoseconds: clock(),
+            journey: journey
+        )
+        orderedJourneyIDs.append(id)
+        trimToCapacityLocked()
+        lock.unlock()
+        return id
+    }
+
+    @discardableResult
+    func beginProgressivePlayback(correlationID: UUID) -> UUID {
+        let id = UUID()
+        let journey = LatencyObservation.Journey(
+            id: id,
+            kind: .progressivePlayback,
+            correlationID: correlationID,
+            context: .init(documentKind: .unknown, cacheClass: .unknown),
+            records: [.init(transition: .playRequested, elapsedNanoseconds: 0)]
         )
         lock.lock()
         activeJourneys[id] = ActiveJourney(

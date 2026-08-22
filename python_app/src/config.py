@@ -64,14 +64,14 @@ class ConversionConfig:
     edge_auto_offline_chars: int = 0  # disabled: Edge handles large chapters via chunking
     # Performance-optimized settings (Jan 2026):
     # Aggressive throughput target: 200+ chars/s with higher concurrency/segment sizes.
-    edge_chunk_chars: int = 12000  # Aggressive default for max throughput
-    edge_max_segment_seconds: int = 85
+    edge_chunk_chars: int = 15000  # Measured local Edge throughput default
+    edge_max_segment_seconds: int = 75
     edge_adaptive_segment_seconds: bool = False  # Opt-in chapter-boundary segment policy
     edge_adaptive_segment_max_seconds: int = 180  # Hard cap used only by the opt-in policy
     edge_aggressive_mode: bool = False
     edge_auto_tune: Optional[bool] = None
     edge_enable_parallel: bool = True
-    edge_max_concurrency: int = 12  # Aggressive: saturate network with parallel requests
+    edge_max_concurrency: int = 8  # Measured local Edge throughput default
     prefer_monolingual_edge: Optional[bool] = None  # Signals when to prefer mono voices
     auto_prefer_piper: bool = False  # Auto-mode hint: Piper was benchmarked faster
     piper_max_procs: Optional[int] = None  # override Piper concurrent process limit

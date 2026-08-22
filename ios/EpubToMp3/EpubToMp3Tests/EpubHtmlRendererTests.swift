@@ -9,6 +9,7 @@ import AppKit
 /// flag is on. NSAttributedString's HTML importer is single-threaded
 /// and requires the main thread, so we mark the whole suite
 /// MainActor-isolated.
+@MainActor
 final class EpubHtmlRendererTests: XCTestCase {
 
     private func makeSettings() -> AppSettings {
@@ -21,6 +22,11 @@ final class EpubHtmlRendererTests: XCTestCase {
     /// awkward for attribute-name lookups in tests).
     private func ns(_ attr: AttributedString) -> NSAttributedString {
         NSAttributedString(attr)
+    }
+
+    func testVisibleTextRejectsWhitespaceAndUnresolvedObjectReplacement() {
+        XCTAssertFalse(EpubHtmlRenderer.hasVisibleText(AttributedString(" \n\u{FFFC}\u{00A0}")))
+        XCTAssertTrue(EpubHtmlRenderer.hasVisibleText(AttributedString("Readable chapter text.")))
     }
 
     @MainActor

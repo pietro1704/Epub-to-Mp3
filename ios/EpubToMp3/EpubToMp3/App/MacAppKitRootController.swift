@@ -346,6 +346,10 @@ final class MacAppKitRootController: NSSplitViewController, NSToolbarDelegate {
         playerPresentation.dismissFullPlayer()
         guard let bookID = UserDefaults.standard.string(forKey: ReaderSessionState.currentlyReadingBookIDKey),
               let book = library.books.first(where: { $0.id == bookID }) else { return }
+        guard PythonBridge.supportsEmbeddedRuntime else {
+            startSidecarPlayback(for: book)
+            return
+        }
         Task { [weak self] in
             guard let self else { return }
             do {
@@ -382,6 +386,39 @@ final class MacAppKitRootController: NSSplitViewController, NSToolbarDelegate {
                 )
                 library.recordConversion(jobId: snapshot.jobId, for: book.id)
             } catch {
+                let alert = NSAlert()
+                alert.messageText = L10n.string("bookDetail.listenStart")
+                alert.informativeText = error.localizedDescription
+                alert.addButton(withTitle: L10n.string("common.ok"))
+                alert.runModal()
+            }
+        }
+    }
+
+    private func startSidecarPlayback(for book: BookEntity) {
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                guard let baseURL = await SidecarEndpoint.waitForReadyURL(settings: self.settings) else {
+                    throw APIError.invalidBaseURL
+                }
+                let url = try await self.library.openBookFileAsync(id: book.id)
+                let client = APIClient(baseURL: baseURL)
+                let response = try await client.submitConversion(localPath: url, options: APIClient.ConvertOptions())
+                self.library.recordConversion(jobId: response.jobId, for: book.id)
+                let initial = try await client.fetchJob(id: response.jobId)
+                guard !Task.isCancelled else { return }
+                self.player.backendBaseURL = baseURL
+                self.player.play(snapshot: initial)
+                self.playerPresentation.showFullPlayer()
+                for try await event in client.eventStream(jobId: response.jobId) {
+                    guard !Task.isCancelled else { return }
+                    if let snapshot = APIClient.decodeSnapshot(from: event.rawPayload) {
+                        self.player.updateSnapshot(snapshot)
+                    }
+                }
+            } catch {
+                guard !Task.isCancelled else { return }
                 let alert = NSAlert()
                 alert.messageText = L10n.string("bookDetail.listenStart")
                 alert.informativeText = error.localizedDescription

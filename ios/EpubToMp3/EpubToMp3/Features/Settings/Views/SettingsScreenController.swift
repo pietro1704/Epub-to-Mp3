@@ -76,7 +76,7 @@ final class SettingsScreenController: UITableViewController {
         guard let section = Section(rawValue: section) else { return 0 }
         switch section {
         case .runtime:
-            return 2
+            return 3
         case .backend:
             return 2
         case .playback:
@@ -148,6 +148,19 @@ final class SettingsScreenController: UITableViewController {
                     LocalAudioConversionScheduler.shared.setAllowsCellularConversion(isOn)
                 }
                 cell.accessibilityIdentifier = "settings.allowCellularAudio"
+                return cell
+            }
+            if indexPath.row == 2 {
+                let cell = tableView.dequeueReusableCell(withIdentifier: "Switch", for: indexPath) as! IOSSwitchCell
+                cell.configure(
+                    title: L10n.string("settings.adaptiveEdgeConcurrency"),
+                    subtitle: L10n.string("settings.adaptiveEdgeConcurrencyDescription"),
+                    isOn: settings.adaptiveEdgeConcurrencyEnabled
+                )
+                cell.onValueChanged = { [weak self] isOn in
+                    self?.settings.adaptiveEdgeConcurrencyEnabled = isOn
+                }
+                cell.accessibilityIdentifier = "settings.adaptiveEdgeConcurrency"
                 return cell
             }
             let cell = tableView.dequeueReusableCell(withIdentifier: "Switch", for: indexPath) as! IOSSwitchCell

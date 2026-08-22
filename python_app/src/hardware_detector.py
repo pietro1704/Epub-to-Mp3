@@ -89,7 +89,7 @@ class HardwareDetector:
         },
         "ultra": {
             "chunk_chars": 15000,  # Increased from 12k
-            "max_segment_seconds": 300,  # Allow longer segments on Edge
+            "max_segment_seconds": 75,
             "concurrency_scale": 1.0,
             "concurrency_cap": 8,  # Increased from 4
             "edge_parallel": True,
@@ -717,8 +717,8 @@ class HardwareDetector:
         if profile.is_macos and not profile.has_gpu:
             # Mac without dedicated GPU - use efficient settings
             # Intel Macs benefit from slightly lower concurrency
-            if "Intel" in profile.cpu_brand:
-                adjusted = max(2, edge_concurrency - 1)
+            if "Intel" in profile.cpu_brand and edge_concurrency > 8:
+                adjusted = max(8, edge_concurrency - 1)
                 os.environ["EDGE_MAX_CONCURRENCY"] = str(adjusted)
 
         if turbo_mode:

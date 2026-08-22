@@ -108,4 +108,19 @@ enum ReaderInitialChapter {
     static func firstSubstantiveIndex(in chapters: [EbookFulltext.Chapter]) -> Int {
         chapters.firstIndex { ($0.charCount ?? $0.text.count) >= 1_000 } ?? 0
     }
+
+    /// Starts a first-time open at readable prose but always honors a
+    /// listener's saved location when it is still within the payload.
+    static func index(
+        progress: ReaderProgressStore.Entry?,
+        in chapters: [EbookFulltext.Chapter]
+    ) -> Int? {
+        guard let progress else {
+            return index(
+                selectedChapter: firstSubstantiveIndex(in: chapters),
+                chapterCount: chapters.count
+            )
+        }
+        return index(selectedChapter: progress.chapterIndex, chapterCount: chapters.count)
+    }
 }

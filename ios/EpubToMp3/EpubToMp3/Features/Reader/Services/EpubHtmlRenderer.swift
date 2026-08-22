@@ -110,7 +110,7 @@ enum EpubHtmlRenderer {
         // string for malformed/fragment-only EPUB documents. Treat that as a
         // failed render so the reader can use the parser's plain-text payload
         // instead of displaying a blank page.
-        guard !imported.string.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+        guard hasVisibleText(AttributedString(imported)) else {
             return nil
         }
 
@@ -125,6 +125,15 @@ enum EpubHtmlRenderer {
         )
         applyOverrides(to: mutated, settings: settings, bodyFontSize: bodyFontSize)
         return AttributedString(mutated)
+    }
+
+    /// The HTML importer can report success for an unsupported SVG-only
+    /// document while returning only whitespace or an unresolved attachment
+    /// marker. Neither puts readable content on the native text surface.
+    static func hasVisibleText(_ attributed: AttributedString) -> Bool {
+        String(attributed.characters).unicodeScalars.contains {
+            !$0.properties.isWhitespace && $0.value != 0xFFFC
+        }
     }
 
     /// Conservative fallback for EPUB fragments that Foundation's HTML

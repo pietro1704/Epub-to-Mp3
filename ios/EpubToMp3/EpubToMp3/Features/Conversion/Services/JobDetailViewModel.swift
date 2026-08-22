@@ -18,6 +18,7 @@ final class JobDetailViewModel: ObservableObject {
     var onSnapshot: ((JobSnapshot) -> Void)?
     var onStreamChunk: ((Data, Int, Int) -> Void)?
     var onStreamFinished: ((JobSnapshot) -> Void)?
+    var onJourneyStarted: ((UUID) -> Void)?
 
     private var streamTask: Task<Void, Never>?
     private var progressTask: Task<Void, Never>?
@@ -31,6 +32,8 @@ final class JobDetailViewModel: ObservableObject {
         }
         streamTask = Task { [weak self] in
             do {
+                let journeyID = UUID()
+                self?.onJourneyStarted?(journeyID)
                 let initial = try await client.fetchJob(id: jobId)
                 guard let self, !Task.isCancelled else { return }
                 self.snapshot = initial
@@ -38,7 +41,13 @@ final class JobDetailViewModel: ObservableObject {
                 self.startRemoteStream(client: client, initial: initial)
                 self.errorMessage = nil
                 self.isStreaming = true
-                for try await event in client.eventStream(jobId: jobId) {
+                let events: AsyncThrowingStream<JobEvent, Error>
+                if let apiClient = client as? APIClient {
+                    events = apiClient.eventStream(jobId: jobId, journeyID: journeyID)
+                } else {
+                    events = client.eventStream(jobId: jobId)
+                }
+                for try await event in events {
                     guard !Task.isCancelled else { return }
                     self.receivedCount += 1
                     self.latestPayload = event.rawPayload

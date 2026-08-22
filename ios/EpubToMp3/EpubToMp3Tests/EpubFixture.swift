@@ -76,7 +76,8 @@ enum EpubFixture {
         chapterTitle: String = "Chapter 1",
         body: String = "This is a short chapter used for end to end testing.",
         stylesheet: String? = nil,
-        footnote: (reference: String, text: String)? = nil
+        footnote: (reference: String, text: String)? = nil,
+        usesOPFElementPrefixes: Bool = false
     ) throws -> URL {
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("fixture-\(UUID().uuidString).epub")
@@ -110,29 +111,30 @@ enum EpubFixture {
         let footnoteManifest = footnote == nil || footnoteIsInChapter ? "" : """
             <item id="notes" href="text/notes.xhtml" media-type="application/xhtml+xml"/>
         """
+        let opfPrefix = usesOPFElementPrefixes ? "opf:" : ""
         let withSpineOPF = """
         <?xml version="1.0" encoding="UTF-8"?>
-        <package xmlns="http://www.idpf.org/2007/opf" version="3.0" \
+        <opf:package xmlns:opf="http://www.idpf.org/2007/opf" version="3.0" \
         unique-identifier="bookid">
-          <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
+          <opf:metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
             <dc:identifier id="bookid">urn:test:book</dc:identifier>
             <dc:title>\(title)</dc:title>
             <dc:creator>\(author)</dc:creator>
             <dc:language>en</dc:language>
-            <meta name="cover" content="cover-img"/>
-          </metadata>
-          <manifest>
-            <item id="cover-img" href="cover.png" media-type="image/png" \
+            <\(opfPrefix)meta name="cover" content="cover-img"/>
+          </opf:metadata>
+          <opf:manifest>
+            <\(opfPrefix)item id="cover-img" href="cover.png" media-type="image/png" \
         properties="cover-image"/>
-            <item id="ch1" href="text/chapter1.xhtml" \
+            <\(opfPrefix)item id="ch1" href="text/chapter1.xhtml" \
         media-type="application/xhtml+xml"/>
         \(stylesheetManifest)
         \(footnoteManifest)
-          </manifest>
-          <spine>
-            <itemref idref="ch1"/>
-          </spine>
-        </package>
+          </opf:manifest>
+          <opf:spine>
+            <\(opfPrefix)itemref idref="ch1"/>
+          </opf:spine>
+        </opf:package>
         """.data(using: .utf8)!
 
         var members: [Member] = [

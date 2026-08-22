@@ -21,7 +21,7 @@ enum LocalFulltextCache {
         cache.name = "com.pietrocode.epubtomp3.warm-reader-content"
         return cache
     }()
-    private static let recentBookIDsKey = "readerWarmBookIDs.v1"
+    private static let recentBookIDsKey = "readerWarmBookIDs.v3"
 
     private static var directory: URL? {
         guard let base = try? FileManager.default.url(
@@ -32,7 +32,7 @@ enum LocalFulltextCache {
         ) else { return nil }
         let dir = base
             .appendingPathComponent("EpubToMp3", isDirectory: true)
-            .appendingPathComponent("ReaderFulltext-v1", isDirectory: true)
+            .appendingPathComponent("ReaderFulltext-v3", isDirectory: true)
         try? FileManager.default.createDirectory(
             at: dir,
             withIntermediateDirectories: true

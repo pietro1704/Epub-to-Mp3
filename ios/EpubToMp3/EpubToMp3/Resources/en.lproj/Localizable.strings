@@ -75,6 +75,8 @@
 "settings.useBuiltInEngineDescription" = "Synthesises chapters on this device. No backend needed.";
 "settings.allowCellularAudio" = "Allow cellular audio conversion";
 "settings.allowCellularAudioDescription" = "By default, chapter conversion waits for Wi-Fi.";
+"settings.adaptiveEdgeConcurrency" = "Experimental faster Wi-Fi conversion";
+"settings.adaptiveEdgeConcurrencyDescription" = "Keeps the first audio chunk prioritized, then converts later chunks in parallel.";
 "settings.audioEngineFooter" = "Reading works offline either way — this only affects how chapters are converted to audio. Turn off only to force the legacy remote-backend mode.";
 "settings.remoteBackend" = "Remote backend";
 "settings.urlNotValid" = "URL is not valid";

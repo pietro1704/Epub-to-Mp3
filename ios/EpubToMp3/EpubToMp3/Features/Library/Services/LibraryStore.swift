@@ -461,6 +461,18 @@ final class LibraryStore: ObservableObject {
         return url
     }
 
+    /// Repairs legacy imports that predate cover persistence without asking
+    /// the listener to import the same EPUB again.
+    func hydrateMissingCover(for id: String) {
+        guard let index = books.firstIndex(where: { $0.id == id }), books[index].coverPNG == nil,
+              let url = try? openBookFile(id: id),
+              let cover = Self.downsampleCover((try? EpubMetadataReader.readMetadata(from: url))?.cover) else {
+            return
+        }
+        books[index].coverPNG = cover
+        persist()
+    }
+
     /// Async variant of `openBookFile(id:)` for reader flows. Bookmark
     /// resolution can wait for iCloud I/O, so that non-cancellable system
     /// call must never occupy the main actor while the reader is showing its

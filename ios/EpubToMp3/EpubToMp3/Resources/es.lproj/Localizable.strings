@@ -72,6 +72,8 @@
 "settings.useBuiltInEngineDescription" = "Sintetiza capítulos en este dispositivo. No necesita backend.";
 "settings.allowCellularAudio" = "Permitir conversión de audio con datos móviles";
 "settings.allowCellularAudioDescription" = "De forma predeterminada, la conversión de capítulos espera Wi-Fi.";
+"settings.adaptiveEdgeConcurrency" = "Conversión Wi-Fi más rápida (experimental)";
+"settings.adaptiveEdgeConcurrencyDescription" = "Prioriza el primer fragmento de audio y convierte los siguientes en paralelo.";
 "settings.audioEngineFooter" = "La lectura funciona sin conexión de todas formas — esto solo afecta cómo se convierten los capítulos a audio. Desactívalo solo para forzar el modo legacy de backend remoto.";
 "settings.remoteBackend" = "Backend remoto";
 "settings.urlNotValid" = "URL no válida";

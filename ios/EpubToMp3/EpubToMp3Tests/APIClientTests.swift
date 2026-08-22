@@ -77,4 +77,21 @@ final class APIClientTests: XCTestCase {
         let manifest = try JSONDecoder().decode(APIClient.ChapterStreamManifest.self, from: json)
         XCTAssertTrue(manifest.chunks.isEmpty)
     }
+
+    func testEventStreamURLCarriesOnlyTheJourneyCorrelationID() throws {
+        let journeyID = UUID(uuidString: "5B6039B7-6471-4CC0-B8F2-C653FE0D093C")!
+
+        let url = try XCTUnwrap(
+            APIClient.eventStreamURL(
+                baseURL: URL(string: "http://127.0.0.1:8000")!,
+                jobID: "job-123",
+                journeyID: journeyID
+            )
+        )
+
+        XCTAssertEqual(url.path, "/api/jobs/job-123/stream")
+        XCTAssertEqual(URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems, [
+            URLQueryItem(name: "journey_id", value: journeyID.uuidString.lowercased()),
+        ])
+    }
 }

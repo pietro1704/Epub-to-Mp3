@@ -65,3 +65,15 @@ def test_explicit_chapter_override_is_preserved_under_low_ram():
         HardwareDetector.apply_optimizations(profile)
 
         assert os.environ["CHAPTER_PARALLEL_COUNT"] == "7"
+
+
+def test_intel_macos_ultra_profile_keeps_measured_edge_concurrency():
+    profile = _profile(ram_total_gb=8.0, ram_available_gb=2.0)
+    profile.cpu_brand = "Intel Core i5"
+    profile.network_speed_estimate = "ultra"
+    profile.is_macos = True
+
+    with patch.dict(os.environ, _clean_environment(), clear=True):
+        HardwareDetector.apply_optimizations(profile)
+
+        assert os.environ["EDGE_MAX_CONCURRENCY"] == "8"

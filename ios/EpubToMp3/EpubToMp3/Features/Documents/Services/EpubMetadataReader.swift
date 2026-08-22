@@ -83,12 +83,24 @@ enum EpubMetadataReader {
         let parser = XMLParser(data: data)
         parser.delegate = delegate
         _ = parser.parse()
-        return OPFMetadata(
+        var metadata = OPFMetadata(
             title: delegate.title,
             author: delegate.author,
             language: delegate.language,
             coverHref: delegate.coverHref
         )
+        if metadata.coverHref == nil, let opf = String(data: data, encoding: .utf8) {
+            metadata.coverHref = fallbackCoverHref(in: opf)
+        }
+        return metadata
+    }
+
+    private static func fallbackCoverHref(in opf: String) -> String? {
+        let pattern = #"<[^>]*item\b(?=[^>]*\b(?:properties|id)=[\"'][^\"']*(?:cover-image|cover)[^\"']*[\"'])[^>]*\bhref=[\"']([^\"']+)[\"'][^>]*>"#
+        guard let range = opf.range(of: pattern, options: .regularExpression) else { return nil }
+        let match = String(opf[range])
+        guard let href = match.range(of: #"href=[\"']([^\"']+)"#, options: .regularExpression) else { return nil }
+        return String(match[href]).split(separator: "\"").last.map(String.init)
     }
 }
 
@@ -107,17 +119,18 @@ private final class OPFDelegate: NSObject, XMLParserDelegate {
     func parser(_ parser: XMLParser, didStartElement elementName: String,
                 namespaceURI: String?, qualifiedName: String?,
                 attributes attributeDict: [String: String] = [:]) {
-        currentTag = elementName.lowercased()
+        let tag = localName(elementName, qualifiedName: qualifiedName)
+        currentTag = tag
         buffer = ""
         // Cover <meta name="cover" content="<id>"/> form.
-        if elementName.lowercased() == "meta",
+        if tag == "meta",
            let name = attributeDict["name"]?.lowercased(),
            name == "cover",
            let content = attributeDict["content"] {
             coverItemId = content
         }
         // Manifest items.
-        if elementName.lowercased() == "item",
+        if tag == "item",
            let id = attributeDict["id"],
            let href = attributeDict["href"] {
             manifestItems[id] = href
@@ -135,7 +148,7 @@ private final class OPFDelegate: NSObject, XMLParserDelegate {
     func parser(_ parser: XMLParser, didEndElement elementName: String,
                 namespaceURI: String?, qualifiedName: String?) {
         let trimmed = buffer.trimmingCharacters(in: .whitespacesAndNewlines)
-        switch elementName.lowercased() {
+        switch localName(elementName, qualifiedName: qualifiedName) {
         case "dc:title", "title":
             if title == nil, !trimmed.isEmpty { title = trimmed }
         case "dc:creator", "creator":
@@ -152,5 +165,10 @@ private final class OPFDelegate: NSObject, XMLParserDelegate {
         if let id = coverItemId, let href = manifestItems[id] {
             coverHref = href
         }
+    }
+
+    private func localName(_ elementName: String, qualifiedName: String?) -> String {
+        let name = qualifiedName ?? elementName
+        return name.split(separator: ":").last?.lowercased() ?? name.lowercased()
     }
 }

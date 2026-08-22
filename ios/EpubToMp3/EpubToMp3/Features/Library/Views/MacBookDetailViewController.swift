@@ -147,7 +147,10 @@ final class MacBookDetailViewController: NSViewController {
     /// stays local by default; server-only formats and the explicit remote
     /// provider use the same API/SSE contract as iOS.
     @objc private func tapListen() {
-        if settings.useEmbeddedRuntime && !book.fileType.requiresServerConversion {
+        // macOS uses the bundled PyInstaller sidecar, exposed through the
+        // same local API/SSE contract as a remote backend. Calling PythonKit
+        // in-process here is unsafe on this Intel runtime and can SIGSEGV.
+        if PythonBridge.supportsEmbeddedRuntime && settings.useEmbeddedRuntime && !book.fileType.requiresServerConversion {
             Task { [weak self] in
                 guard let self else { return }
                 do {
@@ -201,14 +204,6 @@ final class MacBookDetailViewController: NSViewController {
     }
 
     private func startRemoteConversion(url: URL) {
-        guard let baseURL = settings.resolvedBaseURL else {
-            let alert = NSAlert()
-            alert.messageText = L10n.string("bookDetail.listenStart")
-            alert.informativeText = APIError.invalidBaseURL.localizedDescription
-            alert.addButton(withTitle: L10n.string("common.ok"))
-            alert.runModal()
-            return
-        }
         remoteStreamTask?.cancel()
         let player = self.player
         let presentation = self.playerPresentation
@@ -216,6 +211,9 @@ final class MacBookDetailViewController: NSViewController {
         let bookID = self.book.id
         remoteStreamTask = Task {
             do {
+                guard let baseURL = await SidecarEndpoint.waitForReadyURL(settings: settings) else {
+                    throw APIError.invalidBaseURL
+                }
                 let client = APIClient(baseURL: baseURL)
                 let response = try await client.submitConversion(
                     localPath: url,

@@ -136,6 +136,14 @@ def test_chunk_chars_env_invalid_falls_back(monkeypatch):
     assert ios_entrypoints._chunk_chars() == ios_entrypoints._DEFAULT_IOS_CHUNK_CHARS
 
 
+def test_ios_defaults_match_the_measured_edge_throughput_profile(monkeypatch):
+    monkeypatch.delenv("IOS_EDGE_CHUNK_CHARS", raising=False)
+    monkeypatch.delenv("EDGE_MAX_SEGMENT_SECONDS", raising=False)
+
+    assert ios_entrypoints._chunk_chars() == 15_000
+    assert ios_entrypoints._max_segment_seconds() == 75
+
+
 def test_chunk_chars_env_clamped(monkeypatch):
     monkeypatch.setenv("IOS_EDGE_CHUNK_CHARS", "999999")
     assert ios_entrypoints._chunk_chars() == 15_000

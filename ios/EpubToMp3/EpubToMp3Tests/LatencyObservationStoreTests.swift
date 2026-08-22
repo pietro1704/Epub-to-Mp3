@@ -95,4 +95,25 @@ final class LatencyObservationStoreTests: XCTestCase {
         XCTAssertFalse(json.contains("author"))
         XCTAssertFalse(json.contains("audio"))
     }
+
+    func testProgressivePlaybackJourneyPreservesCorrelationAndReadinessBoundaries() throws {
+        var now: UInt64 = 1_000
+        let store = LatencyObservationStore(clock: { now })
+        let correlationID = UUID()
+
+        let journeyID = store.beginProgressivePlayback(correlationID: correlationID)
+        now = 1_030
+        XCTAssertTrue(store.record(.audioQueued, for: journeyID))
+        now = 1_080
+        XCTAssertTrue(store.record(.audioAudible, for: journeyID))
+
+        let journey = try XCTUnwrap(store.snapshot().first)
+        XCTAssertEqual(journey.kind, .progressivePlayback)
+        XCTAssertEqual(journey.correlationID, correlationID)
+        XCTAssertEqual(
+            journey.records.map(\.transition),
+            [.playRequested, .audioQueued, .audioAudible]
+        )
+        XCTAssertEqual(journey.records.map(\.elapsedNanoseconds), [0, 30, 80])
+    }
 }

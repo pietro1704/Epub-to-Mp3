@@ -175,6 +175,26 @@ final class AppSettingsObservationTests: XCTestCase {
         XCTAssertEqual(reloaded.readerLetterSpacing, 2.0, accuracy: 0.001)
     }
 
+    func testAdaptiveEdgeConcurrencyExperimentIsDisabledByDefaultAndPersists() {
+        let suite = UUID().uuidString
+        let defaults = UserDefaults(suiteName: suite)!
+        XCTAssertFalse(AppSettings(defaults: defaults).adaptiveEdgeConcurrencyEnabled)
+
+        AppSettings(defaults: defaults).adaptiveEdgeConcurrencyEnabled = true
+
+        XCTAssertTrue(AppSettings(defaults: defaults).adaptiveEdgeConcurrencyEnabled)
+    }
+
+    #if canImport(AppKit)
+    func testEmbeddedSidecarURLOverridesRemoteBackendURL() {
+        let settings = makeSettings()
+        settings.backendURL = "https://remote.example"
+        settings.sidecarURL = URL(string: "http://127.0.0.1:43123")
+
+        XCTAssertEqual(settings.resolvedBaseURL?.absoluteString, "http://127.0.0.1:43123")
+    }
+    #endif
+
     // MARK: restoreOriginal()
 
     func testRestoreOriginalResetsAllOverrideFields() {

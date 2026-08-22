@@ -76,3 +76,5 @@ python-multipart>=0.0.26  # CVE-2026-40347 (already pinned via direct dep above;
 # Testing (dev only)
 pytest>=9.1.1  # CVE-2025-71176
 pytest-asyncio
+coverage>=7.13.0
+mutmut>=3.4.0

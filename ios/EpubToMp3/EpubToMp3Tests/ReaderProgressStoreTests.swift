@@ -59,6 +59,22 @@ final class ReaderProgressStoreTests: XCTestCase {
         XCTAssertEqual(ReaderInitialChapter.firstSubstantiveIndex(in: chapters), 2)
     }
 
+    func testInitialIndexUsesSavedProgressOrSkipsCoverBoilerplate() {
+        let chapters = [
+            EbookFulltext.Chapter(index: 1, name: "Cover", sourcePath: nil, text: "Cover", speechText: nil, html: nil, css: nil, charCount: 5, segments: nil, resources: nil, footnotes: nil, contentKind: nil),
+            EbookFulltext.Chapter(index: 2, name: "Chapter One", sourcePath: nil, text: String(repeating: "Readable text. ", count: 100), speechText: nil, html: nil, css: nil, charCount: 1_500, segments: nil, resources: nil, footnotes: nil, contentKind: nil),
+        ]
+
+        XCTAssertEqual(ReaderInitialChapter.index(progress: nil, in: chapters), 1)
+        XCTAssertEqual(
+            ReaderInitialChapter.index(
+                progress: .init(chapterIndex: 0, offsetFraction: 0),
+                in: chapters
+            ),
+            0
+        )
+    }
+
     func testSaveOverwritesPreviousEntryForSameBook() {
         let defaults = makeDefaults()
         ReaderProgressStore.save(bookId: "b1", chapterIndex: 1, offsetFraction: 0.1, defaults: defaults)

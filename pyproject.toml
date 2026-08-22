@@ -22,3 +22,16 @@ ignore = ["E501"]
 quote-style = "double"
 indent-style = "space"
 line-ending = "lf"
+
+[tool.mutmut]
+source_paths = ["python_app/src"]
+only_mutate = [
+    "python_app/src/error_classifier.py",
+    "python_app/src/_env_utils.py",
+]
+also_copy = ["python_app/tests"]
+pytest_add_cli_args = ["-q"]
+pytest_add_cli_args_test_selection = [
+    "python_app/tests/test_error_classifier.py",
+    "python_app/tests/test_env_utils.py",
+]

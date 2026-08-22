@@ -191,6 +191,19 @@ final class EpubFallbackParserTests: XCTestCase {
         XCTAssertEqual(name, "My Chapter")
     }
 
+    func testParsesOPFWithQualifiedElementNames() throws {
+        let url = try EpubFixture.createWithChapter(
+            body: "<p>Qualified OPF chapter text.</p>",
+            usesOPFElementPrefixes: true
+        )
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        let result = EpubFallbackParser.parse(url: url, bookId: "qualified-opf")
+
+        XCTAssertEqual(result.chapters.count, 1)
+        XCTAssertTrue(result.chapters[0].text.contains("Qualified OPF chapter text."))
+    }
+
     func testChapterPreservesSourceHTMLForFaithfulRendering() throws {
         let url = try EpubFixture.createWithChapter(
             body: "<img src=\"../images/cover.png\"/><p>Body text here.</p>",

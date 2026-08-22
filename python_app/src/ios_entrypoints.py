@@ -49,10 +49,10 @@ from typing import Any, Callable, Dict, Iterable, List, Optional
 # ``No module named '_struct'``.
 from .tts import _edge_transport, _piper_transport
 
-# Match ``EdgeTTS._DEFAULT_CHUNK_SIZE`` (12_000). The paragraph-boundary
+# Match the measured cross-client Edge throughput profile (15_000). The paragraph-boundary
 # chunker backs up to whitespace so mid-word splits are already avoided.
 # Configurable via env for parity with the rest of the Edge tuning surface.
-_DEFAULT_IOS_CHUNK_CHARS = 12_000
+_DEFAULT_IOS_CHUNK_CHARS = 15_000
 
 # First-chunk burst size for segment streaming. A small first chunk
 # lets the Swift player queue audio in ~500 ms instead of waiting
@@ -61,7 +61,7 @@ _DEFAULT_IOS_CHUNK_CHARS = 12_000
 # Default: 500 chars (~1–2 sentences, typically 4–8 s of audio at
 # 200 WPM neural voice). Range: [100, 2000].
 _DEFAULT_FIRST_CHUNK_CHARS = 500
-_DEFAULT_MAX_SEGMENT_SECONDS = 85.0
+_DEFAULT_MAX_SEGMENT_SECONDS = 75.0
 _DEFAULT_EXPECTED_WPM = 200.0
 
 
@@ -478,9 +478,7 @@ def synthesize_chapter_via_transport(
         audio_complete, coverage = _validate_audio_completeness(destination, len(text))
         if not audio_complete:
             destination.unlink(missing_ok=True)
-            raise RuntimeError(
-                "audio completeness below CLI threshold: " f"{coverage:.1f}% coverage"
-            )
+            raise RuntimeError(f"audio completeness below CLI threshold: {coverage:.1f}% coverage")
     return str(destination)
 
 
@@ -560,9 +558,7 @@ def synthesize_chapter_streaming(
         audio_complete, coverage = _validate_audio_completeness(destination, len(text))
         if not audio_complete:
             destination.unlink(missing_ok=True)
-            raise RuntimeError(
-                "audio completeness below CLI threshold: " f"{coverage:.1f}% coverage"
-            )
+            raise RuntimeError(f"audio completeness below CLI threshold: {coverage:.1f}% coverage")
     return str(destination)
 
 
@@ -1025,7 +1021,7 @@ def convert_epub(
             audio_complete, coverage = _validate_audio_completeness(out_path, char_count)
             if should_validate_audio and not audio_complete:
                 raise RuntimeError(
-                    "audio completeness below CLI threshold: " f"{coverage:.1f}% coverage"
+                    f"audio completeness below CLI threshold: {coverage:.1f}% coverage"
                 )
             entry["status"] = "completed"
             entry["output_path"] = str(out_path)

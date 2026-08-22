@@ -243,6 +243,9 @@ final class AudioPlayer: ObservableObject {
     /// play/pause affordance while AVFoundation moves the timeline.
     @Published private(set) var isSeeking = false
     private var activeSeekID: UUID?
+    private var progressivePlaybackCorrelationID: UUID?
+    private var progressivePlaybackJourneyID: UUID?
+    private var recordedAudiblePlayback = false
     var isLoading: Bool { isSeeking || (isConverting && !firstChapterReady) }
 
     /// Optional cover art bytes (PNG/JPEG). Surfaced to the system
@@ -1251,6 +1254,7 @@ final class AudioPlayer: ObservableObject {
             isPlaying = true
             return
         }
+        beginProgressivePlaybackObservationIfNeeded()
         requestRetentionForAudibleChapter()
         guard let player else {
             pendingAutoPlay = true
@@ -1265,6 +1269,7 @@ final class AudioPlayer: ObservableObject {
         // etc. — doing it earlier (e.g. on book open) interrupts other
         // apps even though we never produce a sound.
         ensureAudioSession()
+        recordProgressivePlayback(.audioQueued)
         player.rate = rate.rawValue
         isPlaying = true
         updateNowPlayingInfo()
@@ -1633,7 +1638,30 @@ final class AudioPlayer: ObservableObject {
 
     func togglePlayPause() { isPlaying ? pause() : resume() }
 
+    func setProgressivePlaybackCorrelationID(_ correlationID: UUID) {
+        progressivePlaybackCorrelationID = correlationID
+        progressivePlaybackJourneyID = nil
+        recordedAudiblePlayback = false
+    }
+
+    private func beginProgressivePlaybackObservationIfNeeded() {
+        guard progressivePlaybackJourneyID == nil,
+              let correlationID = progressivePlaybackCorrelationID
+        else {
+            return
+        }
+        progressivePlaybackJourneyID = LatencyObservationStore.shared.beginProgressivePlayback(
+            correlationID: correlationID
+        )
+    }
+
+    private func recordProgressivePlayback(_ transition: LatencyObservation.Transition) {
+        guard let journeyID = progressivePlaybackJourneyID else { return }
+        _ = LatencyObservationStore.shared.record(transition, for: journeyID)
+    }
+
     func seek(to seconds: TimeInterval) {
+        recordProgressivePlayback(.seekRequested)
         let target = max(0, seconds)
         if Self.shouldAdvanceAtSeekEnd(position: target, duration: durationSeconds) {
             let chapterBefore = currentChapterIndex
@@ -1653,6 +1681,7 @@ final class AudioPlayer: ObservableObject {
             }
             broadcastPosition()
             updateNowPlayingInfo()
+            recordProgressivePlayback(.seekTargetReached)
             return
         }
         positionSeconds = target
@@ -1677,6 +1706,7 @@ final class AudioPlayer: ObservableObject {
                 self.positionSeconds = target
                 self.broadcastPosition()
                 self.updateNowPlayingInfo()
+                self.recordProgressivePlayback(.seekTargetReached)
             }
         }
     }
@@ -1985,6 +2015,7 @@ final class AudioPlayer: ObservableObject {
             // on Play / lock-screen / widget will call `resume()`.
             if isPlaying || pendingAutoPlay {
                 ensureAudioSession()
+                recordProgressivePlayback(.audioQueued)
                 queue.rate = rate.rawValue
                 isPlaying = true
                 pendingAutoPlay = false
@@ -2253,6 +2284,10 @@ final class AudioPlayer: ObservableObject {
             Task { @MainActor [weak self] in
                 guard let self else { return }
                 let rawTime = time.seconds.isFinite ? time.seconds : 0
+                if self.isPlaying, rawTime > 0, !self.recordedAudiblePlayback {
+                    self.recordProgressivePlayback(.audioAudible)
+                    self.recordedAudiblePlayback = true
+                }
                 if !self.isSeeking {
                     self.positionSeconds = self.isSegmentMode
                         ? self.segmentCumulativeBase + rawTime

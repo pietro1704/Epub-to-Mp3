@@ -9,6 +9,7 @@ def test_env_bool_accepts_truthy_spellings(monkeypatch):
 
 def test_env_bool_returns_false_for_missing_or_unknown_values(monkeypatch):
     monkeypatch.delenv("TEST_BOOL", raising=False)
+    assert env_bool("TEST_BOOL") is False
     assert env_bool("TEST_BOOL", default=True) is True
 
     monkeypatch.setenv("TEST_BOOL", "0")

@@ -353,6 +353,25 @@ targets:
         script: |
           set -euo pipefail
           bash "${SRCROOT}/scripts/sync-embedded-python-runtime.sh"
+      - name: "Embed Python conversion sidecar (macOS only)"
+        shell: /bin/bash
+        basedOnDependencyAnalysis: false
+        alwaysOutOfDate: true
+        script: |
+          set -euo pipefail
+          if [[ "${PLATFORM_NAME}" != "macosx" ]]; then
+            exit 0
+          fi
+          REPO_ROOT="${SRCROOT}/../.."
+          SIDECAR_SRC="${REPO_ROOT}/dist/epub-to-mp3-server"
+          if [[ ! -x "${SIDECAR_SRC}" ]]; then
+            echo "error: embedded sidecar missing at ${SIDECAR_SRC}; run mise run sidecar:build" >&2
+            exit 1
+          fi
+          DEST="${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/epub-to-mp3-server"
+          mkdir -p "$(dirname "${DEST}")"
+          cp "${SIDECAR_SRC}" "${DEST}"
+          chmod +x "${DEST}"
   EpubToMp3Tests:
     type: bundle.unit-test
     supportedDestinations: [iOS, macOS]

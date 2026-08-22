@@ -101,6 +101,17 @@ private final class SegmentDeliveryGate: @unchecked Sendable {
 final class PythonBridge: @unchecked Sendable {
     static let shared = PythonBridge()
 
+    /// PythonKit 0.5.1 plus the bundled CPython 3.13 runtime dereferences an
+    /// invalid thread state on Intel macOS. The embedded pipeline must never
+    /// run there until its execution model is replaced.
+    static var supportsEmbeddedRuntime: Bool {
+        #if os(macOS)
+        false
+        #else
+        true
+        #endif
+    }
+
     /// Single-threaded executor for every PythonKit call. Pins every
     /// Python call to a dedicated kernel thread for the process lifetime
     /// (actors can't do this — they guarantee mutual exclusion, not
@@ -153,6 +164,11 @@ final class PythonBridge: @unchecked Sendable {
     /// bundled Python runtime and transport wiring without consuming network
     /// quota or interrupting another audio app.
     func preflightRuntime() async throws {
+        guard Self.supportsEmbeddedRuntime else {
+            throw PythonBridgeError.bootstrapFailed(
+                "Direct CPython execution is disabled on this Mac; audio conversion uses the bundled local service."
+            )
+        }
         guard !Self.interpreterWedged else {
             throw PythonBridgeError.bootstrapFailed(
                 "The embedded interpreter is unavailable for this app session."
@@ -218,6 +234,17 @@ final class PythonBridge: @unchecked Sendable {
     /// - Throws: `PythonBridgeError` if bootstrap, parse, or JSON
     ///   decode fails.
     func parseEpub(at fileURL: URL, bookId: String) async throws -> EbookFulltext {
+        #if os(macOS)
+        // PythonKit 0.5.1 with the bundled CPython 3.13 runtime can
+        // dereference an invalid thread state while decoding this result on
+        // Intel macOS. Keep the AppKit reader on the native parser until the
+        // embedded runtime has a safe macOS execution model.
+        let fallback = await Task.detached(priority: .userInitiated) {
+            EpubFallbackParser.parse(url: fileURL, bookId: bookId)
+        }.value
+        guard !fallback.chapters.isEmpty else { throw PythonBridgeError.emptyResult }
+        return fallback
+        #else
         guard !Self.interpreterWedged else {
             let fallback = await Task.detached(priority: .userInitiated) {
                 EpubFallbackParser.parse(url: fileURL, bookId: bookId)
@@ -258,6 +285,7 @@ final class PythonBridge: @unchecked Sendable {
             guard !fallback.chapters.isEmpty else { throw error }
             return fallback
         }
+        #endif
     }
 
     /// Same as `parseEpub(at:bookId:)` but synchronous. Marked private
@@ -429,6 +457,7 @@ final class PythonBridge: @unchecked Sendable {
         outputDir: URL,
         outputURL: URL? = nil,
         chapterIndex: Int,
+        maxChunkConcurrency: Int = 6,
         onSegment: SegmentHandler? = nil
     ) async throws -> URL {
         guard PythonEmbed.shared.isBootstrapComplete else {
@@ -456,6 +485,7 @@ final class PythonBridge: @unchecked Sendable {
             chunks: chunks,
             voice: resolvedVoice,
             chapterIndex: chapterIndex,
+            maxChunkConcurrency: maxChunkConcurrency,
             onSegment: onSegment
         )
 
@@ -532,18 +562,30 @@ final class PythonBridge: @unchecked Sendable {
         chunks: [String],
         voice: String,
         chapterIndex: Int,
+        maxChunkConcurrency: Int,
         onSegment: SegmentHandler?
     ) async throws -> [Data] {
         // Pre-allocate result array to maintain audio and callback order.
         var results = [Data?](repeating: nil, count: chunks.count)
         let delivery = OrderedSegmentDelivery(count: chunks.count)
 
+        // The first segment is the listener-visible readiness boundary. Do
+        // not let background work compete with it; only open the bounded
+        // WebSocket pool after it has been delivered in source order.
+        let firstData = try await PythonBridge.synthesizeEdgeChunk(chunks[0], voice: voice, index: 0)
+        results[0] = firstData
+        if let onSegment,
+           !(await onSegment(firstData, chapterIndex, 0)) {
+            throw CancellationError()
+        }
+
         try await withThrowingTaskGroup(of: (Int, Data).self) { group in
             var launched = 0
 
-            for (index, chunk) in chunks.enumerated() {
+            for (offset, chunk) in chunks.dropFirst().enumerated() {
+                let index = offset + 1
                 // Throttle: wait for a slot if we've hit max concurrency.
-                if launched >= Self.maxChunkConcurrency {
+                if launched >= max(1, maxChunkConcurrency) {
                     if let (idx, data) = try await group.next() {
                         results[idx] = data
                         let ready = await delivery.insert(data, at: idx)
@@ -558,36 +600,7 @@ final class PythonBridge: @unchecked Sendable {
 
                 let chunkText = chunk
                 group.addTask {
-                    let bridge = EdgeTTSBridge()
-                    var lastError: Error?
-                    let maxRetries = Self.edgeStreamRetryCount()
-                    for attempt in 0..<maxRetries {
-                        do {
-                            try Task.checkCancellation()
-                            let mp3 = try await withTimeout(
-                                seconds: 60, label: "Edge chunk \(index)"
-                            ) {
-                                try await bridge.synthesize(
-                                    text: chunkText, voice: voice
-                                )
-                            }
-                            guard !mp3.isEmpty else {
-                                throw EdgeTTSBridgeError.noAudioReceived
-                            }
-                            return (index, mp3)
-                        } catch is CancellationError {
-                            throw CancellationError()
-                        } catch {
-                            lastError = error
-                            guard attempt + 1 < Self.edgeStreamRetryCount() else { break }
-                            let delay = Self.edgeRetryDelay(attempt: attempt)
-                            if delay > 0 {
-                                let nanos = UInt64(delay * 1_000_000_000)
-                                try await Task.sleep(nanoseconds: nanos)
-                            }
-                        }
-                    }
-                    throw lastError ?? EdgeTTSBridgeError.noAudioReceived
+                    (index, try await PythonBridge.synthesizeEdgeChunk(chunkText, voice: voice, index: index))
                 }
                 launched += 1
             }
@@ -608,6 +621,30 @@ final class PythonBridge: @unchecked Sendable {
         // Convert [Data?] -> [Data], filtering nils (shouldn't happen
         // since we throw on errors, but be defensive).
         return results.compactMap { $0 }
+    }
+
+    private static func synthesizeEdgeChunk(_ text: String, voice: String, index: Int) async throws -> Data {
+        let bridge = EdgeTTSBridge()
+        var lastError: Error?
+        let maxRetries = edgeStreamRetryCount()
+        for attempt in 0..<maxRetries {
+            do {
+                try Task.checkCancellation()
+                let mp3 = try await withTimeout(seconds: 60, label: "Edge chunk \(index)") {
+                    try await bridge.synthesize(text: text, voice: voice)
+                }
+                guard !mp3.isEmpty else { throw EdgeTTSBridgeError.noAudioReceived }
+                return mp3
+            } catch is CancellationError {
+                throw CancellationError()
+            } catch {
+                lastError = error
+                guard attempt + 1 < maxRetries else { break }
+                let delay = edgeRetryDelay(attempt: attempt)
+                if delay > 0 { try await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000)) }
+            }
+        }
+        throw lastError ?? EdgeTTSBridgeError.noAudioReceived
     }
 
     // MARK: - Segment-streaming chapter conversion

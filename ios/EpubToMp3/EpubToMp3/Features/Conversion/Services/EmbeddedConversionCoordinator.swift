@@ -750,7 +750,11 @@ enum EmbeddedConversionCoordinator {
                     var output: URL?
                     for attempt in 0..<Self.maximumAutomaticChapterAttempts {
                         do {
-                            if streamingMode(maxPerformance: maxPerformance) == .orderedParallel {
+                            let edgeStrategy = adaptiveEdgeStrategy(
+                                maxPerformance: maxPerformance,
+                                recentEdgeFailures: attempt
+                            )
+                            if case let .hybrid(maxConcurrentBackfillChunks) = edgeStrategy {
                                 // Explicit high-throughput mode uses the bounded
                                 // Swift WebSocket pool. Python still owns canonical
                                 // text preparation and chunking; PythonBridge holds a
@@ -762,6 +766,7 @@ enum EmbeddedConversionCoordinator {
                                     outputDir: outputURL.deletingLastPathComponent(),
                                     outputURL: outputURL,
                                     chapterIndex: chapter.zeroBasedEpubIndex,
+                                    maxChunkConcurrency: maxConcurrentBackfillChunks,
                                     onSegment: onSegment
                                 )
                             } else {
@@ -1283,6 +1288,38 @@ enum EmbeddedConversionCoordinator {
 
     static func streamingMode(maxPerformance: Bool) -> StreamingMode {
         maxPerformance ? .orderedParallel : .lowestLatencySerial
+    }
+
+    @MainActor
+    static func adaptiveEdgeStrategy(
+        maxPerformance: Bool,
+        recentEdgeFailures: Int,
+        defaults: UserDefaults = .standard,
+        isLowPowerModeEnabled: Bool = ProcessInfo.processInfo.isLowPowerModeEnabled,
+        thermalState: ProcessInfo.ThermalState = ProcessInfo.processInfo.thermalState
+    ) -> AdaptiveEdgeConcurrencyPolicy.Strategy {
+        let connectivity: AdaptiveEdgeConcurrencyPolicy.Connectivity
+        switch LocalAudioConversionScheduler.shared.currentConnectivity {
+        case .unavailable: connectivity = .unavailable
+        case .wifi: connectivity = .wifi
+        case .cellular: connectivity = .cellular
+        }
+        let thermal: AdaptiveEdgeConcurrencyPolicy.ThermalState
+        switch thermalState {
+        case .nominal: thermal = .nominal
+        case .fair: thermal = .fair
+        case .serious: thermal = .serious
+        case .critical: thermal = .critical
+        @unknown default: thermal = .serious
+        }
+        return AdaptiveEdgeConcurrencyPolicy.resolve(
+            automaticModeEnabled: defaults.bool(forKey: "adaptiveEdgeConcurrencyEnabled"),
+            maxPerformanceRequested: maxPerformance,
+            connectivity: connectivity,
+            isLowPowerModeEnabled: isLowPowerModeEnabled,
+            thermalState: thermal,
+            recentEdgeFailures: recentEdgeFailures
+        )
     }
 
     static func prioritizedChapterIndices(source: [Int], priorities: [Int]) -> [Int] {

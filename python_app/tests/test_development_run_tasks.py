@@ -42,3 +42,38 @@ def test_vscode_exposes_debug_run_tasks() -> None:
     assert '"mise run ios:run"' in tasks
     assert '"IOS_TARGET=simulator mise run ios:run"' in tasks
     assert '"mise run flutter:run"' in tasks
+
+
+def test_quality_gate_runs_deterministic_checks() -> None:
+    """New changes must pass tests, static checks, coverage, and mutation tests."""
+    mise = (ROOT / "mise.toml").read_text(encoding="utf-8")
+    requirements = (ROOT / "requirements.txt").read_text(encoding="utf-8")
+    workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+
+    assert "[tasks.quality]" in mise
+    assert "mise run test" in mise
+    assert "QUALITY_BASE" in mise
+    assert 'ruff format --check "${python_files[@]}"' in mise
+    assert "ruff check" in mise
+    assert "coverage run -m pytest" in mise
+    assert "coverage report --fail-under=75" in mise
+    assert "mise run test:mutation" in mise
+    assert "coverage>=" in requirements
+    assert "mutmut>=" in requirements
+    assert "QUALITY_BASE=HEAD^ mise run quality:python" in workflow
+
+
+def test_mutation_task_targets_a_fast_critical_behavior_suite() -> None:
+    """Mutation testing is bounded enough to be a reliable merge gate."""
+    mise = (ROOT / "mise.toml").read_text(encoding="utf-8")
+    pyproject = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
+
+    assert '[tasks."test:mutation"]' in mise
+    assert "mutmut results" in mise
+    assert "survived" in mise
+    assert "[tool.mutmut]" in pyproject
+    assert '"python_app/src/error_classifier.py"' in pyproject
+    assert '"python_app/src/_env_utils.py"' in pyproject
+    assert 'also_copy = ["python_app/tests"]' in pyproject
+    assert '"python_app/tests/test_error_classifier.py"' in pyproject
+    assert '"python_app/tests/test_env_utils.py"' in pyproject

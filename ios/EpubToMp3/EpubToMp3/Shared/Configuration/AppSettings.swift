@@ -184,6 +184,8 @@ final class AppSettings: ObservableObject {
         // it on Wi-Fi by default; the user may opt into cellular explicitly.
         self.allowCellularAudioConversion =
             defaults.object(forKey: "allowCellularAudioConversion") as? Bool ?? false
+        self.adaptiveEdgeConcurrencyEnabled =
+            defaults.object(forKey: "adaptiveEdgeConcurrencyEnabled") as? Bool ?? false
         self.playbackForwardSeconds = Self.validPlaybackSkipInterval(
             defaults.object(forKey: Self.playbackForwardSecondsKey) as? Double
         )
@@ -269,9 +271,16 @@ final class AppSettings: ObservableObject {
         didSet { defaults.set(backendURL, forKey: "backendURL") }
     }
 
+    /// Ephemeral loopback endpoint published by the macOS bundled sidecar.
+    /// It is deliberately not persisted: each launch receives a fresh port.
+    #if canImport(AppKit)
+    @Published var sidecarURL: URL?
+    #endif
+
     /// Master switch: when `true` the app uses its bundled runtime for
     /// everything that *can* run on-device — EPUB parsing (pure Swift +
-    /// PythonBridge), TTS conversion (PythonEmbed on iOS and macOS) —
+    /// PythonBridge), TTS conversion (PythonEmbed on iOS and a bundled
+    /// loopback sidecar on macOS) —
     /// and treats the configured `backendURL` only as an
     /// optional remote fallback for users who genuinely want it.
     ///
@@ -287,6 +296,11 @@ final class AppSettings: ObservableObject {
     /// Defaults to false so local audiobook generation waits for Wi-Fi.
     @Published var allowCellularAudioConversion: Bool = false {
         didSet { defaults.set(allowCellularAudioConversion, forKey: "allowCellularAudioConversion") }
+    }
+
+    /// Experimental Wi-Fi-only Edge backfill behind the first playable chunk.
+    @Published var adaptiveEdgeConcurrencyEnabled: Bool = false {
+        didSet { defaults.set(adaptiveEdgeConcurrencyEnabled, forKey: "adaptiveEdgeConcurrencyEnabled") }
     }
 
     @Published var playbackForwardSeconds: Double = 15 {
@@ -475,6 +489,11 @@ final class AppSettings: ObservableObject {
     /// caller can surface a validation error instead of silently failing.
     /// The URL is retained only for explicit remote-backend screens.
     var resolvedBaseURL: URL? {
+        #if canImport(AppKit)
+        if useEmbeddedRuntime, let sidecarURL {
+            return sidecarURL
+        }
+        #endif
         let trimmed = backendURL.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
         var raw = trimmed

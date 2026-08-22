@@ -225,6 +225,8 @@ final class LocalAudioConversionScheduler {
         startNextWorkIfPossible()
     }
 
+    var currentConnectivity: Connectivity { connectivity }
+
     /// Applies the Settings cellular policy to work that is already queued or
     /// waiting. An active chapter is never cancelled; the conversion loop
     /// checks this policy at its next chapter boundary.

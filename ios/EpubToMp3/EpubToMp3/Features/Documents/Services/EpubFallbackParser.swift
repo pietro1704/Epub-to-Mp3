@@ -350,7 +350,7 @@ private final class SpineDelegate: NSObject, XMLParserDelegate {
     func parser(_ parser: XMLParser, didStartElement elementName: String,
                 namespaceURI: String?, qualifiedName: String?,
                 attributes attributeDict: [String: String] = [:]) {
-        let tag = elementName.lowercased()
+        let tag = localName(elementName, qualifiedName: qualifiedName)
         currentTag = tag
         buffer = ""
         if tag == "item",
@@ -373,14 +373,19 @@ private final class SpineDelegate: NSObject, XMLParserDelegate {
     func parser(_ parser: XMLParser, didEndElement elementName: String,
                 namespaceURI: String?, qualifiedName: String?) {
         let trimmed = buffer.trimmingCharacters(in: .whitespacesAndNewlines)
-        switch elementName.lowercased() {
-        case "dc:title", "title":
+        switch localName(elementName, qualifiedName: qualifiedName) {
+        case "title":
             if info.title == nil, !trimmed.isEmpty { info.title = trimmed }
-        case "dc:creator", "creator":
+        case "creator":
             if info.author == nil, !trimmed.isEmpty { info.author = trimmed }
         default: break
         }
         buffer = ""
         currentTag = nil
+    }
+
+    private func localName(_ elementName: String, qualifiedName: String?) -> String {
+        let name = qualifiedName ?? elementName
+        return name.split(separator: ":").last?.lowercased() ?? name.lowercased()
     }
 }

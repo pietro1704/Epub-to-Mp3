@@ -26,6 +26,12 @@ import XCTest
 
 final class PythonBridgeTimeoutTests: XCTestCase {
 
+    func testInProcessPythonRuntimeIsDisabledOnMacOS() {
+        #if os(macOS)
+        XCTAssertFalse(PythonBridge.supportsEmbeddedRuntime)
+        #endif
+    }
+
     /// Simulates a wedged underlying call by sleeping for far longer
     /// than the timeout budget. The wrapper must surface `TimeoutError`
     /// within the budget, freeing the caller.

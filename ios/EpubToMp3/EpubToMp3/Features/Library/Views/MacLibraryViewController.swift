@@ -21,6 +21,7 @@ final class MacLibraryViewController: NSViewController, NSSearchFieldDelegate,
     private let searchField = NSSearchField()
     private let sortButton = NSPopUpButton()
     private let collectionView = NSCollectionView()
+    private let collectionLayout = NSCollectionViewFlowLayout()
     private let emptyLabel = NSTextField(wrappingLabelWithString: "")
     private let addButton = NSButton()
 
@@ -57,6 +58,14 @@ final class MacLibraryViewController: NSViewController, NSSearchFieldDelegate,
         reload()
         view.setAccessibilityElement(false)
         view.setAccessibilityChildren([searchField, sortButton, collectionView, emptyLabel, addButton])
+    }
+
+    override func viewDidLayout() {
+        super.viewDidLayout()
+        let spacing: CGFloat = 24
+        let inset: CGFloat = 20
+        let availableWidth = max(0, collectionView.bounds.width - (inset * 2) - spacing)
+        collectionLayout.itemSize = NSSize(width: max(180, availableWidth / 2), height: 420)
     }
 
     private func configureToolbar() {
@@ -109,12 +118,11 @@ final class MacLibraryViewController: NSViewController, NSSearchFieldDelegate,
         collectionView.backgroundColors = [.clear]
         collectionView.delegate = self
         collectionView.dataSource = self
-        let layout = NSCollectionViewFlowLayout()
-        layout.itemSize = NSSize(width: 180, height: 270)
-        layout.minimumInteritemSpacing = 18
-        layout.minimumLineSpacing = 24
-        layout.sectionInset = NSEdgeInsets(top: 20, left: 20, bottom: 20, right: 20)
-        collectionView.collectionViewLayout = layout
+        collectionLayout.itemSize = NSSize(width: 180, height: 420)
+        collectionLayout.minimumInteritemSpacing = 24
+        collectionLayout.minimumLineSpacing = 24
+        collectionLayout.sectionInset = NSEdgeInsets(top: 20, left: 20, bottom: 20, right: 20)
+        collectionView.collectionViewLayout = collectionLayout
         scrollView.documentView = collectionView
         view.addSubview(scrollView)
         NSLayoutConstraint.activate([
@@ -168,6 +176,9 @@ final class MacLibraryViewController: NSViewController, NSSearchFieldDelegate,
             sortMode: sortMode
         )
         books = model.arrangedBooks()
+        for book in books where book.coverPNG == nil {
+            library.hydrateMissingCover(for: book.id)
+        }
         collectionView.reloadData()
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }

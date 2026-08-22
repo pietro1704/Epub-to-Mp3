@@ -28,7 +28,7 @@ jobs:
         run: |
           git init .
           git remote add origin "https://github.com/${GITHUB_REPOSITORY}.git"
-          git fetch --no-tags --depth=1 origin "${GITHUB_SHA}"
+          git fetch --no-tags --depth=2 origin "${GITHUB_SHA}"
           git checkout --force FETCH_HEAD
 
       - name: Install mise
@@ -67,6 +67,9 @@ jobs:
       - name: Run Python lint
         run: mise exec -- ruff check .
 
+      - name: Run deterministic Python quality gate
+        run: QUALITY_BASE=HEAD^ mise run quality:python
+
       - name: Run sample conversion smoke
         env:
           R2_OPTIONAL: "true"
@@ -100,7 +103,7 @@ jobs:
         run: |
           git init .
           git remote add origin "https://github.com/${GITHUB_REPOSITORY}.git"
-          git fetch --no-tags --depth=1 origin "${GITHUB_SHA}"
+          git fetch --no-tags --depth=2 origin "${GITHUB_SHA}"
           git checkout --force FETCH_HEAD
 
       - name: Install mise
@@ -145,7 +148,7 @@ jobs:
         run: |
           git init .
           git remote add origin "https://github.com/${GITHUB_REPOSITORY}.git"
-          git fetch --no-tags --depth=1 origin "${GITHUB_SHA}"
+          git fetch --no-tags --depth=2 origin "${GITHUB_SHA}"
           git checkout --force FETCH_HEAD
 
       - name: Install mise

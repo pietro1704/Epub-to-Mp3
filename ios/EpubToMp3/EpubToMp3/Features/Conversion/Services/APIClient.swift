@@ -226,11 +226,34 @@ final class APIClient: @unchecked Sendable {
     /// Streams raw `data:` payloads from the backend's SSE endpoint as an
     /// `AsyncThrowingStream<String, Error>`. Cancelling the iterating task
     /// tears down the underlying URLSession data task automatically.
+    static func eventStreamURL(baseURL: URL, jobID: String, journeyID: UUID?) -> URL? {
+        var components = URLComponents(
+            url: baseURL.appendingPathComponent("api/jobs/\(jobID)/stream"),
+            resolvingAgainstBaseURL: false
+        )
+        if let journeyID {
+            components?.queryItems = [
+                URLQueryItem(name: "journey_id", value: journeyID.uuidString.lowercased()),
+            ]
+        }
+        return components?.url
+    }
+
     func eventStream(jobId: String) -> AsyncThrowingStream<JobEvent, Error> {
+        eventStream(jobId: jobId, journeyID: nil)
+    }
+
+    func eventStream(jobId: String, journeyID: UUID?) -> AsyncThrowingStream<JobEvent, Error> {
         AsyncThrowingStream { continuation in
             let task = Task { [streamingSession, baseURL] in
                 do {
-                    let url = baseURL.appendingPathComponent("api/jobs/\(jobId)/stream")
+                    guard let url = Self.eventStreamURL(
+                        baseURL: baseURL,
+                        jobID: jobId,
+                        journeyID: journeyID
+                    ) else {
+                        throw APIError.invalidBaseURL
+                    }
                     var request = URLRequest(url: url)
                     request.setValue("text/event-stream", forHTTPHeaderField: "Accept")
                     request.setValue("no-cache", forHTTPHeaderField: "Cache-Control")

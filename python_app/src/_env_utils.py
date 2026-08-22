@@ -18,8 +18,6 @@ def env_bool(name: str, default: bool = False) -> bool:
 
 def env_int(name: str, default: int) -> int:
     raw = os.getenv(name)
-    if raw is None or raw == "":
-        return default
     try:
         return int(raw)
     except (TypeError, ValueError):
@@ -28,8 +26,6 @@ def env_int(name: str, default: int) -> int:
 
 def env_float(name: str, default: float) -> float:
     raw = os.getenv(name)
-    if raw is None or raw == "":
-        return default
     try:
         return float(raw)
     except (TypeError, ValueError):

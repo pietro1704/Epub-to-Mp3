@@ -88,6 +88,9 @@ final class JobDetailScreenController: UITableViewController {
             guard let self, self.player.snapshot?.jobId == snapshot.jobId else { return }
             self.player.finishStreaming(snapshot: snapshot)
         }
+        viewModel.onJourneyStarted = { [weak self] journeyID in
+            self?.player.setProgressivePlaybackCorrelationID(journeyID)
+        }
     }
 
     override func viewWillAppear(_ animated: Bool) {

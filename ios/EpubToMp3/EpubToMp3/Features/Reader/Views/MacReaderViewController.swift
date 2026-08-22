@@ -72,10 +72,6 @@ final class MacReaderViewController: NSViewController, NSTableViewDataSource, NS
         surface.onKeyDown = { [weak self] event in
             self?.handleKeyboardEvent(event) ?? false
         }
-        surface.onPageTap = { [weak self] forward in
-            self?.scrollPage(forward: forward)
-            return true
-        }
         view = surface
         view.wantsLayer = true
     }
@@ -215,10 +211,20 @@ final class MacReaderViewController: NSViewController, NSTableViewDataSource, NS
         textView.isVerticallyResizable = true
         textView.isHorizontallyResizable = false
         textView.autoresizingMask = [.width]
+        textView.minSize = .zero
+        textView.maxSize = NSSize(
+            width: CGFloat.greatestFiniteMagnitude,
+            height: CGFloat.greatestFiniteMagnitude
+        )
+        textView.textContainer?.containerSize = NSSize(
+            width: 0,
+            height: CGFloat.greatestFiniteMagnitude
+        )
         textView.textContainer?.widthTracksTextView = true
+        textView.drawsBackground = true
         contentScrollView.documentView = textView
         contentScrollView.hasVerticalScroller = true
-        contentScrollView.drawsBackground = false
+        contentScrollView.drawsBackground = true
 
         toolbar.translatesAutoresizingMaskIntoConstraints = false
         chapterTitleLabel.translatesAutoresizingMaskIntoConstraints = false
@@ -246,10 +252,6 @@ final class MacReaderViewController: NSViewController, NSTableViewDataSource, NS
         configureLoadingOverlay()
         textView.onKeyDown = { [weak self] event in
             self?.handleKeyboardEvent(event) ?? false
-        }
-        textView.onPageTap = { [weak self] forward in
-            self?.scrollPage(forward: forward)
-            return true
         }
         textView.onBuildSelectionMenu = { [weak self] range in
             self?.buildSelectionMenuItems(range: range) ?? []
@@ -303,7 +305,7 @@ final class MacReaderViewController: NSViewController, NSTableViewDataSource, NS
 
         let preferredCoverWidth = loadingCoverView.widthAnchor.constraint(
             equalTo: loadingOverlay.widthAnchor,
-            multiplier: 0.28
+            multiplier: 0.42
         )
         preferredCoverWidth.priority = .defaultHigh
         NSLayoutConstraint.activate([
@@ -316,9 +318,9 @@ final class MacReaderViewController: NSViewController, NSTableViewDataSource, NS
             stack.leadingAnchor.constraint(greaterThanOrEqualTo: loadingOverlay.leadingAnchor, constant: 32),
             stack.trailingAnchor.constraint(lessThanOrEqualTo: loadingOverlay.trailingAnchor, constant: -32),
             preferredCoverWidth,
-            loadingCoverView.widthAnchor.constraint(lessThanOrEqualToConstant: 240),
+            loadingCoverView.widthAnchor.constraint(lessThanOrEqualToConstant: 420),
             loadingCoverView.heightAnchor.constraint(equalTo: loadingCoverView.widthAnchor, multiplier: 1.5),
-            loadingCoverView.heightAnchor.constraint(lessThanOrEqualTo: loadingOverlay.heightAnchor, multiplier: 0.45),
+            loadingCoverView.heightAnchor.constraint(lessThanOrEqualTo: loadingOverlay.heightAnchor, multiplier: 0.60),
         ])
         // The reader toolbar remains available for closing the book while
         // parsing continues underneath the loading surface.
@@ -503,10 +505,15 @@ final class MacReaderViewController: NSViewController, NSTableViewDataSource, NS
             chapterTitleLabel.stringValue = ""
             statusLabel.stringValue = L10n.string("reader.chapterCount", warmPayload.chapters.count)
             chaptersTable.reloadData()
-            if !hasRestoredInitialPosition, let entry = ReaderProgressStore.read(bookId: book.id) {
-                selectedChapter = entry.chapterIndex
-            }
-            selectedChapter = min(max(selectedChapter, 0), max(0, warmPayload.chapters.count - 1))
+            selectedChapter = hasRestoredInitialPosition
+                ? ReaderInitialChapter.index(
+                    selectedChapter: selectedChapter,
+                    chapterCount: warmPayload.chapters.count
+                ) ?? 0
+                : ReaderInitialChapter.index(
+                    progress: ReaderProgressStore.read(bookId: book.id),
+                    in: warmPayload.chapters
+                ) ?? 0
             if let row = tocRows.firstIndex(where: { $0.chapterIndex == selectedChapter }) {
                 chaptersTable.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
             }
@@ -548,16 +555,12 @@ final class MacReaderViewController: NSViewController, NSTableViewDataSource, NS
                         recordControlsUsable()
                         return
                     }
-                    if book.fileType.requiresServerConversion {
-                        guard let baseURL = settings.resolvedBaseURL else {
-                            throw APIError.invalidBaseURL
-                        }
-                        let client = APIClient(baseURL: baseURL)
-                        let uploadID = try await client.uploadBook(at: fileURL)
-                        payload = try await client.fetchUploadedFulltext(uploadID: uploadID)
-                    } else {
-                        payload = try await MacEpubParser.parse(at: fileURL, bookId: book.id)
+                    guard let baseURL = await SidecarEndpoint.waitForReadyURL(settings: settings) else {
+                        throw APIError.invalidBaseURL
                     }
+                    let client = APIClient(baseURL: baseURL)
+                    let uploadID = try await client.registerLocalUpload(path: fileURL)
+                    payload = try await client.fetchUploadedFulltext(uploadID: uploadID)
                 }
                 guard self.isActiveLoad(generation, bookID: book.id) else { return }
                 LocalFulltextCache.save(payload, bookId: book.id)
@@ -565,15 +568,15 @@ final class MacReaderViewController: NSViewController, NSTableViewDataSource, NS
                 fulltext = payload
                 statusLabel.stringValue = L10n.string("reader.chapterCount", payload.chapters.count)
                 chaptersTable.reloadData()
-                if !hasRestoredInitialPosition, let entry = ReaderProgressStore.read(bookId: book.id) {
-                    selectedChapter = entry.chapterIndex
-                } else {
-                    let firstReadableChapter = payload.chapters.firstIndex {
-                        $0.text.trimmingCharacters(in: .whitespacesAndNewlines).count >= 80
-                    } ?? 0
-                    selectedChapter = min(max(selectedChapter, firstReadableChapter), max(0, payload.chapters.count - 1))
-                }
-                selectedChapter = min(max(selectedChapter, 0), max(0, payload.chapters.count - 1))
+                selectedChapter = self.hasRestoredInitialPosition
+                    ? ReaderInitialChapter.index(
+                        selectedChapter: self.selectedChapter,
+                        chapterCount: payload.chapters.count
+                    ) ?? 0
+                    : ReaderInitialChapter.index(
+                        progress: ReaderProgressStore.read(bookId: book.id),
+                        in: payload.chapters
+                    ) ?? 0
                 if let row = self.tocRows.firstIndex(where: { $0.chapterIndex == self.selectedChapter }) {
                     chaptersTable.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
                 }
@@ -598,6 +601,7 @@ final class MacReaderViewController: NSViewController, NSTableViewDataSource, NS
     private func showChapter(_ index: Int, scrollToEnd: Bool = false) {
         guard let chapter = fulltext?.chapters[safe: index] else { return }
         chapterTitleLabel.stringValue = chapter.name ?? ""
+        applyReaderAppearance()
 
         if chapter.isImageOnly {
             if let base64 = chapter.resources?.first?.dataBase64, let data = Data(base64Encoded: base64) {
@@ -609,14 +613,22 @@ final class MacReaderViewController: NSViewController, NSTableViewDataSource, NS
             contentScrollView.documentView = comicPageImageView
         } else {
             contentScrollView.documentView = textView
-            if let html = chapter.html,
+            let plainText = chapter.text.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !plainText.isEmpty {
+                // AppKit's HTML importer accepts some EPUB style sheets but
+                // silently drops their paragraph runs. The backend's plain
+                // text is the canonical reading payload, so it is the safe
+                // default on macOS; HTML remains a fallback for image-only
+                // or malformed documents with no extracted text.
+                textView.textStorage?.setAttributedString(readablePlainText(chapter.text))
+            } else if let html = chapter.html,
+               chapter.css != nil,
                let rendered = EpubHtmlRenderer.render(
                    html: html, css: chapter.css, settings: settings, resources: chapter.resources
                ) {
-                textView.textStorage?.setAttributedString(NSAttributedString(rendered))
+                textView.textStorage?.setAttributedString(readableAttributedText(rendered))
             } else {
-                textView.string = chapter.text
-                textView.font = .systemFont(ofSize: settings.readerPointSize)
+                textView.textStorage?.setAttributedString(readablePlainText(chapter.text))
             }
             repaintSavedHighlights(chapterIndex: index)
             if scrollToEnd {
@@ -628,6 +640,45 @@ final class MacReaderViewController: NSViewController, NSTableViewDataSource, NS
             }
         }
         UserDefaults.standard.set(index, forKey: AudioPlayer.readerCurrentChapterIndexDefaultsKey)
+    }
+
+    /// EPUBs occasionally set a page-wide dark background together with a
+    /// foreground colour that AppKit's HTML importer does not preserve
+    /// consistently. That leaves a solid rectangle with invisible text.
+    /// The reader surface owns page colours, so keep semantic typography and
+    /// links from the EPUB while making every glyph follow the active theme.
+    private func readableAttributedText(_ rendered: AttributedString) -> NSAttributedString {
+        let display = NSMutableAttributedString(attributedString: NSAttributedString(rendered))
+        let range = NSRange(location: 0, length: display.length)
+        guard range.length > 0 else { return display }
+        display.removeAttribute(.backgroundColor, range: range)
+        display.addAttribute(
+            .foregroundColor,
+            value: MacReaderAppearance.resolve(settings: settings).foreground,
+            range: range
+        )
+        return display
+    }
+
+    private func readablePlainText(_ text: String) -> NSAttributedString {
+        NSAttributedString(
+            string: text,
+            attributes: [
+                .font: NSFont.systemFont(ofSize: settings.readerPointSize),
+                .foregroundColor: MacReaderAppearance.resolve(settings: settings).foreground,
+            ]
+        )
+    }
+
+    private func applyReaderAppearance() {
+        let appearance = MacReaderAppearance.resolve(settings: settings)
+        view.layer?.backgroundColor = appearance.background.cgColor
+        toolbar.layer?.backgroundColor = appearance.background.cgColor
+        contentScrollView.backgroundColor = appearance.background
+        textView.backgroundColor = appearance.background
+        textView.textColor = appearance.foreground
+        chapterTitleLabel.textColor = appearance.foreground
+        bookTitleLabel.textColor = appearance.foreground
     }
 
     private func handleReaderLink(_ url: URL, linkText: String) -> Bool {

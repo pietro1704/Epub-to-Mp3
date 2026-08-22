@@ -74,6 +74,17 @@ class TestInferPerfProfile:
         assert result == "local"
 
 
+class TestMeasuredUltraEdgeDefaults:
+    def test_ultra_profile_keeps_the_measured_throughput_values(self):
+        from python_app.src.hardware_detector import HardwareDetector
+
+        profile = HardwareDetector._EDGE_NETWORK_PROFILES["ultra"]
+
+        assert profile["chunk_chars"] == 15_000
+        assert profile["max_segment_seconds"] == 75
+        assert profile["concurrency_cap"] == 8
+
+
 # ---------------------------------------------------------------------------
 # _normalise_languages (pure function — no server import needed)
 # ---------------------------------------------------------------------------

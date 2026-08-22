@@ -71,6 +71,13 @@ class TestConversionConfig(unittest.TestCase):
         # Processing defaults
         self.assertFalse(config.force_reprocess)
 
+    def test_edge_defaults_match_the_measured_throughput_profile(self):
+        config = ConversionConfig(engine="edge")
+
+        self.assertEqual(config.edge_chunk_chars, 15_000)
+        self.assertEqual(config.edge_max_segment_seconds, 75)
+        self.assertEqual(config.edge_max_concurrency, 8)
+
     def test_adaptive_segment_policy_is_opt_in_and_env_configurable(self):
         config = ConversionConfig(engine="edge")
         self.assertFalse(config.edge_adaptive_segment_seconds)
