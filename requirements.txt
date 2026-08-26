@@ -27,7 +27,7 @@ piper-tts>=1.7.0
 # Ebook Processing
 ebooklib>=0.20
 beautifulsoup4>=4.15.0
-pypdf>=6.16.1  # CVE-2026-33699, GHSA-3crg-w4f6-42mx
+pypdf>=6.16.2  # CVE-2026-33699, GHSA-3crg-w4f6-42mx
 lxml>=6.1.2
 mobi>=0.4.1  # MOBI/AZW3 unpacking — server/CLI only, never embedded on-device
 rarfile>=4.5  # CBR visual reading — server/CLI only, requires a RAR backend
