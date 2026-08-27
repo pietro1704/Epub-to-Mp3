@@ -5,6 +5,7 @@
 #if os(iOS) || os(macOS)
 
 import XCTest
+import PythonKit
 @testable import EpubToMp3
 
 @MainActor
@@ -133,13 +134,50 @@ final class PythonEmbedTests: XCTestCase {
         XCTAssertEqual(chunks.joined(separator: " "), text.trimmingCharacters(in: .whitespaces))
     }
 
-    func testBootstrapIsIdempotent() throws {
+    func testBootstrapIsIdempotent() async throws {
         do {
-            try PythonEmbed.shared.bootstrap()
-            try PythonEmbed.shared.bootstrap()  // must not throw on 2nd call
+            try await PythonRunner.shared.callAsync {
+                try PythonEmbed.shared.bootstrap()
+                try PythonEmbed.shared.bootstrap()  // must not throw on 2nd call
+            }
         } catch {
             throw XCTSkip("Bootstrap failed (vendor likely missing): \(error)")
         }
+    }
+
+    func testBootstrapSetsWritablePersistentRoot() async throws {
+        let rootPath = try await PythonRunner.shared.callAsync {
+            try PythonEmbed.shared.bootstrap()
+            guard let rawRoot = getenv("PERSISTENT_ROOT") else {
+                throw PythonEmbedError.persistentRootCreationFailed("PERSISTENT_ROOT is missing")
+            }
+            return String(cString: rawRoot)
+        }
+        let root = URL(fileURLWithPath: rootPath, isDirectory: true)
+        let applicationSupport = try FileManager.default.url(
+            for: .applicationSupportDirectory,
+            in: .userDomainMask,
+            appropriateFor: nil,
+            create: false
+        )
+
+        XCTAssertTrue(root.path.hasPrefix(applicationSupport.path),
+                      "PERSISTENT_ROOT must be in Application Support, not the read-only app bundle")
+        XCTAssertTrue(FileManager.default.isWritableFile(atPath: root.path),
+                      "PERSISTENT_ROOT must be writable by embedded Python")
+
+        let modelsPath = try await PythonRunner.shared.callAsync {
+            let paths = try Python.attemptImport("python_app.src.paths")
+            guard let modelsPath = String(paths.MODELS_DIR) else {
+                throw PythonEmbedError.persistentRootCreationFailed("MODELS_DIR is missing")
+            }
+            return modelsPath
+        }
+        XCTAssertEqual(
+            URL(fileURLWithPath: modelsPath, isDirectory: true).standardizedFileURL,
+            root.appendingPathComponent("models", isDirectory: true).standardizedFileURL,
+            "Embedded Python models must live in writable Application Support"
+        )
     }
 
     /// End-to-end: build a real EPUB with one chapter, hand it to

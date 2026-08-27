@@ -56,6 +56,19 @@ final class AudioPlayerConversionStateTests: XCTestCase {
         XCTAssertFalse(player.isLoading)
     }
 
+    /// A Listen tap must replace its play control immediately, including
+    /// while the embedded runtime warms up and parses the book before the
+    /// first chapter synthesis begins.
+    @MainActor
+    func testBeginPlaybackPreparationShowsLoadingBeforeAudioIsReady() {
+        let player = AudioPlayer()
+
+        player.beginPlaybackPreparation()
+
+        XCTAssertTrue(player.isConverting)
+        XCTAssertTrue(player.isLoading)
+    }
+
     // MARK: - markFirstChapterReady
 
     @MainActor

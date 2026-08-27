@@ -592,11 +592,25 @@ if [[ "${IOS_DEVELOPMENT_SEED_BOOK:-1}" != "0" ]]; then
     fi
   fi
 fi
-if [[ "$SEED_LAUNCH" == "1" ]]; then
-  xcrun devicectl device process launch --device "$DEVICE" --terminate-existing "$BUNDLE_ID" -developmentSeedBook
-else
-  xcrun devicectl device process launch --device "$DEVICE" --terminate-existing "$BUNDLE_ID"
+RETRY_SECONDS="${IOS_LAUNCH_RETRY_SECONDS:-10}"
+if ! [[ "$RETRY_SECONDS" =~ ^[1-9][0-9]*$ ]]; then
+  echo "ios:device:run error: IOS_LAUNCH_RETRY_SECONDS must be a positive integer." >&2
+  exit 2
 fi
+
+# A physical device rejects launches while locked. The app is already installed,
+# so keep this inexpensive launch queue alive until the listener unlocks it.
+while true; do
+  if [[ "$SEED_LAUNCH" == "1" ]]; then
+    if xcrun devicectl device process launch --device "$DEVICE" --terminate-existing "$BUNDLE_ID" -developmentSeedBook; then
+      break
+    fi
+  elif xcrun devicectl device process launch --device "$DEVICE" --terminate-existing "$BUNDLE_ID"; then
+    break
+  fi
+  echo "ios:device:run → launch deferred; retrying in ${RETRY_SECONDS}s (unlock the iPhone to continue)." >&2
+  sleep "$RETRY_SECONDS"
+done
 """
 
 [tasks."ios:device:build"]

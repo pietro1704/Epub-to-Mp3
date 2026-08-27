@@ -184,7 +184,10 @@ def _resolve_cache_dir() -> Path:
 # Directories rooted at the project root (with shared overrides)
 CACHE_DIR = _resolve_cache_dir()  # Temporary per-book data only
 OUTPUT_DIR = _resolve_output_dir()
-MODELS_DIR = PROJECT_ROOT / "models"  # TTS models (Piper)
+# The embedded Apple runtime supplies PERSISTENT_ROOT because its package lives
+# inside a signed, read-only app bundle. Keep source/CLI models project-local,
+# but put downloaded embedded models beside the other writable runtime data.
+MODELS_DIR = PERSISTENT_ROOT / "models" if _persistent_override is not None else PROJECT_ROOT / "models"
 JOBS_DIR = PERSISTENT_ROOT / ".jobs"
 UPLOADS_DIR = PERSISTENT_ROOT / ".uploads"
 JOB_INPUTS_DIR = PERSISTENT_ROOT / ".job_inputs"

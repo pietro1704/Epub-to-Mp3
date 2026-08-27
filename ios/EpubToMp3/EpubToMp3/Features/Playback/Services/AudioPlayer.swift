@@ -2096,6 +2096,13 @@ final class AudioPlayer: ObservableObject {
         conversionStatus.record(.chapterComplete, "First chapter audio ready")
     }
 
+    /// Marks a user-initiated Listen request as loading before runtime
+    /// warmup and EPUB parsing finish. The mini and expanded players derive
+    /// their spinner state from this flag until the first audio arrives.
+    func beginPlaybackPreparation() {
+        isConverting = true
+    }
+
     /// Record a conversion error in the status log. Called by
     /// the native reader when a chapter synthesis fails so the user can
     /// see the error in `ConversionStatusSheet` and tap Retry.

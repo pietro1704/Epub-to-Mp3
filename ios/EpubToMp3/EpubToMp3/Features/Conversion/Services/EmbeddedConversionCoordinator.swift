@@ -188,6 +188,8 @@ enum EmbeddedConversionCoordinator {
         onStreamingStarted: @MainActor @escaping () -> Void = {},
         onChapterAvailable: @MainActor @escaping (JobSnapshot.Chapter) -> Void = { _ in }
     ) async throws -> JobSnapshot {
+        beginPlaybackPreparationIfNeeded(drivesPlayer: drivesPlayer, player: player)
+
         // Do not make a listener wait for Python startup, fulltext recovery,
         // or the remaining conversion when the chapter they asked for already
         // has a canonical local MP3. Start that chapter immediately, then run
@@ -296,6 +298,17 @@ enum EmbeddedConversionCoordinator {
                 onChapterAvailable: onChapterAvailable
             )
         }
+    }
+
+    /// Update playback chrome at the Listen boundary, before local-cache and
+    /// network scheduling can defer actual conversion work.
+    @MainActor
+    static func beginPlaybackPreparationIfNeeded(
+        drivesPlayer: Bool,
+        player: AudioPlayer
+    ) {
+        guard drivesPlayer else { return }
+        player.beginPlaybackPreparation()
     }
 
     /// Recreates the closures for conversion work which iOS interrupted. The

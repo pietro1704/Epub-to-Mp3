@@ -69,5 +69,20 @@ if [[ -d "${DESTINATION}" ]]; then
   rm -rf -- "${DESTINATION}"
 fi
 cp -R "${SOURCE}" "${DESTINATION}"
+
+# iOS enforces code signatures on every dynamically loaded native module.
+# These CPython extensions are copied into the app resources after Xcode's
+# resource phase, so sign the device slice before the target's final bundle
+# signature is created. Simulator and macOS builds do not need this step.
+if [[ "${PLATFORM}" == "iphoneos" ]] \
+    && [[ "${CODE_SIGNING_ALLOWED:-YES}" != "NO" ]] \
+    && [[ -n "${EXPANDED_CODE_SIGN_IDENTITY:-}" ]]; then
+  while IFS= read -r -d '' module; do
+    /usr/bin/codesign --force --sign "${EXPANDED_CODE_SIGN_IDENTITY}" \
+      --timestamp=none "${module}"
+  done < <(find "${DESTINATION}" -type f -name "*.so" -print0)
+  echo "==> Signed CPython binary modules for iPhone device"
+fi
+
 printf '%s\n' "${TARGET}" > "${MARKER}"
 echo "==> Bundled CPython binary modules for ${TARGET}"

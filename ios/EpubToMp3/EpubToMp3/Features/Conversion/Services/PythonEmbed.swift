@@ -16,6 +16,7 @@ import PythonKit
 enum PythonEmbedError: Error, LocalizedError {
     case stdlibMissing
     case sitePackagesMissing
+    case persistentRootCreationFailed(String)
     case pythonInitFailed(String)
     case edgeSynthFailed(String)
     case outputFileMissing(String)
@@ -24,6 +25,7 @@ enum PythonEmbedError: Error, LocalizedError {
         switch self {
         case .stdlibMissing: return "python-stdlib not found in app bundle"
         case .sitePackagesMissing: return "site-packages not found in app bundle"
+        case .persistentRootCreationFailed(let m): return "unable to create embedded Python data directory: \(m)"
         case .pythonInitFailed(let m): return "Py_Initialize failed: \(m)"
         case .edgeSynthFailed(let m): return "Edge-TTS failed: \(m)"
         case .outputFileMissing(let p): return "MP3 not written at \(p)"
@@ -177,14 +179,22 @@ final class PythonEmbed: @unchecked Sendable {
         setenv("PYTHONDONTWRITEBYTECODE", "1", 1)
         setenv("PYTHONUNBUFFERED", "1", 1)
         setenv("PYTHONNOUSERSITE", "1", 1)
-        #if os(macOS)
+        // The embedded package is inside the signed, read-only app bundle.
+        // Python's cache/output/job roots must therefore live in the app's
+        // writable Application Support container on both iOS and macOS.
         let supportRoot = FileManager.default.urls(for: .applicationSupportDirectory,
                                                     in: .userDomainMask)[0]
             .appendingPathComponent("EpubToMp3", isDirectory: true)
-        try? FileManager.default.createDirectory(at: supportRoot,
-                                                   withIntermediateDirectories: true)
+        do {
+            try FileManager.default.createDirectory(at: supportRoot,
+                                                    withIntermediateDirectories: true)
+        } catch {
+            throw PythonEmbedError.persistentRootCreationFailed(error.localizedDescription)
+        }
+        guard FileManager.default.isWritableFile(atPath: supportRoot.path) else {
+            throw PythonEmbedError.persistentRootCreationFailed("directory is not writable: \(supportRoot.path)")
+        }
         setenv("PERSISTENT_ROOT", supportRoot.path, 1)
-        #endif
 
         // PythonKit lazy-loads libpython via dlopen. If the framework
         // is missing (simulator without bootstrap), dlopen returns NULL

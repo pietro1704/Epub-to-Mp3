@@ -130,4 +130,22 @@ final class ReaderProgressStoreTests: XCTestCase {
 
         XCTAssertEqual(ReaderProgressStore.read(bookId: "b1", defaults: defaults)?.characterOffset, 123)
     }
+
+    func testPlaybackPriorityUsesLiveChapterForBookOpenInReader() {
+        let defaults = makeDefaults()
+        ReaderProgressStore.save(bookId: "b1", chapterIndex: 2, offsetFraction: 0.4, defaults: defaults)
+        defaults.set("b1", forKey: ReaderSessionState.currentlyReadingBookIDKey)
+        defaults.set(12, forKey: AudioPlayer.readerCurrentChapterIndexDefaultsKey)
+
+        XCTAssertEqual(ReaderPlaybackPriorityChapter.index(bookID: "b1", defaults: defaults), 12)
+    }
+
+    func testPlaybackPriorityUsesSavedProgressForDifferentBook() {
+        let defaults = makeDefaults()
+        ReaderProgressStore.save(bookId: "b2", chapterIndex: 5, offsetFraction: 0.4, defaults: defaults)
+        defaults.set("b1", forKey: ReaderSessionState.currentlyReadingBookIDKey)
+        defaults.set(12, forKey: AudioPlayer.readerCurrentChapterIndexDefaultsKey)
+
+        XCTAssertEqual(ReaderPlaybackPriorityChapter.index(bookID: "b2", defaults: defaults), 5)
+    }
 }

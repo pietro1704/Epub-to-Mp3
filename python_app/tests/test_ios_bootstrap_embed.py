@@ -40,3 +40,18 @@ def test_python_app_init_still_imports_version() -> None:
         "from python_app/__init__.py, the bootstrap-script copy step "
         "may also be droppable — re-evaluate the iOS embed list."
     )
+
+
+def test_runtime_sync_signs_ios_extension_modules() -> None:
+    """iPhone builds must sign copied CPython ``.so`` modules before packaging.
+
+    iOS refuses to dlopen an unsigned extension module from the app bundle.
+    The ``_struct`` failure would otherwise make the canonical EPUB parser
+    unavailable at runtime even though the framework itself was embedded.
+    """
+    script = REPO_ROOT / "ios" / "EpubToMp3" / "scripts" / "sync-embedded-python-runtime.sh"
+    body = script.read_text(encoding="utf-8")
+    assert '[[ "${PLATFORM}" == "iphoneos" ]]' in body
+    assert '"${EXPANDED_CODE_SIGN_IDENTITY}"' in body
+    assert 'find "${DESTINATION}" -type f -name "*.so" -print0' in body
+    assert "/usr/bin/codesign --force --sign" in body

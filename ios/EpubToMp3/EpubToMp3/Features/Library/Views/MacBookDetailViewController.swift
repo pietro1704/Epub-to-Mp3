@@ -151,7 +151,7 @@ final class MacBookDetailViewController: NSViewController {
             Task { [weak self] in
                 guard let self else { return }
                 do {
-                    let priorityChapterIndex = ReaderProgressStore.read(bookId: self.book.id)?.chapterIndex ?? 0
+                    let priorityChapterIndex = ReaderPlaybackPriorityChapter.index(bookID: self.book.id)
                     if let localSnapshot = await EmbeddedConversionCoordinator.resumeLocalPlaybackIfAvailable(
                         bookID: self.book.id,
                         priorityChapterIndices: [priorityChapterIndex],
@@ -177,6 +177,7 @@ final class MacBookDetailViewController: NSViewController {
                     let snapshot = try await EmbeddedConversionCoordinator.stream(
                         bookURL: url,
                         bookID: book.id,
+                        priorityChapterIndices: [priorityChapterIndex],
                         player: self.player,
                         onStreamingStarted: { [weak self] in
                             self?.playerPresentation.showFullPlayer()

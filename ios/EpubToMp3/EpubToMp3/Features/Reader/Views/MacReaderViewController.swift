@@ -85,6 +85,12 @@ final class MacReaderViewController: NSViewController, NSTableViewDataSource, NS
         view.window?.makeFirstResponder(view)
     }
 
+    override func viewDidLayout() {
+        super.viewDidLayout()
+        guard contentScrollView.documentView === textView else { return }
+        MacReaderTextLayout.fit(textView, in: contentScrollView)
+    }
+
     override func viewWillDisappear() {
         super.viewWillDisappear()
         persistReadingProgress()
@@ -96,6 +102,14 @@ final class MacReaderViewController: NSViewController, NSTableViewDataSource, NS
         settings.objectWillChange
             .sink { [weak self] _ in
                 guard let self, self.fulltext != nil else { return }
+                MacReaderTheme.apply(
+                    settings: self.settings,
+                    surface: self.view,
+                    scrollView: self.contentScrollView,
+                    textView: self.textView,
+                    toolbar: self.toolbar,
+                    labels: [self.bookTitleLabel, self.chapterTitleLabel, self.statusLabel]
+                )
                 self.showChapter(self.selectedChapter)
             }
             .store(in: &settingsCancellables)
@@ -218,7 +232,14 @@ final class MacReaderViewController: NSViewController, NSTableViewDataSource, NS
         textView.textContainer?.widthTracksTextView = true
         contentScrollView.documentView = textView
         contentScrollView.hasVerticalScroller = true
-        contentScrollView.drawsBackground = false
+        MacReaderTheme.apply(
+            settings: settings,
+            surface: view,
+            scrollView: contentScrollView,
+            textView: textView,
+            toolbar: toolbar,
+            labels: [bookTitleLabel, chapterTitleLabel, statusLabel]
+        )
 
         toolbar.translatesAutoresizingMaskIntoConstraints = false
         chapterTitleLabel.translatesAutoresizingMaskIntoConstraints = false
@@ -618,6 +639,7 @@ final class MacReaderViewController: NSViewController, NSTableViewDataSource, NS
                 textView.string = chapter.text
                 textView.font = .systemFont(ofSize: settings.readerPointSize)
             }
+            MacReaderTextLayout.fit(textView, in: contentScrollView)
             repaintSavedHighlights(chapterIndex: index)
             if scrollToEnd {
                 DispatchQueue.main.async { [weak self] in
@@ -1029,7 +1051,16 @@ final class MacReaderTextView: NSTextView, NSTextViewDelegate {
     }
 
     override init(frame frameRect: NSRect, textContainer container: NSTextContainer?) {
-        super.init(frame: frameRect, textContainer: container)
+        if let container {
+            super.init(frame: frameRect, textContainer: container)
+        } else {
+            let storage = NSTextStorage()
+            let layoutManager = NSLayoutManager()
+            let defaultContainer = NSTextContainer(size: .zero)
+            storage.addLayoutManager(layoutManager)
+            layoutManager.addTextContainer(defaultContainer)
+            super.init(frame: frameRect, textContainer: defaultContainer)
+        }
         delegate = self
     }
 

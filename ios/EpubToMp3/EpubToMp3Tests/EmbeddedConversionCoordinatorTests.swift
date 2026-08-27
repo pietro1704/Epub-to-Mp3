@@ -73,6 +73,18 @@ final class EmbeddedConversionCoordinatorTests: XCTestCase {
         XCTAssertEqual(EmbeddedConversionCoordinator.maximumAutomaticChapterAttempts, 2)
     }
 
+    @MainActor
+    func testPlaybackPreparationStartsBeforeSchedulerAdmitsWork() {
+        let player = AudioPlayer()
+
+        EmbeddedConversionCoordinator.beginPlaybackPreparationIfNeeded(
+            drivesPlayer: true,
+            player: player
+        )
+
+        XCTAssertTrue(player.isLoading)
+    }
+
     func testRequestedChapterDownloadsUseIndependentSchedulingKeys() {
         XCTAssertEqual(
             EmbeddedConversionCoordinator.localSchedulingKey(

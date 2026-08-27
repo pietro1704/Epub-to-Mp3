@@ -4,6 +4,9 @@ import os.log
 #if canImport(UIKit)
 import UIKit
 #endif
+#if canImport(AppKit)
+import AppKit
+#endif
 
 /// Reader appearance choices surfaced in the native reader toolbar.
 enum ReaderFontFamily: String, CaseIterable, Identifiable {
@@ -67,6 +70,21 @@ enum ReaderTheme: String, CaseIterable, Identifiable {
         case .dark: return (UIColor(white: 0.12, alpha: 1), .white)
         case .black: return (.black, .white)
         case .custom: return (.systemBackground, .label)
+        }
+    }
+    #endif
+
+    #if canImport(AppKit)
+    var macOSColors: (background: NSColor, foreground: NSColor) {
+        switch self {
+        case .auto: return (.windowBackgroundColor, .labelColor)
+        case .light: return (.white, .black)
+        case .sepia: return (NSColor(red: 0.96, green: 0.91, blue: 0.80, alpha: 1), NSColor(red: 0.22, green: 0.16, blue: 0.10, alpha: 1))
+        case .parchment: return (NSColor(red: 0.90, green: 0.85, blue: 0.72, alpha: 1), NSColor(red: 0.18, green: 0.14, blue: 0.08, alpha: 1))
+        case .paper: return (NSColor(red: 0.98, green: 0.98, blue: 0.95, alpha: 1), NSColor(red: 0.12, green: 0.12, blue: 0.12, alpha: 1))
+        case .dark: return (NSColor(white: 0.12, alpha: 1), .white)
+        case .black: return (.black, .white)
+        case .custom: return (.windowBackgroundColor, .labelColor)
         }
     }
     #endif

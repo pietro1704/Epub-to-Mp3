@@ -24,7 +24,8 @@ def test_persistent_root_override_controls_local_cache_and_output(tmp_path: Path
                 "from python_app.src import paths; "
                 "print(paths.PERSISTENT_ROOT); "
                 "print(paths.CACHE_DIR); "
-                "print(paths.OUTPUT_DIR)"
+                "print(paths.OUTPUT_DIR); "
+                "print(paths.MODELS_DIR)"
             ),
         ],
         cwd=PROJECT_ROOT,
@@ -39,6 +40,8 @@ def test_persistent_root_override_controls_local_cache_and_output(tmp_path: Path
         str(persistent_root.resolve()),
         str((persistent_root / ".cache").resolve()),
         str((persistent_root / "output").resolve()),
+        str((persistent_root / "models").resolve()),
     ]
     assert (persistent_root / ".cache").is_dir()
     assert (persistent_root / "output").is_dir()
+    assert (persistent_root / "models").is_dir()

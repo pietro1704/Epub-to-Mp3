@@ -109,3 +109,17 @@ enum ReaderInitialChapter {
         chapters.firstIndex { ($0.charCount ?? $0.text.count) >= 1_000 } ?? 0
     }
 }
+
+/// Resolves the chapter that should be synthesized first when playback starts.
+/// The live reader cursor wins for the book currently open on screen; saved
+/// progress remains the fallback for starts initiated outside the reader.
+@MainActor
+enum ReaderPlaybackPriorityChapter {
+    static func index(bookID: String, defaults: UserDefaults = .standard) -> Int {
+        if defaults.string(forKey: ReaderSessionState.currentlyReadingBookIDKey) == bookID,
+           let liveIndex = defaults.object(forKey: AudioPlayer.readerCurrentChapterIndexDefaultsKey) as? Int {
+            return max(0, liveIndex)
+        }
+        return ReaderProgressStore.read(bookId: bookID, defaults: defaults)?.chapterIndex ?? 0
+    }
+}

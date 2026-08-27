@@ -298,7 +298,11 @@ final class EpubToMp3App: NSObject, PlatformApplicationDelegate {
 
     private func bootstrapEmbeddedRuntime() {
         guard !Self.isRunningUnderXCTest() else { return }
-        Task {
+        // CPython must be initialized on the same dedicated thread that
+        // later accesses PythonKit. Initializing from a Swift concurrency
+        // task makes the first EPUB parse run on a different thread and can
+        // crash inside `_PyObject_Malloc`.
+        PythonRunner.shared.async {
             do {
                 try PythonEmbed.shared.bootstrap()
             } catch {

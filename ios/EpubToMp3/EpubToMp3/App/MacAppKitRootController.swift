@@ -349,7 +349,7 @@ final class MacAppKitRootController: NSSplitViewController, NSToolbarDelegate {
         Task { [weak self] in
             guard let self else { return }
             do {
-                let priorityChapterIndex = ReaderProgressStore.read(bookId: book.id)?.chapterIndex ?? 0
+                let priorityChapterIndex = ReaderPlaybackPriorityChapter.index(bookID: book.id)
                 if let localSnapshot = await EmbeddedConversionCoordinator.resumeLocalPlaybackIfAvailable(
                     bookID: book.id,
                     priorityChapterIndices: [priorityChapterIndex],
@@ -375,6 +375,7 @@ final class MacAppKitRootController: NSSplitViewController, NSToolbarDelegate {
                 let snapshot = try await EmbeddedConversionCoordinator.stream(
                     bookURL: url,
                     bookID: book.id,
+                    priorityChapterIndices: [priorityChapterIndex],
                     player: player,
                     onStreamingStarted: { [weak self] in
                         self?.playerPresentation.showFullPlayer()
@@ -526,7 +527,29 @@ private final class MacPlayerBarViewController: NSViewController {
     }
 
     @objc private func togglePlayback() {
-        if player.snapshot == nil { onStartPlayback() } else { player.togglePlayPause() }
+        if player.isPlaying {
+            player.pause()
+            refresh()
+            return
+        }
+
+        guard let bookID = UserDefaults.standard.string(forKey: ReaderSessionState.currentlyReadingBookIDKey) else {
+            if player.snapshot == nil { onStartPlayback() } else { player.resume() }
+            refresh()
+            return
+        }
+
+        let chapterIndex = ReaderPlaybackPriorityChapter.index(bookID: bookID)
+        let offsetFraction = ReaderProgressStore.read(bookId: bookID)?.offsetFraction
+        if let snapshot = player.snapshot,
+           snapshot.state == "finished" || snapshot.playableChapters.contains(where: { $0.index == chapterIndex }) {
+            player.startFromReaderPage(chapterIndex, sentenceOffsetRatio: offsetFraction)
+        } else {
+            // The current reader chapter has no local audio yet. Starting the
+            // embedded stream here promotes that chapter ahead of the stale
+            // partial queue instead of resuming an earlier chapter.
+            onStartPlayback()
+        }
         refresh()
     }
     @objc private func nextChapter() { player.nextChapter(); refresh() }
