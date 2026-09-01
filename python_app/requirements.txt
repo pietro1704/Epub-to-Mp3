@@ -33,7 +33,7 @@ uvicorn[standard]>=0.52.4
 python-multipart>=0.0.32
 
 # Data
-pydantic>=2.13.4,<3.0.0
+pydantic>=2.13.5,<3.0.0
 pandas>=3.0.3,<4.0.0
 fsspec<=2026.7.0,>=2026.7.0
 packaging>=26.3,<27.0
