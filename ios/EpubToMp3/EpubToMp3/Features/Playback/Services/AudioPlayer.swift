@@ -1260,7 +1260,6 @@ final class AudioPlayer: ObservableObject {
             return
         }
         beginPlaybackJourneyIfNeeded()
-        requestRetentionForAudibleChapter()
         guard let player else {
             pendingAutoPlay = true
             if let snapshot, !snapshot.playableChapters.isEmpty {
@@ -1268,6 +1267,7 @@ final class AudioPlayer: ObservableObject {
             }
             return
         }
+        recordQueuedAudioIfNeeded()
         // Activate the audio session lazily, only when the user actually
         // starts playback (Play button, lock-screen control, widget toggle).
         // This is what claims the audio focus from Spotify / Apple Music /
@@ -1338,6 +1338,7 @@ final class AudioPlayer: ObservableObject {
             return
         }
         _ = LatencyObservationStore.shared.record(.audioAudible, for: journeyID)
+        requestRetentionForAudibleChapter()
         reportJourneyObservation(.audioAudible, journeyID: journeyID)
         LatencyObservationStore.shared.finish(journeyID)
         activePlaybackJourneyID = nil
