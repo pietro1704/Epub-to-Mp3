@@ -40,9 +40,19 @@ final class LocalAudioConversionScheduler {
     enum WorkState: Equatable {
         case queued
         case waitingForWiFi
+        case waitingForResources
         case generating
         case finished
         case failed(String)
+    }
+
+    /// Conversion yields only at a chapter boundary. Playback and reader work
+    /// are never cancelled, and the persisted request retains its priority.
+    enum ResourceConstraint: Equatable {
+        case stable
+        case lowPower
+        case memoryPressure
+        case thermalPressure
     }
 
     typealias Operation = @MainActor () async throws -> JobSnapshot
@@ -73,6 +83,8 @@ final class LocalAudioConversionScheduler {
     private var active: Work?
     private var states: [String: WorkState] = [:]
     private var chapterPriorities: [String: [Int]] = [:]
+    private var resourceConstraint: ResourceConstraint = .stable
+    private var resourceContinuations: [CheckedContinuation<Void, Never>] = []
     private var pendingResumption: [ResumeRequest]
     private let persistence: UserDefaults?
 
@@ -252,6 +264,47 @@ final class LocalAudioConversionScheduler {
 
     func state(for bookID: String) -> WorkState? {
         states[bookID]
+    }
+
+    func setResourceConstraint(_ constraint: ResourceConstraint) {
+        resourceConstraint = constraint
+        guard constraint == .stable else { return }
+        let continuations = resourceContinuations
+        resourceContinuations.removeAll()
+        continuations.forEach { $0.resume() }
+    }
+
+    /// Samples resource state immediately before a new chapter starts. Memory
+    /// pressure is reported separately through `setResourceConstraint`, while
+    /// low-power and thermal state are available directly from Foundation.
+    func refreshDeviceResourceConstraint() {
+        let process = ProcessInfo.processInfo
+        if process.isLowPowerModeEnabled {
+            setResourceConstraint(.lowPower)
+            return
+        }
+        switch process.thermalState {
+        case .serious, .critical:
+            setResourceConstraint(.thermalPressure)
+        case .nominal, .fair:
+            setResourceConstraint(.stable)
+        @unknown default:
+            setResourceConstraint(.stable)
+        }
+    }
+
+    /// Called between chapters so resource pressure cannot interrupt an audio
+    /// write or discard the listener's requested navigation target.
+    func waitForResourceStability(bookID: String) async {
+        while resourceConstraint != .stable {
+            guard let active, active.bookID == bookID else { return }
+            updateState(.waitingForResources, for: bookID)
+            await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+                resourceContinuations.append(continuation)
+            }
+        }
+        guard let active, active.bookID == bookID else { return }
+        updateState(.generating, for: bookID)
     }
 
     /// Called by the conversion loop at a chapter boundary. It never cancels

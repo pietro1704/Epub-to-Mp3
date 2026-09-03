@@ -283,7 +283,7 @@ final class TocScreenController: UITableViewController {
         case .none:
             return schedulerState != nil
         case .pending:
-            return schedulerState == .queued || schedulerState == .waitingForWiFi
+            return schedulerState == .queued || schedulerState == .waitingForWiFi || schedulerState == .waitingForResources
         case .generating, .waitingForWiFi, .available, .failed:
             return false
         }
@@ -399,7 +399,7 @@ final class TocScreenController: UITableViewController {
         )
         let isWorking = row.artifactState == .generating
             || row.artifactState == .waitingForWiFi
-            || (usesSchedulerStatus && row.schedulerState == .waitingForWiFi)
+            || (usesSchedulerStatus && (row.schedulerState == .waitingForWiFi || row.schedulerState == .waitingForResources))
         let imageName: String
         if row.downloaded {
             imageName = "checkmark.circle.fill"
@@ -409,6 +409,8 @@ final class TocScreenController: UITableViewController {
             imageName = "wifi"
         } else if usesSchedulerStatus, row.schedulerState == .waitingForWiFi {
             imageName = "wifi"
+        } else if usesSchedulerStatus, row.schedulerState == .waitingForResources {
+            imageName = "pause.circle"
         } else if usesSchedulerStatus, row.schedulerState == .queued {
             imageName = "clock"
         } else if usesSchedulerStatus, row.schedulerState == .generating {
@@ -491,6 +493,8 @@ final class TocScreenController: UITableViewController {
             return L10n.string("toc.audioPreparing")
         case .waitingForWiFi:
             return L10n.string("toc.waitingForWiFi")
+        case .waitingForResources:
+            return L10n.string("toc.audioPreparing")
         case .failed:
             return L10n.string("player.downloadFailed")
         case .pending, .available, .none:

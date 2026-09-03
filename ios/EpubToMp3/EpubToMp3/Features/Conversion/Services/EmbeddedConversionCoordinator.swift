@@ -705,6 +705,8 @@ enum EmbeddedConversionCoordinator {
                     chapterIndex: chapter.zeroBasedEpubIndex
                 )
             }
+            LocalAudioConversionScheduler.shared.refreshDeviceResourceConstraint()
+            await LocalAudioConversionScheduler.shared.waitForResourceStability(bookID: bookID)
             await LocalAudioConversionScheduler.shared.waitForNetworkPermission(bookID: bookID)
             try Task.checkCancellation()
             guard isActive(lease) else { throw CancellationError() }

@@ -107,6 +107,32 @@ final class LocalAudioConversionSchedulerTests: XCTestCase {
     }
 
     @MainActor
+    func testResourcePressureYieldsAtBoundaryAndResumesTheSameWork() async throws {
+        let scheduler = LocalAudioConversionScheduler(
+            initialConnectivity: .wifi,
+            observesNetwork: false
+        )
+        scheduler.setResourceConstraint(.thermalPressure)
+        var resumed = false
+
+        let task = Task { @MainActor in
+            try await scheduler.submit(bookID: "book", requiresWiFi: true, coalescingKey: "test") {
+                await scheduler.waitForResourceStability(bookID: "book")
+                resumed = true
+                return self.snapshot(jobID: "book")
+            }
+        }
+        await Task.yield()
+
+        XCTAssertEqual(scheduler.state(for: "book"), .waitingForResources)
+        XCTAssertFalse(resumed)
+        scheduler.setResourceConstraint(.stable)
+        _ = try await task.value
+        XCTAssertTrue(resumed)
+        XCTAssertEqual(scheduler.state(for: "book"), .finished)
+    }
+
+    @MainActor
     func testPriorityChapterIsSelectedBeforeNormalBookOrder() {
         let scheduler = LocalAudioConversionScheduler(
             initialConnectivity: .wifi,
