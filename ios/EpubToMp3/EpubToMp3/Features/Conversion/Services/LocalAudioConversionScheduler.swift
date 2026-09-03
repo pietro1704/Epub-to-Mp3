@@ -85,11 +85,12 @@ final class LocalAudioConversionScheduler {
     private var chapterPriorities: [String: [Int]] = [:]
     private var resourceConstraint: ResourceConstraint = .stable
     private var resourceContinuations: [CheckedContinuation<Void, Never>] = []
+    private var resourceObservers: [NSObjectProtocol] = []
     private var pendingResumption: [ResumeRequest]
     private let persistence: UserDefaults?
 
     #if canImport(Network)
-    private let pathMonitor: NWPathMonitor?
+    private var pathMonitor: NWPathMonitor? = nil
     #endif
 
     init(
@@ -109,6 +110,22 @@ final class LocalAudioConversionScheduler {
                 ? .queued
                 : .waitingForWiFi
         }
+        resourceObservers = [
+            NotificationCenter.default.addObserver(
+                forName: .NSProcessInfoPowerStateDidChange,
+                object: nil,
+                queue: .main
+            ) { [weak self] _ in
+                Task { @MainActor in self?.refreshDeviceResourceConstraint() }
+            },
+            NotificationCenter.default.addObserver(
+                forName: ProcessInfo.thermalStateDidChangeNotification,
+                object: nil,
+                queue: .main
+            ) { [weak self] _ in
+                Task { @MainActor in self?.refreshDeviceResourceConstraint() }
+            }
+        ]
         #if canImport(Network)
         if observesNetwork {
             let monitor = NWPathMonitor()
@@ -121,12 +138,12 @@ final class LocalAudioConversionScheduler {
             }
             monitor.start(queue: DispatchQueue(label: "com.pietrocode.epubtomp3.local-audio-network"))
         } else {
-            pathMonitor = nil
         }
         #endif
     }
 
     deinit {
+        resourceObservers.forEach(NotificationCenter.default.removeObserver)
         #if canImport(Network)
         pathMonitor?.cancel()
         #endif
