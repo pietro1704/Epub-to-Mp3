@@ -1,6 +1,7 @@
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties } from "react";
 import { conversionClient } from "../services/ConversionService";
+import { latencyObservations } from "../services/LatencyObservation";
 import { reportUiIssue } from "../services/uiIssueMonitor";
 import { safeScrollIntoView } from "../utils/safeScrollIntoView";
 import {
@@ -179,6 +180,7 @@ export default function EbookReaderPanel({
   const [followPaused, setFollowPaused] = useState(false);
   const articleHostRef = useRef<HTMLDivElement | null>(null);
   const articleShellRef = useRef<HTMLDivElement | null>(null);
+  const readerJourneyRef = useRef<string | null>(null);
   const deferredSearch = useDeferredValue(search.trim());
 
   useEffect(() => {
@@ -232,6 +234,8 @@ export default function EbookReaderPanel({
 
     async function loadDocument(attempt = 0) {
       if (!jobId) {
+        if (readerJourneyRef.current) latencyObservations.cancel(readerJourneyRef.current);
+        readerJourneyRef.current = null;
         setDocument(null);
         return;
       }
@@ -243,6 +247,11 @@ export default function EbookReaderPanel({
         return;
       }
       if (attempt === 0) {
+        if (readerJourneyRef.current) latencyObservations.cancel(readerJourneyRef.current);
+        readerJourneyRef.current = latencyObservations.begin(
+          "reader_open",
+          "interaction_requested",
+        );
         setLoading(true);
         setLoadError(null);
       }
@@ -264,6 +273,11 @@ export default function EbookReaderPanel({
         });
         setLoading(false);
         setLoadError(null);
+        if (readerJourneyRef.current) {
+          latencyObservations.record(readerJourneyRef.current, "reader_usable");
+          latencyObservations.finish(readerJourneyRef.current);
+          readerJourneyRef.current = null;
+        }
         return;
       }
       const isTransient =
@@ -300,6 +314,8 @@ export default function EbookReaderPanel({
 
     return () => {
       cancelled = true;
+      if (readerJourneyRef.current) latencyObservations.cancel(readerJourneyRef.current);
+      readerJourneyRef.current = null;
       if (retryTimer !== null) {
         clearTimeout(retryTimer);
       }
