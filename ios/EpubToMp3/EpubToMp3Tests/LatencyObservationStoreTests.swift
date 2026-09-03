@@ -1,4 +1,5 @@
 import XCTest
+import AVFoundation
 @testable import EpubToMp3
 
 final class LatencyObservationStoreTests: XCTestCase {
@@ -114,6 +115,7 @@ final class LatencyObservationStoreTests: XCTestCase {
             [.playRequested, .audioQueued, .audioAudible]
         )
         XCTAssertEqual(journey.records.map(\.elapsedNanoseconds), [0, 30, 70])
+        XCTAssertEqual(store.latestElapsedNanoseconds(for: journeyID), 70)
     }
 
     func testSeekJourneyDoesNotCompleteWhenCancelledBeforeTarget() throws {
@@ -129,5 +131,11 @@ final class LatencyObservationStoreTests: XCTestCase {
         let journey = try XCTUnwrap(store.snapshot().first)
         XCTAssertEqual(journey.kind, .seek)
         XCTAssertEqual(journey.records.map(\.transition), [.seekRequested, .cancelled])
+    }
+
+    func testAudiblePlaybackRequiresRenderingRatherThanQueueReadiness() {
+        XCTAssertFalse(AudioPlayer.hasAudibleOutput(timeControlStatus: .paused, renderedSeconds: 3))
+        XCTAssertFalse(AudioPlayer.hasAudibleOutput(timeControlStatus: .playing, renderedSeconds: 0))
+        XCTAssertTrue(AudioPlayer.hasAudibleOutput(timeControlStatus: .playing, renderedSeconds: 0.01))
     }
 }

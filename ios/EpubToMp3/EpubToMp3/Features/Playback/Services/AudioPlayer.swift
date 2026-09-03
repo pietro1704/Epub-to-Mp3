@@ -334,6 +334,12 @@ final class AudioPlayer: ObservableObject {
     /// `AVPlayerItemDidPlayToEndTime` handler runs.
     nonisolated(unsafe) private var currentItemObserver: NSKeyValueObservation?
     private var itemObservationCancellables = Set<AnyCancellable>()
+    /// A playback request is intentionally separate from audible output: a
+    /// queue can be prepared or buffering long before it renders its first
+    /// sample. The journey is completed only by the periodic player clock.
+    private var activePlaybackJourneyID: UUID?
+    private var hasRecordedQueuedAudio = false
+    private var activeSeekJourneyID: UUID?
     private var lastResumePersist: Date = .distantPast
     /// Throttle for `MPNowPlayingInfoCenter` updates — we update at most
     /// once per second so the lock-screen scrubber stays fresh without
@@ -1234,10 +1240,12 @@ final class AudioPlayer: ObservableObject {
         if isUsingSpeechFallback {
             speechFallback.pause()
             isPlaying = false
+            cancelPendingPlaybackJourney()
             return
         }
         player?.pause()
         isPlaying = false
+        cancelPendingPlaybackJourney()
         persistResumePoint(force: true)
         updateNowPlayingInfo()
     }
@@ -1251,6 +1259,7 @@ final class AudioPlayer: ObservableObject {
             isPlaying = true
             return
         }
+        beginPlaybackJourneyIfNeeded()
         requestRetentionForAudibleChapter()
         guard let player else {
             pendingAutoPlay = true
@@ -1302,6 +1311,117 @@ final class AudioPlayer: ObservableObject {
                 chapterIndex: chapterIndex
             )
         }
+    }
+
+    private func beginPlaybackJourneyIfNeeded() {
+        guard activePlaybackJourneyID == nil else { return }
+        let journeyID = LatencyObservationStore.shared.beginProgressivePlayback()
+        activePlaybackJourneyID = journeyID
+        hasRecordedQueuedAudio = false
+        reportJourneyObservation(.playRequested, journeyID: journeyID)
+    }
+
+    private func recordQueuedAudioIfNeeded() {
+        guard let journeyID = activePlaybackJourneyID, !hasRecordedQueuedAudio else { return }
+        _ = LatencyObservationStore.shared.record(.audioQueued, for: journeyID)
+        hasRecordedQueuedAudio = true
+        reportJourneyObservation(.audioQueued, journeyID: journeyID)
+    }
+
+    private func recordAudibleAudioIfNeeded(renderedSeconds: TimeInterval) {
+        guard let journeyID = activePlaybackJourneyID,
+              Self.hasAudibleOutput(
+                timeControlStatus: player?.timeControlStatus,
+                renderedSeconds: renderedSeconds
+              )
+        else {
+            return
+        }
+        _ = LatencyObservationStore.shared.record(.audioAudible, for: journeyID)
+        reportJourneyObservation(.audioAudible, journeyID: journeyID)
+        LatencyObservationStore.shared.finish(journeyID)
+        activePlaybackJourneyID = nil
+        hasRecordedQueuedAudio = false
+    }
+
+    private func cancelPendingPlaybackJourney() {
+        guard let journeyID = activePlaybackJourneyID else { return }
+        _ = LatencyObservationStore.shared.cancel(journeyID)
+        reportJourneyObservation(.cancelled, journeyID: journeyID)
+        activePlaybackJourneyID = nil
+        hasRecordedQueuedAudio = false
+    }
+
+    private func beginSeekJourney() {
+        cancelPendingSeekJourney()
+        let journeyID = LatencyObservationStore.shared.beginSeek()
+        activeSeekJourneyID = journeyID
+        reportJourneyObservation(.seekRequested, journeyID: journeyID)
+    }
+
+    private func completeSeekJourney() {
+        guard let journeyID = activeSeekJourneyID else { return }
+        _ = LatencyObservationStore.shared.record(.seekTargetReached, for: journeyID)
+        reportJourneyObservation(.seekTargetReached, journeyID: journeyID)
+        LatencyObservationStore.shared.finish(journeyID)
+        activeSeekJourneyID = nil
+    }
+
+    private func cancelPendingSeekJourney() {
+        guard let journeyID = activeSeekJourneyID else { return }
+        _ = LatencyObservationStore.shared.cancel(journeyID)
+        reportJourneyObservation(.cancelled, journeyID: journeyID)
+        activeSeekJourneyID = nil
+    }
+
+    private func reportJourneyObservation(
+        _ transition: LatencyObservation.Transition,
+        journeyID: UUID
+    ) {
+        struct Payload: Encodable {
+            let journeyId: String
+            let transition: String
+            let elapsedNanoseconds: UInt64
+        }
+        guard let jobID = snapshot?.jobId,
+              let backendBaseURL,
+              let elapsed = LatencyObservationStore.shared.latestElapsedNanoseconds(for: journeyID)
+        else {
+            return
+        }
+        let url = backendBaseURL.appendingPathComponent(
+            "api/jobs/\(jobID)/journey-observations"
+        )
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try? JSONEncoder().encode(
+            Payload(
+                journeyId: journeyID.uuidString.lowercased(),
+                transition: transition.rawValue,
+                elapsedNanoseconds: elapsed
+            )
+        )
+        guard request.httpBody != nil else { return }
+        Task {
+            do {
+                let (_, response) = try await URLSession.shared.data(for: request)
+                guard let response = response as? HTTPURLResponse,
+                      (200...299).contains(response.statusCode)
+                else {
+                    return
+                }
+            } catch {
+                // Diagnostics must never delay or interrupt listener playback.
+            }
+        }
+    }
+
+    nonisolated static func hasAudibleOutput(
+        timeControlStatus: AVPlayer.TimeControlStatus?,
+        renderedSeconds: TimeInterval
+    ) -> Bool {
+        timeControlStatus == .playing && renderedSeconds > 0
     }
 
     /// True only after an AV queue exists. A snapshot may arrive before its
@@ -1635,6 +1755,7 @@ final class AudioPlayer: ObservableObject {
 
     func seek(to seconds: TimeInterval) {
         let target = max(0, seconds)
+        beginSeekJourney()
         if Self.shouldAdvanceAtSeekEnd(position: target, duration: durationSeconds) {
             let chapterBefore = currentChapterIndex
             if isSegmentMode {
@@ -1653,6 +1774,7 @@ final class AudioPlayer: ObservableObject {
             }
             broadcastPosition()
             updateNowPlayingInfo()
+            completeSeekJourney()
             return
         }
         positionSeconds = target
@@ -1667,7 +1789,7 @@ final class AudioPlayer: ObservableObject {
             to: CMTime(seconds: target, preferredTimescale: 600),
             toleranceBefore: .zero,
             toleranceAfter: .zero
-        ) { [weak self] _ in
+        ) { [weak self] finished in
             Task { @MainActor [weak self] in
                 guard let self, self.activeSeekID == seekID else { return }
                 self.activeSeekID = nil
@@ -1677,6 +1799,11 @@ final class AudioPlayer: ObservableObject {
                 self.positionSeconds = target
                 self.broadcastPosition()
                 self.updateNowPlayingInfo()
+                if finished {
+                    self.completeSeekJourney()
+                } else {
+                    self.cancelPendingSeekJourney()
+                }
             }
         }
     }
@@ -2035,6 +2162,7 @@ final class AudioPlayer: ObservableObject {
             // Also raise firstChapterReady so the mini-player shows play/pause.
             firstChapterReady = true
         }
+        recordQueuedAudioIfNeeded()
         conversionStatus.record(.chunkComplete,
             "ch\(chapterIndex) segment \(segmentIndex) ready (\(data.count) bytes)")
     }
@@ -2260,6 +2388,7 @@ final class AudioPlayer: ObservableObject {
             Task { @MainActor [weak self] in
                 guard let self else { return }
                 let rawTime = time.seconds.isFinite ? time.seconds : 0
+                self.recordAudibleAudioIfNeeded(renderedSeconds: rawTime)
                 if !self.isSeeking {
                     self.positionSeconds = self.isSegmentMode
                         ? self.segmentCumulativeBase + rawTime
@@ -2407,6 +2536,8 @@ final class AudioPlayer: ObservableObject {
     }
 
     private func teardownPlayer() {
+        cancelPendingPlaybackJourney()
+        cancelPendingSeekJourney()
         activeSeekID = nil
         isSeeking = false
         cancelSegmentCapacityWaiters()

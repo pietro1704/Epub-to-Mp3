@@ -822,6 +822,57 @@ def test_convert_endpoint_persists_priority_chapter_index(tmp_path, monkeypatch)
     server.jobs.pop(job_id, None)
 
 
+def test_journey_observations_keep_only_redacted_timing_boundaries(tmp_path, monkeypatch):
+    _configure_server_paths(tmp_path, monkeypatch)
+    _make_telemetry(tmp_path, monkeypatch)
+    job_id = "journey-job"
+    server.jobs[job_id] = {"jobId": job_id, "state": "running", "events": []}
+    client = TestClient(server.app)
+
+    response = client.post(
+        f"/api/jobs/{job_id}/journey-observations",
+        json={
+            "journeyId": "123e4567-e89b-12d3-a456-426614174000",
+            "transition": "audio_audible",
+            "elapsedNanoseconds": 42,
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "recorded"}
+    assert server.jobs[job_id]["journeyObservations"] == [
+        {
+            "journeyId": "123e4567-e89b-12d3-a456-426614174000",
+            "transition": "audio_audible",
+            "elapsedNanoseconds": 42,
+            "recordedAt": server.jobs[job_id]["journeyObservations"][0]["recordedAt"],
+        }
+    ]
+    server.jobs.pop(job_id, None)
+
+
+def test_journey_observations_reject_untrusted_metadata(tmp_path, monkeypatch):
+    _configure_server_paths(tmp_path, monkeypatch)
+    _make_telemetry(tmp_path, monkeypatch)
+    job_id = "journey-invalid"
+    server.jobs[job_id] = {"jobId": job_id, "state": "running", "events": []}
+    client = TestClient(server.app)
+
+    response = client.post(
+        f"/api/jobs/{job_id}/journey-observations",
+        json={
+            "journeyId": "not-a-uuid",
+            "transition": "book_title_leak",
+            "elapsedNanoseconds": 0,
+            "title": "must be ignored",
+        },
+    )
+
+    assert response.status_code == 422
+    assert "journeyObservations" not in server.jobs[job_id]
+    server.jobs.pop(job_id, None)
+
+
 def test_convert_endpoint_ignores_invalid_priority_chapter_index(tmp_path, monkeypatch):
     _configure_server_paths(tmp_path, monkeypatch)
     _make_telemetry(tmp_path, monkeypatch)

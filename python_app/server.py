@@ -2323,6 +2323,28 @@ class JobStatus(BaseModel):
     uiLanguage: Optional[str] = None
     lastActivityAt: Optional[float] = None
     noParallel: Optional[bool] = None
+    journeyObservations: list[dict] = []
+
+
+class JourneyObservationInput(BaseModel):
+    """A privacy-safe client timing record for one conversion journey."""
+
+    journeyId: str
+    transition: str
+    elapsedNanoseconds: int
+
+
+_JOURNEY_TRANSITIONS = frozenset(
+    {
+        "play_requested",
+        "audio_queued",
+        "audio_audible",
+        "seek_requested",
+        "seek_target_reached",
+        "cancelled",
+    }
+)
+_JOURNEY_OBSERVATION_LIMIT = 200
 
 
 class RestartOptions(BaseModel):
@@ -2728,6 +2750,47 @@ async def cancel_job(job_id: str) -> dict:
         _persist_job(job_id, force=True)
 
     return {"status": job["state"]}
+
+
+@app.post("/api/jobs/{job_id}/journey-observations")
+async def record_journey_observation(
+    job_id: str, observation: JourneyObservationInput
+) -> dict[str, str]:
+    """Persist one redacted listener-visible timing boundary for a job.
+
+    The client owns its monotonic clock, while this endpoint only associates
+    its random short-lived journey identifier with the server conversion job.
+    It deliberately rejects arbitrary metadata so book content, listener
+    identity, URLs, and audio payloads cannot enter diagnostics.
+    """
+    _validate_job_id(job_id)
+    job = jobs.get(job_id) or job_manager.load_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    jobs[job_id] = job
+
+    try:
+        journey_id = str(uuid.UUID(observation.journeyId))
+    except (ValueError, AttributeError):
+        raise HTTPException(status_code=422, detail="journeyId must be a UUID")
+    if observation.transition not in _JOURNEY_TRANSITIONS:
+        raise HTTPException(status_code=422, detail="Unsupported journey transition")
+    if observation.elapsedNanoseconds < 0:
+        raise HTTPException(status_code=422, detail="elapsedNanoseconds must be non-negative")
+
+    records = job.setdefault("journeyObservations", [])
+    records.append(
+        {
+            "journeyId": journey_id,
+            "transition": observation.transition,
+            "elapsedNanoseconds": observation.elapsedNanoseconds,
+            "recordedAt": time.time(),
+        }
+    )
+    if len(records) > _JOURNEY_OBSERVATION_LIMIT:
+        del records[:-_JOURNEY_OBSERVATION_LIMIT]
+    _persist_job(job_id)
+    return {"status": "recorded"}
 
 
 @app.post("/api/jobs/{job_id}/resume")
