@@ -410,7 +410,6 @@ final class EpubToMp3App: NSObject, PlatformApplicationDelegate {
         WidgetDataSync.reloadAll()
         setIdleTimerDisabled(true)
         guard !Self.isRunningUnderXCTest() else { return }
-        runCacheEviction()
         pruneOrphanBookmarks()
         pruneOrphanFulltextCache()
     }
@@ -512,13 +511,6 @@ final class EpubToMp3App: NSObject, PlatformApplicationDelegate {
         if group.bool(forKey: "widget.intent.skipForward30") {
             group.removeObject(forKey: "widget.intent.skipForward30")
             player.skipForward()
-        }
-    }
-
-    private func runCacheEviction() {
-        let budget = LocalAudioArtifactStore.temporaryCacheBudgetBytes()
-        Task {
-            _ = try? await LocalAudioArtifactStore.shared.evictTemporaryAudio(toMaximumBytes: budget)
         }
     }
 

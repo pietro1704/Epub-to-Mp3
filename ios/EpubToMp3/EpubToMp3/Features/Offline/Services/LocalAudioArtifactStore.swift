@@ -489,42 +489,17 @@ actor LocalAudioArtifactStore {
         NotificationCenter.default.post(name: Self.didChangeNotification, object: nil)
     }
 
-    /// Evicts only recreatable generated audio. User-promoted downloads are
-    /// deliberately excluded from both the byte calculation and deletion.
+    /// Legacy cache-maintenance entry point.
+    ///
+    /// Streamed audio is listener media, even before it is explicitly promoted
+    /// as a download. Automatic LRU cleanup used to remove it on app launch,
+    /// making a previously playable chapter disappear without an explicit
+    /// listener decision. Storage management must use the scoped, confirmed
+    /// removal actions instead, so this method deliberately performs no I/O.
     @discardableResult
     func evictTemporaryAudio(toMaximumBytes maximumBytes: Int64) throws -> [String] {
-        guard fileManager.fileExists(atPath: root.path) else { return [] }
-        let directories = try fileManager.contentsOfDirectory(
-            at: root,
-            includingPropertiesForKeys: [.isDirectoryKey],
-            options: [.skipsHiddenFiles]
-        )
-        var candidates: [(bookID: String, artifact: ChapterArtifact, bytes: Int64)] = []
-        for directory in directories {
-            guard let manifest = try loadManifest(at: directory) else { continue }
-            for artifact in manifest.chapters where artifact.state == .available && artifact.retention == .temporary {
-                let url = directory.appendingPathComponent(artifact.relativePath)
-                let bytes = (try? fileSize(at: url)) ?? 0
-                guard bytes > 0 else { continue }
-                candidates.append((manifest.bookID, artifact, bytes))
-            }
-        }
-        var bytesInUse = candidates.reduce(Int64(0)) { $0 + $1.bytes }
-        var evictedBookIDs: Set<String> = []
-        for candidate in candidates.sorted(by: { $0.artifact.updatedAt < $1.artifact.updatedAt })
-            where bytesInUse > maximumBytes {
-            let url = bookDirectory(bookID: candidate.bookID)
-                .appendingPathComponent(candidate.artifact.relativePath)
-            try? fileManager.removeItem(at: url)
-            try updateArtifact(bookID: candidate.bookID, chapterIndex: candidate.artifact.index) { artifact in
-                artifact.state = .pending
-                artifact.byteCount = 0
-                artifact.lastError = nil
-            }
-            bytesInUse -= candidate.bytes
-            evictedBookIDs.insert(candidate.bookID)
-        }
-        return evictedBookIDs.sorted()
+        _ = maximumBytes
+        return []
     }
 
     func clearAllAudio() throws {

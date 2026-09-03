@@ -315,7 +315,7 @@ final class LocalAudioArtifactStoreTests: XCTestCase {
         #endif
     }
 
-    func testEvictionRemovesOnlyTemporaryAudio() async throws {
+    func testAutomaticEvictionPreservesStreamedAndDownloadedAudio() async throws {
         let store = LocalAudioArtifactStore(root: root)
         for bookID in ["temporary-book", "downloaded-book"] {
             try await store.prepare(
@@ -334,8 +334,8 @@ final class LocalAudioArtifactStoreTests: XCTestCase {
         let temporary = try await store.artifact(bookID: "temporary-book", chapterIndex: 0)
         let downloaded = try await store.artifact(bookID: "downloaded-book", chapterIndex: 0)
 
-        XCTAssertEqual(evicted, ["temporary-book"])
-        XCTAssertEqual(temporary?.state, .pending)
+        XCTAssertEqual(evicted, [])
+        XCTAssertEqual(temporary?.state, .available)
         XCTAssertEqual(downloaded?.state, .available)
         XCTAssertEqual(downloaded?.retention, .downloaded)
     }
