@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'package:just_audio/just_audio.dart';
 
 import '../models/job_snapshot.dart';
+import 'latency_observation.dart';
 
 abstract class AudioPlayerInterface {
   Stream<Duration> get position;
@@ -64,6 +65,9 @@ class AudioPlayerService implements AudioPlayerInterface {
   final List<String> _segmentSentenceIds = [];
   String? _activeSentenceId;
   StreamSubscription<int?>? _indexSub;
+  StreamSubscription<Duration>? _audibilitySub;
+  String? _playbackJourneyId;
+  String? _seekJourneyId;
 
   @override
   String? get activeSentenceId => _activeSentenceId;
@@ -138,6 +142,7 @@ class AudioPlayerService implements AudioPlayerInterface {
     _chapterSource = ConcatenatingAudioSource(children: children);
     _chapterQueueURLs = urls;
     await _player.setAudioSource(_chapterSource!, preload: false);
+    _recordQueuedAudio();
   }
 
   @override
@@ -159,6 +164,7 @@ class AudioPlayerService implements AudioPlayerInterface {
     }
 
     _segmentSource?.add(AudioSource.uri(uri));
+    _recordQueuedAudio();
 
     if (!_isSegmentMode) {
       _isSegmentMode = true;
@@ -188,13 +194,58 @@ class AudioPlayerService implements AudioPlayerInterface {
   }
 
   @override
-  Future<void> play() => _player.play();
-  @override
-  Future<void> pause() => _player.pause();
+  Future<void> play() {
+    _playbackJourneyId ??= latencyObservations.begin(
+      LatencyJourneyKind.progressivePlayback,
+      LatencyTransition.interactionRequested,
+    );
+    _recordQueuedAudio();
+    _listenForAudibleOutput();
+    return _player.play();
+  }
 
   @override
-  Future<void> seek(Duration position, {int? index}) =>
-      _player.seek(position, index: index);
+  Future<void> pause() {
+    final id = _playbackJourneyId;
+    if (id != null) latencyObservations.cancel(id);
+    _playbackJourneyId = null;
+    return _player.pause();
+  }
+
+  @override
+  Future<void> seek(Duration position, {int? index}) {
+    final previous = _seekJourneyId;
+    if (previous != null) latencyObservations.cancel(previous);
+    _seekJourneyId = latencyObservations.begin(
+      LatencyJourneyKind.seek,
+      LatencyTransition.seekRequested,
+    );
+    return _player.seek(position, index: index);
+  }
+
+  void _recordQueuedAudio() {
+    final id = _playbackJourneyId;
+    if (id != null)
+      latencyObservations.record(id, LatencyTransition.audioQueued);
+  }
+
+  void _listenForAudibleOutput() {
+    _audibilitySub ??= _player.positionStream.listen((position) {
+      if (position <= Duration.zero) return;
+      final playbackId = _playbackJourneyId;
+      if (playbackId != null) {
+        latencyObservations.record(playbackId, LatencyTransition.audioAudible);
+        latencyObservations.finish(playbackId);
+        _playbackJourneyId = null;
+      }
+      final seekId = _seekJourneyId;
+      if (seekId != null) {
+        latencyObservations.record(seekId, LatencyTransition.seekTargetReached);
+        latencyObservations.finish(seekId);
+        _seekJourneyId = null;
+      }
+    });
+  }
 
   @override
   Future<void> setSpeed(double speed) async {
@@ -270,6 +321,7 @@ class AudioPlayerService implements AudioPlayerInterface {
   Future<void> dispose() async {
     _sleepTimer?.cancel();
     _indexSub?.cancel();
+    await _audibilitySub?.cancel();
     await _sentenceController.close();
     await _sleepController.close();
     await _player.dispose();
