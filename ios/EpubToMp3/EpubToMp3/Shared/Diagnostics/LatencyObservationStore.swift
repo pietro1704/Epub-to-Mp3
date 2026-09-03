@@ -4,6 +4,8 @@ import Foundation
 enum LatencyObservation {
     enum JourneyKind: String, Codable, Equatable {
         case bookOpen = "book_open"
+        case progressivePlayback = "progressive_playback"
+        case seek
     }
 
     enum Transition: String, Codable, Equatable {
@@ -11,6 +13,11 @@ enum LatencyObservation {
         case readableContent = "readable_content"
         case controlsUsable = "controls_usable"
         case firstPDFPage = "first_pdf_page"
+        case playRequested = "play_requested"
+        case audioQueued = "audio_queued"
+        case audioAudible = "audio_audible"
+        case seekRequested = "seek_requested"
+        case seekTargetReached = "seek_target_reached"
         case cancelled
     }
 
@@ -76,12 +83,47 @@ final class LatencyObservationStore {
 
     @discardableResult
     func beginBookOpen(documentKind: LatencyObservation.DocumentKind) -> UUID {
+        begin(
+            kind: .bookOpen,
+            documentKind: documentKind,
+            initialTransition: .openRequested
+        )
+    }
+
+    /// Starts a short-lived playback journey. The caller records
+    /// `audioQueued` when media is available and `audioAudible` only after
+    /// the system player confirms it is actually rendering audio.
+    @discardableResult
+    func beginProgressivePlayback() -> UUID {
+        begin(
+            kind: .progressivePlayback,
+            documentKind: .epub,
+            initialTransition: .playRequested
+        )
+    }
+
+    /// Starts a seek journey. A queued seek is intentionally not considered
+    /// complete until the player reaches the requested target.
+    @discardableResult
+    func beginSeek() -> UUID {
+        begin(
+            kind: .seek,
+            documentKind: .epub,
+            initialTransition: .seekRequested
+        )
+    }
+
+    private func begin(
+        kind: LatencyObservation.JourneyKind,
+        documentKind: LatencyObservation.DocumentKind,
+        initialTransition: LatencyObservation.Transition
+    ) -> UUID {
         let id = UUID()
         let journey = LatencyObservation.Journey(
             id: id,
-            kind: .bookOpen,
+            kind: kind,
             context: .init(documentKind: documentKind, cacheClass: .unknown),
-            records: [.init(transition: .openRequested, elapsedNanoseconds: 0)]
+            records: [.init(transition: initialTransition, elapsedNanoseconds: 0)]
         )
         lock.lock()
         activeJourneys[id] = ActiveJourney(

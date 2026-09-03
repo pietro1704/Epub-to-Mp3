@@ -95,4 +95,39 @@ final class LatencyObservationStoreTests: XCTestCase {
         XCTAssertFalse(json.contains("author"))
         XCTAssertFalse(json.contains("audio"))
     }
+
+    func testProgressivePlaybackKeepsQueuedAndAudibleBoundariesDistinct() throws {
+        var now: UInt64 = 100
+        let store = LatencyObservationStore(clock: { now })
+
+        let journeyID = store.beginProgressivePlayback()
+        now = 130
+        XCTAssertTrue(store.record(.audioQueued, for: journeyID))
+        now = 170
+        XCTAssertTrue(store.record(.audioAudible, for: journeyID))
+        store.finish(journeyID)
+
+        let journey = try XCTUnwrap(store.snapshot().first)
+        XCTAssertEqual(journey.kind, .progressivePlayback)
+        XCTAssertEqual(
+            journey.records.map(\.transition),
+            [.playRequested, .audioQueued, .audioAudible]
+        )
+        XCTAssertEqual(journey.records.map(\.elapsedNanoseconds), [0, 30, 70])
+    }
+
+    func testSeekJourneyDoesNotCompleteWhenCancelledBeforeTarget() throws {
+        var now: UInt64 = 10
+        let store = LatencyObservationStore(clock: { now })
+
+        let journeyID = store.beginSeek()
+        now = 25
+        XCTAssertTrue(store.cancel(journeyID))
+        now = 40
+        XCTAssertFalse(store.record(.seekTargetReached, for: journeyID))
+
+        let journey = try XCTUnwrap(store.snapshot().first)
+        XCTAssertEqual(journey.kind, .seek)
+        XCTAssertEqual(journey.records.map(\.transition), [.seekRequested, .cancelled])
+    }
 }
