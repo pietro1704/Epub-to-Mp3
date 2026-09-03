@@ -61,7 +61,13 @@ export class LatencyObservationStore {
   }
 
   cancel(id: string): void {
-    if (this.record(id, "cancelled")) this.finish(id);
+    const active = this.active.get(id);
+    if (!active || active.observation.terminal) return;
+    active.observation.records.push({
+      transition: "cancelled",
+      elapsedMs: Math.max(0, this.now() - active.startedAt),
+    });
+    active.observation.terminal = true;
   }
 
   snapshot(): LatencyObservation[] {

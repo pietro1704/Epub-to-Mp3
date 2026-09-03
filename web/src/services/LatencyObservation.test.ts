@@ -26,4 +26,18 @@ describe("LatencyObservationStore", () => {
       }),
     ]);
   });
+
+  it("records cancellation and rejects later ready boundaries", () => {
+    let now = 10;
+    const store = new LatencyObservationStore(() => now);
+    const id = store.begin("seek", "seek_requested");
+    now = 18;
+    store.cancel(id);
+
+    expect(store.record(id, "seek_target_reached")).toBe(false);
+    expect(store.snapshot()[0].records).toEqual([
+      { transition: "seek_requested", elapsedMs: 0 },
+      { transition: "cancelled", elapsedMs: 8 },
+    ]);
+  });
 });
