@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { conversionClient } from "../services/ConversionService";
+import { latencyObservations } from "../services/LatencyObservation";
 import { useI18n } from "../i18n/I18nProvider";
 import {
   AudioChunkEntry,
@@ -52,6 +53,8 @@ export default function StreamingAudioPlayer({
   const pollTimeoutRef = useRef<number | null>(null);
   // Incremented on stop to cancel in-flight pollForChunk callbacks.
   const pollGenerationRef = useRef<number>(0);
+  const playbackJourneyRef = useRef<string | null>(null);
+  const seekJourneyRef = useRef<string | null>(null);
   const [playbackRate, setPlaybackRate] = useState<number>(() => {
     try {
       const saved = window.localStorage.getItem(SPEED_KEY);
@@ -206,6 +209,9 @@ export default function StreamingAudioPlayer({
       );
 
       if (nextChunk && nextChunk.url) {
+        if (playbackJourneyRef.current) {
+          latencyObservations.record(playbackJourneyRef.current, "audio_queued");
+        }
         setSrc(nextChunk.url);
         setCurrentSegmentText(nextChunk.text || "");
         setCurrentSegment(nextChunk.index);
@@ -266,6 +272,10 @@ export default function StreamingAudioPlayer({
     setError(null);
     setWaiting(true);
     setStarted(true);
+    playbackJourneyRef.current = latencyObservations.begin(
+      "progressive_playback",
+      "interaction_requested",
+    );
 
     let startChapter = sortedChapters[0]?.index ?? 0;
     let startSegment = 0;
@@ -295,6 +305,7 @@ export default function StreamingAudioPlayer({
   };
 
   const handleChapterJump = (chapterIndex: number) => {
+    seekJourneyRef.current = latencyObservations.begin("seek", "seek_requested");
     const audio = audioRef.current;
     if (audio) {
       audio.pause();
@@ -308,6 +319,10 @@ export default function StreamingAudioPlayer({
   };
 
   const handleStop = () => {
+    if (playbackJourneyRef.current) latencyObservations.cancel(playbackJourneyRef.current);
+    if (seekJourneyRef.current) latencyObservations.cancel(seekJourneyRef.current);
+    playbackJourneyRef.current = null;
+    seekJourneyRef.current = null;
     pollGenerationRef.current += 1;
     if (pollTimeoutRef.current) {
       window.clearTimeout(pollTimeoutRef.current);
@@ -333,6 +348,27 @@ export default function StreamingAudioPlayer({
 
   const handlePlay = () => {
     setIsPlaying(true);
+  };
+
+  const handleCanPlay = () => {
+    if (playbackJourneyRef.current) {
+      latencyObservations.record(playbackJourneyRef.current, "audio_playable");
+    }
+  };
+
+  const handleTimeUpdate = () => {
+    const audio = audioRef.current;
+    if (!audio || audio.currentTime <= 0) return;
+    if (playbackJourneyRef.current) {
+      latencyObservations.record(playbackJourneyRef.current, "audio_audible");
+      latencyObservations.finish(playbackJourneyRef.current);
+      playbackJourneyRef.current = null;
+    }
+    if (seekJourneyRef.current) {
+      latencyObservations.record(seekJourneyRef.current, "seek_target_reached");
+      latencyObservations.finish(seekJourneyRef.current);
+      seekJourneyRef.current = null;
+    }
   };
 
   const handleEnded = () => {
@@ -557,6 +593,8 @@ export default function StreamingAudioPlayer({
           onEnded={handleEnded}
           onPlay={handlePlay}
           onPause={handlePause}
+          onCanPlay={handleCanPlay}
+          onTimeUpdate={handleTimeUpdate}
           style={{ width: "100%" }}
         />
         <div className="streaming-player__meta">
