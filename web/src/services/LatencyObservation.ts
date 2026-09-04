@@ -1,14 +1,14 @@
-export type LatencyJourneyKind = "reader_open" | "progressive_playback" | "seek";
+export type LatencyJourneyKind = 'reader_open' | 'progressive_playback' | 'seek';
 
 export type LatencyTransition =
-  | "interaction_requested"
-  | "reader_usable"
-  | "audio_queued"
-  | "audio_playable"
-  | "audio_audible"
-  | "seek_requested"
-  | "seek_target_reached"
-  | "cancelled";
+  | 'interaction_requested'
+  | 'reader_usable'
+  | 'audio_queued'
+  | 'audio_playable'
+  | 'audio_audible'
+  | 'seek_requested'
+  | 'seek_target_reached'
+  | 'cancelled';
 
 export interface LatencyObservation {
   id: string;
@@ -47,7 +47,9 @@ export class LatencyObservationStore {
 
   record(id: string, transition: LatencyTransition): boolean {
     const active = this.active.get(id);
-    if (!active || active.observation.terminal || transition === "cancelled") return false;
+    if (!active || active.observation.terminal || transition === 'cancelled') return false;
+    const lastRecord = active.observation.records[active.observation.records.length - 1];
+    if (lastRecord?.transition === transition) return false;
     active.observation.records.push({
       transition,
       elapsedMs: Math.max(0, this.now() - active.startedAt),
@@ -64,7 +66,7 @@ export class LatencyObservationStore {
     const active = this.active.get(id);
     if (!active || active.observation.terminal) return;
     active.observation.records.push({
-      transition: "cancelled",
+      transition: 'cancelled',
       elapsedMs: Math.max(0, this.now() - active.startedAt),
     });
     active.observation.terminal = true;
