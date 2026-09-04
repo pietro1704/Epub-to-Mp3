@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:just_audio/just_audio.dart';
 
 import '../models/job_snapshot.dart';
@@ -65,6 +66,7 @@ class AudioPlayerService implements AudioPlayerInterface {
   final List<String> _segmentSentenceIds = [];
   String? _activeSentenceId;
   StreamSubscription<int?>? _indexSub;
+  StreamSubscription<PlayerState>? _playabilitySub;
   StreamSubscription<Duration>? _audibilitySub;
   String? _playbackJourneyId;
   String? _seekJourneyId;
@@ -200,6 +202,7 @@ class AudioPlayerService implements AudioPlayerInterface {
       LatencyTransition.interactionRequested,
     );
     _recordQueuedAudio();
+    _listenForPlayableAudio();
     _listenForAudibleOutput();
     return _player.play();
   }
@@ -229,6 +232,23 @@ class AudioPlayerService implements AudioPlayerInterface {
       latencyObservations.record(id, LatencyTransition.audioQueued);
     }
   }
+
+  /// `ready` means the platform player can begin rendering the queued media.
+  /// It deliberately precedes the first positive position tick, which is the
+  /// earliest truthful boundary available to this client for audible output.
+  void _listenForPlayableAudio() {
+    _playabilitySub ??= _player.playerStateStream.listen((state) {
+      if (!isPlayableProcessingState(state.processingState)) return;
+      final id = _playbackJourneyId;
+      if (id != null) {
+        latencyObservations.record(id, LatencyTransition.audioPlayable);
+      }
+    });
+  }
+
+  @visibleForTesting
+  static bool isPlayableProcessingState(ProcessingState state) =>
+      state == ProcessingState.ready;
 
   void _listenForAudibleOutput() {
     _audibilitySub ??= _player.positionStream.listen((position) {
@@ -322,6 +342,7 @@ class AudioPlayerService implements AudioPlayerInterface {
   Future<void> dispose() async {
     _sleepTimer?.cancel();
     _indexSub?.cancel();
+    await _playabilitySub?.cancel();
     await _audibilitySub?.cancel();
     await _sentenceController.close();
     await _sleepController.close();
