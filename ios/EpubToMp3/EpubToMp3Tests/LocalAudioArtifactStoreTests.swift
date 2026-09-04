@@ -72,6 +72,34 @@ final class LocalAudioArtifactStoreTests: XCTestCase {
         XCTAssertEqual(second?.retention, .downloaded)
     }
 
+    func testPromotingCompletedBookSurvivesTemporaryCacheCleanupAndRestart() async throws {
+        let store = LocalAudioArtifactStore(root: root)
+        try await store.prepare(
+            bookID: "book-id",
+            bookTitle: "Book",
+            author: nil,
+            chapters: [
+                .init(index: 0, title: "First"),
+                .init(index: 1, title: "Second")
+            ]
+        )
+        for index in [0, 1] {
+            let url = try await store.canonicalURL(bookID: "book-id", chapterIndex: index)
+            try Data(repeating: 0xA5, count: 1_024).write(to: url)
+            try await store.markAvailable(bookID: "book-id", chapterIndex: index)
+        }
+
+        let promoted = try await store.promoteAvailable(bookID: "book-id")
+        XCTAssertEqual(promoted, [0, 1])
+        try await store.clearTemporaryAudio()
+
+        let reopenedStore = LocalAudioArtifactStore(root: root)
+        let hasCompleteAudio = try await reopenedStore.hasCompleteDownloadedAudio(bookID: "book-id")
+        let downloaded = try await reopenedStore.downloadedIndices(bookID: "book-id")
+        XCTAssertTrue(hasCompleteAudio)
+        XCTAssertEqual(downloaded, [0, 1])
+    }
+
     func testNewStoreInstanceRestoresTheCanonicalAvailableArtifact() async throws {
         let firstStore = LocalAudioArtifactStore(root: root)
         try await firstStore.prepare(

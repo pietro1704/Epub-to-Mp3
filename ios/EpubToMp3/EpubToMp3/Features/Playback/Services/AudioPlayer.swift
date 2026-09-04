@@ -1539,6 +1539,10 @@ final class AudioPlayer: ObservableObject {
         case pause
         /// No divergence (or no snapshot yet) — straight resume.
         case resume
+        /// The reader exposed a concrete page anchor in the chapter that is
+        /// already selected for audio. Start from that anchor rather than an
+        /// older paused cursor.
+        case startFromReaderPage
         /// Reader sits on a different chapter/page than the audio. The UI
         /// surface should show the start-position chooser
         /// (current page / where stopped).
@@ -1577,13 +1581,12 @@ final class AudioPlayer: ObservableObject {
         // of a silent no-op.
         let reader = playableIndex(forEpubZeroBased: readerChapterIndex, in: snapshot)
         guard let reader else { return .offerStartChoice }
-        // Once the reader and audio refer to the same chapter, Play resumes
-        // that chapter directly. Page/scroll position is not a second
-        // playback target: showing the chooser here made Play unexpectedly
-        // offer "current page" versus "where stopped" even though the user
-        // was already on the active chapter. The chooser is reserved for a
-        // genuinely different chapter.
-        if reader == currentChapterIndex { return .resume }
+        // A concrete reader anchor is an explicit listener choice. It wins
+        // even when the chapter matches the audio cursor, so tapping Play on
+        // a later page never silently resumes an earlier passage.
+        if reader == currentChapterIndex {
+            return readerPageRatio == nil ? .resume : .startFromReaderPage
+        }
         return .offerStartChoice
     }
 

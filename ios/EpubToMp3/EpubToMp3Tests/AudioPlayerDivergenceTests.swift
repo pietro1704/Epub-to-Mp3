@@ -161,10 +161,11 @@ final class AudioPlayerDivergenceTests: XCTestCase {
         )
     }
 
-    /// Same chapter always resumes directly, even when the reader page and
-    /// paused audio position differ. The chooser is only for another chapter.
+    /// A known reader page is an explicit listener choice. Even within the
+    /// same chapter, Play must restart at that page instead of resuming an
+    /// older audio cursor.
     @MainActor
-    func testDecisionWithSameChapterButDifferentPageResumesDirectly() {
+    func testDecisionWithSameChapterAndKnownPageStartsFromReaderPage() {
         let player = makePlayer()
         player.testHook_setSnapshot(snapshotWithChapters(5))
         player.testHook_setCurrentChapterIndex(2)
@@ -173,14 +174,14 @@ final class AudioPlayerDivergenceTests: XCTestCase {
 
         XCTAssertEqual(
             player.playTapDecision(readerChapterIndex: 2, readerPageRatio: 0.7),
-            .resume
+            .startFromReaderPage
         )
     }
 
-    /// Tiny ratio jitter should not trigger the floater when the reader is
-    /// effectively on the same page the audio left off.
+    /// The page anchor remains authoritative even when it is close to the
+    /// previous audio position, avoiding an implicit and surprising resume.
     @MainActor
-    func testDecisionWithSameChapterAndNearbyPageResumes() {
+    func testDecisionWithSameChapterAndNearbyPageStartsFromReaderPage() {
         let player = makePlayer()
         player.testHook_setSnapshot(snapshotWithChapters(5))
         player.testHook_setCurrentChapterIndex(2)
@@ -189,7 +190,7 @@ final class AudioPlayerDivergenceTests: XCTestCase {
 
         XCTAssertEqual(
             player.playTapDecision(readerChapterIndex: 2, readerPageRatio: 0.55),
-            .resume
+            .startFromReaderPage
         )
     }
 

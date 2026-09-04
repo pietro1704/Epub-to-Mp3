@@ -876,6 +876,9 @@ enum EmbeddedConversionCoordinator {
             state: errors.isEmpty ? finalState : "failed"
         )
         guard isActive(lease) else { throw CancellationError() }
+        if final.state == "finished" {
+            _ = try await audioArtifacts.promoteAvailable(bookID: bookID)
+        }
         if lease.ownsPlayback {
             playbackPlayer(for: lease, fallback: player).finishEmbeddedStreaming(snapshot: final)
         }
@@ -1261,6 +1264,9 @@ enum EmbeddedConversionCoordinator {
             error: errors.isEmpty ? nil : errors.joined(separator: "\n"),
             lastActivityAt: Date().timeIntervalSince1970
         )
+        if snapshot.state == "finished" {
+            _ = try await artifactStore.promoteAvailable(bookID: bookID)
+        }
         return snapshot
     }
 

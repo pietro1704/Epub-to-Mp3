@@ -215,7 +215,7 @@ final class PlayerScreenController: UIViewController {
 
     @objc
     private func playPauseTapped() {
-        player.togglePlayPause()
+        ReaderPlaybackTapHandler.handle(player: player, presenting: self)
         render()
     }
 

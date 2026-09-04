@@ -319,11 +319,26 @@ final class MiniPlayerBarUIKitView: UIView, UIGestureRecognizerDelegate {
         // Its play control must begin the local conversion instead of merely
         // arming an intent that no producer will ever consume.
         if player.hasLoadedAudioQueue || player.isConverting || player.snapshot?.playableChapters.isEmpty == false {
-            player.togglePlayPause()
+            if let presenter = nearestViewController() {
+                ReaderPlaybackTapHandler.handle(player: player, presenting: presenter)
+            } else {
+                player.togglePlayPause()
+            }
         } else {
             onPlayRequested?()
         }
         render()
+    }
+
+    private func nearestViewController() -> UIViewController? {
+        var responder: UIResponder? = self
+        while let current = responder {
+            if let controller = current as? UIViewController {
+                return controller
+            }
+            responder = current.next
+        }
+        return nil
     }
 
     @objc

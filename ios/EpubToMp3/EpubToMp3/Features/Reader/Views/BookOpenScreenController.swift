@@ -164,6 +164,7 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
     /// chapter tap — restoration only makes sense once, right after the
     /// book is (re)loaded.
     private var hasRestoredInitialPosition = false
+    private var lastPublishedReaderPageRatio: Double?
 
     /// Reports whether the book is currently loading (parsing/fetching
     /// fulltext), so the host screen (`MainReaderScreenController`) can
@@ -749,12 +750,33 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
     private func persistReadingProgress() {
         let anchor = captureReadingAnchor()
         rememberViewportOffset(for: anchor)
+        publishReaderPlaybackAnchor(anchor)
         ReaderProgressStore.save(
             bookId: book.id,
             chapterIndex: selectedChapter,
             offsetFraction: Double(anchor.offsetFraction),
             characterOffset: anchor.characterOffset
         )
+    }
+
+    private func publishReaderPlaybackAnchor(_ anchor: ReadingAnchor? = nil) {
+        let ratio: Double
+        if let anchor {
+            ratio = Double(anchor.offsetFraction)
+        } else {
+            let scrollable = max(
+                scrollView.contentSize.height + scrollView.contentInset.bottom - scrollView.bounds.height,
+                1
+            )
+            ratio = Double(min(max(scrollView.contentOffset.y / scrollable, 0), 1))
+        }
+        guard ratio.isFinite else { return }
+        if let previous = lastPublishedReaderPageRatio,
+           abs(previous - ratio) < 0.001 {
+            return
+        }
+        lastPublishedReaderPageRatio = ratio
+        UserDefaults.standard.set(ratio, forKey: AudioPlayer.readerCurrentPageRatioDefaultsKey)
     }
 
     private func captureReadingAnchor() -> ReadingAnchor {
@@ -1320,6 +1342,9 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
         let textSettings = ReaderTextSettings(settings: settings)
         lastInlineImageViewportWidth = nil
         UserDefaults.standard.set(index, forKey: AudioPlayer.readerCurrentChapterIndexDefaultsKey)
+        UserDefaults.standard.set(0.0, forKey: AudioPlayer.readerCurrentPageRatioDefaultsKey)
+        UserDefaults.standard.removeObject(forKey: AudioPlayer.readerCurrentSentenceIdDefaultsKey)
+        lastPublishedReaderPageRatio = 0
         player.updateReaderChapterTitle(chapter.displayTitle, for: chapter.zeroBasedEpubIndex)
         synchronizeChromeVisibility()
 
@@ -1957,6 +1982,7 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
     }
 
     func scrollViewDidScroll(_ scrollView: UIScrollView) {
+        publishReaderPlaybackAnchor()
         if isPaginatedMode {
             updatePageIndicator()
             updatePageOverflowGuard()

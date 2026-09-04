@@ -493,8 +493,6 @@ final class TocScreenController: UITableViewController {
             return L10n.string("toc.audioPreparing")
         case .waitingForWiFi:
             return L10n.string("toc.waitingForWiFi")
-        case .waitingForResources:
-            return L10n.string("toc.audioPreparing")
         case .failed:
             return L10n.string("player.downloadFailed")
         case .pending, .available, .none:
@@ -508,6 +506,8 @@ final class TocScreenController: UITableViewController {
             return L10n.string("toc.audioPreparing")
         case .waitingForWiFi:
             return L10n.string("toc.waitingForWiFi")
+        case .waitingForResources:
+            return L10n.string("toc.audioPreparing")
         case .failed:
             return L10n.string("player.downloadFailed")
         case .queued:
