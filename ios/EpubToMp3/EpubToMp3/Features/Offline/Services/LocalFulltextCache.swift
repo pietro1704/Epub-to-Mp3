@@ -22,6 +22,7 @@ enum LocalFulltextCache {
         return cache
     }()
     private static let recentBookIDsKey = "readerWarmBookIDs.v1"
+    private static let rebuildableCacheBudgetBytes: Int64 = 256 * 1_024 * 1_024
 
     private static var directory: URL? {
         guard let base = try? FileManager.default.url(
@@ -105,6 +106,10 @@ enum LocalFulltextCache {
         retainInMemory(payload, bookId: bookId)
         guard let url = storageURL(bookId: bookId) else { return }
         write(payload, to: url)
+        _ = reclaimRebuildablePayloads(
+            toMaximumBytes: rebuildableCacheBudgetBytes,
+            preservingBookIDs: [bookId]
+        )
     }
 
     /// Records a successful reader open. The retained payload count is capped
@@ -156,6 +161,48 @@ enum LocalFulltextCache {
         }
         let existing = UserDefaults.standard.stringArray(forKey: recentBookIDsKey) ?? []
         UserDefaults.standard.set(existing.filter { validBookIds.contains($0) }, forKey: recentBookIDsKey)
+        return removed
+    }
+
+    /// Bounds only parsed reader payloads, which can always be rebuilt from
+    /// the source book. Locally generated audiobook audio lives elsewhere and
+    /// is deliberately never considered by this reclamation policy.
+    @discardableResult
+    static func reclaimRebuildablePayloads(
+        toMaximumBytes maximumBytes: Int64,
+        preservingBookIDs: Set<String> = [],
+        directory overrideDirectory: URL? = nil
+    ) -> [String] {
+        guard let directory = overrideDirectory ?? self.directory else { return [] }
+        let entries = (try? FileManager.default.contentsOfDirectory(
+            at: directory,
+            includingPropertiesForKeys: [.contentModificationDateKey, .fileSizeKey],
+            options: [.skipsHiddenFiles]
+        )) ?? []
+        let candidates = entries.compactMap { url -> (bookID: String, url: URL, bytes: Int64, modified: Date)? in
+            guard url.pathExtension == "json",
+                  let values = try? url.resourceValues(forKeys: [.contentModificationDateKey, .fileSizeKey])
+            else { return nil }
+            return (
+                bookID: url.deletingPathExtension().lastPathComponent,
+                url: url,
+                bytes: Int64(values.fileSize ?? 0),
+                modified: values.contentModificationDate ?? .distantPast
+            )
+        }
+        var totalBytes = candidates.reduce(Int64(0)) { $0 + $1.bytes }
+        guard totalBytes > maximumBytes else { return [] }
+
+        var removed: [String] = []
+        for candidate in candidates.sorted(by: { $0.modified < $1.modified }) {
+            guard totalBytes > maximumBytes,
+                  !preservingBookIDs.contains(candidate.bookID),
+                  (try? FileManager.default.removeItem(at: candidate.url)) != nil
+            else { continue }
+            totalBytes -= candidate.bytes
+            memoryCache.removeObject(forKey: candidate.bookID as NSString)
+            removed.append(candidate.bookID)
+        }
         return removed
     }
 
