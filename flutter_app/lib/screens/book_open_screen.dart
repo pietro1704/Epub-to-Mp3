@@ -29,6 +29,8 @@ import '../services/cover_writeback.dart';
 import '../services/python_bridge.dart';
 import '../services/local_conversion_job.dart';
 import '../services/background_conversion_scheduler.dart';
+import '../services/playback_first_resource_policy.dart';
+import '../services/protected_audio_storage_guard.dart';
 import '../services/resume_position_router.dart';
 import '../services/resume_restoration_guard.dart';
 import '../services/sse_subscription_lifecycle.dart';
@@ -47,7 +49,8 @@ class BookOpenScreen extends ConsumerStatefulWidget {
   ConsumerState<BookOpenScreen> createState() => _BookOpenScreenState();
 }
 
-class _BookOpenScreenState extends ConsumerState<BookOpenScreen> {
+class _BookOpenScreenState extends ConsumerState<BookOpenScreen>
+    with WidgetsBindingObserver {
   _Phase _phase = _Phase.resolving;
   EbookFulltext? _fulltext;
   String? _errorMessage;
@@ -65,10 +68,13 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen> {
   StreamSubscription<Duration>? _positionSub;
   Timer? _resumeSaveTimer;
   Future<void> _snapshotWork = Future.value();
+  final PlaybackFirstResourcePolicy _resourcePolicy =
+      PlaybackFirstResourcePolicy();
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     final book = ref
         .read(libraryStoreProvider)
         .books
@@ -90,10 +96,30 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _sseSubscription?.cancel();
     _positionSub?.cancel();
     _resumeSaveTimer?.cancel();
     super.dispose();
+  }
+
+  @override
+  void didHaveMemoryPressure() {
+    _resourcePolicy.recordMemoryPressure();
+  }
+
+  Future<bool> _waitForConversionResourceWindow(
+    AudioPlayerInterface player,
+  ) async {
+    while (mounted && _isConverting) {
+      final reason = _resourcePolicy.yieldReason(
+        playbackActive: player.isPlaying,
+        pendingNavigation: false,
+      );
+      if (reason == null) return true;
+      await Future<void>.delayed(const Duration(milliseconds: 250));
+    }
+    return false;
   }
 
   Future<void> _load() async {
@@ -410,6 +436,7 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen> {
       final lang = await bridge.detectLanguage(sample);
       final voice = _defaultVoices[lang] ?? _defaultVoices['pt']!;
       final scheduler = BackgroundConversionScheduler();
+      final storageGuard = ProtectedAudioStorageGuard();
       final player = ref.read(globalAudioPlayerProvider);
       _setCoverOnPlayer(player);
 
@@ -470,6 +497,7 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen> {
 
       for (var i = 0; i < ft.chapters.length; i++) {
         if (!mounted || !_isConverting) return;
+        if (!await _waitForConversionResourceWindow(player)) return;
         final ch = ft.chapters[i];
         final saved = job.chapters
             .where((c) => c.index == ch.index)
@@ -490,6 +518,12 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen> {
           if (mounted) setState(() => _chaptersConverted = i + 1);
           continue;
         }
+
+        await storageGuard.ensureCanRetain(
+          estimatedBytes: ProtectedAudioStorageGuard.estimateChapterAudioBytes(
+            ch.text,
+          ),
+        );
 
         Map<String, dynamic> result;
         if (scheduler.isSupported) {
@@ -756,16 +790,21 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen> {
             backgroundColor: Colors.transparent,
             elevation: 0,
           ),
-          body: InstantReaderView(
-            fulltext: _fulltext!,
-            bookId: widget.bookId,
-            coverArt: coverArt,
-            statusBanner: _buildStatusBanner(t),
-            player: player,
-            onRequestPlay: _startConversion,
-            onRequestSpeechFallback: Platform.isAndroid
-                ? _speakCurrentChapterOffline
-                : null,
+          body: Listener(
+            behavior: HitTestBehavior.translucent,
+            onPointerDown: (_) => _resourcePolicy.recordReaderInteraction(),
+            onPointerMove: (_) => _resourcePolicy.recordReaderInteraction(),
+            child: InstantReaderView(
+              fulltext: _fulltext!,
+              bookId: widget.bookId,
+              coverArt: coverArt,
+              statusBanner: _buildStatusBanner(t),
+              player: player,
+              onRequestPlay: _startConversion,
+              onRequestSpeechFallback: Platform.isAndroid
+                  ? _speakCurrentChapterOffline
+                  : null,
+            ),
           ),
         );
     }

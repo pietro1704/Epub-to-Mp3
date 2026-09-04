@@ -6,9 +6,11 @@ import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.os.StatFs
 import android.provider.OpenableColumns
 import android.speech.tts.TextToSpeech
 import androidx.work.Data
+import androidx.work.Constraints
 import androidx.work.ExistingWorkPolicy
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
@@ -166,6 +168,12 @@ class MainActivity : FlutterActivity() {
                         result.error("BAD_ARGS", "jobId, text, voice and outputPath are required", null)
                     } else {
                         val request = OneTimeWorkRequestBuilder<BackgroundChapterWorker>()
+                            .setConstraints(
+                                Constraints.Builder()
+                                    .setRequiresBatteryNotLow(true)
+                                    .setRequiresStorageNotLow(true)
+                                    .build(),
+                            )
                             .setInputData(Data.Builder()
                                 .putString(BackgroundChapterWorker.KEY_TEXT, text)
                                 .putString(BackgroundChapterWorker.KEY_VOICE, voice)
@@ -186,6 +194,16 @@ class MainActivity : FlutterActivity() {
                         result.success(true)
                     }
                 }
+                else -> result.notImplemented()
+            }
+        }
+
+        MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            "epub_to_mp3/storage"
+        ).setMethodCallHandler { call, result ->
+            when (call.method) {
+                "availableBytes" -> result.success(StatFs(filesDir.absolutePath).availableBytes)
                 else -> result.notImplemented()
             }
         }

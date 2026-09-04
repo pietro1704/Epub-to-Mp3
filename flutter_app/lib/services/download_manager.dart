@@ -5,13 +5,17 @@ import 'package:dio/dio.dart';
 import 'package:path_provider/path_provider.dart';
 
 import 'offline_cache_eviction.dart';
+import 'protected_audio_storage_guard.dart';
 
 /// Minimal dio-based downloader. Persists files under
 /// `<documents>/downloads/<jobId>/<filename>`. Mirrors iOS
 /// `DownloadManager.swift` interface (start/cancel/progress).
 class DownloadManager {
-  DownloadManager({Dio? dio}) : _dio = dio ?? Dio();
+  DownloadManager({Dio? dio, ProtectedAudioStorageGuard? storageGuard})
+    : _dio = dio ?? Dio(),
+      _storageGuard = storageGuard ?? ProtectedAudioStorageGuard();
   final Dio _dio;
+  final ProtectedAudioStorageGuard _storageGuard;
   final Map<String, CancelToken> _tokens = {};
   final StreamController<DownloadEvent> _events =
       StreamController<DownloadEvent>.broadcast();
@@ -23,6 +27,9 @@ class DownloadManager {
     required String url,
     required String filename,
   }) async {
+    await _storageGuard.ensureCanRetain(
+      estimatedBytes: ProtectedAudioStorageGuard.estimateChapterAudioBytes(''),
+    );
     final dir = await getApplicationDocumentsDirectory();
     final folder = Directory('${dir.path}/downloads/$jobId');
     if (!await folder.exists()) await folder.create(recursive: true);

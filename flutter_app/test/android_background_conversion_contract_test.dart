@@ -11,5 +11,9 @@ void main() {
     expect(kotlin, contains('convert_chapter'));
     expect(activity, contains('enqueueChapter'));
     expect(activity, contains('enqueueUniqueWork'));
+    expect(activity, contains('setRequiresBatteryNotLow'));
+    expect(activity, contains('setRequiresStorageNotLow'));
+    expect(activity, contains('epub_to_mp3/storage'));
+    expect(activity, contains('availableBytes'));
   });
 }
