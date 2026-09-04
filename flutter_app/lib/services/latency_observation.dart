@@ -47,7 +47,9 @@ class LatencyObservationStore {
       LatencyJourney(id, kind, [LatencyRecord(initial, Duration.zero)]),
     );
     _order.add(id);
-    while (_order.length > capacity) _active.remove(_order.removeAt(0));
+    while (_order.length > capacity) {
+      _active.remove(_order.removeAt(0));
+    }
     return id;
   }
 
@@ -55,8 +57,9 @@ class LatencyObservationStore {
     final value = _active[id];
     if (value == null ||
         value.$2.terminal ||
-        transition == LatencyTransition.cancelled)
+        transition == LatencyTransition.cancelled) {
       return false;
+    }
     value.$2.records.add(LatencyRecord(transition, value.$1.elapsed));
     return true;
   }

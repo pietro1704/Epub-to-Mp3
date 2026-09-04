@@ -225,8 +225,9 @@ class AudioPlayerService implements AudioPlayerInterface {
 
   void _recordQueuedAudio() {
     final id = _playbackJourneyId;
-    if (id != null)
+    if (id != null) {
       latencyObservations.record(id, LatencyTransition.audioQueued);
+    }
   }
 
   void _listenForAudibleOutput() {
