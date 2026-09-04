@@ -184,7 +184,12 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
     /// The reader's in-memory chapter is more current than persisted progress
     /// while the user is turning pages, so playback scheduling uses this
     /// value to synthesize the chapter currently on screen first.
-    var currentReaderChapterIndex: Int { selectedChapter }
+    var currentReaderChapterIndex: Int {
+        ReaderPlaybackAnchor.epubIndex(
+            forReaderPosition: selectedChapter,
+            in: fulltext?.chapters ?? []
+        ) ?? selectedChapter
+    }
 
     private lazy var tocNavigationItem = makeNavigationItem(
         symbol: "list.bullet.indent",
@@ -1341,7 +1346,11 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
         forcesScrollingForOversizedFragment = false
         let textSettings = ReaderTextSettings(settings: settings)
         lastInlineImageViewportWidth = nil
-        UserDefaults.standard.set(index, forKey: AudioPlayer.readerCurrentChapterIndexDefaultsKey)
+        let epubIndex = ReaderPlaybackAnchor.epubIndex(
+            forReaderPosition: index,
+            in: fulltext?.chapters ?? []
+        ) ?? chapter.zeroBasedEpubIndex
+        UserDefaults.standard.set(epubIndex, forKey: AudioPlayer.readerCurrentChapterIndexDefaultsKey)
         UserDefaults.standard.set(0.0, forKey: AudioPlayer.readerCurrentPageRatioDefaultsKey)
         UserDefaults.standard.removeObject(forKey: AudioPlayer.readerCurrentSentenceIdDefaultsKey)
         lastPublishedReaderPageRatio = 0

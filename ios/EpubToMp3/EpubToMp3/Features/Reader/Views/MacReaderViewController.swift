@@ -649,7 +649,11 @@ final class MacReaderViewController: NSViewController, NSTableViewDataSource, NS
                 textView.scrollToBeginningOfDocument(nil)
             }
         }
-        UserDefaults.standard.set(index, forKey: AudioPlayer.readerCurrentChapterIndexDefaultsKey)
+        let epubIndex = ReaderPlaybackAnchor.epubIndex(
+            forReaderPosition: index,
+            in: fulltext?.chapters ?? []
+        ) ?? chapter.zeroBasedEpubIndex
+        UserDefaults.standard.set(epubIndex, forKey: AudioPlayer.readerCurrentChapterIndexDefaultsKey)
     }
 
     private func handleReaderLink(_ url: URL, linkText: String) -> Bool {

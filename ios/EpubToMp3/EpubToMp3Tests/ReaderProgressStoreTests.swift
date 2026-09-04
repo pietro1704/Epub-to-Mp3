@@ -59,6 +59,25 @@ final class ReaderProgressStoreTests: XCTestCase {
         XCTAssertEqual(ReaderInitialChapter.firstSubstantiveIndex(in: chapters), 2)
     }
 
+    /// The reader's selected-array position is not the EPUB chapter axis.
+    /// A book can place an epigraph and table of contents at arbitrary EPUB
+    /// indices before a real chapter. Playback must receive the latter axis
+    /// or it narrates whichever earlier chapter happens to share the array
+    /// position.
+    func testPlaybackAnchorUsesCanonicalEpubIndexForManyMeetings() {
+        let chapters = [
+            EbookFulltext.Chapter(index: 1, name: "Epigraph", text: "e", html: nil, css: nil, charCount: 1, segments: nil),
+            EbookFulltext.Chapter(index: 6, name: "Table of Contents", text: "t", html: nil, css: nil, charCount: 1, segments: nil),
+            EbookFulltext.Chapter(index: 24, name: "Many Meetings", text: "m", html: nil, css: nil, charCount: 1, segments: nil),
+        ]
+
+        XCTAssertEqual(
+            ReaderPlaybackAnchor.epubIndex(forReaderPosition: 2, in: chapters),
+            23,
+            "Selecting Many Meetings must target its EPUB index, not reader position 2."
+        )
+    }
+
     func testSaveOverwritesPreviousEntryForSameBook() {
         let defaults = makeDefaults()
         ReaderProgressStore.save(bookId: "b1", chapterIndex: 1, offsetFraction: 0.1, defaults: defaults)

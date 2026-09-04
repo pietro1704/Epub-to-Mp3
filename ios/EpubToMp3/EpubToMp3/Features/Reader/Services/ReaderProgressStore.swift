@@ -110,6 +110,20 @@ enum ReaderInitialChapter {
     }
 }
 
+/// Translates the reader's array position into the canonical zero-based EPUB
+/// axis used by conversion, local artifacts, and playback. The two axes only
+/// happen to match for simple books; front matter and sparse TOCs make them
+/// diverge.
+enum ReaderPlaybackAnchor {
+    static func epubIndex(
+        forReaderPosition position: Int,
+        in chapters: [EbookFulltext.Chapter]
+    ) -> Int? {
+        guard chapters.indices.contains(position) else { return nil }
+        return chapters[position].zeroBasedEpubIndex
+    }
+}
+
 /// Resolves the chapter that should be synthesized first when playback starts.
 /// The live reader cursor wins for the book currently open on screen; saved
 /// progress remains the fallback for starts initiated outside the reader.
