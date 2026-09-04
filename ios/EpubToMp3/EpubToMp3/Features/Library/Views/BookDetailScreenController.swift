@@ -140,9 +140,13 @@ final class BookDetailScreenController: UIViewController {
     }
 
     @objc private func tapListen() {
+        // Reader progress is an array position, whereas local audio artifacts
+        // use the EPUB's canonical chapter index. Resolve it once so the
+        // playback binding and conversion request agree on the visible chapter.
+        let priorityChapterIndex = ReaderPlaybackPriorityChapter.index(bookID: book.id)
         PlaybackBindingStore.setCurrentlyPlaying(
             bookID: book.id,
-            chapterIndex: ReaderProgressStore.read(bookId: book.id)?.chapterIndex ?? 0
+            chapterIndex: priorityChapterIndex
         )
         if settings.useEmbeddedRuntime && !book.fileType.requiresServerConversion {
             guard let url = try? library.openBookFile(id: book.id) else { return }
@@ -153,7 +157,7 @@ final class BookDetailScreenController: UIViewController {
                         bookURL: url,
                         bookID: book.id,
                         requiresWiFi: !self.settings.allowCellularAudioConversion,
-                        priorityChapterIndices: [ReaderProgressStore.read(bookId: self.book.id)?.chapterIndex ?? 0],
+                        priorityChapterIndices: [priorityChapterIndex],
                         player: self.player,
                         onStreamingStarted: { [weak self] in
                             self?.playerPresentation.showFullPlayer()

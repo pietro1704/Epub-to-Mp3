@@ -24,6 +24,13 @@ final class BookDetailWiringTests: XCTestCase {
         XCTAssertTrue(source.contains("tapDownload"))
     }
 
+    func testBookDetailListenUsesCanonicalReaderPlaybackPriority() throws {
+        let source = try source("Features/Library/Views/BookDetailScreenController.swift")
+
+        XCTAssertTrue(source.contains("let priorityChapterIndex = ReaderPlaybackPriorityChapter.index(bookID: book.id)"))
+        XCTAssertTrue(source.contains("priorityChapterIndices: [priorityChapterIndex]"))
+    }
+
     func testMacBookDetailViewControllerIsNativeAppKitWithThreeActions() throws {
         let source = try source("Features/Library/Views/MacBookDetailViewController.swift")
 
