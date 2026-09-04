@@ -460,7 +460,7 @@ final class SettingsScreenController: UITableViewController {
         } else if row == 5 {
             refreshStorageUsage()
             tableView.reloadSections(IndexSet(integer: Section.storage.rawValue), with: .none)
-        } else if row == 6 {
+        } else if row == 7 {
             presentDestructiveAlert(
                 title: L10n.string("settings.clearTemporaryAudioConfirmTitle"),
                 message: L10n.string("settings.clearTemporaryAudioConfirmMessage"),

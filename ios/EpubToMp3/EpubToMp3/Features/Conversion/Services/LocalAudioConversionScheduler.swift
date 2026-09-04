@@ -1,5 +1,9 @@
 import Foundation
 
+#if os(iOS)
+import UIKit
+#endif
+
 #if canImport(Network)
 import Network
 #endif
@@ -86,8 +90,14 @@ final class LocalAudioConversionScheduler {
     private var resourceConstraint: ResourceConstraint = .stable
     private var resourceContinuations: [CheckedContinuation<Void, Never>] = []
     private var resourceObservers: [NSObjectProtocol] = []
+    private var memoryPressureRecoveryTask: Task<Void, Never>?
+    private var memoryPressureActive = false
     private var pendingResumption: [ResumeRequest]
     private let persistence: UserDefaults?
+
+    #if os(macOS)
+    private var memoryPressureSource: DispatchSourceMemoryPressure?
+    #endif
 
     #if canImport(Network)
     private var pathMonitor: NWPathMonitor? = nil
@@ -126,6 +136,27 @@ final class LocalAudioConversionScheduler {
                 Task { @MainActor in self?.refreshDeviceResourceConstraint() }
             }
         ]
+        #if os(iOS)
+        resourceObservers.append(
+            NotificationCenter.default.addObserver(
+                forName: UIApplication.didReceiveMemoryWarningNotification,
+                object: nil,
+                queue: .main
+            ) { [weak self] _ in
+                Task { @MainActor in self?.reportMemoryPressure() }
+            }
+        )
+        #elseif os(macOS)
+        let source = DispatchSource.makeMemoryPressureSource(
+            eventMask: [.warning, .critical],
+            queue: .main
+        )
+        source.setEventHandler { [weak self] in
+            Task { @MainActor in self?.reportMemoryPressure() }
+        }
+        source.resume()
+        memoryPressureSource = source
+        #endif
         #if canImport(Network)
         if observesNetwork {
             let monitor = NWPathMonitor()
@@ -144,6 +175,10 @@ final class LocalAudioConversionScheduler {
 
     deinit {
         resourceObservers.forEach(NotificationCenter.default.removeObserver)
+        memoryPressureRecoveryTask?.cancel()
+        #if os(macOS)
+        memoryPressureSource?.cancel()
+        #endif
         #if canImport(Network)
         pathMonitor?.cancel()
         #endif
@@ -284,6 +319,9 @@ final class LocalAudioConversionScheduler {
     }
 
     func setResourceConstraint(_ constraint: ResourceConstraint) {
+        if constraint != .memoryPressure {
+            memoryPressureActive = false
+        }
         resourceConstraint = constraint
         guard constraint == .stable else { return }
         let continuations = resourceContinuations
@@ -291,10 +329,27 @@ final class LocalAudioConversionScheduler {
         continuations.forEach { $0.resume() }
     }
 
+    /// Memory warnings are transient. Yield at the next chapter boundary, then
+    /// resume after a short quiet window unless low-power or thermal pressure
+    /// still applies. No audio write or pending navigation is cancelled.
+    func reportMemoryPressure(recoveryDelay: TimeInterval = 5) {
+        memoryPressureActive = true
+        setResourceConstraint(.memoryPressure)
+        memoryPressureRecoveryTask?.cancel()
+        memoryPressureRecoveryTask = Task { @MainActor [weak self] in
+            let nanoseconds = UInt64(max(0, recoveryDelay) * 1_000_000_000)
+            try? await Task.sleep(nanoseconds: nanoseconds)
+            guard !Task.isCancelled else { return }
+            self?.memoryPressureActive = false
+            self?.refreshDeviceResourceConstraint()
+        }
+    }
+
     /// Samples resource state immediately before a new chapter starts. Memory
     /// pressure is reported separately through `setResourceConstraint`, while
     /// low-power and thermal state are available directly from Foundation.
     func refreshDeviceResourceConstraint() {
+        if memoryPressureActive { return }
         let process = ProcessInfo.processInfo
         if process.isLowPowerModeEnabled {
             setResourceConstraint(.lowPower)
