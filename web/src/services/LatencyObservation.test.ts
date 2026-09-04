@@ -41,18 +41,24 @@ describe("LatencyObservationStore", () => {
     ]);
   });
 
-  it("does not turn repeated browser readiness events into extra boundaries", () => {
+  it("rejects out-of-order browser readiness events", () => {
     let now = 10;
     const store = new LatencyObservationStore(() => now);
     const id = store.begin("progressive_playback", "interaction_requested");
     now = 20;
-    store.record(id, "audio_playable");
+    expect(store.record(id, "audio_playable")).toBe(false);
+    expect(store.record(id, "audio_audible")).toBe(false);
+    expect(store.record(id, "audio_queued")).toBe(true);
     now = 30;
-    store.record(id, "audio_playable");
+    expect(store.record(id, "audio_audible")).toBe(false);
+    expect(store.record(id, "audio_playable")).toBe(true);
+    expect(store.record(id, "audio_audible")).toBe(true);
 
     expect(store.snapshot()[0].records).toEqual([
       { transition: "interaction_requested", elapsedMs: 0 },
-      { transition: "audio_playable", elapsedMs: 10 },
+      { transition: "audio_queued", elapsedMs: 10 },
+      { transition: "audio_playable", elapsedMs: 20 },
+      { transition: "audio_audible", elapsedMs: 20 },
     ]);
   });
 });

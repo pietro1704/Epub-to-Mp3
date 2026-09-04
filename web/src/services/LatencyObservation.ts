@@ -49,7 +49,9 @@ export class LatencyObservationStore {
     const active = this.active.get(id);
     if (!active || active.observation.terminal || transition === "cancelled") return false;
     const lastRecord = active.observation.records[active.observation.records.length - 1];
-    if (lastRecord?.transition === transition) return false;
+    if (lastRecord?.transition === transition || !this.isValidTransition(active.observation, transition)) {
+      return false;
+    }
     active.observation.records.push({
       transition,
       elapsedMs: Math.max(0, this.now() - active.startedAt),
@@ -77,6 +79,27 @@ export class LatencyObservationStore {
       const observation = this.active.get(id)?.observation;
       return observation ? [{ ...observation, records: [...observation.records] }] : [];
     });
+  }
+
+  private isValidTransition(observation: LatencyObservation, transition: LatencyTransition): boolean {
+    const recorded = new Set(observation.records.map((record) => record.transition));
+    switch (observation.kind) {
+      case "reader_open":
+        return transition === "reader_usable";
+      case "progressive_playback":
+        switch (transition) {
+          case "audio_queued":
+            return !recorded.has("audio_queued") && !recorded.has("audio_playable") && !recorded.has("audio_audible");
+          case "audio_playable":
+            return recorded.has("audio_queued") && !recorded.has("audio_audible");
+          case "audio_audible":
+            return recorded.has("audio_playable") && !recorded.has("audio_audible");
+          default:
+            return false;
+        }
+      case "seek":
+        return transition === "seek_target_reached" && !recorded.has("seek_target_reached");
+    }
   }
 }
 
