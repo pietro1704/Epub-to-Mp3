@@ -393,7 +393,7 @@ final class AudiobookCacheEvictionTests: XCTestCase {
         XCTAssertTrue(evicted.contains("book2"), "Non-active expired job must be evicted")
     }
 
-    func testRegisteredActiveJobIsNeverEvictedByProductionPass() throws {
+    func testProductionPassNeverEvictsLegacyOfflineAudio() throws {
         let activeJobId = "active-registry-\(UUID().uuidString)"
         let expiredJobId = "expired-registry-\(UUID().uuidString)"
         let oldDate = Date().addingTimeInterval(-48 * 3600)
@@ -422,9 +422,12 @@ final class AudiobookCacheEvictionTests: XCTestCase {
         )
 
         XCTAssertFalse(evicted.contains(activeJobId), "An actively opened/synthesised job must be protected")
-        XCTAssertTrue(evicted.contains(expiredJobId), "An inactive expired job remains an eviction candidate")
+        XCTAssertFalse(evicted.contains(expiredJobId), "Legacy audio is protected until the listener removes it")
         XCTAssertTrue(FileManager.default.fileExists(
             atPath: tempRoot.appendingPathComponent(activeJobId, isDirectory: true).path
+        ))
+        XCTAssertTrue(FileManager.default.fileExists(
+            atPath: tempRoot.appendingPathComponent(expiredJobId, isDirectory: true).path
         ))
     }
 

@@ -121,13 +121,15 @@ struct AudiobookCacheEntry: Equatable, Sendable {
 
 // MARK: - AudiobookCacheEviction
 
-/// LRU + TTL eviction policy for the on-device audiobook cache.
+/// Compatibility facade for legacy audiobook-cache callers.
 ///
 /// **Invariants:**
-/// - Never touches the audiobook whose `jobId` appears in `activeJobIds`.
-/// - Runs best-effort; individual delete failures are logged and skipped.
-/// - All filesystem I/O is nonisolated (no actor hop needed for the
-///   stateless scan / delete path).
+/// - Generated or downloaded audio is listener-owned Offline listening cache
+///   content and is never removed by TTL or LRU policy.
+/// - Rebuildable temporary audio is reclaimed only by
+///   `LocalAudioArtifactStore.evictTemporaryAudio(toMaximumBytes:)`, whose
+///   manifest policy excludes downloaded artifacts.
+/// - `deleteAudiobook` remains available solely for an explicit user action.
 ///
 /// **Last-access tracking:**
 /// Call `touchLastAccess(jobId:)` whenever playback opens an audiobook.
@@ -212,54 +214,17 @@ enum AudiobookCacheEviction {
 
     // MARK: Eviction
 
-    /// Run the full eviction pass.
-    ///
-    /// - Parameters:
-    ///   - budgetBytes: Maximum total cache size (bytes). Default = `defaultOfflineCacheBudgetBytes`.
-    ///   - ttlSeconds: Maximum age for an entry (seconds). Default = `defaultOfflineCacheTTLSeconds`.
-    ///   - activeJobIds: Job IDs currently being played or actively downloading — never evicted.
-    ///
-    /// Called on app launch and after each completed download.
-    /// Best-effort: individual failures are swallowed so the app never crashes.
+    /// Legacy entry point retained for source compatibility. Audio may have
+    /// been created by older app versions without a retention manifest, so it
+    /// is conservatively protected rather than guessed to be rebuildable.
     @discardableResult
     static func runEviction(
-        root: URL? = nil,
-        budgetBytes: Int64 = defaultOfflineCacheBudgetBytes,
-        ttlSeconds: TimeInterval = defaultOfflineCacheTTLSeconds,
-        activeJobIds: Set<String> = []
+        root _: URL? = nil,
+        budgetBytes _: Int64 = defaultOfflineCacheBudgetBytes,
+        ttlSeconds _: TimeInterval = defaultOfflineCacheTTLSeconds,
+        activeJobIds _: Set<String> = []
     ) -> [String] {
-        let storageRoot = root ?? DownloadManager.audiobooksRoot()
-        let protectedJobIds = activeJobIds.union(CacheActivityRegistry.activeJobIds())
-        var entries = scanEntries(root: storageRoot)
-        var evicted: [String] = []
-        let now = Date()
-
-        // Phase 1: TTL — evict entries older than ttlSeconds, skipping active.
-        for entry in entries where !protectedJobIds.contains(entry.jobId) {
-            let age = now.timeIntervalSince(entry.lastAccessedAt)
-            if age > ttlSeconds {
-                if deleteAudiobook(jobId: entry.jobId, root: storageRoot) {
-                    evictionLog.info("TTL evicted \(entry.jobId, privacy: .public) age=\(Int(age))s")
-                    evicted.append(entry.jobId)
-                }
-            }
-        }
-
-        // Remove evicted entries from the working set for the budget phase.
-        entries.removeAll { evicted.contains($0.jobId) }
-
-        // Phase 2: LRU budget — remove oldest entries until under budget.
-        var totalBytes = entries.reduce(Int64(0)) { $0 + $1.totalBytes }
-        for entry in entries where !protectedJobIds.contains(entry.jobId) {
-            guard totalBytes > budgetBytes else { break }
-            if deleteAudiobook(jobId: entry.jobId, root: storageRoot) {
-                totalBytes -= entry.totalBytes
-                evictionLog.info("Budget evicted \(entry.jobId, privacy: .public) freed=\(entry.totalBytes)B remaining=\(totalBytes)B")
-                evicted.append(entry.jobId)
-            }
-        }
-
-        return evicted
+        []
     }
 
     // MARK: Library reconcile
