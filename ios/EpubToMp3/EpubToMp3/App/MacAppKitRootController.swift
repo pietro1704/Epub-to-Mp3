@@ -541,6 +541,12 @@ private final class MacPlayerBarViewController: NSViewController {
             return
         }
 
+        if player.hasPausedPlaybackToResume {
+            player.resume()
+            refresh()
+            return
+        }
+
         guard let bookID = UserDefaults.standard.string(forKey: ReaderSessionState.currentlyReadingBookIDKey) else {
             if player.snapshot == nil { onStartPlayback() } else { player.resume() }
             refresh()

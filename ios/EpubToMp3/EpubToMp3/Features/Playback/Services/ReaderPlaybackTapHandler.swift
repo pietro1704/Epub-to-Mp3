@@ -7,6 +7,13 @@ import UIKit
 @MainActor
 enum ReaderPlaybackTapHandler {
     static func handle(player: AudioPlayer, presenting viewController: UIViewController) {
+        // A pause is a transport action, not a new reader-position choice.
+        // Preserve the AVQueuePlayer cursor even though the reader still has
+        // a concrete page anchor in UserDefaults.
+        if player.hasPausedPlaybackToResume {
+            player.resume()
+            return
+        }
         let defaults = UserDefaults.standard
         guard let chapterIndex = defaults.object(
             forKey: AudioPlayer.readerCurrentChapterIndexDefaultsKey

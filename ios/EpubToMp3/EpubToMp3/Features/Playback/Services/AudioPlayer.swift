@@ -135,6 +135,10 @@ final class AudioPlayer: ObservableObject {
     @Published private(set) var currentChapterIndex: Int = 0
     private var readerChapterTitles: [Int: String] = [:]
     @Published private(set) var isPlaying: Bool = false
+    /// A deliberate pause owns the current queue cursor. Reader controls use
+    /// this to resume that cursor instead of treating the next Play tap as a
+    /// new request from the reader's page anchor.
+    private(set) var hasPausedPlaybackToResume = false
     @Published private(set) var rate: PlaybackRate = .x100
     /// High-frequency transport state is published by `playbackClock`
     /// instead of this global object. The computed compatibility surface
@@ -932,6 +936,7 @@ final class AudioPlayer: ObservableObject {
         restoreAutoplay: Bool = true
     ) {
         ensureRemoteCommands()
+        hasPausedPlaybackToResume = false
         // MP3 takeover: if the speech fallback was holding the place,
         // shut it down BEFORE we set up the AVQueuePlayer so the user
         // never hears both transports overlap (synth + MP3 = garbled).
@@ -1252,11 +1257,13 @@ final class AudioPlayer: ObservableObject {
         if isUsingSpeechFallback {
             speechFallback.pause()
             isPlaying = false
+            hasPausedPlaybackToResume = true
             cancelPendingPlaybackJourney()
             return
         }
         player?.pause()
         isPlaying = false
+        hasPausedPlaybackToResume = player != nil
         cancelPendingPlaybackJourney()
         persistResumePoint(force: true)
         updateNowPlayingInfo()
@@ -1269,6 +1276,7 @@ final class AudioPlayer: ObservableObject {
             // session work here. Resume just continues the utterance.
             speechFallback.resume()
             isPlaying = true
+            hasPausedPlaybackToResume = false
             return
         }
         beginPlaybackJourneyIfNeeded()
@@ -1288,6 +1296,7 @@ final class AudioPlayer: ObservableObject {
         ensureAudioSession()
         player.rate = rate.rawValue
         isPlaying = true
+        hasPausedPlaybackToResume = false
         updateNowPlayingInfo()
     }
 
@@ -2547,6 +2556,7 @@ final class AudioPlayer: ObservableObject {
             updateNowPlayingInfo()
         } else if !isSegmentMode {
             isPlaying = false
+            hasPausedPlaybackToResume = false
             updateNowPlayingInfo()
         }
     }
@@ -2566,6 +2576,7 @@ final class AudioPlayer: ObservableObject {
         itemObservationCancellables.removeAll()
         player?.pause()
         player = nil
+        hasPausedPlaybackToResume = false
         ownedPlayerItemIDs.removeAll()
         // A segment is retained until it has been inserted into the queue or
         // this session ends. Teardown is the one intentional discard point:

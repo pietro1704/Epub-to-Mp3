@@ -194,6 +194,28 @@ final class AudioPlayerDivergenceTests: XCTestCase {
         )
     }
 
+    @MainActor
+    func testPauseThenResumeKeepsTheExistingQueueInsteadOfRestartingFromReaderPage() {
+        let player = makePlayer()
+        player.backendBaseURL = URL(string: "http://localhost:0/")!
+        player.play(snapshot: snapshotWithChapters(3), startingAt: 1)
+        player.testHook_setIsPlaying(true)
+
+        player.pause()
+
+        XCTAssertTrue(player.hasPausedPlaybackToResume)
+        XCTAssertEqual(player.currentChapterIndex, 1)
+
+        player.resume()
+
+        XCTAssertFalse(player.hasPausedPlaybackToResume)
+        XCTAssertEqual(
+            player.currentChapterIndex,
+            1,
+            "Resuming a deliberate pause must retain the loaded chapter queue."
+        )
+    }
+
     /// Regression: in the embedded-runtime path, chapters arrive via
     /// `enqueueSegment` and the snapshot carries no `downloadUrl`s,
     /// so `playableChapters` is permanently empty. Pre-fix,
