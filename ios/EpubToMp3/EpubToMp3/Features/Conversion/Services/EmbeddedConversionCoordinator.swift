@@ -835,6 +835,14 @@ enum EmbeddedConversionCoordinator {
                 throw CancellationError()
             } catch {
                 try? FileManager.default.removeItem(at: outputURL)
+                if StoragePressureError.isInsufficientSpace(error) {
+                    try? await audioArtifacts.markFailed(
+                        bookID: bookID,
+                        chapterIndex: chapter.zeroBasedEpubIndex,
+                        errorDescription: StoragePressureError.insufficientSpace.localizedDescription
+                    )
+                    throw StoragePressureError.insufficientSpace
+                }
                 try? await audioArtifacts.markFailed(
                     bookID: bookID,
                     chapterIndex: chapter.zeroBasedEpubIndex,

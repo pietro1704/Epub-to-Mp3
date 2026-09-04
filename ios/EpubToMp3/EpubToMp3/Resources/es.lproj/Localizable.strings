@@ -536,6 +536,8 @@
 "settings.storageTotal" = "Total";
 "settings.manageDownloads" = "Gestionar descargas de libros";
 "settings.manageDownloadsDescription" = "Consulta o elimina el audio descargado por libro";
+"settings.insufficientStorageTitle" = "Almacenamiento lleno";
+"settings.insufficientStorageMessage" = "No hay suficiente espacio libre para seguir creando audio. Gestiona las descargas de libros para liberar espacio; las descargas existentes permanecerán hasta que las elimines.";
 "settings.noDownloadedBooks" = "No hay libros descargados";
 "settings.downloadedChapters" = "%d capítulos descargados";
 "settings.removeBookDownload" = "Eliminar descarga";

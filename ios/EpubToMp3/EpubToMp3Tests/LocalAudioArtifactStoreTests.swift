@@ -16,6 +16,21 @@ final class LocalAudioArtifactStoreTests: XCTestCase {
         root = nil
     }
 
+    func testClassifiesCocoaOutOfSpaceAsStoragePressure() {
+        let error = NSError(
+            domain: NSCocoaErrorDomain,
+            code: NSFileWriteOutOfSpaceError
+        )
+
+        XCTAssertTrue(StoragePressureError.isInsufficientSpace(error))
+    }
+
+    func testDoesNotClassifyAnUnrelatedErrorAsStoragePressure() {
+        let error = NSError(domain: NSURLErrorDomain, code: NSURLErrorTimedOut)
+
+        XCTAssertFalse(StoragePressureError.isInsufficientSpace(error))
+    }
+
     func testPromotingAvailableArtifactKeepsItsCanonicalFile() async throws {
         let store = LocalAudioArtifactStore(root: root)
         try await store.prepare(

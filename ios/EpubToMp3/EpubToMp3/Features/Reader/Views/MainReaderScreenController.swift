@@ -506,6 +506,8 @@ final class MainReaderScreenController: UIViewController {
                         }
                     )
                     self.library.recordConversion(jobId: snapshot.jobId, for: book.id)
+                } catch let error as StoragePressureError {
+                    self.presentStorageManagementAlert(error)
                 } catch {
                     let alert = UIAlertController(
                         title: L10n.string("bookDetail.listenStart"),
@@ -537,6 +539,24 @@ final class MainReaderScreenController: UIViewController {
             ),
             animated: true
         )
+    }
+
+    private func presentStorageManagementAlert(_ error: StoragePressureError) {
+        let alert = UIAlertController(
+            title: L10n.string("settings.insufficientStorageTitle"),
+            message: error.localizedDescription,
+            preferredStyle: .alert
+        )
+        alert.addAction(UIAlertAction(
+            title: L10n.string("settings.manageDownloads"),
+            style: .default
+        ) { [weak self] _ in
+            guard let self else { return }
+            let controller = LocalAudioDownloadsScreenController(library: self.library)
+            self.present(UINavigationController(rootViewController: controller), animated: true)
+        })
+        alert.addAction(UIAlertAction(title: L10n.string("library.cancel"), style: .cancel))
+        present(alert, animated: true)
     }
 }
 

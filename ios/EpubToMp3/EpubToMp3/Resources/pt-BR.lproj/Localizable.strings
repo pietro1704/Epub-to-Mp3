@@ -535,6 +535,8 @@
 "settings.storageTotal" = "Total";
 "settings.manageDownloads" = "Gerenciar downloads dos livros";
 "settings.manageDownloadsDescription" = "Veja ou remova o áudio baixado por livro";
+"settings.insufficientStorageTitle" = "Espaço cheio";
+"settings.insufficientStorageMessage" = "Não há espaço livre suficiente para continuar criando o áudio. Gerencie os downloads dos livros para liberar espaço; os downloads existentes permanecerão até você removê-los.";
 "settings.noDownloadedBooks" = "Nenhum livro baixado";
 "settings.downloadedChapters" = "%d capítulos baixados";
 "settings.removeBookDownload" = "Remover download";
