@@ -34,4 +34,19 @@ void main() {
       LatencyTransition.cancelled,
     );
   });
+
+  test('ignores repeated ready boundaries in one journey', () {
+    final store = LatencyObservationStore();
+    final id = store.begin(
+      LatencyJourneyKind.progressivePlayback,
+      LatencyTransition.interactionRequested,
+    );
+
+    expect(store.record(id, LatencyTransition.audioQueued), isTrue);
+    expect(store.record(id, LatencyTransition.audioQueued), isFalse);
+    expect(store.snapshot().single.records.map((record) => record.transition), [
+      LatencyTransition.interactionRequested,
+      LatencyTransition.audioQueued,
+    ]);
+  });
 }

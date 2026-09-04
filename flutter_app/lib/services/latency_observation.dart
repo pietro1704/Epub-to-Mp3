@@ -60,6 +60,7 @@ class LatencyObservationStore {
         transition == LatencyTransition.cancelled) {
       return false;
     }
+    if (value.$2.records.last.transition == transition) return false;
     value.$2.records.add(LatencyRecord(transition, value.$1.elapsed));
     return true;
   }

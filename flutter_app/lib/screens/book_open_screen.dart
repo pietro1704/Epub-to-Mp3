@@ -28,6 +28,7 @@ import '../services/audio_player_service.dart';
 import '../services/cover_writeback.dart';
 import '../services/python_bridge.dart';
 import '../services/local_conversion_job.dart';
+import '../services/latency_observation.dart';
 import '../services/background_conversion_scheduler.dart';
 import '../services/playback_first_resource_policy.dart';
 import '../services/protected_audio_storage_guard.dart';
@@ -70,6 +71,7 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen>
   Future<void> _snapshotWork = Future.value();
   final PlaybackFirstResourcePolicy _resourcePolicy =
       PlaybackFirstResourcePolicy();
+  String? _readerJourneyId;
 
   @override
   void initState() {
@@ -129,6 +131,10 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen>
     // setState and does not flash the previous book's content onto
     // the newly-mounted bookId.
     final gen = _loadGuard.start();
+    _readerJourneyId = latencyObservations.begin(
+      LatencyJourneyKind.readerOpen,
+      LatencyTransition.interactionRequested,
+    );
     final loadingForBookId = widget.bookId;
     setState(() {
       _phase = _Phase.resolving;
@@ -147,6 +153,7 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen>
         _phase = _Phase.ready;
       });
       _markBookOpened();
+      _completeReaderJourney();
       return;
     }
 
@@ -160,6 +167,7 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen>
         _errorMessage = 'EPUB parsing is not available on this platform';
         _phase = _Phase.error;
       });
+      _cancelReaderJourney();
       return;
     }
 
@@ -178,6 +186,7 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen>
           _errorMessage = 'Book is no longer in the library';
           _phase = _Phase.error;
         });
+        _cancelReaderJourney();
         return;
       }
       final filePath = await library.ensureSupportedBookPath(book);
@@ -193,13 +202,30 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen>
         _phase = _Phase.ready;
       });
       _markBookOpened();
+      _completeReaderJourney();
     } catch (e) {
       if (!mounted || !_loadGuard.isCurrent(gen)) return;
       setState(() {
         _errorMessage = e.toString();
         _phase = _Phase.error;
       });
+      _cancelReaderJourney();
     }
+  }
+
+  void _completeReaderJourney() {
+    final id = _readerJourneyId;
+    if (id == null) return;
+    latencyObservations.record(id, LatencyTransition.readerUsable);
+    latencyObservations.finish(id);
+    _readerJourneyId = null;
+  }
+
+  void _cancelReaderJourney() {
+    final id = _readerJourneyId;
+    if (id == null) return;
+    latencyObservations.cancel(id);
+    _readerJourneyId = null;
   }
 
   void _markBookOpened() {

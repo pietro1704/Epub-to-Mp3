@@ -5,6 +5,8 @@ import 'package:flutter/material.dart';
 import 'package:pdfrx/pdfrx.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../services/latency_observation.dart';
+
 typedef PdfViewerBuilder =
     Widget Function(
       BuildContext context,
@@ -58,12 +60,18 @@ class _PdfReaderScreenState extends State<PdfReaderScreen> {
   Object? _error;
   bool _loading = false;
   bool _chromeVisible = true;
+  String? _readerJourneyId;
 
   @override
   void initState() {
     super.initState();
+    _readerJourneyId = latencyObservations.begin(
+      LatencyJourneyKind.readerOpen,
+      LatencyTransition.interactionRequested,
+    );
     if (widget.loadDocument == null && !File(widget.filePath).existsSync()) {
       _error = StateError('cannot open PDF: ${widget.filePath}');
+      _cancelReaderJourney();
     } else {
       _loading = true;
       unawaited(_load());
@@ -79,13 +87,30 @@ class _PdfReaderScreenState extends State<PdfReaderScreen> {
       }
       if (!mounted) return;
       setState(() => _loading = false);
+      _completeReaderJourney();
     } catch (error) {
       if (!mounted) return;
       setState(() {
         _error = error;
         _loading = false;
       });
+      _cancelReaderJourney();
     }
+  }
+
+  void _completeReaderJourney() {
+    final id = _readerJourneyId;
+    if (id == null) return;
+    latencyObservations.record(id, LatencyTransition.readerUsable);
+    latencyObservations.finish(id);
+    _readerJourneyId = null;
+  }
+
+  void _cancelReaderJourney() {
+    final id = _readerJourneyId;
+    if (id == null) return;
+    latencyObservations.cancel(id);
+    _readerJourneyId = null;
   }
 
   void _pageChanged(int page) {
