@@ -88,6 +88,10 @@ final class LocalAudioConversionScheduler {
     private var states: [String: WorkState] = [:]
     private var chapterPriorities: [String: [Int]] = [:]
     private var resourceConstraint: ResourceConstraint = .stable
+    /// Deterministic injection for tests and support diagnostics. Device
+    /// notifications must not race this explicit boundary state back to
+    /// nominal before the conversion loop has observed the yield.
+    private var injectedResourceConstraint: ResourceConstraint?
     private var resourceContinuations: [CheckedContinuation<Void, Never>] = []
     private var resourceObservers: [NSObjectProtocol] = []
     private var memoryPressureRecoveryTask: Task<Void, Never>?
@@ -319,6 +323,11 @@ final class LocalAudioConversionScheduler {
     }
 
     func setResourceConstraint(_ constraint: ResourceConstraint) {
+        injectedResourceConstraint = constraint == .stable ? nil : constraint
+        applyResourceConstraint(constraint)
+    }
+
+    private func applyResourceConstraint(_ constraint: ResourceConstraint) {
         if constraint != .memoryPressure {
             memoryPressureActive = false
         }
@@ -334,7 +343,7 @@ final class LocalAudioConversionScheduler {
     /// still applies. No audio write or pending navigation is cancelled.
     func reportMemoryPressure(recoveryDelay: TimeInterval = 5) {
         memoryPressureActive = true
-        setResourceConstraint(.memoryPressure)
+        applyResourceConstraint(.memoryPressure)
         memoryPressureRecoveryTask?.cancel()
         memoryPressureRecoveryTask = Task { @MainActor [weak self] in
             let nanoseconds = UInt64(max(0, recoveryDelay) * 1_000_000_000)
@@ -349,19 +358,20 @@ final class LocalAudioConversionScheduler {
     /// pressure is reported separately through `setResourceConstraint`, while
     /// low-power and thermal state are available directly from Foundation.
     func refreshDeviceResourceConstraint() {
+        guard injectedResourceConstraint == nil else { return }
         if memoryPressureActive { return }
         let process = ProcessInfo.processInfo
         if process.isLowPowerModeEnabled {
-            setResourceConstraint(.lowPower)
+            applyResourceConstraint(.lowPower)
             return
         }
         switch process.thermalState {
         case .serious, .critical:
-            setResourceConstraint(.thermalPressure)
+            applyResourceConstraint(.thermalPressure)
         case .nominal, .fair:
-            setResourceConstraint(.stable)
+            applyResourceConstraint(.stable)
         @unknown default:
-            setResourceConstraint(.stable)
+            applyResourceConstraint(.stable)
         }
     }
 

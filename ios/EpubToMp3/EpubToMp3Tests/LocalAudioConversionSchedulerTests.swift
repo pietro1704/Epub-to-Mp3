@@ -2,6 +2,19 @@ import XCTest
 @testable import EpubToMp3
 
 final class LocalAudioConversionSchedulerTests: XCTestCase {
+    @MainActor
+    private func reachesState(
+        _ expected: LocalAudioConversionScheduler.WorkState,
+        for bookID: String,
+        in scheduler: LocalAudioConversionScheduler
+    ) async -> Bool {
+        for _ in 0..<100 {
+            if scheduler.state(for: bookID) == expected { return true }
+            await Task.yield()
+        }
+        return false
+    }
+
     private actor Gate {
         private var continuation: CheckedContinuation<Void, Never>?
         private var isOpen = false
@@ -122,9 +135,12 @@ final class LocalAudioConversionSchedulerTests: XCTestCase {
                 return self.snapshot(jobID: "book")
             }
         }
-        await Task.yield()
-
-        XCTAssertEqual(scheduler.state(for: "book"), .waitingForResources)
+        let reachedResourceWait = await reachesState(
+            .waitingForResources,
+            for: "book",
+            in: scheduler
+        )
+        XCTAssertTrue(reachedResourceWait)
         XCTAssertFalse(resumed)
         scheduler.setResourceConstraint(.stable)
         _ = try await task.value
@@ -148,9 +164,12 @@ final class LocalAudioConversionSchedulerTests: XCTestCase {
                 return self.snapshot(jobID: "book")
             }
         }
-        await Task.yield()
-
-        XCTAssertEqual(scheduler.state(for: "book"), .waitingForResources)
+        let reachedResourceWait = await reachesState(
+            .waitingForResources,
+            for: "book",
+            in: scheduler
+        )
+        XCTAssertTrue(reachedResourceWait)
         XCTAssertFalse(resumed)
         scheduler.setResourceConstraint(.stable)
         _ = try await task.value
