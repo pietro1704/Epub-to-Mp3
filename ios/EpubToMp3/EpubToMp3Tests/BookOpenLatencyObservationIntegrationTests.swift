@@ -6,6 +6,43 @@ import XCTest
 
 @MainActor
 final class BookOpenLatencyObservationIntegrationTests: XCTestCase {
+    func testOpeningAnotherBookCancelsThePendingReaderJourney() throws {
+        let identifier = UUID().uuidString
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: "BookOpenLatencyObservationTests.\(identifier)"))
+        defer { defaults.removePersistentDomain(forName: "BookOpenLatencyObservationTests.\(identifier)") }
+        let firstBook = BookEntity(
+            id: "pending-first-\(identifier)",
+            title: "First pending book",
+            bookmark: Data(),
+            displayFilename: "first.epub",
+            addedAt: Date()
+        )
+        let nextBook = BookEntity(
+            id: "pending-next-\(identifier)",
+            title: "Next book",
+            bookmark: Data(),
+            displayFilename: "next.epub",
+            addedAt: Date()
+        )
+        let knownJourneyIDs = Set(LatencyObservationStore.shared.snapshot().map(\.id))
+        let controller = BookOpenScreenController(
+            book: firstBook,
+            library: LibraryStore(defaults: defaults, defaultsKey: "library.\(identifier)"),
+            settings: AppSettings(defaults: defaults),
+            bookmarkStore: BookmarkStore(defaults: defaults, storageKey: "bookmarks.\(identifier)"),
+            player: AudioPlayer(resumeStore: ResumeStore(storage: UserDefaultsResumeStorage(defaults: defaults)))
+        )
+
+        controller.loadViewIfNeeded()
+        controller.update(book: nextBook)
+
+        let journeys = LatencyObservationStore.shared.snapshot().filter { !knownJourneyIDs.contains($0.id) }
+        XCTAssertTrue(
+            journeys.contains { $0.records.map(\.transition) == [.openRequested, .cancelled] },
+            "Changing books while the first reader journey is pending must cancel it."
+        )
+    }
+
     func testWarmBookOpenEmitsReaderJourney() throws {
         let identifier = UUID().uuidString
         let defaults = try XCTUnwrap(UserDefaults(suiteName: "BookOpenLatencyObservationTests.\(identifier)"))
