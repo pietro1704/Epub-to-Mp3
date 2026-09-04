@@ -118,6 +118,20 @@ final class LatencyObservationStoreTests: XCTestCase {
         XCTAssertEqual(store.latestElapsedNanoseconds(for: journeyID), 70)
     }
 
+    func testProgressivePlaybackRejectsAudibleBeforeQueueReadiness() throws {
+        let store = LatencyObservationStore(clock: { 100 })
+        let journeyID = store.beginProgressivePlayback()
+
+        XCTAssertFalse(store.record(.audioAudible, for: journeyID))
+        XCTAssertTrue(store.record(.audioQueued, for: journeyID))
+        XCTAssertTrue(store.record(.audioAudible, for: journeyID))
+
+        XCTAssertEqual(
+            try XCTUnwrap(store.snapshot().first).records.map(\.transition),
+            [.playRequested, .audioQueued, .audioAudible]
+        )
+    }
+
     func testSeekJourneyDoesNotCompleteWhenCancelledBeforeTarget() throws {
         var now: UInt64 = 10
         let store = LatencyObservationStore(clock: { now })

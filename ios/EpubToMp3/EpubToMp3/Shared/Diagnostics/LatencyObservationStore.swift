@@ -161,7 +161,8 @@ final class LatencyObservationStore {
         defer { lock.unlock() }
         guard transition != .cancelled,
               var active = activeJourneys[journeyID],
-              !active.isTerminal
+              !active.isTerminal,
+              Self.isValid(transition, for: active.journey)
         else {
             return false
         }
@@ -228,6 +229,36 @@ final class LatencyObservationStore {
             ? now - active.startedAtNanoseconds
             : 0
         return max(last, elapsed)
+    }
+
+    /// Diagnostics record listener-visible boundaries, not implementation
+    /// milestones. In particular, a prepared queue cannot become audible
+    /// until the queue boundary was observed first.
+    private static func isValid(
+        _ transition: LatencyObservation.Transition,
+        for journey: LatencyObservation.Journey
+    ) -> Bool {
+        let recorded = Set(journey.records.map(\.transition))
+        switch journey.kind {
+        case .bookOpen:
+            switch transition {
+            case .readableContent, .controlsUsable, .firstPDFPage:
+                return true
+            default:
+                return false
+            }
+        case .progressivePlayback:
+            switch transition {
+            case .audioQueued:
+                return !recorded.contains(.audioQueued) && !recorded.contains(.audioAudible)
+            case .audioAudible:
+                return recorded.contains(.audioQueued) && !recorded.contains(.audioAudible)
+            default:
+                return false
+            }
+        case .seek:
+            return transition == .seekTargetReached && !recorded.contains(.seekTargetReached)
+        }
     }
 
     private func trimToCapacityLocked() {
