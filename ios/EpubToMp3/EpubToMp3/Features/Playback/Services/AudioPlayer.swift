@@ -249,13 +249,16 @@ final class AudioPlayer: ObservableObject {
     /// Now Playing widget so lock screen / Control Center / AirPods
     /// menu show the book cover instead of a generic glyph.
     @Published var coverArtData: Data?
+    private var isUpdatingCoverArtData = false
 
     /// Updates system artwork only when the active book's cover changes.
     /// Both native shells call this as their library and playback pointers
     /// refresh, keeping macOS and iOS Now Playing metadata in sync.
     func updateCoverArtData(_ data: Data?) {
-        guard coverArtData != data else { return }
+        guard !isUpdatingCoverArtData, coverArtData != data else { return }
+        isUpdatingCoverArtData = true
         coverArtData = data
+        isUpdatingCoverArtData = false
         updateNowPlayingInfo()
     }
 

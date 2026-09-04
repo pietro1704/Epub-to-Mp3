@@ -194,6 +194,22 @@ final class AudioPlayerLockScreenTests: XCTestCase {
         XCTAssertNotNil(artwork)
     }
 
+    @MainActor
+    func testCoverArtUpdateDoesNotReenterFromPublishedObserver() {
+        let player = AudioPlayer()
+        var updates = 0
+        let observation = player.objectWillChange.sink {
+            updates += 1
+            player.updateCoverArtData(EpubFixture.coverPNG)
+        }
+
+        player.updateCoverArtData(EpubFixture.coverPNG)
+        withExtendedLifetime(observation) {}
+
+        XCTAssertEqual(updates, 1)
+        XCTAssertEqual(player.coverArtData, EpubFixture.coverPNG)
+    }
+
     /// `stop()` must drop the active book so the lock screen no longer
     /// shows stale metadata — `snapshot` goes nil and the Now Playing
     /// dict falls back to the app-name placeholder.
