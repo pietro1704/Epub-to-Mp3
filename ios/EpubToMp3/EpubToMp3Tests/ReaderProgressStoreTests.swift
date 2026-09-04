@@ -169,4 +169,28 @@ final class ReaderProgressStoreTests: XCTestCase {
 
         XCTAssertEqual(ReaderPlaybackPriorityChapter.index(bookID: "b2", defaults: defaults), 5)
     }
+
+    /// A saved reader position is an array position, while local conversion
+    /// identifies audio by its canonical EPUB index. This fallback is used
+    /// when the reader session has been recreated before a listener taps Play.
+    @MainActor
+    func testPlaybackPriorityMapsSavedManyMeetingsPositionToEpubIndex() {
+        let defaults = makeDefaults()
+        let chapters = [
+            EbookFulltext.Chapter(index: 1, name: "Epigraph", text: "e", html: nil, css: nil, charCount: 1, segments: nil),
+            EbookFulltext.Chapter(index: 6, name: "Table of Contents", text: "t", html: nil, css: nil, charCount: 1, segments: nil),
+            EbookFulltext.Chapter(index: 24, name: "Many Meetings", text: "m", html: nil, css: nil, charCount: 1, segments: nil),
+        ]
+        ReaderProgressStore.save(bookId: "lotr", chapterIndex: 2, offsetFraction: 0.4, defaults: defaults)
+
+        XCTAssertEqual(
+            ReaderPlaybackPriorityChapter.index(
+                bookID: "lotr",
+                chapters: chapters,
+                defaults: defaults
+            ),
+            23,
+            "Saved Many Meetings must not restart conversion at the TOC position."
+        )
+    }
 }

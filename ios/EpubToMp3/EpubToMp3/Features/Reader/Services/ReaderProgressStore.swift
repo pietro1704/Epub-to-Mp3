@@ -129,11 +129,23 @@ enum ReaderPlaybackAnchor {
 /// progress remains the fallback for starts initiated outside the reader.
 @MainActor
 enum ReaderPlaybackPriorityChapter {
-    static func index(bookID: String, defaults: UserDefaults = .standard) -> Int {
+    static func index(
+        bookID: String,
+        chapters: [EbookFulltext.Chapter]? = nil,
+        defaults: UserDefaults = .standard
+    ) -> Int {
         if defaults.string(forKey: ReaderSessionState.currentlyReadingBookIDKey) == bookID,
            let liveIndex = defaults.object(forKey: AudioPlayer.readerCurrentChapterIndexDefaultsKey) as? Int {
             return max(0, liveIndex)
         }
-        return ReaderProgressStore.read(bookId: bookID, defaults: defaults)?.chapterIndex ?? 0
+
+        guard let readerPosition = ReaderProgressStore.read(bookId: bookID, defaults: defaults)?.chapterIndex else {
+            return 0
+        }
+        let resolvedChapters = chapters ?? LocalFulltextCache.read(bookId: bookID)?.chapters ?? []
+        return ReaderPlaybackAnchor.epubIndex(
+            forReaderPosition: readerPosition,
+            in: resolvedChapters
+        ) ?? readerPosition
     }
 }

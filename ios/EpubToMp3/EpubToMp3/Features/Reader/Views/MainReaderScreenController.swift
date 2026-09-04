@@ -465,8 +465,7 @@ final class MainReaderScreenController: UIViewController {
                 guard let self else { return }
                 do {
                     let priorityChapterIndex = self.readerController?.currentReaderChapterIndex
-                        ?? ReaderProgressStore.read(bookId: book.id)?.chapterIndex
-                        ?? 0
+                        ?? ReaderPlaybackPriorityChapter.index(bookID: book.id)
                     if let localSnapshot = await EmbeddedConversionCoordinator.resumeLocalPlaybackIfAvailable(
                         bookID: book.id,
                         priorityChapterIndices: [priorityChapterIndex],
