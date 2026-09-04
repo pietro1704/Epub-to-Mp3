@@ -250,6 +250,15 @@ final class AudioPlayer: ObservableObject {
     /// menu show the book cover instead of a generic glyph.
     @Published var coverArtData: Data?
 
+    /// Updates system artwork only when the active book's cover changes.
+    /// Both native shells call this as their library and playback pointers
+    /// refresh, keeping macOS and iOS Now Playing metadata in sync.
+    func updateCoverArtData(_ data: Data?) {
+        guard coverArtData != data else { return }
+        coverArtData = data
+        updateNowPlayingInfo()
+    }
+
     /// Sleep-timer state. When > 0, playback auto-pauses after this
     /// many wall-clock seconds. Decremented by the time observer.
     private(set) var sleepTimerRemaining: TimeInterval {

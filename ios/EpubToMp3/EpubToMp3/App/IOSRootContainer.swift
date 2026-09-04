@@ -229,6 +229,7 @@ final class IOSRootContainerController: UIViewController {
     }
 
     private func refreshMiniPlayerContent() {
+        syncPlayerCoverArt()
         miniPlayerController.update(
             player: player,
             playbackClock: player.playbackClock,
@@ -251,6 +252,13 @@ final class IOSRootContainerController: UIViewController {
                 self?.readerController.startListeningFromMiniPlayer()
             }
         )
+    }
+
+    private func syncPlayerCoverArt() {
+        let bookID = UserDefaults.standard.string(forKey: AudioPlayer.currentBookIDDefaultsKey)
+            ?? UserDefaults.standard.string(forKey: ReaderSessionState.currentlyReadingBookIDKey)
+        let cover = bookID.flatMap { id in library.books.first(where: { $0.id == id })?.coverPNG }
+        player.updateCoverArtData(cover)
     }
 
     private func applyReaderChromeLayout(

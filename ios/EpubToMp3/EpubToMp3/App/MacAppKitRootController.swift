@@ -412,11 +412,19 @@ final class MacAppKitRootController: NSSplitViewController, NSToolbarDelegate {
     }
 
     private func refreshPlayerBar() {
+        syncPlayerCoverArt()
         let hasReadingContext = player.snapshot != nil
             || UserDefaults.standard.string(forKey: ReaderSessionState.currentlyReadingBookIDKey) != nil
             || library.books.contains { $0.lastOpenedAt != nil }
         playerBar.view.isHidden = !hasReadingContext
         playerBarHeightConstraint?.constant = hasReadingContext ? 60 : 0
+    }
+
+    private func syncPlayerCoverArt() {
+        let bookID = UserDefaults.standard.string(forKey: AudioPlayer.currentBookIDDefaultsKey)
+            ?? UserDefaults.standard.string(forKey: ReaderSessionState.currentlyReadingBookIDKey)
+        let cover = bookID.flatMap { id in library.books.first(where: { $0.id == id })?.coverPNG }
+        player.updateCoverArtData(cover)
     }
 }
 
