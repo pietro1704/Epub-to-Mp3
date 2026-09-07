@@ -78,6 +78,34 @@ final class ReaderProgressStoreTests: XCTestCase {
         )
     }
 
+    @MainActor
+    func testPublishedPlaybackAnchorMakesTocSelectionStartAtSelectedPage() {
+        let defaults = makeDefaults()
+        let chapters = [
+            EbookFulltext.Chapter(index: 1, name: "Cover", text: "c", html: nil, css: nil, charCount: 1, segments: nil),
+            EbookFulltext.Chapter(index: 24, name: "Many Meetings", text: "m", html: nil, css: nil, charCount: 1, segments: nil),
+        ]
+        defaults.set("stale-sentence", forKey: AudioPlayer.readerCurrentSentenceIdDefaultsKey)
+
+        let published = ReaderPlaybackAnchor.publish(
+            readerPosition: 1,
+            chapters: chapters,
+            offsetFraction: 0.42,
+            defaults: defaults
+        )
+
+        XCTAssertEqual(published, 23)
+        XCTAssertEqual(
+            defaults.object(forKey: AudioPlayer.readerCurrentChapterIndexDefaultsKey) as? Int,
+            23
+        )
+        XCTAssertEqual(
+            defaults.object(forKey: AudioPlayer.readerCurrentPageRatioDefaultsKey) as? Double,
+            0.42
+        )
+        XCTAssertNil(defaults.string(forKey: AudioPlayer.readerCurrentSentenceIdDefaultsKey))
+    }
+
     func testSaveOverwritesPreviousEntryForSameBook() {
         let defaults = makeDefaults()
         ReaderProgressStore.save(bookId: "b1", chapterIndex: 1, offsetFraction: 0.1, defaults: defaults)

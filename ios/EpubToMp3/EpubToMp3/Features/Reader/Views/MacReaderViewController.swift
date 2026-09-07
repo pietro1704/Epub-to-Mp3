@@ -76,6 +76,9 @@ final class MacReaderViewController: NSViewController, NSTableViewDataSource, NS
             self?.scrollPage(forward: forward)
             return true
         }
+        surface.onAppearanceChange = { [weak self] in
+            self?.applyCurrentReaderTheme()
+        }
         view = surface
         view.wantsLayer = true
     }
@@ -89,6 +92,18 @@ final class MacReaderViewController: NSViewController, NSTableViewDataSource, NS
         super.viewDidLayout()
         guard contentScrollView.documentView === textView else { return }
         MacReaderTextLayout.fit(textView, in: contentScrollView)
+    }
+
+    private func applyCurrentReaderTheme() {
+        guard isViewLoaded else { return }
+        MacReaderTheme.apply(
+            settings: settings,
+            surface: view,
+            scrollView: contentScrollView,
+            textView: textView,
+            toolbar: toolbar,
+            labels: [bookTitleLabel, chapterTitleLabel, statusLabel]
+        )
     }
 
     override func viewWillDisappear() {
@@ -172,8 +187,10 @@ final class MacReaderViewController: NSViewController, NSTableViewDataSource, NS
 
         let toc = NSButton(title: L10n.string("reader.toc"), target: self, action: #selector(showTOC(_:)))
         toc.bezelStyle = .texturedRounded
+        toc.image = NSImage(systemSymbolName: "list.bullet", accessibilityDescription: L10n.string("reader.toc"))
+        toc.imagePosition = .imageLeading
         toc.toolTip = L10n.string("reader.toc")
-        toc.setAccessibilityIdentifier("reader.toc")
+        toc.setAccessibilityIdentifier("reader.toc.toggle")
 
         let search = NSButton(
             image: NSImage(systemSymbolName: "magnifyingglass", accessibilityDescription: L10n.string("reader.search.placeholder")) ?? NSImage(),
@@ -185,9 +202,10 @@ final class MacReaderViewController: NSViewController, NSTableViewDataSource, NS
 
         let appearance = NSButton(title: "Aa", target: self, action: #selector(showSettings(_:)))
         appearance.bezelStyle = .texturedRounded
+        appearance.font = .systemFont(ofSize: 13, weight: .semibold)
         appearance.toolTip = L10n.string("reader.settings")
         appearance.setAccessibilityLabel(L10n.string("reader.settings"))
-        appearance.setAccessibilityIdentifier("reader.settings")
+        appearance.setAccessibilityIdentifier("reader.settings.toggle")
 
         bookTitleLabel.font = .systemFont(ofSize: 13, weight: .semibold)
         bookTitleLabel.alignment = .center
@@ -208,6 +226,8 @@ final class MacReaderViewController: NSViewController, NSTableViewDataSource, NS
         toolbar.orientation = .horizontal
         toolbar.alignment = .centerY
         toolbar.edgeInsets = NSEdgeInsets(top: 10, left: 16, bottom: 10, right: 16)
+        toolbar.spacing = 10
+        toolbar.distribution = .fill
         toolbar.wantsLayer = true
         toolbar.layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
         toolbar.setAccessibilityIdentifier("reader.toolbar")
@@ -649,11 +669,11 @@ final class MacReaderViewController: NSViewController, NSTableViewDataSource, NS
                 textView.scrollToBeginningOfDocument(nil)
             }
         }
-        let epubIndex = ReaderPlaybackAnchor.epubIndex(
-            forReaderPosition: index,
-            in: fulltext?.chapters ?? []
-        ) ?? chapter.zeroBasedEpubIndex
-        UserDefaults.standard.set(epubIndex, forKey: AudioPlayer.readerCurrentChapterIndexDefaultsKey)
+        ReaderPlaybackAnchor.publish(
+            readerPosition: index,
+            chapters: fulltext?.chapters ?? [],
+            offsetFraction: 0
+        )
     }
 
     private func handleReaderLink(_ url: URL, linkText: String) -> Bool {
@@ -846,6 +866,11 @@ final class MacReaderViewController: NSViewController, NSTableViewDataSource, NS
         let scrollable = max(documentView.frame.height - clipView.bounds.height, 1)
         let fraction = clipView.bounds.origin.y / scrollable
         ReaderProgressStore.save(bookId: bookId, chapterIndex: selectedChapter, offsetFraction: fraction)
+        ReaderPlaybackAnchor.publish(
+            readerPosition: selectedChapter,
+            chapters: fulltext?.chapters ?? [],
+            offsetFraction: fraction
+        )
     }
 
     /// Called once, right after a fresh `loadCurrentBook()`, to jump back to
@@ -862,6 +887,11 @@ final class MacReaderViewController: NSViewController, NSTableViewDataSource, NS
             guard scrollable > 0 else { return }
             clipView.scroll(to: NSPoint(x: 0, y: entry.offsetFraction * scrollable))
             self.contentScrollView.reflectScrolledClipView(clipView)
+            ReaderPlaybackAnchor.publish(
+                readerPosition: entry.chapterIndex,
+                chapters: self.fulltext?.chapters ?? [],
+                offsetFraction: entry.offsetFraction
+            )
         }
     }
 
@@ -1027,8 +1057,14 @@ final class MacReaderViewController: NSViewController, NSTableViewDataSource, NS
 private final class MacReaderSurfaceView: NSView {
     var onKeyDown: ((NSEvent) -> Bool)?
     var onPageTap: ((Bool) -> Bool)?
+    var onAppearanceChange: (() -> Void)?
 
     override var acceptsFirstResponder: Bool { true }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        onAppearanceChange?()
+    }
 
     override func keyDown(with event: NSEvent) {
         guard onKeyDown?(event) == true else {

@@ -122,6 +122,31 @@ enum ReaderPlaybackAnchor {
         guard chapters.indices.contains(position) else { return nil }
         return chapters[position].zeroBasedEpubIndex
     }
+
+    /// Publishes the reader's live playback anchor in the EPUB chapter axis.
+    /// The reader list can contain front matter and sparse TOC entries, while
+    /// audio artifacts are always indexed by their original EPUB position.
+    @MainActor
+    @discardableResult
+    static func publish(
+        readerPosition: Int,
+        chapters: [EbookFulltext.Chapter],
+        offsetFraction: Double,
+        defaults: UserDefaults = .standard
+    ) -> Int? {
+        guard let epubIndex = epubIndex(forReaderPosition: readerPosition, in: chapters) else {
+            return nil
+        }
+        defaults.set(epubIndex, forKey: AudioPlayer.readerCurrentChapterIndexDefaultsKey)
+        defaults.set(
+            min(max(offsetFraction.isFinite ? offsetFraction : 0, 0), 1),
+            forKey: AudioPlayer.readerCurrentPageRatioDefaultsKey
+        )
+        // AppKit has no sentence-level timing anchor. A stale UIKit sentence
+        // must never be used to seek a macOS page.
+        defaults.removeObject(forKey: AudioPlayer.readerCurrentSentenceIdDefaultsKey)
+        return epubIndex
+    }
 }
 
 /// Resolves the chapter that should be synthesized first when playback starts.

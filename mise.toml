@@ -354,6 +354,14 @@ set -euo pipefail
 .venv/bin/python scripts/benchmark_regression.py "$@"
 """
 
+[tasks."benchmark:journeys"]
+description = "Validate recorded cross-client cold/warm journey evidence"
+run = """
+#!/bin/bash
+set -euo pipefail
+.venv/bin/python scripts/performance_evidence_gate.py "$@"
+"""
+
 # ── Embedded Python + native macOS build ─────────────────────────────────────
 # The native AppKit app links the bundled Python.xcframework directly.
 

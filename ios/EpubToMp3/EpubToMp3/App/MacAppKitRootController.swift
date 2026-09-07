@@ -52,7 +52,7 @@ final class MacAppKitRootController: NSSplitViewController, NSToolbarDelegate {
         self.playerPresentation.dismissFullPlayer()
         super.init(nibName: nil, bundle: nil)
         self.playerBar = MacPlayerBarViewController(player: player, library: library, onStartPlayback: { [weak self] in
-            self?.startPlaybackForCurrentBook()
+            self?.playFromCurrentReaderPosition()
         }, onShowFullPlayer: { [weak playerPresentation] in
             playerPresentation?.showFullPlayer()
         })
@@ -181,7 +181,12 @@ final class MacAppKitRootController: NSSplitViewController, NSToolbarDelegate {
     }
 
     @objc func toggleNavigationSidebar(_ sender: Any?) {
-        toggleSidebar(sender)
+        // `NSSplitViewController.toggleSidebar(_:)` can target the trailing
+        // split item when the window's responder chain changes. The app has
+        // one navigation sidebar: make that contract explicit and stable.
+        guard let sidebar = splitViewItems.first else { return }
+        sidebar.isCollapsed.toggle()
+        view.window?.invalidateRestorableState()
     }
 
     @objc func importBooks(_ sender: Any?) {
@@ -353,8 +358,13 @@ final class MacAppKitRootController: NSSplitViewController, NSToolbarDelegate {
                 if let localSnapshot = await EmbeddedConversionCoordinator.resumeLocalPlaybackIfAvailable(
                     bookID: book.id,
                     priorityChapterIndices: [priorityChapterIndex],
+                    autoPlay: false,
                     player: player
                 ) {
+                    player.startFromReaderPage(
+                        priorityChapterIndex,
+                        sentenceOffsetRatio: readerPageRatio(bookID: book.id)
+                    )
                     self.playerPresentation.showFullPlayer()
                     if localSnapshot.state == "finished" {
                         library.recordConversion(jobId: localSnapshot.jobId, for: book.id)
@@ -392,6 +402,30 @@ final class MacAppKitRootController: NSSplitViewController, NSToolbarDelegate {
         }
     }
 
+    /// A macOS Play tap follows the reader's visible location. The reader
+    /// publishes an EPUB-indexed chapter and page ratio for both scrolling
+    /// and TOC navigation, so a selected TOC chapter never resumes stale
+    /// audio from a previous chapter.
+    private func playFromCurrentReaderPosition() {
+        guard let bookID = UserDefaults.standard.string(forKey: ReaderSessionState.currentlyReadingBookIDKey) else {
+            if player.snapshot == nil { startPlaybackForCurrentBook() } else { player.resume() }
+            return
+        }
+        let chapterIndex = ReaderPlaybackPriorityChapter.index(bookID: bookID)
+        let pageRatio = readerPageRatio(bookID: bookID)
+        if let snapshot = player.snapshot,
+           snapshot.state == "finished" || snapshot.playableChapters.contains(where: { $0.index == chapterIndex }) {
+            player.startFromReaderPage(chapterIndex, sentenceOffsetRatio: pageRatio)
+        } else {
+            startPlaybackForCurrentBook()
+        }
+    }
+
+    private func readerPageRatio(bookID: String) -> Double? {
+        UserDefaults.standard.object(forKey: AudioPlayer.readerCurrentPageRatioDefaultsKey) as? Double
+            ?? ReaderProgressStore.read(bookId: bookID)?.offsetFraction
+    }
+
     private func refreshFullPlayer() {
         guard isViewLoaded else { return }
         if playerPresentation.showingFullPlayer {
@@ -400,7 +434,7 @@ final class MacAppKitRootController: NSSplitViewController, NSToolbarDelegate {
                 player: player,
                 library: library,
                 presentation: playerPresentation,
-                onStartPlayback: { [weak self] in self?.startPlaybackForCurrentBook() }
+                onStartPlayback: { [weak self] in self?.playFromCurrentReaderPosition() }
             )
             controller.preferredContentSize = view.window?.contentView?.bounds.size ?? NSSize(width: 1000, height: 700)
             fullPlayerController = controller
@@ -439,6 +473,7 @@ private final class MacPlayerBarViewController: NSViewController {
     private let etaLabel = NSTextField(labelWithString: "")
     private let coverView = NSImageView()
     private let playButton = NSButton()
+    private let previousButton = NSButton()
     private let nextButton = NSButton()
     private let rateButton = NSButton()
     private var cancellable: AnyCancellable?
@@ -474,6 +509,12 @@ private final class MacPlayerBarViewController: NSViewController {
         playButton.action = #selector(togglePlayback)
         playButton.setAccessibilityLabel(L10n.string("player.play"))
         playButton.toolTip = L10n.string("player.play")
+        previousButton.image = NSImage(systemSymbolName: "backward.end.fill", accessibilityDescription: L10n.string("player.previousChapter"))
+        previousButton.bezelStyle = .texturedRounded
+        previousButton.target = self
+        previousButton.action = #selector(previousChapter)
+        previousButton.setAccessibilityLabel(L10n.string("player.previousChapter"))
+        previousButton.toolTip = L10n.string("player.previousChapter")
         nextButton.image = NSImage(systemSymbolName: "forward.end.fill", accessibilityDescription: L10n.string("player.nextChapter"))
         nextButton.bezelStyle = .texturedRounded
         nextButton.target = self
@@ -506,7 +547,7 @@ private final class MacPlayerBarViewController: NSViewController {
             info.topAnchor.constraint(equalTo: openButton.topAnchor),
             info.bottomAnchor.constraint(equalTo: openButton.bottomAnchor),
         ])
-        let stack = NSStackView(views: [openButton, playButton, nextButton, rateButton])
+        let stack = NSStackView(views: [openButton, previousButton, playButton, nextButton, rateButton])
         stack.orientation = .horizontal
         stack.alignment = .centerY
         stack.distribution = .fill
@@ -525,7 +566,7 @@ private final class MacPlayerBarViewController: NSViewController {
         ])
         openButton.setContentHuggingPriority(.defaultLow, for: .horizontal)
         openButton.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-        for button in [playButton, nextButton, rateButton] {
+        for button in [previousButton, playButton, nextButton, rateButton] {
             button.setContentHuggingPriority(.required, for: .horizontal)
             button.setContentCompressionResistancePriority(.required, for: .horizontal)
         }
@@ -541,31 +582,10 @@ private final class MacPlayerBarViewController: NSViewController {
             return
         }
 
-        if player.hasPausedPlaybackToResume {
-            player.resume()
-            refresh()
-            return
-        }
-
-        guard let bookID = UserDefaults.standard.string(forKey: ReaderSessionState.currentlyReadingBookIDKey) else {
-            if player.snapshot == nil { onStartPlayback() } else { player.resume() }
-            refresh()
-            return
-        }
-
-        let chapterIndex = ReaderPlaybackPriorityChapter.index(bookID: bookID)
-        let offsetFraction = ReaderProgressStore.read(bookId: bookID)?.offsetFraction
-        if let snapshot = player.snapshot,
-           snapshot.state == "finished" || snapshot.playableChapters.contains(where: { $0.index == chapterIndex }) {
-            player.startFromReaderPage(chapterIndex, sentenceOffsetRatio: offsetFraction)
-        } else {
-            // The current reader chapter has no local audio yet. Starting the
-            // embedded stream here promotes that chapter ahead of the stale
-            // partial queue instead of resuming an earlier chapter.
-            onStartPlayback()
-        }
+        onStartPlayback()
         refresh()
     }
+    @objc private func previousChapter() { player.previousChapter(); refresh() }
     @objc private func nextChapter() { player.nextChapter(); refresh() }
     @objc private func showRateMenu() {
         let menu = NSMenu()
@@ -598,6 +618,7 @@ private final class MacPlayerBarViewController: NSViewController {
         playButton.image = NSImage(systemSymbolName: player.isPlaying ? "pause.fill" : "play.fill", accessibilityDescription: nil)
         rateButton.title = player.rate.shortLabel
         playButton.isEnabled = player.snapshot != nil || currentBookID != nil
+        previousButton.isEnabled = player.snapshot != nil
         nextButton.isEnabled = player.snapshot != nil
         rateButton.isEnabled = player.snapshot != nil
     }
@@ -687,7 +708,7 @@ private final class MacFullPlayerViewController: NSViewController {
     }
 
     @objc private func togglePlayback() {
-        if player.snapshot == nil { onStartPlayback() } else { player.togglePlayPause() }
+        if player.isPlaying { player.pause() } else { onStartPlayback() }
         refresh()
     }
     @objc private func previousChapter() { player.previousChapter() }
