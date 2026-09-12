@@ -3247,6 +3247,7 @@ final class AudioPlayer: ObservableObject {
     // Strictly compiled-in: not referenced from product code.
     #if DEBUG
     func testHook_setIsPlaying(_ value: Bool) { self.isPlaying = value }
+    func testHook_currentPlayerItem() -> AVPlayerItem? { player?.currentItem }
     func testHook_setSnapshot(_ snap: JobSnapshot) { self.snapshot = snap }
     func testHook_setCurrentChapterIndex(_ idx: Int) { self.currentChapterIndex = idx }
     func testHook_setDurationSeconds(_ value: Double) { self.durationSeconds = value }

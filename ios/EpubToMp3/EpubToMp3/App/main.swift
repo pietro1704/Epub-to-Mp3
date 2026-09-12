@@ -3,10 +3,7 @@ import AppKit
 
 MainActor.assumeIsolated {
     if EpubToMp3App.isRunningUnderXCTest() {
-        while NSApp == nil {
-            RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.1))
-        }
-        NSApp?.run()
+        NSApplication.shared.run()
     } else {
         EpubToMp3App.runApp()
     }

@@ -407,6 +407,12 @@ final class MacAppKitRootController: NSSplitViewController, NSToolbarDelegate {
     /// and TOC navigation, so a selected TOC chapter never resumes stale
     /// audio from a previous chapter.
     private func playFromCurrentReaderPosition() {
+        // Transport Play after a deliberate pause resumes the existing item,
+        // even when the reader still publishes the chapter's opening page.
+        if player.hasPausedPlaybackToResume {
+            player.resume()
+            return
+        }
         guard let bookID = UserDefaults.standard.string(forKey: ReaderSessionState.currentlyReadingBookIDKey) else {
             if player.snapshot == nil { startPlaybackForCurrentBook() } else { player.resume() }
             return

@@ -375,9 +375,9 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.pietrocode.epubtomp3.tests
         BUNDLE_LOADER: "$(TEST_HOST)"
         TEST_HOST: "$(BUILT_PRODUCTS_DIR)/EpubToMp3.app/EpubToMp3"
-        # Both iOS and macOS tests load the app target so @testable symbols
-        # remain available. The macOS main.swift bootstrap reuses XCTest's
-        # existing NSApplication instead of creating a competing instance.
+        # The host owns NSApplication. The test bundle must not inherit the
+        # app's principal class or XCTest creates a second application.
+        "INFOPLIST_KEY_NSPrincipalClass[sdk=macosx*]": "NSObject"
         "TEST_HOST[sdk=macosx*]": "$(BUILT_PRODUCTS_DIR)/EpubToMp3.app/Contents/MacOS/EpubToMp3"
         #
         # xcodegen's per-target `deploymentTarget` does not reliably
