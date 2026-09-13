@@ -235,21 +235,19 @@ enum ReaderPaginatedTextLayout {
             pageStart = safeOffset
             firstFragment = nextFragment
         }
-        // A line-boundary start can leave a very large blank footer on the
-        // final page, especially at small font sizes. Finish at the real
-        // reachable content offset instead. If that offset starts inside a
-        // line, the top overflow guard hides only that incomplete slice and
-        // keeps the full line visible on the preceding page.
-        let finalOffset = max(0, contentHeight - input.pageHeight)
-        if let lastOffset = offsets.last {
-            if finalOffset > lastOffset + epsilon {
-                offsets.append(finalOffset)
-            } else if finalOffset < lastOffset - epsilon {
-                offsets[offsets.count - 1] = finalOffset
-            }
+        // Fill the final page without starting inside a protected fragment.
+        // The nearest line boundary after the natural scroll extent keeps
+        // trailing space small; reserve enough height to make it reachable.
+        let naturalFinalOffset = max(0, contentHeight - input.pageHeight)
+        if let lastOffset = offsets.last,
+           let finalFragment = fragments.first(where: {
+               $0.contentRect.minY >= naturalFinalOffset
+                   && $0.contentRect.minY <= lastOffset
+           }) {
+            offsets[offsets.count - 1] = finalFragment.contentRect.minY
         }
         return Result(
-            contentHeight: contentHeight,
+            contentHeight: max(contentHeight, (offsets.last ?? 0) + input.pageHeight),
             canonicalPageOffsets: offsets,
             protectedFragments: fragments,
             oversizedFragment: oversized,

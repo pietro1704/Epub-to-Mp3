@@ -12,18 +12,23 @@ enum MacReaderTextLayout {
               let container = textView.textContainer,
               let layoutManager = textView.layoutManager else { return }
 
+        // Width tracking can invalidate layout when the view frame changes.
+        // Commit the final width before measuring any glyphs.
+        textView.setFrameSize(NSSize(width: viewport.width, height: textView.frame.height))
+        container.widthTracksTextView = true
         container.containerSize = NSSize(
-            width: viewport.width,
+            width: max(1, viewport.width - textView.textContainerInset.width * 2),
             height: .greatestFiniteMagnitude
         )
-        container.widthTracksTextView = true
+        layoutManager.ensureLayout(forCharacterRange: NSRange(location: 0, length: textView.textStorage?.length ?? 0))
         layoutManager.ensureLayout(for: container)
         let used = layoutManager.usedRect(for: container)
         let height = max(
             viewport.height,
             ceil(used.height + textView.textContainerInset.height * 2)
         )
-        textView.frame = NSRect(x: 0, y: 0, width: viewport.width, height: height)
+        textView.setFrameOrigin(.zero)
+        textView.setFrameSize(NSSize(width: viewport.width, height: height))
     }
 }
 #endif

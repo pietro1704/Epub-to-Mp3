@@ -12,6 +12,45 @@ private typealias ReaderTestFont = NSFont
 
 final class ReaderPaginatedTextLayoutTests: XCTestCase {
     @MainActor
+    func testFinalPageStartsOnAWholeFragmentWithoutExcessiveTrailingSpace() throws {
+        for fontSize in [CGFloat(14), 24] {
+            for pageHeight in [CGFloat(217), 239, 351] {
+                let storage = NSTextStorage(
+                    string: String(repeating: "The traveller followed the quiet river through the valley. ", count: 100),
+                    attributes: [.font: ReaderTestFont.systemFont(ofSize: fontSize)]
+                )
+                let layoutManager = NSLayoutManager()
+                let container = NSTextContainer(size: CGSize(width: 280, height: pageHeight))
+                storage.addLayoutManager(layoutManager)
+                layoutManager.addTextContainer(container)
+                let result = ReaderPaginatedTextLayout.layout(.init(
+                    layoutManager: layoutManager,
+                    textContainer: container,
+                    topInset: 16,
+                    bottomInset: 24,
+                    pageHeight: pageHeight
+                ))
+                let lastOffset = try XCTUnwrap(result.canonicalPageOffsets.last)
+                let lastFragment = try XCTUnwrap(result.protectedFragments.last)
+                let naturalHeight = ceil(lastFragment.contentRect.maxY + result.bottomInset)
+                let largestLineHeight = try XCTUnwrap(result.protectedFragments.map(\.contentRect.height).max())
+                let context = "font=\(fontSize), viewport=\(pageHeight), finalOffset=\(lastOffset)"
+                XCTAssertFalse(result.requiresScrollingFallback, context)
+                XCTAssertGreaterThan(result.canonicalPageOffsets.count, 1, context)
+                XCTAssertTrue(result.protectedFragments.contains {
+                    abs($0.contentRect.minY - lastOffset) < 0.5
+                }, "The final offset must be a real protected-fragment boundary: \(context)")
+                XCTAssertEqual(result.clippingReport(at: lastOffset).clippedLineCount, 0,
+                               "The final page must not rely on masks to hide partial fragments: \(context)")
+                XCTAssertGreaterThanOrEqual(result.contentHeight - pageHeight + 0.5, lastOffset,
+                                            "The scroll extent must reach the final boundary: \(context)")
+                XCTAssertLessThanOrEqual(result.contentHeight - naturalHeight, largestLineHeight + 1,
+                                         "Final-page padding must not add a mostly empty footer: \(context)")
+            }
+        }
+    }
+
+    @MainActor
     private func assertNoVisiblePartialFragments(
         in result: ReaderPaginatedTextLayout.Result,
         at offset: CGFloat,
@@ -133,17 +172,11 @@ final class ReaderPaginatedTextLayoutTests: XCTestCase {
         ) { _, usedRect, _, _, _ in
             lineStarts.append(usedRect.minY)
         }
-        let maximumScrollOffset = max(
-            0,
-            ceil(layoutManager.usedRect(for: container).height) - 40
-        )
-
         XCTAssertGreaterThan(offsets.count, 1)
         for offset in offsets.dropFirst() {
             XCTAssertTrue(
-                lineStarts.contains(where: { abs($0 - offset) < 0.5 })
-                    || abs(offset - maximumScrollOffset) < 0.5,
-                "page offset \(offset) must be a line boundary or the reachable final offset"
+                lineStarts.contains(where: { abs($0 - offset) < 0.5 }),
+                "page offset \(offset) must be a line boundary, including the final page"
             )
         }
     }

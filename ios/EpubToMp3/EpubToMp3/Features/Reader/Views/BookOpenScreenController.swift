@@ -2052,6 +2052,9 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
         }
         if !forward, current <= 1, selectedChapter > 0 {
             persistReadingProgress(); selectedChapter -= 1; showChapter(selectedChapter)
+            // Chapter rendering resets viewport facts and defers pagination.
+            // Resolve the destination chapter before reading its final page.
+            view.layoutIfNeeded()
             let previousTotal = measuredPageCount
             if ProcessInfo.processInfo.arguments.contains("-uiTestFixture") {
                 uiTestPageNumber = previousTotal

@@ -36,6 +36,7 @@ final class MacReaderViewController: NSViewController, NSTableViewDataSource, NS
     private var pdfView: PDFView?
     private var fulltext: EbookFulltext?
     private var selectedChapter = 0
+    private var isSynchronizingTOCSelection = false
     private var currentBookId: String?
     /// Guards against re-seeking scroll position on every manual chapter
     /// selection — restoration only makes sense once per book load.
@@ -171,6 +172,7 @@ final class MacReaderViewController: NSViewController, NSTableViewDataSource, NS
     }
 
     func tableViewSelectionDidChange(_ notification: Notification) {
+        guard !isSynchronizingTOCSelection else { return }
         let row = chaptersTable.selectedRow
         guard row >= 0, let chapterIndex = tocRows[safe: row]?.chapterIndex else { return }
         persistReadingProgress()
@@ -661,13 +663,12 @@ final class MacReaderViewController: NSViewController, NSTableViewDataSource, NS
             }
             MacReaderTextLayout.fit(textView, in: contentScrollView)
             repaintSavedHighlights(chapterIndex: index)
-            if scrollToEnd {
-                DispatchQueue.main.async { [weak self] in
-                    self?.textView.scrollToEndOfDocument(nil)
-                }
-            } else {
-                textView.scrollToBeginningOfDocument(nil)
-            }
+            // NSTextView's responder actions need not move this read-only
+            // viewport. Commit its measured destination directly.
+            let clipView = contentScrollView.contentView
+            let end = max(0, textView.frame.height - clipView.bounds.height)
+            clipView.scroll(to: NSPoint(x: 0, y: scrollToEnd ? end : 0))
+            contentScrollView.reflectScrolledClipView(clipView)
         }
         ReaderPlaybackAnchor.publish(
             readerPosition: index,
@@ -819,6 +820,7 @@ final class MacReaderViewController: NSViewController, NSTableViewDataSource, NS
             selectedChapter += 1
             showChapter(selectedChapter)
             selectCurrentTOCRow()
+            persistReadingProgress()
             return
         }
         if !forward && atStart, selectedChapter > 0 {
@@ -826,6 +828,7 @@ final class MacReaderViewController: NSViewController, NSTableViewDataSource, NS
             selectedChapter -= 1
             showChapter(selectedChapter, scrollToEnd: true)
             selectCurrentTOCRow()
+            persistReadingProgress()
             return
         }
         let offset = forward ? page : -page
@@ -837,6 +840,9 @@ final class MacReaderViewController: NSViewController, NSTableViewDataSource, NS
 
     private func selectCurrentTOCRow() {
         guard let row = tocRows.firstIndex(where: { $0.chapterIndex == selectedChapter }) else { return }
+        // Updating the TOC highlight is not a request to reopen the chapter.
+        isSynchronizingTOCSelection = true
+        defer { isSynchronizingTOCSelection = false }
         chaptersTable.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
     }
 
