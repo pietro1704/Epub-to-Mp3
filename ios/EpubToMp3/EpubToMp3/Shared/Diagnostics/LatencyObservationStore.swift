@@ -2,13 +2,83 @@ import Dispatch
 import Foundation
 
 enum LatencyObservation {
-    enum JourneyKind: String, Codable, Equatable {
+    struct StreamPublication: Codable, Equatable, Sendable {
+        let publicationID: String
+        let producer: ProducerObservation
+
+        private enum CodingKeys: String, CodingKey {
+            case publicationID = "publicationId"
+            case producer
+        }
+
+        init?(publicationID: String, producer: ProducerObservation) {
+            guard Self.isOpaquePublicationID(publicationID) else { return nil }
+            self.publicationID = publicationID
+            self.producer = producer
+        }
+
+        init(from decoder: Decoder) throws {
+            let values = try decoder.container(keyedBy: CodingKeys.self)
+            let identifier = try values.decode(String.self, forKey: .publicationID)
+            let producer = try values.decode(ProducerObservation.self, forKey: .producer)
+            guard let publication = Self(publicationID: identifier, producer: producer) else {
+                throw DecodingError.dataCorrupted(.init(
+                    codingPath: decoder.codingPath,
+                    debugDescription: "Invalid opaque publication identifier"))
+            }
+            self = publication
+        }
+
+        private static func isOpaquePublicationID(_ value: String) -> Bool {
+            let count = value.utf8.count
+            guard count > 0, count <= 36 else { return false }
+            let bytes = Array(value.utf8)
+            if count <= 20, bytes.allSatisfy({ (48...57).contains($0) }) { return true }
+            if count == 32, bytes.allSatisfy({
+                (48...57).contains($0) || (65...70).contains($0) || (97...102).contains($0)
+            }) { return true }
+            return count == 36 && UUID(uuidString: value)?.uuidString.lowercased() == value.lowercased()
+        }
+    }
+
+    /// Producer-relative elapsed values must never enter client-clock records.
+    struct ProducerObservation: Codable, Equatable, Sendable {
+        let version: Int
+        let attemptID: UUID
+        let segmentReadyElapsedNanoseconds: UInt64
+        let artifactPublishedElapsedNanoseconds: UInt64
+
+        private enum CodingKeys: String, CodingKey {
+            case version
+            case attemptID = "attemptId"
+            case segmentReadyElapsedNanoseconds
+            case artifactPublishedElapsedNanoseconds
+        }
+
+        init(from decoder: Decoder) throws {
+            let values = try decoder.container(keyedBy: CodingKeys.self)
+            version = try values.decode(Int.self, forKey: .version)
+            attemptID = try values.decode(UUID.self, forKey: .attemptID)
+            segmentReadyElapsedNanoseconds = try values.decode(
+                UInt64.self, forKey: .segmentReadyElapsedNanoseconds)
+            artifactPublishedElapsedNanoseconds = try values.decode(
+                UInt64.self, forKey: .artifactPublishedElapsedNanoseconds)
+            guard version == 1,
+                  artifactPublishedElapsedNanoseconds >= segmentReadyElapsedNanoseconds else {
+                throw DecodingError.dataCorrupted(.init(
+                    codingPath: decoder.codingPath,
+                    debugDescription: "Invalid producer observation version or ordering"))
+            }
+        }
+    }
+
+    enum JourneyKind: String, Codable, Equatable, Sendable {
         case bookOpen = "book_open"
         case progressivePlayback = "progressive_playback"
         case seek
     }
 
-    enum Transition: String, Codable, Equatable {
+    enum Transition: String, Codable, Equatable, Sendable {
         case openRequested = "open_requested"
         case readableContent = "readable_content"
         case controlsUsable = "controls_usable"
@@ -21,45 +91,54 @@ enum LatencyObservation {
         case cancelled
     }
 
-    enum DocumentKind: String, Codable, Equatable {
+    enum DocumentKind: String, Codable, Equatable, Sendable {
         case epub
         case selectableTextPDF = "selectable_text_pdf"
         case normalizedScannedPDF = "normalized_scanned_pdf"
     }
 
-    enum CacheClass: String, Codable, Equatable {
+    enum CacheClass: String, Codable, Equatable, Sendable {
         case unknown
         case inMemoryWarm = "in_memory_warm"
         case preparedDisk = "prepared_disk"
         case cold
     }
 
-    struct Context: Codable, Equatable {
+    struct Context: Codable, Equatable, Sendable {
         let documentKind: DocumentKind
         var cacheClass: CacheClass
     }
 
-    struct Record: Codable, Equatable {
+    struct Record: Codable, Equatable, Sendable {
         let transition: Transition
         let elapsedNanoseconds: UInt64
     }
 
-    struct Journey: Codable, Equatable {
+    struct Journey: Codable, Equatable, Sendable {
         let id: UUID
         let kind: JourneyKind
         var context: Context
         var records: [Record]
+        var streamPublication: StreamPublication? = nil
+        var streamRequest: StreamRequestReceipt? = nil
     }
 }
 
-/// Holds privacy-safe, in-memory timing observations until the listener
+/// Holds privacy-safe timing observations locally until the listener
 /// explicitly exports diagnostics. Book content and identity never enter this
 /// boundary: records retain only a random journey identifier, document class,
 /// cache class, transition, and monotonic elapsed time.
-final class LatencyObservationStore {
+final class LatencyObservationStore: @unchecked Sendable {
     typealias Clock = () -> UInt64
 
-    static let shared = LatencyObservationStore()
+    static let shared: LatencyObservationStore = {
+        let environment = ProcessInfo.processInfo.environment
+        let isTesting = ["XCTestConfigurationFilePath", "XCTestSessionIdentifier", "XCTestBundlePath"]
+            .contains { environment[$0] != nil }
+        // Native integration tests use the shared collector, but their synthetic
+        // journeys must never hydrate or overwrite the listener's diagnostics.
+        return LatencyObservationStore(persistence: isTesting ? nil : .applicationStorage())
+    }()
 
     private struct ActiveJourney {
         let startedAtNanoseconds: UInt64
@@ -69,16 +148,41 @@ final class LatencyObservationStore {
 
     private let clock: Clock
     private let capacity: Int
+    private let persistence: LatencyObservationPersistence?
+    private var persistenceRevision: UInt64 = 0
+    private var persistenceReady = false
     private let lock = NSLock()
     private var activeJourneys: [UUID: ActiveJourney] = [:]
     private var orderedJourneyIDs: [UUID] = []
 
     init(
         clock: @escaping Clock = { DispatchTime.now().uptimeNanoseconds },
-        capacity: Int = 200
+        capacity: Int = 200,
+        persistence: LatencyObservationPersistence? = nil
     ) {
         self.clock = clock
-        self.capacity = max(1, capacity)
+        self.capacity = min(LatencyObservationPersistence.maximumJourneys, max(1, capacity))
+        self.persistence = persistence
+        persistenceReady = persistence == nil
+        persistence?.load { [weak self] journeys in self?.restoreHistory(journeys) }
+    }
+
+    private func restoreHistory(_ journeys: [LatencyObservation.Journey]) {
+        lock.lock()
+        defer { lock.unlock() }
+        let liveIDs = Set(orderedJourneyIDs)
+        let history = journeys.filter { !liveIDs.contains($0.id) }
+        for journey in history {
+            // Historical elapsed values belong to a prior process clock.
+            // Never resume or fabricate a cancellation for an archived journey.
+            activeJourneys[journey.id] = ActiveJourney(
+                startedAtNanoseconds: 0, journey: journey, isTerminal: true)
+        }
+        orderedJourneyIDs = history.map(\.id) + orderedJourneyIDs
+        trimToCapacityLocked()
+        persistenceReady = true
+        // Do not write an empty archive merely because there was no valid file.
+        if !orderedJourneyIDs.isEmpty { schedulePersistenceLocked() }
     }
 
     @discardableResult
@@ -132,6 +236,7 @@ final class LatencyObservationStore {
         )
         orderedJourneyIDs.append(id)
         trimToCapacityLocked()
+        schedulePersistenceLocked()
         lock.unlock()
         return id
     }
@@ -142,6 +247,7 @@ final class LatencyObservationStore {
         guard var active = activeJourneys[journeyID], !active.isTerminal else { return }
         active.journey.context.cacheClass = cacheClass
         activeJourneys[journeyID] = active
+        schedulePersistenceLocked()
     }
 
     func classifyDocument(_ documentKind: LatencyObservation.DocumentKind, for journeyID: UUID) {
@@ -153,6 +259,7 @@ final class LatencyObservationStore {
             cacheClass: active.journey.context.cacheClass
         )
         activeJourneys[journeyID] = active
+        schedulePersistenceLocked()
     }
 
     @discardableResult
@@ -170,6 +277,39 @@ final class LatencyObservationStore {
             .init(transition: transition, elapsedNanoseconds: elapsedNanoseconds(for: active))
         )
         activeJourneys[journeyID] = active
+        schedulePersistenceLocked()
+        return true
+    }
+
+    @discardableResult
+    func attachStreamPublication(
+        _ publication: LatencyObservation.StreamPublication, for journeyID: UUID
+    ) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        guard var active = activeJourneys[journeyID], !active.isTerminal,
+              active.journey.kind != .bookOpen,
+              active.journey.streamPublication == nil,
+              active.journey.streamRequest.map({ $0.publicationID == publication.publicationID }) ?? true
+        else { return false }
+        active.journey.streamPublication = publication
+        activeJourneys[journeyID] = active
+        schedulePersistenceLocked()
+        return true
+    }
+
+    @discardableResult
+    func attachStreamRequest(_ request: LatencyObservation.StreamRequestReceipt, for journeyID: UUID) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        guard request.journeyID == journeyID,
+              var active = activeJourneys[journeyID], !active.isTerminal,
+              active.journey.kind != .bookOpen, active.journey.streamRequest == nil,
+              active.journey.streamPublication.map({ $0.publicationID == request.publicationID }) ?? true
+        else { return false }
+        active.journey.streamRequest = request
+        activeJourneys[journeyID] = active
+        schedulePersistenceLocked()
         return true
     }
 
@@ -183,6 +323,7 @@ final class LatencyObservationStore {
         )
         active.isTerminal = true
         activeJourneys[journeyID] = active
+        schedulePersistenceLocked()
         return true
     }
 
@@ -192,6 +333,18 @@ final class LatencyObservationStore {
         guard var active = activeJourneys[journeyID], !active.isTerminal else { return }
         active.isTerminal = true
         activeJourneys[journeyID] = active
+        schedulePersistenceLocked()
+    }
+
+    func flushPersistence() async {
+        await persistence?.flush()
+    }
+
+    private func schedulePersistenceLocked() {
+        guard persistenceReady, let persistence else { return }
+        persistenceRevision += 1
+        persistence.schedule(orderedJourneyIDs.compactMap { activeJourneys[$0]?.journey },
+                             revision: persistenceRevision)
     }
 
     func snapshot() -> [LatencyObservation.Journey] {
@@ -214,8 +367,9 @@ final class LatencyObservationStore {
         return try encoder.encode(snapshot())
     }
 
-    func writeDiagnosticExport() throws -> URL {
-        let url = FileManager.default.temporaryDirectory
+    func writeDiagnosticExport(to destination: URL? = nil) async throws -> URL {
+        await flushPersistence()
+        let url = destination ?? FileManager.default.temporaryDirectory
             .appendingPathComponent("performance-diagnostics-\(UUID().uuidString)")
             .appendingPathExtension("json")
         try exportData().write(to: url, options: .atomic)
@@ -243,7 +397,7 @@ final class LatencyObservationStore {
         case .bookOpen:
             switch transition {
             case .readableContent, .controlsUsable, .firstPDFPage:
-                return true
+                return !recorded.contains(transition)
             default:
                 return false
             }

@@ -435,7 +435,12 @@ actor LocalAudioArtifactStore {
         for index in manifest.chapters.indices where manifest.chapters[index].retention == .temporary {
             let artifact = manifest.chapters[index]
             let url = bookDirectory(bookID: bookID).appendingPathComponent(artifact.relativePath)
-            try? fileManager.removeItem(at: url)
+            do {
+                try fileManager.removeItem(at: url)
+            } catch let error as NSError where error.domain == NSCocoaErrorDomain
+                && error.code == NSFileNoSuchFileError {
+                // Already absent audio can still have stale manifest state.
+            }
             manifest.chapters[index].state = .pending
             manifest.chapters[index].byteCount = 0
             manifest.chapters[index].lastError = nil
@@ -463,10 +468,16 @@ actor LocalAudioArtifactStore {
         let artifact = try requiredArtifact(bookID: bookID, chapterIndex: chapterIndex)
         guard artifact.retention == .downloaded else { return }
         let url = bookDirectory(bookID: bookID).appendingPathComponent(artifact.relativePath)
-        try? fileManager.removeItem(at: url)
+        do {
+            try fileManager.removeItem(at: url)
+        } catch let error as NSError where error.domain == NSCocoaErrorDomain
+            && error.code == NSFileNoSuchFileError {
+            // A missing file still needs its stale download metadata cleared.
+        }
         try updateArtifact(bookID: bookID, chapterIndex: chapterIndex) { entry in
             entry.state = .pending
             entry.retention = .temporary
+            entry.playbackRetentionRequested = false
             entry.byteCount = 0
             entry.lastError = nil
         }

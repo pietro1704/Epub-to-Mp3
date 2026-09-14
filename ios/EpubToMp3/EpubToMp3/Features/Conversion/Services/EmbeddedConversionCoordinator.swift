@@ -64,7 +64,16 @@ enum EmbeddedConversionCoordinator {
         let drivesPlayer: Bool
         weak var player: AudioPlayer?
         var task: Task<JobSnapshot, Error>?
-        var playbackAttachment: PlaybackAttachment?
+        var playbackAttachment: PlaybackAttachment? {
+            didSet {
+                guard let playbackAttachment else { return }
+                navigationBinding.invalidate()
+                navigationBinding = PendingPlaybackNavigationBinding(
+                    player: playbackAttachment.player, bookID: request.bookID
+                )
+            }
+        }
+        var navigationBinding: PendingPlaybackNavigationBinding
 
         var ownsPlayback: Bool {
             drivesPlayer || playbackAttachment?.hasBegun == true
@@ -74,6 +83,7 @@ enum EmbeddedConversionCoordinator {
             self.request = request
             self.drivesPlayer = drivesPlayer
             self.player = player
+            navigationBinding = PendingPlaybackNavigationBinding(player: player, bookID: request.bookID)
         }
     }
 
@@ -427,6 +437,7 @@ enum EmbeddedConversionCoordinator {
 
     @MainActor
     private static func cancel(_ lease: StreamLease) {
+        lease.navigationBinding.invalidate()
         if activeStream?.id == lease.id {
             activeStream = nil
         }
@@ -445,6 +456,7 @@ enum EmbeddedConversionCoordinator {
 
     @MainActor
     private static func retire(_ lease: StreamLease) {
+        lease.navigationBinding.invalidate()
         guard activeStream?.id == lease.id else { return }
         activeStream = nil
     }
@@ -690,26 +702,26 @@ enum EmbeddedConversionCoordinator {
             uniqueKeysWithValues: chaptersToGenerate.map { ($0.zeroBasedEpubIndex, $0) }
         )
         while !remainingChapters.isEmpty {
-            guard let nextIndex = LocalAudioConversionScheduler.shared.nextChapterIndex(
-                bookID: bookID,
-                available: Set(remainingChapters.keys),
-                defaultOrder: chaptersToGenerate.map(\.zeroBasedEpubIndex)
-            ), let chapter = remainingChapters.removeValue(forKey: nextIndex) else {
-                break
-            }
             beginAttachedPlaybackIfNeeded(lease: lease, initial: initial, payload: payload)
-            let activePlayer = playbackPlayer(for: lease, fallback: player)
-            if LocalAudioConversionScheduler.shared.state(for: bookID) == .waitingForWiFi {
+            if LocalAudioConversionScheduler.shared.state(for: bookID) == .waitingForWiFi,
+               let waitingChapter = chaptersToGenerate.first(where: { remainingChapters[$0.zeroBasedEpubIndex] != nil }) {
                 try? await audioArtifacts.markWaitingForWiFi(
                     bookID: bookID,
-                    chapterIndex: chapter.zeroBasedEpubIndex
+                    chapterIndex: waitingChapter.zeroBasedEpubIndex
                 )
             }
-            LocalAudioConversionScheduler.shared.refreshDeviceResourceConstraint()
-            await LocalAudioConversionScheduler.shared.waitForResourceStability(bookID: bookID)
-            await LocalAudioConversionScheduler.shared.waitForNetworkPermission(bookID: bookID)
-            try Task.checkCancellation()
+            guard let nextIndex = try await nextReadyChapterIndex(
+                bookID: bookID,
+                available: Set(remainingChapters.keys),
+                defaultOrder: chaptersToGenerate.map(\.zeroBasedEpubIndex),
+                prepareSelection: {
+                    // Reconcile a reader attached while the gates were shut
+                    // before its superseded navigation can select a chapter.
+                    beginAttachedPlaybackIfNeeded(lease: lease, initial: initial, payload: payload)
+                }
+            ), let chapter = remainingChapters.removeValue(forKey: nextIndex) else { break }
             guard isActive(lease) else { throw CancellationError() }
+            let activePlayer = playbackPlayer(for: lease, fallback: player)
             let outputURL = try await audioArtifacts.canonicalURL(
                 bookID: bookID,
                 chapterIndex: chapter.zeroBasedEpubIndex
@@ -1299,6 +1311,25 @@ enum EmbeddedConversionCoordinator {
         guard jobID.hasPrefix(prefix) else { return nil }
         let bookID = String(jobID.dropFirst(prefix.count))
         return bookID.isEmpty ? nil : bookID
+    }
+
+    /// Select only after the gates reopen, so a navigation requested during
+    /// a resource/network wait becomes the next actual synthesis boundary.
+    @MainActor
+    static func nextReadyChapterIndex(
+        bookID: String,
+        available: Set<Int>,
+        defaultOrder: [Int],
+        scheduler: LocalAudioConversionScheduler? = nil,
+        prepareSelection: @MainActor () -> Void = {}
+    ) async throws -> Int? {
+        let scheduler = scheduler ?? .shared
+        scheduler.refreshDeviceResourceConstraint()
+        await scheduler.waitForResourceStability(bookID: bookID)
+        await scheduler.waitForNetworkPermission(bookID: bookID)
+        try Task.checkCancellation()
+        prepareSelection()
+        return scheduler.nextChapterIndex(bookID: bookID, available: available, defaultOrder: defaultOrder)
     }
 
     static func localCacheAction(

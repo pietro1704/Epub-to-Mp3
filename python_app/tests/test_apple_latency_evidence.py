@@ -62,6 +62,188 @@ def test_epub_derives_separate_observed_boundaries(tmp_path, export):
     }
 
 
+def publication():
+    return {
+        "publicationId": "0123456789abcdef0123456789abcdef",
+        "producer": {
+            "version": 1,
+            "attemptId": "123e4567-e89b-12d3-a456-426614174000",
+            "segmentReadyElapsedNanoseconds": 9_000_000_000,
+            "artifactPublishedElapsedNanoseconds": 10_000_000_000,
+        },
+    }
+
+
+def stream_request(journey, identifier="0123456789abcdef0123456789abcdef"):
+    return {
+        "journeyId": journey["id"],
+        "requestId": "123e4567-e89b-12d3-a456-426614174001",
+        "publicationId": identifier,
+    }
+
+
+@pytest.mark.parametrize("identifier", [
+    "0123456789abcdef0123456789abcdef", "0123456789ABCDEF0123456789ABCDEF",
+    "123e4567-e89b-12d3-a456-426614174000", "123E4567-E89B-12D3-A456-426614174000",
+    "0", "12345678901234567890",
+])
+@pytest.mark.parametrize("with_producer", [False, True])
+def test_stream_request_preserves_client_timings(tmp_path, export, identifier, with_producer):
+    expected = load(tmp_path, export)
+    for index in (1, 2):
+        export[index]["streamRequest"] = stream_request(export[index], identifier)
+        if with_producer:
+            export[index]["streamPublication"] = {**publication(), "publicationId": identifier}
+    assert load(tmp_path, export) == expected
+
+
+def test_stream_request_uuid_comparison_is_case_insensitive(tmp_path, export):
+    export[1]["id"] = "123e4567-e89b-12d3-a456-426614174002"
+    export[1]["streamRequest"] = stream_request(export[1])
+    export[1]["streamRequest"]["journeyId"] = export[1]["id"].upper()
+    export[1]["streamRequest"]["requestId"] = export[1]["streamRequest"]["requestId"].upper()
+    assert load(tmp_path, export)["audio_audible"] == 2
+
+
+@pytest.mark.parametrize("field", ["journeyId", "requestId"])
+@pytest.mark.parametrize("value", [None, True, 7, "", "PRIVATE_BOOK_CONTENT", "0" * 32,
+    "{" + str(UUID(int=1)) + "}", "urn:uuid:" + str(UUID(int=1))])
+def test_stream_request_invalid_uuid_is_redacted(tmp_path, export, field, value):
+    export[1]["streamRequest"] = {**stream_request(export[1]), field: value}
+    with pytest.raises(ValueError) as error:
+        load(tmp_path, export)
+    assert "PRIVATE_BOOK_CONTENT" not in str(error.value)
+    assert str(tmp_path) not in str(error.value)
+
+
+@pytest.mark.parametrize("identifier", [None, True, 12, "", "PRIVATE_BOOK_CONTENT", "١٢٣",
+    "123456789012345678901", "g" * 32, "{" + str(UUID(int=1)) + "}"])
+def test_stream_request_invalid_publication_is_redacted(tmp_path, export, identifier):
+    export[2]["streamRequest"] = stream_request(export[2], identifier)
+    with pytest.raises(ValueError) as error:
+        load(tmp_path, export)
+    assert "PRIVATE_BOOK_CONTENT" not in str(error.value)
+    assert str(tmp_path) not in str(error.value)
+
+
+@pytest.mark.parametrize("mutation", ["open", "null", "extra", "missing", "journey_mismatch",
+    "publication_mismatch", "publication_case_mismatch", "unknown_journey_field"])
+def test_stream_request_schema_and_correlation_are_strict(tmp_path, export, mutation):
+    index = 0 if mutation == "open" else 1
+    metadata = stream_request(export[index])
+    if mutation == "null":
+        metadata = None
+    elif mutation == "extra":
+        metadata["text"] = "PRIVATE_BOOK_CONTENT"
+    elif mutation == "missing":
+        metadata.pop("requestId")
+    elif mutation == "journey_mismatch":
+        metadata["journeyId"] = export[2]["id"]
+    elif mutation in ("publication_mismatch", "publication_case_mismatch"):
+        export[index]["streamPublication"] = publication()
+        metadata["publicationId"] = "0" if mutation == "publication_mismatch" else metadata["publicationId"].upper()
+    elif mutation == "unknown_journey_field":
+        export[index]["title"] = "PRIVATE_BOOK_CONTENT"
+    export[index]["streamRequest"] = metadata
+    with pytest.raises(ValueError) as error:
+        load(tmp_path, export)
+    assert "PRIVATE_BOOK_CONTENT" not in str(error.value)
+
+
+@pytest.mark.parametrize("field", ["journeyId", "requestId", "publicationId"])
+def test_stream_request_duplicate_nested_fields_are_rejected(tmp_path, export, field):
+    metadata = stream_request(export[1])
+    export[1]["streamRequest"] = metadata
+    original = json.dumps(field) + ": " + json.dumps(metadata[field])
+    raw = json.dumps(export).replace(original, original + ", " + original).encode()
+    with pytest.raises(ValueError, match="Duplicate"):
+        load(tmp_path, export, raw=raw)
+
+
+@pytest.mark.parametrize("identifier", [
+    "0123456789abcdef0123456789abcdef", "0123456789ABCDEF0123456789ABCDEF",
+    "123e4567-e89b-12d3-a456-426614174000", "123E4567-E89B-12D3-A456-426614174000",
+    "0", "12345678901234567890",
+])
+def test_publication_metadata_does_not_change_client_timings(tmp_path, export, identifier):
+    legacy = load(tmp_path, export)
+    for index in (1, 2):
+        export[index]["streamPublication"] = {**publication(), "publicationId": identifier}
+    assert load(tmp_path, export) == legacy
+
+
+@pytest.mark.parametrize("identifier", [None, True, 12, "", "PRIVATE_BOOK_CONTENT",
+    "١٢٣", "123456789012345678901", "g" * 32, "{" + str(UUID(int=1)) + "}"])
+def test_invalid_publication_identity_is_redacted(tmp_path, export, identifier):
+    export[1]["streamPublication"] = {**publication(), "publicationId": identifier}
+    with pytest.raises(ValueError) as error:
+        load(tmp_path, export)
+    assert "PRIVATE_BOOK_CONTENT" not in str(error.value)
+    assert str(tmp_path) not in str(error.value)
+
+
+@pytest.mark.parametrize("field,value", [
+    ("version", True), ("version", 1.0), ("version", 2),
+    ("attemptId", "PRIVATE_BOOK_CONTENT"), ("attemptId", "0" * 32), ("attemptId", None),
+    ("segmentReadyElapsedNanoseconds", True), ("segmentReadyElapsedNanoseconds", -1),
+    ("segmentReadyElapsedNanoseconds", 1.5), ("segmentReadyElapsedNanoseconds", "1"),
+    ("segmentReadyElapsedNanoseconds", 2**64), ("segmentReadyElapsedNanoseconds", None),
+    ("artifactPublishedElapsedNanoseconds", 1), ("artifactPublishedElapsedNanoseconds", 2**64),
+    ("artifactPublishedElapsedNanoseconds", True), ("artifactPublishedElapsedNanoseconds", float("nan")),
+])
+def test_invalid_producer_metadata_is_redacted(tmp_path, export, field, value):
+    metadata = publication()
+    metadata["producer"][field] = value
+    export[2]["streamPublication"] = metadata
+    with pytest.raises(ValueError) as error:
+        load(tmp_path, export)
+    assert "PRIVATE_BOOK_CONTENT" not in str(error.value)
+
+
+@pytest.mark.parametrize("mutation", ["open", "null", "extra", "missing", "producer_extra", "producer_missing"])
+def test_publication_schema_and_allowed_journey_are_strict(tmp_path, export, mutation):
+    metadata = publication()
+    if mutation == "null":
+        metadata = None
+    elif mutation == "extra":
+        metadata["title"] = "PRIVATE_BOOK_CONTENT"
+    elif mutation == "missing":
+        metadata.pop("producer")
+    elif mutation == "producer_extra":
+        metadata["producer"]["text"] = "PRIVATE_BOOK_CONTENT"
+    elif mutation == "producer_missing":
+        metadata["producer"].pop("attemptId")
+    export[0 if mutation == "open" else 1]["streamPublication"] = metadata
+    with pytest.raises(ValueError) as error:
+        load(tmp_path, export)
+    assert "PRIVATE_BOOK_CONTENT" not in str(error.value)
+
+
+@pytest.mark.parametrize("elapsed", [0, 2**64 - 1])
+def test_producer_unsigned_boundaries_remain_separate_from_client_clock(tmp_path, export, elapsed):
+    expected = load(tmp_path, export)
+    metadata = publication()
+    metadata["producer"]["segmentReadyElapsedNanoseconds"] = elapsed
+    metadata["producer"]["artifactPublishedElapsedNanoseconds"] = elapsed
+    export[1]["streamPublication"] = metadata
+    assert load(tmp_path, export) == expected
+
+
+def test_duplicate_nested_producer_fields_remain_rejected(tmp_path, export):
+    export[1]["streamPublication"] = publication()
+    raw = json.dumps(export).replace('"version": 1', '"version": 1, "version": 1').encode()
+    with pytest.raises(ValueError, match="Duplicate"):
+        load(tmp_path, export, raw=raw)
+
+
+def test_publication_does_not_enable_unknown_journey_fields(tmp_path, export):
+    export[1]["streamPublication"] = publication()
+    export[1]["title"] = "PRIVATE_BOOK_CONTENT"
+    with pytest.raises(ValueError, match="fields") as error:
+        load(tmp_path, export)
+    assert "PRIVATE_BOOK_CONTENT" not in str(error.value)
+
+
 @pytest.mark.parametrize(
     "corpus,document",
     [

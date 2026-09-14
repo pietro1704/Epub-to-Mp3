@@ -60,6 +60,7 @@ from .i18n import Localization, get_localization
 from .performance_profile_store import PerformanceProfileStore
 from .progress import ProgressTracker
 from .speed_controller import AdaptiveSpeedController
+from .stream_attempt_observation import atomic_copy_audio, atomic_write_manifest, observe_synthesis
 from .text_integrity_validator import TextIntegrityValidator
 from .tts.factory import TTSFactory
 from .tts.piper_guard import is_piper_supported_environment
@@ -3650,7 +3651,16 @@ class AudioConverter(
                 allowed = {k: v for k, v in kwargs.items() if k in sig.parameters}
             except Exception:
                 allowed = kwargs
-            return await engine_obj.synthesize_async(text, output_path, **allowed)
+            callback = allowed.get("chunk_callback")
+            if callback is None:
+                return await engine_obj.synthesize_async(text, output_path, **allowed)
+
+            def invoke(observed_callback):
+                return engine_obj.synthesize_async(
+                    text, output_path, **{**allowed, "chunk_callback": observed_callback}
+                )
+
+            return await observe_synthesis(invoke, callback)
 
         # If preprocessing already done by caller, skip duplicate work
         if not skip_preprocessing:
@@ -4840,7 +4850,10 @@ class AudioConverter(
                                     except Exception:
                                         pass
                                 try:
-                                    existing_chunks = list(chunk_root.glob("chunk_*.mp3"))
+                                    existing_chunks = [
+                                        path for path in chunk_root.glob("chunk_*.mp3")
+                                        if re.fullmatch(r"chunk_\d+\.mp3", path.name)
+                                    ]
                                 except Exception:
                                     existing_chunks = []
                                 if existing_chunks:
@@ -4852,6 +4865,8 @@ class AudioConverter(
                                 segment_index: int,
                                 temp_path: Path,
                                 segment_text: Optional[str] = None,
+                                *,
+                                observation=None,
                             ) -> None:
                                 segment_progress_state["hits"] += 1
                                 # Update bar with completed chunks
@@ -4863,15 +4878,21 @@ class AudioConverter(
 
                                 if chunk_root is None:
                                     return
+                                published_target = None
                                 try:
-                                    target = (
+                                    canonical = (
                                         chunk_root / f"chunk_{segment_index:04d}{temp_path.suffix}"
                                     )
-                                    try:
-                                        if temp_path.resolve() != target.resolve():
-                                            shutil.copy2(temp_path, target)
-                                    except OSError:
-                                        shutil.copy2(temp_path, target)
+                                    if observation is None:
+                                        raise RuntimeError("Missing segment publication context")
+                                    if temp_path.resolve() != canonical.resolve():
+                                        atomic_copy_audio(temp_path, canonical)
+                                    # Keep resume-cache naming unchanged while every
+                                    # manifest points to immutable published bytes.
+                                    publication_id = uuid.uuid4().hex
+                                    target = chunk_root / f"chunk_stream_{publication_id}{temp_path.suffix}"
+                                    observation_payload = observation.publish_audio(temp_path, target)
+                                    published_target = target
                                     manifest_path = chunk_root / "manifest.json"
                                     manifest = {
                                         "jobId": job_id or "cli",
@@ -4898,13 +4919,15 @@ class AudioConverter(
                                     }
                                     previous = existing_by_index.get(segment_index) or {}
                                     entry = {
+                                        "id": publication_id,
                                         "index": segment_index,
                                         "file": target.name,
+                                        "observation": observation_payload,
                                     }
                                     if job_id:
                                         entry["url"] = (
                                             f"/api/streams/{job_id}/chapters/"
-                                            f"{chapter_num}/chunks/{segment_index}"
+                                            f"{chapter_num}/chunks/{publication_id}"
                                         )
                                     if segment_text:
                                         entry["text"] = segment_text
@@ -4921,11 +4944,12 @@ class AudioConverter(
                                         if job_id
                                         else ""
                                     )
-                                    manifest_path.write_text(
-                                        json.dumps(manifest, ensure_ascii=False, indent=2),
-                                        encoding="utf-8",
-                                    )
+                                    atomic_write_manifest(manifest_path, manifest)
+                                    published_target = None
                                 except Exception as exc:
+                                    if published_target is not None:
+                                        with contextlib.suppress(OSError):
+                                            published_target.unlink(missing_ok=True)
                                     if self.verbose:
                                         print(f"   ⚠️ Failure saving chunk {segment_index}: {exc}")
 

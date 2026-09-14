@@ -199,7 +199,7 @@ class AudioPlayerService implements AudioPlayerInterface {
   Future<void> play() {
     _playbackJourneyId ??= latencyObservations.begin(
       LatencyJourneyKind.progressivePlayback,
-      LatencyTransition.interactionRequested,
+      LatencyTransition.playRequested,
     );
     _recordQueuedAudio();
     _listenForPlayableAudio();

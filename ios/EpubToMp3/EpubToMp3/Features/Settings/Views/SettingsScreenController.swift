@@ -25,12 +25,19 @@ final class SettingsScreenController: UITableViewController {
     private let player: AudioPlayer
     private let playbackClock: PlaybackClock
     private var storageUsage = StorageUsageScanner.current()
+    private let diagnosticsSession: StreamingDiagnosticsSession
+    private let confirmStreamingDiagnostics: ((String, String, @escaping () -> Void) -> Void)?
+    private var diagnosticsExpiryTask: Task<Void, Never>?
 
-    init(settings: AppSettings, library: LibraryStore, player: AudioPlayer, playbackClock: PlaybackClock) {
+    init(settings: AppSettings, library: LibraryStore, player: AudioPlayer, playbackClock: PlaybackClock,
+         diagnosticsSession: StreamingDiagnosticsSession? = nil,
+         confirmStreamingDiagnostics: ((String, String, @escaping () -> Void) -> Void)? = nil) {
         self.settings = settings
         self.library = library
         self.player = player
         self.playbackClock = playbackClock
+        self.diagnosticsSession = diagnosticsSession ?? .shared
+        self.confirmStreamingDiagnostics = confirmStreamingDiagnostics
         super.init(style: .insetGrouped)
         title = L10n.string("settings.title")
         tabBarItem = UITabBarItem(
@@ -60,7 +67,16 @@ final class SettingsScreenController: UITableViewController {
         super.viewWillAppear(animated)
         refreshStorageUsage()
         tableView.reloadData()
+        scheduleDiagnosticsExpiryRefresh()
     }
+
+    override func viewDidDisappear(_ animated: Bool) {
+        super.viewDidDisappear(animated)
+        diagnosticsExpiryTask?.cancel()
+        diagnosticsExpiryTask = nil
+    }
+
+    deinit { diagnosticsExpiryTask?.cancel() }
 
     func refreshFromStores() {
         guard isViewLoaded else { return }
@@ -86,7 +102,7 @@ final class SettingsScreenController: UITableViewController {
         case .storage:
             return 8
         case .advanced:
-            return 4
+            return 5
         case .about:
             return 3
         }
@@ -361,6 +377,14 @@ final class SettingsScreenController: UITableViewController {
             content.secondaryText = L10n.string("settings.exportPerformanceDiagnosticsDescription")
             content.image = UIImage(systemName: "square.and.arrow.up")
             cell.accessibilityIdentifier = "settings.exportPerformanceDiagnostics"
+        case 3:
+            content.text = L10n.string(diagnosticsSession.isActive
+                ? "settings.stopStreamingDiagnostics" : "settings.recordStreamingDiagnostics")
+            content.secondaryText = L10n.string(diagnosticsSession.isActive
+                ? "settings.streamingDiagnosticsActive" : "settings.streamingDiagnosticsInactive")
+            content.image = UIImage(systemName: "waveform.path")
+            cell.accessibilityIdentifier = "settings.recordStreamingDiagnostics"
+            cell.accessoryType = .none
         default:
             content.text = L10n.string("settings.clearCache")
             content.secondaryText = L10n.string("settings.clearCacheDescription")
@@ -497,6 +521,8 @@ final class SettingsScreenController: UITableViewController {
             )
         } else if row == 2 {
             exportPerformanceDiagnostics()
+        } else if row == 3 {
+            toggleStreamingDiagnostics()
         } else {
             presentDestructiveAlert(
                 title: L10n.string("settings.clearCacheConfirmTitle"),
@@ -510,19 +536,63 @@ final class SettingsScreenController: UITableViewController {
     }
 
     private func exportPerformanceDiagnostics() {
-        do {
-            let url = try LatencyObservationStore.shared.writeDiagnosticExport()
-            let controller = UIActivityViewController(activityItems: [url], applicationActivities: nil)
-            if let popover = controller.popoverPresentationController {
-                popover.sourceView = view
-                popover.sourceRect = view.bounds
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            do {
+                let url = try await LatencyObservationStore.shared.writeDiagnosticExport()
+                let controller = UIActivityViewController(activityItems: [url], applicationActivities: nil)
+                if let popover = controller.popoverPresentationController {
+                    popover.sourceView = view
+                    popover.sourceRect = view.bounds
+                }
+                present(controller, animated: true)
+            } catch {
+                presentInfoAlert(
+                    title: L10n.string("settings.exportPerformanceDiagnostics"),
+                    message: L10n.string("settings.exportPerformanceDiagnosticsError")
+                )
             }
-            present(controller, animated: true)
-        } catch {
-            presentInfoAlert(
-                title: L10n.string("settings.exportPerformanceDiagnostics"),
-                message: L10n.string("settings.exportPerformanceDiagnosticsError")
-            )
+        }
+    }
+
+    private func toggleStreamingDiagnostics() {
+        if diagnosticsSession.isActive {
+            diagnosticsSession.deactivate()
+            refreshStreamingDiagnostics()
+            return
+        }
+        let title = L10n.string("settings.streamingDiagnosticsConfirmTitle")
+        let message = L10n.string("settings.streamingDiagnosticsConfirmMessage")
+        let enable: () -> Void = { [weak self] in
+            guard let self else { return }
+            _ = self.diagnosticsSession.activate()
+            self.refreshStreamingDiagnostics()
+        }
+        if let confirmStreamingDiagnostics {
+            confirmStreamingDiagnostics(title, message, enable)
+        } else {
+            let alert = UIAlertController(title: title, message: message, preferredStyle: .alert)
+            alert.addAction(UIAlertAction(title: L10n.string("common.cancel"), style: .cancel))
+            alert.addAction(UIAlertAction(title: L10n.string("settings.enableStreamingDiagnostics"), style: .default) { _ in enable() })
+            present(alert, animated: true)
+        }
+    }
+
+    private func refreshStreamingDiagnostics() {
+        tableView.reloadRows(at: [IndexPath(row: 3, section: Section.advanced.rawValue)], with: .none)
+        scheduleDiagnosticsExpiryRefresh()
+    }
+
+    private func scheduleDiagnosticsExpiryRefresh() {
+        diagnosticsExpiryTask?.cancel()
+        diagnosticsExpiryTask = nil
+        let remaining = diagnosticsSession.remainingTime
+        guard remaining > 0 else { return }
+        diagnosticsExpiryTask = Task { @MainActor [weak self] in
+            do { try await Task.sleep(nanoseconds: UInt64((remaining + 0.05) * 1_000_000_000)) }
+            catch { return }
+            guard !Task.isCancelled else { return }
+            self?.refreshStreamingDiagnostics()
         }
     }
 

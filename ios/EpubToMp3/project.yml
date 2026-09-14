@@ -240,6 +240,10 @@ targets:
       - framework: Vendor/Python/Python.xcframework
         embed: true
         codeSign: true
+        # PythonKit loads this framework with dlopen. Linking it also makes
+        # the macOS linker depend on the embedded copy, creating a cycle
+        # between linking and framework embedding on incremental builds.
+        link: false
       - package: PythonKit
       # Widget extension — embedded in the main app bundle so iOS can
       # offer it in the widget gallery. iOS-only: the widget target's

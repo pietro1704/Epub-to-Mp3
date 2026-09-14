@@ -19,6 +19,7 @@ except ModuleNotFoundError:  # pragma: no cover - optional dependency
 
 from src.config import ConversionConfig
 from src.job_manager import JobManager
+from src.stream_http_observation import StreamHTTPObservationStore
 from src.telemetry import TelemetryRecorder
 
 from python_app import server
@@ -88,11 +89,13 @@ def _configure_server_paths(tmp_path, monkeypatch):
     monkeypatch.setattr(server, "job_manager", JobManager(jobs_dir))
 
 
-def test_process_conversion_generates_chapters(tmp_path, monkeypatch):
+@pytest.mark.parametrize("retry_first", [False, True])
+def test_process_conversion_generates_chapters(tmp_path, monkeypatch, retry_first):
     """Test server conversion with mocked TTS engine."""
     job_id = str(uuid4())
 
     _configure_server_paths(tmp_path, monkeypatch)
+    monkeypatch.setattr(server, "_CHAPTER_RETRY_BACKOFF_SECONDS", 0)
 
     upload_path = tmp_path / f"{job_id}_book.epub"
     upload_path.write_bytes(FIXTURE_BOOK.read_bytes())
@@ -111,7 +114,12 @@ def test_process_conversion_generates_chapters(tmp_path, monkeypatch):
     }
 
     # Mock the TTS engine to create dummy audio files
-    async def mock_synthesize(self, text, output_path):
+    recorded_callbacks = []
+    expected_stream_bytes = {}
+    failed_attempt_ids = set()
+    publication_responses = []
+
+    async def mock_synthesize(self, text, output_path, progress_callback=None, chunk_callback=None):
         output_path = Path(output_path)
         output_path.parent.mkdir(parents=True, exist_ok=True)
         # Create a minimal valid MP3 file (ID3 header + silence)
@@ -126,6 +134,49 @@ def test_process_conversion_generates_chapters(tmp_path, monkeypatch):
             + [0x00] * 417
         )  # Padding to make valid frame
         output_path.write_bytes(mp3_header * 10)  # Multiple frames
+        if chunk_callback is not None:
+            recorded_callbacks.append((chunk_callback, output_path))
+            for index in (1, 0):
+                segment = output_path.with_name(f"fixture-segment-{index}.mp3")
+                segment.write_bytes(mp3_header * (10 + index))
+                expected_stream_bytes[index] = segment.read_bytes()
+                chunk_callback(index, segment, "Private fixture text")
+                segment.unlink()
+            chapter_index = int(output_path.name.split(" - ", 1)[0])
+            client = TestClient(server.app)
+            manifest_url = f"/api/streams/{job_id}/chapters/{chapter_index}"
+            first_chunk = next(chunk for chunk in client.get(manifest_url).json()["chunks"] if chunk["index"] == 0)
+            first_bytes = expected_stream_bytes[0]
+            replacement = output_path.with_name("republished-segment.mp3")
+            replacement.write_bytes(mp3_header * 12)
+            expected_stream_bytes[0] = replacement.read_bytes()
+            chunk_callback(0, replacement, "Republished fixture segment")
+            replacement.unlink()
+            public_manifest = client.get(manifest_url).json()
+            assert "retiredChunks" not in public_manifest
+            new_chunk = next(chunk for chunk in public_manifest["chunks"] if chunk["index"] == 0)
+            private_chapter = server._load_stream_index(job_id)["chapters"][str(chapter_index)]
+            assert all(set(chunk) == {"id", "file"} for chunk in private_chapter["retiredChunks"])
+            assert sum(chunk["id"] == first_chunk["id"] for chunk in private_chapter["retiredChunks"]) == 1
+            old_response = client.get(first_chunk["url"])
+            new_response = client.get(new_chunk["url"])
+            publication_responses.append((first_chunk, new_chunk, first_bytes, expected_stream_bytes[0],
+                                          old_response.status_code, old_response.content,
+                                          new_response.status_code, new_response.content))
+            previous_manifest = server._stream_index_path(job_id, ensure=False).read_bytes()
+            stream_root = server._job_stream_dir(job_id, ensure=False)
+            previous_files = {path.name: path.read_bytes() for path in stream_root.glob("stream_*")}
+            replacement = output_path.with_name("publication-failure.mp3")
+            replacement.write_bytes(b"replacement must stay unpublished")
+            with patch.object(server, "_save_stream_index", side_effect=OSError("manifest failure")):
+                chunk_callback(0, replacement, "Private replacement")
+            replacement.unlink()
+            assert server._stream_index_path(job_id, ensure=False).read_bytes() == previous_manifest
+            assert {path.name: path.read_bytes() for path in stream_root.glob("stream_*")} == previous_files
+            if retry_first and len(recorded_callbacks) == 1:
+                for chapter in server._load_stream_index(job_id)["chapters"].values():
+                    failed_attempt_ids.update(chunk["observation"]["attemptId"] for chunk in chapter["chunks"])
+                raise RuntimeError("Temporary stream transport interruption")
         return output_path
 
     _make_telemetry(tmp_path, monkeypatch)
@@ -151,7 +202,106 @@ def test_process_conversion_generates_chapters(tmp_path, monkeypatch):
     zip_name = job["outputs"][0]["name"]
     assert zip_name.endswith(".zip")
 
+    stream_index = server._load_stream_index(job_id)
+    assert stream_index["chapters"]
+    observed_attempts = []
+    for chapter in stream_index["chapters"].values():
+        assert [chunk["index"] for chunk in chapter["chunks"]] == [0, 1]
+        attempts = set()
+        for chunk in chapter["chunks"]:
+            assert (server._job_stream_dir(job_id, ensure=False) / chunk["file"]).read_bytes() == expected_stream_bytes[chunk["index"]]
+            observation = chunk["observation"]
+            assert set(observation) == {"version", "attemptId", "segmentReadyElapsedNanoseconds", "artifactPublishedElapsedNanoseconds"}
+            assert observation["artifactPublishedElapsedNanoseconds"] >= observation["segmentReadyElapsedNanoseconds"] >= 0
+            attempts.add(observation["attemptId"])
+        assert len(attempts) == 1
+        observed_attempts.extend(attempts)
+    assert len(set(observed_attempts)) == len(observed_attempts)
+    assert publication_responses
+    for old, new, old_bytes, new_bytes, old_status, old_content, new_status, new_content in publication_responses:
+        assert old["observation"]
+        assert new["observation"]
+        assert old_status == 200
+        assert old_content == old_bytes, "An old manifest URL must keep serving its original publication bytes"
+        assert new_status == 200
+        assert new_content == new_bytes
+        assert old["id"] != new["id"]
+        assert old["index"] == new["index"] == 0
+        # Earlier URLs must also survive subsequent engine attempts.
+        response = TestClient(server.app).get(old["url"])
+        assert response.status_code == 200
+        assert response.content == old_bytes
+    if retry_first:
+        assert failed_attempt_ids
+        assert failed_attempt_ids.isdisjoint(observed_attempts)
+    before_late_callback = server._load_stream_index(job_id)
+    for callback, source in recorded_callbacks:
+        callback(99, source, "Late obsolete callback")
+    assert server._load_stream_index(job_id) == before_late_callback
+
     server.jobs.pop(job_id, None)
+
+
+@pytest.mark.parametrize("missing_field", ["id", "file", "non_dict"])
+def test_process_conversion_recovers_malformed_previous_stream(tmp_path, monkeypatch, missing_field):
+    _configure_server_paths(tmp_path, monkeypatch)
+    _make_telemetry(tmp_path, monkeypatch)
+    job_id = str(uuid4())
+    upload_path = tmp_path / "book.epub"
+    upload_path.write_bytes(FIXTURE_BOOK.read_bytes())
+    server.jobs[job_id] = {
+        "jobId": job_id, "state": "queued", "events": [],
+        "file_path": str(upload_path), "engine": "edge", "voice": None,
+        "chapters": None, "footnote_mode": "inline", "language": "pt-BR", "outputs": [],
+        "resumeRequested": True,
+    }
+    malformed = {"id": "legacy", "file": "old.mp3"}
+    if missing_field == "non_dict":
+        malformed = None
+    else:
+        malformed.pop(missing_field)
+    retained = {"id": 0, "file": "retained.mp3"}
+    (server._job_stream_dir(job_id, ensure=True) / retained["file"]).write_bytes(b"prior audio")
+    server._save_stream_index(job_id, {
+        "chapters": {str(index): {"chunks": [malformed, retained],
+                                  "retiredChunks": [malformed, retained]}
+                     for index in range(1, 5)}
+    })
+    audio_bytes = (bytes([0xFF, 0xFB, 0x90, 0x00]) + bytes(417)) * 10
+    emitted_chapters = []
+
+    async def synthesize(self, text, output_path, progress_callback=None, chunk_callback=None):
+        output_path = Path(output_path)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_bytes(audio_bytes)
+        if chunk_callback is not None:
+            chunk_callback(0, output_path, "Fresh segment")
+            emitted_chapters.append(int(output_path.name.split(" - ", 1)[0]))
+        return output_path
+
+    monkeypatch.setattr(server.AudioProcessor, "convert_to_mp3", staticmethod(_fake_convert_to_mp3))
+    try:
+        with patch("src.tts.edge_engine.EdgeTTSEngine.synthesize_async", synthesize):
+            asyncio.run(server.process_conversion(job_id))
+        assert server.jobs[job_id]["state"] == "finished"
+        assert emitted_chapters
+        with TestClient(server.app) as client:
+            for index in emitted_chapters:
+                response = client.get(f"/api/streams/{job_id}/chapters/{index}")
+                assert response.status_code == 200
+                chunks = response.json()["chunks"]
+                assert len(chunks) == 1
+                assert "observation" in chunks[0], "Fresh publication must replace malformed history"
+                audio = client.get(chunks[0]["url"])
+                assert audio.status_code == 200
+                assert audio.content == audio_bytes
+                previous_audio = client.get(f"/api/streams/{job_id}/chapters/{index}/chunks/0")
+                assert previous_audio.status_code == 200
+                assert previous_audio.content == b"prior audio"
+                history = server._load_stream_index(job_id)["chapters"][str(index)]["retiredChunks"]
+                assert history == [retained]
+    finally:
+        server.jobs.pop(job_id, None)
 
 
 def test_job_output_dir_rejects_stored_path_outside_output_root(tmp_path, monkeypatch):
@@ -1156,6 +1306,52 @@ def test_stream_endpoints_serve_manifest_and_chunk_from_job_stream_dir(tmp_path,
     chunk_response = client.get(f"/api/streams/{job_id}/chapters/1/chunks/0")
     assert chunk_response.status_code == 200
     assert chunk_response.content == MINIMAL_MP3
+
+
+def test_stream_chunk_optional_journey_header_correlates_actual_publication(tmp_path, monkeypatch):
+    _configure_server_paths(tmp_path, monkeypatch)
+    store = StreamHTTPObservationStore()
+    monkeypatch.setattr(server, "stream_http_observations", store, raising=False)
+    job_id = str(uuid4())
+    monkeypatch.setattr(server, "jobs", {job_id: {"jobId": job_id, "outputDir": str(tmp_path / "Book")}})
+    stream_dir = server._job_stream_dir(job_id, ensure=True)
+    old_id, new_id = str(uuid4()), str(uuid4())
+    (stream_dir / "old.mp3").write_bytes(b"old audio")
+    (stream_dir / "new.mp3").write_bytes(b"new audio")
+    server._save_stream_index(job_id, {"chapters": {"1": {
+        "chunks": [{"id": new_id, "index": 0, "file": "new.mp3"}],
+        "retiredChunks": [{"id": old_id, "file": "old.mp3"}],
+    }}})
+    with TestClient(server.app) as client:
+        old_url = f"/api/streams/{job_id}/chapters/1/chunks/{old_id}"
+        new_url = f"/api/streams/{job_id}/chapters/1/chunks/{new_id}"
+        ordinary = client.get(new_url)
+        assert ordinary.content == b"new audio"
+        assert "x-stream-request-id" not in ordinary.headers
+        assert "cache-control" not in ordinary.headers
+        assert store.export() == []
+        for value in ("not-a-uuid", "", str(uuid4()).replace("-", "")):
+            invalid = client.get(new_url, headers={"X-Playback-Journey-ID": value})
+            assert invalid.status_code == 422
+        assert store.export() == []
+        journeys = [str(uuid4()), str(uuid4())]
+        responses = [client.get(url, headers={"X-Playback-Journey-ID": journey})
+                     for url, journey in zip((old_url, new_url), journeys)]
+        assert [response.content for response in responses] == [b"old audio", b"new audio"]
+        records = store.export()
+        assert len(records) == 2
+        assert len({record["requestId"] for record in records}) == 2
+        for record, response, journey, publication in zip(records, responses, journeys, (old_id, new_id)):
+            assert response.headers["cache-control"] == "no-store"
+            assert response.headers["x-playback-journey-id"] == record["journeyId"] == journey
+            assert response.headers["x-stream-publication-id"] == record["publicationId"] == publication
+            assert response.headers["x-stream-request-id"] == record["requestId"]
+            assert record["outcome"] == "body_sent"
+            assert record["responseBytes"] == len(response.content)
+            assert set(record) == {"version", "requestId", "journeyId", "publicationId",
+                                   "requestReceivedElapsedNanoseconds", "outcome", "responseStatus",
+                                   "responseBytes", "responseCompletedElapsedNanoseconds"}
+        assert "journeyObservations" not in server.jobs[job_id]
 
 
 def test_streams_are_isolated_for_jobs_sharing_one_book_output_dir(tmp_path, monkeypatch):

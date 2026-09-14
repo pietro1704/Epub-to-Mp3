@@ -247,6 +247,28 @@ final class AudioPlayer: ObservableObject {
     /// play/pause affordance while AVFoundation moves the timeline.
     @Published private(set) var isSeeking = false
     private var activeSeekID: UUID?
+    private var activeSeekAutoplay: Bool?
+    struct PendingNavigation: Equatable {
+        let requestID: UUID
+        let jobID: String
+        let chapterIndex: Int
+    }
+    @Published private(set) var pendingNavigation: PendingNavigation?
+    private struct PendingChapterSeek {
+        let id: UUID
+        let jobID: String
+        let chapterIndex: Int
+        var autoplay: Bool
+        var isApplying = false
+    }
+    private var pendingChapterSeek: PendingChapterSeek? {
+        didSet {
+            let navigation = pendingChapterSeek.map {
+                PendingNavigation(requestID: $0.id, jobID: $0.jobID, chapterIndex: $0.chapterIndex)
+            }
+            if pendingNavigation != navigation { pendingNavigation = navigation }
+        }
+    }
     var isLoading: Bool { isSeeking || (isConverting && !firstChapterReady) }
 
     /// Optional cover art bytes (PNG/JPEG). Surfaced to the system
@@ -408,6 +430,14 @@ final class AudioPlayer: ObservableObject {
     /// playing AVPlayerItem remains the source of truth for active state.
     private var segmentSentenceIDs: [SegmentBacklog.Identity: String] = [:]
     private var segmentFiles: [SegmentBacklog.Identity: URL] = [:]
+    private var segmentPublications: [SegmentBacklog.Identity: LatencyObservation.StreamPublication] = [:]
+    private var segmentRequestReceipts: [SegmentBacklog.Identity: LatencyObservation.StreamRequestReceipt] = [:]
+    /// Invalidates remote deliveries after stop or transport replacement, even
+    /// when a newly opened session has the same backend job identifier.
+    private(set) var remotePlaybackGeneration = UUID()
+    var remoteSegmentGeneration: UUID? {
+        player == nil || isSegmentMode ? remotePlaybackGeneration : nil
+    }
     private var activeSegmentIdentity: SegmentBacklog.Identity?
     /// AVQueuePlayer removes a finished item before it posts the end
     /// notification. Keep the identities registered at insertion time so the
@@ -493,6 +523,8 @@ final class AudioPlayer: ObservableObject {
     /// observe the structural `AudioPlayer` without subscribing to this
     /// clock.
     let playbackClock: PlaybackClock
+    private let artifactStore: LocalAudioArtifactStore
+    private var lastPlaybackRetentionRequest: (bookID: String, chapterIndex: Int)?
 
     /// `true` while the speech fallback owns the transport. Flips to
     /// `true` on a successful `playFallbackSpeech` and back to `false`
@@ -506,9 +538,11 @@ final class AudioPlayer: ObservableObject {
         resumeStore: ResumeStore = ResumeStore(),
         backendBaseURL: URL? = nil,
         speechFallback: SpeechFallbackPlayer? = nil,
-        playbackClock: PlaybackClock? = nil
+        playbackClock: PlaybackClock? = nil,
+        artifactStore: LocalAudioArtifactStore? = nil
     ) {
         self.playbackClock = playbackClock ?? PlaybackClock()
+        self.artifactStore = artifactStore ?? .shared
         self.resumeStore = resumeStore
         self.backendBaseURL = backendBaseURL
         // Default-construct on MainActor (this init's isolation). A
@@ -709,6 +743,8 @@ final class AudioPlayer: ObservableObject {
         }
 
         if !isSameJob {
+            lastPlaybackRetentionRequest = nil
+            remotePlaybackGeneration = UUID()
             clearConversionState()
             readerChapterTitles.removeAll()
             playbackChapters.removeAll()
@@ -720,6 +756,8 @@ final class AudioPlayer: ObservableObject {
             segmentChapterIndex = -1
             segmentSentenceIDs.removeAll()
             segmentFiles.removeAll()
+            segmentPublications.removeAll()
+            segmentRequestReceipts.removeAll()
             activeSegmentIdentity = nil
             activeSentenceId = nil
             pendingSnapshotStartIndex = 0
@@ -1080,6 +1118,9 @@ final class AudioPlayer: ObservableObject {
     ///    Only chapters strictly ahead of the one currently playing are
     ///    swapped, so the playhead is never disturbed.
     func updateSnapshot(_ newSnapshot: JobSnapshot) {
+        if let pending = pendingChapterSeek, pending.jobID != newSnapshot.jobId {
+            cancelPendingSeekJourney()
+        }
         guard let queue = player else {
             // No player yet. If this is the first SSE snapshot that
             // carries playable MP3s, build the queue now; otherwise the
@@ -1089,7 +1130,7 @@ final class AudioPlayer: ObservableObject {
             self.snapshot = newSnapshot
             if !newSnapshot.playableChapters.isEmpty {
                 let startIndex = pendingSnapshotStartIndex ?? currentChapterIndex
-                play(snapshot: newSnapshot, startingAt: startIndex)
+                play(snapshot: newSnapshot, startingAt: startIndex, restoreAutoplay: false)
             }
             return
         }
@@ -1101,6 +1142,7 @@ final class AudioPlayer: ObservableObject {
         // to canonical chapter files once all segments are complete.
         if isSegmentMode {
             self.snapshot = newSnapshot
+            applyPendingChapterSeekIfAvailable()
             updateNowPlayingInfo()
             return
         }
@@ -1144,6 +1186,7 @@ final class AudioPlayer: ObservableObject {
                 playbackChapters.append(chapter)
             }
         }
+        applyPendingChapterSeekIfAvailable()
         updateNowPlayingInfo()
     }
 
@@ -1151,6 +1194,34 @@ final class AudioPlayer: ObservableObject {
     /// leaving playback tied to temporary MP3 files. The final chapter URLs
     /// restore standard seeking, resume, and offline playback.
     func finishStreaming(snapshot: JobSnapshot) {
+        if var pending = pendingChapterSeek, pending.jobID == snapshot.jobId {
+            let targetIndex = pending.chapterIndex
+                + (isSegmentMode ? Self.segmentManifestIndexOffset(snapshot) : 0)
+            guard let target = snapshot.playableChapters.firstIndex(where: { $0.index == targetIndex }) else {
+                self.snapshot = snapshot
+                if snapshot.isTerminal {
+                    cancelPendingSeekJourney()
+                    lastError = .noPlayableChapters
+                }
+                return
+            }
+            // A transport handoff is not a user cancellation. Carry the
+            // original journey and intent across teardown into the full file.
+            let journeyID = activeSeekJourneyID
+            activeSeekJourneyID = nil
+            pendingChapterSeek = nil
+            pendingAutoPlay = false
+            isPlaying = false
+            play(snapshot: snapshot, startingAt: target, restoreAutoplay: false)
+            activeSeekJourneyID = journeyID
+            pending = PendingChapterSeek(id: pending.id, jobID: pending.jobID,
+                                         chapterIndex: targetIndex, autoplay: pending.autoplay)
+            pendingChapterSeek = pending
+            isSeeking = true
+            isConverting = !snapshot.isTerminal
+            applyPendingChapterSeekIfAvailable()
+            return
+        }
         guard isSegmentMode, player != nil else {
             isConverting = false
             updateSnapshot(snapshot)
@@ -1250,6 +1321,8 @@ final class AudioPlayer: ObservableObject {
     }
 
     func pause() {
+        if activeSeekAutoplay != nil { activeSeekAutoplay = false }
+        pendingChapterSeek?.autoplay = false
         // Slice-2 speech-fallback route: when the synthesizer owns the
         // transport, pause/resume must drive it instead of the silent
         // AVQueuePlayer. We do NOT touch the MP3 player here — it stays
@@ -1270,6 +1343,12 @@ final class AudioPlayer: ObservableObject {
     }
 
     func resume() {
+        if activeSeekAutoplay != nil { activeSeekAutoplay = true }
+        if pendingChapterSeek != nil {
+            pendingChapterSeek?.autoplay = true
+            applyPendingChapterSeekIfAvailable()
+            return
+        }
         if isUsingSpeechFallback {
             // Speech fallback already configured the audio session for
             // `.spokenAudio` when `playFallbackSpeech` ran — no extra
@@ -1301,14 +1380,46 @@ final class AudioPlayer: ObservableObject {
     }
 
     private func requestRetentionForAudibleChapter() {
-        guard let snapshot,
-              let target = Self.playbackRetentionTarget(
-                snapshot: snapshot,
-                playableChapterOffset: currentChapterIndex
-              ) else {
-            return
+        guard let player, let snapshot,
+              let bookID = EmbeddedConversionCoordinator.embeddedBookID(from: snapshot.jobId) else { return }
+        let renderedSeconds = player.currentTime().seconds
+        guard renderedSeconds.isFinite,
+              Self.hasAudibleOutput(timeControlStatus: player.timeControlStatus,
+                                    renderedSeconds: renderedSeconds) else { return }
+        let chapterIndex: Int
+        if isSegmentMode {
+            guard let asset = player.currentItem?.asset as? AVURLAsset,
+                  let identity = Self.segmentIdentityForSegmentItem(asset.url),
+                  segmentFiles[identity] == asset.url else { return }
+            chapterIndex = identity.chapterIndex
+        } else {
+            // SSE snapshots are sorted by EPUB identity, but late arrivals
+            // append to the live queue. Resolve the actual item against that
+            // queue so publishing an earlier chapter never retains it unheard.
+            let chapters = playbackChapters.isEmpty ? snapshot.playableChapters : playbackChapters
+            guard let asset = player.currentItem?.asset as? AVURLAsset else { return }
+            if chapters.indices.contains(currentChapterIndex),
+               absoluteURL(forDownloadPath: chapters[currentChapterIndex].downloadUrl,
+                           jobId: snapshot.jobId,
+                           chapterIndex: chapters[currentChapterIndex].index) == asset.url {
+                chapterIndex = chapters[currentChapterIndex].index
+            } else {
+                guard let offset = Self.resolveChapterIndex(
+                    currentIndex: currentChapterIndex,
+                    chapterURLs: chapters.map {
+                        absoluteURL(forDownloadPath: $0.downloadUrl,
+                                    jobId: snapshot.jobId, chapterIndex: $0.index)
+                    },
+                    currentItemURL: asset.url) else { return }
+                chapterIndex = chapters[offset].index
+            }
         }
-        requestPlaybackRetention(bookID: target.bookID, chapterIndex: target.chapterIndex)
+        // The clock ticks repeatedly, but persistence is needed only once per
+        // audible chapter transition, independently of diagnostic journeys.
+        guard lastPlaybackRetentionRequest?.bookID != bookID
+                || lastPlaybackRetentionRequest?.chapterIndex != chapterIndex else { return }
+        lastPlaybackRetentionRequest = (bookID, chapterIndex)
+        requestPlaybackRetention(bookID: bookID, chapterIndex: chapterIndex)
     }
 
     /// Resolves a player queue offset back to the canonical embedded-book
@@ -1326,8 +1437,8 @@ final class AudioPlayer: ObservableObject {
     }
 
     private func requestPlaybackRetention(bookID: String, chapterIndex: Int) {
-        Task {
-            try? await LocalAudioArtifactStore.shared.requestPlaybackRetention(
+        Task { [artifactStore] in
+            try? await artifactStore.requestPlaybackRetention(
                 bookID: bookID,
                 chapterIndex: chapterIndex
             )
@@ -1339,14 +1450,12 @@ final class AudioPlayer: ObservableObject {
         let journeyID = LatencyObservationStore.shared.beginProgressivePlayback()
         activePlaybackJourneyID = journeyID
         hasRecordedQueuedAudio = false
-        reportJourneyObservation(.playRequested, journeyID: journeyID)
     }
 
     private func recordQueuedAudioIfNeeded() {
         guard let journeyID = activePlaybackJourneyID, !hasRecordedQueuedAudio else { return }
         _ = LatencyObservationStore.shared.record(.audioQueued, for: journeyID)
         hasRecordedQueuedAudio = true
-        reportJourneyObservation(.audioQueued, journeyID: journeyID)
     }
 
     private func recordAudibleAudioIfNeeded(renderedSeconds: TimeInterval) {
@@ -1358,9 +1467,8 @@ final class AudioPlayer: ObservableObject {
         else {
             return
         }
+        attachCurrentStreamPublication(to: journeyID)
         _ = LatencyObservationStore.shared.record(.audioAudible, for: journeyID)
-        requestRetentionForAudibleChapter()
-        reportJourneyObservation(.audioAudible, journeyID: journeyID)
         LatencyObservationStore.shared.finish(journeyID)
         activePlaybackJourneyID = nil
         hasRecordedQueuedAudio = false
@@ -1369,7 +1477,6 @@ final class AudioPlayer: ObservableObject {
     private func cancelPendingPlaybackJourney() {
         guard let journeyID = activePlaybackJourneyID else { return }
         _ = LatencyObservationStore.shared.cancel(journeyID)
-        reportJourneyObservation(.cancelled, journeyID: journeyID)
         activePlaybackJourneyID = nil
         hasRecordedQueuedAudio = false
     }
@@ -1378,65 +1485,37 @@ final class AudioPlayer: ObservableObject {
         cancelPendingSeekJourney()
         let journeyID = LatencyObservationStore.shared.beginSeek()
         activeSeekJourneyID = journeyID
-        reportJourneyObservation(.seekRequested, journeyID: journeyID)
     }
 
     private func completeSeekJourney() {
         guard let journeyID = activeSeekJourneyID else { return }
+        attachCurrentStreamPublication(to: journeyID)
         _ = LatencyObservationStore.shared.record(.seekTargetReached, for: journeyID)
-        reportJourneyObservation(.seekTargetReached, journeyID: journeyID)
         LatencyObservationStore.shared.finish(journeyID)
         activeSeekJourneyID = nil
     }
 
-    private func cancelPendingSeekJourney() {
-        guard let journeyID = activeSeekJourneyID else { return }
-        _ = LatencyObservationStore.shared.cancel(journeyID)
-        reportJourneyObservation(.cancelled, journeyID: journeyID)
-        activeSeekJourneyID = nil
+    private func attachCurrentStreamPublication(to journeyID: UUID) {
+        guard isSegmentMode,
+              let asset = player?.currentItem?.asset as? AVURLAsset,
+              let identity = Self.segmentIdentityForSegmentItem(asset.url),
+              segmentFiles[identity] == asset.url else { return }
+        if let publication = segmentPublications[identity] {
+            _ = LatencyObservationStore.shared.attachStreamPublication(publication, for: journeyID)
+        }
+        if let receipt = segmentRequestReceipts[identity], receipt.journeyID == journeyID {
+            _ = LatencyObservationStore.shared.attachStreamRequest(receipt, for: journeyID)
+        }
     }
 
-    private func reportJourneyObservation(
-        _ transition: LatencyObservation.Transition,
-        journeyID: UUID
-    ) {
-        struct Payload: Encodable {
-            let journeyId: String
-            let transition: String
-            let elapsedNanoseconds: UInt64
-        }
-        guard let jobID = snapshot?.jobId,
-              let backendBaseURL,
-              let elapsed = LatencyObservationStore.shared.latestElapsedNanoseconds(for: journeyID)
-        else {
-            return
-        }
-        let url = backendBaseURL.appendingPathComponent(
-            "api/jobs/\(jobID)/journey-observations"
-        )
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = try? JSONEncoder().encode(
-            Payload(
-                journeyId: journeyID.uuidString.lowercased(),
-                transition: transition.rawValue,
-                elapsedNanoseconds: elapsed
-            )
-        )
-        guard request.httpBody != nil else { return }
-        Task {
-            do {
-                let (_, response) = try await URLSession.shared.data(for: request)
-                guard let response = response as? HTTPURLResponse,
-                      (200...299).contains(response.statusCode)
-                else {
-                    return
-                }
-            } catch {
-                // Diagnostics must never delay or interrupt listener playback.
-            }
-        }
+    private func cancelPendingSeekJourney() {
+        pendingChapterSeek = nil
+        activeSeekID = nil
+        activeSeekAutoplay = nil
+        isSeeking = false
+        guard let journeyID = activeSeekJourneyID else { return }
+        _ = LatencyObservationStore.shared.cancel(journeyID)
+        activeSeekJourneyID = nil
     }
 
     nonisolated static func hasAudibleOutput(
@@ -1780,26 +1859,19 @@ final class AudioPlayer: ObservableObject {
 
     func seek(to seconds: TimeInterval) {
         let target = max(0, seconds)
+        let autoplay = pendingChapterSeek?.autoplay ?? activeSeekAutoplay ?? isPlaying
         beginSeekJourney()
-        if Self.shouldAdvanceAtSeekEnd(position: target, duration: durationSeconds) {
-            let chapterBefore = currentChapterIndex
-            if isSegmentMode {
-                nextChapter()
-            } else if let player {
-                player.seek(to: CMTime(seconds: player.currentItem?.duration.seconds ?? target, preferredTimescale: 600))
-                player.advanceToNextItem()
-                _ = reconcileChapterIndexFromCurrentItem()
-                if currentChapterIndex == chapterBefore {
-                    player.pause()
-                    isPlaying = false
-                }
-            }
-            if currentChapterIndex != chapterBefore {
-                positionSeconds = 0
-            }
-            broadcastPosition()
+        if Self.shouldAdvanceAtSeekEnd(position: target, duration: durationSeconds),
+           let snapshot, let nextIndex = nextCanonicalChapterIndex {
+            pendingChapterSeek = PendingChapterSeek(
+                id: UUID(), jobID: snapshot.jobId, chapterIndex: nextIndex,
+                autoplay: autoplay
+            )
+            isSeeking = true
+            player?.pause()
+            isPlaying = false
+            applyPendingChapterSeekIfAvailable()
             updateNowPlayingInfo()
-            completeSeekJourney()
             return
         }
         positionSeconds = target
@@ -1809,6 +1881,7 @@ final class AudioPlayer: ObservableObject {
 
         let seekID = UUID()
         activeSeekID = seekID
+        activeSeekAutoplay = autoplay
         isSeeking = true
         player.seek(
             to: CMTime(seconds: target, preferredTimescale: 600),
@@ -1817,7 +1890,9 @@ final class AudioPlayer: ObservableObject {
         ) { [weak self] finished in
             Task { @MainActor [weak self] in
                 guard let self, self.activeSeekID == seekID else { return }
+                let shouldResume = self.activeSeekAutoplay == true
                 self.activeSeekID = nil
+                self.activeSeekAutoplay = nil
                 self.isSeeking = false
                 // Keep the user-selected target visible until the first
                 // periodic AVPlayer tick reports the new timeline position.
@@ -1826,6 +1901,7 @@ final class AudioPlayer: ObservableObject {
                 self.updateNowPlayingInfo()
                 if finished {
                     self.completeSeekJourney()
+                    if shouldResume && !self.isPlaying { self.resume() }
                 } else {
                     self.cancelPendingSeekJourney()
                 }
@@ -1833,8 +1909,115 @@ final class AudioPlayer: ObservableObject {
         }
     }
 
+    /// Embedded conversion retains zero-based document indexes even when
+    /// non-narratable opening chapters are absent. Remote manifests are
+    /// one-based; legacy snapshots containing chapter zero remain supported.
+    private static func segmentManifestIndexOffset(_ snapshot: JobSnapshot) -> Int {
+        if EmbeddedConversionCoordinator.embeddedBookID(from: snapshot.jobId) != nil { return 0 }
+        return (snapshot.chapterProgress ?? snapshot.playableChapters).contains { $0.index == 0 } ? 0 : 1
+    }
+
+    /// Pending navigation uses segment indexes while streaming and manifest
+    /// indexes for full files, never offsets in the filtered playable list.
+    private var nextCanonicalChapterIndex: Int? {
+        guard let snapshot else { return nil }
+        let chapters = playbackChapters.isEmpty ? snapshot.playableChapters : playbackChapters
+        let current: Int
+        if isSegmentMode {
+            current = currentChapterIndex
+        } else {
+            guard chapters.indices.contains(currentChapterIndex) else { return nil }
+            current = chapters[currentChapterIndex].index
+        }
+        let offset = isSegmentMode ? Self.segmentManifestIndexOffset(snapshot) : 0
+        return (snapshot.chapterProgress ?? chapters).map { $0.index - offset }.filter { $0 > current }.min()
+    }
+
+    private func applyPendingChapterSeekIfAvailable() {
+        guard var pending = pendingChapterSeek, !pending.isApplying,
+              let snapshot, snapshot.jobId == pending.jobID, let queue = player else { return }
+        let entries: [(URL, SegmentBacklog.Identity?)]
+        if isSegmentMode {
+            let retained = segmentFiles.filter { $0.key.chapterIndex >= pending.chapterIndex }
+                .sorted { $0.key < $1.key }
+            guard retained.first?.key.chapterIndex == pending.chapterIndex else { return }
+            entries = retained.map { ($0.value, $0.key) }
+        } else {
+            let chapters = snapshot.playableChapters.sorted { $0.index < $1.index }
+            guard let targetOffset = chapters.firstIndex(where: { $0.index == pending.chapterIndex }) else { return }
+            let available = chapters[targetOffset...].compactMap { chapter -> (URL, SegmentBacklog.Identity?)? in
+                guard let url = absoluteURL(forDownloadPath: chapter.downloadUrl,
+                                            jobId: snapshot.jobId, chapterIndex: chapter.index) else { return nil }
+                return (url, nil)
+            }
+            guard let targetURL = absoluteURL(forDownloadPath: chapters[targetOffset].downloadUrl,
+                                               jobId: snapshot.jobId, chapterIndex: pending.chapterIndex),
+                  available.first?.0 == targetURL else { return }
+            playbackChapters = chapters
+            entries = available
+        }
+        guard !entries.isEmpty else { return }
+        pending.isApplying = true
+        pendingChapterSeek = pending
+        let seekID = UUID()
+        activeSeekID = seekID
+        // Rebuild in document order. Walking the arrival-ordered queue can
+        // consume a later chapter before the requested one. Segment files
+        // remain retained; the target may live outside the bounded live queue.
+        queue.removeAllItems()
+        ownedPlayerItemIDs.removeAll()
+        if isSegmentMode { _ = backlog.clear() }
+        for (url, identity) in entries {
+            if let identity, queue.items().count >= Self.maxQueueAhead {
+                backlog.append(url: url, chapterIndex: identity.chapterIndex,
+                               segmentIndex: identity.segmentIndex,
+                               sentenceId: segmentSentenceIDs[identity])
+            } else {
+                let item = AVPlayerItem(url: url)
+                queue.insert(item, after: nil)
+                ownedPlayerItemIDs.insert(ObjectIdentifier(item))
+            }
+        }
+        guard let targetItem = queue.currentItem else {
+            cancelPendingSeekJourney()
+            return
+        }
+        resumeSegmentCapacityWaitersIfPossible()
+        _ = reconcileChapterIndexFromCurrentItem()
+        positionSeconds = 0
+        queue.seek(to: .zero, toleranceBefore: .zero, toleranceAfter: .zero) { [weak self] finished in
+            Task { @MainActor [weak self] in
+                guard let self, let current = self.pendingChapterSeek,
+                      current.id == pending.id, self.activeSeekID == seekID else { return }
+                guard finished, self.player?.currentItem === targetItem else {
+                    self.cancelPendingSeekJourney()
+                    return
+                }
+                self.pendingChapterSeek = nil
+                self.activeSeekID = nil
+                self.isSeeking = false
+                self.positionSeconds = 0
+                self.completeSeekJourney()
+                self.publishCurrentChapter(auto: false)
+                if current.autoplay { self.resume() }
+                self.broadcastPosition()
+                self.updateNowPlayingInfo()
+            }
+        }
+    }
+
     func nextChapter() {
-        guard let player else { return }
+        cancelPendingSeekJourney()
+        guard let player else {
+            guard let snapshot,
+                  let nextIndex = Self.chapterNavigationIndex(
+                      currentIndex: currentChapterIndex,
+                      direction: .forward,
+                      chapterCount: snapshot.playableChapters.count
+                  ) else { return }
+            play(snapshot: snapshot, startingAt: nextIndex, restoreAutoplay: isPlaying)
+            return
+        }
         if isSegmentMode {
             // Segment-mode: the queue holds many AVPlayerItems per
             // chapter. `advanceToNextItem()` moves one *segment*
@@ -1881,6 +2064,7 @@ final class AudioPlayer: ObservableObject {
     }
 
     func previousChapter() {
+        cancelPendingSeekJourney()
         if ProcessInfo.processInfo.arguments.contains("-readerNavigationDebug") {
             print("NAV previousChapter current=\(currentChapterIndex) position=\(positionSeconds) segmentMode=\(isSegmentMode)")
         }
@@ -1901,6 +2085,16 @@ final class AudioPlayer: ObservableObject {
             seek(to: 0)
             return
         }
+        guard player != nil else {
+            guard let snapshot,
+                  let previousIndex = Self.chapterNavigationIndex(
+                      currentIndex: currentChapterIndex,
+                      direction: .backward,
+                      chapterCount: snapshot.playableChapters.count
+                  ) else { return }
+            play(snapshot: snapshot, startingAt: previousIndex, restoreAutoplay: isPlaying)
+            return
+        }
         if positionSeconds > 3 {
             seek(to: 0)
             return
@@ -1914,6 +2108,26 @@ final class AudioPlayer: ObservableObject {
         } else {
             seek(to: 0)
         }
+    }
+
+    enum ChapterNavigationDirection {
+        case backward
+        case forward
+    }
+
+    nonisolated static func chapterNavigationIndex(
+        currentIndex: Int,
+        direction: ChapterNavigationDirection,
+        chapterCount: Int
+    ) -> Int? {
+        guard chapterCount > 0 else { return nil }
+        let offset: Int
+        switch direction {
+        case .backward: offset = -1
+        case .forward: offset = 1
+        }
+        let candidate = currentIndex + offset
+        return (0..<chapterCount).contains(candidate) ? candidate : nil
     }
 
     /// Adopt the AVQueuePlayer item that is actually audible. Buffered
@@ -1996,6 +2210,7 @@ final class AudioPlayer: ObservableObject {
     /// the seek — visible as "+/-15 s buttons do nothing". Compute the
     /// delta against the current item's own clock instead.
     func skip(by deltaSeconds: TimeInterval) {
+        cancelPendingSeekJourney()
         guard let player else { return }
         let rawTime = player.currentTime().seconds.isFinite
             ? player.currentTime().seconds
@@ -2032,7 +2247,46 @@ final class AudioPlayer: ObservableObject {
     ///
     /// Thread-safety: must be called on the main actor (same as all other
     /// AudioPlayer methods).
-    func enqueueSegment(data: Data, chapterIndex: Int, segmentIndex: Int, sentenceId: String? = nil) {
+    /// Only the first available segment of an explicitly requested, unbuffered
+    /// chapter can carry consent. The manifest owner requests segments in order;
+    /// sparse/resumed manifests need not start at zero. Prefetch has no journey.
+    func streamRequestAuthorization(
+        jobID: String, generation: UUID, chapterIndex: Int, segmentIndex: Int,
+        session: StreamingDiagnosticsSession = .shared
+    ) -> StreamingDiagnosticsSession.Authorization? {
+        guard generation == remoteSegmentGeneration, let snapshot, snapshot.jobId == jobID,
+              segmentIndex >= 0 else { return nil }
+        let chapter = chapterIndex - Self.segmentManifestIndexOffset(snapshot)
+        guard chapter >= 0,
+              !segmentFiles.keys.contains(where: { $0.chapterIndex == chapter }) else { return nil }
+        if let pending = pendingChapterSeek, let journeyID = activeSeekJourneyID {
+            guard pending.jobID == jobID, pending.chapterIndex == chapter else { return nil }
+            return session.authorization(for: journeyID)
+        }
+        // The manifest owner calls this immediately before downloading its
+        // next available candidate. A queue offset is not a chapter identity:
+        // subset conversions or empty earlier manifests may begin much later.
+        guard player == nil, pendingAutoPlay, let journeyID = activePlaybackJourneyID,
+              let candidate = snapshot.chapterProgress?.first(where: { $0.index == chapterIndex }),
+              candidate.isCompleted || candidate.status?.lowercased() == "processing" else { return nil }
+        return session.authorization(for: journeyID)
+    }
+
+    func enqueueRemoteSegment(
+        data: Data, jobID: String, generation: UUID, chapterIndex: Int, segmentIndex: Int,
+        publication: LatencyObservation.StreamPublication?,
+        receipt: LatencyObservation.StreamRequestReceipt? = nil
+    ) {
+        guard generation == remoteSegmentGeneration, snapshot?.jobId == jobID else { return }
+        enqueueSegment(data: data, chapterIndex: chapterIndex, segmentIndex: segmentIndex,
+                       publication: publication, receipt: receipt)
+    }
+
+    func enqueueSegment(
+        data: Data, chapterIndex: Int, segmentIndex: Int, sentenceId: String? = nil,
+        publication: LatencyObservation.StreamPublication? = nil,
+        receipt: LatencyObservation.StreamRequestReceipt? = nil
+    ) {
         ensureRemoteCommands()
         // Only activate the audio session if the user is already playing.
         // While conversion streams in the background, we may receive
@@ -2111,6 +2365,10 @@ final class AudioPlayer: ObservableObject {
 
         isSegmentMode = true
         segmentFiles[identity] = segFile
+        if let publication { segmentPublications[identity] = publication }
+        if let receipt, publication.map({ $0.publicationID == receipt.publicationID }) ?? true {
+            segmentRequestReceipts[identity] = receipt
+        }
         if let sentenceId {
             segmentSentenceIDs[identity] = sentenceId
         }
@@ -2140,14 +2398,6 @@ final class AudioPlayer: ObservableObject {
                 queue.rate = rate.rawValue
                 isPlaying = true
                 pendingAutoPlay = false
-                // A streamed first segment can become audible before the
-                // completed chapter file is committed. Record the listener's
-                // intent against the raw embedded book now; `markAvailable`
-                // promotes that canonical chapter when it lands.
-                if let snapshot,
-                   let bookID = EmbeddedConversionCoordinator.embeddedBookID(from: snapshot.jobId) {
-                    requestPlaybackRetention(bookID: bookID, chapterIndex: chapterIndex)
-                }
             } else {
                 queue.rate = 0
             }
@@ -2166,6 +2416,8 @@ final class AudioPlayer: ObservableObject {
             )
             guard accepted else {
                 segmentFiles.removeValue(forKey: identity)
+                segmentPublications.removeValue(forKey: identity)
+                segmentRequestReceipts.removeValue(forKey: identity)
                 segmentSentenceIDs.removeValue(forKey: identity)
                 try? FileManager.default.removeItem(at: segFile)
                 audioLog.notice("[enqueueSegment] duplicate backlog entry ignored ch=\(chapterIndex) seg=\(segmentIndex)")
@@ -2190,6 +2442,7 @@ final class AudioPlayer: ObservableObject {
         recordQueuedAudioIfNeeded()
         conversionStatus.record(.chunkComplete,
             "ch\(chapterIndex) segment \(segmentIndex) ready (\(data.count) bytes)")
+        applyPendingChapterSeekIfAvailable()
     }
 
     private func drainPendingSegments() {
@@ -2285,6 +2538,8 @@ final class AudioPlayer: ObservableObject {
     /// Call this when the reader session ends so the lock screen no
     /// longer shows stale metadata for a book that is no longer active.
     func stop() {
+        pendingAutoPlay = false
+        pendingSnapshotStartIndex = nil
         // Speech-fallback teardown: when the synthesizer owns playback,
         // stop it and clear the flag BEFORE the MP3 teardown so a
         // subsequent `play(snapshot:)` tap drives the primary path
@@ -2372,6 +2627,7 @@ final class AudioPlayer: ObservableObject {
     }
 
     private func rewindToCurrentChapterStart() {
+        cancelPendingSeekJourney()
         guard let queue = player else { return }
         if isSegmentMode {
             let items = queue.items()
@@ -2413,6 +2669,7 @@ final class AudioPlayer: ObservableObject {
             Task { @MainActor [weak self] in
                 guard let self else { return }
                 let rawTime = time.seconds.isFinite ? time.seconds : 0
+                self.requestRetentionForAudibleChapter()
                 self.recordAudibleAudioIfNeeded(renderedSeconds: rawTime)
                 if !self.isSeeking {
                     self.positionSeconds = self.isSegmentMode
@@ -2562,6 +2819,8 @@ final class AudioPlayer: ObservableObject {
     }
 
     private func teardownPlayer() {
+        lastPlaybackRetentionRequest = nil
+        remotePlaybackGeneration = UUID()
         cancelPendingPlaybackJourney()
         cancelPendingSeekJourney()
         activeSeekID = nil
@@ -2583,6 +2842,8 @@ final class AudioPlayer: ObservableObject {
         // no AVURLAsset from this player can still consume these files.
         _ = backlog.clear()
         segmentFiles.removeAll()
+        segmentPublications.removeAll()
+        segmentRequestReceipts.removeAll()
         segmentSentenceIDs.removeAll()
         segmentEstimatedDurations.removeAll()
         activeSegmentIdentity = nil

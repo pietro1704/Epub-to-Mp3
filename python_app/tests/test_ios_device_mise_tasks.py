@@ -23,3 +23,12 @@ def test_vscode_exposes_device_build_and_launch_tasks() -> None:
     assert '"iOS: Build physical device"' in tasks
     assert '"mise run ios:device:build"' in tasks
     assert '"mise run ios:device:run"' in tasks
+
+
+def test_device_launch_separates_app_arguments_from_devicectl_options() -> None:
+    mise = (ROOT / "mise.toml").read_text(encoding="utf-8")
+    start = mise.index('[tasks."ios:device:run"]')
+    end = mise.index('[tasks."ios:device:build"]', start)
+    task = mise[start:end]
+
+    assert '"$BUNDLE_ID" -- -developmentSeedBook' in task

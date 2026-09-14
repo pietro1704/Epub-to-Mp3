@@ -87,6 +87,13 @@ final class LocalAudioConversionScheduler {
     private var active: Work?
     private var states: [String: WorkState] = [:]
     private var chapterPriorities: [String: [Int]] = [:]
+    private struct PendingNavigation {
+        let requestID: UUID
+        let chapterIndex: Int
+    }
+    // Navigation belongs to the current playback session, not the durable
+    // conversion queue. Keep it separate from persisted download priorities.
+    private var pendingNavigations: [String: PendingNavigation] = [:]
     private var resourceConstraint: ResourceConstraint = .stable
     /// Deterministic injection for tests and support diagnostics. Device
     /// notifications must not race this explicit boundary state back to
@@ -245,6 +252,20 @@ final class LocalAudioConversionScheduler {
         persistQueue()
     }
 
+    /// The latest pending navigation wins at the next chapter boundary.
+    /// It does not interrupt a chapter or bypass resource/network waits.
+    func setPendingNavigation(bookID: String, requestID: UUID, chapterIndex: Int) {
+        guard !bookID.isEmpty, chapterIndex >= 0 else { return }
+        pendingNavigations[bookID] = PendingNavigation(requestID: requestID, chapterIndex: chapterIndex)
+    }
+
+    /// Late completion or cancellation of a superseded request must not
+    /// remove the listener's newer navigation target.
+    func clearPendingNavigation(bookID: String, requestID: UUID) {
+        guard pendingNavigations[bookID]?.requestID == requestID else { return }
+        pendingNavigations.removeValue(forKey: bookID)
+    }
+
     /// Returns and consumes work descriptions that survived a process exit.
     /// The coordinator immediately re-submits them with fresh closures.
     func takePendingResumeRequests() -> [ResumeRequest] {
@@ -274,6 +295,9 @@ final class LocalAudioConversionScheduler {
         available: Set<Int>,
         defaultOrder: [Int]
     ) -> Int? {
+        if let pending = pendingNavigations[bookID], available.contains(pending.chapterIndex) {
+            return pending.chapterIndex
+        }
         var priorities = chapterPriorities[bookID] ?? []
         while let next = priorities.first {
             priorities.removeFirst()

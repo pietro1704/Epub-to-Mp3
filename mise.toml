@@ -362,6 +362,14 @@ set -euo pipefail
 .venv/bin/python scripts/performance_evidence_gate.py "$@"
 """
 
+[tasks."benchmark:cross-client"]
+description = "Evaluate the complete cross-client performance evidence matrix"
+run = """
+#!/bin/bash
+set -euo pipefail
+.venv/bin/python scripts/cross_client_performance_gate.py "$@"
+"""
+
 # ── Embedded Python + native macOS build ─────────────────────────────────────
 # The native AppKit app links the bundled Python.xcframework directly.
 
@@ -610,7 +618,7 @@ fi
 # so keep this inexpensive launch queue alive until the listener unlocks it.
 while true; do
   if [[ "$SEED_LAUNCH" == "1" ]]; then
-    if xcrun devicectl device process launch --device "$DEVICE" --terminate-existing "$BUNDLE_ID" -developmentSeedBook; then
+    if xcrun devicectl device process launch --device "$DEVICE" --terminate-existing "$BUNDLE_ID" -- -developmentSeedBook; then
       break
     fi
   elif xcrun devicectl device process launch --device "$DEVICE" --terminate-existing "$BUNDLE_ID"; then

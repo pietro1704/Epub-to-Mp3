@@ -65,6 +65,12 @@ from src.paths import (
     UPLOADS_DIR,
 )
 from src.reader_sanitizer import chapter_html_fallback, sanitize_reader_css, sanitize_reader_html
+from src.stream_attempt_observation import observe_synthesis
+from src.stream_http_observation import (
+    ObservedFileResponse,
+    stream_http_observations,
+    validate_journey_id,
+)
 from src.telemetry import TelemetryRecorder
 from src.text_formatting import TextFormattingProcessor
 from src.tts.edge_engine import reset_adaptive_settings
@@ -713,6 +719,33 @@ def _atomic_write_text(path: Path, data: str, encoding: str = "utf-8") -> None:
         except OSError:
             pass
         raise
+
+
+def _retired_stream_chunks(chapter: object, active_ids: frozenset[str] = frozenset()) -> list[dict]:
+    """Preserve valid publication aliases without carrying corrupt history forward."""
+    if not isinstance(chapter, dict):
+        return []
+    retired: dict[str, dict] = {}
+    for field in ("retiredChunks", "chunks"):
+        entries = chapter.get(field)
+        if not isinstance(entries, list):
+            continue
+        for chunk in entries:
+            if not isinstance(chunk, dict):
+                continue
+            chunk_id = chunk.get("id")
+            filename = chunk.get("file")
+            if isinstance(chunk_id, bool) or not isinstance(chunk_id, (str, int)):
+                continue
+            identity = str(chunk_id)
+            if not identity or not all(char.isalnum() or char in "_-" for char in identity):
+                continue
+            if not isinstance(filename, str) or not filename or filename in (".", ".."):
+                continue
+            if any(char in filename for char in ("/", "\\", "\0")) or identity in active_ids:
+                continue
+            retired[identity] = {"id": chunk_id, "file": filename}
+    return list(retired.values())
 
 
 def _save_stream_index(job_id: str, payload: dict) -> None:
@@ -2965,9 +2998,20 @@ async def stream_manifest(job_id: str, chapter_index: int) -> dict:
 
 
 @app.get("/api/streams/{job_id}/chapters/{chapter_index}/chunks/{chunk_id}")
-async def stream_chunk(job_id: str, chapter_index: int, chunk_id: str):
+async def stream_chunk(job_id: str, chapter_index: int, chunk_id: str, request: Request):
     """Serve an individual synthesized chunk for progressive playback."""
     import re as _re
+
+    journey_headers = request.headers.getlist("X-Playback-Journey-ID")
+    received_at = stream_http_observations.received_at() if journey_headers else None
+    journey_id = None
+    if journey_headers:
+        try:
+            if len(journey_headers) != 1:
+                raise ValueError("Duplicate playback journey IDs")
+            journey_id = validate_journey_id(journey_headers[0])
+        except ValueError:
+            raise HTTPException(status_code=422, detail="Invalid playback journey ID") from None
 
     _validate_job_id(job_id)
     if not _re.match(r"^[\w\-]+$", chunk_id):
@@ -2978,8 +3022,11 @@ async def stream_chunk(job_id: str, chapter_index: int, chunk_id: str):
 
     index_payload = _load_stream_index(job_id)
     chapter_payload = index_payload.get("chapters", {}).get(str(int(chapter_index))) or {}
+    publications = (chapter_payload.get("chunks") or []) + (
+        chapter_payload.get("retiredChunks") or []
+    )
     chunk_entry = next(
-        (item for item in chapter_payload.get("chunks") or [] if str(item.get("id")) == chunk_id),
+        (item for item in publications if str(item.get("id")) == chunk_id),
         None,
     )
     if chunk_entry is None:
@@ -2999,9 +3046,14 @@ async def stream_chunk(job_id: str, chapter_index: int, chunk_id: str):
     if served_entry is None:
         raise HTTPException(status_code=404, detail="Chunk not found")
 
-    return FileResponse(
+    response = FileResponse(
         path=served_entry,
         media_type=_guess_media_type(served_entry.name),
+    )
+    if journey_id is None:
+        return response
+    return ObservedFileResponse(
+        response, stream_http_observations, journey_id, chunk_id, received_at=received_at
     )
 
 
@@ -5102,15 +5154,12 @@ async def process_conversion(job_id: str) -> None:
                     with _stream_manifest_lock:
                         stream_index = _load_stream_index(job_id)
                         previous_chapter = stream_index.get("chapters", {}).get(chapter_key) or {}
-                        for chunk in previous_chapter.get("chunks") or []:
-                            old_name = _safe_leaf_name(
-                                str(chunk.get("file") or ""), field_name="chunk"
-                            )
-                            old_path = _resolve_relative_path_within_root(
-                                stream_dir, old_name, must_exist=False
-                            )
-                            old_path.unlink(missing_ok=True)
-                        stream_index.setdefault("chapters", {}).pop(chapter_key, None)
+                        retired = _retired_stream_chunks(previous_chapter)
+                        stream_index.setdefault("chapters", {})[chapter_key] = {
+                            "chapterIndex": idx,
+                            "chunks": [],
+                            "retiredChunks": retired,
+                        }
                         _save_stream_index(job_id, stream_index)
                 except Exception:
                     pass
@@ -5119,21 +5168,29 @@ async def process_conversion(job_id: str) -> None:
                 _manifest_chunks: dict[int, dict] = {}
 
                 def _chunk_callback(
-                    segment_index: int, temp_path: Path, segment_text: str = ""
+                    segment_index: int, temp_path: Path, segment_text: str = "", *, observation=None
                 ) -> None:
                     """Save synthesized segment for streaming playback."""
+                    published_target = None
+                    previous_chunk = _manifest_chunks.get(segment_index)
                     try:
-                        chunk_id = str(segment_index)
+                        # A publication identity must not alias a replacement's
+                        # bytes when a client still holds an earlier manifest.
+                        chunk_id = uuid.uuid4().hex
                         target_name = f"stream_{uuid.uuid4().hex}{temp_path.suffix.lower()}"
                         target = _resolve_relative_path_within_root(
                             stream_dir, target_name, must_exist=False
                         )
-                        shutil.copy2(temp_path, target)
+                        if observation is None:
+                            raise RuntimeError("Missing segment publication context")
+                        observation_payload = observation.publish_audio(temp_path, target)
+                        published_target = target
                         chunk_entry: dict = {
                             "id": chunk_id,
                             "index": segment_index,
                             "file": target.name,
                             "url": f"/api/streams/{job_id}/chapters/{idx}/chunks/{chunk_id}",
+                            "observation": observation_payload,
                         }
                         if segment_text:
                             chunk_entry["text"] = segment_text
@@ -5141,8 +5198,12 @@ async def process_conversion(job_id: str) -> None:
                         with _stream_manifest_lock:
                             stream_index = _load_stream_index(job_id)
                             stream_index.setdefault("jobId", job_id)
+                            previous_chapter = stream_index.get("chapters", {}).get(chapter_key) or {}
+                            active_ids = frozenset(chunk["id"] for chunk in _manifest_chunks.values())
+                            retired = _retired_stream_chunks(previous_chapter, active_ids)
                             stream_index.setdefault("chapters", {})[chapter_key] = {
                                 "chapterIndex": idx,
+                                "retiredChunks": retired,
                                 "chunks": sorted(
                                     _manifest_chunks.values(), key=lambda x: x.get("index", 0)
                                 ),
@@ -5150,7 +5211,15 @@ async def process_conversion(job_id: str) -> None:
                                 "baseUrl": f"/api/streams/{job_id}/chapters/{idx}",
                             }
                             _save_stream_index(job_id, stream_index)
+                        published_target = None
                     except Exception as exc:
+                        if previous_chunk is None:
+                            _manifest_chunks.pop(segment_index, None)
+                        else:
+                            _manifest_chunks[segment_index] = previous_chunk
+                        if published_target is not None:
+                            with contextlib.suppress(OSError):
+                                published_target.unlink(missing_ok=True)
                         logger.debug("Chunk callback error for segment %d: %s", segment_index, exc)
 
                 auto_order: list[str] = []
@@ -5412,16 +5481,19 @@ async def process_conversion(job_id: str) -> None:
                                 output_file, engine_config.engine
                             )
                             try:
-                                try:
-                                    synth_coro = engine_obj.synthesize_async(
-                                        clean_text,
-                                        tts_path,
-                                        progress_callback=_progress_callback,
-                                        chunk_callback=_chunk_callback,
-                                    )
-                                except TypeError:
-                                    # Fallback for engines that don't support callbacks
-                                    synth_coro = engine_obj.synthesize_async(clean_text, tts_path)
+                                def invoke(observed_callback):
+                                    try:
+                                        return engine_obj.synthesize_async(
+                                            clean_text,
+                                            tts_path,
+                                            progress_callback=_progress_callback,
+                                            chunk_callback=observed_callback,
+                                        )
+                                    except TypeError:
+                                        # Fallback for engines that don't support callbacks
+                                        return engine_obj.synthesize_async(clean_text, tts_path)
+
+                                synth_coro = observe_synthesis(invoke, _chunk_callback)
                                 synth_task = asyncio.ensure_future(synth_coro)
                                 # Per-chapter idle watchdog — aborts when the
                                 # engine goes silent mid-synthesis even if the

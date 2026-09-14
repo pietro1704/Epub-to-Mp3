@@ -57,12 +57,59 @@ def _unique_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
     return result
 
 
+def _validate_publication_id(identifier: object) -> None:
+    if not isinstance(identifier, str):
+        raise ValueError("Invalid Apple publication identifier")
+    numeric = 1 <= len(identifier) <= 20 and all(char in "0123456789" for char in identifier)
+    hexadecimal = len(identifier) == 32 and all(
+        char in "0123456789abcdef" for char in identifier.lower()
+    )
+    if not numeric and not hexadecimal:
+        _uuid(identifier)
+
+
+def _validate_publication(value: object) -> None:
+    publication = _object(value, {"publicationId", "producer"})
+    _validate_publication_id(publication["publicationId"])
+    producer = _object(publication["producer"], {
+        "version", "attemptId", "segmentReadyElapsedNanoseconds",
+        "artifactPublishedElapsedNanoseconds",
+    })
+    if type(producer["version"]) is not int or producer["version"] != 1:
+        raise ValueError("Unsupported Apple producer version")
+    _uuid(producer["attemptId"])
+    ready = producer["segmentReadyElapsedNanoseconds"]
+    published = producer["artifactPublishedElapsedNanoseconds"]
+    if type(ready) is not int or type(published) is not int or not 0 <= ready <= published <= 2**64 - 1:
+        raise ValueError("Invalid Apple producer timing")
+
+
 def _validate_journey(value: object) -> dict[str, Any]:
-    journey = _object(value, {"id", "kind", "context", "records"})
-    _uuid(journey["id"])
+    fields = {"id", "kind", "context", "records"}
+    if isinstance(value, dict):
+        fields.update({"streamPublication", "streamRequest"} & value.keys())
+    journey = _object(value, fields)
+    journey_id = _uuid(journey["id"])
     kind = journey["kind"]
     if not isinstance(kind, str) or kind not in _KINDS:
         raise ValueError("Unsupported Apple journey kind")
+    if "streamPublication" in journey:
+        if kind not in ("progressive_playback", "seek"):
+            raise ValueError("Apple publication is not allowed for this journey")
+        _validate_publication(journey["streamPublication"])
+    if "streamRequest" in journey:
+        if kind not in ("progressive_playback", "seek"):
+            raise ValueError("Apple stream request is not allowed for this journey")
+        receipt = _object(journey["streamRequest"], {"journeyId", "requestId", "publicationId"})
+        if _uuid(receipt["journeyId"]) != journey_id:
+            raise ValueError("Apple stream request journey mismatch")
+        _uuid(receipt["requestId"])
+        _validate_publication_id(receipt["publicationId"])
+        if (
+            "streamPublication" in journey
+            and receipt["publicationId"] != journey["streamPublication"]["publicationId"]
+        ):
+            raise ValueError("Apple stream request publication mismatch")
     context = _object(journey["context"], {"documentKind", "cacheClass"})
     if context["documentKind"] not in tuple(_DOCUMENT_KINDS.values()):
         raise ValueError("Unsupported Apple document kind")

@@ -6,6 +6,8 @@ import UniformTypeIdentifiers
 final class MacSettingsViewController: NSViewController {
     private let settings: AppSettings
     private let library: LibraryStore
+    private let clearDownloadsOperation: () async throws -> Void
+    private var isClearingDownloads = false
     private let fontSizeStepper = NSStepper()
     private let fontSizeLabel = NSTextField(labelWithString: "")
     private let fontPopup = NSPopUpButton()
@@ -13,10 +15,23 @@ final class MacSettingsViewController: NSViewController {
     private let layoutPopup = NSPopUpButton()
     private let statusLabel = NSTextField(labelWithString: "")
     private let storageLabel = NSTextField(labelWithString: "")
+    private let diagnosticsButton = NSButton()
+    private let diagnosticsLabel = NSTextField(wrappingLabelWithString: "")
+    private let diagnosticsSession: StreamingDiagnosticsSession
+    private let confirmStreamingDiagnostics: ((String, String, @escaping () -> Void) -> Void)?
+    private var diagnosticsExpiryTask: Task<Void, Never>?
 
-    init(settings: AppSettings, library: LibraryStore) {
+    init(settings: AppSettings, library: LibraryStore,
+         diagnosticsSession: StreamingDiagnosticsSession? = nil,
+         confirmStreamingDiagnostics: ((String, String, @escaping () -> Void) -> Void)? = nil,
+         clearDownloadsOperation: (() async throws -> Void)? = nil) {
         self.settings = settings
         self.library = library
+        self.clearDownloadsOperation = clearDownloadsOperation ?? {
+            try await AudioStorageMaintenance().clearAllDownloads()
+        }
+        self.diagnosticsSession = diagnosticsSession ?? .shared
+        self.confirmStreamingDiagnostics = confirmStreamingDiagnostics
         super.init(nibName: nil, bundle: nil)
         title = L10n.string("settings.title")
     }
@@ -35,7 +50,21 @@ final class MacSettingsViewController: NSViewController {
         super.viewDidLoad()
         configureControls()
         refresh()
+        refreshStreamingDiagnostics()
     }
+
+    override func viewWillAppear() {
+        super.viewWillAppear()
+        refreshStreamingDiagnostics()
+    }
+
+    override func viewDidDisappear() {
+        super.viewDidDisappear()
+        diagnosticsExpiryTask?.cancel()
+        diagnosticsExpiryTask = nil
+    }
+
+    deinit { diagnosticsExpiryTask?.cancel() }
 
     private func configureControls() {
         fontSizeStepper.minValue = 0
@@ -66,6 +95,10 @@ final class MacSettingsViewController: NSViewController {
             target: self,
             action: #selector(exportPerformanceDiagnostics)
         )
+        diagnosticsButton.target = self
+        diagnosticsButton.action = #selector(toggleStreamingDiagnostics)
+        diagnosticsButton.setAccessibilityIdentifier("settings.recordStreamingDiagnostics")
+        diagnosticsLabel.setAccessibilityIdentifier("settings.streamingDiagnosticsStatus")
         fontSizeStepper.setAccessibilityLabel(L10n.string("settings.fontSize"))
         fontPopup.setAccessibilityLabel(L10n.string("settings.font"))
         themePopup.setAccessibilityLabel(L10n.string("settings.theme"))
@@ -92,6 +125,8 @@ final class MacSettingsViewController: NSViewController {
             row(L10n.string("settings.storageUsage"), storageLabel),
             row("", refreshButton),
             row("", exportDiagnosticsButton),
+            row("", diagnosticsButton),
+            row("", diagnosticsLabel),
             row("", clearButton),
         ])
         form.orientation = .vertical
@@ -163,25 +198,109 @@ final class MacSettingsViewController: NSViewController {
         panel.allowedContentTypes = [.json]
         panel.nameFieldStringValue = "performance-diagnostics.json"
         guard panel.runModal() == .OK, let url = panel.url else { return }
-        do {
-            try LatencyObservationStore.shared.exportData().write(to: url, options: .atomic)
-        } catch {
+        Task { @MainActor in
+            do {
+                _ = try await LatencyObservationStore.shared.writeDiagnosticExport(to: url)
+            } catch {
+                let alert = NSAlert()
+                alert.messageText = L10n.string("settings.exportPerformanceDiagnostics")
+                alert.informativeText = L10n.string("settings.exportPerformanceDiagnosticsError")
+                alert.addButton(withTitle: L10n.string("common.ok"))
+                alert.runModal()
+            }
+        }
+    }
+
+    @objc private func toggleStreamingDiagnostics() {
+        if diagnosticsSession.isActive {
+            diagnosticsSession.deactivate()
+            refreshStreamingDiagnostics()
+            return
+        }
+        let title = L10n.string("settings.streamingDiagnosticsConfirmTitle")
+        let message = L10n.string("settings.streamingDiagnosticsConfirmMessage")
+        let enable: () -> Void = { [weak self] in
+            guard let self else { return }
+            _ = self.diagnosticsSession.activate()
+            self.refreshStreamingDiagnostics()
+        }
+        if let confirmStreamingDiagnostics {
+            confirmStreamingDiagnostics(title, message, enable)
+        } else {
             let alert = NSAlert()
-            alert.messageText = L10n.string("settings.exportPerformanceDiagnostics")
-            alert.informativeText = L10n.string("settings.exportPerformanceDiagnosticsError")
-            alert.addButton(withTitle: L10n.string("common.ok"))
-            alert.runModal()
+            alert.messageText = title
+            alert.informativeText = message
+            alert.addButton(withTitle: L10n.string("settings.enableStreamingDiagnostics"))
+            alert.addButton(withTitle: L10n.string("common.cancel"))
+            if let window = view.window {
+                alert.beginSheetModal(for: window) { response in
+                    if response == .alertFirstButtonReturn { enable() }
+                }
+            } else if alert.runModal() == .alertFirstButtonReturn {
+                enable()
+            }
+        }
+    }
+
+    private func refreshStreamingDiagnostics() {
+        let active = diagnosticsSession.isActive
+        diagnosticsButton.title = L10n.string(active
+            ? "settings.stopStreamingDiagnostics" : "settings.recordStreamingDiagnostics")
+        diagnosticsButton.setAccessibilityLabel(diagnosticsButton.title)
+        diagnosticsLabel.stringValue = L10n.string(active
+            ? "settings.streamingDiagnosticsActive" : "settings.streamingDiagnosticsInactive")
+        diagnosticsExpiryTask?.cancel()
+        diagnosticsExpiryTask = nil
+        let remaining = diagnosticsSession.remainingTime
+        guard remaining > 0 else { return }
+        diagnosticsExpiryTask = Task { @MainActor [weak self] in
+            do { try await Task.sleep(nanoseconds: UInt64((remaining + 0.05) * 1_000_000_000)) }
+            catch { return }
+            guard !Task.isCancelled else { return }
+            self?.refreshStreamingDiagnostics()
         }
     }
 
     @objc private func clearDownloads() {
-        Task { await DownloadManager.shared.cancelAll() }
-        StorageUsageScanner.clearAllDownloads()
-        for var book in library.books where book.cachedOffline {
-            book.cachedOffline = false
-            library.update(book)
+        guard !isClearingDownloads, let window = view.window, window.attachedSheet == nil else { return }
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = L10n.string("settings.clearAllDownloadsConfirmTitle")
+        alert.informativeText = L10n.string("settings.clearAllDownloadsConfirmMessage")
+        alert.addButton(withTitle: L10n.string("settings.clearAllDownloads"))
+        alert.addButton(withTitle: L10n.string("common.cancel"))
+        alert.beginSheetModal(for: window) { [weak self] response in
+            guard response == .alertFirstButtonReturn, let self else { return }
+            self.performDownloadRemoval()
         }
-        refresh()
+    }
+
+    private func performDownloadRemoval() {
+        guard !isClearingDownloads else { return }
+        isClearingDownloads = true
+        Task { [weak self] in
+            guard let self else { return }
+            defer {
+                isClearingDownloads = false
+                refresh()
+            }
+            do {
+                try await clearDownloadsOperation()
+                for var book in library.books where book.cachedOffline {
+                    book.cachedOffline = false
+                    library.update(book)
+                }
+            } catch {
+                guard let window = view.window else { return }
+                let alert = NSAlert()
+                alert.alertStyle = .warning
+                alert.messageText = L10n.string("settings.storageRemovalFailedTitle")
+                alert.informativeText = L10n.string("settings.storageRemovalFailedMessage")
+                    + "\n\n" + error.localizedDescription
+                alert.addButton(withTitle: L10n.string("library.ok"))
+                alert.beginSheetModal(for: window, completionHandler: nil)
+            }
+        }
     }
 }
 #endif

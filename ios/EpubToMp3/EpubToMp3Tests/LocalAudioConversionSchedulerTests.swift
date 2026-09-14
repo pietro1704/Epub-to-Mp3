@@ -205,6 +205,90 @@ final class LocalAudioConversionSchedulerTests: XCTestCase {
     }
 
     @MainActor
+    func testPendingNavigationPreemptsAndPreservesNormalPriorities() {
+        let scheduler = LocalAudioConversionScheduler(initialConnectivity: .wifi, observesNetwork: false)
+        let requestID = UUID()
+        scheduler.prioritize(bookID: "book", chapterIndices: [2, 1])
+        scheduler.setPendingNavigation(bookID: "book", requestID: requestID, chapterIndex: 3)
+
+        XCTAssertEqual(scheduler.nextChapterIndex(bookID: "book", available: [0, 1, 2, 3],
+                                                 defaultOrder: [0, 1, 2, 3]), 3)
+        scheduler.clearPendingNavigation(bookID: "book", requestID: requestID)
+        XCTAssertEqual(scheduler.nextChapterIndex(bookID: "book", available: [0, 1, 2],
+                                                 defaultOrder: [0, 1, 2]), 2)
+        XCTAssertEqual(scheduler.nextChapterIndex(bookID: "book", available: [0, 1],
+                                                 defaultOrder: [0, 1]), 1)
+    }
+
+    @MainActor
+    func testPendingNavigationReplacementRejectsStaleCancellation() {
+        let scheduler = LocalAudioConversionScheduler(initialConnectivity: .wifi, observesNetwork: false)
+        let previousID = UUID()
+        let currentID = UUID()
+        scheduler.setPendingNavigation(bookID: "book", requestID: previousID, chapterIndex: 2)
+        scheduler.setPendingNavigation(bookID: "book", requestID: currentID, chapterIndex: 3)
+        scheduler.clearPendingNavigation(bookID: "book", requestID: previousID)
+
+        XCTAssertEqual(scheduler.nextChapterIndex(bookID: "book", available: [0, 2, 3],
+                                                 defaultOrder: [0, 2, 3]), 3)
+        scheduler.clearPendingNavigation(bookID: "book", requestID: currentID)
+        XCTAssertEqual(scheduler.nextChapterIndex(bookID: "book", available: [0, 2, 3],
+                                                 defaultOrder: [0, 2, 3]), 0)
+    }
+
+    @MainActor
+    func testPendingNavigationIsIsolatedByBook() {
+        let scheduler = LocalAudioConversionScheduler(initialConnectivity: .wifi, observesNetwork: false)
+        let requestID = UUID()
+        scheduler.setPendingNavigation(bookID: "first", requestID: requestID, chapterIndex: 2)
+        scheduler.prioritize(bookID: "second", chapterIndices: [1])
+        scheduler.clearPendingNavigation(bookID: "second", requestID: requestID)
+
+        XCTAssertEqual(scheduler.nextChapterIndex(bookID: "first", available: [0, 1, 2],
+                                                 defaultOrder: [0, 1, 2]), 2)
+        XCTAssertEqual(scheduler.nextChapterIndex(bookID: "second", available: [0, 1, 2],
+                                                 defaultOrder: [0, 1, 2]), 1)
+    }
+
+    @MainActor
+    func testUnavailablePendingTargetDoesNotBlockOrDiscardOtherWork() {
+        let scheduler = LocalAudioConversionScheduler(initialConnectivity: .wifi, observesNetwork: false)
+        scheduler.setPendingNavigation(bookID: "book", requestID: UUID(), chapterIndex: 3)
+
+        XCTAssertEqual(scheduler.nextChapterIndex(bookID: "book", available: [0, 1],
+                                                 defaultOrder: [0, 1]), 0)
+        XCTAssertNil(scheduler.nextChapterIndex(bookID: "book", available: [], defaultOrder: []))
+        XCTAssertEqual(scheduler.nextChapterIndex(bookID: "book", available: [1, 3],
+                                                 defaultOrder: [1, 3]), 3)
+    }
+
+    @MainActor
+    func testInvalidPendingNavigationDoesNotReplaceAValidTarget() {
+        let scheduler = LocalAudioConversionScheduler(initialConnectivity: .wifi, observesNetwork: false)
+        scheduler.setPendingNavigation(bookID: "book", requestID: UUID(), chapterIndex: 2)
+        scheduler.setPendingNavigation(bookID: "book", requestID: UUID(), chapterIndex: -1)
+        scheduler.setPendingNavigation(bookID: "", requestID: UUID(), chapterIndex: 2)
+
+        XCTAssertEqual(scheduler.nextChapterIndex(bookID: "book", available: [0, 2], defaultOrder: [0, 2]), 2)
+        XCTAssertEqual(scheduler.nextChapterIndex(bookID: "", available: [0, 2], defaultOrder: [0, 2]), 0)
+    }
+
+    @MainActor
+    func testPendingNavigationIsNotRestoredFromSchedulerPersistence() throws {
+        let suiteName = "LocalAudioPendingNavigation.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let scheduler = LocalAudioConversionScheduler(initialConnectivity: .wifi,
+                                                      observesNetwork: false, persistence: defaults)
+        scheduler.setPendingNavigation(bookID: "book", requestID: UUID(), chapterIndex: 2)
+        let restored = LocalAudioConversionScheduler(initialConnectivity: .wifi,
+                                                     observesNetwork: false, persistence: defaults)
+
+        XCTAssertEqual(scheduler.nextChapterIndex(bookID: "book", available: [0, 2], defaultOrder: [0, 2]), 2)
+        XCTAssertEqual(restored.nextChapterIndex(bookID: "book", available: [0, 2], defaultOrder: [0, 2]), 0)
+    }
+
+    @MainActor
     func testPriorityAddedForAQueuedSameBookJobSurvivesThePreviousJobFinishing() async throws {
         let scheduler = LocalAudioConversionScheduler(
             initialConnectivity: .wifi,

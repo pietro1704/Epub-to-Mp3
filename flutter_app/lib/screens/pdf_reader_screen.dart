@@ -68,6 +68,7 @@ class _PdfReaderScreenState extends State<PdfReaderScreen> {
     _readerJourneyId = latencyObservations.begin(
       LatencyJourneyKind.readerOpen,
       LatencyTransition.interactionRequested,
+      documentKind: LatencyDocumentKind.selectableTextPdf,
     );
     if (widget.loadDocument == null && !File(widget.filePath).existsSync()) {
       _error = StateError('cannot open PDF: ${widget.filePath}');
@@ -101,7 +102,7 @@ class _PdfReaderScreenState extends State<PdfReaderScreen> {
   void _completeReaderJourney() {
     final id = _readerJourneyId;
     if (id == null) return;
-    latencyObservations.record(id, LatencyTransition.readerUsable);
+    latencyObservations.record(id, LatencyTransition.firstPdfPage);
     latencyObservations.finish(id);
     _readerJourneyId = null;
   }

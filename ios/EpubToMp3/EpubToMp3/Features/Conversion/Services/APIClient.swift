@@ -28,7 +28,21 @@ protocol JobStreamingClient: Sendable {
     func fetchJob(id: String) async throws -> JobSnapshot
     func fetchChapterStream(jobId: String, chapterIndex: Int) async throws -> APIClient.ChapterStreamManifest
     func fetchChapterStreamChunk(jobId: String, chapterIndex: Int, chunkId: String) async throws -> Data
+    func fetchChapterStreamChunk(
+        jobId: String, chapterIndex: Int, chunkId: String,
+        authorization: StreamingDiagnosticsSession.Authorization?
+    ) async throws -> APIClient.StreamChunkDownload
     func eventStream(jobId: String) -> AsyncThrowingStream<JobEvent, Error>
+}
+
+extension JobStreamingClient {
+    func fetchChapterStreamChunk(
+        jobId: String, chapterIndex: Int, chunkId: String,
+        authorization: StreamingDiagnosticsSession.Authorization?
+    ) async throws -> APIClient.StreamChunkDownload {
+        let data = try await fetchChapterStreamChunk(jobId: jobId, chapterIndex: chapterIndex, chunkId: chunkId)
+        return .init(data: data, receipt: nil)
+    }
 }
 
 /// Thin Foundation-only API client.
@@ -47,11 +61,42 @@ protocol JobStreamingClient: Sendable {
 /// delegate retain) on every call — and tore the session down mid-flight
 /// during SSE iteration.
 final class APIClient: @unchecked Sendable {
+    struct StreamChunkDownload: Sendable {
+        let data: Data
+        let receipt: LatencyObservation.StreamRequestReceipt?
+    }
     struct StreamChunk: Decodable, Sendable {
         let id: String
         let index: Int
         let url: String
         let text: String?
+        let observation: LatencyObservation.ProducerObservation?
+
+        init(
+            id: String, index: Int, url: String, text: String?,
+            observation: LatencyObservation.ProducerObservation? = nil
+        ) {
+            self.id = id
+            self.index = index
+            self.url = url
+            self.text = text
+            self.observation = observation
+        }
+
+        private enum CodingKeys: String, CodingKey {
+            case id, index, url, text, observation
+        }
+
+        init(from decoder: Decoder) throws {
+            let values = try decoder.container(keyedBy: CodingKeys.self)
+            id = try values.decode(String.self, forKey: .id)
+            index = try values.decode(Int.self, forKey: .index)
+            url = try values.decode(String.self, forKey: .url)
+            text = try values.decodeIfPresent(String.self, forKey: .text)
+            // Optional diagnostics must not make otherwise playable audio fail.
+            observation = try? values.decode(
+                LatencyObservation.ProducerObservation.self, forKey: .observation)
+        }
     }
 
     struct ChapterStreamManifest: Decodable, Sendable {
@@ -189,14 +234,44 @@ final class APIClient: @unchecked Sendable {
     /// Download one synthesized stream chunk into memory so the player can
     /// enqueue it immediately, before the complete chapter MP3 exists.
     func fetchChapterStreamChunk(jobId: String, chapterIndex: Int, chunkId: String) async throws -> Data {
+        try await fetchChapterStreamChunk(
+            jobId: jobId, chapterIndex: chapterIndex, chunkId: chunkId, authorization: nil).data
+    }
+
+    func fetchChapterStreamChunk(
+        jobId: String, chapterIndex: Int, chunkId: String,
+        authorization: StreamingDiagnosticsSession.Authorization?
+    ) async throws -> StreamChunkDownload {
         let url = baseURL.appendingPathComponent(
             "api/streams/\(jobId)/chapters/\(chapterIndex)/chunks/\(chunkId)"
         )
         do {
-            let (data, response) = try await session.data(from: url)
+            let active = authorization.flatMap { $0.isValid ? $0 : nil }
+            let data: Data
+            let response: URLResponse
+            if let active {
+                var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData)
+                request.setValue("no-store", forHTTPHeaderField: "Cache-Control")
+                request.setValue(active.journeyID.uuidString, forHTTPHeaderField: "X-Playback-Journey-ID")
+                (data, response) = try await session.data(
+                    for: request, delegate: StreamRedirectPolicy(origin: url, authorization: active))
+            } else {
+                (data, response) = try await session.data(from: url)
+            }
             try Self.assertOK(response: response, data: data)
             guard !data.isEmpty else { throw APIError.http(status: 502, body: "Empty audio chunk") }
-            return data
+            var receipt: LatencyObservation.StreamRequestReceipt?
+            if let active, active.isValid, let http = response as? HTTPURLResponse,
+               StreamRedirectPolicy.sameOrigin(http.url, url),
+               let echoedJourney = http.value(forHTTPHeaderField: "X-Playback-Journey-ID"),
+               echoedJourney.lowercased() == active.journeyID.uuidString.lowercased(),
+               http.value(forHTTPHeaderField: "X-Stream-Publication-ID") == chunkId,
+               let requestValue = http.value(forHTTPHeaderField: "X-Stream-Request-ID"),
+               let requestID = UUID(uuidString: requestValue),
+               requestID.uuidString.lowercased() == requestValue.lowercased() {
+                receipt = .init(journeyID: active.journeyID, requestID: requestID, publicationID: chunkId)
+            }
+            return .init(data: data, receipt: receipt)
         } catch let error as APIError {
             throw error
         } catch {
@@ -525,3 +600,35 @@ final class APIClient: @unchecked Sendable {
 }
 
 extension APIClient: JobStreamingClient {}
+
+/// A request-scoped delegate never forwards diagnostic identity to another origin.
+private final class StreamRedirectPolicy: NSObject, URLSessionTaskDelegate, Sendable {
+    let origin: URL
+    let authorization: StreamingDiagnosticsSession.Authorization
+
+    init(origin: URL, authorization: StreamingDiagnosticsSession.Authorization) {
+        self.origin = origin
+        self.authorization = authorization
+    }
+
+    static func sameOrigin(_ lhs: URL?, _ rhs: URL) -> Bool {
+        guard let lhs, let leftScheme = lhs.scheme?.lowercased(),
+              let rightScheme = rhs.scheme?.lowercased(),
+              leftScheme == rightScheme, lhs.host?.lowercased() == rhs.host?.lowercased() else { return false }
+        func port(_ url: URL) -> Int? {
+            url.port ?? (url.scheme?.lowercased() == "https" ? 443 : url.scheme?.lowercased() == "http" ? 80 : nil)
+        }
+        return port(lhs) == port(rhs)
+    }
+
+    func urlSession(_ session: URLSession, task: URLSessionTask,
+                    willPerformHTTPRedirection response: HTTPURLResponse,
+                    newRequest request: URLRequest,
+                    completionHandler: @escaping (URLRequest?) -> Void) {
+        var redirected = request
+        if !Self.sameOrigin(request.url, origin) || !authorization.isValid {
+            redirected.setValue(nil, forHTTPHeaderField: "X-Playback-Journey-ID")
+        }
+        completionHandler(redirected)
+    }
+}

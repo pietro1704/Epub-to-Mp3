@@ -16,7 +16,8 @@ final class JobDetailViewModel: ObservableObject {
     /// is already attached to this job can append newly completed chapters
     /// without coupling this view model to UIKit or AppKit.
     var onSnapshot: ((JobSnapshot) -> Void)?
-    var onStreamChunk: ((Data, Int, Int) -> Void)?
+    var onStreamRequestAuthorization: ((String, Int, Int) -> StreamingDiagnosticsSession.Authorization?)?
+    var onStreamChunk: ((Data, Int, Int, LatencyObservation.StreamPublication?, LatencyObservation.StreamRequestReceipt?) -> Void)?
     var onStreamFinished: ((JobSnapshot) -> Void)?
 
     private var streamTask: Task<Void, Never>?
@@ -93,16 +94,23 @@ final class JobDetailViewModel: ObservableObject {
                         for chunk in manifest.chunks.sorted(by: { $0.index < $1.index }) {
                             let key = "\(chapter.index):\(chunk.id)"
                             guard !seen.contains(key) else { continue }
-                            let data = try await client.fetchChapterStreamChunk(
+                            let authorization = self?.onStreamRequestAuthorization?(
+                                snapshot.jobId, chapter.index, chunk.index)
+                            let download = try await client.fetchChapterStreamChunk(
                                 jobId: snapshot.jobId,
                                 chapterIndex: chapter.index,
-                                chunkId: chunk.id
+                                chunkId: chunk.id,
+                                authorization: authorization
                             )
                             guard let self, !Task.isCancelled else { return }
                             seen.insert(key)
                             // API chapter indexes are 1-based; AudioPlayer's
                             // segment queue is explicitly 0-based.
-                            self.onStreamChunk?(data, max(0, chapter.index - 1), chunk.index)
+                            let publication = chunk.observation.flatMap {
+                                LatencyObservation.StreamPublication(publicationID: chunk.id, producer: $0)
+                            }
+                            self.onStreamChunk?(download.data, max(0, chapter.index - 1), chunk.index,
+                                                publication, download.receipt)
                         }
                     } catch {
                         // The manifest may not exist until synthesis starts;

@@ -48,10 +48,9 @@ class DownloadManager {
         },
       );
       _events.add(DownloadEvent(path: path, progress: 1.0, completed: true));
-      // After each completed download, run LRU+TTL eviction in the background.
-      // Exclude the current jobId so we never immediately evict what we just
-      // downloaded.
-      unawaited(OfflineCacheEviction.runEviction(activeJobIds: {jobId}));
+      // Completed downloads are protected listening content. Rebuildable
+      // cache maintenance must never run against this directory.
+      await OfflineCacheEviction.touchLastAccess(jobId);
       return File(path);
     } on DioException catch (e) {
       final partial = File(path);

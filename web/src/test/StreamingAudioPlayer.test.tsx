@@ -133,7 +133,7 @@ describe("StreamingAudioPlayer", () => {
     const playback = observations.find((observation) => observation.kind === "progressive_playback");
     const seek = observations.find((observation) => observation.kind === "seek");
     expect(playback?.records.map((record) => record.transition)).toEqual([
-      "interaction_requested",
+      "play_requested",
       "audio_queued",
       "audio_playable",
       "audio_audible",

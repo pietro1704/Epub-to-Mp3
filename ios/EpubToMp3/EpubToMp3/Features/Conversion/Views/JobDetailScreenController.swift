@@ -27,19 +27,24 @@ final class JobDetailScreenController: UITableViewController {
     private var playbackClock: PlaybackClock
     private let viewModel = JobDetailViewModel()
     private var viewModelObserver: AnyCancellable?
+    private var playbackGeneration: UUID?
+    private var streamDeliveryGeneration: UUID?
+    private let streamingClient: (any JobStreamingClient)?
 
     init(
         jobId: String,
         settings: AppSettings,
         library: LibraryStore,
         player: AudioPlayer,
-        playbackClock: PlaybackClock
+        playbackClock: PlaybackClock,
+        streamingClient: (any JobStreamingClient)? = nil
     ) {
         self.jobId = jobId
         self.settings = settings
         self.library = library
         self.player = player
         self.playbackClock = playbackClock
+        self.streamingClient = streamingClient
         super.init(style: .insetGrouped)
         title = L10n.string("jobDetail.title")
     }
@@ -49,8 +54,9 @@ final class JobDetailScreenController: UITableViewController {
         fatalError("init(coder:) has not been implemented")
     }
 
-    private var client: APIClient? {
-        settings.resolvedBaseURL.map(APIClient.init(baseURL:))
+    private var client: (any JobStreamingClient)? {
+        if let streamingClient { return streamingClient }
+        return settings.resolvedBaseURL.map(APIClient.init(baseURL:))
     }
 
     override func viewDidLoad() {
@@ -67,31 +73,47 @@ final class JobDetailScreenController: UITableViewController {
             }
         }
         viewModel.onSnapshot = { [weak self] snapshot in
-            guard let self else { return }
+            guard let self, self.playbackGeneration == self.player.remotePlaybackGeneration else { return }
             if self.player.snapshot?.jobId == snapshot.jobId {
                 self.player.updateSnapshot(snapshot)
+                self.playbackGeneration = self.player.remotePlaybackGeneration
                 return
             }
             guard !snapshot.isTerminal, let baseURL = self.settings.resolvedBaseURL else { return }
-            _ = self.player.beginRemoteStreaming(snapshot: snapshot, backendBaseURL: baseURL)
+            if self.player.beginRemoteStreaming(snapshot: snapshot, backendBaseURL: baseURL) {
+                self.playbackGeneration = self.player.remotePlaybackGeneration
+                self.streamDeliveryGeneration = self.player.remoteSegmentGeneration
+            }
         }
-        viewModel.onStreamChunk = { [weak self] data, chapterIndex, segmentIndex in
-            guard let self, self.player.snapshot?.jobId == self.jobId else { return }
-            self.player.enqueueSegment(
+        viewModel.onStreamRequestAuthorization = { [weak self] jobID, chapterIndex, segmentIndex in
+            guard let self, let generation = self.streamDeliveryGeneration else { return nil }
+            return self.player.streamRequestAuthorization(jobID: jobID, generation: generation,
+                                                         chapterIndex: chapterIndex, segmentIndex: segmentIndex)
+        }
+        viewModel.onStreamChunk = { [weak self] data, chapterIndex, segmentIndex, publication, receipt in
+            guard let self, let generation = self.streamDeliveryGeneration else { return }
+            self.player.enqueueRemoteSegment(
                 data: data,
+                jobID: self.jobId,
+                generation: generation,
                 chapterIndex: chapterIndex,
                 segmentIndex: segmentIndex,
-                sentenceId: nil
+                publication: publication,
+                receipt: receipt
             )
         }
         viewModel.onStreamFinished = { [weak self] snapshot in
-            guard let self, self.player.snapshot?.jobId == snapshot.jobId else { return }
+            guard let self, self.player.snapshot?.jobId == snapshot.jobId,
+                  self.playbackGeneration == self.player.remotePlaybackGeneration else { return }
             self.player.finishStreaming(snapshot: snapshot)
+            self.playbackGeneration = self.player.remotePlaybackGeneration
         }
     }
 
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
+        playbackGeneration = player.remotePlaybackGeneration
+        streamDeliveryGeneration = player.remoteSegmentGeneration
         viewModel.start(client: client, jobId: jobId)
         tableView.reloadData()
     }
@@ -100,10 +122,16 @@ final class JobDetailScreenController: UITableViewController {
         super.viewDidDisappear(animated)
         if isMovingFromParent || navigationController == nil {
             viewModel.stop()
+            playbackGeneration = nil
+            streamDeliveryGeneration = nil
         }
     }
 
     func update(settings: AppSettings, library: LibraryStore, player: AudioPlayer, playbackClock: PlaybackClock) {
+        if self.player !== player {
+            playbackGeneration = nil
+            streamDeliveryGeneration = nil
+        }
         self.settings = settings
         self.library = library
         self.player = player

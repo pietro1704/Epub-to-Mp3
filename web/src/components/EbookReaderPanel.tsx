@@ -250,7 +250,7 @@ export default function EbookReaderPanel({
         if (readerJourneyRef.current) latencyObservations.cancel(readerJourneyRef.current);
         readerJourneyRef.current = latencyObservations.begin(
           "reader_open",
-          "interaction_requested",
+          "open_requested",
         );
         setLoading(true);
         setLoadError(null);
@@ -274,7 +274,8 @@ export default function EbookReaderPanel({
         setLoading(false);
         setLoadError(null);
         if (readerJourneyRef.current) {
-          latencyObservations.record(readerJourneyRef.current, "reader_usable");
+          latencyObservations.record(readerJourneyRef.current, "readable_content");
+          latencyObservations.record(readerJourneyRef.current, "controls_usable");
           latencyObservations.finish(readerJourneyRef.current);
           readerJourneyRef.current = null;
         }

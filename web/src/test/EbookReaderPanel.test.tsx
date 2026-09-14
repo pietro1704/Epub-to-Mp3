@@ -96,8 +96,9 @@ describe("EbookReaderPanel", () => {
       .slice(existingObservationCount)
       .find((entry) => entry.kind === "reader_open");
     expect(observation?.records.map((record) => record.transition)).toEqual([
-      "interaction_requested",
-      "reader_usable",
+      "open_requested",
+      "readable_content",
+      "controls_usable",
     ]);
     expect(JSON.stringify(observation)).not.toContain("private-reader-job");
     expect(JSON.stringify(observation)).not.toContain("Private reader title");

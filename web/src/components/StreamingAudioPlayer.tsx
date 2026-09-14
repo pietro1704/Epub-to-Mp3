@@ -274,7 +274,7 @@ export default function StreamingAudioPlayer({
     setStarted(true);
     playbackJourneyRef.current = latencyObservations.begin(
       "progressive_playback",
-      "interaction_requested",
+      "play_requested",
     );
 
     let startChapter = sortedChapters[0]?.index ?? 0;

@@ -201,6 +201,80 @@ final class MiniPlayerBarLayoutTests: XCTestCase {
     }
 
     @MainActor
+    func testMiniPlayerExposesBothChapterNavigationControls() throws {
+        let miniPlayer = MiniPlayerBarUIKitView()
+        miniPlayer.configure(
+            player: AudioPlayer(),
+            playbackClock: PlaybackClock(),
+            library: LibraryStore(),
+            onTap: {}
+        )
+
+        let previous = try XCTUnwrap(button(in: miniPlayer, identifier: "miniPlayer.previous"))
+        let next = try XCTUnwrap(button(in: miniPlayer, identifier: "miniPlayer.next"))
+        XCTAssertNotNil(previous.image(for: .normal))
+        XCTAssertNotNil(next.image(for: .normal))
+        XCTAssertFalse(previous.allTargets.isEmpty)
+        XCTAssertFalse(next.allTargets.isEmpty)
+    }
+
+    func testChapterNavigationIndexMovesWithinPlayableChapterBounds() {
+        XCTAssertEqual(
+            AudioPlayer.chapterNavigationIndex(
+                currentIndex: 0,
+                direction: .forward,
+                chapterCount: 3
+            ),
+            1
+        )
+        XCTAssertEqual(
+            AudioPlayer.chapterNavigationIndex(
+                currentIndex: 2,
+                direction: .backward,
+                chapterCount: 3
+            ),
+            1
+        )
+        XCTAssertNil(
+            AudioPlayer.chapterNavigationIndex(
+                currentIndex: 0,
+                direction: .backward,
+                chapterCount: 3
+            )
+        )
+        XCTAssertNil(
+            AudioPlayer.chapterNavigationIndex(
+                currentIndex: 2,
+                direction: .forward,
+                chapterCount: 3
+            )
+        )
+    }
+
+    @MainActor
+    func testExpandedPlayerExposesChapterNavigationControlsAndDoesNotCancelTouches() throws {
+        let player = AudioPlayer()
+        let suite = "full-player.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let controller = FullPlayerScreenController(
+            player: player,
+            playbackClock: player.playbackClock,
+            library: LibraryStore(),
+            playerPresentation: PlayerPresentation(defaults: defaults),
+            settings: AppSettings(defaults: defaults)
+        )
+        controller.loadViewIfNeeded()
+
+        let previous = try XCTUnwrap(button(in: controller.view, identifier: "fullPlayer.previousChapter"))
+        let next = try XCTUnwrap(button(in: controller.view, identifier: "fullPlayer.nextChapter"))
+        XCTAssertFalse(previous.allTargets.isEmpty)
+        XCTAssertFalse(next.allTargets.isEmpty)
+        XCTAssertEqual(controller.view.gestureRecognizers?.count, 1)
+        XCTAssertFalse(controller.view.gestureRecognizers?.first?.cancelsTouchesInView ?? true)
+    }
+
+    @MainActor
     func testSystemAccessoryExcludesAnAdditionalBottomSafeAreaInset() {
         let miniPlayer = MiniPlayerBarUIKitView(usesSystemManagedBottomInset: true)
 

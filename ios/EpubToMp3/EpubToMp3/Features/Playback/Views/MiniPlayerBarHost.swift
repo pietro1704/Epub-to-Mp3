@@ -21,6 +21,7 @@ final class MiniPlayerBarUIKitView: UIView, UIGestureRecognizerDelegate {
     private let chapterLabel = UILabel()
     private let openButton = UIButton(type: .system)
     private let playPauseButton = UIButton(type: .system)
+    private let previousButton = UIButton(type: .system)
     private let nextButton = UIButton(type: .system)
     private let rateButton = UIButton(type: .system)
     private let spinner = UIActivityIndicatorView(style: .medium)
@@ -147,6 +148,9 @@ final class MiniPlayerBarUIKitView: UIView, UIGestureRecognizerDelegate {
         playPauseButton.tintColor = .label
         playPauseButton.accessibilityIdentifier = "miniPlayer.playPause"
         playPauseButton.accessibilityLabel = L10n.string("player.play")
+        previousButton.tintColor = .label
+        previousButton.accessibilityIdentifier = "miniPlayer.previous"
+        previousButton.accessibilityLabel = L10n.string("player.previousChapter")
         nextButton.tintColor = .label
         nextButton.accessibilityIdentifier = "miniPlayer.next"
         nextButton.accessibilityLabel = L10n.string("player.nextChapter")
@@ -154,20 +158,22 @@ final class MiniPlayerBarUIKitView: UIView, UIGestureRecognizerDelegate {
         rateButton.accessibilityIdentifier = "miniPlayer.rate"
         rateButton.accessibilityLabel = L10n.string("player.speed")
         playPauseButton.addTarget(self, action: #selector(playPauseTapped), for: .touchUpInside)
+        previousButton.addTarget(self, action: #selector(previousTapped), for: .touchUpInside)
         nextButton.addTarget(self, action: #selector(nextTapped), for: .touchUpInside)
-        for button in [playPauseButton, nextButton, rateButton] {
+        for button in [playPauseButton, previousButton, nextButton, rateButton] {
             button.translatesAutoresizingMaskIntoConstraints = false
             NSLayoutConstraint.activate([
                 button.widthAnchor.constraint(equalToConstant: 44),
                 button.heightAnchor.constraint(equalToConstant: 44),
             ])
         }
+        previousButton.setImage(UIImage(systemName: "backward.end.fill"), for: .normal)
         nextButton.setImage(UIImage(systemName: "forward.end.fill"), for: .normal)
 
         spinner.hidesWhenStopped = true
         spinner.translatesAutoresizingMaskIntoConstraints = false
 
-        let trailingStack = UIStackView(arrangedSubviews: [playPauseButton, spinner, nextButton, rateButton])
+        let trailingStack = UIStackView(arrangedSubviews: [previousButton, playPauseButton, spinner, nextButton, rateButton])
         trailingStack.axis = .horizontal
         trailingStack.alignment = .center
         trailingStack.spacing = 4
@@ -304,7 +310,7 @@ final class MiniPlayerBarUIKitView: UIView, UIGestureRecognizerDelegate {
             // The whole pill opens the full player. Only the playback
             // controls remain exempt so tapping play/next/rate keeps its
             // local action instead of expanding the player.
-            if view === playPauseButton || view === nextButton || view === rateButton {
+            if view === playPauseButton || view === previousButton || view === nextButton || view === rateButton {
                 return false
             }
             current = view.superview
@@ -339,6 +345,12 @@ final class MiniPlayerBarUIKitView: UIView, UIGestureRecognizerDelegate {
             responder = current.next
         }
         return nil
+    }
+
+    @objc
+    private func previousTapped() {
+        player?.previousChapter()
+        render()
     }
 
     @objc

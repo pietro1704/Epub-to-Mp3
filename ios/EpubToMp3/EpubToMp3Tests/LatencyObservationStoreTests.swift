@@ -3,6 +3,147 @@ import AVFoundation
 @testable import EpubToMp3
 
 final class LatencyObservationStoreTests: XCTestCase {
+    func testStreamRequestCannotMoveBetweenJourneysOrPublications() throws {
+        let store = LatencyObservationStore(clock: { 100 })
+        let first = store.beginSeek()
+        let second = store.beginSeek()
+        let receipt = try XCTUnwrap(LatencyObservation.StreamRequestReceipt(
+            journeyID: first, requestID: UUID(), publicationID: "0"))
+        XCTAssertFalse(store.attachStreamRequest(receipt, for: second))
+        XCTAssertTrue(store.attachStreamRequest(receipt, for: first))
+        XCTAssertFalse(store.attachStreamRequest(receipt, for: first))
+        let wrong = try XCTUnwrap(LatencyObservation.StreamPublication(publicationID: "1", producer: producer()))
+        XCTAssertFalse(store.attachStreamPublication(wrong, for: first))
+        let correct = try XCTUnwrap(LatencyObservation.StreamPublication(publicationID: "0", producer: producer()))
+        XCTAssertTrue(store.attachStreamPublication(correct, for: first))
+        XCTAssertTrue(store.attachStreamPublication(wrong, for: second))
+        let wrongReceipt = try XCTUnwrap(LatencyObservation.StreamRequestReceipt(
+            journeyID: second, requestID: UUID(), publicationID: "0"))
+        XCTAssertFalse(store.attachStreamRequest(wrongReceipt, for: second))
+        let exported = try JSONDecoder().decode([LatencyObservation.Journey].self, from: store.exportData())
+        XCTAssertEqual(exported.first?.streamRequest, receipt)
+        XCTAssertEqual(exported.first?.records.map(\.elapsedNanoseconds), [0])
+        XCTAssertNil(exported.last?.streamRequest)
+    }
+
+    func testTerminalEvictedAndBookOpenJourneysRejectHTTPReceipts() throws {
+        let store = LatencyObservationStore(capacity: 3)
+        let evicted = store.beginSeek()
+        let cancelled = store.beginSeek()
+        store.cancel(cancelled)
+        let finished = store.beginSeek()
+        store.finish(finished)
+        let open = store.beginBookOpen(documentKind: .epub)
+        for id in [evicted, cancelled, finished, open, UUID()] {
+            let receipt = try XCTUnwrap(LatencyObservation.StreamRequestReceipt(
+                journeyID: id, requestID: UUID(), publicationID: "0"))
+            XCTAssertFalse(store.attachStreamRequest(receipt, for: id))
+        }
+        XCTAssertTrue(store.snapshot().allSatisfy { $0.streamRequest == nil })
+    }
+
+    private func producer() throws -> LatencyObservation.ProducerObservation {
+        try JSONDecoder().decode(LatencyObservation.ProducerObservation.self, from: Data(
+            #"{"version":1,"attemptId":"FE0D56D1-3661-49DB-89D4-324A355FB35A","segmentReadyElapsedNanoseconds":9000,"artifactPublishedElapsedNanoseconds":9500}"#.utf8))
+    }
+
+    func testStreamPublicationIsFirstOnlyAndDoesNotChangeClientClock() throws {
+        var now: UInt64 = 100
+        let store = LatencyObservationStore(clock: { now })
+        let first = try XCTUnwrap(LatencyObservation.StreamPublication(
+            publicationID: "fe0d56d1366149db89d4324a355fb35a", producer: producer()))
+        let retry = try XCTUnwrap(LatencyObservation.StreamPublication(
+            publicationID: UUID().uuidString, producer: producer()))
+        let id = store.beginProgressivePlayback()
+        now = 110
+        XCTAssertTrue(store.record(.audioQueued, for: id))
+        now = 120
+        XCTAssertTrue(store.attachStreamPublication(first, for: id))
+        XCTAssertFalse(store.attachStreamPublication(retry, for: id))
+        XCTAssertTrue(store.record(.audioAudible, for: id))
+        store.finish(id)
+        XCTAssertFalse(store.attachStreamPublication(retry, for: id))
+        let exported = try JSONDecoder().decode([LatencyObservation.Journey].self, from: store.exportData())
+        XCTAssertEqual(exported.first?.streamPublication, first)
+        XCTAssertEqual(exported.first?.records.map(\.elapsedNanoseconds), [0, 10, 20])
+        XCTAssertEqual(exported.first?.streamPublication?.producer.artifactPublishedElapsedNanoseconds, 9500)
+    }
+
+    func testCancelledEvictedAndBookOpenJourneysRejectStreamPublication() throws {
+        let store = LatencyObservationStore(capacity: 2)
+        let publication = try XCTUnwrap(LatencyObservation.StreamPublication(
+            publicationID: "0", producer: producer()))
+        let evicted = store.beginSeek()
+        let cancelled = store.beginSeek()
+        XCTAssertTrue(store.cancel(cancelled))
+        let open = store.beginBookOpen(documentKind: .epub)
+        for id in [evicted, cancelled, open, UUID()] {
+            XCTAssertFalse(store.attachStreamPublication(publication, for: id))
+        }
+        XCTAssertTrue(store.snapshot().allSatisfy { $0.streamPublication == nil })
+        let live = store.beginSeek()
+        XCTAssertTrue(store.attachStreamPublication(publication, for: live))
+    }
+
+    func testPublicationIdentifiersCannotExportContentOrPaths() throws {
+        let observation = try producer()
+        for id in ["", "Private_Book_Title", "/private/audio.mp3", "-1", "１２３",
+                   String(repeating: "1", count: 21), "{" + UUID().uuidString + "}"] {
+            XCTAssertNil(LatencyObservation.StreamPublication(publicationID: id, producer: observation))
+        }
+        for id in ["0", String(repeating: "1", count: 20), UUID().uuidString,
+                   "fe0d56d1366149db89d4324a355fb35a"] {
+            let publication = try XCTUnwrap(LatencyObservation.StreamPublication(
+                publicationID: id, producer: observation))
+            let data = try JSONEncoder().encode(publication)
+            XCTAssertEqual(try JSONDecoder().decode(LatencyObservation.StreamPublication.self, from: data), publication)
+            let json = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+            XCTAssertEqual(Set(json.keys), Set(["publicationId", "producer"]))
+        }
+    }
+
+    func testCapacityEvictsOldestJourneyAndRejectsItsLateCallbacks() throws {
+        let store = LatencyObservationStore(clock: { 100 }, capacity: 2)
+        let evicted = store.beginSeek()
+        let retained = store.beginBookOpen(documentKind: .epub)
+        let newest = store.beginProgressivePlayback()
+
+        XCTAssertEqual(store.snapshot().map(\.id), [retained, newest])
+        XCTAssertFalse(store.record(.seekTargetReached, for: evicted))
+        XCTAssertFalse(store.cancel(evicted))
+        store.classifyCache(.cold, for: evicted)
+        store.finish(evicted)
+        let exported = try JSONDecoder().decode([LatencyObservation.Journey].self, from: store.exportData())
+        XCTAssertEqual(exported.map(\.id), [retained, newest],
+                       "Late callbacks must not resurrect evicted diagnostics or evict newer journeys.")
+    }
+
+    func testRepeatedReadinessKeepsFirstTimingAndBoundsJourneyRecords() throws {
+        var now: UInt64 = 100
+        let store = LatencyObservationStore(clock: { now }, capacity: 1)
+        let id = store.beginBookOpen(documentKind: .normalizedScannedPDF)
+        now = 120
+        XCTAssertTrue(store.record(.readableContent, for: id))
+        now = 130
+        XCTAssertTrue(store.record(.controlsUsable, for: id))
+        now = 140
+        XCTAssertTrue(store.record(.firstPDFPage, for: id))
+        now = 200
+        for _ in 0..<1_000 {
+            _ = store.record(.readableContent, for: id)
+            _ = store.record(.controlsUsable, for: id)
+            _ = store.record(.firstPDFPage, for: id)
+        }
+        let exported = try JSONDecoder().decode([LatencyObservation.Journey].self, from: store.exportData())
+        let journey = try XCTUnwrap(exported.first)
+        XCTAssertEqual(journey.records.count, 4,
+                       "Repeated layout/readiness callbacks must not grow local diagnostics without bound.")
+        XCTAssertEqual(Array(journey.records.prefix(4)).map(\.elapsedNanoseconds), [0, 20, 30, 40])
+        XCTAssertFalse(store.record(.readableContent, for: id))
+        XCTAssertTrue(store.cancel(id))
+        XCTAssertEqual(store.snapshot().first?.records.count, 5)
+    }
+
     func testBookOpenJourneyExportsOrderedRedactedRecords() throws {
         var now: UInt64 = 1_000
         let store = LatencyObservationStore(clock: { now })
@@ -82,11 +223,11 @@ final class LatencyObservationStoreTests: XCTestCase {
         XCTAssertEqual(journey.records.map(\.elapsedNanoseconds), [0, 25, 25])
     }
 
-    func testDiagnosticExportWritesOnlySnapshotData() throws {
+    func testDiagnosticExportWritesOnlySnapshotData() async throws {
         let store = LatencyObservationStore(clock: { 42 })
         _ = store.beginBookOpen(documentKind: .selectableTextPDF)
 
-        let url = try store.writeDiagnosticExport()
+        let url = try await store.writeDiagnosticExport()
         defer { try? FileManager.default.removeItem(at: url) }
 
         XCTAssertTrue(FileManager.default.fileExists(atPath: url.path))

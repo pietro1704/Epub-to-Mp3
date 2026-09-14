@@ -6,6 +6,7 @@
 
 import XCTest
 import PythonKit
+import AVFoundation
 @testable import EpubToMp3
 
 @MainActor
@@ -168,7 +169,7 @@ final class PythonEmbedTests: XCTestCase {
 
         let modelsPath = try await PythonRunner.shared.callAsync {
             let paths = try Python.attemptImport("python_app.src.paths")
-            guard let modelsPath = String(paths.MODELS_DIR) else {
+            guard let modelsPath = String(Python.str(paths.MODELS_DIR)) else {
                 throw PythonEmbedError.persistentRootCreationFailed("MODELS_DIR is missing")
             }
             return modelsPath
@@ -307,6 +308,93 @@ final class PythonEmbedTests: XCTestCase {
         let attributes = try FileManager.default.attributesOfItem(atPath: output.path)
         let byteCount = (attributes[.size] as? NSNumber)?.intValue ?? 0
         XCTAssertGreaterThan(byteCount, 10_000, "streaming pipeline wrote an unexpectedly small MP3")
+    }
+
+    /// Exercises the actual Python-to-player handoff and listener transport,
+    /// rather than inferring playback from the generated MP3's byte count.
+    @MainActor
+    func testStreamingPythonAudioPlaysAndResumesAtPausedPosition() async throws {
+        try requireEmbeddedPipeline()
+        try requireNetworkTTS()
+        try await PythonBridge.shared.preflightRuntime()
+
+        let identifier = "PythonPlayback-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: identifier))
+        let standard = UserDefaults.standard
+        let keys = [ReaderSessionState.currentlyReadingBookIDKey,
+                    AudioPlayer.currentBookIDDefaultsKey, AudioPlayer.currentChapterIndexDefaultsKey,
+                    AudioPlayer.readerCurrentChapterIndexDefaultsKey,
+                    AudioPlayer.readerCurrentPageRatioDefaultsKey,
+                    AudioPlayer.readerCurrentSentenceIdDefaultsKey]
+        let saved = keys.map { standard.object(forKey: $0) }
+        let widgetDefaults = UserDefaults(suiteName: WidgetDataSync.appGroupID)
+        let savedWidgetBook = widgetDefaults?.object(forKey: "currentlyPlayingBookId")
+        widgetDefaults?.set("", forKey: "currentlyPlayingBookId")
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent(identifier, isDirectory: true)
+        defer {
+            for (key, value) in zip(keys, saved) { standard.set(value, forKey: key) }
+            widgetDefaults?.set(savedWidgetBook, forKey: "currentlyPlayingBookId")
+            defaults.removePersistentDomain(forName: identifier)
+            try? FileManager.default.removeItem(at: root)
+        }
+        let player = AudioPlayer(resumeStore: ResumeStore(storage: UserDefaultsResumeStorage(defaults: defaults)))
+        defer { player.stop() }
+        standard.set(identifier, forKey: ReaderSessionState.currentlyReadingBookIDKey)
+        standard.set(identifier, forKey: AudioPlayer.currentBookIDDefaultsKey)
+        let snapshot = JobSnapshot(
+            jobId: identifier, state: "running", bookTitle: "Python playback fixture", bookAuthor: nil,
+            coverUrl: nil, coverMimeType: nil, engine: "edge", voice: "en-US-AriaNeural", language: "en",
+            progressPercent: 0, chaptersTotal: 1, chaptersCompleted: 0,
+            chapterProgress: [.init(index: 0, name: "Chapter", status: "processing",
+                downloadUrl: nil, chars: 600, charsProcessed: 0, progressRatio: 0,
+                durationSeconds: nil, startedAt: nil, completedAt: nil)],
+            outputs: nil, logUrl: nil, error: nil, lastActivityAt: nil)
+        let backend = try XCTUnwrap(URL(string: "https://\(UUID().uuidString.lowercased()).invalid/"))
+        XCTAssertTrue(player.beginRemoteStreaming(snapshot: snapshot, backendBaseURL: backend))
+        player.resume()
+        let text = String(repeating:
+            "The reader follows the story while the internal Python engine prepares the audio. "
+            + "Pausing keeps the current listening position, and resuming continues the same sentence. ", count: 4)
+        _ = try await PythonBridge.shared.convertChapterStreaming(
+            text: text, voice: "en-US-AriaNeural",
+            outputURL: root.appendingPathComponent("chapter-0.mp3"), chapterIndex: 0,
+            onSegment: { data, chapterIndex, segmentIndex in
+                guard await player.waitForSegmentCapacity() else { return false }
+                player.enqueueSegment(data: data, chapterIndex: chapterIndex, segmentIndex: segmentIndex)
+                return true
+            })
+        for _ in 0..<200 {
+            if player.positionSeconds >= 2 { break }
+            try await Task.sleep(nanoseconds: 50_000_000)
+        }
+        XCTAssertGreaterThanOrEqual(player.positionSeconds, 2,
+                                    "Real Python-generated audio must advance in the native player.")
+        XCTAssertTrue(player.isPlaying)
+        XCTAssertEqual(player.currentChapterIndex, 0)
+        player.pause()
+        try await Task.sleep(nanoseconds: 100_000_000)
+        let pausedPosition = player.positionSeconds
+        XCTAssertGreaterThanOrEqual(pausedPosition, 2)
+        try await Task.sleep(nanoseconds: 500_000_000)
+        XCTAssertFalse(player.isPlaying)
+        XCTAssertEqual(player.positionSeconds, pausedPosition, accuracy: 0.1)
+
+        player.resume()
+        XCTAssertGreaterThanOrEqual(player.positionSeconds, pausedPosition - 0.1,
+                                    "Resume must preserve the listening position immediately.")
+        for _ in 0..<100 {
+            XCTAssertGreaterThanOrEqual(player.positionSeconds, pausedPosition - 0.1,
+                                        "Player ticks after resume must not return to the chapter beginning.")
+            if player.positionSeconds > pausedPosition + 0.25 { break }
+            try await Task.sleep(nanoseconds: 50_000_000)
+        }
+        XCTAssertTrue(player.isPlaying)
+        XCTAssertEqual(player.currentChapterIndex, 0)
+        XCTAssertGreaterThan(player.positionSeconds, pausedPosition + 0.25,
+                             "Resume must advance the existing streamed timeline.")
+        XCTAssertLessThan(player.positionSeconds, pausedPosition + 2,
+                          "Resuming must not jump elsewhere in the chapter.")
     }
 
     /// Engine-gate regression: asking for Piper must produce a clear

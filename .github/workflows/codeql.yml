@@ -185,6 +185,34 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             ${{ matrix.action }}
 
+      - name: Verify incremental embedded Python builds
+        if: matrix.coverage == 'unit-tests' && matrix.platform == 'macOS'
+        working-directory: ios/EpubToMp3
+        run: |
+          # Keep linker dependency information between builds: a clean build
+          # cannot detect a link/embed cycle involving the bundled framework.
+          for attempt in 1 2; do
+            xcodebuild \
+              -project EpubToMp3.xcodeproj \
+              -scheme EpubToMp3-UnitTests \
+              -destination 'platform=macOS' \
+              -configuration Debug \
+              -derivedDataPath '${{ matrix.derived_data }}' \
+              -resultBundlePath "incremental-python-${attempt}.xcresult" \
+              ENABLE_DEBUG_DYLIB=NO \
+              CODE_SIGNING_ALLOWED=NO \
+              -only-testing:EpubToMp3Tests/PythonEmbedTests/testBootstrapSetsWritablePersistentRoot \
+              test
+          done
+
+      - name: Upload incremental Python results
+        if: always() && matrix.coverage == 'unit-tests' && matrix.platform == 'macOS'
+        uses: actions/upload-artifact@v7
+        with:
+          name: incremental-python-results
+          path: ios/EpubToMp3/incremental-python-*.xcresult
+          if-no-files-found: ignore
+
       - name: Analyze
         uses: github/codeql-action/analyze@v4
         with:

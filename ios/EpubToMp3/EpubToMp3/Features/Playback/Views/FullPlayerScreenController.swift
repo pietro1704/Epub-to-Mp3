@@ -97,6 +97,7 @@ final class FullPlayerScreenController: UIViewController {
         // volume slider, and AirPlay button keep receiving their own touches
         // untouched.
         dismissPanGesture.delegate = self
+        dismissPanGesture.cancelsTouchesInView = false
         view.addGestureRecognizer(dismissPanGesture)
     }
 
@@ -195,6 +196,7 @@ final class FullPlayerScreenController: UIViewController {
         }
 
         configureTransportButton(previousChapterButton, image: "backward.end.fill", action: #selector(previousChapterTapped))
+        previousChapterButton.accessibilityIdentifier = "fullPlayer.previousChapter"
         configureTransportButton(skipBackButton, image: "gobackward.15", action: #selector(skipBackTapped), pointSize: 28)
         configureTransportButton(playPauseButton, image: "play.fill", action: #selector(playPauseTapped), pointSize: 64)
         let playWidth = playPauseButton.widthAnchor.constraint(greaterThanOrEqualToConstant: 64)
@@ -204,6 +206,7 @@ final class FullPlayerScreenController: UIViewController {
         NSLayoutConstraint.activate([playWidth, playHeight])
         configureTransportButton(skipForwardButton, image: "goforward.15", action: #selector(skipForwardTapped), pointSize: 28)
         configureTransportButton(nextChapterButton, image: "forward.end.fill", action: #selector(nextChapterTapped))
+        nextChapterButton.accessibilityIdentifier = "fullPlayer.nextChapter"
 
         let transport = UIStackView(arrangedSubviews: [
             previousChapterButton, skipBackButton, playPauseButton, skipForwardButton, nextChapterButton
