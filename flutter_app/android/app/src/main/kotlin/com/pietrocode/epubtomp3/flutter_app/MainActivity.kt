@@ -14,8 +14,7 @@ import androidx.work.Constraints
 import androidx.work.ExistingWorkPolicy
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
-import com.chaquo.python.Python
-import com.chaquo.python.android.AndroidPlatform
+
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.EventChannel
@@ -27,7 +26,7 @@ import java.io.InputStream
 import java.util.Locale
 
 /**
- * Hosts Flutter, the embedded Python runtime, and Android document ingestion.
+ * Hosts Flutter and Android document ingestion.
  * Incoming content URIs are copied into app-private storage before they are
  * exposed to Dart, because a content URI is not a durable filesystem path.
  */
@@ -208,63 +207,7 @@ class MainActivity : FlutterActivity() {
             }
         }
 
-        // Chaquopy needs to be started exactly once per process.
-        if (!Python.isStarted()) {
-            Python.start(AndroidPlatform(this))
-        }
 
-        MethodChannel(
-            flutterEngine.dartExecutor.binaryMessenger,
-            CHANNEL
-        ).setMethodCallHandler { call, result ->
-            try {
-                val py = Python.getInstance()
-                val entrypoints = py.getModule(PY_MODULE)
-                when (call.method) {
-                    "bootstrap" -> {
-                        val version = entrypoints.callAttr("bootstrap").toString()
-                        result.success(version)
-                    }
-                    "parseEpub" -> {
-                        val path = call.argument<String>("path")
-                        if (path.isNullOrBlank()) {
-                            result.error("BAD_ARGS", "parseEpub requires a non-empty 'path' argument", null)
-                            return@setMethodCallHandler
-                        }
-                        val json = entrypoints.callAttr("parse_epub_to_json", path).toString()
-                        result.success(json)
-                    }
-                    "convertChapter" -> {
-                        val text = call.argument<String>("text") ?: ""
-                        val voice = call.argument<String>("voice") ?: "pt-BR-AntonioNeural"
-                        val outputPath = call.argument<String>("outputPath") ?: ""
-                        if (text.isBlank() || outputPath.isBlank()) {
-                            result.error("BAD_ARGS", "text and outputPath required", null)
-                            return@setMethodCallHandler
-                        }
-                        Thread {
-                            try {
-                                val res = entrypoints.callAttr("convert_chapter", text, voice, outputPath)
-                                val jsonStr = py.getBuiltins().callAttr("str", res).toString()
-                                    .replace("'", "\"")
-                                    .replace("True", "true")
-                                    .replace("False", "false")
-                                mainHandler.post { result.success(jsonStr) }
-                            } catch (e: Throwable) {
-                                mainHandler.post { result.error("PYTHON_ERROR", e.message, null) }
-                            }
-                        }.start()
-                    }
-                    "detectLanguage" -> {
-                        val text = call.argument<String>("text") ?: ""
-                        result.success(entrypoints.callAttr("detect_language", text).toString())
-                    }
-                    else -> result.notImplemented()
-                }
-            } catch (e: Throwable) {
-                result.error("PYTHON_ERROR", e.message ?: e.javaClass.simpleName, e.stackTraceToString())
-            }
-        }
     }
 
     override fun onDestroy() {

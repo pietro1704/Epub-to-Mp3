@@ -14,6 +14,7 @@ import '../services/bookmark_store.dart';
 import '../services/download_manager.dart';
 import '../services/fulltext_store.dart';
 import '../services/local_fulltext_cache.dart';
+import '../services/python_bridge.dart';
 import '../services/resume_store.dart';
 import '../services/sync_engine.dart';
 
@@ -147,7 +148,9 @@ final settingsProvider = StateNotifierProvider<SettingsNotifier, AppSettings>((
 
 final apiClientProvider = Provider<ApiClient>((ref) {
   final settings = ref.watch(settingsProvider);
-  return ApiClient(settings.backendURL);
+  final api = ApiClient(settings.backendURL);
+  PythonBridge().configureAndroidBackend(api);
+  return api;
 });
 
 final downloadManagerProvider = Provider<DownloadManager>((ref) {

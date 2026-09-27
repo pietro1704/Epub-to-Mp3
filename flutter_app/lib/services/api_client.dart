@@ -25,6 +25,11 @@ class ApiClient {
   final Dio _dio;
   final Dio _streamDio;
 
+  Future<EbookFulltext> parseDocument(String filePath, {String jobId = ''}) async {
+    final convertedJobId = await uploadAndConvert(filePath, engine: 'edge');
+    return fetchFulltext(convertedJobId);
+  }
+
   Future<List<SessionRecord>> fetchSessions({int last = 50}) async {
     final r = await _dio.get<Map<String, dynamic>>(
       '/api/sessions',

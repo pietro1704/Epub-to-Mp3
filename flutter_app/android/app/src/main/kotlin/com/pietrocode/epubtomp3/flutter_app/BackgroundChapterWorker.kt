@@ -8,8 +8,7 @@ import androidx.core.app.NotificationCompat
 import androidx.work.CoroutineWorker
 import androidx.work.ForegroundInfo
 import androidx.work.WorkerParameters
-import com.chaquo.python.Python
-import com.chaquo.python.android.AndroidPlatform
+
 
 class BackgroundChapterWorker(
     appContext: Context,
@@ -21,20 +20,7 @@ class BackgroundChapterWorker(
         val outputPath = inputData.getString(KEY_OUTPUT).orEmpty()
         if (text.isBlank() || voice.isBlank() || outputPath.isBlank()) return Result.failure()
         setForeground(createForegroundInfo())
-        return try {
-            if (!Python.isStarted()) Python.start(AndroidPlatform(applicationContext))
-            val result = Python.getInstance()
-                .getModule("python_app.src.android_entrypoints")
-                .callAttr("convert_chapter", text, voice, outputPath)
-                .toString()
-            if (result.contains("'ok': True") || result.contains("\"ok\": true")) {
-                Result.success()
-            } else {
-                Result.retry()
-            }
-        } catch (_: Throwable) {
-            Result.retry()
-        }
+        return Result.failure()
     }
 
     private fun createForegroundInfo(): ForegroundInfo {

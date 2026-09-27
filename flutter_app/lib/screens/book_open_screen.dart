@@ -159,7 +159,7 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen>
 
     // 2) Parse via PythonBridge.
     final bridge = PythonBridge();
-    if (!bridge.isSupported) {
+    if (!bridge.isSupported && !Platform.isAndroid) {
       // On platforms where Python is not available, show the text from
       // cache only. If there's no cache we show an informative error.
       if (!mounted || !_loadGuard.isCurrent(gen)) return;
@@ -290,7 +290,7 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen>
 
     final settings = ref.read(settingsProvider);
     final bridge = PythonBridge();
-    if (settings.useEmbeddedRuntime) {
+    if (settings.useEmbeddedRuntime && !Platform.isAndroid) {
       if (!bridge.isSupported) {
         setState(() {
           _isConverting = false;
