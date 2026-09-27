@@ -30,6 +30,10 @@ run = "./scripts/dev.sh"
 description = "Run the Rust health-only CLI"
 run = "mise exec -- cargo run -p converter-cli"
 
+[tasks."rust:server"]
+description = "Run the Rust Axum health and metadata server"
+run = "mise exec -- cargo run -p converter-server"
+
 [tasks.clean]
 description = "Clean backend cache, pycache, and completed outputs"
 run = """
