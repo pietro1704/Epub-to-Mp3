@@ -208,6 +208,8 @@ targets:
           - "Features/Conversion/Services/PythonBridge.swift"
           - "Features/Conversion/Services/PythonEmbed.swift"
           - "Features/Conversion/Services/PythonRunner.swift"
+          # The coordinator is retained for oracle tests, but its Python-backed
+          # implementation must not enter the production application target.
           - "Features/Conversion/Services/EmbeddedConversionCoordinator.swift"
 
 
