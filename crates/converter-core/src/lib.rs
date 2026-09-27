@@ -1,9 +1,11 @@
 //! Domain types for the conversion pipeline.
 
+pub mod audio;
 pub mod cache;
 pub mod config;
 pub mod epub;
 pub mod ingestion;
+pub mod jobs;
 pub mod paths;
 pub mod piper;
 pub mod text;
