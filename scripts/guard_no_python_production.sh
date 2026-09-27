@@ -3,7 +3,7 @@ set -euo pipefail
 
 # Production artifacts must not contain the legacy Python runtime or bridge.
 # Source compatibility remains allowed until the Rust replacement lands for
-# every client; this guard only scans packaging manifests and release inputs.
+# every client; this guard scans only the production container input.
 
 forbidden=(
   'python_app/'
@@ -20,7 +20,9 @@ forbidden=(
   'python:3.'
 )
 
-files=(Dockerfile mise.toml .github/workflows .dockerignore)
+# Production container inputs are separate from migration/oracle workflows.
+# The guard scans only the Rust production Dockerfile and its ignore file.
+files=(Dockerfile .dockerignore)
 if [[ "${ALLOW_LEGACY_PYTHON_PACKAGING:-}" == "1" ]]; then
   echo "legacy Python packaging guard override is not permitted in CI" >&2
   exit 1

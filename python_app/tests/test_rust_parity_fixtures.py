@@ -47,7 +47,7 @@ def build_corpus():
     _write("fulltext.json", {"miss": {"cache": "miss", "fulltext": "<text>"}, "hit": {"cache": "hit", "fulltext": "<text>"}})
     _write("stream_manifest.json", {"jobId": "<uuid>", "chapters": [{"index": 0, "chunks": [{"id": "<id>", "index": 0, "url": "<url>"}], "retiredChunks": [{"id": "<id>", "file": "<path>"}]}]})
     (CORPUS / "sse.ndjson").write_text("\n".join(json.dumps(item, sort_keys=True) for item in [{"event": "job", "data": {"state": "queued"}}, {"event": "chunk", "data": {"id": "<id>", "index": 0}}, {"event": "job", "data": {"state": "finished"}}]) + "\n", encoding="utf-8")
-    manifest = {"version": 1, "files": {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in sorted(CORPUS.glob("*.json"))} | {"sse.ndjson": hashlib.sha256((CORPUS / "sse.ndjson").read_bytes()).hexdigest()}}
+    manifest = {"version": 1, "files": {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in sorted(CORPUS.glob("*.json")) if p.name != "manifest.json"} | {"sse.ndjson": hashlib.sha256((CORPUS / "sse.ndjson").read_bytes()).hexdigest()}}
     _write("manifest.json", manifest)
 
 def test_golden_fixture_corpus_is_current():

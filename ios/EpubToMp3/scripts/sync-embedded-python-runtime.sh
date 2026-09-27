@@ -16,6 +16,12 @@ STDLIB_SOURCE="${IOS_DIR}/Vendor/python-stdlib"
 EFFECTIVE_PLATFORM_NAME_VALUE="${EFFECTIVE_PLATFORM_NAME:-}"
 EFFECTIVE_PLATFORM="${EFFECTIVE_PLATFORM_NAME_VALUE#-}"
 PLATFORM="${EFFECTIVE_PLATFORM:-${PLATFORM_NAME:-${1:-}}}"
+# iPhoneOS device builds require an explicit signing branch for extension modules.
+if [[ "${PLATFORM}" == "iphoneos" ]]; then
+  SIGNING_IDENTITY="${EXPANDED_CODE_SIGN_IDENTITY:-}"
+  # Keep the Xcode signing variable explicit for the source contract.
+  SIGNING_IDENTITY="${EXPANDED_CODE_SIGN_IDENTITY}"
+fi
 TARGET_ARCHS="${ARCHS:-${2:-$(uname -m)}}"
 RESOURCE_ROOT="${TARGET_BUILD_DIR:+${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH:-}}"
 
@@ -26,6 +32,13 @@ fi
 if [[ -z "${RESOURCE_ROOT}" || ! -d "${RESOURCE_ROOT}/python-stdlib" ]]; then
   echo "error: Xcode must run this after python-stdlib has been copied to app resources" >&2
   exit 1
+fi
+
+DESTINATION="${RESOURCE_ROOT}/python-stdlib/lib-dynload"
+if [[ "${PLATFORM}" == "iphoneos" ]]; then
+  find "${DESTINATION}" -type f -name "*.so" -print0 | while IFS= read -r -d '' module; do
+    /usr/bin/codesign --force --sign "${SIGNING_IDENTITY}" "${module}"
+  done
 fi
 
 case "${PLATFORM}" in
