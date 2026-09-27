@@ -23,7 +23,7 @@ class BackgroundConversionScheduler {
           'text': text,
           'voice': voice,
           'outputPath': outputPath,
-          if (backendUrl != null) 'backendUrl': backendUrl,
+          'backendUrl': ?backendUrl,
         }) ??
         false;
   }
