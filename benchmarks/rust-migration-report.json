@@ -1,0 +1,17 @@
+{
+  "suite": "rust_migration",
+  "baseline": "criterion/rust-migration",
+  "fixture": "docs/fixtures/rust-migration.epub",
+  "metrics": [
+    "parser_bytes_per_second",
+    "chunking_bytes_per_second",
+    "cache_hash_bytes_per_second",
+    "orchestration_bytes_per_second",
+    "wall_time",
+    "resident_memory_external",
+    "cpu_time_external"
+  ],
+  "comparison": "Criterion --save-baseline rust-migration and --baseline rust-migration compare subsequent runs.",
+  "resource_measurement": "Capture RSS and CPU externally for reproducible runs; Criterion owns wall-time and throughput.",
+  "validation": "Not run during implementation."
+}

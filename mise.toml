@@ -362,6 +362,10 @@ echo "Installed repository hooks from .githooks."
 description = "Check native reader changes against their native test pairing"
 run = "./scripts/reader-change-check.sh --cached"
 
+[tasks."benchmark:rust"]
+description = "Measure Rust migration parser, chunker, cache, and orchestration throughput"
+run = "mise exec -- cargo bench --bench rust_migration -- --save-baseline rust-migration"
+
 [tasks."benchmark:check"]
 description = "Compare live telemetry throughput against benchmarks/baseline.json"
 run = """
