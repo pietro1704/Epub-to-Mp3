@@ -34,7 +34,6 @@ class MainActivity : FlutterActivity() {
 
     companion object {
         private const val CHANNEL = "epub_to_mp3/python"
-        private const val PY_MODULE = "python_app.src.android_entrypoints"
         private const val DOCUMENT_CHANNEL = "epub_to_mp3/incoming_documents"
         private const val DOCUMENT_EVENTS_CHANNEL = "epub_to_mp3/incoming_documents/events"
         private const val DEEP_LINK_EVENTS_CHANNEL = "epub_to_mp3/deep_links"
