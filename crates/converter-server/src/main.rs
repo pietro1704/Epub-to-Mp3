@@ -1,72 +1,34 @@
-use std::net::SocketAddr;
-
-use axum::{
-    extract::State,
-    http::StatusCode,
-    response::IntoResponse,
-    routing::get,
-    Json, Router,
-};
+use std::{collections::HashMap, convert::Infallible, path::PathBuf, sync::Arc, time::Duration};
+use axum::{extract::{Multipart, Path, State}, http::StatusCode, response::{sse::{Event, KeepAlive, Sse}, IntoResponse, Response}, routing::{get, post}, Json, Router};
 use converter_core::config::AppConfig;
-use serde::Serialize;
+use futures_util::stream::{self, StreamExt};
+use serde::{Deserialize, Serialize};
+use tokio::sync::{broadcast, RwLock};
 
-#[derive(Clone)]
-struct AppState {
-    config: AppConfig,
-}
-
-#[derive(Serialize)]
-struct HealthResponse {
-    status: &'static str,
-}
-
-#[derive(Serialize)]
-struct MetadataResponse {
-    status: &'static str,
-    engine: String,
-    expected_wpm: u32,
-    persistent_root: String,
-    cache_dir: String,
-    output_dir: String,
-}
-
-async fn health() -> impl IntoResponse {
-    (StatusCode::OK, Json(HealthResponse { status: "ok" }))
-}
-
-async fn metadata(State(state): State<AppState>) -> impl IntoResponse {
-    let paths = &state.config.paths;
-    (
-        StatusCode::OK,
-        Json(MetadataResponse {
-            status: "ok",
-            engine: state.config.engine,
-            expected_wpm: state.config.expected_wpm,
-            persistent_root: paths.persistent_root.display().to_string(),
-            cache_dir: paths.cache_dir.display().to_string(),
-            output_dir: paths.output_dir.display().to_string(),
-        }),
-    )
-}
-
-fn app(config: AppConfig) -> Router {
-    Router::new()
-        .route("/health", get(health))
-        .route("/api/metadata", get(metadata))
-        .with_state(AppState { config })
-}
-
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let config = AppConfig::from_env();
-    let host = std::env::var("HOST").unwrap_or_else(|_| "0.0.0.0".into());
-    let port = std::env::var("PORT")
-        .ok()
-        .and_then(|value| value.parse::<u16>().ok())
-        .unwrap_or(8000);
-    let address: SocketAddr = format!("{host}:{port}").parse()?;
-    let listener = tokio::net::TcpListener::bind(address).await?;
-    println!("converter-server listening on {address}");
-    axum::serve(listener, app(config)).await?;
-    Ok(())
-}
+#[derive(Clone)] struct AppState { config: AppConfig, jobs: Arc<RwLock<HashMap<String, Job>>> }
+#[derive(Clone)] struct Job { snapshot: JobSnapshot, events: broadcast::Sender<SseMessage> }
+#[derive(Clone, Debug)] enum SseMessage { Snapshot(JobSnapshot), Chapter(JobSnapshot) }
+#[derive(Debug, Clone, Serialize, Deserialize)] #[serde(rename_all="camelCase")] struct JobSnapshot { job_id:String, state:String, events:Vec<String>, raw_log:Vec<String>, chapters_total:u32, chapters_completed:u32, progress_percent:f64, chapter_progress:Vec<ChapterProgress>, outputs:Vec<OutputAsset>, error:Option<String>, book_title:Option<String>, book_author:Option<String>, cover_url:Option<String>, cover_mime_type:Option<String>, log_url:Option<String>, engine:Option<String>, voice:Option<String>, language:Option<String>, formatting_cues:bool, ui_language:String, no_parallel:bool }
+#[derive(Debug, Clone, Serialize, Deserialize)] #[serde(rename_all="camelCase")] struct ChapterProgress { index:u32, name:String, status:String, engine:Option<String>, download_url:Option<String> }
+#[derive(Debug, Clone, Serialize, Deserialize)] #[serde(rename_all="camelCase")] struct OutputAsset { name:String, url:String, size_bytes:u64 }
+#[derive(Debug, Serialize)] struct HealthResponse { status:&'static str }
+#[derive(Debug, Serialize)] struct MetadataResponse { status:&'static str, engine:String, expected_wpm:u32, persistent_root:String, cache_dir:String, output_dir:String }
+#[derive(Debug, Serialize)] #[serde(rename_all="camelCase")] struct UploadResponse { upload_id:String, file_name:String, book_title:Option<String>, book_author:Option<String>, cover_url:Option<String>, cover_mime_type:Option<String> }
+#[derive(Debug, Deserialize, Default)] struct LocalUpload { path:String }
+#[derive(Debug, Deserialize)] struct CreateJob { engine:Option<String>, voice:Option<String>, language:Option<String>, formatting_cues:Option<bool>, ui_language:Option<String>, no_parallel:Option<bool> }
+fn initial_job(id:String, f:&CreateJob)->JobSnapshot { JobSnapshot{job_id:id,state:"queued".into(),events:vec!["Conversion queued".into()],raw_log:vec![],chapters_total:0,chapters_completed:0,progress_percent:0.0,chapter_progress:vec![],outputs:vec![],error:None,book_title:None,book_author:None,cover_url:None,cover_mime_type:None,log_url:None,engine:f.engine.clone(),voice:f.voice.clone(),language:f.language.clone(),formatting_cues:f.formatting_cues.unwrap_or(true),ui_language:if f.ui_language.as_deref()==Some("en"){"en"}else{"pt"}.into(),no_parallel:f.no_parallel.unwrap_or(false)} }
+async fn health()->impl IntoResponse {(StatusCode::OK,Json(HealthResponse{status:"healthy"}))}
+async fn metadata(State(s):State<AppState>)->impl IntoResponse{let p=&s.config.paths;(StatusCode::OK,Json(MetadataResponse{status:"ok",engine:s.config.engine.clone(),expected_wpm:s.config.expected_wpm,persistent_root:p.persistent_root.display().to_string(),cache_dir:p.cache_dir.display().to_string(),output_dir:p.output_dir.display().to_string()}))}
+async fn upload(mut m:Multipart,State(s):State<AppState>)->Response{let id=uuid();let d=s.config.paths.uploads_dir.join(&id);if tokio::fs::create_dir_all(&d).await.is_err(){return StatusCode::INTERNAL_SERVER_ERROR.into_response()}let mut n="upload.bin".into();let mut b=Vec::new();while let Ok(Some(mut f))=m.next_field().await{if let Some(x)=f.file_name(){n=x.into()}while let Ok(Some(c))=f.chunk().await{b.extend_from_slice(&c)}}if tokio::fs::write(d.join(&n),b).await.is_err(){return StatusCode::INTERNAL_SERVER_ERROR.into_response()}(StatusCode::OK,Json(UploadResponse{upload_id:id,file_name:n,book_title:None,book_author:None,cover_url:None,cover_mime_type:None})).into_response()}
+async fn local_upload(State(s):State<AppState>,Json(i):Json<LocalUpload>)->Response{let src=PathBuf::from(i.path);let n=src.file_name().and_then(|x|x.to_str()).unwrap_or("upload.bin").to_string();let id=uuid();let d=s.config.paths.uploads_dir.join(&id);if tokio::fs::create_dir_all(&d).await.is_err()||tokio::fs::copy(src,d.join(&n)).await.is_err(){return StatusCode::UNPROCESSABLE_ENTITY.into_response()}(StatusCode::OK,Json(UploadResponse{upload_id:id,file_name:n,book_title:None,book_author:None,cover_url:None,cover_mime_type:None})).into_response()}
+async fn create_job(State(s):State<AppState>,Json(f):Json<CreateJob>)->Response{let id=uuid();let(tx,_)=broadcast::channel(32);let snap=initial_job(id.clone(),&f);s.jobs.write().await.insert(id.clone(),Job{snapshot:snap,events:tx});(StatusCode::OK,Json(serde_json::json!({"jobId":id}))).into_response()}
+async fn status(Path(id):Path<String>,State(s):State<AppState>)->Response{match s.jobs.read().await.get(&id){Some(j)=>(StatusCode::OK,Json(j.snapshot.clone())).into_response(),None=>StatusCode::NOT_FOUND.into_response()}}
+async fn stream_job(Path(id):Path<String>,State(s):State<AppState>)->Response{let(initial,mut rx)=match s.jobs.read().await.get(&id){Some(j)=>(j.snapshot.clone(),j.events.subscribe()),None=>return StatusCode::NOT_FOUND.into_response()};let first=stream::once(async move{Ok::<Event,Infallible>(Event::default().data(serde_json::to_string(&initial).unwrap_or_default()))});let updates=stream::unfold((rx,false),|(mut rx,done)|async move{if done{return None}match rx.recv().await{Ok(SseMessage::Snapshot(x))=>{let t=matches!(x.state.as_str(),"finished"|"failed"|"interrupted"|"cancelled");Some((Ok(Event::default().data(serde_json::to_string(&x).unwrap_or_default())),(rx,t)))},Ok(SseMessage::Chapter(x))=>Some((Ok(Event::default().event("chapter_update").data(serde_json::to_string(&x).unwrap_or_default())),(rx,false))),Err(_)=>None}});Sse::new(first.chain(updates)).keep_alive(KeepAlive::new().interval(Duration::from_secs(15)).text("heartbeat")).into_response()}
+async fn cancel(Path(id):Path<String>,State(s):State<AppState>)->Response{match s.jobs.write().await.get_mut(&id){Some(j)=>{j.snapshot.state=if j.snapshot.state=="queued"{"cancelled".into()}else{"cancelling".into()};let _=j.events.send(SseMessage::Snapshot(j.snapshot.clone()));(StatusCode::OK,Json(serde_json::json!({"status":j.snapshot.state}))).into_response()},None=>StatusCode::NOT_FOUND.into_response()}}
+async fn resume_job(Path(id):Path<String>,State(s):State<AppState>)->Response{match s.jobs.write().await.get_mut(&id){Some(j)=>{j.snapshot.state="queued".into();let _=j.events.send(SseMessage::Snapshot(j.snapshot.clone()));(StatusCode::OK,Json(serde_json::json!({"status":"queued"}))).into_response()},None=>StatusCode::NOT_FOUND.into_response()}}
+async fn log(Path(id):Path<String>,State(s):State<AppState>)->Response{if s.jobs.read().await.contains_key(&id){(StatusCode::OK,[("content-type","text/plain")]," ").into_response()}else{StatusCode::NOT_FOUND.into_response()}}
+async fn output(Path((_id,_file)):Path<(String,String)>)->Response{StatusCode::NOT_FOUND.into_response()}
+async fn chapters(Path((_id,_index)):Path<(String,u32)>)->Response{(StatusCode::OK,Json(serde_json::json!({"chunks":[]}))).into_response()}
+fn uuid()->String{format!("{:032x}",std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_nanos())}
+fn app(c:AppConfig)->Router{Router::new().route("/health",get(health)).route("/api/metadata",get(metadata)).route("/api/uploads",post(upload)).route("/api/uploads/local",post(local_upload)).route("/api/convert",post(create_job)).route("/api/jobs/{id}",get(status)).route("/api/jobs/{id}/stream",get(stream_job)).route("/api/jobs/{id}/cancel",post(cancel)).route("/api/jobs/{id}/resume",post(resume_job)).route("/api/jobs/{id}/log",get(log)).route("/api/outputs/{id}/{file}",get(output)).route("/api/streams/{id}/chapters/{index}",get(chapters)).with_state(AppState{config:c,jobs:Arc::new(RwLock::new(HashMap::new()))})}
+#[tokio::main]async fn main()->Result<(),Box<dyn std::error::Error>>{let c=AppConfig::from_env();let h=std::env::var("HOST").unwrap_or_else(|_|"0.0.0.0".into());let p=std::env::var("PORT").ok().and_then(|v|v.parse().ok()).unwrap_or(8000);let a=format!("{h}:{p}").parse()?;let l=tokio::net::TcpListener::bind(a).await?;println!("converter-server listening on {a}");axum::serve(l,app(c)).await?;Ok(())}
