@@ -61,19 +61,11 @@ jobs:
           distribution: temurin
           java-version: "21"
 
-      - name: Set up Python 3.13 for Chaquopy
-        uses: actions/setup-python@v7
-        with:
-          python-version: "3.13"
-
       - name: Initialize CodeQL
         uses: github/codeql-action/init@v4
         with:
           languages: java-kotlin
           build-mode: manual
-
-      - name: Bootstrap Android Python sources
-        run: bash flutter_app/scripts/bootstrap-android-python.sh
 
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
@@ -89,11 +81,9 @@ jobs:
 
       - name: Build Android app
         working-directory: flutter_app
-        env:
-          PYTHON_EXE: ${{ env.pythonLocation }}/bin/python3.13
         run: |
           flutter pub get
-          flutter build apk --debug -Pchaquopy.buildPython="${PYTHON_EXE}"
+          flutter build apk --debug
 
       - name: Analyze
         uses: github/codeql-action/analyze@v4
