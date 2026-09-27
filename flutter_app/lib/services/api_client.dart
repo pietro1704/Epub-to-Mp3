@@ -9,7 +9,7 @@ import '../models/session_record.dart';
 
 /// Thin wrapper over `dio` for the FastAPI backend.
 class ApiClient {
-  ApiClient(this.baseUrl)
+  ApiClient(this.baseUrl, {this.configurationError})
       : _dio = Dio(BaseOptions(
           baseUrl: baseUrl,
           connectTimeout: const Duration(seconds: 10),
@@ -22,6 +22,7 @@ class ApiClient {
         ));
 
   final String baseUrl;
+  final String? configurationError;
   final Dio _dio;
   final Dio _streamDio;
 
@@ -31,6 +32,7 @@ class ApiClient {
   }
 
   Future<List<SessionRecord>> fetchSessions({int last = 50}) async {
+    _throwIfMisconfigured();
     final r = await _dio.get<Map<String, dynamic>>(
       '/api/sessions',
       queryParameters: {'last': last},
@@ -40,6 +42,7 @@ class ApiClient {
   }
 
   Future<JobSnapshot> fetchJob(String jobId) async {
+    _throwIfMisconfigured();
     final r = await _dio.get<Map<String, dynamic>>('/api/jobs/$jobId');
     return JobSnapshot.fromJson(r.data ?? const {});
   }
@@ -47,6 +50,7 @@ class ApiClient {
   /// Reader text contract per memory `project_reader_fulltext.md`.
   /// 503 -> transient (caller retries); 404/422 -> terminal.
   Future<EbookFulltext> fetchFulltext(String jobId) async {
+    _throwIfMisconfigured();
     final r = await _dio.get<Map<String, dynamic>>(
       '/api/jobs/$jobId/fulltext',
       options: Options(validateStatus: (s) => s != null && s < 500),
@@ -76,6 +80,7 @@ class ApiClient {
     bool? includeCover,
     bool? normalizeAudio,
   }) async {
+    _throwIfMisconfigured();
     final fileName = filePath.split('/').last;
     final uploadForm = FormData.fromMap({
       'file': await MultipartFile.fromFile(filePath, filename: fileName),
@@ -123,6 +128,7 @@ class ApiClient {
   /// Uses a dedicated Dio instance with no receive timeout since SSE
   /// connections are long-lived.
   Stream<JobSnapshot> jobStream(String jobId) async* {
+    _throwIfMisconfigured();
     final response = await _streamDio.get<ResponseBody>(
       '/api/jobs/$jobId/stream',
       options: Options(
@@ -147,6 +153,11 @@ class ApiClient {
         // Ignore malformed frames — keep stream alive.
       }
     }
+  }
+
+  void _throwIfMisconfigured() {
+    final error = configurationError;
+    if (error != null) throw StateError(error);
   }
 }
 

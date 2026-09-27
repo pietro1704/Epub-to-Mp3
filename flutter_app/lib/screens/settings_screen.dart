@@ -98,7 +98,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                           ),
                           const SizedBox(width: 4),
                           Text(
-                            t.invalidUrl,
+                            t.backendUnavailable,
                             style: tt.bodySmall?.copyWith(color: cs.error),
                           ),
                         ],

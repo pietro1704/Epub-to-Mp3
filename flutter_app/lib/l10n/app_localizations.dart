@@ -466,6 +466,12 @@ abstract class AppLocalizations {
   /// **'URL is not valid'**
   String get invalidUrl;
 
+  /// No description provided for @backendUnavailable.
+  ///
+  /// In en, this message translates to:
+  /// **'Set an HTTP(S) backend URL reachable from this device.'**
+  String get backendUnavailable;
+
   /// No description provided for @nOfSteps.
   ///
   /// In en, this message translates to:

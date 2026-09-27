@@ -199,6 +199,10 @@ class AppLocalizationsPt extends AppLocalizations {
   String get invalidUrl => 'URL inválida';
 
   @override
+  String get backendUnavailable =>
+      'Configure uma URL HTTP(S) acessível por este dispositivo.';
+
+  @override
   String nOfSteps(int n, int total) {
     return '$n de $total';
   }

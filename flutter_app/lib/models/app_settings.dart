@@ -16,17 +16,27 @@ import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_app/services/offline_cache_eviction.dart';
 
-/// Default backend URL per platform. Android emulator routes host
-/// `localhost` to `10.0.2.2`; all other platforms reach the host
-/// loopback directly. Visible for testing so it can be exercised
-/// without spinning a full Flutter binding.
+/// Default backend URL for platforms where the host loopback is reachable.
+/// Android emulators use [androidEmulatorBackendUrl] because their
+/// `localhost` is the emulator itself. Physical Android devices must use an
+/// explicit LAN or deployed URL; guessing a host address would silently pick
+/// the wrong network.
 @visibleForTesting
 String defaultBackendUrl({TargetPlatform? platform}) {
-  final p = platform ?? defaultTargetPlatform;
-  if (!kIsWeb && p == TargetPlatform.android) {
-    return 'http://10.0.2.2:8000';
-  }
   return 'http://localhost:8000';
+}
+
+const androidEmulatorBackendUrl = 'http://10.0.2.2:8000';
+
+/// A backend URL is usable only when it identifies an HTTP(S) origin with a
+/// host. This validates configuration without pretending that reachability can
+/// be known until the device makes a request.
+@visibleForTesting
+bool isValidBackendUrl(String value) {
+  final uri = Uri.tryParse(value.trim());
+  return uri != null &&
+      (uri.scheme == 'http' || uri.scheme == 'https') &&
+      uri.host.isNotEmpty;
 }
 
 enum ReaderFontFamily { serif, sans, mono }
@@ -202,7 +212,8 @@ class MirrorAppSettings {
 
   // backendURL ----------------------------------------------------------
   String get backendURL =>
-      _prefs.getString('backendURL') ?? defaultBackendUrl();
+      _prefs.getString('backendURL') ??
+      defaultBackendUrl(platform: defaultTargetPlatform);
   Future<void> setBackendURL(String v) => _prefs.setString('backendURL', v);
 
   // Legacy compatibility — `wpm` and `audioRate` were on the old
@@ -385,7 +396,7 @@ class MirrorAppSettings {
     final cleaned = trimmed.endsWith('/')
         ? trimmed.substring(0, trimmed.length - 1)
         : trimmed;
-    return Uri.tryParse(cleaned);
+    return isValidBackendUrl(cleaned) ? Uri.parse(cleaned) : null;
   }
 
   /// Resolved point size for the current 0..4 step.

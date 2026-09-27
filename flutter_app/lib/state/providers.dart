@@ -148,7 +148,14 @@ final settingsProvider = StateNotifierProvider<SettingsNotifier, AppSettings>((
 
 final apiClientProvider = Provider<ApiClient>((ref) {
   final settings = ref.watch(settingsProvider);
-  final api = ApiClient(settings.backendURL);
+  final baseUrl = settings.resolvedBaseURL;
+  final api = ApiClient(
+    baseUrl?.toString() ?? settings.backendURL,
+    configurationError: baseUrl == null
+        ? 'No reachable backend is configured. Set the backend URL to an '
+            'HTTP(S) LAN address or deployed backend in Settings.'
+        : null,
+  );
   PythonBridge().configureAndroidBackend(api);
   return api;
 });

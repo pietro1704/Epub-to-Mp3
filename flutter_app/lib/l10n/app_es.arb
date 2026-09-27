@@ -68,6 +68,7 @@
   "projectOnGithub": "Proyecto en GitHub",
   "readerPrefsFooter": "Estas preferencias se aplican a todos los libros de tu biblioteca.",
   "invalidUrl": "URL no válida",
+  "backendUnavailable": "Configura una URL HTTP(S) accesible desde este dispositivo.",
   "nOfSteps": "{n} de {total}",
   "@nOfSteps": {
     "placeholders": {
