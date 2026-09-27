@@ -90,11 +90,11 @@ where
 {
     let env: std::collections::HashMap<String, String> = vars
         .into_iter()
-        .filter_map(|(key, value)| {
-            Some((
+        .map(|(key, value)| {
+            (
                 key.as_ref().to_string_lossy().into_owned(),
                 value.as_ref().to_string_lossy().into_owned(),
-            ))
+            )
         })
         .collect();
     resolve_paths_with_env(&env, project_root)

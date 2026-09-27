@@ -8,7 +8,7 @@ use std::{
 };
 
 use axum::{
-    extract::{Multipart, Path as AxumPath, State},
+    extract::{Path as AxumPath, State},
     http::{header, HeaderMap, StatusCode},
     response::{
         sse::{Event, KeepAlive, Sse},
@@ -584,6 +584,7 @@ fn snapshot_event(snapshot: &JobSnapshot, chapter: bool) -> Event {
 fn is_terminal(state: &str) -> bool {
     TERMINAL_STATES.contains(&state)
 }
+#[allow(dead_code)]
 fn inspect_book(path: &Path) -> (Option<String>, Option<String>) {
     std::fs::File::open(path)
         .ok()

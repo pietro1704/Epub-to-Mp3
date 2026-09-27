@@ -202,7 +202,7 @@ impl ConversionWorker {
         text: &str,
         out: &Path,
         voice: Option<&str>,
-        language: Option<&str>,
+        _language: Option<&str>,
     ) -> Result<(), WorkerError> {
         if engine == "edge" {
             let voice = voice.unwrap_or("en-US-GuyNeural");

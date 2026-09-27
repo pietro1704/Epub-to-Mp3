@@ -14,7 +14,7 @@ use sha2::{Digest, Sha256};
 use tokio::{net::TcpStream, sync::Semaphore, time::timeout};
 use tokio_tungstenite::{
     connect_async,
-    tungstenite::{client::IntoClientRequest, http::HeaderValue, Message},
+    tungstenite::{http::HeaderValue, Message},
     MaybeTlsStream, WebSocketStream,
 };
 use url::Url;
@@ -386,14 +386,14 @@ pub fn split_protocol_chunks(text: &str, limit: usize) -> Vec<String> {
         } else {
             format!("{current} {word}")
         };
-        if candidate.as_bytes().len() <= limit {
+        if candidate.len() <= limit {
             current = candidate;
             continue;
         }
         if !current.is_empty() {
             chunks.push(std::mem::take(&mut current));
         }
-        if word.as_bytes().len() <= limit {
+        if word.len() <= limit {
             current = word.into();
         } else {
             let mut fragment = String::new();

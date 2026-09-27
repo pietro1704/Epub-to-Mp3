@@ -130,7 +130,7 @@ pub fn split_text(text: &str, max_chars: usize) -> Result<Vec<String>, PiperErro
             .unwrap_or(remaining.len());
         let candidate = &remaining[..boundary];
         let split = candidate
-            .rfind(|c: char| c == '.' || c == '!' || c == '?' || c == '\n')
+            .rfind(['.', '!', '?', '\n'])
             .map(|i| i + candidate[i..].chars().next().unwrap().len_utf8())
             .or_else(|| candidate.rfind(' ').map(|i| i + 1))
             .filter(|i| *i > boundary / 2)

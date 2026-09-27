@@ -33,19 +33,15 @@ jobs:
       - name: Check production packaging boundary
         run: mise run guard:no-python-production
 
-  production-packaging-guard:
-    name: Production packaging guard
+  python:
+    name: Python
     runs-on: ubuntu-latest
     permissions:
       contents: read
 
     steps:
       - name: Checkout repository
-        run: |
-          git init .
-          git remote add origin "https://github.com/${GITHUB_REPOSITORY}.git"
-          git fetch --no-tags --depth=1 origin "${GITHUB_SHA}"
-          git checkout --force FETCH_HEAD
+        uses: actions/checkout@v4
 
       - name: Install mise
         uses: jdx/mise-action@v4.3.0

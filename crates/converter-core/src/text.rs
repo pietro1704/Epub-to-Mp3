@@ -202,7 +202,7 @@ pub fn apply_structural_speech_cues(
                 || t.strip_prefix("##")
                     .and_then(|x| x.trim().parse::<u32>().ok())
                     .is_some()
-                || t.split_once('|').map_or(false, |(n, rest)| {
+                || t.split_once('|').is_some_and(|(n, rest)| {
                     n.trim().parse::<u32>().is_ok() && rest.trim().is_empty()
                 }))
         })

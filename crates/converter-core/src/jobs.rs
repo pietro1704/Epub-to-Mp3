@@ -4,7 +4,6 @@
 //! transition before replacing the JSON document, so a restart observes either
 //! the old record or the complete new record, never a partial write.
 
-use std::collections::HashMap;
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
@@ -254,7 +253,7 @@ impl JobManager {
         validate_job_id(job_id)?;
         match fs::remove_file(self.job_path(job_id)) {
             Ok(()) => Ok(()),
-            Err(error) if !self.job_path(job_id).exists() => Ok(()),
+            Err(_error) if !self.job_path(job_id).exists() => Ok(()),
             Err(error) => Err(JobError::Io(error)),
         }
     }

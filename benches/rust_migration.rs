@@ -8,6 +8,7 @@ use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Through
 use std::{fs, hint::black_box, io::Cursor};
 
 const FIXTURE: &str = "docs/fixtures/rust-migration.epub";
+#[allow(dead_code)]
 const REPORT: &str = "benchmarks/rust-migration-report.json";
 
 fn fixture_bytes() -> Vec<u8> {

@@ -46,6 +46,9 @@ pub struct Book {
     pub toc: Vec<TocItem>,
 }
 
+type Manifest = HashMap<String, (String, Option<String>)>;
+type PackageParts = (Manifest, Vec<String>, Option<String>, Option<String>);
+
 pub fn parse_epub<R: Read + Seek>(reader: R) -> Result<Book, EpubError> {
     let mut archive = ZipArchive::new(reader)?;
     let container = read_entry(&mut archive, "META-INF/container.xml")?;
@@ -111,18 +114,7 @@ pub fn parse_epub<R: Read + Seek>(reader: R) -> Result<Book, EpubError> {
     })
 }
 
-fn parse_package(
-    xml: &str,
-    _path: &str,
-) -> Result<
-    (
-        HashMap<String, (String, Option<String>)>,
-        Vec<String>,
-        Option<String>,
-        Option<String>,
-    ),
-    EpubError,
-> {
+fn parse_package(xml: &str, _path: &str) -> Result<PackageParts, EpubError> {
     let mut r = Reader::from_str(xml);
     r.config_mut().trim_text(true);
     let mut manifest = HashMap::new();
