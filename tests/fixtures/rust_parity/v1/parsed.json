@@ -1,0 +1,129 @@
+{
+  "author": "Equipe de Testes",
+  "chapters": [
+    {
+      "footnotes": [
+        {
+          "marker": "[[FOOTNOTE_1]]",
+          "number": "1",
+          "original_text": "Esta nota explica o contexto histórico mencionado no texto principal.",
+          "text": "Esta nota explica o contexto histórico mencionado no texto principal."
+        }
+      ],
+      "formatting": [
+        {
+          "formatting": "normal",
+          "text": "Capítulo 1 - Começo\nEste é o início do nosso experimento"
+        },
+        {
+          "formatting": "italic",
+          "text": "itálico"
+        },
+        {
+          "formatting": "normal",
+          "text": "com notas de rodapé\n\nnota de rodapé 1...\nEsta nota explica o contexto histórico mencionado no texto principal.\nfim da nota de rodapé...\n\n."
+        },
+        {
+          "formatting": "italic",
+          "text": "“Olhe além do esperado”"
+        },
+        {
+          "formatting": "normal",
+          "text": ", sussurrou a narradora, reforçando a mensagem com um olhar cúmplice.\nO mentor respondeu com firmeza:"
+        },
+        {
+          "formatting": "italic",
+          "text": "“Continue acreditando”"
+        },
+        {
+          "formatting": "normal",
+          "text": ", mesmo quando tudo parecer perdido.\nSeção 1 - Diário\nO narrador descreve um cenário em português, preparando o leitor para os trechos em outros idiomas.\nSeção 2 - Correspondência\nO protagonista recebe uma carta enigmática com instruções para continuar a jornada.\nNotas"
+        }
+      ],
+      "index": 1,
+      "level": 1,
+      "name": "Capítulo 1 - Começo",
+      "sourcePath": "OEBPS/chapter1.xhtml",
+      "speechText": "Capítulo 1 - Começo.\nEste é o início do nosso experimento em itálico: itálico fim do itálico. com notas de rodapé.\n\nnota de rodapé 1... \nEsta nota explica o contexto histórico mencionado no texto principal.\nfim da nota de rodapé... \n\n. em itálico: “Olhe além do esperado” fim do itálico. , sussurrou a narradora, reforçando a mensagem com um olhar cúmplice.\nO mentor respondeu com firmeza: em itálico: “Continue acreditando” fim do itálico. , mesmo quando tudo parecer perdido.\nSeção 1 - Diário.\nO narrador descreve um cenário em português, preparando o leitor para os trechos em outros idiomas.\nSeção 2 - Correspondência.\nO protagonista recebe uma carta enigmática com instruções para continuar a jornada.\nNotas.",
+      "stableId": null,
+      "text": "Capítulo 1 - Começo\nEste é o início do nosso experimento _itálico_ com notas de rodapé\n\nnota de rodapé 1...\nEsta nota explica o contexto histórico mencionado no texto principal.\nfim da nota de rodapé...\n\n.\n_“Olhe além do esperado”_, sussurrou a narradora, reforçando a mensagem com um olhar cúmplice.\nO mentor respondeu com firmeza: _“Continue acreditando”_, mesmo quando tudo parecer perdido.\nSeção 1 - Diário\nO narrador descreve um cenário em português, preparando o leitor para os trechos em outros idiomas.\nSeção 2 - Correspondência\nO protagonista recebe uma carta enigmática com instruções para continuar a jornada.\nNotas"
+    },
+    {
+      "footnotes": null,
+      "formatting": [
+        {
+          "formatting": "normal",
+          "text": "Capítulo 2 - Correspondências\n[[lang:en]]The letter begins with a confident tone, urging the reader to"
+        },
+        {
+          "formatting": "italic",
+          "text": "“look beyond the obvious”"
+        },
+        {
+          "formatting": "normal",
+          "text": ".[[/lang]]\n[[lang:es]]Más adelante, el remitente cambia al español para susurrar:"
+        },
+        {
+          "formatting": "italic",
+          "text": "“Confía en tu instinto”"
+        },
+        {
+          "formatting": "normal",
+          "text": ".[[/lang]]\n[[lang:pt-BR]]O destinatário sorri e responde em voz baixa:"
+        },
+        {
+          "formatting": "italic",
+          "text": "“Seguirei acreditando”"
+        },
+        {
+          "formatting": "normal",
+          "text": ", prometendo não desistir.[[/lang]]\nO capítulo termina com uma revelação surpreendente."
+        }
+      ],
+      "index": 2,
+      "level": 1,
+      "name": "Capítulo 2 - Correspondências",
+      "sourcePath": "OEBPS/chapter2.xhtml",
+      "speechText": "Capítulo 2 - Correspondências.\n[[lang:en]]The letter begins with a confident tone, urging the reader to em itálico: “look beyond the obvious” fim do itálico. .[[/lang]].\n[[lang:es]]Más adelante, el remitente cambia al español para susurrar: em itálico: “Confía en tu instinto” fim do itálico. .[[/lang]].\n[[lang:pt-BR]]O destinatário sorri e responde em voz baixa: em itálico: “Seguirei acreditando” fim do itálico. , prometendo não desistir.[[/lang]].\nO capítulo termina com uma revelação surpreendente.",
+      "stableId": null,
+      "text": "Capítulo 2 - Correspondências\n[[lang:en]]The letter begins with a confident tone, urging the reader to _“look beyond the obvious”_.[[/lang]]\n[[lang:es]]Más adelante, el remitente cambia al español para susurrar: _“Confía en tu instinto”_.[[/lang]]\n[[lang:pt-BR]]O destinatário sorri e responde em voz baixa: _“Seguirei acreditando”_, prometendo não desistir.[[/lang]]\nO capítulo termina com uma revelação surpreendente."
+    }
+  ],
+  "format": "epub",
+  "language": "pt",
+  "sourceFormat": "epub",
+  "title": "Test Multi Feature Book",
+  "toc": [
+    {
+      "children": [
+        {
+          "children": [],
+          "href": "chapter1.xhtml#ch1-sec1",
+          "level": 2,
+          "title": "Seção 1 - Diário"
+        },
+        {
+          "children": [],
+          "href": "chapter1.xhtml#ch1-sec2",
+          "level": 2,
+          "title": "Seção 2 - Correspondência"
+        },
+        {
+          "children": [],
+          "href": "chapter1.xhtml#notas",
+          "level": 2,
+          "title": "Notas"
+        }
+      ],
+      "href": "chapter1.xhtml#ch1",
+      "level": 1,
+      "title": "Capítulo 1 - Começo"
+    },
+    {
+      "children": [],
+      "href": "chapter2.xhtml#ch2",
+      "level": 1,
+      "title": "Capítulo 2 - Correspondências"
+    }
+  ]
+}

@@ -1,0 +1,13 @@
+{
+  "files": {
+    "cache_keys.json": "008d215a90200080859c41076ff10fa9be10a37b7c027f0f9647756b63bf87a8",
+    "chunks.json": "79f5bf3f26623ea446e3a3e799fbe8d5d81c4341522f09adb296a611a0e32434",
+    "fulltext.json": "eb7ea9ad706082cd80c2a6bd162a11b238bcf25ae63854d43409333c41de4479",
+    "job.json": "31d8d643784ff01a1f27c4faebcc7d645787d25772dc4d6e7fb125ae77722202",
+    "normalized_text.json": "7accc37b9ea74647fd826da562d048a12eea2cdeb7c1c2a519cde1dc79db58c1",
+    "parsed.json": "8fab3af17419a83a37e5084100f617806d77083069496cda2c62621eff0a6019",
+    "sse.ndjson": "c99efbcf3031cbcdc02db85e59ef9290678154769adc1f1f8fb499aee507adf2",
+    "stream_manifest.json": "07e7e128877521d5d9eedb22d15212fbbeefc6f0e65d346c33c0b91baf14de2e"
+  },
+  "version": 1
+}

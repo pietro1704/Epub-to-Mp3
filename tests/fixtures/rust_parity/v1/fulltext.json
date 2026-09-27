@@ -1,0 +1,10 @@
+{
+  "hit": {
+    "cache": "hit",
+    "fulltext": "<text>"
+  },
+  "miss": {
+    "cache": "miss",
+    "fulltext": "<text>"
+  }
+}
