@@ -17,6 +17,22 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  production-packaging-guard:
+    name: Production packaging guard
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install mise
+        uses: jdx/mise-action@v4.3.0
+
+      - name: Check production packaging boundary
+        run: mise run guard:no-python-production
+
   python:
     name: Python
     runs-on: ubuntu-latest

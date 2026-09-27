@@ -34,6 +34,10 @@ run = "mise exec -- cargo run -p converter-cli"
 description = "Run the Rust Axum health and metadata server"
 run = "mise exec -- cargo run -p converter-server"
 
+[tasks."guard:no-python-production"]
+description = "Fail if production packaging reintroduces the legacy Python runtime or bridge"
+run = "bash scripts/guard_no_python_production.sh"
+
 [tasks.clean]
 description = "Clean backend cache, pycache, and completed outputs"
 run = """
@@ -116,7 +120,7 @@ rm -rf ios/EpubToMp3/.build 2>/dev/null || true
 echo "  → Removing Xcode DerivedData for EpubToMp3..."
 rm -rf "$HOME/Library/Developer/Xcode/DerivedData"/EpubToMp3-* 2>/dev/null || true
 
-echo "  → Removing PyInstaller sidecar dist/..."
+echo "  → Removing Rust sidecar dist/..."
 rm -rf dist 2>/dev/null || true
 
 echo "  → Removing flutter_app/build..."
@@ -378,8 +382,8 @@ set -euo pipefail
 .venv/bin/python scripts/cross_client_performance_gate.py "$@"
 """
 
-# ── Embedded Python + native macOS build ─────────────────────────────────────
-# The native AppKit app links the bundled Python.xcframework directly.
+# ── Native macOS build ────────────────────────────────────────────────────────
+# iOS retains the embedded Python runtime; macOS ships the Rust HTTP sidecar.
 
 [tasks."vendor:python"]
 description = "Download + splice Beeware Python.xcframework into ios/EpubToMp3/Vendor (idempotent; iOS embed)"
@@ -389,19 +393,26 @@ sources = ["ios/EpubToMp3/scripts/bootstrap-ios-python.sh", "ios/EpubToMp3/scrip
 outputs = ["ios/EpubToMp3/Vendor/Python/Python.xcframework/Info.plist"]
 run = "bash ios/EpubToMp3/scripts/bootstrap-ios-python.sh"
 
-[tasks."mac:build"]
-description = "Build native AppKit macOS app with embedded Python runtime (MAC_BUILD_CONFIG=Release|Debug, default Release)"
-# Ensure Python.xcframework is on disk before xcodebuild evaluates the
-# `Vendor/Python/Python.xcframework` framework dependency. The Xcode
-# pre-build run-script phase is a second safety net (covers users who
-# open the .xcodeproj directly in Xcode without going through mise).
-depends = ["vendor:python"]
+[tasks."sidecar:build"]
+description = "Build the Rust macOS converter-server sidecar"
+sources = ["Cargo.toml", "Cargo.lock", "crates/**"]
+outputs = ["dist/epub-to-mp3-server"]
 run = """
 #!/bin/bash
 set -euo pipefail
-# PyInstaller probes the host architecture through the system `arch`
-# utility. Put macOS system directories first so a user-level helper with
-# the same name cannot intercept `arch -x86_64` during isolated analysis.
+mkdir -p dist
+mise exec -- cargo build --release -p converter-server
+cp target/release/converter-server dist/epub-to-mp3-server
+chmod 755 dist/epub-to-mp3-server
+echo "Built Rust sidecar: dist/epub-to-mp3-server"
+"""
+
+[tasks."mac:build"]
+description = "Build native AppKit macOS app with the Rust converter-server sidecar (MAC_BUILD_CONFIG=Release|Debug, default Release)"
+depends = ["sidecar:build", "vendor:python"]
+run = """
+#!/bin/bash
+set -euo pipefail
 export PATH="/usr/bin:/bin:/usr/sbin:/sbin:${PATH}"
 # Default stays Release so this task keeps producing the same distributable
 # artifact release-desktop.yml expects. Debug (wholemodule/-O/ThinLTO/dSYM
