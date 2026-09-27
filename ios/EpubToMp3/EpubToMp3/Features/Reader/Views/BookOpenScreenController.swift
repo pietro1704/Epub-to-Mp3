@@ -1688,14 +1688,7 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
                     self.requestAudioDownload(snapshot: snapshot, chapterIndex: chapterIndex)
                 },
                 onRemoveDownload: { chapterIndex in
-                    if false {
-                        Task { try? await LocalAudioArtifactStore.shared.removeDownloadedAudio(
-                            bookID: embeddedBookID,
-                            chapterIndex: chapterIndex
-                        ) }
-                    } else {
-                        DownloadManager.deleteChapter(jobId: snapshot.jobId, chapterIndex: chapterIndex)
-                    }
+                    DownloadManager.deleteChapter(jobId: snapshot.jobId, chapterIndex: chapterIndex)
                 },
                 onDownloadAll: { [weak self] in
                     guard let self else { return }
@@ -1705,11 +1698,7 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
                     ? { Task { await DownloadManager.shared.cancel(jobId: snapshot.jobId) } }
                     : nil,
                 onClearDownloads: {
-                    if false {
-                        Task { try? await LocalAudioArtifactStore.shared.clearDownloadedAudio(bookID: embeddedBookID) }
-                    } else {
-                        Task { await DownloadManager.shared.clearDownloadedBook(jobId: snapshot.jobId) }
-                    }
+                    Task { await DownloadManager.shared.clearDownloadedBook(jobId: snapshot.jobId) }
                 },
                 onRetryFailed: nil,
                 onExport: nil

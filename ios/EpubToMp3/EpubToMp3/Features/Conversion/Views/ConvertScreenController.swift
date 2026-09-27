@@ -343,18 +343,6 @@ final class ConvertScreenController: UITableViewController, UIDocumentPickerDele
 
     private func openSubmittedJob() {
         guard let jobId = viewModel.submittedJobId else { return }
-        if let snapshot = viewModel.embeddedSnapshot {
-            navigationController?.pushViewController(
-                PlayerScreenController(
-                    snapshot: snapshot,
-                    backendBaseURL: nil,
-                    player: player,
-                    playbackClock: playbackClock
-                ),
-                animated: true
-            )
-            return
-        }
         let detail = JobDetailScreenController(
             jobId: jobId,
             settings: settings,

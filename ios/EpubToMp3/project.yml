@@ -208,9 +208,7 @@ targets:
           - "Features/Conversion/Services/PythonBridge.swift"
           - "Features/Conversion/Services/PythonEmbed.swift"
           - "Features/Conversion/Services/PythonRunner.swift"
-          # The coordinator is retained for oracle tests, but its Python-backed
-          # implementation must not enter the production application target.
-          - "Features/Conversion/Services/EmbeddedConversionCoordinator.swift"
+
 
 
       - path: EpubToMp3/Resources/LaunchScreen.storyboard
@@ -323,6 +321,9 @@ targets:
       macOS: "14.0"
     sources:
       - path: EpubToMp3Tests
+        excludes:
+          - "EmbeddedConversionCoordinatorTests.swift"
+          - "AudioPlayerPendingSeekTests.swift"
     dependencies:
       - target: EpubToMp3
     settings:

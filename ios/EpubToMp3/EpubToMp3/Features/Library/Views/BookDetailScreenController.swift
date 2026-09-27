@@ -213,7 +213,7 @@ final class BookDetailScreenController: UIViewController {
                     )) ?? false
                     self.book.cachedOffline = isCompleteDownload
                     self.library.recordConversion(
-                        jobId: snapshot.jobId,
+                        jobId: response.jobId,
                         for: bookID,
                         cachedOffline: isCompleteDownload
                     )

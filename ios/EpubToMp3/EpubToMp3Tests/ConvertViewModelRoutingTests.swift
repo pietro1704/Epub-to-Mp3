@@ -12,10 +12,9 @@ final class ConvertViewModelRoutingTests: XCTestCase {
         XCTAssertTrue(source.contains("#if os(macOS)"))
         XCTAssertTrue(source.contains("localPath: file"))
         XCTAssertTrue(source.contains("useEmbeddedRuntime: Bool = false"))
-        XCTAssertTrue(source.contains("EmbeddedConversionCoordinator.convert"))
-        XCTAssertTrue(source.contains("EmbeddedConversionCoordinator.stream"))
-        XCTAssertTrue(source.contains("requiresServerConversion"))
-        XCTAssertTrue(source.contains("guard canUseEmbeddedRuntime || client != nil"))
+        XCTAssertFalse(source.contains("EmbeddedConversionCoordinator"))
+        XCTAssertFalse(source.contains("requiresServerConversion"))
+        XCTAssertTrue(source.contains("guard client != nil"))
         let screenSource = try readSourceFileIfAvailable(
             at: URL(fileURLWithPath: #filePath)
                 .deletingLastPathComponent()
