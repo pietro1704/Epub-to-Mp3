@@ -674,7 +674,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let port = std::env::var("PORT")
         .ok()
         .and_then(|value| value.parse::<u16>().ok())
-        .unwrap_or(8000);
+        .unwrap_or(7860);
     let address: SocketAddr = format!("{host}:{port}").parse()?;
     tokio::fs::create_dir_all(&config.paths.uploads_dir).await?;
     tokio::fs::create_dir_all(&config.paths.job_inputs_dir).await?;
