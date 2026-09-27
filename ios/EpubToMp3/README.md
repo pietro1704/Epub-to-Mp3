@@ -6,7 +6,7 @@
 # Recommended — headless, no Xcode UI needed
 mise run mac:build          # sidecar:build + xcodebuild → Release .app
 
-# Sidecar only (PyInstaller binary for macOS)
+# Sidecar only (Rust binary for macOS)
 mise run sidecar:build      # → dist/epub-to-mp3-server
 
 # Xcode GUI
@@ -14,7 +14,10 @@ xcodegen generate           # regenerate .xcodeproj from project.yml
 open EpubToMp3.xcodeproj
 ```
 
-`mise run mac:build` chains `sidecar:build` then `xcodebuild -scheme EpubToMp3 -configuration Release`. The resulting `.app` is reported by the task after build; with the current `SYMROOT` layout it is usually at `ios/EpubToMp3/.build/Release/EpubToMp3.app`.
+`mise run mac:build` chains the Rust `sidecar:build` and the iOS-only Python
+vendor task before `xcodebuild -scheme EpubToMp3 -configuration Release`. The
+resulting `.app` is reported by the task after build; with the current
+`SYMROOT` layout it is usually at `ios/EpubToMp3/.build/Release/EpubToMp3.app`.
 
 ## Targets
 

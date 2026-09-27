@@ -57,7 +57,7 @@ xcodegen generate
 open EpubToMp3.xcodeproj
 ```
 
-The `mise run sidecar:build` task builds the embedded Python server
+The `mise run sidecar:build` task builds the embedded Rust server
 that the macOS build copies inside the `.app`'s Resources.
 
 #### Build artifact hygiene

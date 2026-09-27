@@ -297,6 +297,10 @@ final class EpubToMp3App: NSObject, PlatformApplicationDelegate {
     }
 
     private func bootstrapEmbeddedRuntime() {
+        #if os(macOS)
+        // macOS uses the bundled Rust HTTP sidecar; Python remains iOS-only.
+        return
+        #else
         guard !Self.isRunningUnderXCTest() else { return }
         // CPython must be initialized on the same dedicated thread that
         // later accesses PythonKit. Initializing from a Swift concurrency
@@ -309,6 +313,7 @@ final class EpubToMp3App: NSObject, PlatformApplicationDelegate {
                 print("[EmbeddedRuntime] bootstrap failed: \(error)")
             }
         }
+        #endif
     }
 #else
     var window: UIWindow?
