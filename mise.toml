@@ -26,6 +26,10 @@ _.python.venv = { path = ".venv", create = true }
 description = "Start backend (uvicorn) and frontend (Vite) together"
 run = "./scripts/dev.sh"
 
+[tasks."rust:health"]
+description = "Run the Rust health-only CLI"
+run = "mise exec -- cargo run -p converter-cli"
+
 [tasks.clean]
 description = "Clean backend cache, pycache, and completed outputs"
 run = """

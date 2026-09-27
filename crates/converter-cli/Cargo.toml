@@ -1,0 +1,8 @@
+[package]
+name = "converter-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+converter-core = { path = "../converter-core" }
