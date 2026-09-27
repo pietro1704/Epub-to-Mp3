@@ -225,7 +225,7 @@ class AudioPlayerService implements AudioPlayerInterface {
     );
     if (index != null &&
         index >= 0 &&
-        index < _player.audioSources.length &&
+        index < _chapterQueueURLs.length &&
         _player.currentIndex != index) {
       await _player.seek(Duration.zero, index: index);
     }
