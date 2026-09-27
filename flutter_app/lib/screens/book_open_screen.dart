@@ -66,6 +66,7 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen>
   ResumeRestorationGuard _resumeGuard = ResumeRestorationGuard();
   final AsyncLoadGuard _loadGuard = AsyncLoadGuard();
   StreamSubscription<JobSnapshot>? _sseSubscription;
+  StreamSubscription<int?>? _chapterIndexSub;
   StreamSubscription<Duration>? _positionSub;
   Timer? _resumeSaveTimer;
   Future<void> _snapshotWork = Future.value();
@@ -100,7 +101,10 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _sseSubscription?.cancel();
+    _chapterIndexSub?.cancel();
+    _chapterIndexSub = null;
     _positionSub?.cancel();
+    _positionSub = null;
     _resumeSaveTimer?.cancel();
     super.dispose();
   }
@@ -644,7 +648,11 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen>
 
   void _startResumeListener(AudioPlayerInterface player) {
     _positionSub?.cancel();
+    _positionSub = null;
     _chapterIndexSub?.cancel();
+    _chapterIndexSub = player.currentIndex.listen((_) {
+      // Keep the subscription lifecycle aligned with the reader screen.
+    });
     _resumeSaveTimer?.cancel();
     _resumeSaveTimer = Timer.periodic(const Duration(seconds: 5), (_) {
       _saveResumePosition(player);
@@ -701,8 +709,10 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen>
   void _cancelConversion() {
     _sseSubscription?.cancel();
     _sseSubscription = null;
-    _positionSub?.cancel();
     _chapterIndexSub?.cancel();
+    _chapterIndexSub = null;
+    _positionSub?.cancel();
+    _positionSub = null;
     _resumeSaveTimer?.cancel();
     _isConverting = false;
     _conversionError = null;
