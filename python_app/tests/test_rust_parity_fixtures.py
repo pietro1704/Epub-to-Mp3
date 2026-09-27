@@ -3,10 +3,9 @@ from __future__ import annotations
 
 import hashlib
 import json
-import re
 from pathlib import Path
 
-from src.ebook_reader import EbookReader, TextProcessor
+from src.ebook_reader import EbookReader
 from src.ios_entrypoints import prepare_chunks
 from src.text_sanitizer import sanitize_for_edge_recovery, split_into_sentences
 
