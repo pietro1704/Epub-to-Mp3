@@ -9,6 +9,7 @@ pub mod jobs;
 pub mod paths;
 pub mod piper;
 pub mod text;
+pub mod tts;
 pub mod toc;
 
 /// Returns the core library health status.
