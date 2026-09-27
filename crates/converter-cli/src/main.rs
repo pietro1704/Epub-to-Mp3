@@ -171,12 +171,7 @@ fn parse_args(args: &[String]) -> Result<CliOptions, String> {
             "--stop-on-error" => options.stop_on_error = true,
             "--menu" => options.menu = true,
             option if option.starts_with('-') => {
-                // Preserve the broad Python CLI surface. Flags owned by later
-                // conversion tasks are accepted and ignored at this boundary.
-                if option == "--chapter" || option == "--section" {
-                    return Err(format!("{option} requires a value"));
-                }
-                if option.contains('=') { /* already carries its value */ }
+                return Err(format!("unknown option '{option}'"));
             }
             _ => positional.push(value.clone()),
         }
