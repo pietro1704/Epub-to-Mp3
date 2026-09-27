@@ -29,9 +29,9 @@ jobs:
         with:
           fetch-depth: 2
           lfs: false
-          # `workflow_run` has a write-capable token. Check out only the
-          # protected branch after the event filter below, never its SHA.
-          ref: master
+          # Check out the exact successful CI revision, not whichever commit
+          # happens to be current on master when this workflow starts.
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
 
       - name: Detect Space-relevant changes
         id: paths
@@ -70,8 +70,8 @@ jobs:
           fetch-depth: 0
           # Avoid LFS fetch (budget exceeded)
           lfs: false
-          # The job only syncs trusted master after a successful push CI.
-          ref: master
+          # The job only syncs the exact trusted revision after successful CI.
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
 
       - name: Build HF-only repo snapshot
         run: |

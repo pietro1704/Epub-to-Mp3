@@ -62,6 +62,10 @@ jobs:
             echo 'available=true' >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Report optional signing job status
+        if: steps.check.outputs.available != 'true'
+        run: echo 'TestFlight is optional; required CI gates are unaffected because signing credentials are unavailable.'
+
   archive-and-upload:
     name: Archive and upload iOS build
     needs: credentials

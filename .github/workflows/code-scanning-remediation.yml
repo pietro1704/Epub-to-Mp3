@@ -43,7 +43,11 @@ jobs:
             "/repos/${GITHUB_REPOSITORY}/code-scanning/alerts?state=open&per_page=100" \
             > alerts.json
           jq -c '[.[] | select(.rule.security_severity_level != null) | {number, html_url, rule: .rule.id, tool: .tool.name, created_at, most_recent_instance}]' alerts.json > open-alerts.json
-          echo "alerts=$(cat open-alerts.json)" >> "$GITHUB_OUTPUT"
+          echo "alerts=$(jq -c . open-alerts.json)" >> "$GITHUB_OUTPUT"
+
+      - name: Report remediation status
+        if: steps.credentials.outputs.codex_available != 'true'
+        run: echo '::notice::No OPENAI_API_KEY configured; open security alerts remain for manual remediation.'
 
   remediate:
     needs: detect
