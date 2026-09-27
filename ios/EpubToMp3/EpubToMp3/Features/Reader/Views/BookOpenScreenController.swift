@@ -1672,9 +1672,15 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
     /// layout — so a book always opens directly into its content and the
     /// chapter list never pushes or overlays the reading column.
     @objc private func presentTOC() {
-        if let snapshot = player.snapshot, snapshot.jobId == fulltext?.jobId {
+        if let snapshot = player.snapshot {
             let controller = TocScreenController(
-                fulltext: fulltext,
+                fulltext: fulltext ?? EbookFulltext(
+                    jobId: snapshot.jobId,
+                    bookTitle: nil,
+                    bookAuthor: nil,
+                    chapters: [],
+                    toc: nil
+                ),
                 snapshot: snapshot,
                 currentChapterIndex: player.currentChapterIndex,
                 readingChapterIndex: selectedChapter,

@@ -323,7 +323,6 @@ targets:
       - path: EpubToMp3Tests
         excludes:
           - "EmbeddedConversionCoordinatorTests.swift"
-          - "AudioPlayerPendingSeekTests.swift"
     dependencies:
       - target: EpubToMp3
     settings:

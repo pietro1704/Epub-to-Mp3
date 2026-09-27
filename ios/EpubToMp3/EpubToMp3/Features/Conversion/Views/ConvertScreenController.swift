@@ -330,7 +330,6 @@ final class ConvertScreenController: UITableViewController, UIDocumentPickerDele
             guard let self else { return }
             await self.viewModel.submit(
                 client: self.client,
-                useEmbeddedRuntime: self.settings.useEmbeddedRuntime,
                 player: self.player
             )
             if let jobId = self.viewModel.submittedJobId,
