@@ -34,6 +34,10 @@ run = "mise exec -- cargo run -p converter-cli"
 description = "Run the Rust Axum health and metadata server"
 run = "mise exec -- cargo run -p converter-server"
 
+[tasks.convert]
+description = "Run the canonical Rust conversion CLI"
+run = "mise exec -- cargo run --release -p converter-cli --"
+
 [tasks."guard:no-python-production"]
 description = "Fail if production packaging reintroduces the legacy Python runtime or bridge"
 run = "bash scripts/guard_no_python_production.sh"
@@ -391,15 +395,7 @@ set -euo pipefail
 """
 
 # ── Native macOS build ────────────────────────────────────────────────────────
-# iOS retains the embedded Python runtime; macOS ships the Rust HTTP sidecar.
-
-[tasks."vendor:python"]
-description = "Download + splice Beeware Python.xcframework into ios/EpubToMp3/Vendor (idempotent; iOS embed)"
-# Re-run the inexpensive source sync when the canonical Python package or its
-# sync script changes; bootstrap itself avoids re-downloading an existing runtime.
-sources = ["ios/EpubToMp3/scripts/bootstrap-ios-python.sh", "ios/EpubToMp3/scripts/sync-embedded-python.sh", "python_app/**"]
-outputs = ["ios/EpubToMp3/Vendor/Python/Python.xcframework/Info.plist"]
-run = "bash ios/EpubToMp3/scripts/bootstrap-ios-python.sh"
+# Apple clients use the native Swift reader and the Rust backend/sidecar.
 
 [tasks."sidecar:build"]
 description = "Build the Rust macOS converter-server sidecar"
@@ -417,7 +413,7 @@ echo "Built Rust sidecar: dist/epub-to-mp3-server"
 
 [tasks."mac:build"]
 description = "Build native AppKit macOS app with the Rust converter-server sidecar (MAC_BUILD_CONFIG=Release|Debug, default Release)"
-depends = ["sidecar:build", "vendor:python"]
+depends = ["sidecar:build"]
 run = """
 #!/bin/bash
 set -euo pipefail
@@ -498,10 +494,7 @@ open "$APP_PATH"
 """
 
 [tasks."ios:build"]
-description = "Build native UIKit iOS app on the best installed iOS Simulator with embedded Python.xcframework"
-# vendor:python must finish before xcodebuild resolves the framework
-# dependency declared in project.yml.
-depends = ["vendor:python"]
+description = "Build native UIKit iOS app on the best installed iOS Simulator"
 run = """
 #!/bin/bash
 set -euo pipefail

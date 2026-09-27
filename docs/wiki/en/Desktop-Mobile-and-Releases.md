@@ -2,9 +2,8 @@
 
 ## Apple (macOS / iPadOS / iOS) — SwiftUI
 
-The official Apple client lives in `ios/EpubToMp3/`. macOS embeds the
-Python server as a PyInstaller sidecar inside the `.app`; iPadOS and iOS
-talk to a remote backend.
+The official Apple client lives in `ios/EpubToMp3/`. macOS embeds the Rust
+`converter-server` inside the `.app`; iPadOS and iOS talk to a remote backend.
 
 Headless macOS build:
 
@@ -13,7 +12,7 @@ mise run mac:build
 # → task prints the produced .app path, usually ios/EpubToMp3/.build/Release/EpubToMp3.app
 ```
 
-Sidecar-only build (PyInstaller onefile):
+Sidecar-only build (Rust release binary):
 
 ```bash
 mise run sidecar:build

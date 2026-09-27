@@ -2,9 +2,9 @@
 
 The official Apple client for the project. Single SwiftUI codebase
 that ships to **macOS, iPadOS and iOS** out of the same Xcode project.
-On macOS the app embeds the Python backend (PyInstaller sidecar) so it
-runs offline; on iOS / iPadOS it talks to a remote backend (`mise run
-web` locally, or HF Spaces).
+On macOS the app embeds the Rust `converter-server` so it runs offline; on
+iOS / iPadOS it talks to a remote backend (`mise run rust:server` locally,
+or the hosted deployment).
 
 ## Mental model
 
@@ -32,8 +32,7 @@ open EpubToMp3.xcodeproj
 ```
 
 Pick **My Mac** for native macOS, **iPhone/iPad simulator** for iOS.
-For the macOS sidecar to be embedded, build the PyInstaller binary
-first:
+For the macOS sidecar to be embedded, build the Rust server binary first:
 
 ```bash
 mise run sidecar:build      # writes dist/epub-to-mp3-server
@@ -45,7 +44,7 @@ Or do both steps in one shot:
 mise run mac:build          # sidecar:build + headless xcodebuild
 ```
 
-The Xcode `postBuildScripts` phase copies the most recent binary into
+The Xcode `postBuildScripts` phase copies the most recent Rust binary into
 the `.app`'s Resources folder. Without it the macOS app falls back to
 the user-configured backend URL (Settings → Backend).
 

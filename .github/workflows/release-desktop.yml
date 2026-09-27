@@ -111,7 +111,7 @@ jobs:
           distribution: temurin
           java-version: "21"
 
-      - name: Setup Python 3.13 (Chaquopy buildPython requirement)
+      - name: Setup Python 3.13 (legacy Chaquopy migration requirement)
         # Chaquopy needs a Python 3.13 on the build host to resolve
         # pip dependencies before bundling them into the APK.
         # Without this step the build dies with "Couldn't find Python 3.13".
@@ -158,8 +158,9 @@ jobs:
   # ──────────────────────────────────────────────────────────────────────
   # SwiftUI native Apple build (macOS .app + iOS .ipa unsigned)
   #
-  # Builds the official Apple client out of `ios/EpubToMp3/`. Builds the
-  # PyInstaller sidecar inline (no longer reused from a Tauri build).
+  # Builds the official Apple client out of `ios/EpubToMp3/`. macOS embeds
+  # the Rust converter-server; Python remains available only for iOS
+  # migration coverage until the final cross-client validation.
   # The iOS build is unsigned — users sideload via AltStore.
   # ──────────────────────────────────────────────────────────────────────
   swiftui-apple:
@@ -177,18 +178,15 @@ jobs:
           HOMEBREW_GITHUB_API_TOKEN: ${{ github.token }}
         run: brew install xcodegen
 
-      - name: Setup Python
-        uses: actions/setup-python@v7
-        with:
-          python-version: "3.11"
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
 
-      - name: Build PyInstaller sidecar
+      - name: Build Rust macOS sidecar
         run: |
-          python -m venv .venv
-          source .venv/bin/activate
-          pip install pyinstaller --quiet
-          pip install -r requirements-desktop.txt --quiet
-          pyinstaller desktop.spec --noconfirm --clean
+          cargo build --release -p converter-server
+          mkdir -p dist
+          cp target/release/converter-server dist/epub-to-mp3-server
+          chmod 755 dist/epub-to-mp3-server
           ls -lh dist/epub-to-mp3-server
 
       - name: Bootstrap iOS Python.xcframework + python_app embed

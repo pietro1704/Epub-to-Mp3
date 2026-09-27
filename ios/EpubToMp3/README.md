@@ -30,6 +30,10 @@ resulting `.app` is reported by the task after build; with the current
 
 The `EpubToMp3Widget` target requires iOS 17+ because it uses `.containerBackground` (WidgetKit API added in iOS 17).
 
+macOS uses the Rust `converter-server` binary as its canonical local backend.
+The Python runtime is retained only by the iOS migration path until final
+differential validation; it is not part of macOS production packaging.
+
 ## App Group
 
 `group.com.pietrocode.epubtomp3`

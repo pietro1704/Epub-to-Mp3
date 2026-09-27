@@ -38,7 +38,7 @@ platform family:
 
 | Surface | Platforms | Where | Status |
 |---|---|---|---|
-| **SwiftUI native** | macOS · iPadOS · iOS | `ios/EpubToMp3/` | **Official Apple client** — Library-first reader, embedded Python sidecar on macOS, streaming TTS chapter-by-chapter |
+| **SwiftUI native** | macOS · iPadOS · iOS | `ios/EpubToMp3/` | **Official Apple client** — Library-first reader, embedded Rust server on macOS, streaming TTS chapter-by-chapter |
 | **Flutter native** | Linux · Windows · Android | `flutter_app/` | **Official non-Apple client** — single codebase, calls the same FastAPI backend. macOS/iOS are handled by SwiftUI, not Flutter. |
 
 ### SwiftUI app (Apple)
@@ -129,31 +129,32 @@ brew install ffmpeg espeak-ng   # macOS; use apt on Linux
 ## CLI Usage
 
 ```bash
-source .venv/bin/activate   # Required for Piper fallback
-
-# Basic conversion
-python -m python_app.main convert book.epub
+# Native Rust CLI (canonical production entrypoint)
+cargo run --release -p converter-cli -- convert book.epub
 
 # Force a specific engine
-python -m python_app.main convert book.epub --engine edge
-python -m python_app.main convert book.epub --engine piper
+cargo run --release -p converter-cli -- convert book.epub --engine edge
+cargo run --release -p converter-cli -- convert book.epub --engine piper
 
 # Single chapter or range
-python -m python_app.main convert book.epub --chapter 3
-python -m python_app.main convert book.epub --chapter 5.1,5.2,5.3
+cargo run --release -p converter-cli -- convert book.epub --chapter 3
+cargo run --release -p converter-cli -- convert book.epub --chapter 5.1,5.2,5.3
 
 # Preview chapter structure (saves parsed text to cache)
-python -m python_app.main convert book.epub --show-structure
+cargo run --release -p converter-cli -- convert book.epub --show-structure
 
 # Force re-parse (ignore cache)
-python -m python_app.main convert book.epub --clear-cache
+cargo run --release -p converter-cli -- convert book.epub --clear-cache
 
 # Batch: multiple files or folder
-python -m python_app.main convert book1.epub book2.pdf --batch ~/folder/
+cargo run --release -p converter-cli -- convert book1.epub book2.pdf --batch ~/folder/
 
 # Interactive menu (pick engine/voice/settings)
-python -m python_app.main convert book.epub --menu
+cargo run --release -p converter-cli -- convert book.epub --menu
 ```
+
+The Python CLI remains in `python_app/` as the migration oracle until
+differential coverage and the final cutover validation are complete.
 
 ### Shell Autocomplete (Optional)
 
@@ -169,10 +170,12 @@ Tab-completes `.epub`/`.pdf` file paths and `--engine` values.
 ## Web Server
 
 ```bash
-mise run web                            # Recommended
-uvicorn python_app.server:app --port 8000   # Direct
-python hf_app.py                        # HF Spaces entry (port 7860)
+mise run rust:server                   # Native Rust server (canonical)
+cargo run --release -p converter-server # Direct Rust server
 ```
+
+The legacy Python server and HF entrypoint remain available as migration
+oracles only; they are not production packaging entrypoints.
 
 Frontend dev server (hot reload):
 

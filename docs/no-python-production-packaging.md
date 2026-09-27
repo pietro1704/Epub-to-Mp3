@@ -19,9 +19,9 @@ visible without blocking unrelated development.
 The following prerequisites must be satisfied before deleting the retained
 Python paths:
 
-- Replace the HF Spaces Python image/entrypoint with the Rust server image and
-  health-check command.
-- Replace the macOS PyInstaller sidecar with the Rust server binary and remove
+- Keep the Rust server as the canonical hosted image/entrypoint; retain the HF
+  Python adapter only as a migration oracle until the final differential gate.
+- Keep the macOS Rust server binary as the production sidecar; remove
   Python.xcframework/vendor bootstrap phases from the Apple target.
 - Replace Android Chaquopy and desktop Flutter Python asset bootstraps with the
   Rust service integration.
