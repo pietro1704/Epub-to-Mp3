@@ -135,6 +135,12 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v7
 
+      - name: Install mise
+        uses: jdx/mise-action@v4.3.0
+
+      - name: Install toolchain
+        run: mise install
+
       - name: Install XcodeGen
         env:
           HOMEBREW_GITHUB_API_TOKEN: ${{ github.token }}
