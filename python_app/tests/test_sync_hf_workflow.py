@@ -18,11 +18,11 @@ def test_hf_sync_only_tracks_space_runtime_paths() -> None:
     assert "workflow_dispatch" in workflow
 
 
-def test_hf_sync_checks_out_only_the_trusted_master_branch() -> None:
+def test_hf_sync_checks_out_the_trusted_workflow_revision() -> None:
     workflow = WORKFLOW.read_text(encoding="utf-8")
 
-    assert workflow.count("ref: master") == 2
-    assert "github.event.workflow_run.head_sha" not in workflow
+    assert workflow.count("github.event.workflow_run.head_sha") == 2
+    assert "ref: master" not in workflow
     assert "issues: write" not in workflow
 
 
