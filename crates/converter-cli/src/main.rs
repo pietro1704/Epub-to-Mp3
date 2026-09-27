@@ -396,7 +396,8 @@ fn clear_book_cache(input: &Path, assume_yes: bool) -> Result<(), String> {
     }
     for target in targets {
         if target.exists() {
-            fs::remove_dir_all(&target).map_err(|error| format!("failed to clear '{}': {error}", target.display()))?;
+            fs::remove_dir_all(&target)
+                .map_err(|error| format!("failed to clear '{}': {error}", target.display()))?;
         }
     }
     println!("Book cache cleared.");
