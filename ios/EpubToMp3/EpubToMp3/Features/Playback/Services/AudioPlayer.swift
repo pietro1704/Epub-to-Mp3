@@ -523,7 +523,7 @@ final class AudioPlayer: ObservableObject {
     /// observe the structural `AudioPlayer` without subscribing to this
     /// clock.
     let playbackClock: PlaybackClock
-    private let artifactStore: LocalAudioArtifactStore
+    private let artifactStore: LocalAudioArtifactStore?
     private var lastPlaybackRetentionRequest: (bookID: String, chapterIndex: Int)?
 
     /// `true` while the speech fallback owns the transport. Flips to
@@ -542,7 +542,7 @@ final class AudioPlayer: ObservableObject {
         artifactStore: LocalAudioArtifactStore? = nil
     ) {
         self.playbackClock = playbackClock ?? PlaybackClock()
-        self.artifactStore = artifactStore ?? .shared
+        self.artifactStore = artifactStore
         self.resumeStore = resumeStore
         self.backendBaseURL = backendBaseURL
         // Default-construct on MainActor (this init's isolation). A
@@ -1380,8 +1380,7 @@ final class AudioPlayer: ObservableObject {
     }
 
     private func requestRetentionForAudibleChapter() {
-        guard let player, let snapshot,
-              let bookID = EmbeddedConversionCoordinator.embeddedBookID(from: snapshot.jobId) else { return }
+        guard let player, let snapshot else { return }
         let renderedSeconds = player.currentTime().seconds
         guard renderedSeconds.isFinite,
               Self.hasAudibleOutput(timeControlStatus: player.timeControlStatus,
@@ -1416,10 +1415,9 @@ final class AudioPlayer: ObservableObject {
         }
         // The clock ticks repeatedly, but persistence is needed only once per
         // audible chapter transition, independently of diagnostic journeys.
-        guard lastPlaybackRetentionRequest?.bookID != bookID
+        guard lastPlaybackRetentionRequest?.bookID != snapshot.jobId
                 || lastPlaybackRetentionRequest?.chapterIndex != chapterIndex else { return }
-        lastPlaybackRetentionRequest = (bookID, chapterIndex)
-        requestPlaybackRetention(bookID: bookID, chapterIndex: chapterIndex)
+        lastPlaybackRetentionRequest = (snapshot.jobId, chapterIndex)
     }
 
     /// Resolves a player queue offset back to the canonical embedded-book
@@ -1429,21 +1427,12 @@ final class AudioPlayer: ObservableObject {
         snapshot: JobSnapshot,
         playableChapterOffset: Int
     ) -> (bookID: String, chapterIndex: Int)? {
-        guard let bookID = EmbeddedConversionCoordinator.embeddedBookID(from: snapshot.jobId),
-              snapshot.playableChapters.indices.contains(playableChapterOffset) else {
+        guard snapshot.playableChapters.indices.contains(playableChapterOffset) else {
             return nil
         }
-        return (bookID, snapshot.playableChapters[playableChapterOffset].index)
+        return (snapshot.jobId, snapshot.playableChapters[playableChapterOffset].index)
     }
 
-    private func requestPlaybackRetention(bookID: String, chapterIndex: Int) {
-        Task { [artifactStore] in
-            try? await artifactStore.requestPlaybackRetention(
-                bookID: bookID,
-                chapterIndex: chapterIndex
-            )
-        }
-    }
 
     private func beginPlaybackJourneyIfNeeded() {
         guard activePlaybackJourneyID == nil else { return }
@@ -1909,11 +1898,9 @@ final class AudioPlayer: ObservableObject {
         }
     }
 
-    /// Embedded conversion retains zero-based document indexes even when
-    /// non-narratable opening chapters are absent. Remote manifests are
-    /// one-based; legacy snapshots containing chapter zero remain supported.
+    /// Remote manifests are one-based; legacy snapshots containing chapter
+    /// zero remain supported.
     private static func segmentManifestIndexOffset(_ snapshot: JobSnapshot) -> Int {
-        if EmbeddedConversionCoordinator.embeddedBookID(from: snapshot.jobId) != nil { return 0 }
         return (snapshot.chapterProgress ?? snapshot.playableChapters).contains { $0.index == 0 } ? 0 : 1
     }
 

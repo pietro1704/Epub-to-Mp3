@@ -1711,28 +1711,8 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
                         Task { await DownloadManager.shared.clearDownloadedBook(jobId: snapshot.jobId) }
                     }
                 },
-                onRetryFailed: nil
-                    { [weak self] in
-                        guard let self,
-                              let embeddedBookID = EmbeddedConversionCoordinator.embeddedBookID(from: snapshot.jobId) else {
-                            return
-                        }
-                        Task { @MainActor [weak self] in
-                            let failed = (try? await LocalAudioArtifactStore.shared.failedIndices(
-                                bookID: embeddedBookID
-                            )) ?? []
-                            for chapterIndex in failed {
-                                self?.requestAudioDownload(snapshot: snapshot, chapterIndex: chapterIndex)
-                            }
-                        }
-                    }
-                },
-                onExport: EmbeddedConversionCoordinator.embeddedBookID(from: snapshot.jobId).map { bookID in
-                    { [weak self] in
-                        guard let self else { return }
-                        LocalAudiobookShareCoordinator.exportAndPresent(bookID: bookID, from: self)
-                    }
-                }
+                onRetryFailed: nil,
+                onExport: nil
             )
             let nav = UINavigationController(rootViewController: controller)
             configureTOCSheetPresentation(nav)
@@ -1763,81 +1743,11 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
     }
 
     private func requestAudioDownload(snapshot: JobSnapshot, chapterIndex: Int?) {
-        guard let embeddedBookID = EmbeddedConversionCoordinator.embeddedBookID(from: snapshot.jobId) else {
-            Task {
-                if let chapterIndex {
-                    await DownloadManager.shared.enqueueSelected(
-                        snapshot: snapshot,
-                        epubZeroBasedIndices: [chapterIndex],
-                        baseURL: settings.resolvedBaseURL
-                    )
-                } else {
-                    await DownloadManager.shared.enqueueAll(snapshot: snapshot, baseURL: settings.resolvedBaseURL)
-                }
-            }
-            return
-        }
-        guard embeddedBookID == book.id,
-              let url = try? library.openBookFile(id: embeddedBookID) else { return }
-        Task { [weak self] in
-            guard let self else { return }
-            do {
-                let requestedIndices = chapterIndex.map { Set([$0]) }
-                let promoted = try await LocalAudioArtifactStore.shared.promoteAvailable(
-                    bookID: embeddedBookID,
-                    chapterIndices: requestedIndices
-                )
-                if let chapterIndex, promoted.contains(chapterIndex) {
-                    let isCompleteDownload = (try? await LocalAudioArtifactStore.shared.hasCompleteDownloadedAudio(
-                        bookID: embeddedBookID
-                    )) ?? false
-                    self.book.cachedOffline = isCompleteDownload
-                    self.library.recordConversion(
-                        jobId: snapshot.jobId,
-                        for: embeddedBookID,
-                        cachedOffline: isCompleteDownload
-                    )
-                    return
-                }
-                let completed = try await EmbeddedConversionCoordinator.stream(
-                    bookURL: url,
-                    bookID: embeddedBookID,
-                    autoPlay: false,
-                    requiresWiFi: !self.settings.allowCellularAudioConversion,
-                    priorityChapterIndices: chapterIndex.map { [$0] } ?? [],
-                    requestedChapterIndices: chapterIndex.map { [$0] },
-                    drivesPlayer: false,
-                    player: self.player,
-                    onChapterAvailable: { chapter in
-                        guard chapterIndex == nil || chapter.index == chapterIndex else { return }
-                        Task {
-                            try? await LocalAudioArtifactStore.shared.promote(
-                                bookID: embeddedBookID,
-                                chapterIndex: chapter.index
-                            )
-                        }
-                    }
-                )
-                for chapter in completed.playableChapters
-                    where chapterIndex == nil || chapter.index == chapterIndex {
-                    try? await LocalAudioArtifactStore.shared.promote(
-                        bookID: embeddedBookID,
-                        chapterIndex: chapter.index
-                    )
-                }
-                let isCompleteDownload = (try? await LocalAudioArtifactStore.shared.hasCompleteDownloadedAudio(
-                    bookID: embeddedBookID
-                )) ?? false
-                self.book.lastJobId = completed.jobId
-                self.book.cachedOffline = isCompleteDownload
-                self.library.recordConversion(
-                    jobId: completed.jobId,
-                    for: embeddedBookID,
-                    cachedOffline: isCompleteDownload
-                )
-            } catch {
-                // The artifact manifest records the per-chapter failure and
-                // the TOC renders it on its next appearance.
+        Task {
+            if let chapterIndex {
+                await DownloadManager.shared.enqueueSelected(snapshot: snapshot, epubZeroBasedIndices: [chapterIndex], baseURL: settings.resolvedBaseURL)
+            } else {
+                await DownloadManager.shared.enqueueAll(snapshot: snapshot, baseURL: settings.resolvedBaseURL)
             }
         }
     }

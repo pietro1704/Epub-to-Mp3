@@ -199,10 +199,8 @@ final class TocScreenController: UITableViewController {
     }
 
     private var rows: [Row] {
-        let usesEmbeddedAudio = EmbeddedConversionCoordinator.embeddedBookID(from: snapshot.jobId) != nil
-        let schedulerState = EmbeddedConversionCoordinator.embeddedBookID(from: snapshot.jobId).flatMap {
-            LocalAudioConversionScheduler.shared.state(for: $0)
-        }
+        let usesEmbeddedAudio = false
+        let schedulerState: LocalAudioConversionScheduler.WorkState? = nil
         if let fulltext, !fulltext.chapters.isEmpty {
             return fulltext.chapters.map { chapter in
                 let zeroBased = chapter.index - 1
@@ -296,25 +294,13 @@ final class TocScreenController: UITableViewController {
         // closure — referencing `self.snapshot` directly from inside it is
         // both a capture-semantics error and an actor-isolation violation.
         let jobID = snapshot.jobId
-        let embeddedBookID = EmbeddedConversionCoordinator.embeddedBookID(from: jobID)
         Task { [weak self] in
             let downloaded: Set<Int>
             let states: [Int: LocalAudioArtifactStore.ArtifactState]
-            if let embeddedBookID {
-                let manifest = try? await LocalAudioArtifactStore.shared.manifest(bookID: embeddedBookID)
-                downloaded = Set(manifest?.chapters.compactMap { artifact in
-                    guard artifact.retention == .downloaded, artifact.state == .available else { return nil }
-                    return artifact.index
-                } ?? [])
-                states = Dictionary(
-                    uniqueKeysWithValues: (manifest?.chapters ?? []).map { ($0.index, $0.state) }
-                )
-            } else {
-                downloaded = await Task.detached(priority: .utility) {
-                    DownloadManager.locallyDownloadedIndices(for: jobID)
-                }.value
-                states = [:]
-            }
+            downloaded = await Task.detached(priority: .utility) {
+                DownloadManager.locallyDownloadedIndices(for: jobID)
+            }.value
+            states = [:]
             guard let self else { return }
             self.locallyDownloaded = downloaded
             self.localArtifactStates = states
@@ -324,36 +310,11 @@ final class TocScreenController: UITableViewController {
     }
 
     private func observeLocalAudioArtifacts() {
-        guard let embeddedBookID = EmbeddedConversionCoordinator.embeddedBookID(from: snapshot.jobId) else { return }
-        let observer = NotificationCenter.default.addObserver(
-            forName: LocalAudioArtifactStore.didChangeNotification,
-            object: nil,
-            queue: .main
-        ) { [weak self] notification in
-            if let changedBookID = notification.userInfo?["bookID"] as? String,
-               changedBookID != embeddedBookID {
-                return
-            }
-            Task { @MainActor [weak self] in
-                self?.refreshDownloaded()
-            }
-        }
-        notificationObservers.append(observer)
+        return
     }
 
     private func observeConversionScheduler() {
-        guard let embeddedBookID = EmbeddedConversionCoordinator.embeddedBookID(from: snapshot.jobId) else { return }
-        let observer = NotificationCenter.default.addObserver(
-            forName: LocalAudioConversionScheduler.didChangeNotification,
-            object: nil,
-            queue: .main
-        ) { [weak self] notification in
-            guard notification.userInfo?["bookID"] as? String == embeddedBookID else { return }
-            Task { @MainActor [weak self] in
-                self?.refreshDownloaded()
-            }
-        }
-        notificationObservers.append(observer)
+        return
     }
 
     private func configureMoreMenu() {
