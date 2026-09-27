@@ -518,6 +518,7 @@ async fn fulltext(AxumPath(id): AxumPath<String>, State(state): State<AppState>)
 fn app(config: AppConfig) -> Router {
     Router::new()
         .route("/health", get(health))
+        .route("/api/health", get(health))
         .route("/api/metadata", get(metadata))
         .route("/api/uploads", post(upload))
         .route("/api/uploads/local", post(local_upload))
