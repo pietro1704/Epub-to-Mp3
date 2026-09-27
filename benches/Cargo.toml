@@ -1,0 +1,14 @@
+[package]
+name = "rust-migration-bench"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bench]]
+name = "rust_migration"
+path = "rust_migration.rs"
+harness = false
+
+[dependencies]
+converter-core = { path = "../crates/converter-core" }
+criterion = { version = "0.5", features = ["html_reports"] }

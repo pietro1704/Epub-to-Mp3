@@ -46,6 +46,10 @@ run = "bash scripts/guard_no_python_production.sh"
 description = "Report Rust migration readiness, packaging artifacts, and remaining blockers"
 run = "bash scripts/check_rust_migration_gate.sh"
 
+[tasks."check:rust-migration"]
+description = "Check Rust migration readiness, packaging artifacts, and remaining blockers"
+run = "bash scripts/check_rust_migration_gate.sh"
+
 [tasks.clean]
 description = "Clean backend cache, pycache, and completed outputs"
 run = """

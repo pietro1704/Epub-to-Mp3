@@ -4,6 +4,7 @@ members = [
     "crates/converter-core",
     "crates/converter-server",
     "crates/converter-cli",
+    "benches",
 ]
 
 [workspace.package]
@@ -18,6 +19,3 @@ codegen-units = 1
 lto = "thin"
 strip = true
 
-[[bench]]
-name = "rust_migration"
-harness = false
