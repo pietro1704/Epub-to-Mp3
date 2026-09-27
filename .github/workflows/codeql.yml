@@ -150,6 +150,10 @@ jobs:
         working-directory: ios/EpubToMp3
         run: xcodegen generate
 
+      - name: Build Rust macOS sidecar
+        if: matrix.platform == 'macOS'
+        run: mise run sidecar:build
+
       - name: Report Swift coverage scope
         working-directory: ios/EpubToMp3
         run: |
