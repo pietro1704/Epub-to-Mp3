@@ -153,6 +153,9 @@ final class MacBookDetailViewController: NSViewController {
                 do {
                     let url = try await self.library.openBookFileAsync(id: self.book.id)
                     let data = try Data(contentsOf: url, options: .mappedIfSafe)
+                    guard let baseURL = settings.resolvedBaseURL else {
+                        throw APIError.invalidBaseURL
+                    }
                     let response = try await APIClient(baseURL: baseURL).submitConversion(
                         uploadedFile: (data: data, filename: url.lastPathComponent),
                         options: APIClient.ConvertOptions()

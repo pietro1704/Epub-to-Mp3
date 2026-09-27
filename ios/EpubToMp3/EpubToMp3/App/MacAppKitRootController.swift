@@ -356,7 +356,10 @@ final class MacAppKitRootController: NSSplitViewController, NSToolbarDelegate {
             do {
                 let url = try await library.openBookFileAsync(id: book.id)
                 let data = try Data(contentsOf: url, options: .mappedIfSafe)
-                let response = try await APIClient(baseURL: settings.resolvedBaseURL ?? AppSettings.shared.resolvedBaseURL!).submitConversion(
+                guard let baseURL = settings.resolvedBaseURL else {
+                    throw APIError.invalidBaseURL
+                }
+                let response = try await APIClient(baseURL: baseURL).submitConversion(
                     uploadedFile: (data: data, filename: url.lastPathComponent),
                     options: APIClient.ConvertOptions()
                 )
