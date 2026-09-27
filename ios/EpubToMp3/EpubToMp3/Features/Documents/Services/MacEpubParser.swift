@@ -4,12 +4,17 @@
 
 import Foundation
 
-/// macOS entry point for the same in-process EPUB parser used by iOS.
-/// Keeping this adapter small prevents a second parser or a child Python
-/// process from diverging from the native reader path.
+/// macOS document operations use the canonical HTTP backend. The local Rust
+/// sidecar exposes the same upload/fulltext contract as the remote service.
 enum MacEpubParser {
-    static func parse(at fileURL: URL, bookId: String) async throws -> EbookFulltext {
-        try await PythonBridge.shared.parseEpub(at: fileURL, bookId: bookId)
+    static func parse(
+        at fileURL: URL,
+        client: APIClient,
+        bookId: String
+    ) async throws -> EbookFulltext {
+        _ = bookId
+        let uploadID = try await client.uploadBook(at: fileURL)
+        return try await client.fetchUploadedFulltext(uploadID: uploadID)
     }
 }
 

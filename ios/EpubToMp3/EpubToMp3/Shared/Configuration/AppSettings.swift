@@ -156,8 +156,7 @@ enum ReaderTextAlignment: String, CaseIterable, Identifiable {
 }
 
 /// Persisted user preferences. The backend URL drives every API call so the
-/// user can flip between localhost (dev), a tunnelled HF Spaces deploy, or
-/// any reachable server hosting the Python backend.
+/// user can point the native client at the canonical Rust HTTP backend.
 ///
 /// Why direct UserDefaults instead of @AppStorage:
 /// `@AppStorage` is a `DynamicProperty` tied to a declarative view tree.
@@ -185,19 +184,16 @@ final class AppSettings: ObservableObject {
         }()
         // Load persisted values. `??` falls back to the @Published
         // initial-value defaults if the key was never set.
-        // Default backend URL is empty on iOS device (no localhost server
-        // exists in the iPhone sandbox; resolving `localhost:8000` floods
-        // the system log with `Connection refused`). The embedded Python
-        // runtime handles everything in-process; users only set this in
-        // Settings if they actually want to point at a remote backend.
-        // macOS keeps the historical localhost value for remote-only tools.
+        // No localhost server exists in the iPhone sandbox. macOS starts its
+        // bundled Rust sidecar and uses its fixed local port by default.
         #if os(macOS)
-        self.backendURL = launchBackendURL ?? defaults.string(forKey: "backendURL") ?? "http://localhost:8000"
+        self.backendURL = launchBackendURL ?? defaults.string(forKey: "backendURL") ?? "http://127.0.0.1:47860"
         #else
         self.backendURL = launchBackendURL ?? defaults.string(forKey: "backendURL") ?? ""
         #endif
-        // The Apple clients use the bundled Python runtime in-process.
-        self.useEmbeddedRuntime = defaults.object(forKey: "useEmbeddedRuntime") as? Bool ?? true
+        // Retained only for migration/oracle state compatibility; production
+        // Apple clients always use the Rust HTTP backend.
+        self.useEmbeddedRuntime = false
         // Edge is the only network dependency of on-device conversion. Keep
         // it on Wi-Fi by default; the user may opt into cellular explicitly.
         self.allowCellularAudioConversion =
@@ -289,15 +285,14 @@ final class AppSettings: ObservableObject {
 
     /// Master switch: when `true` the app uses its bundled runtime for
     /// everything that *can* run on-device — EPUB parsing (pure Swift +
-    /// PythonBridge), TTS conversion (PythonEmbed on iOS and macOS) —
+    /// HTTP backend), TTS conversion (Rust server) —
     /// and treats the configured `backendURL` only as an
     /// optional remote fallback for users who genuinely want it.
     ///
     /// Reader paths NEVER require this to be false. EPUB parsing is
-    /// local (`EpubMetadataReader` + `ZipReader` + `PythonBridge.parseEpub`).
-    /// The flag exists so QA / power users can force the legacy
-    /// "remote-only" mode from the debug toggle in Settings.
-    @Published var useEmbeddedRuntime: Bool = true {
+    /// remote (`APIClient` + Rust backend). The flag remains only as a
+    /// persisted compatibility key for old installations.
+    @Published var useEmbeddedRuntime: Bool = false {
         didSet { defaults.set(useEmbeddedRuntime, forKey: "useEmbeddedRuntime") }
     }
 
@@ -336,16 +331,12 @@ final class AppSettings: ObservableObject {
 
     /// True iff the reader and library can render the current book
     /// without a configured backend URL. The reader pipeline is always
-    /// local on iOS and macOS through PythonBridge, so this is `true` whenever the
-    /// embedded runtime is enabled — regardless of `backendURL`.
-    var canReadOffline: Bool { useEmbeddedRuntime }
+    /// local on iOS and macOS through the HTTP backend, so it is always false
+    /// until a future offline native implementation exists.
+    var canReadOffline: Bool { false }
 
-    /// Dimmed while the embedded runtime handles reading/conversion
-    /// locally — a remote backend URL has nothing to do in that mode.
-    /// Only enabled once the user opts out of the embedded runtime
-    /// (`useEmbeddedRuntime = false`), which is when the app actually
-    /// talks to a configured backend.
-    var remoteBackendControlsEnabled: Bool { !useEmbeddedRuntime }
+    /// Backend configuration is always relevant to the production client.
+    var remoteBackendControlsEnabled: Bool { true }
 
     /// 5-step font size scale: 0=XS, 1=S, 2=M (default), 3=L, 4=XL.
     /// Clamped in `didSet` so the rest of the app can trust 0…4.

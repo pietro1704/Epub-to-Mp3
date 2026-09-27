@@ -1,13 +1,15 @@
 import Foundation
 
+// Legacy Python oracle source retained outside every production target.
+#if false
+
 @MainActor
 private final class SegmentEmission {
     var didEmit = false
 }
 
-/// Converts a library book through the embedded Python pipeline and exposes
-/// the result in the same JobSnapshot shape used by the network backend.
-/// This keeps the player independent from the selected conversion provider.
+/// Legacy local-stream coordinator retained for migration/oracle tests.
+/// Production Apple conversion is submitted to the canonical HTTP backend.
 enum EmbeddedConversionCoordinator {
     static let maximumAutomaticChapterAttempts = 2
 
@@ -441,7 +443,6 @@ enum EmbeddedConversionCoordinator {
         if activeStream?.id == lease.id {
             activeStream = nil
         }
-        PythonBridge.shared.cancelActiveSynthesis()
         lease.task?.cancel()
         if lease.ownsPlayback {
             lease.player?.stop()
@@ -589,9 +590,8 @@ enum EmbeddedConversionCoordinator {
             return migrated
         }
 
-        // Lifecycle warmup runs opportunistically when the scene activates;
-        // Listen is the authoritative readiness gate so it cannot race that
-        // background task on a cold launch.
+        // Legacy local path retained for migration/oracle tests. Production
+        // conversion enters through ConvertViewModel and APIClient.
         try await PythonBridge.shared.preflightRuntime()
         guard isActive(lease) else { throw CancellationError() }
 
@@ -1594,9 +1594,4 @@ enum EmbeddedConversionCoordinator {
         #endif
     }
 }
-
-private extension Array {
-    subscript(safe index: Index) -> Element? {
-        indices.contains(index) ? self[index] : nil
-    }
-}
+#endif

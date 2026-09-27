@@ -2227,7 +2227,8 @@ final class AudioPlayer: ObservableObject {
         updateNowPlayingInfo()
     }
 
-    /// Segment-streaming ingestion point. Called by `PythonBridge` after
+    /// Segment-streaming ingestion point. Legacy local-stream oracle only;
+    /// production audio arrives from the backend artifact stream.
     /// each TTS chunk closes, before the full chapter MP3 is written.
     ///
     /// - Parameters:

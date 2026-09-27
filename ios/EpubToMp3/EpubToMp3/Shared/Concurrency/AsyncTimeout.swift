@@ -6,7 +6,7 @@
 //  - iOS 17's `Task.timeout` is iOS 17-only; our deployment target is
 //    iOS 15 (see ce8e547 — migrated `@Observable` → `ObservableObject`
 //    for iOS 15 readiness).
-//  - Several critical paths (`PythonBridge.parseEpub`,
+//  - Several critical paths (backend fulltext requests,
 //    `convertChapterStreaming`, `EdgeTTSBridge.synthesize`, the SSE
 //    stream subscription) can stall silently and leave the UI spinning
 //    forever. Wrapping them in `withTimeout` guarantees the call site

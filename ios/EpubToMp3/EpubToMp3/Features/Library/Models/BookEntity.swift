@@ -45,7 +45,7 @@ enum BookFileType: String, Codable, Hashable, CaseIterable, Sendable {
 
     /// MOBI/AZW3 (unpacking library maturity) and CBR (the `unrar` binary's
     /// licensing makes it unsuitable to embed in the app bundle) can only be
-    /// parsed/converted through the server — the on-device `PythonBridge`
+    /// parsed/converted through the server — the native client HTTP bridge
     /// path doesn't support them at all yet. For CBR this only affects
     /// *reading* (comics never convert to audio either way).
     var requiresServerConversion: Bool {

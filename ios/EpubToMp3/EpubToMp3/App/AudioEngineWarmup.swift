@@ -10,9 +10,7 @@ final class AudioEngineWarmup: ObservableObject {
     private var task: Task<Bool, Never>?
     private let preflight: @MainActor () async throws -> Void
 
-    init(preflight: @escaping @MainActor () async throws -> Void = {
-        try await PythonBridge.shared.preflightRuntime()
-    }) {
+    init(preflight: @escaping @MainActor () async throws -> Void = {}) {
         self.preflight = preflight
     }
 
@@ -24,7 +22,7 @@ final class AudioEngineWarmup: ObservableObject {
 
     var stateLabel: String {
         switch state {
-        case .idle: return L10n.string("audioWarmup.state.idle")
+        case .idle: return L10n.string("audioWarmup.state.ready")
         case .warming: return L10n.string("audioWarmup.state.loading")
         case .ready: return L10n.string("audioWarmup.state.ready")
         case .failed: return L10n.string("audioWarmup.state.failed")

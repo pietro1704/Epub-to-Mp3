@@ -169,13 +169,11 @@ final class SettingsScreenController: UITableViewController {
             let cell = tableView.dequeueReusableCell(withIdentifier: "Switch", for: indexPath) as! IOSSwitchCell
             cell.configure(
                 title: L10n.string("settings.useBuiltInEngine"),
-                subtitle: L10n.string("settings.useBuiltInEngineDescription"),
-                isOn: settings.useEmbeddedRuntime
+                subtitle: "Uses the canonical Rust backend.",
+                isOn: false
             )
-            cell.onValueChanged = { [weak self] isOn in
-                self?.settings.useEmbeddedRuntime = isOn
-                self?.tableView.reloadSections(IndexSet(integer: Section.backend.rawValue), with: .none)
-            }
+            cell.onValueChanged = { _ in }
+            cell.isUserInteractionEnabled = false
             return cell
         case .backend:
             if indexPath.row == 0 {
@@ -183,7 +181,7 @@ final class SettingsScreenController: UITableViewController {
                 cell.configure(
                     title: L10n.string("settings.url"),
                     value: settings.backendURL,
-                    placeholder: "http://localhost:8000",
+                    placeholder: "https://rust-backend.example",
                     keyboardType: .URL,
                     autocapitalization: .none,
                     isEnabled: settings.remoteBackendControlsEnabled

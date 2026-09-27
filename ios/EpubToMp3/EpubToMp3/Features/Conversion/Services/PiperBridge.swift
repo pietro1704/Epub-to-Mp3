@@ -81,7 +81,7 @@ enum PiperBridgeError: Error, LocalizedError {
 final class PiperBridge: @unchecked Sendable {
 
     /// Supported language tags. Static so callers (Swift settings UI,
-    /// PythonEmbed bootstrap diagnostics) can enumerate them without
+    /// migration diagnostics can enumerate them without
     /// instantiating the bridge.
     static let supportedLanguages: [String] = PiperBridgeLanguage.allCases.map { $0.rawValue }
 

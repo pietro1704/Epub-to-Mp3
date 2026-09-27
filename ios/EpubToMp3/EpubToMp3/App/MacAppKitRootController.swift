@@ -354,44 +354,14 @@ final class MacAppKitRootController: NSSplitViewController, NSToolbarDelegate {
         Task { [weak self] in
             guard let self else { return }
             do {
-                let priorityChapterIndex = ReaderPlaybackPriorityChapter.index(bookID: book.id)
-                if let localSnapshot = await EmbeddedConversionCoordinator.resumeLocalPlaybackIfAvailable(
-                    bookID: book.id,
-                    priorityChapterIndices: [priorityChapterIndex],
-                    autoPlay: false,
-                    player: player
-                ) {
-                    player.startFromReaderPage(
-                        priorityChapterIndex,
-                        sentenceOffsetRatio: readerPageRatio(bookID: book.id)
-                    )
-                    self.playerPresentation.showFullPlayer()
-                    if localSnapshot.state == "finished" {
-                        library.recordConversion(jobId: localSnapshot.jobId, for: book.id)
-                        return
-                    }
-                    let url = try await library.openBookFileAsync(id: book.id)
-                    let snapshot = try await EmbeddedConversionCoordinator.continuePartialLocalPlayback(
-                        bookURL: url,
-                        bookID: book.id,
-                        priorityChapterIndices: [priorityChapterIndex],
-                        player: player
-                    )
-                    library.recordConversion(jobId: snapshot.jobId, for: book.id)
-                    return
-                }
-
                 let url = try await library.openBookFileAsync(id: book.id)
-                let snapshot = try await EmbeddedConversionCoordinator.stream(
-                    bookURL: url,
-                    bookID: book.id,
-                    priorityChapterIndices: [priorityChapterIndex],
-                    player: player,
-                    onStreamingStarted: { [weak self] in
-                        self?.playerPresentation.showFullPlayer()
-                    }
+                let data = try Data(contentsOf: url, options: .mappedIfSafe)
+                let response = try await APIClient(baseURL: settings.resolvedBaseURL ?? AppSettings.shared.resolvedBaseURL!).submitConversion(
+                    uploadedFile: (data: data, filename: url.lastPathComponent),
+                    options: APIClient.ConvertOptions()
                 )
-                library.recordConversion(jobId: snapshot.jobId, for: book.id)
+                library.recordConversion(jobId: response.jobId, for: book.id)
+                self.playerPresentation.showFullPlayer()
             } catch {
                 let alert = NSAlert()
                 alert.messageText = L10n.string("bookDetail.listenStart")

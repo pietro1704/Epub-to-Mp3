@@ -99,9 +99,6 @@ jobs:
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
           "$HOME/.local/bin/mise" install aqua:yonaskolb/XcodeGen@2.46.0
 
-      - name: Bootstrap embedded Python runtime
-        run: bash ios/EpubToMp3/scripts/bootstrap-ios-python.sh
-
       - name: Generate Xcode project
         working-directory: ios/EpubToMp3
         run: mise exec -- xcodegen generate

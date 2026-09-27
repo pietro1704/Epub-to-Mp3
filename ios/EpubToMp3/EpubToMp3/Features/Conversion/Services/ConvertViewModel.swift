@@ -13,7 +13,6 @@ final class ConvertViewModel {
 
     var isSubmitting = false
     var submittedJobId: String?
-    var embeddedSnapshot: JobSnapshot?
     var error: String?
 
     func submit(
@@ -25,9 +24,11 @@ final class ConvertViewModel {
             error = L10n.string("convert.error.pickFileFirst")
             return
         }
-        let canUseEmbeddedRuntime = useEmbeddedRuntime
-            && !BookFileType.detect(from: file).requiresServerConversion
-        guard canUseEmbeddedRuntime || client != nil else {
+        // Apple production clients use the canonical Rust HTTP backend for
+        // every conversion. Keep the parameter for source compatibility with
+        // existing controllers while ignoring the obsolete embedded path.
+        _ = useEmbeddedRuntime
+        guard client != nil else {
             error = L10n.string("convert.error.engineWarmingUp")
             return
         }
@@ -35,7 +36,6 @@ final class ConvertViewModel {
         isSubmitting = true
         error = nil
         submittedJobId = nil
-        embeddedSnapshot = nil
         defer { isSubmitting = false }
 
         do {
@@ -47,37 +47,6 @@ final class ConvertViewModel {
             options.clearCache = clearCache
             options.forceReprocess = forceReprocess
             options.maxPerformance = maxPerformance
-            if canUseEmbeddedRuntime {
-                let bookID = "conversion-\(UUID().uuidString)"
-                let snapshot: JobSnapshot
-                if let player {
-                    snapshot = try await EmbeddedConversionCoordinator.stream(
-                        bookURL: file,
-                        bookID: bookID,
-                        engine: options.engine,
-                        voice: options.voice ?? "auto",
-                        language: options.language,
-                        clearCache: options.clearCache,
-                        forceReprocess: options.forceReprocess,
-                        maxPerformance: options.maxPerformance,
-                        player: player
-                    )
-                } else {
-                    snapshot = try await EmbeddedConversionCoordinator.convert(
-                        bookURL: file,
-                        bookID: bookID,
-                        engine: options.engine,
-                        voice: options.voice ?? "auto",
-                        language: options.language,
-                        clearCache: options.clearCache,
-                        forceReprocess: options.forceReprocess,
-                        maxPerformance: options.maxPerformance
-                    )
-                }
-                embeddedSnapshot = snapshot
-                submittedJobId = snapshot.jobId
-                return
-            }
 #if os(macOS)
             submittedJobId = try await client!.submitConversion(
                 localPath: file,

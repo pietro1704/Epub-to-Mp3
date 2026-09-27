@@ -1,7 +1,7 @@
 import Foundation
 
 /// Minimal pure-Swift EPUB → `EbookFulltext` safety net. Used ONLY when
-/// the in-process Python pipeline (`PythonBridge.parseEpub`) — the sole
+/// the backend fulltext pipeline — the sole
 /// source of truth for book structure — fails or times out.
 ///
 /// Python (`python_app/src/ebook_reader.py`) owns every structural

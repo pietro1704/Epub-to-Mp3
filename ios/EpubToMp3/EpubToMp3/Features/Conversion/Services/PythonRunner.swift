@@ -25,6 +25,9 @@
 
 import Foundation
 
+# Legacy Python oracle source retained outside every production target.
+#if false
+
 final class PythonRunner: @unchecked Sendable {
     static let shared = PythonRunner()
 
@@ -171,3 +174,4 @@ private final class Bootstrap: @unchecked Sendable {
         }
     }
 }
+#endif

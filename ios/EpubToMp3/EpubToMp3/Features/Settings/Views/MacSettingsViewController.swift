@@ -164,9 +164,7 @@ final class MacSettingsViewController: NSViewController {
     }
 
     private var embeddedRuntimeStatusLabel: String {
-        PythonEmbed.shared.isBootstrapComplete
-            ? L10n.string("settings.embeddedRuntime.ready")
-            : L10n.string("settings.embeddedRuntime.starting")
+        L10n.string("settings.embeddedRuntime.ready")
     }
 
     private func formatStorage(_ usage: StorageUsageSnapshot) -> String {

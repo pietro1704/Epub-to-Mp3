@@ -3,6 +3,10 @@ import os.log
 
 private let cacheLog = Logger(subsystem: "epub2mp3", category: "ChapterCacheManager")
 
+private enum OfflineCacheError: Error {
+    case emptyResult
+}
+
 /// Tracks per-chapter audio cache status and drives background prefetch /
 /// download-all for the embedded TTS path.
 ///
@@ -202,7 +206,7 @@ final class ChapterCacheManager: ObservableObject {
         text: String, voice: String, chapterIndex: Int
     ) async throws -> Data {
         let sentences = splitForTTS(text, chapterIndex: chapterIndex)
-        guard !sentences.isEmpty else { throw PythonBridgeError.emptyResult }
+        guard !sentences.isEmpty else { throw OfflineCacheError.emptyResult }
 
         var totalAudio = Data()
         for (segIdx, sentence) in sentences.enumerated() {
@@ -213,7 +217,7 @@ final class ChapterCacheManager: ObservableObject {
             }
             totalAudio.append(mp3)
         }
-        guard !totalAudio.isEmpty else { throw PythonBridgeError.emptyResult }
+        guard !totalAudio.isEmpty else { throw OfflineCacheError.emptyResult }
         return totalAudio
     }
 

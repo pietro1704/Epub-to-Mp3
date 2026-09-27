@@ -258,7 +258,6 @@ final class EpubToMp3App: NSObject, PlatformApplicationDelegate {
         window.makeKeyAndOrderFront(nil)
         self.window = window
         NSApplication.shared.activate(ignoringOtherApps: true)
-        bootstrapEmbeddedRuntime()
         activateRuntime()
     }
 
@@ -296,25 +295,6 @@ final class EpubToMp3App: NSObject, PlatformApplicationDelegate {
         rootController?.focusLibrarySearch(sender)
     }
 
-    private func bootstrapEmbeddedRuntime() {
-        #if os(macOS)
-        // macOS uses the bundled Rust HTTP sidecar; Python remains iOS-only.
-        return
-        #else
-        guard !Self.isRunningUnderXCTest() else { return }
-        // CPython must be initialized on the same dedicated thread that
-        // later accesses PythonKit. Initializing from a Swift concurrency
-        // task makes the first EPUB parse run on a different thread and can
-        // crash inside `_PyObject_Malloc`.
-        PythonRunner.shared.async {
-            do {
-                try PythonEmbed.shared.bootstrap()
-            } catch {
-                print("[EmbeddedRuntime] bootstrap failed: \(error)")
-            }
-        }
-        #endif
-    }
 #else
     var window: UIWindow?
 
@@ -378,12 +358,6 @@ final class EpubToMp3App: NSObject, PlatformApplicationDelegate {
     }
 
     func activateRuntimeForScene() {
-        Task { await audioWarmup.start() }
-        EmbeddedConversionCoordinator.resumePendingWork(
-            library: library,
-            settings: settings,
-            player: player
-        )
         activateRuntime()
     }
 

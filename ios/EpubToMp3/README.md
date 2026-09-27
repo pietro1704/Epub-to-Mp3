@@ -14,8 +14,8 @@ xcodegen generate           # regenerate .xcodeproj from project.yml
 open EpubToMp3.xcodeproj
 ```
 
-`mise run mac:build` chains the Rust `sidecar:build` and the iOS-only Python
-vendor task before `xcodebuild -scheme EpubToMp3 -configuration Release`. The
+`mise run mac:build` chains the Rust `sidecar:build` before
+`xcodebuild -scheme EpubToMp3 -configuration Release`. The
 resulting `.app` is reported by the task after build; with the current
 `SYMROOT` layout it is usually at `ios/EpubToMp3/.build/Release/EpubToMp3.app`.
 
@@ -30,9 +30,15 @@ resulting `.app` is reported by the task after build; with the current
 
 The `EpubToMp3Widget` target requires iOS 17+ because it uses `.containerBackground` (WidgetKit API added in iOS 17).
 
+Before a physical-device release validation, configure the Rust backend URL in
+Settings (or pass `-backendURL https://...` at launch). For macOS, the bundled
+sidecar must be built and started by the app from
+`Contents/Resources/epub-to-mp3-server` on port `47860`.
+
 macOS uses the Rust `converter-server` binary as its canonical local backend.
-The Python runtime is retained only by the iOS migration path until final
-differential validation; it is not part of macOS production packaging.
+iOS uses the same HTTP contract against a configured remote Rust backend. No
+Apple production target embeds PythonKit, CPython, Python stdlib, or Python
+site-packages.
 
 ## App Group
 

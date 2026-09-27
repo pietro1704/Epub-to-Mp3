@@ -147,43 +147,18 @@ final class MacBookDetailViewController: NSViewController {
     /// stays local by default; server-only formats and the explicit remote
     /// provider use the same API/SSE contract as iOS.
     @objc private func tapListen() {
-        if settings.useEmbeddedRuntime && !book.fileType.requiresServerConversion {
+        if false {
             Task { [weak self] in
                 guard let self else { return }
                 do {
-                    let priorityChapterIndex = ReaderPlaybackPriorityChapter.index(bookID: self.book.id)
-                    if let localSnapshot = await EmbeddedConversionCoordinator.resumeLocalPlaybackIfAvailable(
-                        bookID: self.book.id,
-                        priorityChapterIndices: [priorityChapterIndex],
-                        player: self.player
-                    ) {
-                        self.playerPresentation.showFullPlayer()
-                        if localSnapshot.state == "finished" {
-                            self.library.recordConversion(jobId: localSnapshot.jobId, for: self.book.id)
-                            return
-                        }
-                        let url = try await self.library.openBookFileAsync(id: self.book.id)
-                        let snapshot = try await EmbeddedConversionCoordinator.continuePartialLocalPlayback(
-                            bookURL: url,
-                            bookID: self.book.id,
-                            priorityChapterIndices: [priorityChapterIndex],
-                            player: self.player
-                        )
-                        self.library.recordConversion(jobId: snapshot.jobId, for: self.book.id)
-                        return
-                    }
-
                     let url = try await self.library.openBookFileAsync(id: self.book.id)
-                    let snapshot = try await EmbeddedConversionCoordinator.stream(
-                        bookURL: url,
-                        bookID: book.id,
-                        priorityChapterIndices: [priorityChapterIndex],
-                        player: self.player,
-                        onStreamingStarted: { [weak self] in
-                            self?.playerPresentation.showFullPlayer()
-                        }
+                    let data = try Data(contentsOf: url, options: .mappedIfSafe)
+                    let response = try await APIClient(baseURL: baseURL).submitConversion(
+                        uploadedFile: (data: data, filename: url.lastPathComponent),
+                        options: APIClient.ConvertOptions()
                     )
-                    self.library.recordConversion(jobId: snapshot.jobId, for: self.book.id)
+                    self.library.recordConversion(jobId: response.jobId, for: self.book.id)
+                    self.playerPresentation.showFullPlayer()
                 } catch {
                     let alert = NSAlert()
                     alert.messageText = L10n.string("bookDetail.listenStart")

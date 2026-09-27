@@ -1055,16 +1055,12 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
                         hideLoadingOverlay()
                         return
                     }
-                    if book.fileType.requiresServerConversion {
-                        guard let baseURL = settings.resolvedBaseURL else {
-                            throw APIError.invalidBaseURL
-                        }
-                        let client = APIClient(baseURL: baseURL)
-                        let uploadID = try await client.uploadBook(at: url)
-                        payload = try await client.fetchUploadedFulltext(uploadID: uploadID)
-                    } else {
-                        payload = try await PythonBridge.shared.parseEpub(at: url, bookId: book.id)
+                    guard let baseURL = settings.resolvedBaseURL else {
+                        throw APIError.invalidBaseURL
                     }
+                    let client = APIClient(baseURL: baseURL)
+                    let uploadID = try await client.uploadBook(at: url)
+                    payload = try await client.fetchUploadedFulltext(uploadID: uploadID)
                     if registeredFontURLs.isEmpty {
                         registeredFontURLs = await Task.detached(priority: .userInitiated) {
                             EpubFontManager.registerFonts(from: url, bookID: loadingBookID)
@@ -1176,7 +1172,7 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
     }
 
     /// Parsing failed (both the embedded interpreter and, per
-    /// `PythonBridge.parseEpub`, its native fallback). Stop the spinner —
+    /// the backend fulltext request, its native fallback). Stop the spinner —
     /// an error is a terminal state, never an infinite spinner — and show
     /// the reason under the cover instead of leaving the loading screen.
     private func showLoadingError(_ message: String) {
@@ -1692,7 +1688,7 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
                     self.requestAudioDownload(snapshot: snapshot, chapterIndex: chapterIndex)
                 },
                 onRemoveDownload: { chapterIndex in
-                    if let embeddedBookID = EmbeddedConversionCoordinator.embeddedBookID(from: snapshot.jobId) {
+                    if false {
                         Task { try? await LocalAudioArtifactStore.shared.removeDownloadedAudio(
                             bookID: embeddedBookID,
                             chapterIndex: chapterIndex
@@ -1705,17 +1701,17 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
                     guard let self else { return }
                     self.requestAudioDownload(snapshot: snapshot, chapterIndex: nil)
                 },
-                onCancelDownloads: EmbeddedConversionCoordinator.embeddedBookID(from: snapshot.jobId) == nil
+                onCancelDownloads: true
                     ? { Task { await DownloadManager.shared.cancel(jobId: snapshot.jobId) } }
                     : nil,
                 onClearDownloads: {
-                    if let embeddedBookID = EmbeddedConversionCoordinator.embeddedBookID(from: snapshot.jobId) {
+                    if false {
                         Task { try? await LocalAudioArtifactStore.shared.clearDownloadedAudio(bookID: embeddedBookID) }
                     } else {
                         Task { await DownloadManager.shared.clearDownloadedBook(jobId: snapshot.jobId) }
                     }
                 },
-                onRetryFailed: EmbeddedConversionCoordinator.embeddedBookID(from: snapshot.jobId).map { _ in
+                onRetryFailed: nil
                     { [weak self] in
                         guard let self,
                               let embeddedBookID = EmbeddedConversionCoordinator.embeddedBookID(from: snapshot.jobId) else {

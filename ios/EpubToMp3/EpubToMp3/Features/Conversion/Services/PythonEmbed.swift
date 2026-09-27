@@ -1,6 +1,6 @@
 // PythonEmbed.swift
 //
-// In-process CPython runtime shared by the native iOS and macOS apps.
+// Legacy CPython oracle retained for migration tests only.
 // The Apple clients do not launch a second server process.
 //
 // Bootstrap requirements (run once before building):
@@ -8,7 +8,8 @@
 //
 // See ios/PYTHON-EMBED.md for the full architecture write-up.
 
-#if os(iOS) || os(macOS)
+// Legacy Python oracle source retained outside every production target.
+#if false
 
 import Foundation
 import PythonKit
@@ -395,4 +396,4 @@ final class PythonEmbed: @unchecked Sendable {
     }
 }
 
-#endif  // os(iOS) || targetEnvironment(simulator)
+#endif  // migration oracle disabled in production

@@ -599,7 +599,14 @@ final class MacReaderViewController: NSViewController, NSTableViewDataSource, NS
                         let uploadID = try await client.uploadBook(at: fileURL)
                         payload = try await client.fetchUploadedFulltext(uploadID: uploadID)
                     } else {
-                        payload = try await MacEpubParser.parse(at: fileURL, bookId: book.id)
+                        guard let baseURL = settings.resolvedBaseURL else {
+                            throw APIError.invalidBaseURL
+                        }
+                        payload = try await MacEpubParser.parse(
+                            at: fileURL,
+                            client: APIClient(baseURL: baseURL),
+                            bookId: book.id
+                        )
                     }
                 }
                 guard self.isActiveLoad(generation, bookID: book.id) else { return }

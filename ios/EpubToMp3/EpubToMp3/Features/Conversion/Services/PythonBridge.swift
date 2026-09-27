@@ -1,10 +1,7 @@
 // PythonBridge.swift
 //
-// Thin Swift wrappers around the canonical Python pipeline modules
-// embedded in the iOS bundle (see `python_app/src/`). Calling into
-// these from Swift means the native Apple apps and the HF
-// Spaces backend all run the SAME parser / cache / chunker / validator
-// code. No more Swift reimplementations of EPUB parsing.
+// Legacy Python oracle bridge retained temporarily for migration tests.
+// Production Apple clients use APIClient and the canonical Rust backend.
 //
 // Network I/O remains in Swift (`EdgeTTSBridge.swift`,
 // `URLSessionWebSocketTask`) because iOS cannot `dlopen` libpython's
@@ -12,12 +9,10 @@
 // into Python only for retry/validation orchestration; that wiring is
 // scoped for a follow-up slice.
 //
-// Bootstrap requirements (run once before building):
-//   ios/EpubToMp3/scripts/bootstrap-ios-python.sh
-//
-// The same in-process bridge is used on iOS and macOS.
+// It is intentionally not referenced by production targets.
 
-import Foundation
+// Legacy Python oracle source retained outside every production target.
+#if false
 
 enum PythonBridgeError: Error, LocalizedError {
     case bootstrapFailed(String)
@@ -37,8 +32,10 @@ enum PythonBridgeError: Error, LocalizedError {
     }
 }
 
-#if os(iOS) || os(macOS)
+// Legacy Python oracle source retained outside every production target.
+#if false
 
+import Foundation
 import PythonKit
 
 /// Buffers parallel Edge responses until the next source-order segment is
@@ -1185,4 +1182,4 @@ final class PythonBridge: @unchecked Sendable {
     }
 }
 
-#endif  // os(iOS) || targetEnvironment(simulator)
+#endif  // migration oracle disabled in production

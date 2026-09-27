@@ -319,7 +319,7 @@ final class MainReaderScreenController: UIViewController {
             return
         }
 
-        EmbeddedConversionCoordinator.cancelActiveStream()
+        // Backend jobs are cancelled through the API job lifecycle.
         player.stop()
         player.clearConversionState()
     }
@@ -460,51 +460,19 @@ final class MainReaderScreenController: UIViewController {
 
     private func startListening(presentsFullPlayer: Bool) {
         guard let book = currentBook else { return }
-        if settings.useEmbeddedRuntime && !book.fileType.requiresServerConversion {
+        if let baseURL = settings.resolvedBaseURL {
+            let client = APIClient(baseURL: baseURL)
             Task { [weak self] in
                 guard let self else { return }
                 do {
-                    let priorityChapterIndex = self.readerController?.currentReaderChapterIndex
-                        ?? ReaderPlaybackPriorityChapter.index(bookID: book.id)
-                    if let localSnapshot = await EmbeddedConversionCoordinator.resumeLocalPlaybackIfAvailable(
-                        bookID: book.id,
-                        priorityChapterIndices: [priorityChapterIndex],
-                        player: self.player
-                    ) {
-                        if presentsFullPlayer {
-                            self.playerPresentation.showFullPlayer()
-                        }
-                        if localSnapshot.state == "finished" {
-                            self.library.recordConversion(jobId: localSnapshot.jobId, for: book.id)
-                            return
-                        }
-
-                        let url = try await self.library.openBookFileAsync(id: book.id)
-                        let snapshot = try await EmbeddedConversionCoordinator.continuePartialLocalPlayback(
-                            bookURL: url,
-                            bookID: book.id,
-                            requiresWiFi: !self.settings.allowCellularAudioConversion,
-                            priorityChapterIndices: [priorityChapterIndex],
-                            player: self.player
-                        )
-                        self.library.recordConversion(jobId: snapshot.jobId, for: book.id)
-                        return
-                    }
-
                     let url = try await self.library.openBookFileAsync(id: book.id)
-                    let snapshot = try await EmbeddedConversionCoordinator.stream(
-                        bookURL: url,
-                        bookID: book.id,
-                        requiresWiFi: !self.settings.allowCellularAudioConversion,
-                        priorityChapterIndices: [priorityChapterIndex],
-                        player: self.player,
-                        onStreamingStarted: { [weak self] in
-                            if presentsFullPlayer {
-                                self?.playerPresentation.showFullPlayer()
-                            }
-                        }
+                    let data = try Data(contentsOf: url, options: .mappedIfSafe)
+                    let response = try await client.submitConversion(
+                        uploadedFile: (data: data, filename: url.lastPathComponent),
+                        options: APIClient.ConvertOptions()
                     )
-                    self.library.recordConversion(jobId: snapshot.jobId, for: book.id)
+                    self.library.recordConversion(jobId: response.jobId, for: book.id)
+                    if presentsFullPlayer { self.playerPresentation.showFullPlayer() }
                 } catch let error as StoragePressureError {
                     self.presentStorageManagementAlert(error)
                 } catch {

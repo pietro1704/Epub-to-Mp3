@@ -189,14 +189,6 @@ jobs:
           chmod 755 dist/epub-to-mp3-server
           ls -lh dist/epub-to-mp3-server
 
-      - name: Bootstrap iOS Python.xcframework + python_app embed
-        # Downloads Beeware's Python-Apple-support, grafts the macOS
-        # slice in, copies python_app/src into Vendor/site-packages.
-        # The xcframework is too big to commit (~150 MB) so each CI
-        # run rebuilds it from cached upstream tarballs.
-        run: |
-          bash ios/EpubToMp3/scripts/bootstrap-ios-python.sh
-
       - name: Generate Xcode project
         working-directory: ios/EpubToMp3
         run: xcodegen generate
