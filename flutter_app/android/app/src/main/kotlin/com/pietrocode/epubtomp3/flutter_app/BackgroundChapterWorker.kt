@@ -6,6 +6,10 @@ import android.content.Context
 import android.os.Build
 import androidx.core.app.NotificationCompat
 import androidx.work.CoroutineWorker
+import java.io.File
+import java.net.HttpURLConnection
+import java.net.URL
+import java.net.URLEncoder
 import androidx.work.ForegroundInfo
 import androidx.work.WorkerParameters
 
@@ -19,8 +23,51 @@ class BackgroundChapterWorker(
         val voice = inputData.getString(KEY_VOICE).orEmpty()
         val outputPath = inputData.getString(KEY_OUTPUT).orEmpty()
         if (text.isBlank() || voice.isBlank() || outputPath.isBlank()) return Result.failure()
-        setForeground(createForegroundInfo())
-        return Result.failure()
+        return try {
+            convert_chapter(text, voice, outputPath)
+            Result.success()
+        } catch (_: Exception) {
+            Result.failure()
+        }
+    }
+
+    /** Calls the configured Rust HTTP backend and writes its MP3 result. */
+    private fun convert_chapter(text: String, voice: String, outputPath: String) {
+        val backendUrl = applicationContext
+            .getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
+            .getString(KEY_BACKEND_URL, null)
+            ?.trim()
+            ?.trimEnd('/')
+            ?: throw IllegalStateException("Backend URL is not configured")
+        if (!backendUrl.startsWith("http://") && !backendUrl.startsWith("https://")) {
+            throw IllegalArgumentException("Backend URL must use HTTP or HTTPS")
+        }
+        val payload = listOf(
+            "text=${URLEncoder.encode(text, "UTF-8")}",
+            "voice=${URLEncoder.encode(voice, "UTF-8")}",
+            "output_path=${URLEncoder.encode(outputPath, "UTF-8")}",
+        ).joinToString("&")
+        val connection = (URL("$backendUrl/api/convert_chapter").openConnection() as HttpURLConnection).apply {
+            requestMethod = "POST"
+            doOutput = true
+            connectTimeout = REQUEST_TIMEOUT_MS
+            readTimeout = REQUEST_TIMEOUT_MS
+            setRequestProperty("Content-Type", "application/x-www-form-urlencoded")
+        }
+        try {
+            connection.outputStream.use { it.write(payload.toByteArray(Charsets.UTF_8)) }
+            if (connection.responseCode !in 200..299) {
+                throw IllegalStateException("Backend returned HTTP ${connection.responseCode}")
+            }
+            val bytes = connection.inputStream.use { it.readBytes() }
+            if (bytes.isEmpty()) throw IllegalStateException("Backend returned an empty result")
+            File(outputPath).apply {
+                parentFile?.mkdirs()
+                writeBytes(bytes)
+            }
+        } finally {
+            connection.disconnect()
+        }
     }
 
     private fun createForegroundInfo(): ForegroundInfo {
@@ -43,6 +90,9 @@ class BackgroundChapterWorker(
         const val KEY_TEXT = "text"
         const val KEY_VOICE = "voice"
         const val KEY_OUTPUT = "outputPath"
+        const val KEY_BACKEND_URL = "backendUrl"
+        const val PREFERENCES = "flutter_epub_to_mp3"
+        const val REQUEST_TIMEOUT_MS = 120_000
         const val CHANNEL_ID = "epub_to_mp3_conversion"
         const val NOTIFICATION_ID = 2401
     }

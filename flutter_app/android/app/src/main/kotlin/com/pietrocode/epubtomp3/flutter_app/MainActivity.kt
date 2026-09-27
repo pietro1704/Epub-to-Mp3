@@ -165,7 +165,13 @@ class MainActivity : FlutterActivity() {
                     if (jobId.isNullOrBlank() || text.isNullOrBlank() || voice.isNullOrBlank() || outputPath.isNullOrBlank()) {
                         result.error("BAD_ARGS", "jobId, text, voice and outputPath are required", null)
                     } else {
-                        val request = OneTimeWorkRequestBuilder<BackgroundChapterWorker>()
+                        val backendUrl = call.argument<String>("backendUrl")?.trim()
+                        if (backendUrl.isNullOrBlank()) {
+                            result.error("BAD_ARGS", "backendUrl is required", null)
+                        } else {
+                            getSharedPreferences("flutter_epub_to_mp3", MODE_PRIVATE)
+                                .edit().putString(BackgroundChapterWorker.KEY_BACKEND_URL, backendUrl).apply()
+                            val request = OneTimeWorkRequestBuilder<BackgroundChapterWorker>()
                             .setConstraints(
                                 Constraints.Builder()
                                     .setRequiresBatteryNotLow(true)

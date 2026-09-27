@@ -3,7 +3,8 @@ import 'package:flutter/services.dart';
 
 class BackgroundConversionScheduler {
   BackgroundConversionScheduler({MethodChannel? channel})
-      : _channel = channel ?? const MethodChannel('epub_to_mp3/background_conversion');
+    : _channel =
+          channel ?? const MethodChannel('epub_to_mp3/background_conversion');
 
   final MethodChannel _channel;
 
@@ -14,6 +15,7 @@ class BackgroundConversionScheduler {
     required String text,
     required String voice,
     required String outputPath,
+    String? backendUrl,
   }) async {
     if (!isSupported) return false;
     return await _channel.invokeMethod<bool>('enqueueChapter', {
@@ -21,12 +23,14 @@ class BackgroundConversionScheduler {
           'text': text,
           'voice': voice,
           'outputPath': outputPath,
+          if (backendUrl != null) 'backendUrl': backendUrl,
         }) ??
         false;
   }
 
   Future<bool> cancel(String jobId) async {
     if (!isSupported) return false;
-    return await _channel.invokeMethod<bool>('cancel', {'jobId': jobId}) ?? false;
+    return await _channel.invokeMethod<bool>('cancel', {'jobId': jobId}) ??
+        false;
   }
 }
