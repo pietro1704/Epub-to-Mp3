@@ -391,10 +391,9 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen>
       if (isFirstPlayableBatch) {
         await _restoreResumePosition(player);
         _startResumeListener(player);
-        // Starting a conversion is explicit user intent. Begin once the
-        // first playable chapter is available; later SSE updates append to
-        // the queue without resetting the current audio item.
-        await player.play();
+        // Starting a conversion is explicit user intent. Queue readiness must
+        // not turn into an implicit playback request on Android.
+        // The user starts playback from the reader controls.
       }
     }
 
@@ -518,7 +517,6 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen>
         await player.setQueue(List.of(_playableChapters));
         await _restoreResumePosition(player);
         _startResumeListener(player);
-        await player.play();
       }
 
       for (var i = 0; i < ft.chapters.length; i++) {
@@ -606,7 +604,6 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen>
         if (isFirstPlayableChapter) {
           await _restoreResumePosition(player);
           _startResumeListener(player);
-          await player.play();
         }
         job = await coordinator.completeChapter(job, ch.index, mp3Path);
         _localJob = job;
@@ -647,19 +644,24 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen>
 
   void _startResumeListener(AudioPlayerInterface player) {
     _positionSub?.cancel();
+    _chapterIndexSub?.cancel();
     _resumeSaveTimer?.cancel();
     _resumeSaveTimer = Timer.periodic(const Duration(seconds: 5), (_) {
-      if (!mounted) return;
-      final resume = ref.read(resumeStoreProvider);
-      final playerIdx = player.currentIndexValue ?? 0;
-      final router = ResumePositionRouter(
-        playableChapters: List.of(_playableChapters),
-      );
-      final epubIdx = router.saveValueForPlayerIndex(playerIdx);
-      if (epubIdx == null) return;
-      final pos = player.positionSeconds;
-      resume.saveBookPosition(widget.bookId, epubIdx, pos);
+      _saveResumePosition(player);
     });
+  }
+
+  void _saveResumePosition(AudioPlayerInterface player) {
+    if (!mounted) return;
+    final resume = ref.read(resumeStoreProvider);
+    final playerIdx = player.currentIndexValue;
+    if (playerIdx == null || !player.isPlaying) return;
+    final router = ResumePositionRouter(
+      playableChapters: List.of(_playableChapters),
+    );
+    final epubIdx = router.saveValueForPlayerIndex(playerIdx);
+    if (epubIdx == null) return;
+    resume.saveBookPosition(widget.bookId, epubIdx, player.positionSeconds);
   }
 
   Future<void> _restoreResumePosition(AudioPlayerInterface player) async {
@@ -700,6 +702,7 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen>
     _sseSubscription?.cancel();
     _sseSubscription = null;
     _positionSub?.cancel();
+    _chapterIndexSub?.cancel();
     _resumeSaveTimer?.cancel();
     _isConverting = false;
     _conversionError = null;
@@ -826,6 +829,17 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen>
               coverArt: coverArt,
               statusBanner: _buildStatusBanner(t),
               player: player,
+              initialChapterIndex: _playableChapters.isEmpty
+                  ? 0
+                  : ResumePositionRouter(
+                      playableChapters: List.of(_playableChapters),
+                    ).queueIndexForSavedValue(
+                      ref.read(resumeStoreProvider)
+                              .loadBookPosition(widget.bookId)
+                              ?.chapter ??
+                          0,
+                    ) ??
+                    0,
               onRequestPlay: _startConversion,
               onRequestSpeechFallback: Platform.isAndroid
                   ? _speakCurrentChapterOffline

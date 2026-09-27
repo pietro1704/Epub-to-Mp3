@@ -216,14 +216,20 @@ class AudioPlayerService implements AudioPlayerInterface {
   }
 
   @override
-  Future<void> seek(Duration position, {int? index}) {
+  Future<void> seek(Duration position, {int? index}) async {
     final previous = _seekJourneyId;
     if (previous != null) latencyObservations.cancel(previous);
     _seekJourneyId = latencyObservations.begin(
       LatencyJourneyKind.seek,
       LatencyTransition.seekRequested,
     );
-    return _player.seek(position, index: index);
+    if (index != null &&
+        index >= 0 &&
+        index < _player.audioSources.length &&
+        _player.currentIndex != index) {
+      await _player.seek(Duration.zero, index: index);
+    }
+    await _player.seek(position);
   }
 
   void _recordQueuedAudio() {

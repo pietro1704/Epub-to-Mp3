@@ -24,6 +24,9 @@ class Paginator {
     required List<SentenceSpan> spans,
     int pageSize = 1500,
   }) {
+    if (pageSize <= 0) {
+      throw ArgumentError.value(pageSize, 'pageSize', 'must be greater than zero');
+    }
     if (spans.isEmpty) return const [];
 
     // Build combined text with paragraph breaks between spans.
@@ -40,6 +43,9 @@ class Paginator {
   /// paragraph > sentence > word boundaries. Never cuts mid-word.
   static List<String> _splitAtBoundaries(String text, int budget) {
     if (text.isEmpty) return const [];
+    if (budget <= 0) {
+      throw ArgumentError.value(budget, 'budget', 'must be greater than zero');
+    }
     if (text.length <= budget) return [text];
 
     final pages = <String>[];
