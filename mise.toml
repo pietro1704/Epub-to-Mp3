@@ -38,6 +38,10 @@ run = "mise exec -- cargo run -p converter-server"
 description = "Fail if production packaging reintroduces the legacy Python runtime or bridge"
 run = "bash scripts/guard_no_python_production.sh"
 
+[tasks."migration:gate"]
+description = "Report Rust migration readiness, packaging artifacts, and remaining blockers"
+run = "bash scripts/check_rust_migration_gate.sh"
+
 [tasks.clean]
 description = "Clean backend cache, pycache, and completed outputs"
 run = """
