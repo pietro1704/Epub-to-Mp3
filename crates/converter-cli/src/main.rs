@@ -23,6 +23,7 @@ struct CliOptions {
     show_structure: bool,
     clear_cache: bool,
     no_cache: bool,
+    no_parallel: bool,
     yes: bool,
     stop_on_error: bool,
     menu: bool,
@@ -45,6 +46,7 @@ impl Default for CliOptions {
             show_structure: false,
             clear_cache: false,
             no_cache: false,
+            no_parallel: false,
             yes: false,
             stop_on_error: false,
             menu: false,
@@ -93,6 +95,7 @@ fn run(raw: Vec<String>) -> Result<i32, String> {
         clear_global_cache(options.yes)?;
         return Ok(0);
     }
+
     if options.menu && options.inputs.is_empty() && batch.is_empty() {
         return Err("--menu requires an EPUB or PDF input file".into());
     }
@@ -107,10 +110,11 @@ fn run(raw: Vec<String>) -> Result<i32, String> {
         return show_structure(&all);
     }
 
-    for input in &all {
-        if options.clear_cache {
-            clear_book_cache(input)?;
+    if options.clear_cache {
+        for input in &all {
+            clear_book_cache(Path::new(input), options.yes)?;
         }
+        return Ok(0);
     }
 
     let config = converter_core::config::AppConfig::from_env();
@@ -121,7 +125,7 @@ fn run(raw: Vec<String>) -> Result<i32, String> {
             engine: Some(options.engine.clone()),
             voice: options.voice.clone(),
             language: None,
-            no_parallel: false,
+            no_parallel: options.no_parallel,
         };
         let worker = converter_core::worker::ConversionWorker::new(config.clone())?;
         let manifest = worker.run(request).map_err(|error| error.to_string())?;
@@ -157,6 +161,7 @@ fn parse_args(args: &[String]) -> Result<CliOptions, String> {
         match value.as_str() {
             "--engine" => options.engine = next(value)?,
             "--fallback-engine" => options.fallback_engine = next(value)?,
+            "--engine-chain-fallback" => options.fallback_engine = "auto".into(),
             "--voice" => options.voice = Some(next(value)?),
             "--model" => options.model = Some(next(value)?),
             "--output-dir" => options.output_dir = Some(next(value)?),
@@ -167,6 +172,7 @@ fn parse_args(args: &[String]) -> Result<CliOptions, String> {
             "--show-structure" => options.show_structure = true,
             "--clear-cache" => options.clear_cache = true,
             "--no-cache" => options.no_cache = true,
+            "--no-parallel" => options.no_parallel = true,
             "--yes" | "-y" => options.yes = true,
             "--stop-on-error" => options.stop_on_error = true,
             "--menu" => options.menu = true,
@@ -177,11 +183,7 @@ fn parse_args(args: &[String]) -> Result<CliOptions, String> {
         }
         index += 1;
     }
-    if options.command == "clear-cache" {
-        options.inputs = positional;
-    } else {
-        options.inputs = positional;
-    }
+    options.inputs = positional;
     if !matches!(options.engine.as_str(), "auto" | "edge" | "piper") {
         return Err(format!(
             "invalid engine '{}'; expected auto, edge, or piper",
@@ -307,6 +309,7 @@ fn fuzzy_find_book(query: &str) -> Option<PathBuf> {
             let filename_tokens = norm_tokens(&name);
             let significant = tokens
                 .iter()
+                .filter(|token| !is_noise_token(token))
                 .filter(|token| token.len() >= 2)
                 .collect::<Vec<_>>();
             if significant.is_empty() {
@@ -325,6 +328,10 @@ fn fuzzy_find_book(query: &str) -> Option<PathBuf> {
         })
         .max_by(|left, right| left.0.partial_cmp(&right.0).unwrap_or(Ordering::Equal))
         .map(|(_, path)| path)
+}
+
+fn is_noise_token(token: &str) -> bool {
+    matches!(token, "downloads" | "download" | "home" | "users")
 }
 
 fn norm_tokens(value: &str) -> Vec<String> {
@@ -358,6 +365,42 @@ fn similarity(left: &str, right: &str) -> f64 {
     }
     let distance = row[right.len()] as f64;
     1.0 - distance / left.len().max(right.len()).max(1) as f64
+}
+
+fn clear_book_cache(input: &Path, assume_yes: bool) -> Result<(), String> {
+    let paths = converter_core::paths::resolve_paths();
+    let key = converter_core::cache::sha256_file(input).map_err(|error| error.to_string())?;
+    let cache_dir = paths.cache_dir.join(key);
+    let book_stem = input
+        .file_stem()
+        .and_then(|value| value.to_str())
+        .unwrap_or_default();
+    let mut targets = vec![cache_dir];
+    if !book_stem.is_empty() {
+        targets.push(paths.output_dir.join(book_stem));
+    }
+    if !assume_yes && !io::stdin().is_terminal() {
+        println!("Run with --clear-cache -y to skip confirmation in non-interactive mode.");
+        return Ok(());
+    }
+    if !assume_yes {
+        eprint!("Remove cache for '{}'? [y/N]: ", input.display());
+        let mut answer = String::new();
+        io::stdin()
+            .read_line(&mut answer)
+            .map_err(|error| error.to_string())?;
+        if !matches!(answer.trim().to_ascii_lowercase().as_str(), "y" | "yes") {
+            println!("Cache clear aborted.");
+            return Ok(());
+        }
+    }
+    for target in targets {
+        if target.exists() {
+            fs::remove_dir_all(&target).map_err(|error| format!("failed to clear '{}': {error}", target.display()))?;
+        }
+    }
+    println!("Book cache cleared.");
+    Ok(())
 }
 
 fn clear_global_cache(assume_yes: bool) -> Result<(), String> {
