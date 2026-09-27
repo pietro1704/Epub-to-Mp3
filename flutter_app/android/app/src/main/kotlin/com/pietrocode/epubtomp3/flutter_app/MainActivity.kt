@@ -184,10 +184,11 @@ class MainActivity : FlutterActivity() {
                                 .putString(BackgroundChapterWorker.KEY_OUTPUT, outputPath)
                                 .build())
                             .build()
-                        WorkManager.getInstance(applicationContext).enqueueUniqueWork(
-                            jobId, ExistingWorkPolicy.KEEP, request,
-                        )
-                        result.success(true)
+                            WorkManager.getInstance(applicationContext).enqueueUniqueWork(
+                                jobId, ExistingWorkPolicy.KEEP, request,
+                            )
+                            result.success(true)
+                        }
                     }
                 }
                 "cancel" -> {
