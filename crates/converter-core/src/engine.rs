@@ -38,8 +38,14 @@ impl Default for EnginePolicy {
     fn default() -> Self {
         Self {
             candidates: vec![
-                EngineCandidate { name: "edge".into(), tier: FallbackTier::Primary },
-                EngineCandidate { name: "piper".into(), tier: FallbackTier::Offline },
+                EngineCandidate {
+                    name: "edge".into(),
+                    tier: FallbackTier::Primary,
+                },
+                EngineCandidate {
+                    name: "piper".into(),
+                    tier: FallbackTier::Offline,
+                },
             ],
             concurrency: ConcurrencySettings::default(),
             cancellation: CancellationSettings::default(),
@@ -63,8 +69,14 @@ pub struct ConcurrencySettings {
 
 impl Default for ConcurrencySettings {
     fn default() -> Self {
-        let cpus = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(1);
-        Self { max_chapters: cpus, max_in_flight: cpus, preserve_order: true }
+        let cpus = std::thread::available_parallelism()
+            .map(|n| n.get())
+            .unwrap_or(1);
+        Self {
+            max_chapters: cpus,
+            max_in_flight: cpus,
+            preserve_order: true,
+        }
     }
 }
 
@@ -77,7 +89,10 @@ pub struct CancellationSettings {
 
 impl Default for CancellationSettings {
     fn default() -> Self {
-        Self { poll_interval_ms: 50, allow_finish_current_chunk: true }
+        Self {
+            poll_interval_ms: 50,
+            allow_finish_current_chunk: true,
+        }
     }
 }
 
@@ -85,11 +100,27 @@ impl Default for CancellationSettings {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum ProgressEvent {
-    Started { total_chapters: usize },
-    ChapterStarted { chapter_index: usize, total_chapters: usize },
-    BackendSelected { chapter_index: usize, backend: String, tier: FallbackTier },
-    ChapterCompleted { chapter_index: usize, total_chapters: usize },
-    Fallback { chapter_index: usize, failed_backend: String, next_backend: String },
+    Started {
+        total_chapters: usize,
+    },
+    ChapterStarted {
+        chapter_index: usize,
+        total_chapters: usize,
+    },
+    BackendSelected {
+        chapter_index: usize,
+        backend: String,
+        tier: FallbackTier,
+    },
+    ChapterCompleted {
+        chapter_index: usize,
+        total_chapters: usize,
+    },
+    Fallback {
+        chapter_index: usize,
+        failed_backend: String,
+        next_backend: String,
+    },
     Cancelled,
     Completed,
 }
@@ -122,7 +153,12 @@ pub struct Engine<W> {
 
 impl<W> Engine<W> {
     pub fn new(worker: W, policy: EnginePolicy) -> Self {
-        Self { worker, policy, cancellation: CancellationToken::default(), progress: None }
+        Self {
+            worker,
+            policy,
+            cancellation: CancellationToken::default(),
+            progress: None,
+        }
     }
 
     pub fn with_progress(mut self, sink: ProgressSink) -> Self {
@@ -130,12 +166,22 @@ impl<W> Engine<W> {
         self
     }
 
-    pub fn worker(&self) -> &W { &self.worker }
-    pub fn policy(&self) -> &EnginePolicy { &self.policy }
-    pub fn cancellation(&self) -> CancellationToken { self.cancellation.clone() }
-    pub fn cancel(&self) { self.cancellation.cancel(); }
+    pub fn worker(&self) -> &W {
+        &self.worker
+    }
+    pub fn policy(&self) -> &EnginePolicy {
+        &self.policy
+    }
+    pub fn cancellation(&self) -> CancellationToken {
+        self.cancellation.clone()
+    }
+    pub fn cancel(&self) {
+        self.cancellation.cancel();
+    }
 
     pub fn emit(&self, event: ProgressEvent) {
-        if let Some(sink) = &self.progress { sink(event); }
+        if let Some(sink) = &self.progress {
+            sink(event);
+        }
     }
 }

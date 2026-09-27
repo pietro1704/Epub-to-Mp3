@@ -56,9 +56,15 @@ pub enum IngestionError {
 impl std::fmt::Display for IngestionError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::UnsupportedFormat { format, .. } => write!(f, "unsupported {:?} ingestion adapter", format),
-            Self::MissingDependency { dependency } => write!(f, "missing ingestion dependency: {dependency}"),
-            Self::InvalidInput { message } | Self::ExtractionFailed { message } => f.write_str(message),
+            Self::UnsupportedFormat { format, .. } => {
+                write!(f, "unsupported {:?} ingestion adapter", format)
+            }
+            Self::MissingDependency { dependency } => {
+                write!(f, "missing ingestion dependency: {dependency}")
+            }
+            Self::InvalidInput { message } | Self::ExtractionFailed { message } => {
+                f.write_str(message)
+            }
             Self::NoReadableText => f.write_str("no readable text could be extracted"),
         }
     }
@@ -83,7 +89,11 @@ pub trait PdfIngestionAdapter {
 /// then parses extracted EPUB or HTML. No Rust crate is selected yet, so these
 /// formats fail explicitly rather than being misclassified as EPUB.
 pub trait MobiIngestionAdapter {
-    fn ingest_mobi(&self, path: &Path, format: SourceFormat) -> Result<IngestedBook, IngestionError>;
+    fn ingest_mobi(
+        &self,
+        path: &Path,
+        format: SourceFormat,
+    ) -> Result<IngestedBook, IngestionError>;
 }
 
 #[derive(Debug, Default, Clone, Copy)]
@@ -91,14 +101,16 @@ pub struct UnsupportedPdfAdapter;
 
 impl PdfIngestionAdapter for UnsupportedPdfAdapter {
     fn ingest_pdf(&self, path: &Path) -> Result<IngestedBook, IngestionError> {
-        Err(IngestionError::MissingDependency { dependency: "Rust PDF text extraction adapter (pypdf-compatible)" })
-            .map_err(|error| match error {
-                IngestionError::MissingDependency { .. } => IngestionError::UnsupportedFormat {
-                    format: SourceFormat::Pdf,
-                    path: path.to_path_buf(),
-                },
-                other => other,
-            })
+        Err(IngestionError::MissingDependency {
+            dependency: "Rust PDF text extraction adapter (pypdf-compatible)",
+        })
+        .map_err(|error| match error {
+            IngestionError::MissingDependency { .. } => IngestionError::UnsupportedFormat {
+                format: SourceFormat::Pdf,
+                path: path.to_path_buf(),
+            },
+            other => other,
+        })
     }
 }
 
@@ -106,8 +118,15 @@ impl PdfIngestionAdapter for UnsupportedPdfAdapter {
 pub struct UnsupportedMobiAdapter;
 
 impl MobiIngestionAdapter for UnsupportedMobiAdapter {
-    fn ingest_mobi(&self, path: &Path, format: SourceFormat) -> Result<IngestedBook, IngestionError> {
-        Err(IngestionError::UnsupportedFormat { format, path: path.to_path_buf() })
+    fn ingest_mobi(
+        &self,
+        path: &Path,
+        format: SourceFormat,
+    ) -> Result<IngestedBook, IngestionError> {
+        Err(IngestionError::UnsupportedFormat {
+            format,
+            path: path.to_path_buf(),
+        })
     }
 }
 
@@ -122,7 +141,10 @@ pub fn ingest_non_epub(
             mobi.ingest_mobi(path, format)
         }
         None => Err(IngestionError::InvalidInput {
-            message: format!("unsupported or missing source extension: {}", path.display()),
+            message: format!(
+                "unsupported or missing source extension: {}",
+                path.display()
+            ),
         }),
     }
 }
@@ -133,9 +155,18 @@ mod tests {
 
     #[test]
     fn identifies_supported_non_epub_extensions_case_insensitively() {
-        assert_eq!(SourceFormat::from_path(Path::new("book.PDF")), Some(SourceFormat::Pdf));
-        assert_eq!(SourceFormat::from_path(Path::new("book.mobi")), Some(SourceFormat::Mobi));
-        assert_eq!(SourceFormat::from_path(Path::new("book.AZW3")), Some(SourceFormat::Azw3));
+        assert_eq!(
+            SourceFormat::from_path(Path::new("book.PDF")),
+            Some(SourceFormat::Pdf)
+        );
+        assert_eq!(
+            SourceFormat::from_path(Path::new("book.mobi")),
+            Some(SourceFormat::Mobi)
+        );
+        assert_eq!(
+            SourceFormat::from_path(Path::new("book.AZW3")),
+            Some(SourceFormat::Azw3)
+        );
         assert_eq!(SourceFormat::from_path(Path::new("book.epub")), None);
     }
 

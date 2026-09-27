@@ -13,8 +13,9 @@ pub struct AppConfig {
     pub max_chapter_chars: Option<usize>,
     pub edge_chunk_chars: usize,
     pub edge_max_segment_seconds: u32,
+    pub max_parallel: usize,
+    pub fallback_engine: Option<String>,
 }
-
 impl AppConfig {
     /// Build configuration from environment variables and resolved paths.
     pub fn from_env() -> Self {
@@ -30,6 +31,11 @@ impl AppConfig {
             max_chapter_chars: env_optional_parse("MAX_CHAPTER_CHARS"),
             edge_chunk_chars: env_parse("EDGE_CHUNK_CHARS", 12_000),
             edge_max_segment_seconds: env_parse("EDGE_MAX_SEGMENT_SECONDS", 85),
+            max_parallel: env_parse(
+                "MAX_PARALLEL",
+                std::thread::available_parallelism().map_or(1, |n| n.get()),
+            ),
+            fallback_engine: env_optional_string("FALLBACK_ENGINE"),
         }
     }
 
@@ -61,4 +67,8 @@ fn env_optional_parse<T: std::str::FromStr>(key: &str) -> Option<T> {
         .ok()
         .filter(|value| !value.is_empty())
         .and_then(|value| value.parse().ok())
+}
+
+fn env_optional_string(key: &str) -> Option<String> {
+    std::env::var(key).ok().filter(|value| !value.is_empty())
 }

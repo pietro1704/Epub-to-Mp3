@@ -50,7 +50,9 @@ pub fn sha256_file(path: impl AsRef<Path>) -> io::Result<String> {
     let mut buffer = [0u8; 1024 * 1024];
     loop {
         let count = file.read(&mut buffer)?;
-        if count == 0 { break; }
+        if count == 0 {
+            break;
+        }
         hasher.update(&buffer[..count]);
     }
     Ok(hex::encode(hasher.finalize()))
@@ -62,7 +64,9 @@ pub fn sha1_file(path: impl AsRef<Path>) -> io::Result<String> {
     let mut buffer = [0u8; 1024 * 1024];
     loop {
         let count = file.read(&mut buffer)?;
-        if count == 0 { break; }
+        if count == 0 {
+            break;
+        }
         hasher.update(&buffer[..count]);
     }
     Ok(hex::encode(hasher.finalize()))
@@ -73,18 +77,30 @@ pub fn normalized_text_hash(value: &str) -> String {
 }
 
 /// Resolve a cache child without permitting absolute paths or `..` escape.
-pub fn safe_cache_path(root: impl AsRef<Path>, child: impl AsRef<Path>) -> Result<PathBuf, CacheError> {
+pub fn safe_cache_path(
+    root: impl AsRef<Path>,
+    child: impl AsRef<Path>,
+) -> Result<PathBuf, CacheError> {
     let child = child.as_ref();
-    if child.is_absolute() || child.components().any(|component| matches!(component, std::path::Component::ParentDir)) {
+    if child.is_absolute()
+        || child
+            .components()
+            .any(|component| matches!(component, std::path::Component::ParentDir))
+    {
         return Err(CacheError::Traversal);
     }
     Ok(root.as_ref().join(child))
 }
 
 /// Atomically replace a JSON file. The temporary file is created beside the target.
-pub fn atomic_write_json<T: Serialize>(path: impl AsRef<Path>, value: &T) -> Result<(), CacheError> {
+pub fn atomic_write_json<T: Serialize + ?Sized>(
+    path: impl AsRef<Path>,
+    value: &T,
+) -> Result<(), CacheError> {
     let path = path.as_ref();
-    if let Some(parent) = path.parent() { fs::create_dir_all(parent)?; }
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
     let temp = path.with_extension(format!("tmp-{}", std::process::id()));
     let bytes = serde_json::to_vec(value)?;
     {
@@ -114,12 +130,31 @@ pub struct DuplicateTracker {
 }
 
 impl DuplicateTracker {
-    pub fn check(&mut self, audio_path: impl AsRef<Path>, text: &str, index: usize, name: impl Into<String>) -> io::Result<Option<DuplicateRecord>> {
-        if text.chars().count() < MIN_DUPLICATE_CHARS { return Ok(None); }
+    pub fn check(
+        &mut self,
+        audio_path: impl AsRef<Path>,
+        text: &str,
+        index: usize,
+        name: impl Into<String>,
+    ) -> io::Result<Option<DuplicateRecord>> {
+        if text.chars().count() < MIN_DUPLICATE_CHARS {
+            return Ok(None);
+        }
         let audio_hash = sha1_file(audio_path)?;
         let text_hash = hash_text(text);
-        let record = DuplicateRecord { index, name: name.into(), text_hash: text_hash.clone(), text_len: text.chars().count() };
-        let duplicate = self.by_audio_hash.get(&audio_hash).filter(|existing| existing.text_hash != text_hash && existing.text_len >= MIN_DUPLICATE_CHARS).cloned();
+        let record = DuplicateRecord {
+            index,
+            name: name.into(),
+            text_hash: text_hash.clone(),
+            text_len: text.chars().count(),
+        };
+        let duplicate = self
+            .by_audio_hash
+            .get(&audio_hash)
+            .filter(|existing| {
+                existing.text_hash != text_hash && existing.text_len >= MIN_DUPLICATE_CHARS
+            })
+            .cloned();
         self.by_audio_hash.insert(audio_hash, record);
         Ok(duplicate)
     }
@@ -132,8 +167,14 @@ mod tests {
 
     #[test]
     fn hashes_are_deterministic() {
-        assert_eq!(hash_text("hello"), "aaf4c61ddcc5e8a2dabede0f3b482cd9aea9434d");
-        assert_eq!(normalized_text_hash(" hello\n world "), normalized_text_hash("hello world"));
+        assert_eq!(
+            hash_text("hello"),
+            "aaf4c61ddcc5e8a2dabede0f3b482cd9aea9434d"
+        );
+        assert_eq!(
+            normalized_text_hash(" hello\n world "),
+            normalized_text_hash("hello world")
+        );
     }
 
     #[test]
@@ -153,7 +194,12 @@ mod tests {
     }
 
     fn tempfile_dir() -> PathBuf {
-        let path = std::env::temp_dir().join(format!("converter-core-{}", std::process::id()));
+        let path = std::env::temp_dir().join(format!(
+            "converter-core-{}-{}",
+            std::process::id(),
+            std::thread::current().name().unwrap_or("test")
+        ));
+        let _ = fs::remove_dir_all(&path);
         fs::create_dir_all(&path).unwrap();
         path
     }
@@ -167,7 +213,10 @@ mod tests {
         let text = "x".repeat(MIN_DUPLICATE_CHARS);
         let mut tracker = DuplicateTracker::default();
         assert!(tracker.check(&path, &text, 1, "one").unwrap().is_none());
-        assert!(tracker.check(&path, &("different".to_owned() + &text), 2, "two").unwrap().is_some());
+        assert!(tracker
+            .check(&path, &("different".to_owned() + &text), 2, "two")
+            .unwrap()
+            .is_some());
         fs::remove_dir_all(dir).unwrap();
     }
 }

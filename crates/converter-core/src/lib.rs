@@ -4,15 +4,15 @@ pub mod archive;
 pub mod audio;
 pub mod cache;
 pub mod config;
-pub mod epub;
 pub mod engine;
+pub mod epub;
 pub mod ingestion;
 pub mod jobs;
 pub mod paths;
 pub mod piper;
 pub mod text;
-pub mod tts;
 pub mod toc;
+pub mod tts;
 pub mod worker;
 
 /// Returns the core library health status.

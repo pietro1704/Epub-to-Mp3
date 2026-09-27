@@ -6,7 +6,7 @@
 //! behavior predictable when a process configures its environment at startup.
 
 use std::env;
-use std::ffi::OsString;
+use std::ffi::OsStr;
 use std::fmt;
 use std::path::{Component, Path, PathBuf};
 
@@ -85,15 +85,15 @@ pub fn resolve_paths() -> Paths {
 pub fn resolve_paths_from<I, K, V>(vars: I, project_root: PathBuf) -> Paths
 where
     I: IntoIterator<Item = (K, V)>,
-    K: AsRef<OsStrLike>,
-    V: AsRef<OsStrLike>,
+    K: AsRef<OsStr>,
+    V: AsRef<OsStr>,
 {
     let env: std::collections::HashMap<String, String> = vars
         .into_iter()
         .filter_map(|(key, value)| {
             Some((
-                key.as_ref().to_os_string_lossy().into_owned(),
-                value.as_ref().to_os_string_lossy().into_owned(),
+                key.as_ref().to_string_lossy().into_owned(),
+                value.as_ref().to_string_lossy().into_owned(),
             ))
         })
         .collect();

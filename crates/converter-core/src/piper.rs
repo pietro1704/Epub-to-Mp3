@@ -88,7 +88,9 @@ pub fn classify_stderr(stderr: &str) -> StderrClass {
     let lower = stderr.to_ascii_lowercase();
     if lower.trim().is_empty() {
         StderrClass::None
-    } else if lower.contains("no such file") || lower.contains("model") && lower.contains("not found") {
+    } else if lower.contains("no such file")
+        || lower.contains("model") && lower.contains("not found")
+    {
         StderrClass::MissingModel
     } else if lower.contains("phoneme") || lower.contains("phonemization") {
         StderrClass::MissingPhoneme
@@ -102,26 +104,41 @@ pub fn classify_stderr(stderr: &str) -> StderrClass {
 #[derive(Debug, Clone, Default)]
 pub struct CancellationToken(Arc<std::sync::atomic::AtomicBool>);
 impl CancellationToken {
-    pub fn cancel(&self) { self.0.store(true, std::sync::atomic::Ordering::Release); }
-    pub fn is_cancelled(&self) -> bool { self.0.load(std::sync::atomic::Ordering::Acquire) }
+    pub fn cancel(&self) {
+        self.0.store(true, std::sync::atomic::Ordering::Release);
+    }
+    pub fn is_cancelled(&self) -> bool {
+        self.0.load(std::sync::atomic::Ordering::Acquire)
+    }
 }
 
 pub fn split_text(text: &str, max_chars: usize) -> Result<Vec<String>, PiperError> {
-    if max_chars == 0 { return Err(PiperError::InvalidChunkSize); }
-    if text.chars().count() <= max_chars { return Ok(vec![text.to_owned()]); }
+    if max_chars == 0 {
+        return Err(PiperError::InvalidChunkSize);
+    }
+    if text.chars().count() <= max_chars {
+        return Ok(vec![text.to_owned()]);
+    }
     let mut result = Vec::new();
     let mut remaining = text.trim();
     while !remaining.is_empty() {
-        let boundary = remaining.char_indices().take(max_chars + 1).last()
-            .map(|(i, _)| i).unwrap_or(remaining.len());
+        let boundary = remaining
+            .char_indices()
+            .take(max_chars + 1)
+            .last()
+            .map(|(i, _)| i)
+            .unwrap_or(remaining.len());
         let candidate = &remaining[..boundary];
-        let split = candidate.rfind(|c: char| c == '.' || c == '!' || c == '?' || c == '\n')
+        let split = candidate
+            .rfind(|c: char| c == '.' || c == '!' || c == '?' || c == '\n')
             .map(|i| i + candidate[i..].chars().next().unwrap().len_utf8())
             .or_else(|| candidate.rfind(' ').map(|i| i + 1))
             .filter(|i| *i > boundary / 2)
             .unwrap_or(boundary);
         let chunk = remaining[..split].trim();
-        if !chunk.is_empty() { result.push(chunk.to_owned()); }
+        if !chunk.is_empty() {
+            result.push(chunk.to_owned());
+        }
         remaining = remaining[split..].trim_start();
     }
     Ok(result)
@@ -129,7 +146,11 @@ pub fn split_text(text: &str, max_chars: usize) -> Result<Vec<String>, PiperErro
 
 pub fn select_model(config: &PiperConfig, language: Option<&str>) -> Result<PathBuf, PiperError> {
     let model = config.model_for_language(language).to_path_buf();
-    if model.is_file() { Ok(model) } else { Err(PiperError::MissingModel(model)) }
+    if model.is_file() {
+        Ok(model)
+    } else {
+        Err(PiperError::MissingModel(model))
+    }
 }
 
 pub fn synthesize(
@@ -138,27 +159,68 @@ pub fn synthesize(
     output: &Path,
     cancel: &CancellationToken,
 ) -> Result<PathBuf, PiperError> {
-    if !config.binary.is_file() { return Err(PiperError::MissingBinary(config.binary.clone())); }
+    if !config.binary.is_file() {
+        return Err(PiperError::MissingBinary(config.binary.clone()));
+    }
     let model = select_model(config, None)?;
-    if cancel.is_cancelled() { return Err(PiperError::Cancelled); }
-    if text.trim().is_empty() { return Err(PiperError::EmptyOutput); }
-    if let Some(parent) = output.parent() { fs::create_dir_all(parent).map_err(|e| PiperError::Io(e.to_string()))?; }
+    if cancel.is_cancelled() {
+        return Err(PiperError::Cancelled);
+    }
+    if text.trim().is_empty() {
+        return Err(PiperError::EmptyOutput);
+    }
+    if let Some(parent) = output.parent() {
+        fs::create_dir_all(parent).map_err(|e| PiperError::Io(e.to_string()))?;
+    }
 
     let mut child = Command::new(&config.binary)
-        .args(["--model", model.to_str().unwrap_or_default(), "--output_file", output.to_str().unwrap_or_default()])
-        .stdin(Stdio::piped()).stdout(Stdio::null()).stderr(Stdio::piped())
-        .spawn().map_err(|e| PiperError::Io(e.to_string()))?;
-    child.stdin.take().unwrap().write_all(text.as_bytes()).map_err(|e| PiperError::Io(e.to_string()))?;
+        .args([
+            "--model",
+            model.to_str().unwrap_or_default(),
+            "--output_file",
+            output.to_str().unwrap_or_default(),
+        ])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|e| PiperError::Io(e.to_string()))?;
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(text.as_bytes())
+        .map_err(|e| PiperError::Io(e.to_string()))?;
     let started = Instant::now();
     loop {
-        if cancel.is_cancelled() { let _ = child.kill(); return Err(PiperError::Cancelled); }
-        if started.elapsed() >= config.timeout { let _ = child.kill(); return Err(PiperError::Timeout); }
-        match child.try_wait().map_err(|e| PiperError::Io(e.to_string()))? {
+        if cancel.is_cancelled() {
+            let _ = child.kill();
+            return Err(PiperError::Cancelled);
+        }
+        if started.elapsed() >= config.timeout {
+            let _ = child.kill();
+            return Err(PiperError::Timeout);
+        }
+        match child
+            .try_wait()
+            .map_err(|e| PiperError::Io(e.to_string()))?
+        {
             Some(status) => {
-                let output_data = child.wait_with_output().map_err(|e| PiperError::Io(e.to_string()))?;
-                let stderr = String::from_utf8_lossy(&output_data.stderr).trim().to_owned();
-                if !status.success() { return Err(PiperError::Process { code: status.code(), stderr }); }
-                if !output.is_file() || fs::metadata(output).map(|m| m.len()).unwrap_or(0) == 0 { return Err(PiperError::EmptyOutput); }
+                let output_data = child
+                    .wait_with_output()
+                    .map_err(|e| PiperError::Io(e.to_string()))?;
+                let stderr = String::from_utf8_lossy(&output_data.stderr)
+                    .trim()
+                    .to_owned();
+                if !status.success() {
+                    return Err(PiperError::Process {
+                        code: status.code(),
+                        stderr,
+                    });
+                }
+                if !output.is_file() || fs::metadata(output).map(|m| m.len()).unwrap_or(0) == 0 {
+                    return Err(PiperError::EmptyOutput);
+                }
                 return Ok(output.to_path_buf());
             }
             None => thread::sleep(Duration::from_millis(10)),
@@ -176,11 +238,21 @@ mod tests {
         let dir = tempfile_dir();
         let script = dir.join("piper-fake");
         let mut file = fs::File::create(&script).unwrap();
-        writeln!(file, "#!/bin/sh\ncat >/dev/null\nprintf 'RIFFfake' > \"$4\"").unwrap();
+        writeln!(
+            file,
+            "#!/bin/sh\ncat >/dev/null\nprintf 'RIFFfake' > \"$4\""
+        )
+        .unwrap();
         drop(file);
         let mut perms = fs::metadata(&script).unwrap().permissions();
-        #[cfg(unix)] { use std::os::unix::fs::PermissionsExt; perms.set_mode(0o755); fs::set_permissions(&script, perms).unwrap(); }
-        let model = dir.join("voice.onnx"); fs::write(&model, b"model").unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            perms.set_mode(0o755);
+            fs::set_permissions(&script, perms).unwrap();
+        }
+        let model = dir.join("voice.onnx");
+        fs::write(&model, b"model").unwrap();
         let out = dir.join("out.wav");
         let config = PiperConfig::new(script, model);
         assert!(synthesize(&config, "hello", &out, &CancellationToken::default()).is_ok());
@@ -188,6 +260,7 @@ mod tests {
 
     fn tempfile_dir() -> PathBuf {
         let path = std::env::temp_dir().join(format!("piper-adapter-{}", std::process::id()));
-        let _ = fs::create_dir_all(&path); path
+        let _ = fs::create_dir_all(&path);
+        path
     }
 }

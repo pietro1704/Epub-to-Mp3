@@ -2,7 +2,7 @@ use std::cmp::Ordering;
 use std::collections::HashSet;
 use std::env;
 use std::fs;
-use std::io::{self, IsTerminal, Read};
+use std::io::{self, IsTerminal};
 use std::path::{Path, PathBuf};
 
 const SUPPORTED_EXTENSIONS: &[&str] = &["epub", "pdf"];
@@ -127,7 +127,8 @@ fn run(raw: Vec<String>) -> Result<i32, String> {
             language: None,
             no_parallel: options.no_parallel,
         };
-        let worker = converter_core::worker::ConversionWorker::new(config.clone())?;
+        let worker = converter_core::worker::ConversionWorker::new(config.clone())
+            .map_err(|error| error.to_string())?;
         let manifest = worker.run(request).map_err(|error| error.to_string())?;
         println!(
             "{}",
@@ -435,32 +436,6 @@ fn clear_global_cache(assume_yes: bool) -> Result<(), String> {
     Ok(())
 }
 
-fn clear_book_cache(input: &str) -> Result<(), String> {
-    let paths = converter_core::paths::resolve_paths();
-    let stem = Path::new(input)
-        .file_stem()
-        .and_then(|value| value.to_str())
-        .unwrap_or(input);
-    let slug = stem
-        .chars()
-        .map(|character| {
-            if character.is_alphanumeric() {
-                character
-            } else {
-                '_'
-            }
-        })
-        .collect::<String>();
-    for root in [&paths.cache_dir, &paths.output_dir] {
-        let candidate = root.join(&slug);
-        if candidate.exists() {
-            fs::remove_dir_all(&candidate)
-                .map_err(|error| format!("failed to clear '{}': {error}", candidate.display()))?;
-        }
-    }
-    Ok(())
-}
-
 fn show_structure(inputs: &[String]) -> Result<i32, String> {
     for input in inputs {
         println!("Structure: {input}");
@@ -498,7 +473,7 @@ impl ExpandPath for Path {
         if self == Path::new("~") {
             return home_dir();
         }
-        if let Ok(value) = self.to_str() {
+        if let Some(value) = self.to_str() {
             if let Some(rest) = value.strip_prefix("~/") {
                 return home_dir().join(rest);
             }

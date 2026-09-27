@@ -3,9 +3,9 @@
 //! Run with `mise run benchmark:rust`; this task is separate from correctness
 //! gates. Criterion emits estimates and HTML reports, while the metadata report
 //! identifies the baseline and external resource measurements to collect.
-use std::{fs, hint::black_box, io::Cursor};
-use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 use converter_core::{cache, epub::parse_epub, text, tts::split_protocol_chunks};
+use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
+use std::{fs, hint::black_box, io::Cursor};
 
 const FIXTURE: &str = "docs/fixtures/rust-migration.epub";
 const REPORT: &str = "benchmarks/rust-migration-report.json";
@@ -36,9 +36,11 @@ fn chunking(c: &mut Criterion) {
     let mut group = c.benchmark_group("chunking");
     group.throughput(Throughput::Bytes(text.len() as u64));
     for limit in [4_000usize, 12_000, 24_000] {
-        group.bench_with_input(BenchmarkId::new("protocol_chunks", limit), &limit, |b, &limit| {
-            b.iter(|| black_box(split_protocol_chunks(black_box(&text), limit)))
-        });
+        group.bench_with_input(
+            BenchmarkId::new("protocol_chunks", limit),
+            &limit,
+            |b, &limit| b.iter(|| black_box(split_protocol_chunks(black_box(&text), limit))),
+        );
     }
     group.finish();
 }
@@ -47,8 +49,12 @@ fn cache(c: &mut Criterion) {
     let text = "cache normalization throughput ".repeat(20_000);
     let mut group = c.benchmark_group("cache");
     group.throughput(Throughput::Bytes(text.len() as u64));
-    group.bench_function("hash_text", |b| b.iter(|| black_box(cache::hash_text(black_box(&text)))));
-    group.bench_function("normalized_text_hash", |b| b.iter(|| black_box(cache::normalized_text_hash(black_box(&text)))));
+    group.bench_function("hash_text", |b| {
+        b.iter(|| black_box(cache::hash_text(black_box(&text))))
+    });
+    group.bench_function("normalized_text_hash", |b| {
+        b.iter(|| black_box(cache::normalized_text_hash(black_box(&text))))
+    });
     group.finish();
 }
 
@@ -57,7 +63,13 @@ fn orchestration(c: &mut Criterion) {
     let mut group = c.benchmark_group("orchestration");
     group.throughput(Throughput::Bytes(text.len() as u64));
     group.bench_function("structural_speech_cues", |b| {
-        b.iter(|| black_box(text::apply_structural_speech_cues(black_box(&text), Some("<h1>Chapter One</h1>"), Some("Chapter One"))))
+        b.iter(|| {
+            black_box(text::apply_structural_speech_cues(
+                black_box(&text),
+                Some("<h1>Chapter One</h1>"),
+                Some("Chapter One"),
+            ))
+        })
     });
     group.finish();
 }

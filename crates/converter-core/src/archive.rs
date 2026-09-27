@@ -42,7 +42,10 @@ pub fn list_members<R: Read + Seek>(reader: R) -> Result<Vec<ArchiveMember>, Arc
             continue;
         }
         validate_member_name(entry.name())?;
-        members.push(ArchiveMember { name: entry.name().to_owned(), size: entry.size() });
+        members.push(ArchiveMember {
+            name: entry.name().to_owned(),
+            size: entry.size(),
+        });
     }
     Ok(members)
 }
@@ -54,7 +57,11 @@ pub fn list_image_members<R: Read + Seek>(reader: R) -> Result<Vec<ArchiveMember
         Path::new(&member.name)
             .extension()
             .and_then(|extension| extension.to_str())
-            .map(|extension| IMAGE_SUFFIXES.iter().any(|known| extension.eq_ignore_ascii_case(known)))
+            .map(|extension| {
+                IMAGE_SUFFIXES
+                    .iter()
+                    .any(|known| extension.eq_ignore_ascii_case(known))
+            })
             .unwrap_or(false)
     });
     members.sort_by(|left, right| natural_compare(&left.name, &right.name));
@@ -62,10 +69,16 @@ pub fn list_image_members<R: Read + Seek>(reader: R) -> Result<Vec<ArchiveMember
 }
 
 /// Extracts one member to a file without buffering the complete payload.
-pub fn extract_member<R: Read + Seek>(reader: R, member_name: &str, output: impl AsRef<Path>) -> Result<(), ArchiveError> {
+pub fn extract_member<R: Read + Seek>(
+    reader: R,
+    member_name: &str,
+    output: impl AsRef<Path>,
+) -> Result<(), ArchiveError> {
     validate_member_name(member_name)?;
     let mut archive = ZipArchive::new(reader)?;
-    let mut input = archive.by_name(member_name).map_err(|_| ArchiveError::MissingMember(member_name.to_owned()))?;
+    let mut input = archive
+        .by_name(member_name)
+        .map_err(|_| ArchiveError::MissingMember(member_name.to_owned()))?;
     let output = output.as_ref();
     if let Some(parent) = output.parent() {
         std::fs::create_dir_all(parent)?;
@@ -90,7 +103,10 @@ fn validate_member_name(name: &str) -> Result<(), ArchiveError> {
     if name.is_empty() || path.is_absolute() || name.starts_with('/') || name.starts_with('\\') {
         return Err(ArchiveError::UnsafeMember(name.to_owned()));
     }
-    if path.components().any(|component| matches!(component, std::path::Component::ParentDir)) {
+    if path
+        .components()
+        .any(|component| matches!(component, std::path::Component::ParentDir))
+    {
         return Err(ArchiveError::UnsafeMember(name.to_owned()));
     }
     Ok(())
@@ -109,14 +125,22 @@ fn natural_parts(value: &str) -> Vec<NaturalPart> {
     for character in value.chars() {
         let is_digit = character.is_ascii_digit();
         if !current.is_empty() && is_digit != digits {
-            parts.push(if digits { NaturalPart::Number(current.parse().unwrap_or(u64::MAX)) } else { NaturalPart::Text(current.to_ascii_lowercase()) });
+            parts.push(if digits {
+                NaturalPart::Number(current.parse().unwrap_or(u64::MAX))
+            } else {
+                NaturalPart::Text(current.to_ascii_lowercase())
+            });
             current.clear();
         }
         digits = is_digit;
         current.push(character);
     }
     if !current.is_empty() {
-        parts.push(if digits { NaturalPart::Number(current.parse().unwrap_or(u64::MAX)) } else { NaturalPart::Text(current.to_ascii_lowercase()) });
+        parts.push(if digits {
+            NaturalPart::Number(current.parse().unwrap_or(u64::MAX))
+        } else {
+            NaturalPart::Text(current.to_ascii_lowercase())
+        });
     }
     parts
 }
@@ -128,4 +152,6 @@ enum NaturalPart {
 }
 
 #[allow(dead_code)]
-fn _path_buf(name: &str) -> PathBuf { PathBuf::from(name) }
+fn _path_buf(name: &str) -> PathBuf {
+    PathBuf::from(name)
+}
