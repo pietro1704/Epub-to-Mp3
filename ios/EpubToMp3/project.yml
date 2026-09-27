@@ -288,14 +288,26 @@ targets:
           GCC_OPTIMIZATION_LEVEL: s
           DEBUG_INFORMATION_FORMAT: "dwarf-with-dsym"
           STRIP_INSTALLED_PRODUCT: YES
-    # Xcode copies this prebuilt Rust sidecar through its resource phase.
-    # Keep the source path and final bundle name explicit so the user-script
-    # sandbox is not involved in embedding the executable.
-    resources:
-      - path: ../../dist/epub-to-mp3-server
-        destination: epub-to-mp3-server
-        buildPhase: resources
-        buildRule: copy
+    postBuildScripts:
+      - name: "Embed Rust converter sidecar (macOS only)"
+        shell: /bin/bash
+        basedOnDependencyAnalysis: false
+        alwaysOutOfDate: true
+        inputFiles:
+          - "${SRCROOT}/../../dist/epub-to-mp3-server"
+        outputFiles:
+          - "${BUILT_PRODUCTS_DIR}/${CONTENTS_FOLDER_PATH}/Resources/epub-to-mp3-server"
+        script: |
+          set -euo pipefail
+          if [ "${PLATFORM_NAME}" != "macosx" ]; then exit 0; fi
+          SIDECAR="${SRCROOT}/../../dist/epub-to-mp3-server"
+          if [ ! -x "${SIDECAR}" ]; then
+            echo "error: Rust sidecar missing at ${SIDECAR}; run mise run sidecar:build" >&2
+            exit 1
+          fi
+          RESOURCES_DIR="${BUILT_PRODUCTS_DIR}/${CONTENTS_FOLDER_PATH}/Resources"
+          install -d "${RESOURCES_DIR}"
+          install -m 755 "${SIDECAR}" "${RESOURCES_DIR}/epub-to-mp3-server"
 
   EpubToMp3Tests:
     type: bundle.unit-test
