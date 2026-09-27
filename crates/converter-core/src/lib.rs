@@ -1,5 +1,6 @@
 //! Domain types for the conversion pipeline.
 
+pub mod archive;
 pub mod audio;
 pub mod cache;
 pub mod config;
