@@ -246,15 +246,15 @@ impl<T: EdgeTransport + 'static> EdgeTtsClient<T> {
 
     async fn synthesize_request(&self, ssml: &str, chars: usize) -> Result<Vec<u8>, EdgeError> {
         let request_id = random_id();
-        let connection_id = random_id();
-        let url = request_url(
-            &self.config.endpoint,
-            &connection_id,
-            &self.config.trusted_client_token,
-        )?;
-        let request = protocol_request(url)?;
         let mut retries = 0;
         loop {
+            let connection_id = random_id();
+            let url = request_url(
+                &self.config.endpoint,
+                &connection_id,
+                &self.config.trusted_client_token,
+            )?;
+            let request = protocol_request(url)?;
             self.emit(TelemetryEvent::RequestStarted {
                 request_id: request_id.clone(),
                 chars,

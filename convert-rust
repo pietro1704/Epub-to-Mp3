@@ -3,4 +3,6 @@ set -euo pipefail
 
 SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 cd "$SCRIPT_DIR"
+export EDGE_MAX_CONCURRENCY="${EDGE_MAX_CONCURRENCY:-8}"
+export RUST_CHAPTER_PARALLELISM="${RUST_CHAPTER_PARALLELISM:-$(sysctl -n hw.ncpu 2>/dev/null || printf 4)}"
 exec mise exec -- cargo run -p converter-cli -- "$@"
