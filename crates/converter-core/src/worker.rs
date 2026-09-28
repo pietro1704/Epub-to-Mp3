@@ -12,8 +12,9 @@ use serde::{Deserialize, Serialize};
 use std::{
     fs, io,
     path::{Path, PathBuf},
-    sync::Arc,
+    sync::{Arc, Mutex},
 };
+use rayon::prelude::*;
 use thiserror::Error;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -137,9 +138,21 @@ impl ConversionWorker {
         fs::create_dir_all(&cache_dir)?;
         fs::create_dir_all(&output_dir)?;
         let total = book.chapters.len();
-        let mut files = Vec::with_capacity(total);
-        let mut manifest = Vec::with_capacity(total);
-        for (position, chapter) in book.chapters.iter().enumerate() {
+        let parallelism = if request.no_parallel {
+            1
+        } else {
+            std::env::var("RUST_CHAPTER_PARALLELISM")
+                .ok()
+                .and_then(|value| value.parse().ok())
+                .filter(|value| *value > 0)
+                .unwrap_or_else(|| std::thread::available_parallelism().map(|v| v.get()).unwrap_or(1))
+        };
+        let pool = rayon::ThreadPoolBuilder::new()
+            .num_threads(parallelism)
+            .build()
+            .map_err(|error| WorkerError::Piper(error.to_string()))?;
+        let results = Mutex::new(Vec::with_capacity(total));
+        pool.install(|| book.chapters.par_iter().enumerate().try_for_each(|(position, chapter)| -> Result<(), WorkerError> {
             if self.cancel.is_cancelled() || self.jobs.is_cancellation_requested(&request.job_id)? {
                 return Err(WorkerError::Cancelled);
             }
@@ -163,26 +176,19 @@ impl ConversionWorker {
                 )?;
             }
             let name = mp3.file_name().unwrap().to_string_lossy().to_string();
-            files.push((mp3.clone(), name.clone()));
-            manifest.push(ChapterMetadata {
+            results.lock().unwrap().push((position, mp3, name.clone(), ChapterMetadata {
                 index: position + 1,
                 title: chapter.name.clone(),
                 filename: name,
                 text_chars: text.chars().count(),
-            });
-            let percent = ((position + 1) as f64 / (total.max(1) as f64)) * 100.0;
-            self.emit(ProgressEvent {
-                job_id: request.job_id.clone(),
-                state: "running".into(),
-                chapter_index: Some(position),
-                chapters_total: total,
-                chapters_completed: position + 1,
-                percent,
-                engine: Some(engine),
-                message: format!("Converted chapter {}", position + 1),
-            });
-            self.jobs.update_progress(&request.job_id,serde_json::json!({"chaptersCompleted":position+1,"chaptersTotal":total,"percent":percent}))?;
-        }
+                },
+            ));
+            Ok(())
+        }))?;
+        let mut results = results.into_inner().unwrap();
+        results.sort_by_key(|item| item.0);
+        let files: Vec<_> = results.iter().map(|(_, path, name, _)| (path.clone(), name.clone())).collect();
+        let manifest: Vec<_> = results.into_iter().map(|(_, _, _, metadata)| metadata).collect();
         let archive = output_dir.join(format!("{}.zip", sanitize(&book.title)));
         audio::create_archive(&archive, &files)?;
         let output_name = archive.file_name().unwrap().to_string_lossy().to_string();
@@ -243,6 +249,7 @@ impl ConversionWorker {
             .map(|_| ())
             .map_err(|e| WorkerError::Piper(e.to_string()))
     }
+    #[allow(dead_code)]
     fn emit(&self, event: ProgressEvent) {
         if let Some(sink) = &self.progress {
             sink(event)
