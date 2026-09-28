@@ -162,10 +162,18 @@ impl EdgeTransport for WebSocketTransport {
         Box::pin(async move {
             let request = request.map(|_| ()).into_client_request()
                 .map_err(|e| EdgeError::Transport(e.to_string()))?;
-            let (socket, _) = tokio_tungstenite::connect_async_tls_with_config(
+            let uri = request.uri().clone();
+            let host = uri
+                .host()
+                .ok_or_else(|| EdgeError::Url("missing host".into()))?;
+            let port = uri.port_u16().unwrap_or(443);
+            let stream = TcpStream::connect((host, port))
+                .await
+                .map_err(|e| EdgeError::Transport(e.to_string()))?;
+            let (socket, _) = tokio_tungstenite::client_async_tls_with_config(
                 request,
+                stream,
                 None,
-                false,
                 None,
             )
             .await
