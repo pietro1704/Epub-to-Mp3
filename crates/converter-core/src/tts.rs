@@ -174,7 +174,7 @@ impl EdgeTransport for WebSocketTransport {
                 .await
                 .map_err(|error| EdgeError::Transport(error.to_string()))?;
             let (socket, _) = client_async_tls_with_config(request, stream, None, None)
-            .await
+                .await
                 .map_err(|e| EdgeError::Transport(e.to_string()))?;
             Ok(socket)
         })

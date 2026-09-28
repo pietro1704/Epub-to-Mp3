@@ -4878,7 +4878,7 @@ def _add_conversion_arguments(
     )
     engine_arg = parser.add_argument(
         "--engine",
-        choices=["auto", "edge", "piper", "rust"],
+        choices=["auto", "edge", "piper"],
         default="edge",
         help="TTS engine to use (default: edge). rust uses the embedded Rust backend",
     )

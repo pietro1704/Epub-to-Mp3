@@ -8,13 +8,13 @@ use crate::{
     piper::{self, CancellationToken, PiperConfig},
     tts::{EdgeConfig, EdgeError, EdgeTtsClient},
 };
+use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::{
     fs, io,
     path::{Path, PathBuf},
     sync::{Arc, Mutex},
 };
-use rayon::prelude::*;
 use thiserror::Error;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -145,50 +145,71 @@ impl ConversionWorker {
                 .ok()
                 .and_then(|value| value.parse().ok())
                 .filter(|value| *value > 0)
-                .unwrap_or_else(|| std::thread::available_parallelism().map(|v| v.get()).unwrap_or(1))
+                .unwrap_or_else(|| {
+                    std::thread::available_parallelism()
+                        .map(|v| v.get())
+                        .unwrap_or(1)
+                })
         };
         let pool = rayon::ThreadPoolBuilder::new()
             .num_threads(parallelism)
             .build()
             .map_err(|error| WorkerError::Piper(error.to_string()))?;
         let results = Mutex::new(Vec::with_capacity(total));
-        pool.install(|| book.chapters.par_iter().enumerate().try_for_each(|(position, chapter)| -> Result<(), WorkerError> {
-            if self.cancel.is_cancelled() || self.jobs.is_cancellation_requested(&request.job_id)? {
-                return Err(WorkerError::Cancelled);
-            }
-            let text_path = cache_dir.join(format!("{}.json", chapter.index.replace('.', "_")));
-            let text = if text_path.is_file() {
-                cache::read_json::<String>(&text_path)?
-            } else {
-                cache::atomic_write_json(&text_path, &chapter.text)?;
-                chapter.text.clone()
-            };
-            let stem = format!("{:04}-{}", position + 1, sanitize(&chapter.name));
-            let mp3 = output_dir.join(format!("{stem}.mp3"));
-            let engine = select_engine(request.engine.as_deref(), &self.config);
-            if !mp3.is_file() {
-                self.synthesize_with_timeout(
-                    &engine,
-                    &text,
-                    &mp3,
-                    request.voice.as_deref(),
-                    request.language.as_deref(),
-                )?;
-            }
-            let name = mp3.file_name().unwrap().to_string_lossy().to_string();
-            results.lock().unwrap().push((position, mp3, name.clone(), ChapterMetadata {
-                index: position + 1,
-                title: chapter.name.clone(),
-                filename: name,
-                text_chars: text.chars().count(),
+        pool.install(|| {
+            book.chapters.par_iter().enumerate().try_for_each(
+                |(position, chapter)| -> Result<(), WorkerError> {
+                    if self.cancel.is_cancelled()
+                        || self.jobs.is_cancellation_requested(&request.job_id)?
+                    {
+                        return Err(WorkerError::Cancelled);
+                    }
+                    let text_path =
+                        cache_dir.join(format!("{}.json", chapter.index.replace('.', "_")));
+                    let text = if text_path.is_file() {
+                        cache::read_json::<String>(&text_path)?
+                    } else {
+                        cache::atomic_write_json(&text_path, &chapter.text)?;
+                        chapter.text.clone()
+                    };
+                    let stem = format!("{:04}-{}", position + 1, sanitize(&chapter.name));
+                    let mp3 = output_dir.join(format!("{stem}.mp3"));
+                    let engine = select_engine(request.engine.as_deref(), &self.config);
+                    if !mp3.is_file() {
+                        self.synthesize_with_timeout(
+                            &engine,
+                            &text,
+                            &mp3,
+                            request.voice.as_deref(),
+                            request.language.as_deref(),
+                        )?;
+                    }
+                    let name = mp3.file_name().unwrap().to_string_lossy().to_string();
+                    results.lock().unwrap().push((
+                        position,
+                        mp3,
+                        name.clone(),
+                        ChapterMetadata {
+                            index: position + 1,
+                            title: chapter.name.clone(),
+                            filename: name,
+                            text_chars: text.chars().count(),
+                        },
+                    ));
+                    Ok(())
                 },
-            ));
-            Ok(())
-        }))?;
+            )
+        })?;
         let mut results = results.into_inner().unwrap();
         results.sort_by_key(|item| item.0);
-        let files: Vec<_> = results.iter().map(|(_, path, name, _)| (path.clone(), name.clone())).collect();
-        let manifest: Vec<_> = results.into_iter().map(|(_, _, _, metadata)| metadata).collect();
+        let files: Vec<_> = results
+            .iter()
+            .map(|(_, path, name, _)| (path.clone(), name.clone()))
+            .collect();
+        let manifest: Vec<_> = results
+            .into_iter()
+            .map(|(_, _, _, metadata)| metadata)
+            .collect();
         let archive = output_dir.join(format!("{}.zip", sanitize(&book.title)));
         audio::create_archive(&archive, &files)?;
         let output_name = archive.file_name().unwrap().to_string_lossy().to_string();
@@ -240,7 +261,10 @@ impl ConversionWorker {
         let model = if model.is_file() {
             model
         } else {
-            self.config.paths.project_root.join("models/piper/pt_BR-faber-medium.onnx")
+            self.config
+                .paths
+                .project_root
+                .join("models/piper/pt_BR-faber-medium.onnx")
         };
         let binary = std::env::var_os("PIPER_BINARY")
             .map(PathBuf::from)
