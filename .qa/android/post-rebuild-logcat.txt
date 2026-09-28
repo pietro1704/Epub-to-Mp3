@@ -1,0 +1,26 @@
+--------- beginning of main
+--------- beginning of system
+09-28 13:54:46.629 31711 31745 D FlutterJNI: Beginning load of flutter...
+09-28 13:54:46.642 31711 31745 D FlutterJNI: flutter (null) was loaded normally!
+09-28 13:54:47.639 31711 31711 I flutter : [IMPORTANT:flutter/shell/common/shell.cc(528)] [Action Required]: Impeller opt-out deprecated.
+09-28 13:54:47.639 31711 31711 I flutter :     The application opted out of Impeller by either using the
+09-28 13:54:47.639 31711 31711 I flutter :     `--no-enable-impeller` flag or the
+09-28 13:54:47.639 31711 31711 I flutter :     `io.flutter.embedding.android.EnableImpeller` `AndroidManifest.xml` entry.
+09-28 13:54:47.639 31711 31711 I flutter :     These options are going to go away in an upcoming Flutter release. Remove
+09-28 13:54:47.639 31711 31711 I flutter :     the explicit opt-out. If you need to opt-out, please report a bug describing
+09-28 13:54:47.639 31711 31711 I flutter :     the issue.
+09-28 13:54:47.639 31711 31711 I flutter : 
+09-28 13:54:47.639 31711 31711 I flutter :     https://github.com/flutter/flutter/issues/new?template=02_bug.yml
+09-28 13:54:47.639 31711 31711 I flutter : 
+09-28 13:54:47.891 31711 31772 I flutter : The Dart VM service is listening on http://127.0.0.1:41398/fCzYZ5xIYLM=/
+09-28 13:54:48.597 31711 31711 I flutter : [IMPORTANT:flutter/shell/common/shell.cc(528)] [Action Required]: Impeller opt-out deprecated.
+09-28 13:54:48.597 31711 31711 I flutter :     The application opted out of Impeller by either using the
+09-28 13:54:48.597 31711 31711 I flutter :     `--no-enable-impeller` flag or the
+09-28 13:54:48.597 31711 31711 I flutter :     `io.flutter.embedding.android.EnableImpeller` `AndroidManifest.xml` entry.
+09-28 13:54:48.597 31711 31711 I flutter :     These options are going to go away in an upcoming Flutter release. Remove
+09-28 13:54:48.597 31711 31711 I flutter :     the explicit opt-out. If you need to opt-out, please report a bug describing
+09-28 13:54:48.597 31711 31711 I flutter :     the issue.
+09-28 13:54:48.597 31711 31711 I flutter : 
+09-28 13:54:48.597 31711 31711 I flutter :     https://github.com/flutter/flutter/issues/new?template=02_bug.yml
+09-28 13:54:48.597 31711 31711 I flutter : 
+09-28 13:54:55.036 31711 31711 D FlutterJNI: Sending viewport metrics to the engine.

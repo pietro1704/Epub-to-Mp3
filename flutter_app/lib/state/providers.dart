@@ -12,6 +12,7 @@ import '../services/audio_player_service.dart';
 import '../services/background_audio_handler.dart';
 import '../services/bookmark_store.dart';
 import '../services/download_manager.dart';
+import '../services/embedded_converter.dart';
 import '../services/fulltext_store.dart';
 import '../services/local_fulltext_cache.dart';
 import '../services/python_bridge.dart';
@@ -160,6 +161,30 @@ final apiClientProvider = Provider<ApiClient>((ref) {
   return api;
 });
 
+/// Explicit conversion seam. Embedded mode never silently falls back to HTTP.
+final converterModeProvider = Provider<ConverterMode>((ref) {
+  final settings = ref.watch(settingsProvider);
+  // The Android APK currently has no converter-ffi shared library. Keep the
+  // backend path as the safe default; embedded mode remains an explicit opt-in
+  // for builds that package and register the native runtime.
+  return settings.useEmbeddedRuntime ? ConverterMode.embedded : ConverterMode.http;
+});
+
+final embeddedConverterProvider = Provider<EmbeddedConverter>((ref) {
+  return EmbeddedConverterRegistry.current;
+});
+
+final localConverterAdapterProvider = Provider<LocalConverterAdapter>((ref) {
+  final api = ref.watch(apiClientProvider);
+  return LocalConverterAdapter(
+    mode: ref.watch(converterModeProvider),
+    embedded: ref.watch(embeddedConverterProvider),
+    httpFallback: ({required inputPath, required outputPath}) async {
+      await api.parseDocument(inputPath);
+      return outputPath;
+    },
+  );
+});
 final downloadManagerProvider = Provider<DownloadManager>((ref) {
   final dm = DownloadManager();
   ref.onDispose(dm.dispose);
@@ -307,9 +332,5 @@ class _ReaderSessionNotifier extends StateNotifier<String?> {
       _prefs.setString(_key, value);
     }
 
-    // Opening a book is also the reader's mini-player context switch. This
-    // keeps both surfaces bound to the same book even when navigation is
-    // initiated by a deep link, document import, or a restored session.
-    _ref.read(currentlyPlayingBookIdProvider.notifier).state = value;
   }
 }

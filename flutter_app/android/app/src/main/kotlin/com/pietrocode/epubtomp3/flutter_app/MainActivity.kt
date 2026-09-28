@@ -8,14 +8,15 @@ import android.os.Handler
 import android.os.Looper
 import android.os.StatFs
 import android.provider.OpenableColumns
-import android.speech.tts.TextToSpeech
+
+import android.util.Log
 import androidx.work.Data
 import androidx.work.Constraints
 import androidx.work.ExistingWorkPolicy
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 
-import io.flutter.embedding.android.FlutterActivity
+import com.ryanheise.audioservice.AudioServiceActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodChannel
@@ -30,7 +31,9 @@ import java.util.Locale
  * Incoming content URIs are copied into app-private storage before they are
  * exposed to Dart, because a content URI is not a durable filesystem path.
  */
-class MainActivity : FlutterActivity() {
+class MainActivity : AudioServiceActivity() {
+
+    private val embeddedLogTag = "EmbeddedConverter"
 
     companion object {
         private const val CHANNEL = "epub_to_mp3/python"
@@ -39,14 +42,43 @@ class MainActivity : FlutterActivity() {
         private const val DEEP_LINK_EVENTS_CHANNEL = "epub_to_mp3/deep_links"
         private const val DOCUMENT_QUEUE = "incoming_documents.v1"
         private const val DOCUMENT_DIR = "incoming_documents"
+        private const val EMBEDDED_CHANNEL = "epub_to_mp3/embedded_converter"
+        private const val EMBEDDED_UNAVAILABLE = "EMBEDDED_CONVERTER_UNAVAILABLE"
+        private const val CONVERTER_LIBRARY = "converter_ffi"
+
+        private var converterLibraryLoaded = false
+
+        init {
+            try {
+                System.loadLibrary(CONVERTER_LIBRARY)
+                converterLibraryLoaded = true
+            } catch (_: UnsatisfiedLinkError) {
+                converterLibraryLoaded = false
+            }
+        }
+
+        private fun converterLibraryAvailable(): Boolean = try {
+            if (!converterLibraryLoaded) {
+                System.loadLibrary(CONVERTER_LIBRARY)
+                converterLibraryLoaded = true
+            }
+            true
+        } catch (_: UnsatisfiedLinkError) {
+            false
+        }
     }
 
     private val mainHandler = Handler(Looper.getMainLooper())
     private var documentEvents: EventChannel.EventSink? = null
     private var deepLinkEvents: EventChannel.EventSink? = null
     private val pendingDeepLinks = mutableListOf<String>()
-    private var offlineTts: TextToSpeech? = null
-    private var offlineTtsReady = false
+
+
+    private fun embeddedConverterStatus(): String = try {
+        if (converterLibraryAvailable()) "loaded" else "unavailable"
+    } catch (_: Throwable) {
+        "unavailable"
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -60,6 +92,9 @@ class MainActivity : FlutterActivity() {
     }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
+        // AudioServiceActivity supplies audio_service's shared engine. Register
+        // only this activity's channels on that engine; do not create or cache
+        // another engine here.
         super.configureFlutterEngine(flutterEngine)
 
         EventChannel(
@@ -109,48 +144,6 @@ class MainActivity : FlutterActivity() {
             }
         }
 
-        offlineTts = TextToSpeech(this) { status ->
-            offlineTtsReady = status == TextToSpeech.SUCCESS
-        }
-        MethodChannel(
-            flutterEngine.dartExecutor.binaryMessenger,
-            "epub_to_mp3/android_tts"
-        ).setMethodCallHandler { call, result ->
-            val tts = offlineTts
-            when (call.method) {
-                "isAvailable" -> result.success(offlineTtsReady && tts != null)
-                "listVoices" -> {
-                    if (!offlineTtsReady || tts == null) {
-                        result.success(emptyList<Map<String, String>>())
-                    } else {
-                        result.success(tts.voices.map { voice ->
-                            mapOf("name" to voice.name, "locale" to voice.locale.toLanguageTag())
-                        })
-                    }
-                }
-                "speak" -> {
-                    val text = call.argument<String>("text")
-                    val localeTag = call.argument<String>("locale")
-                    if (!offlineTtsReady || tts == null || text.isNullOrBlank() || localeTag.isNullOrBlank()) {
-                        result.success(false)
-                    } else {
-                        val locale = Locale.forLanguageTag(localeTag)
-                        val languageStatus = tts.setLanguage(locale)
-                        if (languageStatus == TextToSpeech.LANG_MISSING_DATA ||
-                            languageStatus == TextToSpeech.LANG_NOT_SUPPORTED) {
-                            result.success(false)
-                        } else {
-                            result.success(tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, "offline-fallback"))
-                        }
-                    }
-                }
-                "pause", "stop" -> {
-                    tts?.stop()
-                    result.success(null)
-                }
-                else -> result.notImplemented()
-            }
-        }
 
         MethodChannel(
             flutterEngine.dartExecutor.binaryMessenger,
@@ -213,13 +206,65 @@ class MainActivity : FlutterActivity() {
             }
         }
 
+        MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            EMBEDDED_CHANNEL
+        ).setMethodCallHandler { call, result ->
+            when (call.method) {
+                "status" -> result.success(embeddedConverterStatus())
+                "parse" -> {
+                    if (!converterLibraryAvailable()) {
+                        result.error(EMBEDDED_UNAVAILABLE, "converter-ffi native library is not packaged in this APK", null)
+                    } else {
+                        val inputPath = call.argument<String>("inputPath")
+                        if (inputPath.isNullOrBlank()) {
+                            result.error("BAD_ARGS", "inputPath is required", null)
+                        } else {
+                            Log.i(embeddedLogTag, "parse start input=$inputPath")
+                            val native = nativeParse(inputPath)
+                            if (native == null) {
+                                Log.e(embeddedLogTag, "parse failed: ${nativeLastError()}")
+                                result.error(EMBEDDED_UNAVAILABLE, nativeLastError(), null)
+                            } else {
+                                Log.i(embeddedLogTag, "parse success bytes=${native.length}")
+                                result.success(native)
+                            }
+                        }
+                    }
+                }
+                "convert" -> {
+                    if (!converterLibraryAvailable()) {
+                        result.error(EMBEDDED_UNAVAILABLE, "converter-ffi native library is not packaged in this APK", null)
+                    } else {
+                        val inputPath = call.argument<String>("inputPath")
+                        val outputPath = call.argument<String>("outputPath")
+                        if (inputPath.isNullOrBlank() || outputPath.isNullOrBlank()) {
+                            result.error("BAD_ARGS", "inputPath and outputPath are required", null)
+                        } else {
+                            Log.i(embeddedLogTag, "convert start input=$inputPath output=$outputPath")
+                            val native = nativeConvert(inputPath, outputPath)
+                            if (native == null) {
+                                Log.e(embeddedLogTag, "convert failed: ${nativeLastError()}")
+                                result.error(EMBEDDED_UNAVAILABLE, nativeLastError(), null)
+                            } else {
+                                Log.i(embeddedLogTag, "convert success result=$native")
+                                result.success(native)
+                            }
+                        }
+                    }
+                }
+                else -> result.notImplemented()
+            }
+        }
+
 
     }
 
+    private external fun nativeParse(inputPath: String): String?
+    private external fun nativeConvert(inputPath: String, outputPath: String): String?
+    private external fun nativeLastError(): String
+
     override fun onDestroy() {
-        offlineTts?.stop()
-        offlineTts?.shutdown()
-        offlineTts = null
         super.onDestroy()
     }
 

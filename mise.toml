@@ -50,6 +50,18 @@ run = "bash scripts/check_rust_migration_gate.sh"
 description = "Check Rust migration readiness, packaging artifacts, and remaining blockers"
 run = "bash scripts/check_rust_migration_gate.sh"
 
+[tasks."converter-ffi:validate"]
+description = "Validate converter-ffi native target mapping and artifact names on the host"
+run = "mise exec -- python scripts/validate_converter_ffi_targets.py"
+
+[tasks."converter-ffi:targets"]
+description = "List converter-ffi native target mappings and exact output paths"
+run = "mise exec -- python scripts/build_converter_ffi.py --list"
+
+[tasks."converter-ffi:build"]
+description = "Build converter-ffi for installed Android/iOS Rust targets without installing toolchains"
+run = "mise exec -- python scripts/build_converter_ffi.py"
+
 [tasks.clean]
 description = "Clean backend cache, pycache, and completed outputs"
 run = """

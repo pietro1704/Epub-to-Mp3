@@ -1,0 +1,940 @@
+--------- beginning of main
+09-28 13:52:27.712  4937  4937 D LiveIconView: updateLiveIcon : -1
+--------- beginning of system
+09-28 13:52:27.864  3546  3559 D SamsungAlarmManager: Cancel Alarm calling from uid:10034 pid :28694 / op:PendingIntent{cf1c998: PendingIntentRecord{bd47af9 com.google.android.gms startService}}
+09-28 13:52:27.865  3546  3559 I SamsungAlarmManager: setLocked to kernel - T:2 / 20260928T135347, SetElapsed=866622481, nowELAPSED=866543228
+09-28 13:52:27.865  3546  3559 I SamsungAlarmManager: setLocked to kernel - T:3 / 20260928T135300, SetElapsed=866575363, nowELAPSED=866543228
+09-28 13:52:27.868  5188  5188 I SKBD    : and isTosAccept false
+09-28 13:52:27.872  3546  3619 I WindowManager: reset, Reparenting to original parent, shouldDeferScheduleAnimation=false, destroyLeash=true, surface=Surface(name=AppWindowToken{c000093 token=Token{d39d182 ActivityRecord{a8ba4cd u0 com.sec.android.app.launcher/.activities.LauncherActivity t2}}})/@0x249c006, parent=Surface(name=Task=2)/@0xc8cc6c7, parentNativeHandle=android.os.BinderProxy@19ed8e9, caller=com.android.server.wm.SurfaceAnimator.lambda$getFinishedCallback$0:97 com.android.server.wm.-$$Lambda$SurfaceAnimator$SIBia0mND666K8lMCPsoid8pUTI.run:4 com.android.server.wm.SurfaceAnimator.lambda$getFinishedCallback$1:104 com.android.server.wm.-$$Lambda$SurfaceAnimator$vdRZk66hQVbQCvVXEaQCT1kVmFc.onAnimationFinished:4 com.android.server.wm.LocalAnimationAdapter.lambda$startAnimation$0:65 
+09-28 13:52:27.872  3546  3619 D SurfaceControl: reparent is called, sc=Surface(name=AppWindowToken{c000093 token=Token{d39d182 ActivityRecord{a8ba4cd u0 com.sec.android.app.launcher/.activities.LauncherActivity t2}}})/@0x249c006, newParentHandle=android.os.BinderProxy@19ed8e9, transaction=android.view.SurfaceControl$Transaction@7b1d692
+09-28 13:52:27.873  3546  3619 D SurfaceControl: destroy(transaction), animation-leash is destroyed, sc=Surface(name=Surface(name=AppWindowToken{c000093 token=Token{d39d182 ActivityRecord{a8ba4cd u0 com.sec.android.app.launcher/.activities.LauncherActivity t2}}})/@0x249c006 - animation-leash)/@0xbedb775, transaction=android.view.SurfaceControl$Transaction@7b1d692, caller=com.android.server.wm.SurfaceAnimator.reset:338 com.android.server.wm.SurfaceAnimator.lambda$getFinishedCallback$0:97 com.android.server.wm.-$$Lambda$SurfaceAnimator$SIBia0mND666K8lMCPsoid8pUTI.run:4 com.android.server.wm.SurfaceAnimator.lambda$getFinishedCallback$1:104 com.android.server.wm.-$$Lambda$SurfaceAnimator$vdRZk66hQVbQCvVXEaQCT1kVmFc.onAnimationFinished:4 com.android.server.wm.LocalAnimationAdapter.lambda$startAnimation$0:65 com.android.server.wm.-$$Lambda$LocalAnimationAdapter$X--EomqUvw4qy89IeeTFTH7aCMo.run:4 
+09-28 13:52:27.874  3546  3546 D FreeformController: Fail to invalid task id :  -1
+09-28 13:52:27.878  3017  3704 D Layer   : [AppWindowToken{c000093 token=Token{d39d182 ActivityRecord{a8ba4cd u0 com.sec.android.app.launcher/.activities.LauncherActivity t2}}}#0]::reparent oldParent:[Surface(name=AppWindowToken{c000093 token=Token{d39d182 ActivityRecord{a8ba4cd u0 com.sec.android.app.launcher/.activities.LauncherActivity t2}}})/@0x249c006 - animation-leash#0], newParent:[Task=2#0]
+09-28 13:52:27.878  3017  3704 I SurfaceFlinger: id=5791 Removed Surface(name=AppWindowToken{c000093 token=Token{d39d182 ActivityRecord{a8ba4cd u0 com.sec.android.app.launcher/.activities.LauncherActivity t2}}})/@0x249c006 - animation-leash#0 (0/59)
+09-28 13:52:27.888  3017  3017 I Layer   : id=5791 onRemoved Surface(name=AppWindowToken{c000093 token=Token{d39d182 ActivityRecord{a8ba4cd u0 com.sec.android.app.launcher/.activities.LauncherActivity t2}}})/@0x249c006 - animation-leash#0 
+09-28 13:52:27.916  3546  3739 D WifiStateMachine: enter getWifiLinkLayerStats
+09-28 13:52:27.916  3546  3739 I WifiVendorHal: getWifiLinkLayerStats(l.2973) before calling iface.getLinkLayerStats
+09-28 13:52:27.916  3002  3002 I android.hardware.wifi@1.0-service: enter getLinkLayerStats
+09-28 13:52:27.916  3002  3002 I android.hardware.wifi@1.0-service: enter getLinkLayerStatsInternal
+09-28 13:52:27.921  3002  3002 I android.hardware.wifi@1.0-service: Successfully getLinkLayerStats.
+09-28 13:52:27.921  3546  3739 I WifiVendorHal: getWifiLinkLayerStats(l.2973) after calling iface.getLinkLayerStats
+09-28 13:52:27.931  3546  3739 I WifiStateMachine: checkScoreBasedQuality -  mPreviousScore[0]:79 mPreviousScore[1]:79 mPreviousScore[2]:79 s2Score:80mPrevoiusScoreAverage:79
+09-28 13:52:28.006  3546  3546 D CustomFrequencyManagerService: releaseDVFSLockLocked : Getting Lock type frm List : DVFS_MIN_LIMIT  frequency : 2184000  uid : 1000  pid : 3546  tag : AMS_APP_HOME@CPU_MIN@15
+09-28 13:52:28.068  5188  5188 I SKBD    : and isTosAccept false
+09-28 13:52:28.089  3546 31274 D TspStateManagerInternal: update cmd=set_grip_data,1,45,7,24,666
+09-28 13:52:28.269  5188  5188 I SKBD    : and isTosAccept false
+09-28 13:52:28.429 31272 31272 D AndroidRuntime: >>>>>> START com.android.internal.os.RuntimeInit uid 2000 <<<<<<
+09-28 13:52:28.433 31272 31272 D SecNativeFeatureCppIf: encoded
+09-28 13:52:28.433 31272 31272 D SecNativeFeatureCppIf: decoding and unzip finish
+09-28 13:52:28.433 31272 31272 D SecNativeFeatureCppIf: use unCompDataBuff. encoded
+09-28 13:52:28.433 31272 31272 D SecNativeFeatureCppIf: Free unCompDataBuff
+09-28 13:52:28.433 31272 31272 D SecNativeFeatureCppIf: encoded
+09-28 13:52:28.434 31272 31272 D SecNativeFeatureCppIf: decoding and unzip finish
+09-28 13:52:28.434 31272 31272 D SecNativeFeatureCppIf: use unCompDataBuff. encoded
+09-28 13:52:28.434 31272 31272 D SecNativeFeatureCppIf: Free unCompDataBuff
+09-28 13:52:28.470  5188  5188 I SKBD    : and isTosAccept false
+09-28 13:52:28.503 31272 31272 D ICU     : Timezone override file found: /data/misc/zoneinfo/current/icu/icu_tzdata.dat
+09-28 13:52:28.517 31272 31272 I app_process: report jit thread pid = 31275
+09-28 13:52:28.519 31272 31272 I app_process: The ClassLoaderContext is a special shared library.
+09-28 13:52:28.521  3546  6327 D GameManagerService: identifyGamePackage. com.sec.android.app.launcher, mCurrentUserId: 0, callerUserId: 0
+09-28 13:52:28.521  3546  6327 D GamePkgDataHelper: getGamePkgData(). com.sec.android.app.launcher
+09-28 13:52:28.548 31272 31272 D SemCscFeature: Encoded
+09-28 13:52:28.549 31272 31272 I chatty  : uid=2000(shell) identical 1 line
+09-28 13:52:28.550 31272 31272 D SemCscFeature: Encoded
+09-28 13:52:28.552 31272 31272 E SemAffinityControl: SemAffinityControl: registerfunction enter
+09-28 13:52:28.557 31272 31272 D AndroidRuntime: Calling main entry com.android.commands.monkey.Monkey
+09-28 13:52:28.558 31272 31272 W Monkey  : args: [-p, com.pietrocode.epubtomp3.flutter_app, 1]
+09-28 13:52:28.559 31272 31272 W Monkey  :  arg: "-p"
+09-28 13:52:28.559 31272 31272 W Monkey  :  arg: "com.pietrocode.epubtomp3.flutter_app"
+09-28 13:52:28.559 31272 31272 W Monkey  :  arg: "1"
+09-28 13:52:28.559 31272 31272 W Monkey  : data="com.pietrocode.epubtomp3.flutter_app"
+09-28 13:52:28.587  3546  3565 W BroadcastQueue: Skipping deliver [background] BroadcastRecord{f05e744 u-1 android.net.conn.CONNECTIVITY_CHANGE} to ReceiverList{492602d 31272 (unknown name)/2000/u-1 remote:87d35d6}: process gone or crashing
+09-28 13:52:28.592  3017  4645 E NativeSemDvfsGpuManager: release:: Start
+09-28 13:52:28.592  3017  4645 E NativeSemDvfsGpuManager: release():: mIsAcquired = 1 , mName = GPU  , mTagName : SurfaceFlinger 
+09-28 13:52:28.594  3017  4645 E NativeCustomFrequencyManager: [NativeCFMS] BpCustomFrequencyManager::releaseGPU() 
+09-28 13:52:28.594  3017  4645 E NativeSemDvfsGpuManager: release:: End
+09-28 13:52:28.631  3546  3559 I ActivityManager: START u0 {act=android.intent.action.MAIN typ=null flg=0x10200000 cmp=ComponentInfo{com.pietrocode.epubtomp3.flutter_app/com.pietrocode.epubtomp3.flutter_app.MainActivity}} from uid 2000
+09-28 13:52:28.631  3546  3559 E ActivityManager: getPackageFromAppProcesses, return null :31272
+09-28 13:52:28.632  3546  3559 W Binder  : Outgoing transactions from this process must be FLAG_ONEWAY
+09-28 13:52:28.632  3546  3559 W Binder  : java.lang.Throwable
+09-28 13:52:28.632  3546  3559 W Binder  : 	at android.os.BinderProxy.transact(Binder.java:1127)
+09-28 13:52:28.632  3546  3559 W Binder  : 	at android.app.IActivityController$Stub$Proxy.activityStarting(IActivityController.java:176)
+09-28 13:52:28.632  3546  3559 W Binder  : 	at com.android.server.am.ActivityStarter.startActivity(ActivityStarter.java:922)
+09-28 13:52:28.632  3546  3559 W Binder  : 	at com.android.server.am.ActivityStarter.startActivity(ActivityStarter.java:665)
+09-28 13:52:28.632  3546  3559 W Binder  : 	at com.android.server.am.ActivityStarter.startActivityMayWait(ActivityStarter.java:1542)
+09-28 13:52:28.632  3546  3559 W Binder  : 	at com.android.server.am.ActivityStarter.execute(ActivityStarter.java:606)
+09-28 13:52:28.632  3546  3559 W Binder  : 	at com.android.server.am.ActivityManagerService.startActivityAsUser(ActivityManagerService.java:6701)
+09-28 13:52:28.632  3546  3559 W Binder  : 	at com.android.server.am.ActivityManagerService.startActivityAsUser(ActivityManagerService.java:6592)
+09-28 13:52:28.632  3546  3559 W Binder  : 	at com.android.server.am.ActivityManagerService.startActivity(ActivityManagerService.java:6583)
+09-28 13:52:28.632  3546  3559 W Binder  : 	at android.app.IActivityManager$Stub.onTransact$startActivity$(IActivityManager.java:10834)
+09-28 13:52:28.632  3546  3559 W Binder  : 	at android.app.IActivityManager$Stub.onTransact(IActivityManager.java:111)
+09-28 13:52:28.632  3546  3559 W Binder  : 	at com.android.server.am.ActivityManagerService.onTransact(ActivityManagerService.java:4173)
+09-28 13:52:28.632  3546  3559 W Binder  : 	at android.os.Binder.execTransact(Binder.java:739)
+09-28 13:52:28.635  3546  3559 D CustomFrequencyManagerService: acquireDVFSLockLocked : type : DVFS_MIN_LIMIT  frequency : 2184000  uid : 1000  pid : 3546  pkgName : AMS_APP_SWITCH@CPU_MIN@37
+09-28 13:52:28.636  3546  3559 D ActivityManagerPerformance: AMP_acquire() APP_SWITCH
+09-28 13:52:28.636  3546  3559 I ActivityManager: [IOP] sourceDir : /data/app/com.pietrocode.epubtomp3.flutter_app-ly_ZEz1A87jWs6aXef5EfA== in ActivityStacksupervisor
+09-28 13:52:28.643  3017  3017 I SurfaceFlinger: id=5792 createSurf (4440x4440),2 flag=4, Stack=185#0
+09-28 13:52:28.645  3017  3017 I SurfaceFlinger: id=5793 createSurf (4440x4440),-1 flag=20004, animation background stackId=185#0
+09-28 13:52:28.648  3017  3017 I SurfaceFlinger: id=5794 createSurf (4440x4440),2 flag=4, Task=221#0
+09-28 13:52:28.652  3017  3017 I SurfaceFlinger: id=5795 createSurf (4440x4440),2 flag=4, AppWindowToken{ae529ae token=Token{8e1d229 ActivityRecord{71c33b0 u0 com.pietrocode.epubtomp3.flutter_app/.MainActivity t221}}}#0
+09-28 13:52:28.654  3546  3559 D ActivityManager: [PIP] Update supportsEnterPipOnTaskSwitch(startActivityLocked
+09-28 13:52:28.655  4937  4937 V Launcher: Launcher.onPause()
+09-28 13:52:28.656  4937  4937 E FolderMediator: OpenFolder is null
+09-28 13:52:28.656  3546  3619 I DecorView: createDecorCaptionView >> DecorView@d9f34f[flutter_app], isFloating: false, isApplication: false, hasWindowDecorCaption: false, hasWindowControllerCallback: false
+09-28 13:52:28.659  3546  3546 D MdnieScenarioControlService: MultiWindowState : false
+09-28 13:52:28.659 31272 31272 I Monkey  : Events injected: 1
+09-28 13:52:28.660  3546  3619 D InputTransport: Input channel constructed: fd=356
+09-28 13:52:28.660  3546  3619 D InputTransport: Input channel constructed: fd=460
+09-28 13:52:28.663  3017  3017 I SurfaceFlinger: id=5796 createSurf (4440x4440),2 flag=4, a6c756b Splash Screen com.pietrocode.epubtomp3.flutter_app#0
+09-28 13:52:28.665  3546  3546 D CS_HdrController: updateMultiWindowState : 0
+09-28 13:52:28.665  3546  3546 D GameManagerService: MultiWindowEventListener.onFocusStackChanged(), state=0, top=ComponentInfo{com.pietrocode.epubtomp3.flutter_app/com.pietrocode.epubtomp3.flutter_app.MainActivity}
+09-28 13:52:28.666 28858 28858 I bqwu    : onPause
+09-28 13:52:28.667  3546  3619 D ViewRootImpl@d5e32ba[flutter_app]: setView = DecorView@d9f34f[flutter_app] TM=true MM=false
+09-28 13:52:28.667 28858 28858 I bqwu    : onStop
+09-28 13:52:28.668  3546  4926 V WindowOrientationListener: getProposedRotation :-1
+09-28 13:52:28.668  3546  4926 V WindowManager: rotationForOrientationLw(orient=5, last=0); user=0  sensorRotation=-1 mLidState=-1 mDockMode=0 mHdmiPlugged=false
+09-28 13:52:28.668  3546  6542 I ActivityManager: mTimer start at this point for Notification solution
+09-28 13:52:28.668  3546  6542 I ActivityManager: mTimer scheduling done
+09-28 13:52:28.670  3546  6542 D StorageManagerService: getExternalStorageMountMode : 1
+09-28 13:52:28.670  5188  5188 I SKBD    : and isTosAccept false
+09-28 13:52:28.670  3546  6542 D StorageManagerService: getExternalStorageMountMode : 3
+09-28 13:52:28.670  3546  6542 D StorageManagerService: getExternalStorageMountMode : final mountMode=1, uid : 10198, packageName : com.pietrocode.epubtomp3.flutter_app
+09-28 13:52:28.671  3546  6542 I ApplicationPolicy: isApplicationExternalStorageWhitelisted:com.pietrocode.epubtomp3.flutter_app user:0
+09-28 13:52:28.671  3546  6542 D ApplicationPolicy: isApplicationExternalStorageWhitelisted: DO is not enabled on user 0. Allowed.
+09-28 13:52:28.671  3546  6542 D ActivityManager: package  com.pietrocode.epubtomp3.flutter_app, user - 0 is SDcard whitelisted
+09-28 13:52:28.671  3546  6542 I ApplicationPolicy: isApplicationExternalStorageBlacklisted:com.pietrocode.epubtomp3.flutter_app user:0
+09-28 13:52:28.671  3546  6542 D ApplicationPolicy: isApplicationExternalStorageBlacklisted: DO is not enabled on user 0. Allowed.
+09-28 13:52:28.671  3546  6542 I ApplicationPolicy: isApplicationExternalStorageBlacklisted:com.pietrocode.epubtomp3.flutter_app user:0
+09-28 13:52:28.671  3546  6542 D ApplicationPolicy: isApplicationExternalStorageBlacklisted: DO is not enabled on user 0. Allowed.
+09-28 13:52:28.671  3546  3619 V WindowManager: Relayout Window{a6c756b u0 Splash Screen com.pietrocode.epubtomp3.flutter_app}: viewVisibility=0 req=1080x2076 {(0,0)(fillxfill) sim={adjust=pan} ty=APPLICATION_STARTING wanim=0x1030001
+09-28 13:52:28.671  3546  3619 V WindowManager:   fl=NOT_FOCUSABLE NOT_TOUCHABLE LAYOUT_IN_SCREEN LAYOUT_INSET_DECOR ALT_FOCUSABLE_IM SPLIT_TOUCH HARDWARE_ACCELERATED
+09-28 13:52:28.671  3546  3619 V WindowManager:   pfl=FAKE_HARDWARE_ACCELERATED SHOW_FOR_ALL_USERS FORCE_DRAW_STATUS_BAR_BACKGROUND  remains{ 0x1000000 }
+09-28 13:52:28.671  3546  3619 V WindowManager:   vsysui=LIGHT_NAVIGATION_BAR naviIconColor=0}
+09-28 13:52:28.674  3017  3017 I SurfaceFlinger: id=5797 createSurf (1080x2076),1 flag=404, Splash Screen com.pietrocode.epubtomp3.flutter_app#0
+09-28 13:52:28.676  3546  3619 D WindowManager: makeSurface duration=2 name=Splash Screen com.pietrocode.epubtomp3.flutter_app
+09-28 13:52:28.676  3546  3619 D ViewRootImpl@d5e32ba[flutter_app]: Relayout returned: old=[0,0][1080,2076] new=[0,0][1080,2076] result=0x7 surface={true 495623163904} changed=true
+09-28 13:52:28.676  3546  4926 V WindowOrientationListener: getProposedRotation :-1
+09-28 13:52:28.677  3546  4926 V WindowManager: rotationForOrientationLw(orient=5, last=0); user=0  sensorRotation=-1 mLidState=-1 mDockMode=0 mHdmiPlugged=false
+09-28 13:52:28.679  3546  6542 V ActivityManager: Scheduling idle now: forceIdle=trueimmediate=true
+09-28 13:52:28.681  3546  6542 V WindowManager: Resize reasons for w=Window{a6c756b u0 Splash Screen com.pietrocode.epubtomp3.flutter_app}:  contentInsetsChanged=false [0,72][0,0] visibleInsetsChanged=false [0,72][0,0] stableInsetsChanged=false [0,72][0,0] outsetsChanged=false [0,0][0,0] surfaceResized=false configChanged=false dragResizingChanged=false reportOrientationChanged=false displayCutoutChanged=false nextForceRelayoutToClient=false
+09-28 13:52:28.685  3546  3546 D Telecom:SamsungPrebindingServiceImpl: onTopActivityChanged : ComponentInfo{com.pietrocode.epubtomp3.flutter_app/com.pietrocode.epubtomp3.flutter_app.MainActivity}
+09-28 13:52:28.685  3546  3566 D CoverManager: unregisterListener
+09-28 13:52:28.686  3546  3566 V GearVrManagerService: removeStateCallback=com.android.server.policy.ImmersiveModeConfirmation$5@674a329
+09-28 13:52:28.686 31272 31272 I Monkey  : ## Network stats: elapsed time=51ms (0ms mobile, 0ms wifi, 51ms not connected)
+09-28 13:52:28.688 31272 31272 I app_process: System.exit called, status: 0
+09-28 13:52:28.688 31272 31272 I AndroidRuntime: VM exiting with result code 0.
+09-28 13:52:28.689  3546  6542 V WindowManager: Relayout Window{212e8f7 u0 com.sec.android.app.launcher/com.sec.android.app.launcher.activities.LauncherActivity}: viewVisibility=0 req=1080x2220 {(0,0)(fillxfill) sim={adjust=nothing} layoutInDisplayCutoutMode=always ty=BASE_APPLICATION fmt=TRANSPARENT wanim=0x10302ec
+09-28 13:52:28.689  3546  6542 V WindowManager:   fl=DIM_BEHIND LAYOUT_IN_SCREEN FULLSCREEN FORCE_NOT_FULLSCREEN LAYOUT_INSET_DECOR SHOW_WALLPAPER SPLIT_TOUCH HARDWARE_ACCELERATED DRAWS_SYSTEM_BAR_BACKGROUNDS
+09-28 13:52:28.689  3546  6542 V WindowManager:   pfl=FORCE_DRAW_STATUS_BAR_BACKGROUND
+09-28 13:52:28.689  3546  6542 V WindowManager:   vsysui=LAYOUT_STABLE LAYOUT_HIDE_NAVIGATION LAYOUT_FULLSCREEN dimDuration=222 naviIconColor=0
+09-28 13:52:28.689  3546  6542 V WindowManager:   sfl=CHANGE_DIM_EFFECT_TO_BLUR}
+09-28 13:52:28.689  3865  4220 D Tile.RotationLockTile:  handleUpdateState: true orientation = true
+09-28 13:52:28.691  3546  6542 V WindowOrientationListener: getProposedRotation :-1
+09-28 13:52:28.691  3546  6542 V WindowManager: rotationForOrientationLw(orient=-1, last=0); user=0  sensorRotation=-1 mLidState=-1 mDockMode=0 mHdmiPlugged=false
+09-28 13:52:28.693  4937  4937 D ViewRootImpl@e99ab1a[LauncherActivity]: Relayout returned: old=[0,0][1080,2220] new=[0,0][1080,2220] result=0x1 surface={true 494603821056} changed=false
+09-28 13:52:28.694  3865  4220 D Tile.RotationLockTile:  handleUpdateState: true orientation = true
+09-28 13:52:28.694  3546  3566 V WindowOrientationListener: getProposedRotation :-1
+09-28 13:52:28.694  3546  3566 V WindowManager: rotationForOrientationLw(orient=-1, last=0); user=0  sensorRotation=-1 mLidState=-1 mDockMode=0 mHdmiPlugged=false
+09-28 13:52:28.697  3546  3575 D PowerManagerService: [api] setScreenDimDurationOverrideFromWindowManagerInternal: timeoutMillis: -1
+09-28 13:52:28.698  3546  3566 D CoverManager: unregisterListener
+09-28 13:52:28.698  3546  3566 V GearVrManagerService: removeStateCallback=com.android.server.policy.ImmersiveModeConfirmation$5@674a329
+09-28 13:52:28.699  3546  3566 V WindowOrientationListener: getProposedRotation :-1
+09-28 13:52:28.699  3546  3566 V WindowManager: rotationForOrientationLw(orient=-1, last=0); user=0  sensorRotation=-1 mLidState=-1 mDockMode=0 mHdmiPlugged=false
+09-28 13:52:28.701  3546  3567 I ActivityManager: Start proc 31285:com.pietrocode.epubtomp3.flutter_app/u0a198 for activity com.pietrocode.epubtomp3.flutter_app/.MainActivity
+09-28 13:52:28.701 31285 31285 E Zygote  : isWhitelistProcess - Process is Whitelisted
+09-28 13:52:28.705 31285 31285 E Zygote  : accessInfo : 1
+09-28 13:52:28.707  3546  3619 D WindowManager: finishDrawingWindow: Window{a6c756b u0 Splash Screen com.pietrocode.epubtomp3.flutter_app} mDrawState=DRAW_PENDING
+09-28 13:52:28.707  3546  3619 D ViewRootImpl@d5e32ba[flutter_app]: MSG_RESIZED_REPORT: frame=[0,0][1080,2076] ci=[0,72][0,0] vi=[0,72][0,0] or=1
+09-28 13:52:28.709  3546  3619 I WindowManager: commitFinishDrawingLocked: mDrawState=READY_TO_SHOW Surface(name=Splash Screen com.pietrocode.epubtomp3.flutter_app)/@0xcb09d61
+09-28 13:52:28.709 31285 31285 I mp3.flutter_ap: Late-enabling -Xcheck:jni
+09-28 13:52:28.725  3546  3619 D WindowManager: finishDrawingWindow: Window{a6c756b u0 Splash Screen com.pietrocode.epubtomp3.flutter_app} mDrawState=READY_TO_SHOW
+09-28 13:52:28.738 31285 31285 I mp3.flutter_ap: report jit thread pid = 31290
+09-28 13:52:28.752  3546  6542 I ActivityManager: DSS on for com.pietrocode.epubtomp3.flutter_app and scale is 1.0
+09-28 13:52:28.754  3546  6542 V WindowOrientationListener: getProposedRotation :-1
+09-28 13:52:28.754  3546  6542 V WindowManager: rotationForOrientationLw(orient=-1, last=0); user=0  sensorRotation=-1 mLidState=-1 mDockMode=0 mHdmiPlugged=false
+09-28 13:52:28.756  3546  6542 I WindowManager: commitFinishDrawingLocked: mDrawState=READY_TO_SHOW Surface(name=Splash Screen com.pietrocode.epubtomp3.flutter_app)/@0xcb09d61
+09-28 13:52:28.759  3546  6542 D GamePkgDataHelper: notifyAppCreate(), pkgName: com.pietrocode.epubtomp3.flutter_app, sendRet: true
+09-28 13:52:28.759  3546  3823 D GamePkgDataHelper: getGamePkgData(). com.pietrocode.epubtomp3.flutter_app
+09-28 13:52:28.759  3546  3823 D GameManagerService: handleMessage(), MSG_APP_CREATE. ignore. pkgName: com.pietrocode.epubtomp3.flutter_app
+09-28 13:52:28.759  3546  6542 D InputDispatcher: Focused application set to: ae529ae
+09-28 13:52:28.760  3546  6542 V WindowManager: Changing focus from Window{212e8f7 u0 com.sec.android.app.launcher/com.sec.android.app.launcher.activities.LauncherActivity} to null Callers=com.android.server.wm.WindowManagerService.setFocusedApp:3187 com.android.server.am.ActivityManagerService.setResumedActivityUncheckLocked:4498 com.android.server.am.ActivityStack.onActivityStateChanged:560 com.android.server.am.TaskRecord.onActivityStateChanged:2186 
+09-28 13:52:28.760  3546  6542 D InputDispatcher: Focus left window (4937): 212e8f7 0
+09-28 13:52:28.763  3546  6542 D GameManagerService: noteResumeComponent(), resumeComponent: com.pietrocode.epubtomp3.flutter_app
+09-28 13:52:28.763  3546  3823 D GameManagerService: handleForegroundChange(). pkgName: com.pietrocode.epubtomp3.flutter_app, clsName: com.pietrocode.epubtomp3.flutter_app.MainActivity,FgActivityName:com.pietrocode.epubtomp3.flutter_app/.MainActivity,userID:0
+09-28 13:52:28.763  3546  3823 D GameManagerService:   handleForegroundChange(). set mFgApp: com.pietrocode.epubtomp3.flutter_app
+09-28 13:52:28.763  3546  6542 D GamePkgDataHelper: getSosPolicy(). com.pietrocode.epubtomp3.flutter_app
+09-28 13:52:28.764  3546  3823 D GameManagerService: notifyResumePause(). pkg: com.pietrocode.epubtomp3.flutter_app, type: 4, isMinimized: false, isTunableApp: false
+09-28 13:52:28.764  3546  3823 D GameManagerService:   notifyResumePause(). unexpected mPrevNotiType: -1
+09-28 13:52:28.764  3546  3559 D GamePkgDataHelper: getGamePkgDataIncServer(). com.pietrocode.epubtomp3.flutter_app
+09-28 13:52:28.764  3546  6542 D GameManagerService: identifyGamePackage. com.pietrocode.epubtomp3.flutter_app, mCurrentUserId: 0, callerUserId: 0
+09-28 13:52:28.764  3546  6542 D GamePkgDataHelper: getGamePkgData(). com.pietrocode.epubtomp3.flutter_app
+09-28 13:52:28.764  3546  6542 D MARsPolicyManager: onPackageResumedFG pkgName = com.pietrocode.epubtomp3.flutter_app, userId = 0
+09-28 13:52:28.766  3546  3566 D CodecSolution: isMaxAspectPackageEx: com.pietrocode.epubtomp3.flutter_app : true(2)
+09-28 13:52:28.766  4059 27743 D ForegroundUtils: could not check pending caller
+09-28 13:52:28.767  3546  3559 D GamePkgDataHelper: getSosPolicy(). com.pietrocode.epubtomp3.flutter_app
+09-28 13:52:28.767  3546  3619 I WindowManager: commitFinishDrawingLocked: mDrawState=READY_TO_SHOW Surface(name=Splash Screen com.pietrocode.epubtomp3.flutter_app)/@0xcb09d61
+09-28 13:52:28.769  4850  6680 E SDHMS:SDHMS_UTIL_IO: e = /sys/class/input_booster/touchkey/time (Permission denied)
+09-28 13:52:28.769  4850  6680 E SDHMS:SDHMS_UTIL_IO: e = /sys/class/input_booster/touchkey/time (Permission denied)
+09-28 13:52:28.770  3014  6788 V APM_AudioPolicyManager: AudioPolicyManager:setRecordSilenced(uid:10198, silenced:0)
+09-28 13:52:28.771  3546  3619 I WindowManager: Cancelling animation restarting=true, leash=null, surface=Surface(name=AppWindowToken{c000093 token=Token{d39d182 ActivityRecord{a8ba4cd u0 com.sec.android.app.launcher/.activities.LauncherActivity t2}}})/@0x249c006, parent=Surface(name=Task=2)/@0xc8cc6c7
+09-28 13:52:28.771  3546  3619 I WindowManager: Reparenting to leash, surface=Surface(name=AppWindowToken{c000093 token=Token{d39d182 ActivityRecord{a8ba4cd u0 com.sec.android.app.launcher/.activities.LauncherActivity t2}}})/@0x249c006
+09-28 13:52:28.772  3017  3017 I SurfaceFlinger: id=5798 createSurf (4440x4440),2 flag=4, Surface(name=AppWindowToken{c000093 token=Token{d39d182 ActivityRecord{a8ba4cd u0 com.sec.android.app.launcher/.activities.LauncherActivity t2}}})/@0x249c006 - animation-leash#0
+09-28 13:52:28.773  3546  3619 D WindowManager: makeSurface duration=2 leash=Surface(name=Surface(name=AppWindowToken{c000093 token=Token{d39d182 ActivityRecord{a8ba4cd u0 com.sec.android.app.launcher/.activities.LauncherActivity t2}}})/@0x249c006 - animation-leash)/@0x5045f12
+09-28 13:52:28.773  3546  3619 D SurfaceControl: reparent is called, sc=Surface(name=AppWindowToken{c000093 token=Token{d39d182 ActivityRecord{a8ba4cd u0 com.sec.android.app.launcher/.activities.LauncherActivity t2}}})/@0x249c006, newParentHandle=android.os.BinderProxy@1c026e3, transaction=android.view.SurfaceControl$Transaction@7b1d692
+09-28 13:52:28.773  3546  3559 D GameManagerService: identifyGamePackage. com.pietrocode.epubtomp3.flutter_app, mCurrentUserId: 0, callerUserId: 0
+09-28 13:52:28.773  3546  3559 D GamePkgDataHelper: getGamePkgData(). com.pietrocode.epubtomp3.flutter_app
+09-28 13:52:28.774  4850  6680 E SDHMS:SDHMS_UTIL_IO: e = /sys/class/input_booster/touchkey/time (Permission denied)
+09-28 13:52:28.775  3546  3619 I WindowManager: Cancelling animation restarting=true, leash=null, surface=Surface(name=AppWindowToken{ae529ae token=Token{8e1d229 ActivityRecord{71c33b0 u0 com.pietrocode.epubtomp3.flutter_app/.MainActivity t221}}})/@0x208be6a, parent=Surface(name=Task=221)/@0x7b98f5b
+09-28 13:52:28.775  3546  3619 I WindowManager: Reparenting to leash, surface=Surface(name=AppWindowToken{ae529ae token=Token{8e1d229 ActivityRecord{71c33b0 u0 com.pietrocode.epubtomp3.flutter_app/.MainActivity t221}}})/@0x208be6a
+09-28 13:52:28.776  3017  3017 I SurfaceFlinger: id=5799 createSurf (4440x4440),2 flag=4, Surface(name=AppWindowToken{ae529ae token=Token{8e1d229 ActivityRecord{71c33b0 u0 com.pietrocode.epubtomp3.flutter_app/.MainActivity t221}}})/@0x208be6a - animation-leash#0
+09-28 13:52:28.778  3546  4926 D GameManagerService: identifyGamePackage. com.pietrocode.epubtomp3.flutter_app, mCurrentUserId: 0, callerUserId: 0
+09-28 13:52:28.778  3546  4926 D GamePkgDataHelper: getGamePkgData(). com.pietrocode.epubtomp3.flutter_app
+09-28 13:52:28.778  3546  3619 D WindowManager: makeSurface duration=2 leash=Surface(name=Surface(name=AppWindowToken{ae529ae token=Token{8e1d229 ActivityRecord{71c33b0 u0 com.pietrocode.epubtomp3.flutter_app/.MainActivity t221}}})/@0x208be6a - animation-leash)/@0xf11f3f8
+09-28 13:52:28.779  3546  3619 D SurfaceControl: reparent is called, sc=Surface(name=AppWindowToken{ae529ae token=Token{8e1d229 ActivityRecord{71c33b0 u0 com.pietrocode.epubtomp3.flutter_app/.MainActivity t221}}})/@0x208be6a, newParentHandle=android.os.BinderProxy@ccaa0d1, transaction=android.view.SurfaceControl$Transaction@1ec5736
+09-28 13:52:28.780  3546  3619 V WindowManager: performShowLocked: mDrawState=HAS_DRAWN in Window{a6c756b u0 Splash Screen com.pietrocode.epubtomp3.flutter_app}
+09-28 13:52:28.783  3546  3566 D WindowManager: setSystemUiVisibility: vis= 0x18, fullscreenVis= 0x0, dockedVis= 0x0, win=Window{a6c756b u0 Splash Screen com.pietrocode.epubtomp3.flutter_app}
+09-28 13:52:28.784  3865  3865 D BarTransitions.SecNavigationBarView: MODE_TRANSPARENT -> MODE_OPAQUE animate=true
+09-28 13:52:28.784  3865  3865 D Navbar.ImmersiveControllerAdapter: onSystemUiVisibilityChanged - 24,0
+09-28 13:52:28.784  3865  3865 I Navbar.ImmersiveController: handleEvent - VISIBLE, BAR_MODE_CHANGED
+09-28 13:52:28.785  3865  3865 D LightBarController: onNavigationVisibilityChanged : vis = 18, nbModeChanged = true navigationBarMode = 0
+09-28 13:52:28.785  3017  3704 D Layer   : [AppWindowToken{ae529ae token=Token{8e1d229 ActivityRecord{71c33b0 u0 com.pietrocode.epubtomp3.flutter_app/.MainActivity t221}}}#0]::reparent oldParent:[Task=221#0], newParent:[Surface(name=AppWindowToken{ae529ae token=Token{8e1d229 ActivityRecord{71c33b0 u0 com.pietrocode.epubtomp3.flutter_app/.MainActivity t221}}})/@0x208be6a - animation-leash#0]
+09-28 13:52:28.785  3017  3704 D Layer   : [AppWindowToken{c000093 token=Token{d39d182 ActivityRecord{a8ba4cd u0 com.sec.android.app.launcher/.activities.LauncherActivity t2}}}#0]::reparent oldParent:[Task=2#0], newParent:[Surface(name=AppWindowToken{c000093 token=Token{d39d182 ActivityRecord{a8ba4cd u0 com.sec.android.app.launcher/.activities.LauncherActivity t2}}})/@0x249c006 - animation-leash#0]
+09-28 13:52:28.788  3546  3575 D WindowManager: reportFocusChangedSerialized, focused=false, inTouchMode=true, win=Window{212e8f7 u0 com.sec.android.app.launcher/com.sec.android.app.launcher.activities.LauncherActivity}
+09-28 13:52:28.789  4937  4937 D ViewRootImpl@e99ab1a[LauncherActivity]: MSG_WINDOW_FOCUS_CHANGED 0 1
+09-28 13:52:28.789  4937  4937 D InputMethodManager: prepareNavigationBarInfo() DecorView@5b28891[LauncherActivity]
+09-28 13:52:28.789  4937  4937 D InputMethodManager: getNavigationBarColor() 0
+09-28 13:52:28.789  3546  3559 D SamsungPhoneWindowManager: adjustSystemUiVisibilityLw: vis=0x18
+09-28 13:52:28.789  3546  3559 D InputManager-JNI: setSystemUiVisibility dexmode: false changed: true displayid: 0 visibility: 0x18 DD: 0x18 OD: 0x0
+09-28 13:52:28.792  4937 22616 D RecentsTaskLoadPlan: lastReportedWindowingMode is not exist.
+09-28 13:52:28.799  4937 22616 I chatty  : uid=10091(com.sec.android.app.launcher) Binder:4937_B identical 5 lines
+09-28 13:52:28.800  4937 22616 D RecentsTaskLoadPlan: lastReportedWindowingMode is not exist.
+09-28 13:52:28.837  4663  4663 D io_stats: !@ 179,0 r 2700567 134575888 w 1388671 71463920 d 116147 81768628 f 421932 440599 iot 2981600 2612567 th 51200 0 0 pt 0 inp 0 0 374832.481
+09-28 13:52:28.871  5188  5188 I SKBD    : and isTosAccept false
+09-28 13:52:28.881  2996 32482 W MapperHal: buffer descriptor with invalid usage bits 0x8000000
+09-28 13:52:28.895  3017  3017 I SurfaceFlinger: Display 0 HWC layers:
+09-28 13:52:28.895  3017  3017 I SurfaceFlinger:     type    |    handle    | flag |  format   |   source crop (l,t,r,b)    |         frame       | name 
+09-28 13:52:28.895  3017  3017 I SurfaceFlinger: ------------+--------------+------+-----------+----------------------------+---------------------+------
+09-28 13:52:28.895  3017  3017 I SurfaceFlinger:      Client | 0x786ac32f00 | 0002 | RGBA_8888 | 570.0    0.0 1650.0 2220.0 |    0    0 1080 2220 | com.android.systemui.ImageWallpaper[3865]#0
+09-28 13:52:28.895  3017  3017 I SurfaceFlinger:      Client | 0x786a61ffc0 | 0000 | RGBA_8888 |  73.0  151.0 1007.0 2069.0 |    0    1 1080 2219 | com.sec.android.app.launcher/com.sec[...]ties.LauncherActivity[4937]#0 (Blur)
+09-28 13:52:28.895  3017  3017 I SurfaceFlinger:      Device | 0x7861497780 | 0002 | RGBA_8888 |   0.0    0.0 1080.0 2076.0 |   89  172  991 1904 | Splash Screen com.pietrocode.epubtomp3.flutter_app#0
+09-28 13:52:28.895  3017  3017 I SurfaceFlinger:      Device | 0x786ac33e00 | 0000 | RGBA_8888 |   0.0    0.0 1080.0   72.0 |    0    0 1080   72 | StatusBar[3865]#0
+09-28 13:52:28.895  3017  3017 I SurfaceFlinger:      Device | 0x786a620b00 | 0000 | RGBA_8888 |   0.0    0.0 1080.0  144.0 |    0 2076 1080 2220 | NavigationBar[3865]#0
+09-28 13:52:28.895  3017  3017 I SurfaceFlinger: 
+09-28 13:52:28.897  3546  4008 D MdnieScenarioControlService:  packageName : com.pietrocode.epubtomp3.flutter_app    className : com.pietrocode.epubtomp3.flutter_app.MainActivity
+09-28 13:52:28.897  3546  4008 V MdnieScenarioControlService: setUIMode from UI function(3)
+09-28 13:52:28.899  2996 32482 W MapperHal: buffer descriptor with invalid usage bits 0x8000000
+09-28 13:52:28.918  2996 32482 W MapperHal: buffer descriptor with invalid usage bits 0x8000000
+09-28 13:52:28.933  3017  3017 I SurfaceFlinger: Display 0 HWC layers:
+09-28 13:52:28.933  3017  3017 I SurfaceFlinger:     type    |    handle    | flag |  format   |   source crop (l,t,r,b)    |         frame       | name 
+09-28 13:52:28.933  3017  3017 I SurfaceFlinger: ------------+--------------+------+-----------+----------------------------+---------------------+------
+09-28 13:52:28.933  3017  3017 I SurfaceFlinger:      Device | 0x786ac32f00 | 0002 | RGBA_8888 | 570.0    0.0 1650.0 2220.0 |    0    0 1080 2220 | com.android.systemui.ImageWallpaper[3865]#0
+09-28 13:52:28.933  3017  3017 I SurfaceFlinger:      Device | 0x7861497780 | 0002 | RGBA_8888 |   0.0    0.0 1080.0 2076.0 |   50   96 1030 1980 | Splash Screen com.pietrocode.epubtomp3.flutter_app#0
+09-28 13:52:28.933  3017  3017 I SurfaceFlinger:      Device | 0x786ac33e00 | 0000 | RGBA_8888 |   0.0    0.0 1080.0   72.0 |    0    0 1080   72 | StatusBar[3865]#0
+09-28 13:52:28.933  3017  3017 I SurfaceFlinger:      Device | 0x786a61fa80 | 0000 | RGBA_8888 |   0.0    0.0 1080.0  144.0 |    0 2076 1080 2220 | NavigationBar[3865]#0
+09-28 13:52:28.933  3017  3017 I SurfaceFlinger: 
+09-28 13:52:29.028  3546  3619 I WindowManager: reset, Reparenting to original parent, shouldDeferScheduleAnimation=false, destroyLeash=true, surface=Surface(name=AppWindowToken{ae529ae token=Token{8e1d229 ActivityRecord{71c33b0 u0 com.pietrocode.epubtomp3.flutter_app/.MainActivity t221}}})/@0x208be6a, parent=Surface(name=Task=221)/@0x7b98f5b, parentNativeHandle=android.os.BinderProxy@59eb0c2, caller=com.android.server.wm.SurfaceAnimator.lambda$getFinishedCallback$0:97 com.android.server.wm.-$$Lambda$SurfaceAnimator$SIBia0mND666K8lMCPsoid8pUTI.run:4 com.android.server.wm.SurfaceAnimator.lambda$getFinishedCallback$1:104 com.android.server.wm.-$$Lambda$SurfaceAnimator$vdRZk66hQVbQCvVXEaQCT1kVmFc.onAnimationFinished:4 com.android.server.wm.LocalAnimationAdapter.lambda$startAnimation$0:65 
+09-28 13:52:29.028  3546  3619 D SurfaceControl: reparent is called, sc=Surface(name=AppWindowToken{ae529ae token=Token{8e1d229 ActivityRecord{71c33b0 u0 com.pietrocode.epubtomp3.flutter_app/.MainActivity t221}}})/@0x208be6a, newParentHandle=android.os.BinderProxy@59eb0c2, transaction=android.view.SurfaceControl$Transaction@1ec5736
+09-28 13:52:29.029  3546  3619 D SurfaceControl: destroy(transaction), animation-leash is destroyed, sc=Surface(name=Surface(name=AppWindowToken{ae529ae token=Token{8e1d229 ActivityRecord{71c33b0 u0 com.pietrocode.epubtomp3.flutter_app/.MainActivity t221}}})/@0x208be6a - animation-leash)/@0xf11f3f8, transaction=android.view.SurfaceControl$Transaction@1ec5736, caller=com.android.server.wm.SurfaceAnimator.reset:338 com.android.server.wm.SurfaceAnimator.lambda$getFinishedCallback$0:97 com.android.server.wm.-$$Lambda$SurfaceAnimator$SIBia0mND666K8lMCPsoid8pUTI.run:4 com.android.server.wm.SurfaceAnimator.lambda$getFinishedCallback$1:104 com.android.server.wm.-$$Lambda$SurfaceAnimator$vdRZk66hQVbQCvVXEaQCT1kVmFc.onAnimationFinished:4 com.android.server.wm.LocalAnimationAdapter.lambda$startAnimation$0:65 com.android.server.wm.-$$Lambda$LocalAnimationAdapter$X--EomqUvw4qy89IeeTFTH7aCMo.run:4 
+09-28 13:52:29.029  3546  3546 D FreeformController: Fail to invalid task id :  -1
+09-28 13:52:29.032  3017  3704 D Layer   : [AppWindowToken{ae529ae token=Token{8e1d229 ActivityRecord{71c33b0 u0 com.pietrocode.epubtomp3.flutter_app/.MainActivity t221}}}#0]::reparent oldParent:[Surface(name=AppWindowToken{ae529ae token=Token{8e1d229 ActivityRecord{71c33b0 u0 com.pietrocode.epubtomp3.flutter_app/.MainActivity t221}}})/@0x208be6a - animation-leash#0], newParent:[Task=221#0]
+09-28 13:52:29.033  3017  3704 I SurfaceFlinger: id=5799 Removed Surface(name=AppWindowToken{ae529ae token=Token{8e1d229 ActivityRecord{71c33b0 u0 com.pietrocode.epubtomp3.flutter_app/.MainActivity t221}}})/@0x208be6a - animation-leash#0 (0/66)
+09-28 13:52:29.035  3546  3823 D GameManagerService: handleForegroundChange(). pkgName: com.sec.android.app.launcher, clsName: com.sec.android.app.launcher.activities.LauncherActivity,FgActivityName:com.sec.android.app.launcher/.activities.LauncherActivity,userID:0
+09-28 13:52:29.035  3546  3823 D GameManagerService:   handleForegroundChange(). set mFgApp: com.sec.android.app.launcher
+09-28 13:52:29.035  3546  3823 D GameManagerService: notifyResumePause(). pkg: com.sec.android.app.launcher, type: 4, isMinimized: false, isTunableApp: false
+09-28 13:52:29.035  3546  3823 D GameManagerService:   notifyResumePause(). unexpected mPrevNotiType: -1
+09-28 13:52:29.044  3017  3017 I Layer   : id=5799 onRemoved Surface(name=AppWindowToken{ae529ae token=Token{8e1d229 ActivityRecord{71c33b0 u0 com.pietrocode.epubtomp3.flutter_app/.MainActivity t221}}})/@0x208be6a - animation-leash#0 
+09-28 13:52:29.061  3546  3619 I WindowManager: reset, Reparenting to original parent, shouldDeferScheduleAnimation=false, destroyLeash=true, surface=Surface(name=AppWindowToken{c000093 token=Token{d39d182 ActivityRecord{a8ba4cd u0 com.sec.android.app.launcher/.activities.LauncherActivity t2}}})/@0x249c006, parent=Surface(name=Task=2)/@0xc8cc6c7, parentNativeHandle=android.os.BinderProxy@19ed8e9, caller=com.android.server.wm.SurfaceAnimator.lambda$getFinishedCallback$0:97 com.android.server.wm.-$$Lambda$SurfaceAnimator$SIBia0mND666K8lMCPsoid8pUTI.run:4 com.android.server.wm.SurfaceAnimator.lambda$getFinishedCallback$1:104 com.android.server.wm.-$$Lambda$SurfaceAnimator$vdRZk66hQVbQCvVXEaQCT1kVmFc.onAnimationFinished:4 com.android.server.wm.LocalAnimationAdapter.lambda$startAnimation$0:65 
+09-28 13:52:29.061  3546  3619 D SurfaceControl: reparent is called, sc=Surface(name=AppWindowToken{c000093 token=Token{d39d182 ActivityRecord{a8ba4cd u0 com.sec.android.app.launcher/.activities.LauncherActivity t2}}})/@0x249c006, newParentHandle=android.os.BinderProxy@19ed8e9, transaction=android.view.SurfaceControl$Transaction@7b1d692
+09-28 13:52:29.062  3546  3619 D SurfaceControl: destroy(transaction), animation-leash is destroyed, sc=Surface(name=Surface(name=AppWindowToken{c000093 token=Token{d39d182 ActivityRecord{a8ba4cd u0 com.sec.android.app.launcher/.activities.LauncherActivity t2}}})/@0x249c006 - animation-leash)/@0x5045f12, transaction=android.view.SurfaceControl$Transaction@7b1d692, caller=com.android.server.wm.SurfaceAnimator.reset:338 com.android.server.wm.SurfaceAnimator.lambda$getFinishedCallback$0:97 com.android.server.wm.-$$Lambda$SurfaceAnimator$SIBia0mND666K8lMCPsoid8pUTI.run:4 com.android.server.wm.SurfaceAnimator.lambda$getFinishedCallback$1:104 com.android.server.wm.-$$Lambda$SurfaceAnimator$vdRZk66hQVbQCvVXEaQCT1kVmFc.onAnimationFinished:4 com.android.server.wm.LocalAnimationAdapter.lambda$startAnimation$0:65 com.android.server.wm.-$$Lambda$LocalAnimationAdapter$X--EomqUvw4qy89IeeTFTH7aCMo.run:4 
+09-28 13:52:29.062  3546  3619 V WindowManager: Setting visibility of Window{212e8f7 u0 com.sec.android.app.launcher/com.sec.android.app.launcher.activities.LauncherActivity}: false, caller=com.android.server.wm.WindowContainer.sendAppVisibilityToClients:615 com.android.server.wm.AppWindowToken.setClientHidden:461 com.android.server.wm.AppWindowToken.onAnimationFinished:2393 com.android.server.wm.-$$Lambda$yVRF8YoeNdTa8GR1wDStVsHu8xM.run:2 com.android.server.wm.SurfaceAnimator.lambda$getFinishedCallback$0:100 
+09-28 13:52:29.063  3546  3546 D FreeformController: Fail to invalid task id :  -1
+09-28 13:52:29.063  3865 31121 D WallpaperService: dispatchAppVisibility onVisibilityChanged(): false
+09-28 13:52:29.064  3865  3865 D ImageWallpaper: onVisibilityChanged: mVisible, visible=true, false
+09-28 13:52:29.064  3865  3865 D ImageWallpaper: Visibility changed to visible=false
+09-28 13:52:29.064  3865  3865 D WallpaperService: reportVisibility onVisibilityChanged visible: false
+09-28 13:52:29.065  3017  9286 D Layer   : [AppWindowToken{c000093 token=Token{d39d182 ActivityRecord{a8ba4cd u0 com.sec.android.app.launcher/.activities.LauncherActivity t2}}}#0]::reparent oldParent:[Surface(name=AppWindowToken{c000093 token=Token{d39d182 ActivityRecord{a8ba4cd u0 com.sec.android.app.launcher/.activities.LauncherActivity t2}}})/@0x249c006 - animation-leash#0], newParent:[Task=2#0]
+09-28 13:52:29.065  3017  9286 I SurfaceFlinger: id=5798 Removed Surface(name=AppWindowToken{c000093 token=Token{d39d182 ActivityRecord{a8ba4cd u0 com.sec.android.app.launcher/.activities.LauncherActivity t2}}})/@0x249c006 - animation-leash#0 (0/65)
+09-28 13:52:29.071  5188  5188 I SKBD    : and isTosAccept false
+09-28 13:52:29.078  3017  3017 I Layer   : id=5798 onRemoved Surface(name=AppWindowToken{c000093 token=Token{d39d182 ActivityRecord{a8ba4cd u0 com.sec.android.app.launcher/.activities.LauncherActivity t2}}})/@0x249c006 - animation-leash#0 
+09-28 13:52:29.079  4937  4937 I Launcher: onWindowVisibilityChanged : false
+09-28 13:52:29.083  3017  3062 E BufferQueueProducer: [com.sec.android.app.launcher/com.sec.android.app.launcher.activities.LauncherActivity[4937]#0] disconnect: not connected (req=1)
+09-28 13:52:29.084  4937  5459 W libEGL  : EGLNativeWindowType 0x7328af6010 disconnect failed
+09-28 13:52:29.084  4937  5459 D OpenGLRenderer: eglDestroySurface = 0x73470e7c80, 0x7328af6000
+09-28 13:52:29.084  3017  3017 I SurfaceFlinger: Display 0 HWC layers:
+09-28 13:52:29.084  3017  3017 I SurfaceFlinger:     type    |    handle    | flag |  format   |   source crop (l,t,r,b)    |         frame       | name 
+09-28 13:52:29.084  3017  3017 I SurfaceFlinger: ------------+--------------+------+-----------+----------------------------+---------------------+------
+09-28 13:52:29.084  3017  3017 I SurfaceFlinger:      Device | 0x7861497780 | 0002 | RGBA_8888 |   0.0    0.0 1080.0 2076.0 |    0    0 1080 2076 | Splash Screen com.pietrocode.epubtomp3.flutter_app#0
+09-28 13:52:29.084  3017  3017 I SurfaceFlinger:      Device | 0x786ac33e00 | 0000 | RGBA_8888 |   0.0    0.0 1080.0   72.0 |    0    0 1080   72 | StatusBar[3865]#0
+09-28 13:52:29.084  3017  3017 I SurfaceFlinger:      Device | 0x786a61fa80 | 0000 | RGBA_8888 |   0.0    0.0 1080.0  144.0 |    0 2076 1080 2220 | NavigationBar[3865]#0
+09-28 13:52:29.084  3017  3017 I SurfaceFlinger: 
+09-28 13:52:29.087  3546  6542 V WindowManager: Relayout Window{212e8f7 u0 com.sec.android.app.launcher/com.sec.android.app.launcher.activities.LauncherActivity}: viewVisibility=8 req=1080x2220 {(0,0)(fillxfill) sim={adjust=nothing} layoutInDisplayCutoutMode=always ty=BASE_APPLICATION fmt=TRANSPARENT wanim=0x10302ec
+09-28 13:52:29.087  3546  6542 V WindowManager:   fl=DIM_BEHIND LAYOUT_IN_SCREEN FULLSCREEN FORCE_NOT_FULLSCREEN LAYOUT_INSET_DECOR SHOW_WALLPAPER SPLIT_TOUCH HARDWARE_ACCELERATED DRAWS_SYSTEM_BAR_BACKGROUNDS
+09-28 13:52:29.087  3546  6542 V WindowManager:   pfl=FORCE_DRAW_STATUS_BAR_BACKGROUND
+09-28 13:52:29.087  3546  6542 V WindowManager:   vsysui=LAYOUT_STABLE LAYOUT_HIDE_NAVIGATION LAYOUT_FULLSCREEN dimDuration=222 naviIconColor=0
+09-28 13:52:29.087  3546  6542 V WindowManager:   sfl=CHANGE_DIM_EFFECT_TO_BLUR}
+09-28 13:52:29.088  3546  6542 E WindowManager: win=Window{212e8f7 u0 com.sec.android.app.launcher/com.sec.android.app.launcher.activities.LauncherActivity} destroySurfaces: appStopped=false win.mWindowRemovalAllowed=false win.mRemoveOnExit=false win.mViewVisibility=8 caller=com.android.server.wm.WindowManagerService.tryStartExitingAnimation:2810 com.android.server.wm.WindowManagerService.relayoutWindow:2507 com.android.server.wm.Session.relayoutForTranslate:302 android.view.IWindowSession$Stub.onTransact:518 com.android.server.wm.Session.onTransact:186 android.os.Binder.execTransact:739 <bottom of call stack> 
+09-28 13:52:29.088  3546  6542 I WindowManager: Destroying surface Surface(name=com.sec.android.app.launcher/com.sec.android.app.launcher.activities.LauncherActivity[4937])/@0x17a48b9 called by com.android.server.wm.WindowStateAnimator.destroySurface:1880 com.android.server.wm.WindowStateAnimator.destroySurfaceLocked:840 com.android.server.wm.WindowState.destroySurfaceUnchecked:3877 com.android.server.wm.WindowState.destroySurface:3858 com.android.server.wm.WindowManagerService.tryStartExitingAnimation:2810 com.android.server.wm.WindowManagerService.relayoutWindow:2507 com.android.server.wm.Session.relayoutForTranslate:302 android.view.IWindowSession$Stub.onTransact:518 
+09-28 13:52:29.088  3017  3062 I SurfaceFlinger: id=5790 Removed com.sec.android.app.launcher/com.sec.android.app.launcher.activities.LauncherActivity[4937]#0 (0/64)
+09-28 13:52:29.092  4937  4937 D ViewRootImpl@e99ab1a[LauncherActivity]: Relayout returned: old=[0,0][1080,2220] new=[0,0][1080,2220] result=0x5 surface={false 0} changed=true
+09-28 13:52:29.094  3017  3017 I Layer   : id=5790 onRemoved com.sec.android.app.launcher/com.sec.android.app.launcher.activities.LauncherActivity[4937]#0 
+09-28 13:52:29.227  3546  6542 D WifiPermissionsUtil: canAccessScanResults: pkgName = com.sec.android.sdhms, uid = 1000
+09-28 13:52:29.271  5188  5188 I SKBD    : and isTosAccept false
+09-28 13:52:29.408 28694 26172 W AOSP-MdnsDiscoveryManag: Error while decoding multicast packet (4758): 1 [CONTEXT service_id=168 ]
+09-28 13:52:29.408 28694 26172 W AOSP-MdnsDiscoveryManag: Error while decoding multicast packet (4759): 1 [CONTEXT service_id=168 ]
+09-28 13:52:29.451  3546  3546 D Telecom:SamsungPrebindingServiceImpl: handleMessage 0
+09-28 13:52:29.451  3546  3546 I Telecom:SamsungPrebindingServiceImpl: isSktTPhoneMode supportTPhone: false
+09-28 13:52:29.451  3546  3546 I Telecom:SamsungPrebindingServiceImpl: needToKeepBinding - false - match not found
+09-28 13:52:29.467  3546  3738 D WifiTrafficPoller: TrafficStats TxPkts=850862 RxPkts=3679816 TxBytes=95575424 RxBytes=4896640292 , Foreground uid=10198 pkgName=com.pietrocode.epubtomp3.flutter_app TxPackets=111 RxPackets=84 TxBytes=10476 RxBytes=4268
+09-28 13:52:29.472  5188  5188 I SKBD    : and isTosAccept false
+09-28 13:52:29.604 31285 31285 W mp3.flutter_ap: Accessing hidden field Landroid/os/Trace;->TRACE_TAG_APP:J (light greylist, reflection)
+09-28 13:52:29.604 31285 31285 W mp3.flutter_ap: Accessing hidden method Landroid/os/Trace;->isTagEnabled(J)Z (light greylist, reflection)
+09-28 13:52:29.624 31285 31285 D WM-WrkMgrInitializer: Initializing WorkManager with default configuration.
+09-28 13:52:29.672  5188  5188 I SKBD    : and isTosAccept false
+09-28 13:52:29.701 31285 31285 D WM-PackageManagerHelper: Skipping component enablement for androidx.work.impl.background.systemjob.SystemJobService
+09-28 13:52:29.701 31285 31285 D WM-Schedulers: Created SystemJobScheduler and enabled SystemJobService
+09-28 13:52:29.743 31285 31285 I mp3.flutter_ap: Rejecting re-init on previously-failed class java.lang.Class<io.flutter.embedding.android.FlutterActivity$1>: java.lang.NoClassDefFoundError: Failed resolution of: Landroid/window/OnBackAnimationCallback;
+09-28 13:52:29.743 31285 31285 I mp3.flutter_ap:   at java.lang.Object java.lang.Class.newInstance() (Class.java:-2)
+09-28 13:52:29.743 31285 31285 I mp3.flutter_ap:   at android.app.Activity android.app.AppComponentFactory.instantiateActivity(java.lang.ClassLoader, java.lang.String, android.content.Intent) (AppComponentFactory.java:69)
+09-28 13:52:29.743 31285 31285 I mp3.flutter_ap:   at android.app.Activity androidx.core.app.CoreComponentFactory.instantiateActivity(java.lang.ClassLoader, java.lang.String, android.content.Intent) (CoreComponentFactory.java:44)
+09-28 13:52:29.744 31285 31285 I mp3.flutter_ap:   at android.app.Activity android.app.Instrumentation.newActivity(java.lang.ClassLoader, java.lang.String, android.content.Intent) (Instrumentation.java:1219)
+09-28 13:52:29.744 31285 31285 I mp3.flutter_ap:   at android.app.Activity android.app.ActivityThread.performLaunchActivity(android.app.ActivityThread$ActivityClientRecord, android.content.Intent) (ActivityThread.java:3015)
+09-28 13:52:29.744 31285 31285 I mp3.flutter_ap:   at android.app.Activity android.app.ActivityThread.handleLaunchActivity(android.app.ActivityThread$ActivityClientRecord, android.app.servertransaction.PendingTransactionActions, android.content.Intent) (ActivityThread.java:3264)
+09-28 13:52:29.744 31285 31285 I mp3.flutter_ap:   at void android.app.servertransaction.LaunchActivityItem.execute(android.app.ClientTransactionHandler, android.os.IBinder, android.app.servertransaction.PendingTransactionActions) (LaunchActivityItem.java:78)
+09-28 13:52:29.744 31285 31285 I mp3.flutter_ap:   at void android.app.servertransaction.TransactionExecutor.executeCallbacks(android.app.servertransaction.ClientTransaction) (TransactionExecutor.java:108)
+09-28 13:52:29.744 31285 31285 I mp3.flutter_ap:   at void android.app.servertransaction.TransactionExecutor.execute(android.app.servertransaction.ClientTransaction) (TransactionExecutor.java:68)
+09-28 13:52:29.744 31285 31285 I mp3.flutter_ap:   at void android.app.ActivityThread$H.handleMessage(android.os.Message) (ActivityThread.java:1955)
+09-28 13:52:29.744 31285 31285 I mp3.flutter_ap:   at void android.os.Handler.dispatchMessage(android.os.Message) (Handler.java:106)
+09-28 13:52:29.744 31285 31285 I mp3.flutter_ap:   at void android.os.Looper.loop() (Looper.java:214)
+09-28 13:52:29.744 31285 31285 I mp3.flutter_ap:   at void android.app.ActivityThread.main(java.lang.String[]) (ActivityThread.java:7078)
+09-28 13:52:29.744 31285 31285 I mp3.flutter_ap:   at java.lang.Object java.lang.reflect.Method.invoke(java.lang.Object, java.lang.Object[]) (Method.java:-2)
+09-28 13:52:29.744 31285 31285 I mp3.flutter_ap:   at void com.android.internal.os.RuntimeInit$MethodAndArgsCaller.run() (RuntimeInit.java:494)
+09-28 13:52:29.744 31285 31285 I mp3.flutter_ap:   at void com.android.internal.os.ZygoteInit.main(java.lang.String[]) (ZygoteInit.java:964)
+09-28 13:52:29.744 31285 31285 I mp3.flutter_ap: Caused by: java.lang.ClassNotFoundException: Didn't find class "android.window.OnBackAnimationCallback" on path: DexPathList[[zip file "/data/app/com.pietrocode.epubtomp3.flutter_app-ly_ZEz1A87jWs6aXef5EfA==/base.apk"],nativeLibraryDirectories=[/data/app/com.pietrocode.epubtomp3.flutter_app-ly_ZEz1A87jWs6aXef5EfA==/lib/arm64, /data/app/com.pietrocode.epubtomp3.flutter_app-ly_ZEz1A87jWs6aXef5EfA==/base.apk!/lib/arm64-v8a, /system/lib64, /system/vendor/lib64]]
+09-28 13:52:29.744 31285 31285 I mp3.flutter_ap:   at java.lang.Class dalvik.system.BaseDexClassLoader.findClass(java.lang.String) (BaseDexClassLoader.java:134)
+09-28 13:52:29.744 31285 31285 I mp3.flutter_ap:   at java.lang.Class java.lang.ClassLoader.loadClass(java.lang.String, boolean) (ClassLoader.java:379)
+09-28 13:52:29.744 31285 31285 I mp3.flutter_ap:   at java.lang.Class java.lang.ClassLoader.loadClass(java.lang.String) (ClassLoader.java:312)
+09-28 13:52:29.744 31285 31285 I mp3.flutter_ap:   at java.lang.Object java.lang.Class.newInstance() (Class.java:-2)
+09-28 13:52:29.744 31285 31285 I mp3.flutter_ap:   at android.app.Activity android.app.AppComponentFactory.instantiateActivity(java.lang.ClassLoader, java.lang.String, android.content.Intent) (AppComponentFactory.java:69)
+09-28 13:52:29.744 31285 31285 I mp3.flutter_ap:   at android.app.Activity androidx.core.app.CoreComponentFactory.instantiateActivity(java.lang.ClassLoader, java.lang.String, android.content.Intent) (CoreComponentFactory.java:44)
+09-28 13:52:29.744 31285 31285 I mp3.flutter_ap:   at android.app.Activity android.app.Instrumentation.newActivity(java.lang.ClassLoader, java.lang.String, android.content.Intent) (Instrumentation.java:1219)
+09-28 13:52:29.744 31285 31285 I mp3.flutter_ap:   at android.app.Activity android.app.ActivityThread.performLaunchActivity(android.app.ActivityThread$ActivityClientRecord, android.content.Intent) (ActivityThread.java:3015)
+09-28 13:52:29.744 31285 31285 I mp3.flutter_ap:   at android.app.Activity android.app.ActivityThread.handleLaunchActivity(android.app.ActivityThread$ActivityClientRecord, android.app.servertransaction.PendingTransactionActions, android.content.Intent) (ActivityThread.java:3264)
+09-28 13:52:29.744 31285 31285 I mp3.flutter_ap:   at void android.app.servertransaction.LaunchActivityItem.execute(android.app.ClientTransactionHandler, android.os.IBinder, android.app.servertransaction.PendingTransactionActions) (LaunchActivityItem.java:78)
+09-28 13:52:29.744 31285 31285 I mp3.flutter_ap:   at void android.app.servertransaction.TransactionExecutor.executeCallbacks(android.app.servertransaction.ClientTransaction) (TransactionExecutor.java:108)
+09-28 13:52:29.744 31285 31285 I mp3.flutter_ap:   at void android.app.servertransaction.TransactionExecutor.execute(android.app.servertransaction.ClientTransaction) (TransactionExecutor.java:68)
+09-28 13:52:29.744 31285 31285 I mp3.flutter_ap:   at void android.app.ActivityThread$H.handleMessage(android.os.Message) (ActivityThread.java:1955)
+09-28 13:52:29.744 31285 31285 I mp3.flutter_ap:   at void android.os.Handler.dispatchMessage(android.os.Message) (Handler.java:106)
+09-28 13:52:29.744 31285 31285 I mp3.flutter_ap:   at void android.os.Looper.loop() (Looper.java:214)
+09-28 13:52:29.744 31285 31285 I mp3.flutter_ap:   at void android.app.ActivityThread.main(java.lang.String[]) (ActivityThread.java:7078)
+09-28 13:52:29.744 31285 31285 I mp3.flutter_ap:   at java.lang.Object java.lang.reflect.Method.invoke(java.lang.Object, java.lang.Object[]) (Method.java:-2)
+09-28 13:52:29.744 31285 31285 I mp3.flutter_ap:   at void com.android.internal.os.RuntimeInit$MethodAndArgsCaller.run() (RuntimeInit.java:494)
+09-28 13:52:29.744 31285 31285 I mp3.flutter_ap:   at void com.android.internal.os.ZygoteInit.main(java.lang.String[]) (ZygoteInit.java:964)
+09-28 13:52:29.744 31285 31285 I mp3.flutter_ap: 
+09-28 13:52:29.744 31285 31285 I mp3.flutter_ap: Rejecting re-init on previously-failed class java.lang.Class<io.flutter.embedding.android.FlutterActivity$1>: java.lang.NoClassDefFoundError: Failed resolution of: Landroid/window/OnBackAnimationCallback;
+09-28 13:52:29.744 31285 31285 I mp3.flutter_ap:   at java.lang.Object java.lang.Class.newInstance() (Class.java:-2)
+09-28 13:52:29.744 31285 31285 I mp3.flutter_ap:   at android.app.Activity android.app.AppComponentFactory.instantiateActivity(java.lang.ClassLoader, java.lang.String, android.content.Intent) (AppComponentFactory.java:69)
+09-28 13:52:29.744 31285 31285 I mp3.flutter_ap:   at android.app.Activity androidx.core.app.CoreComponentFactory.instantiateActivity(java.lang.ClassLoader, java.lang.String, android.content.Intent) (CoreComponentFactory.java:44)
+09-28 13:52:29.744 31285 31285 I mp3.flutter_ap:   at android.app.Activity android.app.Instrumentation.newActivity(java.lang.ClassLoader, java.lang.String, android.content.Intent) (Instrumentation.java:1219)
+09-28 13:52:29.744 31285 31285 I mp3.flutter_ap:   at android.app.Activity android.app.ActivityThread.performLaunchActivity(android.app.ActivityThread$ActivityClientRecord, android.content.Intent) (ActivityThread.java:3015)
+09-28 13:52:29.744 31285 31285 I mp3.flutter_ap:   at android.app.Activity android.app.ActivityThread.handleLaunchActivity(android.app.ActivityThread$ActivityClientRecord, android.app.servertransaction.PendingTransactionActions, android.content.Intent) (ActivityThread.java:3264)
+09-28 13:52:29.744 31285 31285 I mp3.flutter_ap:   at void android.app.servertransaction.LaunchActivityItem.execute(android.app.ClientTransactionHandler, android.os.IBinder, android.app.servertransaction.PendingTransactionActions) (LaunchActivityItem.java:78)
+09-28 13:52:29.744 31285 31285 I mp3.flutter_ap:   at void android.app.servertransaction.TransactionExecutor.executeCallbacks(android.app.servertransaction.ClientTransaction) (TransactionExecutor.java:108)
+09-28 13:52:29.744 31285 31285 I mp3.flutter_ap:   at void android.app.servertransaction.TransactionExecutor.execute(android.app.servertransaction.ClientTransaction) (TransactionExecutor.java:68)
+09-28 13:52:29.744 31285 31285 I mp3.flutter_ap:   at void android.app.ActivityThread$H.handleMessage(android.os.Message) (ActivityThread.java:1955)
+09-28 13:52:29.744 31285 31285 I mp3.flutter_ap:   at void android.os.Handler.dispatchMessage(android.os.Message) (Handler.java:106)
+09-28 13:52:29.744 31285 31285 I mp3.flutter_ap:   at void android.os.Looper.loop() (Looper.java:214)
+09-28 13:52:29.744 31285 31285 I mp3.flutter_ap:   at void android.app.ActivityThread.main(java.lang.String[]) (ActivityThread.java:7078)
+09-28 13:52:29.744 31285 31285 I mp3.flutter_ap:   at java.lang.Object java.lang.reflect.Method.invoke(java.lang.Object, java.lang.Object[]) (Method.java:-2)
+09-28 13:52:29.744 31285 31285 I mp3.flutter_ap:   at void com.android.internal.os.RuntimeInit$MethodAndArgsCaller.run() (RuntimeInit.java:494)
+09-28 13:52:29.744 31285 31285 I mp3.flutter_ap:   at void com.android.internal.os.ZygoteInit.main(java.lang.String[]) (ZygoteInit.java:964)
+09-28 13:52:29.744 31285 31285 I mp3.flutter_ap: Caused by: java.lang.ClassNotFoundException: Didn't find class "android.window.OnBackAnimationCallback" on path: DexPathList[[zip file "/data/app/com.pietrocode.epubtomp3.flutter_app-ly_ZEz1A87jWs6aXef5EfA==/base.apk"],nativeLibraryDirectories=[/data/app/com.pietrocode.epubtomp3.flutter_app-ly_ZEz1A87jWs6aXef5EfA==/lib/arm64, /data/app/com.pietrocode.epubtomp3.flutter_app-ly_ZEz1A87jWs6aXef5EfA==/base.apk!/lib/arm64-v8a, /system/lib64, /system/vendor/lib64]]
+09-28 13:52:29.744 31285 31285 I mp3.flutter_ap:   at java.lang.Class dalvik.system.BaseDexClassLoader.findClass(java.lang.String) (BaseDexClassLoader.java:134)
+09-28 13:52:29.744 31285 31285 I mp3.flutter_ap:   at java.lang.Class java.lang.ClassLoader.loadClass(java.lang.String, boolean) (ClassLoader.java:379)
+09-28 13:52:29.744 31285 31285 I mp3.flutter_ap:   at java.lang.Class java.lang.ClassLoader.loadClass(java.lang.String) (ClassLoader.java:312)
+09-28 13:52:29.744 31285 31285 I mp3.flutter_ap:   at java.lang.Object java.lang.Class.newInstance() (Class.java:-2)
+09-28 13:52:29.744 31285 31285 I mp3.flutter_ap:   at android.app.Activity android.app.AppComponentFactory.instantiateActivity(java.lang.ClassLoader, java.lang.String, android.content.Intent) (AppComponentFactory.java:69)
+09-28 13:52:29.744 31285 31285 I mp3.flutter_ap:   at android.app.Activity androidx.core.app.CoreComponentFactory.instantiateActivity(java.lang.ClassLoader, java.lang.String, android.content.Intent) (CoreComponentFactory.java:44)
+09-28 13:52:29.744 31285 31285 I mp3.flutter_ap:   at android.app.Activity android.app.Instrumentation.newActivity(java.lang.ClassLoader, java.lang.String, android.content.Intent) (Instrumentation.java:1219)
+09-28 13:52:29.744 31285 31285 I mp3.flutter_ap:   at android.app.Activity android.app.ActivityThread.performLaunchActivity(android.app.ActivityThread$ActivityClientRecord, android.content.Intent) (ActivityThread.java:3015)
+09-28 13:52:29.744 31285 31285 I mp3.flutter_ap:   at android.app.Activity android.app.ActivityThread.handleLaunchActivity(android.app.ActivityThread$ActivityClientRecord, android.app.servertransaction.PendingTransactionActions, android.content.Intent) (ActivityThread.java:3264)
+09-28 13:52:29.744 31285 31285 I mp3.flutter_ap:   at void android.app.servertransaction.LaunchActivityItem.execute(android.app.ClientTransactionHandler, android.os.IBinder, android.app.servertransaction.PendingTransactionActions) (LaunchActivityItem.java:78)
+09-28 13:52:29.744 31285 31285 I mp3.flutter_ap:   at void android.app.servertransaction.TransactionExecutor.executeCallbacks(android.app.servertransaction.ClientTransaction) (TransactionExecutor.java:108)
+09-28 13:52:29.744 31285 31285 I mp3.flutter_ap:   at void android.app.servertransaction.TransactionExecutor.execute(android.app.servertransaction.ClientTransaction) (TransactionExecutor.java:68)
+09-28 13:52:29.744 31285 31285 I mp3.flutter_ap:   at void android.app.ActivityThread$H.handleMessage(android.os.Message) (ActivityThread.java:1955)
+09-28 13:52:29.744 31285 31285 I mp3.flutter_ap:   at void android.os.Handler.dispatchMessage(android.os.Message) (Handler.java:106)
+09-28 13:52:29.744 31285 31285 I mp3.flutter_ap:   at void android.os.Looper.loop() (Looper.java:214)
+09-28 13:52:29.744 31285 31285 I mp3.flutter_ap:   at void android.app.ActivityThread.main(java.lang.String[]) (ActivityThread.java:7078)
+09-28 13:52:29.744 31285 31285 I mp3.flutter_ap:   at java.lang.Object java.lang.reflect.Method.invoke(java.lang.Object, java.lang.Object[]) (Method.java:-2)
+09-28 13:52:29.744 31285 31285 I mp3.flutter_ap:   at void com.android.internal.os.RuntimeInit$MethodAndArgsCaller.run() (RuntimeInit.java:494)
+09-28 13:52:29.744 31285 31285 I mp3.flutter_ap:   at void com.android.internal.os.ZygoteInit.main(java.lang.String[]) (ZygoteInit.java:964)
+09-28 13:52:29.744 31285 31285 I mp3.flutter_ap: 
+09-28 13:52:29.745 31285 31285 I mp3.flutter_ap: Rejecting re-init on previously-failed class java.lang.Class<io.flutter.embedding.android.FlutterActivity$$ExternalSyntheticLambda0>: java.lang.NoClassDefFoundError: Failed resolution of: Landroid/window/OnBackInvokedCallback;
+09-28 13:52:29.745 31285 31285 I mp3.flutter_ap:   at java.lang.Object java.lang.Class.newInstance() (Class.java:-2)
+09-28 13:52:29.745 31285 31285 I mp3.flutter_ap:   at android.app.Activity android.app.AppComponentFactory.instantiateActivity(java.lang.ClassLoader, java.lang.String, android.content.Intent) (AppComponentFactory.java:69)
+09-28 13:52:29.745 31285 31285 I mp3.flutter_ap:   at android.app.Activity androidx.core.app.CoreComponentFactory.instantiateActivity(java.lang.ClassLoader, java.lang.String, android.content.Intent) (CoreComponentFactory.java:44)
+09-28 13:52:29.745 31285 31285 I mp3.flutter_ap:   at android.app.Activity android.app.Instrumentation.newActivity(java.lang.ClassLoader, java.lang.String, android.content.Intent) (Instrumentation.java:1219)
+09-28 13:52:29.745 31285 31285 I mp3.flutter_ap:   at android.app.Activity android.app.ActivityThread.performLaunchActivity(android.app.ActivityThread$ActivityClientRecord, android.content.Intent) (ActivityThread.java:3015)
+09-28 13:52:29.745 31285 31285 I mp3.flutter_ap:   at android.app.Activity android.app.ActivityThread.handleLaunchActivity(android.app.ActivityThread$ActivityClientRecord, android.app.servertransaction.PendingTransactionActions, android.content.Intent) (ActivityThread.java:3264)
+09-28 13:52:29.745 31285 31285 I mp3.flutter_ap:   at void android.app.servertransaction.LaunchActivityItem.execute(android.app.ClientTransactionHandler, android.os.IBinder, android.app.servertransaction.PendingTransactionActions) (LaunchActivityItem.java:78)
+09-28 13:52:29.745 31285 31285 I mp3.flutter_ap:   at void android.app.servertransaction.TransactionExecutor.executeCallbacks(android.app.servertransaction.ClientTransaction) (TransactionExecutor.java:108)
+09-28 13:52:29.745 31285 31285 I mp3.flutter_ap:   at void android.app.servertransaction.TransactionExecutor.execute(android.app.servertransaction.ClientTransaction) (TransactionExecutor.java:68)
+09-28 13:52:29.745 31285 31285 I mp3.flutter_ap:   at void android.app.ActivityThread$H.handleMessage(android.os.Message) (ActivityThread.java:1955)
+09-28 13:52:29.745 31285 31285 I mp3.flutter_ap:   at void android.os.Handler.dispatchMessage(android.os.Message) (Handler.java:106)
+09-28 13:52:29.745 31285 31285 I mp3.flutter_ap:   at void android.os.Looper.loop() (Looper.java:214)
+09-28 13:52:29.745 31285 31285 I mp3.flutter_ap:   at void android.app.ActivityThread.main(java.lang.String[]) (ActivityThread.java:7078)
+09-28 13:52:29.745 31285 31285 I mp3.flutter_ap:   at java.lang.Object java.lang.reflect.Method.invoke(java.lang.Object, java.lang.Object[]) (Method.java:-2)
+09-28 13:52:29.745 31285 31285 I mp3.flutter_ap:   at void com.android.internal.os.RuntimeInit$MethodAndArgsCaller.run() (RuntimeInit.java:494)
+09-28 13:52:29.745 31285 31285 I mp3.flutter_ap:   at void com.android.internal.os.ZygoteInit.main(java.lang.String[]) (ZygoteInit.java:964)
+09-28 13:52:29.745 31285 31285 I mp3.flutter_ap: Caused by: java.lang.ClassNotFoundException: Didn't find class "android.window.OnBackInvokedCallback" on path: DexPathList[[zip file "/data/app/com.pietrocode.epubtomp3.flutter_app-ly_ZEz1A87jWs6aXef5EfA==/base.apk"],nativeLibraryDirectories=[/data/app/com.pietrocode.epubtomp3.flutter_app-ly_ZEz1A87jWs6aXef5EfA==/lib/arm64, /data/app/com.pietrocode.epubtomp3.flutter_app-ly_ZEz1A87jWs6aXef5EfA==/base.apk!/lib/arm64-v8a, /system/lib64, /system/vendor/lib64]]
+09-28 13:52:29.745 31285 31285 I mp3.flutter_ap:   at java.lang.Class dalvik.system.BaseDexClassLoader.findClass(java.lang.String) (BaseDexClassLoader.java:134)
+09-28 13:52:29.745 31285 31285 I mp3.flutter_ap:   at java.lang.Class java.lang.ClassLoader.loadClass(java.lang.String, boolean) (ClassLoader.java:379)
+09-28 13:52:29.746 31285 31285 I mp3.flutter_ap:   at java.lang.Class java.lang.ClassLoader.loadClass(java.lang.String) (ClassLoader.java:312)
+09-28 13:52:29.746 31285 31285 I mp3.flutter_ap:   at java.lang.Object java.lang.Class.newInstance() (Class.java:-2)
+09-28 13:52:29.746 31285 31285 I mp3.flutter_ap:   at android.app.Activity android.app.AppComponentFactory.instantiateActivity(java.lang.ClassLoader, java.lang.String, android.content.Intent) (AppComponentFactory.java:69)
+09-28 13:52:29.746 31285 31285 I mp3.flutter_ap:   at android.app.Activity androidx.core.app.CoreComponentFactory.instantiateActivity(java.lang.ClassLoader, java.lang.String, android.content.Intent) (CoreComponentFactory.java:44)
+09-28 13:52:29.746 31285 31285 I mp3.flutter_ap:   at android.app.Activity android.app.Instrumentation.newActivity(java.lang.ClassLoader, java.lang.String, android.content.Intent) (Instrumentation.java:1219)
+09-28 13:52:29.746 31285 31285 I mp3.flutter_ap:   at android.app.Activity android.app.ActivityThread.performLaunchActivity(android.app.ActivityThread$ActivityClientRecord, android.content.Intent) (ActivityThread.java:3015)
+09-28 13:52:29.746 31285 31285 I mp3.flutter_ap:   at android.app.Activity android.app.ActivityThread.handleLaunchActivity(android.app.ActivityThread$ActivityClientRecord, android.app.servertransaction.PendingTransactionActions, android.content.Intent) (ActivityThread.java:3264)
+09-28 13:52:29.746 31285 31285 I mp3.flutter_ap:   at void android.app.servertransaction.LaunchActivityItem.execute(android.app.ClientTransactionHandler, android.os.IBinder, android.app.servertransaction.PendingTransactionActions) (LaunchActivityItem.java:78)
+09-28 13:52:29.746 31285 31285 I mp3.flutter_ap:   at void android.app.servertransaction.TransactionExecutor.executeCallbacks(android.app.servertransaction.ClientTransaction) (TransactionExecutor.java:108)
+09-28 13:52:29.746 31285 31285 I mp3.flutter_ap:   at void android.app.servertransaction.TransactionExecutor.execute(android.app.servertransaction.ClientTransaction) (TransactionExecutor.java:68)
+09-28 13:52:29.746 31285 31285 I mp3.flutter_ap:   at void android.app.ActivityThread$H.handleMessage(android.os.Message) (ActivityThread.java:1955)
+09-28 13:52:29.746 31285 31285 I mp3.flutter_ap:   at void android.os.Handler.dispatchMessage(android.os.Message) (Handler.java:106)
+09-28 13:52:29.746 31285 31285 I mp3.flutter_ap:   at void android.os.Looper.loop() (Looper.java:214)
+09-28 13:52:29.746 31285 31285 I mp3.flutter_ap:   at void android.app.ActivityThread.main(java.lang.String[]) (ActivityThread.java:7078)
+09-28 13:52:29.746 31285 31285 I mp3.flutter_ap:   at java.lang.Object java.lang.reflect.Method.invoke(java.lang.Object, java.lang.Object[]) (Method.java:-2)
+09-28 13:52:29.746 31285 31285 I mp3.flutter_ap:   at void com.android.internal.os.RuntimeInit$MethodAndArgsCaller.run() (RuntimeInit.java:494)
+09-28 13:52:29.746 31285 31285 I mp3.flutter_ap:   at void com.android.internal.os.ZygoteInit.main(java.lang.String[]) (ZygoteInit.java:964)
+09-28 13:52:29.746 31285 31285 I mp3.flutter_ap: 
+09-28 13:52:29.746 31285 31285 I mp3.flutter_ap: Rejecting re-init on previously-failed class java.lang.Class<io.flutter.embedding.android.FlutterActivity$$ExternalSyntheticLambda0>: java.lang.NoClassDefFoundError: Failed resolution of: Landroid/window/OnBackInvokedCallback;
+09-28 13:52:29.746 31285 31285 I mp3.flutter_ap:   at java.lang.Object java.lang.Class.newInstance() (Class.java:-2)
+09-28 13:52:29.746 31285 31285 I mp3.flutter_ap:   at android.app.Activity android.app.AppComponentFactory.instantiateActivity(java.lang.ClassLoader, java.lang.String, android.content.Intent) (AppComponentFactory.java:69)
+09-28 13:52:29.746 31285 31285 I mp3.flutter_ap:   at android.app.Activity androidx.core.app.CoreComponentFactory.instantiateActivity(java.lang.ClassLoader, java.lang.String, android.content.Intent) (CoreComponentFactory.java:44)
+09-28 13:52:29.746 31285 31285 I mp3.flutter_ap:   at android.app.Activity android.app.Instrumentation.newActivity(java.lang.ClassLoader, java.lang.String, android.content.Intent) (Instrumentation.java:1219)
+09-28 13:52:29.746 31285 31285 I mp3.flutter_ap:   at android.app.Activity android.app.ActivityThread.performLaunchActivity(android.app.ActivityThread$ActivityClientRecord, android.content.Intent) (ActivityThread.java:3015)
+09-28 13:52:29.746 31285 31285 I mp3.flutter_ap:   at android.app.Activity android.app.ActivityThread.handleLaunchActivity(android.app.ActivityThread$ActivityClientRecord, android.app.servertransaction.PendingTransactionActions, android.content.Intent) (ActivityThread.java:3264)
+09-28 13:52:29.746 31285 31285 I mp3.flutter_ap:   at void android.app.servertransaction.LaunchActivityItem.execute(android.app.ClientTransactionHandler, android.os.IBinder, android.app.servertransaction.PendingTransactionActions) (LaunchActivityItem.java:78)
+09-28 13:52:29.746 31285 31285 I mp3.flutter_ap:   at void android.app.servertransaction.TransactionExecutor.executeCallbacks(android.app.servertransaction.ClientTransaction) (TransactionExecutor.java:108)
+09-28 13:52:29.746 31285 31285 I mp3.flutter_ap:   at void android.app.servertransaction.TransactionExecutor.execute(android.app.servertransaction.ClientTransaction) (TransactionExecutor.java:68)
+09-28 13:52:29.746 31285 31285 I mp3.flutter_ap:   at void android.app.ActivityThread$H.handleMessage(android.os.Message) (ActivityThread.java:1955)
+09-28 13:52:29.746 31285 31285 I mp3.flutter_ap:   at void android.os.Handler.dispatchMessage(android.os.Message) (Handler.java:106)
+09-28 13:52:29.746 31285 31285 I mp3.flutter_ap:   at void android.os.Looper.loop() (Looper.java:214)
+09-28 13:52:29.746 31285 31285 I mp3.flutter_ap:   at void android.app.ActivityThread.main(java.lang.String[]) (ActivityThread.java:7078)
+09-28 13:52:29.746 31285 31285 I mp3.flutter_ap:   at java.lang.Object java.lang.reflect.Method.invoke(java.lang.Object, java.lang.Object[]) (Method.java:-2)
+09-28 13:52:29.746 31285 31285 I mp3.flutter_ap:   at void com.android.internal.os.RuntimeInit$MethodAndArgsCaller.run() (RuntimeInit.java:494)
+09-28 13:52:29.746 31285 31285 I mp3.flutter_ap:   at void com.android.internal.os.ZygoteInit.main(java.lang.String[]) (ZygoteInit.java:964)
+09-28 13:52:29.746 31285 31285 I mp3.flutter_ap: Caused by: java.lang.ClassNotFoundException: Didn't find class "android.window.OnBackInvokedCallback" on path: DexPathList[[zip file "/data/app/com.pietrocode.epubtomp3.flutter_app-ly_ZEz1A87jWs6aXef5EfA==/base.apk"],nativeLibraryDirectories=[/data/app/com.pietrocode.epubtomp3.flutter_app-ly_ZEz1A87jWs6aXef5EfA==/lib/arm64, /data/app/com.pietrocode.epubtomp3.flutter_app-ly_ZEz1A87jWs6aXef5EfA==/base.apk!/lib/arm64-v8a, /system/lib64, /system/vendor/lib64]]
+09-28 13:52:29.746 31285 31285 I mp3.flutter_ap:   at java.lang.Class dalvik.system.BaseDexClassLoader.findClass(java.lang.String) (BaseDexClassLoader.java:134)
+09-28 13:52:29.746 31285 31285 I mp3.flutter_ap:   at java.lang.Class java.lang.ClassLoader.loadClass(java.lang.String, boolean) (ClassLoader.java:379)
+09-28 13:52:29.746 31285 31285 I mp3.flutter_ap:   at java.lang.Class java.lang.ClassLoader.loadClass(java.lang.String) (ClassLoader.java:312)
+09-28 13:52:29.746 31285 31285 I mp3.flutter_ap:   at java.lang.Object java.lang.Class.newInstance() (Class.java:-2)
+09-28 13:52:29.746 31285 31285 I mp3.flutter_ap:   at android.app.Activity android.app.AppComponentFactory.instantiateActivity(java.lang.ClassLoader, java.lang.String, android.content.Intent) (AppComponentFactory.java:69)
+09-28 13:52:29.746 31285 31285 I mp3.flutter_ap:   at android.app.Activity androidx.core.app.CoreComponentFactory.instantiateActivity(java.lang.ClassLoader, java.lang.String, android.content.Intent) (CoreComponentFactory.java:44)
+09-28 13:52:29.746 31285 31285 I mp3.flutter_ap:   at android.app.Activity android.app.Instrumentation.newActivity(java.lang.ClassLoader, java.lang.String, android.content.Intent) (Instrumentation.java:1219)
+09-28 13:52:29.746 31285 31285 I mp3.flutter_ap:   at android.app.Activity android.app.ActivityThread.performLaunchActivity(android.app.ActivityThread$ActivityClientRecord, android.content.Intent) (ActivityThread.java:3015)
+09-28 13:52:29.746 31285 31285 I mp3.flutter_ap:   at android.app.Activity android.app.ActivityThread.handleLaunchActivity(android.app.ActivityThread$ActivityClientRecord, android.app.servertransaction.PendingTransactionActions, android.content.Intent) (ActivityThread.java:3264)
+09-28 13:52:29.746 31285 31285 I mp3.flutter_ap:   at void android.app.servertransaction.LaunchActivityItem.execute(android.app.ClientTransactionHandler, android.os.IBinder, android.app.servertransaction.PendingTransactionActions) (LaunchActivityItem.java:78)
+09-28 13:52:29.746 31285 31285 I mp3.flutter_ap:   at void android.app.servertransaction.TransactionExecutor.executeCallbacks(android.app.servertransaction.ClientTransaction) (TransactionExecutor.java:108)
+09-28 13:52:29.746 31285 31285 I mp3.flutter_ap:   at void android.app.servertransaction.TransactionExecutor.execute(android.app.servertransaction.ClientTransaction) (TransactionExecutor.java:68)
+09-28 13:52:29.746 31285 31285 I mp3.flutter_ap:   at void android.app.ActivityThread$H.handleMessage(android.os.Message) (ActivityThread.java:1955)
+09-28 13:52:29.746 31285 31285 I mp3.flutter_ap:   at void android.os.Handler.dispatchMessage(android.os.Message) (Handler.java:106)
+09-28 13:52:29.746 31285 31285 I mp3.flutter_ap:   at void android.os.Looper.loop() (Looper.java:214)
+09-28 13:52:29.746 31285 31285 I mp3.flutter_ap:   at void android.app.ActivityThread.main(java.lang.String[]) (ActivityThread.java:7078)
+09-28 13:52:29.746 31285 31285 I mp3.flutter_ap:   at java.lang.Object java.lang.reflect.Method.invoke(java.lang.Object, java.lang.Object[]) (Method.java:-2)
+09-28 13:52:29.746 31285 31285 I mp3.flutter_ap:   at void com.android.internal.os.RuntimeInit$MethodAndArgsCaller.run() (RuntimeInit.java:494)
+09-28 13:52:29.746 31285 31285 I mp3.flutter_ap:   at void com.android.internal.os.ZygoteInit.main(java.lang.String[]) (ZygoteInit.java:964)
+09-28 13:52:29.746 31285 31285 I mp3.flutter_ap: 
+09-28 13:52:29.849 31285 31306 I ResourceExtractor: Found extracted resources res_timestamp-1-1790614023502
+09-28 13:52:29.850 31285 31305 D FlutterJNI: Beginning load of flutter...
+09-28 13:52:29.860 31285 31305 D FlutterJNI: flutter (null) was loaded normally!
+09-28 13:52:29.870 31285 31285 W mp3.flutter_ap: Accessing hidden method Landroid/view/SurfaceControl$Transaction;-><init>()V (light greylist, linking)
+09-28 13:52:29.870 31285 31285 W mp3.flutter_ap: Accessing hidden method Landroid/view/SurfaceControl$Transaction;->merge(Landroid/view/SurfaceControl$Transaction;)Landroid/view/SurfaceControl$Transaction; (dark greylist, linking)
+09-28 13:52:29.870 31285 31285 W mp3.flutter_ap: Accessing hidden method Landroid/view/SurfaceControl$Transaction;->apply()V (light greylist, linking)
+09-28 13:52:29.872 31285 31285 W mp3.flutter_ap: Accessing hidden method Landroid/view/SurfaceControl$Transaction;->merge(Landroid/view/SurfaceControl$Transaction;)Landroid/view/SurfaceControl$Transaction; (dark greylist, linking)
+09-28 13:52:29.873  5188  5188 I SKBD    : and isTosAccept false
+09-28 13:52:29.877  3091  3091 E audit   : type=1400 audit(1790614349.873:5882): avc:  denied  { read } for  pid=31285 comm="mp3.flutter_app" name="max_map_count" dev="proc" ino=5860566 scontext=u:r:untrusted_app:s0:c198,c256,c512,c768 tcontext=u:object_r:proc_max_map_count:s0 tclass=file permissive=0 SEPF_SM-A530F_9_0020 audit_filtered
+09-28 13:52:29.877  3091  3091 E audit   : type=1300 audit(1790614349.873:5882): arch=c00000b7 syscall=56 success=no exit=-13 a0=ffffff9c a1=7351a5b015 a2=0 a3=0 items=0 ppid=3164 pid=31285 auid=4294967295 uid=10198 gid=10198 euid=10198 suid=10198 fsuid=10198 egid=10198 sgid=10198 fsgid=10198 tty=(none) ses=4294967295 comm="mp3.flutter_app" exe="/system/bin/app_process64" subj=u:r:untrusted_app:s0:c198,c256,c512,c768 key=(null)
+09-28 13:52:29.877  3091  3091 E audit   : type=1327 audit(1790614349.873:5882): proctitle="com.pietrocode.epubtomp3.flutter_app"
+09-28 13:52:29.889 31285 31285 I flutter : [IMPORTANT:flutter/shell/common/shell.cc(528)] [Action Required]: Impeller opt-out deprecated.
+09-28 13:52:29.889 31285 31285 I flutter :     The application opted out of Impeller by either using the
+09-28 13:52:29.889 31285 31285 I flutter :     `--no-enable-impeller` flag or the
+09-28 13:52:29.889 31285 31285 I flutter :     `io.flutter.embedding.android.EnableImpeller` `AndroidManifest.xml` entry.
+09-28 13:52:29.889 31285 31285 I flutter :     These options are going to go away in an upcoming Flutter release. Remove
+09-28 13:52:29.889 31285 31285 I flutter :     the explicit opt-out. If you need to opt-out, please report a bug describing
+09-28 13:52:29.889 31285 31285 I flutter :     the issue.
+09-28 13:52:29.889 31285 31285 I flutter : 
+09-28 13:52:29.889 31285 31285 I flutter :     https://github.com/flutter/flutter/issues/new?template=02_bug.yml
+09-28 13:52:29.889 31285 31285 I flutter : 
+09-28 13:52:29.896 31285 31285 I ConfigStore: android::hardware::configstore::V1_0::ISurfaceFlingerConfigs::hasWideColorDisplay retrieved: 0
+09-28 13:52:29.896 31285 31285 I ConfigStore: android::hardware::configstore::V1_0::ISurfaceFlingerConfigs::hasHDRDisplay retrieved: 0
+09-28 13:52:29.927 31285 31285 D MediaBrowserCompat: Connecting to a MediaBrowserService.
+09-28 13:52:29.936  3014  3089 V APM_AudioPolicyManager: listAudioPorts() role 0 type 0 num_ports 0 ports 0xe7415040
+09-28 13:52:29.936  3014  3089 V APM_AudioPolicyManager: listAudioPorts() got 0 ports needed 9
+09-28 13:52:29.936  3014  3089 V APM_AudioPolicyManager: listAudioPorts() role 0 type 0 num_ports 9 ports 0xe747a000
+09-28 13:52:29.936  3014  3089 V APM_AudioPolicyManager: listAudioPorts() got 9 ports needed 9
+09-28 13:52:30.073  5188  5188 I SKBD    : and isTosAccept false
+09-28 13:52:30.166  3546  3823 D GameManagerService: handleForegroundChange(). pkgName: com.pietrocode.epubtomp3.flutter_app, clsName: com.pietrocode.epubtomp3.flutter_app.MainActivity,FgActivityName:com.pietrocode.epubtomp3.flutter_app/.MainActivity,userID:0
+09-28 13:52:30.166  3546  3823 D GameManagerService:   handleForegroundChange(). set mFgApp: com.pietrocode.epubtomp3.flutter_app
+09-28 13:52:30.167  3546  3823 D GameManagerService: notifyResumePause(). pkg: com.pietrocode.epubtomp3.flutter_app, type: 4, isMinimized: false, isTunableApp: false
+09-28 13:52:30.167  3546  3823 D GameManagerService:   notifyResumePause(). unexpected mPrevNotiType: -1
+09-28 13:52:30.265 31285 31330 I flutter : The Dart VM service is listening on http://127.0.0.1:45138/HfO5X2bYxpY=/
+09-28 13:52:30.274  5188  5188 I SKBD    : and isTosAccept false
+09-28 13:52:30.474  5188  5188 I chatty  : uid=10160(com.sec.android.inputmethod) identical 1 line
+09-28 13:52:30.674  5188  5188 I SKBD    : and isTosAccept false
+09-28 13:52:30.817 31285 31285 W mp3.flutter_ap: Unknown chunk type '200'.
+09-28 13:52:30.817 31285 31285 I chatty  : uid=10198(com.pietrocode.epubtomp3.flutter_app) identical 1 line
+09-28 13:52:30.818 31285 31285 W mp3.flutter_ap: Unknown chunk type '200'.
+09-28 13:52:30.825  3546  6542 D StorageManagerService: getExternalStorageMountMode : 3
+09-28 13:52:30.825  3546  6542 D StorageManagerService: getExternalStorageMountMode : 3
+09-28 13:52:30.825  3546  6542 D StorageManagerService: getExternalStorageMountMode : final mountMode=3, uid : 1000, packageName : com.samsung.SMT
+09-28 13:52:30.825  3546  6542 I ApplicationPolicy: isApplicationExternalStorageWhitelisted:com.samsung.SMT user:0
+09-28 13:52:30.826  3546  6542 D ApplicationPolicy: isApplicationExternalStorageWhitelisted: DO is not enabled on user 0. Allowed.
+09-28 13:52:30.826  3546  6542 D ActivityManager: package  com.samsung.SMT, user - 0 is SDcard whitelisted
+09-28 13:52:30.826  3546  6542 I ApplicationPolicy: isApplicationExternalStorageBlacklisted:com.samsung.SMT user:0
+09-28 13:52:30.826  3546  6542 D ApplicationPolicy: isApplicationExternalStorageBlacklisted: DO is not enabled on user 0. Allowed.
+09-28 13:52:30.826  3546  6542 I ApplicationPolicy: isApplicationExternalStorageBlacklisted:com.samsung.SMT user:0
+09-28 13:52:30.826  3546  6542 D ApplicationPolicy: isApplicationExternalStorageBlacklisted: DO is not enabled on user 0. Allowed.
+09-28 13:52:30.826 31285 31285 I TextToSpeech: Sucessfully bound to com.samsung.SMT
+09-28 13:52:30.836 31285 31285 D OpenGLRenderer: Skia GL Pipeline
+09-28 13:52:30.840 31332 31332 E Zygote  : isWhitelistProcess - Process is Whitelisted
+09-28 13:52:30.840 31332 31332 E Zygote  : accessInfo : 1
+09-28 13:52:30.842  3546  3567 I ActivityManager: Start proc 31332:com.samsung.SMT/1000 for service com.samsung.SMT/.SamsungTTSService
+09-28 13:52:30.847 31332 31332 I com.samsung.SM: report jit thread pid = 31337
+09-28 13:52:30.848 31332 31332 E com.samsung.SM: Not starting debugger since process cannot load the jdwp agent.
+09-28 13:52:30.864  3546  6542 I ActivityManager: DSS on for com.samsung.SMT and scale is 1.0
+09-28 13:52:30.875  5188  5188 I SKBD    : and isTosAccept false
+09-28 13:52:30.905 31285 31285 W mp3.flutter_ap: Accessing hidden method Landroid/view/accessibility/AccessibilityNodeInfo;->getSourceNodeId()J (light greylist, reflection)
+09-28 13:52:30.905 31285 31285 W mp3.flutter_ap: Accessing hidden method Landroid/view/accessibility/AccessibilityRecord;->getSourceNodeId()J (light greylist, reflection)
+09-28 13:52:30.905 31285 31285 W mp3.flutter_ap: Accessing hidden field Landroid/view/accessibility/AccessibilityNodeInfo;->mChildNodeIds:Landroid/util/LongArray; (light greylist, reflection)
+09-28 13:52:30.905 31285 31285 W mp3.flutter_ap: Accessing hidden method Landroid/util/LongArray;->get(I)J (light greylist, reflection)
+09-28 13:52:30.917 31332 31332 D SamsungTTS: Now preloaded engine working...
+09-28 13:52:30.927 31285 31285 D FlutterRenderer: Width is zero. 0,0
+09-28 13:52:30.932  3546  3739 D WifiStateMachine: enter getWifiLinkLayerStats
+09-28 13:52:30.932  3546  3739 I WifiVendorHal: getWifiLinkLayerStats(l.2973) before calling iface.getLinkLayerStats
+09-28 13:52:30.933  3002  3002 I android.hardware.wifi@1.0-service: enter getLinkLayerStats
+09-28 13:52:30.933  3002  3002 I android.hardware.wifi@1.0-service: enter getLinkLayerStatsInternal
+09-28 13:52:30.936  3002  3002 I android.hardware.wifi@1.0-service: Successfully getLinkLayerStats.
+09-28 13:52:30.936  3546  3739 I WifiVendorHal: getWifiLinkLayerStats(l.2973) after calling iface.getLinkLayerStats
+09-28 13:52:30.937 31285 31285 I DecorView: createDecorCaptionView >> DecorView@7c619d7[], isFloating: false, isApplication: true, hasWindowDecorCaption: false, hasWindowControllerCallback: true
+09-28 13:52:30.942  3546  3739 I WifiStateMachine: checkScoreBasedQuality -  mPreviousScore[0]:79 mPreviousScore[1]:79 mPreviousScore[2]:80 s2Score:80mPrevoiusScoreAverage:79
+09-28 13:52:30.959 31332 31332 I SamsungTTS: [Service][300800018][3.0.08.18] Loading Success
+09-28 13:52:30.961 31285 31285 D EmergencyMode: [EmergencyManager] android createPackageContext successful
+09-28 13:52:30.981  3546  4926 E WindowManager: App trying to use insecure INPUT_FEATURE_NO_INPUT_CHANNEL flag.  Ignoring
+09-28 13:52:30.981  3546  4926 D InputTransport: Input channel constructed: fd=503
+09-28 13:52:30.981  3546  4926 D InputTransport: Input channel constructed: fd=613
+09-28 13:52:30.989  3017  3017 I SurfaceFlinger: id=5800 createSurf (4440x4440),2 flag=4, ae64b28 com.pietrocode.epubtomp3.flutter_app/com.pietrocode.epubtomp3.flutter_app.MainActivity#0
+09-28 13:52:30.993  3546  4926 D InputTransport: Input channel destroyed: fd=613
+09-28 13:52:30.993 31285 31285 D InputTransport: Input channel constructed: fd=95
+09-28 13:52:30.995 31285 31285 D ViewRootImpl@e5a4fa9[MainActivity]: setView = DecorView@7c619d7[MainActivity] TM=true MM=false
+09-28 13:52:30.996 31332 31332 I SamsungTTS: [SmtTTS][372006261][com.samsung.SMT] loading success.
+09-28 13:52:31.075  5188  5188 I SKBD    : and isTosAccept false
+09-28 13:52:31.114 31285 31285 W mp3.flutter_ap: Accessing hidden method Landroid/os/Trace;->asyncTraceBegin(JLjava/lang/String;I)V (light greylist, reflection)
+09-28 13:52:31.276  5188  5188 I SKBD    : and isTosAccept false
+09-28 13:52:31.280 31285 31307 W mp3.flutter_ap: Accessing hidden method Landroid/os/Trace;->asyncTraceEnd(JLjava/lang/String;I)V (light greylist, reflection)
+09-28 13:52:31.303 31332 31332 D SamsungTTS: Check_Voices... [	304	]ms , [36]check [9]languages [9]voices
+09-28 13:52:31.307 31332 31332 I SamsungTTS: [LoadLanguage] : por-BRA-[f00]
+09-28 13:52:31.346 31332 31332 I SamsungTTS: [SmtTTS][372006261][com.samsung.SMT] loading success.
+09-28 13:52:31.389 31332 31350 D SamsungTTS: Check_Packs... [	84	]ms , [0] fd packs installed.
+09-28 13:52:31.471  3865  3865 D SecStatusBarWifiView: updateState: WifiIconState(resId=2131232678, visible=true, activityId=2131232703)
+09-28 13:52:31.476  5188  5188 I SKBD    : and isTosAccept false
+09-28 13:52:31.637  3546  4664 D CustomFrequencyManagerService: acquireDVFSLockLocked : type : DVFS_MIN_LIMIT  frequency : 1768000  uid : 1000  pid : 3546  pkgName : AMS_RESUME_TAIL@CPU_MIN@43
+09-28 13:52:31.637  3546  4664 D ActivityManagerPerformance: AMP_acquire() TAIL
+09-28 13:52:31.638  3546  4664 D CustomFrequencyManagerService: releaseDVFSLockLocked : Getting Lock type frm List : DVFS_MIN_LIMIT  frequency : 2184000  uid : 1000  pid : 3546  tag : AMS_APP_SWITCH@CPU_MIN@37
+09-28 13:52:31.638  3546  4664 D ActivityManagerPerformance: AMP_release() APP_SWITCH
+09-28 13:52:32.238  3546  3546 D CustomFrequencyManagerService: releaseDVFSLockLocked : Getting Lock type frm List : DVFS_MIN_LIMIT  frequency : 1768000  uid : 1000  pid : 3546  tag : AMS_RESUME_TAIL@CPU_MIN@43
+09-28 13:52:32.277  5188  5188 I chatty  : uid=10160(com.sec.android.inputmethod) identical 4 lines
+09-28 13:52:32.478  5188  5188 I SKBD    : and isTosAccept false
+09-28 13:52:32.523  3546  3630 D SensorService: [SO] 0.151 0.014 9.972
+09-28 13:52:32.549  3014  3089 V APM_AudioPolicyManager: getAudioPolicyConfig: audioParam;outDevice
+09-28 13:52:32.549  3014  3089 V APM_AudioPolicyManager: getNewOutputDevice() selected device 0
+09-28 13:52:32.549  3014  3089 V APM_AudioPolicyManager: ### curdevice : 2
+09-28 13:52:32.679  5188  5188 I SKBD    : and isTosAccept false
+09-28 13:52:32.992  4850  5130 D SDHMS:s : SIOP:: AP:224(340,87) BAT:295(295,0) CHG:334(334,0) USB:0(0,0) WIFI:221(273,50) ATC:0(0,-999) 
+09-28 13:52:33.080  5188  5188 I chatty  : uid=10160(com.sec.android.inputmethod) identical 2 lines
+09-28 13:52:33.281  5188  5188 I SKBD    : and isTosAccept false
+09-28 13:52:33.462  3865  4220 D NetworkController.MobileSignalController(0/1): onSignalStrengthsChanged signalStrength=SignalStrength: 3 99 -3 -200 -3 -200 -1 0 -114 -8 60 10 0 2147483647 3 14 -106 0x1000 P gsm|lte use_rsrp_and_rssnr_for_lte_level  [-128, -118, -108, -98] [-115, -105, -95, -85] level=1
+09-28 13:52:33.462  3865  4220 D NetworkController.MobileSignalController(0/1): getMobileIconGroup(): 13
+09-28 13:52:33.481  5188  5188 I SKBD    : and isTosAccept false
+09-28 13:52:33.550 31285 31285 I Choreographer: Skipped 236 frames!  The application may be doing too much work on its main thread.
+09-28 13:52:33.593 31285 31285 I mp3.flutter_ap: Rejecting re-init on previously-failed class java.lang.Class<androidx.window.layout.adapter.sidecar.DistinctElementSidecarCallback>: java.lang.NoClassDefFoundError: Failed resolution of: Landroidx/window/sidecar/SidecarInterface$SidecarCallback;
+09-28 13:52:33.593 31285 31285 I mp3.flutter_ap:   at androidx.window.layout.adapter.sidecar.ExtensionInterfaceCompat androidx.window.layout.adapter.sidecar.SidecarWindowBackend$Companion.initAndVerifyExtension(android.content.Context) (SidecarWindowBackend.kt:207)
+09-28 13:52:33.593 31285 31285 I mp3.flutter_ap:   at androidx.window.layout.adapter.sidecar.SidecarWindowBackend androidx.window.layout.adapter.sidecar.SidecarWindowBackend$Companion.getInstance(android.content.Context) (SidecarWindowBackend.kt:191)
+09-28 13:52:33.593 31285 31285 I mp3.flutter_ap:   at androidx.window.layout.WindowInfoTracker androidx.window.layout.WindowInfoTracker$Companion.getOrCreate(android.content.Context) (WindowInfoTracker.kt:135)
+09-28 13:52:33.593 31285 31285 I mp3.flutter_ap:   at io.flutter.embedding.android.WindowInfoRepositoryCallbackAdapterWrapper io.flutter.embedding.android.FlutterView.createWindowInfoRepo() (FlutterView.java:559)
+09-28 13:52:33.593 31285 31285 I mp3.flutter_ap:   at void io.flutter.embedding.android.FlutterView.onAttachedToWindow() (FlutterView.java:580)
+09-28 13:52:33.593 31285 31285 I mp3.flutter_ap:   at void android.view.View.dispatchAttachedToWindow(android.view.View$AttachInfo, int) (View.java:20001)
+09-28 13:52:33.593 31285 31285 I mp3.flutter_ap:   at void android.view.ViewGroup.dispatchAttachedToWindow(android.view.View$AttachInfo, int) (ViewGroup.java:3589)
+09-28 13:52:33.593 31285 31285 I mp3.flutter_ap:   at void android.view.ViewGroup.dispatchAttachedToWindow(android.view.View$AttachInfo, int) (ViewGroup.java:3596)
+09-28 13:52:33.593 31285 31285 I chatty  : uid=10198(com.pietrocode.epubtomp3.flutter_app) identical 1 line
+09-28 13:52:33.593 31285 31285 I mp3.flutter_ap:   at void android.view.ViewGroup.dispatchAttachedToWindow(android.view.View$AttachInfo, int) (ViewGroup.java:3596)
+09-28 13:52:33.593 31285 31285 I mp3.flutter_ap:   at void android.view.ViewRootImpl.performTraversals() (ViewRootImpl.java:2243)
+09-28 13:52:33.593 31285 31285 I mp3.flutter_ap:   at void android.view.ViewRootImpl.doTraversal() (ViewRootImpl.java:1908)
+09-28 13:52:33.593 31285 31285 I mp3.flutter_ap:   at void android.view.ViewRootImpl$TraversalRunnable.run() (ViewRootImpl.java:8523)
+09-28 13:52:33.593 31285 31285 I mp3.flutter_ap:   at void android.view.Choreographer$CallbackRecord.run(long) (Choreographer.java:949)
+09-28 13:52:33.593 31285 31285 I mp3.flutter_ap:   at void android.view.Choreographer.doCallbacks(int, long) (Choreographer.java:761)
+09-28 13:52:33.593 31285 31285 I mp3.flutter_ap:   at void android.view.Choreographer.doFrame(long, int) (Choreographer.java:696)
+09-28 13:52:33.593 31285 31285 I mp3.flutter_ap:   at void android.view.Choreographer$FrameDisplayEventReceiver.run() (Choreographer.java:935)
+09-28 13:52:33.593 31285 31285 I mp3.flutter_ap:   at void android.os.Handler.handleCallback(android.os.Message) (Handler.java:873)
+09-28 13:52:33.593 31285 31285 I mp3.flutter_ap:   at void android.os.Handler.dispatchMessage(android.os.Message) (Handler.java:99)
+09-28 13:52:33.593 31285 31285 I mp3.flutter_ap:   at void android.os.Looper.loop() (Looper.java:214)
+09-28 13:52:33.593 31285 31285 I mp3.flutter_ap:   at void android.app.ActivityThread.main(java.lang.String[]) (ActivityThread.java:7078)
+09-28 13:52:33.593 31285 31285 I mp3.flutter_ap:   at java.lang.Object java.lang.reflect.Method.invoke(java.lang.Object, java.lang.Object[]) (Method.java:-2)
+09-28 13:52:33.593 31285 31285 I mp3.flutter_ap:   at void com.android.internal.os.RuntimeInit$MethodAndArgsCaller.run() (RuntimeInit.java:494)
+09-28 13:52:33.593 31285 31285 I mp3.flutter_ap:   at void com.android.internal.os.ZygoteInit.main(java.lang.String[]) (ZygoteInit.java:964)
+09-28 13:52:33.593 31285 31285 I mp3.flutter_ap: Caused by: java.lang.ClassNotFoundException: Didn't find class "androidx.window.sidecar.SidecarInterface$SidecarCallback" on path: DexPathList[[zip file "/data/app/com.pietrocode.epubtomp3.flutter_app-ly_ZEz1A87jWs6aXef5EfA==/base.apk"],nativeLibraryDirectories=[/data/app/com.pietrocode.epubtomp3.flutter_app-ly_ZEz1A87jWs6aXef5EfA==/lib/arm64, /data/app/com.pietrocode.epubtomp3.flutter_app-ly_ZEz1A87jWs6aXef5EfA==/base.apk!/lib/arm64-v8a, /system/lib64, /system/vendor/lib64]]
+09-28 13:52:33.593 31285 31285 I mp3.flutter_ap:   at java.lang.Class dalvik.system.BaseDexClassLoader.findClass(java.lang.String) (BaseDexClassLoader.java:134)
+09-28 13:52:33.593 31285 31285 I mp3.flutter_ap:   at java.lang.Class java.lang.ClassLoader.loadClass(java.lang.String, boolean) (ClassLoader.java:379)
+09-28 13:52:33.593 31285 31285 I mp3.flutter_ap:   at java.lang.Class java.lang.ClassLoader.loadClass(java.lang.String) (ClassLoader.java:312)
+09-28 13:52:33.593 31285 31285 I mp3.flutter_ap:   at androidx.window.layout.adapter.sidecar.ExtensionInterfaceCompat androidx.window.layout.adapter.sidecar.SidecarWindowBackend$Companion.initAndVerifyExtension(android.content.Context) (SidecarWindowBackend.kt:207)
+09-28 13:52:33.593 31285 31285 I mp3.flutter_ap:   at androidx.window.layout.adapter.sidecar.SidecarWindowBackend androidx.window.layout.adapter.sidecar.SidecarWindowBackend$Companion.getInstance(android.content.Context) (SidecarWindowBackend.kt:191)
+09-28 13:52:33.593 31285 31285 I mp3.flutter_ap:   at androidx.window.layout.WindowInfoTracker androidx.window.layout.WindowInfoTracker$Companion.getOrCreate(android.content.Context) (WindowInfoTracker.kt:135)
+09-28 13:52:33.593 31285 31285 I mp3.flutter_ap:   at io.flutter.embedding.android.WindowInfoRepositoryCallbackAdapterWrapper io.flutter.embedding.android.FlutterView.createWindowInfoRepo() (FlutterView.java:559)
+09-28 13:52:33.593 31285 31285 I mp3.flutter_ap:   at void io.flutter.embedding.android.FlutterView.onAttachedToWindow() (FlutterView.java:580)
+09-28 13:52:33.593 31285 31285 I mp3.flutter_ap:   at void android.view.View.dispatchAttachedToWindow(android.view.View$AttachInfo, int) (View.java:20001)
+09-28 13:52:33.593 31285 31285 I mp3.flutter_ap:   at void android.view.ViewGroup.dispatchAttachedToWindow(android.view.View$AttachInfo, int) (ViewGroup.java:3589)
+09-28 13:52:33.593 31285 31285 I mp3.flutter_ap:   at void android.view.ViewGroup.dispatchAttachedToWindow(android.view.View$AttachInfo, int) (ViewGroup.java:3596)
+09-28 13:52:33.593 31285 31285 I chatty  : uid=10198(com.pietrocode.epubtomp3.flutter_app) identical 1 line
+09-28 13:52:33.593 31285 31285 I mp3.flutter_ap:   at void android.view.ViewGroup.dispatchAttachedToWindow(android.view.View$AttachInfo, int) (ViewGroup.java:3596)
+09-28 13:52:33.593 31285 31285 I mp3.flutter_ap:   at void android.view.ViewRootImpl.performTraversals() (ViewRootImpl.java:2243)
+09-28 13:52:33.593 31285 31285 I mp3.flutter_ap:   at void android.view.ViewRootImpl.doTraversal() (ViewRootImpl.java:1908)
+09-28 13:52:33.593 31285 31285 I mp3.flutter_ap:   at void android.view.ViewRootImpl$TraversalRunnable.run() (ViewRootImpl.java:8523)
+09-28 13:52:33.593 31285 31285 I mp3.flutter_ap:   at void android.view.Choreographer$CallbackRecord.run(long) (Choreographer.java:949)
+09-28 13:52:33.593 31285 31285 I mp3.flutter_ap:   at void android.view.Choreographer.doCallbacks(int, long) (Choreographer.java:761)
+09-28 13:52:33.593 31285 31285 I mp3.flutter_ap:   at void android.view.Choreographer.doFrame(long, int) (Choreographer.java:696)
+09-28 13:52:33.593 31285 31285 I mp3.flutter_ap:   at void android.view.Choreographer$FrameDisplayEventReceiver.run() (Choreographer.java:935)
+09-28 13:52:33.593 31285 31285 I mp3.flutter_ap:   at void android.os.Handler.handleCallback(android.os.Message) (Handler.java:873)
+09-28 13:52:33.593 31285 31285 I mp3.flutter_ap:   at void android.os.Handler.dispatchMessage(android.os.Message) (Handler.java:99)
+09-28 13:52:33.593 31285 31285 I mp3.flutter_ap:   at void android.os.Looper.loop() (Looper.java:214)
+09-28 13:52:33.593 31285 31285 I mp3.flutter_ap:   at void android.app.ActivityThread.main(java.lang.String[]) (ActivityThread.java:7078)
+09-28 13:52:33.593 31285 31285 I mp3.flutter_ap:   at java.lang.Object java.lang.reflect.Method.invoke(java.lang.Object, java.lang.Object[]) (Method.java:-2)
+09-28 13:52:33.593 31285 31285 I mp3.flutter_ap:   at void com.android.internal.os.RuntimeInit$MethodAndArgsCaller.run() (RuntimeInit.java:494)
+09-28 13:52:33.593 31285 31285 I mp3.flutter_ap:   at void com.android.internal.os.ZygoteInit.main(java.lang.String[]) (ZygoteInit.java:964)
+09-28 13:52:33.593 31285 31285 I mp3.flutter_ap: 
+09-28 13:52:33.594 31285 31285 I mp3.flutter_ap: Rejecting re-init on previously-failed class java.lang.Class<androidx.window.layout.adapter.sidecar.DistinctElementSidecarCallback>: java.lang.NoClassDefFoundError: Failed resolution of: Landroidx/window/sidecar/SidecarInterface$SidecarCallback;
+09-28 13:52:33.594 31285 31285 I mp3.flutter_ap:   at androidx.window.layout.adapter.sidecar.ExtensionInterfaceCompat androidx.window.layout.adapter.sidecar.SidecarWindowBackend$Companion.initAndVerifyExtension(android.content.Context) (SidecarWindowBackend.kt:207)
+09-28 13:52:33.594 31285 31285 I mp3.flutter_ap:   at androidx.window.layout.adapter.sidecar.SidecarWindowBackend androidx.window.layout.adapter.sidecar.SidecarWindowBackend$Companion.getInstance(android.content.Context) (SidecarWindowBackend.kt:191)
+09-28 13:52:33.594 31285 31285 I mp3.flutter_ap:   at androidx.window.layout.WindowInfoTracker androidx.window.layout.WindowInfoTracker$Companion.getOrCreate(android.content.Context) (WindowInfoTracker.kt:135)
+09-28 13:52:33.594 31285 31285 I mp3.flutter_ap:   at io.flutter.embedding.android.WindowInfoRepositoryCallbackAdapterWrapper io.flutter.embedding.android.FlutterView.createWindowInfoRepo() (FlutterView.java:559)
+09-28 13:52:33.594 31285 31285 I mp3.flutter_ap:   at void io.flutter.embedding.android.FlutterView.onAttachedToWindow() (FlutterView.java:580)
+09-28 13:52:33.594 31285 31285 I mp3.flutter_ap:   at void android.view.View.dispatchAttachedToWindow(android.view.View$AttachInfo, int) (View.java:20001)
+09-28 13:52:33.594 31285 31285 I mp3.flutter_ap:   at void android.view.ViewGroup.dispatchAttachedToWindow(android.view.View$AttachInfo, int) (ViewGroup.java:3589)
+09-28 13:52:33.594 31285 31285 I mp3.flutter_ap:   at void android.view.ViewGroup.dispatchAttachedToWindow(android.view.View$AttachInfo, int) (ViewGroup.java:3596)
+09-28 13:52:33.594 31285 31285 I chatty  : uid=10198(com.pietrocode.epubtomp3.flutter_app) identical 1 line
+09-28 13:52:33.594 31285 31285 I mp3.flutter_ap:   at void android.view.ViewGroup.dispatchAttachedToWindow(android.view.View$AttachInfo, int) (ViewGroup.java:3596)
+09-28 13:52:33.594 31285 31285 I mp3.flutter_ap:   at void android.view.ViewRootImpl.performTraversals() (ViewRootImpl.java:2243)
+09-28 13:52:33.594 31285 31285 I mp3.flutter_ap:   at void android.view.ViewRootImpl.doTraversal() (ViewRootImpl.java:1908)
+09-28 13:52:33.594 31285 31285 I mp3.flutter_ap:   at void android.view.ViewRootImpl$TraversalRunnable.run() (ViewRootImpl.java:8523)
+09-28 13:52:33.594 31285 31285 I mp3.flutter_ap:   at void android.view.Choreographer$CallbackRecord.run(long) (Choreographer.java:949)
+09-28 13:52:33.594 31285 31285 I mp3.flutter_ap:   at void android.view.Choreographer.doCallbacks(int, long) (Choreographer.java:761)
+09-28 13:52:33.594 31285 31285 I mp3.flutter_ap:   at void android.view.Choreographer.doFrame(long, int) (Choreographer.java:696)
+09-28 13:52:33.594 31285 31285 I mp3.flutter_ap:   at void android.view.Choreographer$FrameDisplayEventReceiver.run() (Choreographer.java:935)
+09-28 13:52:33.594 31285 31285 I mp3.flutter_ap:   at void android.os.Handler.handleCallback(android.os.Message) (Handler.java:873)
+09-28 13:52:33.594 31285 31285 I mp3.flutter_ap:   at void android.os.Handler.dispatchMessage(android.os.Message) (Handler.java:99)
+09-28 13:52:33.594 31285 31285 I mp3.flutter_ap:   at void android.os.Looper.loop() (Looper.java:214)
+09-28 13:52:33.594 31285 31285 I mp3.flutter_ap:   at void android.app.ActivityThread.main(java.lang.String[]) (ActivityThread.java:7078)
+09-28 13:52:33.594 31285 31285 I mp3.flutter_ap:   at java.lang.Object java.lang.reflect.Method.invoke(java.lang.Object, java.lang.Object[]) (Method.java:-2)
+09-28 13:52:33.594 31285 31285 I mp3.flutter_ap:   at void com.android.internal.os.RuntimeInit$MethodAndArgsCaller.run() (RuntimeInit.java:494)
+09-28 13:52:33.594 31285 31285 I mp3.flutter_ap:   at void com.android.internal.os.ZygoteInit.main(java.lang.String[]) (ZygoteInit.java:964)
+09-28 13:52:33.594 31285 31285 I mp3.flutter_ap: Caused by: java.lang.ClassNotFoundException: Didn't find class "androidx.window.sidecar.SidecarInterface$SidecarCallback" on path: DexPathList[[zip file "/data/app/com.pietrocode.epubtomp3.flutter_app-ly_ZEz1A87jWs6aXef5EfA==/base.apk"],nativeLibraryDirectories=[/data/app/com.pietrocode.epubtomp3.flutter_app-ly_ZEz1A87jWs6aXef5EfA==/lib/arm64, /data/app/com.pietrocode.epubtomp3.flutter_app-ly_ZEz1A87jWs6aXef5EfA==/base.apk!/lib/arm64-v8a, /system/lib64, /system/vendor/lib64]]
+09-28 13:52:33.594 31285 31285 I mp3.flutter_ap:   at java.lang.Class dalvik.system.BaseDexClassLoader.findClass(java.lang.String) (BaseDexClassLoader.java:134)
+09-28 13:52:33.594 31285 31285 I mp3.flutter_ap:   at java.lang.Class java.lang.ClassLoader.loadClass(java.lang.String, boolean) (ClassLoader.java:379)
+09-28 13:52:33.594 31285 31285 I mp3.flutter_ap:   at java.lang.Class java.lang.ClassLoader.loadClass(java.lang.String) (ClassLoader.java:312)
+09-28 13:52:33.594 31285 31285 I mp3.flutter_ap:   at androidx.window.layout.adapter.sidecar.ExtensionInterfaceCompat androidx.window.layout.adapter.sidecar.SidecarWindowBackend$Companion.initAndVerifyExtension(android.content.Context) (SidecarWindowBackend.kt:207)
+09-28 13:52:33.594 31285 31285 I mp3.flutter_ap:   at androidx.window.layout.adapter.sidecar.SidecarWindowBackend androidx.window.layout.adapter.sidecar.SidecarWindowBackend$Companion.getInstance(android.content.Context) (SidecarWindowBackend.kt:191)
+09-28 13:52:33.594 31285 31285 I mp3.flutter_ap:   at androidx.window.layout.WindowInfoTracker androidx.window.layout.WindowInfoTracker$Companion.getOrCreate(android.content.Context) (WindowInfoTracker.kt:135)
+09-28 13:52:33.594 31285 31285 I mp3.flutter_ap:   at io.flutter.embedding.android.WindowInfoRepositoryCallbackAdapterWrapper io.flutter.embedding.android.FlutterView.createWindowInfoRepo() (FlutterView.java:559)
+09-28 13:52:33.594 31285 31285 I mp3.flutter_ap:   at void io.flutter.embedding.android.FlutterView.onAttachedToWindow() (FlutterView.java:580)
+09-28 13:52:33.594 31285 31285 I mp3.flutter_ap:   at void android.view.View.dispatchAttachedToWindow(android.view.View$AttachInfo, int) (View.java:20001)
+09-28 13:52:33.594 31285 31285 I mp3.flutter_ap:   at void android.view.ViewGroup.dispatchAttachedToWindow(android.view.View$AttachInfo, int) (ViewGroup.java:3589)
+09-28 13:52:33.594 31285 31285 I mp3.flutter_ap:   at void android.view.ViewGroup.dispatchAttachedToWindow(android.view.View$AttachInfo, int) (ViewGroup.java:3596)
+09-28 13:52:33.594 31285 31285 I chatty  : uid=10198(com.pietrocode.epubtomp3.flutter_app) identical 1 line
+09-28 13:52:33.594 31285 31285 I mp3.flutter_ap:   at void android.view.ViewGroup.dispatchAttachedToWindow(android.view.View$AttachInfo, int) (ViewGroup.java:3596)
+09-28 13:52:33.594 31285 31285 I mp3.flutter_ap:   at void android.view.ViewRootImpl.performTraversals() (ViewRootImpl.java:2243)
+09-28 13:52:33.594 31285 31285 I mp3.flutter_ap:   at void android.view.ViewRootImpl.doTraversal() (ViewRootImpl.java:1908)
+09-28 13:52:33.594 31285 31285 I mp3.flutter_ap:   at void android.view.ViewRootImpl$TraversalRunnable.run() (ViewRootImpl.java:8523)
+09-28 13:52:33.594 31285 31285 I mp3.flutter_ap:   at void android.view.Choreographer$CallbackRecord.run(long) (Choreographer.java:949)
+09-28 13:52:33.594 31285 31285 I mp3.flutter_ap:   at void android.view.Choreographer.doCallbacks(int, long) (Choreographer.java:761)
+09-28 13:52:33.594 31285 31285 I mp3.flutter_ap:   at void android.view.Choreographer.doFrame(long, int) (Choreographer.java:696)
+09-28 13:52:33.594 31285 31285 I mp3.flutter_ap:   at void android.view.Choreographer$FrameDisplayEventReceiver.run() (Choreographer.java:935)
+09-28 13:52:33.594 31285 31285 I mp3.flutter_ap:   at void android.os.Handler.handleCallback(android.os.Message) (Handler.java:873)
+09-28 13:52:33.594 31285 31285 I mp3.flutter_ap:   at void android.os.Handler.dispatchMessage(android.os.Message) (Handler.java:99)
+09-28 13:52:33.594 31285 31285 I mp3.flutter_ap:   at void android.os.Looper.loop() (Looper.java:214)
+09-28 13:52:33.594 31285 31285 I mp3.flutter_ap:   at void android.app.ActivityThread.main(java.lang.String[]) (ActivityThread.java:7078)
+09-28 13:52:33.594 31285 31285 I mp3.flutter_ap:   at java.lang.Object java.lang.reflect.Method.invoke(java.lang.Object, java.lang.Object[]) (Method.java:-2)
+09-28 13:52:33.594 31285 31285 I mp3.flutter_ap:   at void com.android.internal.os.RuntimeInit$MethodAndArgsCaller.run() (RuntimeInit.java:494)
+09-28 13:52:33.594 31285 31285 I mp3.flutter_ap:   at void com.android.internal.os.ZygoteInit.main(java.lang.String[]) (ZygoteInit.java:964)
+09-28 13:52:33.594 31285 31285 I mp3.flutter_ap: 
+09-28 13:52:33.610 31285 31285 W mp3.flutter_ap: Accessing hidden method Landroid/content/Context;->getOpPackageName()Ljava/lang/String; (light greylist, linking)
+09-28 13:52:33.655 31285 31285 D SurfaceView: onWindowVisibilityChanged(0) true io.flutter.embedding.android.FlutterSurfaceView{d1c16b6 V.E...... ......I. 0,0-0,0} of ViewRootImpl@e5a4fa9[MainActivity]
+09-28 13:52:33.659 31285 31285 D FlutterRenderer: Width is zero. 0,0
+09-28 13:52:33.682  3546  4926 V WindowManager: Relayout Window{ae64b28 u0 com.pietrocode.epubtomp3.flutter_app/com.pietrocode.epubtomp3.flutter_app.MainActivity}: viewVisibility=0 req=1080x2220 {(0,0)(fillxfill) sim={adjust=resize forwardNavigation} ty=BASE_APPLICATION fmt=TRANSLUCENT wanim=0x1030001
+09-28 13:52:33.682  3546  4926 V WindowManager:   fl=LAYOUT_IN_SCREEN LAYOUT_INSET_DECOR SPLIT_TOUCH HARDWARE_ACCELERATED DRAWS_SYSTEM_BAR_BACKGROUNDS
+09-28 13:52:33.682  3546  4926 V WindowManager:   pfl=FORCE_DRAW_STATUS_BAR_BACKGROUND  remains{ 0x1000000 }
+09-28 13:52:33.682  3546  4926 V WindowManager:   vsysui=LAYOUT_STABLE LAYOUT_FULLSCREEN LIGHT_NAVIGATION_BAR naviIconColor=0}
+09-28 13:52:33.682  5188  5188 I SKBD    : and isTosAccept false
+09-28 13:52:33.685  3546  4926 V WindowManager: Resize reasons for w=Window{ae64b28 u0 com.pietrocode.epubtomp3.flutter_app/com.pietrocode.epubtomp3.flutter_app.MainActivity}:  contentInsetsChanged=false [0,72][0,144] visibleInsetsChanged=false [0,72][0,144] stableInsetsChanged=false [0,72][0,144] outsetsChanged=false [0,0][0,0] surfaceResized=false configChanged=true dragResizingChanged=false reportOrientationChanged=false displayCutoutChanged=false nextForceRelayoutToClient=false
+09-28 13:52:33.689  3546  4926 D WindowManager: preserveSurfaceLocked: Not has surfaceWindowStateAnimator{1e8f1d4 com.pietrocode.epubtomp3.flutter_app/com.pietrocode.epubtomp3.flutter_app.MainActivity}
+09-28 13:52:33.691  3017  3017 I SurfaceFlinger: id=5801 createSurf (1080x2220),1 flag=4, com.pietrocode.epubtomp3.flutter_app/com.pietrocode.epubtomp3.flutter_app.MainActivity[31285]#0
+09-28 13:52:33.693  3546  4926 D WindowManager: makeSurface duration=3 name=com.pietrocode.epubtomp3.flutter_app/com.pietrocode.epubtomp3.flutter_app.MainActivity[31285]
+09-28 13:52:33.694  3546  4926 V WindowManager: Changing focus from null to Window{ae64b28 u0 com.pietrocode.epubtomp3.flutter_app/com.pietrocode.epubtomp3.flutter_app.MainActivity} Callers=com.android.server.wm.WindowManagerService.relayoutWindow:2577 com.android.server.wm.Session.relayoutForTranslate:302 android.view.IWindowSession$Stub.onTransact:518 com.android.server.wm.Session.onTransact:186 
+09-28 13:52:33.694  3546  4926 D StatusBarManagerService: notifyRequestedSystemKey recent=false home=false
+09-28 13:52:33.695  3546  3566 D WindowManager: setSystemUiVisibility: vis= 0x518, fullscreenVis= 0x0, dockedVis= 0x0, win=Window{ae64b28 u0 com.pietrocode.epubtomp3.flutter_app/com.pietrocode.epubtomp3.flutter_app.MainActivity}
+09-28 13:52:33.696  3546  4926 D InputDispatcher: Focus entered window (31285): ae64b28 0
+09-28 13:52:33.696  3546  3575 D WindowManager: reportFocusChangedSerialized, focused=true, inTouchMode=true, win=Window{ae64b28 u0 com.pietrocode.epubtomp3.flutter_app/com.pietrocode.epubtomp3.flutter_app.MainActivity}
+09-28 13:52:33.697  3546  4926 D SamsungPhoneWindowManager: adjustSystemUiVisibilityLw: vis=0x518
+09-28 13:52:33.697  3546  4926 D InputManager-JNI: setSystemUiVisibility dexmode: false changed: true displayid: 0 visibility: 0x518 DD: 0x518 OD: 0x0
+09-28 13:52:33.697  3865  3865 D LightBarController: onNavigationVisibilityChanged : vis = 518, nbModeChanged = false navigationBarMode = 0
+09-28 13:52:33.699 31285 31285 D ViewRootImpl@e5a4fa9[MainActivity]: Relayout returned: old=[0,0][1080,2220] new=[0,0][1080,2220] result=0x7 surface={true 495343099904} changed=true
+09-28 13:52:33.700 31285 31349 I OpenGLRenderer: Initialized EGL, version 1.4
+09-28 13:52:33.700 31285 31349 D OpenGLRenderer: Swap behavior 2
+09-28 13:52:33.703 31285 31285 D FlutterJNI: Sending viewport metrics to the engine.
+09-28 13:52:33.721 31285 31349 D mali_winsys: EGLint new_window_surface(egl_winsys_display *, void *, EGLSurface, EGLConfig, egl_winsys_surface **, EGLBoolean) returns 0x3000
+09-28 13:52:33.721 31285 31349 D OpenGLRenderer: eglCreateWindowSurface = 0x734cd5f300, 0x7354bfe010
+09-28 13:52:33.724  3017  3017 I SurfaceFlinger: id=5802 createSurf (1080x2076),4 flag=404, SurfaceView - com.pietrocode.epubtomp3.flutter_app/com.pietrocode.epubtomp3.flutter_app.MainActivity@d1c16b6@0[31285]#0
+09-28 13:52:33.726  3017  3017 I SurfaceFlinger: id=5803 createSurf (1080x2076),1024 flag=20404, Background for -SurfaceView - com.pietrocode.epubtomp3.flutter_app/com.pietrocode.epubtomp3.flutter_app.MainActivity@d1c16b6@0[31285]#0
+09-28 13:52:33.728 31285 31285 D SurfaceView: show() Surface(name=SurfaceView - com.pietrocode.epubtomp3.flutter_app/com.pietrocode.epubtomp3.flutter_app.MainActivity@d1c16b6@0[31285])/@0xaa54fb7 io.flutter.embedding.android.FlutterSurfaceView{d1c16b6 V.E...... ......ID 0,0-1080,2076}
+09-28 13:52:33.735 31285 31285 D SurfaceView: surfaceCreated 1 #8 io.flutter.embedding.android.FlutterSurfaceView{d1c16b6 V.E...... ......ID 0,0-1080,2076}
+09-28 13:52:33.736 31285 31308 D mali_winsys: EGLint new_window_surface(egl_winsys_display *, void *, EGLSurface, EGLConfig, egl_winsys_surface **, EGLBoolean) returns 0x3000
+09-28 13:52:33.743 31285 31285 D SurfaceView: surfaceChanged (1080,2076) 1 #8 io.flutter.embedding.android.FlutterSurfaceView{d1c16b6 V.E...... ......ID 0,0-1080,2076}
+09-28 13:52:33.838  4663  4663 D io_stats: !@ 179,0 r 2700669 134577148 w 1388701 71464224 d 116150 81768748 f 421934 440601 iot 2981640 2612607 th 51200 0 0 pt 0 inp 0 0 374837.483
+09-28 13:52:33.883  5188  5188 I SKBD    : and isTosAccept false
+09-28 13:52:33.943  3546  3739 D WifiStateMachine: enter getWifiLinkLayerStats
+09-28 13:52:33.943  3546  3739 I WifiVendorHal: getWifiLinkLayerStats(l.2973) before calling iface.getLinkLayerStats
+09-28 13:52:33.944  3002  3002 I android.hardware.wifi@1.0-service: enter getLinkLayerStats
+09-28 13:52:33.944  3002  3002 I android.hardware.wifi@1.0-service: enter getLinkLayerStatsInternal
+09-28 13:52:33.953  3002  3002 I android.hardware.wifi@1.0-service: Successfully getLinkLayerStats.
+09-28 13:52:33.953  3546  3739 I WifiVendorHal: getWifiLinkLayerStats(l.2973) after calling iface.getLinkLayerStats
+09-28 13:52:33.963  3546  3739 I WifiStateMachine: checkScoreBasedQuality -  mPreviousScore[0]:79 mPreviousScore[1]:80 mPreviousScore[2]:80 s2Score:80mPrevoiusScoreAverage:79
+09-28 13:52:34.084  5188  5188 I SKBD    : and isTosAccept false
+09-28 13:52:34.197  3546 31361 D TspStateManagerInternal: update cmd=set_grip_data,1,30,7,7,0
+09-28 13:52:34.284  5188  5188 I chatty  : uid=10160(com.sec.android.inputmethod) identical 1 line
+09-28 13:52:34.485  5188  5188 I SKBD    : and isTosAccept false
+09-28 13:52:34.497  3546  3738 D WifiTrafficPoller: TrafficStats TxPkts=850862 RxPkts=3679824 TxBytes=95575424 RxBytes=4896644242 , Foreground uid=10198 pkgName=com.pietrocode.epubtomp3.flutter_app TxPackets=111 RxPackets=84 TxBytes=10476 RxBytes=4268
+09-28 13:52:34.498  3865  3865 D SecStatusBarWifiView: updateState: WifiIconState(resId=2131232678, visible=true, activityId=2131232683)
+09-28 13:52:34.685  5188  5188 I SKBD    : and isTosAccept false
+09-28 13:52:34.796  3546  6327 D GameManagerService: identifyGamePackage. com.pietrocode.epubtomp3.flutter_app, mCurrentUserId: 0, callerUserId: 0
+09-28 13:52:34.796  3546  6327 D GamePkgDataHelper: getGamePkgData(). com.pietrocode.epubtomp3.flutter_app
+09-28 13:52:34.886  5188  5188 I chatty  : uid=10160(com.sec.android.inputmethod) identical 1 line
+09-28 13:52:35.087  5188  5188 I SKBD    : and isTosAccept false
+09-28 13:52:35.169 28694 28694 D BoundBrokerSvc: onUnbind: Intent { act=com.google.android.gms.onboardingconsent.api.ConsentManagerApiService.START dat=chimera-action: cmp=com.google.android.gms/.chimera.GmsApiService }
+09-28 13:52:35.266 28694 28694 D BoundBrokerSvc: onUnbind: Intent { act=com.google.android.gms.presencemanager.service.START dat=chimera-action: cmp=com.google.android.gms/.chimera.PersistentApiService }
+09-28 13:52:35.273 28694 28694 D BoundBrokerSvc: onUnbind: Intent { act=com.google.android.gms.presencemanager.service.INTERNAL_IDENTITY dat=chimera-action: cmp=com.google.android.gms/.chimera.PersistentApiService }
+09-28 13:52:35.280 28694 28694 D BoundBrokerSvc: onUnbind: Intent { act=com.google.android.gms.auth.aang.events.services.START dat=chimera-action: cmp=com.google.android.gms/.chimera.PersistentApiService }
+09-28 13:52:35.287  5188  5188 I SKBD    : and isTosAccept false
+09-28 13:52:35.487  5188  5188 I SKBD    : and isTosAccept false
+09-28 13:52:35.503  3865  3865 D SecStatusBarWifiView: updateState: WifiIconState(resId=2131232678, visible=true, activityId=2131232703)
+09-28 13:52:35.620 28694 28694 D BoundBrokerSvc: onUnbind: Intent { act=com.google.android.gms.libs.gmscorelogger.service.START dat=chimera-action: cmp=com.google.android.gms/.chimera.PersistentDirectBootAwareApiService }
+09-28 13:52:35.688  5188  5188 I SKBD    : and isTosAccept false
+09-28 13:52:35.888  5188  5188 I SKBD    : and isTosAccept false
+09-28 13:52:36.015  3865  4220 D NetworkController.MobileSignalController(0/1): onSignalStrengthsChanged signalStrength=SignalStrength: 3 99 -3 -200 -3 -200 -1 1 -110 -8 -40 10 0 2147483647 3 14 -106 0x1000 P gsm|lte use_rsrp_and_rssnr_for_lte_level  [-128, -118, -108, -98] [-115, -105, -95, -85] level=1
+09-28 13:52:36.015  3865  4220 D NetworkController.MobileSignalController(0/1): getMobileIconGroup(): 13
+09-28 13:52:36.089  5188  5188 I SKBD    : and isTosAccept false
+09-28 13:52:36.290  5188  5188 I chatty  : uid=10160(com.sec.android.inputmethod) identical 1 line
+09-28 13:52:36.490  5188  5188 I SKBD    : and isTosAccept false
+09-28 13:52:36.505  3865  3865 D SecStatusBarWifiView: updateState: WifiIconState(resId=2131232678, visible=true, activityId=2131232683)
+09-28 13:52:36.691  5188  5188 I SKBD    : and isTosAccept false
+09-28 13:52:36.892  5188  5188 I SKBD    : and isTosAccept false
+09-28 13:52:36.965  3546  3739 D WifiStateMachine: enter getWifiLinkLayerStats
+09-28 13:52:36.965  3546  3739 I WifiVendorHal: getWifiLinkLayerStats(l.2973) before calling iface.getLinkLayerStats
+09-28 13:52:36.966  3002  3002 I android.hardware.wifi@1.0-service: enter getLinkLayerStats
+09-28 13:52:36.966  3002  3002 I android.hardware.wifi@1.0-service: enter getLinkLayerStatsInternal
+09-28 13:52:36.976  3002  3002 I android.hardware.wifi@1.0-service: Successfully getLinkLayerStats.
+09-28 13:52:36.977  3546  3739 I WifiVendorHal: getWifiLinkLayerStats(l.2973) after calling iface.getLinkLayerStats
+09-28 13:52:36.988  3546  3739 I WifiStateMachine: checkScoreBasedQuality -  mPreviousScore[0]:80 mPreviousScore[1]:80 mPreviousScore[2]:80 s2Score:80mPrevoiusScoreAverage:80
+09-28 13:52:37.092  5188  5188 I SKBD    : and isTosAccept false
+09-28 13:52:37.294  5188  5188 I SKBD    : and isTosAccept false
+09-28 13:52:37.299  3865  4220 D NetworkController.MobileSignalController(0/1): onSignalStrengthsChanged signalStrength=SignalStrength: 3 99 -3 -200 -3 -200 -1 3 -108 -9 30 10 0 2147483647 3 14 -106 0x1000 P gsm|lte use_rsrp_and_rssnr_for_lte_level  [-128, -118, -108, -98] [-115, -105, -95, -85] level=1
+09-28 13:52:37.301  3865  4220 D NetworkController.MobileSignalController(0/1): getMobileIconGroup(): 13
+09-28 13:52:37.495  5188  5188 I SKBD    : and isTosAccept false
+09-28 13:52:37.627  3546  6542 D SamsungAlarmManager: Cancel Alarm calling from uid:10034 pid :28694 / op:PendingIntent{7d5bf7d: PendingIntentRecord{bb379 com.google.android.gms broadcastIntent}}
+09-28 13:52:37.634  3546  6542 I SamsungAlarmManager: setLocked to kernel - T:2 / 20260928T135600, SetElapsed=866755815, nowELAPSED=866552997
+09-28 13:52:37.635  3546  6542 I SamsungAlarmManager: setLocked to kernel - T:3 / 20260928T135259, SetElapsed=866575363, nowELAPSED=866552998
+09-28 13:52:37.635 28694 30503 I AlarmManager: setExactAndAllowWhileIdle [name: GCM_HB_ALARM type: 2 triggerAtMillis: 868352999]
+09-28 13:52:37.645  3546  6542 D SamsungAlarmManager: setExact Intent (T:2/F:5/AC:false) 20260928T135347 - CU:10034/CP:28694
+09-28 13:52:37.645  3546  6542 I SamsungAlarmManager: setLocked to kernel - T:2 / 20260928T135347, SetElapsed=866622481, nowELAPSED=866553009
+09-28 13:52:37.646  3546  6542 I SamsungAlarmManager: setLocked to kernel - T:3 / 20260928T135259, SetElapsed=866575363, nowELAPSED=866553009
+09-28 13:52:37.647  3546  6542 D SamsungAlarmManager: Cancel Alarm calling from uid:10034 pid :28694 / op:PendingIntent{e08ce72: PendingIntentRecord{bb379 com.google.android.gms broadcastIntent}}
+09-28 13:52:37.653  3546  6542 I SamsungAlarmManager: setLocked to kernel - T:2 / 20260928T135600, SetElapsed=866755815, nowELAPSED=866553016
+09-28 13:52:37.653  3546  6542 I SamsungAlarmManager: setLocked to kernel - T:3 / 20260928T135300, SetElapsed=866575363, nowELAPSED=866553016
+09-28 13:52:37.653 28694 30503 I AlarmManager: setExactAndAllowWhileIdle [name: GCM_HB_ALARM type: 2 triggerAtMillis: 868353017]
+09-28 13:52:37.658  3546  6542 D SamsungAlarmManager: setExact Intent (T:2/F:5/AC:false) 20260928T135347 - CU:10034/CP:28694
+09-28 13:52:37.658  3546  6542 I SamsungAlarmManager: setLocked to kernel - T:2 / 20260928T135347, SetElapsed=866622481, nowELAPSED=866553022
+09-28 13:52:37.659  3546  6542 I SamsungAlarmManager: setLocked to kernel - T:3 / 20260928T135300, SetElapsed=866575363, nowELAPSED=866553022
+09-28 13:52:37.695  5188  5188 I SKBD    : and isTosAccept false
+09-28 13:52:37.896  5188  5188 I SKBD    : and isTosAccept false
+09-28 13:52:38.060 31285 31308 D vndksupport: Loading /vendor/lib64/hw/android.hardware.graphics.mapper@2.0-impl.so from current namespace instead of sphal namespace.
+09-28 13:52:38.096  5188  5188 I SKBD    : and isTosAccept false
+09-28 13:52:38.272  3207  3293 D EnterpriseController: netId is 0
+09-28 13:52:38.272  3207  3293 E Netd    : getNetworkForDns: getNetId from enterpriseCtrl is netid 0
+09-28 13:52:38.272  3207  3293 D DnsProxyListener: DNSDBG::dns addrinfo af 2
+09-28 13:52:38.297  5188  5188 I SKBD    : and isTosAccept false
+09-28 13:52:38.352  3207  3293 D EnterpriseController: netId is 0
+09-28 13:52:38.352  3207  3293 E Netd    : getNetworkForDns: getNetId from enterpriseCtrl is netid 0
+09-28 13:52:38.352  3207  3293 D DnsProxyListener: DNSDBG::dns addrinfo af 2
+09-28 13:52:38.498  5188  5188 I SKBD    : and isTosAccept false
+09-28 13:52:38.538  3546  3738 D WifiTrafficPoller: TrafficStats TxPkts=850864 RxPkts=3679829 TxBytes=95575556 RxBytes=4896645098 , Foreground uid=10198 pkgName=com.pietrocode.epubtomp3.flutter_app TxPackets=115 RxPackets=87 TxBytes=10808 RxBytes=4420
+09-28 13:52:38.539  3865  3865 D SecStatusBarWifiView: updateState: WifiIconState(resId=2131232678, visible=true, activityId=2131232684)
+09-28 13:52:38.595  3207  3293 D EnterpriseController: netId is 0
+09-28 13:52:38.596  3207  3293 E Netd    : getNetworkForDns: getNetId from enterpriseCtrl is netid 0
+09-28 13:52:38.596  3207  3293 D DnsProxyListener: DNSDBG::dns addrinfo af 2
+09-28 13:52:38.662  3546  3565 W ActivityManager: Launch timeout has expired, giving up wake lock!
+09-28 13:52:38.698  5188  5188 I SKBD    : and isTosAccept false
+09-28 13:52:38.828  3207  3293 D EnterpriseController: netId is 0
+09-28 13:52:38.828  3207  3293 E Netd    : getNetworkForDns: getNetId from enterpriseCtrl is netid 0
+09-28 13:52:38.828  3207  3293 D DnsProxyListener: DNSDBG::dns addrinfo af 2
+09-28 13:52:38.840  4663  4663 D io_stats: !@ 179,0 r 2700703 134577864 w 1388707 71464596 d 116151 81768752 f 421937 440604 iot 2981664 2612628 th 51200 0 0 pt 0 inp 0 0 374842.485
+09-28 13:52:38.899  5188  5188 I SKBD    : and isTosAccept false
+09-28 13:52:38.919 31285 31285 I TextToSpeech: Connected to ComponentInfo{com.samsung.SMT/com.samsung.SMT.SamsungTTSService}
+09-28 13:52:38.924 31332 31345 I SamsungTTS: [IsAvailable] por-BRA-null is LANG_COUNTRY_AVAILABLE
+09-28 13:52:38.925 31285 31372 I TextToSpeech: Set up connection to ComponentInfo{com.samsung.SMT/com.samsung.SMT.SamsungTTSService}
+09-28 13:52:39.086 31285 31285 I Choreographer: Skipped 325 frames!  The application may be doing too much work on its main thread.
+09-28 13:52:39.102  5188  5188 I SKBD    : and isTosAccept false
+09-28 13:52:39.111  3546  6542 V WindowManager: Relayout Window{ae64b28 u0 com.pietrocode.epubtomp3.flutter_app/com.pietrocode.epubtomp3.flutter_app.MainActivity}: viewVisibility=0 req=1080x2220 {(0,0)(fillxfill) sim={adjust=resize forwardNavigation} ty=BASE_APPLICATION fmt=TRANSLUCENT wanim=0x1030001
+09-28 13:52:39.111  3546  6542 V WindowManager:   fl=LAYOUT_IN_SCREEN LAYOUT_INSET_DECOR SPLIT_TOUCH HARDWARE_ACCELERATED DRAWS_SYSTEM_BAR_BACKGROUNDS
+09-28 13:52:39.111  3546  6542 V WindowManager:   pfl=FORCE_DRAW_STATUS_BAR_BACKGROUND
+09-28 13:52:39.111  3546  6542 V WindowManager:   vsysui=LAYOUT_STABLE LAYOUT_FULLSCREEN LIGHT_STATUS_BAR naviIconColor=0}
+09-28 13:52:39.117  3546  3566 D WindowManager: setSystemUiVisibility: vis= 0x2518, fullscreenVis= 0x0, dockedVis= 0x0, win=Window{ae64b28 u0 com.pietrocode.epubtomp3.flutter_app/com.pietrocode.epubtomp3.flutter_app.MainActivity}
+09-28 13:52:39.119  3865  3865 D LightBarController: onNavigationVisibilityChanged : vis = 2518, nbModeChanged = false navigationBarMode = 0
+09-28 13:52:39.128 31285 31285 D ViewRootImpl@e5a4fa9[MainActivity]: Relayout returned: old=[0,0][1080,2220] new=[0,0][1080,2220] result=0x3 surface={true 495343099904} changed=false
+09-28 13:52:39.129 31285 31285 D FlutterJNI: Sending viewport metrics to the engine.
+09-28 13:52:39.131  3546  4926 D SamsungPhoneWindowManager: adjustSystemUiVisibilityLw: vis=0x2518
+09-28 13:52:39.131  3546  4926 D InputManager-JNI: setSystemUiVisibility dexmode: false changed: true displayid: 0 visibility: 0x2518 DD: 0x2518 OD: 0x0
+09-28 13:52:39.151 31285 31349 I OpenGLRenderer: Davey! duration=5483ms; Flags=1, IntendedVsync=374837312733545, Vsync=374842729399995, OldestInputEvent=9223372036854775807, NewestInputEvent=0, HandleInputStart=374842731781128, AnimationStart=374842731839205, PerformTraversalsStart=374842731842513, DrawStart=374842779142436, SyncQueued=374842781416590, SyncStart=374842781690705, IssueDrawCommandsStart=374842782438821, SwapBuffers=374842792685282, FrameCompleted=374842796334782, DequeueBufferDuration=3632000, QueueBufferDuration=1054000, 
+09-28 13:52:39.153  3546  4926 D WindowManager: finishDrawingWindow: Window{ae64b28 u0 com.pietrocode.epubtomp3.flutter_app/com.pietrocode.epubtomp3.flutter_app.MainActivity} mDrawState=DRAW_PENDING
+09-28 13:52:39.156 31285 31285 D ViewRootImpl@e5a4fa9[MainActivity]: MSG_RESIZED: frame=[0,0][1080,2220] ci=[0,72][0,144] vi=[0,72][0,144] or=1
+09-28 13:52:39.158  3546  3619 I WindowManager: commitFinishDrawingLocked: mDrawState=READY_TO_SHOW Surface(name=com.pietrocode.epubtomp3.flutter_app/com.pietrocode.epubtomp3.flutter_app.MainActivity[31285])/@0x6d0a76c
+09-28 13:52:39.159 31285 31285 D ViewRootImpl@e5a4fa9[MainActivity]: MSG_WINDOW_FOCUS_CHANGED 1 1
+09-28 13:52:39.167  3546  3619 I WindowManager: commitFinishDrawingLocked: mDrawState=READY_TO_SHOW Surface(name=com.pietrocode.epubtomp3.flutter_app/com.pietrocode.epubtomp3.flutter_app.MainActivity[31285])/@0x6d0a76c
+09-28 13:52:39.167  3546  3619 I WindowManager: Cancelling animation restarting=false, leash=null, surface=Surface(name=ae64b28 com.pietrocode.epubtomp3.flutter_app/com.pietrocode.epubtomp3.flutter_app.MainActivity)/@0x3626135, parent=Surface(name=AppWindowToken{ae529ae token=Token{8e1d229 ActivityRecord{71c33b0 u0 com.pietrocode.epubtomp3.flutter_app/.MainActivity t221}}})/@0x208be6a
+09-28 13:52:39.167  3546  3619 V WindowManager: performShowLocked: mDrawState=HAS_DRAWN in Window{ae64b28 u0 com.pietrocode.epubtomp3.flutter_app/com.pietrocode.epubtomp3.flutter_app.MainActivity}
+09-28 13:52:39.179 31285 31285 D InputMethodManager: prepareNavigationBarInfo() DecorView@7c619d7[MainActivity]
+09-28 13:52:39.179 31285 31285 D InputMethodManager: getNavigationBarColor() -16777216
+09-28 13:52:39.182  3546  3619 D ViewRootImpl@d5e32ba[flutter_app]: dispatchDetachedFromWindow
+09-28 13:52:39.183 31285 31285 D InputMethodManager: prepareNavigationBarInfo() DecorView@7c619d7[MainActivity]
+09-28 13:52:39.183  3546  3575 I ActivityManager: Displayed com.pietrocode.epubtomp3.flutter_app/.MainActivity: +10s500ms
+09-28 13:52:39.183 31285 31285 D InputMethodManager: getNavigationBarColor() -16777216
+09-28 13:52:39.183 31285 31285 V InputMethodManager: Starting input: tba=com.pietrocode.epubtomp3.flutter_app ic=null mNaviBarColor -16777216 mIsGetNaviBarColorSuccess true , NavVisible : true , NavTrans : false
+09-28 13:52:39.183 31285 31285 D InputMethodManager: startInputInner - Id : 0
+09-28 13:52:39.183 31285 31285 I InputMethodManager: startInputInner - mService.startInputOrWindowGainedFocus
+09-28 13:52:39.185  3546  4926 D InputMethodManagerService: startInputOrWindowGainedFocus : windowGainedFocus 
+09-28 13:52:39.185  3546  3619 V WindowManager: Remove Window{a6c756b u0 Splash Screen com.pietrocode.epubtomp3.flutter_app}: mSurfaceController=Surface(name=Splash Screen com.pietrocode.epubtomp3.flutter_app)/@0xcb09d61 mAnimatingExit=false mRemoveOnExit=false mHasSurface=true surfaceShowing=true isAnimationSet=false app-animation=false mWillReplaceWindow=false inPendingTransaction=false mDisplayFrozen=false callers=com.android.server.wm.WindowState.removeIfPossible:2776 com.android.server.wm.WindowManagerService.removeWindow:1986 com.android.server.wm.Session.remove:268 android.view.ViewRootImpl.dispatchDetachedFromWindow:4562 android.view.ViewRootImpl.doDie:7993 android.view.ViewRootImpl$ViewRootHandler.handleMessage:4984 
+09-28 13:52:39.186  3546  3619 I WindowManager: Cancelling animation restarting=true, leash=null, surface=Surface(name=a6c756b Splash Screen com.pietrocode.epubtomp3.flutter_app)/@0xb64dbb1, parent=Surface(name=AppWindowToken{ae529ae token=Token{8e1d229 ActivityRecord{71c33b0 u0 com.pietrocode.epubtomp3.flutter_app/.MainActivity t221}}})/@0x208be6a
+09-28 13:52:39.187  3546  3619 I WindowManager: Reparenting to leash, surface=Surface(name=a6c756b Splash Screen com.pietrocode.epubtomp3.flutter_app)/@0xb64dbb1
+09-28 13:52:39.187  4850  4850 W Settings: Setting development_settings_enabled has moved from android.provider.Settings.Secure to android.provider.Settings.Global.
+09-28 13:52:39.187  3546  4926 D InputMethodManagerService: windowGainedFocus: destinationUserId (getCallingUid) = 0
+09-28 13:52:39.187  3546  4926 D InputMethodManagerService: windowGainedFocus: currentUserId=0
+09-28 13:52:39.187  3546  4926 D InputMethodManagerService: windowGainedFocus: mCurrentFocusedUserId=0
+09-28 13:52:39.188  3546  4926 D InputMethodManagerService: windowGainedFocus : lock - currentUserId = 0 destinationUserId = 0
+09-28 13:52:39.189  3017  3017 I SurfaceFlinger: id=5804 createSurf (4440x4440),2 flag=4, Surface(name=a6c756b Splash Screen com.pietrocode.epubtomp3.flutter_app)/@0xb64dbb1 - animation-leash#0
+09-28 13:52:39.189  3546  4926 D InputMethodManagerService: windowGainedFocus : mCurrentFocusedUserId - 0 and mSecureKeypadEnabled - false, userSwitched - false
+09-28 13:52:39.192  3546  3619 D WindowManager: makeSurface duration=5 leash=Surface(name=Surface(name=a6c756b Splash Screen com.pietrocode.epubtomp3.flutter_app)/@0xb64dbb1 - animation-leash)/@0xc7a896
+09-28 13:52:39.192  3546  3619 D SurfaceControl: reparent is called, sc=Surface(name=a6c756b Splash Screen com.pietrocode.epubtomp3.flutter_app)/@0xb64dbb1, newParentHandle=android.os.BinderProxy@464ac17, transaction=android.view.SurfaceControl$Transaction@c167804
+09-28 13:52:39.193  3212  3281 E storaged: getDiskStats failed with result NOT_SUPPORTED and size 0
+09-28 13:52:39.198  3017  9286 D Layer   : [a6c756b Splash Screen com.pietrocode.epubtomp3.flutter_app#0]::reparent oldParent:[AppWindowToken{ae529ae token=Token{8e1d229 ActivityRecord{71c33b0 u0 com.pietrocode.epubtomp3.flutter_app/.MainActivity t221}}}#0], newParent:[Surface(name=a6c756b Splash Screen com.pietrocode.epubtomp3.flutter_app)/@0xb64dbb1 - animation-leash#0]
+09-28 13:52:39.200  3546  3619 D InputTransport: Input channel destroyed: fd=356
+09-28 13:52:39.200  3546  3619 D InputTransport: Input channel destroyed: fd=460
+09-28 13:52:39.201  3546  4926 V InputMethodManagerService: windowGainedFocus : reason=WINDOW_FOCUS_GAIN client=android.os.BinderProxy@805961a inputContext=null missingMethods= attribute=android.view.inputmethod.EditorInfo@53a81ed nm = com.pietrocode.epubtomp3.flutter_app controlFlags=#104 softInputMode=#110 windowFlags=#81810100
+09-28 13:52:39.201  3546  4926 V InputMethodManagerService: hideCurrentInputLocked : shouldHideSoftInput is false
+09-28 13:52:39.202  3546  4926 D InputMethodManagerService: isImeSwitcherDisabledPackage : false
+09-28 13:52:39.202  4937  4937 D InputTransport: Input channel destroyed: fd=131
+09-28 13:52:39.202  3546  4926 D InputMethodManagerService: mDesktopModeManager null!
+09-28 13:52:39.202  3546  4926 D InputMethodManagerService: updateSystemUiLocked 0
+09-28 13:52:39.203  3546  4926 V InputMethodManagerService: Creating new session for client ClientState{7cdb822 uid 10198 pid 31285}
+09-28 13:52:39.203  3865  3865 D NavigationBar: setImeWindowStatus() imeShown = false, backDisposition = 0, showImeSwitcher = false
+09-28 13:52:39.204  3546  4926 D InputTransport: Input channel constructed: fd=356
+09-28 13:52:39.204  3546  4926 D InputTransport: Input channel constructed: fd=460
+09-28 13:52:39.204  3546  4926 D InputTransport: Input channel destroyed: fd=460
+09-28 13:52:39.204  5188 19701 D InputTransport: Input channel constructed: fd=90
+09-28 13:52:39.207  3546  4926 D InputMethodManagerService: checkDisplayOfStartInputAndUpdateKeyboard display Id 0last 0
+09-28 13:52:39.207  3546  4926 D InputMethodManagerService: setCurrentInputInfo - inputContext : null eidtorInfo : android.view.inputmethod.EditorInfo@53a81ed missingMethods : 0
+09-28 13:52:39.208  4937  4937 D ViewRootImpl@e99ab1a[LauncherActivity]: stopped(true) old=false
+09-28 13:52:39.208  3546  4926 D InputTransport: Input channel constructed: fd=460
+09-28 13:52:39.208  3546  4926 D InputTransport: Input channel destroyed: fd=460
+09-28 13:52:39.209  4937  4937 D Launcher.AppsStage: onStopActivity 
+09-28 13:52:39.209  4937  4937 I Notification.Badge: removeNotificationsChangedListener
+09-28 13:52:39.210 31285 31298 D InputTransport: Input channel constructed: fd=104
+09-28 13:52:39.211  5188  5188 I InputMethodWrapper:  call dispatchStartInputWithToken
+09-28 13:52:39.211  5188  5188 I InputMethodService: dispatchStartInputWithToken
+09-28 13:52:39.211  5188  5188 I SKBD_Performance: [IIManager] [PF_CL][onFinishInput] 409038
+09-28 13:52:39.211  5188  5188 D InputMethodService: checkDisplayOfStartInputAndUpdateKeyboard display Id 0last 0
+09-28 13:52:39.213  4937  4937 D StageManager: saved stages : inStack [1, 2] , outStack[]
+09-28 13:52:39.213  4937  4937 D DesktopModeManager: isDesktopModeEnabledOnDual mSemDesktopModeManager is null
+09-28 13:52:39.214  4937  4937 D DesktopModeManager: isDesktopModeEnabledOnDual mSemDesktopModeManager is null
+09-28 13:52:39.228  5188  5188 I SKBD    : SamsungKeypad [IMI] onStartInput - caller pid : 31285, caller uid : 10198
+09-28 13:52:39.231  3546  3566 D CodecSolution: isMaxAspectPackageEx: com.pietrocode.epubtomp3.flutter_app : true(2)
+09-28 13:52:39.232  4059 27743 D ForegroundUtils: could not check pending caller
+09-28 13:52:39.255  3017  3017 I SurfaceFlinger: Display 0 HWC layers:
+09-28 13:52:39.255  3017  3017 I SurfaceFlinger:     type    |    handle    | flag |  format   |   source crop (l,t,r,b)    |         frame       | name 
+09-28 13:52:39.255  3017  3017 I SurfaceFlinger: ------------+--------------+------+-----------+----------------------------+---------------------+------
+09-28 13:52:39.255  3017  3017 I SurfaceFlinger:      Device | 0x786a61fc00 | 0002 | RGBA_8888 |   0.0    0.0 1080.0 2076.0 |    0    0 1080 2076 | SurfaceView - com.pietrocode.epubtom[...]_app.MainActivity@d1c16b6@0[31285]#0
+09-28 13:52:39.255  3017  3017 I SurfaceFlinger:      Device | 0x786a620800 | 0000 | RGBA_8888 |   0.0    0.0 1080.0 2076.0 |    0    0 1080 2076 | com.pietrocode.epubtomp3.flutter_app[...]p3.flutter_app.MainActivity[31285]#0
+09-28 13:52:39.255  3017  3017 I SurfaceFlinger:      Device | 0x7861497780 | 0002 | RGBA_8888 |   0.0    0.0 1080.0 2076.0 |    0    0 1080 2076 | Splash Screen com.pietrocode.epubtomp3.flutter_app#0
+09-28 13:52:39.255  3017  3017 I SurfaceFlinger:      Device | 0x786ac33ec0 | 0000 | RGBA_8888 |   0.0    0.0 1080.0   72.0 |    0    0 1080   72 | StatusBar[3865]#0
+09-28 13:52:39.255  3017  3017 I SurfaceFlinger:      Device | 0x786a620a40 | 0000 | RGBA_8888 |   0.0    0.0 1080.0  144.0 |    0 2076 1080 2220 | NavigationBar[3865]#0
+09-28 13:52:39.255  3017  3017 I SurfaceFlinger: 
+09-28 13:52:39.275  3546  3559 D WifiPermissionsUtil: canAccessScanResults: pkgName = com.sec.android.sdhms, uid = 1000
+09-28 13:52:39.303  5188  5188 I SKBD    : and isTosAccept false
+09-28 13:52:39.362  3546  3619 I WindowManager: reset, Reparenting to original parent, shouldDeferScheduleAnimation=false, destroyLeash=true, surface=Surface(name=a6c756b Splash Screen com.pietrocode.epubtomp3.flutter_app)/@0xb64dbb1, parent=Surface(name=AppWindowToken{ae529ae token=Token{8e1d229 ActivityRecord{71c33b0 u0 com.pietrocode.epubtomp3.flutter_app/.MainActivity t221}}})/@0x208be6a, parentNativeHandle=android.os.BinderProxy@633346e, caller=com.android.server.wm.SurfaceAnimator.lambda$getFinishedCallback$0:97 com.android.server.wm.-$$Lambda$SurfaceAnimator$SIBia0mND666K8lMCPsoid8pUTI.run:4 com.android.server.wm.SurfaceAnimator.lambda$getFinishedCallback$1:104 com.android.server.wm.-$$Lambda$SurfaceAnimator$vdRZk66hQVbQCvVXEaQCT1kVmFc.onAnimationFinished:4 com.android.server.wm.LocalAnimationAdapter.lambda$startAnimation$0:65 
+09-28 13:52:39.362  3546  3619 D SurfaceControl: reparent is called, sc=Surface(name=a6c756b Splash Screen com.pietrocode.epubtomp3.flutter_app)/@0xb64dbb1, newParentHandle=android.os.BinderProxy@633346e, transaction=android.view.SurfaceControl$Transaction@c167804
+09-28 13:52:39.362  3546  3619 D SurfaceControl: destroy(transaction), animation-leash is destroyed, sc=Surface(name=Surface(name=a6c756b Splash Screen com.pietrocode.epubtomp3.flutter_app)/@0xb64dbb1 - animation-leash)/@0xc7a896, transaction=android.view.SurfaceControl$Transaction@c167804, caller=com.android.server.wm.SurfaceAnimator.reset:338 com.android.server.wm.SurfaceAnimator.lambda$getFinishedCallback$0:97 com.android.server.wm.-$$Lambda$SurfaceAnimator$SIBia0mND666K8lMCPsoid8pUTI.run:4 com.android.server.wm.SurfaceAnimator.lambda$getFinishedCallback$1:104 com.android.server.wm.-$$Lambda$SurfaceAnimator$vdRZk66hQVbQCvVXEaQCT1kVmFc.onAnimationFinished:4 com.android.server.wm.LocalAnimationAdapter.lambda$startAnimation$0:65 com.android.server.wm.-$$Lambda$LocalAnimationAdapter$X--EomqUvw4qy89IeeTFTH7aCMo.run:4 
+09-28 13:52:39.363  3546  3619 E WindowManager: win=Window{a6c756b u0 Splash Screen com.pietrocode.epubtomp3.flutter_app EXITING} destroySurfaces: appStopped=false win.mWindowRemovalAllowed=true win.mRemoveOnExit=true win.mViewVisibility=0 caller=com.android.server.wm.AppWindowToken.destroySurfaces:871 com.android.server.wm.AppWindowToken.destroySurfaces:852 com.android.server.wm.WindowState.onExitAnimationDone:5480 com.android.server.wm.WindowStateAnimator.onAnimationFinished:320 com.android.server.wm.WindowState.onAnimationFinished:5902 com.android.server.wm.-$$Lambda$yVRF8YoeNdTa8GR1wDStVsHu8xM.run:2 com.android.server.wm.SurfaceAnimator.lambda$getFinishedCallback$0:100 
+09-28 13:52:39.364  3546  3619 I WindowManager: Destroying surface Surface(name=Splash Screen com.pietrocode.epubtomp3.flutter_app)/@0xcb09d61 called by com.android.server.wm.WindowStateAnimator.destroySurface:1880 com.android.server.wm.WindowStateAnimator.destroySurfaceLocked:840 com.android.server.wm.WindowState.destroySurfaceUnchecked:3877 com.android.server.wm.WindowState.destroySurface:3858 com.android.server.wm.AppWindowToken.destroySurfaces:871 com.android.server.wm.AppWindowToken.destroySurfaces:852 com.android.server.wm.WindowState.onExitAnimationDone:5480 com.android.server.wm.WindowStateAnimator.onAnimationFinished:320 
+09-28 13:52:39.364  3546  4008 D MdnieScenarioControlService:  packageName : com.pietrocode.epubtomp3.flutter_app    className : com.pietrocode.epubtomp3.flutter_app.MainActivity
+09-28 13:52:39.364  3546  4008 V MdnieScenarioControlService: setUIMode from UI function(3)
+09-28 13:52:39.365  3017  3062 I SurfaceFlinger: id=5797 Removed Splash Screen com.pietrocode.epubtomp3.flutter_app#0 (0/68)
+09-28 13:52:39.370  3546  3566 D WindowManager: setSystemUiVisibility: vis= 0xa508, fullscreenVis= 0x2000, dockedVis= 0x0, win=Window{ae64b28 u0 com.pietrocode.epubtomp3.flutter_app/com.pietrocode.epubtomp3.flutter_app.MainActivity}
+09-28 13:52:39.372  3865  3865 D BarTransitions.SecNavigationBarView: MODE_OPAQUE -> MODE_TRANSPARENT animate=true
+09-28 13:52:39.372  3865  3865 D Navbar.ImmersiveControllerAdapter: onSystemUiVisibilityChanged - 42248,4
+09-28 13:52:39.372  3865  3865 I Navbar.ImmersiveController: handleEvent - VISIBLE, BAR_MODE_CHANGED
+09-28 13:52:39.373  3865  3865 D LightBarController: onNavigationVisibilityChanged : vis = a508, nbModeChanged = true navigationBarMode = 4
+09-28 13:52:39.377  3017  9286 W SurfaceFlinger: Attempting to set client state on removed layer: Splash Screen com.pietrocode.epubtomp3.flutter_app#0 [s.what : 40]
+09-28 13:52:39.377  3017  9286 D Layer   : [a6c756b Splash Screen com.pietrocode.epubtomp3.flutter_app#0]::reparent oldParent:[Surface(name=a6c756b Splash Screen com.pietrocode.epubtomp3.flutter_app)/@0xb64dbb1 - animation-leash#0], newParent:[AppWindowToken{ae529ae token=Token{8e1d229 ActivityRecord{71c33b0 u0 com.pietrocode.epubtomp3.flutter_app/.MainActivity t221}}}#0]
+09-28 13:52:39.377  3017  9286 W SurfaceFlinger: Attempting to destroy on removed layer: Splash Screen com.pietrocode.epubtomp3.flutter_app#0
+09-28 13:52:39.377  3017  9286 I SurfaceFlinger: id=5804 Removed Surface(name=a6c756b Splash Screen com.pietrocode.epubtomp3.flutter_app)/@0xb64dbb1 - animation-leash#0 (2/67)
+09-28 13:52:39.377  3017  9286 I SurfaceFlinger: id=5796 Removed a6c756b Splash Screen com.pietrocode.epubtomp3.flutter_app#0 (1/66)
+09-28 13:52:39.378  3017  3017 I Layer   : id=5796 onRemoved a6c756b Splash Screen com.pietrocode.epubtomp3.flutter_app#0 
+09-28 13:52:39.378  3017  3017 I Layer   : id=5804 onRemoved Surface(name=a6c756b Splash Screen com.pietrocode.epubtomp3.flutter_app)/@0xb64dbb1 - animation-leash#0 
+09-28 13:52:39.378  3017  3017 I Layer   : id=5797 onRemoved Splash Screen com.pietrocode.epubtomp3.flutter_app#0 
+09-28 13:52:39.381  3546  4926 D SamsungPhoneWindowManager: adjustSystemUiVisibilityLw: vis=0xa508
+09-28 13:52:39.381  3546  4926 D InputManager-JNI: setSystemUiVisibility dexmode: false changed: true displayid: 0 visibility: 0xa508 DD: 0xa508 OD: 0x0
+09-28 13:52:39.387  3017  3017 I SurfaceFlinger: Display 0 HWC layers:
+09-28 13:52:39.387  3017  3017 I SurfaceFlinger:     type    |    handle    | flag |  format   |   source crop (l,t,r,b)    |         frame       | name 
+09-28 13:52:39.387  3017  3017 I SurfaceFlinger: ------------+--------------+------+-----------+----------------------------+---------------------+------
+09-28 13:52:39.387  3017  3017 I SurfaceFlinger:      Device | 0x786a61fc00 | 0002 | RGBA_8888 |   0.0    0.0 1080.0 2076.0 |    0    0 1080 2076 | SurfaceView - com.pietrocode.epubtom[...]_app.MainActivity@d1c16b6@0[31285]#0
+09-28 13:52:39.387  3017  3017 I SurfaceFlinger:      Device | 0x786a620800 | 0000 | RGBA_8888 |   0.0    0.0 1080.0 2220.0 |    0    0 1080 2220 | com.pietrocode.epubtomp3.flutter_app[...]p3.flutter_app.MainActivity[31285]#0
+09-28 13:52:39.387  3017  3017 I SurfaceFlinger:      Device | 0x786ac33ec0 | 0000 | RGBA_8888 |   0.0    0.0 1080.0   72.0 |    0    0 1080   72 | StatusBar[3865]#0
+09-28 13:52:39.387  3017  3017 I SurfaceFlinger:      Device | 0x786a620a40 | 0000 | RGBA_8888 |   0.0    0.0 1080.0  144.0 |    0 2076 1080 2220 | NavigationBar[3865]#0
+09-28 13:52:39.387  3017  3017 I SurfaceFlinger: 
+09-28 13:52:39.504  5188  5188 I SKBD    : and isTosAccept false
+09-28 13:52:39.563  3865  3865 D SecStatusBarWifiView: updateState: WifiIconState(resId=2131232678, visible=true, activityId=2131232703)
+09-28 13:52:39.603  3546  4926 D MediaSessionStack: updateMediaButtonSessionIfNeeded, callers=com.android.server.media.MediaSessionStack.addSession:114 com.android.server.media.MediaSessionService.createSessionLocked:730 
+09-28 13:52:39.603  3546  4926 D MediaSessionService: Created session for com.pietrocode.epubtomp3.flutter_app with tag media-session
+09-28 13:52:39.604  3865  4650 D vol.MediaSessions: updateRemoteControllerH null
+09-28 13:52:39.604  3865  4650 D vol.MediaSessions: onActiveSessionsUpdatedH n=0
+09-28 13:52:39.605  3865  4650 D vol.MediaSessions: onActiveSessionsUpdatedH n=0
+09-28 13:52:39.605  3865  3865 D PlaybackStateMonitor_LOCK: onActiveSessionsChanged() controllers: Size: 0
+09-28 13:52:39.605  3865  3865 D PlaybackStateMonitor_LOCK: onActiveSessionsChanged() no active session pkg
+09-28 13:52:39.605  3865  3865 D PlaybackStateMonitor_LOCK: updateController: , current controller = 
+09-28 13:52:39.605  3865  3865 D MusicController_LOCK: onSessionEnabled() enabled = true, mEnabled = true, lastSession = app.revanced.android.youtube, activeSession = null
+09-28 13:52:39.620 31285 31285 I System.out: flutterEngine warmed up
+09-28 13:52:39.639  3546  3559 V WindowManager: Relayout Window{ae64b28 u0 com.pietrocode.epubtomp3.flutter_app/com.pietrocode.epubtomp3.flutter_app.MainActivity}: viewVisibility=0 req=1080x2220 {(0,0)(fillxfill) sim={adjust=resize} ty=BASE_APPLICATION fmt=TRANSLUCENT wanim=0x1030001
+09-28 13:52:39.639  3546  3559 V WindowManager:   fl=LAYOUT_IN_SCREEN LAYOUT_INSET_DECOR SPLIT_TOUCH HARDWARE_ACCELERATED DRAWS_SYSTEM_BAR_BACKGROUNDS
+09-28 13:52:39.639  3546  3559 V WindowManager:   pfl=FORCE_DRAW_STATUS_BAR_BACKGROUND
+09-28 13:52:39.639  3546  3559 V WindowManager:   vsysui=LAYOUT_STABLE LAYOUT_FULLSCREEN LIGHT_STATUS_BAR naviIconColor=0}
+09-28 13:52:39.648 31285 31285 D ViewRootImpl@e5a4fa9[MainActivity]: Relayout returned: old=[0,0][1080,2220] new=[0,0][1080,2220] result=0x1 surface={true 495343099904} changed=false
+09-28 13:52:39.651 31285 31285 D InputMethodManager: prepareNavigationBarInfo() DecorView@7c619d7[MainActivity]
+09-28 13:52:39.651 31285 31285 D InputMethodManager: getNavigationBarColor() -16777216
+09-28 13:52:39.652 31285 31285 V InputMethodManager: Starting input: tba=com.pietrocode.epubtomp3.flutter_app ic=null mNaviBarColor -16777216 mIsGetNaviBarColorSuccess true , NavVisible : true , NavTrans : false
+09-28 13:52:39.652 31285 31285 D InputMethodManager: startInputInner - Id : 0
+09-28 13:52:39.661 31285 31285 D FlutterJNI: Sending viewport metrics to the engine.
+09-28 13:52:39.669 31285 31377 D ProfileInstaller: Installing profile for com.pietrocode.epubtomp3.flutter_app
+09-28 13:52:39.704  5188  5188 I SKBD    : and isTosAccept false
+09-28 13:52:39.800  3546  3559 I ActivityManager: Killing 30402:com.samsung.android.sm.provider/1000 (adj 906): empty #25
+09-28 13:52:39.801  3546  3568 W libprocessgroup: kill(-30402, 9) failed: No such process
+09-28 13:52:39.845  3546  3568 I chatty  : uid=1000(system) ActivityManager identical 8 lines
+09-28 13:52:39.851  3546  3568 W libprocessgroup: kill(-30402, 9) failed: No such process
+09-28 13:52:39.852  3164  3164 I Zygote  : Process 30402 exited due to signal (9)
+09-28 13:52:39.853  4059 27743 D ForegroundUtils: could not check pending caller
+09-28 13:52:39.856  3546  3568 W libprocessgroup: kill(-30402, 9) failed: No such process
+09-28 13:52:39.856  3546  3568 I libprocessgroup: Successfully killed process cgroup uid 1000 pid 30402 in 55ms
+09-28 13:52:39.905  5188  5188 I SKBD    : and isTosAccept false

@@ -161,9 +161,42 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen>
       return;
     }
 
-    // 2) Parse via PythonBridge.
+    // 2) Parse through the selected local runtime. Embedded Android mode
+    // never routes a local EPUB through the HTTP backend.
+    final settings = ref.read(settingsProvider);
+    if (Platform.isAndroid && settings.useEmbeddedRuntime) {
+      try {
+        final library = ref.read(libraryStoreProvider);
+        final book = library.books
+            .where((b) => b.id == loadingForBookId)
+            .firstOrNull;
+        if (book == null) throw StateError('Book is no longer in the library');
+        final path = await library.ensureSupportedBookPath(book);
+        final fulltext = await ref
+            .read(embeddedConverterProvider)
+            .parse(inputPath: path, jobId: loadingForBookId);
+        if (!mounted || !_loadGuard.isCurrent(gen)) return;
+        await cache.save(fulltext, loadingForBookId);
+        if (!mounted || !_loadGuard.isCurrent(gen)) return;
+        setState(() {
+          _fulltext = fulltext;
+          _phase = _Phase.ready;
+        });
+        _markBookOpened();
+        _completeReaderJourney();
+      } catch (error) {
+        if (!mounted || !_loadGuard.isCurrent(gen)) return;
+        setState(() {
+          _errorMessage = error.toString();
+          _phase = _Phase.error;
+        });
+        _cancelReaderJourney();
+      }
+      return;
+    }
+
     final bridge = PythonBridge();
-    if (!bridge.isSupported && !Platform.isAndroid) {
+    if (!bridge.isSupported) {
       // On platforms where Python is not available, show the text from
       // cache only. If there's no cache we show an informative error.
       if (!mounted || !_loadGuard.isCurrent(gen)) return;
@@ -290,11 +323,62 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen>
       _resumeGuard = ResumeRestorationGuard();
     });
 
-    ref.read(currentlyPlayingBookIdProvider.notifier).state = widget.bookId;
-
     final settings = ref.read(settingsProvider);
-    final bridge = PythonBridge();
+    if (Platform.isAndroid && settings.useEmbeddedRuntime) {
+      try {
+        final library = ref.read(libraryStoreProvider);
+        final book = library.books
+            .where((b) => b.id == widget.bookId)
+            .firstOrNull;
+        if (book == null) throw StateError('Book is no longer in the library');
+        final path = await library.ensureSupportedBookPath(book);
+        final outputDir =
+            '${(await getApplicationDocumentsDirectory()).path}/audiobooks/${widget.bookId}';
+        final manifest = await ref
+            .read(embeddedConverterProvider)
+            .convert(
+              inputPath: path,
+              outputPath: outputDir,
+            );
+        final audioFile = File(manifest);
+        if (!await audioFile.exists()) {
+          throw StateError('Rust converter returned a missing audio file');
+        }
+        final audio = ref.read(globalAudioPlayerProvider);
+        await audio.setQueue([
+          ChapterProgress(
+            index: 0,
+            name: ft.chapters.first.displayTitle,
+            status: 'completed',
+            downloadUrl: audioFile.uri.toString(),
+            progressRatio: 1.0,
+          ),
+        ]);
+        await audio.play();
+        ref.read(currentlyPlayingBookIdProvider.notifier).state = widget.bookId;
+        if (!mounted) return;
+        setState(() {
+          _isConverting = false;
+          _chaptersConverted = 1;
+          _playableChapters.add(ChapterProgress(
+            index: 0,
+            name: ft.chapters.first.displayTitle,
+            status: 'completed',
+            downloadUrl: audioFile.uri.toString(),
+            progressRatio: 1.0,
+          ));
+        });
+      } catch (error) {
+        if (!mounted) return;
+        setState(() {
+          _isConverting = false;
+          _conversionError = error.toString();
+        });
+      }
+      return;
+    }
     if (settings.useEmbeddedRuntime && !Platform.isAndroid) {
+      final bridge = PythonBridge();
       if (!bridge.isSupported) {
         setState(() {
           _isConverting = false;
@@ -842,14 +926,15 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen>
               initialChapterIndex: _playableChapters.isEmpty
                   ? 0
                   : ResumePositionRouter(
-                      playableChapters: List.of(_playableChapters),
-                    ).queueIndexForSavedValue(
-                      ref.read(resumeStoreProvider)
-                              .loadBookPosition(widget.bookId)
-                              ?.chapter ??
-                          0,
-                    ) ??
-                    0,
+                          playableChapters: List.of(_playableChapters),
+                        ).queueIndexForSavedValue(
+                          ref
+                                  .read(resumeStoreProvider)
+                                  .loadBookPosition(widget.bookId)
+                                  ?.chapter ??
+                              0,
+                        ) ??
+                        0,
               onRequestPlay: _startConversion,
               onRequestSpeechFallback: Platform.isAndroid
                   ? _speakCurrentChapterOffline

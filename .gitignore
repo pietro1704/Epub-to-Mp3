@@ -192,4 +192,5 @@ ios/EpubToMp3/Vendor/piper-models/
 .claude/mirror-queue.txt
 .worktrees/
 target/
+# Local Hermes QA artifacts
 .hermes-run/

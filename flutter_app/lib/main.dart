@@ -18,9 +18,20 @@ import 'services/widget_playback_snapshot.dart';
 import 'models/app_settings.dart';
 import 'services/offline_cache_eviction.dart';
 import 'state/providers.dart';
+import 'services/embedded_converter.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // Register the Android platform adapter before Riverpod can resolve the
+  // embedded converter. Without this registration, opening a book fails with
+  // "converter-ffi runtime is not registered" even though the channel exists.
+  if (defaultTargetPlatform == TargetPlatform.android) {
+    EmbeddedConverterRegistry.register(AndroidEmbeddedConverter());
+    final converter = EmbeddedConverterRegistry.current;
+    if (converter is AndroidEmbeddedConverter) {
+      unawaited(converter.isRuntimeLoaded());
+    }
+  }
   // Render the shell before any disk/plugin initialization. Android 9 devices
   // must not remain on the launch window while SharedPreferences is opening.
   runApp(const _StartupShell());
@@ -69,27 +80,21 @@ Future<void> _initializeAndroidAudio(
   AudioStartupState state,
 ) async {
   try {
-    final handler = await Future.any<BackgroundAudioHandler?>([
-      AudioService.init(
-        builder: () => BackgroundAudioHandler(
-          player,
-          snapshotStore: WidgetPlaybackSnapshotStore(prefs),
-        ),
-        config: AudioServiceConfig(
-          androidNotificationChannelId: 'com.pietrocode.epubtomp3.audio',
-          androidNotificationChannelName: 'Audiobook playback',
-          androidNotificationOngoing: true,
-          androidStopForegroundOnPause: true,
-          androidNotificationClickStartsActivity: true,
-          androidResumeOnClick: true,
-        ),
+    final handler = await AudioService.init(
+      builder: () => BackgroundAudioHandler(
+        player,
+        snapshotStore: WidgetPlaybackSnapshotStore(prefs),
       ),
-      Future<BackgroundAudioHandler?>.delayed(
-        const Duration(seconds: 2),
-        () => null,
+      config: AudioServiceConfig(
+        androidNotificationChannelId: 'com.pietrocode.epubtomp3.audio',
+        androidNotificationChannelName: 'Audiobook playback',
+        androidNotificationOngoing: true,
+        androidStopForegroundOnPause: true,
+        androidNotificationClickStartsActivity: true,
+        androidResumeOnClick: true,
       ),
-    ]);
-    if (handler != null) state.attach(handler);
+    );
+    state.attach(handler);
   } catch (_) {
     // MediaSession is an enhancement. The in-app player remains available
     // when Android rejects or cannot start the background service.
@@ -103,9 +108,7 @@ class _StartupShell extends StatelessWidget {
   Widget build(BuildContext context) {
     return const MaterialApp(
       debugShowCheckedModeBanner: false,
-      home: Scaffold(
-        body: Center(child: CircularProgressIndicator()),
-      ),
+      home: Scaffold(body: Center(child: CircularProgressIndicator())),
     );
   }
 }

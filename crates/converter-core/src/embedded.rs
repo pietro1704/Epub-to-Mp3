@@ -38,6 +38,7 @@ pub struct EmbeddedChapterMetadata {
     pub name: String,
     pub source_path: String,
     pub text_chars: usize,
+    pub text: String,
     pub level: u32,
 }
 
@@ -143,6 +144,7 @@ fn metadata_from_book(book: &Book) -> EmbeddedBookMetadata {
                 name: chapter.name.clone(),
                 source_path: chapter.source_path.clone(),
                 text_chars: chapter.text.chars().count(),
+                text: chapter.text.clone(),
                 level: chapter.level,
             })
             .collect(),

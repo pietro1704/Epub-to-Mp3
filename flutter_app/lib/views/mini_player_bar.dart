@@ -12,6 +12,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../services/audio_player_service.dart';
+
 import '../services/background_audio_handler.dart' as background_audio;
 import '../state/providers.dart';
 import 'full_player_sheet.dart';
@@ -256,7 +257,6 @@ class MiniPlayerBar extends ConsumerWidget {
     Uint8List? coverArt,
     String? bookId,
   ) {
-    if (player is! AudioPlayerService) return;
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -265,13 +265,15 @@ class MiniPlayerBar extends ConsumerWidget {
         initialChildSize: 0.92,
         minChildSize: 0.5,
         maxChildSize: 0.95,
-        builder: (_, controller) => FullPlayerSheet(
-          player: player,
-          bookTitle: bookTitle,
-          author: author,
-          coverArt: coverArt,
-          bookId: bookId,
-        ),
+        builder: (_, controller) {
+          return FullPlayerSheet(
+            player: player,
+            bookTitle: bookTitle,
+            author: author,
+            coverArt: coverArt,
+            bookId: bookId,
+          );
+        },
       ),
     );
   }

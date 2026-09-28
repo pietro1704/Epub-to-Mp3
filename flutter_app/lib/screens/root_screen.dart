@@ -29,6 +29,7 @@ class RootScreen extends ConsumerWidget {
     final tabIndex = ref.watch(rootTabIndexProvider);
     final chromeVisible = ref.watch(readerChromeVisibleProvider);
     final showShellChrome = tabIndex != 0 || chromeVisible;
+    final showMiniPlayer = tabIndex != 0;
 
     return Scaffold(
       body: Column(
@@ -36,7 +37,7 @@ class RootScreen extends ConsumerWidget {
           Expanded(
             child: IndexedStack(index: tabIndex, children: _screens),
           ),
-          if (showShellChrome) const MiniPlayerBar(),
+          if (showMiniPlayer) const MiniPlayerBar(),
         ],
       ),
       bottomNavigationBar: showShellChrome

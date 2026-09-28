@@ -1,0 +1,20 @@
+--------- beginning of main
+--------- beginning of system
+09-28 13:42:29.775 D/FlutterJNI(28573): Beginning load of flutter...
+09-28 13:42:29.786 D/FlutterJNI(28573): flutter (null) was loaded normally!
+09-28 13:42:30.767 I/flutter (28573): [IMPORTANT:flutter/shell/common/shell.cc(528)] [Action Required]: Impeller opt-out deprecated.
+09-28 13:42:30.767 I/flutter (28573):     The application opted out of Impeller by either using the
+09-28 13:42:30.767 I/flutter (28573):     `--no-enable-impeller` flag or the
+09-28 13:42:30.767 I/flutter (28573):     `io.flutter.embedding.android.EnableImpeller` `AndroidManifest.xml` entry.
+09-28 13:42:30.767 I/flutter (28573):     These options are going to go away in an upcoming Flutter release. Remove
+09-28 13:42:30.767 I/flutter (28573):     the explicit opt-out. If you need to opt-out, please report a bug describing
+09-28 13:42:30.767 I/flutter (28573):     the issue.
+09-28 13:42:30.767 I/flutter (28573): 
+09-28 13:42:30.767 I/flutter (28573):     https://github.com/flutter/flutter/issues/new?template=02_bug.yml
+09-28 13:42:30.767 I/flutter (28573): 
+09-28 13:42:31.014 I/flutter (28573): The Dart VM service is listening on http://127.0.0.1:34780/WMAPrh3s7mY=/
+09-28 13:42:32.109 D/FlutterRenderer(28573): Width is zero. 0,0
+09-28 13:42:35.091 D/FlutterRenderer(28573): Width is zero. 0,0
+09-28 13:42:35.124 D/FlutterJNI(28573): Sending viewport metrics to the engine.
+09-28 13:42:40.972 D/FlutterJNI(28573): Sending viewport metrics to the engine.
+09-28 13:42:41.507 D/FlutterJNI(28573): Sending viewport metrics to the engine.

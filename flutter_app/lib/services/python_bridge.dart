@@ -57,9 +57,7 @@ class PythonBridge {
     }
   }
 
-  /// True only where this bridge can actually execute Python. On
-  /// unsupported platforms (iOS, macOS, web) callers should fall back to
-  /// the remote FastAPI backend.
+  /// True only where this bridge can actually execute Python.
   bool get isSupported => _isAndroid ? _androidApi != null : _isDesktop;
 
   // ---------------------------------------------------------------- public
@@ -92,12 +90,7 @@ class PythonBridge {
   /// Parses an EPUB / PDF located at [filePath] off the main isolate
   /// and decodes the resulting JSON payload into an [EbookFulltext].
   Future<EbookFulltext> parseEpub(String filePath, {String jobId = ''}) async {
-    if (_isAndroid) {
-      final api = _androidApi;
-      if (api == null) throw StateError('Android backend URL is not configured');
-      final convertedJobId = await api.uploadAndConvert(filePath, engine: 'edge');
-      return api.fetchFulltext(convertedJobId);
-    }
+
     if (_isDesktop) {
       await _ensureDesktopPython();
       // Pass the file path via stdin (NUL-terminated) so we don't have
@@ -112,11 +105,7 @@ class PythonBridge {
       );
       return _decodeFulltext(raw, jobId);
     }
-    if (_isAndroid) {
-      final api = _androidApi;
-      if (api == null) throw StateError('Android backend URL is not configured');
-      return api.parseDocument(filePath, jobId: jobId);
-    }
+
     // Android (or test host) — MethodChannel path.
     final raw = await _channel.invokeMethod<String>(
       'parseEpub',
