@@ -17,6 +17,10 @@
 
 set -euo pipefail  # Exit on error + catch unset vars
 
+# Resolve the repository root so the wrapper works from any subdirectory.
+SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+cd "$SCRIPT_DIR"
+
 MISE_BIN=$(command -v mise || true)
 if [ -z "$MISE_BIN" ]; then
     echo "❌ mise not found. Install mise (https://mise.jdx.dev) to use ./convert."
