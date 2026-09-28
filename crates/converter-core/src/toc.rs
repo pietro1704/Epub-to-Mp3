@@ -69,7 +69,7 @@ pub fn parse_nav(xml: &str) -> Result<Vec<TocItem>, quick_xml::Error> {
         match reader.read_event()? {
             Event::Start(e) if e.name().as_ref() == b"nav" => {
                 in_toc = e.attributes().flatten().any(|a| {
-                    a.key.as_ref() == b"type"
+                    (a.key.as_ref() == b"type" || a.key.as_ref() == b"epub:type")
                         && String::from_utf8_lossy(&a.value)
                             .split_whitespace()
                             .any(|v| v.eq_ignore_ascii_case("toc"))
@@ -128,4 +128,19 @@ pub fn minimum_levels(items: &[TocItem]) -> HashMap<String, u32> {
         walk(x, &mut out)
     }
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn recognizes_epub_namespace_toc_attribute() {
+        let items = parse_nav(
+            r#"<html><body><nav epub:type="toc"><ol><li><a href="chapter.xhtml">Chapter</a></li></ol></nav></body></html>"#,
+        )
+        .unwrap();
+        assert_eq!(items[0].href, "chapter.xhtml");
+        assert_eq!(items[0].title, "Chapter");
+    }
 }

@@ -209,19 +209,36 @@ impl ConversionWorker {
             let rt = tokio::runtime::Builder::new_current_thread()
                 .enable_all()
                 .build()?;
-            let bytes =
-                rt.block_on(EdgeTtsClient::new(EdgeConfig::new(voice)?).synthesize(text))?;
-            fs::write(out, bytes)?;
-            return Ok(());
+            match rt.block_on(EdgeTtsClient::new(EdgeConfig::new(voice)?).synthesize(text)) {
+                Ok(bytes) => {
+                    fs::write(out, bytes)?;
+                    return Ok(());
+                }
+                Err(error) => {
+                    eprintln!("Edge synthesis failed; falling back to Piper: {error}");
+                }
+            }
         }
         let binary = std::env::var_os("PIPER_BINARY")
             .map(PathBuf::from)
+            .or_else(|| {
+                let managed = self.config.paths.project_root.join(".venv/bin/piper");
+                managed.is_file().then_some(managed)
+            })
             .unwrap_or_else(|| PathBuf::from("piper"));
         let model = std::env::var_os("PIPER_MODEL")
             .map(PathBuf::from)
-            .unwrap_or_else(|| self.config.paths.piper_models_dir.join("en_US.onnx"));
+            .unwrap_or_else(|| {
+                self.config
+                    .paths
+                    .piper_models_dir
+                    .join("en_US-lessac-medium.onnx")
+            });
         let mut c = PiperConfig::new(binary, model);
-        c.chunk_chars = 5_000;
+        c.chunk_chars = std::env::var("PIPER_CHUNK_CHARS")
+            .ok()
+            .and_then(|value| value.parse().ok())
+            .unwrap_or(5_000);
         piper::synthesize(&c, text, out, &self.cancel)
             .map(|_| ())
             .map_err(|e| WorkerError::Piper(e.to_string()))

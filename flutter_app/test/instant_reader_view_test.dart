@@ -50,6 +50,22 @@ Widget _wrap(SharedPreferences prefs, Widget child) {
 
 void main() {
   group('InstantReaderView', () {
+    testWidgets('renders short non-empty front matter', (t) async {
+      final prefs = await _mockPrefs();
+      final fulltext = EbookFulltext.fromJson({
+        'jobId': 'short-front-matter',
+        'chapters': [
+          {'index': 0, 'name': 'Dedication', 'text': 'To Ana.'},
+          {'index': 1, 'name': 'Chapter 1', 'text': 'The story begins here.'},
+        ],
+      });
+      await t.pumpWidget(_wrap(prefs, InstantReaderView(fulltext: fulltext)));
+      await t.pump();
+      await t.pump(const Duration(milliseconds: 100));
+      expect(find.text('To Ana.'), findsOneWidget);
+      expect(find.text('Dedication'), findsNWidgets(2));
+    });
+
     testWidgets('shows settings button', (t) async {
       final prefs = await _mockPrefs();
       await t.pumpWidget(_wrap(

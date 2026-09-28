@@ -21,6 +21,9 @@ import 'state/providers.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // Render the shell before any disk/plugin initialization. Android 9 devices
+  // must not remain on the launch window while SharedPreferences is opening.
+  runApp(const _StartupShell());
   final prefs = await SharedPreferences.getInstance();
 
   // Match the native reader's default without changing the shared settings
@@ -60,9 +63,6 @@ Future<void> main() async {
   }
 }
 
-/// Starts Android's MediaSession after the first Flutter frame is allowed to
-/// render. A broken or slow platform service must never block the library and
-/// reader UI; both the service and the UI keep using [player].
 Future<void> _initializeAndroidAudio(
   AudioPlayerService player,
   SharedPreferences prefs,
@@ -93,6 +93,20 @@ Future<void> _initializeAndroidAudio(
   } catch (_) {
     // MediaSession is an enhancement. The in-app player remains available
     // when Android rejects or cannot start the background service.
+  }
+}
+
+class _StartupShell extends StatelessWidget {
+  const _StartupShell();
+
+  @override
+  Widget build(BuildContext context) {
+    return const MaterialApp(
+      debugShowCheckedModeBanner: false,
+      home: Scaffold(
+        body: Center(child: CircularProgressIndicator()),
+      ),
+    );
   }
 }
 

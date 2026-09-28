@@ -274,6 +274,7 @@ dependencies = [
  "futures-util",
  "hex",
  "http",
+ "percent-encoding",
  "quick-xml",
  "rand",
  "serde",

@@ -22,6 +22,10 @@ pub struct PiperConfig {
     pub timeout: Duration,
 }
 
+const DEFAULT_TIMEOUT: Duration = Duration::from_secs(120);
+const TIMEOUT_PER_1K_CHARS: Duration = Duration::from_secs(15);
+const TIMEOUT_PER_CHUNK: Duration = Duration::from_secs(120);
+
 impl PiperConfig {
     pub fn new(binary: impl Into<PathBuf>, model: impl Into<PathBuf>) -> Self {
         Self {
@@ -29,7 +33,7 @@ impl PiperConfig {
             model: model.into(),
             language_models: BTreeMap::new(),
             chunk_chars: 5_000,
-            timeout: Duration::from_secs(120),
+            timeout: DEFAULT_TIMEOUT,
         }
     }
 
@@ -172,7 +176,11 @@ pub fn synthesize(
     if let Some(parent) = output.parent() {
         fs::create_dir_all(parent).map_err(|e| PiperError::Io(e.to_string()))?;
     }
-
+    let chunks = split_text(text, config.chunk_chars)?;
+    let timeout = config
+        .timeout
+        .saturating_add(TIMEOUT_PER_1K_CHARS.saturating_mul((text.chars().count() / 1_000) as u32))
+        .max(TIMEOUT_PER_CHUNK.saturating_mul(chunks.len() as u32));
     let mut child = Command::new(&config.binary)
         .args([
             "--model",
@@ -197,7 +205,7 @@ pub fn synthesize(
             let _ = child.kill();
             return Err(PiperError::Cancelled);
         }
-        if started.elapsed() >= config.timeout {
+        if started.elapsed() >= timeout {
             let _ = child.kill();
             return Err(PiperError::Timeout);
         }
@@ -256,6 +264,27 @@ mod tests {
         let out = dir.join("out.wav");
         let config = PiperConfig::new(script, model);
         assert!(synthesize(&config, "hello", &out, &CancellationToken::default()).is_ok());
+    }
+
+    #[test]
+    fn timeout_budget_grows_for_multiple_chunks() {
+        let dir = tempfile_dir();
+        let script = dir.join("fast-piper");
+        fs::write(&script, "#!/bin/sh\nprintf 'RIFFfake' > \"$4\"\n").unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mut permissions = fs::metadata(&script).unwrap().permissions();
+            permissions.set_mode(0o755);
+            fs::set_permissions(&script, permissions).unwrap();
+        }
+        let model = dir.join("voice.onnx");
+        fs::write(&model, b"model").unwrap();
+        let output = dir.join("out.wav");
+        let mut config = PiperConfig::new(script, model);
+        config.chunk_chars = 5_000;
+        config.timeout = Duration::from_secs(1);
+        assert!(synthesize(&config, "hello", &output, &CancellationToken::default()).is_ok());
     }
 
     fn tempfile_dir() -> PathBuf {

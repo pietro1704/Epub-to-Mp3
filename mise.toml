@@ -32,7 +32,7 @@ run = "mise exec -- cargo run -p converter-cli"
 
 [tasks."rust:server"]
 description = "Run the Rust Axum health and metadata server"
-run = "mise exec -- cargo run -p converter-server"
+run = "PIPER_BINARY=\"$MISE_PROJECT_ROOT/.venv/bin/piper\" PIPER_MODEL=\"$MISE_PROJECT_ROOT/models/piper/en_US-lessac-medium.onnx\" mise exec -- cargo run -p converter-server"
 
 [tasks.convert]
 description = "Run the canonical Rust conversion CLI"

@@ -444,6 +444,9 @@ fn protocol_request(url: Url) -> Result<Request<()>, EdgeError> {
         "User-Agent",
         HeaderValue::from_static("Mozilla/5.0 EdgeTTS Rust Client"),
     );
+    // tungstenite generates the RFC 6455 handshake headers. Supplying a
+    // WebSocket key here creates a second key during connect_async and Edge
+    // rejects the request as malformed.
     Ok(request.map(|_| ()))
 }
 

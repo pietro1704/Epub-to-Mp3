@@ -1,7 +1,8 @@
 use std::collections::{HashMap, HashSet};
 use std::io::{Read, Seek};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
+use percent_encoding::percent_decode_str;
 use quick_xml::events::Event;
 use quick_xml::Reader;
 use thiserror::Error;
@@ -61,10 +62,39 @@ pub fn parse_epub<R: Read + Seek>(reader: R) -> Result<Book, EpubError> {
     let author = xml_text(&opf, b"creator").unwrap_or_default();
     let language = xml_text(&opf, b"language");
     let (manifest, spine, ncx_href, nav_href) = parse_package(&opf, &rootfile)?;
-    let toc = if let Some(href) = ncx_href {
-        parse_ncx(&read_entry(&mut archive, &join(opf_dir, &href))?).unwrap_or_default()
-    } else if let Some(href) = nav_href {
-        parse_nav(&read_entry(&mut archive, &join(opf_dir, &href))?).unwrap_or_default()
+    let nav_href = nav_href.or_else(|| {
+        manifest
+            .values()
+            .find(|(_, media_type)| media_type.as_deref() == Some("application/xhtml+xml"))
+            .and_then(|(href, _)| {
+                (href
+                    .rsplit('/')
+                    .next()
+                    .unwrap_or_default()
+                    .eq_ignore_ascii_case("nav.xhtml"))
+                .then_some(href.clone())
+            })
+    });
+    let ncx_href = manifest
+        .values()
+        .find(|(candidate, media_type)| {
+            ncx_href.as_deref() == Some(candidate.as_str())
+                || media_type.as_deref() == Some("application/x-dtbncx+xml")
+        })
+        .map(|(candidate, _)| candidate.clone());
+
+    let toc = if let Some(href) = nav_href {
+        parse_nav(&read_entry(
+            &mut archive,
+            &resolve_resource_path(opf_dir, &href),
+        )?)
+        .unwrap_or_default()
+    } else if let Some(href) = ncx_href {
+        parse_ncx(&read_entry(
+            &mut archive,
+            &resolve_resource_path(opf_dir, &href),
+        )?)
+        .unwrap_or_default()
     } else {
         Vec::new()
     };
@@ -81,7 +111,7 @@ pub fn parse_epub<R: Read + Seek>(reader: R) -> Result<Book, EpubError> {
             .get(id)
             .ok_or_else(|| EpubError::MissingResource(id.clone()))?
             .clone();
-        let path = join(opf_dir, &href);
+        let path = resolve_resource_path(opf_dir, &href);
         let html = read_entry(&mut archive, &path)?;
         let text = html_to_text(&html);
         if text.trim().is_empty() {
@@ -184,10 +214,16 @@ fn read_entry<R: Read + Seek>(
     f.read_to_string(&mut s)?;
     Ok(s)
 }
-fn join(base: &Path, href: &str) -> String {
-    let mut p = PathBuf::from(base);
-    p.push(href.split('#').next().unwrap_or(href));
-    p.to_string_lossy().replace('\\', "/")
+fn resolve_resource_path(base: &Path, href: &str) -> String {
+    let href = href.split('#').next().unwrap_or(href);
+    let href = percent_decode_str(href).decode_utf8_lossy();
+    let href_path = Path::new(href.as_ref());
+    let path = if href_path.starts_with(base) {
+        href_path.to_path_buf()
+    } else {
+        base.join(href_path)
+    };
+    path.to_string_lossy().replace('\\', "/")
 }
 fn attr(e: &quick_xml::events::BytesStart<'_>, key: &[u8]) -> Option<String> {
     e.attributes()

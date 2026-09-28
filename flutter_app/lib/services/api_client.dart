@@ -10,23 +10,30 @@ import '../models/session_record.dart';
 /// Thin wrapper over `dio` for the FastAPI backend.
 class ApiClient {
   ApiClient(this.baseUrl, {this.configurationError})
-      : _dio = Dio(BaseOptions(
+    : _dio = Dio(
+        BaseOptions(
           baseUrl: baseUrl,
           connectTimeout: const Duration(seconds: 10),
           receiveTimeout: const Duration(seconds: 30),
-        )),
-        _streamDio = Dio(BaseOptions(
+        ),
+      ),
+      _streamDio = Dio(
+        BaseOptions(
           baseUrl: baseUrl,
           connectTimeout: const Duration(seconds: 10),
           // SSE streams are long-lived — no receive timeout.
-        ));
+        ),
+      );
 
   final String baseUrl;
   final String? configurationError;
   final Dio _dio;
   final Dio _streamDio;
 
-  Future<EbookFulltext> parseDocument(String filePath, {String jobId = ''}) async {
+  Future<EbookFulltext> parseDocument(
+    String filePath, {
+    String jobId = '',
+  }) async {
     final convertedJobId = await uploadAndConvert(filePath, engine: 'edge');
     return fetchFulltext(convertedJobId);
   }
@@ -103,10 +110,10 @@ class ApiClient {
     if (normalizeAudio != null) {
       convertFields['normalize_audio'] = normalizeAudio;
     }
-    final convertForm = FormData.fromMap(convertFields);
     final convertResp = await _dio.post<Map<String, dynamic>>(
       '/api/convert',
-      data: convertForm,
+      data: convertFields,
+      options: Options(contentType: Headers.jsonContentType),
     );
     return convertResp.data?['jobId'] as String;
   }

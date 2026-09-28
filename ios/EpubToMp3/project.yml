@@ -275,6 +275,10 @@ targets:
           "CODE_SIGNING_REQUIRED[sdk=iphoneos*]": YES
           "CODE_SIGNING_ALLOWED[sdk=iphoneos*]": YES
           "CODE_SIGN_STYLE[sdk=iphoneos*]": Automatic
+          # Simulator apps are installed by CoreSimulator and must not be
+          # signed with the device identity. Keep device signing unchanged.
+          "CODE_SIGNING_REQUIRED[sdk=iphonesimulator*]": NO
+          "CODE_SIGNING_ALLOWED[sdk=iphonesimulator*]": NO
           # On a 2018 Intel Mac the discrete Radeon Pro draws the
           # native AppKit window without software-rendering stalls.
           ENABLE_HARDENED_RUNTIME: NO

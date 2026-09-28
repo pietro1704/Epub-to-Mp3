@@ -8,7 +8,7 @@ use std::{
 };
 
 use axum::{
-    extract::{Path as AxumPath, State},
+    extract::{DefaultBodyLimit, Multipart, Path as AxumPath, State},
     http::{header, HeaderMap, StatusCode},
     response::{
         sse::{Event, KeepAlive, Sse},
@@ -25,6 +25,9 @@ use converter_core::{
 use futures_util::stream::{self, StreamExt};
 use serde::{Deserialize, Serialize};
 use tokio::sync::{broadcast, RwLock};
+
+// Keep a concrete server-side ceiling above normal EPUB sizes while preventing unbounded request bodies.
+const MAX_UPLOAD_BYTES: usize = 100 * 1024 * 1024;
 
 const TERMINAL_STATES: &[&str] = &[
     "finished",
@@ -195,16 +198,36 @@ async fn metadata(State(state): State<AppState>) -> impl IntoResponse {
     )
 }
 
-async fn upload(State(state): State<AppState>, body: axum::body::Bytes) -> Response {
+async fn upload(State(state): State<AppState>, mut multipart: Multipart) -> Response {
     let id = uuid();
     let directory = state.config.paths.uploads_dir.join(&id);
     if tokio::fs::create_dir_all(&directory).await.is_err() {
         return StatusCode::INTERNAL_SERVER_ERROR.into_response();
     }
-    let filename = "upload.bin".to_owned();
-    let bytes = body.to_vec();
-
-    let _ = tokio::fs::write(directory.join(&filename), &bytes).await;
+    let Some(field) = (match multipart.next_field().await {
+        Ok(field) => field,
+        Err(_) => return StatusCode::BAD_REQUEST.into_response(),
+    }) else {
+        return StatusCode::BAD_REQUEST.into_response();
+    };
+    let filename = field
+        .file_name()
+        .map(Path::new)
+        .and_then(|path| path.file_name())
+        .and_then(|value| value.to_str())
+        .filter(|value| !value.is_empty())
+        .unwrap_or("source.epub")
+        .to_owned();
+    let bytes = match field.bytes().await {
+        Ok(bytes) => bytes,
+        Err(_) => return StatusCode::BAD_REQUEST.into_response(),
+    };
+    if tokio::fs::write(directory.join(&filename), &bytes)
+        .await
+        .is_err()
+    {
+        return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+    }
     (
         StatusCode::OK,
         Json(UploadResponse {
@@ -227,7 +250,7 @@ async fn local_upload(State(state): State<AppState>, Json(input): Json<LocalUplo
     let filename = source
         .file_name()
         .and_then(|v| v.to_str())
-        .unwrap_or("upload.bin")
+        .unwrap_or("source.epub")
         .to_owned();
     let id = uuid();
     let directory = state.config.paths.uploads_dir.join(&id);
@@ -520,7 +543,10 @@ fn app(config: AppConfig) -> Router {
         .route("/health", get(health))
         .route("/api/health", get(health))
         .route("/api/metadata", get(metadata))
-        .route("/api/uploads", post(upload))
+        .route(
+            "/api/uploads",
+            post(upload).layer(DefaultBodyLimit::max(MAX_UPLOAD_BYTES)),
+        )
         .route("/api/uploads/local", post(local_upload))
         .route("/api/convert", post(create_job))
         .route("/api/jobs/resumable", get(resumable_jobs))
@@ -675,7 +701,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let port = std::env::var("PORT")
         .ok()
         .and_then(|value| value.parse::<u16>().ok())
-        .unwrap_or(7860);
+        .unwrap_or(8000);
     let address: SocketAddr = format!("{host}:{port}").parse()?;
     tokio::fs::create_dir_all(&config.paths.uploads_dir).await?;
     tokio::fs::create_dir_all(&config.paths.job_inputs_dir).await?;

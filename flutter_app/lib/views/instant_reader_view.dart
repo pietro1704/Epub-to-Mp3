@@ -53,8 +53,6 @@ class _InstantReaderViewState extends ConsumerState<InstantReaderView> {
   SentenceSyncCoordinator? _sentenceSync;
   String? _liveSentenceId;
 
-  static const _minReadableChars = 10;
-
   @override
   void initState() {
     super.initState();
@@ -145,35 +143,29 @@ class _InstantReaderViewState extends ConsumerState<InstantReaderView> {
 
   int get _firstReadableIndex {
     final idx = widget.fulltext.chapters.indexWhere(
-      (c) => c.text.trim().length >= _minReadableChars,
+      (c) => c.text.trim().isNotEmpty,
     );
     return idx >= 0 ? idx : 0;
   }
 
   Chapter? _resolveChapter(int index) {
     final chapters = widget.fulltext.chapters;
-    final candidates = [
-      chapters.cast<Chapter?>().firstWhere(
-        (c) => c!.index == index + 1,
-        orElse: () => null,
-      ),
-      chapters.cast<Chapter?>().firstWhere(
-        (c) => c!.index == index,
-        orElse: () => null,
-      ),
-      if (index >= 0 && index < chapters.length) chapters[index],
-    ];
-    for (final c in candidates) {
-      if (c != null && c.text.trim().length >= _minReadableChars) return c;
-    }
-    return candidates.whereType<Chapter>().firstOrNull;
+    if (chapters.isEmpty) return null;
+
+    // The backend's chapter index is a stable identifier, not a guaranteed
+    // zero-based array offset. Prefer the actual array position here: the
+    // reader advances through the complete payload, including short front
+    // matter, and must not reinterpret position 1 as chapter index 1.
+    final clamped = index.clamp(0, chapters.length - 1).toInt();
+    return chapters[clamped];
   }
 
   bool advanceToNextChapter() {
-    if (_currentChapterIndex + 1 >= widget.fulltext.chapters.length) {
+    final next = _currentChapterIndex + 1;
+    if (next >= widget.fulltext.chapters.length) {
       return false;
     }
-    setState(() => _currentChapterIndex += 1);
+    setState(() => _currentChapterIndex = next);
     _savePosition();
     return true;
   }

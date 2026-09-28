@@ -192,3 +192,4 @@ ios/EpubToMp3/Vendor/piper-models/
 .claude/mirror-queue.txt
 .worktrees/
 target/
+.hermes-run/
