@@ -270,11 +270,17 @@ const _currentlyReadingKey = 'currentlyReadingBookId';
 final currentlyReadingBookIdProvider =
     StateNotifierProvider<_ReaderSessionNotifier, String?>((ref) {
       final prefs = ref.watch(sharedPrefsProvider);
-      return _ReaderSessionNotifier(prefs, _currentlyReadingKey, ref);
+      return _ReaderSessionNotifier(prefs, _currentlyReadingKey);
     });
 
 /// The book whose audio is actively playing/paused. Ephemeral (not persisted).
-final currentlyPlayingBookIdProvider = StateProvider<String?>((ref) => null);
+final StateProvider<String?> currentlyPlayingBookIdProvider =
+    StateProvider<String?>((ref) {
+      ref.listen<String?>(currentlyReadingBookIdProvider, (_, next) {
+        ref.read(currentlyPlayingBookIdProvider.notifier).state = next;
+      });
+      return ref.read(currentlyReadingBookIdProvider);
+    });
 
 /// Singleton audio player for on-device playback. Not keyed by jobId — this
 /// Flutter app runs everything locally, so one player instance suffices.
@@ -317,12 +323,12 @@ final readerChromeVisibleProvider = StateProvider<bool>((ref) => true);
 /// A trivial persisted String? notifier. Reads a SharedPreferences key on
 /// construction and writes on every `set`.
 class _ReaderSessionNotifier extends StateNotifier<String?> {
-  _ReaderSessionNotifier(this._prefs, this._key, this._ref)
+  _ReaderSessionNotifier(this._prefs, this._key)
     : super(_prefs.getString(_key));
 
   final SharedPreferences _prefs;
   final String _key;
-  final Ref _ref;
+
 
   void set(String? value) {
     state = value;
