@@ -13,7 +13,6 @@ use rand::{distr::Alphanumeric, Rng};
 use sha2::{Digest, Sha256};
 use tokio::{net::TcpStream, sync::Semaphore, time::timeout};
 use tokio_tungstenite::{
-    connect_async,
     tungstenite::{client::IntoClientRequest, http::HeaderValue, Message},
     MaybeTlsStream, WebSocketStream,
 };
@@ -161,8 +160,11 @@ pub struct WebSocketTransport;
 impl EdgeTransport for WebSocketTransport {
     fn connect<'a>(&'a self, request: Request<()>) -> TransportFuture<'a> {
         Box::pin(async move {
-            let request = request.map(|_| ()).into_client_request()
+            let mut request = request.map(|_| ()).into_client_request()
                 .map_err(|e| EdgeError::Transport(e.to_string()))?;
+            request.headers_mut().remove("sec-websocket-key");
+            request.headers_mut().remove("sec-websocket-version");
+            request.headers_mut().remove("sec-websocket-extensions");
             let (socket, _) = tokio_tungstenite::connect_async_tls_with_config(
                 request,
                 None,
