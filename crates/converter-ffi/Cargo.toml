@@ -1,0 +1,18 @@
+[package]
+name = "converter-ffi"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+description = "Stable C ABI for the embedded EPUB conversion session"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+converter-core = { path = "../converter-core" }
+serde_json = "1"
+
+[dev-dependencies]
+tempfile = "3"
+zip = "2"
