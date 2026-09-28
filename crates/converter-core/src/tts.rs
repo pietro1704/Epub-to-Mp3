@@ -160,8 +160,9 @@ pub struct WebSocketTransport;
 impl EdgeTransport for WebSocketTransport {
     fn connect<'a>(&'a self, request: Request<()>) -> TransportFuture<'a> {
         Box::pin(async move {
-            let request = request.map(|_| ()).into_client_request()
+            let mut request = request.map(|_| ()).into_client_request()
                 .map_err(|e| EdgeError::Transport(e.to_string()))?;
+            request.headers_mut().remove("sec-websocket-key");
             let uri = request.uri().clone();
             let host = uri
                 .host()
