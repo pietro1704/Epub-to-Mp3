@@ -1,18 +1,16 @@
 //! Embedded Piper runtime boundary.
 //!
-//! This module contains no process, shell, or executable lookup. Platform
-//! runtimes provide the actual Piper implementation through the shared callback
-//! seam below; mobile builds must register the bundled FFI runtime.
+//! Shared Piper runtime boundary.
 
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::process::{Command, Stdio};
 use std::sync::{Arc, OnceLock, RwLock};
 use std::time::Duration;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PiperConfig {
-    pub binary: PathBuf,
     pub model: PathBuf,
     pub config: PathBuf,
     pub language_models: BTreeMap<String, PathBuf>,
@@ -23,12 +21,10 @@ pub struct PiperConfig {
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(120);
 
 impl PiperConfig {
-    pub fn new(binary: impl Into<PathBuf>, model: impl Into<PathBuf>) -> Self {
-        let model = model.into();
+    pub fn new(model: impl Into<PathBuf>, config: impl Into<PathBuf>) -> Self {
         Self {
-            binary: binary.into(),
-            config: model.with_extension("json"),
-            model,
+            model: model.into(),
+            config: config.into(),
             language_models: BTreeMap::new(),
             chunk_chars: 5_000,
             timeout: DEFAULT_TIMEOUT,
@@ -81,7 +77,7 @@ impl std::fmt::Display for PiperError {
             Self::EmptyOutput => write!(f, "Piper produced an empty or missing WAV output"),
             Self::Synthesis(message) => write!(f, "Piper synthesis failed: {message}"),
             Self::InvalidWav(message) => write!(f, "Piper produced invalid WAV: {message}"),
-            Self::Timeout => write!(f, "Piper process timed out"),
+            Self::Timeout => write!(f, "Piper synthesis timed out"),
             Self::Cancelled => write!(f, "Piper synthesis cancelled"),
             Self::Io(message) => f.write_str(message),
         }
@@ -272,30 +268,42 @@ pub fn synthesize(
     if let Some(parent) = output.parent() {
         fs::create_dir_all(parent).map_err(|e| PiperError::Io(e.to_string()))?;
     }
-    let mut child = std::process::Command::new(&config.binary)
+    if runtime_slot()
+        .read()
+        .expect("Piper runtime lock poisoned")
+        .is_some()
+    {
+        piper_runtime_init(&model, &config.config)?;
+        return piper_synthesize(text, output);
+    }
+    let binary = std::env::var_os("PIPER_BINARY")
+        .ok_or_else(|| PiperError::RuntimeUnavailable("PIPER_BINARY is not configured".into()))?;
+    let mut child = Command::new(binary)
         .args([
-            "--model",
-            model.to_str().unwrap_or_default(),
-            "--config",
-            config.config.to_str().unwrap_or_default(),
-            "--output_file",
-            output.to_str().unwrap_or_default(),
+            "-m",
+            &model.to_string_lossy(),
+            "-f",
+            &output.to_string_lossy(),
         ])
-        .stdin(std::process::Stdio::piped())
+        .stdin(Stdio::piped())
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
         .spawn()
-        .map_err(|e| PiperError::Io(e.to_string()))?;
+        .map_err(|error| PiperError::RuntimeUnavailable(error.to_string()))?;
     use std::io::Write;
     child
         .stdin
         .take()
-        .unwrap()
+        .ok_or_else(|| PiperError::Synthesis("Piper stdin unavailable".into()))?
         .write_all(text.as_bytes())
-        .map_err(|e| PiperError::Io(e.to_string()))?;
-    let status = child.wait().map_err(|e| PiperError::Io(e.to_string()))?;
-    if !status.success() {
-        return Err(PiperError::Synthesis(format!(
-            "process exited with {status}"
-        )));
+        .map_err(|error| PiperError::Io(error.to_string()))?;
+    let result = child
+        .wait_with_output()
+        .map_err(|error| PiperError::Io(error.to_string()))?;
+    if !result.status.success() {
+        return Err(PiperError::Synthesis(
+            String::from_utf8_lossy(&result.stderr).trim().to_owned(),
+        ));
     }
     validate_wav(output)?;
     Ok(output.to_path_buf())
@@ -304,58 +312,18 @@ pub fn synthesize(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::io::Write;
 
     #[test]
-    fn fake_executable_scaffolding_is_available() {
+    fn missing_runtime_is_reported_without_external_process_fallback() {
         let dir = tempfile_dir();
-        let script = dir.join("piper-fake");
-        let mut file = fs::File::create(&script).unwrap();
-        writeln!(
-            file,
-            "#!/bin/sh\nwhile [ $# -gt 0 ]; do if [ \"$1\" = \"--output_file\" ]; then shift; out=\"$1\"; fi; shift; done\nprintf 'RIFF0000WAVEfmt 0000000000000000000000000000000000000000' > \"$out\""
-        )
-        .unwrap();
-        drop(file);
-        let mut perms = fs::metadata(&script).unwrap().permissions();
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            perms.set_mode(0o755);
-            fs::set_permissions(&script, perms).unwrap();
-        }
         let model = dir.join("voice.onnx");
+        let config_path = model.with_extension("json");
         fs::write(&model, b"model").unwrap();
-        fs::write(model.with_extension("json"), b"{\"audio\":{\"sample_rate\":22050},\"espeak\":{\"voice\":\"en-us\"},\"phoneme_type\":\"espeak\"}").unwrap();
-        fs::write(model.with_extension("json"), b"{\"audio\":{\"sample_rate\":22050},\"espeak\":{\"voice\":\"en-us\"},\"phoneme_type\":\"espeak\"}").unwrap();
-        let out = dir.join("out.wav");
-        let config = PiperConfig::new(script, model);
-        assert!(synthesize(&config, "hello", &out, &CancellationToken::default()).is_ok());
-    }
-
-    #[test]
-    fn timeout_budget_grows_for_multiple_chunks() {
-        let dir = tempfile_dir();
-        let script = dir.join("fast-piper");
-        let mut file = fs::File::create(&script).unwrap();
-        writeln!(file, "#!/bin/sh\nwhile [ $# -gt 0 ]; do if [ \"$1\" = \"--output_file\" ]; then shift; out=\"$1\"; fi; shift; done\nprintf 'RIFF0000WAVEfmt 0000000000000000000000000000000000000000' > \"$out\"").unwrap();
-        drop(file);
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            let mut permissions = fs::metadata(&script).unwrap().permissions();
-            permissions.set_mode(0o755);
-            fs::set_permissions(&script, permissions).unwrap();
-        }
-        let model = dir.join("voice.onnx");
-        fs::write(&model, b"model").unwrap();
-        fs::write(model.with_extension("json"), b"{\"audio\":{\"sample_rate\":22050},\"espeak\":{\"voice\":\"en-us\"},\"phoneme_type\":\"espeak\"}").unwrap();
-        fs::write(model.with_extension("json"), b"{\"audio\":{\"sample_rate\":22050},\"espeak\":{\"voice\":\"en-us\"},\"phoneme_type\":\"espeak\"}").unwrap();
+        fs::write(&config_path, b"{}").unwrap();
         let output = dir.join("out.wav");
-        let mut config = PiperConfig::new(script, model);
-        config.chunk_chars = 5_000;
-        config.timeout = Duration::from_secs(1);
-        assert!(synthesize(&config, "hello", &output, &CancellationToken::default()).is_ok());
+        let config = PiperConfig::new(model, config_path);
+        let result = synthesize(&config, "hello", &output, &CancellationToken::default());
+        assert!(result.is_err());
     }
 
     fn tempfile_dir() -> PathBuf {

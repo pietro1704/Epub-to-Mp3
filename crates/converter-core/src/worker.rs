@@ -266,14 +266,23 @@ impl ConversionWorker {
                 .project_root
                 .join("models/piper/pt_BR-faber-medium.onnx")
         };
+        let config = model.with_extension("json");
+        let mut c = PiperConfig::new(model, config);
         let binary = std::env::var_os("PIPER_BINARY")
             .map(PathBuf::from)
+            .filter(|path| path.is_file())
             .or_else(|| {
                 let managed = self.config.paths.project_root.join(".venv/bin/piper");
                 managed.is_file().then_some(managed)
             })
             .unwrap_or_else(|| PathBuf::from("piper"));
-        let mut c = PiperConfig::new(binary, model);
+        if !binary.is_file() && binary != Path::new("piper") {
+            return Err(WorkerError::Piper(format!(
+                "Piper binary not found: {}",
+                binary.display()
+            )));
+        }
+        std::env::set_var("PIPER_BINARY", binary);
         c.chunk_chars = std::env::var("PIPER_CHUNK_CHARS")
             .ok()
             .and_then(|value| value.parse().ok())

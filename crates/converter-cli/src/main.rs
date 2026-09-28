@@ -21,7 +21,8 @@ struct CliOptions {
     chapters: Vec<String>,
     sections: Vec<String>,
     show_structure: bool,
-    clear_cache: bool,
+    clean_cache: bool,
+    verify: bool,
     no_cache: bool,
     no_parallel: bool,
     yes: bool,
@@ -44,7 +45,8 @@ impl Default for CliOptions {
             chapters: Vec::new(),
             sections: Vec::new(),
             show_structure: false,
-            clear_cache: false,
+            clean_cache: false,
+            verify: false,
             no_cache: false,
             no_parallel: false,
             yes: false,
@@ -92,7 +94,7 @@ fn run(raw: Vec<String>) -> Result<i32, String> {
         }
     }
 
-    if options.clear_cache && options.inputs.is_empty() && batch.is_empty() {
+    if options.clean_cache && options.inputs.is_empty() && batch.is_empty() {
         clear_global_cache(options.yes)?;
         return Ok(0);
     }
@@ -111,11 +113,10 @@ fn run(raw: Vec<String>) -> Result<i32, String> {
         return show_structure(&all);
     }
 
-    if options.clear_cache {
+    if options.clean_cache {
         for input in &all {
-            clear_book_cache(Path::new(input), options.yes)?;
+            clear_book_cache(Path::new(input), true)?;
         }
-        return Ok(0);
     }
 
     let config = converter_core::config::AppConfig::from_env();
@@ -132,7 +133,19 @@ fn run(raw: Vec<String>) -> Result<i32, String> {
             config.clone(),
         )
         .map_err(|error| error.to_string())?;
-        let manifest = session.convert().map_err(|error| error.to_string())?;
+        let manifest = if options.verify && !options.clean_cache {
+            read_manifest(&config.paths.output_dir.join(format!(
+                "cli-{}-{}",
+                std::process::id(),
+                position
+            )))?
+        } else {
+            session.convert().map_err(|error| error.to_string())?
+        };
+        if options.verify {
+            verify_output(&config.paths.output_dir.join(&manifest.job_id), &manifest)?;
+            println!("verified: {} chapters and archive", manifest.chapters.len());
+        }
         println!(
             "{}",
             serde_json::to_string_pretty(&manifest).map_err(|error| error.to_string())?
@@ -151,7 +164,7 @@ fn parse_args(args: &[String]) -> Result<CliOptions, String> {
     ) {
         options.command = args[0].clone();
         options.menu = options.command == "menu";
-        options.clear_cache = options.command == "clear-cache";
+        options.clean_cache = options.command == "clear-cache";
         index = 1;
     }
     while index < args.len() {
@@ -174,7 +187,8 @@ fn parse_args(args: &[String]) -> Result<CliOptions, String> {
             "--batch" => options.batch_inputs.push(next(value)?),
             "--batch-file" => options.batch_manifest = Some(next(value)?),
             "--show-structure" => options.show_structure = true,
-            "--clear-cache" => options.clear_cache = true,
+            "--clear-cache" | "--clean-cache" => options.clean_cache = true,
+            "--verify" | "--verify-only" => options.verify = true,
             "--no-cache" => options.no_cache = true,
             "--no-parallel" => options.no_parallel = true,
             "--yes" | "-y" => options.yes = true,
@@ -408,6 +422,53 @@ fn clear_book_cache(input: &Path, assume_yes: bool) -> Result<(), String> {
     Ok(())
 }
 
+fn read_manifest(output_dir: &Path) -> Result<converter_core::worker::OutputManifest, String> {
+    let path = output_dir.join("manifest.json");
+    let content = fs::read_to_string(&path)
+        .map_err(|error| format!("failed to read '{}': {error}", path.display()))?;
+    serde_json::from_str(&content)
+        .map_err(|error| format!("failed to parse '{}': {error}", path.display()))
+}
+
+fn verify_output(
+    output_dir: &Path,
+    manifest: &converter_core::worker::OutputManifest,
+) -> Result<(), String> {
+    if manifest.chapters.is_empty() {
+        return Err("verification failed: manifest has no chapters".into());
+    }
+    for (position, chapter) in manifest.chapters.iter().enumerate() {
+        let expected = position + 1;
+        if chapter.index != expected {
+            return Err(format!(
+                "verification failed: expected chapter {expected}, found {}",
+                chapter.index
+            ));
+        }
+        let path = output_dir.join(&chapter.filename);
+        let size = fs::metadata(&path)
+            .map_err(|error| format!("verification failed: {}: {error}", path.display()))?
+            .len();
+        if size == 0 {
+            return Err(format!(
+                "verification failed: empty audio {}",
+                path.display()
+            ));
+        }
+    }
+    let archive = output_dir.join(&manifest.archive);
+    let archive_size = fs::metadata(&archive)
+        .map_err(|error| format!("verification failed: {}: {error}", archive.display()))?
+        .len();
+    if archive_size == 0 {
+        return Err(format!(
+            "verification failed: empty archive {}",
+            archive.display()
+        ));
+    }
+    Ok(())
+}
+
 fn clear_global_cache(assume_yes: bool) -> Result<(), String> {
     let paths = converter_core::paths::resolve_paths();
     if !paths.cache_dir.exists() && !paths.output_dir.exists() {
@@ -465,7 +526,7 @@ fn show_structure(inputs: &[String]) -> Result<i32, String> {
 }
 
 fn print_help() {
-    println!("EBook to Audiobook Converter\n\nUsage: convert [INPUT ...] [OPTIONS]\n       clear-cache [BOOK]\n\nInputs accept EPUB/PDF files, directories, loose multiword names, and fuzzy matches.\n\nOptions: --engine {{auto,edge,piper}} --voice VOICE --model MODEL --chapter CHAPTER --show-structure --clear-cache --batch PATH --batch-file FILE --yes");
+    println!("EBook to Audiobook Converter\n\nUsage: convert [INPUT ...] [OPTIONS]\n       clear-cache [BOOK]\n\nInputs accept EPUB/PDF files, directories, loose multiword names, and fuzzy matches.\n\nOptions: --engine {{auto,edge,piper}} --voice VOICE --model MODEL --chapter CHAPTER --show-structure --clean-cache --verify --batch PATH --batch-file FILE --yes");
 }
 
 fn home_dir() -> PathBuf {
@@ -476,6 +537,8 @@ fn home_dir() -> PathBuf {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
     #[test]
     fn cli_sources_only_the_embedded_core_api() {
         let source = include_str!("main.rs");
@@ -487,6 +550,28 @@ mod tests {
         assert!(!source.contains(&forbidden_client));
         let forbidden_http = ["http", "://"].concat();
         assert!(!source.contains(&forbidden_http));
+    }
+
+    #[test]
+    fn verification_rejects_missing_chapter_audio() {
+        let root = std::env::temp_dir().join(format!("converter-verify-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&root).expect("temporary directory should be created");
+        let manifest = converter_core::worker::OutputManifest {
+            job_id: "test".into(),
+            title: "Book".into(),
+            author: "Author".into(),
+            chapters: vec![converter_core::audio::ChapterMetadata {
+                index: 1,
+                title: "Chapter 1".into(),
+                filename: "0001-Chapter_1.mp3".into(),
+                text_chars: 10,
+            }],
+            archive: "Book.zip".into(),
+        };
+        let error = verify_output(&root, &manifest).expect_err("missing audio must fail");
+        assert!(error.contains("verification failed"));
+        let _ = fs::remove_dir_all(root);
     }
 }
 
