@@ -224,10 +224,24 @@ impl ConversionWorker {
                     eprintln!("Edge synthesis failed; falling back to Piper: {error}");
                 }
             }
-            return Err(WorkerError::Piper(
-                "Edge synthesis failed and Piper fallback was unavailable".into(),
-            ));
         }
+        self.synthesize_with_piper(text, out)
+    }
+
+    fn synthesize_with_piper(&self, text: &str, out: &Path) -> Result<(), WorkerError> {
+        let model = std::env::var_os("PIPER_MODEL")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| {
+                self.config
+                    .paths
+                    .piper_models_dir
+                    .join("pt_BR-faber-medium.onnx")
+            });
+        let model = if model.is_file() {
+            model
+        } else {
+            self.config.paths.project_root.join("models/piper/pt_BR-faber-medium.onnx")
+        };
         let binary = std::env::var_os("PIPER_BINARY")
             .map(PathBuf::from)
             .or_else(|| {
@@ -235,14 +249,6 @@ impl ConversionWorker {
                 managed.is_file().then_some(managed)
             })
             .unwrap_or_else(|| PathBuf::from("piper"));
-        let model = std::env::var_os("PIPER_MODEL")
-            .map(PathBuf::from)
-            .unwrap_or_else(|| {
-                self.config
-                    .paths
-                    .piper_models_dir
-                    .join("en_US-lessac-medium.onnx")
-            });
         let mut c = PiperConfig::new(binary, model);
         c.chunk_chars = std::env::var("PIPER_CHUNK_CHARS")
             .ok()

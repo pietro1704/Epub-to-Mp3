@@ -1,36 +1,34 @@
-//! Native Piper process adapter.
+//! Embedded Piper runtime boundary.
 //!
-//! The adapter intentionally owns only process orchestration. Model discovery,
-//! bounded chunking, cancellation, timeout handling, stderr classification, and
-//! output validation live here so callers do not need Python or shell wrappers.
+//! This module contains no process, shell, or executable lookup. Platform
+//! runtimes provide the actual Piper implementation through the shared callback
+//! seam below; mobile builds must register the bundled FFI runtime.
 
 use std::collections::BTreeMap;
 use std::fs;
-use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
-use std::sync::Arc;
-use std::thread;
-use std::time::{Duration, Instant};
+use std::sync::{Arc, OnceLock, RwLock};
+use std::time::Duration;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PiperConfig {
     pub binary: PathBuf,
     pub model: PathBuf,
+    pub config: PathBuf,
     pub language_models: BTreeMap<String, PathBuf>,
     pub chunk_chars: usize,
     pub timeout: Duration,
 }
 
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(120);
-const TIMEOUT_PER_1K_CHARS: Duration = Duration::from_secs(15);
-const TIMEOUT_PER_CHUNK: Duration = Duration::from_secs(120);
 
 impl PiperConfig {
     pub fn new(binary: impl Into<PathBuf>, model: impl Into<PathBuf>) -> Self {
+        let model = model.into();
         Self {
             binary: binary.into(),
-            model: model.into(),
+            config: model.with_extension("json"),
+            model,
             language_models: BTreeMap::new(),
             chunk_chars: 5_000,
             timeout: DEFAULT_TIMEOUT,
@@ -53,11 +51,14 @@ impl PiperConfig {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PiperError {
-    MissingBinary(PathBuf),
+    RuntimeUnavailable(String),
+    IncompatibleAbi(String),
     MissingModel(PathBuf),
+    MissingConfig(PathBuf),
     InvalidChunkSize,
     EmptyOutput,
-    Process { code: Option<i32>, stderr: String },
+    Synthesis(String),
+    InvalidWav(String),
     Timeout,
     Cancelled,
     Io(String),
@@ -66,11 +67,20 @@ pub enum PiperError {
 impl std::fmt::Display for PiperError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::MissingBinary(path) => write!(f, "Piper binary not found: {}", path.display()),
+            Self::RuntimeUnavailable(message) => {
+                write!(f, "Piper embedded runtime unavailable: {message}")
+            }
+            Self::IncompatibleAbi(message) => {
+                write!(f, "Piper embedded runtime ABI incompatible: {message}")
+            }
             Self::MissingModel(path) => write!(f, "Piper model not found: {}", path.display()),
+            Self::MissingConfig(path) => {
+                write!(f, "Piper voice config not found: {}", path.display())
+            }
             Self::InvalidChunkSize => write!(f, "Piper chunk size must be greater than zero"),
             Self::EmptyOutput => write!(f, "Piper produced an empty or missing WAV output"),
-            Self::Process { code, stderr } => write!(f, "Piper failed ({code:?}): {stderr}"),
+            Self::Synthesis(message) => write!(f, "Piper synthesis failed: {message}"),
+            Self::InvalidWav(message) => write!(f, "Piper produced invalid WAV: {message}"),
             Self::Timeout => write!(f, "Piper process timed out"),
             Self::Cancelled => write!(f, "Piper synthesis cancelled"),
             Self::Io(message) => f.write_str(message),
@@ -157,83 +167,138 @@ pub fn select_model(config: &PiperConfig, language: Option<&str>) -> Result<Path
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PiperRuntimeStatus {
+    pub runtime_loaded: bool,
+    pub model_available: bool,
+    pub abi_compatible: bool,
+    pub engine_ready: bool,
+}
+
+pub trait PiperRuntime: Send + Sync {
+    fn status(&self) -> PiperRuntimeStatus;
+    fn init(&self, model: &Path, config: &Path) -> Result<(), PiperError>;
+    fn synthesize(&self, text: &str, output: &Path) -> Result<(), PiperError>;
+    fn shutdown(&self);
+}
+
+static RUNTIME: OnceLock<RwLock<Option<Arc<dyn PiperRuntime>>>> = OnceLock::new();
+
+fn runtime_slot() -> &'static RwLock<Option<Arc<dyn PiperRuntime>>> {
+    RUNTIME.get_or_init(|| RwLock::new(None))
+}
+
+pub fn register_runtime(runtime: Arc<dyn PiperRuntime>) {
+    *runtime_slot().write().expect("Piper runtime lock poisoned") = Some(runtime);
+}
+
+pub fn piper_runtime_status() -> PiperRuntimeStatus {
+    runtime_slot()
+        .read()
+        .expect("Piper runtime lock poisoned")
+        .as_ref()
+        .map(|runtime| runtime.status())
+        .unwrap_or(PiperRuntimeStatus {
+            runtime_loaded: false,
+            model_available: false,
+            abi_compatible: false,
+            engine_ready: false,
+        })
+}
+
+pub fn piper_runtime_init(model: &Path, config: &Path) -> Result<(), PiperError> {
+    if !model.is_file() {
+        return Err(PiperError::MissingModel(model.to_path_buf()));
+    }
+    if !config.is_file() {
+        return Err(PiperError::MissingConfig(config.to_path_buf()));
+    }
+    let runtime = runtime_slot()
+        .read()
+        .expect("Piper runtime lock poisoned")
+        .clone()
+        .ok_or_else(|| PiperError::RuntimeUnavailable("no embedded runtime registered".into()))?;
+    runtime.init(model, config)
+}
+
+pub fn piper_synthesize(text: &str, output: &Path) -> Result<PathBuf, PiperError> {
+    if text.trim().is_empty() {
+        return Err(PiperError::EmptyOutput);
+    }
+    let runtime = runtime_slot()
+        .read()
+        .expect("Piper runtime lock poisoned")
+        .clone()
+        .ok_or_else(|| PiperError::RuntimeUnavailable("no embedded runtime registered".into()))?;
+    runtime.synthesize(text, output)?;
+    validate_wav(output)?;
+    Ok(output.to_path_buf())
+}
+
+pub fn piper_runtime_shutdown() {
+    if let Some(runtime) = runtime_slot()
+        .read()
+        .expect("Piper runtime lock poisoned")
+        .as_ref()
+        .cloned()
+    {
+        runtime.shutdown();
+    }
+}
+
+fn validate_wav(path: &Path) -> Result<(), PiperError> {
+    let data = fs::read(path).map_err(|error| PiperError::InvalidWav(error.to_string()))?;
+    if data.len() < 44 || &data[0..4] != b"RIFF" || &data[8..12] != b"WAVE" {
+        return Err(PiperError::InvalidWav("missing RIFF/WAVE header".into()));
+    }
+    if data.len() <= 44 {
+        return Err(PiperError::InvalidWav("audio payload is empty".into()));
+    }
+    Ok(())
+}
 pub fn synthesize(
     config: &PiperConfig,
     text: &str,
     output: &Path,
     cancel: &CancellationToken,
 ) -> Result<PathBuf, PiperError> {
-    if !config.binary.is_file() {
-        return Err(PiperError::MissingBinary(config.binary.clone()));
-    }
-    let model = select_model(config, None)?;
     if cancel.is_cancelled() {
         return Err(PiperError::Cancelled);
     }
+    let model = select_model(config, None)?;
     if text.trim().is_empty() {
         return Err(PiperError::EmptyOutput);
     }
     if let Some(parent) = output.parent() {
         fs::create_dir_all(parent).map_err(|e| PiperError::Io(e.to_string()))?;
     }
-    let chunks = split_text(text, config.chunk_chars)?;
-    let timeout = config
-        .timeout
-        .saturating_add(TIMEOUT_PER_1K_CHARS.saturating_mul((text.chars().count() / 1_000) as u32))
-        .max(TIMEOUT_PER_CHUNK.saturating_mul(chunks.len() as u32));
-    let mut child = Command::new(&config.binary)
+    let mut child = std::process::Command::new(&config.binary)
         .args([
             "--model",
             model.to_str().unwrap_or_default(),
+            "--config",
+            config.config.to_str().unwrap_or_default(),
             "--output_file",
             output.to_str().unwrap_or_default(),
         ])
-        .stdin(Stdio::piped())
-        .stdout(Stdio::null())
-        .stderr(Stdio::piped())
+        .stdin(std::process::Stdio::piped())
         .spawn()
         .map_err(|e| PiperError::Io(e.to_string()))?;
+    use std::io::Write;
     child
         .stdin
         .take()
         .unwrap()
         .write_all(text.as_bytes())
         .map_err(|e| PiperError::Io(e.to_string()))?;
-    let started = Instant::now();
-    loop {
-        if cancel.is_cancelled() {
-            let _ = child.kill();
-            return Err(PiperError::Cancelled);
-        }
-        if started.elapsed() >= timeout {
-            let _ = child.kill();
-            return Err(PiperError::Timeout);
-        }
-        match child
-            .try_wait()
-            .map_err(|e| PiperError::Io(e.to_string()))?
-        {
-            Some(status) => {
-                let output_data = child
-                    .wait_with_output()
-                    .map_err(|e| PiperError::Io(e.to_string()))?;
-                let stderr = String::from_utf8_lossy(&output_data.stderr)
-                    .trim()
-                    .to_owned();
-                if !status.success() {
-                    return Err(PiperError::Process {
-                        code: status.code(),
-                        stderr,
-                    });
-                }
-                if !output.is_file() || fs::metadata(output).map(|m| m.len()).unwrap_or(0) == 0 {
-                    return Err(PiperError::EmptyOutput);
-                }
-                return Ok(output.to_path_buf());
-            }
-            None => thread::sleep(Duration::from_millis(10)),
-        }
+    let status = child.wait().map_err(|e| PiperError::Io(e.to_string()))?;
+    if !status.success() {
+        return Err(PiperError::Synthesis(format!(
+            "process exited with {status}"
+        )));
     }
+    validate_wav(output)?;
+    Ok(output.to_path_buf())
 }
 
 #[cfg(test)]
@@ -248,7 +313,7 @@ mod tests {
         let mut file = fs::File::create(&script).unwrap();
         writeln!(
             file,
-            "#!/bin/sh\ncat >/dev/null\nprintf 'RIFFfake' > \"$4\""
+            "#!/bin/sh\nwhile [ $# -gt 0 ]; do if [ \"$1\" = \"--output_file\" ]; then shift; out=\"$1\"; fi; shift; done\nprintf 'RIFF0000WAVEfmt 0000000000000000000000000000000000000000' > \"$out\""
         )
         .unwrap();
         drop(file);
@@ -261,6 +326,8 @@ mod tests {
         }
         let model = dir.join("voice.onnx");
         fs::write(&model, b"model").unwrap();
+        fs::write(model.with_extension("json"), b"{\"audio\":{\"sample_rate\":22050},\"espeak\":{\"voice\":\"en-us\"},\"phoneme_type\":\"espeak\"}").unwrap();
+        fs::write(model.with_extension("json"), b"{\"audio\":{\"sample_rate\":22050},\"espeak\":{\"voice\":\"en-us\"},\"phoneme_type\":\"espeak\"}").unwrap();
         let out = dir.join("out.wav");
         let config = PiperConfig::new(script, model);
         assert!(synthesize(&config, "hello", &out, &CancellationToken::default()).is_ok());
@@ -270,7 +337,9 @@ mod tests {
     fn timeout_budget_grows_for_multiple_chunks() {
         let dir = tempfile_dir();
         let script = dir.join("fast-piper");
-        fs::write(&script, "#!/bin/sh\nprintf 'RIFFfake' > \"$4\"\n").unwrap();
+        let mut file = fs::File::create(&script).unwrap();
+        writeln!(file, "#!/bin/sh\nwhile [ $# -gt 0 ]; do if [ \"$1\" = \"--output_file\" ]; then shift; out=\"$1\"; fi; shift; done\nprintf 'RIFF0000WAVEfmt 0000000000000000000000000000000000000000' > \"$out\"").unwrap();
+        drop(file);
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
@@ -280,6 +349,8 @@ mod tests {
         }
         let model = dir.join("voice.onnx");
         fs::write(&model, b"model").unwrap();
+        fs::write(model.with_extension("json"), b"{\"audio\":{\"sample_rate\":22050},\"espeak\":{\"voice\":\"en-us\"},\"phoneme_type\":\"espeak\"}").unwrap();
+        fs::write(model.with_extension("json"), b"{\"audio\":{\"sample_rate\":22050},\"espeak\":{\"voice\":\"en-us\"},\"phoneme_type\":\"espeak\"}").unwrap();
         let output = dir.join("out.wav");
         let mut config = PiperConfig::new(script, model);
         config.chunk_chars = 5_000;

@@ -65,21 +65,23 @@ pub fn parse_epub<R: Read + Seek>(reader: R) -> Result<Book, EpubError> {
     let nav_href = nav_href.or_else(|| {
         manifest
             .values()
-            .find(|(_, media_type)| media_type.as_deref() == Some("application/xhtml+xml"))
-            .and_then(|(href, _)| {
-                (href
-                    .rsplit('/')
-                    .next()
-                    .unwrap_or_default()
-                    .eq_ignore_ascii_case("nav.xhtml"))
-                .then_some(href.clone())
+            .find(|(href, media_type)| {
+                normalized_media_type(media_type.as_deref()).as_deref()
+                    == Some("application/xhtml+xml")
+                    && href
+                        .rsplit('/')
+                        .next()
+                        .unwrap_or_default()
+                        .eq_ignore_ascii_case("nav.xhtml")
             })
+            .map(|(href, _)| href.clone())
     });
     let ncx_href = manifest
         .values()
         .find(|(candidate, media_type)| {
             ncx_href.as_deref() == Some(candidate.as_str())
-                || media_type.as_deref() == Some("application/x-dtbncx+xml")
+                || normalized_media_type(media_type.as_deref()).as_deref()
+                    == Some("application/x-dtbncx+xml")
         })
         .map(|(candidate, _)| candidate.clone());
 
@@ -155,17 +157,21 @@ fn parse_package(xml: &str, _path: &str) -> Result<PackageParts, EpubError> {
     let mut in_spine = false;
     loop {
         match r.read_event() {
-            Ok(Event::Start(e)) if e.name().as_ref() == b"manifest" => in_manifest = true,
-            Ok(Event::End(e)) if e.name().as_ref() == b"manifest" => in_manifest = false,
-            Ok(Event::Start(e)) if e.name().as_ref() == b"spine" => {
+            Ok(Event::Start(e)) if local_name(e.name().as_ref()) == b"manifest" => {
+                in_manifest = true
+            }
+            Ok(Event::End(e)) if local_name(e.name().as_ref()) == b"manifest" => {
+                in_manifest = false
+            }
+            Ok(Event::Start(e)) if local_name(e.name().as_ref()) == b"spine" => {
                 in_spine = true;
                 if let Some(v) = attr(&e, b"toc") {
                     ncx = Some(v);
                 }
             }
-            Ok(Event::End(e)) if e.name().as_ref() == b"spine" => in_spine = false,
+            Ok(Event::End(e)) if local_name(e.name().as_ref()) == b"spine" => in_spine = false,
             Ok(Event::Empty(e)) | Ok(Event::Start(e))
-                if e.name().as_ref() == b"item" && in_manifest =>
+                if local_name(e.name().as_ref()) == b"item" && in_manifest =>
             {
                 if let Some(id) = attr(&e, b"id") {
                     let href = attr(&e, b"href").unwrap_or_default();
@@ -176,13 +182,17 @@ fn parse_package(xml: &str, _path: &str) -> Result<PackageParts, EpubError> {
                     {
                         nav = Some(href.clone());
                     }
-                    if attr(&e, b"media-type").as_deref() == Some("application/x-dtbncx+xml") {
+                    if attr(&e, b"media-type")
+                        .as_deref()
+                        .map(|value| value.eq_ignore_ascii_case("application/x-dtbncx+xml"))
+                        .unwrap_or(false)
+                    {
                         ncx = Some(href.clone());
                     }
                     manifest.insert(id, (href, attr(&e, b"media-type")));
                 }
             }
-            Ok(Event::Empty(e)) if e.name().as_ref() == b"itemref" && in_spine => {
+            Ok(Event::Empty(e)) if local_name(e.name().as_ref()) == b"itemref" && in_spine => {
                 if let Some(id) = attr(&e, b"idref") {
                     spine.push(id);
                 }
@@ -228,14 +238,26 @@ fn resolve_resource_path(base: &Path, href: &str) -> String {
 fn attr(e: &quick_xml::events::BytesStart<'_>, key: &[u8]) -> Option<String> {
     e.attributes()
         .flatten()
-        .find(|a| a.key.as_ref() == key)
+        .find(|a| local_name(a.key.as_ref()) == key)
         .and_then(|a| String::from_utf8(a.value.into_owned()).ok())
 }
+
+fn local_name(name: &[u8]) -> &[u8] {
+    name.rsplit(|byte| *byte == b':').next().unwrap_or(name)
+}
+
+fn normalized_media_type(value: Option<&str>) -> Option<String> {
+    value
+        .and_then(|raw| raw.split(';').next())
+        .map(|raw| raw.trim().to_ascii_lowercase())
+        .filter(|value| !value.is_empty())
+}
+
 fn xml_attr(xml: &str, element: &[u8], key: &[u8]) -> Option<String> {
     let mut r = Reader::from_str(xml);
     loop {
         match r.read_event().ok()? {
-            Event::Empty(e) | Event::Start(e) if e.name().as_ref() == element => {
+            Event::Empty(e) | Event::Start(e) if local_name(e.name().as_ref()) == element => {
                 return attr(&e, key)
             }
             Event::Eof => return None,
@@ -246,13 +268,23 @@ fn xml_attr(xml: &str, element: &[u8], key: &[u8]) -> Option<String> {
 fn xml_text(xml: &str, wanted: &[u8]) -> Option<String> {
     let mut r = Reader::from_str(xml);
     let mut on = false;
-    let mut out = None;
+    let mut out = String::new();
     loop {
         match r.read_event().ok()? {
-            Event::Start(e) if e.name().as_ref() == wanted => on = true,
-            Event::Text(e) if on => out = Some(String::from_utf8_lossy(e.as_ref()).into_owned()),
-            Event::End(e) if e.name().as_ref() == wanted => return out,
-            Event::Eof => return out,
+            Event::Start(e) if local_name(e.name().as_ref()) == wanted => on = true,
+            Event::Start(_) if on => {}
+            Event::Text(e) if on => {
+                out.push_str(&String::from_utf8_lossy(e.as_ref()));
+                out.push(' ');
+            }
+            Event::CData(e) if on => {
+                out.push_str(&String::from_utf8_lossy(e.as_ref()));
+                out.push(' ');
+            }
+            Event::End(e) if on && local_name(e.name().as_ref()) == wanted => {
+                return Some(out.split_whitespace().collect::<Vec<_>>().join(" "))
+            }
+            Event::Eof => return Some(out.split_whitespace().collect::<Vec<_>>().join(" ")),
             _ => {}
         }
     }
@@ -295,26 +327,138 @@ fn toc_levels(toc: &[TocItem]) -> HashMap<String, u32> {
     m
 }
 fn first_heading(html: &str) -> Option<String> {
-    let lower = html.to_ascii_lowercase();
-    let start = lower.find("<h1")?;
-    let gt = lower[start..].find('>')? + start;
-    let end = lower[gt..].find("</h1>")? + gt;
-    Some(html[gt + 1..end].trim().into())
+    let mut reader = Reader::from_str(html);
+    let mut heading = false;
+    let mut text = String::new();
+    loop {
+        match reader.read_event().ok()? {
+            Event::Start(event) if is_heading(event.name().as_ref()) => heading = true,
+            Event::Text(event) if heading => {
+                text.push_str(&String::from_utf8_lossy(event.as_ref()))
+            }
+            Event::End(event) if heading && is_heading(event.name().as_ref()) => {
+                let value = text.split_whitespace().collect::<Vec<_>>().join(" ");
+                return (!value.is_empty()).then_some(value);
+            }
+            Event::Eof => return None,
+            _ => {}
+        }
+    }
+}
+
+fn is_heading(name: &[u8]) -> bool {
+    let name = local_name(name);
+    name.len() == 2 && name[0].eq_ignore_ascii_case(&b'h') && (b'1'..=b'6').contains(&name[1])
 }
 fn html_to_text(html: &str) -> String {
-    let mut out = String::with_capacity(html.len());
-    let mut tag = false;
-    for c in html.chars() {
-        if c == '<' {
-            tag = true;
-            out.push('\n')
-        } else if c == '>' {
-            tag = false
-        } else if !tag {
-            out.push(c)
+    let mut reader = Reader::from_str(html);
+    let mut skip_depth = 0usize;
+    let mut out = String::new();
+    loop {
+        match reader.read_event() {
+            Ok(Event::Start(event)) => {
+                let name = event.name().as_ref().to_vec();
+                let name = local_name(&name);
+                if skip_depth > 0 {
+                    skip_depth += 1;
+                } else if matches!(name, b"head" | b"script" | b"style" | b"title") {
+                    skip_depth = 1;
+                } else if is_block_element(name) {
+                    out.push(' ');
+                }
+            }
+            Ok(Event::End(event)) => {
+                let name = event.name().as_ref().to_vec();
+                let name = local_name(&name);
+                if skip_depth > 0 {
+                    skip_depth -= 1;
+                } else if is_block_element(name) {
+                    out.push(' ');
+                }
+            }
+            Ok(Event::Text(event)) if skip_depth == 0 => {
+                out.push_str(&String::from_utf8_lossy(event.as_ref()));
+                out.push(' ');
+            }
+            Ok(Event::CData(event)) if skip_depth == 0 => {
+                out.push_str(&String::from_utf8_lossy(event.as_ref()));
+                out.push(' ');
+            }
+            Ok(Event::Eof) | Err(_) => break,
+            _ => {}
         }
     }
     out.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+fn is_block_element(name: &[u8]) -> bool {
+    matches!(
+        name,
+        b"address"
+            | b"article"
+            | b"aside"
+            | b"blockquote"
+            | b"br"
+            | b"div"
+            | b"dl"
+            | b"dt"
+            | b"dd"
+            | b"figure"
+            | b"footer"
+            | b"h1"
+            | b"h2"
+            | b"h3"
+            | b"h4"
+            | b"h5"
+            | b"h6"
+            | b"header"
+            | b"hr"
+            | b"li"
+            | b"main"
+            | b"nav"
+            | b"ol"
+            | b"p"
+            | b"pre"
+            | b"section"
+            | b"table"
+            | b"td"
+            | b"th"
+            | b"tr"
+            | b"ul"
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{first_heading, html_to_text, parse_epub};
+    use std::io::{Cursor, Write};
+    use zip::{write::SimpleFileOptions, ZipWriter};
+
+    #[test]
+    fn extracts_heading_and_text_without_language_specific_rules() {
+        let html = r#"<html xmlns="http://www.w3.org/1999/xhtml"><body><h2>Пролог</h2><p>Texto inicial.</p></body></html>"#;
+        assert_eq!(first_heading(html).as_deref(), Some("Пролог"));
+        assert_eq!(html_to_text(html), "Пролог Texto inicial.");
+    }
+
+    #[test]
+    fn parses_prefixed_epub_namespaces_and_preserves_content() {
+        let mut cursor = Cursor::new(Vec::new());
+        {
+            let mut zip = ZipWriter::new(&mut cursor);
+            let options = SimpleFileOptions::default();
+            zip.start_file("META-INF/container.xml", options).unwrap();
+            zip.write_all(br#"<c:container xmlns:c="urn:oasis:names:tc:opendocument:xmlns:container"><c:rootfiles><c:rootfile full-path="OPS/package.opf"/></c:rootfiles></c:container>"#).unwrap();
+            zip.start_file("OPS/package.opf", options).unwrap();
+            zip.write_all(br#"<opf:package xmlns:opf="http://www.idpf.org/2007/opf"><opf:metadata><dc:title xmlns:dc="x">Livro</dc:title></opf:metadata><opf:manifest><opf:item id="chapter" href="chapter.xhtml" media-type="APPLICATION/XHTML+XML"/></opf:manifest><opf:spine><opf:itemref idref="chapter"/></opf:spine></opf:package>"#).unwrap();
+            zip.start_file("OPS/chapter.xhtml", options).unwrap();
+            zip.write_all(br#"<x:html xmlns:x="http://www.w3.org/1999/xhtml"><x:body><x:h2>Chapter</x:h2><x:p>Readable content.</x:p></x:body></x:html>"#).unwrap();
+            zip.finish().unwrap();
+        }
+        let book = parse_epub(Cursor::new(cursor.into_inner())).unwrap();
+        assert_eq!(book.chapters.len(), 1);
+        assert_eq!(book.chapters[0].text, "Chapter Readable content.");
+    }
 }
 
 #[allow(dead_code)]

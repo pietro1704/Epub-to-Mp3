@@ -13,7 +13,8 @@ use rand::{distr::Alphanumeric, Rng};
 use sha2::{Digest, Sha256};
 use tokio::{net::TcpStream, sync::Semaphore, time::timeout};
 use tokio_tungstenite::{
-    tungstenite::{client::IntoClientRequest, http::HeaderValue, Message},
+    client_async_tls_with_config,
+    tungstenite::{http::HeaderValue, Message},
     MaybeTlsStream, WebSocketStream,
 };
 use url::Url;
@@ -160,23 +161,19 @@ pub struct WebSocketTransport;
 impl EdgeTransport for WebSocketTransport {
     fn connect<'a>(&'a self, request: Request<()>) -> TransportFuture<'a> {
         Box::pin(async move {
-            let mut request = request.map(|_| ()).into_client_request()
-                .map_err(|e| EdgeError::Transport(e.to_string()))?;
-            request.headers_mut().remove("Sec-WebSocket-Key");
-            request.headers_mut().remove("Sec-WebSocket-Version");
-            request.headers_mut().remove("Sec-WebSocket-Extensions");
+            let mut request = request;
+            request.headers_mut().remove("sec-websocket-key");
+            request.headers_mut().remove("sec-websocket-version");
+            request.headers_mut().remove("sec-websocket-extensions");
             let uri = request.uri().clone();
-            let host = uri.host().ok_or_else(|| EdgeError::Url("missing host".into()))?;
+            let host = uri
+                .host()
+                .ok_or_else(|| EdgeError::Url("missing host".into()))?;
             let port = uri.port_u16().unwrap_or(443);
             let stream = TcpStream::connect((host, port))
                 .await
-                .map_err(|e| EdgeError::Transport(e.to_string()))?;
-            let (socket, _) = tokio_tungstenite::client_async_tls_with_config(
-                request,
-                stream,
-                None,
-                None,
-            )
+                .map_err(|error| EdgeError::Transport(error.to_string()))?;
+            let (socket, _) = client_async_tls_with_config(request, stream, None, None)
             .await
                 .map_err(|e| EdgeError::Transport(e.to_string()))?;
             Ok(socket)
