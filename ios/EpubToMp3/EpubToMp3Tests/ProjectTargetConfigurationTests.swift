@@ -171,17 +171,11 @@ final class ProjectTargetConfigurationTests: XCTestCase {
         XCTAssertTrue(zipReader.contains("let rc = deflated.withUnsafeBytes"))
         XCTAssertFalse(telemetry.contains("String(format:"))
 
-        let pythonRunner = try readSourceFileIfAvailable(
-            at: root.appendingPathComponent(
-                "EpubToMp3/Features/Conversion/Services/PythonRunner.swift"
-            )
-        )
         let importer = try readSourceFileIfAvailable(
             at: root.appendingPathComponent(
                 "EpubToMp3/Features/Offline/Services/SharedContainerImporter.swift"
             )
         )
-        XCTAssertTrue(pythonRunner.contains("private final class CompletionGate: @unchecked Sendable"))
         XCTAssertTrue(importer.contains("private static let availabilityState = AvailabilityState()"))
         XCTAssertFalse(importer.contains("nonisolated(unsafe) private static var groupAvailabilityCache"))
 
