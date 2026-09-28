@@ -163,6 +163,8 @@ impl EdgeTransport for WebSocketTransport {
             let mut request = request.map(|_| ()).into_client_request()
                 .map_err(|e| EdgeError::Transport(e.to_string()))?;
             request.headers_mut().remove("Sec-WebSocket-Key");
+            request.headers_mut().remove("Sec-WebSocket-Version");
+            request.headers_mut().remove("Sec-WebSocket-Extensions");
             let uri = request.uri().clone();
             let host = uri.host().ok_or_else(|| EdgeError::Url("missing host".into()))?;
             let port = uri.port_u16().unwrap_or(443);
