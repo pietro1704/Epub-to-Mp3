@@ -55,6 +55,7 @@ impl Default for CliOptions {
 }
 
 fn main() {
+    let _ = rustls::crypto::ring::default_provider().install_default();
     let raw = env::args().skip(1).collect::<Vec<_>>();
     match run(raw) {
         Ok(code) => std::process::exit(code),
@@ -119,17 +120,19 @@ fn run(raw: Vec<String>) -> Result<i32, String> {
 
     let config = converter_core::config::AppConfig::from_env();
     for (position, input) in all.iter().enumerate() {
-        let request = converter_core::worker::ConversionRequest {
-            input: PathBuf::from(input),
-            job_id: format!("cli-{}-{}", std::process::id(), position),
-            engine: Some(options.engine.clone()),
-            voice: options.voice.clone(),
-            language: None,
-            no_parallel: options.no_parallel,
-        };
-        let worker = converter_core::worker::ConversionWorker::new(config.clone())
-            .map_err(|error| error.to_string())?;
-        let manifest = worker.run(request).map_err(|error| error.to_string())?;
+        let session = converter_core::embedded::EmbeddedConversionSession::open(
+            input,
+            converter_core::embedded::EmbeddedConversionOptions {
+                job_id: Some(format!("cli-{}-{}", std::process::id(), position)),
+                engine: Some(options.engine.clone()),
+                voice: options.voice.clone(),
+                language: None,
+                no_parallel: options.no_parallel,
+            },
+            config.clone(),
+        )
+        .map_err(|error| error.to_string())?;
+        let manifest = session.convert().map_err(|error| error.to_string())?;
         println!(
             "{}",
             serde_json::to_string_pretty(&manifest).map_err(|error| error.to_string())?
@@ -285,7 +288,7 @@ fn supported(path: &Path) -> bool {
         .unwrap_or(false)
 }
 
-fn fuzzy_find_book(query: &str) -> Option<PathBuf> {
+fn fuzzy_find_book(query: &str) -> Option<std::path::PathBuf> {
     let tokens = norm_tokens(query);
     if tokens.is_empty() {
         return None;
@@ -437,15 +440,21 @@ fn clear_global_cache(assume_yes: bool) -> Result<(), String> {
 }
 
 fn show_structure(inputs: &[String]) -> Result<i32, String> {
+    let config = converter_core::config::AppConfig::from_env();
     for input in inputs {
         println!("Structure: {input}");
         if input.to_ascii_lowercase().ends_with(".epub") {
-            let file = fs::File::open(input).map_err(|error| error.to_string())?;
-            let book = converter_core::epub::parse_epub(file).map_err(|error| error.to_string())?;
-            if !book.title.is_empty() {
-                println!("Title: {}", book.title);
+            let session = converter_core::embedded::EmbeddedConversionSession::open(
+                input,
+                Default::default(),
+                config.clone(),
+            )
+            .map_err(|error| error.to_string())?;
+            let metadata = session.metadata();
+            if !metadata.title.is_empty() {
+                println!("Title: {}", metadata.title);
             }
-            for chapter in book.chapters {
+            for chapter in &metadata.chapters {
                 println!("{} {}", chapter.index, chapter.name);
             }
         } else {
@@ -463,6 +472,22 @@ fn home_dir() -> PathBuf {
     env::var_os("HOME")
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from("."))
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn cli_sources_only_the_embedded_core_api() {
+        let source = include_str!("main.rs");
+        assert!(source.contains("EmbeddedConversionSession"));
+        assert!(!source
+            .lines()
+            .any(|line| line.trim_start().starts_with("use converter_server")));
+        let forbidden_client = ["re", "qwest"].concat();
+        assert!(!source.contains(&forbidden_client));
+        let forbidden_http = ["http", "://"].concat();
+        assert!(!source.contains(&forbidden_http));
+    }
 }
 
 trait ExpandPath {

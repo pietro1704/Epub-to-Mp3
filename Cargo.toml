@@ -2,6 +2,7 @@
 resolver = "2"
 members = [
     "crates/converter-core",
+    "crates/converter-ffi",
     "crates/converter-server",
     "crates/converter-cli",
     "benches",
