@@ -167,7 +167,7 @@ impl ConversionWorker {
             let mp3 = output_dir.join(format!("{stem}.mp3"));
             let engine = select_engine(request.engine.as_deref(), &self.config);
             if !mp3.is_file() {
-                self.synthesize(
+                self.synthesize_with_timeout(
                     &engine,
                     &text,
                     &mp3,
@@ -224,6 +224,9 @@ impl ConversionWorker {
                     eprintln!("Edge synthesis failed; falling back to Piper: {error}");
                 }
             }
+            return Err(WorkerError::Piper(
+                "Edge synthesis failed and Piper fallback was unavailable".into(),
+            ));
         }
         let binary = std::env::var_os("PIPER_BINARY")
             .map(PathBuf::from)
@@ -248,6 +251,35 @@ impl ConversionWorker {
         piper::synthesize(&c, text, out, &self.cancel)
             .map(|_| ())
             .map_err(|e| WorkerError::Piper(e.to_string()))
+    }
+    fn synthesize_with_timeout(
+        &self,
+        engine: &str,
+        text: &str,
+        out: &Path,
+        voice: Option<&str>,
+        language: Option<&str>,
+    ) -> Result<(), WorkerError> {
+        let timeout_secs = std::env::var("RUST_CHAPTER_TIMEOUT_SECONDS")
+            .ok()
+            .and_then(|value| value.parse::<u64>().ok())
+            .unwrap_or(180);
+        let result = std::thread::scope(|scope| {
+            let handle = scope.spawn(|| self.synthesize(engine, text, out, voice, language));
+            let started = std::time::Instant::now();
+            while !handle.is_finished() {
+                if self.cancel.is_cancelled()
+                    || started.elapsed() >= std::time::Duration::from_secs(timeout_secs)
+                {
+                    return Err(WorkerError::Piper("chapter synthesis timed out".into()));
+                }
+                std::thread::sleep(std::time::Duration::from_millis(100));
+            }
+            handle
+                .join()
+                .unwrap_or_else(|_| Err(WorkerError::Piper("synthesis thread panicked".into())))
+        });
+        result
     }
     #[allow(dead_code)]
     fn emit(&self, event: ProgressEvent) {
