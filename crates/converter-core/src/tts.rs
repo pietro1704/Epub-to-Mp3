@@ -163,8 +163,13 @@ impl EdgeTransport for WebSocketTransport {
         Box::pin(async move {
             let request = request.map(|_| ()).into_client_request()
                 .map_err(|e| EdgeError::Transport(e.to_string()))?;
-            let (socket, _) = connect_async(request)
-                .await
+            let (socket, _) = tokio_tungstenite::connect_async_tls_with_config(
+                request,
+                None,
+                false,
+                None,
+            )
+            .await
                 .map_err(|e| EdgeError::Transport(e.to_string()))?;
             Ok(socket)
         })
