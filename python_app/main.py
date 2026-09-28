@@ -4508,11 +4508,15 @@ class ConverterApplication:
         if getattr(args, "auto_fix_output", None) is not None:
             overrides["auto_fix_output"] = bool(getattr(args, "auto_fix_output"))
 
-        # "auto" is a UI-friendly alias kept for parity with the web form; it
-        # means "let the default (Edge) engine handle it" at the CLI layer.
+        # "auto" is a UI-friendly alias kept for parity with the web form.
         engine_choice = args.engine or "edge"
         if engine_choice == "auto":
             engine_choice = "edge"
+        if engine_choice == "rust":
+            raise RuntimeError(
+                "The Rust backend is invoked through the Rust CLI; use "
+                "./convert-rust or mise exec -- cargo run -p converter-cli -- ..."
+            )
         config = self.config.create_conversion_config(
             engine=engine_choice,
             voice=args.voice,
@@ -4874,9 +4878,9 @@ def _add_conversion_arguments(
     )
     engine_arg = parser.add_argument(
         "--engine",
-        choices=["auto", "edge", "piper"],
+        choices=["auto", "edge", "piper", "rust"],
         default="edge",
-        help="TTS engine to use (default: edge). auto=edge (alias), edge=fast cloud, piper=offline fallback",
+        help="TTS engine to use (default: edge). rust uses the embedded Rust backend",
     )
     parser.add_argument(
         "--fallback-engine",
