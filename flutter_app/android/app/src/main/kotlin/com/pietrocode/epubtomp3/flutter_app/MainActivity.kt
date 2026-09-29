@@ -28,6 +28,7 @@ import java.io.InputStream
 import java.util.Locale
 import java.util.concurrent.Executors
 
+
 /**
  * Hosts Flutter and Android document ingestion.
  * Incoming content URIs are copied into app-private storage before they are
@@ -37,6 +38,7 @@ class MainActivity : AudioServiceActivity() {
 
     private val embeddedLogTag = "EmbeddedConverter"
     private val converterExecutor = Executors.newSingleThreadExecutor()
+
 
     companion object {
         private const val CHANNEL = "epub_to_mp3/python"
@@ -201,6 +203,11 @@ class MainActivity : AudioServiceActivity() {
                         if (backendUrl.isNullOrBlank()) {
                             result.error("BAD_ARGS", "backendUrl is required", null)
                         } else {
+                            val payloadFile = persistBackgroundPayload(jobId, text, voice, outputPath)
+                            if (payloadFile == null) {
+                                result.error("IO_ERROR", "Could not persist background conversion payload", null)
+                                return@setMethodCallHandler
+                            }
                             getSharedPreferences("flutter_epub_to_mp3", MODE_PRIVATE)
                                 .edit().putString(BackgroundChapterWorker.KEY_BACKEND_URL, backendUrl).apply()
                             val request = OneTimeWorkRequestBuilder<BackgroundChapterWorker>()
@@ -211,9 +218,7 @@ class MainActivity : AudioServiceActivity() {
                                     .build(),
                             )
                             .setInputData(Data.Builder()
-                                .putString(BackgroundChapterWorker.KEY_TEXT, text)
-                                .putString(BackgroundChapterWorker.KEY_VOICE, voice)
-                                .putString(BackgroundChapterWorker.KEY_OUTPUT, outputPath)
+                                .putString(BackgroundChapterWorker.KEY_PAYLOAD, payloadFile.absolutePath)
                                 .build())
                             .build()
                             WorkManager.getInstance(applicationContext).enqueueUniqueWork(
@@ -264,15 +269,18 @@ class MainActivity : AudioServiceActivity() {
                             result.error("BAD_ARGS", "inputPath is required", null)
                         } else {
                             Log.i(embeddedLogTag, "parse start input=$inputPath")
-                            ensureBundledPiperModel()
-                            System.setProperty("PIPER_MODEL", ensureBundledPiperModel())
-                            val native = nativeParse(inputPath)
-                            if (native == null) {
-                                Log.e(embeddedLogTag, "parse failed: ${nativeLastError()}")
-                                result.error(EMBEDDED_UNAVAILABLE, nativeLastError(), null)
-                            } else {
-                                Log.i(embeddedLogTag, "parse success bytes=${native.length}")
-                                result.success(native)
+                            converterExecutor.execute {
+                                try {
+                                    ensureBundledPiperModel()
+                                    System.setProperty("PIPER_MODEL", ensureBundledPiperModel())
+                                    val native = nativeParse(inputPath)
+                                    runOnUiThread {
+                                        if (native == null) result.error(EMBEDDED_UNAVAILABLE, nativeLastError(), null)
+                                        else result.success(native)
+                                    }
+                                } catch (error: Throwable) {
+                                    runOnUiThread { result.error(EMBEDDED_UNAVAILABLE, error.message, null) }
+                                }
                             }
                         }
                     }
@@ -325,6 +333,24 @@ class MainActivity : AudioServiceActivity() {
     override fun onDestroy() {
         converterExecutor.shutdownNow()
         super.onDestroy()
+    }
+
+    private fun persistBackgroundPayload(jobId: String, text: String, voice: String, outputPath: String): File? {
+        val dir = File(cacheDir, "background_conversion").apply { mkdirs() }
+        val target = File(dir, "${jobId.replace(Regex("[^A-Za-z0-9_-]"), "_")}.json")
+        val temp = File(dir, "${target.name}.${System.nanoTime()}.tmp")
+        return try {
+            JSONObject().apply {
+                put("text", text)
+                put("voice", voice)
+                put("outputPath", outputPath)
+            }.toString().also { temp.writeText(it, Charsets.UTF_8) }
+            if (!temp.renameTo(target)) throw java.io.IOException("Could not atomically publish payload")
+            target
+        } catch (_: Exception) {
+            temp.delete()
+            null
+        }
     }
 
     private fun handleIncomingIntent(incoming: Intent?) {

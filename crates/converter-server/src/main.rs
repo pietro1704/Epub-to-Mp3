@@ -46,6 +46,7 @@ struct AppState {
 struct Job {
     snapshot: JobSnapshot,
     events: broadcast::Sender<SseMessage>,
+    cancellation: converter_core::piper::CancellationToken,
 }
 #[derive(Clone, Debug)]
 enum SseMessage {
@@ -308,8 +309,16 @@ async fn create_job(State(state): State<AppState>, Json(form): Json<CreateJob>) 
         Job {
             snapshot,
             events: sender.clone(),
+            cancellation: converter_core::piper::CancellationToken::default(),
         },
     );
+    let cancellation = state
+        .jobs
+        .read()
+        .await
+        .get(&id)
+        .map(|job| job.cancellation.clone())
+        .expect("job inserted before worker starts");
     let worker = match ConversionWorker::new(state.config.clone()) {
         Ok(worker) => worker,
         Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
@@ -330,30 +339,41 @@ async fn create_job(State(state): State<AppState>, Json(form): Json<CreateJob>) 
         let worker = worker.with_progress(Arc::new(move |event: ProgressEvent| {
             if let Ok(mut guard) = progress_jobs.try_write() {
                 if let Some(job) = guard.get_mut(&event.job_id) {
-                    job.snapshot.state = "running".into();
-                    job.snapshot.chapters_total = event.chapters_total as u32;
-                    job.snapshot.chapters_completed = event.chapters_completed as u32;
-                    job.snapshot.progress_percent = event.percent;
-                    job.snapshot.engine = event.engine.clone();
-                    job.snapshot.events.push(event.message.clone());
-                    job.snapshot.raw_log.push(event.message);
-                    let _ = progress_sender.send(SseMessage::Chapter(job.snapshot.clone()));
-                }
+                job.snapshot.state = "running".into();
+                job.snapshot.chapters_total = event.chapters_total as u32;
+                job.snapshot.chapters_completed = event.chapters_completed as u32;
+                job.snapshot.progress_percent = event.percent;
+                job.snapshot.engine = event.engine.clone();
+                job.snapshot.events.push(event.message.clone());
+                job.snapshot.raw_log.push(event.message);
+                let _ = progress_sender.send(SseMessage::Chapter(job.snapshot.clone()));
             }
+        } else {
+            let mut guard = progress_jobs.blocking_write();
+            if let Some(job) = guard.get_mut(&event.job_id) {
+                job.snapshot.state = "running".into();
+                job.snapshot.chapters_total = event.chapters_total as u32;
+                job.snapshot.chapters_completed = event.chapters_completed as u32;
+                job.snapshot.progress_percent = event.percent;
+                job.snapshot.engine = event.engine.clone();
+                job.snapshot.events.push(event.message.clone());
+                job.snapshot.raw_log.push(event.message);
+                let _ = progress_sender.send(SseMessage::Chapter(job.snapshot.clone()));
+            }
+        }
         }));
-        let result = worker.run(request);
-        if let Ok(mut guard) = jobs.try_write() {
-            if let Some(job) = guard.get_mut(&id) {
-                match result {
-                    Ok(manifest) => apply_manifest(&mut job.snapshot, &manifest),
-                    Err(error) => {
-                        job.snapshot.state = "failed".into();
-                        job.snapshot.error = Some(error.to_string());
-                        job.snapshot.events.push(error.to_string());
-                    }
+        let result = worker.with_cancellation(cancellation).run(request);
+        let mut guard = jobs.blocking_write();
+        if let Some(job) = guard.get_mut(&id) {
+            match result {
+                Ok(manifest) => apply_manifest(&mut job.snapshot, &manifest),
+                Err(error) => {
+                    job.snapshot.state = if matches!(error, converter_core::worker::WorkerError::Cancelled) { "cancelled".into() } else { "failed".into() };
+                    job.snapshot.error = Some(error.to_string());
+                    job.snapshot.events.push(error.to_string());
                 }
-                let _ = sender.send(SseMessage::Snapshot(job.snapshot.clone()));
             }
+            let _ = sender.send(SseMessage::Snapshot(job.snapshot.clone()));
         }
     });
     (
@@ -411,6 +431,7 @@ async fn cancel(AxumPath(id): AxumPath<String>, State(state): State<AppState>) -
         )
             .into_response(),
         Some(job) => {
+            job.cancellation.cancel();
             job.snapshot.state = if job.snapshot.state == "queued" {
                 "cancelled"
             } else {

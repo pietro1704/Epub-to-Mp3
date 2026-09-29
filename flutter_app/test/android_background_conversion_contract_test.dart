@@ -11,6 +11,12 @@ void main() {
     expect(kotlin, contains('convert_chapter'));
     expect(activity, contains('enqueueChapter'));
     expect(activity, contains('enqueueUniqueWork'));
+    expect(activity, contains('KEY_PAYLOAD'));
+    expect(activity, contains('persistBackgroundPayload'));
+    expect(activity, contains('converterExecutor.execute'));
+    expect(kotlin, contains('Dispatchers.IO'));
+    expect(kotlin, contains('ensureActive'));
+    expect(kotlin, contains('atomically publish chapter audio'));
     expect(activity, contains('setRequiresBatteryNotLow'));
     expect(activity, contains('setRequiresStorageNotLow'));
     expect(activity, contains('epub_to_mp3/storage'));

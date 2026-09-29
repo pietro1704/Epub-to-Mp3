@@ -7,11 +7,16 @@ import android.os.Build
 import androidx.core.app.NotificationCompat
 import androidx.work.CoroutineWorker
 import java.io.File
+import java.io.IOException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.withContext
 import java.net.HttpURLConnection
 import java.net.URL
 import java.net.URLEncoder
 import androidx.work.ForegroundInfo
 import androidx.work.WorkerParameters
+import org.json.JSONObject
 
 
 class BackgroundChapterWorker(
@@ -19,20 +24,29 @@ class BackgroundChapterWorker(
     params: WorkerParameters,
 ) : CoroutineWorker(appContext, params) {
     override suspend fun doWork(): Result {
-        val text = inputData.getString(KEY_TEXT).orEmpty()
-        val voice = inputData.getString(KEY_VOICE).orEmpty()
-        val outputPath = inputData.getString(KEY_OUTPUT).orEmpty()
+        val payloadPath = inputData.getString(KEY_PAYLOAD).orEmpty()
+        val payload = try {
+            JSONObject(File(payloadPath).readText(Charsets.UTF_8))
+        } catch (_: Exception) {
+            return Result.failure()
+        }
+        val text = payload.optString("text")
+        val voice = payload.optString("voice")
+        val outputPath = payload.optString("outputPath")
         if (text.isBlank() || voice.isBlank() || outputPath.isBlank()) return Result.failure()
         return try {
-            convert_chapter(text, voice, outputPath)
+            setForeground(createForegroundInfo())
+            withContext(Dispatchers.IO) { convert_chapter(text, voice, outputPath) }
             Result.success()
+        } catch (_: kotlinx.coroutines.CancellationException) {
+            throw _
         } catch (_: Exception) {
             Result.failure()
         }
     }
 
     /** Calls the configured Rust HTTP backend and writes its MP3 result. */
-    private fun convert_chapter(text: String, voice: String, outputPath: String) {
+    private suspend fun convert_chapter(text: String, voice: String, outputPath: String) {
         val backendUrl = applicationContext
             .getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
             .getString(KEY_BACKEND_URL, null)
@@ -55,16 +69,23 @@ class BackgroundChapterWorker(
             setRequestProperty("Content-Type", "application/x-www-form-urlencoded")
         }
         try {
+            ensureActive()
             connection.outputStream.use { it.write(payload.toByteArray(Charsets.UTF_8)) }
             if (connection.responseCode !in 200..299) {
                 throw IllegalStateException("Backend returned HTTP ${connection.responseCode}")
             }
             val bytes = connection.inputStream.use { it.readBytes() }
+            ensureActive()
             if (bytes.isEmpty()) throw IllegalStateException("Backend returned an empty result")
-            File(outputPath).apply {
+            val target = File(outputPath).apply {
                 parentFile?.mkdirs()
-                writeBytes(bytes)
             }
+            val temp = File(target.parentFile, ".${target.name}.${System.nanoTime()}.tmp")
+            try {
+                temp.writeBytes(bytes)
+                ensureActive()
+                if (!temp.renameTo(target)) throw IOException("Could not atomically publish chapter audio")
+            } finally { temp.delete() }
         } finally {
             connection.disconnect()
         }
@@ -87,9 +108,7 @@ class BackgroundChapterWorker(
     }
 
     companion object {
-        const val KEY_TEXT = "text"
-        const val KEY_VOICE = "voice"
-        const val KEY_OUTPUT = "outputPath"
+        const val KEY_PAYLOAD = "payloadPath"
         const val KEY_BACKEND_URL = "backendUrl"
         const val PREFERENCES = "flutter_epub_to_mp3"
         const val REQUEST_TIMEOUT_MS = 120_000

@@ -843,6 +843,7 @@ _JOB_WORKERS = max(1, int(os.getenv("JOB_WORKERS", "1") or "1"))  # Processar 1 
 _job_queue: Optional[asyncio.Queue[str]] = None
 _job_workers: list[asyncio.Task] = []
 _jobs_in_queue: set[str] = set()
+_job_tasks: dict[str, asyncio.Task] = {}
 _worker_scale_lock = asyncio.Lock()
 
 _pending_uploads: Dict[str, dict] = {}
@@ -1660,6 +1661,22 @@ def _enqueue_job(job_id: str) -> bool:
         return False
 
 
+def _schedule_job_conversion(job_id: str) -> bool:
+    """Start at most one in-process conversion task for a job."""
+    task = _job_tasks.get(job_id)
+    if task is not None and not task.done():
+        return False
+    task = asyncio.create_task(process_conversion(job_id))
+    _job_tasks[job_id] = task
+
+    def _clear(done: asyncio.Task, *, expected: asyncio.Task = task) -> None:
+        if _job_tasks.get(job_id) is expected:
+            _job_tasks.pop(job_id, None)
+
+    task.add_done_callback(_clear)
+    return True
+
+
 async def _job_worker(worker_id: int) -> None:
     """Dedicated worker that processes jobs from the global queue."""
     assert _job_queue is not None
@@ -1675,7 +1692,10 @@ async def _job_worker(worker_id: int) -> None:
             if state in {"finished", "cancelled"}:
                 continue
             logger.info("Worker %s converting job %s (%s)", worker_id, job_id, state or "queued")
-            await process_conversion(job_id)
+            _schedule_job_conversion(job_id)
+            task = _job_tasks.get(job_id)
+            if task is not None:
+                await task
         except Exception as exc:  # pragma: no cover - defensive
             logger.error(
                 "Worker %s failed processing job %s: %s", worker_id, job_id, exc, exc_info=True
@@ -1731,7 +1751,7 @@ async def _resume_pending_jobs() -> None:
             pass
         if not _enqueue_job(job_id):
             logger.warning("Job queue unavailable during resume, executing inline for %s", job_id)
-            asyncio.create_task(process_conversion(job_id))
+            _schedule_job_conversion(job_id)
 
 
 # Load existing jobs from disk on startup
@@ -2256,7 +2276,7 @@ async def _job_watchdog():
             await _scale_worker_pool(target_workers)
             stalled_inline = _detect_stalled_jobs()
             for stalled_id in stalled_inline:
-                asyncio.create_task(process_conversion(stalled_id))
+                _schedule_job_conversion(stalled_id)
         except Exception as exc:  # pragma: no cover - defensive
             logger.error("Job watchdog encountered an error: %s", exc, exc_info=True)
 
@@ -2752,7 +2772,7 @@ async def convert_ebook(
         logger.info(f"Job {job_id} created and persisted successfully")
 
     if not _enqueue_job(job_id):
-        background_tasks.add_task(process_conversion, job_id)
+        background_tasks.add_task(_schedule_job_conversion, job_id)
     return {"jobId": job_id}
 
 

@@ -92,6 +92,10 @@ impl ConversionWorker {
         self.progress = Some(sink);
         self
     }
+    pub fn with_cancellation(mut self, cancel: CancellationToken) -> Self {
+        self.cancel = cancel;
+        self
+    }
     pub fn cancel(&self) {
         self.cancel.cancel();
     }

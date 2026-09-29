@@ -147,36 +147,17 @@ final class MacBookDetailViewController: NSViewController {
     /// stays local by default; server-only formats and the explicit remote
     /// provider use the same API/SSE contract as iOS.
     @objc private func tapListen() {
-        if false {
-            Task { [weak self] in
-                guard let self else { return }
-                do {
-                    let url = try await self.library.openBookFileAsync(id: self.book.id)
-                    let data = try Data(contentsOf: url, options: .mappedIfSafe)
-                    guard let baseURL = settings.resolvedBaseURL else {
-                        throw APIError.invalidBaseURL
-                    }
-                    let response = try await APIClient(baseURL: baseURL).submitConversion(
-                        uploadedFile: (data: data, filename: url.lastPathComponent),
-                        options: APIClient.ConvertOptions()
-                    )
-                    self.library.recordConversion(jobId: response.jobId, for: self.book.id)
-                    self.playerPresentation.showFullPlayer()
-                } catch {
-                    let alert = NSAlert()
-                    alert.messageText = L10n.string("bookDetail.listenStart")
-                    alert.informativeText = error.localizedDescription
-                    alert.addButton(withTitle: L10n.string("common.ok"))
-                    alert.runModal()
-                }
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                let url = try await library.openBookFileAsync(id: book.id)
+                guard !Task.isCancelled else { return }
+                startRemoteConversion(url: url)
+            } catch {
+                guard !Task.isCancelled else { return }
+                onShowJobs()
             }
-            return
         }
-        guard let url = try? library.openBookFile(id: book.id) else {
-            onShowJobs()
-            return
-        }
-        startRemoteConversion(url: url)
     }
 
     private func startRemoteConversion(url: URL) {
