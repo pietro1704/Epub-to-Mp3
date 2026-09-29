@@ -98,7 +98,15 @@ jobs:
             --exclude ".cache" \
             --exclude "desktop" \
             --exclude "flutter_app" \
-            --exclude "ios"
+            --exclude "ios" \
+            --exclude ".hermes" \
+            --exclude ".qa" \
+            --exclude "*.png" \
+            --exclude "*.jpg" \
+            --exclude "*.jpeg" \
+            --exclude "*.gif" \
+            --exclude "*.webp" \
+            --exclude "*.bin"
           cd "$HF_SYNC_DIR"
           git init
           git config user.name "hf-sync-bot"
