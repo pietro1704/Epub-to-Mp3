@@ -265,10 +265,13 @@ mod tests {
     #[test]
     fn piper_inference_generates_valid_wav_from_vendored_model() {
         let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        let model = root
-            .join("../../models/piper/en_US-lessac-medium.onnx")
-            .canonicalize()
-            .unwrap();
+        let model = [
+            root.join("../../models/piper/en_US-lessac-medium.onnx"),
+            root.join("../../models/piper/pt_BR-faber-medium.onnx"),
+        ]
+        .into_iter()
+        .find(|path| path.is_file())
+        .expect("CI must provide a vendored Piper model");
         let config = PathBuf::from(format!("{}.json", model.display()));
         let output = std::env::temp_dir().join(format!(
             "piper-runtime-smoke-{}-{}.wav",
