@@ -26,6 +26,7 @@ import java.io.File
 import java.io.FileOutputStream
 import java.io.InputStream
 import java.util.Locale
+import java.util.concurrent.Executors
 
 /**
  * Hosts Flutter and Android document ingestion.
@@ -35,6 +36,7 @@ import java.util.Locale
 class MainActivity : AudioServiceActivity() {
 
     private val embeddedLogTag = "EmbeddedConverter"
+    private val converterExecutor = Executors.newSingleThreadExecutor()
 
     companion object {
         private const val CHANNEL = "epub_to_mp3/python"
@@ -289,13 +291,21 @@ class MainActivity : AudioServiceActivity() {
                             System.setProperty("PIPER_MODEL", ensureBundledPiperModel())
                             Log.i(embeddedLogTag, "convert native call libraryLoaded=$converterLibraryLoaded model=${ensureBundledPiperModel()}")
                             Log.i(embeddedLogTag, "convert invoking JNI")
-                            val native = nativeConvert(inputPath, outputPath)
-                            if (native == null) {
-                                Log.e(embeddedLogTag, "convert failed: ${nativeLastError()}")
-                                result.error(EMBEDDED_UNAVAILABLE, nativeLastError(), null)
-                            } else {
-                                Log.i(embeddedLogTag, "convert native returned ${native.length} chars")
-                                result.success(native)
+                            converterExecutor.execute {
+                                try {
+                                    val native = nativeConvert(inputPath, outputPath)
+                                    if (native == null) {
+                                        val error = nativeLastError()
+                                        Log.e(embeddedLogTag, "convert failed: $error")
+                                        runOnUiThread { result.error(EMBEDDED_UNAVAILABLE, error, null) }
+                                    } else {
+                                        Log.i(embeddedLogTag, "convert native returned ${native.length} chars")
+                                        runOnUiThread { result.success(native) }
+                                    }
+                                } catch (error: Throwable) {
+                                    Log.e(embeddedLogTag, "native conversion failed", error)
+                                    runOnUiThread { result.error(EMBEDDED_UNAVAILABLE, error.message, null) }
+                                }
                             }
                         }
                     }
@@ -313,6 +323,7 @@ class MainActivity : AudioServiceActivity() {
     private external fun nativeLastError(): String
 
     override fun onDestroy() {
+        converterExecutor.shutdownNow()
         super.onDestroy()
     }
 
