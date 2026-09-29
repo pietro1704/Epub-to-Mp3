@@ -120,6 +120,31 @@ pub fn parse_epub<R: Read + Seek>(reader: R) -> Result<Book, EpubError> {
             continue;
         }
         let key = href.split('#').next().unwrap_or(&href);
+        let is_boilerplate = text
+            .to_ascii_lowercase()
+            .contains("dados de copyright sobre a obra");
+        if is_boilerplate && position < 3 {
+            continue;
+        }
+        let normalized = text.trim().to_ascii_lowercase();
+        if position < 5
+            && (normalized.starts_with("sumário ")
+                || normalized.starts_with("sumario ")
+                || normalized == "sumário"
+                || normalized == "sumario")
+        {
+            continue;
+        }
+        if position < 10 {
+            let editorial = normalized.contains("capa")
+                || normalized.contains("folha de rosto")
+                || normalized.contains("créditos")
+                || normalized.contains("creditos")
+                || normalized.contains("copyright");
+            if editorial {
+                continue;
+            }
+        }
         let index = if let Some(value) = indices.get(key) {
             value.clone()
         } else {

@@ -33,7 +33,7 @@ struct EmbeddedBook { let metadataJSON: Data }
 
 /// Loads and invokes the stable C ABI only when the bundled dylib is present.
 final class ConverterFFIAdapter: EmbeddedConverter {
-    private let handle: UnsafeMutableRawPointer?
+    private var handle: UnsafeMutableRawPointer?
     private let close: (UnsafeMutableRawPointer?) -> Void
     private let metadata: (UnsafeRawPointer?) -> UnsafeMutablePointer<CChar>?
     private let freeString: (UnsafeMutablePointer<CChar>?) -> Void

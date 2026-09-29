@@ -5,7 +5,7 @@
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+
 use std::sync::{Arc, OnceLock, RwLock};
 use std::time::Duration;
 
@@ -178,6 +178,43 @@ pub trait PiperRuntime: Send + Sync {
     fn shutdown(&self);
 }
 
+/// Runtime adapter for platform glue and deterministic integration tests.
+pub struct RegisteredPiperRuntime {
+    synthesize_fn: Box<dyn Fn(&str, &Path) -> Result<(), PiperError> + Send + Sync>,
+}
+
+impl RegisteredPiperRuntime {
+    pub fn new<F>(synthesize_fn: F) -> Self
+    where
+        F: Fn(&str, &Path) -> Result<(), PiperError> + Send + Sync + 'static,
+    {
+        Self {
+            synthesize_fn: Box::new(synthesize_fn),
+        }
+    }
+}
+
+impl PiperRuntime for RegisteredPiperRuntime {
+    fn status(&self) -> PiperRuntimeStatus {
+        PiperRuntimeStatus {
+            runtime_loaded: true,
+            model_available: true,
+            abi_compatible: true,
+            engine_ready: true,
+        }
+    }
+
+    fn init(&self, _model: &Path, _config: &Path) -> Result<(), PiperError> {
+        Ok(())
+    }
+
+    fn synthesize(&self, text: &str, output: &Path) -> Result<(), PiperError> {
+        (self.synthesize_fn)(text, output)
+    }
+
+    fn shutdown(&self) {}
+}
+
 static RUNTIME: OnceLock<RwLock<Option<Arc<dyn PiperRuntime>>>> = OnceLock::new();
 
 fn runtime_slot() -> &'static RwLock<Option<Arc<dyn PiperRuntime>>> {
@@ -271,42 +308,16 @@ pub fn synthesize(
     if runtime_slot()
         .read()
         .expect("Piper runtime lock poisoned")
-        .is_some()
+        .is_none()
     {
-        piper_runtime_init(&model, &config.config)?;
-        return piper_synthesize(text, output);
-    }
-    let binary = std::env::var_os("PIPER_BINARY")
-        .ok_or_else(|| PiperError::RuntimeUnavailable("PIPER_BINARY is not configured".into()))?;
-    let mut child = Command::new(binary)
-        .args([
-            "-m",
-            &model.to_string_lossy(),
-            "-f",
-            &output.to_string_lossy(),
-        ])
-        .stdin(Stdio::piped())
-        .stdout(Stdio::null())
-        .stderr(Stdio::piped())
-        .spawn()
-        .map_err(|error| PiperError::RuntimeUnavailable(error.to_string()))?;
-    use std::io::Write;
-    child
-        .stdin
-        .take()
-        .ok_or_else(|| PiperError::Synthesis("Piper stdin unavailable".into()))?
-        .write_all(text.as_bytes())
-        .map_err(|error| PiperError::Io(error.to_string()))?;
-    let result = child
-        .wait_with_output()
-        .map_err(|error| PiperError::Io(error.to_string()))?;
-    if !result.status.success() {
-        return Err(PiperError::Synthesis(
-            String::from_utf8_lossy(&result.stderr).trim().to_owned(),
+        return Err(PiperError::RuntimeUnavailable(
+            "embedded Piper runtime is not registered".into(),
         ));
     }
-    validate_wav(output)?;
-    Ok(output.to_path_buf())
+    piper_runtime_init(&model, &config.config)?;
+    let path = piper_synthesize(text, output)?;
+    validate_wav(&path)?;
+    Ok(path)
 }
 
 #[cfg(test)]

@@ -45,12 +45,15 @@ class MainActivity : AudioServiceActivity() {
         private const val EMBEDDED_CHANNEL = "epub_to_mp3/embedded_converter"
         private const val EMBEDDED_UNAVAILABLE = "EMBEDDED_CONVERTER_UNAVAILABLE"
         private const val CONVERTER_LIBRARY = "converter_ffi"
+        private const val PIPER_RUNTIME_LIBRARY = "piper_runtime"
 
         private var converterLibraryLoaded = false
 
         init {
             try {
+                System.loadLibrary(PIPER_RUNTIME_LIBRARY)
                 System.loadLibrary(CONVERTER_LIBRARY)
+                registerEmbeddedPiper()
                 converterLibraryLoaded = true
             } catch (_: UnsatisfiedLinkError) {
                 converterLibraryLoaded = false
@@ -59,12 +62,20 @@ class MainActivity : AudioServiceActivity() {
 
         private fun converterLibraryAvailable(): Boolean = try {
             if (!converterLibraryLoaded) {
+                System.loadLibrary(PIPER_RUNTIME_LIBRARY)
                 System.loadLibrary(CONVERTER_LIBRARY)
+                registerEmbeddedPiper()
                 converterLibraryLoaded = true
             }
             true
         } catch (_: UnsatisfiedLinkError) {
             false
+        }
+
+        private external fun piper_runtime_register_embedded()
+
+        private fun registerEmbeddedPiper() {
+            try { piper_runtime_register_embedded() } catch (_: UnsatisfiedLinkError) { }
         }
     }
 
@@ -74,10 +85,28 @@ class MainActivity : AudioServiceActivity() {
     private val pendingDeepLinks = mutableListOf<String>()
 
 
-    private fun embeddedConverterStatus(): String = try {
-        if (converterLibraryAvailable()) "loaded" else "unavailable"
+    private fun embeddedConverterStatus(): Map<String, Boolean> = try {
+        val nativeStatus = if (converterLibraryAvailable()) {
+            nativePiperStatus()?.let { JSONObject(it) }
+        } else null
+        val loaded = nativeStatus?.optBoolean("runtimeLoaded", false) == true
+        val modelAvailable = loaded && (
+            assets.list("piper")?.any { it.endsWith(".onnx") } == true ||
+                File(filesDir, "piper").listFiles()?.any { it.extension == "onnx" } == true
+            )
+        mapOf(
+            "runtimeLoaded" to loaded,
+            "modelAvailable" to (nativeStatus?.optBoolean("modelAvailable", false) == true || modelAvailable),
+            "abiCompatible" to (nativeStatus?.optBoolean("abiCompatible", false) == true),
+            "engineReady" to (nativeStatus?.optBoolean("engineReady", false) == true && modelAvailable),
+        )
     } catch (_: Throwable) {
-        "unavailable"
+        mapOf(
+            "runtimeLoaded" to false,
+            "modelAvailable" to false,
+            "abiCompatible" to false,
+            "engineReady" to false,
+        )
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -262,6 +291,7 @@ class MainActivity : AudioServiceActivity() {
 
     private external fun nativeParse(inputPath: String): String?
     private external fun nativeConvert(inputPath: String, outputPath: String): String?
+    private external fun nativePiperStatus(): String?
     private external fun nativeLastError(): String
 
     override fun onDestroy() {

@@ -1,0 +1,19 @@
+[package]
+name = "piper-runtime"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+
+[lib]
+crate-type = ["cdylib", "staticlib"]
+
+[features]
+default = []
+onnxruntime = ["dep:ort"]
+piper-inference = ["dep:piper-rs"]
+heavy-runtime-tests = []
+
+[dependencies]
+ort = { version = "2.0.0-rc.12", optional = true, default-features = false, features = ["ndarray", "load-dynamic"] }
+piper-rs = { version = "0.2.0", optional = true, default-features = false }
+serde_json = "1"

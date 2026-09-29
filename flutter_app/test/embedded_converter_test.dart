@@ -67,7 +67,12 @@ void main() {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(channel, (call) async {
       expect(call.method, 'status');
-      return 'loaded';
+      return <String, bool>{
+        'runtimeLoaded': true,
+        'modelAvailable': true,
+        'abiCompatible': true,
+        'engineReady': true,
+      };
     });
     expect(
       await AndroidEmbeddedConverter(channel: channel).isRuntimeLoaded(),

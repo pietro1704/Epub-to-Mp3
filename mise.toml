@@ -17,6 +17,7 @@ cocoapods = "1.16.2"
 # requires JAVA_HOME to be set; mise handles that when java is in [tools].
 java = "21.0.2"
 android-sdk = "11.0"
+ninja = "latest"
 
 [env]
 # Keep the project virtualenv managed by mise without the deprecated tool option.
@@ -59,8 +60,32 @@ description = "List converter-ffi native target mappings and exact output paths"
 run = "mise exec -- python scripts/build_converter_ffi.py --list"
 
 [tasks."converter-ffi:build"]
-description = "Build converter-ffi for installed Android/iOS Rust targets without installing toolchains"
-run = "mise exec -- python scripts/build_converter_ffi.py"
+description = "Build the shared converter-ffi Rust library for the host"
+run = "mise exec -- cargo build -p converter-ffi --release"
+
+[tasks."converter-ffi:android-arm64"]
+description = "Build converter-ffi for Android arm64 with mise-managed Rust and NDK"
+run = "NDK=\"${ANDROID_NDK_HOME:-$HOME/.local/share/mise/installs/android-sdk/11.0/ndk/28.2.13676358}\"; TOOLCHAIN=\"$NDK/toolchains/llvm/prebuilt/darwin-x86_64/bin\"; CC_aarch64_linux_android=\"$TOOLCHAIN/aarch64-linux-android24-clang\" AR_aarch64_linux_android=\"$TOOLCHAIN/llvm-ar\" CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER=\"$TOOLCHAIN/aarch64-linux-android24-clang\" OPENSSL_NO_VENDOR=1 RUSTLS_PLATFORM_VERIFIER=0 CARGO_NET_OFFLINE=${CARGO_NET_OFFLINE:-false} RUSTUP_TOOLCHAIN=stable mise exec -- rustup run stable cargo build -p converter-ffi --features android-jni --release --target aarch64-linux-android"
+
+[tasks."converter-ffi:android-check"]
+description = "Check Android converter-ffi without linking unsupported Piper inference dependencies"
+run = "mise exec -- cargo check -p converter-ffi --features android-jni"
+
+[tasks."converter-ffi:android-install"]
+description = "Install the cached Android arm64 converter-ffi artifact into the APK source tree"
+run = "mkdir -p flutter_app/android/app/src/main/jniLibs/arm64-v8a && cp target/aarch64-linux-android/release/libconverter_ffi.so flutter_app/android/app/src/main/jniLibs/arm64-v8a/libconverter_ffi.so"
+
+[tasks."android:embedded-deps"]
+description = "Install Android NDK dependencies through mise-managed sdkmanager"
+run = "SDKMANAGER=\"$HOME/.local/share/mise/installs/android-sdk/11.0/cmdline-tools/11.0/bin/sdkmanager\"; test -x \"$SDKMANAGER\"; \"$SDKMANAGER\" \"platform-tools\" \"platforms;android-35\" \"build-tools;35.0.0\" \"ndk;28.2.13676358\"; mise install ninja@latest"
+
+[tasks."android:runtime-audit"]
+description = "Audit required embedded Piper Android native libraries"
+run = "mise exec -- bash -lc 'set -e; test -d flutter_app/android/app/src/main/jniLibs/arm64-v8a; test -f flutter_app/android/app/src/main/assets/piper/pt_BR-faber-medium.onnx; test -f flutter_app/android/app/src/main/assets/piper/pt_BR-faber-medium.onnx.json; if find flutter_app/android/app/src/main/jniLibs -type f -name \"libpiper_runtime.so\" -print -quit | grep -q .; then echo \"libpiper_runtime.so present\"; else echo \"ERROR: libpiper_runtime.so is missing; Piper inference is not Android-ready\" >&2; exit 1; fi'"
+
+[tasks."piper:android-arm64"]
+description = "Build Piper Embedded runtime for Android arm64 with the mise-managed NDK"
+run = "NDK=\"${ANDROID_NDK_HOME:-$HOME/.local/share/mise/installs/android-sdk/11.0/ndk/28.2.13676358}\"; TOOLCHAIN=\"$NDK/toolchains/llvm/prebuilt/darwin-x86_64/bin\"; SYSROOT=\"$NDK/toolchains/llvm/prebuilt/darwin-x86_64/sysroot\"; NINJA=\"$HOME/.local/share/mise/installs/ninja/1.13.2/ninja\"; CLANG=\"$TOOLCHAIN/clang\"; export ANDROID_NDK_HOME=\"$NDK\" ANDROID_NDK_ROOT=\"$NDK\" PATH=\"$TOOLCHAIN:$HOME/.local/share/mise/installs/ninja/1.13.2:$PATH\"; CC_aarch64_linux_android=\"$TOOLCHAIN/aarch64-linux-android24-clang\" CXX_aarch64_linux_android=\"$TOOLCHAIN/aarch64-linux-android24-clang++\" AR_aarch64_linux_android=\"$TOOLCHAIN/llvm-ar\" CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER=\"$TOOLCHAIN/aarch64-linux-android24-clang\" BINDGEN_EXTRA_CLANG_ARGS_aarch64_linux_android=\"--target=aarch64-linux-android24 --sysroot=$SYSROOT -I$SYSROOT/usr/include -include stdio.h\" BINDGEN_EXTRA_CLANG_ARGS=\"--target=aarch64-linux-android24 --sysroot=$SYSROOT -I$SYSROOT/usr/include -include stdio.h\" CFLAGS_aarch64_linux_android=\"--sysroot=$SYSROOT\" CMAKE_TOOLCHAIN_FILE=\"$NDK/build/cmake/android.toolchain.cmake\" CMAKE_GENERATOR=Ninja CMAKE_MAKE_PROGRAM=\"$NINJA\" TARGET_CC=\"$TOOLCHAIN/aarch64-linux-android24-clang\" CC=\"$TOOLCHAIN/aarch64-linux-android24-clang\" RUSTUP_TOOLCHAIN=stable mise exec -- rustup run stable cargo clean -p espeak-rs-sys; RUSTUP_TOOLCHAIN=stable mise exec -- rustup run stable cargo build -p piper-runtime --features onnxruntime,piper-inference --release --target aarch64-linux-android"
 
 [tasks.clean]
 description = "Clean backend cache, pycache, and completed outputs"
@@ -666,8 +691,7 @@ done
 """
 
 [tasks."ios:device:build"]
-description = "Build the native iOS app for a connected physical device without using CoreSimulator"
-depends = ["vendor:python"]
+description = "Build the native iOS app for a connected physical device using persistent incremental cache"
 run = """
 #!/bin/bash
 set -euo pipefail
@@ -696,7 +720,13 @@ if [[ -z "$XCODE_DEVICE" ]]; then
   echo "Set IOS_XCODE_DEVICE_ID to the physical device UDID from xcrun xctrace list devices." >&2
   exit 2
 fi
-xcodegen generate
+PROJECT_YML="project.yml"
+GENERATED_PROJECT="EpubToMp3.xcodeproj/EpubToMp3.xcodeproj/project.pbxproj"
+if [[ ! -f "$GENERATED_PROJECT" || "$PROJECT_YML" -nt "$GENERATED_PROJECT" ]]; then
+  xcodegen generate
+else
+  echo "ios:device:build → reusing generated Xcode project"
+fi
 "${MISE_PROJECT_ROOT:-../..}/scripts/verify_widget_embedded.sh"
 BUILD_LOG="${TMPDIR:-/tmp}/epub-to-mp3-ios-device-build.log"
 if ! xcodebuild \\
@@ -705,6 +735,7 @@ if ! xcodebuild \\
        -configuration Debug \\
        -destination "id=$XCODE_DEVICE" \\
        -derivedDataPath ./.build-device \\
+       -parallelizeTargets \\
        -showBuildTimingSummary \\
        build >"${BUILD_LOG}" 2>&1; then
   echo "** DEVICE BUILD FAILED **"
@@ -1160,8 +1191,8 @@ description = "Static analysis of the Flutter app (lints + type errors)"
 run = "cd flutter_app && flutter analyze"
 
 [tasks."flutter:build-apk-debug"]
-description = "Build a debug APK for Android"
-run = "cd flutter_app && flutter build apk --debug"
+description = "Build a debug APK for Android using Flutter's incremental build cache"
+run = "cd flutter_app && flutter build apk --debug --build-number=${FLUTTER_BUILD_NUMBER:-1} --no-pub"
 
 [tasks."flutter:build-linux"]
 description = "Build the Flutter Linux desktop app (release)"
@@ -1173,7 +1204,11 @@ run = "cd flutter_app && flutter build windows --release"
 
 [tasks."flutter:build-apk"]
 description = "Build the Flutter Android APK (release)"
-run = "cd flutter_app && flutter build apk --release"
+run = "cd flutter_app && flutter build apk --release --no-pub"
+
+[tasks."flutter:build-apk-debug:clean"]
+description = "Explicitly clean Flutter Android artifacts before a debug build"
+run = "cd flutter_app && flutter clean && flutter build apk --debug --build-number=${FLUTTER_BUILD_NUMBER:-1}"
 
 [tasks."android:bootstrap-python"]
 description = "Sync python_app/src into the Flutter Android Chaquopy source set"
@@ -1186,3 +1221,6 @@ run = "bash flutter_app/scripts/bootstrap-desktop-python.sh"
 [tasks."flutter:run-desktop"]
 description = "Run the Flutter desktop app on the host platform (Linux/Windows only)"
 run = "cd flutter_app && flutter run -d $(uname | tr '[:upper:]' 'a-z')"
+[tasks."piper:build-runtime"]
+description = "Build the native Piper Embedded runtime without external executable fallback"
+run = "mise exec -- cargo build -p piper-runtime --features onnxruntime,piper-inference --release"

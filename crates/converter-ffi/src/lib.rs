@@ -13,6 +13,7 @@ use converter_core::{
     embedded::{EmbeddedBookMetadata, EmbeddedConversionSession},
     paths::resolve_paths_from,
 };
+
 use serde_json::json;
 use std::{
     collections::HashMap,
@@ -92,7 +93,7 @@ pub unsafe extern "C" fn converter_session_convert_json(
         return fail(format!("failed to create output directory: {error}"));
     }
     let job = format!("embedded-{}", std::process::id());
-    let generated_output_dir = config.paths.output_dir.join(&job);
+    let generated_output_dir = output.join(&job);
     let request = converter_core::worker::ConversionRequest {
         input: session.session.input_path().to_path_buf(),
         job_id: job,
@@ -232,6 +233,25 @@ pub extern "C" fn piper_runtime_shutdown() {
     piper::piper_runtime_shutdown();
 }
 
+/// Registers the platform runtime through a conservative status-only bridge.
+/// The actual mobile implementation must replace this adapter before shipping.
+#[no_mangle]
+pub extern "C" fn piper_runtime_register_unavailable() {
+    piper::register_runtime(std::sync::Arc::new(
+        converter_core::piper::RegisteredPiperRuntime::new(|_, _| {
+            Err(converter_core::piper::PiperError::RuntimeUnavailable(
+                "native Piper implementation is not linked".into(),
+            ))
+        }),
+    ));
+}
+
+#[cfg(feature = "piper-runtime")]
+#[no_mangle]
+pub extern "C" fn piper_runtime_register_embedded() {
+    piper_runtime::piper_runtime_register_core();
+}
+
 thread_local! {
     static LAST_ERROR: std::cell::RefCell<Option<String>> = const { std::cell::RefCell::new(None) };
 }
@@ -286,6 +306,23 @@ mod android_jni {
         env.get_string(&value)
             .map(|value| value.to_string_lossy().into_owned())
             .map_err(|error| error.to_string())
+    }
+
+    #[no_mangle]
+    pub extern "system" fn Java_com_pietrocode_epubtomp3_flutter_1app_MainActivity_nativePiperStatus(
+        env: JNIEnv<'_>,
+        _class: JClass<'_>,
+    ) -> jstring {
+        let status = piper_runtime_status();
+        let value = serde_json::json!({
+            "runtimeLoaded": status.runtime_loaded,
+            "modelAvailable": status.model_available,
+            "abiCompatible": status.abi_compatible,
+            "engineReady": status.engine_ready,
+        })
+        .to_string();
+        env.new_string(value)
+            .map_or(std::ptr::null_mut(), |value| value.into_raw())
     }
 
     #[no_mangle]

@@ -2,7 +2,7 @@
 //
 // Lifecycle:
 //   1. Try cached fulltext (instant).
-//   2. If no cache: parse EPUB via PythonBridge, cache the result.
+//   2. If no cache: parse EPUB through the selected native/runtime bridge, cache the result.
 //   3. On success: render InstantReaderView.
 //   4. Audio is NOT auto-started — user taps play.
 //   5. Play triggers upload+convert via backend, SSE streams progress.
@@ -282,9 +282,16 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen>
       (candidate) => candidate.text.trim().isNotEmpty,
       orElse: () => fulltext.chapters.first,
     );
+    if (!Platform.isAndroid) return;
+    // Embedded mode must never fall back to Android TextToSpeech.
+    final settings = ref.read(settingsProvider);
+    if (settings.useEmbeddedRuntime) {
+      if (!mounted) return;
+      setState(() => _conversionError = 'Embedded Piper is the only audio engine in embedded mode');
+      return;
+    }
     final engine = ref.read(androidSpeechFallbackProvider);
     if (!await engine.isAvailable() || !mounted) return;
-    // Explicit user action only: opening a book never starts speech.
     await engine.speak(chapter.text, locale: _offlineLocale(chapter.text));
   }
 

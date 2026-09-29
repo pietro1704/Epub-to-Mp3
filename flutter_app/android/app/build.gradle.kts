@@ -18,6 +18,7 @@ android {
     sourceSets {
         getByName("main") {
             jniLibs.srcDirs("src/main/jniLibs")
+            assets.srcDirs("src/main/assets")
         }
     }
 
@@ -40,8 +41,7 @@ android {
         versionCode = flutter.versionCode
         versionName = flutter.versionName
 
-        // arm64-v8a = real devices; x86_64 = emulator only.
-        // armeabi-v7a excluded — saves ~20MB in APK (32-bit ARM is <2% of active devices).
+        // Keep the same native ABI contract as the Rust artifact packager.
         ndk {
             abiFilters += listOf("arm64-v8a", "x86_64")
         }

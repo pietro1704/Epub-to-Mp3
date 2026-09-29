@@ -18,6 +18,16 @@ class EmbeddedConverterUnavailable extends Error {
   String toString() => 'EmbeddedConverterUnavailable: $message';
 }
 
+class EmbeddedConversionFailure extends Error {
+  EmbeddedConversionFailure(this.code, this.message);
+
+  final String code;
+  final String message;
+
+  @override
+  String toString() => 'EmbeddedConversionFailure($code): $message';
+}
+
 /// Platform-neutral seam for the converter-ffi C ABI.
 abstract interface class EmbeddedConverter {
   Future<EbookFulltext> parse({required String inputPath, String jobId = ''});
@@ -36,19 +46,28 @@ class AndroidEmbeddedConverter implements EmbeddedConverter {
   static const channelName = 'epub_to_mp3/embedded_converter';
   final MethodChannel _channel;
 
-  Future<bool> isRuntimeLoaded() async {
+  Future<Map<String, bool>> runtimeStatus() async {
     try {
-      return await _channel.invokeMethod<String>('status') == 'loaded';
+      final raw = await _channel.invokeMethod<Map<Object?, Object?>>('status');
+      if (raw == null) return const {};
+      return raw.map((key, value) => MapEntry(key.toString(), value == true));
     } on MissingPluginException {
-      return false;
+      return const {};
     } on PlatformException {
-      return false;
+      return const {};
     }
   }
 
+  Future<bool> isRuntimeLoaded() async =>
+      (await runtimeStatus())['runtimeLoaded'] == true;
+
   Future<void> ensureRuntimeLoaded() async {
-    if (!await isRuntimeLoaded()) {
-      throw EmbeddedConverterUnavailable();
+    final status = await runtimeStatus();
+    if (status['engineReady'] != true) {
+      throw EmbeddedConversionFailure(
+        status['modelAvailable'] == false ? 'MODEL_MISSING' : 'RUNTIME_UNAVAILABLE',
+        'Embedded Piper is not ready: $status',
+      );
     }
   }
 
@@ -80,12 +99,10 @@ class AndroidEmbeddedConverter implements EmbeddedConverter {
     } on MissingPluginException {
       throw EmbeddedConverterUnavailable();
     } on PlatformException catch (error) {
-      if (error.code == 'EMBEDDED_CONVERTER_UNAVAILABLE') {
-        throw EmbeddedConverterUnavailable(
-          error.message ?? 'converter-ffi runtime is unavailable',
-        );
-      }
-      rethrow;
+      throw EmbeddedConversionFailure(
+        error.code,
+        error.message ?? 'embedded parse failed',
+      );
     }
   }
 
@@ -121,12 +138,10 @@ class AndroidEmbeddedConverter implements EmbeddedConverter {
     } on MissingPluginException {
       throw EmbeddedConverterUnavailable();
     } on PlatformException catch (error) {
-      if (error.code == 'EMBEDDED_CONVERTER_UNAVAILABLE') {
-        throw EmbeddedConverterUnavailable(
-          error.message ?? 'converter-ffi runtime is unavailable',
-        );
-      }
-      rethrow;
+      throw EmbeddedConversionFailure(
+        error.code,
+        error.message ?? 'embedded conversion failed',
+      );
     }
   }
 }

@@ -8,14 +8,14 @@
 use std::{fmt, sync::Arc, time::Duration};
 
 use futures_util::{SinkExt, StreamExt};
-use http::Request;
+use http::{header::HeaderValue, Request};
 use rand::{distr::Alphanumeric, Rng};
 use sha2::{Digest, Sha256};
-use tokio::{net::TcpStream, sync::Semaphore, time::timeout};
+use tokio::{sync::Semaphore, time::timeout};
 use tokio_tungstenite::{
     client_async_tls_with_config,
-    tungstenite::{http::HeaderValue, Message},
-    MaybeTlsStream, WebSocketStream,
+    tungstenite::{client::IntoClientRequest, Message},
+    Connector, MaybeTlsStream, WebSocketStream,
 };
 use url::Url;
 
@@ -25,9 +25,40 @@ pub const TRUSTED_CLIENT_TOKEN: &str = "6A5AA1D4EAFF4E9FB37E23D68491D6F4";
 pub const DEFAULT_OUTPUT_FORMAT: &str = "audio-24khz-48kbitrate-mono-mp3";
 pub const DEFAULT_CHUNK_CHARS: usize = 12_000;
 pub const DEFAULT_CONCURRENCY: usize = 8;
+const EDGE_BROWSER_VERSION: &str = "1-143.0.3650.75";
 
 pub type Telemetry = Arc<dyn Fn(TelemetryEvent) + Send + Sync>;
-pub type EdgeSocket = WebSocketStream<MaybeTlsStream<TcpStream>>;
+pub type EdgeSocket = WebSocketStream<MaybeTlsStream<tokio::net::TcpStream>>;
+
+pub async fn synthesize_with_reference_client(
+    text: &str,
+    voice: &str,
+) -> Result<Vec<u8>, EdgeError> {
+    let client = edge_tts_rust::EdgeTtsClient::builder()
+        .ws_pool_size(0)
+        .ws_warmup(false)
+        .request_chunk_reuse(false)
+        .receive_timeout(Duration::from_secs(10))
+        .build()
+        .map_err(|error| EdgeError::Transport(error.to_string()))?;
+    let result = client
+        .synthesize(
+            text,
+            edge_tts_rust::SpeakOptions {
+                voice: voice.to_owned(),
+                ..edge_tts_rust::SpeakOptions::default()
+            },
+        )
+        .await
+        .map_err(|error| EdgeError::Transport(error.to_string()))?;
+    let audio = result.audio;
+    if audio.is_empty() {
+        Err(EdgeError::NoAudio)
+    } else {
+        Ok(audio)
+    }
+}
+const EDGE_ORIGIN: &str = "chrome-extension://jdiccldimpdaibmpdkjnbmckianbfold";
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum RetryCategory {
@@ -161,21 +192,95 @@ pub struct WebSocketTransport;
 impl EdgeTransport for WebSocketTransport {
     fn connect<'a>(&'a self, request: Request<()>) -> TransportFuture<'a> {
         Box::pin(async move {
-            let mut request = request;
-            request.headers_mut().remove("sec-websocket-key");
-            request.headers_mut().remove("sec-websocket-version");
-            request.headers_mut().remove("sec-websocket-extensions");
-            let uri = request.uri().clone();
-            let host = uri
-                .host()
-                .ok_or_else(|| EdgeError::Url("missing host".into()))?;
-            let port = uri.port_u16().unwrap_or(443);
-            let stream = TcpStream::connect((host, port))
-                .await
+            let mut request = request
+                .uri()
+                .to_string()
+                .into_client_request()
                 .map_err(|error| EdgeError::Transport(error.to_string()))?;
-            let (socket, _) = client_async_tls_with_config(request, stream, None, None)
-                .await
-                .map_err(|e| EdgeError::Transport(e.to_string()))?;
+            request
+                .headers_mut()
+                .insert("Origin", HeaderValue::from_static(EDGE_ORIGIN));
+            let token = sec_ms_gec_now();
+            request.headers_mut().insert(
+                "Sec-MS-GEC",
+                HeaderValue::from_str(&token)
+                    .map_err(|error| EdgeError::Transport(error.to_string()))?,
+            );
+            request.headers_mut().insert(
+                "Sec-MS-GEC-Version",
+                HeaderValue::from_static(EDGE_BROWSER_VERSION),
+            );
+            let muid = "00000000000000000000000000000000";
+            let cookie = format!("muid={muid};");
+            request.headers_mut().insert(
+                "Cookie",
+                HeaderValue::from_str(&cookie)
+                    .map_err(|error| EdgeError::Transport(error.to_string()))?,
+            );
+
+            request.headers_mut().insert(
+                "User-Agent",
+                HeaderValue::from_static(
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36 Edg/143.0.0.0",
+                ),
+            );
+            request
+                .headers_mut()
+                .insert("Pragma", HeaderValue::from_static("no-cache"));
+            request
+                .headers_mut()
+                .insert("Cache-Control", HeaderValue::from_static("no-cache"));
+            request.headers_mut().insert(
+                "Accept-Encoding",
+                HeaderValue::from_static("gzip, deflate, br"),
+            );
+            request.headers_mut().insert(
+                "Accept-Language",
+                HeaderValue::from_static("en-US,en;q=0.9"),
+            );
+            request
+                .headers_mut()
+                .insert("Accept", HeaderValue::from_static("*/*"));
+            request.headers_mut().insert(
+                "Sec-CH-UA",
+                HeaderValue::from_static(
+                    "\" Not;A Brand\";v=\"99\", \"Microsoft Edge\";v=\"143\", \"Chromium\";v=\"143\"",
+                ),
+            );
+            request
+                .headers_mut()
+                .insert("Sec-CH-UA-Mobile", HeaderValue::from_static("?0"));
+            request
+                .headers_mut()
+                .insert("Sec-Fetch-Site", HeaderValue::from_static("none"));
+            request
+                .headers_mut()
+                .insert("Sec-Fetch-Mode", HeaderValue::from_static("cors"));
+            request
+                .headers_mut()
+                .insert("Sec-Fetch-Dest", HeaderValue::from_static("empty"));
+            let mut roots = rustls::RootCertStore::empty();
+            let certificate_result = rustls_native_certs::load_native_certs();
+            for certificate in certificate_result.certs {
+                roots
+                    .add(certificate)
+                    .map_err(|error| EdgeError::Transport(error.to_string()))?;
+            }
+            let mut tls_config = rustls::ClientConfig::builder()
+                .with_root_certificates(roots)
+                .with_no_client_auth();
+            tls_config.alpn_protocols = vec![b"http/1.1".to_vec()];
+            let tls_connector = Connector::Rustls(std::sync::Arc::new(tls_config));
+            let (socket, _) = client_async_tls_with_config(
+                request,
+                tokio::net::TcpStream::connect("speech.platform.bing.com:443")
+                    .await
+                    .map_err(|error| EdgeError::Transport(error.to_string()))?,
+                None,
+                Some(tls_connector),
+            )
+            .await
+            .map_err(|e| EdgeError::Transport(e.to_string()))?;
             Ok(socket)
         })
     }
@@ -436,9 +541,28 @@ fn random_id() -> String {
 fn request_url(endpoint: &Url, connection_id: &str, token: &str) -> Result<Url, EdgeError> {
     let mut url = endpoint.clone();
     url.query_pairs_mut()
-        .append_pair("TrustedClientToken", token)
         .append_pair("ConnectionId", connection_id);
+    if !url
+        .query_pairs()
+        .any(|(key, value)| key == "TrustedClientToken" && value == token)
+    {
+        url.query_pairs_mut()
+            .append_pair("TrustedClientToken", token);
+    }
     Ok(url)
+}
+
+fn sec_ms_gec_now() -> String {
+    const WINDOWS_EPOCH_SECONDS: u64 = 11_644_473_600;
+    let seconds = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+    let rounded_seconds = seconds + WINDOWS_EPOCH_SECONDS;
+    let rounded_seconds = rounded_seconds - rounded_seconds % 300;
+    let ticks = rounded_seconds * 10_000_000;
+    let payload = format!("{ticks}{TRUSTED_CLIENT_TOKEN}");
+    hex::encode(Sha256::digest(payload.as_bytes())).to_uppercase()
 }
 
 fn protocol_request(url: Url) -> Result<Request<()>, EdgeError> {
@@ -447,16 +571,16 @@ fn protocol_request(url: Url) -> Result<Request<()>, EdgeError> {
         .uri(url.as_str())
         .body(())
         .map_err(|e| EdgeError::Url(e.to_string()))?;
-    let headers = request.headers_mut();
-    headers.insert(
-        "Origin",
-        HeaderValue::from_static("chrome-extension://jdiccldimpdaibmpdkjnbmckianbfold"),
-    );
-    headers.insert(
+    request
+        .headers_mut()
+        .insert("Origin", HeaderValue::from_static(EDGE_ORIGIN));
+    request.headers_mut().insert(
         "User-Agent",
-        HeaderValue::from_static("Mozilla/5.0 EdgeTTS Rust Client"),
+        HeaderValue::from_static(
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/131.0.0.0 Safari/537.36",
+        ),
     );
-    Ok(request.map(|_| ()))
+    Ok(request)
 }
 
 fn protocol_timestamp() -> String {
