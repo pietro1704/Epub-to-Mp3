@@ -36,17 +36,17 @@ class BackgroundChapterWorker(
         if (text.isBlank() || voice.isBlank() || outputPath.isBlank()) return Result.failure()
         return try {
             setForeground(createForegroundInfo())
-            withContext(Dispatchers.IO) { convert_chapter(text, voice, outputPath) }
+            withContext(Dispatchers.IO) { convertChapter(text, voice, outputPath) }
             Result.success()
-        } catch (_: kotlinx.coroutines.CancellationException) {
-            throw _
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
         } catch (_: Exception) {
             Result.failure()
         }
     }
 
     /** Calls the configured Rust HTTP backend and writes its MP3 result. */
-    private suspend fun convert_chapter(text: String, voice: String, outputPath: String) {
+    private suspend fun convertChapter(text: String, voice: String, outputPath: String) {
         val backendUrl = applicationContext
             .getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
             .getString(KEY_BACKEND_URL, null)
@@ -69,13 +69,15 @@ class BackgroundChapterWorker(
             setRequestProperty("Content-Type", "application/x-www-form-urlencoded")
         }
         try {
-            ensureActive()
+            // Keep cancellation cooperative while the worker performs network
+            // and file I/O; CoroutineWorker's context owns the lifecycle.
+            coroutineContext.ensureActive()
             connection.outputStream.use { it.write(payload.toByteArray(Charsets.UTF_8)) }
             if (connection.responseCode !in 200..299) {
                 throw IllegalStateException("Backend returned HTTP ${connection.responseCode}")
             }
             val bytes = connection.inputStream.use { it.readBytes() }
-            ensureActive()
+            coroutineContext.ensureActive()
             if (bytes.isEmpty()) throw IllegalStateException("Backend returned an empty result")
             val target = File(outputPath).apply {
                 parentFile?.mkdirs()
@@ -83,7 +85,7 @@ class BackgroundChapterWorker(
             val temp = File(target.parentFile, ".${target.name}.${System.nanoTime()}.tmp")
             try {
                 temp.writeBytes(bytes)
-                ensureActive()
+                coroutineContext.ensureActive()
                 if (!temp.renameTo(target)) throw IOException("Could not atomically publish chapter audio")
             } finally { temp.delete() }
         } finally {
