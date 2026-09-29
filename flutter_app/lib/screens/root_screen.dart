@@ -29,7 +29,10 @@ class RootScreen extends ConsumerWidget {
     final tabIndex = ref.watch(rootTabIndexProvider);
     final chromeVisible = ref.watch(readerChromeVisibleProvider);
     final showShellChrome = tabIndex != 0 || chromeVisible;
-    final showMiniPlayer = tabIndex != 0;
+    // Keep one Spotify-style player surface across every tab, including the
+    // reader. The reader's inline controls remain contextual, while this
+    // shell owns the cross-tab playback affordance.
+    const showMiniPlayer = true;
 
     return Scaffold(
       body: Column(
