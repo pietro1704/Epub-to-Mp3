@@ -155,7 +155,7 @@ pub extern "C" fn piper_synthesize(
             return Err("Piper runtime is not initialized".to_owned());
         }
         let text = unsafe { CStr::from_ptr(text) }.to_string_lossy();
-        let output = unsafe { CStr::from_ptr(output) }.to_string_lossy();
+        let _output = unsafe { CStr::from_ptr(output) }.to_string_lossy();
         if text.trim().is_empty() {
             return Err("Piper synthesis text is empty".to_owned());
         }
@@ -203,6 +203,7 @@ pub extern "C" fn piper_runtime_shutdown() {
     }
 }
 
+#[cfg(feature = "piper-inference")]
 fn write_wav(path: &Path, samples: &[f32], sample_rate: u32) -> Result<(), String> {
     if samples.is_empty() || sample_rate == 0 {
         return Err("Piper returned empty audio".to_owned());

@@ -177,10 +177,12 @@ pub struct PiperStatus {
     pub engine_ready: bool,
 }
 
+pub type PiperRuntimeStatusC = PiperStatus;
+
 #[cfg(not(feature = "piper-runtime"))]
 #[no_mangle]
 pub unsafe extern "C" fn piper_runtime_status() -> PiperRuntimeStatusC {
-    let status: PiperRuntimeStatus = piper::piper_runtime_status();
+    let status = piper::piper_runtime_status();
     PiperStatus {
         runtime_loaded: status.runtime_loaded,
         model_available: status.model_available,
