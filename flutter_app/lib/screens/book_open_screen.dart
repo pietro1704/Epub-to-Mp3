@@ -316,6 +316,7 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen>
 
   Future<void> _startConversion() async {
     if (_isConverting) return;
+    debugPrint('BookOpenScreen: start conversion requested for ${widget.bookId}');
     final ft = _fulltext;
     if (ft == null || ft.chapters.isEmpty) return;
 
@@ -343,37 +344,73 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen>
             '${(await getApplicationDocumentsDirectory()).path}/audiobooks/${widget.bookId}';
         final manifest = await ref
             .read(embeddedConverterProvider)
-            .convert(
-              inputPath: path,
-              outputPath: outputDir,
-            );
-        final audioFile = File(manifest);
-        if (!await audioFile.exists()) {
-          throw StateError('Rust converter returned a missing audio file');
+            .convert(inputPath: path, outputPath: outputDir);
+        debugPrint('Embedded conversion returned ${manifest.length} bytes');
+        final manifestFile = File(manifest);
+        final manifestIsInline = manifest.trimLeft().startsWith('{');
+        if (!manifestIsInline && !await manifestFile.exists()) {
+          throw StateError('Rust converter returned a missing manifest');
         }
-        final audio = ref.read(globalAudioPlayerProvider);
-        await audio.setQueue([
-          ChapterProgress(
-            index: 0,
-            name: ft.chapters.first.displayTitle,
+        final manifestData = jsonDecode(
+          manifestIsInline ? manifest : await manifestFile.readAsString(),
+        );
+        if (manifestData is! Map<String, dynamic>) {
+          throw StateError('Rust converter returned invalid manifest JSON');
+        }
+        final coverName = manifestData['cover'] as String?;
+        if (coverName != null && coverName.isNotEmpty) {
+          final coverFile = File(
+            manifestIsInline ? '$outputDir/$coverName' : '${manifestFile.parent.path}/$coverName',
+          );
+          if (await coverFile.exists()) {
+            final bytes = await coverFile.readAsBytes();
+            final book = ref
+                .read(libraryStoreProvider)
+                .books
+                .where((b) => b.id == widget.bookId)
+                .firstOrNull;
+            if (book != null && book.coverBase64 == null) {
+              book.coverBase64 = base64Encode(bytes);
+              ref.read(libraryStoreProvider).update(book);
+            }
+          }
+        }
+        final chapterEntries = manifestData['chapters'];
+        if (chapterEntries is! List || chapterEntries.isEmpty) {
+          throw StateError('Rust converter returned no playable chapters');
+        }
+        final audioFiles = <ChapterProgress>[];
+        for (var i = 0; i < chapterEntries.length; i++) {
+          final entry = chapterEntries[i];
+          if (entry is! Map<String, dynamic>) continue;
+          final rawPath = entry['path'] ?? entry['audioPath'] ?? entry['file'];
+          if (rawPath is! String || rawPath.isEmpty) continue;
+          final audioFile = File(
+            rawPath.startsWith('/') ? rawPath : '$outputDir/$rawPath',
+          );
+          if (!await audioFile.exists() || await audioFile.length() == 0) {
+            throw StateError('Rust converter returned invalid chapter audio');
+          }
+          audioFiles.add(ChapterProgress(
+            index: i,
+            name: i < ft.chapters.length ? ft.chapters[i].displayTitle : 'Chapter ${i + 1}',
             status: 'completed',
             downloadUrl: audioFile.uri.toString(),
             progressRatio: 1.0,
-          ),
-        ]);
+          ));
+        }
+        if (audioFiles.isEmpty) {
+          throw StateError('Rust converter returned no valid chapter audio');
+        }
+        final audio = ref.read(globalAudioPlayerProvider);
+        await audio.setQueue(audioFiles);
         await audio.play();
         ref.read(currentlyPlayingBookIdProvider.notifier).state = widget.bookId;
         if (!mounted) return;
         setState(() {
           _isConverting = false;
-          _chaptersConverted = 1;
-          _playableChapters.add(ChapterProgress(
-            index: 0,
-            name: ft.chapters.first.displayTitle,
-            status: 'completed',
-            downloadUrl: audioFile.uri.toString(),
-            progressRatio: 1.0,
-          ));
+          _chaptersConverted = audioFiles.length;
+          _playableChapters.addAll(audioFiles);
         });
       } catch (error) {
         if (!mounted) return;

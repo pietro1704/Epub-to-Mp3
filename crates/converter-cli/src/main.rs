@@ -456,7 +456,6 @@ fn clear_book_cache(input: &Path, assume_yes: bool) -> Result<(), String> {
     Ok(())
 }
 
-
 fn verify_output(
     output_dir: &Path,
     manifest: &converter_core::worker::OutputManifest,
@@ -480,6 +479,18 @@ fn verify_output(
             return Err(format!(
                 "verification failed: empty audio {}",
                 path.display()
+            ));
+        }
+        let expected_title = chapter.title.trim();
+        if !expected_title.is_empty()
+            && !chapter
+                .filename
+                .to_lowercase()
+                .contains(&expected_title.to_lowercase())
+        {
+            return Err(format!(
+                "verification failed: filename '{}' does not contain TOC title '{}'",
+                chapter.filename, chapter.title
             ));
         }
     }
@@ -594,7 +605,8 @@ mod tests {
                 filename: "0001-Chapter_1.mp3".into(),
                 text_chars: 10,
             }],
-            archive: "Book.zip".into(),
+            archive: "archive.zip".into(),
+            cover: None,
         };
         let error = verify_output(&root, &manifest).expect_err("missing audio must fail");
         assert!(error.contains("verification failed"));

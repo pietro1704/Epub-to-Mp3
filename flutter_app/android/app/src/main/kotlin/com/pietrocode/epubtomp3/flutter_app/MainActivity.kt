@@ -23,6 +23,7 @@ import io.flutter.plugin.common.MethodChannel
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
+import java.io.FileOutputStream
 import java.io.InputStream
 import java.util.Locale
 
@@ -53,7 +54,6 @@ class MainActivity : AudioServiceActivity() {
             try {
                 System.loadLibrary(PIPER_RUNTIME_LIBRARY)
                 System.loadLibrary(CONVERTER_LIBRARY)
-                registerEmbeddedPiper()
                 converterLibraryLoaded = true
             } catch (_: UnsatisfiedLinkError) {
                 converterLibraryLoaded = false
@@ -64,7 +64,6 @@ class MainActivity : AudioServiceActivity() {
             if (!converterLibraryLoaded) {
                 System.loadLibrary(PIPER_RUNTIME_LIBRARY)
                 System.loadLibrary(CONVERTER_LIBRARY)
-                registerEmbeddedPiper()
                 converterLibraryLoaded = true
             }
             true
@@ -72,10 +71,9 @@ class MainActivity : AudioServiceActivity() {
             false
         }
 
-        private external fun piper_runtime_register_embedded()
-
         private fun registerEmbeddedPiper() {
-            try { piper_runtime_register_embedded() } catch (_: UnsatisfiedLinkError) { }
+            // The native converter resolves the Piper runtime directly from
+            // its linked library; no JNI symbol is required for registration.
         }
     }
 
@@ -86,19 +84,14 @@ class MainActivity : AudioServiceActivity() {
 
 
     private fun embeddedConverterStatus(): Map<String, Boolean> = try {
-        val nativeStatus = if (converterLibraryAvailable()) {
-            nativePiperStatus()?.let { JSONObject(it) }
-        } else null
-        val loaded = nativeStatus?.optBoolean("runtimeLoaded", false) == true
-        val modelAvailable = loaded && (
-            assets.list("piper")?.any { it.endsWith(".onnx") } == true ||
-                File(filesDir, "piper").listFiles()?.any { it.extension == "onnx" } == true
-            )
+        val model = ensureBundledPiperModel()
+        System.setProperty("PIPER_MODEL", model)
+        val modelAvailable = File(model).isFile && File("$model.json").isFile
         mapOf(
-            "runtimeLoaded" to loaded,
-            "modelAvailable" to (nativeStatus?.optBoolean("modelAvailable", false) == true || modelAvailable),
-            "abiCompatible" to (nativeStatus?.optBoolean("abiCompatible", false) == true),
-            "engineReady" to (nativeStatus?.optBoolean("engineReady", false) == true && modelAvailable),
+            "runtimeLoaded" to converterLibraryLoaded,
+            "modelAvailable" to modelAvailable,
+            "abiCompatible" to converterLibraryLoaded,
+            "engineReady" to (converterLibraryLoaded && modelAvailable),
         )
     } catch (_: Throwable) {
         mapOf(
@@ -107,6 +100,21 @@ class MainActivity : AudioServiceActivity() {
             "abiCompatible" to false,
             "engineReady" to false,
         )
+    }
+
+    private fun ensureBundledPiperModel(): String {
+        val target = File(filesDir, "piper/pt_BR-faber-medium.onnx")
+        val config = File(filesDir, "piper/pt_BR-faber-medium.onnx.json")
+        if (!target.isFile || !config.isFile) {
+            target.parentFile?.mkdirs()
+            assets.open("piper/pt_BR-faber-medium.onnx").use { input ->
+                FileOutputStream(target).use { output -> input.copyTo(output) }
+            }
+            assets.open("piper/pt_BR-faber-medium.onnx.json").use { input ->
+                FileOutputStream(config).use { output -> input.copyTo(output) }
+            }
+        }
+        return target.absolutePath
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -239,8 +247,12 @@ class MainActivity : AudioServiceActivity() {
             flutterEngine.dartExecutor.binaryMessenger,
             EMBEDDED_CHANNEL
         ).setMethodCallHandler { call, result ->
+            Log.i(embeddedLogTag, "method ${call.method} received")
             when (call.method) {
-                "status" -> result.success(embeddedConverterStatus())
+                "status" -> {
+                    Log.i(embeddedLogTag, "status requested")
+                    result.success(embeddedConverterStatus())
+                }
                 "parse" -> {
                     if (!converterLibraryAvailable()) {
                         result.error(EMBEDDED_UNAVAILABLE, "converter-ffi native library is not packaged in this APK", null)
@@ -250,6 +262,8 @@ class MainActivity : AudioServiceActivity() {
                             result.error("BAD_ARGS", "inputPath is required", null)
                         } else {
                             Log.i(embeddedLogTag, "parse start input=$inputPath")
+                            ensureBundledPiperModel()
+                            System.setProperty("PIPER_MODEL", ensureBundledPiperModel())
                             val native = nativeParse(inputPath)
                             if (native == null) {
                                 Log.e(embeddedLogTag, "parse failed: ${nativeLastError()}")
@@ -271,12 +285,16 @@ class MainActivity : AudioServiceActivity() {
                             result.error("BAD_ARGS", "inputPath and outputPath are required", null)
                         } else {
                             Log.i(embeddedLogTag, "convert start input=$inputPath output=$outputPath")
+                            ensureBundledPiperModel()
+                            System.setProperty("PIPER_MODEL", ensureBundledPiperModel())
+                            Log.i(embeddedLogTag, "convert native call libraryLoaded=$converterLibraryLoaded model=${ensureBundledPiperModel()}")
+                            Log.i(embeddedLogTag, "convert invoking JNI")
                             val native = nativeConvert(inputPath, outputPath)
                             if (native == null) {
                                 Log.e(embeddedLogTag, "convert failed: ${nativeLastError()}")
                                 result.error(EMBEDDED_UNAVAILABLE, nativeLastError(), null)
                             } else {
-                                Log.i(embeddedLogTag, "convert success result=$native")
+                                Log.i(embeddedLogTag, "convert native returned ${native.length} chars")
                                 result.success(native)
                             }
                         }
@@ -291,7 +309,7 @@ class MainActivity : AudioServiceActivity() {
 
     private external fun nativeParse(inputPath: String): String?
     private external fun nativeConvert(inputPath: String, outputPath: String): String?
-    private external fun nativePiperStatus(): String?
+
     private external fun nativeLastError(): String
 
     override fun onDestroy() {

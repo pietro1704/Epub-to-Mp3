@@ -13,6 +13,27 @@ static INITIALIZED: AtomicBool = AtomicBool::new(false);
 #[cfg(feature = "piper-inference")]
 static RUNTIME: std::sync::OnceLock<std::sync::Mutex<Option<Piper>>> = std::sync::OnceLock::new();
 
+#[cfg(feature = "piper-inference")]
+static MODEL_PATH: std::sync::OnceLock<std::sync::Mutex<Option<String>>> =
+    std::sync::OnceLock::new();
+
+#[cfg(feature = "piper-inference")]
+pub fn configured_model_path() -> Option<String> {
+    MODEL_PATH
+        .get()
+        .and_then(|value| value.lock().ok()?.clone())
+}
+
+#[cfg(feature = "piper-inference")]
+#[no_mangle]
+pub extern "C" fn piper_runtime_set_model_path(path: &str) {
+    MODEL_PATH
+        .get_or_init(|| std::sync::Mutex::new(None))
+        .lock()
+        .expect("Piper model path lock poisoned")
+        .replace(path.to_owned());
+}
+
 fn error(buffer: *mut c_char, length: u32, message: &str) {
     if buffer.is_null() || length == 0 {
         return;

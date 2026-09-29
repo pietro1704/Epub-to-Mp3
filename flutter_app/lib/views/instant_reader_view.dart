@@ -463,6 +463,7 @@ class _InstantReaderViewState extends ConsumerState<InstantReaderView> {
                         color: fg,
                       ),
                       onPressed: widget.player!.togglePlayPause,
+                      tooltip: isPlaying ? 'Pause' : 'Play',
                     );
                   },
                 )
@@ -474,6 +475,7 @@ class _InstantReaderViewState extends ConsumerState<InstantReaderView> {
                       icon: Icon(Icons.play_circle_filled, size: 36, color: fg),
                       onPressed: widget.onRequestPlay,
                       tooltip: 'Create audio',
+                      key: const ValueKey('create-audio'),
                     ),
                     if (widget.onRequestSpeechFallback != null)
                       IconButton(

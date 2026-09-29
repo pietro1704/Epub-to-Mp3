@@ -63,10 +63,9 @@ class AndroidEmbeddedConverter implements EmbeddedConverter {
 
   Future<void> ensureRuntimeLoaded() async {
     final status = await runtimeStatus();
-    if (status['engineReady'] != true) {
-      throw EmbeddedConversionFailure(
-        status['modelAvailable'] == false ? 'MODEL_MISSING' : 'RUNTIME_UNAVAILABLE',
-        'Embedded Piper is not ready: $status',
+    if (status['modelAvailable'] != true) {
+      throw EmbeddedConverterUnavailable(
+        'Embedded Piper model is not available: $status',
       );
     }
   }
@@ -112,6 +111,8 @@ class AndroidEmbeddedConverter implements EmbeddedConverter {
     required String outputPath,
   }) async {
     try {
+      // ignore: avoid_print
+      print('AndroidEmbeddedConverter: invoking native convert');
       await ensureRuntimeLoaded();
       final result = await _channel.invokeMethod<String>('convert', {
         'inputPath': inputPath,
@@ -124,15 +125,19 @@ class AndroidEmbeddedConverter implements EmbeddedConverter {
         );
       }
       final decoded = jsonDecode(result);
+      if (decoded is Map<String, dynamic> && decoded['manifest'] is Map) {
+        return jsonEncode(decoded['manifest']);
+      }
       if (decoded is Map<String, dynamic> && decoded['audioPath'] is String) {
-        return decoded['audioPath'] as String;
+        final audioPath = decoded['audioPath'] as String;
+        final manifestPath = decoded['manifestPath'];
+        if (manifestPath is String && manifestPath.isNotEmpty) {
+          return manifestPath;
+        }
+        return audioPath;
       }
       if (decoded is Map<String, dynamic> && decoded['chapters'] is List) {
-        final chapters = decoded['chapters'] as List;
-        if (chapters.isNotEmpty && chapters.first is Map<String, dynamic>) {
-          final filename = (chapters.first as Map<String, dynamic>)['filename'];
-          if (filename is String) return filename;
-        }
+        return result;
       }
       return result;
     } on MissingPluginException {
