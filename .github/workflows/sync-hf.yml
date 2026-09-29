@@ -38,6 +38,13 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          if [[ "${{ github.event_name }}" == "workflow_run" ]]; then
+            # A successful CI workflow_run is already the trust boundary.
+            # Do not re-derive changed paths from a shallow checkout.
+            echo "should_sync=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
           if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
             echo "should_sync=true" >> "$GITHUB_OUTPUT"
             exit 0
