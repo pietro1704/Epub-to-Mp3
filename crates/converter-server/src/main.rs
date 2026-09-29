@@ -339,28 +339,28 @@ async fn create_job(State(state): State<AppState>, Json(form): Json<CreateJob>) 
         let worker = worker.with_progress(Arc::new(move |event: ProgressEvent| {
             if let Ok(mut guard) = progress_jobs.try_write() {
                 if let Some(job) = guard.get_mut(&event.job_id) {
-                job.snapshot.state = "running".into();
-                job.snapshot.chapters_total = event.chapters_total as u32;
-                job.snapshot.chapters_completed = event.chapters_completed as u32;
-                job.snapshot.progress_percent = event.percent;
-                job.snapshot.engine = event.engine.clone();
-                job.snapshot.events.push(event.message.clone());
-                job.snapshot.raw_log.push(event.message);
-                let _ = progress_sender.send(SseMessage::Chapter(job.snapshot.clone()));
+                    job.snapshot.state = "running".into();
+                    job.snapshot.chapters_total = event.chapters_total as u32;
+                    job.snapshot.chapters_completed = event.chapters_completed as u32;
+                    job.snapshot.progress_percent = event.percent;
+                    job.snapshot.engine = event.engine.clone();
+                    job.snapshot.events.push(event.message.clone());
+                    job.snapshot.raw_log.push(event.message);
+                    let _ = progress_sender.send(SseMessage::Chapter(job.snapshot.clone()));
+                }
+            } else {
+                let mut guard = progress_jobs.blocking_write();
+                if let Some(job) = guard.get_mut(&event.job_id) {
+                    job.snapshot.state = "running".into();
+                    job.snapshot.chapters_total = event.chapters_total as u32;
+                    job.snapshot.chapters_completed = event.chapters_completed as u32;
+                    job.snapshot.progress_percent = event.percent;
+                    job.snapshot.engine = event.engine.clone();
+                    job.snapshot.events.push(event.message.clone());
+                    job.snapshot.raw_log.push(event.message);
+                    let _ = progress_sender.send(SseMessage::Chapter(job.snapshot.clone()));
+                }
             }
-        } else {
-            let mut guard = progress_jobs.blocking_write();
-            if let Some(job) = guard.get_mut(&event.job_id) {
-                job.snapshot.state = "running".into();
-                job.snapshot.chapters_total = event.chapters_total as u32;
-                job.snapshot.chapters_completed = event.chapters_completed as u32;
-                job.snapshot.progress_percent = event.percent;
-                job.snapshot.engine = event.engine.clone();
-                job.snapshot.events.push(event.message.clone());
-                job.snapshot.raw_log.push(event.message);
-                let _ = progress_sender.send(SseMessage::Chapter(job.snapshot.clone()));
-            }
-        }
         }));
         let result = worker.with_cancellation(cancellation).run(request);
         let mut guard = jobs.blocking_write();
@@ -368,7 +368,12 @@ async fn create_job(State(state): State<AppState>, Json(form): Json<CreateJob>) 
             match result {
                 Ok(manifest) => apply_manifest(&mut job.snapshot, &manifest),
                 Err(error) => {
-                    job.snapshot.state = if matches!(error, converter_core::worker::WorkerError::Cancelled) { "cancelled".into() } else { "failed".into() };
+                    job.snapshot.state =
+                        if matches!(error, converter_core::worker::WorkerError::Cancelled) {
+                            "cancelled".into()
+                        } else {
+                            "failed".into()
+                        };
                     job.snapshot.error = Some(error.to_string());
                     job.snapshot.events.push(error.to_string());
                 }
