@@ -106,7 +106,14 @@ jobs:
             --exclude "*.jpeg" \
             --exclude "*.gif" \
             --exclude "*.webp" \
-            --exclude "*.bin"
+            --exclude "*.bin" \
+            --exclude "*.so" \
+            --exclude "*.dylib" \
+            --exclude "*.dll" \
+            --exclude "*.a" \
+            --exclude "*.o" \
+            --exclude "*.onnx" \
+            --exclude "target"
           cd "$HF_SYNC_DIR"
           git init
           git config user.name "hf-sync-bot"
