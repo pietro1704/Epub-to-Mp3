@@ -13,7 +13,7 @@ use rand::{distr::Alphanumeric, Rng};
 use sha2::{Digest, Sha256};
 use tokio::{net::TcpStream, sync::Semaphore, time::timeout};
 use tokio_tungstenite::{
-    connect_async_tls_with_config,
+    client_async_tls_with_config,
     tungstenite::{http::HeaderValue, Message},
     MaybeTlsStream, WebSocketStream,
 };
@@ -161,7 +161,19 @@ pub struct WebSocketTransport;
 impl EdgeTransport for WebSocketTransport {
     fn connect<'a>(&'a self, request: Request<()>) -> TransportFuture<'a> {
         Box::pin(async move {
-            let (socket, _) = connect_async_tls_with_config(request, None, false, None)
+            let mut request = request;
+            request.headers_mut().remove("sec-websocket-key");
+            request.headers_mut().remove("sec-websocket-version");
+            request.headers_mut().remove("sec-websocket-extensions");
+            let uri = request.uri().clone();
+            let host = uri
+                .host()
+                .ok_or_else(|| EdgeError::Url("missing host".into()))?;
+            let port = uri.port_u16().unwrap_or(443);
+            let stream = TcpStream::connect((host, port))
+                .await
+                .map_err(|error| EdgeError::Transport(error.to_string()))?;
+            let (socket, _) = client_async_tls_with_config(request, stream, None, None)
                 .await
                 .map_err(|e| EdgeError::Transport(e.to_string()))?;
             Ok(socket)
@@ -444,9 +456,6 @@ fn protocol_request(url: Url) -> Result<Request<()>, EdgeError> {
         "User-Agent",
         HeaderValue::from_static("Mozilla/5.0 EdgeTTS Rust Client"),
     );
-    // tungstenite generates the RFC 6455 handshake headers. Supplying a
-    // WebSocket key here creates a second key during connect_async and Edge
-    // rejects the request as malformed.
     Ok(request.map(|_| ()))
 }
 

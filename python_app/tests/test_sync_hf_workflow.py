@@ -12,7 +12,7 @@ def test_hf_sync_only_tracks_space_runtime_paths() -> None:
     workflow = WORKFLOW.read_text(encoding="utf-8")
 
     assert "Detect Space-relevant changes" in workflow
-    assert "python_app/" in workflow
+    assert '--exclude "python_app"' in workflow
     assert "web/" in workflow
     assert "needs.changes.outputs.should_sync == 'true'" in workflow
     assert "workflow_dispatch" in workflow
