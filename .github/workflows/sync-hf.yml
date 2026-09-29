@@ -45,7 +45,7 @@ jobs:
 
           base=$(git rev-parse HEAD^)
           changed=$(git diff --name-only "$base" HEAD)
-          if grep -Eq '^(python_app/|web/|hf_app\.py$|Dockerfile$|requirements\.txt$|paths\.py$)' <<< "$changed"; then
+          if grep -Eq '^(crates/|Cargo\.toml$|Cargo\.lock$|web/|Dockerfile$|\.github/workflows/sync-hf\.yml$)' <<< "$changed"; then
             echo "should_sync=true" >> "$GITHUB_OUTPUT"
           else
             echo "should_sync=false" >> "$GITHUB_OUTPUT"
@@ -82,6 +82,12 @@ jobs:
             --exclude ".git" \
             --exclude "pretrained_models" \
             --exclude "voice_samples" \
+            --exclude "python_app" \
+            --exclude "hf_app.py" \
+            --exclude "requirements.txt" \
+            --exclude "paths.py" \
+            --exclude "pyproject.toml" \
+            --exclude "pytest.ini" \
             --exclude "output" \
             --exclude "node_modules" \
             --exclude "web/node_modules" \
@@ -140,7 +146,8 @@ jobs:
             if [ "$HTTP_CODE" = "200" ]; then
               echo "HF Space is healthy"
               cat /tmp/hf_health.json
-              VERSION=$(python3 -c "import json; print(json.load(open('/tmp/hf_health.json')).get('version', 'unknown'))" 2>/dev/null || echo "unknown")
+              VERSION=$(sed -nE 's/.*"version"[[:space:]]*:[[:space:]]*"([^"]*)".*/\1/p' /tmp/hf_health.json | head -1)
+              VERSION=${VERSION:-unknown}
               echo "Deployed version: $VERSION"
               exit 0
             fi
