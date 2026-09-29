@@ -7,6 +7,8 @@
 //! - `converter_last_error` returns an owned UTF-8 error string, or null when no error exists.
 //! - Every returned string must be released with `converter_string_free`.
 
+extern crate piper_runtime;
+
 use converter_core::piper::{self, PiperRuntimeStatus};
 use converter_core::{
     config::AppConfig,
@@ -172,8 +174,9 @@ pub struct PiperStatus {
     pub engine_ready: bool,
 }
 
+#[cfg(not(feature = "piper-runtime"))]
 #[no_mangle]
-pub extern "C" fn piper_runtime_status() -> PiperStatus {
+pub unsafe extern "C" fn piper_runtime_status() -> PiperRuntimeStatusC {
     let status: PiperRuntimeStatus = piper::piper_runtime_status();
     PiperStatus {
         runtime_loaded: status.runtime_loaded,
@@ -183,6 +186,7 @@ pub extern "C" fn piper_runtime_status() -> PiperStatus {
     }
 }
 
+#[cfg(not(feature = "piper-runtime"))]
 #[no_mangle]
 pub unsafe extern "C" fn piper_runtime_init(model: *const c_char, config: *const c_char) -> bool {
     clear_last_error();
@@ -205,6 +209,7 @@ pub unsafe extern "C" fn piper_runtime_init(model: *const c_char, config: *const
     }
 }
 
+#[cfg(not(feature = "piper-runtime"))]
 #[no_mangle]
 pub unsafe extern "C" fn piper_synthesize(text: *const c_char, output: *const c_char) -> bool {
     clear_last_error();
@@ -228,6 +233,7 @@ pub unsafe extern "C" fn piper_synthesize(text: *const c_char, output: *const c_
     }
 }
 
+#[cfg(not(feature = "piper-runtime"))]
 #[no_mangle]
 pub extern "C" fn piper_runtime_shutdown() {
     piper::piper_runtime_shutdown();
@@ -313,7 +319,22 @@ mod android_jni {
         env: JNIEnv<'_>,
         _class: JClass<'_>,
     ) -> jstring {
-        let status = piper_runtime_status();
+        let status = {
+            #[cfg(feature = "piper-runtime")]
+            {
+                let status = piper_runtime::piper_runtime_status();
+                PiperStatus {
+                    runtime_loaded: status.runtime_loaded != 0,
+                    model_available: status.model_available != 0,
+                    abi_compatible: status.abi_compatible != 0,
+                    engine_ready: status.engine_ready != 0,
+                }
+            }
+            #[cfg(not(feature = "piper-runtime"))]
+            {
+                piper_runtime_status()
+            }
+        };
         let value = serde_json::json!({
             "runtimeLoaded": status.runtime_loaded,
             "modelAvailable": status.model_available,

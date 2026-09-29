@@ -5,7 +5,8 @@ edition = "2021"
 license = "MIT"
 
 [lib]
-crate-type = ["cdylib", "staticlib"]
+name = "piper_runtime"
+crate-type = ["rlib", "cdylib", "staticlib"]
 
 [features]
 default = []
