@@ -58,6 +58,48 @@ impl Default for CliOptions {
 
 fn main() {
     let _ = rustls::crypto::ring::default_provider().install_default();
+    converter_core::piper::register_runtime(std::sync::Arc::new(
+        converter_core::piper::RegisteredPiperRuntime::new(|text, output| {
+            let model = std::env::var_os("PIPER_MODEL")
+                .map(std::path::PathBuf::from)
+                .unwrap_or_else(|| {
+                    std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                        .join("../../models/piper/pt_BR-faber-medium.onnx")
+                });
+            let config = model.with_extension("onnx.json");
+            let binary = std::env::var_os("PIPER_BINARY")
+                .unwrap_or_else(|| std::ffi::OsString::from("piper"));
+            let mut command = std::process::Command::new(binary);
+            command
+                .arg("--model")
+                .arg(model)
+                .arg("--config")
+                .arg(config)
+                .arg("--output_file")
+                .arg(output);
+            let mut child = command
+                .stdin(std::process::Stdio::piped())
+                .stderr(std::process::Stdio::piped())
+                .spawn()
+                .map_err(|error| converter_core::piper::PiperError::Io(error.to_string()))?;
+            use std::io::Write;
+            child
+                .stdin
+                .take()
+                .ok_or_else(|| converter_core::piper::PiperError::Io("missing Piper stdin".into()))?
+                .write_all(text.as_bytes())
+                .map_err(|error| converter_core::piper::PiperError::Io(error.to_string()))?;
+            let result = child
+                .wait_with_output()
+                .map_err(|error| converter_core::piper::PiperError::Io(error.to_string()))?;
+            if !result.status.success() {
+                return Err(converter_core::piper::PiperError::Synthesis(
+                    String::from_utf8_lossy(&result.stderr).trim().to_owned(),
+                ));
+            }
+            Ok(())
+        }),
+    ));
     let raw = env::args().skip(1).collect::<Vec<_>>();
     match run(raw) {
         Ok(code) => std::process::exit(code),
@@ -133,15 +175,7 @@ fn run(raw: Vec<String>) -> Result<i32, String> {
             config.clone(),
         )
         .map_err(|error| error.to_string())?;
-        let manifest = if options.verify && !options.clean_cache {
-            read_manifest(&config.paths.output_dir.join(format!(
-                "cli-{}-{}",
-                std::process::id(),
-                position
-            )))?
-        } else {
-            session.convert().map_err(|error| error.to_string())?
-        };
+        let manifest = session.convert().map_err(|error| error.to_string())?;
         if options.verify {
             verify_output(&config.paths.output_dir.join(&manifest.job_id), &manifest)?;
             println!("verified: {} chapters and archive", manifest.chapters.len());
@@ -422,13 +456,6 @@ fn clear_book_cache(input: &Path, assume_yes: bool) -> Result<(), String> {
     Ok(())
 }
 
-fn read_manifest(output_dir: &Path) -> Result<converter_core::worker::OutputManifest, String> {
-    let path = output_dir.join("manifest.json");
-    let content = fs::read_to_string(&path)
-        .map_err(|error| format!("failed to read '{}': {error}", path.display()))?;
-    serde_json::from_str(&content)
-        .map_err(|error| format!("failed to parse '{}': {error}", path.display()))
-}
 
 fn verify_output(
     output_dir: &Path,

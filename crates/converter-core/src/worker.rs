@@ -6,7 +6,7 @@ use crate::{
     epub,
     jobs::{JobError, JobManager, JobRecord, JobState},
     piper::{self, CancellationToken, PiperConfig},
-    tts::{EdgeConfig, EdgeError, EdgeTtsClient},
+    tts::EdgeError,
 };
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
@@ -156,6 +156,7 @@ impl ConversionWorker {
             .build()
             .map_err(|error| WorkerError::Piper(error.to_string()))?;
         let results = Mutex::new(Vec::with_capacity(total));
+        let _parallelism = parallelism.min(2);
         pool.install(|| {
             book.chapters.par_iter().enumerate().try_for_each(
                 |(position, chapter)| -> Result<(), WorkerError> {
@@ -176,6 +177,7 @@ impl ConversionWorker {
                     let mp3 = output_dir.join(format!("{stem}.mp3"));
                     let engine = select_engine(request.engine.as_deref(), &self.config);
                     if !mp3.is_file() {
+                        eprintln!("synthesizing chapter {}/{}", position + 1, total);
                         self.synthesize_with_timeout(
                             &engine,
                             &text,
@@ -236,13 +238,19 @@ impl ConversionWorker {
             let rt = tokio::runtime::Builder::new_current_thread()
                 .enable_all()
                 .build()?;
-            match rt.block_on(EdgeTtsClient::new(EdgeConfig::new(voice)?).synthesize(text)) {
+            match rt.block_on(crate::tts::synthesize_with_reference_client(text, voice)) {
                 Ok(bytes) => {
                     fs::write(out, bytes)?;
                     return Ok(());
                 }
                 Err(error) => {
-                    eprintln!("Edge synthesis failed; falling back to Piper: {error}");
+                    if is_edge_fallback_error(&error) {
+                        eprintln!(
+                            "Edge synthesis unavailable; falling back to embedded Piper: {error}"
+                        );
+                        return self.synthesize_with_piper(text, out);
+                    }
+                    return Err(WorkerError::Edge(error));
                 }
             }
         }
@@ -266,23 +274,8 @@ impl ConversionWorker {
                 .project_root
                 .join("models/piper/pt_BR-faber-medium.onnx")
         };
-        let config = model.with_extension("json");
+        let config = model.with_extension("onnx.json");
         let mut c = PiperConfig::new(model, config);
-        let binary = std::env::var_os("PIPER_BINARY")
-            .map(PathBuf::from)
-            .filter(|path| path.is_file())
-            .or_else(|| {
-                let managed = self.config.paths.project_root.join(".venv/bin/piper");
-                managed.is_file().then_some(managed)
-            })
-            .unwrap_or_else(|| PathBuf::from("piper"));
-        if !binary.is_file() && binary != Path::new("piper") {
-            return Err(WorkerError::Piper(format!(
-                "Piper binary not found: {}",
-                binary.display()
-            )));
-        }
-        std::env::set_var("PIPER_BINARY", binary);
         c.chunk_chars = std::env::var("PIPER_CHUNK_CHARS")
             .ok()
             .and_then(|value| value.parse().ok())
@@ -310,13 +303,23 @@ impl ConversionWorker {
                 if self.cancel.is_cancelled()
                     || started.elapsed() >= std::time::Duration::from_secs(timeout_secs)
                 {
-                    return Err(WorkerError::Piper("chapter synthesis timed out".into()));
+                    return Err(if engine == "edge" {
+                        WorkerError::Edge(EdgeError::Transport(
+                            "chapter synthesis timed out".into(),
+                        ))
+                    } else {
+                        WorkerError::Piper("chapter synthesis timed out".into())
+                    });
                 }
                 std::thread::sleep(std::time::Duration::from_millis(100));
             }
-            handle
-                .join()
-                .unwrap_or_else(|_| Err(WorkerError::Piper("synthesis thread panicked".into())))
+            handle.join().unwrap_or_else(|_| {
+                Err(if engine == "edge" {
+                    WorkerError::Edge(EdgeError::Transport("synthesis thread panicked".into()))
+                } else {
+                    WorkerError::Piper("synthesis thread panicked".into())
+                })
+            })
         });
         result
     }
@@ -327,6 +330,33 @@ impl ConversionWorker {
         }
     }
 }
+
+fn is_edge_fallback_error(error: &EdgeError) -> bool {
+    let message = error.to_string().to_ascii_lowercase();
+    ["429", "rate", "quota", "timeout", "timed out", "transport"]
+        .iter()
+        .any(|marker| message.contains(marker))
+}
+
+#[cfg(test)]
+mod fallback_tests {
+    #[test]
+    fn edge_fallback_markers_are_rate_limit_or_transport_failures() {
+        for message in [
+            "429 Too Many Requests",
+            "request timeout",
+            "transport closed",
+        ] {
+            let lower = message.to_ascii_lowercase();
+            assert!(
+                ["429", "rate", "quota", "timeout", "timed out", "transport"]
+                    .iter()
+                    .any(|marker| lower.contains(marker))
+            );
+        }
+    }
+}
+
 fn select_engine(request: Option<&str>, config: &AppConfig) -> String {
     match request
         .unwrap_or(&config.engine)
