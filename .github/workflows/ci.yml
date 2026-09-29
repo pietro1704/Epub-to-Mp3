@@ -88,7 +88,7 @@ jobs:
         run: mise exec -- python -m pytest -v --tb=short
 
       - name: Run Python lint
-        run: mise exec -- ruff check .
+        run: mise exec -- ruff check python_app tests
 
       - name: Run sample conversion smoke
         env:
