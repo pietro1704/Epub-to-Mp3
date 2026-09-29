@@ -155,7 +155,7 @@ pub extern "C" fn piper_synthesize(
             return Err("Piper runtime is not initialized".to_owned());
         }
         let text = unsafe { CStr::from_ptr(text) }.to_string_lossy();
-        let _output = unsafe { CStr::from_ptr(output) }.to_string_lossy();
+        let output = unsafe { CStr::from_ptr(output) }.to_string_lossy();
         if text.trim().is_empty() {
             return Err("Piper synthesis text is empty".to_owned());
         }
@@ -265,7 +265,7 @@ mod tests {
     fn piper_inference_generates_valid_wav_from_vendored_model() {
         let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         let model = root
-            .join("../../models/piper/en_US-lessac-medium.onnx")
+            .join("../../models/piper/pt_BR-faber-medium.onnx")
             .canonicalize()
             .unwrap();
         let config = PathBuf::from(format!("{}.json", model.display()));
