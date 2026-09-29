@@ -25,6 +25,7 @@ pub fn configured_model_path() -> Option<String> {
 }
 
 #[cfg(feature = "piper-inference")]
+#[allow(improper_ctypes_definitions)]
 #[no_mangle]
 pub extern "C" fn piper_runtime_set_model_path(path: &str) {
     MODEL_PATH
@@ -265,7 +266,7 @@ mod tests {
     fn piper_inference_generates_valid_wav_from_vendored_model() {
         let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         let model = root
-            .join("../../models/piper/pt_BR-faber-medium.onnx")
+            .join("../../models/piper/en_US-lessac-medium.onnx")
             .canonicalize()
             .unwrap();
         let config = PathBuf::from(format!("{}.json", model.display()));
