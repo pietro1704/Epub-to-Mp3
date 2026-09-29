@@ -145,8 +145,9 @@ jobs:
       - name: Install Piper smoke model
         run: |
           mise exec -- bash scripts/install_piper_binary.sh
-          test -f models/piper/pt_BR-faber-medium.onnx
-          test -f models/piper/pt_BR-faber-medium.onnx.json
+          mkdir -p models/piper
+          cp models/pt_BR-faber-medium.onnx models/piper/pt_BR-faber-medium.onnx
+          cp models/pt_BR-faber-medium.onnx.json models/piper/pt_BR-faber-medium.onnx.json
       - name: Piper Embedded runtime smoke test
         run: mise exec -- cargo test --manifest-path native/piper-runtime/Cargo.toml --features onnxruntime,piper-inference,heavy-runtime-tests piper_inference_generates_valid_wav_from_vendored_model -- --nocapture
   web:
