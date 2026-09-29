@@ -5,7 +5,6 @@ members = [
     "crates/converter-ffi",
     "crates/converter-server",
     "crates/converter-cli",
-    "benches",
 ]
 
 [workspace.package]
