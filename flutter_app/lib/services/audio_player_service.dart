@@ -11,6 +11,7 @@ abstract class AudioPlayerInterface {
   Stream<Duration> get position;
   Stream<bool> get playing;
   bool get isPlaying;
+  bool get isLoading;
   Stream<int?> get currentIndex;
   int? get currentIndexValue;
   String? get activeSentenceId;
@@ -43,7 +44,16 @@ abstract class AudioPlayerInterface {
 class AudioPlayerService implements AudioPlayerInterface {
   AudioPlayerService({String? backendBase, AudioPlayer? player})
     : _baseUrl = backendBase,
-      _player = player ?? AudioPlayer();
+      _player = player ?? AudioPlayer() {
+    _player.playerStateStream.listen(_logPlayerState);
+    _player.playbackEventStream.listen((event) {
+      // ignore: avoid_print
+      print(
+        'AudioPlayer event processing=${event.processingState.name} '
+        'index=${event.currentIndex} buffered=${event.bufferedPosition}',
+      );
+    });
+  }
 
   final AudioPlayer _player;
   final String? _baseUrl;
@@ -55,6 +65,10 @@ class AudioPlayerService implements AudioPlayerInterface {
   Stream<bool> get playing => _player.playingStream;
   @override
   bool get isPlaying => _player.playing;
+  @override
+  bool get isLoading =>
+      _player.processingState == ProcessingState.loading ||
+      _player.processingState == ProcessingState.buffering;
   @override
   Stream<int?> get currentIndex => _player.currentIndexStream;
   @override
@@ -104,6 +118,8 @@ class AudioPlayerService implements AudioPlayerInterface {
 
   @override
   Future<void> setQueue(List<ChapterProgress> chapters) async {
+    // ignore: avoid_print
+    print('AudioPlayer setQueue chapters=${chapters.length} base=$_baseUrl');
     final base = _baseUrl ?? '';
     final children = <AudioSource>[];
     final map = <int>[];
@@ -112,6 +128,10 @@ class AudioPlayerService implements AudioPlayerInterface {
       final c = chapters[i];
       if (c.downloadUrl != null) {
         final url = _resolve(base, c.downloadUrl!);
+        if (url.scheme.isEmpty ||
+            (url.scheme == 'http' && base.isEmpty)) {
+          continue;
+        }
         children.add(AudioSource.uri(url));
         urls.add(url);
         map.add(i);
@@ -125,6 +145,8 @@ class AudioPlayerService implements AudioPlayerInterface {
         );
     _chapters = chapters;
     _playableMap = map;
+    // ignore: avoid_print
+    print('AudioPlayer resolvedSources=${urls.length} urls=$urls');
     if (children.isEmpty) return;
 
     if (keepsExistingQueue) {
@@ -155,7 +177,7 @@ class AudioPlayerService implements AudioPlayerInterface {
       _segmentSource = ConcatenatingAudioSource(children: []);
       _chapterSource = null;
       _chapterQueueURLs = const [];
-      _player.setAudioSource(_segmentSource!, preload: false);
+        unawaited(_player.setAudioSource(_segmentSource!, preload: false));
     }
     if (sentenceId != null) {
       _segmentSentenceIds.add(sentenceId);
@@ -197,6 +219,8 @@ class AudioPlayerService implements AudioPlayerInterface {
 
   @override
   Future<void> play() {
+    // ignore: avoid_print
+    print('AudioPlayer play requested sourceCount=${_chapterQueueURLs.length} segment=$_isSegmentMode');
     _playbackJourneyId ??= latencyObservations.begin(
       LatencyJourneyKind.progressivePlayback,
       LatencyTransition.playRequested,
@@ -237,6 +261,16 @@ class AudioPlayerService implements AudioPlayerInterface {
     if (id != null) {
       latencyObservations.record(id, LatencyTransition.audioQueued);
     }
+  }
+
+  void _logPlayerState(PlayerState state) {
+    // Device diagnostics are intentionally limited to playback metadata.
+    // ignore: avoid_print
+    print(
+      'AudioPlayer state=${state.processingState.name} '
+      'playing=${state.playing} index=${_player.currentIndex} '
+      'duration=${_player.duration}',
+    );
   }
 
   /// `ready` means the platform player can begin rendering the queued media.
@@ -305,7 +339,7 @@ class AudioPlayerService implements AudioPlayerInterface {
     if (_player.playing) {
       _player.pause();
     } else {
-      _player.play();
+      unawaited(play());
     }
   }
 
@@ -394,6 +428,8 @@ class FakeAudioPlayerService implements AudioPlayerInterface {
   Stream<bool> get playing => _playingController.stream;
   @override
   bool get isPlaying => _playing;
+  @override
+  bool get isLoading => false;
   @override
   Stream<int?> get currentIndex => _indexController.stream;
   @override

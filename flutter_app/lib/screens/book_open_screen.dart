@@ -58,9 +58,6 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen>
 
   // Local conversion state
   bool _isConverting = false;
-  String? _conversionError;
-  int _chaptersConverted = 0;
-  int _chaptersTotal = 0;
   final List<ChapterProgress> _playableChapters = [];
   LocalConversionJob? _localJob;
   ResumeRestorationGuard _resumeGuard = ResumeRestorationGuard();
@@ -287,7 +284,7 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen>
     final settings = ref.read(settingsProvider);
     if (settings.useEmbeddedRuntime) {
       if (!mounted) return;
-      setState(() => _conversionError = 'Embedded Piper is the only audio engine in embedded mode');
+      if (mounted) setState(() {});
       return;
     }
     final engine = ref.read(androidSpeechFallbackProvider);
@@ -314,6 +311,7 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen>
     'zh': 'zh-CN-YunxiNeural',
   };
 
+  // ignore: unused_element
   Future<void> _startConversion() async {
     if (_isConverting) return;
     debugPrint('BookOpenScreen: start conversion requested for ${widget.bookId}');
@@ -322,9 +320,6 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen>
 
     setState(() {
       _isConverting = true;
-      _conversionError = null;
-      _chaptersConverted = 0;
-      _chaptersTotal = ft.chapters.length;
       _playableChapters.clear();
       // Reset the latched guard so the resume restoration retries for
       // the new conversion run.
@@ -409,14 +404,12 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen>
         if (!mounted) return;
         setState(() {
           _isConverting = false;
-          _chaptersConverted = audioFiles.length;
           _playableChapters.addAll(audioFiles);
         });
       } catch (error) {
         if (!mounted) return;
         setState(() {
           _isConverting = false;
-          _conversionError = error.toString();
         });
       }
       return;
@@ -426,8 +419,6 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen>
       if (!bridge.isSupported) {
         setState(() {
           _isConverting = false;
-          _conversionError =
-              'Local Python runtime is not available on this device';
         });
         return;
       }
@@ -445,7 +436,6 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen>
       unawaited(_speakCurrentChapterOffline());
       setState(() {
         _isConverting = false;
-        _conversionError = error.toString();
       });
     }
   }
@@ -475,7 +465,6 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen>
         if (!mounted) return;
         setState(() {
           _isConverting = false;
-          _conversionError = e.toString();
         });
       },
       onDone: () {
@@ -497,7 +486,6 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen>
         if (!mounted) return;
         setState(() {
           _isConverting = false;
-          _conversionError = error.toString();
         });
       }
     });
@@ -529,12 +517,6 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen>
       }
     }
 
-    setState(() {
-      _chaptersConverted = snapshot.chaptersCompleted ?? playable.length;
-      _chaptersTotal =
-          snapshot.chaptersTotal ?? _fulltext?.chapters.length ?? 0;
-    });
-
     if (snapshot.coverUrl != null) {
       _fetchBackendCover(snapshot.coverUrl!);
     }
@@ -543,10 +525,7 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen>
       _sseSubscription?.cancel();
       _sseSubscription = null;
       if (snapshot.state.toLowerCase() == 'failed') {
-        setState(() {
-          _isConverting = false;
-          _conversionError = snapshot.error ?? 'Conversion failed';
-        });
+        setState(() => _isConverting = false);
       } else {
         setState(() => _isConverting = false);
       }
@@ -659,9 +638,6 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen>
             .where((c) => c.index == ch.index)
             .firstOrNull;
         if (saved?.status == 'completed') {
-          if (mounted) {
-            setState(() => _chaptersConverted = _playableChapters.length);
-          }
           continue;
         }
 
@@ -671,7 +647,7 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen>
         if (ch.text.trim().isEmpty) {
           job = await coordinator.completeChapter(job, ch.index, mp3Path);
           _localJob = job;
-          if (mounted) setState(() => _chaptersConverted = i + 1);
+
           continue;
         }
 
@@ -739,7 +715,7 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen>
         }
         job = await coordinator.completeChapter(job, ch.index, mp3Path);
         _localJob = job;
-        setState(() => _chaptersConverted = i + 1);
+
       }
 
       if (!mounted) return;
@@ -755,10 +731,7 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen>
         );
       }
       if (!mounted) return;
-      setState(() {
-        _isConverting = false;
-        _conversionError = e.toString();
-      });
+      setState(() => _isConverting = false);
     }
   }
 
@@ -843,28 +816,11 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen>
     _positionSub = null;
     _resumeSaveTimer?.cancel();
     _isConverting = false;
-    _conversionError = null;
-    _chaptersConverted = 0;
-    _chaptersTotal = 0;
+
     _playableChapters.clear();
     _resumeGuard = ResumeRestorationGuard();
   }
 
-  String? _buildStatusBanner(AppLocalizations t) {
-    if (_conversionError != null) {
-      return t.conversionFailed;
-    }
-    if (_isConverting && _chaptersTotal > 0) {
-      return t.chaptersConverted(_chaptersConverted, _chaptersTotal);
-    }
-    if (_isConverting) {
-      return t.startingConversion;
-    }
-    if (!_isConverting && _playableChapters.isNotEmpty) {
-      return null;
-    }
-    return null;
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -965,7 +921,6 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen>
               fulltext: _fulltext!,
               bookId: widget.bookId,
               coverArt: coverArt,
-              statusBanner: _buildStatusBanner(t),
               player: player,
               initialChapterIndex: _playableChapters.isEmpty
                   ? 0
@@ -979,10 +934,6 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen>
                               0,
                         ) ??
                         0,
-              onRequestPlay: _startConversion,
-              onRequestSpeechFallback: Platform.isAndroid
-                  ? _speakCurrentChapterOffline
-                  : null,
             ),
           ),
         );

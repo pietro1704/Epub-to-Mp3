@@ -260,7 +260,8 @@ fn normalize_cli_args(raw: &[String]) -> Vec<String> {
         }
         first.push(token.clone());
         consumed = index + 1;
-        if Path::new(&first.join(" ")).expand().exists() {
+        let candidate = Path::new(&first.join(" ")).expand();
+        if candidate.is_file() || candidate.is_dir() {
             break;
         }
     }
@@ -343,7 +344,11 @@ fn fuzzy_find_book(query: &str) -> Option<std::path::PathBuf> {
     }
     let mut candidates = Vec::new();
     let mut seen = HashSet::new();
-    for base in [home_dir().join("Downloads"), env::current_dir().ok()?] {
+    let mut search_roots = vec![home_dir().join("Downloads"), env::current_dir().ok()?];
+    if let Some(parent) = Path::new(query).expand().parent() {
+        search_roots.push(parent.to_path_buf());
+    }
+    for base in search_roots {
         let Ok(entries) = fs::read_dir(base) else {
             continue;
         };

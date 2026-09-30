@@ -25,6 +25,7 @@ use converter_core::{
 use futures_util::stream::{self, StreamExt};
 use serde::{Deserialize, Serialize};
 use tokio::sync::{broadcast, RwLock};
+use tower_http::services::ServeDir;
 
 // Keep a concrete server-side ceiling above normal EPUB sizes while preventing unbounded request bodies.
 const MAX_UPLOAD_BYTES: usize = 100 * 1024 * 1024;
@@ -585,6 +586,7 @@ fn app(config: AppConfig) -> Router {
         .route("/api/jobs/{id}/fulltext", get(fulltext))
         .route("/api/outputs/{id}/{file}", get(output))
         .route("/api/streams/{id}/chapters/{index}", get(chapters))
+        .fallback_service(ServeDir::new("web/dist").append_index_html_on_directories(true))
         .with_state(AppState {
             config,
             jobs: Arc::new(RwLock::new(HashMap::new())),

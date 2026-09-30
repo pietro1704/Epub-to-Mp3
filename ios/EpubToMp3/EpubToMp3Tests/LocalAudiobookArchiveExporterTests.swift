@@ -3,7 +3,7 @@ import XCTest
 @testable import EpubToMp3
 
 final class LocalAudiobookArchiveExporterTests: XCTestCase {
-    func testExportsCompletedChaptersAndPartialManifestInOrder() throws {
+    func testExportsCompletedChaptersAndPartialManifestInOrder() async throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("audiobook-export-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -14,7 +14,7 @@ final class LocalAudiobookArchiveExporterTests: XCTestCase {
         try Data([2, 2, 2]).write(to: second)
         try Data([5, 5, 5]).write(to: fifth)
 
-        let archive = try LocalAudiobookArchiveExporter.export(
+        let archive = try await LocalAudiobookArchiveExporter.export(
             bookID: "book-id",
             bookTitle: "Book",
             author: "Author",

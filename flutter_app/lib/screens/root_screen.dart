@@ -27,12 +27,11 @@ class RootScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final t = AppLocalizations.of(context)!;
     final tabIndex = ref.watch(rootTabIndexProvider);
-    final chromeVisible = ref.watch(readerChromeVisibleProvider);
-    final showShellChrome = tabIndex != 0 || chromeVisible;
+
     // Keep one Spotify-style player surface across every tab, including the
     // reader. The reader's inline controls remain contextual, while this
     // shell owns the cross-tab playback affordance.
-    const showMiniPlayer = true;
+
 
     return Scaffold(
       body: Column(
@@ -40,11 +39,10 @@ class RootScreen extends ConsumerWidget {
           Expanded(
             child: IndexedStack(index: tabIndex, children: _screens),
           ),
-          if (showMiniPlayer) const MiniPlayerBar(),
+          const MiniPlayerBar(),
         ],
       ),
-      bottomNavigationBar: showShellChrome
-          ? NavigationBar(
+      bottomNavigationBar: NavigationBar(
               selectedIndex: tabIndex,
               onDestinationSelected: (i) =>
                   ref.read(rootTabIndexProvider.notifier).state = i,
@@ -75,8 +73,7 @@ class RootScreen extends ConsumerWidget {
                   label: t.settingsTitle,
                 ),
               ],
-            )
-          : null,
+            ),
     );
   }
 }

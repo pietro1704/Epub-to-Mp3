@@ -152,14 +152,14 @@ jobs:
           echo "Push to Hugging Face completed successfully."
 
       - name: Wait for HF Space rebuild
-        run: sleep 90
+        run: sleep 30
 
       - name: Health check HF Space
         id: healthcheck
         run: |
           set -euo pipefail
-          MAX_RETRIES=10
-          RETRY_DELAY=30
+          MAX_RETRIES=20
+          RETRY_DELAY=15
           URL="https://pi1704-epub-to-mp3.hf.space/api/health"
 
           for i in $(seq 1 $MAX_RETRIES); do
@@ -168,9 +168,6 @@ jobs:
             if [ "$HTTP_CODE" = "200" ]; then
               echo "HF Space is healthy"
               cat /tmp/hf_health.json
-              VERSION=$(sed -nE 's/.*"version"[[:space:]]*:[[:space:]]*"([^"]*)".*/\1/p' /tmp/hf_health.json | head -1)
-              VERSION=${VERSION:-unknown}
-              echo "Deployed version: $VERSION"
               exit 0
             fi
             echo "Got HTTP $HTTP_CODE, retrying in ${RETRY_DELAY}s..."

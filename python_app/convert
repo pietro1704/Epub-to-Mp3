@@ -115,7 +115,7 @@ def _normalize_cli_args(raw_args: list[str]) -> list[str]:
         tokens.append(token)
         candidate = " ".join(tokens)
         expanded = Path(candidate).expanduser()
-        if expanded.exists():
+        if expanded.is_file() or expanded.is_dir():
             detected_path = str(expanded)
             consumed = idx + 1
             break

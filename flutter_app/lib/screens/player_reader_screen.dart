@@ -13,7 +13,7 @@ import '../services/reader_chapter_resolver.dart';
 import '../services/sentence_sync_coordinator.dart';
 import '../services/toc_navigation_coordinator.dart';
 import '../state/providers.dart';
-import '../views/full_player_sheet.dart';
+
 import '../views/reader_search_overlay.dart';
 import '../views/reader_settings_sheet.dart';
 import '../views/reader_theme_colors.dart';
@@ -143,35 +143,6 @@ class _PlayerReaderScreenState extends ConsumerState<PlayerReaderScreen> {
     );
   }
 
-  void _showFullPlayer() {
-    final player = ref.read(audioPlayerProvider(widget.jobId));
-    // Prefer the live SSE snapshot; fall back to the one-shot fetch.
-    final streamSnap = ref.read(jobStreamProvider(widget.jobId));
-    final job =
-        streamSnap.valueOrNull ??
-        ref.read(jobSnapshotProvider(widget.jobId)).valueOrNull;
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (_) => DraggableScrollableSheet(
-        initialChildSize: 0.92,
-        minChildSize: 0.5,
-        maxChildSize: 0.95,
-        builder: (_, controller) {
-          final chapters = job?.playableChapters ?? [];
-          return FullPlayerSheet(
-            player: player,
-            bookTitle: job?.bookTitle,
-            chapterLabel: _currentChapterIndex < chapters.length
-                ? chapters[_currentChapterIndex].name
-                : null,
-            bookId: widget.jobId,
-          );
-        },
-      ),
-    );
-  }
 
   void _toggleBookmark() {
     final t = AppLocalizations.of(context)!;
@@ -423,26 +394,15 @@ class _PlayerReaderScreenState extends ConsumerState<PlayerReaderScreen> {
                 t: t,
                 onCenterTap: () => _setChromeVisible(!_chromeVisible),
               );
-              final controls = _PlayerControls(
-                jobId: widget.jobId,
-                snapshot: snapshot,
-                onExpandPlayer: _showFullPlayer,
-              );
               if (wide) {
                 return Row(
                   children: [
                     Expanded(child: reader),
                     const VerticalDivider(width: 1),
-                    if (_chromeVisible) SizedBox(width: 320, child: controls),
                   ],
                 );
               }
-              return Column(
-                children: [
-                  Expanded(child: reader),
-                  if (_chromeVisible) ...[const Divider(height: 1), controls],
-                ],
-              );
+              return reader;
             },
           ),
           if (_searchVisible)
@@ -522,82 +482,6 @@ class _Reader extends ConsumerWidget {
           onCenterTap: onCenterTap,
         );
       },
-    );
-  }
-}
-
-class _PlayerControls extends ConsumerWidget {
-  const _PlayerControls({
-    required this.jobId,
-    this.snapshot,
-    this.onExpandPlayer,
-  });
-  final String jobId;
-  final JobSnapshot? snapshot;
-  final VoidCallback? onExpandPlayer;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final t = AppLocalizations.of(context)!;
-    final player = ref.watch(audioPlayerProvider(jobId));
-    final snap = snapshot;
-
-    // Build progress string from live snapshot.
-    String statusText;
-    if (snap == null) {
-      statusText = t.startingConversion;
-    } else {
-      final total = snap.chaptersTotal ?? 0;
-      final done = snap.chaptersCompleted ?? 0;
-      if (total > 0) {
-        statusText = '${snap.state} • ${t.chaptersConverted(done, total)}';
-      } else {
-        statusText =
-            '${snap.state} • ${(snap.progressPercent ?? 0).toStringAsFixed(1)}%';
-      }
-    }
-
-    return GestureDetector(
-      onTap: onExpandPlayer,
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(statusText),
-            const SizedBox(height: 12),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                StreamBuilder<bool>(
-                  stream: player.playing,
-                  builder: (context, snap) {
-                    final playing = snap.data ?? false;
-                    return IconButton(
-                      iconSize: 48,
-                      icon: Icon(
-                        playing ? Icons.pause_circle : Icons.play_circle,
-                      ),
-                      onPressed: () async {
-                        final j = snapshot;
-                        if (j != null && player.chapters.isEmpty) {
-                          await player.setQueue(j.playableChapters);
-                        }
-                        player.togglePlayPause();
-                      },
-                    );
-                  },
-                ),
-                const SizedBox(width: 16),
-                IconButton(
-                  icon: const Icon(Icons.forward_30),
-                  onPressed: () => player.skipForward(seconds: 30),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
     );
   }
 }
