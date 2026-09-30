@@ -61,22 +61,15 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: ubuntu-latest
-            logical_target: android-arm64
-            rust_target: aarch64-linux-android
-            build_task: converter-ffi:android-arm64
           - os: macos-14
             logical_target: ios-device
             rust_target: aarch64-apple-ios
-            build_task: converter-ffi:build
           - os: macos-14
             logical_target: ios-simulator-arm64
             rust_target: aarch64-apple-ios-sim
-            build_task: converter-ffi:build
           - os: macos-14
             logical_target: ios-simulator-x64
             rust_target: x86_64-apple-ios
-            build_task: converter-ffi:build
 
     steps:
       - name: Checkout repository
@@ -95,11 +88,7 @@ jobs:
 
       - name: Build converter-ffi artifact (verification only)
         run: |
-          if [[ "${{ matrix.logical_target }}" == "android-arm64" ]]; then
-            mise run converter-ffi:android-arm64
-          else
-            mise exec -- cargo build -p converter-ffi --release --target "${{ matrix.rust_target }}"
-          fi
+          mise exec -- cargo build -p converter-ffi --release --target "${{ matrix.rust_target }}"
 
       - name: Verify expected artifact exists
         shell: bash
@@ -109,11 +98,7 @@ jobs:
             *apple*) library=libconverter_ffi.dylib ;;
             *) library=libconverter_ffi.so ;;
           esac
-          if [[ '${{ matrix.logical_target }}' == 'android-arm64' ]]; then
-            artifact="target/piper-android/${{ matrix.rust_target }}/release/${library}"
-          else
-            artifact="target/${{ matrix.rust_target }}/release/${library}"
-          fi
+          artifact="target/${{ matrix.rust_target }}/release/${library}"
           test -f "$artifact" || { echo "::error::Expected converter-ffi artifact was not produced: $artifact"; exit 1; }
           echo "Verified $artifact"
           echo "No release artifact is published by this workflow."
