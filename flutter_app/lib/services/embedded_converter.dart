@@ -114,6 +114,10 @@ class AndroidEmbeddedConverter implements EmbeddedConverter {
       // ignore: avoid_print
       print('AndroidEmbeddedConverter: invoking native convert');
       await ensureRuntimeLoaded();
+      // The native channel returns a manifest path or inline JSON. Keep the
+      // request observable on Android while the Rust worker runs.
+      // ignore: avoid_print
+      print('AndroidEmbeddedConverter: invoking native convert input=$inputPath output=$outputPath');
       final result = await _channel.invokeMethod<String>('convert', {
         'inputPath': inputPath,
         'outputPath': outputPath,

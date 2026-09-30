@@ -294,13 +294,12 @@ class MainActivity : AudioServiceActivity() {
                         if (inputPath.isNullOrBlank() || outputPath.isNullOrBlank()) {
                             result.error("BAD_ARGS", "inputPath and outputPath are required", null)
                         } else {
-                            Log.i(embeddedLogTag, "convert start input=$inputPath output=$outputPath")
-                            ensureBundledPiperModel()
-                            System.setProperty("PIPER_MODEL", ensureBundledPiperModel())
-                            Log.i(embeddedLogTag, "convert native call libraryLoaded=$converterLibraryLoaded model=${ensureBundledPiperModel()}")
-                            Log.i(embeddedLogTag, "convert invoking JNI")
                             converterExecutor.execute {
                                 try {
+                                    Log.i(embeddedLogTag, "convert start input=$inputPath output=$outputPath")
+                                    val model = ensureBundledPiperModel()
+                                    System.setProperty("PIPER_MODEL", model)
+                                    Log.i(embeddedLogTag, "convert invoking JNI libraryLoaded=$converterLibraryLoaded model=$model")
                                     val native = nativeConvert(inputPath, outputPath)
                                     if (native == null) {
                                         val error = nativeLastError()

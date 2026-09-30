@@ -4,8 +4,8 @@
 //   1. Try cached fulltext (instant).
 //   2. If no cache: parse EPUB through the selected native/runtime bridge, cache the result.
 //   3. On success: render InstantReaderView.
-//   4. Audio is NOT auto-started — user taps play.
-//   5. Play triggers upload+convert via backend, SSE streams progress.
+//   4. Audio is NOT auto-started — user taps the global player.
+//   5. Android/iOS conversion runs through the embedded Rust runtime.
 //
 // This widget is embedded inside the Reader tab (not pushed as a route)
 // so the MiniPlayerBar and NavigationBar remain visible.
@@ -287,7 +287,6 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen>
     'zh': 'zh-CN-YunxiNeural',
   };
 
-  // ignore: unused_element
   Future<void> _startConversion() async {
     debugPrint('BookOpenScreen: start conversion requested for ${widget.bookId}');
     final ft = _fulltext;
@@ -383,6 +382,7 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen>
           _playableChapters.addAll(audioFiles);
         });
       } catch (error) {
+        debugPrint('BookOpenScreen: embedded conversion failed: $error');
         if (!mounted) return;
         setState(() {
           _isConverting = false;
@@ -871,9 +871,7 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen>
         final coverArt = book?.coverBase64 != null
             ? _decodeCover(book!.coverBase64!)
             : null;
-        final player = (_isConverting || _playableChapters.isNotEmpty)
-            ? ref.read(globalAudioPlayerProvider)
-            : null;
+        final player = ref.read(globalAudioPlayerProvider);
         return Scaffold(
           appBar: AppBar(
             title: Text(bookTitle),
@@ -885,23 +883,55 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen>
             behavior: HitTestBehavior.translucent,
             onPointerDown: (_) => _resourcePolicy.recordReaderInteraction(),
             onPointerMove: (_) => _resourcePolicy.recordReaderInteraction(),
-            child: InstantReaderView(
-              fulltext: _fulltext!,
-              bookId: widget.bookId,
-              coverArt: coverArt,
-              player: player,
-              initialChapterIndex: _playableChapters.isEmpty
-                  ? 0
-                  : ResumePositionRouter(
-                          playableChapters: List.of(_playableChapters),
-                        ).queueIndexForSavedValue(
-                          ref
-                                  .read(resumeStoreProvider)
-                                  .loadBookPosition(widget.bookId)
-                                  ?.chapter ??
-                              0,
-                        ) ??
-                        0,
+            child: Stack(
+              children: [
+                InstantReaderView(
+                  fulltext: _fulltext!,
+                  bookId: widget.bookId,
+                  coverArt: coverArt,
+                  player: player,
+                  initialChapterIndex: _playableChapters.isEmpty
+                      ? 0
+                      : ResumePositionRouter(
+                              playableChapters: List.of(_playableChapters),
+                            ).queueIndexForSavedValue(
+                              ref
+                                      .read(resumeStoreProvider)
+                                      .loadBookPosition(widget.bookId)
+                                      ?.chapter ??
+                                  0,
+                            ) ??
+                            0,
+                ),
+                if (Platform.isAndroid && !_isConverting)
+                  Positioned(
+                    right: 16,
+                    bottom: 16,
+                    child: FloatingActionButton.extended(
+                      onPressed: _startConversion,
+                      icon: const Icon(Icons.play_arrow),
+                      label: const Text('Create audio'),
+                    ),
+                  ),
+                if (_isConverting)
+                  const Positioned(
+                    right: 24,
+                    bottom: 24,
+                    child: Card(
+                      child: Padding(
+                        padding: EdgeInsets.all(12),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)),
+                            SizedBox(width: 10),
+                            Text('Creating audio…'),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
             ),
           ),
         );
