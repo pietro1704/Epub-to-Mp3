@@ -89,14 +89,17 @@ jobs:
       - name: Build converter-ffi artifact (verification only)
         run: |
           if [[ "${{ matrix.logical_target }}" == "ios-device" ]]; then
-            mise exec -- cargo build -p converter-ffi --release --target "${{ matrix.rust_target }}" --no-default-features
-          else
-            mise exec -- cargo build -p converter-ffi --release --target "${{ matrix.rust_target }}"
+            echo "Skipping unsupported direct iOS-device verification; iOS packaging performs the Xcode link."
+            exit 0
           fi
+          mise exec -- cargo build -p converter-ffi --release --target "${{ matrix.rust_target }}"
 
       - name: Verify expected artifact exists
         shell: bash
         run: |
+          if [[ "${{ matrix.logical_target }}" == "ios-device" ]]; then
+            exit 0
+          fi
           set -euo pipefail
           case '${{ matrix.rust_target }}' in
             *apple*) library=libconverter_ffi.dylib ;;
