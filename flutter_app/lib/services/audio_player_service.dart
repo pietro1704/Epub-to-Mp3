@@ -147,7 +147,9 @@ class AudioPlayerService implements AudioPlayerInterface {
     _playableMap = map;
     // ignore: avoid_print
     print('AudioPlayer resolvedSources=${urls.length} urls=$urls');
-    if (children.isEmpty) return;
+    if (children.isEmpty) {
+      throw StateError('No playable audio sources were produced by Rust');
+    }
 
     if (keepsExistingQueue) {
       for (
@@ -168,6 +170,9 @@ class AudioPlayerService implements AudioPlayerInterface {
     await _player.setAudioSource(_chapterSource!, preload: false);
     _recordQueuedAudio();
   }
+
+  @visibleForTesting
+  bool get hasQueuedAudio => _chapterQueueURLs.isNotEmpty || _isSegmentMode;
 
   @override
   void enqueueSegment(Uri uri, {String? sentenceId, int chapterIndex = 0}) {
@@ -210,6 +215,9 @@ class AudioPlayerService implements AudioPlayerInterface {
     if (urlOrPath.startsWith('http') || urlOrPath.startsWith('file:')) {
       return Uri.parse(urlOrPath);
     }
+    if (urlOrPath.startsWith('/')) {
+      return Uri.file(urlOrPath);
+    }
     final cleanBase = base.endsWith('/')
         ? base.substring(0, base.length - 1)
         : base;
@@ -221,6 +229,11 @@ class AudioPlayerService implements AudioPlayerInterface {
   Future<void> play() {
     // ignore: avoid_print
     print('AudioPlayer play requested sourceCount=${_chapterQueueURLs.length} segment=$_isSegmentMode');
+    if (!hasQueuedAudio) {
+      // ignore: avoid_print
+      print('AudioPlayer play ignored: no queued audio');
+      return Future<void>.value();
+    }
     _playbackJourneyId ??= latencyObservations.begin(
       LatencyJourneyKind.progressivePlayback,
       LatencyTransition.playRequested,

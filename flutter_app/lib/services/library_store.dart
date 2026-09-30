@@ -153,7 +153,7 @@ class LibraryStore extends ChangeNotifier {
   /// Returns a parser-safe path for legacy Android imports whose provider
   /// omitted both the filename extension and MIME type. Android file
   /// pickers commonly materialize these files under `cache/file_picker/...`
-  /// with a display name such as `Documento de Pietro`; the Python reader
+  /// with a display name such as `Documento de Pietro`; the embedded reader
   /// dispatches by suffix and would otherwise report `Unsupported format:`.
   Future<String> ensureSupportedBookPath(BookEntity book) async {
     final path = book.filePath;

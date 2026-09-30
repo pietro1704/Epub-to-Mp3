@@ -26,7 +26,7 @@ import '../models/job_snapshot.dart';
 import '../services/async_load_guard.dart';
 import '../services/audio_player_service.dart';
 import '../services/cover_writeback.dart';
-import '../services/python_bridge.dart';
+
 import '../services/local_conversion_job.dart';
 import '../services/latency_observation.dart';
 import '../services/background_conversion_scheduler.dart';
@@ -127,7 +127,7 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen>
 
   Future<void> _load() async {
     // didUpdateWidget can fire a new _load while a previous one is
-    // still awaiting cache.read / bridge.parseEpub. Tag each load
+    // still awaiting cache.read / embedded Rust parsing. Tag each load
     // with a generation token so the stale continuation skips its
     // setState and does not flash the previous book's content onto
     // the newly-mounted bookId.
@@ -160,8 +160,7 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen>
 
     // 2) Parse through the selected local runtime. Embedded Android mode
     // never routes a local EPUB through the HTTP backend.
-    final settings = ref.read(settingsProvider);
-    if (Platform.isAndroid && settings.useEmbeddedRuntime) {
+    if (Platform.isAndroid) {
       try {
         final library = ref.read(libraryStoreProvider);
         final book = library.books
@@ -192,19 +191,6 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen>
       return;
     }
 
-    final bridge = PythonBridge();
-    if (!bridge.isSupported) {
-      // On platforms where Python is not available, show the text from
-      // cache only. If there's no cache we show an informative error.
-      if (!mounted || !_loadGuard.isCurrent(gen)) return;
-      setState(() {
-        _errorMessage = 'EPUB parsing is not available on this platform';
-        _phase = _Phase.error;
-      });
-      _cancelReaderJourney();
-      return;
-    }
-
     try {
       final library = ref.read(libraryStoreProvider);
       // Null-safe lookup: the user can remove the book from the library
@@ -224,10 +210,10 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen>
         return;
       }
       final filePath = await library.ensureSupportedBookPath(book);
-      final fulltext = await bridge.parseEpub(
-        filePath,
-        jobId: loadingForBookId,
-      );
+      final fulltext = await ref.read(embeddedConverterProvider).parse(
+            inputPath: filePath,
+            jobId: loadingForBookId,
+          );
       if (!mounted || !_loadGuard.isCurrent(gen)) return;
       await cache.save(fulltext, loadingForBookId);
       if (!mounted || !_loadGuard.isCurrent(gen)) return;
@@ -275,23 +261,13 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen>
   Future<void> _speakCurrentChapterOffline() async {
     final fulltext = _fulltext;
     if (fulltext == null || fulltext.chapters.isEmpty) return;
-    final chapter = fulltext.chapters.firstWhere(
-      (candidate) => candidate.text.trim().isNotEmpty,
-      orElse: () => fulltext.chapters.first,
-    );
     if (!Platform.isAndroid) return;
     // Embedded mode must never fall back to Android TextToSpeech.
-    final settings = ref.read(settingsProvider);
-    if (settings.useEmbeddedRuntime) {
-      if (!mounted) return;
-      if (mounted) setState(() {});
-      return;
-    }
-    final engine = ref.read(androidSpeechFallbackProvider);
-    if (!await engine.isAvailable() || !mounted) return;
-    await engine.speak(chapter.text, locale: _offlineLocale(chapter.text));
+    if (!mounted) return;
+    setState(() {});
   }
 
+  // ignore: unused_element
   String _offlineLocale(String text) {
     final lower = text.toLowerCase();
     if (RegExp(r'\b(the|and|this|that)\b').hasMatch(lower)) return 'en-US';
@@ -313,7 +289,6 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen>
 
   // ignore: unused_element
   Future<void> _startConversion() async {
-    if (_isConverting) return;
     debugPrint('BookOpenScreen: start conversion requested for ${widget.bookId}');
     final ft = _fulltext;
     if (ft == null || ft.chapters.isEmpty) return;
@@ -326,8 +301,7 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen>
       _resumeGuard = ResumeRestorationGuard();
     });
 
-    final settings = ref.read(settingsProvider);
-    if (Platform.isAndroid && settings.useEmbeddedRuntime) {
+    if (Platform.isAndroid) {
       try {
         final library = ref.read(libraryStoreProvider);
         final book = library.books
@@ -399,7 +373,9 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen>
         }
         final audio = ref.read(globalAudioPlayerProvider);
         await audio.setQueue(audioFiles);
-        await audio.play();
+        if (audio.chapters.isEmpty) {
+          throw StateError('Rust audio queue was empty after setQueue');
+        }
         ref.read(currentlyPlayingBookIdProvider.notifier).state = widget.bookId;
         if (!mounted) return;
         setState(() {
@@ -414,21 +390,11 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen>
       }
       return;
     }
-    if (settings.useEmbeddedRuntime && !Platform.isAndroid) {
-      final bridge = PythonBridge();
-      if (!bridge.isSupported) {
-        setState(() {
-          _isConverting = false;
-        });
-        return;
-      }
-      await _startLocalConversion(bridge);
+    if (Platform.isAndroid || Platform.isIOS) {
+      await _startLocalConversion();
       return;
     }
-
-    // The external backend is an explicit settings opt-in. Do not silently
-    // fall back to it after a local conversion error because that would send
-    // the book off-device against the selected provider policy.
+    // The external backend remains an explicit desktop compatibility path.
     try {
       await _startBackendConversion();
     } catch (error) {
@@ -554,23 +520,22 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen>
     } catch (_) {}
   }
 
-  Future<void> _startLocalConversion(PythonBridge bridge) async {
+  // ignore: unused_element
+  Future<void> _startLocalConversion() async {
     final ft = _fulltext!;
     final coordinator = ConversionJobCoordinator(
       LocalConversionJobStore(ref.read(sharedPrefsProvider)),
     );
     final jobId = 'local-${widget.bookId}';
     try {
+      final library = ref.read(libraryStoreProvider);
+      final book = library.books.where((b) => b.id == widget.bookId).firstOrNull;
+      if (book == null) throw StateError('Book is no longer in the library');
       final docsDir = await getApplicationDocumentsDirectory();
       final outDir = Directory('${docsDir.path}/audiobooks/${widget.bookId}');
       if (!await outDir.exists()) await outDir.create(recursive: true);
 
-      final sample = ft.chapters.first.text.substring(
-        0,
-        ft.chapters.first.text.length.clamp(0, 500),
-      );
-      final lang = await bridge.detectLanguage(sample);
-      final voice = _defaultVoices[lang] ?? _defaultVoices['pt']!;
+      final voice = _defaultVoices['pt']!;
       final scheduler = BackgroundConversionScheduler();
       final storageGuard = ProtectedAudioStorageGuard();
       final player = ref.read(globalAudioPlayerProvider);
@@ -681,11 +646,14 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen>
                   'error': 'Background conversion timed out',
                 };
         } else {
-          result = await bridge.convertChapter(
-            text: ch.text,
+          final resultPath = await ref.read(embeddedConverterProvider).convert(
+            inputPath: book.filePath,
             outputPath: mp3Path,
-            voice: voice,
           );
+          result = <String, dynamic>{
+            'ok': true,
+            'path': resultPath,
+          };
         }
         if (!mounted) return;
         if (result['ok'] != true) {

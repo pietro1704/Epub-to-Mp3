@@ -63,9 +63,9 @@ class AndroidEmbeddedConverter implements EmbeddedConverter {
 
   Future<void> ensureRuntimeLoaded() async {
     final status = await runtimeStatus();
-    if (status['modelAvailable'] != true) {
+    if (status['engineReady'] != true) {
       throw EmbeddedConverterUnavailable(
-        'Embedded Piper model is not available: $status',
+        'Embedded Rust Piper runtime is not ready: $status',
       );
     }
   }
@@ -126,7 +126,15 @@ class AndroidEmbeddedConverter implements EmbeddedConverter {
       }
       final decoded = jsonDecode(result);
       if (decoded is Map<String, dynamic> && decoded['manifest'] is Map) {
-        return jsonEncode(decoded['manifest']);
+        final manifest = Map<String, dynamic>.from(decoded['manifest'] as Map);
+        final chapters = manifest['chapters'];
+        if (chapters is! List || chapters.isEmpty) {
+          throw EmbeddedConversionFailure(
+            'EMPTY_MANIFEST',
+            'Rust converter returned no chapters',
+          );
+        }
+        return jsonEncode(manifest);
       }
       if (decoded is Map<String, dynamic> && decoded['audioPath'] is String) {
         final audioPath = decoded['audioPath'] as String;
