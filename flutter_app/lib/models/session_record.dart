@@ -4,7 +4,7 @@ import 'package:freezed_annotation/freezed_annotation.dart';
 part 'session_record.freezed.dart';
 part 'session_record.g.dart';
 
-/// `GET /api/sessions` — see `python_app/src/session_logger.py`.
+/// `GET /api/sessions` response model.
 /// Wire format is snake_case here (legacy log entries).
 @freezed
 class SessionRecord with _$SessionRecord {
