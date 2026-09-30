@@ -88,7 +88,11 @@ jobs:
 
       - name: Build converter-ffi artifact (verification only)
         run: |
-          mise exec -- cargo build -p converter-ffi --release --target "${{ matrix.rust_target }}"
+          if [[ "${{ matrix.logical_target }}" == "ios-device" ]]; then
+            mise exec -- cargo build -p converter-ffi --release --target "${{ matrix.rust_target }}" --no-default-features
+          else
+            mise exec -- cargo build -p converter-ffi --release --target "${{ matrix.rust_target }}"
+          fi
 
       - name: Verify expected artifact exists
         shell: bash
