@@ -11,4 +11,10 @@ class BooksTest < ActionDispatch::IntegrationTest
     assert_response :success
     assert_equal 1, JSON.parse(response.body).size
   end
+  test "reports a queued book without a Rust job" do
+    book = Book.create!(title: "Book", source_path: "/tmp/book.epub")
+    get "/books/#{book.id}/job"
+    assert_response :accepted
+    assert_equal "imported", JSON.parse(response.body)["status"]
+  end
 end
