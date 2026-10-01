@@ -259,12 +259,6 @@ impl ConversionWorker {
                 Some(name)
             })
             .flatten();
-        if cover.is_none() {
-            return Err(WorkerError::Piper(
-                "source book has no embedded cover image".into(),
-            ));
-        }
-        if let Some(cover_name) = &cover {
             let cover_path = output_dir.join(cover_name);
             for (_, path, _, _) in &results {
                 audio::embed_cover(path, &cover_path)?;
