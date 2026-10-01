@@ -6,59 +6,18 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
-  pull-requests: write
-  issues: write
+  contents: read
+  pull-requests: read
 
 jobs:
-  flush:
-    name: Admin-merge green dependabot PRs, close broken ones
+  report:
+    name: Report Dependabot PR status
     runs-on: ubuntu-latest
     steps:
-      - name: Merge or close
+      - name: Report open Dependabot PRs
         env:
           GH_TOKEN: ${{ secrets.DEPENDABOT_ADMIN_TOKEN || secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
         run: |
-          set -eu
-          mapfile -t prs < <(gh pr list --repo "$REPO" --state open --author "app/dependabot" --json number,headRefOid,createdAt --jq '.[] | "\(.number)\t\(.headRefOid)\t\(.createdAt)"')
-          if [ ${#prs[@]} -eq 0 ]; then
-            echo "no open dependabot PRs"
-            exit 0
-          fi
-
-          now=$(date -u +%s)
-          for row in "${prs[@]}"; do
-            pr=${row%%$'\t'*}
-            rest=${row#*$'\t'}
-            sha=${rest%%$'\t'*}
-            created=${rest##*$'\t'}
-
-            age_h=$(( (now - $(date -u -d "$created" +%s)) / 3600 ))
-
-            # Collect non-skipping check conclusions
-            states=$(gh pr checks "$pr" --repo "$REPO" --json name,state --jq '.[] | select(.state != "SKIPPING" and .state != "PENDING") | .state' || true)
-            pending=$(gh pr checks "$pr" --repo "$REPO" --json state --jq '.[] | select(.state == "PENDING")' | wc -l)
-            fails=$(printf "%s\n" "$states" | grep -c "FAILURE" || true)
-            passes=$(printf "%s\n" "$states" | grep -c "SUCCESS" || true)
-
-            echo "PR #$pr age=${age_h}h passes=$passes fails=$fails pending=$pending"
-
-            if [ "$pending" -gt 0 ]; then
-              echo "  -> waiting on pending checks, skip"
-              continue
-            fi
-
-            if [ "$fails" -gt 0 ] && [ "$age_h" -ge 72 ]; then
-              echo "  -> failing >72h, closing"
-              gh pr close "$pr" --repo "$REPO" --delete-branch \
-                --comment "Auto-closed: dependabot PR failing CI for >72h. Reopen manually once upstream compatibility lands."
-              continue
-            fi
-
-            if [ "$fails" -eq 0 ] && [ "$passes" -gt 0 ]; then
-              echo "  -> all green, attempting admin merge"
-              gh pr merge "$pr" --repo "$REPO" --squash --delete-branch --admin || \
-                gh pr merge "$pr" --repo "$REPO" --squash --delete-branch --auto || true
-            fi
-          done
+          gh pr list --repo "$REPO" --state open --author "app/dependabot" \
+            --json number,title,url,createdAt

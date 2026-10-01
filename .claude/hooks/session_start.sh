@@ -7,14 +7,13 @@ PROJECT_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
 LOG_FILE="$PROJECT_DIR/.logs/conversions.jsonl"
 JOBS_DIR="$PROJECT_DIR/.jobs"
 
-# Single python3 invocation: auto-trim + stats + last 5 + active jobs + output JSON
+# Single python3 invocation: stats + last 5 + active jobs + output JSON
 python3 - "$LOG_FILE" "$JOBS_DIR" <<'PYEOF'
 import json, os, sys
 
 log_file, jobs_dir = sys.argv[1], sys.argv[2]
 lines = ""
 
-# ── Auto-trim log if it exceeds 1000 entries ─────────────────────────────────
 records = []
 if os.path.isfile(log_file):
     try:
@@ -26,12 +25,7 @@ if os.path.isfile(log_file):
                         records.append(json.loads(line))
                     except Exception:
                         pass
-        if len(records) > 1000:
-            keep = records[-500:]
-            with open(log_file, "w", encoding="utf-8") as f:
-                for r in keep:
-                    f.write(json.dumps(r, ensure_ascii=False) + "\n")
-            records = keep
+
     except Exception:
         pass
 

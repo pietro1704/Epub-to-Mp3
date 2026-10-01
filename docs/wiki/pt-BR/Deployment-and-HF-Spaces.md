@@ -44,9 +44,8 @@ O projeto aplica um perfil mais conservador em:
 
 ## Storage permanente
 
-Para armazenamento externo opcional, consulte:
-
-- [docs/R2_SETUP.md](/Users/pietropugliesi/Developer/Epub-to-Mp3/docs/R2_SETUP.md)
+Armazenamento externo de objetos não é configurado por este repositório. A
+documentação de deploy deve usar apenas links relativos ao repositório.
 
 ## Deploys automatizados
 
@@ -57,9 +56,3 @@ Workflows importantes:
 - `Sync to Hugging Face Space`
 - `Release Desktop`
 - `Auto Release`
-
-## Git e sync
-
-Para detalhes de workflow Git/HF:
-
-- [docs/GIT_WORKFLOW.md](/Users/pietropugliesi/Developer/Epub-to-Mp3/docs/GIT_WORKFLOW.md)

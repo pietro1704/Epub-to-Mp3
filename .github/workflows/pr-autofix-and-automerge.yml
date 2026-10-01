@@ -59,8 +59,8 @@ jobs:
           echo "number=$(jq -r '.number' <<< "$PR_JSON")" >> "$GITHUB_OUTPUT"
           echo "sha=$HEAD_SHA" >> "$GITHUB_OUTPUT"
 
-      - name: Dispatch repair or merge worker
-        if: steps.resolve.outputs.number != ''
+      - name: Dispatch repair worker
+        if: steps.resolve.outputs.number != '' && github.event.workflow_run.conclusion == 'failure'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ steps.resolve.outputs.number }}
@@ -68,14 +68,20 @@ jobs:
           CONCLUSION: ${{ github.event.workflow_run.conclusion }}
         run: |
           set -euo pipefail
+<<<<<<< HEAD
           case "$CONCLUSION" in
             failure) MODE=fix ;;
             success) MODE=merge ;;
             *) echo 'Unexpected CI conclusion; refusing to dispatch.' >&2; exit 1 ;;
           esac
+||||||| e1d1565d6e
+          MODE=merge
+          [[ "$CONCLUSION" == failure ]] && MODE=fix
+=======
+>>>>>>> origin/chore/repository-trust
           gh workflow run pr-autofix-worker.yml \
             --repo "$GITHUB_REPOSITORY" \
             --ref master \
             -f pr_number="$PR_NUMBER" \
             -f head_sha="$HEAD_SHA" \
-            -f mode="$MODE"
+            -f mode=fix

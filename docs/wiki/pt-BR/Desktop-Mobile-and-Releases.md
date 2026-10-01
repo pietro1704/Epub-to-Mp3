@@ -1,9 +1,9 @@
 # Desktop, Mobile e Releases
 
-## Apple (macOS / iPadOS / iOS) — SwiftUI
+## Apple (macOS / iPadOS / iOS) — UIKit/AppKit
 
 O cliente oficial Apple está em `ios/EpubToMp3/`. No macOS o app embute
-o servidor Python como sidecar PyInstaller dentro do `.app`; iPadOS e
+o runtime Python dentro do `.app`; iPadOS e
 iOS apontam para um backend remoto.
 
 Build headless do macOS:
@@ -13,12 +13,6 @@ mise run mac:build
 # → a tarefa imprime o caminho do .app gerado, normalmente ios/EpubToMp3/.build/Release/EpubToMp3.app
 ```
 
-Build apenas do sidecar (PyInstaller onefile):
-
-```bash
-mise run sidecar:build
-# → dist/epub-to-mp3-server
-```
 
 Abrir no Xcode:
 
@@ -43,7 +37,7 @@ mise run flutter:build-apk          # Android (release)
 
 `release-desktop.yml` roda em cada tag `v*.*.*` e publica:
 
-- macOS `.zip` (SwiftUI, com sidecar embutido)
+- macOS `.zip` (app Apple nativo com runtime Python embutido)
 - Linux `.tar.gz` (Flutter)
 - Windows `.zip` (Flutter)
 - Android `.apk` (Flutter)

@@ -30,6 +30,7 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Install mise
+<<<<<<< HEAD
         uses: jdx/mise-action@v4.3.0
 
       - name: Check production packaging boundary
@@ -53,6 +54,17 @@ jobs:
         env:
           MISE_GITHUB_TOKEN: ${{ github.token }}
         run: mise install
+||||||| e1d1565d6e
+        run: |
+          curl https://mise.run | sh
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          "$HOME/.local/bin/mise" install
+=======
+        run: |
+          curl https://mise.run | sh
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          "$HOME/.local/bin/mise" install python
+>>>>>>> origin/chore/repository-trust
 
       - name: Cache pip
         uses: actions/cache@v6
@@ -123,11 +135,29 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v7
       - name: Install mise
+<<<<<<< HEAD
         uses: jdx/mise-action@v4.3.0
       - name: Install Rust toolchain
         run: mise install
       - name: Cache Rust build artifacts
         uses: actions/cache@v4
+||||||| e1d1565d6e
+        run: |
+          curl https://mise.run | sh
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          "$HOME/.local/bin/mise" install
+
+      - name: Cache npm
+        uses: actions/cache@v6
+=======
+        run: |
+          curl https://mise.run | sh
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          "$HOME/.local/bin/mise" install node npm
+
+      - name: Cache npm
+        uses: actions/cache@v6
+>>>>>>> origin/chore/repository-trust
         with:
           path: |
             ~/.cargo/registry
@@ -199,12 +229,24 @@ jobs:
           git checkout --force FETCH_HEAD
 
       - name: Install mise
+<<<<<<< HEAD
         uses: jdx/mise-action@v4.3.0
 
       - name: Install toolchain
         env:
           MISE_GITHUB_TOKEN: ${{ github.token }}
         run: mise install
+||||||| e1d1565d6e
+        run: |
+          curl https://mise.run | sh
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          "$HOME/.local/bin/mise" install
+=======
+        run: |
+          curl https://mise.run | sh
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          "$HOME/.local/bin/mise" install flutter
+>>>>>>> origin/chore/repository-trust
 
       - name: Run Flutter tests
         working-directory: flutter_app

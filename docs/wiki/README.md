@@ -5,10 +5,10 @@ This folder contains a local, versioned wiki for the project in:
 - [Português do Brasil](./pt-BR/Home.md)
 - [English](./en/Home.md)
 
-Suggested publishing model:
+Publishing model:
 
 1. Use the files in `docs/wiki/` as the source of truth.
-2. Copy them to the GitHub Wiki when needed.
+2. Run `bash scripts/github-ci-wiki-wizard.sh` from the repository root to publish them safely to the GitHub Wiki. It asks for confirmation before overwriting wiki content and stages only the TestFlight workflow, `docs/wiki/`, and the wizard itself when committing. TestFlight remains manual-only until an active Apple Developer Program membership and its signing credentials are available.
 3. Keep product and architecture changes documented here in the same PR as the code change.
 
 Recommended page order:
