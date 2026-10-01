@@ -8,7 +8,7 @@ class RustClient
   def metadata = request(:get, "/api/metadata")
   def upload_local(path) = request(:post, "/api/uploads/local", { path: path })
   def convert(upload_id:, engine: nil, voice: nil, language: nil)
-    payload = { uploadId: upload_id }
+    payload = { upload_id: upload_id }
     payload[:engine] = engine if engine; payload[:voice] = voice if voice; payload[:language] = language if language
     request(:post, "/api/convert", payload)
   end
