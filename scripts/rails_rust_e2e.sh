@@ -11,7 +11,7 @@ trap cleanup EXIT
 (cd "$ROOT" && PORT="$PORT" cargo run -p converter-server >"$TMP/rust.log" 2>&1) & RUST_PID=$!
 for _ in $(seq 1 90); do curl -fsS "http://127.0.0.1:$PORT/health" >/dev/null && break || sleep 1; done
 curl -fsS "http://127.0.0.1:$PORT/health" >/dev/null
-(export E2E_EPUB="$FIXTURE"; cd "$ROOT/ruby_app/rails_gateway"; RUST_CONVERTER_URL="http://127.0.0.1:$PORT" RAILS_ENV=test bundle exec rails runner - <<'RUBY'
+(export E2E_EPUB="$FIXTURE"; cd "$ROOT/ruby_app/rails_gateway"; RUST_CONVERTER_URL="http://127.0.0.1:$PORT" RAILS_ENV=test mise exec -- bundle exec rails runner - <<'RUBY'
 require "json"
 fixture = ENV.fetch("E2E_EPUB")
 Book.delete_all
