@@ -2,18 +2,16 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
-RUST_LOG="${RUST_LOG:-info}"
 PORT="${RUST_PORT:-18000}"
 FIXTURE="${E2E_EPUB:-$ROOT/python_app/tests/fixtures/epubs/test_multifeature.epub}"
 TMP="$(mktemp -d)"
 cleanup() { [[ -n "${RUST_PID:-}" ]] && kill "$RUST_PID" 2>/dev/null || true; rm -rf "$TMP"; }
 trap cleanup EXIT
 [[ -f "$FIXTURE" ]] || { echo "fixture not found: $FIXTURE" >&2; exit 1; }
-(cd "$ROOT" && RUST_LOG="$RUST_LOG" cargo run -p converter-server -- --port "$PORT" >"$TMP/rust.log" 2>&1) &
-RUST_PID=$!
-for _ in $(seq 1 90); do curl -fsS "http://127.0.0.1:$PORT/health" >/dev/null && break; sleep 1; done
+(cd "$ROOT" && PORT="$PORT" cargo run -p converter-server >"$TMP/rust.log" 2>&1) & RUST_PID=$!
+for _ in $(seq 1 90); do curl -fsS "http://127.0.0.1:$PORT/health" >/dev/null && break || sleep 1; done
 curl -fsS "http://127.0.0.1:$PORT/health" >/dev/null
-(cd "$ROOT/ruby_app/rails_gateway" && RUST_CONVERTER_URL="http://127.0.0.1:$PORT" RAILS_ENV=test bundle exec rails runner - <<'RUBY'
+(export E2E_EPUB="$FIXTURE"; cd "$ROOT/ruby_app/rails_gateway"; RUST_CONVERTER_URL="http://127.0.0.1:$PORT" RAILS_ENV=test bundle exec rails runner - <<'RUBY'
 require "json"
 fixture = ENV.fetch("E2E_EPUB")
 Book.delete_all
@@ -27,7 +25,7 @@ loop do
   payload = client.job(book.job_id)
   state = payload.fetch("state")
   abort JSON.generate(payload) if %w[failed cancelled interrupted].include?(state)
-  break payload if %w[finished completed].include?(state)
+  break if %w[finished completed].include?(state)
   abort "timeout waiting for #{book.job_id}" if Time.now >= deadline
   sleep 2
 end
