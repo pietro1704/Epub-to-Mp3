@@ -14,6 +14,6 @@ class BooksTest < ActionDispatch::IntegrationTest
   end
   test "rejects unsafe output filenames" do
     book = Book.create!(title: "Book", source_path: "/tmp/book.epub", job_id: "job-1")
-    get "/books/#{book.id}/outputs/evil%20name.mp3"; assert_response :bad_request
+    get "/books/#{book.id}/outputs/..evil.mp3"; assert_response :bad_request
   end
 end
