@@ -1,0 +1,30 @@
+name: Ruby Rust Integration
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  ruby-rust:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.2"
+          bundler-cache: true
+          working-directory: ruby_app
+      - name: Ruby gateway tests
+        working-directory: ruby_app
+        run: ruby -I. test/rust_client_test.rb
+      - name: Rust tests
+        run: cargo test -p converter-core -p converter-server --locked
+      - name: Rust format
+        run: cargo fmt --all -- --check
