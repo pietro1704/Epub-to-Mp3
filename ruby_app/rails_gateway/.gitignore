@@ -1,0 +1,6 @@
+
+/tmp/
+/log/
+/storage/*.sqlite3
+/config/master.key
+/config/credentials/*.key

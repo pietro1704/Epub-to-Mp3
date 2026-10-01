@@ -18,12 +18,15 @@ jobs:
       - name: Set up Ruby
         uses: ruby/setup-ruby@v1
         with:
-          ruby-version: "3.2"
+          ruby-version: "4.0"
           bundler-cache: true
-          working-directory: ruby_app
+          working-directory: ruby_app/rails_gateway
       - name: Ruby gateway tests
         working-directory: ruby_app
         run: ruby -I. test/rust_client_test.rb
+      - name: Rails gateway tests
+        working-directory: ruby_app/rails_gateway
+        run: bundle exec rails test
       - name: Rust tests
         run: cargo test -p converter-core -p converter-server --locked
       - name: Rust format
