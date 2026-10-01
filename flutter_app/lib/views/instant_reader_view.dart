@@ -10,7 +10,7 @@ import '../services/audio_player_service.dart';
 import '../services/sentence_sync_coordinator.dart';
 import '../services/sync_engine.dart';
 import '../state/providers.dart';
-import 'full_player_sheet.dart';
+
 import 'reader_settings_sheet.dart';
 import 'reader_theme_colors.dart';
 import 'reader_view.dart';
@@ -20,9 +20,6 @@ typedef Chapter = FulltextChapter;
 class InstantReaderView extends ConsumerStatefulWidget {
   final EbookFulltext fulltext;
   final int initialChapterIndex;
-  final String? statusBanner;
-  final VoidCallback? onRequestPlay;
-  final VoidCallback? onRequestSpeechFallback;
   final AudioPlayerInterface? player;
   final String? activeSentenceId;
   final Uint8List? coverArt;
@@ -32,9 +29,6 @@ class InstantReaderView extends ConsumerStatefulWidget {
     super.key,
     required this.fulltext,
     this.initialChapterIndex = 0,
-    this.statusBanner,
-    this.onRequestPlay,
-    this.onRequestSpeechFallback,
     this.player,
     this.activeSentenceId,
     this.coverArt,
@@ -193,26 +187,6 @@ class _InstantReaderViewState extends ConsumerState<InstantReaderView> {
     );
   }
 
-  void _showFullPlayer(Chapter chapter) {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (_) => DraggableScrollableSheet(
-        initialChildSize: 0.92,
-        minChildSize: 0.5,
-        maxChildSize: 0.95,
-        builder: (_, controller) => FullPlayerSheet(
-          player: widget.player!,
-          bookTitle: widget.fulltext.bookTitle,
-          author: widget.fulltext.bookAuthor,
-          chapterLabel: chapter.displayTitle,
-          coverArt: widget.coverArt,
-          bookId: widget.bookId,
-        ),
-      ),
-    );
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -328,169 +302,7 @@ class _InstantReaderViewState extends ConsumerState<InstantReaderView> {
           ),
         ),
 
-        // Bottom bar — hidden when chrome is off
-        AnimatedSize(
-          duration: const Duration(milliseconds: 250),
-          child: _chromeVisible
-              ? _buildBottomBar(context, chapter, bg, fg)
-              : const SizedBox.shrink(),
-        ),
       ],
-    );
-  }
-
-  Widget _buildBottomBar(
-    BuildContext context,
-    Chapter chapter,
-    Color bg,
-    Color fg,
-  ) {
-    final banner = widget.statusBanner;
-    final isConverting = banner != null && banner.isNotEmpty;
-    final isError =
-        isConverting &&
-        (banner.toLowerCase().contains('failed') ||
-            banner.toLowerCase().contains('unavailable'));
-    final hasPlayer = widget.player != null;
-
-    return GestureDetector(
-      onTap: hasPlayer ? () => _showFullPlayer(chapter) : null,
-      child: Container(
-        decoration: BoxDecoration(
-          color: bg,
-          border: Border(top: BorderSide(color: fg.withValues(alpha: 0.15))),
-        ),
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-        child: SafeArea(
-          top: false,
-          child: Row(
-            children: [
-              // Cover art or headphones icon
-              if (widget.coverArt != null)
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(6),
-                  child: Image.memory(
-                    widget.coverArt!,
-                    width: 44,
-                    height: 44,
-                    fit: BoxFit.cover,
-                  ),
-                )
-              else
-                Container(
-                  width: 44,
-                  height: 44,
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(6),
-                    color: fg.withValues(alpha: 0.1),
-                  ),
-                  child: Icon(
-                    Icons.headphones,
-                    color: fg.withValues(alpha: 0.6),
-                    size: 22,
-                  ),
-                ),
-              const SizedBox(width: 12),
-
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      chapter.displayTitle,
-                      style: TextStyle(color: fg, fontWeight: FontWeight.w500),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    if (isConverting)
-                      Row(
-                        children: [
-                          if (isError)
-                            Icon(
-                              Icons.warning_amber_rounded,
-                              size: 14,
-                              color: Colors.orange[700],
-                            )
-                          else
-                            SizedBox(
-                              width: 14,
-                              height: 14,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 1.5,
-                                color: fg.withValues(alpha: 0.5),
-                              ),
-                            ),
-                          const SizedBox(width: 4),
-                          Expanded(
-                            child: Text(
-                              banner,
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: fg.withValues(alpha: 0.5),
-                              ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                        ],
-                      )
-                    else if (widget.fulltext.bookAuthor != null)
-                      Text(
-                        widget.fulltext.bookAuthor!,
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: fg.withValues(alpha: 0.5),
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                  ],
-                ),
-              ),
-
-              if (hasPlayer)
-                StreamBuilder<bool>(
-                  stream: widget.player!.playing,
-                  builder: (context, snap) {
-                    final isPlaying = snap.data ?? false;
-                    return IconButton(
-                      icon: Icon(
-                        isPlaying
-                            ? Icons.pause_circle_filled
-                            : Icons.play_circle_filled,
-                        size: 36,
-                        color: fg,
-                      ),
-                      onPressed: widget.player!.togglePlayPause,
-                    );
-                  },
-                )
-              else if (!isConverting && widget.onRequestPlay != null)
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    IconButton(
-                      icon: Icon(Icons.play_circle_filled, size: 36, color: fg),
-                      onPressed: widget.onRequestPlay,
-                      tooltip: 'Create audio',
-                    ),
-                    if (widget.onRequestSpeechFallback != null)
-                      IconButton(
-                        icon: Icon(
-                          Icons.record_voice_over,
-                          size: 30,
-                          color: fg,
-                        ),
-                        onPressed: widget.onRequestSpeechFallback,
-                        tooltip: 'Speak offline',
-                      ),
-                  ],
-                ),
-            ],
-          ),
-        ),
-      ),
     );
   }
 }

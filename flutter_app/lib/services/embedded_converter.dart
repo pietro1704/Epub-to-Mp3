@@ -64,9 +64,8 @@ class AndroidEmbeddedConverter implements EmbeddedConverter {
   Future<void> ensureRuntimeLoaded() async {
     final status = await runtimeStatus();
     if (status['engineReady'] != true) {
-      throw EmbeddedConversionFailure(
-        status['modelAvailable'] == false ? 'MODEL_MISSING' : 'RUNTIME_UNAVAILABLE',
-        'Embedded Piper is not ready: $status',
+      throw EmbeddedConverterUnavailable(
+        'Embedded Rust Piper runtime is not ready: $status',
       );
     }
   }
@@ -112,7 +111,13 @@ class AndroidEmbeddedConverter implements EmbeddedConverter {
     required String outputPath,
   }) async {
     try {
+      // ignore: avoid_print
+      print('AndroidEmbeddedConverter: invoking native convert');
       await ensureRuntimeLoaded();
+      // The native channel returns a manifest path or inline JSON. Keep the
+      // request observable on Android while the Rust worker runs.
+      // ignore: avoid_print
+      print('AndroidEmbeddedConverter: invoking native convert input=$inputPath output=$outputPath');
       final result = await _channel.invokeMethod<String>('convert', {
         'inputPath': inputPath,
         'outputPath': outputPath,
@@ -124,15 +129,27 @@ class AndroidEmbeddedConverter implements EmbeddedConverter {
         );
       }
       final decoded = jsonDecode(result);
+      if (decoded is Map<String, dynamic> && decoded['manifest'] is Map) {
+        final manifest = Map<String, dynamic>.from(decoded['manifest'] as Map);
+        final chapters = manifest['chapters'];
+        if (chapters is! List || chapters.isEmpty) {
+          throw EmbeddedConversionFailure(
+            'EMPTY_MANIFEST',
+            'Rust converter returned no chapters',
+          );
+        }
+        return jsonEncode(manifest);
+      }
       if (decoded is Map<String, dynamic> && decoded['audioPath'] is String) {
-        return decoded['audioPath'] as String;
+        final audioPath = decoded['audioPath'] as String;
+        final manifestPath = decoded['manifestPath'];
+        if (manifestPath is String && manifestPath.isNotEmpty) {
+          return manifestPath;
+        }
+        return audioPath;
       }
       if (decoded is Map<String, dynamic> && decoded['chapters'] is List) {
-        final chapters = decoded['chapters'] as List;
-        if (chapters.isNotEmpty && chapters.first is Map<String, dynamic>) {
-          final filename = (chapters.first as Map<String, dynamic>)['filename'];
-          if (filename is String) return filename;
-        }
+        return result;
       }
       return result;
     } on MissingPluginException {

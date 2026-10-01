@@ -25,6 +25,7 @@ use converter_core::{
 use futures_util::stream::{self, StreamExt};
 use serde::{Deserialize, Serialize};
 use tokio::sync::{broadcast, RwLock};
+use tower_http::services::ServeDir;
 
 // Keep a concrete server-side ceiling above normal EPUB sizes while preventing unbounded request bodies.
 const MAX_UPLOAD_BYTES: usize = 100 * 1024 * 1024;
@@ -46,6 +47,7 @@ struct AppState {
 struct Job {
     snapshot: JobSnapshot,
     events: broadcast::Sender<SseMessage>,
+    cancellation: converter_core::piper::CancellationToken,
 }
 #[derive(Clone, Debug)]
 enum SseMessage {
@@ -308,8 +310,16 @@ async fn create_job(State(state): State<AppState>, Json(form): Json<CreateJob>) 
         Job {
             snapshot,
             events: sender.clone(),
+            cancellation: converter_core::piper::CancellationToken::default(),
         },
     );
+    let cancellation = state
+        .jobs
+        .read()
+        .await
+        .get(&id)
+        .map(|job| job.cancellation.clone())
+        .expect("job inserted before worker starts");
     let worker = match ConversionWorker::new(state.config.clone()) {
         Ok(worker) => worker,
         Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
@@ -339,21 +349,37 @@ async fn create_job(State(state): State<AppState>, Json(form): Json<CreateJob>) 
                     job.snapshot.raw_log.push(event.message);
                     let _ = progress_sender.send(SseMessage::Chapter(job.snapshot.clone()));
                 }
+            } else {
+                let mut guard = progress_jobs.blocking_write();
+                if let Some(job) = guard.get_mut(&event.job_id) {
+                    job.snapshot.state = "running".into();
+                    job.snapshot.chapters_total = event.chapters_total as u32;
+                    job.snapshot.chapters_completed = event.chapters_completed as u32;
+                    job.snapshot.progress_percent = event.percent;
+                    job.snapshot.engine = event.engine.clone();
+                    job.snapshot.events.push(event.message.clone());
+                    job.snapshot.raw_log.push(event.message);
+                    let _ = progress_sender.send(SseMessage::Chapter(job.snapshot.clone()));
+                }
             }
         }));
-        let result = worker.run(request);
-        if let Ok(mut guard) = jobs.try_write() {
-            if let Some(job) = guard.get_mut(&id) {
-                match result {
-                    Ok(manifest) => apply_manifest(&mut job.snapshot, &manifest),
-                    Err(error) => {
-                        job.snapshot.state = "failed".into();
-                        job.snapshot.error = Some(error.to_string());
-                        job.snapshot.events.push(error.to_string());
-                    }
+        let result = worker.with_cancellation(cancellation).run(request);
+        let mut guard = jobs.blocking_write();
+        if let Some(job) = guard.get_mut(&id) {
+            match result {
+                Ok(manifest) => apply_manifest(&mut job.snapshot, &manifest),
+                Err(error) => {
+                    job.snapshot.state =
+                        if matches!(error, converter_core::worker::WorkerError::Cancelled) {
+                            "cancelled".into()
+                        } else {
+                            "failed".into()
+                        };
+                    job.snapshot.error = Some(error.to_string());
+                    job.snapshot.events.push(error.to_string());
                 }
-                let _ = sender.send(SseMessage::Snapshot(job.snapshot.clone()));
             }
+            let _ = sender.send(SseMessage::Snapshot(job.snapshot.clone()));
         }
     });
     (
@@ -411,6 +437,7 @@ async fn cancel(AxumPath(id): AxumPath<String>, State(state): State<AppState>) -
         )
             .into_response(),
         Some(job) => {
+            job.cancellation.cancel();
             job.snapshot.state = if job.snapshot.state == "queued" {
                 "cancelled"
             } else {
@@ -559,6 +586,7 @@ fn app(config: AppConfig) -> Router {
         .route("/api/jobs/{id}/fulltext", get(fulltext))
         .route("/api/outputs/{id}/{file}", get(output))
         .route("/api/streams/{id}/chapters/{index}", get(chapters))
+        .fallback_service(ServeDir::new("web/dist").append_index_html_on_directories(true))
         .with_state(AppState {
             config,
             jobs: Arc::new(RwLock::new(HashMap::new())),

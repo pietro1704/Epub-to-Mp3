@@ -45,6 +45,8 @@ pub struct Book {
     pub language: Option<String>,
     pub chapters: Vec<Chapter>,
     pub toc: Vec<TocItem>,
+    pub cover: Option<Vec<u8>>,
+    pub cover_mime: Option<String>,
 }
 
 type Manifest = HashMap<String, (String, Option<String>)>;
@@ -109,7 +111,7 @@ pub fn parse_epub<R: Read + Seek>(reader: R) -> Result<Book, EpubError> {
         .max()
         .unwrap_or(0);
     for (position, id) in spine.iter().enumerate() {
-        let (href, name) = manifest
+        let (href, _media_type) = manifest
             .get(id)
             .ok_or_else(|| EpubError::MissingResource(id.clone()))?
             .clone();
@@ -120,31 +122,6 @@ pub fn parse_epub<R: Read + Seek>(reader: R) -> Result<Book, EpubError> {
             continue;
         }
         let key = href.split('#').next().unwrap_or(&href);
-        let is_boilerplate = text
-            .to_ascii_lowercase()
-            .contains("dados de copyright sobre a obra");
-        if is_boilerplate && position < 3 {
-            continue;
-        }
-        let normalized = text.trim().to_ascii_lowercase();
-        if position < 5
-            && (normalized.starts_with("sumário ")
-                || normalized.starts_with("sumario ")
-                || normalized == "sumário"
-                || normalized == "sumario")
-        {
-            continue;
-        }
-        if position < 10 {
-            let editorial = normalized.contains("capa")
-                || normalized.contains("folha de rosto")
-                || normalized.contains("créditos")
-                || normalized.contains("creditos")
-                || normalized.contains("copyright");
-            if editorial {
-                continue;
-            }
-        }
         let index = if let Some(value) = indices.get(key) {
             value.clone()
         } else {
@@ -152,23 +129,48 @@ pub fn parse_epub<R: Read + Seek>(reader: R) -> Result<Book, EpubError> {
             orphan.to_string()
         };
         let level = levels.get(key).copied().unwrap_or(1);
+        let toc_title = toc_title_for(&toc, key);
         chapters.push(Chapter {
             index,
-            name: name.unwrap_or_else(|| {
-                first_heading(&html).unwrap_or_else(|| format!("Chapter {}", position + 1))
-            }),
+            name: toc_title
+                .or_else(|| first_heading(&html))
+                .unwrap_or_else(|| format!("Chapter {}", position + 1)),
             source_path: path,
             text,
             level,
         });
     }
+    let (cover, cover_mime) = cover_image(&mut archive, &manifest, opf_dir)?;
     Ok(Book {
         title,
         author,
         language,
         chapters,
         toc,
+        cover,
+        cover_mime,
     })
+}
+
+fn cover_image<R: Read + Seek>(
+    archive: &mut ZipArchive<R>,
+    manifest: &Manifest,
+    base: &Path,
+) -> Result<(Option<Vec<u8>>, Option<String>), EpubError> {
+    for (href, media) in manifest.values() {
+        let media = media.as_deref().unwrap_or_default().to_ascii_lowercase();
+        let name = href.to_ascii_lowercase();
+        if media.starts_with("image/") && (name.contains("cover") || name.contains("capa")) {
+            let path = resolve_resource_path(base, href);
+            let mut file = archive
+                .by_name(&path)
+                .map_err(|_| EpubError::MissingResource(path.clone()))?;
+            let mut bytes = Vec::new();
+            file.read_to_end(&mut bytes)?;
+            return Ok((Some(bytes), Some(media.to_string())));
+        }
+    }
+    Ok((None, None))
 }
 
 fn parse_package(xml: &str, _path: &str) -> Result<PackageParts, EpubError> {
@@ -314,6 +316,22 @@ fn xml_text(xml: &str, wanted: &[u8]) -> Option<String> {
         }
     }
 }
+fn flatten_toc(item: &TocItem) -> Vec<&TocItem> {
+    let mut items = vec![item];
+    for child in &item.children {
+        items.extend(flatten_toc(child));
+    }
+    items
+}
+
+fn toc_title_for(toc: &[TocItem], key: &str) -> Option<String> {
+    toc.iter()
+        .flat_map(flatten_toc)
+        .find(|item| item.href.split('#').next().unwrap_or_default() == key)
+        .map(|item| item.title.clone())
+        .filter(|title| !title.is_empty())
+}
+
 fn hierarchy_indices(toc: &[TocItem]) -> HashMap<String, String> {
     let mut m = HashMap::new();
     for (i, x) in toc.iter().enumerate() {

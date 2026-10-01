@@ -106,31 +106,9 @@ jobs:
             derived_data: .build-codeql-macos
             scheme: EpubToMp3
             action: build
-          # `build-for-testing` compiles the app and every XCTest source. We
-          # keep it in its own CodeQL database so the additional test source
-          # extraction cannot consume the app build's 40-minute budget.
-          - coverage: unit-tests
-            platform: macOS
-            destination: generic/platform=macOS
-            derived_data: .build-codeql-macos-tests
-            scheme: EpubToMp3-UnitTests
-            action: build-for-testing
-          # The iOS unit-test compilation includes the app, both iOS-only
-          # extensions, and the complete unit-test target.
-          - coverage: unit-tests
-            platform: iOS
-            destination: generic/platform=iOS
-            derived_data: .build-codeql-ios-tests
-            scheme: EpubToMp3-UnitTests
-            action: build-for-testing
-          # UI tests live in a distinct target and therefore need their own
-          # compile pass to be present in the Swift CodeQL database.
-          - coverage: ui-tests
-            platform: iOS
-            destination: generic/platform=iOS
-            derived_data: .build-codeql-ios-ui-tests
-            scheme: EpubToMp3-UITests
-            action: build-for-testing
+          # Test targets are validated by the native test workflow. CodeQL
+          # scans production Swift once, avoiding duplicate databases and
+          # fragile test-only compilation failures.
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7

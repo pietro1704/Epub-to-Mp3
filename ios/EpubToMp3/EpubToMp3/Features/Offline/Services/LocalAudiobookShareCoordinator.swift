@@ -30,7 +30,7 @@ enum LocalAudiobookShareCoordinator {
                 let exportsDirectory = FileManager.default.temporaryDirectory
                     .appendingPathComponent("EpubToMp3AudioExports", isDirectory: true)
                     .appendingPathComponent(UUID().uuidString, isDirectory: true)
-                let archiveURL = try LocalAudiobookArchiveExporter.export(
+                let archiveURL = try await LocalAudiobookArchiveExporter.export(
                     bookID: manifest.bookID,
                     bookTitle: manifest.bookTitle,
                     author: manifest.author,

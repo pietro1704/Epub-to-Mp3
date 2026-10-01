@@ -47,6 +47,7 @@ pub struct OutputManifest {
     pub author: String,
     pub chapters: Vec<ChapterMetadata>,
     pub archive: String,
+    pub cover: Option<String>,
 }
 #[derive(Debug, Error)]
 pub enum WorkerError {
@@ -89,6 +90,10 @@ impl ConversionWorker {
     }
     pub fn with_progress(mut self, sink: ProgressSink) -> Self {
         self.progress = Some(sink);
+        self
+    }
+    pub fn with_cancellation(mut self, cancel: CancellationToken) -> Self {
+        self.cancel = cancel;
         self
     }
     pub fn cancel(&self) {
@@ -138,6 +143,16 @@ impl ConversionWorker {
         fs::create_dir_all(&cache_dir)?;
         fs::create_dir_all(&output_dir)?;
         let total = book.chapters.len();
+        let source_text_chars: usize = book
+            .chapters
+            .iter()
+            .map(|chapter| chapter.text.chars().count())
+            .sum();
+        if total == 0 || source_text_chars == 0 {
+            return Err(WorkerError::Piper(
+                "source book has no readable chapter text".into(),
+            ));
+        }
         let parallelism = if request.no_parallel {
             1
         } else {
@@ -173,8 +188,19 @@ impl ConversionWorker {
                         cache::atomic_write_json(&text_path, &chapter.text)?;
                         chapter.text.clone()
                     };
+                    if text.chars().count() != chapter.text.chars().count() {
+                        return Err(WorkerError::Piper(format!(
+                            "cached chapter text mismatch for '{}'",
+                            chapter.name
+                        )));
+                    }
                     let stem = format!("{:04}-{}", position + 1, sanitize(&chapter.name));
                     let mp3 = output_dir.join(format!("{stem}.mp3"));
+                    let language = request
+                        .language
+                        .as_deref()
+                        .or(book.language.as_deref())
+                        .or_else(|| detect_language(&text));
                     let engine = select_engine(request.engine.as_deref(), &self.config);
                     if !mp3.is_file() {
                         eprintln!("synthesizing chapter {}/{}", position + 1, total);
@@ -183,7 +209,7 @@ impl ConversionWorker {
                             &text,
                             &mp3,
                             request.voice.as_deref(),
-                            request.language.as_deref(),
+                            request.language.as_deref().or(language),
                         )?;
                     }
                     let name = mp3.file_name().unwrap().to_string_lossy().to_string();
@@ -209,11 +235,52 @@ impl ConversionWorker {
             .map(|(_, path, name, _)| (path.clone(), name.clone()))
             .collect();
         let manifest: Vec<_> = results
-            .into_iter()
-            .map(|(_, _, _, metadata)| metadata)
+            .iter()
+            .map(|(_, _, _, metadata)| metadata.clone())
             .collect();
+        let output_text_chars: usize = manifest.iter().map(|chapter| chapter.text_chars).sum();
+        if output_text_chars != source_text_chars {
+            return Err(WorkerError::Piper(format!(
+                "text coverage mismatch: source={source_text_chars}, output={output_text_chars}"
+            )));
+        }
+        let cover = book
+            .cover
+            .as_ref()
+            .map(|cover| {
+                let extension = match book.cover_mime.as_deref() {
+                    Some("image/png") => "png",
+                    Some("image/webp") => "webp",
+                    _ => "jpg",
+                };
+                let name = format!("cover.{extension}");
+                let path = output_dir.join(&name);
+                std::fs::write(&path, cover).ok()?;
+                Some(name)
+            })
+            .flatten();
+        if cover.is_none() {
+            return Err(WorkerError::Piper(
+                "source book has no embedded cover image".into(),
+            ));
+        }
+        if let Some(cover_name) = &cover {
+            let cover_path = output_dir.join(cover_name);
+            for (_, path, _, _) in &results {
+                audio::embed_cover(path, &cover_path)?;
+            }
+        }
         let archive = output_dir.join(format!("{}.zip", sanitize(&book.title)));
-        audio::create_archive(&archive, &files)?;
+        let archive_files = files
+            .iter()
+            .cloned()
+            .chain(
+                cover
+                    .as_ref()
+                    .map(|name| (output_dir.join(name), name.clone())),
+            )
+            .collect::<Vec<_>>();
+        audio::create_archive(&archive, &archive_files)?;
         let output_name = archive.file_name().unwrap().to_string_lossy().to_string();
         let result = OutputManifest {
             job_id: request.job_id.clone(),
@@ -221,6 +288,7 @@ impl ConversionWorker {
             author: book.author,
             chapters: manifest,
             archive: output_name,
+            cover,
         };
         cache::atomic_write_json(output_dir.join("manifest.json"), &result)?;
         Ok(result)
@@ -231,10 +299,10 @@ impl ConversionWorker {
         text: &str,
         out: &Path,
         voice: Option<&str>,
-        _language: Option<&str>,
+        language: Option<&str>,
     ) -> Result<(), WorkerError> {
         if engine == "edge" {
-            let voice = voice.unwrap_or("en-US-GuyNeural");
+            let voice = voice.unwrap_or_else(|| default_edge_voice(language));
             let rt = tokio::runtime::Builder::new_current_thread()
                 .enable_all()
                 .build()?;
@@ -269,10 +337,10 @@ impl ConversionWorker {
         let model = if model.is_file() {
             model
         } else {
-            self.config
-                .paths
-                .project_root
-                .join("models/piper/pt_BR-faber-medium.onnx")
+            return Err(WorkerError::Piper(format!(
+                "Piper model is unavailable at {}",
+                model.display()
+            )));
         };
         let config = model.with_extension("onnx.json");
         let mut c = PiperConfig::new(model, config);
@@ -331,6 +399,32 @@ impl ConversionWorker {
     }
 }
 
+fn detect_language(text: &str) -> Option<&'static str> {
+    let lower = text.to_ascii_lowercase();
+    let markers = [
+        ("pt-BR", [" que ", " não ", " uma ", " para ", " você "]),
+        ("it-IT", [" che ", " non ", " una ", " per ", " della "]),
+        ("es-ES", [" que ", " no ", " una ", " para ", " los "]),
+        ("en-US", [" the ", " and ", " not ", " this ", " with "]),
+    ];
+    markers
+        .into_iter()
+        .max_by_key(|(_, words)| words.iter().filter(|word| lower.contains(**word)).count())
+        .and_then(|(language, words)| {
+            (words.iter().filter(|word| lower.contains(**word)).count() >= 2).then_some(language)
+        })
+}
+
+fn default_edge_voice(language: Option<&str>) -> &'static str {
+    match language.unwrap_or_default().to_ascii_lowercase().as_str() {
+        "pt" | "pt-br" | "pt_br" => "pt-BR-FranciscaNeural",
+        "it" | "it-it" => "it-IT-ElsaNeural",
+        "es" | "es-es" | "es-mx" => "es-ES-ElviraNeural",
+        "en" | "en-us" | "en-gb" => "en-US-AvaNeural",
+        _ => "en-US-AvaNeural",
+    }
+}
+
 fn is_edge_fallback_error(error: &EdgeError) -> bool {
     let message = error.to_string().to_ascii_lowercase();
     ["429", "rate", "quota", "timeout", "timed out", "transport"]
@@ -371,14 +465,14 @@ fn sanitize(value: &str) -> String {
     let mut s = value
         .chars()
         .map(|c| {
-            if c.is_ascii_alphanumeric() || c == '-' || c == '_' {
-                ' '
+            if c.is_alphanumeric() || matches!(c, '-' | '_' | ' ' | '.') {
+                c
             } else {
                 '_'
             }
         })
         .collect::<String>();
-    s = s.split_whitespace().collect::<Vec<_>>().join("_");
+    s = s.split_whitespace().collect::<Vec<_>>().join(" ");
     if s.is_empty() {
         "book".into()
     } else {

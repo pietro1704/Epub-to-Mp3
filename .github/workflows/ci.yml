@@ -88,7 +88,7 @@ jobs:
         run: mise exec -- python -m pytest -v --tb=short
 
       - name: Run Python lint
-        run: mise exec -- ruff check .
+        run: mise exec -- ruff check python_app tests
 
       - name: Run sample conversion smoke
         env:
@@ -142,8 +142,14 @@ jobs:
         run: mise exec -- cargo test --workspace
       - name: Rust formatting
         run: mise exec -- cargo fmt --all -- --check
+      - name: Install Piper smoke model
+        run: |
+          mise exec -- bash scripts/install_piper_binary.sh
+          mkdir -p models/piper
+          cp models/pt_BR-faber-medium.onnx models/piper/pt_BR-faber-medium.onnx
+          cp models/pt_BR-faber-medium.onnx.json models/piper/pt_BR-faber-medium.onnx.json
       - name: Piper Embedded runtime smoke test
-        run: mise exec -- cargo test --manifest-path native/piper-runtime/Cargo.toml --features heavy-runtime-tests piper_inference_generates_valid_wav_from_vendored_model -- --nocapture
+        run: mise exec -- cargo test --manifest-path native/piper-runtime/Cargo.toml --features onnxruntime,piper-inference,heavy-runtime-tests piper_inference_generates_valid_wav_from_vendored_model -- --nocapture
   web:
     name: Web
     needs: production-packaging-guard

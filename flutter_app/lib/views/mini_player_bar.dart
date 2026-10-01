@@ -149,11 +149,21 @@ class MiniPlayerBar extends ConsumerWidget {
                 tooltip: 'Skip back 15 seconds',
               ),
 
-              // Play/pause
+              // Play/pause or loading state
               StreamBuilder<bool>(
                 stream: player.playing,
                 builder: (context, snap) {
                   final isPlaying = snap.data ?? false;
+                  if (player.isLoading) {
+                    return const SizedBox(
+                      width: 48,
+                      height: 48,
+                      child: Padding(
+                        padding: EdgeInsets.all(14),
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                    );
+                  }
                   return Semantics(
                     label: isPlaying ? 'Pause' : 'Play',
                     button: true,

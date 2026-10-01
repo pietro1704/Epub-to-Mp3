@@ -7,9 +7,10 @@
 //! - `converter_last_error` returns an owned UTF-8 error string, or null when no error exists.
 //! - Every returned string must be released with `converter_string_free`.
 
+#[cfg(feature = "piper-runtime")]
 extern crate piper_runtime;
 
-use converter_core::piper::{self, PiperRuntimeStatus};
+use converter_core::piper;
 use converter_core::{
     config::AppConfig,
     embedded::{EmbeddedBookMetadata, EmbeddedConversionSession},
@@ -96,10 +97,12 @@ pub unsafe extern "C" fn converter_session_convert_json(
     }
     let job = format!("embedded-{}", std::process::id());
     let generated_output_dir = output.join(&job);
+    #[cfg(feature = "piper-runtime")]
+    piper_runtime_register_embedded();
     let request = converter_core::worker::ConversionRequest {
         input: session.session.input_path().to_path_buf(),
         job_id: job,
-        engine: Some("edge".to_owned()),
+        engine: Some("piper".to_owned()),
         voice: None,
         language: None,
         no_parallel: true,
@@ -174,10 +177,12 @@ pub struct PiperStatus {
     pub engine_ready: bool,
 }
 
+pub type PiperRuntimeStatusC = PiperStatus;
+
 #[cfg(not(feature = "piper-runtime"))]
 #[no_mangle]
 pub unsafe extern "C" fn piper_runtime_status() -> PiperRuntimeStatusC {
-    let status: PiperRuntimeStatus = piper::piper_runtime_status();
+    let status = piper::piper_runtime_status();
     PiperStatus {
         runtime_loaded: status.runtime_loaded,
         model_available: status.model_available,
@@ -240,7 +245,6 @@ pub extern "C" fn piper_runtime_shutdown() {
 }
 
 /// Registers the platform runtime through a conservative status-only bridge.
-/// The actual mobile implementation must replace this adapter before shipping.
 #[no_mangle]
 pub extern "C" fn piper_runtime_register_unavailable() {
     piper::register_runtime(std::sync::Arc::new(
@@ -255,7 +259,63 @@ pub extern "C" fn piper_runtime_register_unavailable() {
 #[cfg(feature = "piper-runtime")]
 #[no_mangle]
 pub extern "C" fn piper_runtime_register_embedded() {
-    piper_runtime::piper_runtime_register_core();
+    piper::register_runtime(std::sync::Arc::new(
+        converter_core::piper::RegisteredPiperRuntime::new(|text, output| {
+            let model = std::env::var_os("PIPER_MODEL")
+                .map(std::path::PathBuf::from)
+                .ok_or_else(|| {
+                    converter_core::piper::PiperError::MissingModel(std::path::PathBuf::from(
+                        "PIPER_MODEL",
+                    ))
+                })?;
+            let config = model.with_extension("onnx.json");
+            if !model.is_file() {
+                return Err(converter_core::piper::PiperError::MissingModel(model));
+            }
+            if !config.is_file() {
+                return Err(converter_core::piper::PiperError::MissingConfig(config));
+            }
+            let model = std::ffi::CString::new(model.to_string_lossy().as_bytes())
+                .map_err(|error| converter_core::piper::PiperError::Synthesis(error.to_string()))?;
+            let config = std::ffi::CString::new(config.to_string_lossy().as_bytes())
+                .map_err(|error| converter_core::piper::PiperError::Synthesis(error.to_string()))?;
+            let text = std::ffi::CString::new(text)
+                .map_err(|error| converter_core::piper::PiperError::Synthesis(error.to_string()))?;
+            let output = std::ffi::CString::new(output.to_string_lossy().as_bytes())
+                .map_err(|error| converter_core::piper::PiperError::Synthesis(error.to_string()))?;
+            let mut error = vec![0_u8; 2048];
+            if piper_runtime::piper_runtime_init(
+                model.as_ptr(),
+                config.as_ptr(),
+                error.as_mut_ptr(),
+                error.len() as u32,
+            ) == 0
+            {
+                return Err(converter_core::piper::PiperError::Synthesis(c_error(
+                    &error,
+                )));
+            }
+            if piper_runtime::piper_synthesize(
+                text.as_ptr(),
+                output.as_ptr(),
+                error.as_mut_ptr(),
+                error.len() as u32,
+            ) == 0
+            {
+                return Err(converter_core::piper::PiperError::Synthesis(c_error(
+                    &error,
+                )));
+            }
+            Ok(())
+        }),
+    ));
+}
+
+#[cfg(feature = "piper-runtime")]
+fn c_error(error: &[u8]) -> String {
+    String::from_utf8_lossy(error)
+        .trim_end_matches('\0')
+        .to_owned()
 }
 
 thread_local! {
@@ -319,6 +379,8 @@ mod android_jni {
         env: JNIEnv<'_>,
         _class: JClass<'_>,
     ) -> jstring {
+        #[cfg(feature = "piper-runtime")]
+        piper_runtime_register_embedded();
         let status = {
             #[cfg(feature = "piper-runtime")]
             {
@@ -352,6 +414,8 @@ mod android_jni {
         _class: JClass<'_>,
         path: JString<'_>,
     ) -> jstring {
+        #[cfg(feature = "piper-runtime")]
+        piper_runtime_register_embedded();
         let path = match read_string(&mut env, path) {
             Ok(path) => path,
             Err(error) => {
@@ -365,7 +429,9 @@ mod android_jni {
             Err(_) => return std::ptr::null_mut(),
         };
         let handle = unsafe { converter_session_open(path.as_ptr()) };
+        eprintln!("converter-ffi: open returned");
         if handle.is_null() {
+            eprintln!("converter-ffi: open failed");
             return std::ptr::null_mut();
         }
         let metadata = unsafe { converter_session_metadata_json(handle) };
@@ -390,6 +456,9 @@ mod android_jni {
         path: JString<'_>,
         output: JString<'_>,
     ) -> jstring {
+        eprintln!("converter-ffi: nativeConvert entered");
+        #[cfg(feature = "piper-runtime")]
+        piper_runtime_register_embedded();
         let path = match read_string(&mut env, path) {
             Ok(path) => path,
             Err(_) => return std::ptr::null_mut(),
@@ -403,7 +472,9 @@ mod android_jni {
             Err(_) => return std::ptr::null_mut(),
         };
         let handle = unsafe { converter_session_open(path.as_ptr()) };
+        eprintln!("converter-ffi: open returned");
         if handle.is_null() {
+            eprintln!("converter-ffi: open failed");
             return std::ptr::null_mut();
         }
         let output = match CString::new(output) {
@@ -411,6 +482,10 @@ mod android_jni {
             Err(_) => return std::ptr::null_mut(),
         };
         let result = unsafe { converter_session_convert_json(handle, output.as_ptr()) };
+        eprintln!(
+            "converter-ffi: conversion returned result={}",
+            !result.is_null()
+        );
         unsafe { converter_session_free(handle) };
         if result.is_null() {
             return std::ptr::null_mut();
@@ -419,13 +494,7 @@ mod android_jni {
             .to_string_lossy()
             .into_owned();
         unsafe { converter_string_free(result) };
-        let Some(audio_path) = serde_json::from_str::<serde_json::Value>(&manifest)
-            .ok()
-            .and_then(|value| value.get("audioPath")?.as_str().map(str::to_owned))
-        else {
-            return std::ptr::null_mut();
-        };
-        env.new_string(audio_path)
+        env.new_string(manifest)
             .map_or(std::ptr::null_mut(), |value| value.into_raw())
     }
 

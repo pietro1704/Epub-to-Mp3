@@ -72,3 +72,15 @@ def test_fuzzy_find_book_matches_misspelled_query(monkeypatch, tmp_path):
     assert match == target
 
     assert module._fuzzy_find_book("completely unrelated qwerty") is None
+
+
+def test_normalize_cli_args_stops_at_existing_path_with_spaces(tmp_path):
+    module = _load_convert_module()
+    book = tmp_path / "Box Dom Quixote de la Mancha.epub"
+    book.write_bytes(b"PK")
+
+    normalized = module._normalize_cli_args(
+        [*str(book).split(), "--verify"]
+    )
+
+    assert normalized == [str(book), "--verify"]

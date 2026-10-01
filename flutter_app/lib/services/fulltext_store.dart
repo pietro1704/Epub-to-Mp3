@@ -65,7 +65,13 @@ class FulltextStore {
   Future<void> _writeCache(String jobId, EbookFulltext data) async {
     try {
       final f = await _cacheFile(jobId);
-      await f.writeAsString(jsonEncode(_encode(data)));
+      final tmp = File('${f.path}.${DateTime.now().microsecondsSinceEpoch}.tmp');
+      try {
+        await tmp.writeAsString(jsonEncode(_encode(data)), flush: true);
+        await tmp.rename(f.path);
+      } finally {
+        if (await tmp.exists()) await tmp.delete();
+      }
     } catch (_) {}
   }
 

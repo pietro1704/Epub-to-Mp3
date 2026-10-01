@@ -5,7 +5,7 @@ import 'ebook_fulltext.dart' show FulltextChapter;
 part 'job_snapshot.freezed.dart';
 part 'job_snapshot.g.dart';
 
-/// Mirrors `python_app/server.py::JobStatus`. Wire format is camelCase.
+/// Mirrors the backend job status. Wire format is camelCase.
 @freezed
 class ChapterProgress with _$ChapterProgress {
   const ChapterProgress._();

@@ -260,7 +260,8 @@ fn normalize_cli_args(raw: &[String]) -> Vec<String> {
         }
         first.push(token.clone());
         consumed = index + 1;
-        if Path::new(&first.join(" ")).expand().exists() {
+        let candidate = Path::new(&first.join(" ")).expand();
+        if candidate.is_file() || candidate.is_dir() {
             break;
         }
     }
@@ -343,7 +344,11 @@ fn fuzzy_find_book(query: &str) -> Option<std::path::PathBuf> {
     }
     let mut candidates = Vec::new();
     let mut seen = HashSet::new();
-    for base in [home_dir().join("Downloads"), env::current_dir().ok()?] {
+    let mut search_roots = vec![home_dir().join("Downloads"), env::current_dir().ok()?];
+    if let Some(parent) = Path::new(query).expand().parent() {
+        search_roots.push(parent.to_path_buf());
+    }
+    for base in search_roots {
         let Ok(entries) = fs::read_dir(base) else {
             continue;
         };
@@ -456,7 +461,6 @@ fn clear_book_cache(input: &Path, assume_yes: bool) -> Result<(), String> {
     Ok(())
 }
 
-
 fn verify_output(
     output_dir: &Path,
     manifest: &converter_core::worker::OutputManifest,
@@ -480,6 +484,18 @@ fn verify_output(
             return Err(format!(
                 "verification failed: empty audio {}",
                 path.display()
+            ));
+        }
+        let expected_title = chapter.title.trim();
+        if !expected_title.is_empty()
+            && !chapter
+                .filename
+                .to_lowercase()
+                .contains(&expected_title.to_lowercase())
+        {
+            return Err(format!(
+                "verification failed: filename '{}' does not contain TOC title '{}'",
+                chapter.filename, chapter.title
             ));
         }
     }
@@ -594,7 +610,8 @@ mod tests {
                 filename: "0001-Chapter_1.mp3".into(),
                 text_chars: 10,
             }],
-            archive: "Book.zip".into(),
+            archive: "archive.zip".into(),
+            cover: None,
         };
         let error = verify_output(&root, &manifest).expect_err("missing audio must fail");
         assert!(error.contains("verification failed"));

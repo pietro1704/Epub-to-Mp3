@@ -23,8 +23,11 @@ import io.flutter.plugin.common.MethodChannel
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
+import java.io.FileOutputStream
 import java.io.InputStream
 import java.util.Locale
+import java.util.concurrent.Executors
+
 
 /**
  * Hosts Flutter and Android document ingestion.
@@ -34,9 +37,11 @@ import java.util.Locale
 class MainActivity : AudioServiceActivity() {
 
     private val embeddedLogTag = "EmbeddedConverter"
+    private val converterExecutor = Executors.newSingleThreadExecutor()
+
 
     companion object {
-        private const val CHANNEL = "epub_to_mp3/python"
+        private const val CHANNEL = "epub_to_mp3/embedded_rust"
         private const val DOCUMENT_CHANNEL = "epub_to_mp3/incoming_documents"
         private const val DOCUMENT_EVENTS_CHANNEL = "epub_to_mp3/incoming_documents/events"
         private const val DEEP_LINK_EVENTS_CHANNEL = "epub_to_mp3/deep_links"
@@ -53,7 +58,6 @@ class MainActivity : AudioServiceActivity() {
             try {
                 System.loadLibrary(PIPER_RUNTIME_LIBRARY)
                 System.loadLibrary(CONVERTER_LIBRARY)
-                registerEmbeddedPiper()
                 converterLibraryLoaded = true
             } catch (_: UnsatisfiedLinkError) {
                 converterLibraryLoaded = false
@@ -64,7 +68,6 @@ class MainActivity : AudioServiceActivity() {
             if (!converterLibraryLoaded) {
                 System.loadLibrary(PIPER_RUNTIME_LIBRARY)
                 System.loadLibrary(CONVERTER_LIBRARY)
-                registerEmbeddedPiper()
                 converterLibraryLoaded = true
             }
             true
@@ -72,10 +75,9 @@ class MainActivity : AudioServiceActivity() {
             false
         }
 
-        private external fun piper_runtime_register_embedded()
-
         private fun registerEmbeddedPiper() {
-            try { piper_runtime_register_embedded() } catch (_: UnsatisfiedLinkError) { }
+            // The native converter resolves the Piper runtime directly from
+            // its linked library; no JNI symbol is required for registration.
         }
     }
 
@@ -86,19 +88,14 @@ class MainActivity : AudioServiceActivity() {
 
 
     private fun embeddedConverterStatus(): Map<String, Boolean> = try {
-        val nativeStatus = if (converterLibraryAvailable()) {
-            nativePiperStatus()?.let { JSONObject(it) }
-        } else null
-        val loaded = nativeStatus?.optBoolean("runtimeLoaded", false) == true
-        val modelAvailable = loaded && (
-            assets.list("piper")?.any { it.endsWith(".onnx") } == true ||
-                File(filesDir, "piper").listFiles()?.any { it.extension == "onnx" } == true
-            )
+        val model = ensureBundledPiperModel()
+        System.setProperty("PIPER_MODEL", model)
+        val modelAvailable = File(model).isFile && File("$model.json").isFile
         mapOf(
-            "runtimeLoaded" to loaded,
-            "modelAvailable" to (nativeStatus?.optBoolean("modelAvailable", false) == true || modelAvailable),
-            "abiCompatible" to (nativeStatus?.optBoolean("abiCompatible", false) == true),
-            "engineReady" to (nativeStatus?.optBoolean("engineReady", false) == true && modelAvailable),
+            "runtimeLoaded" to converterLibraryLoaded,
+            "modelAvailable" to modelAvailable,
+            "abiCompatible" to converterLibraryLoaded,
+            "engineReady" to (converterLibraryLoaded && modelAvailable),
         )
     } catch (_: Throwable) {
         mapOf(
@@ -107,6 +104,21 @@ class MainActivity : AudioServiceActivity() {
             "abiCompatible" to false,
             "engineReady" to false,
         )
+    }
+
+    private fun ensureBundledPiperModel(): String {
+        val target = File(filesDir, "piper/pt_BR-faber-medium.onnx")
+        val config = File(filesDir, "piper/pt_BR-faber-medium.onnx.json")
+        if (!target.isFile || !config.isFile) {
+            target.parentFile?.mkdirs()
+            assets.open("piper/pt_BR-faber-medium.onnx").use { input ->
+                FileOutputStream(target).use { output -> input.copyTo(output) }
+            }
+            assets.open("piper/pt_BR-faber-medium.onnx.json").use { input ->
+                FileOutputStream(config).use { output -> input.copyTo(output) }
+            }
+        }
+        return target.absolutePath
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -191,6 +203,11 @@ class MainActivity : AudioServiceActivity() {
                         if (backendUrl.isNullOrBlank()) {
                             result.error("BAD_ARGS", "backendUrl is required", null)
                         } else {
+                            val payloadFile = persistBackgroundPayload(jobId, text, voice, outputPath)
+                            if (payloadFile == null) {
+                                result.error("IO_ERROR", "Could not persist background conversion payload", null)
+                                return@setMethodCallHandler
+                            }
                             getSharedPreferences("flutter_epub_to_mp3", MODE_PRIVATE)
                                 .edit().putString(BackgroundChapterWorker.KEY_BACKEND_URL, backendUrl).apply()
                             val request = OneTimeWorkRequestBuilder<BackgroundChapterWorker>()
@@ -201,9 +218,7 @@ class MainActivity : AudioServiceActivity() {
                                     .build(),
                             )
                             .setInputData(Data.Builder()
-                                .putString(BackgroundChapterWorker.KEY_TEXT, text)
-                                .putString(BackgroundChapterWorker.KEY_VOICE, voice)
-                                .putString(BackgroundChapterWorker.KEY_OUTPUT, outputPath)
+                                .putString(BackgroundChapterWorker.KEY_PAYLOAD, payloadFile.absolutePath)
                                 .build())
                             .build()
                             WorkManager.getInstance(applicationContext).enqueueUniqueWork(
@@ -239,8 +254,12 @@ class MainActivity : AudioServiceActivity() {
             flutterEngine.dartExecutor.binaryMessenger,
             EMBEDDED_CHANNEL
         ).setMethodCallHandler { call, result ->
+            Log.i(embeddedLogTag, "method ${call.method} received")
             when (call.method) {
-                "status" -> result.success(embeddedConverterStatus())
+                "status" -> {
+                    Log.i(embeddedLogTag, "status requested")
+                    result.success(embeddedConverterStatus())
+                }
                 "parse" -> {
                     if (!converterLibraryAvailable()) {
                         result.error(EMBEDDED_UNAVAILABLE, "converter-ffi native library is not packaged in this APK", null)
@@ -250,13 +269,18 @@ class MainActivity : AudioServiceActivity() {
                             result.error("BAD_ARGS", "inputPath is required", null)
                         } else {
                             Log.i(embeddedLogTag, "parse start input=$inputPath")
-                            val native = nativeParse(inputPath)
-                            if (native == null) {
-                                Log.e(embeddedLogTag, "parse failed: ${nativeLastError()}")
-                                result.error(EMBEDDED_UNAVAILABLE, nativeLastError(), null)
-                            } else {
-                                Log.i(embeddedLogTag, "parse success bytes=${native.length}")
-                                result.success(native)
+                            converterExecutor.execute {
+                                try {
+                                    ensureBundledPiperModel()
+                                    System.setProperty("PIPER_MODEL", ensureBundledPiperModel())
+                                    val native = nativeParse(inputPath)
+                                    runOnUiThread {
+                                        if (native == null) result.error(EMBEDDED_UNAVAILABLE, nativeLastError(), null)
+                                        else result.success(native)
+                                    }
+                                } catch (error: Throwable) {
+                                    runOnUiThread { result.error(EMBEDDED_UNAVAILABLE, error.message, null) }
+                                }
                             }
                         }
                     }
@@ -270,14 +294,25 @@ class MainActivity : AudioServiceActivity() {
                         if (inputPath.isNullOrBlank() || outputPath.isNullOrBlank()) {
                             result.error("BAD_ARGS", "inputPath and outputPath are required", null)
                         } else {
-                            Log.i(embeddedLogTag, "convert start input=$inputPath output=$outputPath")
-                            val native = nativeConvert(inputPath, outputPath)
-                            if (native == null) {
-                                Log.e(embeddedLogTag, "convert failed: ${nativeLastError()}")
-                                result.error(EMBEDDED_UNAVAILABLE, nativeLastError(), null)
-                            } else {
-                                Log.i(embeddedLogTag, "convert success result=$native")
-                                result.success(native)
+                            converterExecutor.execute {
+                                try {
+                                    Log.i(embeddedLogTag, "convert start input=$inputPath output=$outputPath")
+                                    val model = ensureBundledPiperModel()
+                                    System.setProperty("PIPER_MODEL", model)
+                                    Log.i(embeddedLogTag, "convert invoking JNI libraryLoaded=$converterLibraryLoaded model=$model")
+                                    val native = nativeConvert(inputPath, outputPath)
+                                    if (native == null) {
+                                        val error = nativeLastError()
+                                        Log.e(embeddedLogTag, "convert failed: $error")
+                                        runOnUiThread { result.error(EMBEDDED_UNAVAILABLE, error, null) }
+                                    } else {
+                                        Log.i(embeddedLogTag, "convert native returned ${native.length} chars")
+                                        runOnUiThread { result.success(native) }
+                                    }
+                                } catch (error: Throwable) {
+                                    Log.e(embeddedLogTag, "native conversion failed", error)
+                                    runOnUiThread { result.error(EMBEDDED_UNAVAILABLE, error.message, null) }
+                                }
                             }
                         }
                     }
@@ -291,11 +326,30 @@ class MainActivity : AudioServiceActivity() {
 
     private external fun nativeParse(inputPath: String): String?
     private external fun nativeConvert(inputPath: String, outputPath: String): String?
-    private external fun nativePiperStatus(): String?
+
     private external fun nativeLastError(): String
 
     override fun onDestroy() {
+        converterExecutor.shutdownNow()
         super.onDestroy()
+    }
+
+    private fun persistBackgroundPayload(jobId: String, text: String, voice: String, outputPath: String): File? {
+        val dir = File(cacheDir, "background_conversion").apply { mkdirs() }
+        val target = File(dir, "${jobId.replace(Regex("[^A-Za-z0-9_-]"), "_")}.json")
+        val temp = File(dir, "${target.name}.${System.nanoTime()}.tmp")
+        return try {
+            JSONObject().apply {
+                put("text", text)
+                put("voice", voice)
+                put("outputPath", outputPath)
+            }.toString().also { temp.writeText(it, Charsets.UTF_8) }
+            if (!temp.renameTo(target)) throw java.io.IOException("Could not atomically publish payload")
+            target
+        } catch (_: Exception) {
+            temp.delete()
+            null
+        }
     }
 
     private fun handleIncomingIntent(incoming: Intent?) {

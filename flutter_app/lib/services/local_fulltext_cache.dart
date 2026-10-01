@@ -68,7 +68,7 @@ class LocalFulltextCache {
       final f = await _fileFor(bookId);
       if (f == null) return;
       final tmp = File('${f.path}.tmp');
-      await tmp.writeAsString(jsonEncode(payload.toJson()));
+      await tmp.writeAsString(jsonEncode(payload.toJson()), flush: true);
       await tmp.rename(f.path);
       await _touch(f);
       await _reclaimRebuildableBytes(f.parent);

@@ -325,6 +325,19 @@ mod tests {
     use super::*;
 
     #[test]
+    fn cancellation_token_can_be_shared_with_active_worker() {
+        let token = CancellationToken::default();
+        let worker_token = token.clone();
+        std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_millis(10));
+            worker_token.cancel();
+        })
+        .join()
+        .unwrap();
+        assert!(token.is_cancelled());
+    }
+
+    #[test]
     fn missing_runtime_is_reported_without_external_process_fallback() {
         let dir = tempfile_dir();
         let model = dir.join("voice.onnx");

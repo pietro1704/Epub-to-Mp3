@@ -15,7 +15,6 @@ import '../services/download_manager.dart';
 import '../services/embedded_converter.dart';
 import '../services/fulltext_store.dart';
 import '../services/local_fulltext_cache.dart';
-import '../services/python_bridge.dart';
 import '../services/resume_store.dart';
 import '../services/sync_engine.dart';
 
@@ -157,16 +156,18 @@ final apiClientProvider = Provider<ApiClient>((ref) {
             'HTTP(S) LAN address or deployed backend in Settings.'
         : null,
   );
-  PythonBridge().configureAndroidBackend(api);
   return api;
 });
 
 /// Explicit conversion seam. Embedded mode never silently falls back to HTTP.
 final converterModeProvider = Provider<ConverterMode>((ref) {
   final settings = ref.watch(settingsProvider);
-  // The Android APK currently has no converter-ffi shared library. Keep the
-  // backend path as the safe default; embedded mode remains an explicit opt-in
-  // for builds that package and register the native runtime.
+  // Mobile conversion is always handled by the embedded Rust runtime. HTTP is
+  // an explicit compatibility mode for desktop/remote deployments only.
+  if (defaultTargetPlatform == TargetPlatform.android ||
+      defaultTargetPlatform == TargetPlatform.iOS) {
+    return ConverterMode.embedded;
+  }
   return settings.useEmbeddedRuntime ? ConverterMode.embedded : ConverterMode.http;
 });
 

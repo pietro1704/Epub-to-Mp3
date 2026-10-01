@@ -13,6 +13,28 @@ static INITIALIZED: AtomicBool = AtomicBool::new(false);
 #[cfg(feature = "piper-inference")]
 static RUNTIME: std::sync::OnceLock<std::sync::Mutex<Option<Piper>>> = std::sync::OnceLock::new();
 
+#[cfg(feature = "piper-inference")]
+static MODEL_PATH: std::sync::OnceLock<std::sync::Mutex<Option<String>>> =
+    std::sync::OnceLock::new();
+
+#[cfg(feature = "piper-inference")]
+pub fn configured_model_path() -> Option<String> {
+    MODEL_PATH
+        .get()
+        .and_then(|value| value.lock().ok()?.clone())
+}
+
+#[cfg(feature = "piper-inference")]
+#[allow(improper_ctypes_definitions)]
+#[no_mangle]
+pub extern "C" fn piper_runtime_set_model_path(path: &str) {
+    MODEL_PATH
+        .get_or_init(|| std::sync::Mutex::new(None))
+        .lock()
+        .expect("Piper model path lock poisoned")
+        .replace(path.to_owned());
+}
+
 fn error(buffer: *mut c_char, length: u32, message: &str) {
     if buffer.is_null() || length == 0 {
         return;
@@ -182,6 +204,7 @@ pub extern "C" fn piper_runtime_shutdown() {
     }
 }
 
+#[cfg(feature = "piper-inference")]
 fn write_wav(path: &Path, samples: &[f32], sample_rate: u32) -> Result<(), String> {
     if samples.is_empty() || sample_rate == 0 {
         return Err("Piper returned empty audio".to_owned());
@@ -242,10 +265,13 @@ mod tests {
     #[test]
     fn piper_inference_generates_valid_wav_from_vendored_model() {
         let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        let model = root
-            .join("../../models/piper/en_US-lessac-medium.onnx")
-            .canonicalize()
-            .unwrap();
+        let model = [
+            root.join("../../models/piper/en_US-lessac-medium.onnx"),
+            root.join("../../models/piper/pt_BR-faber-medium.onnx"),
+        ]
+        .into_iter()
+        .find(|path| path.is_file())
+        .expect("CI must provide a vendored Piper model");
         let config = PathBuf::from(format!("{}.json", model.display()));
         let output = std::env::temp_dir().join(format!(
             "piper-runtime-smoke-{}-{}.wav",

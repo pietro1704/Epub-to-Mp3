@@ -79,7 +79,7 @@ enum LocalAudiobookArchiveExporter {
         }
     }
 
-    static func export(
+    static func exportSynchronously(
         bookID: String,
         bookTitle: String,
         author: String?,
@@ -140,6 +140,27 @@ enum LocalAudiobookArchiveExporter {
             .appendingPathComponent(safeFileName(bookTitle) + ".zip")
         try writeStoredZip(entries: archiveEntries, to: archiveURL)
         return archiveURL
+    }
+
+    /// Performs the synchronous archive construction away from the caller's
+    /// actor. The returned URL is published only after the complete archive
+    /// has been atomically written.
+    static func export(
+        bookID: String,
+        bookTitle: String,
+        author: String?,
+        chapters: [Chapter],
+        destinationDirectory: URL
+    ) async throws -> URL {
+        try await Task.detached(priority: .userInitiated) {
+            try Self.exportSynchronously(
+                bookID: bookID,
+                bookTitle: bookTitle,
+                author: author,
+                chapters: chapters,
+                destinationDirectory: destinationDirectory
+            )
+        }.value
     }
 
     private static func writeStoredZip(entries: [Entry], to url: URL) throws {

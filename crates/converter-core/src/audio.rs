@@ -292,6 +292,41 @@ pub fn create_archive(
     Ok(())
 }
 
+pub fn embed_cover(input: &Path, cover: &Path) -> Result<(), AudioError> {
+    let temp = input.with_extension(format!("cover-{}.mp3", std::process::id()));
+    let input_s = input.to_string_lossy().into_owned();
+    let cover_s = cover.to_string_lossy().into_owned();
+    let temp_s = temp.to_string_lossy().into_owned();
+    run(&ProcessSpec::new("ffmpeg").args([
+        "-y",
+        "-i",
+        &input_s,
+        "-i",
+        &cover_s,
+        "-map",
+        "0:a:0",
+        "-map",
+        "1:v:0",
+        "-c:a",
+        "libmp3lame",
+        "-b:a",
+        "48k",
+        "-ac",
+        "1",
+        "-ar",
+        "24000",
+        "-c:v",
+        "copy",
+        "-id3v2_version",
+        "3",
+        "-metadata:s:v:0",
+        "title=Cover",
+        &temp_s,
+    ]))?;
+    fs::rename(temp, input)?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

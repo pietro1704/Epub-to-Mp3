@@ -253,7 +253,7 @@ class MirrorAppSettings {
   String get backendUrl => backendURL;
 
   // Sidecar (macOS only on Swift; on Flutter only the Linux/Windows
-  // desktop builds spin up a sidecar — see PythonBridge).
+  // desktop builds spin up a sidecar.
   Uri? sidecarURL;
   bool get useEmbeddedSidecar => _prefs.getBool('useEmbeddedSidecar') ?? true;
   Future<void> setUseEmbeddedSidecar(bool v) =>
