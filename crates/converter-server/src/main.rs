@@ -367,7 +367,9 @@ async fn create_job(State(state): State<AppState>, Json(form): Json<CreateJob>) 
         let mut guard = jobs.blocking_write();
         if let Some(job) = guard.get_mut(&id) {
             match result {
-                Ok(manifest) => apply_manifest(&mut job.snapshot, &manifest),
+                Ok(manifest) => {
+                    apply_manifest(&mut job.snapshot, &manifest, &state.config.paths.output_dir)
+                }
                 Err(error) => {
                     job.snapshot.state =
                         if matches!(error, converter_core::worker::WorkerError::Cancelled) {
@@ -675,7 +677,7 @@ async fn find_job_input(config: &AppConfig, job_id: &str) -> Option<PathBuf> {
     }
     None
 }
-fn apply_manifest(snapshot: &mut JobSnapshot, manifest: &OutputManifest) {
+fn apply_manifest(snapshot: &mut JobSnapshot, manifest: &OutputManifest, output_dir: &Path) {
     snapshot.state = "finished".into();
     snapshot.book_title = Some(manifest.title.clone());
     snapshot.book_author = Some(manifest.author.clone());
@@ -702,7 +704,11 @@ fn apply_manifest(snapshot: &mut JobSnapshot, manifest: &OutputManifest) {
         .map(|chapter| OutputAsset {
             name: chapter.filename.clone(),
             url: format!("/api/outputs/{}/{}", snapshot.job_id, chapter.filename),
-            size_bytes: 0,
+            size_bytes: std::fs::metadata(
+                output_dir.join(&snapshot.job_id).join(&chapter.filename),
+            )
+            .map(|metadata| metadata.len())
+            .unwrap_or(0),
         })
         .collect();
     snapshot.events.push("Conversion finished".into());
