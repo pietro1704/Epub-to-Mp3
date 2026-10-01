@@ -156,7 +156,7 @@ pub extern "C" fn piper_synthesize(
             return Err("Piper runtime is not initialized".to_owned());
         }
         let text = unsafe { CStr::from_ptr(text) }.to_string_lossy();
-        let output = unsafe { CStr::from_ptr(output) }.to_string_lossy();
+        let _output = unsafe { CStr::from_ptr(output) }.to_string_lossy();
         if text.trim().is_empty() {
             return Err("Piper synthesis text is empty".to_owned());
         }
