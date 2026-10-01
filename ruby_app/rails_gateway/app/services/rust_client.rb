@@ -3,12 +3,12 @@ require "net/http"
 require "uri"
 
 class RustClient
-  TERMINAL_STATES = %w[finished completed failed interrupted cancelled].freeze
   def initialize(base_url: ENV.fetch("RUST_CONVERTER_URL", "http://127.0.0.1:8000")); @base_uri = URI(base_url); end
   def health = request(:get, "/health")
   def metadata = request(:get, "/api/metadata")
-  def convert(input:, engine: nil, voice: nil, language: nil)
-    payload = { input: input }
+  def upload_local(path) = request(:post, "/api/uploads/local", { path: path })
+  def convert(upload_id:, engine: nil, voice: nil, language: nil)
+    payload = { uploadId: upload_id }
     payload[:engine] = engine if engine; payload[:voice] = voice if voice; payload[:language] = language if language
     request(:post, "/api/convert", payload)
   end
