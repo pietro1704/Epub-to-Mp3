@@ -34,6 +34,7 @@ pub async fn synthesize_with_reference_client(
     text: &str,
     voice: &str,
 ) -> Result<Vec<u8>, EdgeError> {
+    let _ = rustls::crypto::ring::default_provider().install_default();
     let client = edge_tts_rust::EdgeTtsClient::builder()
         .ws_pool_size(0)
         .ws_warmup(false)
