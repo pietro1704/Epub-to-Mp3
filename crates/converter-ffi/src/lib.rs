@@ -973,6 +973,56 @@ mod android_jni {
     }
 
     #[no_mangle]
+    pub extern "system" fn Java_com_pietrocode_epubtomp3_flutter_1app_MainActivity_nativeTtsInstalledReadyEngine(
+        mut env: JNIEnv<'_>,
+        _class: JClass<'_>,
+        language: JString<'_>,
+        platform: JString<'_>,
+        android_api: jint,
+        installed_json: JString<'_>,
+        ready_json: JString<'_>,
+    ) -> jstring {
+        let values = [language, platform, installed_json, ready_json]
+            .into_iter()
+            .map(|value| read_string(&mut env, value))
+            .collect::<Result<Vec<_>, _>>();
+        let values = match values {
+            Ok(values) => values,
+            Err(error) => {
+                return env
+                    .new_string(error)
+                    .map_or(std::ptr::null_mut(), |value| value.into_raw())
+            }
+        };
+        let c_values = values
+            .iter()
+            .map(|value| CString::new(value.as_str()))
+            .collect::<Result<Vec<_>, _>>();
+        let c_values = match c_values {
+            Ok(values) => values,
+            Err(_) => return std::ptr::null_mut(),
+        };
+        let engine = unsafe {
+            converter_tts_installed_ready_engine(
+                c_values[0].as_ptr(),
+                c_values[1].as_ptr(),
+                android_api.max(0) as u32,
+                c_values[2].as_ptr(),
+                c_values[3].as_ptr(),
+            )
+        };
+        if engine.is_null() {
+            return std::ptr::null_mut();
+        }
+        let value = unsafe { CStr::from_ptr(engine) }
+            .to_string_lossy()
+            .into_owned();
+        unsafe { converter_string_free(engine) };
+        env.new_string(value)
+            .map_or(std::ptr::null_mut(), |value| value.into_raw())
+    }
+
+    #[no_mangle]
     pub extern "system" fn Java_com_pietrocode_epubtomp3_flutter_1app_MainActivity_nativeTtsModelInstall(
         mut env: JNIEnv<'_>,
         _class: JClass<'_>,

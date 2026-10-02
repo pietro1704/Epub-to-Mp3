@@ -34,6 +34,15 @@ class FakeConverter implements EmbeddedConverter {
   }) async => 'piper';
 
   @override
+  Future<String> ttsInstalledReadyEngine({
+    required String language,
+    required String platform,
+    required String installedModelIdsJson,
+    required String readyModelIdsJson,
+    int? androidApi,
+  }) async => 'none';
+
+  @override
   Future<String> installTtsModel({
     required String modelId,
     required String url,

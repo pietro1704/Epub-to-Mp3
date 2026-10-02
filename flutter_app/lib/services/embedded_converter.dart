@@ -45,6 +45,15 @@ abstract interface class EmbeddedConverter {
     int? androidApi,
   }) =>
       throw EmbeddedConverterUnavailable('TTS engine selection is unavailable');
+  Future<String> ttsInstalledReadyEngine({
+    required String language,
+    required String platform,
+    required String installedModelIdsJson,
+    required String readyModelIdsJson,
+    int? androidApi,
+  }) => throw EmbeddedConverterUnavailable(
+    'Validated TTS engine selection is unavailable',
+  );
   Future<String> installTtsModel({
     required String modelId,
     required String url,
@@ -224,6 +233,33 @@ class AndroidEmbeddedConverter implements EmbeddedConverter {
   }
 
   @override
+  Future<String> ttsInstalledReadyEngine({
+    required String language,
+    required String platform,
+    required String installedModelIdsJson,
+    required String readyModelIdsJson,
+    int? androidApi,
+  }) async {
+    final value = await _channel.invokeMethod<String>(
+      'ttsInstalledReadyEngine',
+      {
+        'language': language,
+        'platform': platform,
+        'installedModelIdsJson': installedModelIdsJson,
+        'readyModelIdsJson': readyModelIdsJson,
+        // ignore: use_null_aware_elements
+        if (androidApi != null) 'androidApi': androidApi,
+      },
+    );
+    if (value == null || value.isEmpty) {
+      throw EmbeddedConverterUnavailable(
+        'empty validated TTS engine selection',
+      );
+    }
+    return value;
+  }
+
+  @override
   Future<String> installTtsModel({
     required String modelId,
     required String url,
@@ -310,6 +346,15 @@ class UnavailableEmbeddedConverter implements EmbeddedConverter {
   Future<String> ttsDefaultEngine({
     required String language,
     required String platform,
+    int? androidApi,
+  }) => throw EmbeddedConverterUnavailable();
+
+  @override
+  Future<String> ttsInstalledReadyEngine({
+    required String language,
+    required String platform,
+    required String installedModelIdsJson,
+    required String readyModelIdsJson,
     int? androidApi,
   }) => throw EmbeddedConverterUnavailable();
 

@@ -404,6 +404,26 @@ class MainActivity : AudioServiceActivity() {
                         }
                     }
                 }
+                "ttsInstalledReadyEngine" -> {
+                    val language = call.argument<String>("language")
+                    val platform = call.argument<String>("platform") ?: "android"
+                    val androidApi = call.argument<Int>("androidApi") ?: android.os.Build.VERSION.SDK_INT
+                    val installedJson = call.argument<String>("installedModelIdsJson") ?: "[]"
+                    val readyJson = call.argument<String>("readyModelIdsJson") ?: "[]"
+                    if (language.isNullOrBlank()) {
+                        result.error("BAD_ARGS", "language is required", null)
+                    } else {
+                        converterExecutor.execute {
+                            val value = nativeTtsInstalledReadyEngine(
+                                language, platform, androidApi, installedJson, readyJson
+                            )
+                            runOnUiThread {
+                                if (value == null) result.error(EMBEDDED_UNAVAILABLE, nativeLastError(), null)
+                                else result.success(value)
+                            }
+                        }
+                    }
+                }
                 "ttsModelInstallManifest" -> {
                     val modelId = call.argument<String>("modelId")
                     val artifactsJson = call.argument<String>("artifactsJson")
@@ -531,6 +551,7 @@ class MainActivity : AudioServiceActivity() {
     private external fun nativeConvert(inputPath: String, outputPath: String): String?
     private external fun nativeTtsModels(): String?
     private external fun nativeTtsDefaultEngine(language: String, platform: String, androidApi: Int): String?
+    private external fun nativeTtsInstalledReadyEngine(language: String, platform: String, androidApi: Int, installedModelIdsJson: String, readyModelIdsJson: String): String?
     private external fun nativeTtsModelInstall(modelId: String, url: String, sha256: String, root: String): String?
     private external fun nativeTtsModelInstallManifest(modelId: String, artifactsJson: String, root: String): String?
     private external fun nativeTtsModelInstallCatalogManifest(modelId: String, root: String): String?
