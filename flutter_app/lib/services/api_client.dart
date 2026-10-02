@@ -126,8 +126,8 @@ class ApiClient {
         options: Options(responseType: ResponseType.bytes),
       );
       return response.data;
-    } catch (_) {
-      return null;
+    } on DioException catch (error) {
+      throw ApiHttpException.fromDio(error);
     }
   }
 
@@ -156,8 +156,8 @@ class ApiClient {
       try {
         final json = jsonDecode(payload) as Map<String, dynamic>;
         yield JobSnapshot.fromJson(json);
-      } catch (_) {
-        // Ignore malformed frames — keep stream alive.
+      } catch (error) {
+        throw SseProtocolException('Invalid job stream frame: $error');
       }
     }
   }
@@ -166,6 +166,32 @@ class ApiClient {
     final error = configurationError;
     if (error != null) throw StateError(error);
   }
+}
+
+class ApiHttpException implements Exception {
+  const ApiHttpException(this.statusCode, this.message);
+
+  factory ApiHttpException.fromDio(DioException error) {
+    return ApiHttpException(
+      error.response?.statusCode,
+      error.message ?? 'HTTP request failed',
+    );
+  }
+
+  final int? statusCode;
+  final String message;
+
+  @override
+  String toString() => 'ApiHttpException($statusCode): $message';
+}
+
+class SseProtocolException implements Exception {
+  const SseProtocolException(this.message);
+
+  final String message;
+
+  @override
+  String toString() => 'SseProtocolException: $message';
 }
 
 class FulltextTransient implements Exception {
