@@ -4609,8 +4609,12 @@ async def process_conversion(job_id: str) -> None:
 
             if not engine_seeds or active_config is None:
                 job["state"] = "failed"
-                _set_job_error(job, "No TTS engine available")
-                _append_event(job, "❌ No TTS engine available to start conversion")
+                no_engine_message = (
+                    "No TTS engine available. Install a compatible voice model in Settings "
+                    "or enable Edge-TTS."
+                )
+                _set_job_error(job, no_engine_message)
+                _append_event(job, f"❌ {no_engine_message}")
                 _persist_job(job_id, force=True)
                 return
 
