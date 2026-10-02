@@ -25,7 +25,6 @@ import io.flutter.plugin.common.MethodChannel
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
-import java.io.FileOutputStream
 import java.io.InputStream
 import java.util.Locale
 import java.util.concurrent.Executors
@@ -54,10 +53,7 @@ class MainActivity : AudioServiceActivity() {
         private const val EMBEDDED_CHANNEL = "epub_to_mp3/embedded_converter"
         private const val EMBEDDED_UNAVAILABLE = "EMBEDDED_CONVERTER_UNAVAILABLE"
         private const val CONVERTER_LIBRARY = "converter_ffi"
-        private const val PIPER_RUNTIME_LIBRARY = "piper_runtime"
-
         private var converterLibraryLoaded = false
-        private var piperLibraryLoaded = false
 
         init {
             // Native libraries are loaded lazily before the first conversion.
@@ -68,10 +64,6 @@ class MainActivity : AudioServiceActivity() {
                 if (!converterLibraryLoaded) {
                     System.loadLibrary(CONVERTER_LIBRARY)
                     converterLibraryLoaded = true
-                }
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && !piperLibraryLoaded) {
-                    System.loadLibrary(PIPER_RUNTIME_LIBRARY)
-                    piperLibraryLoaded = true
                 }
                 converterLibraryLoaded
             } catch (_: UnsatisfiedLinkError) {
@@ -93,14 +85,12 @@ class MainActivity : AudioServiceActivity() {
 
     private fun embeddedConverterStatus(): Map<String, Boolean> = try {
         converterLibraryAvailable()
-        val model = ensureBundledPiperModel()
-        System.setProperty("PIPER_MODEL", model)
-        val modelAvailable = File(model).isFile && File("$model.json").isFile
+        val modelAvailable = installedLocalModel() != null
         mapOf(
             "runtimeLoaded" to converterLibraryLoaded,
             "modelAvailable" to modelAvailable,
-            "abiCompatible" to (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q || piperLibraryLoaded),
-            "engineReady" to converterLibraryLoaded,
+            "abiCompatible" to (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q),
+            "engineReady" to (converterLibraryLoaded && modelAvailable),
         )
     } catch (_: Throwable) {
         mapOf(
@@ -111,19 +101,13 @@ class MainActivity : AudioServiceActivity() {
         )
     }
 
-    private fun ensureBundledPiperModel(): String {
-        val target = File(filesDir, "piper/pt_BR-faber-medium.onnx")
-        val config = File(filesDir, "piper/pt_BR-faber-medium.onnx.json")
-        if (!target.isFile || !config.isFile) {
-            target.parentFile?.mkdirs()
-            assets.open("piper/pt_BR-faber-medium.onnx").use { input ->
-                FileOutputStream(target).use { output -> input.copyTo(output) }
-            }
-            assets.open("piper/pt_BR-faber-medium.onnx.json").use { input ->
-                FileOutputStream(config).use { output -> input.copyTo(output) }
-            }
-        }
-        return target.absolutePath
+    private fun installedLocalModel(): String? {
+        val root = File(filesDir, "tts-models")
+        return root.listFiles()
+            ?.asSequence()
+            ?.map { File(it, "model.bin") }
+            ?.firstOrNull { it.isFile }
+            ?.absolutePath
     }
 
     private fun ensureTextToSpeech(): Boolean {
@@ -474,8 +458,6 @@ class MainActivity : AudioServiceActivity() {
                             Log.i(embeddedLogTag, "parse start input=$inputPath")
                             converterExecutor.execute {
                                 try {
-                                    ensureBundledPiperModel()
-                                    System.setProperty("PIPER_MODEL", ensureBundledPiperModel())
                                     val native = nativeParse(inputPath)
                                     runOnUiThread {
                                         if (native == null) result.error(EMBEDDED_UNAVAILABLE, nativeLastError(), null)
@@ -500,7 +482,13 @@ class MainActivity : AudioServiceActivity() {
                             converterExecutor.execute {
                                 try {
                                     Log.i(embeddedLogTag, "convert start input=$inputPath output=$outputPath")
-                                    val model = ensureBundledPiperModel()
+                                    val model = installedLocalModel()
+                                    if (model == null) {
+                                        runOnUiThread {
+                                            result.error(EMBEDDED_UNAVAILABLE, "no local TTS model is installed", null)
+                                        }
+                                        return@execute
+                                    }
                                     System.setProperty("PIPER_MODEL", model)
                                     Log.i(embeddedLogTag, "convert invoking JNI libraryLoaded=$converterLibraryLoaded model=$model")
                                     val native = nativeConvert(inputPath, outputPath)

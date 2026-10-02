@@ -7,7 +7,31 @@ import '../models/ebook_fulltext.dart';
 import '../models/job_snapshot.dart';
 import '../models/session_record.dart';
 
-/// Thin wrapper over `dio` for the FastAPI backend.
+class ApiContract {
+  const ApiContract({
+    required this.version,
+    required this.backend,
+    required this.capabilities,
+  });
+
+  factory ApiContract.fromJson(Map<String, dynamic> json) {
+    return ApiContract(
+      version: json['version'] as String? ?? '',
+      backend: json['backend'] as String? ?? '',
+      capabilities: (json['capabilities'] as List<dynamic>? ?? const [])
+          .whereType<String>()
+          .toSet(),
+    );
+  }
+
+  final String version;
+  final String backend;
+  final Set<String> capabilities;
+
+  bool supports(String capability) => capabilities.contains(capability);
+}
+
+/// Thin wrapper over the versioned Rust-compatible conversion API.
 class ApiClient {
   ApiClient(this.baseUrl, {this.configurationError})
     : _dio = Dio(
@@ -36,6 +60,12 @@ class ApiClient {
   }) async {
     final convertedJobId = await uploadAndConvert(filePath, engine: 'edge');
     return fetchFulltext(convertedJobId);
+  }
+
+  Future<ApiContract> fetchContract() async {
+    _throwIfMisconfigured();
+    final r = await _dio.get<Map<String, dynamic>>('/api/contract');
+    return ApiContract.fromJson(r.data ?? const {});
   }
 
   Future<List<SessionRecord>> fetchSessions({int last = 50}) async {
@@ -126,8 +156,8 @@ class ApiClient {
         options: Options(responseType: ResponseType.bytes),
       );
       return response.data;
-    } catch (_) {
-      return null;
+    } on DioException catch (error) {
+      throw ApiHttpException.fromDio(error);
     }
   }
 
@@ -156,8 +186,8 @@ class ApiClient {
       try {
         final json = jsonDecode(payload) as Map<String, dynamic>;
         yield JobSnapshot.fromJson(json);
-      } catch (_) {
-        // Ignore malformed frames — keep stream alive.
+      } catch (error) {
+        throw SseProtocolException('Invalid job stream frame: $error');
       }
     }
   }
@@ -166,6 +196,32 @@ class ApiClient {
     final error = configurationError;
     if (error != null) throw StateError(error);
   }
+}
+
+class ApiHttpException implements Exception {
+  const ApiHttpException(this.statusCode, this.message);
+
+  factory ApiHttpException.fromDio(DioException error) {
+    return ApiHttpException(
+      error.response?.statusCode,
+      error.message ?? 'HTTP request failed',
+    );
+  }
+
+  final int? statusCode;
+  final String message;
+
+  @override
+  String toString() => 'ApiHttpException($statusCode): $message';
+}
+
+class SseProtocolException implements Exception {
+  const SseProtocolException(this.message);
+
+  final String message;
+
+  @override
+  String toString() => 'SseProtocolException: $message';
 }
 
 class FulltextTransient implements Exception {

@@ -80,8 +80,8 @@ description = "Install Android NDK dependencies through mise-managed sdkmanager"
 run = "SDKMANAGER=\"$HOME/.local/share/mise/installs/android-sdk/11.0/cmdline-tools/11.0/bin/sdkmanager\"; test -x \"$SDKMANAGER\"; \"$SDKMANAGER\" \"platform-tools\" \"platforms;android-35\" \"build-tools;35.0.0\" \"ndk;28.2.13676358\"; mise install ninja@latest"
 
 [tasks."android:runtime-audit"]
-description = "Audit required embedded Piper Android native libraries"
-run = "mise exec -- bash -lc 'set -e; test -d flutter_app/android/app/src/main/jniLibs/arm64-v8a; test -f flutter_app/android/app/src/main/assets/piper/pt_BR-faber-medium.onnx; test -f flutter_app/android/app/src/main/assets/piper/pt_BR-faber-medium.onnx.json; if find flutter_app/android/app/src/main/jniLibs -type f -name \"libpiper_runtime.so\" -print -quit | grep -q .; then echo \"libpiper_runtime.so present\"; else echo \"ERROR: libpiper_runtime.so is missing; Piper inference is not Android-ready\" >&2; exit 1; fi'"
+description = "Audit the optional embedded Piper Android runtime"
+run = "mise exec -- bash -lc 'set -e; test -d flutter_app/android/app/src/main/jniLibs/arm64-v8a; if find flutter_app/android/app/src/main/jniLibs -type f -name \"libpiper_runtime.so\" -print -quit | grep -q .; then echo \"libpiper_runtime.so present\"; else echo \"ERROR: libpiper_runtime.so is missing; Piper inference is not Android-ready\" >&2; exit 1; fi'"
 
 [tasks."piper:android-arm64"]
 description = "Build Piper Embedded runtime for Android arm64 with the mise-managed NDK"
@@ -222,14 +222,15 @@ if [ ! -x ".venv/bin/python" ]; then
 fi
 
 echo "🐍 Installing Python dependencies (root)..."
-.venv/bin/python -m pip install --upgrade pip
-.venv/bin/python -m pip install -r requirements.txt
+UV_BIN="${UV_BIN:-$HOME/.hermes/bin/uv}"
+test -x "$UV_BIN"
+"$UV_BIN" pip install --python .venv/bin/python -r requirements.txt
 
 echo "🐍 Installing Python dependencies (python_app)..."
-.venv/bin/python -m pip install -r python_app/requirements.txt
+"$UV_BIN" pip install --python .venv/bin/python -r python_app/requirements.txt
 
 echo "🔍 Installing lint/format tools..."
-.venv/bin/python -m pip install ruff pre-commit
+"$UV_BIN" pip install --python .venv/bin/python ruff pre-commit
 
 echo "🎙️ Configuring native Piper..."
 bash scripts/install_piper_binary.sh
@@ -316,20 +317,19 @@ run = """
 #!/bin/bash
 set -euo pipefail
 
-echo "🔍 Python CVE scan (PyPI service — installed env)..."
-if ! .venv/bin/python -m pip show pip-audit &>/dev/null; then
-    echo "Installing pip-audit..."
-    .venv/bin/python -m pip install pip-audit --quiet
-fi
-# Scans the *installed* environment, which catches stale local pins
-# requirements.txt has already addressed but which pip install
-# --upgrade would clear. PyPI service replaced OSV because OSV
-# advisories without a `ranges` field crash pip-audit 2.10
-# (KeyError 'ranges' on certain malicious-package alerts).
-.venv/bin/python -m pip_audit -s pypi || {
+echo "🔍 Python CVE scan (PyPI service — declared requirements)..."
+# Resolve in a temporary Python 3.12 environment because the project requires
+# numpy 2.5+ and the managed project venv intentionally has no pip.
+UV_BIN="${UV_BIN:-$HOME/.hermes/bin/uv}"
+AUDIT_TMP="$(mktemp -d "${TMPDIR:-/tmp}/epub-audit.XXXXXX")"
+trap 'rm -rf "$AUDIT_TMP"' EXIT
+"$UV_BIN" venv --python 3.12 "$AUDIT_TMP/venv" >/dev/null
+"$UV_BIN" pip install --python "$AUDIT_TMP/venv/bin/python" \
+    -r requirements.txt -r python_app/requirements.txt >/dev/null
+"$UV_BIN" tool run --from pip-audit pip-audit --path \
+    "$AUDIT_TMP/venv/lib/python3.12/site-packages" -s pypi || {
     echo ""
-    echo "⚠️  CVEs surfaced. Common cause: local venv is stale relative to requirements.txt."
-    echo "💡 Try: source .venv/bin/activate && pip install --upgrade -r requirements.txt"
+    echo "⚠️ CVEs surfaced in the resolved Python dependencies."
     exit 1
 }
 echo "✅ Python: no known vulnerabilities."
@@ -409,7 +409,7 @@ run = "./scripts/reader-change-check.sh --cached"
 
 [tasks."benchmark:rust"]
 description = "Measure Rust migration parser, chunker, cache, and orchestration throughput"
-run = "mise exec -- cargo bench --bench rust_migration -- --save-baseline rust-migration"
+run = "mise exec -- cargo bench --manifest-path benches/Cargo.toml --bench rust_migration -- --save-baseline rust-migration"
 
 [tasks."benchmark:check"]
 description = "Compare live telemetry throughput against benchmarks/baseline.json"

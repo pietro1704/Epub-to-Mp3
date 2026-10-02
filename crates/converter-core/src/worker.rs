@@ -136,8 +136,11 @@ impl ConversionWorker {
         if ext != "epub" {
             return Err(WorkerError::Unsupported(ext));
         }
-        let book = epub::parse_epub(std::io::BufReader::new(fs::File::open(&request.input)?))?;
-        let book_key = cache::sha256_file(&request.input)?;
+        // Read the immutable source once: parsing the ZIP and hashing it from
+        // separate file handles doubled disk I/O for every conversion.
+        let source = fs::read(&request.input)?;
+        let book_key = cache::sha256_bytes(&source);
+        let book = epub::parse_epub(std::io::Cursor::new(&source))?;
         let cache_dir = self.config.paths.cache_dir.join(&book_key);
         let output_dir = self.config.paths.output_dir.join(&request.job_id);
         fs::create_dir_all(&cache_dir)?;
@@ -153,10 +156,19 @@ impl ConversionWorker {
                 "source book has no readable chapter text".into(),
             ));
         }
+        let detected_language = request
+            .language
+            .as_deref()
+            .or(book.language.as_deref())
+            .or_else(|| {
+                book.chapters
+                    .first()
+                    .and_then(|chapter| detect_language(&chapter.text))
+            });
         let parallelism = if request.no_parallel {
             1
         } else {
-            std::env::var("RUST_CHAPTER_PARALLELISM")
+            let configured = std::env::var("RUST_CHAPTER_PARALLELISM")
                 .ok()
                 .and_then(|value| value.parse().ok())
                 .filter(|value| *value > 0)
@@ -164,14 +176,19 @@ impl ConversionWorker {
                     std::thread::available_parallelism()
                         .map(|v| v.get())
                         .unwrap_or(1)
-                })
+                });
+            let cap = std::env::var("RUST_CHAPTER_PARALLELISM_CAP")
+                .ok()
+                .and_then(|value| value.parse().ok())
+                .filter(|value| *value > 0)
+                .unwrap_or(8);
+            configured.min(self.config.max_parallel).min(cap).max(1)
         };
         let pool = rayon::ThreadPoolBuilder::new()
             .num_threads(parallelism)
             .build()
             .map_err(|error| WorkerError::Piper(error.to_string()))?;
         let results = Mutex::new(Vec::with_capacity(total));
-        let _parallelism = parallelism.min(2);
         pool.install(|| {
             book.chapters.par_iter().enumerate().try_for_each(
                 |(position, chapter)| -> Result<(), WorkerError> {
@@ -196,11 +213,7 @@ impl ConversionWorker {
                     }
                     let stem = format!("{:04}-{}", position + 1, sanitize(&chapter.name));
                     let mp3 = output_dir.join(format!("{stem}.mp3"));
-                    let language = request
-                        .language
-                        .as_deref()
-                        .or(book.language.as_deref())
-                        .or_else(|| detect_language(&text));
+                    let language = detected_language;
                     let engine = select_engine(request.engine.as_deref(), &self.config);
                     if !mp3.is_file() {
                         eprintln!("synthesizing chapter {}/{}", position + 1, total);

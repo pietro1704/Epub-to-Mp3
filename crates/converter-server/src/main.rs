@@ -1,6 +1,7 @@
 use std::{
     collections::HashMap,
     convert::Infallible,
+    fs,
     net::SocketAddr,
     path::{Path, PathBuf},
     sync::Arc,
@@ -8,7 +9,7 @@ use std::{
 };
 
 use axum::{
-    extract::{DefaultBodyLimit, Multipart, Path as AxumPath, State},
+    extract::{ConnectInfo, DefaultBodyLimit, Multipart, Path as AxumPath, State},
     http::{header, HeaderMap, StatusCode},
     response::{
         sse::{Event, KeepAlive, Sse},
@@ -29,6 +30,7 @@ use tower_http::services::ServeDir;
 
 // Keep a concrete server-side ceiling above normal EPUB sizes while preventing unbounded request bodies.
 const MAX_UPLOAD_BYTES: usize = 100 * 1024 * 1024;
+const API_CONTRACT_VERSION: &str = "1";
 
 const TERMINAL_STATES: &[&str] = &[
     "finished",
@@ -99,6 +101,14 @@ struct OutputAsset {
 #[derive(Debug, Serialize)]
 struct HealthResponse {
     status: &'static str,
+    contract_version: &'static str,
+}
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ContractResponse {
+    version: &'static str,
+    backend: &'static str,
+    capabilities: Vec<&'static str>,
 }
 #[derive(Debug, Serialize)]
 struct MetadataResponse {
@@ -182,8 +192,81 @@ fn initial_job(id: String, f: &CreateJob) -> JobSnapshot {
     }
 }
 
+fn snapshot_path(config: &AppConfig, job_id: &str) -> PathBuf {
+    config
+        .paths
+        .jobs_dir
+        .join(format!("{job_id}.snapshot.json"))
+}
+
+fn persist_snapshot(config: &AppConfig, snapshot: &JobSnapshot) -> std::io::Result<()> {
+    fs::create_dir_all(&config.paths.jobs_dir)?;
+    let target = snapshot_path(config, &snapshot.job_id);
+    let temporary = target.with_extension(format!("tmp-{}", std::process::id()));
+    let bytes = serde_json::to_vec_pretty(snapshot)
+        .map_err(|error| std::io::Error::other(error.to_string()))?;
+    fs::write(&temporary, bytes)?;
+    fs::rename(temporary, target)
+}
+
+fn load_snapshots(config: &AppConfig) -> HashMap<String, Job> {
+    let mut jobs = HashMap::new();
+    let Ok(entries) = fs::read_dir(&config.paths.jobs_dir) else {
+        return jobs;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let Some(name) = path.file_name().and_then(|value| value.to_str()) else {
+            continue;
+        };
+        if !name.ends_with(".snapshot.json") {
+            continue;
+        }
+        let Ok(bytes) = fs::read(path) else {
+            continue;
+        };
+        let Ok(mut snapshot) = serde_json::from_slice::<JobSnapshot>(&bytes) else {
+            continue;
+        };
+        if matches!(snapshot.state.as_str(), "queued" | "running" | "cancelling") {
+            snapshot.state = "interrupted".into();
+            snapshot.error = Some("Server restarted before the conversion completed".into());
+            snapshot
+                .events
+                .push("Conversion interrupted by server restart".into());
+            let _ = persist_snapshot(config, &snapshot);
+        }
+        let (events, _) = broadcast::channel(64);
+        jobs.insert(
+            snapshot.job_id.clone(),
+            Job {
+                snapshot,
+                events,
+                cancellation: converter_core::piper::CancellationToken::default(),
+            },
+        );
+    }
+    jobs
+}
+
 async fn health() -> impl IntoResponse {
-    (StatusCode::OK, Json(HealthResponse { status: "healthy" }))
+    (
+        StatusCode::OK,
+        Json(HealthResponse {
+            status: "healthy",
+            contract_version: API_CONTRACT_VERSION,
+        }),
+    )
+}
+async fn contract() -> impl IntoResponse {
+    (
+        StatusCode::OK,
+        Json(ContractResponse {
+            version: API_CONTRACT_VERSION,
+            backend: "rust",
+            capabilities: vec!["uploads", "jobs", "sse", "epub", "edge", "piper"],
+        }),
+    )
 }
 async fn metadata(State(state): State<AppState>) -> impl IntoResponse {
     let paths = &state.config.paths;
@@ -244,10 +327,29 @@ async fn upload(State(state): State<AppState>, mut multipart: Multipart) -> Resp
         .into_response()
 }
 
-async fn local_upload(State(state): State<AppState>, Json(input): Json<LocalUpload>) -> Response {
-    let source = PathBuf::from(input.path);
-    if !source.is_file() {
+async fn local_upload(
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
+    State(state): State<AppState>,
+    Json(input): Json<LocalUpload>,
+) -> Response {
+    if !peer.ip().is_loopback() {
+        return StatusCode::FORBIDDEN.into_response();
+    }
+    let raw_path = PathBuf::from(input.path);
+    if !raw_path.is_absolute() {
+        return StatusCode::BAD_REQUEST.into_response();
+    }
+    let Ok(source) = raw_path.canonicalize() else {
         return StatusCode::NOT_FOUND.into_response();
+    };
+    if !source.is_file() || !is_allowed_local_source(&source) {
+        return StatusCode::FORBIDDEN.into_response();
+    }
+    if !matches!(
+        source.extension().and_then(|value| value.to_str()),
+        Some("epub" | "pdf" | "fb2" | "docx" | "cbz" | "cbr" | "mobi" | "prc" | "azw" | "azw3")
+    ) {
+        return StatusCode::BAD_REQUEST.into_response();
     }
     let filename = source
         .file_name()
@@ -275,6 +377,23 @@ async fn local_upload(State(state): State<AppState>, Json(input): Json<LocalUplo
         }),
     )
         .into_response()
+}
+
+fn is_allowed_local_source(source: &Path) -> bool {
+    let mut roots = vec![PathBuf::from("/tmp"), PathBuf::from("/private/tmp")];
+    if let Ok(cwd) = std::env::current_dir() {
+        roots.push(cwd);
+    }
+    if let Ok(home) = std::env::var("HOME") {
+        roots.push(PathBuf::from(home));
+    }
+    if Path::new("/var/folders").exists() {
+        roots.push(PathBuf::from("/var/folders"));
+    }
+    if Path::new("/Volumes").exists() {
+        roots.push(PathBuf::from("/Volumes"));
+    }
+    roots.iter().any(|root| source.starts_with(root))
 }
 
 async fn create_job(State(state): State<AppState>, Json(form): Json<CreateJob>) -> Response {
@@ -313,6 +432,9 @@ async fn create_job(State(state): State<AppState>, Json(form): Json<CreateJob>) 
             cancellation: converter_core::piper::CancellationToken::default(),
         },
     );
+    if let Some(job) = state.jobs.read().await.get(&id) {
+        let _ = persist_snapshot(&state.config, &job.snapshot);
+    }
     let cancellation = state
         .jobs
         .read()
@@ -381,6 +503,7 @@ async fn create_job(State(state): State<AppState>, Json(form): Json<CreateJob>) 
                     job.snapshot.events.push(error.to_string());
                 }
             }
+            let _ = persist_snapshot(&state.config, &job.snapshot);
             let _ = sender.send(SseMessage::Snapshot(job.snapshot.clone()));
         }
     });
@@ -568,9 +691,11 @@ async fn fulltext(AxumPath(id): AxumPath<String>, State(state): State<AppState>)
 }
 
 fn app(config: AppConfig) -> Router {
+    let recovered_jobs = load_snapshots(&config);
     Router::new()
         .route("/health", get(health))
         .route("/api/health", get(health))
+        .route("/api/contract", get(contract))
         .route("/api/metadata", get(metadata))
         .route(
             "/api/uploads",
@@ -591,7 +716,7 @@ fn app(config: AppConfig) -> Router {
         .fallback_service(ServeDir::new("web/dist").append_index_html_on_directories(true))
         .with_state(AppState {
             config,
-            jobs: Arc::new(RwLock::new(HashMap::new())),
+            jobs: Arc::new(RwLock::new(recovered_jobs)),
         })
 }
 async fn resumable_jobs(State(state): State<AppState>) -> Response {
@@ -720,12 +845,26 @@ fn safe_leaf(value: &str) -> bool {
         && Path::new(value).file_name().and_then(|v| v.to_str()) == Some(value)
 }
 fn uuid() -> String {
-    format!(
-        "{:032x}",
-        std::time::SystemTime::now()
+    let mut bytes = [0u8; 16];
+    if getrandom::fill(&mut bytes).is_err() {
+        let fallback = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
-            .as_nanos()
+            .as_nanos();
+        bytes.copy_from_slice(&fallback.to_le_bytes());
+    }
+    // UUID v4 layout: random identifier with the version/variant bits set.
+    bytes[6] = (bytes[6] & 0x0f) | 0x40;
+    bytes[8] = (bytes[8] & 0x3f) | 0x80;
+    format!(
+        "{:08x}-{:04x}-{:04x}-{:04x}-{:012x}",
+        u32::from_be_bytes(bytes[0..4].try_into().unwrap()),
+        u16::from_be_bytes(bytes[4..6].try_into().unwrap()),
+        u16::from_be_bytes(bytes[6..8].try_into().unwrap()),
+        u16::from_be_bytes(bytes[8..10].try_into().unwrap()),
+        u64::from_be_bytes([
+            0, 0, bytes[10], bytes[11], bytes[12], bytes[13], bytes[14], bytes[15]
+        ]),
     )
 }
 #[tokio::main]
@@ -742,6 +881,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tokio::fs::create_dir_all(&config.paths.output_dir).await?;
     let listener = tokio::net::TcpListener::bind(address).await?;
     println!("converter-server listening on {address}");
-    axum::serve(listener, app(config)).await?;
+    axum::serve(
+        listener,
+        app(config).into_make_service_with_connect_info::<SocketAddr>(),
+    )
+    .await?;
     Ok(())
 }

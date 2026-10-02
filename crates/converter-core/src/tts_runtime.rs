@@ -13,7 +13,7 @@ use serde::Serialize;
 use thiserror::Error;
 
 #[cfg(feature = "kokoro-tract-runtime")]
-use tract_onnx::prelude::{Framework, InferenceModelExt, IntoRunnable};
+use tract_onnx::prelude::{tvec, Framework, InferenceModelExt, IntoRunnable, IntoTValue, Tensor};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct RuntimeCapability {
@@ -125,7 +125,7 @@ impl KokoroTokenizer {
             if let Some((length, id)) = matched {
                 tokens.push(id);
                 index += length;
-            } else if chars[index].is_whitespace() {
+            } else if chars[index].is_whitespace() || chars[index] == '\u{200d}' {
                 index += 1;
             } else {
                 return Err(RuntimeError::RuntimeUnavailable(format!(
@@ -137,6 +137,49 @@ impl KokoroTokenizer {
         tokens.push(self.eos_id);
         Ok(tokens)
     }
+}
+
+#[cfg(feature = "kokoro-tract-runtime")]
+pub fn phonemize_kokoro_english(text: &str) -> Result<String, RuntimeError> {
+    let phonemizer = misaki_rs::G2P::new(misaki_rs::Language::EnglishUS);
+    let (phonemes, _) = phonemizer.g2p(text).map_err(|error| {
+        RuntimeError::RuntimeUnavailable(format!("Misaki phonemization failed: {error}"))
+    })?;
+    if phonemes.trim().is_empty() {
+        return Err(RuntimeError::RuntimeUnavailable(
+            "Misaki returned no phonemes".to_owned(),
+        ));
+    }
+    Ok(normalize_kokoro_english_phonemes(&phonemes))
+}
+
+#[cfg(feature = "kokoro-tract-runtime")]
+fn load_kokoro_voice_style(
+    model_root: &Path,
+    token_count: usize,
+) -> Result<Vec<f32>, RuntimeError> {
+    const STYLE_DIM: usize = 256;
+    let bytes = std::fs::read(model_root.join("voices/af.bin")).map_err(|error| {
+        RuntimeError::RuntimeUnavailable(format!("failed to read Kokoro voice: {error}"))
+    })?;
+    if bytes.len() % (STYLE_DIM * std::mem::size_of::<f32>()) != 0 {
+        return Err(RuntimeError::RuntimeUnavailable(
+            "Kokoro voice file has an invalid size".to_owned(),
+        ));
+    }
+    let rows = bytes.len() / (STYLE_DIM * std::mem::size_of::<f32>());
+    let row = token_count.min(rows.saturating_sub(1));
+    let start = row * STYLE_DIM * std::mem::size_of::<f32>();
+    let style = bytes[start..start + STYLE_DIM * std::mem::size_of::<f32>()]
+        .chunks_exact(4)
+        .map(|chunk| f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
+        .collect::<Vec<_>>();
+    if style.iter().any(|value| !value.is_finite()) {
+        return Err(RuntimeError::RuntimeUnavailable(
+            "Kokoro voice contains non-finite values".to_owned(),
+        ));
+    }
+    Ok(style)
 }
 
 /// Checks the on-disk Kokoro model layout without loading a native runtime.
@@ -172,7 +215,10 @@ pub fn inspect_runtime(engine: &str, model_root: &Path) -> Result<RuntimeCapabil
         .and_then(|model| model.into_optimized())
         .and_then(|model| model.into_runnable())
     {
-        Ok(_) => None,
+        Ok(_) => phonemize_kokoro_english("Hello world")
+            .map(|_| ())
+            .map_err(|error| error.to_string())
+            .err(),
         Err(error) => Some(format!("tract ONNX session unavailable: {error}")),
     };
 
@@ -189,11 +235,81 @@ pub fn inspect_runtime(engine: &str, model_root: &Path) -> Result<RuntimeCapabil
     })
 }
 
+#[cfg(feature = "kokoro-tract-runtime")]
+pub fn synthesize_kokoro(model_root: &Path, text: &str) -> Result<Vec<u8>, RuntimeError> {
+    let phonemes = phonemize_kokoro_english(text)?;
+    let tokenizer = KokoroTokenizer::from_json(
+        &std::fs::read_to_string(model_root.join("tokenizer.json")).map_err(|error| {
+            RuntimeError::RuntimeUnavailable(format!("failed to read Kokoro tokenizer: {error}"))
+        })?,
+        512,
+    )?;
+    let encoded = tokenizer.encode_phonemes(&phonemes)?;
+    let token_count = encoded.len().saturating_sub(2);
+    let style = load_kokoro_voice_style(model_root, token_count)?;
+    let padded = [vec![0_i64], encoded, vec![0_i64]].concat();
+    let model = tract_onnx::onnx()
+        .model_for_path(model_root.join("onnx/model_quantized.onnx"))
+        .and_then(|model| model.into_optimized())
+        .and_then(|model| model.into_runnable())
+        .map_err(|error| {
+            RuntimeError::RuntimeUnavailable(format!("Kokoro model load failed: {error}"))
+        })?;
+    let outputs = model
+        .run(tvec![
+            Tensor::from_shape(&[1, padded.len()], &padded)
+                .map_err(|error| RuntimeError::RuntimeUnavailable(error.to_string()))?
+                .into_tvalue(),
+            Tensor::from_shape(&[1, 256], &style)
+                .map_err(|error| RuntimeError::RuntimeUnavailable(error.to_string()))?
+                .into_tvalue(),
+            Tensor::from_shape(&[1], &[1.0_f32])
+                .map_err(|error| RuntimeError::RuntimeUnavailable(error.to_string()))?
+                .into_tvalue(),
+        ])
+        .map_err(|error| {
+            RuntimeError::RuntimeUnavailable(format!("Kokoro inference failed: {error}"))
+        })?;
+    let pcm = outputs
+        .first()
+        .ok_or_else(|| RuntimeError::RuntimeUnavailable("Kokoro returned no audio".to_owned()))?
+        .try_as_plain_ram()
+        .map_err(|error| RuntimeError::RuntimeUnavailable(error.to_string()))?
+        .as_slice::<f32>()
+        .map_err(|error| RuntimeError::RuntimeUnavailable(error.to_string()))?;
+    encode_wav_pcm_24khz(pcm)
+}
+
+#[cfg(not(feature = "kokoro-tract-runtime"))]
 pub fn synthesize_kokoro(_model_root: &Path, _text: &str) -> Result<Vec<u8>, RuntimeError> {
-    let _ = (_model_root, _text);
     Err(RuntimeError::RuntimeUnavailable(
         "Kokoro inference runtime requires a maintained ONNX Runtime integration".to_owned(),
     ))
+}
+
+#[cfg(feature = "kokoro-tract-runtime")]
+fn encode_wav_pcm_24khz(samples: &[f32]) -> Result<Vec<u8>, RuntimeError> {
+    let mut wav = Vec::with_capacity(44 + samples.len() * 2);
+    let data_len = (samples.len() * 2) as u32;
+    let riff_len = 36 + data_len;
+    wav.extend_from_slice(b"RIFF");
+    wav.extend_from_slice(&riff_len.to_le_bytes());
+    wav.extend_from_slice(b"WAVEfmt ");
+    wav.extend_from_slice(&16_u32.to_le_bytes());
+    wav.extend_from_slice(&1_u16.to_le_bytes());
+    wav.extend_from_slice(&1_u16.to_le_bytes());
+    wav.extend_from_slice(&24_000_u32.to_le_bytes());
+    wav.extend_from_slice(&48_000_u32.to_le_bytes());
+    wav.extend_from_slice(&2_u16.to_le_bytes());
+    wav.extend_from_slice(&16_u16.to_le_bytes());
+    wav.extend_from_slice(b"data");
+    wav.extend_from_slice(&data_len.to_le_bytes());
+    for sample in samples {
+        let clamped = sample.clamp(-1.0, 1.0);
+        let value = (clamped * i16::MAX as f32) as i16;
+        wav.extend_from_slice(&value.to_le_bytes());
+    }
+    Ok(wav)
 }
 
 #[cfg(test)]
@@ -241,11 +357,45 @@ mod tests {
         let capability = inspect_runtime("kokoro", root.path()).unwrap();
         assert!(capability.installed);
         assert!(!capability.inference_ready);
-        assert_eq!(
+        assert!(matches!(
             synthesize_kokoro(root.path(), "hello").unwrap_err(),
-            RuntimeError::RuntimeUnavailable(
-                "Kokoro inference runtime requires a maintained ONNX Runtime integration".into(),
-            )
+            RuntimeError::RuntimeUnavailable(_)
+        ));
+    }
+
+    #[test]
+    fn serializes_runtime_capability_with_stable_field_names() {
+        let capability = RuntimeCapability {
+            engine: "kokoro",
+            model_id: "kokoro-82m",
+            installed: true,
+            inference_ready: false,
+            reason: Some("synthesis is not implemented".to_owned()),
+        };
+        assert_eq!(
+            serde_json::to_string(&capability).unwrap(),
+            r#"{"engine":"kokoro","model_id":"kokoro-82m","installed":true,"inference_ready":false,"reason":"synthesis is not implemented"}"#
         );
+    }
+
+    #[cfg(feature = "kokoro-tract-runtime")]
+    #[test]
+    fn selects_voice_style_row_by_token_count() {
+        let root = tempdir().unwrap();
+        let mut bytes = vec![0_u8; 2 * 256 * 4];
+        bytes[256 * 4..256 * 4 + 4].copy_from_slice(&1.5_f32.to_le_bytes());
+        fs::create_dir_all(root.path().join("voices")).unwrap();
+        fs::write(root.path().join("voices/af.bin"), bytes).unwrap();
+        let style = load_kokoro_voice_style(root.path(), 1).unwrap();
+        assert_eq!(style[0], 1.5);
+        assert_eq!(style.len(), 256);
+    }
+
+    #[cfg(feature = "kokoro-tract-runtime")]
+    #[test]
+    fn phonemizes_english_without_system_espeak_data() {
+        let phonemes = phonemize_kokoro_english("Hello world").unwrap();
+        assert!(!phonemes.is_empty());
+        assert!(phonemes.contains('h'));
     }
 }
