@@ -9,6 +9,9 @@ use std::path::{Path, PathBuf};
 use serde::Serialize;
 use thiserror::Error;
 
+#[cfg(feature = "kokoro-tract-runtime")]
+use tract_onnx::prelude::{Framework, InferenceModelExt, IntoRunnable};
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct RuntimeCapability {
     pub engine: &'static str,
@@ -55,14 +58,26 @@ pub fn inspect_runtime(engine: &str, model_root: &Path) -> Result<RuntimeCapabil
         });
     }
 
+    #[cfg(feature = "kokoro-tract-runtime")]
+    let runtime_error = match tract_onnx::onnx()
+        .model_for_path(model_root.join("onnx/model_quantized.onnx"))
+        .and_then(|model| model.into_optimized())
+        .and_then(|model| model.into_runnable())
+    {
+        Ok(_) => None,
+        Err(error) => Some(format!("tract ONNX session unavailable: {error}")),
+    };
+
+    #[cfg(not(feature = "kokoro-tract-runtime"))]
+    let runtime_error =
+        Some("Kokoro inference runtime requires a maintained embedded ONNX integration".to_owned());
+
     Ok(RuntimeCapability {
         engine: "kokoro",
         model_id: "kokoro-82m",
         installed: true,
-        inference_ready: false,
-        reason: Some(
-            "Kokoro inference runtime requires a maintained ONNX Runtime integration".to_owned(),
-        ),
+        inference_ready: runtime_error.is_none(),
+        reason: runtime_error,
     })
 }
 
