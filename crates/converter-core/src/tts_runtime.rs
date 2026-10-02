@@ -31,6 +31,40 @@ pub enum RuntimeError {
     RuntimeUnavailable(String),
 }
 
+/// Converts common espeak IPA spellings into Kokoro's Misaki symbols.
+pub fn normalize_kokoro_english_phonemes(ipa: &str) -> String {
+    let mut result = ipa.replace('\u{0361}', "^");
+    for (from, to) in [
+        ("a^ɪ", "I"),
+        ("a^ʊ", "W"),
+        ("d^ʒ", "ʤ"),
+        ("e^ɪ", "A"),
+        ("t^ʃ", "ʧ"),
+        ("ɔ^ɪ", "Y"),
+        ("ə^l", "ᵊl"),
+        ("ʔn", "tᵊn"),
+        ("ɚ", "əɹ"),
+        ("e", "A"),
+        ("r", "ɹ"),
+        ("x", "k"),
+        ("ç", "k"),
+        ("ɐ", "ə"),
+        ("ɬ", "l"),
+        ("ʔ", "t"),
+        ("ʲ", ""),
+        ("\u{0303}", ""),
+    ] {
+        result = result.replace(from, to);
+    }
+    result
+        .replace("o^ʊ", "O")
+        .replace("ɜːɹ", "ɜɹ")
+        .replace("ɜː", "ɜɹ")
+        .replace("ɪə", "iə")
+        .replace('ː', "")
+        .replace('^', "")
+}
+
 /// Checks the on-disk Kokoro model layout without loading a native runtime.
 ///
 /// Returning `inference_ready = false` is intentional until the ONNX session,
@@ -101,6 +135,11 @@ mod tests {
         assert!(!capability.installed);
         assert!(!capability.inference_ready);
         assert!(capability.reason.unwrap().contains("missing artifact"));
+    }
+
+    #[test]
+    fn normalizes_common_kokoro_english_ipa_symbols() {
+        assert_eq!(normalize_kokoro_english_phonemes("t^ʃ e^ɪɚ"), "ʧ Aəɹ");
     }
 
     #[test]
