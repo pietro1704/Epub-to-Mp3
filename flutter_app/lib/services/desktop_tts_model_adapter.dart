@@ -24,6 +24,22 @@ typedef _MetadataNative =
     ffi.Pointer<Utf8> Function(ffi.Pointer<Utf8>, ffi.Pointer<Utf8>);
 typedef _MetadataDart =
     ffi.Pointer<Utf8> Function(ffi.Pointer<Utf8>, ffi.Pointer<Utf8>);
+typedef _InstalledReadyEngineNative =
+    ffi.Pointer<Utf8> Function(
+      ffi.Pointer<Utf8>,
+      ffi.Pointer<Utf8>,
+      ffi.Uint32,
+      ffi.Pointer<Utf8>,
+      ffi.Pointer<Utf8>,
+    );
+typedef _InstalledReadyEngineDart =
+    ffi.Pointer<Utf8> Function(
+      ffi.Pointer<Utf8>,
+      ffi.Pointer<Utf8>,
+      int,
+      ffi.Pointer<Utf8>,
+      ffi.Pointer<Utf8>,
+    );
 typedef _FreeNative = ffi.Void Function(ffi.Pointer<Utf8>);
 typedef _FreeDart = void Function(ffi.Pointer<Utf8>);
 typedef _ErrorNative = ffi.Pointer<Utf8> Function();
@@ -46,6 +62,10 @@ final class DesktopTtsModelAdapter {
     _metadata = _library.lookupFunction<_MetadataNative, _MetadataDart>(
       'converter_tts_model_metadata',
     );
+    _installedReadyEngine = _library
+        .lookupFunction<_InstalledReadyEngineNative, _InstalledReadyEngineDart>(
+          'converter_tts_installed_ready_engine',
+        );
     _free = _library.lookupFunction<_FreeNative, _FreeDart>(
       'converter_string_free',
     );
@@ -59,10 +79,30 @@ final class DesktopTtsModelAdapter {
   late final _InstallDart _install;
   late final _RemoveDart _remove;
   late final _MetadataDart _metadata;
+  late final _InstalledReadyEngineDart _installedReadyEngine;
   late final _FreeDart _free;
   late final _ErrorDart _lastError;
 
   String modelsJson() => _readOwned(_models());
+
+  String installedReadyEngine({
+    required String language,
+    required String platform,
+    required String installedModelIdsJson,
+    required String readyModelIdsJson,
+    int androidApi = 0,
+  }) {
+    return using((arena) {
+      final result = _installedReadyEngine(
+        language.toNativeUtf8(allocator: arena),
+        platform.toNativeUtf8(allocator: arena),
+        androidApi,
+        installedModelIdsJson.toNativeUtf8(allocator: arena),
+        readyModelIdsJson.toNativeUtf8(allocator: arena),
+      );
+      return _readOwned(result);
+    });
+  }
 
   String installFromCatalog({required String modelId, required String root}) {
     return using((arena) {
@@ -123,9 +163,12 @@ final class DesktopTtsModelAdapter {
     if (override != null && override.isNotEmpty) {
       return ffi.DynamicLibrary.open(override);
     }
-    if (Platform.isWindows) return ffi.DynamicLibrary.open('converter_ffi.dll');
-    if (Platform.isMacOS)
+    if (Platform.isWindows) {
+      return ffi.DynamicLibrary.open('converter_ffi.dll');
+    }
+    if (Platform.isMacOS) {
       return ffi.DynamicLibrary.open('libconverter_ffi.dylib');
+    }
     return ffi.DynamicLibrary.open('libconverter_ffi.so');
   }
 }
