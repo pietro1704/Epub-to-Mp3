@@ -9,7 +9,7 @@ Research date: 2026-10-02. Goal: compare local/open TTS candidates for audiobook
 Recommended product strategy:
 
 1. Keep Edge-TTS as the default quality/speed path when network is available.
-2. Add Kokoro-82M as the first local single-language/selected-language candidate: unusually small, fast, permissive Apache-2.0, and likely a better audiobook-quality/CPU trade-off than Piper for supported languages.
+2. Add Kokoro-82M as the first local English candidate: unusually small, fast, permissive Apache-2.0, and likely a better audiobook-quality/CPU trade-off than Piper. Do not advertise it as multilingual until non-English voice packs and runtime support are verified.
 3. Add MeloTTS as a CPU-oriented multilingual local candidate where its supported language/voice quality is sufficient; it is explicitly documented as real-time on CPU.
 4. Treat Qwen3-TTS-12Hz-0.6B-CustomVoice as the strongest quality/coverage experiment, not the default mobile runtime: 10 languages including Portuguese, but materially larger and dependent on a PyTorch-class runtime. The 1.7B variant is a server/GPU quality tier.
 5. Treat Chatterbox Multilingual as a quality/expressiveness server tier, not an embedded/mobile fallback: approximately 0.5B parameters, 23+ languages depending on release, and a heavier diffusion decoder.
@@ -21,7 +21,7 @@ Recommended product strategy:
 |---|---|---|---|---|---|
 | Edge-TTS | Broad Microsoft voice catalog; cloud | High and consistent | Fast when network is good; zero local model | Default online engine | Network, rate limits, service dependency |
 | Piper | Many per-language voices | Good/variable; voice-dependent | Excellent CPU/offline; small per voice | Reliable offline fallback | Quality varies; separate model per language/voice |
-| Kokoro-82M | Smaller multilingual set; voice/language dependent | High for its size; validate PT-BR specifically | Excellent candidate for CPU/mobile; 82M | Local default for supported language | Coverage and mobile packaging/runtime need validation |
+| Kokoro-82M | English manifest currently verified; other voices pending | High for its size; validate each voice | 92.9 MB verified quantized package plus runtime | Local default for verified English | Non-English voice/runtime support still pending |
 | MeloTTS | EN variants, ES, FR, ZH, JA, KO and others per official docs | Good, especially single-language voices | Officially CPU real-time; model per language | Local single-language engine | Less broad coverage; voice quality varies |
 | Qwen3-TTS 0.6B | 10 major languages incl. PT | Very high potential; controllable | Low-latency streaming claims, but 0.6B runtime/weights are heavy for phones | Server or high-end desktop multilingual tier | PyTorch/deployment size, RAM, mobile feasibility |
 | Qwen3-TTS 1.7B | Same 10 languages | Higher quality/control than 0.6B | Server/GPU tier | Premium audiobook/server mode | Too large for ordinary mobile/CPU |
@@ -32,7 +32,7 @@ Recommended product strategy:
 
 Detect language once from a cleaned sample of the book (title/front matter excluded; combine several chapter excerpts). Use a confidence threshold and keep a manual override. Route by language rather than automatically choosing a multilingual model:
 
-- Portuguese, English, Spanish, French, German, Italian, Japanese, Korean, Chinese: test Edge, then Kokoro/MeloTTS where a strong voice exists; use Piper as the robust offline fallback.
+- Portuguese, Spanish, French, German, Italian, Japanese, Korean, Chinese: test Edge, then MeloTTS where a strong voice exists; use Piper as the robust offline fallback. The current verified Kokoro manifest is English-only.
 - Less-covered languages: use Edge first, then Piper voice catalog. Do not route blindly to Kokoro/MeloTTS.
 - Mixed-language books: detect per chapter or paragraph only when confidence changes materially; otherwise retain the book's dominant voice for consistency.
 
@@ -42,7 +42,7 @@ Recommended policy: `language_detector -> voice registry -> engine candidates(la
 
 ### Balanced default
 
-`Edge-TTS -> Kokoro-82M or MeloTTS -> Piper`
+`Edge-TTS -> verified Kokoro voice or MeloTTS -> Piper`
 
 Use only after measuring the exact voice/model. Keep one voice stable across a book. For a fully offline run, select Kokoro/MeloTTS if supported and otherwise Piper.
 
