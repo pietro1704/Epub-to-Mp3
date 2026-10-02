@@ -9,6 +9,16 @@ final class ConverterFFIAdapterTests: XCTestCase {
         }
     }
 
+    func testMissingArtifactReturnsUnavailableForTtsCatalog() {
+        let adapter = ConverterFFIAdapter(bundle: Bundle(for: ConverterFFIAdapterTests.self))
+        XCTAssertThrowsError(try adapter.ttsModels()) { error in
+            XCTAssertEqual(error as? EmbeddedConverterError, .artifactUnavailable)
+        }
+        XCTAssertThrowsError(try adapter.ttsDefaultEngine(language: "pt-BR", platform: "ios")) { error in
+            XCTAssertEqual(error as? EmbeddedConverterError, .artifactUnavailable)
+        }
+    }
+
     func testInvalidArtifactReturnsTypedUnavailableErrorWithoutRuntimeConversion() throws {
         let bundleURL = try makeBundle(with: Data("not a Mach-O dylib".utf8), name: "converter_ffi")
         defer { try? FileManager.default.removeItem(at: bundleURL) }
