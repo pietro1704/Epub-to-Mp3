@@ -57,6 +57,12 @@ abstract interface class EmbeddedConverter {
     required String modelId,
     required String root,
   }) => throw EmbeddedConverterUnavailable('TTS model removal is unavailable');
+  Future<String> installTtsModelFromCatalog({
+    required String modelId,
+    required String root,
+  }) => throw EmbeddedConverterUnavailable(
+    'Catalog TTS model installation is unavailable',
+  );
 }
 
 /// The Android implementation invokes the registered native converter through
@@ -244,6 +250,19 @@ class AndroidEmbeddedConverter implements EmbeddedConverter {
   }
 
   @override
+  Future<String> installTtsModelFromCatalog({
+    required String modelId,
+    required String root,
+  }) async {
+    final value = await _channel.invokeMethod<String>(
+      'ttsModelInstallCatalogManifest',
+      {'modelId': modelId, 'root': root},
+    );
+    if (value == null || value.isEmpty) throw EmbeddedConverterUnavailable();
+    return value;
+  }
+
+  @override
   Future<bool> removeTtsModel({
     required String modelId,
     required String root,
@@ -286,6 +305,12 @@ class UnavailableEmbeddedConverter implements EmbeddedConverter {
     required String modelId,
     required String url,
     required String sha256,
+    required String root,
+  }) => throw EmbeddedConverterUnavailable();
+
+  @override
+  Future<String> installTtsModelFromCatalog({
+    required String modelId,
     required String root,
   }) => throw EmbeddedConverterUnavailable();
 

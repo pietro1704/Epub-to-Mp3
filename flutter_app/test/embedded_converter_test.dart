@@ -42,6 +42,12 @@ class FakeConverter implements EmbeddedConverter {
   }) async => '$root/$modelId/model.bin';
 
   @override
+  Future<String> installTtsModelFromCatalog({
+    required String modelId,
+    required String root,
+  }) async => '$root/$modelId';
+
+  @override
   Future<bool> removeTtsModel({
     required String modelId,
     required String root,
