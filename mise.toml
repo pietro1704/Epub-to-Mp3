@@ -222,14 +222,15 @@ if [ ! -x ".venv/bin/python" ]; then
 fi
 
 echo "🐍 Installing Python dependencies (root)..."
-.venv/bin/python -m pip install --upgrade pip
-.venv/bin/python -m pip install -r requirements.txt
+UV_BIN="${UV_BIN:-$HOME/.hermes/bin/uv}"
+test -x "$UV_BIN"
+"$UV_BIN" pip install --python .venv/bin/python -r requirements.txt
 
 echo "🐍 Installing Python dependencies (python_app)..."
-.venv/bin/python -m pip install -r python_app/requirements.txt
+"$UV_BIN" pip install --python .venv/bin/python -r python_app/requirements.txt
 
 echo "🔍 Installing lint/format tools..."
-.venv/bin/python -m pip install ruff pre-commit
+"$UV_BIN" pip install --python .venv/bin/python ruff pre-commit
 
 echo "🎙️ Configuring native Piper..."
 bash scripts/install_piper_binary.sh
