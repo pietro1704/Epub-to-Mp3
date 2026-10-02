@@ -90,7 +90,40 @@ The best practical three-way balance is likely:
 
 This is a recommendation based on official capabilities and architecture, not a verified head-to-head benchmark on this repository's hardware.
 
-## Sources
+## Runtime feasibility update (2026-10-02)
+
+A more viable embedded runtime candidate than the abandoned `kokoroxide` path is
+`sherpa-onnx`:
+
+- the official project documents offline TTS and Kokoro-82M support;
+- the official C API exposes `SherpaOnnxCreateOfflineTts` and model-family-specific
+  configuration, which is suitable for a thin Rust FFI adapter;
+- crates.io currently publishes `sherpa-onnx` 1.13.8 and
+  `sherpa-onnx-sys` 1.13.8 under Apache-2.0, with static/shared features;
+- the official project explicitly lists Android and embedded/offline usage.
+
+Recommended next implementation slice:
+
+1. Add `sherpa-onnx-sys` behind a dedicated `kokoro-sherpa-runtime` feature in
+   `converter-core`, without enabling it in the baseline builds.
+2. Wrap only the offline Kokoro TTS C API in a Rust-owned lifecycle: create,
+   synthesize one chapter, write WAV/PCM, and destroy the handle.
+3. Keep the catalog model disabled until startup and one real synthesis call pass.
+4. Build the native archive independently for Android, Apple, Linux, and Windows;
+   never assume the crates.io host archive is valid for every target.
+5. Only then publish Kokoro manifests and connect the model manager's install action.
+
+This is an implementation path, not yet runtime proof. It still requires native
+archive/toolchain validation and real audio synthesis on each target.
+
+## Additional primary sources
+
+- sherpa-onnx TTS documentation: https://k2-fsa.github.io/sherpa/onnx/tts/index.html
+- sherpa-onnx Kokoro documentation: https://k2-fsa.github.io/sherpa/onnx/tts/pretrained_models/kokoro.html
+- sherpa-onnx C TTS API: https://k2-fsa.github.io/sherpa/onnx/c-api/html/tts.html
+- sherpa-onnx Kokoro C example: https://github.com/k2-fsa/sherpa-onnx/blob/master/c-api-examples/kokoro-tts-en-c-api.c
+- sherpa-onnx Rust crate: https://crates.io/crates/sherpa-onnx/1.13.8
+- sherpa-onnx raw FFI crate: https://crates.io/crates/sherpa-onnx-sys/1.13.8
 
 - Kokoro official repository/model link: https://github.com/hexgrad/kokoro
 - Piper official repository and voice samples: https://github.com/rhasspy/piper and https://rhasspy.github.io/piper-samples/
