@@ -191,6 +191,18 @@ pub fn inspect_runtime(engine: &str, model_root: &Path) -> Result<RuntimeCapabil
         return Err(RuntimeError::UnsupportedEngine(engine.to_owned()));
     }
 
+    #[cfg(feature = "kokoro-sherpa-runtime")]
+    let required = [
+        if model_root.join("model.int8.onnx").is_file() {
+            model_root.join("model.int8.onnx")
+        } else {
+            model_root.join("model.onnx")
+        },
+        model_root.join("tokens.txt"),
+        model_root.join("voices.bin"),
+        model_root.join("espeak-ng-data"),
+    ];
+    #[cfg(not(feature = "kokoro-sherpa-runtime"))]
     let required = [
         model_root.join("onnx/model_quantized.onnx"),
         model_root.join("config.json"),
@@ -222,7 +234,16 @@ pub fn inspect_runtime(engine: &str, model_root: &Path) -> Result<RuntimeCapabil
         Err(error) => Some(format!("tract ONNX session unavailable: {error}")),
     };
 
-    #[cfg(not(feature = "kokoro-tract-runtime"))]
+    #[cfg(feature = "kokoro-sherpa-runtime")]
+    let runtime_error = crate::kokoro_sherpa::synthesize_wav(model_root, "Hello world")
+        .map(|_| ())
+        .map_err(|error| error.to_string())
+        .err();
+
+    #[cfg(all(
+        not(feature = "kokoro-sherpa-runtime"),
+        not(feature = "kokoro-tract-runtime")
+    ))]
     let runtime_error =
         Some("Kokoro inference runtime requires a maintained embedded ONNX integration".to_owned());
 
@@ -340,6 +361,7 @@ mod tests {
         assert_eq!(tokenizer.encode_phonemes("ab a").unwrap(), vec![0, 2, 1, 0]);
     }
 
+    #[cfg(not(feature = "kokoro-sherpa-runtime"))]
     #[test]
     fn installed_model_remains_unavailable_until_inference_is_verified() {
         let root = tempdir().unwrap();
