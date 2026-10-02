@@ -156,7 +156,7 @@ impl ConversionWorker {
         let parallelism = if request.no_parallel {
             1
         } else {
-            std::env::var("RUST_CHAPTER_PARALLELISM")
+            let configured = std::env::var("RUST_CHAPTER_PARALLELISM")
                 .ok()
                 .and_then(|value| value.parse().ok())
                 .filter(|value| *value > 0)
@@ -164,14 +164,19 @@ impl ConversionWorker {
                     std::thread::available_parallelism()
                         .map(|v| v.get())
                         .unwrap_or(1)
-                })
+                });
+            let cap = std::env::var("RUST_CHAPTER_PARALLELISM_CAP")
+                .ok()
+                .and_then(|value| value.parse().ok())
+                .filter(|value| *value > 0)
+                .unwrap_or(8);
+            configured.min(self.config.max_parallel).min(cap).max(1)
         };
         let pool = rayon::ThreadPoolBuilder::new()
             .num_threads(parallelism)
             .build()
             .map_err(|error| WorkerError::Piper(error.to_string()))?;
         let results = Mutex::new(Vec::with_capacity(total));
-        let _parallelism = parallelism.min(2);
         pool.install(|| {
             book.chapters.par_iter().enumerate().try_for_each(
                 |(position, chapter)| -> Result<(), WorkerError> {

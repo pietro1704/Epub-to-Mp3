@@ -106,7 +106,12 @@ pub fn atomic_write_json<T: Serialize + ?Sized>(
     {
         let mut file = File::create(&temp)?;
         file.write_all(&bytes)?;
-        file.sync_all()?;
+        if std::env::var("RUST_CACHE_FSYNC")
+            .map(|value| matches!(value.as_str(), "1" | "true" | "TRUE" | "yes"))
+            .unwrap_or(false)
+        {
+            file.sync_all()?;
+        }
     }
     fs::rename(temp, path)?;
     Ok(())
