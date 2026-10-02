@@ -6,6 +6,10 @@ license.workspace = true
 
 description = "Core domain types for EPUB to MP3 conversion"
 
+[features]
+default = []
+kokoro-runtime = []
+
 [dependencies]
 hex = "0.4"
 tempfile = "3"

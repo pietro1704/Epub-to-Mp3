@@ -59,14 +59,19 @@ pub fn inspect_runtime(engine: &str, model_root: &Path) -> Result<RuntimeCapabil
         engine: "kokoro",
         model_id: "kokoro-82m",
         installed: true,
-        inference_ready: false,
-        reason: Some("Kokoro inference runtime is not compiled yet".to_owned()),
+        inference_ready: cfg!(feature = "kokoro-runtime"),
+        reason: if cfg!(feature = "kokoro-runtime") {
+            None
+        } else {
+            Some("Kokoro inference runtime is not compiled yet".to_owned())
+        },
     })
 }
 
 pub fn synthesize_kokoro(_model_root: &Path, _text: &str) -> Result<Vec<u8>, RuntimeError> {
+    let _ = (_model_root, _text);
     Err(RuntimeError::RuntimeUnavailable(
-        "Kokoro inference runtime is not compiled yet".to_owned(),
+        "Kokoro inference runtime requires a maintained ONNX Runtime integration".to_owned(),
     ))
 }
 
@@ -104,7 +109,9 @@ mod tests {
         assert!(!capability.inference_ready);
         assert_eq!(
             synthesize_kokoro(root.path(), "hello").unwrap_err(),
-            RuntimeError::RuntimeUnavailable("Kokoro inference runtime is not compiled yet".into())
+            RuntimeError::RuntimeUnavailable(
+                "Kokoro inference runtime requires a maintained ONNX Runtime integration".into(),
+            )
         );
     }
 }
