@@ -37,8 +37,8 @@ if [ ! -x "$PYTHON_BIN" ] || [ ! -x "$PIPER_BIN" ]; then
     "$MISE_BIN" run install
 fi
 
-# Allow Piper fallback by default (user can override to 0)
-export ENABLE_PIPER="${ENABLE_PIPER:-1}"
+# Keep local Piper opt-in; users must explicitly install/select a model.
+export ENABLE_PIPER="${ENABLE_PIPER:-0}"
 
 # Invoke the venv interpreter DIRECTLY rather than `mise exec -- python`.
 # `mise exec` resolves the interpreter from the caller's shell/mise state,
