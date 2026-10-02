@@ -2,10 +2,10 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_app/services/tts_model_catalog.dart';
 
 void main() {
-  test('prefers Kokoro for supported desktop languages', () {
+  test('does not select Kokoro before its runtime is available', () {
     expect(
-      TtsModelCatalog.defaultEngine(language: 'pt-BR', platform: 'macos'),
-      'kokoro',
+      TtsModelCatalog.defaultEngine(language: 'en-US', platform: 'macos'),
+      'piper',
     );
   });
 

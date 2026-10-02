@@ -11,6 +11,7 @@ class TtsModelDescriptor {
     required this.qualityRank,
     required this.speedRank,
     required this.defaultRank,
+    required this.runtimeAvailable,
     this.downloadUrl,
     this.sha256,
     this.minimumAndroidApi,
@@ -24,6 +25,7 @@ class TtsModelDescriptor {
   final int qualityRank;
   final int speedRank;
   final int defaultRank;
+  final bool runtimeAvailable;
   final String? downloadUrl;
   final String? sha256;
   final int? minimumAndroidApi;
@@ -49,12 +51,13 @@ class TtsModelCatalog {
     TtsModelDescriptor(
       id: 'kokoro-82m',
       engine: 'kokoro',
-      languages: {'en', 'es', 'fr', 'it', 'pt', 'ja', 'zh'},
+      languages: {'en'},
       platforms: {'android', 'ios', 'macos', 'linux', 'windows'},
-      downloadBytes: 82 * 1024 * 1024,
+      downloadBytes: 92_889_596,
       qualityRank: 4,
       speedRank: 4,
       defaultRank: 1,
+      runtimeAvailable: false,
       minimumAndroidApi: 29,
     ),
     TtsModelDescriptor(
@@ -66,6 +69,7 @@ class TtsModelCatalog {
       qualityRank: 3,
       speedRank: 5,
       defaultRank: 2,
+      runtimeAvailable: true,
       minimumAndroidApi: 29,
     ),
     TtsModelDescriptor(
@@ -77,6 +81,7 @@ class TtsModelCatalog {
       qualityRank: 4,
       speedRank: 3,
       defaultRank: 3,
+      runtimeAvailable: false,
     ),
     TtsModelDescriptor(
       id: 'qwen3-tts-0.6b',
@@ -87,6 +92,7 @@ class TtsModelCatalog {
       qualityRank: 5,
       speedRank: 2,
       defaultRank: 4,
+      runtimeAvailable: false,
     ),
   ];
 
@@ -109,11 +115,13 @@ class TtsModelCatalog {
     final result =
         descriptors
             .where(
-              (model) => model.supports(
-                language: language,
-                platform: selectedPlatform,
-                androidApi: androidApi,
-              ),
+              (model) =>
+                  model.runtimeAvailable &&
+                  model.supports(
+                    language: language,
+                    platform: selectedPlatform,
+                    androidApi: androidApi,
+                  ),
             )
             .toList()
           ..sort((a, b) => a.defaultRank.compareTo(b.defaultRank));
