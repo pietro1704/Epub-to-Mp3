@@ -14,22 +14,16 @@ class DesktopTtsModelAdapterError implements Exception {
 
 typedef _ModelsNative = ffi.Pointer<Utf8> Function();
 typedef _ModelsDart = ffi.Pointer<Utf8> Function();
-typedef _InstallNative = ffi.Pointer<Utf8> Function(
-  ffi.Pointer<Utf8>,
-  ffi.Pointer<Utf8>,
-);
-typedef _InstallDart = ffi.Pointer<Utf8> Function(
-  ffi.Pointer<Utf8>,
-  ffi.Pointer<Utf8>,
-);
-typedef _RemoveNative = ffi.Bool Function(
-  ffi.Pointer<Utf8>,
-  ffi.Pointer<Utf8>,
-);
-typedef _RemoveDart = bool Function(
-  ffi.Pointer<Utf8>,
-  ffi.Pointer<Utf8>,
-);
+typedef _InstallNative =
+    ffi.Pointer<Utf8> Function(ffi.Pointer<Utf8>, ffi.Pointer<Utf8>);
+typedef _InstallDart =
+    ffi.Pointer<Utf8> Function(ffi.Pointer<Utf8>, ffi.Pointer<Utf8>);
+typedef _RemoveNative = ffi.Bool Function(ffi.Pointer<Utf8>, ffi.Pointer<Utf8>);
+typedef _RemoveDart = bool Function(ffi.Pointer<Utf8>, ffi.Pointer<Utf8>);
+typedef _MetadataNative =
+    ffi.Pointer<Utf8> Function(ffi.Pointer<Utf8>, ffi.Pointer<Utf8>);
+typedef _MetadataDart =
+    ffi.Pointer<Utf8> Function(ffi.Pointer<Utf8>, ffi.Pointer<Utf8>);
 typedef _FreeNative = ffi.Void Function(ffi.Pointer<Utf8>);
 typedef _FreeDart = void Function(ffi.Pointer<Utf8>);
 typedef _ErrorNative = ffi.Pointer<Utf8> Function();
@@ -39,7 +33,7 @@ typedef _ErrorDart = ffi.Pointer<Utf8> Function();
 /// It never contains model URLs, checksums, or selection policy.
 final class DesktopTtsModelAdapter {
   DesktopTtsModelAdapter({ffi.DynamicLibrary? library})
-      : _library = library ?? _openLibrary() {
+    : _library = library ?? _openLibrary() {
     _models = _library.lookupFunction<_ModelsNative, _ModelsDart>(
       'converter_tts_models_json',
     );
@@ -48,6 +42,9 @@ final class DesktopTtsModelAdapter {
     );
     _remove = _library.lookupFunction<_RemoveNative, _RemoveDart>(
       'converter_tts_model_remove',
+    );
+    _metadata = _library.lookupFunction<_MetadataNative, _MetadataDart>(
+      'converter_tts_model_metadata',
     );
     _free = _library.lookupFunction<_FreeNative, _FreeDart>(
       'converter_string_free',
@@ -61,6 +58,7 @@ final class DesktopTtsModelAdapter {
   late final _ModelsDart _models;
   late final _InstallDart _install;
   late final _RemoveDart _remove;
+  late final _MetadataDart _metadata;
   late final _FreeDart _free;
   late final _ErrorDart _lastError;
 
@@ -68,7 +66,10 @@ final class DesktopTtsModelAdapter {
 
   String installFromCatalog({required String modelId, required String root}) {
     return using((arena) {
-      final result = _install(modelId.toNativeUtf8(allocator: arena), root.toNativeUtf8(allocator: arena));
+      final result = _install(
+        modelId.toNativeUtf8(allocator: arena),
+        root.toNativeUtf8(allocator: arena),
+      );
       if (result == ffi.nullptr) {
         throw DesktopTtsModelAdapterError(_readError());
       }
@@ -84,6 +85,17 @@ final class DesktopTtsModelAdapter {
       );
       if (!removed) throw DesktopTtsModelAdapterError(_readError());
       return true;
+    });
+  }
+
+  String? metadata({required String modelId, required String root}) {
+    return using((arena) {
+      final result = _metadata(
+        modelId.toNativeUtf8(allocator: arena),
+        root.toNativeUtf8(allocator: arena),
+      );
+      if (result == ffi.nullptr) return null;
+      return _readOwned(result);
     });
   }
 
@@ -112,7 +124,8 @@ final class DesktopTtsModelAdapter {
       return ffi.DynamicLibrary.open(override);
     }
     if (Platform.isWindows) return ffi.DynamicLibrary.open('converter_ffi.dll');
-    if (Platform.isMacOS) return ffi.DynamicLibrary.open('libconverter_ffi.dylib');
+    if (Platform.isMacOS)
+      return ffi.DynamicLibrary.open('libconverter_ffi.dylib');
     return ffi.DynamicLibrary.open('libconverter_ffi.so');
   }
 }

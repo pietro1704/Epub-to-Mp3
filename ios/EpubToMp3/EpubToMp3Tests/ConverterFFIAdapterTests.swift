@@ -23,6 +23,9 @@ final class ConverterFFIAdapterTests: XCTestCase {
         XCTAssertThrowsError(try adapter.removeTtsModel(modelID: "kokoro-82m", root: "/tmp/models")) { error in
             XCTAssertEqual(error as? EmbeddedConverterError, .artifactUnavailable)
         }
+        XCTAssertThrowsError(try adapter.ttsModelMetadata(modelID: "kokoro-82m", root: "/tmp/models")) { error in
+            XCTAssertEqual(error as? EmbeddedConverterError, .artifactUnavailable)
+        }
         XCTAssertThrowsError(try adapter.installTtsModelFromCatalog(modelID: "kokoro-82m", root: "/tmp/models")) { error in
             XCTAssertEqual(error as? EmbeddedConverterError, .artifactUnavailable)
         }
