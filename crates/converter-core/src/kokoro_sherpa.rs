@@ -14,8 +14,13 @@ pub fn synthesize_wav(model_root: &Path, text: &str) -> Result<Vec<u8>, RuntimeE
         .map_err(|_| RuntimeError::RuntimeUnavailable("invalid voices path".into()))?;
     let tokens = CString::new(model_root.join("tokens.txt").to_string_lossy().as_bytes())
         .map_err(|_| RuntimeError::RuntimeUnavailable("invalid tokens path".into()))?;
-    let data_dir = CString::new(model_root.join("espeak-ng-data").to_string_lossy().as_bytes())
-        .map_err(|_| RuntimeError::RuntimeUnavailable("invalid data path".into()))?;
+    let data_dir = CString::new(
+        model_root
+            .join("espeak-ng-data")
+            .to_string_lossy()
+            .as_bytes(),
+    )
+    .map_err(|_| RuntimeError::RuntimeUnavailable("invalid data path".into()))?;
     let input = CString::new(text)
         .map_err(|_| RuntimeError::RuntimeUnavailable("text contains a NUL byte".into()))?;
 
