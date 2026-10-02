@@ -1,4 +1,4 @@
-//! Backend-independent API for embedding the conversion core.
+//! API for embedding the conversion core directly into application clients.
 
 use crate::{
     config::AppConfig,
@@ -105,7 +105,7 @@ impl EmbeddedConversionSession {
         &self.metadata
     }
 
-    /// Run conversion synchronously using the existing backend-independent worker.
+    /// Run conversion synchronously using the embedded worker.
     pub fn convert(&self) -> Result<OutputManifest, EmbeddedConversionError> {
         let job_id = self
             .options

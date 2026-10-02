@@ -19,7 +19,7 @@ pub enum FallbackTier {
     Offline,
 }
 
-/// A synthesis backend candidate in fallback order.
+/// A local or online synthesis engine candidate in fallback order.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct EngineCandidate {
     pub name: String,
@@ -96,7 +96,7 @@ impl Default for CancellationSettings {
     }
 }
 
-/// Stable progress messages emitted by orchestration, not by a backend.
+/// Stable progress messages emitted by orchestration, not by an engine.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum ProgressEvent {
@@ -129,7 +129,7 @@ pub type ProgressSink = Arc<dyn Fn(ProgressEvent) + Send + Sync>;
 
 /// Adapter seam for parser/TTS/cache/audio implementations.
 ///
-/// The engine owns policy and lifecycle; adapters own I/O and backend details.
+/// The engine owns policy and lifecycle; adapters own I/O and runtime details.
 pub trait ConversionWorker: Send + Sync {
     type Input: Send + Sync;
     type Output: Send;

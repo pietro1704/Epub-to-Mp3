@@ -32,7 +32,7 @@ impl fmt::Display for PathError {
 
 impl std::error::Error for PathError {}
 
-/// All persistent directories used by the backend.
+/// All persistent directories used by the embedded conversion runtime.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Paths {
     pub project_root: PathBuf,
