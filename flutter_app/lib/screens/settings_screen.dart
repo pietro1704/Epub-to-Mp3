@@ -1,8 +1,12 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:path_provider/path_provider.dart';
 
 import '../l10n/app_localizations.dart';
 import '../models/app_settings.dart';
+import '../services/embedded_converter.dart';
 import '../state/providers.dart';
 
 class SettingsScreen extends ConsumerStatefulWidget {
@@ -54,6 +58,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             ),
           ),
           _FooterText(t.audioEngineFooter),
+          const _TtsModelManagerCard(),
           const SizedBox(height: 20),
 
           // ── Remote Backend ──
@@ -409,6 +414,107 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           ),
           const SizedBox(height: 24),
         ],
+      ),
+    );
+  }
+}
+
+class _TtsModelManagerCard extends ConsumerStatefulWidget {
+  const _TtsModelManagerCard();
+
+  @override
+  ConsumerState<_TtsModelManagerCard> createState() =>
+      _TtsModelManagerCardState();
+}
+
+class _TtsModelManagerCardState extends ConsumerState<_TtsModelManagerCard> {
+  Future<List<Map<String, dynamic>>>? _catalog;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _catalog ??= _loadCatalog();
+  }
+
+  Future<List<Map<String, dynamic>>> _loadCatalog() async {
+    final raw = await ref.read(embeddedConverterProvider).ttsModels();
+    final decoded = jsonDecode(raw);
+    if (decoded is! List)
+      throw const FormatException('Invalid TTS model catalog');
+    return decoded.whereType<Map>().map(Map<String, dynamic>.from).toList();
+  }
+
+  Future<String> _modelRoot() async {
+    final directory = await getApplicationSupportDirectory();
+    return '${directory.path}/tts-models';
+  }
+
+  Future<void> _install(String modelId) async {
+    try {
+      await ref
+          .read(embeddedConverterProvider)
+          .installTtsModelFromCatalog(
+            modelId: modelId,
+            root: await _modelRoot(),
+          );
+      if (mounted) setState(() => _catalog = _loadCatalog());
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(error.toString())));
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final t = AppLocalizations.of(context)!;
+    return Card(
+      child: FutureBuilder<List<Map<String, dynamic>>>(
+        future: _catalog,
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const ListTile(leading: CircularProgressIndicator());
+          }
+          if (snapshot.hasError) {
+            return ListTile(
+              leading: const Icon(Icons.memory_outlined),
+              title: Text(t.downloadAll),
+              subtitle: Text(snapshot.error.toString()),
+              trailing: IconButton(
+                icon: const Icon(Icons.refresh),
+                tooltip: t.refresh,
+                onPressed: () => setState(() => _catalog = _loadCatalog()),
+              ),
+            );
+          }
+          final models = snapshot.data ?? const [];
+          return Column(
+            children: [
+              ListTile(
+                leading: const Icon(Icons.memory_outlined),
+                title: Text(t.downloadAll),
+                subtitle: Text(t.useBuiltInEngineDesc),
+                trailing: IconButton(
+                  icon: const Icon(Icons.refresh),
+                  tooltip: t.refresh,
+                  onPressed: () => setState(() => _catalog = _loadCatalog()),
+                ),
+              ),
+              for (final model in models)
+                ListTile(
+                  title: Text('${model['id'] ?? ''}'),
+                  subtitle: Text('${model['languages'] ?? ''}'),
+                  trailing: IconButton(
+                    icon: const Icon(Icons.download_outlined),
+                    tooltip: t.downloadAll,
+                    onPressed: () => _install('${model['id']}'),
+                  ),
+                ),
+            ],
+          );
+        },
       ),
     );
   }
