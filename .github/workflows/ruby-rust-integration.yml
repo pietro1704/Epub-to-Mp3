@@ -19,11 +19,16 @@ jobs:
         uses: ruby/setup-ruby@v1
         with:
           ruby-version: "4.0"
-          bundler-cache: true
-          working-directory: ruby_app/rails_gateway
+          bundler-cache: false
+      - name: Install Ruby gateway dependencies
+        working-directory: ruby_app
+        run: bundle install --jobs 4 --retry 3
+      - name: Install Rails gateway dependencies
+        working-directory: ruby_app/rails_gateway
+        run: bundle install --jobs 4 --retry 3
       - name: Ruby gateway tests
         working-directory: ruby_app
-        run: ruby -I. test/rust_client_test.rb
+        run: bundle exec ruby -I. test/rust_client_test.rb
       - name: Rails gateway tests
         working-directory: ruby_app/rails_gateway
         run: bundle exec rails test

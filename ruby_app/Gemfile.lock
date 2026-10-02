@@ -1,6 +1,11 @@
 GEM
   remote: https://rubygems.org/
   specs:
+    drb (2.2.3)
+    minitest (6.0.6)
+      drb (~> 2.0)
+      prism (~> 1.5)
+    prism (1.9.0)
     webrick (1.9.2)
 
 PLATFORMS
@@ -8,10 +13,11 @@ PLATFORMS
   x86_64-linux
 
 DEPENDENCIES
+  minitest
   webrick
 
 RUBY VERSION
-   ruby 2.6.10p210
+  ruby 2.6.10p210
 
 BUNDLED WITH
-   1.17.2
+  4.0.20
