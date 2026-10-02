@@ -23,6 +23,8 @@ pub struct ModelManifest {
 pub enum ModelStoreError {
     #[error("model download URL is missing")]
     MissingUrl,
+    #[error("model download URL must use HTTPS")]
+    InsecureUrl,
     #[error("model checksum is missing")]
     MissingChecksum,
     #[error("HTTP model download failed: {0}")]
@@ -95,6 +97,9 @@ impl ModelStore {
             .filter(|value| !value.is_empty())
             .ok_or(ModelStoreError::MissingChecksum)?
             .to_ascii_lowercase();
+        if !url.starts_with("https://") {
+            return Err(ModelStoreError::InsecureUrl);
+        }
 
         let directory = self.root.join(model.id);
         tokio::fs::create_dir_all(&directory).await?;
@@ -157,6 +162,9 @@ impl ModelStore {
                 let expected = artifact.sha256.to_ascii_lowercase();
                 if expected.is_empty() {
                     return Err(ModelStoreError::MissingChecksum);
+                }
+                if !artifact.url.starts_with("https://") {
+                    return Err(ModelStoreError::InsecureUrl);
                 }
                 let mut response = self
                     .client
@@ -232,6 +240,22 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn rejects_insecure_install_before_network_access() {
+        let root = tempfile::tempdir().unwrap();
+        let store = ModelStore::new(root.path());
+        let checksum = "0".repeat(64);
+        let error = store
+            .install(
+                &MODELS[0],
+                Some("http://example.invalid/model"),
+                Some(&checksum),
+            )
+            .await
+            .unwrap_err();
+        assert!(matches!(error, ModelStoreError::InsecureUrl));
+    }
+
+    #[tokio::test]
     async fn remove_is_idempotent() {
         let root = tempfile::tempdir().unwrap();
         let store = ModelStore::new(root.path());
@@ -264,6 +288,22 @@ mod tests {
         };
         let error = store.install_manifest(&manifest).await.unwrap_err();
         assert!(matches!(error, ModelStoreError::InvalidArtifactName(_)));
+    }
+
+    #[tokio::test]
+    async fn manifest_rejects_insecure_url_before_network_access() {
+        let root = tempfile::tempdir().unwrap();
+        let store = ModelStore::new(root.path());
+        let manifest = ModelManifest {
+            model_id: "kokoro-82m".to_owned(),
+            artifacts: vec![ModelArtifact {
+                name: "model.onnx".to_owned(),
+                url: "http://example.invalid/model".to_owned(),
+                sha256: "0".repeat(64),
+            }],
+        };
+        let error = store.install_manifest(&manifest).await.unwrap_err();
+        assert!(matches!(error, ModelStoreError::InsecureUrl));
     }
 
     #[test]
