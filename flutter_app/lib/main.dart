@@ -33,8 +33,7 @@ Future<void> main() async {
       unawaited(converter.isRuntimeLoaded());
     }
   }
-  if (defaultTargetPlatform == TargetPlatform.macOS ||
-      defaultTargetPlatform == TargetPlatform.linux ||
+  if (defaultTargetPlatform == TargetPlatform.linux ||
       defaultTargetPlatform == TargetPlatform.windows) {
     // Desktop model management uses the same Rust catalog and ABI as mobile.
     // Conversion registration remains separate until the desktop native
