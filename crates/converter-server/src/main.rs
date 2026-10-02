@@ -213,9 +213,17 @@ fn load_snapshots(config: &AppConfig) -> HashMap<String, Job> {
         let Ok(bytes) = fs::read(path) else {
             continue;
         };
-        let Ok(snapshot) = serde_json::from_slice::<JobSnapshot>(&bytes) else {
+        let Ok(mut snapshot) = serde_json::from_slice::<JobSnapshot>(&bytes) else {
             continue;
         };
+        if matches!(snapshot.state.as_str(), "queued" | "running" | "cancelling") {
+            snapshot.state = "interrupted".into();
+            snapshot.error = Some("Server restarted before the conversion completed".into());
+            snapshot
+                .events
+                .push("Conversion interrupted by server restart".into());
+            let _ = persist_snapshot(config, &snapshot);
+        }
         let (events, _) = broadcast::channel(64);
         jobs.insert(
             snapshot.job_id.clone(),
