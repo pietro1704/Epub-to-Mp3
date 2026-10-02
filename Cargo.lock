@@ -2597,6 +2597,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "rust-migration-bench"
+version = "0.1.0"
+dependencies = [
+ "converter-core",
+ "criterion",
+]
+
+[[package]]
 name = "rustc-hash"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"

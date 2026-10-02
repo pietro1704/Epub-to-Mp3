@@ -409,7 +409,7 @@ run = "./scripts/reader-change-check.sh --cached"
 
 [tasks."benchmark:rust"]
 description = "Measure Rust migration parser, chunker, cache, and orchestration throughput"
-run = "mise exec -- cargo bench --bench rust_migration -- --save-baseline rust-migration"
+run = "mise exec -- cargo bench --manifest-path benches/Cargo.toml --bench rust_migration -- --save-baseline rust-migration"
 
 [tasks."benchmark:check"]
 description = "Compare live telemetry throughput against benchmarks/baseline.json"

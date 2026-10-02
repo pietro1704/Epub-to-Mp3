@@ -6,6 +6,7 @@ members = [
     "crates/converter-server",
     "crates/converter-cli",
     "native/piper-runtime",
+    "benches",
 ]
 
 [workspace.package]
