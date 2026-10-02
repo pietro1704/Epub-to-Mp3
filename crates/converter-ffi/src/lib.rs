@@ -440,6 +440,39 @@ pub unsafe extern "C" fn converter_tts_model_remove(
     }
 }
 
+/// Returns the installed model metadata JSON, or null when the model is absent.
+#[no_mangle]
+pub unsafe extern "C" fn converter_tts_model_metadata(
+    model_id: *const c_char,
+    root: *const c_char,
+) -> *mut c_char {
+    clear_last_error();
+    let model_id = match c_string(model_id, "model id") {
+        Ok(value) => value,
+        Err(error) => return fail(error),
+    };
+    let root = match c_string(root, "model storage root") {
+        Ok(value) => value,
+        Err(error) => return fail(error),
+    };
+    let store = converter_core::model_store::ModelStore::new(root);
+    let runtime = match tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+    {
+        Ok(runtime) => runtime,
+        Err(error) => return fail(format!("failed to read model metadata: {error}")),
+    };
+    match runtime.block_on(store.installed_metadata(&model_id)) {
+        Ok(Some(value)) => match CString::new(value) {
+            Ok(value) => value.into_raw(),
+            Err(_) => fail("model metadata contains an interior NUL byte".to_owned()),
+        },
+        Ok(None) => ptr::null_mut(),
+        Err(error) => fail(error.to_string()),
+    }
+}
+
 #[repr(C)]
 pub struct PiperStatus {
     pub runtime_loaded: bool,
