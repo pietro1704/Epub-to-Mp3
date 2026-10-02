@@ -133,14 +133,15 @@ def test_simulator_run_task_requires_an_existing_app_and_never_builds():
     assert "-downloadPlatform" not in task
 
 
-def test_install_task_upgrades_pip_before_security_pins():
-    """Fresh environments must not retain a vulnerable bootstrap pip."""
+def test_install_task_uses_uv_before_security_pins():
+    """Fresh environments must install dependencies without relying on pip."""
     body = MISE_TOML.read_text(encoding="utf-8")
     install_start = body.index("[tasks.install]")
     test_start = body.index("\n[tasks.test]", install_start)
     task = body[install_start:test_start]
 
-    upgrade = ".venv/bin/python -m pip install --upgrade pip"
-    requirements = ".venv/bin/python -m pip install -r requirements.txt"
-    assert upgrade in task
-    assert task.index(upgrade) < task.index(requirements)
+    uv_install = '"$UV_BIN" pip install --python .venv/bin/python -r requirements.txt'
+    requirements = '"$UV_BIN" pip install --python .venv/bin/python -r python_app/requirements.txt'
+    assert 'UV_BIN="${UV_BIN:-$HOME/.hermes/bin/uv}"' in task
+    assert uv_install in task
+    assert task.index(uv_install) < task.index(requirements)
