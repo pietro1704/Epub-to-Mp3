@@ -106,7 +106,7 @@ class AndroidEmbeddedConverter implements EmbeddedConverter {
     final status = await runtimeStatus();
     if (status['engineReady'] != true) {
       throw EmbeddedConverterUnavailable(
-        'Embedded Rust Piper runtime is not ready: $status',
+        'Embedded TTS runtime is not ready: $status',
       );
     }
   }
