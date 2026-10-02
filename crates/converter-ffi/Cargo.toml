@@ -10,6 +10,7 @@ description = "Stable C ABI for embedded conversion"
 default = []
 android-jni = ["dep:jni"]
 piper-runtime = ["dep:piper_runtime"]
+kokoro-tract-runtime = ["converter-core/kokoro-tract-runtime"]
 
 [lib]
 crate-type = ["cdylib", "rlib"]
