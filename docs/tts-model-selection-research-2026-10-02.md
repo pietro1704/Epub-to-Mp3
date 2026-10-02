@@ -21,7 +21,7 @@ Recommended product strategy:
 |---|---|---|---|---|---|
 | Edge-TTS | Broad Microsoft voice catalog; cloud | High and consistent | Fast when network is good; zero local model | Default online engine | Network, rate limits, service dependency |
 | Piper | Many per-language voices | Good/variable; voice-dependent | Excellent CPU/offline; small per voice | Reliable offline fallback | Quality varies; separate model per language/voice |
-| Kokoro-82M | English manifest currently verified; other voices pending | High for its size; validate each voice | 92.9 MB verified quantized package plus runtime | Local default for verified English | Non-English voice/runtime support still pending |
+| Kokoro-82M | English manifest currently verified; other voices pending | High for its size; validate each voice | 92.9 MB verified quantized package plus runtime | Candidate local default after runtime validation | Runtime and non-English voice support still pending |
 | MeloTTS | EN variants, ES, FR, ZH, JA, KO and others per official docs | Good, especially single-language voices | Officially CPU real-time; model per language | Local single-language engine | Less broad coverage; voice quality varies |
 | Qwen3-TTS 0.6B | 10 major languages incl. PT | Very high potential; controllable | Low-latency streaming claims, but 0.6B runtime/weights are heavy for phones | Server or high-end desktop multilingual tier | PyTorch/deployment size, RAM, mobile feasibility |
 | Qwen3-TTS 1.7B | Same 10 languages | Higher quality/control than 0.6B | Server/GPU tier | Premium audiobook/server mode | Too large for ordinary mobile/CPU |

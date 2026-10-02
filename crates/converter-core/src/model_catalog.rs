@@ -29,6 +29,7 @@ pub struct TtsModelDescriptor {
     pub default_rank: u8,
     pub download_bytes: u64,
     pub artifacts: &'static [TtsArtifactDescriptor],
+    pub runtime_available: bool,
 }
 
 impl TtsModelDescriptor {
@@ -100,6 +101,7 @@ pub static MODELS: &[TtsModelDescriptor] = &[
         default_rank: 1,
         download_bytes: 92_889_596,
         artifacts: KOKORO_ENGLISH_ARTIFACTS,
+        runtime_available: false,
     },
     TtsModelDescriptor {
         id: "piper-default",
@@ -116,6 +118,7 @@ pub static MODELS: &[TtsModelDescriptor] = &[
         default_rank: 2,
         download_bytes: 25 * 1024 * 1024,
         artifacts: &[],
+        runtime_available: true,
     },
     TtsModelDescriptor {
         id: "melotts",
@@ -130,6 +133,7 @@ pub static MODELS: &[TtsModelDescriptor] = &[
         default_rank: 3,
         download_bytes: 150 * 1024 * 1024,
         artifacts: &[],
+        runtime_available: false,
     },
     TtsModelDescriptor {
         id: "qwen3-tts-0.6b",
@@ -144,6 +148,7 @@ pub static MODELS: &[TtsModelDescriptor] = &[
         default_rank: 4,
         download_bytes: 700 * 1024 * 1024,
         artifacts: &[],
+        runtime_available: false,
     },
 ];
 
@@ -154,6 +159,7 @@ pub fn candidates(
 ) -> Vec<&'static TtsModelDescriptor> {
     let mut result: Vec<_> = MODELS
         .iter()
+        .filter(|model| model.runtime_available)
         .filter(|model| model.supports(language, platform, android_api))
         .collect();
     result.sort_by_key(|model| model.default_rank);
@@ -176,11 +182,8 @@ mod tests {
     use super::*;
 
     #[test]
-    fn prefers_kokoro_for_supported_english_on_desktop() {
-        assert_eq!(
-            default_engine("en-US", ModelPlatform::Macos, None),
-            "kokoro"
-        );
+    fn does_not_select_unimplemented_kokoro_runtime() {
+        assert_eq!(default_engine("en-US", ModelPlatform::Macos, None), "piper");
     }
 
     #[test]
