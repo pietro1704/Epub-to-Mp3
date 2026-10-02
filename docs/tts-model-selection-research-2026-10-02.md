@@ -146,3 +146,18 @@ This artifact is not yet enabled as a production download: synthesis requires th
 ## Rust runtime compatibility checkpoint
 
 The first Rust candidate, `kokoroxide 0.1.5`, cannot currently be used as a reproducible dependency: it requires `ort 1.16`, whose published versions are yanked from crates.io. The current `ort 2.0.0-rc.12` line also does not publish a prebuilt binary for this project's Intel macOS target, and its dynamic-loading mode requires the application to package a matching ONNX Runtime library. Therefore Kokoro remains cataloged and downloadable only as an unactivated candidate; Piper remains the safe local fallback until a maintained cross-platform runtime is integrated and exercised with real audio.
+
+## sherpa-onnx Kokoro package verification
+
+The official sherpa-onnx `tts-models` release publishes complete model packages whose layout matches the C API adapter (`model.onnx`, `voices.bin`, `tokens.txt`, and `espeak-ng-data`), unlike the Hugging Face ONNX packaging described above. Verified release metadata from the GitHub API:
+
+| Package | Download bytes | SHA-256 | Intended use |
+|---|---:|---|---|
+| `kokoro-int8-en-v0_19.tar.bz2` | 103,248,205 | `c9f0dd393615805b0bab050c340834d5e684e732aec91c0e860cd30e982c08bd` | First CPU/desktop smoke test |
+| `kokoro-en-v0_19.tar.bz2` | 319,625,534 | `912804855a04745fa77a30be545b3f9a5d15c4d66db00b88cbcd4921df605ac7` | Higher-quality English |
+| `kokoro-int8-multi-lang-v1_1.tar.bz2` | 147,031,220 | `a1e94694776049035c4f2c6529f003aaece993c76aae9a78995831c3c4dcafc6` | Multilingual CPU candidate |
+
+Source: `https://github.com/k2-fsa/sherpa-onnx/releases/tag/tts-models`.
+
+These are archive artifacts, not yet catalog entries: ModelStore must add verified archive extraction with path-traversal protection and atomic directory publication before exposing them in Settings. The int8 English package is the next smoke-test candidate because it minimizes download and runtime cost while preserving the official sherpa layout.
+
