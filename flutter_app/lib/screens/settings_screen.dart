@@ -429,6 +429,7 @@ class _TtsModelManagerCard extends ConsumerStatefulWidget {
 
 class _TtsModelManagerCardState extends ConsumerState<_TtsModelManagerCard> {
   Future<List<Map<String, dynamic>>>? _catalog;
+  Map<String, String> _installedMetadata = const {};
 
   @override
   void didChangeDependencies() {
@@ -441,7 +442,22 @@ class _TtsModelManagerCardState extends ConsumerState<_TtsModelManagerCard> {
     final decoded = jsonDecode(raw);
     if (decoded is! List)
       throw const FormatException('Invalid TTS model catalog');
-    return decoded.whereType<Map>().map(Map<String, dynamic>.from).toList();
+    final models = decoded
+        .whereType<Map>()
+        .map(Map<String, dynamic>.from)
+        .toList();
+    final root = await _modelRoot();
+    final metadata = <String, String>{};
+    for (final model in models) {
+      final id = model['id'];
+      if (id is! String || id.isEmpty) continue;
+      final value = await ref
+          .read(embeddedConverterProvider)
+          .ttsModelMetadata(modelId: id, root: root);
+      if (value != null) metadata[id] = value;
+    }
+    if (mounted) _installedMetadata = metadata;
+    return models;
   }
 
   Future<String> _modelRoot() async {
@@ -505,11 +521,23 @@ class _TtsModelManagerCardState extends ConsumerState<_TtsModelManagerCard> {
               for (final model in models)
                 ListTile(
                   title: Text('${model['id'] ?? ''}'),
-                  subtitle: Text('${model['languages'] ?? ''}'),
+                  subtitle: Text(
+                    _installedMetadata.containsKey(model['id'])
+                        ? t.downloadComplete
+                        : '${model['languages'] ?? ''}',
+                  ),
                   trailing: IconButton(
-                    icon: const Icon(Icons.download_outlined),
-                    tooltip: t.downloadAll,
-                    onPressed: () => _install('${model['id']}'),
+                    icon: Icon(
+                      _installedMetadata.containsKey(model['id'])
+                          ? Icons.delete_outline
+                          : Icons.download_outlined,
+                    ),
+                    tooltip: _installedMetadata.containsKey(model['id'])
+                        ? t.remove
+                        : t.downloadAll,
+                    onPressed: () => _installedMetadata.containsKey(model['id'])
+                        ? _remove('${model['id']}')
+                        : _install('${model['id']}'),
                   ),
                 ),
             ],
@@ -517,6 +545,21 @@ class _TtsModelManagerCardState extends ConsumerState<_TtsModelManagerCard> {
         },
       ),
     );
+  }
+
+  Future<void> _remove(String modelId) async {
+    try {
+      await ref
+          .read(embeddedConverterProvider)
+          .removeTtsModel(modelId: modelId, root: await _modelRoot());
+      if (mounted) setState(() => _catalog = _loadCatalog());
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(error.toString())));
+      }
+    }
   }
 }
 
