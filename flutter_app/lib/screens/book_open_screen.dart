@@ -72,6 +72,21 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen>
       PlaybackFirstResourcePolicy();
   String? _readerJourneyId;
 
+  void _showConversionError(Object error) {
+    if (!mounted) return;
+    final detail = error.toString();
+    final l10n = AppLocalizations.of(context)!;
+    final message =
+        detail.contains('NO_MODEL') ||
+            detail.contains('ENGINE_UNAVAILABLE') ||
+            detail.contains('No TTS engine')
+        ? '${l10n.conversionFailed}: ${l10n.settingsTitle}'
+        : '${l10n.conversionFailed}: $detail';
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
+  }
+
   @override
   void initState() {
     super.initState();
@@ -279,13 +294,16 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen>
       chunks.addAll(SpeechTextPolicy.splitForAndroidTts(chapter.text));
     }
     if (chunks.isEmpty) return;
-    final locale = SpeechTextPolicy.detectLocale(fulltext.chapters.map((chapter) => chapter.text));
-    debugPrint('BookOpenScreen: Android TTS fallback locale=$locale chunks=${chunks.length}');
+    final locale = SpeechTextPolicy.detectLocale(
+      fulltext.chapters.map((chapter) => chapter.text),
+    );
+    debugPrint(
+      'BookOpenScreen: Android TTS fallback locale=$locale chunks=${chunks.length}',
+    );
     try {
-      await const MethodChannel('epub_to_mp3/android_tts').invokeMethod<void>(
-        'speakQueued',
-        {'texts': chunks, 'locale': locale},
-      );
+      await const MethodChannel(
+        'epub_to_mp3/android_tts',
+      ).invokeMethod<void>('speakQueued', {'texts': chunks, 'locale': locale});
     } on PlatformException {
       await speech.speak(chunks.first, locale: locale);
     }
@@ -392,6 +410,7 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen>
         });
       } catch (error) {
         debugPrint('BookOpenScreen: embedded conversion failed: $error');
+        _showConversionError(error);
         if (!mounted) return;
         setState(() {
           _isConverting = false;
@@ -408,6 +427,7 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen>
       await _startBackendConversion();
     } catch (error) {
       if (!mounted) return;
+      _showConversionError(error);
       unawaited(_speakCurrentChapterOffline());
       setState(() {
         _isConverting = false;
@@ -431,9 +451,11 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen>
       final edgeVoice = detectedLocale == 'en-US'
           ? 'en-US-AvaMultilingualNeural'
           : detectedLocale == 'pt-BR'
-              ? 'pt-BR-ThalitaMultilingualNeural'
-              : '$detectedLocale-Standard-A';
-      debugPrint('BookOpenScreen: Edge voice=$edgeVoice locale=$detectedLocale');
+          ? 'pt-BR-ThalitaMultilingualNeural'
+          : '$detectedLocale-Standard-A';
+      debugPrint(
+        'BookOpenScreen: Edge voice=$edgeVoice locale=$detectedLocale',
+      );
       final chapters = <ChapterProgress>[];
       final player = ref.read(globalAudioPlayerProvider);
       var startedPlayback = false;
@@ -465,9 +487,11 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen>
           await player.play();
         }
         if (mounted) {
-          setState(() => _playableChapters
-            ..clear()
-            ..addAll(chapters));
+          setState(
+            () => _playableChapters
+              ..clear()
+              ..addAll(chapters),
+          );
         }
       }
       if (mounted) {
