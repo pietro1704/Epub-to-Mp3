@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import os
 import pathlib
-import urllib.request
+
 from pathlib import Path
 from typing import Optional, Protocol
 
@@ -101,8 +101,14 @@ class TTSFactory:
                 shutil.which("piper") or (Path(sys.executable).parent / "piper").exists()
             )
         if piper_available:
-            # Piper downloads models on demand, so expose it whenever the binary exists.
-            engines.append("piper")
+            # A binary alone is not enough: model installation is explicit in
+            # Settings and conversion must not download model weights.
+            try:
+                self._find_piper_model()
+            except FileNotFoundError:
+                pass
+            else:
+                engines.append("piper")
 
         return engines
 
@@ -275,18 +281,18 @@ class TTSFactory:
                     name = candidate.stem.lower()
                     if any(name.startswith(prefix) for prefix in preferred_prefixes):
                         return candidate
-                # Preferred language not found — try downloading before using wrong-language fallback
+                # Preferred language not found: model installation belongs to
+                # Settings/ModelStore, never to the conversion path.
                 continue
 
             # No language preference: use first available model in directory
             return candidates[0]
 
-        downloaded = self._download_default_piper_model(preferred_code)
-        if downloaded:
-            return downloaded
-
-        # No model in the requested language is available and the on-demand
-        # download failed. Picking *any* installed model here used to be the
+        # No model in the requested language is installed. Picking *any* model
+        # here would be a silent wrong-language fallback and conversion must
+        # never download a model as a side effect.
+        #
+        # Picking *any* installed model here used to be the
         # silent fallback, but it produces unlistenable output: a pt-BR
         # audiobook narrated by `en_US-lessac-medium` reads Portuguese with
         # English phonemes (the Carl regression). Refuse instead so the
@@ -309,30 +315,5 @@ class TTSFactory:
                 return candidates[0]
 
         raise FileNotFoundError("No Piper models were found")
-
-    def _download_default_piper_model(self, preferred_code: Optional[str]) -> Optional[Path]:
-        code = (preferred_code or "").split("-", 1)[0].lower()
-        sources = DEFAULT_PIPER_SOURCES.get(code) or DEFAULT_PIPER_SOURCES.get("en")
-        if not sources:
-            return None
-
-        # Prioridade: PIPER_MODEL_DIR env, depois root/models
-        project_root = self._resolve_project_root()
-        target_dir = Path(os.getenv("PIPER_MODEL_DIR") or project_root / "models")
-        target_dir.mkdir(parents=True, exist_ok=True)
-
-        model_path = target_dir / sources["model"]
-        config_path = target_dir / sources["config"]
-
-        try:
-            if not model_path.exists():
-                urllib.request.urlretrieve(sources["model_url"], model_path)
-            if not config_path.exists():
-                urllib.request.urlretrieve(sources["config_url"], config_path)
-        except Exception:
-            return None
-
-        return model_path if model_path.exists() else None
-
 
 __all__ = ["TTSFactory", "TTSEngine"]
