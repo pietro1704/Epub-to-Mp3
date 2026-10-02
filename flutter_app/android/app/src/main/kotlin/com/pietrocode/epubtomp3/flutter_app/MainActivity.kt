@@ -435,6 +435,18 @@ class MainActivity : AudioServiceActivity() {
                         }
                     }
                 }
+                "ttsModelMetadata" -> {
+                    val modelId = call.argument<String>("modelId")
+                    val root = call.argument<String>("root")
+                    if (modelId.isNullOrBlank() || root.isNullOrBlank()) {
+                        result.error("BAD_ARGS", "modelId and root are required", null)
+                    } else {
+                        converterExecutor.execute {
+                            val value = nativeTtsModelMetadata(modelId, root)
+                            runOnUiThread { result.success(value) }
+                        }
+                    }
+                }
                 "ttsModelRemove" -> {
                     val modelId = call.argument<String>("modelId")
                     val root = call.argument<String>("root")
@@ -522,6 +534,7 @@ class MainActivity : AudioServiceActivity() {
     private external fun nativeTtsModelInstall(modelId: String, url: String, sha256: String, root: String): String?
     private external fun nativeTtsModelInstallManifest(modelId: String, artifactsJson: String, root: String): String?
     private external fun nativeTtsModelInstallCatalogManifest(modelId: String, root: String): String?
+    private external fun nativeTtsModelMetadata(modelId: String, root: String): String?
     private external fun nativeTtsModelRemove(modelId: String, root: String): Boolean
 
     private external fun nativeLastError(): String

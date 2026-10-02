@@ -1014,6 +1014,41 @@ mod android_jni {
     }
 
     #[no_mangle]
+    pub extern "system" fn Java_com_pietrocode_epubtomp3_flutter_1app_MainActivity_nativeTtsModelMetadata(
+        mut env: JNIEnv<'_>,
+        _class: JClass<'_>,
+        model_id: JString<'_>,
+        root: JString<'_>,
+    ) -> jstring {
+        let model_id = match read_string(&mut env, model_id) {
+            Ok(value) => value,
+            Err(_) => return std::ptr::null_mut(),
+        };
+        let root = match read_string(&mut env, root) {
+            Ok(value) => value,
+            Err(_) => return std::ptr::null_mut(),
+        };
+        let model_id = match CString::new(model_id) {
+            Ok(value) => value,
+            Err(_) => return std::ptr::null_mut(),
+        };
+        let root = match CString::new(root) {
+            Ok(value) => value,
+            Err(_) => return std::ptr::null_mut(),
+        };
+        let metadata = unsafe { converter_tts_model_metadata(model_id.as_ptr(), root.as_ptr()) };
+        if metadata.is_null() {
+            return std::ptr::null_mut();
+        }
+        let value = unsafe { CStr::from_ptr(metadata) }
+            .to_string_lossy()
+            .into_owned();
+        unsafe { converter_string_free(metadata) };
+        env.new_string(value)
+            .map_or(std::ptr::null_mut(), |value| value.into_raw())
+    }
+
+    #[no_mangle]
     pub extern "system" fn Java_com_pietrocode_epubtomp3_flutter_1app_MainActivity_nativeTtsModelRemove(
         mut env: JNIEnv<'_>,
         _class: JClass<'_>,

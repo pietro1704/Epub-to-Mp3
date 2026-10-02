@@ -48,6 +48,12 @@ class FakeConverter implements EmbeddedConverter {
   }) async => '$root/$modelId';
 
   @override
+  Future<String?> ttsModelMetadata({
+    required String modelId,
+    required String root,
+  }) async => null;
+
+  @override
   Future<bool> removeTtsModel({
     required String modelId,
     required String root,

@@ -57,6 +57,10 @@ abstract interface class EmbeddedConverter {
     required String modelId,
     required String root,
   }) => throw EmbeddedConverterUnavailable('TTS model removal is unavailable');
+  Future<String?> ttsModelMetadata({
+    required String modelId,
+    required String root,
+  }) => throw EmbeddedConverterUnavailable('TTS model metadata is unavailable');
   Future<String> installTtsModelFromCatalog({
     required String modelId,
     required String root,
@@ -263,6 +267,15 @@ class AndroidEmbeddedConverter implements EmbeddedConverter {
   }
 
   @override
+  Future<String?> ttsModelMetadata({
+    required String modelId,
+    required String root,
+  }) async => await _channel.invokeMethod<String>('ttsModelMetadata', {
+    'modelId': modelId,
+    'root': root,
+  });
+
+  @override
   Future<bool> removeTtsModel({
     required String modelId,
     required String root,
@@ -310,6 +323,12 @@ class UnavailableEmbeddedConverter implements EmbeddedConverter {
 
   @override
   Future<String> installTtsModelFromCatalog({
+    required String modelId,
+    required String root,
+  }) => throw EmbeddedConverterUnavailable();
+
+  @override
+  Future<String?> ttsModelMetadata({
     required String modelId,
     required String root,
   }) => throw EmbeddedConverterUnavailable();
