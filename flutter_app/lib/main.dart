@@ -19,6 +19,7 @@ import 'models/app_settings.dart';
 import 'services/offline_cache_eviction.dart';
 import 'state/providers.dart';
 import 'services/embedded_converter.dart';
+import 'services/tts_model_adapter_registry.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -31,6 +32,14 @@ Future<void> main() async {
     if (converter is AndroidEmbeddedConverter) {
       unawaited(converter.isRuntimeLoaded());
     }
+  }
+  if (defaultTargetPlatform == TargetPlatform.macOS ||
+      defaultTargetPlatform == TargetPlatform.linux ||
+      defaultTargetPlatform == TargetPlatform.windows) {
+    // Desktop model management uses the same Rust catalog and ABI as mobile.
+    // Conversion registration remains separate until the desktop native
+    // conversion bridge is available for that target.
+    TtsModelAdapterRegistry.enableDesktop();
   }
   // Render the shell before any disk/plugin initialization. Android 9 devices
   // must not remain on the launch window while SharedPreferences is opening.
