@@ -58,6 +58,12 @@ pub fn sha256_file(path: impl AsRef<Path>) -> io::Result<String> {
     Ok(hex::encode(hasher.finalize()))
 }
 
+pub fn sha256_bytes(value: &[u8]) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(value);
+    hex::encode(hasher.finalize())
+}
+
 pub fn sha1_file(path: impl AsRef<Path>) -> io::Result<String> {
     let mut file = File::open(path)?;
     let mut hasher = Sha1::new();
@@ -180,6 +186,16 @@ mod tests {
             normalized_text_hash(" hello\n world "),
             normalized_text_hash("hello world")
         );
+        assert_eq!(sha256_bytes(b"hello"), sha256_file_for_test(b"hello"));
+    }
+
+    fn sha256_file_for_test(value: &[u8]) -> String {
+        let dir = tempfile_dir();
+        let path = dir.join("source.epub");
+        fs::write(&path, value).unwrap();
+        let hash = sha256_file(&path).unwrap();
+        fs::remove_dir_all(dir).unwrap();
+        hash
     }
 
     #[test]

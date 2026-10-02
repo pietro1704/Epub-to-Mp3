@@ -184,7 +184,10 @@ fn initial_job(id: String, f: &CreateJob) -> JobSnapshot {
 }
 
 fn snapshot_path(config: &AppConfig, job_id: &str) -> PathBuf {
-    config.paths.jobs_dir.join(format!("{job_id}.snapshot.json"))
+    config
+        .paths
+        .jobs_dir
+        .join(format!("{job_id}.snapshot.json"))
 }
 
 fn persist_snapshot(config: &AppConfig, snapshot: &JobSnapshot) -> std::io::Result<()> {
@@ -833,7 +836,9 @@ fn uuid() -> String {
         u16::from_be_bytes(bytes[4..6].try_into().unwrap()),
         u16::from_be_bytes(bytes[6..8].try_into().unwrap()),
         u16::from_be_bytes(bytes[8..10].try_into().unwrap()),
-        u64::from_be_bytes([0, 0, bytes[10], bytes[11], bytes[12], bytes[13], bytes[14], bytes[15]]),
+        u64::from_be_bytes([
+            0, 0, bytes[10], bytes[11], bytes[12], bytes[13], bytes[14], bytes[15]
+        ]),
     )
 }
 #[tokio::main]

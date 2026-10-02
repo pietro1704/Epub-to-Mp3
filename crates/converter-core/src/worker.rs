@@ -136,8 +136,11 @@ impl ConversionWorker {
         if ext != "epub" {
             return Err(WorkerError::Unsupported(ext));
         }
-        let book = epub::parse_epub(std::io::BufReader::new(fs::File::open(&request.input)?))?;
-        let book_key = cache::sha256_file(&request.input)?;
+        // Read the immutable source once: parsing the ZIP and hashing it from
+        // separate file handles doubled disk I/O for every conversion.
+        let source = fs::read(&request.input)?;
+        let book_key = cache::sha256_bytes(&source);
+        let book = epub::parse_epub(std::io::Cursor::new(&source))?;
         let cache_dir = self.config.paths.cache_dir.join(&book_key);
         let output_dir = self.config.paths.output_dir.join(&request.job_id);
         fs::create_dir_all(&cache_dir)?;
