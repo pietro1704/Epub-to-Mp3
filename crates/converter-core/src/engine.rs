@@ -37,16 +37,10 @@ pub struct EnginePolicy {
 impl Default for EnginePolicy {
     fn default() -> Self {
         Self {
-            candidates: vec![
-                EngineCandidate {
-                    name: "edge".into(),
-                    tier: FallbackTier::Primary,
-                },
-                EngineCandidate {
-                    name: "piper".into(),
-                    tier: FallbackTier::Offline,
-                },
-            ],
+            candidates: vec![EngineCandidate {
+                name: "edge".into(),
+                tier: FallbackTier::Primary,
+            }],
             concurrency: ConcurrencySettings::default(),
             cancellation: CancellationSettings::default(),
         }
@@ -183,5 +177,22 @@ impl<W> Engine<W> {
         if let Some(sink) = &self.progress {
             sink(event);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn default_policy_does_not_select_an_uninstalled_offline_engine() {
+        let policy = EnginePolicy::default();
+        assert_eq!(
+            policy
+                .candidates_in_order()
+                .map(|candidate| candidate.name.as_str())
+                .collect::<Vec<_>>(),
+            vec!["edge"]
+        );
     }
 }
