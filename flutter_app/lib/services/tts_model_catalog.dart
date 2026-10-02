@@ -36,8 +36,9 @@ class TtsModelDescriptor {
     int? androidApi,
   }) {
     if (!platforms.contains(platform)) return false;
-    if (!languages.contains(language.split('-').first.toLowerCase()))
+    if (!languages.contains(language.split('-').first.toLowerCase())) {
       return false;
+    }
     return platform != 'android' ||
         minimumAndroidApi == null ||
         (androidApi ?? 0) >= minimumAndroidApi!;

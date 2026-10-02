@@ -7,7 +7,31 @@ import '../models/ebook_fulltext.dart';
 import '../models/job_snapshot.dart';
 import '../models/session_record.dart';
 
-/// Thin wrapper over `dio` for the FastAPI backend.
+class ApiContract {
+  const ApiContract({
+    required this.version,
+    required this.backend,
+    required this.capabilities,
+  });
+
+  factory ApiContract.fromJson(Map<String, dynamic> json) {
+    return ApiContract(
+      version: json['version'] as String? ?? '',
+      backend: json['backend'] as String? ?? '',
+      capabilities: (json['capabilities'] as List<dynamic>? ?? const [])
+          .whereType<String>()
+          .toSet(),
+    );
+  }
+
+  final String version;
+  final String backend;
+  final Set<String> capabilities;
+
+  bool supports(String capability) => capabilities.contains(capability);
+}
+
+/// Thin wrapper over the versioned Rust-compatible conversion API.
 class ApiClient {
   ApiClient(this.baseUrl, {this.configurationError})
     : _dio = Dio(
@@ -36,6 +60,12 @@ class ApiClient {
   }) async {
     final convertedJobId = await uploadAndConvert(filePath, engine: 'edge');
     return fetchFulltext(convertedJobId);
+  }
+
+  Future<ApiContract> fetchContract() async {
+    _throwIfMisconfigured();
+    final r = await _dio.get<Map<String, dynamic>>('/api/contract');
+    return ApiContract.fromJson(r.data ?? const {});
   }
 
   Future<List<SessionRecord>> fetchSessions({int last = 50}) async {

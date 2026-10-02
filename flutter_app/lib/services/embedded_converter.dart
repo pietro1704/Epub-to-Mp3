@@ -210,6 +210,7 @@ class AndroidEmbeddedConverter implements EmbeddedConverter {
     final value = await _channel.invokeMethod<String>('ttsDefaultEngine', {
       'language': language,
       'platform': platform,
+      // ignore: use_null_aware_elements
       if (androidApi != null) 'androidApi': androidApi,
     });
     if (value == null || value.isEmpty) {
@@ -235,7 +236,6 @@ class AndroidEmbeddedConverter implements EmbeddedConverter {
     return value;
   }
 
-  @override
   Future<String> installTtsModelManifest({
     required String modelId,
     required String artifactsJson,
