@@ -17,6 +17,12 @@ final class ConverterFFIAdapterTests: XCTestCase {
         XCTAssertThrowsError(try adapter.ttsDefaultEngine(language: "pt-BR", platform: "ios")) { error in
             XCTAssertEqual(error as? EmbeddedConverterError, .artifactUnavailable)
         }
+        XCTAssertThrowsError(try adapter.installTtsModel(modelID: "kokoro-82m", url: "https://example.invalid/model", sha256: String(repeating: "0", count: 64), root: "/tmp/models")) { error in
+            XCTAssertEqual(error as? EmbeddedConverterError, .artifactUnavailable)
+        }
+        XCTAssertThrowsError(try adapter.removeTtsModel(modelID: "kokoro-82m", root: "/tmp/models")) { error in
+            XCTAssertEqual(error as? EmbeddedConverterError, .artifactUnavailable)
+        }
     }
 
     func testInvalidArtifactReturnsTypedUnavailableErrorWithoutRuntimeConversion() throws {

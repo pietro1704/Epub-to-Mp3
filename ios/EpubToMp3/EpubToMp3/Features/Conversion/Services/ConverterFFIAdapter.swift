@@ -8,6 +8,8 @@ private typealias ConverterStringFree = @convention(c) (UnsafeMutablePointer<CCh
 private typealias ConverterLastError = @convention(c) () -> UnsafeMutablePointer<CChar>?
 private typealias ConverterTtsModels = @convention(c) () -> UnsafeMutablePointer<CChar>?
 private typealias ConverterTtsDefaultEngine = @convention(c) (UnsafePointer<CChar>?, UnsafePointer<CChar>?, UInt32) -> UnsafeMutablePointer<CChar>?
+private typealias ConverterTtsModelInstall = @convention(c) (UnsafePointer<CChar>?, UnsafePointer<CChar>?, UnsafePointer<CChar>?, UnsafePointer<CChar>?) -> UnsafeMutablePointer<CChar>?
+private typealias ConverterTtsModelRemove = @convention(c) (UnsafePointer<CChar>?, UnsafePointer<CChar>?) -> Bool
 
 /// Errors exposed by the optional embedded converter seam.
 enum EmbeddedConverterError: Error, LocalizedError, Equatable {
@@ -36,12 +38,14 @@ final class ConverterFFIAdapter: EmbeddedConverter {
     private let lastError: () -> UnsafeMutablePointer<CChar>?
     private let ttsModelsJSON: () -> UnsafeMutablePointer<CChar>?
     private let ttsDefaultEngine: (UnsafePointer<CChar>?, UnsafePointer<CChar>?, UInt32) -> UnsafeMutablePointer<CChar>?
+    private let ttsModelInstall: ((UnsafePointer<CChar>?, UnsafePointer<CChar>?, UnsafePointer<CChar>?, UnsafePointer<CChar>?) -> UnsafeMutablePointer<CChar>?)?
+    private let ttsModelRemove: ((UnsafePointer<CChar>?, UnsafePointer<CChar>?) -> Bool)?
     private var _open: ConverterSessionOpen = { _ in nil }
 
     init(bundle: Bundle = .main) {
         guard let url = bundle.url(forResource: "converter_ffi", withExtension: "dylib"),
               let library = dlopen(url.path, RTLD_NOW | RTLD_LOCAL) else {
-            handle = nil; close = { _ in }; metadata = { _ in nil }; freeString = { _ in }; lastError = { nil }; ttsModelsJSON = { nil }; ttsDefaultEngine = { _, _, _ in nil }; return
+            handle = nil; close = { _ in }; metadata = { _ in nil }; freeString = { _ in }; lastError = { nil }; ttsModelsJSON = { nil }; ttsDefaultEngine = { _, _, _ in nil }; ttsModelInstall = nil; ttsModelRemove = nil; return
         }
         func symbol<T>(_ name: String, as: T.Type) -> T? { dlsym(library, name).map { unsafeBitCast($0, to: T.self) } }
         guard let open: ConverterSessionOpen = symbol("converter_session_open", as: ConverterSessionOpen.self),
@@ -51,7 +55,7 @@ final class ConverterFFIAdapter: EmbeddedConverter {
               let error: ConverterLastError = symbol("converter_last_error", as: ConverterLastError.self),
               let models: ConverterTtsModels = symbol("converter_tts_models_json", as: ConverterTtsModels.self),
               let defaultEngine: ConverterTtsDefaultEngine = symbol("converter_tts_default_engine", as: ConverterTtsDefaultEngine.self) else {
-            dlclose(library); handle = nil; close = { _ in }; metadata = { _ in nil }; freeString = { _ in }; lastError = { nil }; ttsModelsJSON = { nil }; ttsDefaultEngine = { _, _, _ in nil }; return
+            dlclose(library); handle = nil; close = { _ in }; metadata = { _ in nil }; freeString = { _ in }; lastError = { nil }; ttsModelsJSON = { nil }; ttsDefaultEngine = { _, _, _ in nil }; ttsModelInstall = nil; ttsModelRemove = nil; return
         }
         handle = library
         close = { value in dispose(value) }
@@ -60,6 +64,8 @@ final class ConverterFFIAdapter: EmbeddedConverter {
         lastError = error
         ttsModelsJSON = { models() }
         ttsDefaultEngine = { language, platform, api in defaultEngine(language, platform, api) }
+        ttsModelInstall = symbol("converter_tts_model_install", as: ConverterTtsModelInstall.self)
+        ttsModelRemove = symbol("converter_tts_model_remove", as: ConverterTtsModelRemove.self)
         _open = open
     }
 
@@ -92,6 +98,34 @@ final class ConverterFFIAdapter: EmbeddedConverter {
         }
         defer { freeString(value) }
         return engine
+    }
+
+    func installTtsModel(modelID: String, url: String, sha256: String, root: String) throws -> URL {
+        guard handle != nil, let install = ttsModelInstall else { throw EmbeddedConverterError.artifactUnavailable }
+        let result = modelID.withCString { modelPointer in
+            url.withCString { urlPointer in
+                sha256.withCString { hashPointer in
+                    root.withCString { rootPointer in
+                        install(modelPointer, urlPointer, hashPointer, rootPointer)
+                    }
+                }
+            }
+        }
+        guard let value = result, let path = String(validatingUTF8: value) else {
+            throw EmbeddedConverterError.conversionFailed(readError())
+        }
+        defer { freeString(value) }
+        return URL(fileURLWithPath: path)
+    }
+
+    func removeTtsModel(modelID: String, root: String) throws {
+        guard handle != nil, let remove = ttsModelRemove else { throw EmbeddedConverterError.artifactUnavailable }
+        let removed = modelID.withCString { modelPointer in
+            root.withCString { rootPointer in
+                remove(modelPointer, rootPointer)
+            }
+        }
+        guard removed else { throw EmbeddedConverterError.conversionFailed(readError()) }
     }
 
     private func readError() -> String {
