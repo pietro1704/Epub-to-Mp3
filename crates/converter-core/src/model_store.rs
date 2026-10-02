@@ -35,6 +35,8 @@ pub enum ModelStoreError {
     InvalidArtifactName(String),
     #[error("model manifest is empty")]
     EmptyManifest,
+    #[error("unknown TTS model: {0}")]
+    UnknownModel(String),
 }
 
 #[derive(Debug, Clone)]
@@ -59,6 +61,25 @@ impl ModelStore {
 
     pub fn model_path(&self, model_id: &str) -> PathBuf {
         self.root.join(model_id).join("model.bin")
+    }
+
+    pub fn catalog_manifest(model_id: &str) -> Result<ModelManifest, ModelStoreError> {
+        let model = crate::model_catalog::MODELS
+            .iter()
+            .find(|model| model.id == model_id)
+            .ok_or_else(|| ModelStoreError::UnknownModel(model_id.to_owned()))?;
+        Ok(ModelManifest {
+            model_id: model.id.to_owned(),
+            artifacts: model
+                .artifacts
+                .iter()
+                .map(|artifact| ModelArtifact {
+                    name: artifact.name.to_owned(),
+                    url: artifact.url.to_owned(),
+                    sha256: artifact.sha256.to_owned(),
+                })
+                .collect(),
+        })
     }
 
     pub async fn install(
@@ -243,5 +264,20 @@ mod tests {
         };
         let error = store.install_manifest(&manifest).await.unwrap_err();
         assert!(matches!(error, ModelStoreError::InvalidArtifactName(_)));
+    }
+
+    #[test]
+    fn builds_verified_manifest_from_catalog() {
+        let manifest = ModelStore::catalog_manifest("kokoro-82m").unwrap();
+        assert_eq!(manifest.artifacts.len(), 5);
+        assert_eq!(manifest.artifacts[0].sha256.len(), 64);
+    }
+
+    #[test]
+    fn rejects_unknown_catalog_model() {
+        assert!(matches!(
+            ModelStore::catalog_manifest("missing"),
+            Err(ModelStoreError::UnknownModel(_))
+        ));
     }
 }
