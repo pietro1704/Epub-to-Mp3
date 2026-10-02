@@ -283,6 +283,11 @@ final StateProvider<String?> currentlyPlayingBookIdProvider =
       return ref.read(currentlyReadingBookIdProvider);
     });
 
+/// Starts local conversion when the persistent player is pressed before the
+/// book has any playable audio queued.
+final playbackRequestProvider =
+    StateProvider<Future<void> Function()?>((ref) => null);
+
 /// Singleton audio player for on-device playback. Not keyed by jobId — this
 /// Flutter app runs everything locally, so one player instance suffices.
 /// Typed as the interface so tests can substitute a [FakeAudioPlayerService].

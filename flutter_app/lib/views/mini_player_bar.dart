@@ -174,7 +174,19 @@ class MiniPlayerBar extends ConsumerWidget {
                             : Icons.play_arrow_rounded,
                         size: 28,
                       ),
-                      onPressed: player.togglePlayPause,
+                      onPressed: () async {
+                        if (player.chapters.isEmpty) {
+                          final request = ref.read(playbackRequestProvider);
+                          if (request != null) {
+                            await request();
+                          }
+                          if (player.chapters.isNotEmpty) {
+                            await player.play();
+                          }
+                          return;
+                        }
+                        player.togglePlayPause();
+                      },
                     ),
                   );
                 },

@@ -9,6 +9,8 @@ pub mod engine;
 pub mod epub;
 pub mod ingestion;
 pub mod jobs;
+pub mod model_catalog;
+pub mod model_store;
 pub mod paths;
 pub mod piper;
 pub mod text;

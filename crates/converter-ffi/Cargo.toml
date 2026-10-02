@@ -21,6 +21,7 @@ serde = { version = "1", features = ["derive"] }
 jni = { version = "0.21", optional = true }
 piper_runtime = { package = "piper-runtime", path = "../../native/piper-runtime", optional = true, features = ["onnxruntime", "piper-inference"] }
 rustls = { version = "0.23", default-features = false, features = ["ring"] }
+tokio = { version = "1", features = ["rt", "time", "net", "sync"] }
 
 [dev-dependencies]
 tempfile = "3"

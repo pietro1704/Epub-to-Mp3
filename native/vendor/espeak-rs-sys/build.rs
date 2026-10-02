@@ -230,6 +230,19 @@ fn main() {
         config.define("USE_LIBPCAUDIO", "OFF");
     }
 
+    if target == "aarch64-linux-android" {
+        config
+            .define("ANDROID_ABI", "arm64-v8a")
+            .define("ANDROID_PLATFORM", "android-24");
+        let ndk_root = env::var("ANDROID_NDK_ROOT").expect("ANDROID_NDK_ROOT is required for Android builds");
+        println!(
+            "cargo:rustc-link-search=native={}/toolchains/llvm/prebuilt/darwin-x86_64/sysroot/usr/lib/aarch64-linux-android",
+            ndk_root
+        );
+        println!("cargo:rustc-link-lib=static=c++_static");
+        println!("cargo:rustc-link-lib=static=c++abi");
+    }
+
     // General
     config
         .profile(&profile)

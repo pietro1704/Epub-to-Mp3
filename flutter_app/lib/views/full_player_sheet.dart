@@ -1,5 +1,8 @@
 import 'dart:async';
+import 'dart:io';
 import 'dart:typed_data';
+
+import 'package:path_provider/path_provider.dart';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -53,8 +56,24 @@ class _FullPlayerSheetState extends ConsumerState<FullPlayerSheet> {
     var completed = 0;
     for (final ch in chapters) {
       final url = ch.downloadUrl;
-      if (url == null || url.startsWith('file:')) {
+      if (url == null || url.isEmpty) {
         completed++;
+        if (mounted) setState(() => _downloadStatus = '$completed/${chapters.length}');
+        continue;
+      }
+      if (url.startsWith('file:')) {
+        try {
+          final source = File.fromUri(Uri.parse(url));
+          final dir = await getApplicationDocumentsDirectory();
+          final folder = Directory('${dir.path}/downloads/${widget.bookId ?? 'unknown'}')
+            ..createSync(recursive: true);
+          final target = File('${folder.path}/chapter_${ch.index}.mp3');
+          if (await source.exists() && await source.length() > 0) {
+            await source.copy(target.path);
+          }
+        } catch (_) {}
+        completed++;
+        if (mounted) setState(() => _downloadStatus = '$completed/${chapters.length}');
         continue;
       }
       final fullUrl = url.startsWith('http')
@@ -72,8 +91,20 @@ class _FullPlayerSheetState extends ConsumerState<FullPlayerSheet> {
 
     if (!mounted) return;
 
-    // Mark book as offline
+    var downloadedCount = 0;
     if (widget.bookId != null) {
+      final dir = await getApplicationDocumentsDirectory();
+      for (final ch in chapters) {
+        final file = File(
+          '${dir.path}/downloads/${widget.bookId}/chapter_${ch.index}.mp3',
+        );
+        if (await file.exists() && await file.length() > 0) {
+          downloadedCount++;
+        }
+      }
+    }
+    // Mark book as offline only after every chapter has a local copy.
+    if (widget.bookId != null && downloadedCount == chapters.length) {
       final library = ref.read(libraryStoreProvider);
       final idx = library.books.indexWhere((b) => b.id == widget.bookId);
       if (idx >= 0) {

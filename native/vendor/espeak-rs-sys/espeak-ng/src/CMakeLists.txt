@@ -31,7 +31,9 @@ if (NOT WIN32)
     DEPENDS espeak-ng-bin
   )
 endif()
-install(TARGETS espeak-ng-bin)
+if (NOT CMAKE_SYSTEM_NAME STREQUAL "iOS")
+  install(TARGETS espeak-ng-bin)
+endif()
 install(DIRECTORY include/espeak include/espeak-ng TYPE INCLUDE)
 
 if (ESPEAK_COMPAT AND NOT WIN32)

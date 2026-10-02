@@ -13,9 +13,8 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io' show Directory, File, Platform;
-import 'dart:typed_data';
-
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
 
@@ -29,9 +28,11 @@ import '../services/cover_writeback.dart';
 
 import '../services/local_conversion_job.dart';
 import '../services/latency_observation.dart';
-import '../services/background_conversion_scheduler.dart';
+
 import '../services/playback_first_resource_policy.dart';
 import '../services/protected_audio_storage_guard.dart';
+import '../services/edge_web_tts.dart';
+import '../services/speech_text_policy.dart';
 import '../services/resume_position_router.dart';
 import '../services/resume_restoration_guard.dart';
 import '../services/sse_subscription_lifecycle.dart';
@@ -75,6 +76,11 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        ref.read(playbackRequestProvider.notifier).state = _startConversion;
+      }
+    });
     final book = ref
         .read(libraryStoreProvider)
         .books
@@ -210,10 +216,9 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen>
         return;
       }
       final filePath = await library.ensureSupportedBookPath(book);
-      final fulltext = await ref.read(embeddedConverterProvider).parse(
-            inputPath: filePath,
-            jobId: loadingForBookId,
-          );
+      final fulltext = await ref
+          .read(embeddedConverterProvider)
+          .parse(inputPath: filePath, jobId: loadingForBookId);
       if (!mounted || !_loadGuard.isCurrent(gen)) return;
       await cache.save(fulltext, loadingForBookId);
       if (!mounted || !_loadGuard.isCurrent(gen)) return;
@@ -262,44 +267,42 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen>
     final fulltext = _fulltext;
     if (fulltext == null || fulltext.chapters.isEmpty) return;
     if (!Platform.isAndroid) return;
-    // Embedded mode must never fall back to Android TextToSpeech.
-    if (!mounted) return;
-    setState(() {});
+    final speech = ref.read(androidSpeechFallbackProvider);
+    var available = await speech.isAvailable();
+    for (var attempt = 0; !available && attempt < 20; attempt++) {
+      await Future<void>.delayed(const Duration(milliseconds: 500));
+      available = await speech.isAvailable();
+    }
+    if (!available) return;
+    final chunks = <String>[];
+    for (final chapter in fulltext.chapters) {
+      chunks.addAll(SpeechTextPolicy.splitForAndroidTts(chapter.text));
+    }
+    if (chunks.isEmpty) return;
+    final locale = SpeechTextPolicy.detectLocale(fulltext.chapters.map((chapter) => chapter.text));
+    debugPrint('BookOpenScreen: Android TTS fallback locale=$locale chunks=${chunks.length}');
+    try {
+      await const MethodChannel('epub_to_mp3/android_tts').invokeMethod<void>(
+        'speakQueued',
+        {'texts': chunks, 'locale': locale},
+      );
+    } on PlatformException {
+      await speech.speak(chunks.first, locale: locale);
+    }
   }
-
-  // ignore: unused_element
-  String _offlineLocale(String text) {
-    final lower = text.toLowerCase();
-    if (RegExp(r'\b(the|and|this|that)\b').hasMatch(lower)) return 'en-US';
-    if (RegExp(r'\b(el|la|los|una|que)\b').hasMatch(lower)) return 'es-ES';
-    if (RegExp(r'\b(le|une|les|des|que)\b').hasMatch(lower)) return 'fr-FR';
-    return 'pt-BR';
-  }
-
-  static const _defaultVoices = <String, String>{
-    'pt': 'pt-BR-AntonioNeural',
-    'en': 'en-US-GuyNeural',
-    'es': 'es-MX-JorgeNeural',
-    'fr': 'fr-FR-HenriNeural',
-    'de': 'de-DE-ConradNeural',
-    'it': 'it-IT-DiegoNeural',
-    'ja': 'ja-JP-KeitaNeural',
-    'zh': 'zh-CN-YunxiNeural',
-  };
 
   Future<void> _startConversion() async {
-    debugPrint('BookOpenScreen: start conversion requested for ${widget.bookId}');
+    debugPrint(
+      'BookOpenScreen: start conversion requested for ${widget.bookId}',
+    );
     final ft = _fulltext;
     if (ft == null || ft.chapters.isEmpty) return;
 
-    setState(() {
-      _isConverting = true;
-      _playableChapters.clear();
-      // Reset the latched guard so the resume restoration retries for
-      // the new conversion run.
-      _resumeGuard = ResumeRestorationGuard();
-    });
-
+    final useWebEdge = Platform.isAndroid;
+    if (useWebEdge) {
+      await _startEdgeWebConversion(ft);
+      return;
+    }
     if (Platform.isAndroid) {
       try {
         final library = ref.read(libraryStoreProvider);
@@ -328,7 +331,9 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen>
         final coverName = manifestData['cover'] as String?;
         if (coverName != null && coverName.isNotEmpty) {
           final coverFile = File(
-            manifestIsInline ? '$outputDir/$coverName' : '${manifestFile.parent.path}/$coverName',
+            manifestIsInline
+                ? '$outputDir/$coverName'
+                : '${manifestFile.parent.path}/$coverName',
           );
           if (await coverFile.exists()) {
             final bytes = await coverFile.readAsBytes();
@@ -359,13 +364,17 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen>
           if (!await audioFile.exists() || await audioFile.length() == 0) {
             throw StateError('Rust converter returned invalid chapter audio');
           }
-          audioFiles.add(ChapterProgress(
-            index: i,
-            name: i < ft.chapters.length ? ft.chapters[i].displayTitle : 'Chapter ${i + 1}',
-            status: 'completed',
-            downloadUrl: audioFile.uri.toString(),
-            progressRatio: 1.0,
-          ));
+          audioFiles.add(
+            ChapterProgress(
+              index: i,
+              name: i < ft.chapters.length
+                  ? ft.chapters[i].displayTitle
+                  : 'Chapter ${i + 1}',
+              status: 'completed',
+              downloadUrl: audioFile.uri.toString(),
+              progressRatio: 1.0,
+            ),
+          );
         }
         if (audioFiles.isEmpty) {
           throw StateError('Rust converter returned no valid chapter audio');
@@ -403,6 +412,74 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen>
       setState(() {
         _isConverting = false;
       });
+    }
+  }
+
+  Future<void> _startEdgeWebConversion(EbookFulltext fulltext) async {
+    setState(() {
+      _isConverting = true;
+      _playableChapters.clear();
+    });
+    try {
+      final docsDir = await getApplicationDocumentsDirectory();
+      final outDir = Directory('${docsDir.path}/audiobooks/${widget.bookId}')
+        ..createSync(recursive: true);
+      final edge = EdgeWebTts();
+      final detectedLocale = SpeechTextPolicy.detectLocale(
+        fulltext.chapters.map((chapter) => chapter.text),
+      );
+      final edgeVoice = detectedLocale == 'en-US'
+          ? 'en-US-AvaMultilingualNeural'
+          : detectedLocale == 'pt-BR'
+              ? 'pt-BR-ThalitaMultilingualNeural'
+              : '$detectedLocale-Standard-A';
+      debugPrint('BookOpenScreen: Edge voice=$edgeVoice locale=$detectedLocale');
+      final chapters = <ChapterProgress>[];
+      final player = ref.read(globalAudioPlayerProvider);
+      var startedPlayback = false;
+      for (var i = 0; i < fulltext.chapters.length; i++) {
+        final chapter = fulltext.chapters[i];
+        final path = '${outDir.path}/chapter_${chapter.index}.mp3';
+        final output = File(path);
+        if (chapter.text.trim().isEmpty) {
+          continue;
+        }
+        if (!await output.exists() || await output.length() == 0) {
+          final audio = await edge.synthesize(chapter.text, voice: edgeVoice);
+          if (audio.isEmpty) throw StateError('Edge returned empty audio');
+          await output.writeAsBytes(audio, flush: true);
+        }
+        final progress = ChapterProgress(
+          index: i,
+          name: chapter.displayTitle,
+          status: 'completed',
+          downloadUrl: 'file://$path',
+          chars: chapter.text.length,
+          progressRatio: 1,
+        );
+        chapters.add(progress);
+        await player.setQueue(List.of(chapters));
+        ref.read(currentlyPlayingBookIdProvider.notifier).state = widget.bookId;
+        if (!startedPlayback) {
+          startedPlayback = true;
+          await player.play();
+        }
+        if (mounted) {
+          setState(() => _playableChapters
+            ..clear()
+            ..addAll(chapters));
+        }
+      }
+      if (mounted) {
+        setState(() {
+          _isConverting = false;
+          _playableChapters.addAll(chapters);
+        });
+      }
+    } catch (error) {
+      debugPrint('BookOpenScreen: Edge web conversion failed: $error');
+      await _speakCurrentChapterOffline();
+      if (mounted) setState(() => _isConverting = false);
     }
   }
 
@@ -529,14 +606,14 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen>
     final jobId = 'local-${widget.bookId}';
     try {
       final library = ref.read(libraryStoreProvider);
-      final book = library.books.where((b) => b.id == widget.bookId).firstOrNull;
+      final book = library.books
+          .where((b) => b.id == widget.bookId)
+          .firstOrNull;
       if (book == null) throw StateError('Book is no longer in the library');
       final docsDir = await getApplicationDocumentsDirectory();
       final outDir = Directory('${docsDir.path}/audiobooks/${widget.bookId}');
       if (!await outDir.exists()) await outDir.create(recursive: true);
 
-      final voice = _defaultVoices['pt']!;
-      final scheduler = BackgroundConversionScheduler();
       final storageGuard = ProtectedAudioStorageGuard();
       final player = ref.read(globalAudioPlayerProvider);
       _setCoverOnPlayer(player);
@@ -622,39 +699,10 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen>
           ),
         );
 
-        Map<String, dynamic> result;
-        if (scheduler.isSupported) {
-          final workerId = '$jobId-${ch.index}';
-          final queued = await scheduler.enqueueChapter(
-            jobId: workerId,
-            text: ch.text,
-            voice: voice,
-            outputPath: mp3Path,
-          );
-          if (!queued) {
-            throw StateError('Could not enqueue background conversion');
-          }
-          final deadline = DateTime.now().add(const Duration(minutes: 30));
-          while (!await File(mp3Path).exists() &&
-              DateTime.now().isBefore(deadline)) {
-            await Future<void>.delayed(const Duration(seconds: 1));
-          }
-          result = await File(mp3Path).exists()
-              ? <String, dynamic>{'ok': true, 'path': mp3Path}
-              : <String, dynamic>{
-                  'ok': false,
-                  'error': 'Background conversion timed out',
-                };
-        } else {
-          final resultPath = await ref.read(embeddedConverterProvider).convert(
-            inputPath: book.filePath,
-            outputPath: mp3Path,
-          );
-          result = <String, dynamic>{
-            'ok': true,
-            'path': resultPath,
-          };
-        }
+        final resultPath = await ref
+            .read(embeddedConverterProvider)
+            .convert(inputPath: book.filePath, outputPath: mp3Path);
+        final result = <String, dynamic>{'ok': true, 'path': resultPath};
         if (!mounted) return;
         if (result['ok'] != true) {
           final error =
@@ -683,7 +731,6 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen>
         }
         job = await coordinator.completeChapter(job, ch.index, mp3Path);
         _localJob = job;
-
       }
 
       if (!mounted) return;
@@ -788,7 +835,6 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen>
     _playableChapters.clear();
     _resumeGuard = ResumeRestorationGuard();
   }
-
 
   @override
   Widget build(BuildContext context) {
@@ -903,16 +949,6 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen>
                             ) ??
                             0,
                 ),
-                if (Platform.isAndroid && !_isConverting)
-                  Positioned(
-                    right: 16,
-                    bottom: 16,
-                    child: FloatingActionButton.extended(
-                      onPressed: _startConversion,
-                      icon: const Icon(Icons.play_arrow),
-                      label: const Text('Create audio'),
-                    ),
-                  ),
                 if (_isConverting)
                   const Positioned(
                     right: 24,
@@ -923,7 +959,11 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen>
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)),
+                            SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            ),
                             SizedBox(width: 10),
                             Text('Creating audio…'),
                           ],

@@ -156,7 +156,12 @@ pub extern "C" fn piper_synthesize(
             return Err("Piper runtime is not initialized".to_owned());
         }
         let text = unsafe { CStr::from_ptr(text) }.to_string_lossy();
-        let _output = unsafe { CStr::from_ptr(output) }.to_string_lossy();
+        #[cfg(not(feature = "piper-inference"))]
+        let _ = output;
+        #[cfg(feature = "piper-inference")]
+        let output_path = unsafe { CStr::from_ptr(output) }
+            .to_string_lossy()
+            .into_owned();
         if text.trim().is_empty() {
             return Err("Piper synthesis text is empty".to_owned());
         }
@@ -174,7 +179,7 @@ pub extern "C" fn piper_synthesize(
             let (samples, sample_rate) = piper
                 .create(text.as_ref(), false, None, None, None, None)
                 .map_err(|error| error.to_string())?;
-            write_wav(Path::new(output.as_ref()), &samples, sample_rate)?;
+            write_wav(Path::new(&output_path), &samples, sample_rate)?;
             return Ok(());
         }
         #[cfg(not(feature = "piper-inference"))]

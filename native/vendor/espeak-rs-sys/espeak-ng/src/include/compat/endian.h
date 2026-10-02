@@ -125,4 +125,17 @@
 #else
 #	error platform not supported
 #endif
+
+#if defined(__APPLE__)
+#	include <libkern/OSByteOrder.h>
+#	if !defined(le16toh)
+#		define le16toh(x) OSSwapLittleToHostInt16(x)
+#	endif
+#	if !defined(le32toh)
+#		define le32toh(x) OSSwapLittleToHostInt32(x)
+#	endif
+#elif defined(__ANDROID__) && !defined(le16toh) && !defined(le32toh)
+#	define le16toh(x) (x)
+#	define le32toh(x) (x)
+#endif
 #endif

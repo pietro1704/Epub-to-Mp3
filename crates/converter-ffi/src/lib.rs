@@ -102,7 +102,7 @@ pub unsafe extern "C" fn converter_session_convert_json(
     let request = converter_core::worker::ConversionRequest {
         input: session.session.input_path().to_path_buf(),
         job_id: job,
-        engine: Some("piper".to_owned()),
+        engine: Some("edge".to_owned()),
         voice: None,
         language: None,
         no_parallel: true,
@@ -166,6 +166,145 @@ pub unsafe extern "C" fn converter_session_free(handle: *mut ConverterSession) {
 pub unsafe extern "C" fn converter_string_free(value: *mut c_char) {
     if !value.is_null() {
         drop(CString::from_raw(value));
+    }
+}
+
+/// Returns the shared TTS model catalog as an owned JSON string.
+#[no_mangle]
+pub unsafe extern "C" fn converter_tts_models_json() -> *mut c_char {
+    clear_last_error();
+    let value = match serde_json::to_string(converter_core::model_catalog::MODELS) {
+        Ok(value) => value,
+        Err(error) => return fail(error.to_string()),
+    };
+    CString::new(value).map_or_else(
+        |_| fail("model catalog contains an interior NUL byte".to_owned()),
+        CString::into_raw,
+    )
+}
+
+/// Returns the default local engine for a language and platform.
+#[no_mangle]
+pub unsafe extern "C" fn converter_tts_default_engine(
+    language: *const c_char,
+    platform: *const c_char,
+    android_api: u32,
+) -> *mut c_char {
+    clear_last_error();
+    let language = match c_string(language, "language") {
+        Ok(value) => value,
+        Err(error) => return fail(error),
+    };
+    let platform = match c_string(platform, "platform") {
+        Ok(value) => value,
+        Err(error) => return fail(error),
+    };
+    let platform = match platform.to_ascii_lowercase().as_str() {
+        "android" => converter_core::model_catalog::ModelPlatform::Android,
+        "ios" => converter_core::model_catalog::ModelPlatform::Ios,
+        "macos" => converter_core::model_catalog::ModelPlatform::Macos,
+        "linux" => converter_core::model_catalog::ModelPlatform::Linux,
+        "windows" => converter_core::model_catalog::ModelPlatform::Windows,
+        other => return fail(format!("unsupported platform: {other}")),
+    };
+    let api = (android_api > 0).then_some(android_api);
+    CString::new(converter_core::model_catalog::default_engine(
+        &language, platform, api,
+    ))
+    .map_or_else(
+        |_| fail("default engine contains an interior NUL byte".to_owned()),
+        CString::into_raw,
+    )
+}
+
+/// Installs a catalog model after downloading and verifying its SHA-256.
+/// This blocking ABI is intended for a background worker in each client.
+#[no_mangle]
+pub unsafe extern "C" fn converter_tts_model_install(
+    model_id: *const c_char,
+    url: *const c_char,
+    sha256: *const c_char,
+    root: *const c_char,
+) -> *mut c_char {
+    clear_last_error();
+    let model_id = match c_string(model_id, "model id") {
+        Ok(value) => value,
+        Err(error) => return fail(error),
+    };
+    let url = match c_string(url, "model URL") {
+        Ok(value) => value,
+        Err(error) => return fail(error),
+    };
+    let sha256 = match c_string(sha256, "model SHA-256") {
+        Ok(value) => value,
+        Err(error) => return fail(error),
+    };
+    let root = match c_string(root, "model storage root") {
+        Ok(value) => value,
+        Err(error) => return fail(error),
+    };
+    let model = match converter_core::model_catalog::MODELS
+        .iter()
+        .find(|model| model.id == model_id)
+    {
+        Some(model) => model,
+        None => return fail(format!("unknown TTS model: {model_id}")),
+    };
+    let store = converter_core::model_store::ModelStore::new(root);
+    let runtime = match tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+    {
+        Ok(runtime) => runtime,
+        Err(error) => return fail(format!("failed to start model installer: {error}")),
+    };
+    match runtime.block_on(store.install(model, Some(&url), Some(&sha256))) {
+        Ok(installed) => match CString::new(installed.path.to_string_lossy().as_bytes()) {
+            Ok(value) => value.into_raw(),
+            Err(_) => fail("installed model path contains an interior NUL byte".to_owned()),
+        },
+        Err(error) => fail(error.to_string()),
+    }
+}
+
+/// Removes a catalog model from the supplied storage root.
+#[no_mangle]
+pub unsafe extern "C" fn converter_tts_model_remove(
+    model_id: *const c_char,
+    root: *const c_char,
+) -> bool {
+    clear_last_error();
+    let model_id = match c_string(model_id, "model id") {
+        Ok(value) => value,
+        Err(error) => {
+            fail::<()>(error);
+            return false;
+        }
+    };
+    let root = match c_string(root, "model storage root") {
+        Ok(value) => value,
+        Err(error) => {
+            fail::<()>(error);
+            return false;
+        }
+    };
+    let store = converter_core::model_store::ModelStore::new(root);
+    let runtime = match tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+    {
+        Ok(runtime) => runtime,
+        Err(error) => {
+            fail::<()>(error.to_string());
+            return false;
+        }
+    };
+    match runtime.block_on(store.remove(&model_id)) {
+        Ok(()) => true,
+        Err(error) => {
+            fail::<()>(error.to_string());
+            false
+        }
     }
 }
 
@@ -364,7 +503,7 @@ mod android_jni {
     use super::*;
     use jni::{
         objects::{JClass, JString},
-        sys::jstring,
+        sys::{jboolean, jint, jstring},
         JNIEnv,
     };
 
@@ -394,7 +533,7 @@ mod android_jni {
             }
             #[cfg(not(feature = "piper-runtime"))]
             {
-                piper_runtime_status()
+                unsafe { piper_runtime_status() }
             }
         };
         let value = serde_json::json!({
@@ -516,6 +655,133 @@ mod android_jni {
         env.new_string(value)
             .map_or(std::ptr::null_mut(), |value| value.into_raw())
     }
+
+    #[no_mangle]
+    pub extern "system" fn Java_com_pietrocode_epubtomp3_flutter_1app_MainActivity_nativeTtsModels(
+        env: JNIEnv<'_>,
+        _class: JClass<'_>,
+    ) -> jstring {
+        let value = serde_json::to_string(converter_core::model_catalog::MODELS)
+            .unwrap_or_else(|error| format!("{{\"error\":\"{error}\"}}"));
+        env.new_string(value)
+            .map_or(std::ptr::null_mut(), |value| value.into_raw())
+    }
+
+    #[no_mangle]
+    pub extern "system" fn Java_com_pietrocode_epubtomp3_flutter_1app_MainActivity_nativeTtsDefaultEngine(
+        mut env: JNIEnv<'_>,
+        _class: JClass<'_>,
+        language: JString<'_>,
+        platform: JString<'_>,
+        android_api: jint,
+    ) -> jstring {
+        let language = match read_string(&mut env, language) {
+            Ok(value) => value,
+            Err(error) => {
+                return env
+                    .new_string(error)
+                    .map_or(std::ptr::null_mut(), |value| value.into_raw())
+            }
+        };
+        let platform = match read_string(&mut env, platform) {
+            Ok(value) => value,
+            Err(error) => {
+                return env
+                    .new_string(error)
+                    .map_or(std::ptr::null_mut(), |value| value.into_raw())
+            }
+        };
+        let platform = match platform.to_ascii_lowercase().as_str() {
+            "android" => converter_core::model_catalog::ModelPlatform::Android,
+            "ios" => converter_core::model_catalog::ModelPlatform::Ios,
+            "macos" => converter_core::model_catalog::ModelPlatform::Macos,
+            "linux" => converter_core::model_catalog::ModelPlatform::Linux,
+            "windows" => converter_core::model_catalog::ModelPlatform::Windows,
+            other => {
+                return env
+                    .new_string(format!("unsupported platform: {other}"))
+                    .map_or(std::ptr::null_mut(), |value| value.into_raw())
+            }
+        };
+        let api = (android_api > 0).then_some(android_api as u32);
+        let engine = converter_core::model_catalog::default_engine(&language, platform, api);
+        env.new_string(engine)
+            .map_or(std::ptr::null_mut(), |value| value.into_raw())
+    }
+
+    #[no_mangle]
+    pub extern "system" fn Java_com_pietrocode_epubtomp3_flutter_1app_MainActivity_nativeTtsModelInstall(
+        mut env: JNIEnv<'_>,
+        _class: JClass<'_>,
+        model_id: JString<'_>,
+        url: JString<'_>,
+        sha256: JString<'_>,
+        root: JString<'_>,
+    ) -> jstring {
+        let values = [model_id, url, sha256, root]
+            .into_iter()
+            .map(|value| read_string(&mut env, value))
+            .collect::<Result<Vec<_>, _>>();
+        let values = match values {
+            Ok(values) => values,
+            Err(error) => {
+                return env
+                    .new_string(error)
+                    .map_or(std::ptr::null_mut(), |value| value.into_raw())
+            }
+        };
+        let c_values = values
+            .iter()
+            .map(|value| CString::new(value.as_str()))
+            .collect::<Result<Vec<_>, _>>();
+        let c_values = match c_values {
+            Ok(values) => values,
+            Err(_) => return std::ptr::null_mut(),
+        };
+        let path = unsafe {
+            converter_tts_model_install(
+                c_values[0].as_ptr(),
+                c_values[1].as_ptr(),
+                c_values[2].as_ptr(),
+                c_values[3].as_ptr(),
+            )
+        };
+        if path.is_null() {
+            return std::ptr::null_mut();
+        }
+        let value = unsafe { CStr::from_ptr(path) }
+            .to_string_lossy()
+            .into_owned();
+        unsafe { converter_string_free(path) };
+        env.new_string(value)
+            .map_or(std::ptr::null_mut(), |value| value.into_raw())
+    }
+
+    #[no_mangle]
+    pub extern "system" fn Java_com_pietrocode_epubtomp3_flutter_1app_MainActivity_nativeTtsModelRemove(
+        mut env: JNIEnv<'_>,
+        _class: JClass<'_>,
+        model_id: JString<'_>,
+        root: JString<'_>,
+    ) -> jboolean {
+        let model_id = match read_string(&mut env, model_id) {
+            Ok(value) => value,
+            Err(_) => return 0,
+        };
+        let root = match read_string(&mut env, root) {
+            Ok(value) => value,
+            Err(_) => return 0,
+        };
+        let model_id = match CString::new(model_id) {
+            Ok(value) => value,
+            Err(_) => return 0,
+        };
+        let root = match CString::new(root) {
+            Ok(value) => value,
+            Err(_) => return 0,
+        };
+        unsafe { converter_tts_model_remove(model_id.as_ptr(), root.as_ptr()) as jboolean }
+    }
 }
 
 #[cfg(test)]
@@ -565,6 +831,23 @@ mod tests {
                 .unwrap()
                 .contains("failed to read input"));
             converter_string_free(error);
+        }
+    }
+
+    #[test]
+    fn shared_model_catalog_and_default_engine_are_exposed() {
+        unsafe {
+            let catalog = converter_tts_models_json();
+            assert!(!catalog.is_null());
+            let value = CStr::from_ptr(catalog).to_str().unwrap();
+            assert!(value.contains("kokoro-82m"));
+            converter_string_free(catalog);
+
+            let language = CString::new("pt-BR").unwrap();
+            let platform = CString::new("android").unwrap();
+            let engine = converter_tts_default_engine(language.as_ptr(), platform.as_ptr(), 28);
+            assert_eq!(CStr::from_ptr(engine).to_str().unwrap(), "piper");
+            converter_string_free(engine);
         }
     }
 

@@ -10,7 +10,9 @@ enum ConverterMode { embedded, http }
 /// Raised when embedded conversion was explicitly requested but no native
 /// converter-ffi implementation has been registered for this process.
 class EmbeddedConverterUnavailable extends Error {
-  EmbeddedConverterUnavailable([this.message = 'converter-ffi runtime is unavailable']);
+  EmbeddedConverterUnavailable([
+    this.message = 'converter-ffi runtime is unavailable',
+  ]);
 
   final String message;
 
@@ -35,6 +37,26 @@ abstract interface class EmbeddedConverter {
     required String inputPath,
     required String outputPath,
   });
+  Future<String> ttsModels() =>
+      throw EmbeddedConverterUnavailable('TTS model catalog is unavailable');
+  Future<String> ttsDefaultEngine({
+    required String language,
+    required String platform,
+    int? androidApi,
+  }) =>
+      throw EmbeddedConverterUnavailable('TTS engine selection is unavailable');
+  Future<String> installTtsModel({
+    required String modelId,
+    required String url,
+    required String sha256,
+    required String root,
+  }) => throw EmbeddedConverterUnavailable(
+    'TTS model installation is unavailable',
+  );
+  Future<bool> removeTtsModel({
+    required String modelId,
+    required String root,
+  }) => throw EmbeddedConverterUnavailable('TTS model removal is unavailable');
 }
 
 /// The Android implementation invokes the registered native converter through
@@ -117,7 +139,9 @@ class AndroidEmbeddedConverter implements EmbeddedConverter {
       // The native channel returns a manifest path or inline JSON. Keep the
       // request observable on Android while the Rust worker runs.
       // ignore: avoid_print
-      print('AndroidEmbeddedConverter: invoking native convert input=$inputPath output=$outputPath');
+      print(
+        'AndroidEmbeddedConverter: invoking native convert input=$inputPath output=$outputPath',
+      );
       final result = await _channel.invokeMethod<String>('convert', {
         'inputPath': inputPath,
         'outputPath': outputPath,
@@ -161,6 +185,60 @@ class AndroidEmbeddedConverter implements EmbeddedConverter {
       );
     }
   }
+
+  @override
+  Future<String> ttsModels() async {
+    final value = await _channel.invokeMethod<String>('ttsModels');
+    if (value == null || value.isEmpty) {
+      throw EmbeddedConverterUnavailable('empty TTS model catalog');
+    }
+    return value;
+  }
+
+  @override
+  Future<String> ttsDefaultEngine({
+    required String language,
+    required String platform,
+    int? androidApi,
+  }) async {
+    final value = await _channel.invokeMethod<String>('ttsDefaultEngine', {
+      'language': language,
+      'platform': platform,
+      if (androidApi != null) 'androidApi': androidApi,
+    });
+    if (value == null || value.isEmpty) {
+      throw EmbeddedConverterUnavailable('empty TTS engine selection');
+    }
+    return value;
+  }
+
+  @override
+  Future<String> installTtsModel({
+    required String modelId,
+    required String url,
+    required String sha256,
+    required String root,
+  }) async {
+    final value = await _channel.invokeMethod<String>('ttsModelInstall', {
+      'modelId': modelId,
+      'url': url,
+      'sha256': sha256,
+      'root': root,
+    });
+    if (value == null || value.isEmpty) throw EmbeddedConverterUnavailable();
+    return value;
+  }
+
+  @override
+  Future<bool> removeTtsModel({
+    required String modelId,
+    required String root,
+  }) async =>
+      await _channel.invokeMethod<bool>('ttsModelRemove', {
+        'modelId': modelId,
+        'root': root,
+      }) ??
+      false;
 }
 
 class UnavailableEmbeddedConverter implements EmbeddedConverter {
@@ -178,6 +256,30 @@ class UnavailableEmbeddedConverter implements EmbeddedConverter {
   }) {
     throw EmbeddedConverterUnavailable();
   }
+
+  @override
+  Future<String> ttsModels() => throw EmbeddedConverterUnavailable();
+
+  @override
+  Future<String> ttsDefaultEngine({
+    required String language,
+    required String platform,
+    int? androidApi,
+  }) => throw EmbeddedConverterUnavailable();
+
+  @override
+  Future<String> installTtsModel({
+    required String modelId,
+    required String url,
+    required String sha256,
+    required String root,
+  }) => throw EmbeddedConverterUnavailable();
+
+  @override
+  Future<bool> removeTtsModel({
+    required String modelId,
+    required String root,
+  }) => throw EmbeddedConverterUnavailable();
 }
 
 /// Routes local conversion to embedded ffi or the explicit HTTP compatibility

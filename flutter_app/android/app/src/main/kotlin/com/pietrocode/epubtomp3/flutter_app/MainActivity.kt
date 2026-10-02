@@ -4,9 +4,11 @@ import android.content.Intent
 import android.database.Cursor
 import android.net.Uri
 import android.os.Bundle
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.os.StatFs
+import android.speech.tts.TextToSpeech
 import android.provider.OpenableColumns
 
 import android.util.Log
@@ -38,6 +40,8 @@ class MainActivity : AudioServiceActivity() {
 
     private val embeddedLogTag = "EmbeddedConverter"
     private val converterExecutor = Executors.newSingleThreadExecutor()
+    private var textToSpeech: TextToSpeech? = null
+    private var textToSpeechReady = false
 
 
     companion object {
@@ -53,26 +57,26 @@ class MainActivity : AudioServiceActivity() {
         private const val PIPER_RUNTIME_LIBRARY = "piper_runtime"
 
         private var converterLibraryLoaded = false
+        private var piperLibraryLoaded = false
 
         init {
-            try {
-                System.loadLibrary(PIPER_RUNTIME_LIBRARY)
-                System.loadLibrary(CONVERTER_LIBRARY)
-                converterLibraryLoaded = true
-            } catch (_: UnsatisfiedLinkError) {
-                converterLibraryLoaded = false
-            }
+            // Native libraries are loaded lazily before the first conversion.
         }
 
-        private fun converterLibraryAvailable(): Boolean = try {
-            if (!converterLibraryLoaded) {
-                System.loadLibrary(PIPER_RUNTIME_LIBRARY)
-                System.loadLibrary(CONVERTER_LIBRARY)
-                converterLibraryLoaded = true
+        private fun converterLibraryAvailable(): Boolean {
+            return try {
+                if (!converterLibraryLoaded) {
+                    System.loadLibrary(CONVERTER_LIBRARY)
+                    converterLibraryLoaded = true
+                }
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && !piperLibraryLoaded) {
+                    System.loadLibrary(PIPER_RUNTIME_LIBRARY)
+                    piperLibraryLoaded = true
+                }
+                converterLibraryLoaded
+            } catch (_: UnsatisfiedLinkError) {
+                false
             }
-            true
-        } catch (_: UnsatisfiedLinkError) {
-            false
         }
 
         private fun registerEmbeddedPiper() {
@@ -88,14 +92,15 @@ class MainActivity : AudioServiceActivity() {
 
 
     private fun embeddedConverterStatus(): Map<String, Boolean> = try {
+        converterLibraryAvailable()
         val model = ensureBundledPiperModel()
         System.setProperty("PIPER_MODEL", model)
         val modelAvailable = File(model).isFile && File("$model.json").isFile
         mapOf(
             "runtimeLoaded" to converterLibraryLoaded,
             "modelAvailable" to modelAvailable,
-            "abiCompatible" to converterLibraryLoaded,
-            "engineReady" to (converterLibraryLoaded && modelAvailable),
+            "abiCompatible" to (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q || piperLibraryLoaded),
+            "engineReady" to converterLibraryLoaded,
         )
     } catch (_: Throwable) {
         mapOf(
@@ -121,6 +126,61 @@ class MainActivity : AudioServiceActivity() {
         return target.absolutePath
     }
 
+    private fun ensureTextToSpeech(): Boolean {
+        if (textToSpeechReady) return true
+        if (textToSpeech == null) {
+            val preferredEngine = if (packageManager.getInstalledPackages(0)
+                    .any { it.packageName == "com.google.android.tts" }) {
+                "com.google.android.tts"
+            } else {
+                null
+            }
+            textToSpeech = if (preferredEngine != null) {
+                TextToSpeech(this, { status ->
+                    textToSpeechReady = status == TextToSpeech.SUCCESS
+                    Log.i("AndroidTts", "engine=com.google.android.tts init=$status ready=$textToSpeechReady")
+                    textToSpeech?.voices?.map { it.locale.toLanguageTag() }?.distinct()?.let {
+                        Log.i("AndroidTts", "available locales=${it.joinToString(",")}")
+                    }
+                    if (textToSpeechReady) textToSpeech?.language = Locale.US
+                }, preferredEngine)
+            } else {
+                TextToSpeech(this) { status ->
+                    textToSpeechReady = status == TextToSpeech.SUCCESS
+                    Log.i("AndroidTts", "engine=default init=$status ready=$textToSpeechReady")
+                    if (textToSpeechReady) textToSpeech?.language = Locale.US
+                }
+            }
+        }
+        return textToSpeechReady
+    }
+
+    private fun setSpeechLocale(tag: String): Boolean {
+        val engine = textToSpeech ?: return false
+        val requested = Locale.forLanguageTag(tag)
+        val candidates = when (requested.language) {
+            "en" -> listOf(requested, Locale.US, Locale.UK)
+            "pt" -> listOf(requested, Locale("pt", "PT"))
+            "es" -> listOf(requested, Locale("es", "ES"))
+            "fr" -> listOf(requested, Locale.FRANCE)
+            else -> listOf(requested)
+        }
+        for (locale in candidates.distinct()) {
+            val availability = engine.isLanguageAvailable(locale)
+            val selected = engine.setLanguage(locale)
+            Log.i("AndroidTts", "locale candidate=${locale.toLanguageTag()} availability=$availability selected=$selected")
+            if (availability >= TextToSpeech.LANG_AVAILABLE &&
+                selected != TextToSpeech.LANG_MISSING_DATA &&
+                selected != TextToSpeech.LANG_NOT_SUPPORTED
+            ) {
+                Log.i("AndroidTts", "selected locale=${locale.toLanguageTag()}")
+                return true
+            }
+        }
+        Log.e("AndroidTts", "requested locale unavailable=$tag")
+        return false
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         handleIncomingIntent(intent)
@@ -137,6 +197,56 @@ class MainActivity : AudioServiceActivity() {
         // only this activity's channels on that engine; do not create or cache
         // another engine here.
         super.configureFlutterEngine(flutterEngine)
+
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "epub_to_mp3/android_tts")
+            .setMethodCallHandler { call, result ->
+                when (call.method) {
+                    "isAvailable" -> result.success(ensureTextToSpeech())
+                    "listVoices" -> result.success(textToSpeech?.voices?.map {
+                        mapOf("name" to it.name, "locale" to it.locale.toLanguageTag())
+                    } ?: emptyList<Map<String, String>>())
+                    "speak" -> {
+                        val text = call.argument<String>("text").orEmpty()
+                        val locale = call.argument<String>("locale") ?: "pt-BR"
+                        if (text.isBlank() || !ensureTextToSpeech()) {
+                            result.error("TTS_UNAVAILABLE", "Android TextToSpeech is unavailable", null)
+                        } else {
+                            if (!setSpeechLocale(locale)) {
+                                result.error("TTS_LOCALE_UNAVAILABLE", "Requested speech locale is unavailable", locale)
+                                return@setMethodCallHandler
+                            }
+                            val status = textToSpeech?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "epub-${System.nanoTime()}")
+                                ?: TextToSpeech.ERROR
+                            if (status == TextToSpeech.SUCCESS) result.success(null)
+                            else result.error("TTS_SPEAK_FAILED", "TextToSpeech rejected the text", null)
+                        }
+                    }
+                    "speakQueued" -> {
+                        val texts = call.argument<List<String>>("texts").orEmpty()
+                        val locale = call.argument<String>("locale") ?: "pt-BR"
+                        if (texts.isEmpty() || !ensureTextToSpeech()) {
+                            result.error("TTS_UNAVAILABLE", "Android TextToSpeech is unavailable", null)
+                        } else {
+                            if (!setSpeechLocale(locale)) {
+                                result.error("TTS_LOCALE_UNAVAILABLE", "Requested speech locale is unavailable", locale)
+                                return@setMethodCallHandler
+                            }
+                            Log.i("AndroidTts", "queueing chunks=${texts.size} locale=$locale")
+                            texts.forEachIndexed { index, text ->
+                                textToSpeech?.speak(
+                                    text,
+                                    if (index == 0) TextToSpeech.QUEUE_FLUSH else TextToSpeech.QUEUE_ADD,
+                                    null,
+                                    "epub-${System.nanoTime()}-$index"
+                                )
+                            }
+                            result.success(null)
+                        }
+                    }
+                    "pause", "stop" -> { textToSpeech?.stop(); result.success(null) }
+                    else -> result.notImplemented()
+                }
+            }
 
         EventChannel(
             flutterEngine.dartExecutor.binaryMessenger,
@@ -260,6 +370,68 @@ class MainActivity : AudioServiceActivity() {
                     Log.i(embeddedLogTag, "status requested")
                     result.success(embeddedConverterStatus())
                 }
+                "ttsModels" -> {
+                    if (!converterLibraryAvailable()) {
+                        result.error(EMBEDDED_UNAVAILABLE, "converter-ffi native library is not packaged in this APK", null)
+                    } else {
+                        converterExecutor.execute {
+                            val value = nativeTtsModels()
+                            runOnUiThread {
+                                if (value == null) result.error(EMBEDDED_UNAVAILABLE, nativeLastError(), null)
+                                else result.success(value)
+                            }
+                        }
+                    }
+                }
+                "ttsDefaultEngine" -> {
+                    if (!converterLibraryAvailable()) {
+                        result.error(EMBEDDED_UNAVAILABLE, "converter-ffi native library is not packaged in this APK", null)
+                    } else {
+                        val language = call.argument<String>("language")
+                        val platform = call.argument<String>("platform") ?: "android"
+                        val androidApi = call.argument<Int>("androidApi") ?: android.os.Build.VERSION.SDK_INT
+                        if (language.isNullOrBlank()) {
+                            result.error("BAD_ARGS", "language is required", null)
+                        } else {
+                            converterExecutor.execute {
+                                val value = nativeTtsDefaultEngine(language, platform, androidApi)
+                                runOnUiThread {
+                                    if (value == null) result.error(EMBEDDED_UNAVAILABLE, nativeLastError(), null)
+                                    else result.success(value)
+                                }
+                            }
+                        }
+                    }
+                }
+                "ttsModelInstall" -> {
+                    val modelId = call.argument<String>("modelId")
+                    val url = call.argument<String>("url")
+                    val sha256 = call.argument<String>("sha256")
+                    val root = call.argument<String>("root")
+                    if (modelId.isNullOrBlank() || url.isNullOrBlank() || sha256.isNullOrBlank() || root.isNullOrBlank()) {
+                        result.error("BAD_ARGS", "modelId, url, sha256, and root are required", null)
+                    } else {
+                        converterExecutor.execute {
+                            val value = nativeTtsModelInstall(modelId, url, sha256, root)
+                            runOnUiThread {
+                                if (value == null) result.error(EMBEDDED_UNAVAILABLE, nativeLastError(), null)
+                                else result.success(value)
+                            }
+                        }
+                    }
+                }
+                "ttsModelRemove" -> {
+                    val modelId = call.argument<String>("modelId")
+                    val root = call.argument<String>("root")
+                    if (modelId.isNullOrBlank() || root.isNullOrBlank()) {
+                        result.error("BAD_ARGS", "modelId and root are required", null)
+                    } else {
+                        converterExecutor.execute {
+                            val removed = nativeTtsModelRemove(modelId, root)
+                            runOnUiThread { result.success(removed) }
+                        }
+                    }
+                }
                 "parse" -> {
                     if (!converterLibraryAvailable()) {
                         result.error(EMBEDDED_UNAVAILABLE, "converter-ffi native library is not packaged in this APK", null)
@@ -326,11 +498,18 @@ class MainActivity : AudioServiceActivity() {
 
     private external fun nativeParse(inputPath: String): String?
     private external fun nativeConvert(inputPath: String, outputPath: String): String?
+    private external fun nativeTtsModels(): String?
+    private external fun nativeTtsDefaultEngine(language: String, platform: String, androidApi: Int): String?
+    private external fun nativeTtsModelInstall(modelId: String, url: String, sha256: String, root: String): String?
+    private external fun nativeTtsModelRemove(modelId: String, root: String): Boolean
 
     private external fun nativeLastError(): String
 
     override fun onDestroy() {
         converterExecutor.shutdownNow()
+        textToSpeech?.stop()
+        textToSpeech?.shutdown()
+        textToSpeech = null
         super.onDestroy()
     }
 

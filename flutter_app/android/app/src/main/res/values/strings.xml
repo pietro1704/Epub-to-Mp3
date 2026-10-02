@@ -1,4 +1,5 @@
 <resources>
+    <string name="app_name">EpubToMp3</string>
     <string name="shortcut_jobs_short">Jobs</string>
     <string name="shortcut_jobs_long">Open conversion jobs</string>
 </resources>
