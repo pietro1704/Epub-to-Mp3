@@ -840,10 +840,10 @@ export const translations: Record<Locale, Translations> = {
             "Todos (automático) — pt, en, es, fr, de, it, ja, zh e mais",
         },
         piper: {
-          tagline: "Leve, offline e garantido — o fallback confiável",
+          tagline: "Leve e offline — opção local instalada pelo usuário",
           quality: "Básica — voz robótica mas inteligível",
           speed: "~25 chars/s — moderado",
-          requirements: "Nenhum — funciona em qualquer máquina",
+          requirements: "Runtime Piper e modelo compatível instalados",
           bestVoice: "pt_BR-faber-medium.onnx",
           bestVoiceNote:
             "Faber é a melhor voz pt-BR disponível. Para inglês, Lessac-medium tem qualidade superior.",
@@ -851,7 +851,7 @@ export const translations: Record<Locale, Translations> = {
             "100% offline — sem internet necessária",
             "Extremamente leve (~15 MB por modelo)",
             "Funciona em qualquer hardware",
-            "Nunca falha — é o fallback final do sistema",
+            "Pode funcionar sem internet após a instalação explícita",
           ],
           cons: [
             "Qualidade de voz mais robótica",
@@ -1684,7 +1684,7 @@ export const translations: Record<Locale, Translations> = {
             "100% offline — no internet needed",
             "Extremely lightweight (~15 MB per model)",
             "Works on any hardware",
-            "Never fails — the system's final fallback",
+            "Works offline after an explicit compatible model install",
           ],
           cons: [
             "More robotic voice quality",
