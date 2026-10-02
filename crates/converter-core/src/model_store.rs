@@ -413,7 +413,7 @@ mod tests {
     #[test]
     fn builds_verified_manifest_from_catalog() {
         let manifest = ModelStore::catalog_manifest("kokoro-82m").unwrap();
-        assert_eq!(manifest.artifacts.len(), 5);
+        assert_eq!(manifest.artifacts.len(), 1);
         assert_eq!(manifest.artifacts[0].sha256.len(), 64);
     }
 

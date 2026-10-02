@@ -54,34 +54,10 @@ impl TtsModelDescriptor {
 
 static KOKORO_ENGLISH_ARTIFACTS: &[TtsArtifactDescriptor] = &[
     TtsArtifactDescriptor {
-        name: "onnx/model_quantized.onnx",
-        url: "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/onnx/model_quantized.onnx",
-        sha256: "fbae9257e1e05ffc727e951ef9b9c98418e6d79f1c9b6b13bd59f5c9028a1478",
-        bytes: 92_361_116,
-    },
-    TtsArtifactDescriptor {
-        name: "config.json",
-        url: "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/config.json",
-        sha256: "df34b4f930b23447cd4dc410fabfb42eb3f24e803e6c3f97d618fb359380a36f",
-        bytes: 44,
-    },
-    TtsArtifactDescriptor {
-        name: "tokenizer.json",
-        url: "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/tokenizer.json",
-        sha256: "77a02c8e164413299b4b4c403b14f8e0e1c1b727db4d46a09d6327b861060a34",
-        bytes: 3_497,
-    },
-    TtsArtifactDescriptor {
-        name: "tokenizer_config.json",
-        url: "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/tokenizer_config.json",
-        sha256: "be1cb066d6ef6b074b3f15e6a6dd21ac88ff3cdaedf325f0aaed686c70f75d20",
-        bytes: 113,
-    },
-    TtsArtifactDescriptor {
-        name: "voices/af.bin",
-        url: "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/voices/af.bin",
-        sha256: "a4f11d9d055a12bfa0db2668a3e4f0ef8fd1f1ccca69494479718e44dbf9e41a",
-        bytes: 524_288,
+        name: "kokoro-int8-en-v0_19.tar.bz2",
+        url: "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/kokoro-int8-en-v0_19.tar.bz2",
+        sha256: "c9f0dd393615805b0bab050c340834d5e684e732aec91c0e860cd30e982c08bd",
+        bytes: 103_248_205,
     },
 ];
 
@@ -99,7 +75,7 @@ pub static MODELS: &[TtsModelDescriptor] = &[
         ],
         minimum_android_api: Some(29),
         default_rank: 1,
-        download_bytes: 92_889_058,
+        download_bytes: 103_248_205,
         artifacts: KOKORO_ENGLISH_ARTIFACTS,
         runtime_available: false,
     },
@@ -211,9 +187,9 @@ mod tests {
             .iter()
             .find(|model| model.id == "kokoro-82m")
             .unwrap();
-        assert_eq!(model.artifacts.len(), 5);
-        assert_eq!(model.artifacts[0].bytes, 92_361_116);
-        assert_eq!(model.artifacts[4].name, "voices/af.bin");
+        assert_eq!(model.artifacts.len(), 1);
+        assert_eq!(model.artifacts[0].bytes, 103_248_205);
+        assert_eq!(model.artifacts[0].name, "kokoro-int8-en-v0_19.tar.bz2");
     }
 
     #[test]
