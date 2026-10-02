@@ -161,9 +161,24 @@ pub fn installed_engine(
     android_api: Option<u32>,
     installed_model_ids: &[&str],
 ) -> Option<&'static str> {
-    candidates(language, platform, android_api)
-        .into_iter()
-        .find(|model| installed_model_ids.contains(&model.id))
+    installed_ready_engine(language, platform, android_api, installed_model_ids, &[])
+}
+
+/// Selects a compatible installed engine only when the caller has verified
+/// that its runtime can synthesize audio on this device.
+pub fn installed_ready_engine(
+    language: &str,
+    platform: ModelPlatform,
+    android_api: Option<u32>,
+    installed_model_ids: &[&str],
+    ready_model_ids: &[&str],
+) -> Option<&'static str> {
+    MODELS
+        .iter()
+        .filter(|model| model.supports(language, platform, android_api))
+        .filter(|model| installed_model_ids.contains(&model.id))
+        .filter(|model| ready_model_ids.contains(&model.id))
+        .min_by_key(|model| model.default_rank)
         .map(|model| model.engine)
 }
 
@@ -209,6 +224,16 @@ mod tests {
         assert_eq!(
             installed_engine("en-US", ModelPlatform::Macos, None, &["kokoro-82m"]),
             None
+        );
+        assert_eq!(
+            installed_ready_engine(
+                "en-US",
+                ModelPlatform::Macos,
+                None,
+                &["kokoro-82m"],
+                &["kokoro-82m"]
+            ),
+            Some("kokoro")
         );
     }
 

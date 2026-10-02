@@ -288,6 +288,63 @@ pub unsafe extern "C" fn converter_tts_default_engine(
     )
 }
 
+/// Selects an engine from installed models that the client has runtime-tested.
+/// Both JSON arguments must be arrays of model IDs. An empty or unverified
+/// readiness list intentionally returns `"none"`.
+#[no_mangle]
+pub unsafe extern "C" fn converter_tts_installed_ready_engine(
+    language: *const c_char,
+    platform: *const c_char,
+    android_api: u32,
+    installed_model_ids_json: *const c_char,
+    ready_model_ids_json: *const c_char,
+) -> *mut c_char {
+    clear_last_error();
+    let language = match c_string(language, "language") {
+        Ok(value) => value,
+        Err(error) => return fail(error),
+    };
+    let platform = match c_string(platform, "platform") {
+        Ok(value) => value,
+        Err(error) => return fail(error),
+    };
+    let installed_json = match c_string(installed_model_ids_json, "installed model IDs") {
+        Ok(value) => value,
+        Err(error) => return fail(error),
+    };
+    let ready_json = match c_string(ready_model_ids_json, "ready model IDs") {
+        Ok(value) => value,
+        Err(error) => return fail(error),
+    };
+    let installed: Vec<String> = match serde_json::from_str(&installed_json) {
+        Ok(value) => value,
+        Err(error) => return fail(format!("invalid installed model IDs JSON: {error}")),
+    };
+    let ready: Vec<String> = match serde_json::from_str(&ready_json) {
+        Ok(value) => value,
+        Err(error) => return fail(format!("invalid ready model IDs JSON: {error}")),
+    };
+    let installed: Vec<&str> = installed.iter().map(String::as_str).collect();
+    let ready: Vec<&str> = ready.iter().map(String::as_str).collect();
+    let platform = match platform.to_ascii_lowercase().as_str() {
+        "android" => converter_core::model_catalog::ModelPlatform::Android,
+        "ios" => converter_core::model_catalog::ModelPlatform::Ios,
+        "macos" => converter_core::model_catalog::ModelPlatform::Macos,
+        "linux" => converter_core::model_catalog::ModelPlatform::Linux,
+        "windows" => converter_core::model_catalog::ModelPlatform::Windows,
+        other => return fail(format!("unsupported platform: {other}")),
+    };
+    let api = (android_api > 0).then_some(android_api);
+    let engine = converter_core::model_catalog::installed_ready_engine(
+        &language, platform, api, &installed, &ready,
+    )
+    .unwrap_or("none");
+    CString::new(engine).map_or_else(
+        |_| fail("selected engine contains an interior NUL byte".to_owned()),
+        CString::into_raw,
+    )
+}
+
 /// Installs a catalog model after downloading and verifying its SHA-256.
 /// This blocking ABI is intended for a background worker in each client.
 #[no_mangle]
@@ -1179,6 +1236,36 @@ mod tests {
             let platform = CString::new("android").unwrap();
             let engine = converter_tts_default_engine(language.as_ptr(), platform.as_ptr(), 28);
             assert_eq!(CStr::from_ptr(engine).to_str().unwrap(), "none");
+            converter_string_free(engine);
+        }
+    }
+
+    #[test]
+    fn ready_model_selection_requires_runtime_verified_ids() {
+        let language = CString::new("en-US").unwrap();
+        let platform = CString::new("macos").unwrap();
+        let installed = CString::new(r#"["kokoro-82m"]"#).unwrap();
+        let not_ready = CString::new("[]").unwrap();
+        let ready = CString::new(r#"["kokoro-82m"]"#).unwrap();
+        unsafe {
+            let engine = converter_tts_installed_ready_engine(
+                language.as_ptr(),
+                platform.as_ptr(),
+                0,
+                installed.as_ptr(),
+                not_ready.as_ptr(),
+            );
+            assert_eq!(CStr::from_ptr(engine).to_str().unwrap(), "none");
+            converter_string_free(engine);
+
+            let engine = converter_tts_installed_ready_engine(
+                language.as_ptr(),
+                platform.as_ptr(),
+                0,
+                installed.as_ptr(),
+                ready.as_ptr(),
+            );
+            assert_eq!(CStr::from_ptr(engine).to_str().unwrap(), "kokoro");
             converter_string_free(engine);
         }
     }
