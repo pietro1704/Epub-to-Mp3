@@ -184,6 +184,35 @@ pub unsafe extern "C" fn converter_tts_models_json() -> *mut c_char {
     )
 }
 
+/// Inspects whether an installed local runtime is ready for inference.
+#[no_mangle]
+pub unsafe extern "C" fn converter_tts_runtime_status_json(
+    engine: *const c_char,
+    model_root: *const c_char,
+) -> *mut c_char {
+    clear_last_error();
+    let engine = match c_string(engine, "engine") {
+        Ok(value) => value,
+        Err(error) => return fail(error),
+    };
+    let model_root = match c_string(model_root, "model root") {
+        Ok(value) => value,
+        Err(error) => return fail(error),
+    };
+    let status = match converter_core::tts_runtime::inspect_runtime(&engine, Path::new(&model_root))
+    {
+        Ok(status) => status,
+        Err(error) => return fail(error.to_string()),
+    };
+    match serde_json::to_string(&status) {
+        Ok(value) => CString::new(value).map_or_else(
+            |_| fail("runtime status contains an interior NUL byte".to_owned()),
+            CString::into_raw,
+        ),
+        Err(error) => fail(error.to_string()),
+    }
+}
+
 /// Returns the default local engine for a language and platform.
 #[no_mangle]
 pub unsafe extern "C" fn converter_tts_default_engine(

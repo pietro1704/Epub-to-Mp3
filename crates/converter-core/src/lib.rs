@@ -16,6 +16,7 @@ pub mod piper;
 pub mod text;
 pub mod toc;
 pub mod tts;
+pub mod tts_runtime;
 pub mod worker;
 
 /// Returns the core library health status.
