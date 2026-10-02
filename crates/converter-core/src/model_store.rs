@@ -225,6 +225,18 @@ impl ModelStore {
         result
     }
 
+    pub async fn installed_metadata(
+        &self,
+        model_id: &str,
+    ) -> Result<Option<String>, ModelStoreError> {
+        let path = self.root.join(model_id).join("metadata.json");
+        match tokio::fs::read_to_string(path).await {
+            Ok(value) => Ok(Some(value)),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+            Err(error) => Err(ModelStoreError::Io(error)),
+        }
+    }
+
     pub async fn is_installed(&self, model_id: &str, expected_sha256: &str) -> bool {
         let path = self.model_path(model_id);
         match tokio::fs::read(path).await {
@@ -272,6 +284,13 @@ mod tests {
             .await
             .unwrap_err();
         assert!(matches!(error, ModelStoreError::InsecureUrl));
+    }
+
+    #[tokio::test]
+    async fn reports_missing_metadata_without_error() {
+        let root = tempfile::tempdir().unwrap();
+        let store = ModelStore::new(root.path());
+        assert_eq!(store.installed_metadata("missing").await.unwrap(), None);
     }
 
     #[tokio::test]
