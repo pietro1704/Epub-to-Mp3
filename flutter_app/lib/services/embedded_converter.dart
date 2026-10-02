@@ -230,6 +230,20 @@ class AndroidEmbeddedConverter implements EmbeddedConverter {
   }
 
   @override
+  Future<String> installTtsModelManifest({
+    required String modelId,
+    required String artifactsJson,
+    required String root,
+  }) async {
+    final value = await _channel.invokeMethod<String>(
+      'ttsModelInstallManifest',
+      {'modelId': modelId, 'artifactsJson': artifactsJson, 'root': root},
+    );
+    if (value == null || value.isEmpty) throw EmbeddedConverterUnavailable();
+    return value;
+  }
+
+  @override
   Future<bool> removeTtsModel({
     required String modelId,
     required String root,

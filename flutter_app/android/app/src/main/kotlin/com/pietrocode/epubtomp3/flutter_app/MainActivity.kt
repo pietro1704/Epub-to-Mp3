@@ -420,6 +420,22 @@ class MainActivity : AudioServiceActivity() {
                         }
                     }
                 }
+                "ttsModelInstallManifest" -> {
+                    val modelId = call.argument<String>("modelId")
+                    val artifactsJson = call.argument<String>("artifactsJson")
+                    val root = call.argument<String>("root")
+                    if (modelId.isNullOrBlank() || artifactsJson.isNullOrBlank() || root.isNullOrBlank()) {
+                        result.error("BAD_ARGS", "modelId, artifactsJson, and root are required", null)
+                    } else {
+                        converterExecutor.execute {
+                            val value = nativeTtsModelInstallManifest(modelId, artifactsJson, root)
+                            runOnUiThread {
+                                if (value == null) result.error(EMBEDDED_UNAVAILABLE, nativeLastError(), null)
+                                else result.success(value)
+                            }
+                        }
+                    }
+                }
                 "ttsModelRemove" -> {
                     val modelId = call.argument<String>("modelId")
                     val root = call.argument<String>("root")
@@ -501,6 +517,7 @@ class MainActivity : AudioServiceActivity() {
     private external fun nativeTtsModels(): String?
     private external fun nativeTtsDefaultEngine(language: String, platform: String, androidApi: Int): String?
     private external fun nativeTtsModelInstall(modelId: String, url: String, sha256: String, root: String): String?
+    private external fun nativeTtsModelInstallManifest(modelId: String, artifactsJson: String, root: String): String?
     private external fun nativeTtsModelRemove(modelId: String, root: String): Boolean
 
     private external fun nativeLastError(): String
