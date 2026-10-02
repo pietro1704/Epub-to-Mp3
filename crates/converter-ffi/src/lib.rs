@@ -17,6 +17,7 @@ use converter_core::{
     paths::resolve_paths_from,
 };
 
+use serde::Deserialize;
 use serde_json::json;
 use std::{
     collections::HashMap,
@@ -260,6 +261,71 @@ pub unsafe extern "C" fn converter_tts_model_install(
     };
     match runtime.block_on(store.install(model, Some(&url), Some(&sha256))) {
         Ok(installed) => match CString::new(installed.path.to_string_lossy().as_bytes()) {
+            Ok(value) => value.into_raw(),
+            Err(_) => fail("installed model path contains an interior NUL byte".to_owned()),
+        },
+        Err(error) => fail(error.to_string()),
+    }
+}
+
+/// Installs a multi-file model manifest. The JSON must contain an array of
+/// `{name,url,sha256}` artifacts; publication occurs only after all files pass.
+#[no_mangle]
+pub unsafe extern "C" fn converter_tts_model_install_manifest(
+    model_id: *const c_char,
+    artifacts_json: *const c_char,
+    root: *const c_char,
+) -> *mut c_char {
+    clear_last_error();
+    #[derive(Deserialize)]
+    struct ArtifactInput {
+        name: String,
+        url: String,
+        sha256: String,
+    }
+    let model_id = match c_string(model_id, "model id") {
+        Ok(value) => value,
+        Err(error) => return fail(error),
+    };
+    let artifacts_json = match c_string(artifacts_json, "model artifacts JSON") {
+        Ok(value) => value,
+        Err(error) => return fail(error),
+    };
+    let root = match c_string(root, "model storage root") {
+        Ok(value) => value,
+        Err(error) => return fail(error),
+    };
+    if !converter_core::model_catalog::MODELS
+        .iter()
+        .any(|model| model.id == model_id)
+    {
+        return fail(format!("unknown TTS model: {model_id}"));
+    }
+    let artifacts: Vec<ArtifactInput> = match serde_json::from_str(&artifacts_json) {
+        Ok(value) => value,
+        Err(error) => return fail(format!("invalid model artifacts JSON: {error}")),
+    };
+    let manifest = converter_core::model_store::ModelManifest {
+        model_id: model_id.clone(),
+        artifacts: artifacts
+            .into_iter()
+            .map(|artifact| converter_core::model_store::ModelArtifact {
+                name: artifact.name,
+                url: artifact.url,
+                sha256: artifact.sha256,
+            })
+            .collect(),
+    };
+    let store = converter_core::model_store::ModelStore::new(&root);
+    let runtime = match tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+    {
+        Ok(runtime) => runtime,
+        Err(error) => return fail(format!("failed to start model installer: {error}")),
+    };
+    match runtime.block_on(store.install_manifest(&manifest)) {
+        Ok(_) => match CString::new(store.root().join(model_id).to_string_lossy().as_bytes()) {
             Ok(value) => value.into_raw(),
             Err(_) => fail("installed model path contains an interior NUL byte".to_owned()),
         },
@@ -848,6 +914,28 @@ mod tests {
             let engine = converter_tts_default_engine(language.as_ptr(), platform.as_ptr(), 28);
             assert_eq!(CStr::from_ptr(engine).to_str().unwrap(), "piper");
             converter_string_free(engine);
+        }
+    }
+
+    #[test]
+    fn manifest_rejects_invalid_json_before_network_access() {
+        let model = CString::new("kokoro-82m").unwrap();
+        let artifacts = CString::new("not-json").unwrap();
+        let root = tempfile::tempdir().unwrap();
+        let root = CString::new(root.path().to_str().unwrap()).unwrap();
+        unsafe {
+            assert!(converter_tts_model_install_manifest(
+                model.as_ptr(),
+                artifacts.as_ptr(),
+                root.as_ptr()
+            )
+            .is_null());
+            let error = converter_last_error();
+            assert!(CStr::from_ptr(error)
+                .to_str()
+                .unwrap()
+                .contains("invalid model artifacts JSON"));
+            converter_string_free(error);
         }
     }
 
