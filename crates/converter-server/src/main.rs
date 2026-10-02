@@ -30,6 +30,7 @@ use tower_http::services::ServeDir;
 
 // Keep a concrete server-side ceiling above normal EPUB sizes while preventing unbounded request bodies.
 const MAX_UPLOAD_BYTES: usize = 100 * 1024 * 1024;
+const API_CONTRACT_VERSION: &str = "1";
 
 const TERMINAL_STATES: &[&str] = &[
     "finished",
@@ -100,6 +101,14 @@ struct OutputAsset {
 #[derive(Debug, Serialize)]
 struct HealthResponse {
     status: &'static str,
+    contract_version: &'static str,
+}
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ContractResponse {
+    version: &'static str,
+    backend: &'static str,
+    capabilities: Vec<&'static str>,
 }
 #[derive(Debug, Serialize)]
 struct MetadataResponse {
@@ -241,7 +250,23 @@ fn load_snapshots(config: &AppConfig) -> HashMap<String, Job> {
 }
 
 async fn health() -> impl IntoResponse {
-    (StatusCode::OK, Json(HealthResponse { status: "healthy" }))
+    (
+        StatusCode::OK,
+        Json(HealthResponse {
+            status: "healthy",
+            contract_version: API_CONTRACT_VERSION,
+        }),
+    )
+}
+async fn contract() -> impl IntoResponse {
+    (
+        StatusCode::OK,
+        Json(ContractResponse {
+            version: API_CONTRACT_VERSION,
+            backend: "rust",
+            capabilities: vec!["uploads", "jobs", "sse", "epub", "edge", "piper"],
+        }),
+    )
 }
 async fn metadata(State(state): State<AppState>) -> impl IntoResponse {
     let paths = &state.config.paths;
@@ -670,6 +695,7 @@ fn app(config: AppConfig) -> Router {
     Router::new()
         .route("/health", get(health))
         .route("/api/health", get(health))
+        .route("/api/contract", get(contract))
         .route("/api/metadata", get(metadata))
         .route(
             "/api/uploads",
