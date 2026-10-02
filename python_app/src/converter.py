@@ -580,6 +580,8 @@ class AudioConverter(
         """
         if os.getenv("DISABLE_PIPER_FALLBACK", "").strip().lower() in {"1", "true", "yes"}:
             return
+        if str(getattr(self, "_cli_fallback_engine", "") or "").lower() != "piper":
+            return
         if getattr(self, "_piper_prefetch_started", False):
             return
         self._piper_prefetch_started = True
