@@ -14,6 +14,9 @@ final class ConverterFFIAdapterTests: XCTestCase {
         XCTAssertThrowsError(try adapter.ttsModels()) { error in
             XCTAssertEqual(error as? EmbeddedConverterError, .artifactUnavailable)
         }
+        XCTAssertThrowsError(try adapter.ttsInstalledReadyEngine(language: "en-US", platform: "ios", installedModelIDsJSON: "[]", readyModelIDsJSON: "[]")) { error in
+            XCTAssertEqual(error as? EmbeddedConverterError, .artifactUnavailable)
+        }
         XCTAssertThrowsError(try adapter.ttsDefaultEngine(language: "pt-BR", platform: "ios")) { error in
             XCTAssertEqual(error as? EmbeddedConverterError, .artifactUnavailable)
         }

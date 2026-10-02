@@ -8,6 +8,7 @@ private typealias ConverterStringFree = @convention(c) (UnsafeMutablePointer<CCh
 private typealias ConverterLastError = @convention(c) () -> UnsafeMutablePointer<CChar>?
 private typealias ConverterTtsModels = @convention(c) () -> UnsafeMutablePointer<CChar>?
 private typealias ConverterTtsDefaultEngine = @convention(c) (UnsafePointer<CChar>?, UnsafePointer<CChar>?, UInt32) -> UnsafeMutablePointer<CChar>?
+private typealias ConverterTtsInstalledReadyEngine = @convention(c) (UnsafePointer<CChar>?, UnsafePointer<CChar>?, UInt32, UnsafePointer<CChar>?, UnsafePointer<CChar>?) -> UnsafeMutablePointer<CChar>?
 private typealias ConverterTtsModelInstall = @convention(c) (UnsafePointer<CChar>?, UnsafePointer<CChar>?, UnsafePointer<CChar>?, UnsafePointer<CChar>?) -> UnsafeMutablePointer<CChar>?
 private typealias ConverterTtsModelRemove = @convention(c) (UnsafePointer<CChar>?, UnsafePointer<CChar>?) -> Bool
 private typealias ConverterTtsModelMetadata = @convention(c) (UnsafePointer<CChar>?, UnsafePointer<CChar>?) -> UnsafeMutablePointer<CChar>?
@@ -41,6 +42,7 @@ final class ConverterFFIAdapter: EmbeddedConverter {
     private let lastError: () -> UnsafeMutablePointer<CChar>?
     private let ttsModelsJSON: () -> UnsafeMutablePointer<CChar>?
     private let ttsDefaultEngine: (UnsafePointer<CChar>?, UnsafePointer<CChar>?, UInt32) -> UnsafeMutablePointer<CChar>?
+    private let ttsInstalledReadyEngine: ((UnsafePointer<CChar>?, UnsafePointer<CChar>?, UInt32, UnsafePointer<CChar>?, UnsafePointer<CChar>?) -> UnsafeMutablePointer<CChar>?)?
     private let ttsModelInstall: ((UnsafePointer<CChar>?, UnsafePointer<CChar>?, UnsafePointer<CChar>?, UnsafePointer<CChar>?) -> UnsafeMutablePointer<CChar>?)?
     private let ttsModelRemove: ((UnsafePointer<CChar>?, UnsafePointer<CChar>?) -> Bool)?
     private let ttsModelMetadata: ((UnsafePointer<CChar>?, UnsafePointer<CChar>?) -> UnsafeMutablePointer<CChar>?)?
@@ -51,7 +53,7 @@ final class ConverterFFIAdapter: EmbeddedConverter {
     init(bundle: Bundle = .main) {
         guard let url = bundle.url(forResource: "converter_ffi", withExtension: "dylib"),
               let library = dlopen(url.path, RTLD_NOW | RTLD_LOCAL) else {
-            handle = nil; close = { _ in }; metadata = { _ in nil }; freeString = { _ in }; lastError = { nil }; ttsModelsJSON = { nil }; ttsDefaultEngine = { _, _, _ in nil }; ttsModelInstall = nil; ttsModelRemove = nil; ttsModelMetadata = nil; ttsModelInstallManifest = nil; ttsModelInstallCatalogManifest = nil; return
+            handle = nil; close = { _ in }; metadata = { _ in nil }; freeString = { _ in }; lastError = { nil }; ttsModelsJSON = { nil }; ttsDefaultEngine = { _, _, _ in nil }; ttsInstalledReadyEngine = nil; ttsModelInstall = nil; ttsModelRemove = nil; ttsModelMetadata = nil; ttsModelInstallManifest = nil; ttsModelInstallCatalogManifest = nil; return
         }
         func symbol<T>(_ name: String, as: T.Type) -> T? { dlsym(library, name).map { unsafeBitCast($0, to: T.self) } }
         guard let open: ConverterSessionOpen = symbol("converter_session_open", as: ConverterSessionOpen.self),
@@ -61,7 +63,7 @@ final class ConverterFFIAdapter: EmbeddedConverter {
               let error: ConverterLastError = symbol("converter_last_error", as: ConverterLastError.self),
               let models: ConverterTtsModels = symbol("converter_tts_models_json", as: ConverterTtsModels.self),
               let defaultEngine: ConverterTtsDefaultEngine = symbol("converter_tts_default_engine", as: ConverterTtsDefaultEngine.self) else {
-            dlclose(library); handle = nil; close = { _ in }; metadata = { _ in nil }; freeString = { _ in }; lastError = { nil }; ttsModelsJSON = { nil }; ttsDefaultEngine = { _, _, _ in nil }; ttsModelInstall = nil; ttsModelRemove = nil; ttsModelMetadata = nil; ttsModelInstallManifest = nil; ttsModelInstallCatalogManifest = nil; return
+            dlclose(library); handle = nil; close = { _ in }; metadata = { _ in nil }; freeString = { _ in }; lastError = { nil }; ttsModelsJSON = { nil }; ttsDefaultEngine = { _, _, _ in nil }; ttsInstalledReadyEngine = nil; ttsModelInstall = nil; ttsModelRemove = nil; ttsModelMetadata = nil; ttsModelInstallManifest = nil; ttsModelInstallCatalogManifest = nil; return
         }
         handle = library
         close = { value in dispose(value) }
@@ -70,6 +72,7 @@ final class ConverterFFIAdapter: EmbeddedConverter {
         lastError = error
         ttsModelsJSON = { models() }
         ttsDefaultEngine = { language, platform, api in defaultEngine(language, platform, api) }
+        ttsInstalledReadyEngine = symbol("converter_tts_installed_ready_engine", as: ConverterTtsInstalledReadyEngine.self)
         ttsModelInstall = symbol("converter_tts_model_install", as: ConverterTtsModelInstall.self)
         ttsModelRemove = symbol("converter_tts_model_remove", as: ConverterTtsModelRemove.self)
         ttsModelMetadata = symbol("converter_tts_model_metadata", as: ConverterTtsModelMetadata.self)
@@ -100,6 +103,24 @@ final class ConverterFFIAdapter: EmbeddedConverter {
         let result = language.withCString { languagePointer in
             platform.withCString { platformPointer in
                 ttsDefaultEngine(languagePointer, platformPointer, androidAPI)
+            }
+        }
+        guard let value = result, let engine = String(validatingUTF8: value) else {
+            throw EmbeddedConverterError.conversionFailed(readError())
+        }
+        defer { freeString(value) }
+        return engine
+    }
+
+    func ttsInstalledReadyEngine(language: String, platform: String, installedModelIDsJSON: String, readyModelIDsJSON: String, androidAPI: UInt32 = 0) throws -> String {
+        guard handle != nil, let select = ttsInstalledReadyEngine else { throw EmbeddedConverterError.artifactUnavailable }
+        let result = language.withCString { languagePointer in
+            platform.withCString { platformPointer in
+                installedModelIDsJSON.withCString { installedPointer in
+                    readyModelIDsJSON.withCString { readyPointer in
+                        select(languagePointer, platformPointer, androidAPI, installedPointer, readyPointer)
+                    }
+                }
             }
         }
         guard let value = result, let engine = String(validatingUTF8: value) else {
