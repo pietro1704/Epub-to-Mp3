@@ -320,12 +320,6 @@ impl ConversionWorker {
                     return Ok(());
                 }
                 Err(error) => {
-                    if is_edge_fallback_error(&error) {
-                        eprintln!(
-                            "Edge synthesis unavailable; falling back to embedded Piper: {error}"
-                        );
-                        return self.synthesize_with_piper(text, out);
-                    }
                     return Err(WorkerError::Edge(error));
                 }
             }
@@ -430,32 +424,6 @@ fn default_edge_voice(language: Option<&str>) -> &'static str {
         "es" | "es-es" | "es-mx" => "es-ES-ElviraNeural",
         "en" | "en-us" | "en-gb" => "en-US-AvaNeural",
         _ => "en-US-AvaNeural",
-    }
-}
-
-fn is_edge_fallback_error(error: &EdgeError) -> bool {
-    let message = error.to_string().to_ascii_lowercase();
-    ["429", "rate", "quota", "timeout", "timed out", "transport"]
-        .iter()
-        .any(|marker| message.contains(marker))
-}
-
-#[cfg(test)]
-mod fallback_tests {
-    #[test]
-    fn edge_fallback_markers_are_rate_limit_or_transport_failures() {
-        for message in [
-            "429 Too Many Requests",
-            "request timeout",
-            "transport closed",
-        ] {
-            let lower = message.to_ascii_lowercase();
-            assert!(
-                ["429", "rate", "quota", "timeout", "timed out", "transport"]
-                    .iter()
-                    .any(|marker| lower.contains(marker))
-            );
-        }
     }
 }
 
