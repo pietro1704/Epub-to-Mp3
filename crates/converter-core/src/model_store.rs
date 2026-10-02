@@ -6,6 +6,19 @@ use std::path::{Path, PathBuf};
 use thiserror::Error;
 use tokio::io::AsyncWriteExt;
 
+#[derive(Debug, Clone)]
+pub struct ModelArtifact {
+    pub name: String,
+    pub url: String,
+    pub sha256: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct ModelManifest {
+    pub model_id: String,
+    pub artifacts: Vec<ModelArtifact>,
+}
+
 #[derive(Debug, Error)]
 pub enum ModelStoreError {
     #[error("model download URL is missing")]
@@ -18,6 +31,10 @@ pub enum ModelStoreError {
     Io(#[from] std::io::Error),
     #[error("model checksum mismatch: expected {expected}, got {actual}")]
     ChecksumMismatch { expected: String, actual: String },
+    #[error("invalid model artifact name: {0}")]
+    InvalidArtifactName(String),
+    #[error("model manifest is empty")]
+    EmptyManifest,
 }
 
 #[derive(Debug, Clone)]
@@ -88,6 +105,78 @@ impl ModelStore {
         })
     }
 
+    pub async fn install_manifest(
+        &self,
+        manifest: &ModelManifest,
+    ) -> Result<Vec<InstalledModel>, ModelStoreError> {
+        if manifest.artifacts.is_empty() {
+            return Err(ModelStoreError::EmptyManifest);
+        }
+        let staging = self.root.join(format!(".{}.installing", manifest.model_id));
+        let target = self.root.join(&manifest.model_id);
+        let _ = tokio::fs::remove_dir_all(&staging).await;
+        tokio::fs::create_dir_all(&staging).await?;
+        let result = async {
+            let mut installed = Vec::with_capacity(manifest.artifacts.len());
+            for artifact in &manifest.artifacts {
+                let path = Path::new(&artifact.name);
+                if artifact.name.is_empty()
+                    || path.is_absolute()
+                    || path
+                        .components()
+                        .any(|c| matches!(c, std::path::Component::ParentDir))
+                {
+                    return Err(ModelStoreError::InvalidArtifactName(artifact.name.clone()));
+                }
+                let destination = staging.join(path);
+                if let Some(parent) = destination.parent() {
+                    tokio::fs::create_dir_all(parent).await?;
+                }
+                let temporary = PathBuf::from(format!("{}.part", destination.display()));
+                let expected = artifact.sha256.to_ascii_lowercase();
+                if expected.is_empty() {
+                    return Err(ModelStoreError::MissingChecksum);
+                }
+                let mut response = self
+                    .client
+                    .get(&artifact.url)
+                    .send()
+                    .await?
+                    .error_for_status()?;
+                let mut file = tokio::fs::File::create(&temporary).await?;
+                let mut digest = Sha256::new();
+                while let Some(chunk) = response.chunk().await? {
+                    digest.update(&chunk);
+                    file.write_all(&chunk).await?;
+                }
+                file.flush().await?;
+                let actual = hex::encode(digest.finalize());
+                if actual != expected {
+                    return Err(ModelStoreError::ChecksumMismatch { expected, actual });
+                }
+                tokio::fs::rename(&temporary, &destination).await?;
+                installed.push(InstalledModel {
+                    id: manifest.model_id.clone(),
+                    path: target.join(path),
+                    sha256: actual,
+                });
+            }
+            let backup = self.root.join(format!(".{}.previous", manifest.model_id));
+            let _ = tokio::fs::remove_dir_all(&backup).await;
+            if tokio::fs::try_exists(&target).await? {
+                tokio::fs::rename(&target, &backup).await?;
+            }
+            tokio::fs::rename(&staging, &target).await?;
+            let _ = tokio::fs::remove_dir_all(&backup).await;
+            Ok(installed)
+        }
+        .await;
+        if result.is_err() {
+            let _ = tokio::fs::remove_dir_all(&staging).await;
+        }
+        result
+    }
+
     pub async fn is_installed(&self, model_id: &str, expected_sha256: &str) -> bool {
         let path = self.model_path(model_id);
         match tokio::fs::read(path).await {
@@ -126,5 +215,33 @@ mod tests {
         let root = tempfile::tempdir().unwrap();
         let store = ModelStore::new(root.path());
         store.remove("missing").await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn manifest_rejects_empty_artifact_list_without_network_access() {
+        let root = tempfile::tempdir().unwrap();
+        let store = ModelStore::new(root.path());
+        let manifest = ModelManifest {
+            model_id: "kokoro-82m".to_owned(),
+            artifacts: Vec::new(),
+        };
+        let error = store.install_manifest(&manifest).await.unwrap_err();
+        assert!(matches!(error, ModelStoreError::EmptyManifest));
+    }
+
+    #[tokio::test]
+    async fn manifest_rejects_path_traversal_before_network_access() {
+        let root = tempfile::tempdir().unwrap();
+        let store = ModelStore::new(root.path());
+        let manifest = ModelManifest {
+            model_id: "kokoro-82m".to_owned(),
+            artifacts: vec![ModelArtifact {
+                name: "../escape.bin".to_owned(),
+                url: "https://example.invalid/model".to_owned(),
+                sha256: "0".repeat(64),
+            }],
+        };
+        let error = store.install_manifest(&manifest).await.unwrap_err();
+        assert!(matches!(error, ModelStoreError::InvalidArtifactName(_)));
     }
 }
