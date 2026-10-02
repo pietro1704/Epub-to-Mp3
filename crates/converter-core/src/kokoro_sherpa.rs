@@ -8,7 +8,12 @@ use std::{ffi::CString, path::Path};
 use crate::tts_runtime::RuntimeError;
 
 pub fn synthesize_wav(model_root: &Path, text: &str) -> Result<Vec<u8>, RuntimeError> {
-    let model = CString::new(model_root.join("model.onnx").to_string_lossy().as_bytes())
+    let model_path = if model_root.join("model.int8.onnx").is_file() {
+        model_root.join("model.int8.onnx")
+    } else {
+        model_root.join("model.onnx")
+    };
+    let model = CString::new(model_path.to_string_lossy().as_bytes())
         .map_err(|_| RuntimeError::RuntimeUnavailable("invalid model path".into()))?;
     let voices = CString::new(model_root.join("voices.bin").to_string_lossy().as_bytes())
         .map_err(|_| RuntimeError::RuntimeUnavailable("invalid voices path".into()))?;
