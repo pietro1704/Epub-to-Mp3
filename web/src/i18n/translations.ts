@@ -1249,7 +1249,7 @@ export const translations: Record<Locale, Translations> = {
           "A conversão demorou mais do que o esperado. Tente um engine diferente.",
         network: "Falha de rede. Verifique sua conexão e tente novamente.",
         engine_unavailable:
-          "Nenhum engine TTS disponível. Verifique os logs do servidor.",
+          "Nenhum engine TTS disponível. Instale um modelo de voz compatível em Configurações ou habilite o Edge-TTS.",
         audio_truncation:
           "Áudio gerado mais curto que o esperado. Tente diminuir o capítulo.",
         incomplete_segments:
@@ -2068,7 +2068,8 @@ export const translations: Record<Locale, Translations> = {
         rate_limit: "Rate limit reached. Please try again in a few minutes.",
         timeout: "Conversion took too long. Try a different engine.",
         network: "Network error. Check your connection and try again.",
-        engine_unavailable: "No TTS engine available. Check the server logs.",
+        engine_unavailable:
+          "No TTS engine available. Install a compatible voice model in Settings or enable Edge-TTS.",
         audio_truncation:
           "Generated audio is shorter than expected. Try a shorter chapter.",
         incomplete_segments:
