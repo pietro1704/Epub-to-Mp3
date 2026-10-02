@@ -30,45 +30,6 @@ class TTSEngine(Protocol):
         ...
 
 
-DEFAULT_PIPER_SOURCES = {
-    "pt": {
-        "model": "pt_BR-faber-medium.onnx",
-        "config": "pt_BR-faber-medium.onnx.json",
-        "model_url": "https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/pt/pt_BR/faber/medium/pt_BR-faber-medium.onnx",
-        "config_url": "https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/pt/pt_BR/faber/medium/pt_BR-faber-medium.onnx.json",
-    },
-    "en": {
-        "model": "en_US-lessac-medium.onnx",
-        "config": "en_US-lessac-medium.onnx.json",
-        "model_url": "https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/en/en_US/lessac/medium/en_US-lessac-medium.onnx",
-        "config_url": "https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/en/en_US/lessac/medium/en_US-lessac-medium.onnx.json",
-    },
-    "es": {
-        "model": "es_ES-davefx-medium.onnx",
-        "config": "es_ES-davefx-medium.onnx.json",
-        "model_url": "https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/es/es_ES/davefx/medium/es_ES-davefx-medium.onnx",
-        "config_url": "https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/es/es_ES/davefx/medium/es_ES-davefx-medium.onnx.json",
-    },
-    "fr": {
-        "model": "fr_FR-mls-medium.onnx",
-        "config": "fr_FR-mls-medium.onnx.json",
-        "model_url": "https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/fr/fr_FR/mls/medium/fr_FR-mls-medium.onnx",
-        "config_url": "https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/fr/fr_FR/mls/medium/fr_FR-mls-medium.onnx.json",
-    },
-    "de": {
-        "model": "de_DE-mls-medium.onnx",
-        "config": "de_DE-mls-medium.onnx.json",
-        "model_url": "https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/de/de_DE/mls/medium/de_DE-mls-medium.onnx",
-        "config_url": "https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/de/de_DE/mls/medium/de_DE-mls-medium.onnx.json",
-    },
-    "it": {
-        "model": "it_IT-riccardo-x_low.onnx",
-        "config": "it_IT-riccardo-x_low.onnx.json",
-        "model_url": "https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/it/it_IT/riccardo/x_low/it_IT-riccardo-x_low.onnx",
-        "config_url": "https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/it/it_IT/riccardo/x_low/it_IT-riccardo-x_low.onnx.json",
-    },
-}
-
 
 class TTSFactory:
     #: Engines allowed to honour a narrator/character voice split
