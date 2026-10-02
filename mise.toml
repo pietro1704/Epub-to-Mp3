@@ -316,20 +316,19 @@ run = """
 #!/bin/bash
 set -euo pipefail
 
-echo "🔍 Python CVE scan (PyPI service — installed env)..."
-if ! .venv/bin/python -m pip show pip-audit &>/dev/null; then
-    echo "Installing pip-audit..."
-    .venv/bin/python -m pip install pip-audit --quiet
-fi
-# Scans the *installed* environment, which catches stale local pins
-# requirements.txt has already addressed but which pip install
-# --upgrade would clear. PyPI service replaced OSV because OSV
-# advisories without a `ranges` field crash pip-audit 2.10
-# (KeyError 'ranges' on certain malicious-package alerts).
-.venv/bin/python -m pip_audit -s pypi || {
+echo "🔍 Python CVE scan (PyPI service — declared requirements)..."
+# Resolve in a temporary Python 3.12 environment because the project requires
+# numpy 2.5+ and the managed project venv intentionally has no pip.
+UV_BIN="${UV_BIN:-$HOME/.hermes/bin/uv}"
+AUDIT_TMP="$(mktemp -d "${TMPDIR:-/tmp}/epub-audit.XXXXXX")"
+trap 'rm -rf "$AUDIT_TMP"' EXIT
+"$UV_BIN" venv --python 3.12 "$AUDIT_TMP/venv" >/dev/null
+"$UV_BIN" pip install --python "$AUDIT_TMP/venv/bin/python" \
+    -r requirements.txt -r python_app/requirements.txt >/dev/null
+"$UV_BIN" tool run --from pip-audit pip-audit --path \
+    "$AUDIT_TMP/venv/lib/python3.12/site-packages" -s pypi || {
     echo ""
-    echo "⚠️  CVEs surfaced. Common cause: local venv is stale relative to requirements.txt."
-    echo "💡 Try: source .venv/bin/activate && pip install --upgrade -r requirements.txt"
+    echo "⚠️ CVEs surfaced in the resolved Python dependencies."
     exit 1
 }
 echo "✅ Python: no known vulnerabilities."
