@@ -237,13 +237,8 @@ class _EngineSelectionMixin:
                     return None
                 _warn_piper_fallback()
                 return "piper"
-            # If explicit override is unavailable, fall through to default resolution.
-        if _has_piper_support() and (not available_set or "piper" in available_set):
-            if _piper_fallback_disabled():
-                print("\nℹ️  DISABLE_PIPER_FALLBACK=1: skipping Piper, will retry Edge.\n")
-                return None
-            _warn_piper_fallback()
-            return "piper"
+            # An unavailable explicit override must not silently select another
+            # local engine; the caller will report the controlled failure.
         return None
 
     def _predict_edge_runtime_seconds(self, chapter_chars: int) -> float:
