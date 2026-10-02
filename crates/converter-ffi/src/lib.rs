@@ -213,6 +213,47 @@ pub unsafe extern "C" fn converter_tts_runtime_status_json(
     }
 }
 
+/// Synthesizes one text payload with the optional sherpa Kokoro runtime.
+/// Returns an owned WAV byte buffer; release it with `converter_bytes_free`.
+#[cfg(feature = "kokoro-sherpa-runtime")]
+#[no_mangle]
+pub unsafe extern "C" fn converter_tts_synthesize_wav(
+    model_root: *const c_char,
+    text: *const c_char,
+    out_len: *mut usize,
+) -> *mut u8 {
+    clear_last_error();
+    if out_len.is_null() {
+        return fail::<*mut u8>("output length pointer is null".to_owned());
+    }
+    let model_root = match c_string(model_root, "model root") {
+        Ok(value) => value,
+        Err(error) => return fail::<*mut u8>(error),
+    };
+    let text = match c_string(text, "text") {
+        Ok(value) => value,
+        Err(error) => return fail::<*mut u8>(error),
+    };
+    let wav = match converter_core::kokoro_sherpa::synthesize_wav(Path::new(&model_root), &text) {
+        Ok(wav) => wav,
+        Err(error) => return fail::<*mut u8>(error.to_string()),
+    };
+    let mut wav = wav.into_boxed_slice();
+    let length = wav.len();
+    let pointer = wav.as_mut_ptr();
+    std::mem::forget(wav);
+    *out_len = length;
+    pointer
+}
+
+/// Frees a byte buffer returned by a converter ABI function.
+#[no_mangle]
+pub unsafe extern "C" fn converter_bytes_free(pointer: *mut u8, length: usize) {
+    if !pointer.is_null() {
+        drop(Vec::from_raw_parts(pointer, length, length));
+    }
+}
+
 /// Returns the default local engine for a language and platform.
 #[no_mangle]
 pub unsafe extern "C" fn converter_tts_default_engine(

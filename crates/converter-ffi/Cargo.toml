@@ -11,6 +11,7 @@ default = []
 android-jni = ["dep:jni"]
 piper-runtime = ["dep:piper_runtime"]
 kokoro-tract-runtime = ["converter-core/kokoro-tract-runtime"]
+kokoro-sherpa-runtime = ["converter-core/kokoro-sherpa-runtime"]
 
 [lib]
 crate-type = ["cdylib", "rlib"]
