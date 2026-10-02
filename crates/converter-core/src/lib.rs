@@ -17,6 +17,8 @@ pub mod text;
 pub mod toc;
 pub mod tts;
 pub mod tts_runtime;
+#[cfg(feature = "kokoro-sherpa-runtime")]
+pub mod kokoro_sherpa;
 pub mod worker;
 
 /// Returns the core library health status.
