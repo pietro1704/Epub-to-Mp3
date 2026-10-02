@@ -333,6 +333,43 @@ pub unsafe extern "C" fn converter_tts_model_install_manifest(
     }
 }
 
+/// Installs the verified manifest embedded in the shared catalog.
+#[no_mangle]
+pub unsafe extern "C" fn converter_tts_model_install_catalog_manifest(
+    model_id: *const c_char,
+    root: *const c_char,
+) -> *mut c_char {
+    clear_last_error();
+    let model_id = match c_string(model_id, "model id") {
+        Ok(value) => value,
+        Err(error) => return fail(error),
+    };
+    let root = match c_string(root, "model storage root") {
+        Ok(value) => value,
+        Err(error) => return fail(error),
+    };
+    let store = converter_core::model_store::ModelStore::new(&root);
+    let manifest = match converter_core::model_store::ModelStore::catalog_manifest(&model_id) {
+        Ok(manifest) => manifest,
+        Err(error) => return fail(error.to_string()),
+    };
+    let runtime = match tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+    {
+        Ok(runtime) => runtime,
+        Err(error) => return fail(format!("failed to start model installer: {error}")),
+    };
+    match runtime.block_on(store.install_manifest(&manifest)) {
+        Ok(_) => CString::new(store.root().join(model_id).to_string_lossy().as_bytes())
+            .map_or_else(
+                |_| fail("installed model path contains an interior NUL byte".to_owned()),
+                CString::into_raw,
+            ),
+        Err(error) => fail(error.to_string()),
+    }
+}
+
 /// Removes a catalog model from the supplied storage root.
 #[no_mangle]
 pub unsafe extern "C" fn converter_tts_model_remove(
@@ -981,6 +1018,25 @@ mod tests {
                 .to_str()
                 .unwrap()
                 .contains("invalid model artifacts JSON"));
+            converter_string_free(error);
+        }
+    }
+
+    #[test]
+    fn catalog_manifest_rejects_unknown_model_before_network_access() {
+        let model = CString::new("missing").unwrap();
+        let tempdir = tempfile::tempdir().unwrap();
+        let root = CString::new(tempdir.path().to_str().unwrap()).unwrap();
+        unsafe {
+            assert!(
+                converter_tts_model_install_catalog_manifest(model.as_ptr(), root.as_ptr())
+                    .is_null()
+            );
+            let error = converter_last_error();
+            assert!(CStr::from_ptr(error)
+                .to_str()
+                .unwrap()
+                .contains("unknown TTS model"));
             converter_string_free(error);
         }
     }
