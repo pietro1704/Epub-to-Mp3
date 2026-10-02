@@ -9,7 +9,7 @@ description = "Core domain types for EPUB to MP3 conversion"
 [features]
 default = []
 kokoro-runtime = []
-kokoro-sherpa-runtime = ["dep:sherpa-onnx-sys"]
+kokoro-sherpa-runtime = ["dep:sherpa-onnx-sys", "dep:bzip2", "dep:tar"]
 kokoro-tract-runtime = ["dep:tract-onnx", "dep:misaki-rs"]
 
 
@@ -36,6 +36,8 @@ http = "1"
 rand = "0.9"
 url = "2"
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "stream"] }
+bzip2 = { version = "0.4", optional = true }
+tar = { version = "0.4", optional = true }
 tract-onnx = { version = "0.23.8", default-features = false, optional = true }
 misaki-rs = { version = "0.6", default-features = false, optional = true }
 sherpa-onnx-sys = { version = "1.13.8", default-features = false, optional = true }

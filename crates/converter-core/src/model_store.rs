@@ -1,8 +1,12 @@
 //! Verified, atomic storage for downloadable TTS models.
 
 use crate::model_catalog::TtsModelDescriptor;
+#[cfg(feature = "kokoro-sherpa-runtime")]
+use bzip2::read::BzDecoder;
 use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
+#[cfg(feature = "kokoro-sherpa-runtime")]
+use tar::Archive;
 use thiserror::Error;
 use tokio::io::AsyncWriteExt;
 
@@ -39,6 +43,8 @@ pub enum ModelStoreError {
     EmptyManifest,
     #[error("unknown TTS model: {0}")]
     UnknownModel(String),
+    #[error("invalid model archive: {0}")]
+    InvalidArchive(String),
 }
 
 #[derive(Debug, Clone)]
@@ -183,7 +189,17 @@ impl ModelStore {
                 if actual != expected {
                     return Err(ModelStoreError::ChecksumMismatch { expected, actual });
                 }
-                tokio::fs::rename(&temporary, &destination).await?;
+                if artifact.name.ends_with(".tar.bz2") {
+                    #[cfg(feature = "kokoro-sherpa-runtime")]
+                    extract_model_archive(&temporary, &staging)?;
+                    #[cfg(not(feature = "kokoro-sherpa-runtime"))]
+                    return Err(ModelStoreError::InvalidArchive(
+                        "archive extraction requires kokoro-sherpa-runtime".to_owned(),
+                    ));
+                    tokio::fs::remove_file(&temporary).await?;
+                } else {
+                    tokio::fs::rename(&temporary, &destination).await?;
+                }
                 installed.push(InstalledModel {
                     id: manifest.model_id.clone(),
                     path: target.join(path),
@@ -256,6 +272,56 @@ impl ModelStore {
     pub fn root(&self) -> &Path {
         &self.root
     }
+}
+
+#[cfg(feature = "kokoro-sherpa-runtime")]
+fn extract_model_archive(archive_path: &Path, staging: &Path) -> Result<(), ModelStoreError> {
+    let file = std::fs::File::open(archive_path)?;
+    let decoder = BzDecoder::new(file);
+    let mut archive = Archive::new(decoder);
+    let archive_root = staging.join(".archive");
+    std::fs::create_dir_all(&archive_root)?;
+    for entry in archive
+        .entries()
+        .map_err(|error| ModelStoreError::InvalidArchive(error.to_string()))?
+    {
+        let mut entry =
+            entry.map_err(|error| ModelStoreError::InvalidArchive(error.to_string()))?;
+        let path = entry
+            .path()
+            .map_err(|error| ModelStoreError::InvalidArchive(error.to_string()))?
+            .into_owned();
+        if path.is_absolute()
+            || path
+                .components()
+                .any(|component| matches!(component, std::path::Component::ParentDir))
+        {
+            return Err(ModelStoreError::InvalidArtifactName(
+                path.display().to_string(),
+            ));
+        }
+        let destination = archive_root.join(&path);
+        if let Some(parent) = destination.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        entry
+            .unpack(&destination)
+            .map_err(|error| ModelStoreError::InvalidArchive(error.to_string()))?;
+    }
+    let entries = std::fs::read_dir(&archive_root)?.collect::<Result<Vec<_>, _>>()?;
+    if entries.len() == 1 && entries[0].path().is_dir() {
+        let root = entries[0].path();
+        for entry in std::fs::read_dir(root)? {
+            let entry = entry?;
+            std::fs::rename(entry.path(), staging.join(entry.file_name()))?;
+        }
+    } else {
+        for entry in entries {
+            std::fs::rename(entry.path(), staging.join(entry.file_name()))?;
+        }
+    }
+    std::fs::remove_dir_all(&archive_root)?;
+    Ok(())
 }
 
 #[cfg(test)]

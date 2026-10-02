@@ -629,6 +629,7 @@ dependencies = [
 name = "converter-core"
 version = "0.1.0"
 dependencies = [
+ "bzip2 0.4.4",
  "criterion",
  "edge-tts-rust",
  "futures-util",
@@ -647,6 +648,7 @@ dependencies = [
  "sha1",
  "sha2",
  "sherpa-onnx-sys",
+ "tar",
  "tempfile",
  "thiserror 2.0.21",
  "tokio",
