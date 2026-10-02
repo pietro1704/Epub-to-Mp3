@@ -336,6 +336,7 @@ fn encode_wav_pcm_24khz(samples: &[f32]) -> Result<Vec<u8>, RuntimeError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(not(feature = "kokoro-sherpa-runtime"))]
     use std::fs;
     use tempfile::tempdir;
 
