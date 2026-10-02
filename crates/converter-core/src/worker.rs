@@ -156,6 +156,15 @@ impl ConversionWorker {
                 "source book has no readable chapter text".into(),
             ));
         }
+        let detected_language = request
+            .language
+            .as_deref()
+            .or(book.language.as_deref())
+            .or_else(|| {
+                book.chapters
+                    .first()
+                    .and_then(|chapter| detect_language(&chapter.text))
+            });
         let parallelism = if request.no_parallel {
             1
         } else {
@@ -204,11 +213,7 @@ impl ConversionWorker {
                     }
                     let stem = format!("{:04}-{}", position + 1, sanitize(&chapter.name));
                     let mp3 = output_dir.join(format!("{stem}.mp3"));
-                    let language = request
-                        .language
-                        .as_deref()
-                        .or(book.language.as_deref())
-                        .or_else(|| detect_language(&text));
+                    let language = detected_language;
                     let engine = select_engine(request.engine.as_deref(), &self.config);
                     if !mp3.is_file() {
                         eprintln!("synthesizing chapter {}/{}", position + 1, total);
