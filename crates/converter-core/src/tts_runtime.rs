@@ -4,7 +4,10 @@
 //! synthesize audio. This module keeps the distinction explicit and shared by
 //! every client adapter.
 
-use std::path::{Path, PathBuf};
+use std::{
+    collections::HashMap,
+    path::{Path, PathBuf},
+};
 
 use serde::Serialize;
 use thiserror::Error;
@@ -63,6 +66,77 @@ pub fn normalize_kokoro_english_phonemes(ipa: &str) -> String {
         .replace("ɪə", "iə")
         .replace('ː', "")
         .replace('^', "")
+}
+
+#[derive(Debug, Clone)]
+pub struct KokoroTokenizer {
+    vocab: HashMap<String, i64>,
+    bos_id: i64,
+    eos_id: i64,
+    max_length: usize,
+    max_token_chars: usize,
+}
+
+impl KokoroTokenizer {
+    pub fn from_json(value: &str, max_length: usize) -> Result<Self, RuntimeError> {
+        let document: serde_json::Value = serde_json::from_str(value).map_err(|error| {
+            RuntimeError::RuntimeUnavailable(format!("invalid tokenizer: {error}"))
+        })?;
+        let object = document
+            .get("model")
+            .and_then(|model| model.get("vocab"))
+            .and_then(serde_json::Value::as_object)
+            .ok_or_else(|| RuntimeError::RuntimeUnavailable("tokenizer vocab is missing".into()))?;
+        let vocab: HashMap<_, _> = object
+            .iter()
+            .filter_map(|(token, id)| id.as_i64().map(|id| (token.clone(), id)))
+            .collect();
+        let bos_id = *vocab.get("$").ok_or_else(|| {
+            RuntimeError::RuntimeUnavailable("tokenizer BOS token is missing".into())
+        })?;
+        let max_token_chars = vocab
+            .keys()
+            .map(|token| token.chars().count())
+            .max()
+            .unwrap_or(1);
+        Ok(Self {
+            vocab,
+            bos_id,
+            eos_id: bos_id,
+            max_length,
+            max_token_chars,
+        })
+    }
+
+    pub fn encode_phonemes(&self, phonemes: &str) -> Result<Vec<i64>, RuntimeError> {
+        let chars: Vec<_> = phonemes.chars().collect();
+        let mut tokens = vec![self.bos_id];
+        let mut index = 0;
+        while index < chars.len() && tokens.len() + 1 < self.max_length {
+            let limit = self.max_token_chars.min(chars.len() - index);
+            let mut matched = None;
+            for length in (1..=limit).rev() {
+                let token: String = chars[index..index + length].iter().collect();
+                if let Some(id) = self.vocab.get(&token) {
+                    matched = Some((length, *id));
+                    break;
+                }
+            }
+            if let Some((length, id)) = matched {
+                tokens.push(id);
+                index += length;
+            } else if chars[index].is_whitespace() {
+                index += 1;
+            } else {
+                return Err(RuntimeError::RuntimeUnavailable(format!(
+                    "tokenizer does not contain phoneme {:?}",
+                    chars[index]
+                )));
+            }
+        }
+        tokens.push(self.eos_id);
+        Ok(tokens)
+    }
 }
 
 /// Checks the on-disk Kokoro model layout without loading a native runtime.
@@ -140,6 +214,14 @@ mod tests {
     #[test]
     fn normalizes_common_kokoro_english_ipa_symbols() {
         assert_eq!(normalize_kokoro_english_phonemes("t^ʃ e^ɪɚ"), "ʧ Aəɹ");
+    }
+
+    #[test]
+    fn tokenizes_with_longest_match_and_bos_eos() {
+        let tokenizer =
+            KokoroTokenizer::from_json(r#"{"model":{"vocab":{"$":0,"a":1,"ab":2,"b":3}}}"#, 16)
+                .unwrap();
+        assert_eq!(tokenizer.encode_phonemes("ab a").unwrap(), vec![0, 2, 1, 0]);
     }
 
     #[test]
