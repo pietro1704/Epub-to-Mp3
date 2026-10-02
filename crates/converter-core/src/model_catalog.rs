@@ -55,31 +55,31 @@ impl TtsModelDescriptor {
 static KOKORO_ENGLISH_ARTIFACTS: &[TtsArtifactDescriptor] = &[
     TtsArtifactDescriptor {
         name: "onnx/model_quantized.onnx",
-        url: "https://huggingface.co/onnx-community/Kokoro-82M-ONNX/resolve/main/onnx/model_quantized.onnx",
-        sha256: "0d55b15d4b735d61a21b0105136bc81b8768c4db94753193c19354fa863cd556",
-        bytes: 92_360_543,
+        url: "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/onnx/model_quantized.onnx",
+        sha256: "fbae9257e1e05ffc727e951ef9b9c98418e6d79f1c9b6b13bd59f5c9028a1478",
+        bytes: 92_361_116,
     },
     TtsArtifactDescriptor {
         name: "config.json",
-        url: "https://huggingface.co/onnx-community/Kokoro-82M-ONNX/resolve/main/config.json",
+        url: "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/config.json",
         sha256: "df34b4f930b23447cd4dc410fabfb42eb3f24e803e6c3f97d618fb359380a36f",
         bytes: 44,
     },
     TtsArtifactDescriptor {
         name: "tokenizer.json",
-        url: "https://huggingface.co/onnx-community/Kokoro-82M-ONNX/resolve/main/tokenizer.json",
-        sha256: "ee301fc39cf903ddbb463564630a28767785e3a11edd6d8226e92d4b4ef131bb",
-        bytes: 4_608,
+        url: "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/tokenizer.json",
+        sha256: "77a02c8e164413299b4b4c403b14f8e0e1c1b727db4d46a09d6327b861060a34",
+        bytes: 3_497,
     },
     TtsArtifactDescriptor {
         name: "tokenizer_config.json",
-        url: "https://huggingface.co/onnx-community/Kokoro-82M-ONNX/resolve/main/tokenizer_config.json",
+        url: "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/tokenizer_config.json",
         sha256: "be1cb066d6ef6b074b3f15e6a6dd21ac88ff3cdaedf325f0aaed686c70f75d20",
         bytes: 113,
     },
     TtsArtifactDescriptor {
         name: "voices/af.bin",
-        url: "https://huggingface.co/onnx-community/Kokoro-82M-ONNX/resolve/main/voices/af.bin",
+        url: "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/voices/af.bin",
         sha256: "a4f11d9d055a12bfa0db2668a3e4f0ef8fd1f1ccca69494479718e44dbf9e41a",
         bytes: 524_288,
     },
@@ -99,7 +99,7 @@ pub static MODELS: &[TtsModelDescriptor] = &[
         ],
         minimum_android_api: Some(29),
         default_rank: 1,
-        download_bytes: 92_889_596,
+        download_bytes: 92_889_058,
         artifacts: KOKORO_ENGLISH_ARTIFACTS,
         runtime_available: false,
     },
@@ -171,10 +171,24 @@ pub fn default_engine(
     platform: ModelPlatform,
     android_api: Option<u32>,
 ) -> &'static str {
+    let _ = (language, platform, android_api);
+    "none"
+}
+
+/// Selects the highest-ranked compatible engine from models installed locally.
+///
+/// An empty result is intentional: the application starts without voice models
+/// and must not silently download or choose Piper as an implicit default.
+pub fn installed_engine(
+    language: &str,
+    platform: ModelPlatform,
+    android_api: Option<u32>,
+    installed_model_ids: &[&str],
+) -> Option<&'static str> {
     candidates(language, platform, android_api)
-        .first()
+        .into_iter()
+        .find(|model| installed_model_ids.contains(&model.id))
         .map(|model| model.engine)
-        .unwrap_or("piper")
 }
 
 #[cfg(test)]
@@ -183,12 +197,12 @@ mod tests {
 
     #[test]
     fn does_not_select_unimplemented_kokoro_runtime() {
-        assert_eq!(default_engine("en-US", ModelPlatform::Macos, None), "piper");
+        assert_eq!(default_engine("en-US", ModelPlatform::Macos, None), "none");
     }
 
     #[test]
     fn does_not_claim_unverified_multilingual_kokoro_voices() {
-        assert_eq!(default_engine("pt-BR", ModelPlatform::Macos, None), "piper");
+        assert_eq!(default_engine("pt-BR", ModelPlatform::Macos, None), "none");
     }
 
     #[test]
@@ -198,7 +212,7 @@ mod tests {
             .find(|model| model.id == "kokoro-82m")
             .unwrap();
         assert_eq!(model.artifacts.len(), 5);
-        assert_eq!(model.artifacts[0].bytes, 92_360_543);
+        assert_eq!(model.artifacts[0].bytes, 92_361_116);
         assert_eq!(model.artifacts[4].name, "voices/af.bin");
     }
 
@@ -206,7 +220,19 @@ mod tests {
     fn protects_android_api_28_from_native_models() {
         assert_eq!(
             default_engine("pt-BR", ModelPlatform::Android, Some(28)),
-            "piper"
+            "none"
+        );
+    }
+
+    #[test]
+    fn selects_only_an_installed_compatible_model() {
+        assert_eq!(
+            installed_engine("en-US", ModelPlatform::Macos, None, &[]),
+            None
+        );
+        assert_eq!(
+            installed_engine("en-US", ModelPlatform::Macos, None, &["kokoro-82m"]),
+            None
         );
     }
 

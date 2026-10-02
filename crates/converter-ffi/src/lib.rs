@@ -1069,7 +1069,7 @@ mod tests {
             let language = CString::new("pt-BR").unwrap();
             let platform = CString::new("android").unwrap();
             let engine = converter_tts_default_engine(language.as_ptr(), platform.as_ptr(), 28);
-            assert_eq!(CStr::from_ptr(engine).to_str().unwrap(), "piper");
+            assert_eq!(CStr::from_ptr(engine).to_str().unwrap(), "none");
             converter_string_free(engine);
         }
     }

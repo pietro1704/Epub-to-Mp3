@@ -80,8 +80,8 @@ description = "Install Android NDK dependencies through mise-managed sdkmanager"
 run = "SDKMANAGER=\"$HOME/.local/share/mise/installs/android-sdk/11.0/cmdline-tools/11.0/bin/sdkmanager\"; test -x \"$SDKMANAGER\"; \"$SDKMANAGER\" \"platform-tools\" \"platforms;android-35\" \"build-tools;35.0.0\" \"ndk;28.2.13676358\"; mise install ninja@latest"
 
 [tasks."android:runtime-audit"]
-description = "Audit required embedded Piper Android native libraries"
-run = "mise exec -- bash -lc 'set -e; test -d flutter_app/android/app/src/main/jniLibs/arm64-v8a; test -f flutter_app/android/app/src/main/assets/piper/pt_BR-faber-medium.onnx; test -f flutter_app/android/app/src/main/assets/piper/pt_BR-faber-medium.onnx.json; if find flutter_app/android/app/src/main/jniLibs -type f -name \"libpiper_runtime.so\" -print -quit | grep -q .; then echo \"libpiper_runtime.so present\"; else echo \"ERROR: libpiper_runtime.so is missing; Piper inference is not Android-ready\" >&2; exit 1; fi'"
+description = "Audit the optional embedded Piper Android runtime"
+run = "mise exec -- bash -lc 'set -e; test -d flutter_app/android/app/src/main/jniLibs/arm64-v8a; if find flutter_app/android/app/src/main/jniLibs -type f -name \"libpiper_runtime.so\" -print -quit | grep -q .; then echo \"libpiper_runtime.so present\"; else echo \"ERROR: libpiper_runtime.so is missing; Piper inference is not Android-ready\" >&2; exit 1; fi'"
 
 [tasks."piper:android-arm64"]
 description = "Build Piper Embedded runtime for Android arm64 with the mise-managed NDK"

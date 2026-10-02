@@ -132,13 +132,17 @@ class TtsModelCatalog {
     required String language,
     String? platform,
     int? androidApi,
-  }) =>
-      candidates(
-        language: language,
-        platform: platform,
-        androidApi: androidApi,
-      ).firstOrNull?.engine ??
-      'piper';
+    Set<String> installedModelIds = const {},
+  }) {
+    for (final model in candidates(
+      language: language,
+      platform: platform,
+      androidApi: androidApi,
+    )) {
+      if (installedModelIds.contains(model.id)) return model.engine;
+    }
+    return 'none';
+  }
 }
 
 extension<T> on List<T> {

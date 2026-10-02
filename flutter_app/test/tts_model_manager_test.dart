@@ -26,6 +26,7 @@ void main() {
         qualityRank: 1,
         speedRank: 1,
         defaultRank: 1,
+        runtimeAvailable: true,
       );
       await expectLater(TtsModelManager().download(model), throwsStateError);
     },
