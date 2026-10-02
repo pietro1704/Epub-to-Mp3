@@ -1,6 +1,7 @@
 use std::{
     collections::HashMap,
     convert::Infallible,
+    fs,
     net::SocketAddr,
     path::{Path, PathBuf},
     sync::Arc,
@@ -182,6 +183,52 @@ fn initial_job(id: String, f: &CreateJob) -> JobSnapshot {
     }
 }
 
+fn snapshot_path(config: &AppConfig, job_id: &str) -> PathBuf {
+    config.paths.jobs_dir.join(format!("{job_id}.snapshot.json"))
+}
+
+fn persist_snapshot(config: &AppConfig, snapshot: &JobSnapshot) -> std::io::Result<()> {
+    fs::create_dir_all(&config.paths.jobs_dir)?;
+    let target = snapshot_path(config, &snapshot.job_id);
+    let temporary = target.with_extension(format!("tmp-{}", std::process::id()));
+    let bytes = serde_json::to_vec_pretty(snapshot)
+        .map_err(|error| std::io::Error::other(error.to_string()))?;
+    fs::write(&temporary, bytes)?;
+    fs::rename(temporary, target)
+}
+
+fn load_snapshots(config: &AppConfig) -> HashMap<String, Job> {
+    let mut jobs = HashMap::new();
+    let Ok(entries) = fs::read_dir(&config.paths.jobs_dir) else {
+        return jobs;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let Some(name) = path.file_name().and_then(|value| value.to_str()) else {
+            continue;
+        };
+        if !name.ends_with(".snapshot.json") {
+            continue;
+        }
+        let Ok(bytes) = fs::read(path) else {
+            continue;
+        };
+        let Ok(snapshot) = serde_json::from_slice::<JobSnapshot>(&bytes) else {
+            continue;
+        };
+        let (events, _) = broadcast::channel(64);
+        jobs.insert(
+            snapshot.job_id.clone(),
+            Job {
+                snapshot,
+                events,
+                cancellation: converter_core::piper::CancellationToken::default(),
+            },
+        );
+    }
+    jobs
+}
+
 async fn health() -> impl IntoResponse {
     (StatusCode::OK, Json(HealthResponse { status: "healthy" }))
 }
@@ -349,6 +396,9 @@ async fn create_job(State(state): State<AppState>, Json(form): Json<CreateJob>) 
             cancellation: converter_core::piper::CancellationToken::default(),
         },
     );
+    if let Some(job) = state.jobs.read().await.get(&id) {
+        let _ = persist_snapshot(&state.config, &job.snapshot);
+    }
     let cancellation = state
         .jobs
         .read()
@@ -417,6 +467,7 @@ async fn create_job(State(state): State<AppState>, Json(form): Json<CreateJob>) 
                     job.snapshot.events.push(error.to_string());
                 }
             }
+            let _ = persist_snapshot(&state.config, &job.snapshot);
             let _ = sender.send(SseMessage::Snapshot(job.snapshot.clone()));
         }
     });
@@ -604,6 +655,7 @@ async fn fulltext(AxumPath(id): AxumPath<String>, State(state): State<AppState>)
 }
 
 fn app(config: AppConfig) -> Router {
+    let recovered_jobs = load_snapshots(&config);
     Router::new()
         .route("/health", get(health))
         .route("/api/health", get(health))
@@ -627,7 +679,7 @@ fn app(config: AppConfig) -> Router {
         .fallback_service(ServeDir::new("web/dist").append_index_html_on_directories(true))
         .with_state(AppState {
             config,
-            jobs: Arc::new(RwLock::new(HashMap::new())),
+            jobs: Arc::new(RwLock::new(recovered_jobs)),
         })
 }
 async fn resumable_jobs(State(state): State<AppState>) -> Response {
