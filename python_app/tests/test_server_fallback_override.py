@@ -12,6 +12,7 @@ from src._server_engine_helpers import (
     _build_engine_chain,
     _engine_chain_fallback_enabled,
     _fallback_engine_override,
+    _piper_model_available,
 )
 from src.config import ConversionConfig
 
@@ -51,6 +52,21 @@ class TestFallbackEngineOverride(unittest.TestCase):
         fallback_engines = [c.engine for c in chain[1:] if c.engine != "edge"]
         self.assertNotIn("kokoro", fallback_engines)
         self.assertNotIn("coqui", fallback_engines)
+
+    def test_explicit_piper_fallback_still_requires_installed_model(self):
+        with patch("src._server_engine_helpers._piper_model_available", return_value=False):
+            cfg = ConversionConfig(engine="edge", voice="en-US-JennyNeural", primary_language="en")
+            with patch.dict(
+                os.environ,
+                {"FALLBACK_ENGINE_OVERRIDE": "piper", "ENGINE_CHAIN_FALLBACK": "1"},
+                clear=False,
+            ):
+                chain = _build_engine_chain(cfg)
+        self.assertNotIn("piper", [candidate.engine for candidate in chain])
+
+    def test_piper_model_probe_is_false_when_factory_has_no_model(self):
+        with patch("python_app.server.tts_factory._find_piper_model", side_effect=FileNotFoundError):
+            self.assertFalse(_piper_model_available("pt-BR"))
 
 
 class TestEngineChainFallbackGate(unittest.TestCase):
