@@ -6,7 +6,6 @@ import AppKit
 import AVFoundation
 
 final class MacAppKitRootControllerTests: XCTestCase {
-<<<<<<< HEAD
     @MainActor
     func testPlayButtonResumesPausedAudioAtItsExactTime() async throws {
         let suiteName = "MacPauseResume.\(UUID().uuidString)"
@@ -102,19 +101,6 @@ final class MacAppKitRootControllerTests: XCTestCase {
     }
 
     @MainActor
-||||||| e1d1565d6e
-=======
-    func testPlayerBarIsCollapsedWhenThereIsNoReadingContext() {
-        XCTAssertFalse(
-            MacAppKitRootController.shouldShowPlayerBar(
-                hasSnapshot: false,
-                hasCurrentBook: false,
-                hasPreviouslyOpenedBook: false
-            )
-        )
-    }
-
->>>>>>> origin/chore/repository-trust
     func testMainMenuProvidesNativeFileEditViewWindowAndHelpMenus() throws {
         let mainMenu = EpubToMp3App.makeMainMenu()
         let menuTitles = mainMenu.items.compactMap { $0.submenu?.title }

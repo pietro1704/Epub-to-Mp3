@@ -22,15 +22,8 @@ fi
 echo "$NOW" > "$STAMP"
 
 LOG="/tmp/claude-web-typecheck.log"
-<<<<<<< HEAD
 ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || exit 0
 cd "$ROOT/web" || exit 0
-||||||| e1d1565d6e
-cd /Users/pietropugliesi/Developer/Epub-to-Mp3/web || exit 0
-=======
-PROJECT_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
-cd "$PROJECT_DIR/web" || exit 0
->>>>>>> origin/chore/repository-trust
 {
     echo "=== $(date) :: edited $FILE"
     npx tsc --noEmit -p tsconfig.build.json 2>&1 | tail -20

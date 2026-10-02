@@ -433,33 +433,12 @@ final class MacAppKitRootController: NSSplitViewController, NSToolbarDelegate {
     }
 
     private func refreshPlayerBar() {
-<<<<<<< HEAD
         syncPlayerCoverArt()
         let hasReadingContext = player.snapshot != nil
             || UserDefaults.standard.string(forKey: ReaderSessionState.currentlyReadingBookIDKey) != nil
             || library.books.contains { $0.lastOpenedAt != nil }
         playerBar.view.isHidden = !hasReadingContext
         playerBarHeightConstraint?.constant = hasReadingContext ? 60 : 0
-||||||| e1d1565d6e
-        let hasReadingContext = player.snapshot != nil
-            || UserDefaults.standard.string(forKey: ReaderSessionState.currentlyReadingBookIDKey) != nil
-            || library.books.contains { $0.lastOpenedAt != nil }
-        playerBar.view.isHidden = !hasReadingContext
-        playerBarHeightConstraint?.constant = hasReadingContext ? 60 : 0
-=======
-        let hasReadingContext = Self.shouldShowPlayerBar(
-            hasSnapshot: player.snapshot != nil,
-            hasCurrentBook: UserDefaults.standard.string(forKey: ReaderSessionState.currentlyReadingBookIDKey) != nil,
-            hasPreviouslyOpenedBook: library.books.contains { $0.lastOpenedAt != nil }
-        )
-        if hasReadingContext {
-            playerBarHeightConstraint?.constant = 60
-            playerBar.setCollapsed(false)
-        } else {
-            playerBar.setCollapsed(true)
-            playerBarHeightConstraint?.constant = 0
-        }
->>>>>>> origin/chore/repository-trust
     }
 
     private func syncPlayerCoverArt() {

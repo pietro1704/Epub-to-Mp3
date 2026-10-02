@@ -11,15 +11,8 @@
 
 set -euo pipefail
 
-<<<<<<< HEAD
 ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || exit 0
 cd "$ROOT/ios/EpubToMp3" || {
-||||||| e1d1565d6e
-cd /Users/pietropugliesi/Developer/Epub-to-Mp3/ios/EpubToMp3 || {
-=======
-PROJECT_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
-cd "$PROJECT_DIR/ios/EpubToMp3" || {
->>>>>>> origin/chore/repository-trust
     echo '{"systemMessage":"xcode_build_smoke: ios/EpubToMp3 not found, skipping"}'
     exit 0
 }
@@ -34,16 +27,8 @@ fi
 
 # Only run when at least one Swift file changed in the working tree —
 # avoids paying ~30 s on no-op turns.
-<<<<<<< HEAD
 CHANGED=$(git -C "$ROOT" diff --name-only HEAD 2>/dev/null | grep -cE '^ios/EpubToMp3/EpubToMp3.*\.swift$' || true)
 STAGED=$(git -C "$ROOT" diff --cached --name-only 2>/dev/null | grep -cE '^ios/EpubToMp3/EpubToMp3.*\.swift$' || true)
-||||||| e1d1565d6e
-CHANGED=$(git -C /Users/pietropugliesi/Developer/Epub-to-Mp3 diff --name-only HEAD 2>/dev/null | grep -cE '^ios/EpubToMp3/EpubToMp3.*\.swift$' || true)
-STAGED=$(git -C /Users/pietropugliesi/Developer/Epub-to-Mp3 diff --cached --name-only 2>/dev/null | grep -cE '^ios/EpubToMp3/EpubToMp3.*\.swift$' || true)
-=======
-CHANGED=$(git -C "$PROJECT_DIR" diff --name-only HEAD 2>/dev/null | grep -cE '^ios/EpubToMp3/EpubToMp3.*\.swift$' || true)
-STAGED=$(git -C "$PROJECT_DIR" diff --cached --name-only 2>/dev/null | grep -cE '^ios/EpubToMp3/EpubToMp3.*\.swift$' || true)
->>>>>>> origin/chore/repository-trust
 if [ "$CHANGED" = "0" ] && [ "$STAGED" = "0" ]; then
     exit 0
 fi

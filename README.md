@@ -38,16 +38,8 @@ platform family:
 
 | Surface | Platforms | Where | Status |
 |---|---|---|---|
-<<<<<<< HEAD
 | **SwiftUI native** | macOS · iPadOS · iOS | `ios/EpubToMp3/` | **Official Apple client** — Library-first reader, embedded Rust server on macOS, streaming TTS chapter-by-chapter |
 | **Flutter native** | Linux · Windows · Android | `flutter_app/` | **Official non-Apple client** — single codebase, calls the same FastAPI backend. macOS/iOS are handled by SwiftUI, not Flutter. |
-||||||| e1d1565d6e
-| **SwiftUI native** | macOS · iPadOS · iOS | `ios/EpubToMp3/` | **Official Apple client** — Library-first reader, embedded Python sidecar on macOS, streaming TTS chapter-by-chapter |
-| **Flutter native** | Linux · Windows · Android | `flutter_app/` | **Official non-Apple client** — single codebase, calls the same FastAPI backend. macOS/iOS are handled by SwiftUI, not Flutter. |
-=======
-| **UIKit/AppKit native** | macOS · iPadOS · iOS | `ios/EpubToMp3/` | **Official Apple client** — Library-first reader, embedded Python runtime on macOS, streaming TTS chapter-by-chapter |
-| **Flutter native** | Linux · Windows · Android | `flutter_app/` | **Official non-Apple client** — single codebase, calls the same FastAPI backend. macOS/iOS are handled by UIKit/AppKit, not Flutter. |
->>>>>>> origin/chore/repository-trust
 
 ### UIKit/AppKit app (Apple)
 
@@ -65,16 +57,8 @@ xcodegen generate
 open EpubToMp3.xcodeproj
 ```
 
-<<<<<<< HEAD
 The `mise run sidecar:build` task builds the embedded Rust server
 that the macOS build copies inside the `.app`'s Resources.
-||||||| e1d1565d6e
-The `mise run sidecar:build` task builds the embedded Python server
-that the macOS build copies inside the `.app`'s Resources.
-=======
-The macOS build embeds the versioned Python runtime directly; there is no
-separate `sidecar:build` task or PyInstaller artifact.
->>>>>>> origin/chore/repository-trust
 
 #### Build artifact hygiene
 
@@ -186,18 +170,8 @@ Tab-completes `.epub`/`.pdf` file paths and `--engine` values.
 ## Web Server
 
 ```bash
-<<<<<<< HEAD
 mise run rust:server                   # Native Rust server (canonical)
 cargo run --release -p converter-server # Direct Rust server
-||||||| e1d1565d6e
-mise run web                            # Recommended
-uvicorn python_app.server:app --port 8000   # Direct
-python hf_app.py                        # HF Spaces entry (port 7860)
-=======
-mise run dev                            # Starts backend and frontend together
-uvicorn python_app.server:app --port 8000   # Direct
-python hf_app.py                        # HF Spaces entry (port 7860)
->>>>>>> origin/chore/repository-trust
 ```
 
 The legacy Python server and HF entrypoint remain available as migration

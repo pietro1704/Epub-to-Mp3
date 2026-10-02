@@ -98,7 +98,6 @@ private final class SegmentDeliveryGate: @unchecked Sendable {
 final class PythonBridge: @unchecked Sendable {
     static let shared = PythonBridge()
 
-<<<<<<< HEAD
     /// PythonKit 0.5.1 plus the bundled CPython 3.13 runtime dereferences an
     /// invalid thread state on Intel macOS. The embedded pipeline must never
     /// run there until its execution model is replaced.
@@ -110,21 +109,6 @@ final class PythonBridge: @unchecked Sendable {
         #endif
     }
 
-||||||| e1d1565d6e
-=======
-    /// PythonKit + the bundled CPython 3.13 runtime crash on macOS during
-    /// PythonObject attribute access, even when calls remain on one Thread.
-    /// macOS has native EPUB parsing and Swift Edge-TTS transport, so keep the
-    /// embedded interpreter limited to the iOS runtime that requires it.
-    static var usesEmbeddedRuntime: Bool {
-        #if os(macOS)
-        false
-        #else
-        true
-        #endif
-    }
-
->>>>>>> origin/chore/repository-trust
     /// Single-threaded executor for every PythonKit call. Pins every
     /// Python call to a dedicated kernel thread for the process lifetime
     /// (actors can't do this — they guarantee mutual exclusion, not
@@ -177,16 +161,11 @@ final class PythonBridge: @unchecked Sendable {
     /// bundled Python runtime and transport wiring without consuming network
     /// quota or interrupting another audio app.
     func preflightRuntime() async throws {
-<<<<<<< HEAD
         guard Self.supportsEmbeddedRuntime else {
             throw PythonBridgeError.bootstrapFailed(
                 "Direct CPython execution is disabled on this Mac; audio conversion uses the bundled local service."
             )
         }
-||||||| e1d1565d6e
-=======
-        guard Self.usesEmbeddedRuntime else { return }
->>>>>>> origin/chore/repository-trust
         guard !Self.interpreterWedged else {
             throw PythonBridgeError.bootstrapFailed(
                 "The embedded interpreter is unavailable for this app session."
@@ -252,7 +231,6 @@ final class PythonBridge: @unchecked Sendable {
     /// - Throws: `PythonBridgeError` if bootstrap, parse, or JSON
     ///   decode fails.
     func parseEpub(at fileURL: URL, bookId: String) async throws -> EbookFulltext {
-<<<<<<< HEAD
         #if os(macOS)
         // PythonKit 0.5.1 with the bundled CPython 3.13 runtime can
         // dereference an invalid thread state while decoding this result on
@@ -264,18 +242,6 @@ final class PythonBridge: @unchecked Sendable {
         guard !fallback.chapters.isEmpty else { throw PythonBridgeError.emptyResult }
         return fallback
         #else
-||||||| e1d1565d6e
-=======
-        guard Self.usesEmbeddedRuntime else {
-            let fallback = await Task.detached(priority: .userInitiated) {
-                EpubFallbackParser.parse(url: fileURL, bookId: bookId)
-            }.value
-            guard !fallback.chapters.isEmpty else {
-                throw PythonBridgeError.emptyResult
-            }
-            return fallback
-        }
->>>>>>> origin/chore/repository-trust
         guard !Self.interpreterWedged else {
             let fallback = await Task.detached(priority: .userInitiated) {
                 EpubFallbackParser.parse(url: fileURL, bookId: bookId)

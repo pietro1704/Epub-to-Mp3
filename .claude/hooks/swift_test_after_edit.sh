@@ -22,15 +22,8 @@ fi
 echo "$NOW" > "$STAMP"
 
 LOG="/tmp/claude-swift-test.log"
-<<<<<<< HEAD
 ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || exit 0
 cd "$ROOT/ios/EpubToMp3" || exit 0
-||||||| e1d1565d6e
-cd /Users/pietropugliesi/Developer/Epub-to-Mp3/ios/EpubToMp3 || exit 0
-=======
-PROJECT_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
-cd "$PROJECT_DIR/ios/EpubToMp3" || exit 0
->>>>>>> origin/chore/repository-trust
 {
     echo "=== $(date) :: edited $FILE"
     swift test 2>&1 | tail -5

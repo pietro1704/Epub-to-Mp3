@@ -68,17 +68,11 @@ jobs:
           CONCLUSION: ${{ github.event.workflow_run.conclusion }}
         run: |
           set -euo pipefail
-<<<<<<< HEAD
           case "$CONCLUSION" in
             failure) MODE=fix ;;
             success) MODE=merge ;;
             *) echo 'Unexpected CI conclusion; refusing to dispatch.' >&2; exit 1 ;;
           esac
-||||||| e1d1565d6e
-          MODE=merge
-          [[ "$CONCLUSION" == failure ]] && MODE=fix
-=======
->>>>>>> origin/chore/repository-trust
           gh workflow run pr-autofix-worker.yml \
             --repo "$GITHUB_REPOSITORY" \
             --ref master \

@@ -2,18 +2,8 @@
 
 ## Apple (macOS / iPadOS / iOS) — UIKit/AppKit
 
-<<<<<<< HEAD
 The official Apple client lives in `ios/EpubToMp3/`. macOS embeds the Rust
 `converter-server` inside the `.app`; iPadOS and iOS talk to a remote backend.
-||||||| e1d1565d6e
-The official Apple client lives in `ios/EpubToMp3/`. macOS embeds the
-Python server as a PyInstaller sidecar inside the `.app`; iPadOS and iOS
-talk to a remote backend.
-=======
-The official Apple client lives in `ios/EpubToMp3/`. macOS embeds the
-Python runtime inside the `.app`; iPadOS and iOS
-talk to a remote backend.
->>>>>>> origin/chore/repository-trust
 
 Headless macOS build:
 
@@ -22,22 +12,12 @@ mise run mac:build
 # → task prints the produced .app path, usually ios/EpubToMp3/.build/Release/EpubToMp3.app
 ```
 
-<<<<<<< HEAD
 Sidecar-only build (Rust release binary):
 
 ```bash
 mise run sidecar:build
 # → dist/epub-to-mp3-server
 ```
-||||||| e1d1565d6e
-Sidecar-only build (PyInstaller onefile):
-
-```bash
-mise run sidecar:build
-# → dist/epub-to-mp3-server
-```
-=======
->>>>>>> origin/chore/repository-trust
 
 Open in Xcode:
 

@@ -6,13 +6,7 @@ The project is split into four layers:
 
 1. `python_app/`: backend and conversion pipeline
 2. `web/`: React/TypeScript frontend
-<<<<<<< HEAD
 3. `ios/EpubToMp3/`: SwiftUI client (macOS · iPadOS · iOS) with embedded Rust server on macOS
-||||||| e1d1565d6e
-3. `ios/EpubToMp3/`: SwiftUI client (macOS · iPadOS · iOS) with embedded PyInstaller sidecar on macOS
-=======
-3. `ios/EpubToMp3/`: UIKit/AppKit client (macOS · iPadOS · iOS) with an embedded Python runtime on macOS
->>>>>>> origin/chore/repository-trust
 4. `flutter_app/`: Flutter client (Linux · Windows · Android)
 
 ## Two conversion pipelines
@@ -47,17 +41,6 @@ Main files:
 
 ## Native clients
 
-<<<<<<< HEAD
 - `ios/EpubToMp3/project.yml`: xcodegen project descriptor; the `Embed Rust converter sidecar (macOS only)` post-build script copies `dist/epub-to-mp3-server` into the `.app` Resources
-||||||| e1d1565d6e
-- `ios/EpubToMp3/project.yml`: xcodegen project descriptor; the `Embed Python sidecar (macOS only)` post-build script copies `dist/epub-to-mp3-server` into the `.app` Resources
-=======
-- `ios/EpubToMp3/project.yml`: XcodeGen project descriptor for the native Apple client and its embedded Python runtime
->>>>>>> origin/chore/repository-trust
 - `flutter_app/lib/`: Flutter client source (Linux · Windows · Android)
-<<<<<<< HEAD
 - `crates/converter-server/`: Rust server sidecar built via `mise run sidecar:build`
-||||||| e1d1565d6e
-- `desktop.spec`: PyInstaller spec for the sidecar binary built via `mise run sidecar:build`
-=======
->>>>>>> origin/chore/repository-trust

@@ -35,23 +35,8 @@ fi
 # Wait a moment for GitHub to register the push.
 sleep 8
 
-<<<<<<< HEAD
 SHA=$(git rev-parse HEAD 2>/dev/null || true)
 if [[ -z "$SHA" ]]; then
-||||||| e1d1565d6e
-# Get the latest run ID for master CI triggered by push
-RUN_ID=$(gh run list --branch master --workflow CI --event push --limit 1 --json databaseId -q '.[0].databaseId' 2>/dev/null)
-if [[ -z "$RUN_ID" ]]; then
-    echo '{"additionalContext": "## CI Monitor\nCould not find a CI run after push. Check GitHub Actions manually."}'
-=======
-# Get the CI run triggered by this exact pushed commit.
-RUN_ID=$(gh run list --commit "$SHA" --workflow CI --event push --limit 1 --json databaseId -q '.[0].databaseId' 2>/dev/null)
-if [[ -z "$RUN_ID" ]]; then
-    python3 -c "
-import json, sys
-print(json.dumps({'additionalContext': '## CI Monitor\nCould not find a CI run for pushed commit ' + sys.argv[1] + '. Check GitHub Actions manually.'}))
-" "$SHA"
->>>>>>> origin/chore/repository-trust
     exit 0
 fi
 
