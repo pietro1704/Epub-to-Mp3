@@ -195,6 +195,25 @@ impl ModelStore {
             if tokio::fs::try_exists(&target).await? {
                 tokio::fs::rename(&target, &backup).await?;
             }
+            let metadata = format!(
+                "{{\"id\":\"{}\",\"artifacts\":[{}]}}",
+                manifest.model_id,
+                installed
+                    .iter()
+                    .map(|item| {
+                        format!(
+                            "{{\"path\":\"{}\",\"sha256\":\"{}\"}}",
+                            item.path
+                                .strip_prefix(&target)
+                                .unwrap_or(&item.path)
+                                .display(),
+                            item.sha256
+                        )
+                    })
+                    .collect::<Vec<_>>()
+                    .join(",")
+            );
+            tokio::fs::write(staging.join("metadata.json"), metadata).await?;
             tokio::fs::rename(&staging, &target).await?;
             let _ = tokio::fs::remove_dir_all(&backup).await;
             Ok(installed)
