@@ -41,7 +41,7 @@ pub fn synthesize_wav(model_root: &Path, text: &str) -> Result<Vec<u8>, RuntimeE
         config.model.kokoro.tokens = tokens.as_ptr();
         config.model.kokoro.data_dir = data_dir.as_ptr();
         config.model.kokoro.length_scale = 1.0;
-        config.max_num_sentences = 2;
+        config.max_num_sentences = 1;
 
         let tts = sherpa_onnx_sys::SherpaOnnxCreateOfflineTts(&config);
         if tts.is_null() {
