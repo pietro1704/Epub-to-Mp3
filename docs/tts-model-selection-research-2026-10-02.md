@@ -103,3 +103,9 @@ This is a recommendation based on official capabilities and architecture, not a 
 - MeloTTS official repository: https://github.com/myshell-ai/MeloTTS
 - MeloTTS official documentation: https://docs.myshell.ai/technology/melotts
 - XTTS-v2 model card: https://huggingface.co/coqui/XTTS-v2
+
+## Verified Kokoro ONNX artifact reconnaissance
+
+The official Kokoro repository publishes Apache-2.0 weights. The `onnx-community/Kokoro-82M-ONNX` Hugging Face repository provides an ONNX packaging suitable for investigation, including `onnx/model_quantized.onnx` (92,360,543 bytes), `tokenizer.json`, and per-voice binary files. The quantized model SHA-256 was independently verified on 2026-10-02 as `0d55b15d4b735d61a21b0105136bc81b8768c4db94753193c19354fa863cd556`.
+
+This artifact is not yet enabled as a production download: synthesis requires the model, tokenizer, voice assets, and a compatible ONNX Runtime integration as one tested package. The current Rust ModelStore accepts one artifact plus one checksum, so enabling only the ONNX file would create an incomplete installation. The next slice must install the complete asset manifest atomically and validate synthesis on each target before promoting Kokoro from catalog candidate to default runtime.
