@@ -651,6 +651,7 @@ dependencies = [
  "axum",
  "converter-core",
  "futures-util",
+ "getrandom 0.3.4",
  "serde",
  "serde_json",
  "tokio",
