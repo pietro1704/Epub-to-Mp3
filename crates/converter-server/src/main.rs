@@ -452,6 +452,7 @@ async fn create_job(State(state): State<AppState>, Json(form): Json<CreateJob>) 
         engine: form.engine.clone(),
         voice: form.voice.clone(),
         language: form.language.clone(),
+        chapter_indices: None,
         no_parallel: form.no_parallel.unwrap_or(false),
     };
     let jobs = state.jobs.clone();

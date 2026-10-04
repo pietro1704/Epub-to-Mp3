@@ -122,3 +122,44 @@ only, and glyph-aware layout must ensure no partially rendered line is shown.
 The final visible text presentation for one committed reader geometry. It
 preserves the reading anchor while exposing page, clipping, and fallback facts
 for the active text surface.
+
+## Verified book structure
+
+The chapter tree used for conversion, derived preferentially from the source
+book's table of contents. Verification checks that TOC entries map to readable
+content, titles and order are preserved, invalid anchors or pages are reported,
+and relevant unmapped content is surfaced before synthesis.
+
+## Structure fallback
+
+An explicitly reported chapter tree derived from the source EPUB/PDF/HTML
+structure when automatic TOC extraction is incomplete or unavailable. It is
+shown for review and requires confirmation only when verification produces
+warnings.
+
+## Local conversion
+
+Book ingestion, structure verification, text preparation, TTS, chapter audio,
+manifest persistence, and playback performed on the client device without a
+backend requirement. Edge TTS may be attempted online; a compatible installed
+local model is the fallback and is never downloaded implicitly.
+
+## Playback snapshot
+
+The immutable, versioned state published by the central playback coordinator.
+Every playback surface consumes it instead of reading the player, background
+callbacks, conversion events, or persistence directly. It includes confirmed
+playing/loading state, chapter, position, duration, speed, and a monotonic
+revision.
+
+## Playback coordinator
+
+The sole owner of playback state reconciliation for one process. It accepts
+commands, observes the real player, publishes playback snapshots, and rejects
+or supersedes stale/conflicting operations. UI controls emit intent only.
+
+## Rehydratable state
+
+Persisted playback or conversion state that can be checked against real
+artifacts and reconciled after relaunch. Transient states such as playing,
+loading, and converting are never trusted without live confirmation.

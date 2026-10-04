@@ -37,7 +37,7 @@ run = "PIPER_BINARY=\"$MISE_PROJECT_ROOT/.venv/bin/piper\" PIPER_MODEL=\"$MISE_P
 
 [tasks.convert]
 description = "Run the canonical Rust conversion CLI"
-run = "mise exec -- cargo run --release -p converter-cli --"
+run = "mise exec -- cargo run --release -p converter-cli --bin converter-cli --"
 
 [tasks."guard:no-python-production"]
 description = "Fail if production packaging reintroduces the legacy Python runtime or bridge"
@@ -65,15 +65,15 @@ run = "mise exec -- cargo build -p converter-ffi --release"
 
 [tasks."converter-ffi:android-arm64"]
 description = "Build converter-ffi for Android arm64 with mise-managed Rust and NDK"
-run = "NDK=\"${ANDROID_NDK_HOME:-$HOME/.local/share/mise/installs/android-sdk/11.0/ndk/28.2.13676358}\"; TOOLCHAIN=\"$NDK/toolchains/llvm/prebuilt/darwin-x86_64/bin\"; SYSROOT=\"$NDK/toolchains/llvm/prebuilt/darwin-x86_64/sysroot\"; NINJA=\"$HOME/.local/share/mise/installs/ninja/1.13.2/ninja\"; export ANDROID_NDK_HOME=\"$NDK\" ANDROID_NDK_ROOT=\"$NDK\" PATH=\"$TOOLCHAIN:$HOME/.local/share/mise/installs/ninja/1.13.2:$HOME/.cargo/bin:$PATH\"; export CC_aarch64_linux_android=\"$TOOLCHAIN/aarch64-linux-android24-clang\" CXX_aarch64_linux_android=\"$TOOLCHAIN/aarch64-linux-android24-clang++\" AR_aarch64_linux_android=\"$TOOLCHAIN/llvm-ar\" CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER=\"$TOOLCHAIN/aarch64-linux-android24-clang\" BINDGEN_EXTRA_CLANG_ARGS_aarch64_linux_android=\"--target=aarch64-linux-android24 --sysroot=$SYSROOT -I$SYSROOT/usr/include -include stdio.h\" BINDGEN_EXTRA_CLANG_ARGS=\"--target=aarch64-linux-android24 --sysroot=$SYSROOT -I$SYSROOT/usr/include -include stdio.h\" CFLAGS_aarch64_linux_android=\"--sysroot=$SYSROOT\" CMAKE_TOOLCHAIN_FILE=\"$NDK/build/cmake/android.toolchain.cmake\" CMAKE_GENERATOR=Ninja CMAKE_MAKE_PROGRAM=\"$NINJA\" TARGET_CC=\"$TOOLCHAIN/aarch64-linux-android24-clang\" CC=\"$TOOLCHAIN/aarch64-linux-android24-clang\" RUSTUP_TOOLCHAIN=stable; cargo build -p converter-ffi --features android-jni,piper-runtime --release --target aarch64-linux-android --target-dir target/piper-android"
+run = "NDK=\"${ANDROID_NDK_HOME:-$HOME/.local/share/mise/installs/android-sdk/11.0/ndk/28.2.13676358}\"; TOOLCHAIN=\"$NDK/toolchains/llvm/prebuilt/darwin-x86_64/bin\"; SYSROOT=\"$NDK/toolchains/llvm/prebuilt/darwin-x86_64/sysroot\"; NINJA=\"$HOME/.local/share/mise/installs/ninja/1.13.2/ninja\"; export ANDROID_NDK_HOME=\"$NDK\" ANDROID_NDK_ROOT=\"$NDK\" PATH=\"$TOOLCHAIN:$HOME/.local/share/mise/installs/ninja/1.13.2:$HOME/.cargo/bin:$PATH\"; export CC_aarch64_linux_android=\"$TOOLCHAIN/aarch64-linux-android24-clang\" CXX_aarch64_linux_android=\"$TOOLCHAIN/aarch64-linux-android24-clang++\" AR_aarch64_linux_android=\"$TOOLCHAIN/llvm-ar\" CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER=\"$TOOLCHAIN/aarch64-linux-android24-clang\" BINDGEN_EXTRA_CLANG_ARGS_aarch64_linux_android=\"--target=aarch64-linux-android24 --sysroot=$SYSROOT -I$SYSROOT/usr/include -include stdio.h\" BINDGEN_EXTRA_CLANG_ARGS=\"--target=aarch64-linux-android24 --sysroot=$SYSROOT -I$SYSROOT/usr/include -include stdio.h\" CFLAGS_aarch64_linux_android=\"--sysroot=$SYSROOT\" CMAKE_TOOLCHAIN_FILE=\"$NDK/build/cmake/android.toolchain.cmake\" CMAKE_GENERATOR=Ninja CMAKE_MAKE_PROGRAM=\"$NINJA\" TARGET_CC=\"$TOOLCHAIN/aarch64-linux-android24-clang\" CC=\"$TOOLCHAIN/aarch64-linux-android24-clang\" RUSTUP_TOOLCHAIN=stable; cargo build -p converter-ffi --features android-jni --release --target aarch64-linux-android --target-dir target/edge-android"
 
 [tasks."converter-ffi:android-check"]
 description = "Check Android converter-ffi without linking unsupported Piper inference dependencies"
-run = "mise exec -- cargo check -p converter-ffi --features android-jni"
+run = "env -u CC -u CFLAGS -u CXX -u AR -u CMAKE_TOOLCHAIN_FILE -u CMAKE_GENERATOR -u CMAKE_MAKE_PROGRAM mise exec -- cargo check -p converter-ffi --features android-jni"
 
 [tasks."converter-ffi:android-install"]
 description = "Install the cached Android arm64 converter-ffi artifact into the APK source tree"
-run = "mkdir -p flutter_app/android/app/src/main/jniLibs/arm64-v8a && cp target/aarch64-linux-android/release/libconverter_ffi.so flutter_app/android/app/src/main/jniLibs/arm64-v8a/libconverter_ffi.so"
+run = "mkdir -p flutter_app/android/app/src/main/jniLibs/arm64-v8a && cp target/edge-android/aarch64-linux-android/release/libconverter_ffi.so flutter_app/android/app/src/main/jniLibs/arm64-v8a/libconverter_ffi.so"
 
 [tasks."android:embedded-deps"]
 description = "Install Android NDK dependencies through mise-managed sdkmanager"
@@ -81,7 +81,7 @@ run = "SDKMANAGER=\"$HOME/.local/share/mise/installs/android-sdk/11.0/cmdline-to
 
 [tasks."android:runtime-audit"]
 description = "Audit the optional embedded Piper Android runtime"
-run = "mise exec -- bash -lc 'set -e; test -d flutter_app/android/app/src/main/jniLibs/arm64-v8a; if find flutter_app/android/app/src/main/jniLibs -type f -name \"libpiper_runtime.so\" -print -quit | grep -q .; then echo \"libpiper_runtime.so present\"; else echo \"ERROR: libpiper_runtime.so is missing; Piper inference is not Android-ready\" >&2; exit 1; fi'"
+run = "mise exec -- bash -lc 'set -e; test -d flutter_app/android/app/src/main/jniLibs/arm64-v8a; if find flutter_app/android/app/src/main/jniLibs -type f -name \"libpiper_runtime.so\" -print -quit | grep -q .; then echo \"optional Piper runtime present\"; else echo \"Piper runtime absent: Edge-only Android artifact is active\"; fi'"
 
 [tasks."piper:android-arm64"]
 description = "Build Piper Embedded runtime for Android arm64 with the mise-managed NDK"

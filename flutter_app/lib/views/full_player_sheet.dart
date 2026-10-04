@@ -317,9 +317,11 @@ class _FullPlayerSheetState extends ConsumerState<FullPlayerSheet> {
       stream: widget.player.playing,
       builder: (context, snap) {
         final isPlaying = snap.data ?? false;
-        return Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
+        return FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
             // Previous chapter
             Semantics(
               label: 'Previous chapter',
@@ -383,6 +385,7 @@ class _FullPlayerSheetState extends ConsumerState<FullPlayerSheet> {
               ),
             ),
           ],
+          ),
         );
       },
     );

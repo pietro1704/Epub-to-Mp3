@@ -25,6 +25,7 @@ pub struct ConversionRequest {
     pub engine: Option<String>,
     pub voice: Option<String>,
     pub language: Option<String>,
+    pub chapter_indices: Option<Vec<String>>,
     pub no_parallel: bool,
 }
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -145,15 +146,35 @@ impl ConversionWorker {
         let output_dir = self.config.paths.output_dir.join(&request.job_id);
         fs::create_dir_all(&cache_dir)?;
         fs::create_dir_all(&output_dir)?;
-        let total = book.chapters.len();
-        let source_text_chars: usize = book
+        let chapters: Vec<_> = book
             .chapters
+            .iter()
+            .enumerate()
+            .filter(|(position, chapter)| {
+                request
+                    .chapter_indices
+                    .as_ref()
+                    .map(|wanted| {
+                        wanted.iter().any(|value| {
+                            value == &chapter.index
+                                || value
+                                    .parse::<usize>()
+                                    .map(|index| index == *position)
+                                    .unwrap_or(false)
+                        })
+                    })
+                    .unwrap_or(true)
+            })
+            .map(|(_, chapter)| chapter)
+            .collect();
+        let total = chapters.len();
+        let source_text_chars: usize = chapters
             .iter()
             .map(|chapter| chapter.text.chars().count())
             .sum();
         if total == 0 || source_text_chars == 0 {
             return Err(WorkerError::Piper(
-                "source book has no readable chapter text".into(),
+                "selected chapters have no readable text".into(),
             ));
         }
         let detected_language = request
@@ -190,7 +211,7 @@ impl ConversionWorker {
             .map_err(|error| WorkerError::Piper(error.to_string()))?;
         let results = Mutex::new(Vec::with_capacity(total));
         pool.install(|| {
-            book.chapters.par_iter().enumerate().try_for_each(
+            chapters.par_iter().enumerate().try_for_each(
                 |(position, chapter)| -> Result<(), WorkerError> {
                     if self.cancel.is_cancelled()
                         || self.jobs.is_cancellation_requested(&request.job_id)?
@@ -257,21 +278,24 @@ impl ConversionWorker {
                 "text coverage mismatch: source={source_text_chars}, output={output_text_chars}"
             )));
         }
-        let cover = book
-            .cover
-            .as_ref()
-            .map(|cover| {
-                let extension = match book.cover_mime.as_deref() {
-                    Some("image/png") => "png",
-                    Some("image/webp") => "webp",
-                    _ => "jpg",
-                };
-                let name = format!("cover.{extension}");
-                let path = output_dir.join(&name);
-                std::fs::write(&path, cover).ok()?;
-                Some(name)
-            })
-            .flatten();
+        let cover = if cfg!(target_os = "android") {
+            None
+        } else {
+            book.cover
+                .as_ref()
+                .map(|cover| {
+                    let extension = match book.cover_mime.as_deref() {
+                        Some("image/png") => "png",
+                        Some("image/webp") => "webp",
+                        _ => "jpg",
+                    };
+                    let name = format!("cover.{extension}");
+                    let path = output_dir.join(&name);
+                    std::fs::write(&path, cover).ok()?;
+                    Some(name)
+                })
+                .flatten()
+        };
         if let Some(cover_name) = &cover {
             let cover_path = output_dir.join(cover_name);
             for (_, path, _, _) in &results {
@@ -316,7 +340,12 @@ impl ConversionWorker {
                 .build()?;
             match rt.block_on(crate::tts::synthesize_with_reference_client(text, voice)) {
                 Ok(bytes) => {
-                    fs::write(out, bytes)?;
+                    fs::write(out, bytes).map_err(|error| {
+                        WorkerError::Edge(EdgeError::Transport(format!(
+                            "failed to write synthesized audio {}: {error}",
+                            out.display()
+                        )))
+                    })?;
                     return Ok(());
                 }
                 Err(error) => {
@@ -328,6 +357,11 @@ impl ConversionWorker {
     }
 
     fn synthesize_with_piper(&self, text: &str, out: &Path) -> Result<(), WorkerError> {
+        if cfg!(target_os = "android") {
+            return Err(WorkerError::Piper(
+                "Piper is disabled on Android; Edge TTS is required".into(),
+            ));
+        }
         let model = std::env::var_os("PIPER_MODEL")
             .map(PathBuf::from)
             .unwrap_or_else(|| {
@@ -365,7 +399,11 @@ impl ConversionWorker {
         let timeout_secs = std::env::var("RUST_CHAPTER_TIMEOUT_SECONDS")
             .ok()
             .and_then(|value| value.parse::<u64>().ok())
-            .unwrap_or(180);
+            .unwrap_or(if cfg!(target_os = "android") {
+                300
+            } else {
+                180
+            });
         let result = std::thread::scope(|scope| {
             let handle = scope.spawn(|| self.synthesize(engine, text, out, voice, language));
             let started = std::time::Instant::now();
@@ -422,8 +460,8 @@ fn default_edge_voice(language: Option<&str>) -> &'static str {
         "pt" | "pt-br" | "pt_br" => "pt-BR-FranciscaNeural",
         "it" | "it-it" => "it-IT-ElsaNeural",
         "es" | "es-es" | "es-mx" => "es-ES-ElviraNeural",
-        "en" | "en-us" | "en-gb" => "en-US-AvaNeural",
-        _ => "en-US-AvaNeural",
+        "en" | "en-us" | "en-gb" => "en-US-GuyNeural",
+        _ => "en-US-EmmaMultilingualNeural",
     }
 }
 

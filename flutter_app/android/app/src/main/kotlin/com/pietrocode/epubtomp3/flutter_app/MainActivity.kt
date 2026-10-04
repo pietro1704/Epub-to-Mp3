@@ -8,7 +8,9 @@ import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.os.StatFs
+import android.os.Environment
 import android.speech.tts.TextToSpeech
+import android.speech.tts.UtteranceProgressListener
 import android.provider.OpenableColumns
 
 import android.util.Log
@@ -28,6 +30,9 @@ import java.io.File
 import java.io.InputStream
 import java.util.Locale
 import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.TimeoutException
+
 
 
 /**
@@ -53,6 +58,8 @@ class MainActivity : AudioServiceActivity() {
         private const val EMBEDDED_CHANNEL = "epub_to_mp3/embedded_converter"
         private const val EMBEDDED_UNAVAILABLE = "EMBEDDED_CONVERTER_UNAVAILABLE"
         private const val CONVERTER_LIBRARY = "converter_ffi"
+        private const val DOCUMENT_PICKER_REQUEST = 4107
+        private const val MAX_IMPORT_BYTES = 512L * 1024L * 1024L
         private var converterLibraryLoaded = false
 
         init {
@@ -60,6 +67,9 @@ class MainActivity : AudioServiceActivity() {
         }
 
         private fun converterLibraryAvailable(): Boolean {
+            // The packaged converter is Edge-only on legacy Android devices.
+            // Piper remains a separately gated local runtime and is never
+            // loaded here on API 28.
             return try {
                 if (!converterLibraryLoaded) {
                     System.loadLibrary(CONVERTER_LIBRARY)
@@ -78,10 +88,13 @@ class MainActivity : AudioServiceActivity() {
     }
 
     private val mainHandler = Handler(Looper.getMainLooper())
+    private val incomingDocumentUriPolicy by lazy {
+        IncomingDocumentUriPolicy(listOf(Environment.getExternalStorageDirectory()))
+    }
     private var documentEvents: EventChannel.EventSink? = null
     private var deepLinkEvents: EventChannel.EventSink? = null
+    private var pendingDocumentPickerResult: MethodChannel.Result? = null
     private val pendingDeepLinks = mutableListOf<String>()
-
 
     private fun embeddedConverterStatus(): Map<String, Boolean> = try {
         converterLibraryAvailable()
@@ -89,8 +102,9 @@ class MainActivity : AudioServiceActivity() {
         mapOf(
             "runtimeLoaded" to converterLibraryLoaded,
             "modelAvailable" to modelAvailable,
-            "abiCompatible" to (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q),
-            "engineReady" to (converterLibraryLoaded && modelAvailable),
+            "abiCompatible" to converterLibraryLoaded,
+            // Edge is the online default and does not require a local model.
+            "engineReady" to converterLibraryLoaded,
         )
     } catch (_: Throwable) {
         mapOf(
@@ -105,7 +119,12 @@ class MainActivity : AudioServiceActivity() {
         val root = File(filesDir, "tts-models")
         return root.listFiles()
             ?.asSequence()
-            ?.map { File(it, "model.bin") }
+            ?.flatMap { directory ->
+                sequenceOf(
+                    File(directory, "model.onnx"),
+                    File(directory, "model.bin"),
+                )
+            }
             ?.firstOrNull { it.isFile }
             ?.absolutePath
     }
@@ -168,12 +187,32 @@ class MainActivity : AudioServiceActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         handleIncomingIntent(intent)
+
     }
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
         handleIncomingIntent(intent)
+    }
+
+    @Deprecated("Deprecated in Android API Activity, retained for API 28 compatibility")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode != DOCUMENT_PICKER_REQUEST) return
+        val callback = pendingDocumentPickerResult ?: return
+        pendingDocumentPickerResult = null
+        if (resultCode != RESULT_OK || data?.data == null) {
+            callback.success(null)
+            return
+        }
+        val uri = data.data!!
+        val document = copyIntoPrivateStorage(uri, contentResolver.getType(uri))
+        if (document == null) {
+            callback.error("DOCUMENT_IMPORT_FAILED", "Could not copy the selected document", null)
+        } else {
+            callback.success(document.first)
+        }
     }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
@@ -203,6 +242,39 @@ class MainActivity : AudioServiceActivity() {
                                 ?: TextToSpeech.ERROR
                             if (status == TextToSpeech.SUCCESS) result.success(null)
                             else result.error("TTS_SPEAK_FAILED", "TextToSpeech rejected the text", null)
+                        }
+                    }
+                    "synthesizeToFile" -> {
+                        val text = call.argument<String>("text").orEmpty()
+                        val locale = call.argument<String>("locale") ?: "pt-BR"
+                        val path = call.argument<String>("path").orEmpty()
+                        if (text.isBlank() || path.isBlank() || !ensureTextToSpeech()) {
+                            result.error("TTS_UNAVAILABLE", "Android TextToSpeech is unavailable", null)
+                        } else if (!setSpeechLocale(locale)) {
+                            result.error("TTS_LOCALE_UNAVAILABLE", "Requested speech locale is unavailable", locale)
+                        } else {
+                            val utteranceId = "file-${System.nanoTime()}"
+                            textToSpeech?.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
+                                override fun onStart(id: String?) {
+                                    Log.i("AndroidTts", "synthesize start id=$id path=$path")
+                                }
+                                override fun onError(id: String?) {
+                                    Log.e("AndroidTts", "synthesize error id=$id path=$path")
+                                    if (id == utteranceId) mainHandler.post {
+                                        result.error("TTS_SYNTHESIS_FAILED", "TextToSpeech failed to write audio", null)
+                                    }
+                                }
+                                override fun onDone(id: String?) {
+                                    Log.i("AndroidTts", "synthesize done id=$id exists=${File(path).exists()} bytes=${File(path).length()}")
+                                    if (id == utteranceId) mainHandler.post { result.success(path) }
+                                }
+                            })
+                            val status = textToSpeech?.synthesizeToFile(text, Bundle(), File(path), utteranceId)
+                                ?: TextToSpeech.ERROR
+                            Log.i("AndroidTts", "synthesize requested status=$status id=$utteranceId path=$path chars=${text.length}")
+                            if (status != TextToSpeech.SUCCESS) {
+                                result.error("TTS_SYNTHESIS_FAILED", "TextToSpeech rejected the text", null)
+                            }
                         }
                     }
                     "speakQueued" -> {
@@ -265,6 +337,25 @@ class MainActivity : AudioServiceActivity() {
             DOCUMENT_CHANNEL
         ).setMethodCallHandler { call, result ->
             when (call.method) {
+                "pickDocument" -> {
+                    Log.i(embeddedLogTag, "native document picker requested")
+                    if (pendingDocumentPickerResult != null) {
+                        result.error("PICKER_BUSY", "A document picker is already open", null)
+                    } else {
+                        pendingDocumentPickerResult = result
+                        startActivityForResult(
+                            Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                                addCategory(Intent.CATEGORY_OPENABLE)
+                                type = "*/*"
+                                putExtra(
+                                    Intent.EXTRA_MIME_TYPES,
+                                    arrayOf("application/epub+zip", "application/pdf"),
+                                )
+                            },
+                            DOCUMENT_PICKER_REQUEST,
+                        )
+                    }
+                }
                 "getPendingDocuments" -> result.success(readQueue())
                 "acknowledgeDocument" -> {
                     val path = call.argument<String>("path")
@@ -443,15 +534,47 @@ class MainActivity : AudioServiceActivity() {
                 "ttsModelInstallCatalogManifest" -> {
                     val modelId = call.argument<String>("modelId")
                     val root = call.argument<String>("root")
+                    Log.i(embeddedLogTag, "ttsModelInstallCatalogManifest model=$modelId root=$root")
                     if (modelId.isNullOrBlank() || root.isNullOrBlank()) {
                         result.error("BAD_ARGS", "modelId and root are required", null)
                     } else {
                         converterExecutor.execute {
                             val value = nativeTtsModelInstallCatalogManifest(modelId, root)
                             runOnUiThread {
+                                Log.i(embeddedLogTag, "ttsModelInstallCatalogManifest completed model=$modelId value=${value != null}")
                                 if (value == null) result.error(EMBEDDED_UNAVAILABLE, nativeLastError(), null)
                                 else result.success(value)
                             }
+                        }
+                    }
+                }
+                "piperSynthesize" -> {
+                    val text = call.argument<String>("text").orEmpty()
+                    val output = call.argument<String>("output").orEmpty()
+                    Log.i(embeddedLogTag, "piperSynthesize start output=$output chars=${text.length}")
+                    converterExecutor.execute {
+                        val isolatedExecutor = Executors.newSingleThreadExecutor()
+                        try {
+                            val nativeFuture = isolatedExecutor.submit<Pair<Boolean, String?>> {
+                                val value = nativePiperSynthesize(text, output)
+                                value to if (value) null else nativeLastError()
+                            }
+                            val (value, error) = nativeFuture.get(120, TimeUnit.SECONDS)
+                            Log.i(embeddedLogTag, "piperSynthesize completed success=$value error=$error")
+                            runOnUiThread {
+                                if (value) result.success(output)
+                                else result.error(EMBEDDED_UNAVAILABLE, error ?: "Piper synthesis failed", null)
+                            }
+                        } catch (error: TimeoutException) {
+                            Log.e(embeddedLogTag, "piperSynthesize timed out after 120 seconds")
+                            runOnUiThread {
+                                result.error("PIPER_SYNTHESIS_TIMEOUT", "Piper synthesis timed out", null)
+                            }
+                        } catch (error: Throwable) {
+                            Log.e(embeddedLogTag, "piperSynthesize failed", error)
+                            runOnUiThread { result.error(EMBEDDED_UNAVAILABLE, error.message, null) }
+                        } finally {
+                            isolatedExecutor.shutdownNow()
                         }
                     }
                 }
@@ -514,18 +637,41 @@ class MainActivity : AudioServiceActivity() {
                             converterExecutor.execute {
                                 try {
                                     Log.i(embeddedLogTag, "convert start input=$inputPath output=$outputPath")
-                                    val model = installedLocalModel()
-                                    if (model == null) {
+                                    // The native request is Edge-first. A local Piper model is
+                                    // optional and must not gate the online default.
+                                    Log.i(embeddedLogTag, "convert invoking JNI libraryLoaded=$converterLibraryLoaded engine=edge")
+                                    val chapterStart = call.argument<Int>("chapterStart") ?: -1
+                                    val chapterEnd = call.argument<Int>("chapterEnd") ?: -1
+                                    val isolatedExecutor = Executors.newSingleThreadExecutor()
+                                    // converter_last_error is thread-local. Read it on the
+                                    // same worker thread immediately after nativeConvert;
+                                    // reading it after Future.get would lose the real error.
+                                    val nativeFuture = isolatedExecutor.submit<Pair<String?, String?>> {
+                                        val value = nativeConvert(inputPath, outputPath, chapterStart, chapterEnd)
+                                        value to if (value == null) nativeLastError() else null
+                                    }
+                                    // A complete EPUB can legitimately take several minutes on
+                                    // legacy hardware when Edge processes chapters serially. Keep
+                                    // the watchdog finite, but do not abort a valid long-running
+                                    // conversion after the old one-chapter timeout.
+                                    val (native, nativeError) = try {
+                                        nativeFuture.get(900, TimeUnit.SECONDS)
+                                    } catch (_: TimeoutException) {
+                                        nativeFuture.cancel(true)
+                                        Log.e(embeddedLogTag, "embedded conversion timed out after 900 seconds")
                                         runOnUiThread {
-                                            result.error(EMBEDDED_UNAVAILABLE, "no local TTS model is installed", null)
+                                            result.error(
+                                                "EMBEDDED_CONVERSION_TIMEOUT",
+                                                "Embedded conversion timed out after 900 seconds",
+                                                null
+                                            )
                                         }
                                         return@execute
+                                    } finally {
+                                        isolatedExecutor.shutdownNow()
                                     }
-                                    System.setProperty("PIPER_MODEL", model)
-                                    Log.i(embeddedLogTag, "convert invoking JNI libraryLoaded=$converterLibraryLoaded model=$model")
-                                    val native = nativeConvert(inputPath, outputPath)
                                     if (native == null) {
-                                        val error = nativeLastError()
+                                        val error = nativeError ?: "converter-ffi failed without an error"
                                         Log.e(embeddedLogTag, "convert failed: $error")
                                         runOnUiThread { result.error(EMBEDDED_UNAVAILABLE, error, null) }
                                     } else {
@@ -548,13 +694,14 @@ class MainActivity : AudioServiceActivity() {
     }
 
     private external fun nativeParse(inputPath: String): String?
-    private external fun nativeConvert(inputPath: String, outputPath: String): String?
+    private external fun nativeConvert(inputPath: String, outputPath: String, chapterStart: Int, chapterEnd: Int): String?
     private external fun nativeTtsModels(): String?
     private external fun nativeTtsDefaultEngine(language: String, platform: String, androidApi: Int): String?
     private external fun nativeTtsInstalledReadyEngine(language: String, platform: String, androidApi: Int, installedModelIdsJson: String, readyModelIdsJson: String): String?
     private external fun nativeTtsModelInstall(modelId: String, url: String, sha256: String, root: String): String?
     private external fun nativeTtsModelInstallManifest(modelId: String, artifactsJson: String, root: String): String?
     private external fun nativeTtsModelInstallCatalogManifest(modelId: String, root: String): String?
+    private external fun nativePiperSynthesize(text: String, output: String): Boolean
     private external fun nativeTtsModelMetadata(modelId: String, root: String): String?
     private external fun nativeTtsModelRemove(modelId: String, root: String): Boolean
 
@@ -600,19 +747,27 @@ class MainActivity : AudioServiceActivity() {
             return
         }
 
-        val document = copyIntoPrivateStorage(uri, incoming.type) ?: return
-        val path = document.first
-        val displayName = document.second
-        val queue = readQueueObjects()
-        if ((0 until queue.length()).none { queue.optJSONObject(it)?.optString("path") == path }) {
-            queue.put(JSONObject().apply {
-                put("path", path)
-                put("displayName", displayName)
-                put("source", uri.toString())
-            })
-            writeQueue(queue)
+        converterExecutor.execute {
+            val document = copyIntoPrivateStorage(uri, incoming.type)
+            mainHandler.post {
+                if (document == null) {
+                    documentEvents?.error("DOCUMENT_IMPORT_FAILED", "Could not validate or copy the incoming document", uri.toString())
+                    return@post
+                }
+                val path = document.first
+                val displayName = document.second
+                val queue = readQueueObjects()
+                if ((0 until queue.length()).none { queue.optJSONObject(it)?.optString("path") == path }) {
+                    queue.put(JSONObject().apply {
+                        put("path", path)
+                        put("displayName", displayName)
+                        put("source", uri.toString())
+                    })
+                    writeQueue(queue)
+                }
+                documentEvents?.success(mapOf("path" to path, "displayName" to displayName))
+            }
         }
-        documentEvents?.success(mapOf("path" to path, "displayName" to displayName))
     }
 
     private fun forwardDeepLink(uri: Uri) {
@@ -626,7 +781,7 @@ class MainActivity : AudioServiceActivity() {
     }
 
     private fun copyIntoPrivateStorage(uri: Uri, mimeType: String?): Pair<String, String>? {
-        if (!isTrustedContentUri(uri)) return null
+        if (!incomingDocumentUriPolicy.isAllowed(uri)) return null
         val sourceName = queryDisplayName(uri)
             ?: uri.lastPathSegment?.substringAfterLast('/')
             ?: "shared_document"
@@ -638,32 +793,54 @@ class MainActivity : AudioServiceActivity() {
             mimeType == "application/epub+zip" -> ".epub"
             else -> null
         }
-        if (extension == null) {
-            extension = detectDocumentExtension(uri) ?: return null
-        }
+        val signatureExtension = detectDocumentExtension(uri) ?: return null
+        if (extension != null && extension != signatureExtension) return null
+        extension = signatureExtension
         val safeBase = sourceName.substringBeforeLast('.', sourceName)
             .replace(Regex("[^A-Za-z0-9._-]"), "_")
             .trim('_')
             .ifEmpty { "shared_document" }
-        val sourceKey = Integer.toHexString(uri.toString().hashCode())
+        val sourceKey = java.security.MessageDigest.getInstance("SHA-256")
+            .digest(uri.toString().toByteArray(Charsets.UTF_8))
+            .joinToString("") { "%02x".format(it) }.take(24)
         val displayName = if (lowerName.endsWith(extension)) sourceName else "$safeBase$extension"
         val target = File(File(filesDir, DOCUMENT_DIR), "${safeBase}_$sourceKey$extension")
         target.parentFile?.mkdirs()
         return try {
             openTrustedInputStream(uri)?.use { input ->
-                target.outputStream().use { output -> input.copyTo(output) }
+                target.outputStream().use { output ->
+                    var total = 0L
+                    val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+                    while (true) {
+                        val count = input.read(buffer)
+                        if (count < 0) break
+                        total += count
+                        if (total > MAX_IMPORT_BYTES) throw IllegalArgumentException("document exceeds import limit")
+                        output.write(buffer, 0, count)
+                    }
+                }
             } ?: return null
             target.absolutePath to displayName
         } catch (_: Exception) {
+            target.delete()
             null
         }
     }
 
     /** Infer common book formats when Android omits the filename extension/MIME. */
     private fun detectDocumentExtension(uri: Uri): String? {
-        if (!isTrustedContentUri(uri)) return null
+        if (!incomingDocumentUriPolicy.isAllowed(uri)) return null
         return try {
-            val header = openTrustedInputStream(uri)?.use { it.readNBytes(8) } ?: return null
+            val header = openTrustedInputStream(uri)?.use { input ->
+                val buffer = ByteArray(8)
+                var total = 0
+                while (total < buffer.size) {
+                    val count = input.read(buffer, total, buffer.size - total)
+                    if (count < 0) break
+                    total += count
+                }
+                buffer.copyOf(total)
+            } ?: return null
             when {
                 header.size >= 4 && header[0] == '%'.code.toByte() &&
                     header[1] == 'P'.code.toByte() && header[2] == 'D'.code.toByte() &&
@@ -678,7 +855,7 @@ class MainActivity : AudioServiceActivity() {
     }
 
     private fun queryDisplayName(uri: Uri): String? {
-        if (!isTrustedContentUri(uri)) return null
+        if (!incomingDocumentUriPolicy.isAllowed(uri)) return null
         val cursor: Cursor = contentResolver.query(
             uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null
         ) ?: return null
@@ -686,24 +863,17 @@ class MainActivity : AudioServiceActivity() {
     }
 
     private fun isTrustedContentUri(uri: Uri): Boolean {
-        if (uri.scheme != "content" || uri.authority.isNullOrBlank()) return false
-
-        // A caller controls the content URI. Normalize its path before resolving it so
-        // a provider cannot make this activity read the app's private /data storage.
-        val normalizedPath = try {
-            File(uri.path ?: return false).canonicalPath
-        } catch (_: Exception) {
-            return false
-        }
-        return !normalizedPath.startsWith("/data/")
+        return incomingDocumentUriPolicy.isAllowed(uri)
     }
 
     private fun openTrustedInputStream(uri: Uri): InputStream? {
-        if (uri.scheme != "content" || uri.authority.isNullOrBlank()) return null
+        if (!incomingDocumentUriPolicy.isAllowed(uri)) return null
         return try {
-            val normalizedPath = File(uri.path ?: return null).canonicalPath
-            if (normalizedPath.startsWith("/data/")) return null
-            contentResolver.openInputStream(uri)
+            when (uri.scheme?.lowercase()) {
+                "content" -> contentResolver.openInputStream(uri)
+                "file" -> File(uri.path!!).canonicalFile.inputStream()
+                else -> null
+            }
         } catch (_: Exception) {
             null
         }

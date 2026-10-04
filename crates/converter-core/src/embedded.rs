@@ -3,6 +3,7 @@
 use crate::{
     config::AppConfig,
     epub::{self, Book},
+    structure::{self, StructureVerification},
     worker::{ConversionRequest, ConversionWorker, OutputManifest, WorkerError},
 };
 use std::{
@@ -19,6 +20,7 @@ pub struct EmbeddedConversionOptions {
     pub engine: Option<String>,
     pub voice: Option<String>,
     pub language: Option<String>,
+    pub chapter_indices: Option<Vec<String>>,
     pub no_parallel: bool,
 }
 
@@ -64,6 +66,7 @@ pub struct EmbeddedConversionSession {
     input: PathBuf,
     options: EmbeddedConversionOptions,
     metadata: EmbeddedBookMetadata,
+    structure: StructureVerification,
     config: AppConfig,
 }
 
@@ -89,6 +92,7 @@ impl EmbeddedConversionSession {
             input,
             options,
             metadata: metadata_from_book(&book),
+            structure: structure::verify_epub_toc(&book),
             config,
         })
     }
@@ -103,6 +107,11 @@ impl EmbeddedConversionSession {
 
     pub fn metadata(&self) -> &EmbeddedBookMetadata {
         &self.metadata
+    }
+
+    /// Return TOC/source-structure verification for every client adapter.
+    pub fn structure_verification(&self) -> &StructureVerification {
+        &self.structure
     }
 
     /// Run conversion synchronously using the embedded worker.
@@ -120,6 +129,7 @@ impl EmbeddedConversionSession {
                 engine: self.options.engine.clone(),
                 voice: self.options.voice.clone(),
                 language: self.options.language.clone(),
+                chapter_indices: self.options.chapter_indices.clone(),
                 no_parallel: self.options.no_parallel,
             })
             .map_err(EmbeddedConversionError::from)

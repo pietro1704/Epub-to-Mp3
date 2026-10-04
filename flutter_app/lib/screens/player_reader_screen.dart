@@ -86,8 +86,10 @@ class _PlayerReaderScreenState extends ConsumerState<PlayerReaderScreen> {
     final player = ref.read(audioPlayerProvider(widget.jobId));
 
     // Track playing state so we only sync during playback.
+    _isPlaying = player.isPlaying;
     _playingSub = player.playing.listen((playing) {
-      _isPlaying = playing;
+      if (!mounted || _isPlaying == playing) return;
+      setState(() => _isPlaying = playing);
     });
 
     // When the player advances to a new item, update the reader chapter.

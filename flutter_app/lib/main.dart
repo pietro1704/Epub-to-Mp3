@@ -20,6 +20,7 @@ import 'services/offline_cache_eviction.dart';
 import 'state/providers.dart';
 import 'services/embedded_converter.dart';
 import 'services/tts_model_adapter_registry.dart';
+import 'views/reader_theme_colors.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -209,7 +210,7 @@ class _EpubToMp3AppState extends ConsumerState<EpubToMp3App> {
         ),
         useMaterial3: true,
       ),
-      themeMode: settings.darkMode ? ThemeMode.dark : ThemeMode.light,
+      themeMode: ReaderThemeColors.themeMode(settings.readerTheme),
       localizationsDelegates: AppLocalizations.localizationsDelegates,
       supportedLocales: AppLocalizations.supportedLocales,
       home: const RootScreen(),

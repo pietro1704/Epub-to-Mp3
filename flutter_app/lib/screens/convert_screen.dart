@@ -1,6 +1,9 @@
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 
 import '../state/providers.dart';
 
@@ -58,13 +61,47 @@ class _ConvertScreenState extends ConsumerState<ConvertScreen> {
     super.dispose();
   }
 
+  @override
+  void didUpdateWidget(covariant ConvertScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.initialFilePath != oldWidget.initialFilePath &&
+        widget.initialFilePath != null) {
+      _filePath = widget.initialFilePath;
+    }
+  }
+
   Future<void> _pickFile() async {
+    if (defaultTargetPlatform == TargetPlatform.android) {
+      try {
+        const channel = MethodChannel('epub_to_mp3/incoming_documents');
+        final path = await channel.invokeMethod<String>('pickDocument');
+        if (!mounted || path == null || path.isEmpty) return;
+        setState(() {
+          _filePath = path;
+          _error = null;
+          _jobId = null;
+        });
+      } on PlatformException catch (error) {
+        if (mounted) setState(() => _error = error.message ?? error.code);
+      }
+      return;
+    }
     final result = await FilePicker.platform.pickFiles(
       type: FileType.custom,
       allowedExtensions: const ['epub', 'pdf'],
     );
-    final path = result?.files.single.path;
-    if (path != null) setState(() => _filePath = path);
+    if (result == null || result.files.isEmpty) return;
+    final path = result.files.single.path;
+    if (!mounted) return;
+    if (path == null || path.isEmpty) {
+      setState(() => _error = 'The selected file is not accessible on this device.');
+      return;
+    }
+    setState(() {
+      _filePath = path;
+      _error = null;
+      _jobId = null;
+    });
   }
 
   Future<void> _submit() async {
@@ -86,20 +123,29 @@ class _ConvertScreenState extends ConsumerState<ConvertScreen> {
         includeCover: _includeCover,
         normalizeAudio: _normalizeAudio,
       );
-      final starter =
-          widget.startConversion ??
-          (request) => ref
-              .read(apiClientProvider)
-              .uploadAndConvert(
-                request.filePath,
-                engine: request.engine,
-                voice: request.voice,
-                language: request.language,
+      final starter = widget.startConversion ??
+          (request) async {
+            if (defaultTargetPlatform == TargetPlatform.android) {
+              final root = await getApplicationDocumentsDirectory();
+              final output = '${root.path}/audiobooks/${DateTime.now().millisecondsSinceEpoch}';
+              return ref.read(embeddedConverterProvider).convert(
+                inputPath: request.filePath,
+                outputPath: output,
                 chapterStart: request.chapterStart,
                 chapterEnd: request.chapterEnd,
-                includeCover: request.includeCover,
-                normalizeAudio: request.normalizeAudio,
               );
+            }
+            return ref.read(apiClientProvider).uploadAndConvert(
+              request.filePath,
+              engine: request.engine,
+              voice: request.voice,
+              language: request.language,
+              chapterStart: request.chapterStart,
+              chapterEnd: request.chapterEnd,
+              includeCover: request.includeCover,
+              normalizeAudio: request.normalizeAudio,
+            );
+          };
       final jobId = await starter(request);
       if (!mounted) return;
       setState(() {
@@ -118,6 +164,7 @@ class _ConvertScreenState extends ConsumerState<ConvertScreen> {
   @override
   Widget build(BuildContext context) {
     final jobId = _jobId;
+    final supportsPiper = defaultTargetPlatform != TargetPlatform.android;
     return Scaffold(
       appBar: AppBar(title: const Text('Convert')),
       body: ListView(
@@ -132,9 +179,10 @@ class _ConvertScreenState extends ConsumerState<ConvertScreen> {
           DropdownButtonFormField<String>(
             initialValue: _engine,
             decoration: const InputDecoration(labelText: 'Engine'),
-            items: const [
-              DropdownMenuItem(value: 'edge', child: Text('Edge TTS')),
-              DropdownMenuItem(value: 'piper', child: Text('Piper')),
+            items: [
+              const DropdownMenuItem(value: 'edge', child: Text('Edge TTS')),
+              if (supportsPiper)
+                const DropdownMenuItem(value: 'piper', child: Text('Piper')),
             ],
             onChanged: (v) => setState(() => _engine = v ?? _engine),
           ),
@@ -207,7 +255,7 @@ class _ConvertScreenState extends ConsumerState<ConvertScreen> {
           if (jobId != null) ...[
             const SizedBox(height: 12),
             Text(jobId, key: const Key('conversion-job-id')),
-            StreamBuilder(
+            if (defaultTargetPlatform != TargetPlatform.android) StreamBuilder(
               stream: ref.read(apiClientProvider).jobStream(jobId),
               builder: (context, snapshot) {
                 if (snapshot.hasError) {

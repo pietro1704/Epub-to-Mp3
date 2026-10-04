@@ -162,6 +162,18 @@ fn run(raw: Vec<String>) -> Result<i32, String> {
     }
 
     let config = converter_core::config::AppConfig::from_env();
+    let selected_chapters = if options.chapters.is_empty() && options.sections.is_empty() {
+        None
+    } else {
+        Some(
+            options
+                .chapters
+                .iter()
+                .chain(options.sections.iter())
+                .cloned()
+                .collect(),
+        )
+    };
     for (position, input) in all.iter().enumerate() {
         let session = converter_core::embedded::EmbeddedConversionSession::open(
             input,
@@ -170,6 +182,7 @@ fn run(raw: Vec<String>) -> Result<i32, String> {
                 engine: Some(options.engine.clone()),
                 voice: options.voice.clone(),
                 language: None,
+                chapter_indices: selected_chapters.clone(),
                 no_parallel: options.no_parallel,
             },
             config.clone(),
@@ -487,12 +500,9 @@ fn verify_output(
             ));
         }
         let expected_title = chapter.title.trim();
-        if !expected_title.is_empty()
-            && !chapter
-                .filename
-                .to_lowercase()
-                .contains(&expected_title.to_lowercase())
-        {
+        let normalized_filename = normalized_name(&chapter.filename);
+        let normalized_title = normalized_name(expected_title);
+        if !normalized_title.is_empty() && !normalized_filename.contains(&normalized_title) {
             return Err(format!(
                 "verification failed: filename '{}' does not contain TOC title '{}'",
                 chapter.filename, chapter.title
@@ -510,6 +520,14 @@ fn verify_output(
         ));
     }
     Ok(())
+}
+
+fn normalized_name(value: &str) -> String {
+    value
+        .chars()
+        .filter(|character| character.is_alphanumeric())
+        .flat_map(char::to_lowercase)
+        .collect()
 }
 
 fn clear_global_cache(assume_yes: bool) -> Result<(), String> {

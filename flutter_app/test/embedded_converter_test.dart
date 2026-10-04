@@ -9,6 +9,19 @@ class FakeConverter implements EmbeddedConverter {
   int calls = 0;
 
   @override
+  Future<Uint8List> edgeProbe(String text, {String? locale}) async => Uint8List.fromList(const [1]);
+
+  @override
+  Future<void> speakFallback(String text, {required String locale}) async {}
+
+  @override
+  Future<String> synthesizeFallback(
+    String text, {
+    required String locale,
+    required String path,
+  }) async => path;
+
+  @override
   Future<EbookFulltext> parse({
     required String inputPath,
     String jobId = '',
@@ -18,6 +31,8 @@ class FakeConverter implements EmbeddedConverter {
   Future<String> convert({
     required String inputPath,
     required String outputPath,
+    int? chapterStart,
+    int? chapterEnd,
   }) async {
     calls++;
     return outputPath;

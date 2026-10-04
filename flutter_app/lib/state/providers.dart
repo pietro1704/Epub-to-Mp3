@@ -15,6 +15,7 @@ import '../services/download_manager.dart';
 import '../services/embedded_converter.dart';
 import '../services/fulltext_store.dart';
 import '../services/local_fulltext_cache.dart';
+import '../services/playback_snapshot.dart';
 import '../services/resume_store.dart';
 import '../services/sync_engine.dart';
 
@@ -296,6 +297,13 @@ final globalAudioPlayerProvider = Provider<AudioPlayerInterface>((ref) {
   final p = AudioPlayerService(backendBase: settings.backendURL);
   ref.onDispose(p.dispose);
   return p;
+});
+
+/// Immutable playback state consumed by every Flutter playback surface.
+final playbackCoordinatorProvider = Provider<PlaybackCoordinator>((ref) {
+  final coordinator = PlaybackCoordinator(ref.watch(globalAudioPlayerProvider));
+  ref.onDispose(coordinator.dispose);
+  return coordinator;
 });
 
 /// Android MediaSession adapter. Null on desktop/iOS and in host tests.

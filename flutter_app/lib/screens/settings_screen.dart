@@ -6,7 +6,6 @@ import 'package:path_provider/path_provider.dart';
 
 import '../l10n/app_localizations.dart';
 import '../models/app_settings.dart';
-import '../services/embedded_converter.dart';
 import '../state/providers.dart';
 
 class SettingsScreen extends ConsumerStatefulWidget {
@@ -440,8 +439,9 @@ class _TtsModelManagerCardState extends ConsumerState<_TtsModelManagerCard> {
   Future<List<Map<String, dynamic>>> _loadCatalog() async {
     final raw = await ref.read(embeddedConverterProvider).ttsModels();
     final decoded = jsonDecode(raw);
-    if (decoded is! List)
+    if (decoded is! List) {
       throw const FormatException('Invalid TTS model catalog');
+    }
     final models = decoded
         .whereType<Map>()
         .map(Map<String, dynamic>.from)

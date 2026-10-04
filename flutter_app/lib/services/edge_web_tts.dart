@@ -21,20 +21,22 @@ class EdgeWebTts {
     if (text.trim().isEmpty) throw StateError('Edge text is empty');
     final requestId = _requestId();
     final connectionId = _requestId();
+    final secGec = secMsGec();
     final url = Uri.parse('$_endpoint?TrustedClientToken=$_token&ConnectionId=$connectionId'
-        '&Sec-MS-GEC=${secMsGec()}&Sec-MS-GEC-Version=1-143.0.3650.75');
+        '&Sec-MS-GEC=$secGec&Sec-MS-GEC-Version=1-143.0.3650.75');
     final socket = IOWebSocketChannel.connect(
       url,
       headers: {
         'Origin': _origin,
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/143.0.0.0 Safari/537.36 Edg/143.0.0.0',
-        'Sec-MS-GEC': secMsGec(),
+        'Sec-MS-GEC': secGec,
         'Sec-MS-GEC-Version': '1-143.0.3650.75',
-        'Cookie': 'muid=00000000000000000000000000000000;',
+        'Sec-WebSocket-Version': '13',
+        'Cookie': 'muid=${_requestId().substring(0, 32).toUpperCase()};',
         'Pragma': 'no-cache',
         'Cache-Control': 'no-cache',
         'Accept': '*/*',
-        'Accept-Encoding': 'gzip, deflate, br',
+        'Accept-Encoding': 'gzip, deflate, br, zstd',
         'Accept-Language': 'en-US,en;q=0.9',
         'Sec-CH-UA': '" Not;A Brand";v="99", "Microsoft Edge";v="143", "Chromium";v="143"',
         'Sec-Fetch-Site': 'none',

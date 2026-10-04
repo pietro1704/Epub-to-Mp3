@@ -126,4 +126,15 @@ class ReaderThemeColors {
         return Brightness.dark;
     }
   }
+
+  static ThemeMode themeMode(
+    ReaderTheme theme, {
+    Brightness? platformBrightness,
+  }) {
+    if (theme == ReaderTheme.auto) return ThemeMode.system;
+    return brightness(theme, platformBrightness: platformBrightness) ==
+            Brightness.dark
+        ? ThemeMode.dark
+        : ThemeMode.light;
+  }
 }

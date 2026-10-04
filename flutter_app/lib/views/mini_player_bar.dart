@@ -12,6 +12,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../services/audio_player_service.dart';
+import '../services/playback_snapshot.dart';
 
 import '../services/background_audio_handler.dart' as background_audio;
 import '../state/providers.dart';
@@ -23,6 +24,23 @@ class MiniPlayerBar extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final coordinator = ref.watch(playbackCoordinatorProvider);
+    return StreamBuilder<PlaybackSnapshot>(
+      stream: coordinator.stream,
+      initialData: coordinator.snapshot,
+      builder: (context, snapshot) => _buildWithSnapshot(
+        context,
+        ref,
+        snapshot.data ?? coordinator.snapshot,
+      ),
+    );
+  }
+
+  Widget _buildWithSnapshot(
+    BuildContext context,
+    WidgetRef ref,
+    PlaybackSnapshot playback,
+  ) {
     final playingBookId = ref.watch(currentlyPlayingBookIdProvider);
     if (playingBookId == null) return const SizedBox.shrink();
 
@@ -149,48 +167,39 @@ class MiniPlayerBar extends ConsumerWidget {
                 tooltip: 'Skip back 15 seconds',
               ),
 
-              // Play/pause or loading state
-              StreamBuilder<bool>(
-                stream: player.playing,
-                builder: (context, snap) {
-                  final isPlaying = snap.data ?? false;
-                  if (player.isLoading) {
-                    return const SizedBox(
-                      width: 48,
-                      height: 48,
-                      child: Padding(
-                        padding: EdgeInsets.all(14),
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      ),
-                    );
-                  }
-                  return Semantics(
-                    label: isPlaying ? 'Pause' : 'Play',
-                    button: true,
-                    child: IconButton(
-                      icon: Icon(
-                        isPlaying
-                            ? Icons.pause_rounded
-                            : Icons.play_arrow_rounded,
-                        size: 28,
-                      ),
-                      onPressed: () async {
-                        if (player.chapters.isEmpty) {
-                          final request = ref.read(playbackRequestProvider);
-                          if (request != null) {
-                            await request();
-                          }
-                          if (player.chapters.isNotEmpty) {
-                            await player.play();
-                          }
-                          return;
-                        }
-                        player.togglePlayPause();
-                      },
+              // Play/pause or loading state. The coordinator snapshot is the
+              // only state used to render this control.
+              if (playback.isLoading)
+                const SizedBox(
+                  width: 48,
+                  height: 48,
+                  child: Padding(
+                    padding: EdgeInsets.all(14),
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                )
+              else
+                Semantics(
+                  label: playback.isPlaying ? 'Pause' : 'Play',
+                  button: true,
+                  child: IconButton(
+                    icon: Icon(
+                      playback.isPlaying
+                          ? Icons.pause_rounded
+                          : Icons.play_arrow_rounded,
+                      size: 28,
                     ),
-                  );
-                },
-              ),
+                    onPressed: () async {
+                      if (player.chapters.isEmpty) {
+                        final request = ref.read(playbackRequestProvider);
+                        if (request != null) await request();
+                        if (player.chapters.isNotEmpty) await player.play();
+                        return;
+                      }
+                      player.togglePlayPause();
+                    },
+                  ),
+                ),
 
               // Skip +15s
               IconButton(

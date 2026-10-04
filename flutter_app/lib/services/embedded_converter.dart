@@ -1,8 +1,9 @@
 import 'dart:convert';
-
 import 'package:flutter/services.dart';
 
 import '../models/ebook_fulltext.dart';
+import 'edge_web_tts.dart';
+import 'android_speech_fallback.dart';
 
 /// Selects the implementation used for local conversion.
 enum ConverterMode { embedded, http }
@@ -32,10 +33,22 @@ class EmbeddedConversionFailure extends Error {
 
 /// Platform-neutral seam for the converter-ffi C ABI.
 abstract interface class EmbeddedConverter {
+  Future<Uint8List> edgeProbe(String text, {String? locale}) => throw EmbeddedConverterUnavailable(
+    'Android Edge transport probe is unavailable',
+  );
+  Future<void> speakFallback(String text, {required String locale}) =>
+      throw EmbeddedConverterUnavailable('Android speech fallback is unavailable');
+  Future<String> synthesizeFallback(
+    String text, {
+    required String locale,
+    required String path,
+  }) => throw EmbeddedConverterUnavailable('Android audio synthesis fallback is unavailable');
   Future<EbookFulltext> parse({required String inputPath, String jobId = ''});
   Future<String> convert({
     required String inputPath,
     required String outputPath,
+    int? chapterStart,
+    int? chapterEnd,
   });
   Future<String> ttsModels() =>
       throw EmbeddedConverterUnavailable('TTS model catalog is unavailable');
@@ -86,6 +99,51 @@ class AndroidEmbeddedConverter implements EmbeddedConverter {
 
   static const channelName = 'epub_to_mp3/embedded_converter';
   final MethodChannel _channel;
+  final EdgeWebTts _edge = EdgeWebTts();
+  final AndroidSpeechFallback _speechFallback = AndroidSpeechFallback();
+
+  @override
+  Future<Uint8List> edgeProbe(String text, {String? locale}) async {
+    final normalized = (locale ?? 'en-US').replaceAll('_', '-');
+    final voice = normalized.toLowerCase().startsWith('pt')
+        ? 'pt-BR-AntonioNeural'
+        : normalized.toLowerCase().startsWith('es')
+        ? 'es-ES-AlvaroNeural'
+        : 'en-US-GuyNeural';
+    try {
+      final raw = await _edge.synthesize(text, voice: voice);
+      if (raw.isEmpty) {
+        throw EmbeddedConversionFailure('EDGE_PROBE_EMPTY', 'Edge returned no audio');
+      }
+      return raw;
+    } on EmbeddedConversionFailure {
+      rethrow;
+    } catch (error) {
+      throw EmbeddedConversionFailure('EDGE_PROBE_FAILED', '$voice: $error');
+    }
+  }
+
+  @override
+  Future<void> speakFallback(String text, {required String locale}) =>
+      _speechFallback.speak(text, locale: locale);
+
+  @override
+  Future<String> synthesizeFallback(
+    String text, {
+    required String locale,
+    required String path,
+  }) async {
+    try {
+      final result = await _channel.invokeMethod<String>('piperSynthesize', {
+        'text': text,
+        'output': path,
+      }).timeout(const Duration(seconds: 60));
+      if (result != null && result.isNotEmpty) return result;
+    } on PlatformException catch (error) {
+      throw EmbeddedConversionFailure('PIPER_SYNTHESIS_FAILED', error.message ?? error.code);
+    }
+    throw EmbeddedConversionFailure('PIPER_SYNTHESIS_EMPTY', 'Piper returned no audio path');
+  }
 
   Future<Map<String, bool>> runtimeStatus() async {
     try {
@@ -150,6 +208,8 @@ class AndroidEmbeddedConverter implements EmbeddedConverter {
   Future<String> convert({
     required String inputPath,
     required String outputPath,
+    int? chapterStart,
+    int? chapterEnd,
   }) async {
     try {
       // ignore: avoid_print
@@ -164,6 +224,8 @@ class AndroidEmbeddedConverter implements EmbeddedConverter {
       final result = await _channel.invokeMethod<String>('convert', {
         'inputPath': inputPath,
         'outputPath': outputPath,
+        'chapterStart': chapterStart ?? -1,
+        'chapterEnd': chapterEnd ?? -1,
       });
       if (result == null || result.isEmpty) {
         throw PlatformException(
@@ -276,6 +338,12 @@ class AndroidEmbeddedConverter implements EmbeddedConverter {
     return value;
   }
 
+  Future<String> synthesizePiper({required String text, required String output}) async {
+    final value = await _channel.invokeMethod<String>('piperSynthesize', {'text': text, 'output': output});
+    if (value == null || value.isEmpty) throw EmbeddedConverterUnavailable();
+    return value;
+  }
+
   Future<String> installTtsModelManifest({
     required String modelId,
     required String artifactsJson,
@@ -327,6 +395,21 @@ class UnavailableEmbeddedConverter implements EmbeddedConverter {
   const UnavailableEmbeddedConverter();
 
   @override
+  Future<Uint8List> edgeProbe(String text, {String? locale}) =>
+      throw EmbeddedConverterUnavailable();
+
+  @override
+  Future<void> speakFallback(String text, {required String locale}) =>
+      throw EmbeddedConverterUnavailable();
+
+  @override
+  Future<String> synthesizeFallback(
+    String text, {
+    required String locale,
+    required String path,
+  }) => throw EmbeddedConverterUnavailable();
+
+  @override
   Future<EbookFulltext> parse({required String inputPath, String jobId = ''}) {
     throw EmbeddedConverterUnavailable();
   }
@@ -335,6 +418,8 @@ class UnavailableEmbeddedConverter implements EmbeddedConverter {
   Future<String> convert({
     required String inputPath,
     required String outputPath,
+    int? chapterStart,
+    int? chapterEnd,
   }) {
     throw EmbeddedConverterUnavailable();
   }

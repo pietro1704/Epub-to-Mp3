@@ -7,6 +7,7 @@ plugins {
 
 dependencies {
     implementation("androidx.work:work-runtime-ktx:2.9.0")
+    testImplementation(kotlin("test"))
 }
 
 android {
@@ -36,6 +37,7 @@ android {
         applicationId = "com.pietrocode.epubtomp3.flutter_app"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
+        // The installed NDK rejects the Flutter plugin's unresolved platform 1 default.
         minSdk = flutter.minSdkVersion
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode

@@ -9,7 +9,7 @@ use std::{fmt, sync::Arc, time::Duration};
 
 use futures_util::{SinkExt, StreamExt};
 use http::{header::HeaderValue, Request};
-use rand::{distr::Alphanumeric, Rng};
+use rand::Rng;
 use sha2::{Digest, Sha256};
 use tokio::{sync::Semaphore, time::timeout};
 use tokio_tungstenite::{
@@ -35,29 +35,23 @@ pub async fn synthesize_with_reference_client(
     voice: &str,
 ) -> Result<Vec<u8>, EdgeError> {
     let _ = rustls::crypto::ring::default_provider().install_default();
-    let client = edge_tts_rust::EdgeTtsClient::builder()
-        .ws_pool_size(0)
-        .ws_warmup(false)
-        .request_chunk_reuse(false)
-        .receive_timeout(Duration::from_secs(10))
-        .build()
-        .map_err(|error| EdgeError::Transport(error.to_string()))?;
-    let result = client
-        .synthesize(
-            text,
-            edge_tts_rust::SpeakOptions {
-                voice: voice.to_owned(),
-                ..edge_tts_rust::SpeakOptions::default()
-            },
-        )
-        .await
-        .map_err(|error| EdgeError::Transport(error.to_string()))?;
-    let audio = result.audio;
-    if audio.is_empty() {
-        Err(EdgeError::NoAudio)
+    let mut config = EdgeConfig::new(voice)?;
+    config.chunk_chars = if cfg!(target_os = "android") {
+        4096
     } else {
-        Ok(audio)
-    }
+        12000
+    };
+    config.concurrency = 1;
+    config.timeout = Duration::from_secs(if cfg!(target_os = "android") { 60 } else { 30 });
+    let client = EdgeTtsClient::new(config);
+    let result = timeout(
+        Duration::from_secs(if cfg!(target_os = "android") { 120 } else { 45 }),
+        client.synthesize(text),
+    )
+    .await
+    .map_err(|_| EdgeError::Timeout)?
+    .map_err(|error| EdgeError::Transport(error.to_string()))?;
+    Ok(result)
 }
 const EDGE_ORIGIN: &str = "chrome-extension://jdiccldimpdaibmpdkjnbmckianbfold";
 
@@ -198,20 +192,30 @@ impl EdgeTransport for WebSocketTransport {
                 .to_string()
                 .into_client_request()
                 .map_err(|error| EdgeError::Transport(error.to_string()))?;
+
             request
                 .headers_mut()
                 .insert("Origin", HeaderValue::from_static(EDGE_ORIGIN));
-            let token = sec_ms_gec_now();
+            request
+                .headers_mut()
+                .insert("Pragma", HeaderValue::from_static("no-cache"));
+            request
+                .headers_mut()
+                .insert("Cache-Control", HeaderValue::from_static("no-cache"));
+            request
+                .headers_mut()
+                .insert("Sec-WebSocket-Version", HeaderValue::from_static("13"));
             request.headers_mut().insert(
-                "Sec-MS-GEC",
-                HeaderValue::from_str(&token)
-                    .map_err(|error| EdgeError::Transport(error.to_string()))?,
+                "Accept-Encoding",
+                HeaderValue::from_static("gzip, deflate, br, zstd"),
             );
             request.headers_mut().insert(
-                "Sec-MS-GEC-Version",
-                HeaderValue::from_static(EDGE_BROWSER_VERSION),
+                "Accept-Language",
+                HeaderValue::from_static("en-US,en;q=0.9"),
             );
-            let muid = "00000000000000000000000000000000";
+            let mut muid_bytes = [0u8; 16];
+            rand::rng().fill(&mut muid_bytes);
+            let muid = hex::encode_upper(muid_bytes);
             let cookie = format!("muid={muid};");
             request.headers_mut().insert(
                 "Cookie",
@@ -267,6 +271,7 @@ impl EdgeTransport for WebSocketTransport {
                     .add(certificate)
                     .map_err(|error| EdgeError::Transport(error.to_string()))?;
             }
+            roots.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
             let mut tls_config = rustls::ClientConfig::builder()
                 .with_root_certificates(roots)
                 .with_no_client_auth();
@@ -332,12 +337,13 @@ impl<T: EdgeTransport + 'static> EdgeTtsClient<T> {
         let chunks = split_protocol_chunks(text, self.config.chunk_chars);
         let mut output = Vec::new();
         for chunk in chunks {
-            let ssml = make_ssml(
+            let ssml = make_ssml_escaped(
                 &chunk,
                 &self.config.voice,
                 &self.config.rate,
                 &self.config.volume,
                 &self.config.pitch,
+                false,
             );
             output.extend(self.synthesize_request(&ssml, chunk.len()).await?);
         }
@@ -416,16 +422,16 @@ impl<T: EdgeTransport + 'static> EdgeTtsClient<T> {
         ssml: &str,
     ) -> Result<Vec<u8>, EdgeError> {
         let mut socket = self.transport.connect(request).await?;
-        let timestamp = protocol_timestamp();
+        let speech_timestamp = protocol_timestamp();
         socket
             .send(Message::Text(
-                speech_config(&timestamp, &self.config.output_format).into(),
+                speech_config(&speech_timestamp, &self.config.output_format).into(),
             ))
             .await
             .map_err(|e| EdgeError::Transport(e.to_string()))?;
         socket
             .send(Message::Text(
-                ssml_frame(request_id, &timestamp, ssml).into(),
+                ssml_frame(request_id, &protocol_timestamp(), ssml).into(),
             ))
             .await
             .map_err(|e| EdgeError::Transport(e.to_string()))?;
@@ -433,13 +439,27 @@ impl<T: EdgeTransport + 'static> EdgeTtsClient<T> {
             let mut audio = Vec::new();
             while let Some(message) = socket.next().await {
                 match message.map_err(|e| EdgeError::Transport(e.to_string()))? {
-                    Message::Text(text) if frame_path(&text).as_deref() == Some("turn.end") => {
-                        return if audio.is_empty() {
-                            Err(EdgeError::NoAudio)
-                        } else {
-                            Ok(audio)
-                        };
-                    }
+                    Message::Text(text) => match frame_path(&text).as_deref() {
+                        Some("turn.end") => {
+                            return if audio.is_empty() {
+                                Err(EdgeError::NoAudio)
+                            } else {
+                                Ok(audio)
+                            };
+                        }
+                        Some("turn.start") | Some("response") | Some("audio.metadata") => {}
+                        Some(path) => {
+                            return Err(EdgeError::Protocol(format!(
+                                "Edge returned unexpected text frame {path}"
+                            )));
+                        }
+                        None if text.to_ascii_lowercase().contains("error") => {
+                            return Err(EdgeError::Protocol(format!(
+                                "Edge returned an error frame: {text}"
+                            )));
+                        }
+                        None => {}
+                    },
                     Message::Binary(frame) => {
                         let payload = parse_audio_frame(&frame)?;
                         if !payload.is_empty() {
@@ -450,7 +470,16 @@ impl<T: EdgeTransport + 'static> EdgeTtsClient<T> {
                             audio.extend_from_slice(&payload);
                         }
                     }
-                    Message::Close(_) => break,
+                    Message::Close(frame) => {
+                        let reason = frame
+                            .as_ref()
+                            .map(|value| value.reason.to_string())
+                            .filter(|value| !value.is_empty())
+                            .unwrap_or_else(|| "no close reason".to_owned());
+                        return Err(EdgeError::Transport(format!(
+                            "Edge closed the WebSocket: {reason}"
+                        )));
+                    }
                     _ => {}
                 }
             }
@@ -478,6 +507,14 @@ pub fn xml_escape(value: &str) -> String {
     value
         .chars()
         .fold(String::with_capacity(value.len()), |mut out, ch| {
+            if (ch < ' ' && ch != '\t' && ch != '\n' && ch != '\r')
+                || (('\u{7f}'..='\u{9f}').contains(&ch))
+                || ch == '\u{fffe}'
+                || ch == '\u{ffff}'
+            {
+                out.push(' ');
+                return out;
+            }
             match ch {
                 '&' => out.push_str("&amp;"),
                 '<' => out.push_str("&lt;"),
@@ -491,52 +528,79 @@ pub fn xml_escape(value: &str) -> String {
 }
 
 pub fn make_ssml(text: &str, voice: &str, rate: &str, volume: &str, pitch: &str) -> String {
-    format!("<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xml:lang='en-US'><voice name='{}'><prosody pitch='{}' rate='{}' volume='{}'>{}</prosody></voice></speak>", xml_escape(voice), xml_escape(rate), xml_escape(volume), xml_escape(pitch), xml_escape(text))
+    make_ssml_escaped(text, voice, rate, volume, pitch, true)
+}
+
+fn make_ssml_escaped(
+    text: &str,
+    voice: &str,
+    rate: &str,
+    volume: &str,
+    pitch: &str,
+    escape_text: bool,
+) -> String {
+    let text = if escape_text {
+        xml_escape(text)
+    } else {
+        text.to_owned()
+    };
+    format!("<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xml:lang='en-US'><voice name='{}'><prosody pitch='{}' rate='{}' volume='{}'>{}</prosody></voice></speak>", xml_escape(voice), xml_escape(rate), xml_escape(volume), xml_escape(pitch), text)
 }
 
 pub fn split_protocol_chunks(text: &str, limit: usize) -> Vec<String> {
     let limit = limit.max(1);
+    let escaped = xml_escape(text);
+    let mut bytes = escaped.as_bytes();
     let mut chunks = Vec::new();
-    let mut current = String::new();
-    for word in text.split_whitespace() {
-        let candidate = if current.is_empty() {
-            word.into()
-        } else {
-            format!("{current} {word}")
-        };
-        if candidate.len() <= limit {
-            current = candidate;
-            continue;
+
+    while bytes.len() > limit {
+        let mut split_at = bytes[..limit]
+            .iter()
+            .rposition(|byte| *byte == b'\n' || *byte == b' ')
+            .unwrap_or(limit);
+
+        while std::str::from_utf8(&bytes[..split_at]).is_err() && split_at > 0 {
+            split_at -= 1;
         }
-        if !current.is_empty() {
-            chunks.push(std::mem::take(&mut current));
-        }
-        if word.len() <= limit {
-            current = word.into();
-        } else {
-            let mut fragment = String::new();
-            for ch in word.chars() {
-                if !fragment.is_empty() && fragment.len() + ch.len_utf8() > limit {
-                    chunks.push(std::mem::take(&mut fragment));
-                }
-                fragment.push(ch);
+
+        while split_at > 0 {
+            let Some(amp_index) = bytes[..split_at].iter().rposition(|byte| *byte == b'&') else {
+                break;
+            };
+            if bytes[amp_index..split_at].contains(&b';') {
+                break;
             }
-            current = fragment;
+            split_at = amp_index;
         }
+
+        if split_at == 0 {
+            split_at = limit;
+            while std::str::from_utf8(&bytes[..split_at]).is_err() && split_at > 0 {
+                split_at -= 1;
+            }
+        }
+
+        let chunk = std::str::from_utf8(&bytes[..split_at])
+            .expect("split point must remain valid UTF-8")
+            .trim();
+        if !chunk.is_empty() {
+            chunks.push(chunk.to_owned());
+        }
+        bytes = &bytes[split_at..];
     }
-    if !current.is_empty() {
-        chunks.push(current);
+
+    let tail = std::str::from_utf8(bytes)
+        .expect("remaining chunk must remain valid UTF-8")
+        .trim();
+    if !tail.is_empty() {
+        chunks.push(tail.to_owned());
     }
     chunks
 }
 
 fn random_id() -> String {
-    rand::rng()
-        .sample_iter(&Alphanumeric)
-        .take(32)
-        .map(char::from)
-        .collect::<String>()
-        .to_lowercase()
+    let bytes: [u8; 16] = rand::rng().random();
+    hex::encode(bytes)
 }
 
 fn request_url(endpoint: &Url, connection_id: &str, token: &str) -> Result<Url, EdgeError> {
@@ -550,6 +614,9 @@ fn request_url(endpoint: &Url, connection_id: &str, token: &str) -> Result<Url, 
         url.query_pairs_mut()
             .append_pair("TrustedClientToken", token);
     }
+    url.query_pairs_mut()
+        .append_pair("Sec-MS-GEC", &sec_ms_gec_now())
+        .append_pair("Sec-MS-GEC-Version", EDGE_BROWSER_VERSION);
     Ok(url)
 }
 
@@ -574,22 +641,62 @@ fn protocol_request(url: Url) -> Result<Request<()>, EdgeError> {
         .map_err(|e| EdgeError::Url(e.to_string()))?;
     request
         .headers_mut()
+        .insert("Pragma", HeaderValue::from_static("no-cache"));
+    request
+        .headers_mut()
+        .insert("Cache-Control", HeaderValue::from_static("no-cache"));
+    request
+        .headers_mut()
+        .insert("Sec-WebSocket-Version", HeaderValue::from_static("13"));
+    request
+        .headers_mut()
         .insert("Origin", HeaderValue::from_static(EDGE_ORIGIN));
+    request.headers_mut().insert(
+        "Accept-Encoding",
+        HeaderValue::from_static("gzip, deflate, br, zstd"),
+    );
+    request.headers_mut().insert(
+        "Accept-Language",
+        HeaderValue::from_static("en-US,en;q=0.9"),
+    );
+    let muid = random_id().to_uppercase();
+    request.headers_mut().insert(
+        "Cookie",
+        HeaderValue::from_str(&format!("muid={muid};"))
+            .map_err(|e| EdgeError::Url(e.to_string()))?,
+    );
     request.headers_mut().insert(
         "User-Agent",
         HeaderValue::from_static(
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/131.0.0.0 Safari/537.36",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36 Edg/143.0.0.0",
         ),
     );
     Ok(request)
 }
 
 fn protocol_timestamp() -> String {
-    "Thu Jan 01 1970 00:00:00 GMT+0000 (Coordinated Universal Time)".into()
+    time::OffsetDateTime::now_utc()
+        .format(&time::macros::format_description!(
+            "[weekday repr:short] [month repr:short] [day padding:zero] [year] [hour]:[minute]:[second] GMT+0000 (Coordinated Universal Time)"
+        ))
+        .expect("Edge timestamp format is static and valid")
 }
 
 fn speech_config(timestamp: &str, format: &str) -> String {
-    format!("X-Timestamp:{timestamp}\r\nContent-Type:application/json; charset=utf-8\r\nPath:speech.config\r\n\r\n{{\"context\":{{\"synthesis\":{{\"audio\":{{\"metadataoptions\":{{\"sentenceBoundaryEnabled\":\"false\",\"wordBoundaryEnabled\":\"false\"}},\"outputFormat\":\"{format}\"}}}}}}}}\r\n")
+    let payload = serde_json::json!({
+        "context": {
+            "synthesis": {
+                "audio": {
+                    "metadataoptions": {
+                        "sentenceBoundaryEnabled": false,
+                        "wordBoundaryEnabled": true,
+                    },
+                    "outputFormat": format,
+                },
+            },
+        },
+    });
+    format!("X-Timestamp:{timestamp}\r\nContent-Type:application/json; charset=utf-8\r\nPath:speech.config\r\n\r\n{payload}\r\n")
 }
 
 fn ssml_frame(request_id: &str, timestamp: &str, ssml: &str) -> String {
@@ -641,6 +748,36 @@ mod protocol_tests {
         let chunks = split_protocol_chunks("one two three four", 8);
         assert_eq!(chunks, vec!["one two", "three", "four"]);
         assert!(chunks.iter().all(|chunk| chunk.len() <= 8));
+    }
+
+    #[test]
+    fn ssml_matches_reference_shape_and_escapes_text_once() {
+        let ssml = make_ssml("A & <B> 'quoted'", "en-US-GuyNeural", "+0%", "+0%", "+0Hz");
+        assert_eq!(
+            ssml,
+            "<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xml:lang='en-US'><voice name='en-US-GuyNeural'><prosody pitch='+0%' rate='+0%' volume='+0Hz'>A &amp; &lt;B&gt; &apos;quoted&apos;</prosody></voice></speak>"
+        );
+        assert!(!ssml.contains("xmlns:mstts"));
+    }
+
+    #[test]
+    fn chunking_raw_text_keeps_xml_entities_intact_after_escaping() {
+        let text = format!("{} & value", "x".repeat(7));
+        for chunk in split_protocol_chunks(&text, 8) {
+            let ssml = make_ssml(&chunk, "en-US-GuyNeural", "+0%", "+0%", "+0Hz");
+            let mut reader = quick_xml::Reader::from_str(&ssml);
+            let mut depth = 0usize;
+            loop {
+                match reader.read_event() {
+                    Ok(quick_xml::events::Event::Start(_)) => depth += 1,
+                    Ok(quick_xml::events::Event::End(_)) => depth -= 1,
+                    Ok(quick_xml::events::Event::Eof) => break,
+                    Ok(_) => {}
+                    Err(error) => panic!("invalid SSML chunk: {error}"),
+                }
+            }
+            assert_eq!(depth, 0);
+        }
     }
 
     #[test]

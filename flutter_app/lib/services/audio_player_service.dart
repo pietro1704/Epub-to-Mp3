@@ -518,9 +518,19 @@ class FakeAudioPlayerService implements AudioPlayerInterface {
   }
 
   @override
-  void nextChapter() {}
+  void nextChapter() {
+    final current = _currentIndex;
+    if (current == null || current + 1 >= _chapters.length) return;
+    _currentIndex = current + 1;
+    _indexController.add(_currentIndex);
+  }
   @override
-  void previousChapter() {}
+  void previousChapter() {
+    final current = _currentIndex;
+    if (current == null || current <= 0) return;
+    _currentIndex = current - 1;
+    _indexController.add(_currentIndex);
+  }
 
   @override
   void togglePlayPause() {

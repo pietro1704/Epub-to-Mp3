@@ -63,7 +63,10 @@ pub unsafe extern "C" fn converter_session_metadata_json(
         Some(handle) => handle,
         None => return fail("invalid null session handle".to_owned()),
     };
-    let metadata = metadata_json(session.session.metadata());
+    let metadata = metadata_json(
+        session.session.metadata(),
+        session.session.structure_verification(),
+    );
     match CString::new(metadata) {
         Ok(value) => value.into_raw(),
         Err(error) => fail(format!("metadata contains an interior NUL byte: {error}")),
@@ -77,6 +80,8 @@ pub unsafe extern "C" fn converter_session_metadata_json(
 pub unsafe extern "C" fn converter_session_convert_json(
     handle: *const ConverterSession,
     output_dir: *const c_char,
+    chapter_start: i32,
+    chapter_end: i32,
 ) -> *mut c_char {
     clear_last_error();
     let _ = rustls::crypto::ring::default_provider().install_default();
@@ -89,7 +94,7 @@ pub unsafe extern "C" fn converter_session_convert_json(
         Err(error) => return fail(error),
     };
     let config = AppConfig::from_paths(resolve_paths_from(
-        HashMap::<String, String>::new(),
+        [("OUTPUT_DIR".to_owned(), output_dir.clone())],
         std::path::PathBuf::from(output_dir.clone()),
     ));
     let output = Path::new(&output_dir);
@@ -106,6 +111,17 @@ pub unsafe extern "C" fn converter_session_convert_json(
         engine: Some("edge".to_owned()),
         voice: None,
         language: None,
+        chapter_indices: if chapter_start >= 0 {
+            Some(if chapter_end >= chapter_start {
+                (chapter_start..=chapter_end)
+                    .map(|index| index.to_string())
+                    .collect()
+            } else {
+                vec![chapter_start.to_string()]
+            })
+        } else {
+            None
+        },
         no_parallel: true,
     };
     let worker = match converter_core::worker::ConversionWorker::new(config) {
@@ -665,12 +681,24 @@ pub extern "C" fn piper_runtime_register_embedded() {
         converter_core::piper::RegisteredPiperRuntime::new(|text, output| {
             let model = std::env::var_os("PIPER_MODEL")
                 .map(std::path::PathBuf::from)
-                .ok_or_else(|| {
-                    converter_core::piper::PiperError::MissingModel(std::path::PathBuf::from(
-                        "PIPER_MODEL",
-                    ))
-                })?;
-            let config = model.with_extension("onnx.json");
+                .or_else(|| {
+                    let root = std::path::Path::new(
+                        "/data/user/0/com.pietrocode.epubtomp3.flutter_app/app_flutter/tts-models",
+                    );
+                    std::fs::read_dir(root).ok()?.flatten().find_map(|entry| {
+                        let directory = entry.path();
+                        ["model.onnx", "model.bin"]
+                            .iter()
+                            .map(|name| directory.join(name))
+                            .find(|candidate| candidate.is_file())
+                    })
+                })
+                .unwrap_or_else(|| std::path::PathBuf::from("/data/user/0/com.pietrocode.epubtomp3.flutter_app/app_flutter/tts-models/model.onnx"));
+            let config = if model.file_name().and_then(|name| name.to_str()) == Some("model.onnx") {
+                model.with_file_name("model.onnx.json")
+            } else {
+                model.with_file_name("model.json")
+            };
             if !model.is_file() {
                 return Err(converter_core::piper::PiperError::MissingModel(model));
             }
@@ -744,7 +772,10 @@ unsafe fn c_string(value: *const c_char, name: &str) -> Result<String, String> {
         .map_err(|_| format!("{name} must be valid UTF-8"))
 }
 
-fn metadata_json(metadata: &EmbeddedBookMetadata) -> String {
+fn metadata_json(
+    metadata: &EmbeddedBookMetadata,
+    structure: &converter_core::structure::StructureVerification,
+) -> String {
     json!({
         "title": metadata.title,
         "author": metadata.author,
@@ -757,6 +788,17 @@ fn metadata_json(metadata: &EmbeddedBookMetadata) -> String {
             "text": chapter.text,
             "level": chapter.level,
         })).collect::<Vec<_>>(),
+        "structure": {
+            "source": format!("{:?}", structure.source),
+            "verified": structure.verified,
+            "requiresConfirmation": structure.requires_confirmation(),
+            "mappedTocItems": structure.mapped_toc_items,
+            "totalTocItems": structure.total_toc_items,
+            "warnings": structure.warnings.iter().map(|warning| json!({
+                "code": warning.code,
+                "message": warning.message,
+            })).collect::<Vec<_>>(),
+        },
     })
     .to_string()
 }
@@ -811,6 +853,46 @@ mod android_jni {
     }
 
     #[no_mangle]
+    pub extern "system" fn Java_com_pietrocode_epubtomp3_flutter_1app_MainActivity_nativePiperSynthesize(
+        mut env: JNIEnv<'_>,
+        _class: JClass<'_>,
+        text: JString<'_>,
+        output: JString<'_>,
+    ) -> jboolean {
+        let text = match read_string(&mut env, text) {
+            Ok(value) => value,
+            Err(error) => return fail::<jboolean>(error),
+        };
+        let output = match read_string(&mut env, output) {
+            Ok(value) => value,
+            Err(error) => return fail::<jboolean>(error),
+        };
+        let text = std::ffi::CString::new(text).unwrap();
+        let output = std::ffi::CString::new(output).unwrap();
+        let model = std::ffi::CString::new("/data/user/0/com.pietrocode.epubtomp3.flutter_app/app_flutter/tts-models/en_US-lessac-low.onnx/model.bin").unwrap();
+        let config = std::ffi::CString::new("/data/user/0/com.pietrocode.epubtomp3.flutter_app/app_flutter/tts-models/en_US-lessac-low.onnx/model.json").unwrap();
+        #[cfg(feature = "piper-runtime")]
+        {
+            let mut error = vec![0_u8; 2048];
+            let initialized = piper_runtime::piper_runtime_init(model.as_ptr(), config.as_ptr(), error.as_mut_ptr(), error.len() as u32);
+            if initialized == 0 {
+                let message = unsafe { std::ffi::CStr::from_ptr(error.as_ptr()) }.to_string_lossy().into_owned();
+                fail::<jboolean>(message);
+                return 0;
+            }
+            let synthesized = piper_runtime::piper_synthesize(text.as_ptr(), output.as_ptr(), error.as_mut_ptr(), error.len() as u32);
+            if synthesized == 0 {
+                let message = unsafe { std::ffi::CStr::from_ptr(error.as_ptr()) }.to_string_lossy().into_owned();
+                fail::<jboolean>(message);
+                return 0;
+            }
+            return 1;
+        }
+        #[cfg(not(feature = "piper-runtime"))]
+        unsafe { if piper_runtime_init(model.as_ptr(), config.as_ptr()) { if piper_synthesize(text.as_ptr(), output.as_ptr()) { 1 } else { 0 } } else { 0 } }
+    }
+
+    #[no_mangle]
     pub extern "system" fn Java_com_pietrocode_epubtomp3_flutter_1app_MainActivity_nativeParse(
         mut env: JNIEnv<'_>,
         _class: JClass<'_>,
@@ -857,6 +939,8 @@ mod android_jni {
         _class: JClass<'_>,
         path: JString<'_>,
         output: JString<'_>,
+        chapter_start: jint,
+        chapter_end: jint,
     ) -> jstring {
         eprintln!("converter-ffi: nativeConvert entered");
         #[cfg(feature = "piper-runtime")]
@@ -883,7 +967,9 @@ mod android_jni {
             Ok(output) => output,
             Err(_) => return std::ptr::null_mut(),
         };
-        let result = unsafe { converter_session_convert_json(handle, output.as_ptr()) };
+        let result = unsafe {
+            converter_session_convert_json(handle, output.as_ptr(), chapter_start, chapter_end)
+        };
         eprintln!(
             "converter-ffi: conversion returned result={}",
             !result.is_null()

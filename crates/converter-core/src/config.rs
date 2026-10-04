@@ -29,11 +29,22 @@ impl AppConfig {
             engine: env_string("ENGINE", "auto"),
             expected_wpm: env_parse("EXPECTED_WPM", 200),
             max_chapter_chars: env_optional_parse("MAX_CHAPTER_CHARS"),
-            edge_chunk_chars: env_parse("EDGE_CHUNK_CHARS", 12_000),
+            edge_chunk_chars: env_parse(
+                "EDGE_CHUNK_CHARS",
+                if cfg!(target_os = "android") {
+                    4_096
+                } else {
+                    12_000
+                },
+            ),
             edge_max_segment_seconds: env_parse("EDGE_MAX_SEGMENT_SECONDS", 85),
             max_parallel: env_parse(
                 "MAX_PARALLEL",
-                std::thread::available_parallelism().map_or(1, |n| n.get()),
+                if cfg!(target_os = "android") {
+                    1
+                } else {
+                    std::thread::available_parallelism().map_or(1, |n| n.get())
+                },
             ),
             fallback_engine: env_optional_string("FALLBACK_ENGINE"),
         }

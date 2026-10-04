@@ -27,11 +27,11 @@ import '../services/audio_player_service.dart';
 import '../services/cover_writeback.dart';
 
 import '../services/local_conversion_job.dart';
+import '../services/edge_chapter_conversion.dart';
 import '../services/latency_observation.dart';
 
 import '../services/playback_first_resource_policy.dart';
-import '../services/protected_audio_storage_guard.dart';
-import '../services/edge_web_tts.dart';
+
 import '../services/speech_text_policy.dart';
 import '../services/resume_position_router.dart';
 import '../services/resume_restoration_guard.dart';
@@ -91,11 +91,7 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) {
-        ref.read(playbackRequestProvider.notifier).state = _startConversion;
-      }
-    });
+
     final book = ref
         .read(libraryStoreProvider)
         .books
@@ -132,19 +128,6 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen>
     _resourcePolicy.recordMemoryPressure();
   }
 
-  Future<bool> _waitForConversionResourceWindow(
-    AudioPlayerInterface player,
-  ) async {
-    while (mounted && _isConverting) {
-      final reason = _resourcePolicy.yieldReason(
-        playbackActive: player.isPlaying,
-        pendingNavigation: false,
-      );
-      if (reason == null) return true;
-      await Future<void>.delayed(const Duration(milliseconds: 250));
-    }
-    return false;
-  }
 
   Future<void> _load() async {
     // didUpdateWidget can fire a new _load while a previous one is
@@ -315,13 +298,12 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen>
     );
     final ft = _fulltext;
     if (ft == null || ft.chapters.isEmpty) return;
+    if (mounted) setState(() => _isConverting = true);
 
-    final useWebEdge = Platform.isAndroid;
-    if (useWebEdge) {
-      await _startEdgeWebConversion(ft);
-      return;
-    }
-    if (Platform.isAndroid) {
+    // Android uses the chapter-by-chapter local Edge path. The web/backend
+    // path remains an explicit compatibility option for desktop only.
+    if (Platform.isAndroid &&
+        const String.fromEnvironment('EPUB_USE_NATIVE_MANIFEST') == '1') {
       try {
         final library = ref.read(libraryStoreProvider);
         final book = library.books
@@ -435,77 +417,6 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen>
     }
   }
 
-  Future<void> _startEdgeWebConversion(EbookFulltext fulltext) async {
-    setState(() {
-      _isConverting = true;
-      _playableChapters.clear();
-    });
-    try {
-      final docsDir = await getApplicationDocumentsDirectory();
-      final outDir = Directory('${docsDir.path}/audiobooks/${widget.bookId}')
-        ..createSync(recursive: true);
-      final edge = EdgeWebTts();
-      final detectedLocale = SpeechTextPolicy.detectLocale(
-        fulltext.chapters.map((chapter) => chapter.text),
-      );
-      final edgeVoice = detectedLocale == 'en-US'
-          ? 'en-US-AvaMultilingualNeural'
-          : detectedLocale == 'pt-BR'
-          ? 'pt-BR-ThalitaMultilingualNeural'
-          : '$detectedLocale-Standard-A';
-      debugPrint(
-        'BookOpenScreen: Edge voice=$edgeVoice locale=$detectedLocale',
-      );
-      final chapters = <ChapterProgress>[];
-      final player = ref.read(globalAudioPlayerProvider);
-      var startedPlayback = false;
-      for (var i = 0; i < fulltext.chapters.length; i++) {
-        final chapter = fulltext.chapters[i];
-        final path = '${outDir.path}/chapter_${chapter.index}.mp3';
-        final output = File(path);
-        if (chapter.text.trim().isEmpty) {
-          continue;
-        }
-        if (!await output.exists() || await output.length() == 0) {
-          final audio = await edge.synthesize(chapter.text, voice: edgeVoice);
-          if (audio.isEmpty) throw StateError('Edge returned empty audio');
-          await output.writeAsBytes(audio, flush: true);
-        }
-        final progress = ChapterProgress(
-          index: i,
-          name: chapter.displayTitle,
-          status: 'completed',
-          downloadUrl: 'file://$path',
-          chars: chapter.text.length,
-          progressRatio: 1,
-        );
-        chapters.add(progress);
-        await player.setQueue(List.of(chapters));
-        ref.read(currentlyPlayingBookIdProvider.notifier).state = widget.bookId;
-        if (!startedPlayback) {
-          startedPlayback = true;
-          await player.play();
-        }
-        if (mounted) {
-          setState(
-            () => _playableChapters
-              ..clear()
-              ..addAll(chapters),
-          );
-        }
-      }
-      if (mounted) {
-        setState(() {
-          _isConverting = false;
-          _playableChapters.addAll(chapters);
-        });
-      }
-    } catch (error) {
-      debugPrint('BookOpenScreen: Edge web conversion failed: $error');
-      await _speakCurrentChapterOffline();
-      if (mounted) setState(() => _isConverting = false);
-    }
-  }
 
   Future<void> _startBackendConversion() async {
     final api = ref.read(apiClientProvider);
@@ -624,6 +535,7 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen>
   // ignore: unused_element
   Future<void> _startLocalConversion() async {
     final ft = _fulltext!;
+    debugPrint('BookOpenScreen: local conversion entered chapters=${ft.chapters.length}');
     final coordinator = ConversionJobCoordinator(
       LocalConversionJobStore(ref.read(sharedPrefsProvider)),
     );
@@ -634,11 +546,12 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen>
           .where((b) => b.id == widget.bookId)
           .firstOrNull;
       if (book == null) throw StateError('Book is no longer in the library');
+      debugPrint('BookOpenScreen: local book resolved path=${book.filePath}');
       final docsDir = await getApplicationDocumentsDirectory();
       final outDir = Directory('${docsDir.path}/audiobooks/${widget.bookId}');
       if (!await outDir.exists()) await outDir.create(recursive: true);
+      debugPrint('BookOpenScreen: local output ready path=${outDir.path}');
 
-      final storageGuard = ProtectedAudioStorageGuard();
       final player = ref.read(globalAudioPlayerProvider);
       _setCoverOnPlayer(player);
 
@@ -649,9 +562,13 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen>
         job = await coordinator.createJob(
           bookId: widget.bookId,
           jobId: jobId,
-          chapters: ft.chapters
-              .map((ch) => LocalConversionChapterSpec(ch.index, ch.name ?? ''))
-              .toList(),
+          // Fulltext indices are EPUB-axis identifiers and may repeat for
+          // structural entries. Conversion output needs a dense, unique
+          // playable axis so every chapter gets its own file and job record.
+          chapters: [
+            for (var i = 0; i < ft.chapters.length; i++)
+              LocalConversionChapterSpec(i, ft.chapters[i].name ?? ''),
+          ],
         );
       } else {
         job = existingJob;
@@ -667,17 +584,25 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen>
         }
       }
       _localJob = job;
+      final bookLocale = SpeechTextPolicy.detectLocale(
+        ft.chapters.map((chapter) => chapter.text),
+      );
+      debugPrint('BookOpenScreen: verified book locale=$bookLocale');
 
       // Rebuild the queue from files already recorded as completed. A process
       // death therefore resumes at the first pending chapter, not chapter 0.
+      final restoredAudioPaths = <String>{};
       for (final saved in job.chapters.where((c) => c.status == 'completed')) {
         final path = saved.outputPath;
         if (path == null || path.isEmpty || !await File(path).exists()) {
           continue;
         }
-        final source = ft.chapters
-            .where((c) => c.index == saved.index)
-            .firstOrNull;
+        // Older jobs could contain repeated EPUB structural index 0 entries.
+        // Never enqueue the same physical MP3 repeatedly after migration.
+        if (!restoredAudioPaths.add(path)) continue;
+        final source = saved.index >= 0 && saved.index < ft.chapters.length
+            ? ft.chapters[saved.index]
+            : ft.chapters.where((c) => c.index == saved.index).firstOrNull;
         _playableChapters.add(
           ChapterProgress(
             index: saved.index,
@@ -690,72 +615,70 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen>
         );
       }
       _playableChapters.sort((a, b) => a.index.compareTo(b.index));
+      debugPrint('BookOpenScreen: completed queue restored count=${_playableChapters.length}');
       if (_playableChapters.isNotEmpty) {
         await player.setQueue(List.of(_playableChapters));
         await _restoreResumePosition(player);
         _startResumeListener(player);
+        // The play button may have triggered this conversion request while
+        // the queue was still empty. Start the first restored file now rather
+        // than waiting for the entire book to finish converting.
       }
+      // Persist a checkpoint even when the process resumes an existing job.
+      // This recreates a missing manifest before the next long chapter starts.
+      final restoredManifestTemp = File('${outDir.path}/manifest.json.part');
+      await restoredManifestTemp.writeAsString(
+        jsonEncode(job.toJson()),
+        flush: true,
+      );
+      await restoredManifestTemp.rename('${outDir.path}/manifest.json');
 
-      for (var i = 0; i < ft.chapters.length; i++) {
-        if (!mounted || !_isConverting) return;
-        if (!await _waitForConversionResourceWindow(player)) return;
-        final ch = ft.chapters[i];
-        final saved = job.chapters
-            .where((c) => c.index == ch.index)
-            .firstOrNull;
-        if (saved?.status == 'completed') {
-          continue;
-        }
-
-        job = await coordinator.markChapterRunning(job, ch.index);
-        _localJob = job;
-        final mp3Path = '${outDir.path}/chapter_${ch.index}.mp3';
-        if (ch.text.trim().isEmpty) {
-          job = await coordinator.completeChapter(job, ch.index, mp3Path);
-          _localJob = job;
-
-          continue;
-        }
-
-        await storageGuard.ensureCanRetain(
-          estimatedBytes: ProtectedAudioStorageGuard.estimateChapterAudioBytes(
-            ch.text,
+      final converter = ref.read(embeddedConverterProvider);
+      final conversionService = EdgeChapterConversionService(
+        converter: converter,
+        coordinator: coordinator,
+      );
+      final conversionChapters = [
+        for (var i = 0; i < ft.chapters.length; i++)
+          FulltextChapter(
+            index: i,
+            name: ft.chapters[i].name,
+            text: ft.chapters[i].text,
           ),
-        );
-
-        final resultPath = await ref
-            .read(embeddedConverterProvider)
-            .convert(inputPath: book.filePath, outputPath: mp3Path);
-        final result = <String, dynamic>{'ok': true, 'path': resultPath};
-        if (!mounted) return;
-        if (result['ok'] != true) {
-          final error =
-              result['error']?.toString() ?? 'Chapter conversion failed';
-          _localJob = await coordinator.failChapter(job, ch.index, error);
-          throw StateError(error);
-        }
-
-        final cp = ChapterProgress(
-          index: ch.index,
-          name: ch.name,
-          status: 'completed',
-          downloadUrl: 'file://$mp3Path',
-          chars: ch.text.length,
-          progressRatio: 1.0,
-        );
-        final isFirstPlayableChapter = _playableChapters.isEmpty;
-        if (!_playableChapters.any((c) => c.index == cp.index)) {
-          _playableChapters.add(cp);
-          _playableChapters.sort((a, b) => a.index.compareTo(b.index));
-        }
-        await player.setQueue(List.of(_playableChapters));
-        if (isFirstPlayableChapter) {
-          await _restoreResumePosition(player);
-          _startResumeListener(player);
-        }
-        job = await coordinator.completeChapter(job, ch.index, mp3Path);
-        _localJob = job;
-      }
+      ];
+      job = await conversionService.convert(
+        bookId: widget.bookId,
+        jobId: jobId,
+        chapters: conversionChapters,
+        outputDirectory: outDir.path,
+        onUpdate: (updated) async {
+          if (!mounted) return;
+          setState(() => _localJob = updated);
+        },
+        onChapterCompleted: (chapter, path, updated) async {
+          if (!mounted) return;
+          final isFirstPlayableChapter = _playableChapters.isEmpty;
+          final cp = ChapterProgress(
+            index: chapter.index,
+            name: chapter.name,
+            status: 'completed',
+            downloadUrl: 'file://$path',
+            chars: chapter.text.length,
+            progressRatio: 1.0,
+          );
+          if (!_playableChapters.any((c) => c.index == cp.index)) {
+            _playableChapters.add(cp);
+            _playableChapters.sort((a, b) => a.index.compareTo(b.index));
+          }
+          await player.setQueue(List.of(_playableChapters));
+          if (isFirstPlayableChapter) {
+            await _restoreResumePosition(player);
+            _startResumeListener(player);
+          }
+          _localJob = updated;
+        },
+      );
+      _localJob = job;
 
       if (!mounted) return;
       _markBookOffline();
@@ -973,6 +896,15 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen>
                             ) ??
                             0,
                 ),
+                Positioned(
+                  top: 12,
+                  right: 12,
+                  child: FilledButton.icon(
+                    onPressed: _isConverting ? null : _startConversion,
+                    icon: const Icon(Icons.auto_stories),
+                    label: Text(t.convertTitle),
+                  ),
+                ),
                 if (_isConverting)
                   const Positioned(
                     right: 24,
@@ -988,8 +920,6 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen>
                               height: 20,
                               child: CircularProgressIndicator(strokeWidth: 2),
                             ),
-                            SizedBox(width: 10),
-                            Text('Creating audio…'),
                           ],
                         ),
                       ),
