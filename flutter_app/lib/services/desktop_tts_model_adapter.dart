@@ -44,6 +44,8 @@ typedef _FreeNative = ffi.Void Function(ffi.Pointer<Utf8>);
 typedef _FreeDart = void Function(ffi.Pointer<Utf8>);
 typedef _ErrorNative = ffi.Pointer<Utf8> Function();
 typedef _ErrorDart = ffi.Pointer<Utf8> Function();
+typedef _JobLogNative = ffi.Pointer<Utf8> Function(ffi.Pointer<Utf8>);
+typedef _JobLogDart = ffi.Pointer<Utf8> Function(ffi.Pointer<Utf8>);
 
 /// Thin desktop adapter over the shared converter-ffi catalog and ModelStore.
 /// It never contains model URLs, checksums, or selection policy.
@@ -72,6 +74,9 @@ final class DesktopTtsModelAdapter {
     _lastError = _library.lookupFunction<_ErrorNative, _ErrorDart>(
       'converter_last_error',
     );
+    _jobLog = _library.lookupFunction<_JobLogNative, _JobLogDart>(
+      'converter_job_log_json',
+    );
   }
 
   final ffi.DynamicLibrary _library;
@@ -82,6 +87,12 @@ final class DesktopTtsModelAdapter {
   late final _InstalledReadyEngineDart _installedReadyEngine;
   late final _FreeDart _free;
   late final _ErrorDart _lastError;
+  late final _JobLogDart _jobLog;
+
+  String jobLog({required String jobId}) => using((arena) {
+        final result = _jobLog(jobId.toNativeUtf8(allocator: arena));
+        return _readOwned(result);
+      });
 
   String modelsJson() => _readOwned(_models());
 

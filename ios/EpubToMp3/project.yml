@@ -220,6 +220,14 @@ targets:
       - path: EpubToMp3/Features/Conversion/Services/ConverterFFIAdapter.swift
       - path: EpubToMp3/Resources/LaunchScreen.storyboard
         buildPhase: resources
+      # Localization files are excluded from the recursive source group so
+      # XcodeGen must add them explicitly to the application resource phase.
+      - path: EpubToMp3/Resources/en.lproj
+        buildPhase: resources
+      - path: EpubToMp3/Resources/pt-BR.lproj
+        buildPhase: resources
+      - path: EpubToMp3/Resources/es.lproj
+        buildPhase: resources
     dependencies:
 
       # Widget extension — embedded in the main app bundle so iOS can
@@ -249,6 +257,7 @@ targets:
         ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS: NO
         SUPPORTED_PLATFORMS: "iphoneos iphonesimulator macosx"
         ENABLE_HARDENED_RUNTIME: YES
+        ENABLE_USER_SCRIPT_SANDBOXING: NO
         # AVFoundation exposes legacy non-Sendable handles and the player
         # intentionally isolates them behind locked nonisolated storage.
         # Keep Swift 6 concurrency checking and warnings-as-errors enabled.
@@ -301,25 +310,34 @@ targets:
           DEBUG_INFORMATION_FORMAT: "dwarf-with-dsym"
           STRIP_INSTALLED_PRODUCT: YES
     postBuildScripts:
-      - name: "Embed Rust converter sidecar (macOS only)"
+      - name: "Embed Rust converter runtime"
         shell: /bin/bash
         basedOnDependencyAnalysis: false
         alwaysOutOfDate: true
         inputFiles:
-          - "${SRCROOT}/../../dist/epub-to-mp3-server"
+          - "${SRCROOT}/../../target/release/libconverter_ffi.dylib"
+          - "${SRCROOT}/../../target/aarch64-apple-ios/release/libconverter_ffi.dylib"
         outputFiles:
-          - "${BUILT_PRODUCTS_DIR}/${CONTENTS_FOLDER_PATH}/Resources/epub-to-mp3-server"
+          - "${BUILT_PRODUCTS_DIR}/${CONTENTS_FOLDER_PATH}/Resources/converter_ffi.dylib"
         script: |
           set -euo pipefail
-          if [ "${PLATFORM_NAME}" != "macosx" ]; then exit 0; fi
-          SIDECAR="${SRCROOT}/../../dist/epub-to-mp3-server"
-          if [ ! -x "${SIDECAR}" ]; then
-            echo "error: Rust sidecar missing at ${SIDECAR}; run mise run sidecar:build" >&2
+          if [ "${PLATFORM_NAME}" = "macosx" ]; then
+            RESOURCES_DIR="${BUILT_PRODUCTS_DIR}/${CONTENTS_FOLDER_PATH}/Resources"
+            install -d "${RESOURCES_DIR}"
+            FFI="${SRCROOT}/../../target/release/libconverter_ffi.dylib"
+          elif [ "${PLATFORM_NAME}" = "iphoneos" ]; then
+            RESOURCES_DIR="${BUILT_PRODUCTS_DIR}/${FRAMEWORKS_FOLDER_PATH}"
+            install -d "${RESOURCES_DIR}"
+            FFI="${SRCROOT}/../../target/aarch64-apple-ios/release/libconverter_ffi.dylib"
+          else
+            exit 0
+          fi
+          if [ -f "${FFI}" ]; then
+            install -m 755 "${FFI}" "${RESOURCES_DIR}/converter_ffi.dylib"
+          else
+            echo "error: embedded Rust converter missing at ${FFI}" >&2
             exit 1
           fi
-          RESOURCES_DIR="${BUILT_PRODUCTS_DIR}/${CONTENTS_FOLDER_PATH}/Resources"
-          install -d "${RESOURCES_DIR}"
-          install -m 755 "${SIDECAR}" "${RESOURCES_DIR}/epub-to-mp3-server"
 
   EpubToMp3Tests:
     type: bundle.unit-test

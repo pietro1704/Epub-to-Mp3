@@ -445,6 +445,17 @@ class MainActivity : AudioServiceActivity() {
                     Log.i(embeddedLogTag, "status requested")
                     result.success(embeddedConverterStatus())
                 }
+                "jobLog" -> {
+                    val jobId = call.argument<String>("jobId")
+                    if (jobId.isNullOrBlank()) result.error("BAD_ARGS", "jobId is required", null)
+                    else converterExecutor.execute {
+                        val value = nativeJobLog(jobId)
+                        runOnUiThread {
+                            if (value == null) result.error(EMBEDDED_UNAVAILABLE, nativeLastError(), null)
+                            else result.success(value)
+                        }
+                    }
+                }
                 "ttsModels" -> {
                     if (!converterLibraryAvailable()) {
                         result.error(EMBEDDED_UNAVAILABLE, "converter-ffi native library is not packaged in this APK", null)
@@ -694,6 +705,7 @@ class MainActivity : AudioServiceActivity() {
     }
 
     private external fun nativeParse(inputPath: String): String?
+    private external fun nativeJobLog(jobId: String): String?
     private external fun nativeConvert(inputPath: String, outputPath: String, chapterStart: Int, chapterEnd: Int): String?
     private external fun nativeTtsModels(): String?
     private external fun nativeTtsDefaultEngine(language: String, platform: String, androidApi: Int): String?

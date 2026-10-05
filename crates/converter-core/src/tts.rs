@@ -343,7 +343,7 @@ impl<T: EdgeTransport + 'static> EdgeTtsClient<T> {
                 &self.config.rate,
                 &self.config.volume,
                 &self.config.pitch,
-                false,
+                true,
             );
             output.extend(self.synthesize_request(&ssml, chunk.len()).await?);
         }
@@ -549,8 +549,7 @@ fn make_ssml_escaped(
 
 pub fn split_protocol_chunks(text: &str, limit: usize) -> Vec<String> {
     let limit = limit.max(1);
-    let escaped = xml_escape(text);
-    let mut bytes = escaped.as_bytes();
+    let mut bytes = text.as_bytes();
     let mut chunks = Vec::new();
 
     while bytes.len() > limit {
@@ -561,16 +560,6 @@ pub fn split_protocol_chunks(text: &str, limit: usize) -> Vec<String> {
 
         while std::str::from_utf8(&bytes[..split_at]).is_err() && split_at > 0 {
             split_at -= 1;
-        }
-
-        while split_at > 0 {
-            let Some(amp_index) = bytes[..split_at].iter().rposition(|byte| *byte == b'&') else {
-                break;
-            };
-            if bytes[amp_index..split_at].contains(&b';') {
-                break;
-            }
-            split_at = amp_index;
         }
 
         if split_at == 0 {

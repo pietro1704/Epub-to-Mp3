@@ -260,7 +260,11 @@ final class MacAppKitRootController: NSSplitViewController, NSToolbarDelegate {
                 controller = MacLibraryViewController(
                     library: library,
                     bookmarkStore: bookmarkStore,
-                onOpenBook: { [weak self] bookID in self?.showReader(bookID: bookID) }
+                onOpenBook: { [weak self] bookID in self?.showReader(bookID: bookID) },
+                onDownloadBook: { [weak self] bookID in
+                    self?.showBookDetail(bookID: bookID)
+                    (self?.detailController as? MacBookDetailViewController)?.downloadWholeBook()
+                }
                 )
             case .jobs: controller = MacJobsListViewController()
             case .settings: controller = MacSettingsViewController(settings: settings, library: library)
@@ -363,16 +367,15 @@ final class MacAppKitRootController: NSSplitViewController, NSToolbarDelegate {
             guard let self else { return }
             do {
                 let url = try await library.openBookFileAsync(id: book.id)
-                let data = try Data(contentsOf: url, options: .mappedIfSafe)
-                guard let baseURL = settings.resolvedBaseURL else {
-                    throw APIError.invalidBaseURL
+                let result = try await RustConversionCoordinator().convert(bookURL: url)
+                let snapshot = try result.snapshot()
+                library.recordConversion(jobId: result.jobID, for: book.id)
+                await MainActor.run {
+                    self.player.setSnapshot(snapshot)
+                    self.player.play(snapshot: snapshot, restoreAutoplay: true)
+                    self.player.resume()
+                    self.playerPresentation.showFullPlayer()
                 }
-                let response = try await APIClient(baseURL: baseURL).submitConversion(
-                    uploadedFile: (data: data, filename: url.lastPathComponent),
-                    options: APIClient.ConvertOptions()
-                )
-                library.recordConversion(jobId: response.jobId, for: book.id)
-                self.playerPresentation.showFullPlayer()
             } catch {
                 let alert = NSAlert()
                 alert.messageText = L10n.string("bookDetail.listenStart")
@@ -437,7 +440,11 @@ final class MacAppKitRootController: NSSplitViewController, NSToolbarDelegate {
         let hasReadingContext = player.snapshot != nil
             || UserDefaults.standard.string(forKey: ReaderSessionState.currentlyReadingBookIDKey) != nil
             || library.books.contains { $0.lastOpenedAt != nil }
-        playerBar.view.isHidden = !hasReadingContext
+        // Keep the internal stack constrained to the full bar width. Toggling
+        // only `isHidden` leaves the bar visible with its edge constraints
+        // deactivated, which collapses the content to the leading edge and
+        // creates a large empty region beside the mini-player controls.
+        playerBar.setCollapsed(!hasReadingContext)
         playerBarHeightConstraint?.constant = hasReadingContext ? 60 : 0
     }
 

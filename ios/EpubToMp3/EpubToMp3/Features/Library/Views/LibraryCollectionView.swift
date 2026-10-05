@@ -40,6 +40,7 @@ final class LibraryGridController: UICollectionViewController {
 
     private let metrics: LibraryGridLayoutMetrics
     var onOpen: ((BookEntity) -> Void)?
+    var onDownload: ((BookEntity) -> Void)?
     var onRemove: ((BookEntity) -> Void)?
 
     /// id → book, so selection/context callbacks can hand back the entity.
@@ -164,7 +165,13 @@ final class LibraryGridController: UICollectionViewController {
                 // workaround for presenting from a UIAction handler.
                 DispatchQueue.main.async { self?.onRemove?(book) }
             }
-            return UIMenu(children: [remove])
+            let download = UIAction(
+                title: L10n.string("library.downloadWholeBook"),
+                image: UIImage(systemName: "arrow.down.circle")
+            ) { [weak self] _ in
+                DispatchQueue.main.async { self?.onDownload?(book) }
+            }
+            return UIMenu(children: [download, remove])
         }
     }
 }

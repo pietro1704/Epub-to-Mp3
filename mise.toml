@@ -67,6 +67,14 @@ run = "mise exec -- cargo build -p converter-ffi --release"
 description = "Build converter-ffi for Android arm64 with mise-managed Rust and NDK"
 run = "NDK=\"${ANDROID_NDK_HOME:-$HOME/.local/share/mise/installs/android-sdk/11.0/ndk/28.2.13676358}\"; TOOLCHAIN=\"$NDK/toolchains/llvm/prebuilt/darwin-x86_64/bin\"; SYSROOT=\"$NDK/toolchains/llvm/prebuilt/darwin-x86_64/sysroot\"; NINJA=\"$HOME/.local/share/mise/installs/ninja/1.13.2/ninja\"; export ANDROID_NDK_HOME=\"$NDK\" ANDROID_NDK_ROOT=\"$NDK\" PATH=\"$TOOLCHAIN:$HOME/.local/share/mise/installs/ninja/1.13.2:$HOME/.cargo/bin:$PATH\"; export CC_aarch64_linux_android=\"$TOOLCHAIN/aarch64-linux-android24-clang\" CXX_aarch64_linux_android=\"$TOOLCHAIN/aarch64-linux-android24-clang++\" AR_aarch64_linux_android=\"$TOOLCHAIN/llvm-ar\" CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER=\"$TOOLCHAIN/aarch64-linux-android24-clang\" BINDGEN_EXTRA_CLANG_ARGS_aarch64_linux_android=\"--target=aarch64-linux-android24 --sysroot=$SYSROOT -I$SYSROOT/usr/include -include stdio.h\" BINDGEN_EXTRA_CLANG_ARGS=\"--target=aarch64-linux-android24 --sysroot=$SYSROOT -I$SYSROOT/usr/include -include stdio.h\" CFLAGS_aarch64_linux_android=\"--sysroot=$SYSROOT\" CMAKE_TOOLCHAIN_FILE=\"$NDK/build/cmake/android.toolchain.cmake\" CMAKE_GENERATOR=Ninja CMAKE_MAKE_PROGRAM=\"$NINJA\" TARGET_CC=\"$TOOLCHAIN/aarch64-linux-android24-clang\" CC=\"$TOOLCHAIN/aarch64-linux-android24-clang\" RUSTUP_TOOLCHAIN=stable; cargo build -p converter-ffi --features android-jni --release --target aarch64-linux-android --target-dir target/edge-android"
 
+[tasks."converter-ffi:ios-device"]
+description = "Build converter-ffi for iOS device with the Xcode SDK deployment target"
+run = '''IPHONEOS_DEPLOYMENT_TARGET=15.0 SDKROOT=$(xcrun --sdk iphoneos --show-sdk-path) mise exec -- cargo build -p converter-ffi --release --target aarch64-apple-ios'''
+
+[tasks."converter-ffi:ios-device:verify"]
+description = "Verify the iOS converter-ffi Mach-O architecture, platform, and exported ABI"
+run = "bash scripts/verify_converter_ffi_ios.sh"
+
 [tasks."converter-ffi:android-check"]
 description = "Check Android converter-ffi without linking unsupported Piper inference dependencies"
 run = "env -u CC -u CFLAGS -u CXX -u AR -u CMAKE_TOOLCHAIN_FILE -u CMAKE_GENERATOR -u CMAKE_MAKE_PROGRAM mise exec -- cargo check -p converter-ffi --features android-jni"
@@ -653,6 +661,17 @@ PY
 fi
 if [[ ! -d "$APP_PATH" ]]; then
   echo "ios:device:run error: app not found: $APP_PATH" >&2
+  exit 2
+fi
+BUNDLE_ID_FROM_PLIST=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APP_PATH/Info.plist" 2>/dev/null || true)
+if [[ "$BUNDLE_ID_FROM_PLIST" != "$BUNDLE_ID" ]]; then
+  echo "ios:device:run error: invalid bundle identifier: ${BUNDLE_ID_FROM_PLIST:-missing} (expected $BUNDLE_ID)" >&2
+  exit 2
+fi
+if ! codesign --verify --strict --verbose=2 "$APP_PATH" >/tmp/epubtomp3-codesign.log 2>&1; then
+  echo "ios:device:run error: app is not signed for device installation: $APP_PATH" >&2
+  sed -n '1,12p' /tmp/epubtomp3-codesign.log >&2
+  echo "Build with signing enabled before running this task." >&2
   exit 2
 fi
 echo "ios:device:run → device: $DEVICE"

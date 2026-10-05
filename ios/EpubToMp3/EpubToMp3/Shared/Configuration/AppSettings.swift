@@ -173,27 +173,10 @@ final class AppSettings: ObservableObject {
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
-        let launchBackendURL: String? = {
-            let arguments = ProcessInfo.processInfo.arguments
-            guard let index = arguments.firstIndex(of: "-backendURL"),
-                  arguments.indices.contains(arguments.index(after: index)) else {
-                return nil
-            }
-            let value = arguments[arguments.index(after: index)].trimmingCharacters(in: .whitespacesAndNewlines)
-            return value.isEmpty ? nil : value
-        }()
-        // Load persisted values. `??` falls back to the @Published
-        // initial-value defaults if the key was never set.
-        // No localhost server exists in the iPhone sandbox. macOS starts its
-        // bundled Rust sidecar and uses its fixed local port by default.
-        #if os(macOS)
-        self.backendURL = launchBackendURL ?? defaults.string(forKey: "backendURL") ?? "http://127.0.0.1:47860"
-        #else
-        self.backendURL = launchBackendURL ?? defaults.string(forKey: "backendURL") ?? ""
-        #endif
-        // Retained only for migration/oracle state compatibility; production
-        // Apple clients always use the Rust HTTP backend.
-        self.useEmbeddedRuntime = false
+        // Conversion is local Rust on every Apple platform. Backend URLs are
+        // retained only as inert migration data and never drive production.
+        self.backendURL = ""
+        self.useEmbeddedRuntime = true
         // Edge is the only network dependency of on-device conversion. Keep
         // it on Wi-Fi by default; the user may opt into cellular explicitly.
         self.allowCellularAudioConversion =

@@ -1,5 +1,6 @@
 #if os(macOS)
 import AppKit
+import Combine
 
 /// macOS counterpart of `BookDetailScreenController` — the primary product
 /// surface for an opened book (cover, progress, Read/Listen/Download)
@@ -15,7 +16,10 @@ final class MacBookDetailViewController: NSViewController {
     private let playerPresentation: PlayerPresentation
     private let onRead: (String) -> Void
     private let onShowJobs: () -> Void
-    private var remoteStreamTask: Task<Void, Never>?
+    private let jobViewModel = JobDetailViewModel()
+    private var playbackGeneration: UUID?
+    private var streamDeliveryGeneration: UUID?
+    private var autoPlayStream = false
 
     private let coverView = NSImageView()
     private let titleLabel = NSTextField(labelWithString: "")
@@ -23,7 +27,9 @@ final class MacBookDetailViewController: NSViewController {
     private let progressLabel = NSTextField(labelWithString: "")
     private let readButton = NSButton()
     private let listenButton = NSButton()
+    private let convertButton = NSButton()
     private let downloadButton = NSButton()
+    private let logButton = NSButton()
 
     init(
         book: BookEntity,
@@ -47,9 +53,7 @@ final class MacBookDetailViewController: NSViewController {
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
-    deinit {
-        remoteStreamTask?.cancel()
-    }
+
 
     override func loadView() {
         view = NSView()
@@ -57,8 +61,49 @@ final class MacBookDetailViewController: NSViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
+        configureStreamingCallbacks()
         configureLayout()
         render()
+    }
+
+    private func configureStreamingCallbacks() {
+        jobViewModel.onSnapshot = { [weak self] snapshot in
+            guard let self else { return }
+            if self.player.snapshot?.jobId == snapshot.jobId {
+                self.player.updateSnapshot(snapshot)
+                self.playbackGeneration = self.player.remotePlaybackGeneration
+                return
+            }
+            guard !snapshot.isTerminal,
+                  let baseURL = self.settings.resolvedBaseURL else { return }
+            if self.player.beginRemoteStreaming(snapshot: snapshot, backendBaseURL: baseURL) {
+                self.playbackGeneration = self.player.remotePlaybackGeneration
+                self.streamDeliveryGeneration = self.player.remoteSegmentGeneration
+                if self.autoPlayStream { self.player.resume() }
+            }
+        }
+        jobViewModel.onStreamRequestAuthorization = { [weak self] jobID, chapterIndex, segmentIndex in
+            guard let self, let generation = self.streamDeliveryGeneration else { return nil }
+            return self.player.streamRequestAuthorization(
+                jobID: jobID, generation: generation,
+                chapterIndex: chapterIndex, segmentIndex: segmentIndex
+            )
+        }
+        jobViewModel.onStreamChunk = { [weak self] data, chapterIndex, segmentIndex, publication, receipt in
+            guard let self, let generation = self.streamDeliveryGeneration else { return }
+            self.player.enqueueRemoteSegment(
+                data: data, jobID: self.jobViewModel.snapshot?.jobId ?? "",
+                generation: generation, chapterIndex: chapterIndex,
+                segmentIndex: segmentIndex, publication: publication, receipt: receipt
+            )
+        }
+        jobViewModel.onStreamFinished = { [weak self] snapshot in
+            guard let self,
+                  self.player.snapshot?.jobId == snapshot.jobId,
+                  self.playbackGeneration == self.player.remotePlaybackGeneration else { return }
+            self.player.finishStreaming(snapshot: snapshot)
+            self.playbackGeneration = self.player.remotePlaybackGeneration
+        }
     }
 
     private func configureLayout() {
@@ -88,12 +133,22 @@ final class MacBookDetailViewController: NSViewController {
         listenButton.target = self
         listenButton.action = #selector(tapListen)
 
+        convertButton.title = L10n.string("convert.title")
+        convertButton.bezelStyle = .rounded
+        convertButton.target = self
+        convertButton.action = #selector(tapConvert)
+
         downloadButton.title = L10n.string("bookDetail.download")
         downloadButton.bezelStyle = .rounded
         downloadButton.target = self
         downloadButton.action = #selector(tapDownload)
 
-        let actions = NSStackView(views: [readButton, listenButton, downloadButton])
+        logButton.title = L10n.string("conversion.log")
+        logButton.bezelStyle = .rounded
+        logButton.target = self
+        logButton.action = #selector(tapLog)
+
+        let actions = NSStackView(views: [readButton, listenButton, convertButton, downloadButton, logButton])
         actions.orientation = .horizontal
         actions.spacing = 12
         actions.distribution = .fillEqually
@@ -152,7 +207,7 @@ final class MacBookDetailViewController: NSViewController {
             do {
                 let url = try await library.openBookFileAsync(id: book.id)
                 guard !Task.isCancelled else { return }
-                startRemoteConversion(url: url)
+                startRustConversion(url: url, autoPlay: true)
             } catch {
                 guard !Task.isCancelled else { return }
                 onShowJobs()
@@ -160,38 +215,31 @@ final class MacBookDetailViewController: NSViewController {
         }
     }
 
-    private func startRemoteConversion(url: URL) {
-        guard let baseURL = settings.resolvedBaseURL else {
-            let alert = NSAlert()
-            alert.messageText = L10n.string("bookDetail.listenStart")
-            alert.informativeText = APIError.invalidBaseURL.localizedDescription
-            alert.addButton(withTitle: L10n.string("common.ok"))
-            alert.runModal()
-            return
+    @objc private func tapConvert() {
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                let url = try await library.openBookFileAsync(id: book.id)
+                startRustConversion(url: url, autoPlay: false)
+            } catch {
+                onShowJobs()
+            }
         }
-        remoteStreamTask?.cancel()
-        let player = self.player
-        let presentation = self.playerPresentation
+    }
+
+    private func startRustConversion(url: URL, autoPlay: Bool) {
         let library = self.library
         let bookID = self.book.id
-        remoteStreamTask = Task {
+        Task {
             do {
-                let client = APIClient(baseURL: baseURL)
-                let response = try await client.submitConversion(
-                    localPath: url,
-                    options: APIClient.ConvertOptions()
-                )
-                library.recordConversion(jobId: response.jobId, for: bookID)
-                let initial = try await client.fetchJob(id: response.jobId)
+                let result = try await RustConversionCoordinator().convert(bookURL: url)
+                let snapshot = try result.snapshot()
+                library.recordConversion(jobId: result.jobID, for: bookID)
                 guard !Task.isCancelled else { return }
-                player.backendBaseURL = baseURL
-                player.play(snapshot: initial)
-                presentation.showFullPlayer()
-                for try await event in client.eventStream(jobId: response.jobId) {
-                    guard !Task.isCancelled else { return }
-                    if let snapshot = APIClient.decodeSnapshot(from: event.rawPayload) {
-                        player.updateSnapshot(snapshot)
-                    }
+                await MainActor.run {
+                    self.player.setSnapshot(snapshot)
+                    self.player.play(snapshot: snapshot, restoreAutoplay: autoPlay)
+                    if autoPlay { self.player.resume() }
                 }
             } catch {
                 guard !Task.isCancelled else { return }
@@ -220,6 +268,17 @@ final class MacBookDetailViewController: NSViewController {
             return
         }
         onShowJobs()
+    }
+
+    @objc private func tapLog() {
+        guard let jobID = book.lastJobId,
+              let root = try? FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: false) else { return }
+        let url = root.appendingPathComponent("EpubToMp3/RustConversions/\(jobID)/conversion.log")
+        presentAsSheet(RustConversionLogViewController(logURL: url))
+    }
+
+    func downloadWholeBook() {
+        tapDownload()
     }
 }
 #endif

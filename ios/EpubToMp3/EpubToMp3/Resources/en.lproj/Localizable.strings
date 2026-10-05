@@ -44,6 +44,7 @@
 "library.editTags" = "Edit Tags";
 "library.cancel" = "Cancel";
 "library.removeBook" = "Remove book";
+"library.downloadWholeBook" = "Download entire book";
 "library.all" = "All";
 "library.allBooks" = "All books";
 "library.importError" = "Import error";
@@ -312,6 +313,7 @@
 
 /* === ConvertView === */
 "convert.title" = "Convert";
+"conversion.log" = "Conversion log";
 "convert.file" = "File";
 "convert.selected" = "Selected";
 "convert.noFilePicked" = "No file picked.";
