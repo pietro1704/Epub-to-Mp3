@@ -134,15 +134,20 @@ class AndroidEmbeddedConverter implements EmbeddedConverter {
     required String path,
   }) async {
     try {
-      final result = await _channel.invokeMethod<String>('piperSynthesize', {
-        'text': text,
-        'output': path,
-      }).timeout(const Duration(seconds: 60));
+      final result = await const MethodChannel('epub_to_mp3/android_tts')
+          .invokeMethod<String>('synthesizeToFile', {
+            'text': text,
+            'locale': locale,
+            'path': path,
+          })
+          .timeout(const Duration(seconds: 90));
       if (result != null && result.isNotEmpty) return result;
     } on PlatformException catch (error) {
-      throw EmbeddedConversionFailure('PIPER_SYNTHESIS_FAILED', error.message ?? error.code);
+      throw EmbeddedConversionFailure('TTS_SYNTHESIS_FAILED', error.message ?? error.code);
+    } on MissingPluginException catch (error) {
+      throw EmbeddedConversionFailure('TTS_UNAVAILABLE', error.toString());
     }
-    throw EmbeddedConversionFailure('PIPER_SYNTHESIS_EMPTY', 'Piper returned no audio path');
+    throw EmbeddedConversionFailure('TTS_SYNTHESIS_EMPTY', 'Android TTS returned no audio path');
   }
 
   Future<Map<String, bool>> runtimeStatus() async {

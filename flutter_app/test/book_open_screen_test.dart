@@ -126,6 +126,9 @@ void main() {
 
       // Should show reader content (chapter title from InstantReaderView).
       expect(find.text('Chapter 1'), findsWidgets);
+      // The Reader has no standalone conversion action; conversion is
+      // requested by the persistent player's Play control.
+      expect(find.text('Converter'), findsNothing);
     });
 
     testWidgets('shows error when parsing unavailable', (t) async {

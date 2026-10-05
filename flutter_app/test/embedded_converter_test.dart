@@ -87,6 +87,29 @@ class FakeConverter implements EmbeddedConverter {
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
+  test('Android fallback uses the TTS file synthesis channel', () async {
+    const channel = MethodChannel('epub_to_mp3/android_tts');
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (call) async {
+          expect(call.method, 'synthesizeToFile');
+          expect(call.arguments, {
+            'text': 'texto de teste',
+            'locale': 'pt-BR',
+            'path': '/tmp/chapter.mp3',
+          });
+          return '/tmp/chapter.mp3';
+        });
+
+    final result = await AndroidEmbeddedConverter().synthesizeFallback(
+      'texto de teste',
+      locale: 'pt-BR',
+      path: '/tmp/chapter.mp3',
+    );
+    expect(result, '/tmp/chapter.mp3');
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, null);
+  });
+
   test(
     'Android channel contract reports unavailable without native library',
     () async {

@@ -70,6 +70,16 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
           mainAxisSize: MainAxisSize.min,
           children: [
             ListTile(
+              leading: const Icon(Icons.download_for_offline_outlined),
+              title: Text(t.downloadAll),
+              onTap: () {
+                Navigator.pop(context);
+                ref.read(manualDownloadRequestProvider.notifier).state =
+                    book.filePath;
+                ref.read(rootTabIndexProvider.notifier).state = 2;
+              },
+            ),
+            ListTile(
               leading: const Icon(Icons.label_outline),
               title: Text(t.editTags),
               onTap: () {

@@ -1,5 +1,40 @@
 # Ubiquitous Language
 
+## Library full-book download
+
+A long press on a book in the Flutter Library exposes “Download all”. The
+one-shot request opens the dedicated Convert destination and starts the full
+book conversion with no chapter range. Android uses the embedded converter and
+Linux uses the configured backend/API path. This is manual conversion and is
+separate from Reader stream-on-demand, which is triggered only by Play.
+
+
+The Reader screen must not expose a separate “Converter” action. Stream-on-
+demand conversion starts only when the listener taps Play in the persistent
+player. The play request first asks the active book screen to populate the
+audio queue; only after a playable chapter is queued may playback start. Opening
+a book never starts conversion or playback automatically. Full/manual
+conversion remains available in the dedicated Convert destination.
+
+## Embedded backend conversion contract
+
+The Apple macOS and iOS apps use the backend embedded in the app as the
+conversion boundary. Conversion is not tied to one transport or one engine:
+when the configured engine/provider is online, the embedded backend may use the
+online model; when the configured engine/provider is offline, it uses the
+installed local model/runtime. Both modes must expose the same job, progress,
+artifact, cancellation, and playback contracts.
+
+Progressive streaming must work on both macOS and iOS: a validated first
+chapter becomes playable while later chapters continue converting. Manual
+conversion must also be an explicit action on both platforms and must use the
+same embedded backend/job pipeline rather than a separate implementation.
+
+When Pietro establishes a durable product decision or workflow preference,
+record it in the repository's authoritative documentation before implementing
+related features. Keep the same decision synchronized to the Arch checkout
+without syncing credentials, runtime state, caches, or unrelated local changes.
+
 ## Repository trust surface
 
 The collection of repository-facing automation, documentation, hooks, and
