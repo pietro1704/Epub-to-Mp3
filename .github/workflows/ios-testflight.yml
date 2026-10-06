@@ -27,7 +27,7 @@ env:
 jobs:
   credentials:
     name: Check TestFlight credentials
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     outputs:
       available: ${{ steps.check.outputs.available }}
 

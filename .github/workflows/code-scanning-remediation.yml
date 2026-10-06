@@ -17,7 +17,7 @@ concurrency:
 
 jobs:
   detect:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     outputs:
       alerts: ${{ steps.alerts.outputs.alerts }}
       codex_available: ${{ steps.credentials.outputs.codex_available }}
@@ -52,7 +52,7 @@ jobs:
   remediate:
     needs: detect
     if: needs.detect.outputs.alerts != '[]' && needs.detect.outputs.codex_available == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     strategy:
       max-parallel: 1
       matrix:

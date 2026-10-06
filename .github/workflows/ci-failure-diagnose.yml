@@ -20,7 +20,7 @@ permissions:
 
 jobs:
   diagnose:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     if: github.event.workflow_run.conclusion == 'failure'
     steps:
       - name: Fetch failed run summary
@@ -41,14 +41,12 @@ jobs:
             echo "log<<DIAG_EOF"
             echo "$FAILED_LOG"
             echo "DIAG_EOF"
-          } >> "$GITHUB_OUTPUT"
-          {
             echo "jobs<<JOBS_EOF"
             cat failed_jobs.txt
             echo "JOBS_EOF"
+            echo "url=${{ github.event.workflow_run.html_url }}"
+            echo "name=${{ github.event.workflow_run.name }}"
           } >> "$GITHUB_OUTPUT"
-          echo "url=${{ github.event.workflow_run.html_url }}" >> "$GITHUB_OUTPUT"
-          echo "name=${{ github.event.workflow_run.name }}" >> "$GITHUB_OUTPUT"
 
       - name: Find associated PR
         id: pr

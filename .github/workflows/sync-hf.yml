@@ -20,7 +20,7 @@ concurrency:
 
 jobs:
   changes:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     outputs:
       should_sync: ${{ steps.paths.outputs.should_sync }}
     steps:
@@ -60,7 +60,7 @@ jobs:
 
   sync:
     needs: changes
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # Run automatically on successful CI for master; allow manual override
     if: >
       ((github.event_name == 'workflow_run' &&
