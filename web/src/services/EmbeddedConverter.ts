@@ -1,10 +1,8 @@
-import type { BookTextDocument } from "../types/conversion";
+import initWasm, { inspect_epub } from "../wasm/converter_wasm";
+import type { BookTextChapter, BookTextDocument } from "../types/conversion";
 
 export type EmbeddedCapability = "metadata" | "chapter-preview" | "audio-conversion";
-
-export type EmbeddedUnavailableReason =
-  | "audio-conversion-not-implemented"
-  | "capability-not-supported";
+export type EmbeddedUnavailableReason = "audio-conversion-not-implemented" | "capability-not-supported";
 
 export class EmbeddedCapabilityUnavailableError extends Error {
   readonly code = "EMBEDDED_CAPABILITY_UNAVAILABLE" as const;
@@ -12,10 +10,7 @@ export class EmbeddedCapabilityUnavailableError extends Error {
   readonly capability: EmbeddedCapability;
   readonly reason: EmbeddedUnavailableReason;
 
-  constructor(
-    capability: EmbeddedCapability,
-    reason: EmbeddedUnavailableReason = "capability-not-supported",
-  ) {
+  constructor(capability: EmbeddedCapability, reason: EmbeddedUnavailableReason = "capability-not-supported") {
     super(`Embedded ${capability} is unavailable: ${reason}.`);
     this.name = "EmbeddedCapabilityUnavailableError";
     this.capability = capability;
@@ -31,33 +26,33 @@ export interface EmbeddedConverter {
   convertToAudio(file: Blob): Promise<never>;
 }
 
-/** Explicit capability registry. No HTTP fallback is allowed in embedded mode. */
 export const embeddedCapabilities = {
   mode: "embedded" as const,
-  available: new Set<EmbeddedCapability>(),
-  unavailable: new Set<EmbeddedCapability>([
-    "metadata",
-    "chapter-preview",
-    "audio-conversion",
-  ]),
+  available: new Set<EmbeddedCapability>(["metadata", "chapter-preview"]),
+  unavailable: new Set<EmbeddedCapability>(["audio-conversion"]),
 } as const;
 
-export function createUnavailableEmbeddedConverter(): EmbeddedConverter {
-  const unavailable = (capability: EmbeddedCapability): never => {
-    const reason: EmbeddedUnavailableReason =
-      capability === "audio-conversion"
-        ? "audio-conversion-not-implemented"
-        : "capability-not-supported";
-    throw new EmbeddedCapabilityUnavailableError(capability, reason);
-  };
-
-  return {
-    mode: "embedded",
-    capabilities: embeddedCapabilities.available,
-    inspect: async () => unavailable("metadata"),
-    previewChapter: async () => unavailable("chapter-preview"),
-    convertToAudio: async () => unavailable("audio-conversion"),
-  };
+let wasmReady: Promise<void> | undefined;
+async function ensureWasm(): Promise<void> {
+  wasmReady ??= initWasm().then(() => undefined);
+  await wasmReady;
 }
 
-export const embeddedConverter = createUnavailableEmbeddedConverter();
+async function inspect(file: Blob): Promise<BookTextDocument> {
+  await ensureWasm();
+  return JSON.parse(inspect_epub(new Uint8Array(await file.arrayBuffer()))) as BookTextDocument;
+}
+
+export const embeddedConverter: EmbeddedConverter = {
+  mode: "embedded",
+  capabilities: embeddedCapabilities.available,
+  inspect,
+  previewChapter: async (file, chapterIndex) => {
+    const chapter = (await inspect(file)).chapters[chapterIndex] as BookTextChapter | undefined;
+    if (!chapter) throw new EmbeddedCapabilityUnavailableError("chapter-preview");
+    return chapter.text;
+  },
+  convertToAudio: async () => {
+    throw new EmbeddedCapabilityUnavailableError("audio-conversion", "audio-conversion-not-implemented");
+  },
+};
