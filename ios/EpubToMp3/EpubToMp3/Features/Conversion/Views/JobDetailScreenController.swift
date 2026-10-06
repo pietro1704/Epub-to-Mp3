@@ -30,6 +30,7 @@ final class JobDetailScreenController: UITableViewController {
     private var playbackGeneration: UUID?
     private var streamDeliveryGeneration: UUID?
     private let streamingClient: (any JobStreamingClient)?
+    private let autoPlayOnFirstPlayableSegment: Bool
 
     init(
         jobId: String,
@@ -37,7 +38,8 @@ final class JobDetailScreenController: UITableViewController {
         library: LibraryStore,
         player: AudioPlayer,
         playbackClock: PlaybackClock,
-        streamingClient: (any JobStreamingClient)? = nil
+        streamingClient: (any JobStreamingClient)? = nil,
+        autoPlayOnFirstPlayableSegment: Bool = false
     ) {
         self.jobId = jobId
         self.settings = settings
@@ -45,6 +47,7 @@ final class JobDetailScreenController: UITableViewController {
         self.player = player
         self.playbackClock = playbackClock
         self.streamingClient = streamingClient
+        self.autoPlayOnFirstPlayableSegment = autoPlayOnFirstPlayableSegment
         super.init(style: .insetGrouped)
         title = L10n.string("jobDetail.title")
     }
@@ -83,6 +86,9 @@ final class JobDetailScreenController: UITableViewController {
             if self.player.beginRemoteStreaming(snapshot: snapshot, backendBaseURL: baseURL) {
                 self.playbackGeneration = self.player.remotePlaybackGeneration
                 self.streamDeliveryGeneration = self.player.remoteSegmentGeneration
+                if self.autoPlayOnFirstPlayableSegment {
+                    self.player.resume()
+                }
             }
         }
         viewModel.onStreamRequestAuthorization = { [weak self] jobID, chapterIndex, segmentIndex in

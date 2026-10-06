@@ -123,6 +123,15 @@ final class LibraryScreenController: UIViewController, UIDocumentPickerDelegate,
         gridController.onRemove = { [weak self] book in
             self?.presentRemoveAlert(for: book)
         }
+        gridController.onDownload = { [weak self] book in
+            guard let self else { return }
+            let detail = BookDetailScreenController(
+                book: book, library: library, settings: settings,
+                player: player, playerPresentation: playerPresentation
+            )
+            self.navigationController?.pushViewController(detail, animated: true)
+            detail.downloadWholeBook()
+        }
         gridController.view.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(gridController.view)
         NSLayoutConstraint.activate([

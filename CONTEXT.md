@@ -1,5 +1,45 @@
 # Ubiquitous Language
 
+## Library full-book download
+
+A long press on a book in the Flutter Library exposes “Download all”. The
+one-shot request opens the dedicated Convert destination and starts the full
+book conversion with no chapter range. Each supported client uses the embedded
+shared Rust converter locally. This is manual conversion and is separate from
+Reader stream-on-demand, which is triggered only by Play.
+
+
+The Reader screen must not expose a separate “Converter” action. Stream-on-
+demand conversion starts only when the listener taps Play in the persistent
+player. The play request first asks the active book screen to populate the
+audio queue; only after a playable chapter is queued may playback start. Opening
+a book never starts conversion or playback automatically. Full/manual
+conversion remains available in the dedicated Convert destination.
+
+## Shared Rust conversion runtime contract
+
+All supported devices and clients — macOS, iOS, iPadOS, Android, Linux, and
+Windows — must perform audiobook conversion through the same shared Rust
+conversion code (`converter-core`/`converter-ffi`). The application embeds and invokes that Rust runtime locally; no external
+HTTP/Python backend or backend service of any kind is part of the product
+runtime or required for conversion.
+
+The Rust conversion boundary is model/provider agnostic. Model selection is a
+runtime configuration concern: an online provider/model may be used when
+configured, or an installed offline provider/model may be used when configured,
+without changing the client contract or introducing a platform-specific
+conversion implementation. The shared Rust layer owns job lifecycle, progress,
+chapter artifacts, cancellation, errors, manifests, and streaming-ready audio.
+
+Every client must expose the same behavior: on-demand playback starts when the
+first validated audio is available, later chapters continue converting and are
+queued progressively, and manual conversion is an explicit action using the
+same Rust pipeline without autoplay. No backend service is part of the product
+architecture.
+
+This is a hard architecture invariant. Do not reintroduce an external backend,
+platform-specific converter, or separate online/offline conversion pipeline.
+
 ## Repository trust surface
 
 The collection of repository-facing automation, documentation, hooks, and
@@ -76,10 +116,10 @@ warm opens.
 ## Performance program
 
 A cross-client effort to improve observable application speed through explicit
-latency budgets. It sequences the Apple client and conversion backend before
-the web and Flutter clients, and prioritizes perceived readiness and playback
-stability. Conversion may use available CPU and memory aggressively only while
-it does not degrade reading or playback responsiveness.
+latency budgets. It sequences the Apple clients and shared Rust conversion
+runtime before the web and Flutter clients, and prioritizes perceived readiness
+and playback stability. Conversion may use available CPU and memory
+aggressively only while it does not degrade reading or playback responsiveness.
 
 ## Latency observation
 

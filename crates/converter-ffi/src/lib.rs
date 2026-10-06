@@ -24,6 +24,7 @@ use std::{
     ffi::{c_char, CStr, CString},
     path::Path,
     ptr,
+    sync::Arc,
 };
 
 /// Opaque session handle owned by the caller.
@@ -124,10 +125,28 @@ pub unsafe extern "C" fn converter_session_convert_json(
         },
         no_parallel: true,
     };
-    let worker = match converter_core::worker::ConversionWorker::new(config) {
-        Ok(worker) => worker,
-        Err(error) => return fail(error.to_string()),
-    };
+    let progress_log = generated_output_dir.join("conversion.log");
+    let worker =
+        match converter_core::worker::ConversionWorker::new(config) {
+            Ok(worker) => worker,
+            Err(error) => return fail(error.to_string()),
+        }
+        .with_progress(Arc::new(move |event| {
+            let line =
+                format!(
+            "[Rust] state={} chapter={:?} completed={} total={} percent={:.1} engine={:?} {}\n",
+            event.state, event.chapter_index, event.chapters_completed, event.chapters_total,
+            event.percent, event.engine, event.message
+        );
+            use std::io::Write;
+            if let Ok(mut file) = std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(&progress_log)
+            {
+                let _ = file.write_all(line.as_bytes());
+            }
+        }));
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| worker.run(request)));
     match result {
         Err(payload) => {
@@ -198,6 +217,40 @@ pub unsafe extern "C" fn converter_tts_models_json() -> *mut c_char {
         |_| fail("model catalog contains an interior NUL byte".to_owned()),
         CString::into_raw,
     )
+}
+
+/// Returns the current durable Rust coordinator record for a job. Clients poll
+/// this small JSON payload for live conversion status; no HTTP or Python path
+/// is involved.
+#[no_mangle]
+pub unsafe extern "C" fn converter_job_log_json(job_id: *const c_char) -> *mut c_char {
+    clear_last_error();
+    let job_id = match c_string(job_id, "job id") {
+        Ok(value) => value,
+        Err(error) => return fail(error),
+    };
+    let paths = resolve_paths_from(
+        std::env::vars(),
+        Path::new(env!("CARGO_MANIFEST_DIR")).to_path_buf(),
+    );
+    let manager = match converter_core::jobs::JobManager::new(paths.jobs_dir) {
+        Ok(manager) => manager,
+        Err(error) => return fail(error.to_string()),
+    };
+    match manager.load(&job_id) {
+        Ok(record) => match serde_json::to_string(&json!([
+            format!("job {}: {:?}", record.job_id, record.state),
+            format!("progress: {}", record.progress),
+            format!("updated: {}", record.updated_at),
+        ])) {
+            Ok(value) => CString::new(value).map_or_else(
+                |_| fail("job log contains an interior NUL byte".to_owned()),
+                CString::into_raw,
+            ),
+            Err(error) => fail(error.to_string()),
+        },
+        Err(error) => fail(error.to_string()),
+    }
 }
 
 /// Inspects whether an installed local runtime is ready for inference.
@@ -874,22 +927,46 @@ mod android_jni {
         #[cfg(feature = "piper-runtime")]
         {
             let mut error = vec![0_u8; 2048];
-            let initialized = piper_runtime::piper_runtime_init(model.as_ptr(), config.as_ptr(), error.as_mut_ptr(), error.len() as u32);
+            let initialized = piper_runtime::piper_runtime_init(
+                model.as_ptr(),
+                config.as_ptr(),
+                error.as_mut_ptr(),
+                error.len() as u32,
+            );
             if initialized == 0 {
-                let message = unsafe { std::ffi::CStr::from_ptr(error.as_ptr()) }.to_string_lossy().into_owned();
+                let message = unsafe { std::ffi::CStr::from_ptr(error.as_ptr()) }
+                    .to_string_lossy()
+                    .into_owned();
                 fail::<jboolean>(message);
                 return 0;
             }
-            let synthesized = piper_runtime::piper_synthesize(text.as_ptr(), output.as_ptr(), error.as_mut_ptr(), error.len() as u32);
+            let synthesized = piper_runtime::piper_synthesize(
+                text.as_ptr(),
+                output.as_ptr(),
+                error.as_mut_ptr(),
+                error.len() as u32,
+            );
             if synthesized == 0 {
-                let message = unsafe { std::ffi::CStr::from_ptr(error.as_ptr()) }.to_string_lossy().into_owned();
+                let message = unsafe { std::ffi::CStr::from_ptr(error.as_ptr()) }
+                    .to_string_lossy()
+                    .into_owned();
                 fail::<jboolean>(message);
                 return 0;
             }
             return 1;
         }
         #[cfg(not(feature = "piper-runtime"))]
-        unsafe { if piper_runtime_init(model.as_ptr(), config.as_ptr()) { if piper_synthesize(text.as_ptr(), output.as_ptr()) { 1 } else { 0 } } else { 0 } }
+        unsafe {
+            if piper_runtime_init(model.as_ptr(), config.as_ptr()) {
+                if piper_synthesize(text.as_ptr(), output.as_ptr()) {
+                    1
+                } else {
+                    0
+                }
+            } else {
+                0
+            }
+        }
     }
 
     #[no_mangle]
@@ -983,6 +1060,24 @@ mod android_jni {
             .into_owned();
         unsafe { converter_string_free(result) };
         env.new_string(manifest)
+            .map_or(std::ptr::null_mut(), |value| value.into_raw())
+    }
+
+    #[no_mangle]
+    pub extern "system" fn Java_com_pietrocode_epubtomp3_flutter_1app_MainActivity_nativeJobLog(
+        mut env: JNIEnv<'_>,
+        _class: JClass<'_>,
+        job_id: JString<'_>,
+    ) -> jstring {
+        let job_id = match read_string(&mut env, job_id) {
+            Ok(value) => value,
+            Err(_) => return std::ptr::null_mut(),
+        };
+        let path = std::env::temp_dir()
+            .join("converter-ffi/jobs")
+            .join(format!("{job_id}.json"));
+        let value = std::fs::read_to_string(path).unwrap_or_else(|_| "[]".to_owned());
+        env.new_string(value)
             .map_or(std::ptr::null_mut(), |value| value.into_raw())
     }
 

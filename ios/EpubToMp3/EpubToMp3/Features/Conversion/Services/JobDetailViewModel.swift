@@ -1,7 +1,6 @@
 import Combine
 import Foundation
 
-#if os(iOS)
 @MainActor
 final class JobDetailViewModel: ObservableObject {
     @Published private(set) var snapshot: JobSnapshot?
@@ -146,4 +145,3 @@ final class JobDetailViewModel: ObservableObject {
         Task { await DownloadManager.shared.clearDownloadedBook(jobId: jobId) }
     }
 }
-#endif

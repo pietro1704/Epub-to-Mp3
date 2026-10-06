@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../l10n/app_localizations.dart';
 import '../state/providers.dart';
 import 'job_detail_screen.dart';
+import 'conversion_log_screen.dart';
 import 'settings_screen.dart';
 
 class JobsListScreen extends ConsumerWidget {
@@ -44,6 +45,15 @@ class JobsListScreen extends ConsumerWidget {
                 final s = list[i];
                 return ListTile(
                   title: Text(s.bookTitle),
+                  trailing: IconButton(
+                    tooltip: 'Conversion log',
+                    icon: const Icon(Icons.article_outlined),
+                    onPressed: () => Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => ConversionLogScreen(jobId: s.id),
+                      ),
+                    ),
+                  ),
                   subtitle: Text(
                     '${s.engine ?? '-'} • ${s.outcome ?? '-'} • ${s.timestamp}',
                   ),

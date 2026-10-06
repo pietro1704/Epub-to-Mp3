@@ -55,6 +55,22 @@ class _ConvertScreenState extends ConsumerState<ConvertScreen> {
   String? _error;
 
   @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final requested = ref.read(manualDownloadRequestProvider);
+      if (!mounted || requested == null) return;
+      ref.read(manualDownloadRequestProvider.notifier).state = null;
+      setState(() {
+        _filePath = requested;
+        _error = null;
+        _jobId = null;
+      });
+      _submit();
+    });
+  }
+
+  @override
   void dispose() {
     _startController.dispose();
     _endController.dispose();
@@ -94,7 +110,9 @@ class _ConvertScreenState extends ConsumerState<ConvertScreen> {
     final path = result.files.single.path;
     if (!mounted) return;
     if (path == null || path.isEmpty) {
-      setState(() => _error = 'The selected file is not accessible on this device.');
+      setState(
+        () => _error = 'The selected file is not accessible on this device.',
+      );
       return;
     }
     setState(() {
@@ -123,28 +141,34 @@ class _ConvertScreenState extends ConsumerState<ConvertScreen> {
         includeCover: _includeCover,
         normalizeAudio: _normalizeAudio,
       );
-      final starter = widget.startConversion ??
+      final starter =
+          widget.startConversion ??
           (request) async {
             if (defaultTargetPlatform == TargetPlatform.android) {
               final root = await getApplicationDocumentsDirectory();
-              final output = '${root.path}/audiobooks/${DateTime.now().millisecondsSinceEpoch}';
-              return ref.read(embeddedConverterProvider).convert(
-                inputPath: request.filePath,
-                outputPath: output,
-                chapterStart: request.chapterStart,
-                chapterEnd: request.chapterEnd,
-              );
+              final output =
+                  '${root.path}/audiobooks/${DateTime.now().millisecondsSinceEpoch}';
+              return ref
+                  .read(embeddedConverterProvider)
+                  .convert(
+                    inputPath: request.filePath,
+                    outputPath: output,
+                    chapterStart: request.chapterStart,
+                    chapterEnd: request.chapterEnd,
+                  );
             }
-            return ref.read(apiClientProvider).uploadAndConvert(
-              request.filePath,
-              engine: request.engine,
-              voice: request.voice,
-              language: request.language,
-              chapterStart: request.chapterStart,
-              chapterEnd: request.chapterEnd,
-              includeCover: request.includeCover,
-              normalizeAudio: request.normalizeAudio,
-            );
+            return ref
+                .read(apiClientProvider)
+                .uploadAndConvert(
+                  request.filePath,
+                  engine: request.engine,
+                  voice: request.voice,
+                  language: request.language,
+                  chapterStart: request.chapterStart,
+                  chapterEnd: request.chapterEnd,
+                  includeCover: request.includeCover,
+                  normalizeAudio: request.normalizeAudio,
+                );
           };
       final jobId = await starter(request);
       if (!mounted) return;
@@ -255,27 +279,28 @@ class _ConvertScreenState extends ConsumerState<ConvertScreen> {
           if (jobId != null) ...[
             const SizedBox(height: 12),
             Text(jobId, key: const Key('conversion-job-id')),
-            if (defaultTargetPlatform != TargetPlatform.android) StreamBuilder(
-              stream: ref.read(apiClientProvider).jobStream(jobId),
-              builder: (context, snapshot) {
-                if (snapshot.hasError) {
-                  return Text('Progress error: ${snapshot.error}');
-                }
-                final value = snapshot.data;
-                final progress = value?.progressPercent;
-                return Column(
-                  children: [
-                    LinearProgressIndicator(
-                      value: progress == null ? null : progress / 100,
-                    ),
-                    if (value != null)
-                      Text(
-                        '${value.state} ${progress?.toStringAsFixed(0) ?? ''}%',
+            if (defaultTargetPlatform != TargetPlatform.android)
+              StreamBuilder(
+                stream: ref.read(apiClientProvider).jobStream(jobId),
+                builder: (context, snapshot) {
+                  if (snapshot.hasError) {
+                    return Text('Progress error: ${snapshot.error}');
+                  }
+                  final value = snapshot.data;
+                  final progress = value?.progressPercent;
+                  return Column(
+                    children: [
+                      LinearProgressIndicator(
+                        value: progress == null ? null : progress / 100,
                       ),
-                  ],
-                );
-              },
-            ),
+                      if (value != null)
+                        Text(
+                          '${value.state} ${progress?.toStringAsFixed(0) ?? ''}%',
+                        ),
+                    ],
+                  );
+                },
+              ),
           ],
           if (_error != null) ...[
             Text(

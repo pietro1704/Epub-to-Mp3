@@ -4,6 +4,7 @@ import Darwin
 private typealias ConverterSessionOpen = @convention(c) (UnsafePointer<CChar>?) -> UnsafeMutableRawPointer?
 private typealias ConverterSessionMetadata = @convention(c) (UnsafeRawPointer?) -> UnsafeMutablePointer<CChar>?
 private typealias ConverterSessionFree = @convention(c) (UnsafeMutableRawPointer?) -> Void
+private typealias ConverterSessionConvert = @convention(c) (UnsafeRawPointer?, UnsafePointer<CChar>?, Int32, Int32) -> UnsafeMutablePointer<CChar>?
 private typealias ConverterStringFree = @convention(c) (UnsafeMutablePointer<CChar>?) -> Void
 private typealias ConverterLastError = @convention(c) () -> UnsafeMutablePointer<CChar>?
 private typealias ConverterTtsModels = @convention(c) () -> UnsafeMutablePointer<CChar>?
@@ -49,9 +50,12 @@ final class ConverterFFIAdapter: EmbeddedConverter {
     private let ttsModelInstallManifest: ((UnsafePointer<CChar>?, UnsafePointer<CChar>?, UnsafePointer<CChar>?) -> UnsafeMutablePointer<CChar>?)?
     private let ttsModelInstallCatalogManifest: ((UnsafePointer<CChar>?, UnsafePointer<CChar>?) -> UnsafeMutablePointer<CChar>?)?
     private var _open: ConverterSessionOpen = { _ in nil }
+    private var convertJSON: ConverterSessionConvert?
 
     init(bundle: Bundle = .main) {
-        guard let url = bundle.url(forResource: "converter_ffi", withExtension: "dylib"),
+        let url = bundle.url(forResource: "converter_ffi", withExtension: "dylib")
+            ?? bundle.privateFrameworksURL?.appendingPathComponent("converter_ffi.dylib")
+        guard let url,
               let library = dlopen(url.path, RTLD_NOW | RTLD_LOCAL) else {
             handle = nil; close = { _ in }; metadata = { _ in nil }; freeString = { _ in }; lastError = { nil }; ttsModelsJSON = { nil }; ttsDefaultEngine = { _, _, _ in nil }; ttsInstalledReadyEngine = nil; ttsModelInstall = nil; ttsModelRemove = nil; ttsModelMetadata = nil; ttsModelInstallManifest = nil; ttsModelInstallCatalogManifest = nil; return
         }
@@ -79,6 +83,7 @@ final class ConverterFFIAdapter: EmbeddedConverter {
         ttsModelInstallManifest = symbol("converter_tts_model_install_manifest", as: ConverterTtsModelInstallManifest.self)
         ttsModelInstallCatalogManifest = symbol("converter_tts_model_install_catalog_manifest", as: ConverterTtsModelInstallCatalogManifest.self)
         _open = open
+        convertJSON = symbol("converter_session_convert_json", as: ConverterSessionConvert.self)
     }
 
     func openBook(at url: URL) throws -> EmbeddedBook {
@@ -88,6 +93,31 @@ final class ConverterFFIAdapter: EmbeddedConverter {
         guard let value = metadata(session), let json = String(validatingUTF8: value) else { throw EmbeddedConverterError.conversionFailed(readError()) }
         freeString(value)
         return EmbeddedBook(metadataJSON: Data(json.utf8))
+    }
+
+    /// Converts an EPUB through the bundled Rust ABI and returns its manifest.
+    /// Chapter bounds are inclusive; -1 means all chapters.
+    func convertBook(
+        at url: URL,
+        outputDirectory: URL,
+        chapterStart: Int32 = -1,
+        chapterEnd: Int32 = -1
+    ) throws -> Data {
+        guard handle != nil, let convertJSON else {
+            throw EmbeddedConverterError.artifactUnavailable
+        }
+        guard let session = _open(url.path) else {
+            throw EmbeddedConverterError.conversionFailed(readError())
+        }
+        defer { close(session) }
+        let result = outputDirectory.path.withCString { outputPointer in
+            convertJSON(session, outputPointer, chapterStart, chapterEnd)
+        }
+        guard let value = result, let json = String(validatingUTF8: value) else {
+            throw EmbeddedConverterError.conversionFailed(readError())
+        }
+        defer { freeString(value) }
+        return Data(json.utf8)
     }
 
     func ttsModels() throws -> Data {

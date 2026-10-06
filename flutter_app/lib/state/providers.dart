@@ -154,7 +154,7 @@ final apiClientProvider = Provider<ApiClient>((ref) {
     baseUrl?.toString() ?? settings.backendURL,
     configurationError: baseUrl == null
         ? 'No reachable backend is configured. Set the backend URL to an '
-            'HTTP(S) LAN address or deployed backend in Settings.'
+              'HTTP(S) LAN address or deployed backend in Settings.'
         : null,
   );
   return api;
@@ -280,8 +280,12 @@ final StateProvider<String?> currentlyPlayingBookIdProvider =
 
 /// Starts local conversion when the persistent player is pressed before the
 /// book has any playable audio queued.
-final playbackRequestProvider =
-    StateProvider<Future<void> Function()?>((ref) => null);
+final playbackRequestProvider = StateProvider<Future<void> Function()?>(
+  (ref) => null,
+);
+
+/// One-shot request created by a Library long-press to download the full book.
+final manualDownloadRequestProvider = StateProvider<String?>((ref) => null);
 
 /// Singleton audio player for on-device playback. Not keyed by jobId — this
 /// Flutter app runs everything locally, so one player instance suffices.
@@ -337,7 +341,6 @@ class _ReaderSessionNotifier extends StateNotifier<String?> {
   final SharedPreferences _prefs;
   final String _key;
 
-
   void set(String? value) {
     state = value;
     if (value == null) {
@@ -345,6 +348,5 @@ class _ReaderSessionNotifier extends StateNotifier<String?> {
     } else {
       _prefs.setString(_key, value);
     }
-
   }
 }

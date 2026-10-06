@@ -94,7 +94,8 @@ class TestEngineChainFallbackGate(unittest.TestCase):
         cfg = ConversionConfig(engine="edge", voice="en-US-JennyNeural", primary_language="en")
         with patch.dict(os.environ, {"ENGINE_CHAIN_FALLBACK": "1"}, clear=False):
             os.environ.pop("FALLBACK_ENGINE_OVERRIDE", None)
-            chain = _build_engine_chain(cfg)
+            with patch("src._server_engine_helpers._piper_model_available", return_value=True):
+                chain = _build_engine_chain(cfg)
         engines = {c.engine for c in chain}
         self.assertIn("edge", engines)
         self.assertTrue(engines - {"edge"}, f"expected offline tiers, got {engines}")

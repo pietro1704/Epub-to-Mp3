@@ -68,6 +68,7 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen>
   StreamSubscription<Duration>? _positionSub;
   Timer? _resumeSaveTimer;
   Future<void> _snapshotWork = Future.value();
+  Future<void> Function()? _playbackRequest;
   final PlaybackFirstResourcePolicy _resourcePolicy =
       PlaybackFirstResourcePolicy();
   String? _readerJourneyId;
@@ -91,6 +92,16 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+
+    _playbackRequest = () async {
+      if (!mounted) return;
+      await _startConversion();
+    };
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        ref.read(playbackRequestProvider.notifier).state = _playbackRequest;
+      }
+    });
 
     final book = ref
         .read(libraryStoreProvider)
@@ -127,7 +138,6 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen>
   void didHaveMemoryPressure() {
     _resourcePolicy.recordMemoryPressure();
   }
-
 
   Future<void> _load() async {
     // didUpdateWidget can fire a new _load while a previous one is
@@ -417,7 +427,6 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen>
     }
   }
 
-
   Future<void> _startBackendConversion() async {
     final api = ref.read(apiClientProvider);
     final library = ref.read(libraryStoreProvider);
@@ -535,7 +544,9 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen>
   // ignore: unused_element
   Future<void> _startLocalConversion() async {
     final ft = _fulltext!;
-    debugPrint('BookOpenScreen: local conversion entered chapters=${ft.chapters.length}');
+    debugPrint(
+      'BookOpenScreen: local conversion entered chapters=${ft.chapters.length}',
+    );
     final coordinator = ConversionJobCoordinator(
       LocalConversionJobStore(ref.read(sharedPrefsProvider)),
     );
@@ -615,7 +626,9 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen>
         );
       }
       _playableChapters.sort((a, b) => a.index.compareTo(b.index));
-      debugPrint('BookOpenScreen: completed queue restored count=${_playableChapters.length}');
+      debugPrint(
+        'BookOpenScreen: completed queue restored count=${_playableChapters.length}',
+      );
       if (_playableChapters.isNotEmpty) {
         await player.setQueue(List.of(_playableChapters));
         await _restoreResumePosition(player);
@@ -895,15 +908,6 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen>
                                   0,
                             ) ??
                             0,
-                ),
-                Positioned(
-                  top: 12,
-                  right: 12,
-                  child: FilledButton.icon(
-                    onPressed: _isConverting ? null : _startConversion,
-                    icon: const Icon(Icons.auto_stories),
-                    label: Text(t.convertTitle),
-                  ),
                 ),
                 if (_isConverting)
                   const Positioned(

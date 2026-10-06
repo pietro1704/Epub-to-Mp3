@@ -22,6 +22,7 @@ final class BookDetailScreenController: UIViewController {
     private let readButton = UIButton(type: .system)
     private let listenButton = UIButton(type: .system)
     private let downloadButton = UIButton(type: .system)
+    private let logButton = UIButton(type: .system)
 
     init(
         book: BookEntity,
@@ -82,7 +83,11 @@ final class BookDetailScreenController: UIViewController {
         downloadButton.setTitle(L10n.string("bookDetail.download"), for: .normal)
         downloadButton.addTarget(self, action: #selector(tapDownload), for: .touchUpInside)
 
-        let actions = UIStackView(arrangedSubviews: [readButton, listenButton, downloadButton])
+        logButton.configuration = .bordered()
+        logButton.setTitle(L10n.string("conversion.log"), for: .normal)
+        logButton.addTarget(self, action: #selector(tapLog), for: .touchUpInside)
+
+        let actions = UIStackView(arrangedSubviews: [readButton, listenButton, downloadButton, logButton])
         actions.axis = .horizontal
         actions.spacing = 12
         actions.distribution = .fillEqually
@@ -148,50 +153,38 @@ final class BookDetailScreenController: UIViewController {
             bookID: book.id,
             chapterIndex: priorityChapterIndex
         )
-        if let baseURL = settings.resolvedBaseURL {
-            guard let url = try? library.openBookFile(id: book.id) else { return }
-            Task { [weak self] in
-                guard let self else { return }
-                do {
-                    let data = try Data(contentsOf: url, options: .mappedIfSafe)
-                    let response = try await APIClient(baseURL: baseURL).submitConversion(
-                        uploadedFile: (data: data, filename: url.lastPathComponent),
-                        options: APIClient.ConvertOptions()
-                    )
-                    self.book.lastJobId = response.jobId
-                    self.library.recordConversion(jobId: response.jobId, for: self.book.id)
-                    self.playerPresentation.showFullPlayer()
-                } catch {
+        guard let url = try? library.openBookFile(id: book.id) else { return }
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                let result = try await RustConversionCoordinator().convert(bookURL: url)
+                let snapshot = try result.snapshot()
+                self.book.lastJobId = result.jobID
+                self.library.recordConversion(jobId: result.jobID, for: self.book.id)
+                await MainActor.run {
+                    self.player.setSnapshot(snapshot)
+                    self.player.play(snapshot: snapshot, restoreAutoplay: true)
+                    self.player.resume()
+                }
+            } catch {
+                await MainActor.run {
                     let alert = UIAlertController(
                         title: L10n.string("bookDetail.listenStart"),
                         message: error.localizedDescription,
                         preferredStyle: .alert
                     )
                     alert.addAction(UIAlertAction(title: L10n.string("common.ok"), style: .default))
-                    present(alert, animated: true)
+                    self.present(alert, animated: true)
                 }
             }
-            return
         }
-        if let jobId = book.lastJobId {
-            navigationController?.pushViewController(
-                JobDetailScreenController(
-                    jobId: jobId, settings: settings, library: library, player: player, playbackClock: player.playbackClock
-                ),
-                animated: true
-            )
-            return
-        }
-        guard let url = try? library.openBookFile(id: book.id) else { return }
-        navigationController?.pushViewController(
-            ConvertScreenController(
-                settings: settings, library: library, player: player,
-                playbackClock: player.playbackClock,
-                preselectedFileURL: url,
-                preselectedBookID: book.id
-            ),
-            animated: true
-        )
+    }
+
+    @objc private func tapLog() {
+        guard let jobID = book.lastJobId,
+              let root = try? FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: false) else { return }
+        let url = root.appendingPathComponent("EpubToMp3/RustConversions/\(jobID)/conversion.log")
+        navigationController?.pushViewController(RustConversionLogViewController(logURL: url), animated: true)
     }
 
     @objc private func tapDownload() {
@@ -255,6 +248,13 @@ final class BookDetailScreenController: UIViewController {
             ),
             animated: true
         )
+    }
+
+    /// Entry point used by the library context menu. It intentionally reuses
+    /// the existing Download/Conversion flow rather than creating a second
+    /// backend or a library-specific download path.
+    func downloadWholeBook() {
+        tapDownload()
     }
 }
 #endif

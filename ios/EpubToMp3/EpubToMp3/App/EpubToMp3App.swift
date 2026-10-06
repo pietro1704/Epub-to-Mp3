@@ -218,6 +218,12 @@ final class EpubToMp3App: NSObject, PlatformApplicationDelegate {
         configureMainWindowIfNeeded()
     }
 
+#if os(macOS)
+    func applicationSupportsSecureRestorableState(_ app: NSApplication) -> Bool {
+        true
+    }
+#endif
+
     private func configureMainWindowIfNeeded() {
         guard window == nil else { return }
         let root = MacAppKitRootController(

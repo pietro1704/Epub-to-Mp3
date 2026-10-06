@@ -12,6 +12,7 @@ final class MacLibraryViewController: NSViewController, NSSearchFieldDelegate,
     private let library: LibraryStore
     private let bookmarkStore: BookmarkStore
     private let onOpenBook: (String) -> Void
+    private let onDownloadBook: (String) -> Void
     private var cancellables: Set<AnyCancellable> = []
     private var sortMode: LibraryGridModel.SortMode = .lastOpened
     private var selectedTag: String?
@@ -29,11 +30,13 @@ final class MacLibraryViewController: NSViewController, NSSearchFieldDelegate,
     init(
         library: LibraryStore,
         bookmarkStore: BookmarkStore,
-        onOpenBook: @escaping (String) -> Void
+        onOpenBook: @escaping (String) -> Void,
+        onDownloadBook: @escaping (String) -> Void
     ) {
         self.library = library
         self.bookmarkStore = bookmarkStore
         self.onOpenBook = onOpenBook
+        self.onDownloadBook = onDownloadBook
         super.init(nibName: nil, bundle: nil)
         title = L10n.string("library.title")
     }
@@ -262,7 +265,18 @@ final class MacLibraryViewController: NSViewController, NSSearchFieldDelegate,
         remove.target = self
         remove.representedObject = book.id
         menu.addItem(remove)
+        let download = NSMenuItem(title: L10n.string("library.downloadWholeBook"),
+                                  action: #selector(downloadSelectedBook(_:)), keyEquivalent: "")
+        download.target = self
+        download.representedObject = book.id
+        menu.insertItem(download, at: 0)
         return menu
+    }
+
+    @objc
+    private func downloadSelectedBook(_ sender: NSMenuItem) {
+        guard let id = sender.representedObject as? String else { return }
+        onDownloadBook(id)
     }
 
     @objc

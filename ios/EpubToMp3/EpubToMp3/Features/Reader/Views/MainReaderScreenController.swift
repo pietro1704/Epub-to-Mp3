@@ -460,52 +460,31 @@ final class MainReaderScreenController: UIViewController {
 
     private func startListening(presentsFullPlayer: Bool) {
         guard let book = currentBook else { return }
-        if let baseURL = settings.resolvedBaseURL {
-            let client = APIClient(baseURL: baseURL)
-            Task { [weak self] in
-                guard let self else { return }
-                do {
-                    let url = try await self.library.openBookFileAsync(id: book.id)
-                    let data = try Data(contentsOf: url, options: .mappedIfSafe)
-                    let response = try await client.submitConversion(
-                        uploadedFile: (data: data, filename: url.lastPathComponent),
-                        options: APIClient.ConvertOptions()
-                    )
-                    self.library.recordConversion(jobId: response.jobId, for: book.id)
-                    if presentsFullPlayer { self.playerPresentation.showFullPlayer() }
-                } catch let error as StoragePressureError {
-                    self.presentStorageManagementAlert(error)
-                } catch {
-                    let alert = UIAlertController(
-                        title: L10n.string("bookDetail.listenStart"),
-                        message: error.localizedDescription,
-                        preferredStyle: .alert
-                    )
-                    alert.addAction(UIAlertAction(title: L10n.string("common.ok"), style: .default))
-                    self.present(alert, animated: true)
-                }
-            }
-            return
-        }
-        if let jobId = book.lastJobId {
-            navigationController?.pushViewController(
-                JobDetailScreenController(
-                    jobId: jobId, settings: settings, library: library, player: player, playbackClock: player.playbackClock
-                ),
-                animated: true
-            )
-            return
-        }
         guard let url = try? library.openBookFile(id: book.id) else { return }
-        navigationController?.pushViewController(
-            ConvertScreenController(
-                settings: settings, library: library, player: player,
-                playbackClock: player.playbackClock,
-                preselectedFileURL: url,
-                preselectedBookID: book.id
-            ),
-            animated: true
-        )
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                let result = try await RustConversionCoordinator().convert(bookURL: url)
+                let snapshot = try result.snapshot()
+                self.library.recordConversion(jobId: result.jobID, for: book.id)
+                await MainActor.run {
+                    self.player.setSnapshot(snapshot)
+                    self.player.play(snapshot: snapshot, restoreAutoplay: true)
+                    self.player.resume()
+                    if presentsFullPlayer { self.playerPresentation.showFullPlayer() }
+                }
+            } catch let error as StoragePressureError {
+                self.presentStorageManagementAlert(error)
+            } catch {
+                let alert = UIAlertController(
+                    title: L10n.string("bookDetail.listenStart"),
+                    message: error.localizedDescription,
+                    preferredStyle: .alert
+                )
+                alert.addAction(UIAlertAction(title: L10n.string("common.ok"), style: .default))
+                self.present(alert, animated: true)
+            }
+        }
     }
 
     private func presentStorageManagementAlert(_ error: StoragePressureError) {

@@ -1,5 +1,13 @@
 # CLAUDE.md
 
+## Delivery workflow
+
+For multi-file features, regressions, branch integration, or workflow changes,
+read [`docs/agent-workflow.md`](docs/agent-workflow.md) before editing. Run
+`mise run preflight` before opening a PR or declaring a branch complete. A task
+is complete only after its PR is merged, all required CI/security checks are
+green, and the result is verified on `master`.
+
 Project instructions for **any** Claude assistant working on this repo
 (Claude Code, Claude.ai web, Claude Desktop). These rules override all
 defaults.
@@ -40,15 +48,34 @@ and never runs the conversion.
 
 ## Project Overview
 
-Full-stack EPUB/PDF to MP3 audiobook converter. Python backend (FastAPI) + React/TypeScript frontend. Three deployment modes that **share the same cache and output directories**:
+Full-stack EPUB/PDF to MP3 audiobook converter. The current Apple product runtime
+is native Swift plus the shared Rust `converter-core`/`converter-ffi` embedded in
+macOS and iOS. Conversion on those clients does not require Python, FastAPI,
+HTTP, Uvicorn, SSE, a sidecar, or any external backend.
+
+The Python/FastAPI and React surfaces remain legacy/web compatibility paths and
+must not be introduced into the Apple runtime. The shared Rust runtime is
+model/provider agnostic and owns local conversion, progress, artifacts,
+manifest persistence, cancellation, and streaming-ready audio.
+
+**Apple runtime invariant:** Mac and iOS use the same embedded Rust conversion
+pipeline. Online/offline behavior is selected by Rust model/provider
+configuration, not by selecting a different platform converter.
+
+**Validation invariant:** a device-run task must reject unsigned bundles before
+calling `devicectl`; a Rust Apple artifact must pass architecture, platform, and
+ABI verification before it is embedded.
+
+**Legacy/web modes** (not used by the Apple product runtime):
 
 | Mode | Entry point | Paths |
 |------|-------------|-------|
-| CLI local | `python -m python_app.main convert` | `PROJECT_ROOT/.cache/`, `PROJECT_ROOT/output/` |
-| Web local | `mise run web` / `uvicorn python_app.server:app` | same as CLI |
-| HF Spaces | `hf_app.py` (Docker, port 7860) | `/data/epub-to-mp3/.cache/`, `/data/epub-to-mp3/output/` |
+| CLI legacy | `python -m python_app.main convert` | `PROJECT_ROOT/.cache/`, `PROJECT_ROOT/output/` |
+| Web legacy | `mise run web` / `uvicorn python_app.server:app` | same as CLI |
+| HF legacy | `hf_app.py` (Docker, port 7860) | `/data/epub-to-mp3/.cache/`, `/data/epub-to-mp3/output/` |
 
-CLI and web-local automatically share cache because both use `PROJECT_ROOT` as `PERSISTENT_ROOT`. To override, set `PERSISTENT_ROOT`, `CACHE_DIR`, or `OUTPUT_DIR` env vars.
+The Rust and legacy paths may share persistent data only when explicitly
+configured; do not make the Apple runtime depend on the legacy paths.
 
 **TTS Engines** (fastest → slowest): Edge-TTS (cloud) → Piper (offline ONNX, all languages)
 
