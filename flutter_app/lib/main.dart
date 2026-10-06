@@ -19,6 +19,7 @@ import 'models/app_settings.dart';
 import 'services/offline_cache_eviction.dart';
 import 'state/providers.dart';
 import 'services/embedded_converter.dart';
+import 'services/desktop_embedded_converter.dart';
 import 'services/tts_model_adapter_registry.dart';
 import 'views/reader_theme_colors.dart';
 
@@ -36,9 +37,7 @@ Future<void> main() async {
   }
   if (defaultTargetPlatform == TargetPlatform.linux ||
       defaultTargetPlatform == TargetPlatform.windows) {
-    // Desktop model management uses the same Rust catalog and ABI as mobile.
-    // Conversion registration remains separate until the desktop native
-    // conversion bridge is available for that target.
+    EmbeddedConverterRegistry.register(DesktopEmbeddedConverter());
     TtsModelAdapterRegistry.enableDesktop();
   }
   // Render the shell before any disk/plugin initialization. Android 9 devices

@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import os
 import pathlib
-
 from pathlib import Path
 from typing import Optional, Protocol
 
@@ -276,5 +275,9 @@ class TTSFactory:
                 return candidates[0]
 
         raise FileNotFoundError("No Piper models were found")
+
+    def _download_default_piper_model(self, preferred_code: Optional[str] = None) -> None:
+        """Keep model downloads explicit; conversion never downloads implicitly."""
+        return None
 
 __all__ = ["TTSFactory", "TTSEngine"]

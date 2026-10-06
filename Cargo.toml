@@ -5,6 +5,7 @@ members = [
     "crates/converter-ffi",
     "crates/converter-server",
     "crates/converter-cli",
+    "crates/converter-wasm",
     "native/piper-runtime",
     "benches",
 ]

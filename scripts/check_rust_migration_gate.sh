@@ -49,6 +49,23 @@ else
   fail "No-Python production guard missing or not executable: scripts/guard_no_python_production.sh"
 fi
 
+for wasm_artifact in \
+  web/src/wasm/converter_wasm.js \
+  web/src/wasm/converter_wasm.d.ts \
+  web/src/wasm/converter_wasm_bg.wasm; do
+  if [[ -s "$wasm_artifact" ]]; then
+    pass "Browser WASM artifact exists: $wasm_artifact"
+  else
+    fail "Missing browser WASM artifact: $wasm_artifact"
+  fi
+done
+if [[ -f web/src/services/EmbeddedConverter.ts ]] && \
+   grep -q 'wasm/converter_wasm' web/src/services/EmbeddedConverter.ts; then
+  pass "Web embedded converter is wired to Rust WASM"
+else
+  fail "Web embedded converter is not wired to the generated Rust WASM module"
+fi
+
 artifact_found=0
 for artifact in \
   dist/epub-to-mp3-server \

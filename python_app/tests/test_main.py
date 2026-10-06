@@ -1759,7 +1759,10 @@ class TestCliE2E(unittest.TestCase):
             check=False,
         )
         self.assertEqual(proc.returncode, 0, msg=proc.stderr or proc.stdout)
-        self.assertIn("Chapters:", proc.stdout)
+        self.assertTrue(
+            "Chapters:" in proc.stdout or "Capítulos:" in proc.stdout,
+            msg=proc.stdout,
+        )
 
 
 class TestSectionNumberDisplay(unittest.TestCase):

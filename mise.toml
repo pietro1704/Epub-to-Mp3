@@ -8,6 +8,8 @@ rust = "stable"
 ruby = "4.0.7"
 # Changelog generator (conventional commits → CHANGELOG.md)
 "cargo:git-cliff" = "latest"
+# WASM toolchain for the direct Rust web adapter.
+"cargo:wasm-bindgen-cli" = "latest"
 # Flutter SDK for the cross-platform companion app under flutter_app/.
 flutter = "3.41.9"
 # CocoaPods is used by the Capacitor iOS build (web/ → web/ios/App/),
@@ -24,7 +26,7 @@ ninja = "latest"
 _.python.venv = { path = ".venv", create = true }
 
 [tasks.dev]
-description = "Start backend (uvicorn) and frontend (Vite) together"
+description = "Start the Rust converter server and frontend (Vite) together"
 run = "./scripts/dev.sh"
 
 [tasks."rust:health"]
@@ -39,9 +41,25 @@ run = "PIPER_BINARY=\"$MISE_PROJECT_ROOT/.venv/bin/piper\" PIPER_MODEL=\"$MISE_P
 description = "Run the canonical Rust conversion CLI"
 run = "mise exec -- cargo run --release -p converter-cli --bin converter-cli --"
 
+[tasks."web:wasm-build"]
+description = "Build and verify the direct Rust EPUB WASM adapter"
+run = "bash scripts/build_web_wasm.sh"
+
+[tasks."migration:product-boundary-audit"]
+description = "Audit remaining web and Flutter HTTP/Python product boundaries"
+run = "bash scripts/check_direct_runtime_boundary.sh"
+
+[tasks."branches:cleanup-preview"]
+description = "Preview safe remote branch cleanup without deleting anything"
+run = "bash scripts/cleanup_remote_branches.sh --remote origin"
+
 [tasks."guard:no-python-production"]
 description = "Fail if production packaging reintroduces the legacy Python runtime or bridge"
 run = "bash scripts/guard_no_python_production.sh"
+
+[tasks."migration:build-and-gate"]
+description = "Build Rust production artifacts and run the migration readiness gate"
+run = "mise exec -- cargo build -p converter-cli -p converter-server --release && mkdir -p dist && cp target/release/converter-server dist/epub-to-mp3-server && mise run migration:gate"
 
 [tasks."migration:gate"]
 description = "Report Rust migration readiness, packaging artifacts, and remaining blockers"

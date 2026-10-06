@@ -239,6 +239,14 @@ class _EngineSelectionMixin:
                 return "piper"
             # An unavailable explicit override must not silently select another
             # local engine; the caller will report the controlled failure.
+            return None
+        if (
+            "piper" in available_set
+            and _has_piper_support()
+            and not _piper_fallback_disabled()
+        ):
+            _warn_piper_fallback()
+            return "piper"
         return None
 
     def _predict_edge_runtime_seconds(self, chapter_chars: int) -> float:

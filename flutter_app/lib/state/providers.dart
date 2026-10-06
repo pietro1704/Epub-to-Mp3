@@ -160,18 +160,10 @@ final apiClientProvider = Provider<ApiClient>((ref) {
   return api;
 });
 
-/// Explicit conversion seam. Embedded mode never silently falls back to HTTP.
+/// All product targets use the embedded Rust converter. Remote HTTP conversion
+/// is intentionally not a product mode.
 final converterModeProvider = Provider<ConverterMode>((ref) {
-  final settings = ref.watch(settingsProvider);
-  // Mobile conversion is always handled by the embedded Rust runtime. HTTP is
-  // an explicit compatibility mode for desktop/remote deployments only.
-  if (defaultTargetPlatform == TargetPlatform.android ||
-      defaultTargetPlatform == TargetPlatform.iOS) {
-    return ConverterMode.embedded;
-  }
-  return settings.useEmbeddedRuntime
-      ? ConverterMode.embedded
-      : ConverterMode.http;
+  return ConverterMode.embedded;
 });
 
 final embeddedConverterProvider = Provider<EmbeddedConverter>((ref) {
