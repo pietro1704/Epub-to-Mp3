@@ -1,5 +1,13 @@
 # CLAUDE.md
 
+## Delivery workflow
+
+For multi-file features, regressions, branch integration, or workflow changes,
+read [`docs/agent-workflow.md`](docs/agent-workflow.md) before editing. Run
+`mise run preflight` before opening a PR or declaring a branch complete. A task
+is complete only after its PR is merged, all required CI/security checks are
+green, and the result is verified on `master`.
+
 Project instructions for **any** Claude assistant working on this repo
 (Claude Code, Claude.ai web, Claude Desktop). These rules override all
 defaults.

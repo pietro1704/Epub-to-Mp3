@@ -276,6 +276,10 @@ mise run test:integration
 mise run test:web
 """
 
+[tasks.preflight]
+description = "Run the full local delivery gate before opening or merging a PR"
+run = "bash scripts/preflight.sh"
+
 [tasks."test:unit"]
 description = "Run Python unit tests (excluding benchmarks)"
 run = """
@@ -480,7 +484,7 @@ echo "Built Rust sidecar: dist/epub-to-mp3-server"
 
 [tasks."mac:build"]
 description = "Build native AppKit macOS app with the Rust converter-server sidecar (MAC_BUILD_CONFIG=Release|Debug, default Release)"
-depends = ["sidecar:build"]
+depends = ["sidecar:build", "converter-ffi:build"]
 run = """
 #!/bin/bash
 set -euo pipefail
