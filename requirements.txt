@@ -59,7 +59,7 @@ psutil>=7.2.2
 
 # Security pins (transitive dependency CVE fixes)
 pillow>=12.3.0      # CVE-2026-25990
-werkzeug>=3.1.8     # CVE-2026-27199
+werkzeug>=3.1.9     # CVE-2026-27199
 flask>=3.1.3        # CVE-2026-27205 (via TTS)
 # NLTK is not used by the Edge-TTS + Piper runtime and is intentionally not
 # installed; this avoids pulling the vulnerable optional model-artifact APIs.

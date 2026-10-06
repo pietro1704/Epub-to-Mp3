@@ -61,7 +61,7 @@ faster-whisper>=1.2.1
 
 # Security pins (CVE fixes)
 pillow>=12.3.0
-werkzeug>=3.1.8
+werkzeug>=3.1.9
 
 # Testing
 pytest
