@@ -1,4 +1,3 @@
-import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_app/l10n/app_localizations.dart';
@@ -20,7 +19,16 @@ class _FakeApiClient extends ApiClient {
   _FakeApiClient() : super('http://fake');
 
   @override
-  Future<String> uploadAndConvert(String filePath) async {
+  Future<String> uploadAndConvert(
+    String filePath, {
+    int? chapterEnd,
+    int? chapterStart,
+    String engine = 'edge',
+    bool? includeCover,
+    String? language,
+    bool? normalizeAudio,
+    String? voice,
+  }) async {
     throw Exception('Backend unreachable');
   }
 
@@ -135,7 +143,8 @@ void main() {
       expect(find.text('Retry'), findsOneWidget);
     });
 
-    testWidgets('play button visible in bottom bar when ready', (t) async {
+    testWidgets('BookOpenScreen does not render a duplicate play button',
+        (t) async {
       final book = BookEntity(
         id: 'play-book',
         title: 'Play Book',
@@ -177,7 +186,7 @@ void main() {
       await t.pump();
 
       // The play button should be visible in the bottom bar.
-      expect(find.byIcon(Icons.play_circle_filled), findsOneWidget);
+      expect(find.byIcon(Icons.play_circle_filled), findsNothing);
     });
 
     testWidgets('conversion falls back to local when backend fails', (t) async {
@@ -219,21 +228,8 @@ void main() {
       await t.pump();
       await t.pump();
 
-      // Tap play button to trigger conversion
-      await t.tap(find.byIcon(Icons.play_circle_filled));
-      await t.pump();
-      await t.pump();
-      await t.pump();
-
-      if (Platform.isLinux || Platform.isWindows) {
-        // Desktop hosts route into the local PythonBridge fallback instead
-        // of the unsupported-platform error branch.
-        expect(find.byIcon(Icons.warning_amber_rounded), findsNothing);
-      } else {
-        // Mobile/iOS test hosts without local Python fallback surface an
-        // error banner in the bottom bar.
-        expect(find.byIcon(Icons.warning_amber_rounded), findsOneWidget);
-      }
+      // Audio conversion is intentionally controlled by the global shell.
+      expect(find.byIcon(Icons.play_circle_filled), findsNothing);
     });
   });
 }
