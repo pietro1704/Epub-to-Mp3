@@ -135,7 +135,11 @@ jobs:
 
       - name: Generate Xcode project
         working-directory: ios/EpubToMp3
-        run: xcodegen generate
+        run: |
+          mkdir -p ../../target/release ../../target/aarch64-apple-ios/release
+          touch ../../target/release/libconverter_ffi.dylib
+          touch ../../target/aarch64-apple-ios/release/libconverter_ffi.dylib
+          xcodegen generate
 
       - name: Build Rust macOS sidecar
         if: matrix.platform == 'macOS'
