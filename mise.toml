@@ -8,6 +8,8 @@ rust = "stable"
 ruby = "4.0.7"
 # Changelog generator (conventional commits → CHANGELOG.md)
 "cargo:git-cliff" = "latest"
+# WASM toolchain for the direct Rust web adapter.
+"cargo:wasm-bindgen-cli" = "latest"
 # Flutter SDK for the cross-platform companion app under flutter_app/.
 flutter = "3.41.9"
 # CocoaPods is used by the Capacitor iOS build (web/ → web/ios/App/),
