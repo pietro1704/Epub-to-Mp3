@@ -690,6 +690,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "converter-wasm"
+version = "0.1.0"
+dependencies = [
+ "converter-core",
+ "serde_json",
+ "wasm-bindgen",
+]
+
+[[package]]
 name = "core-foundation"
 version = "0.10.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
