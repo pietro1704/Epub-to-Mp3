@@ -118,22 +118,18 @@ final class JobsListScreenController: UIViewController {
 
     private func reload() {
         fetchTask?.cancel()
-        guard let baseURL = settings.resolvedBaseURL else {
-            applyState(.message(L10n.string("jobDetail.error.configureBackend")))
-            return
-        }
         applyState(.loading)
         fetchTask = Task { [weak self] in
             guard let self else { return }
             do {
-                let client = APIClient(baseURL: baseURL)
-                let sessions = try await client.fetchSessions()
+                let localSessions = try Self.fetchLocalSessions()
                 guard !Task.isCancelled else { return }
-                self.sessions = sessions
-                if sessions.isEmpty {
+                self.sessions = localSessions
+                if localSessions.isEmpty {
+                    self.controller.apply(sessions: [], animated: false)
                     self.applyState(.message(L10n.string("jobs.noConversionsDescription")))
                 } else {
-                    self.controller.apply(sessions: sessions, animated: false)
+                    self.controller.apply(sessions: localSessions, animated: false)
                     self.applyState(.content)
                 }
             } catch {
@@ -141,6 +137,56 @@ final class JobsListScreenController: UIViewController {
                 self.applyState(.message(error.localizedDescription))
             }
         }
+    }
+
+    private static func fetchLocalSessions() throws -> [SessionRecord] {
+        let root = try FileManager.default.url(
+            for: .applicationSupportDirectory,
+            in: .userDomainMask,
+            appropriateFor: nil,
+            create: true
+        ).appendingPathComponent("EpubToMp3/RustConversions", isDirectory: true)
+        guard FileManager.default.fileExists(atPath: root.path) else { return [] }
+
+        let directories = try FileManager.default.contentsOfDirectory(
+            at: root,
+            includingPropertiesForKeys: [.contentModificationDateKey],
+            options: [.skipsHiddenFiles]
+        )
+        var localSessions: [(date: Date, session: SessionRecord)] = []
+        for directory in directories {
+            let manifestURL = directory.appendingPathComponent("manifest.json")
+            guard let data = try? Data(contentsOf: manifestURL),
+                  let envelope = try? JSONDecoder().decode(LocalManifestEnvelope.self, from: data) else { continue }
+            let chapterCount = envelope.manifest.chapters.count
+            guard chapterCount > 0 else { continue }
+            let modifiedAt = (try? directory.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate)
+                ?? .distantPast
+            let session = SessionRecord(
+                timestamp: ISO8601DateFormatter().string(from: modifiedAt),
+                bookTitle: envelope.manifest.title,
+                jobId: envelope.manifest.jobId,
+                engine: "Rust",
+                chaptersConverted: chapterCount,
+                durationSeconds: nil,
+                outcome: "finished",
+                mode: "embedded"
+            )
+            localSessions.append((modifiedAt, session))
+        }
+        return localSessions.sorted { $0.date > $1.date }.map(\.session)
+    }
+
+    private struct LocalManifestEnvelope: Decodable {
+        let manifest: Manifest
+
+        struct Manifest: Decodable {
+            let jobId: String
+            let title: String
+            let chapters: [Chapter]
+        }
+
+        struct Chapter: Decodable {}
     }
 
     private func open(session: SessionRecord) {

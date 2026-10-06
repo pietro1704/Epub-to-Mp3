@@ -316,10 +316,10 @@ final class AppSettings: ObservableObject {
     /// without a configured backend URL. The reader pipeline is always
     /// local on iOS and macOS through the HTTP backend, so it is always false
     /// until a future offline native implementation exists.
-    var canReadOffline: Bool { false }
+    var canReadOffline: Bool { true }
 
     /// Backend configuration is always relevant to the production client.
-    var remoteBackendControlsEnabled: Bool { true }
+    var remoteBackendControlsEnabled: Bool { false }
 
     /// 5-step font size scale: 0=XS, 1=S, 2=M (default), 3=L, 4=XL.
     /// Clamped in `didSet` so the rest of the app can trust 0…4.
@@ -463,26 +463,10 @@ final class AppSettings: ObservableObject {
         }
     }
 
-    /// Best-effort parsed URL — returns nil if the user typed garbage so the
-    /// caller can surface a validation error instead of silently failing.
-    /// The URL is retained only for explicit remote-backend screens.
+    /// Compatibility shim for legacy screens. Apple production never uses a
+    /// remote backend, so this intentionally always returns nil.
     var resolvedBaseURL: URL? {
-        let trimmed = backendURL.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return nil }
-        var raw = trimmed
-        while raw.hasSuffix("/") { raw.removeLast() }
-        if raw.hasSuffix("/api") { raw.removeLast(4) }
-        while raw.hasSuffix("/") { raw.removeLast() }
-        guard let url = URL(string: raw) else { return nil }
-        let scheme = url.scheme?.lowercased()
-        guard scheme == "http" || scheme == "https",
-              let host = url.host, !host.isEmpty else {
-            let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "EpubToMp3",
-                                category: "security")
-            logger.warning("resolvedBaseURL: rejected URL with invalid or missing scheme — \"\(raw, privacy: .public)\"")
-            return nil
-        }
-        return url
+        nil
     }
 
     // MARK: Override knobs (opt-in)

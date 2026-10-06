@@ -55,9 +55,6 @@ final class ConvertScreenController: UITableViewController, UIDocumentPickerDele
         fatalError("init(coder:) has not been implemented")
     }
 
-    private var client: APIClient? {
-        settings.resolvedBaseURL.map(APIClient.init(baseURL:))
-    }
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -329,7 +326,6 @@ final class ConvertScreenController: UITableViewController, UIDocumentPickerDele
         Task { [weak self] in
             guard let self else { return }
             await self.viewModel.submit(
-                client: self.client,
                 player: self.player
             )
             if let jobId = self.viewModel.submittedJobId,
