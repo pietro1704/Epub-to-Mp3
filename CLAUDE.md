@@ -78,6 +78,15 @@ CLI and web-local automatically share cache because both use `PROJECT_ROOT` as `
 
 ---
 
+## Runtime Architecture Decision — authoritative
+
+- Do not run, ship, or add a Python/FastAPI/Uvicorn backend for product execution.
+- CLI, web, Flutter Android, and Flutter Linux must call the shared Rust core directly through embedded binaries, FFI, WASM, or platform bindings as appropriate.
+- The web client must use its embedded Rust/WASM adapter, not HTTP to `python_app.server`.
+- Flutter clients must use Rust FFI/platform bindings, not HTTP to a Python service.
+- Treat Python server orchestration as transitional migration material and remove it only after each Rust path is verified.
+- New product features land in the Rust core first and are exposed to each surface without reintroducing a backend.
+
 ## #1 Priority: Speed
 
 **Speed is the most critical requirement.** Every design decision must optimize for maximum throughput:

@@ -152,7 +152,7 @@ backend_watch_signature() {
     backend_watch_files | while read -r relative_path; do
       [[ -n "$relative_path" ]] || continue
       if [[ -e "$relative_path" ]]; then
-        stat -f '%m %N' "$relative_path" 2>/dev/null || true
+        stat -c '%Y %n' "$relative_path" 2>/dev/null || true
       fi
     done
   ) | sort
