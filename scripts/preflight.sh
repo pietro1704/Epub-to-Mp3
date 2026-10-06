@@ -10,8 +10,12 @@ if git diff --name-only --diff-filter=U | grep -q .; then
 fi
 
 branch=$(git branch --show-current)
-if [[ -z "$branch" || "$branch" == master || "$branch" == main ]]; then
-  echo "Run preflight from a feature or fix branch, not '$branch'." >&2
+if [[ -z "$branch" ]]; then
+  branch="(detached HEAD)"
+fi
+if [[ "$branch" == master || "$branch" == main ]] \
+  || git diff --quiet "origin/master" HEAD 2>/dev/null; then
+  echo "Run preflight from a feature or fix ref, not '$branch'." >&2
   exit 1
 fi
 
