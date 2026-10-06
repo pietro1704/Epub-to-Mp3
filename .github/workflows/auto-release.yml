@@ -16,7 +16,7 @@ permissions:
 jobs:
   auto-release:
     name: Auto version tag
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     if: github.ref == 'refs/heads/master'
     steps:
       - name: Checkout
@@ -94,29 +94,35 @@ jobs:
           )
 
           if [[ -z "$NEW" ]]; then
-            echo "skip=true" >> "$GITHUB_OUTPUT"
-            echo "base_version=$BASE_VERSION" >> "$GITHUB_OUTPUT"
-            echo "last_tag=${LAST_TAG}" >> "$GITHUB_OUTPUT"
-            echo "range=${RANGE}" >> "$GITHUB_OUTPUT"
+            {
+              echo "skip=true"
+              echo "base_version=$BASE_VERSION"
+              echo "last_tag=${LAST_TAG}"
+              echo "range=${RANGE}"
+            } >> "$GITHUB_OUTPUT"
             echo "Committed version ${BASE_VERSION} is not newer than ${LAST_TAG}; skipping release tag"
             exit 0
           fi
 
           if git rev-parse "v${NEW}" >/dev/null 2>&1; then
-            echo "skip=true" >> "$GITHUB_OUTPUT"
-            echo "base_version=$BASE_VERSION" >> "$GITHUB_OUTPUT"
-            echo "last_tag=${LAST_TAG}" >> "$GITHUB_OUTPUT"
-            echo "range=${RANGE}" >> "$GITHUB_OUTPUT"
+            {
+              echo "skip=true"
+              echo "base_version=$BASE_VERSION"
+              echo "last_tag=${LAST_TAG}"
+              echo "range=${RANGE}"
+            } >> "$GITHUB_OUTPUT"
             echo "Tag v${NEW} already exists; skipping"
             exit 0
           fi
 
-          echo "skip=false" >> "$GITHUB_OUTPUT"
-          echo "base_version=$BASE_VERSION" >> "$GITHUB_OUTPUT"
-          echo "last_tag=${LAST_TAG}" >> "$GITHUB_OUTPUT"
-          echo "range=${RANGE}" >> "$GITHUB_OUTPUT"
-          echo "version=$NEW" >> "$GITHUB_OUTPUT"
-          echo "tag=v$NEW" >> "$GITHUB_OUTPUT"
+          {
+            echo "skip=false"
+            echo "base_version=$BASE_VERSION"
+            echo "last_tag=${LAST_TAG}"
+            echo "range=${RANGE}"
+            echo "version=$NEW"
+            echo "tag=v$NEW"
+          } >> "$GITHUB_OUTPUT"
           echo "Version: ${BASE_VERSION} -> ${NEW} (last tag: ${LAST_TAG:-none})"
 
       - name: Create release tag

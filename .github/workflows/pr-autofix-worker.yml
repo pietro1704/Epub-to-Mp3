@@ -35,7 +35,7 @@ concurrency:
 jobs:
   validate:
     name: Validate trusted PR state
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     outputs:
       eligible: ${{ steps.resolve.outputs.eligible }}
       head_ref: ${{ steps.resolve.outputs.head_ref }}
@@ -73,7 +73,7 @@ jobs:
     name: Codex CI auto-fix
     needs: validate
     if: inputs.mode == 'fix' && needs.validate.outputs.eligible == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Prevent repeated repair of the same SHA
         id: guard
@@ -181,7 +181,7 @@ jobs:
     name: Queue squash auto-merge
     needs: validate
     if: inputs.mode == 'merge' && needs.validate.outputs.eligible == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Verify PR state and CI result
         id: verify

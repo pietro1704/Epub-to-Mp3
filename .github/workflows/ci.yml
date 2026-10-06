@@ -21,7 +21,7 @@ concurrency:
 jobs:
   production-packaging-guard:
     name: Production packaging guard
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
 
@@ -41,7 +41,7 @@ jobs:
   python:
     name: Python
     needs: production-packaging-guard
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
 
@@ -68,7 +68,7 @@ jobs:
           restore-keys: pip-
 
       - name: Cache Python virtualenv
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: .venv
           key: python-venv-${{ runner.os }}-${{ hashFiles('requirements.txt', 'python_app/requirements.txt') }}
@@ -121,7 +121,8 @@ jobs:
   rust:
     name: Rust
     needs: production-packaging-guard
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
     permissions:
       contents: read
 
@@ -135,8 +136,20 @@ jobs:
           install: false
       - name: Install Rust toolchain
         run: mise install
+      - name: Install ONNX Runtime smoke-test library
+        run: |
+          archive="$RUNNER_TEMP/onnxruntime-linux-x64-1.24.4.tgz"
+          curl --fail --location --retry 3 \
+            https://github.com/microsoft/onnxruntime/releases/download/v1.24.4/onnxruntime-linux-x64-1.24.4.tgz \
+            --output "$archive"
+          echo '3a211fbea252c1e66290658f1b735b772056149f28321e71c308942cdb54b747  '"$archive" | sha256sum --check --status
+          mkdir -p "$RUNNER_TEMP/onnxruntime"
+          tar -xzf "$archive" -C "$RUNNER_TEMP/onnxruntime"
+          runtime_library="$RUNNER_TEMP/onnxruntime/onnxruntime-linux-x64-1.24.4/lib/libonnxruntime.so"
+          test -f "$runtime_library"
+          echo "ORT_DYLIB_PATH=$runtime_library" >> "$GITHUB_ENV"
       - name: Cache Rust build artifacts
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             ~/.cargo/registry
@@ -167,7 +180,7 @@ jobs:
   web:
     name: Web
     needs: production-packaging-guard
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
 
@@ -189,7 +202,7 @@ jobs:
         working-directory: web
         run: mise exec -- npm ci --prefer-offline --no-audit --no-fund
       - name: Cache npm downloads
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/.npm
           key: npm-${{ runner.os }}-${{ hashFiles('web/package-lock.json', 'web/package.json') }}
@@ -207,7 +220,7 @@ jobs:
   flutter:
     name: Flutter
     needs: production-packaging-guard
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
 

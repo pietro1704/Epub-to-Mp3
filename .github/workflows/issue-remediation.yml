@@ -27,7 +27,7 @@ jobs:
        (github.event.issue.user.login == github.repository_owner ||
         contains(github.event.issue.labels.*.name, 'auto-fix-approved')) &&
        !contains(github.event.issue.labels.*.name, 'automated'))
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Resolve trusted issue
         id: issue

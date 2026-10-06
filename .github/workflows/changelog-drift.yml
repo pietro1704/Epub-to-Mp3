@@ -23,7 +23,7 @@ permissions:
 
 jobs:
   drift:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # Skip the workflow entirely on Dependabot PRs — they intentionally
     # don't touch CHANGELOG.md, so flagging drift on every dependency
     # bump is just noise that blocks auto-merge.
