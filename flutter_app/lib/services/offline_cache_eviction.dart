@@ -29,7 +29,7 @@ class AudiobookCacheEntry {
 
 // MARK: - OfflineCacheEviction
 
-/// LRU + TTL eviction policy for the Flutter offline audiobook cache.
+/// Legacy cache-maintenance entry point for the Flutter offline audiobook cache.
 ///
 /// **Layout:** `<documents>/downloads/<jobId>/` — mirrors [DownloadManager].
 ///
@@ -41,10 +41,9 @@ class AudiobookCacheEntry {
 /// override so tests can operate on a temp directory without mocking
 /// `path_provider` at the platform level.
 ///
-/// **Invariants:**
-/// - Never evicts a jobId in [activeJobIds].
-/// - Best-effort: individual delete failures are caught and skipped.
-/// - All I/O is async.
+/// Completed streamed audio and manual downloads are listener-owned offline
+/// media. Automatic TTL/LRU cleanup must never remove them; explicit delete
+/// actions use [deleteJob] instead.
 class OfflineCacheEviction {
   OfflineCacheEviction._();
 
@@ -85,8 +84,7 @@ class OfflineCacheEviction {
     }
   }
 
-  static Future<DateTime?> _readLastAccess(
-      Directory root, String jobId) async {
+  static Future<DateTime?> _readLastAccess(Directory root, String jobId) async {
     try {
       final file = _lastAccessFile(root, jobId);
       if (!await file.exists()) return null;
@@ -117,11 +115,13 @@ class OfflineCacheEviction {
       final totalBytes = await _folderSize(entity);
       final lastAccess =
           await _readLastAccess(root, jobId) ?? await _folderMtime(entity);
-      entries.add(AudiobookCacheEntry(
-        jobId: jobId,
-        totalBytes: totalBytes,
-        lastAccessedAt: lastAccess,
-      ));
+      entries.add(
+        AudiobookCacheEntry(
+          jobId: jobId,
+          totalBytes: totalBytes,
+          lastAccessedAt: lastAccess,
+        ),
+      );
     }
 
     // LRU: oldest first.
@@ -140,7 +140,7 @@ class OfflineCacheEviction {
 
   // MARK: Eviction
 
-  /// Run the combined TTL + LRU budget eviction.
+  /// Legacy automatic maintenance hook. It deliberately performs no deletion.
   ///
   /// - [budgetBytes]: max total cache size; default [kDefaultOfflineCacheBudgetBytes].
   /// - [ttlSeconds]: max age in seconds; default [kDefaultOfflineCacheTTLSeconds].
@@ -154,37 +154,10 @@ class OfflineCacheEviction {
     Set<String> activeJobIds = const {},
     Directory? downloadsRoot,
   }) async {
-    final root = await _resolveRoot(downloadsRoot);
-    var entries = await scanEntries(downloadsRoot: downloadsRoot);
-    final evicted = <String>[];
-    final now = DateTime.now().toUtc();
-
-    // Phase 1: TTL — evict entries whose last access is older than ttlSeconds.
-    for (final entry in entries) {
-      if (activeJobIds.contains(entry.jobId)) continue;
-      final age = now.difference(entry.lastAccessedAt).inSeconds;
-      if (age > ttlSeconds) {
-        if (await _deleteJob(root, entry.jobId)) {
-          evicted.add(entry.jobId);
-        }
-      }
-    }
-
-    // Remove evicted entries from working set.
-    entries.removeWhere((e) => evicted.contains(e.jobId));
-
-    // Phase 2: LRU budget — evict oldest until under budget.
-    var totalBytes = entries.fold<int>(0, (s, e) => s + e.totalBytes);
-    for (final entry in entries) {
-      if (totalBytes <= budgetBytes) break;
-      if (activeJobIds.contains(entry.jobId)) continue;
-      if (await _deleteJob(root, entry.jobId)) {
-        totalBytes -= entry.totalBytes;
-        evicted.add(entry.jobId);
-      }
-    }
-
-    return evicted;
+    // Keep the signature while callers migrate to explicit storage management.
+    // Referencing inputs avoids hiding stale call sites behind unused warnings.
+    final _ = (budgetBytes, ttlSeconds, activeJobIds, downloadsRoot);
+    return const [];
   }
 
   // MARK: Delete

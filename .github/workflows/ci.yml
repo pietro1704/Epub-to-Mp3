@@ -9,6 +9,8 @@ on:
       - master
   pull_request:
 
+  workflow_dispatch:
+
 permissions:
   contents: read
 
@@ -17,28 +19,57 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  python:
-    name: Python
+  production-packaging-guard:
+    name: Production packaging guard
     runs-on: ubuntu-latest
     permissions:
       contents: read
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Install mise
-        uses: jdx/mise-action@v4
+        uses: jdx/mise-action@v4.3.0
+
+      - name: Check production packaging boundary
+        run: mise run guard:no-python-production
+
+  python:
+    name: Python
+    needs: production-packaging-guard
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Install mise
+        uses: jdx/mise-action@v4.3.0
+
+      - name: Install toolchain
+        env:
+          MISE_GITHUB_TOKEN: ${{ github.token }}
+        run: mise install
 
       - name: Cache pip
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: ~/.cache/pip
           key: pip-${{ hashFiles('requirements.txt', 'python_app/requirements.txt') }}
           restore-keys: pip-
 
+      - name: Cache Python virtualenv
+        uses: actions/cache@v4
+        with:
+          path: .venv
+          key: python-venv-${{ runner.os }}-${{ hashFiles('requirements.txt', 'python_app/requirements.txt') }}
+          restore-keys: python-venv-${{ runner.os }}-
+
       - name: Install system dependencies
-        run: sudo apt-get install -y --no-install-recommends ffmpeg
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
 
       - name: Install Python dependencies
         env:
@@ -49,14 +80,15 @@ jobs:
           .venv/bin/python -m pip install -r requirements.txt -r python_app/requirements.txt ruff
           bash scripts/install_piper_binary.sh
 
-      - name: Bootstrap iOS vendor (for drift tests)
-        run: bash ios/EpubToMp3/scripts/bootstrap-ios-python.sh
+      - name: Bootstrap iOS embedded Python vendor
+        working-directory: ios/EpubToMp3
+        run: bash scripts/bootstrap-ios-python.sh
 
       - name: Run Python tests
         run: mise exec -- python -m pytest -v --tb=short
 
       - name: Run Python lint
-        run: mise exec -- ruff check .
+        run: mise exec -- ruff check python_app tests
 
       - name: Run sample conversion smoke
         env:
@@ -80,38 +112,104 @@ jobs:
             --workers 1 \
             --forward-args "--engine edge --chapter 1 --no-parallel --no-validate-text --no-validate-audio --stage-pipeline"
 
-  web:
-    name: Web
+  rust:
+    name: Rust
+    needs: production-packaging-guard
     runs-on: ubuntu-latest
     permissions:
       contents: read
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
-
+        uses: actions/checkout@v7
       - name: Install mise
-        uses: jdx/mise-action@v4
-
-      - name: Cache npm
-        uses: actions/cache@v5
+        uses: jdx/mise-action@v4.3.0
+      - name: Install Rust toolchain
+        run: mise install
+      - name: Cache Rust build artifacts
+        uses: actions/cache@v4
         with:
-          path: web/node_modules
-          key: npm-${{ hashFiles('web/package-lock.json') }}
-          restore-keys: npm-
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+            native/piper-runtime/target
+          key: rust-${{ runner.os }}-${{ hashFiles('Cargo.lock', 'native/piper-runtime/Cargo.lock', '**/Cargo.toml') }}
+          restore-keys: rust-${{ runner.os }}-
+      - name: Check Rust workspace
+        run: mise exec -- cargo check --workspace
+      - name: Test Rust workspace
+        run: mise exec -- cargo test --workspace
+      - name: Rust formatting
+        run: mise exec -- cargo fmt --all -- --check
+      - name: Install Piper smoke model
+        run: |
+          mise exec -- bash scripts/install_piper_binary.sh
+          mkdir -p models/piper
+          cp models/pt_BR-faber-medium.onnx models/piper/pt_BR-faber-medium.onnx
+          cp models/pt_BR-faber-medium.onnx.json models/piper/pt_BR-faber-medium.onnx.json
+      - name: Piper Embedded runtime smoke test
+        run: mise exec -- cargo test --manifest-path native/piper-runtime/Cargo.toml --features onnxruntime,piper-inference,heavy-runtime-tests piper_inference_generates_valid_wav_from_vendored_model -- --nocapture
+  web:
+    name: Web
+    needs: production-packaging-guard
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
 
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+      - name: Install mise
+        uses: jdx/mise-action@v4.3.0
+      - name: Install toolchain
+        run: mise install
       - name: Install web dependencies
         working-directory: web
-        run: mise exec -- npm install
-
+        run: mise exec -- npm ci --prefer-offline --no-audit --no-fund
+      - name: Cache npm downloads
+        uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: npm-${{ runner.os }}-${{ hashFiles('web/package-lock.json', 'web/package.json') }}
+          restore-keys: npm-${{ runner.os }}-
       - name: Run web tests
         working-directory: web
         run: mise exec -- npm test
-
       - name: Run web lint
         working-directory: web
         run: mise exec -- npm run lint
-
       - name: Run web build
         working-directory: web
         run: mise exec -- npm run build
+
+  flutter:
+    name: Flutter
+    needs: production-packaging-guard
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        run: |
+          git init .
+          git remote add origin "https://github.com/${GITHUB_REPOSITORY}.git"
+          git fetch --no-tags --depth=1 origin "${GITHUB_SHA}"
+          git checkout --force FETCH_HEAD
+
+      - name: Install mise
+        uses: jdx/mise-action@v4.3.0
+
+      - name: Install toolchain
+        env:
+          MISE_GITHUB_TOKEN: ${{ github.token }}
+        run: mise install
+
+      - name: Run Flutter tests
+        working-directory: flutter_app
+        run: mise exec -- flutter test
+
+      - name: Run Flutter analyzer
+        working-directory: flutter_app
+        run: mise exec -- flutter analyze

@@ -32,7 +32,7 @@ By default, local CLI and web mode share the same persistent directories:
 ## Main features
 
 - `EPUB` and `PDF` to `MP3` conversion
-- Fallback chain across `Edge-TTS`, `Kokoro`, and `Piper`
+- Edge-first synthesis with optional Piper fallback
 - Table of contents and chapter hierarchy preservation
 - Aggressive caching to avoid repeated parsing
 - Progressive playback while chunks are synthesized

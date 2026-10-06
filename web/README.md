@@ -12,8 +12,7 @@ Step 1 of the UI now accepts multiple EPUB/PDF files. Drop several books, drag o
 
 ```bash
 # From project root
-cd python_app
-python -m uvicorn main:app --reload --port 8000
+python -m uvicorn python_app.server:app --reload --port 8000
 ```
 
 ### 2. Start Frontend (in another terminal)
@@ -27,6 +26,14 @@ VITE_API_BASE=http://localhost:8000 npm run dev
 Frontend will run at `http://localhost:5173` and connect to Python backend at `http://localhost:8000`.
 
 **Note**: Without backend running, frontend will show 404 errors. Only `sample.epub` is mocked for file upload testing.
+
+### Supported TTS engines
+
+The backend currently exposes **Edge-TTS** (`edge`) and **Piper** (`piper`).
+`auto` is an alias for the Edge-first selection. Piper is only listed when
+its binary is available; models are downloaded or discovered on demand.
+The frontend's engine and voice choices come from `GET /api/voices`.
+Kokoro, Coqui, and Spark are not supported engines.
 
 ## Build & Deploy
 

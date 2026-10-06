@@ -11,6 +11,7 @@ import sys
 import tempfile
 import time
 import unittest
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, patch
@@ -26,6 +27,7 @@ from src.converter import (
     validate_audio_completeness,
 )
 from src.ebook_reader import Chapter
+from src.engine_pool import ResourceSnapshot
 from src.text_formatting import TextFormattingProcessor
 
 
@@ -169,6 +171,71 @@ class TestAudioConverter(unittest.IsolatedAsyncioTestCase):
         import shutil
 
         shutil.rmtree(self.temp_dir, ignore_errors=True)
+
+    def test_initial_validation_is_deferred_when_output_audio_exists(self):
+        output_dir = Path(self.temp_dir)
+        (output_dir / "1 - chapter.mp3").write_bytes(b"audio")
+        config = ConversionConfig(engine="edge", output_dir=output_dir)
+
+        self.assertFalse(self.converter._should_run_initial_validation(output_dir, config))
+
+    def test_initial_validation_is_deferred_when_cached_audio_exists(self):
+        output_dir = Path(self.temp_dir)
+        cache_dir = output_dir / "cache"
+        cache_dir.mkdir()
+        (cache_dir / "1 - chapter.mp3").write_bytes(b"audio")
+        config = ConversionConfig(engine="edge", output_dir=output_dir, cache_dir=cache_dir)
+
+        self.assertFalse(self.converter._should_run_initial_validation(output_dir, config))
+
+    def test_initial_validation_remains_enabled_for_new_conversion(self):
+        output_dir = Path(self.temp_dir)
+        config = ConversionConfig(engine="edge", output_dir=output_dir)
+
+        self.assertTrue(self.converter._should_run_initial_validation(output_dir, config))
+
+    async def test_report_results_surfaces_validation_stats_breakdown_on_failure(self):
+        """Final-validation failure must explain *why* in result.errors, not
+        just flip success=False — a run that converts every chapter
+        (chapters_failed=0) but fails the post-hoc cross-validation
+        previously logged as outcome=partial with no way to tell which
+        validate_book bucket (duration_mismatch, missing_mp3, ...) caused
+        it. See LOTR 2026-07-16 session (95/95 converted, outcome=partial)."""
+        output_dir = Path(self.temp_dir)
+        self.converter._last_output_dir = output_dir
+        self.converter._active_config = self.config
+        self.converter._last_chapters_for_text = []
+        self.converter._auto_validate_output = AsyncMock(return_value=False)
+        self.converter._last_validation_stats = {
+            "total_chapters": 95,
+            "perfect": 92,
+            "duration_mismatch": 2,
+            "missing_mp3": 1,
+        }
+
+        result = ConversionResult(
+            success=True,
+            total_chapters=95,
+            converted_chapters=95,
+            output_files=[],
+            errors=[],
+        )
+
+        await self.converter._report_results(result)
+
+        self.assertFalse(result.success)
+        self.assertEqual(len(result.errors), 1)
+        self.assertIn("duration_mismatch=2", result.errors[0])
+        self.assertIn("missing_mp3=1", result.errors[0])
+        self.assertNotIn("perfect=", result.errors[0])
+        self.assertNotIn("total_chapters=", result.errors[0])
+
+    def test_duplicate_cleanup_is_opt_in(self):
+        config = ConversionConfig(engine="edge")
+
+        self.assertFalse(self.converter._duplicate_cleanup_enabled(config))
+        config.cleanup_duplicate_files = True
+        self.assertTrue(self.converter._duplicate_cleanup_enabled(config))
 
     def test_eta_baseline_persistence_roundtrip(self):
         config = ConversionConfig(
@@ -539,10 +606,76 @@ class TestAudioConverter(unittest.IsolatedAsyncioTestCase):
         self.assertGreater(self.converter._parallel_state["ceiling"], 8)
         self.assertGreater(self.converter._parallel_state["current"], 8)
 
+    def test_engine_resource_budget_does_not_recover_under_ram_pressure(self):
+        self.converter._resource_budget_enabled = True
+        self.converter._parallel_state["ceiling"] = 4
+        self.converter._parallel_state["current"] = 1
+        self.converter._engine_resource_budget = {
+            "edge": {"cap": 1, "pressure_streak": 0, "free_streak": 0}
+        }
+        pressure = ResourceSnapshot(cpu_percent=10.0, ram_gb=0.5)
+
+        for _ in range(6):
+            self.converter._apply_engine_resource_budget(
+                engine_label="edge", snapshot=pressure, engine_pool=None
+            )
+
+        self.assertEqual(self.converter._parallel_state["current"], 1)
+        self.assertEqual(self.converter._parallel_state["ceiling"], 4)
+
+    def test_engine_resource_budget_emits_reason_coded_transition(self):
+        self.converter._resource_budget_enabled = True
+        self.converter._parallel_state["ceiling"] = 4
+        self.converter._parallel_state["current"] = 4
+        self.converter._append_runtime_metric = Mock()
+        pressure = ResourceSnapshot(cpu_percent=10.0, ram_gb=0.5)
+
+        with patch.dict(
+            os.environ,
+            {"CHAPTER_PARALLEL_COUNT": "7", "CHAPTER_PARALLEL_COUNT_SOURCE": "detected"},
+            clear=False,
+        ):
+            for _ in range(2):
+                self.converter._apply_engine_resource_budget(
+                    engine_label="edge", snapshot=pressure, engine_pool=None
+                )
+
+        events = [call.args[0] for call in self.converter._append_runtime_metric.call_args_list]
+        self.assertEqual(len(events), 1)
+        self.assertEqual(events[0]["event"], "resource_budget_cap")
+        self.assertEqual(events[0]["reason"], "ram_available")
+        self.assertFalse(events[0]["override_bypassed_guard"])
+
+    def test_engine_resource_budget_reports_explicit_override_bypass(self):
+        self.converter._resource_budget_enabled = True
+        self.converter._parallel_state["ceiling"] = 4
+        self.converter._parallel_state["current"] = 4
+        self.converter._append_runtime_metric = Mock()
+        pressure = ResourceSnapshot(cpu_percent=10.0, ram_gb=0.5)
+
+        with patch.dict(
+            os.environ,
+            {"CHAPTER_PARALLEL_COUNT": "7", "CHAPTER_PARALLEL_COUNT_SOURCE": "explicit"},
+            clear=False,
+        ):
+            for _ in range(2):
+                self.converter._apply_engine_resource_budget(
+                    engine_label="edge", snapshot=pressure, engine_pool=None
+                )
+
+        events = [call.args[0] for call in self.converter._append_runtime_metric.call_args_list]
+        self.assertTrue(events[0]["override_bypassed_guard"])
+
     def test_adaptive_state_checkpoint_roundtrip(self):
         path_dir = Path(self.temp_dir)
         self.converter._adaptive_checkpoint_enabled = True
         self.converter._segment_adaptive_state["pre_check_interval_by_engine"] = {"edge": 3}
+        self.converter._segment_adaptive_state["segment_duration_policy"] = {
+            "enabled": True,
+            "target_seconds": 120.0,
+            "hard_max_seconds": 180.0,
+            "success_streak": 2,
+        }
         self.converter._engine_resource_budget = {
             "edge": {"cap": 2, "pressure_streak": 0, "free_streak": 0}
         }
@@ -554,6 +687,9 @@ class TestAudioConverter(unittest.IsolatedAsyncioTestCase):
         other._load_adaptive_state_checkpoint(path_dir)
         self.assertEqual(
             other._segment_adaptive_state["pre_check_interval_by_engine"].get("edge"), 3
+        )
+        self.assertEqual(
+            other._segment_adaptive_state["segment_duration_policy"]["target_seconds"], 120.0
         )
         self.assertEqual(other._engine_resource_budget.get("edge", {}).get("cap"), 2)
         self.assertEqual(other._auto_ab_counter, 9)
@@ -580,6 +716,10 @@ class TestAudioConverter(unittest.IsolatedAsyncioTestCase):
             {"event": "auto_ab_exploration", "chapter": 1, "engine": "piper"},
             {"event": "resource_budget_cap", "engine": "edge"},
             {"event": "adaptive_state_restored"},
+            {
+                "event": "runtime_profile",
+                "limits": {"chapter_parallel_effective": 2},
+            },
             {"event": "chapter_complete", "chapter": 1, "engine": "edge", "success": True},
         ]
         metrics_path.write_text(
@@ -597,6 +737,136 @@ class TestAudioConverter(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(int(opt.get("ab_explorations", 0)), 1)
         self.assertEqual(int(opt.get("budget_caps_applied", 0)), 1)
         self.assertEqual(int(opt.get("adaptive_state_restores", 0)), 1)
+        self.assertEqual(payload["runtime_profile"]["limits"]["chapter_parallel_effective"], 2)
+
+    def test_runtime_metric_dedupes_repeated_budget_caps(self):
+        metrics_path = Path(self.temp_dir) / "_runtime_metrics.jsonl"
+        self.converter._last_output_dir = Path(self.temp_dir)
+        self.converter._append_runtime_metric(
+            {
+                "event": "resource_budget_cap",
+                "engine": "edge",
+                "from_parallel": 4,
+                "to_parallel": 3,
+                "reason": "ram_available",
+                "ts": 100.0,
+            }
+        )
+        self.converter._append_runtime_metric(
+            {
+                "event": "resource_budget_cap",
+                "engine": "edge",
+                "from_parallel": 4,
+                "to_parallel": 3,
+                "reason": "ram_available",
+                "ts": 104.0,
+            }
+        )
+        self.converter._append_runtime_metric(
+            {
+                "event": "resource_budget_cap",
+                "engine": "edge",
+                "from_parallel": 4,
+                "to_parallel": 3,
+                "reason": "ram_available",
+                "ts": 120.0,
+            }
+        )
+        lines = metrics_path.read_text(encoding="utf-8").splitlines()
+        self.assertEqual(len(lines), 2)
+
+    def test_runtime_metric_keeps_distinct_thermal_caps(self):
+        metrics_path = Path(self.temp_dir) / "_runtime_metrics.jsonl"
+        self.converter._last_output_dir = Path(self.temp_dir)
+        self.converter._append_runtime_metric(
+            {
+                "event": "thermal_guard_cap",
+                "mode": "normal",
+                "from_parallel": 9,
+                "to_parallel": 8,
+                "ts": 200.0,
+            }
+        )
+        self.converter._append_runtime_metric(
+            {
+                "event": "thermal_guard_cap",
+                "mode": "critical",
+                "from_parallel": 8,
+                "to_parallel": 4,
+                "ts": 201.0,
+            }
+        )
+        lines = metrics_path.read_text(encoding="utf-8").splitlines()
+        self.assertEqual(len(lines), 2)
+
+    def test_effective_runtime_profile_records_applied_limits_and_cap_reasons(self):
+        self.converter.hardware_profile = SimpleNamespace(
+            cpu_count=8,
+            cpu_physical=4,
+            ram_total_gb=8.0,
+            ram_available_gb=1.5,
+            network_speed_estimate="medium",
+            os_type="Darwin",
+        )
+        self.converter._thermal_guard_state = {"cap": 2, "mode": "thermal_warm"}
+        self.converter._runtime_run_id = "run-profile-test"
+        config = ConversionConfig(
+            engine="edge",
+            edge_chunk_chars=12000,
+            edge_max_segment_seconds=85,
+            edge_enable_parallel=True,
+            edge_max_concurrency=12,
+        )
+        network_stats = SimpleNamespace(
+            requests=4,
+            successes=3,
+            failures=1,
+            rate_limits=1,
+            timeouts=0,
+            total_latency=6.0,
+        )
+        edge_engine = SimpleNamespace(
+            _chunk_char_limit=8000,
+            _max_segment_seconds=75.0,
+            _parallel_slots=3,
+            _enable_parallel=False,
+            _network_tuner=SimpleNamespace(stats=network_stats),
+        )
+
+        self.converter._record_effective_runtime_profile(
+            config=config,
+            edge_engine=edge_engine,
+            chapter_parallel_count=2,
+            network_tier="medium",
+            edge_cap=4,
+            output_dir=Path(self.temp_dir),
+            cap_reasons=["ram", "network", "thermal", "explicit_env"],
+        )
+
+        record = json.loads(
+            (Path(self.temp_dir) / "_runtime_metrics.jsonl").read_text(encoding="utf-8")
+        )
+        self.assertEqual(record["event"], "runtime_profile")
+        self.assertEqual(record["run_id"], "run-profile-test")
+        self.assertEqual(record["hardware"]["cpu_physical"], 4)
+        self.assertEqual(record["network"]["requests"], 4)
+        self.assertEqual(record["limits"]["chapter_parallel_effective"], 2)
+        self.assertEqual(record["limits"]["edge"]["chunk_chars"], 8000)
+        self.assertEqual(record["limits"]["edge"]["max_segment_seconds"], 75.0)
+        self.assertEqual(record["thermal_power"]["mode"], "thermal_warm")
+        self.assertEqual(record["cap_reasons"], ["explicit_env", "network", "ram", "thermal"])
+
+        self.converter._record_effective_runtime_profile(
+            config=config,
+            edge_engine=edge_engine,
+            chapter_parallel_count=1,
+            network_tier="slow",
+            edge_cap=1,
+            output_dir=Path(self.temp_dir),
+        )
+        self.assertEqual(
+            len((Path(self.temp_dir) / "_runtime_metrics.jsonl").read_text().splitlines()), 1
+        )
 
     def test_analyze_chapter_stats_flags_prefer_offline(self):
         """Very long chapters should trigger offline recommendation."""
@@ -1815,6 +2085,106 @@ class TestAudioConverter(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(result.output_files), 2)
         self.assertEqual(len(result.errors), 0)
 
+    async def test_stream_attempt_observations_preserve_cli_chunks_and_reject_late_callbacks(self):
+        await self._verify_stream_attempt_observations(retry_first=False)
+
+    async def test_stream_attempt_retry_replaces_cli_observation_identity(self):
+        await self._verify_stream_attempt_observations(retry_first=True)
+
+    async def test_stream_cache_callback_keeps_canonical_resume_bytes(self):
+        await self._verify_stream_attempt_observations(retry_first=False, cached_callback=True)
+
+    async def test_stream_manifest_failure_preserves_previous_publication(self):
+        await self._verify_stream_attempt_observations(retry_first=False, manifest_failure=True)
+
+    async def test_stream_job_manifest_urls_bind_publication_identity(self):
+        await self._verify_stream_attempt_observations(retry_first=True, job_scoped=True)
+
+    async def _verify_stream_attempt_observations(self, *, retry_first, cached_callback=False, manifest_failure=False, job_scoped=False):
+        callbacks = []
+        expected = {0: b"first audio" * 200, 1: b"second audio" * 200}
+        failed_attempts = set()
+        failed_publications = set()
+        test_case = self
+
+        class StreamingEngine(MockTTSEngine):
+            async def synthesize_async(self, text, output_path, chunk_callback=None, resume_chunks_dir=None):
+                output_path = Path(output_path)
+                output_path.parent.mkdir(parents=True, exist_ok=True)
+                output_path.write_bytes(b"final audio" * 200)
+                if chunk_callback:
+                    callbacks.append((chunk_callback, output_path))
+                    for index in (1, 0):
+                        source = (Path(resume_chunks_dir) / f"chunk_{index:04d}.mp3" if cached_callback
+                                  else output_path.with_name(f"source-{index}.mp3"))
+                        source.write_bytes(expected[index])
+                        chunk_callback(index, source, "Private fixture text")
+                        if not cached_callback:
+                            source.unlink()
+                    if manifest_failure:
+                        manifest_path = Path(resume_chunks_dir) / "manifest.json"
+                        previous = manifest_path.read_bytes()
+                        old_files = {path.name: path.read_bytes() for path in Path(resume_chunks_dir).glob("chunk_stream_*")}
+                        source = output_path.with_name("replacement.mp3")
+                        source.write_bytes(b"different replacement audio" * 200)
+                        with patch("src.converter.atomic_write_manifest", side_effect=OSError("manifest failure")):
+                            chunk_callback(0, source, "Replacement must not become visible")
+                        source.unlink()
+                        test_case.assertEqual(manifest_path.read_bytes(), previous)
+                        test_case.assertEqual({path.name: path.read_bytes() for path in Path(resume_chunks_dir).glob("chunk_stream_*")}, old_files)
+                    if retry_first and len(callbacks) == 1:
+                        manifest = json.loads((Path(resume_chunks_dir) / "manifest.json").read_text())
+                        failed_attempts.update(entry["observation"]["attemptId"] for entry in manifest["chunks"])
+                        failed_publications.update(entry.get("id") for entry in manifest["chunks"])
+                        output_path.unlink()
+                        return None
+                return output_path
+
+        self.config.cache_dir = str(Path(self.temp_dir) / "cache")
+        if job_scoped:
+            self.config.job_id = "publication-fixture"
+            self.config.output_dir = self.temp_dir
+        result = await self.converter._convert_chapters_sequential(
+            [Chapter(1, "Chapter", "chapter.html", "Content for a streaming fixture.")],
+            StreamingEngine(), Path(self.temp_dir), self.config,
+        )
+        self.assertTrue(result.success)
+        manifest_root = Path(self.temp_dir) if job_scoped else Path(self.config.cache_dir)
+        manifests = list(manifest_root.rglob("manifest.json"))
+        self.assertEqual(len(manifests), 1)
+        manifest_path = manifests[0]
+        manifest = json.loads(manifest_path.read_text())
+        self.assertEqual([entry["index"] for entry in manifest["chunks"]], [0, 1])
+        attempts = set()
+        publications = set()
+        for entry in manifest["chunks"]:
+            publication_id = entry.get("id")
+            self.assertIsInstance(publication_id, str)
+            self.assertNotEqual(publication_id, str(entry["index"]))
+            publications.add(publication_id)
+            if job_scoped:
+                self.assertEqual(entry["url"], f"/api/streams/publication-fixture/chapters/{manifest['chapterIndex']}/chunks/{publication_id}")
+            self.assertEqual((manifest_path.parent / entry["file"]).read_bytes(), expected[entry["index"]])
+            observation = entry["observation"]
+            self.assertEqual(set(observation), {"version", "attemptId", "segmentReadyElapsedNanoseconds", "artifactPublishedElapsedNanoseconds"})
+            self.assertGreaterEqual(observation["artifactPublishedElapsedNanoseconds"], observation["segmentReadyElapsedNanoseconds"])
+            attempts.add(observation["attemptId"])
+        self.assertEqual(len(attempts), 1)
+        self.assertEqual(len(publications), 2)
+        if cached_callback:
+            canonical = [path for path in manifest_path.parent.glob("chunk_*.mp3")
+                         if re.fullmatch(r"chunk_\d+\.mp3", path.name)]
+            self.assertEqual(len(canonical), 2)
+            self.assertEqual(b"".join(path.read_bytes() for path in sorted(canonical)), expected[0] + expected[1])
+        if retry_first:
+            self.assertTrue(failed_attempts)
+            self.assertTrue(failed_attempts.isdisjoint(attempts))
+            self.assertTrue(failed_publications.isdisjoint(publications))
+        before = manifest_path.read_bytes()
+        for callback, source in callbacks:
+            callback(99, source, "Late obsolete callback")
+        self.assertEqual(manifest_path.read_bytes(), before)
+
     async def test_auto_mode_selects_engine_per_chapter_during_conversion(self):
         """Auto mode should decide engine for each chapter during sequential conversion."""
         chapters = [
@@ -2163,8 +2533,12 @@ class TestAudioConverter(unittest.IsolatedAsyncioTestCase):
         old_threshold = os.environ.get("EDGE_PIPER_THRESHOLD")
         os.environ["EDGE_PIPER_THRESHOLD"] = "999"
         try:
+            test_config = replace(
+                self.config,
+                extra={**(self.config.extra or {}), "max_chapter_attempts": "1"},
+            )
             result = await self.converter._convert_chapters_sequential(
-                chapters, mock_tts_engine, output_dir, self.config
+                chapters, mock_tts_engine, output_dir, test_config
             )
         finally:
             if old_threshold is None:
@@ -2354,6 +2728,24 @@ class TestAudioConverter(unittest.IsolatedAsyncioTestCase):
                 "expected sequential or parallel conversion to be called",
             )
             mock_report.assert_called_once_with(expected_result)
+
+    async def test_convert_rejects_an_empty_parser_result(self):
+        """A parser returning no chapters must fail rather than report success."""
+        empty_reader = SimpleNamespace(
+            title="Empty PDF",
+            author="",
+            file_path=Path(self.temp_dir) / "empty.pdf",
+            get_chapter_structure=lambda preserve_all=True: [],
+        )
+
+        with patch.object(self.converter, "_report_results", new_callable=AsyncMock) as report:
+            result = await self.converter.convert(empty_reader, self.config)
+
+        self.assertFalse(result.success)
+        self.assertEqual(result.total_chapters, 0)
+        self.assertEqual(result.converted_chapters, 0)
+        self.assertEqual(result.errors, ["No readable chapters were extracted from Empty PDF"])
+        report.assert_awaited_once_with(result)
 
     async def test_convert_auto_e2e_edge_dns_failure_falls_back_offline(self):
         """E2E: auto mode should recover from Edge DNS failure by switching offline."""

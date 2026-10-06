@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+./scripts/reader-change-check.sh --cached
+
+if [[ -x .venv/bin/pre-commit ]]; then
+    .venv/bin/pre-commit run --hook-stage pre-commit
+elif command -v pre-commit >/dev/null 2>&1; then
+    pre-commit run --hook-stage pre-commit
+else
+    echo "pre-commit is unavailable; install dependencies with 'mise run install'." >&2
+    exit 1
+fi

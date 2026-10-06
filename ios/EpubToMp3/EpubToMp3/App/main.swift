@@ -1,0 +1,20 @@
+#if os(macOS)
+import AppKit
+
+MainActor.assumeIsolated {
+    if EpubToMp3App.isRunningUnderXCTest() {
+        NSApplication.shared.run()
+    } else {
+        EpubToMp3App.runApp()
+    }
+}
+#else
+import UIKit
+
+UIApplicationMain(
+    CommandLine.argc,
+    CommandLine.unsafeArgv,
+    nil,
+    NSStringFromClass(EpubToMp3App.self)
+)
+#endif

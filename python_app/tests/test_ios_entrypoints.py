@@ -17,11 +17,13 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
 from python_app.src import ios_entrypoints
 from python_app.src import paths as paths_module
+from python_app.src.ebook_reader import Book, Chapter, EpubParser
 from python_app.src.tts import _edge_transport, _piper_transport
 
 FIXTURE_EPUB = Path(__file__).parent / "fixtures" / "epubs" / "test_multifeature.epub"
@@ -44,6 +46,10 @@ _ENV_SNAPSHOT_KEYS = (
     "OUTPUT_DIR",
     "PERSISTENT_ROOT",
     "MAX_CHAPTER_CHARS",
+    "EDGE_FIRST_CHUNK_CHARS",
+    "IOS_EDGE_CHUNK_CHARS",
+    "EDGE_MAX_SEGMENT_SECONDS",
+    "EXPECTED_WPM",
 )
 
 
@@ -442,6 +448,35 @@ def test_convert_epub_without_force_reuses_outputs(tmp_path: Path, _fake_transpo
     assert cached, "expected at least one chapter reused from disk"
 
 
+def test_convert_epub_no_validate_disables_helper_validation(
+    tmp_path: Path, _fake_transport, monkeypatch
+):
+    """The CLI-compatible flag must reach the synthesis helper unchanged."""
+    if not FIXTURE_EPUB.exists():
+        pytest.skip("fixture EPUB missing")
+
+    received_validation_flags: list[bool] = []
+    original = ios_entrypoints.synthesize_chapter_via_transport
+
+    def observe_validation(*args, **kwargs):
+        received_validation_flags.append(kwargs["validate_audio"])
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(ios_entrypoints, "synthesize_chapter_via_transport", observe_validation)
+
+    result = ios_entrypoints.convert_epub(
+        epub_path=str(FIXTURE_EPUB),
+        output_dir=str(tmp_path / "out"),
+        cache_dir=str(tmp_path / "cache"),
+        chapter=1,
+        no_validate=True,
+        validate_audio=False,
+    )
+
+    assert result["outputs"]
+    assert received_validation_flags == [False]
+
+
 # ---------------------------------------------------------------------------
 # Missing input
 # ---------------------------------------------------------------------------
@@ -641,6 +676,67 @@ def test_resolve_auto_voice_empty():
 
 
 # ---------------------------------------------------------------------------
+# Parser-prepared speech payload
+# ---------------------------------------------------------------------------
+
+
+def test_prepare_audible_speech_text_matches_cli_populated_speech_branch():
+    """Residual formatting markers use the CLI's no-segment branch."""
+    from python_app.src.text_formatting import TextFormattingProcessor
+
+    speech_text = "Chapter one...\n\n[[fmt:italic]]An emphasized phrase[[/fmt]]."
+    expected = TextFormattingProcessor().to_audible_text(speech_text, None)
+
+    actual = ios_entrypoints.prepare_audible_speech_text(speech_text)
+
+    assert actual == expected
+    assert "[[fmt:" not in actual
+    assert "em itálico" in actual
+
+
+def test_prepare_audible_speech_text_preserves_structural_cues():
+    """Already-prepared title pauses survive the final Markdown cleanup."""
+    speech_text = "Chapter one...\n\nNarration with _inline markdown_."
+
+    actual = ios_entrypoints.prepare_audible_speech_text(speech_text)
+
+    assert actual == "Chapter one...\n\nNarration with inline markdown."
+
+
+def test_convert_epub_sends_canonical_speech_text_to_transport(
+    tmp_path: Path, _fake_transport, monkeypatch
+):
+    """In-process conversion must not synthesize the reader-facing raw text."""
+    source = tmp_path / "book.epub"
+    source.write_text("placeholder")
+    speech_text = "Chapter one...\n\nNarration with _inline markdown_."
+    chapter = Chapter(
+        index=1,
+        name="Chapter one",
+        source_path="ch1.xhtml",
+        text="This reader text must never reach Edge.",
+        speech_text=speech_text,
+    )
+    monkeypatch.setattr(
+        EpubParser,
+        "parse",
+        lambda _parser: Book("Book", "Author", [chapter], language="en"),
+    )
+
+    result = ios_entrypoints.convert_epub(
+        epub_path=str(source),
+        output_dir=str(tmp_path / "out"),
+        cache_dir=str(tmp_path / "cache"),
+        voice="en-US-AriaNeural",
+    )
+
+    assert result["errors"] == []
+    assert [text for text, _voice in _fake_transport] == [
+        ios_entrypoints.prepare_audible_speech_text(speech_text)
+    ]
+
+
+# ---------------------------------------------------------------------------
 # synthesize_chapter_streaming with voice="auto"
 # ---------------------------------------------------------------------------
 
@@ -711,8 +807,38 @@ class TestPrepareChunks:
         # First chunk should be ≤ first_chunk_chars default (500) + slack
         assert len(result["chunks"][0]) <= 600
 
-    def test_non_streaming_mode_uses_full_chunk_size(self):
+    def test_non_streaming_mode_uses_full_chunk_size(self, monkeypatch):
+        # Chunk preparation is a pure default-policy test. Do not inherit
+        # process-level tuning or a prior test's iOS streaming overrides.
+        for key in (
+            "EDGE_FIRST_CHUNK_CHARS",
+            "IOS_EDGE_CHUNK_CHARS",
+            "EDGE_MAX_SEGMENT_SECONDS",
+            "EXPECTED_WPM",
+        ):
+            monkeypatch.delenv(key, raising=False)
         text = "A sentence. " * 400  # ~5200 chars
         result = ios_entrypoints.prepare_chunks(text, voice="en-US-AriaNeural", streaming=False)
-        # At 12K chunk size, 5200 chars fits in one chunk
-        assert len(result["chunks"]) == 1
+        # The char limit is not the only CLI bound: 85s at EXPECTED_WPM=200
+        # also splits long prose into duration-safe segments.
+        assert len(result["chunks"]) >= 2
+        assert all(len(chunk) <= 12_000 for chunk in result["chunks"])
+
+
+def test_audio_completeness_matches_cli_duration_threshold(tmp_path, monkeypatch):
+    """The iOS adapter uses the CLI WPM/coverage rule for long chapters."""
+    import mutagen.mp3
+
+    output = tmp_path / "chapter.mp3"
+    output.write_bytes(b"synthetic")
+    monkeypatch.setenv("EXPECTED_WPM", "200")
+    monkeypatch.setattr(
+        mutagen.mp3,
+        "MP3",
+        lambda _path: SimpleNamespace(info=SimpleNamespace(length=120.0)),
+    )
+
+    complete, coverage = ios_entrypoints._validate_audio_completeness(output, 2000)
+
+    assert complete is True
+    assert coverage == 100.0

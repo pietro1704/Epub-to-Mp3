@@ -1,5 +1,8 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:path_provider/path_provider.dart';
 
 import '../l10n/app_localizations.dart';
 import '../models/app_settings.dart';
@@ -18,8 +21,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   @override
   void initState() {
     super.initState();
-    _urlCtl =
-        TextEditingController(text: ref.read(settingsProvider).backendURL);
+    _urlCtl = TextEditingController(
+      text: ref.read(settingsProvider).backendURL,
+    );
   }
 
   @override
@@ -53,21 +57,24 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             ),
           ),
           _FooterText(t.audioEngineFooter),
+          const _TtsModelManagerCard(),
           const SizedBox(height: 20),
 
           // ── Remote Backend ──
           _SectionHeader(t.remoteBackendSection),
           Card(
             child: Padding(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Row(
                     children: [
-                      Icon(Icons.dns_outlined,
-                          size: 20, color: cs.onSurfaceVariant),
+                      Icon(
+                        Icons.dns_outlined,
+                        size: 20,
+                        color: cs.onSurfaceVariant,
+                      ),
                       const SizedBox(width: 12),
                       Expanded(
                         child: TextField(
@@ -88,12 +95,16 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                       padding: const EdgeInsets.only(left: 32, bottom: 4),
                       child: Row(
                         children: [
-                          Icon(Icons.warning_amber_rounded,
-                              size: 14, color: cs.error),
+                          Icon(
+                            Icons.warning_amber_rounded,
+                            size: 14,
+                            color: cs.error,
+                          ),
                           const SizedBox(width: 4),
-                          Text(t.invalidUrl,
-                              style: tt.bodySmall
-                                  ?.copyWith(color: cs.error)),
+                          Text(
+                            t.backendUnavailable,
+                            style: tt.bodySmall?.copyWith(color: cs.error),
+                          ),
                         ],
                       ),
                     ),
@@ -120,21 +131,17 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                         icon: const Icon(Icons.remove_circle_outline),
                         onPressed: settings.readerFontSize > 0
                             ? () => notifier.setReaderFontSize(
-                                settings.readerFontSize - 1)
+                                settings.readerFontSize - 1,
+                              )
                             : null,
                       ),
                       SizedBox(
                         width: 48,
                         child: Text(
-                          t.nOfSteps(
-                            settings.readerFontSize + 1,
-                            5,
-                          ),
+                          t.nOfSteps(settings.readerFontSize + 1, 5),
                           textAlign: TextAlign.center,
                           style: tt.bodyMedium?.copyWith(
-                            fontFeatures: [
-                              const FontFeature.tabularFigures()
-                            ],
+                            fontFeatures: [const FontFeature.tabularFigures()],
                           ),
                         ),
                       ),
@@ -142,7 +149,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                         icon: const Icon(Icons.add_circle_outline),
                         onPressed: settings.readerFontSize < 4
                             ? () => notifier.setReaderFontSize(
-                                settings.readerFontSize + 1)
+                                settings.readerFontSize + 1,
+                              )
                             : null,
                       ),
                     ],
@@ -152,8 +160,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
                 // Font family
                 ListTile(
-                  leading:
-                      Icon(Icons.font_download, color: cs.onSurfaceVariant),
+                  leading: Icon(
+                    Icons.font_download,
+                    color: cs.onSurfaceVariant,
+                  ),
                   title: Text(t.fontLabel),
                   trailing: DropdownButton<ReaderFontFamily>(
                     value: settings.readerFontFamily,
@@ -162,10 +172,12 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                       if (v != null) notifier.setReaderFontFamily(v);
                     },
                     items: ReaderFontFamily.values
-                        .map((f) => DropdownMenuItem(
-                              value: f,
-                              child: Text(f.displayName),
-                            ))
+                        .map(
+                          (f) => DropdownMenuItem(
+                            value: f,
+                            child: Text(f.displayName),
+                          ),
+                        )
                         .toList(),
                   ),
                 ),
@@ -173,8 +185,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
                 // Theme
                 ListTile(
-                  leading:
-                      Icon(Icons.palette_outlined, color: cs.onSurfaceVariant),
+                  leading: Icon(
+                    Icons.palette_outlined,
+                    color: cs.onSurfaceVariant,
+                  ),
                   title: Text(t.themeLabel),
                   trailing: DropdownButton<ReaderTheme>(
                     value: settings.readerTheme,
@@ -184,10 +198,12 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     },
                     items: ReaderTheme.values
                         .where((t) => t != ReaderTheme.custom)
-                        .map((t) => DropdownMenuItem(
-                              value: t,
-                              child: Text(t.displayName),
-                            ))
+                        .map(
+                          (t) => DropdownMenuItem(
+                            value: t,
+                            child: Text(t.displayName),
+                          ),
+                        )
                         .toList(),
                   ),
                 ),
@@ -195,15 +211,19 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
                 // Layout
                 ListTile(
-                  leading: Icon(Icons.view_agenda_outlined,
-                      color: cs.onSurfaceVariant),
+                  leading: Icon(
+                    Icons.view_agenda_outlined,
+                    color: cs.onSurfaceVariant,
+                  ),
                   title: Text(t.layoutLabel),
                   trailing: SegmentedButton<ReaderLayout>(
                     segments: ReaderLayout.values
-                        .map((l) => ButtonSegment(
-                              value: l,
-                              label: Text(l.displayName),
-                            ))
+                        .map(
+                          (l) => ButtonSegment(
+                            value: l,
+                            label: Text(l.displayName),
+                          ),
+                        )
                         .toList(),
                     selected: {settings.readerLayout},
                     onSelectionChanged: (s) =>
@@ -219,8 +239,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
                 // Line spacing stepper
                 ListTile(
-                  leading: Icon(Icons.format_line_spacing,
-                      color: cs.onSurfaceVariant),
+                  leading: Icon(
+                    Icons.format_line_spacing,
+                    color: cs.onSurfaceVariant,
+                  ),
                   title: Text(t.lineSpacingLabel),
                   trailing: Row(
                     mainAxisSize: MainAxisSize.min,
@@ -229,7 +251,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                         icon: const Icon(Icons.remove_circle_outline),
                         onPressed: settings.readerLineSpacing > 0
                             ? () => notifier.setReaderLineSpacing(
-                                settings.readerLineSpacing - 2)
+                                settings.readerLineSpacing - 2,
+                              )
                             : null,
                       ),
                       SizedBox(
@@ -238,9 +261,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                           '${settings.readerLineSpacing.toInt()} pt',
                           textAlign: TextAlign.center,
                           style: tt.bodyMedium?.copyWith(
-                            fontFeatures: [
-                              const FontFeature.tabularFigures()
-                            ],
+                            fontFeatures: [const FontFeature.tabularFigures()],
                           ),
                         ),
                       ),
@@ -248,7 +269,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                         icon: const Icon(Icons.add_circle_outline),
                         onPressed: settings.readerLineSpacing < 16
                             ? () => notifier.setReaderLineSpacing(
-                                settings.readerLineSpacing + 2)
+                                settings.readerLineSpacing + 2,
+                              )
                             : null,
                       ),
                     ],
@@ -258,8 +280,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
                 // Margin stepper
                 ListTile(
-                  leading: Icon(Icons.format_indent_increase,
-                      color: cs.onSurfaceVariant),
+                  leading: Icon(
+                    Icons.format_indent_increase,
+                    color: cs.onSurfaceVariant,
+                  ),
                   title: Text(t.marginLabel),
                   trailing: Row(
                     mainAxisSize: MainAxisSize.min,
@@ -268,7 +292,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                         icon: const Icon(Icons.remove_circle_outline),
                         onPressed: settings.readerMargin > 16
                             ? () => notifier.setReaderMargin(
-                                settings.readerMargin - 4)
+                                settings.readerMargin - 4,
+                              )
                             : null,
                       ),
                       SizedBox(
@@ -277,9 +302,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                           '${settings.readerMargin.toInt()} pt',
                           textAlign: TextAlign.center,
                           style: tt.bodyMedium?.copyWith(
-                            fontFeatures: [
-                              const FontFeature.tabularFigures()
-                            ],
+                            fontFeatures: [const FontFeature.tabularFigures()],
                           ),
                         ),
                       ),
@@ -287,7 +310,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                         icon: const Icon(Icons.add_circle_outline),
                         onPressed: settings.readerMargin < 80
                             ? () => notifier.setReaderMargin(
-                                settings.readerMargin + 4)
+                                settings.readerMargin + 4,
+                              )
                             : null,
                       ),
                     ],
@@ -297,11 +321,12 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
                 // Auto-scroll
                 SwitchListTile(
-                  secondary:
-                      Icon(Icons.vertical_align_bottom, color: cs.onSurfaceVariant),
+                  secondary: Icon(
+                    Icons.vertical_align_bottom,
+                    color: cs.onSurfaceVariant,
+                  ),
                   title: Text(t.autoScrollLabel),
-                  subtitle:
-                      Text(t.autoScrollDesc, style: tt.bodySmall),
+                  subtitle: Text(t.autoScrollDesc, style: tt.bodySmall),
                   value: settings.readerAutoScroll,
                   onChanged: (v) => notifier.setReaderAutoScroll(v),
                 ),
@@ -336,8 +361,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 ),
                 const Divider(height: 1, indent: 56),
                 ListTile(
-                  leading: Icon(Icons.timer_outlined,
-                      color: cs.onSurfaceVariant),
+                  leading: Icon(
+                    Icons.timer_outlined,
+                    color: cs.onSurfaceVariant,
+                  ),
                   title: Text(t.wpmLabel),
                   subtitle: Slider(
                     value: settings.wpm.toDouble(),
@@ -365,17 +392,16 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             child: Column(
               children: [
                 ListTile(
-                  leading: Icon(Icons.info_outline,
-                      color: cs.onSurfaceVariant),
+                  leading: Icon(Icons.info_outline, color: cs.onSurfaceVariant),
                   title: Text(t.platformLabel),
-                  trailing: Text(t.platformAndroid,
-                      style: tt.bodyMedium
-                          ?.copyWith(color: cs.onSurfaceVariant)),
+                  trailing: Text(
+                    t.platformAndroid,
+                    style: tt.bodyMedium?.copyWith(color: cs.onSurfaceVariant),
+                  ),
                 ),
                 const Divider(height: 1, indent: 56),
                 ListTile(
-                  leading: Icon(Icons.open_in_new,
-                      color: cs.onSurfaceVariant),
+                  leading: Icon(Icons.open_in_new, color: cs.onSurfaceVariant),
                   title: Text(t.projectOnGithub),
                   trailing: const Icon(Icons.chevron_right),
                   onTap: () {
@@ -392,6 +418,151 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   }
 }
 
+class _TtsModelManagerCard extends ConsumerStatefulWidget {
+  const _TtsModelManagerCard();
+
+  @override
+  ConsumerState<_TtsModelManagerCard> createState() =>
+      _TtsModelManagerCardState();
+}
+
+class _TtsModelManagerCardState extends ConsumerState<_TtsModelManagerCard> {
+  Future<List<Map<String, dynamic>>>? _catalog;
+  Map<String, String> _installedMetadata = const {};
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _catalog ??= _loadCatalog();
+  }
+
+  Future<List<Map<String, dynamic>>> _loadCatalog() async {
+    final raw = await ref.read(embeddedConverterProvider).ttsModels();
+    final decoded = jsonDecode(raw);
+    if (decoded is! List) {
+      throw const FormatException('Invalid TTS model catalog');
+    }
+    final models = decoded
+        .whereType<Map>()
+        .map(Map<String, dynamic>.from)
+        .toList();
+    final root = await _modelRoot();
+    final metadata = <String, String>{};
+    for (final model in models) {
+      final id = model['id'];
+      if (id is! String || id.isEmpty) continue;
+      final value = await ref
+          .read(embeddedConverterProvider)
+          .ttsModelMetadata(modelId: id, root: root);
+      if (value != null) metadata[id] = value;
+    }
+    if (mounted) _installedMetadata = metadata;
+    return models;
+  }
+
+  Future<String> _modelRoot() async {
+    final directory = await getApplicationSupportDirectory();
+    return '${directory.path}/tts-models';
+  }
+
+  Future<void> _install(String modelId) async {
+    try {
+      await ref
+          .read(embeddedConverterProvider)
+          .installTtsModelFromCatalog(
+            modelId: modelId,
+            root: await _modelRoot(),
+          );
+      if (mounted) setState(() => _catalog = _loadCatalog());
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(error.toString())));
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final t = AppLocalizations.of(context)!;
+    return Card(
+      child: FutureBuilder<List<Map<String, dynamic>>>(
+        future: _catalog,
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const ListTile(leading: CircularProgressIndicator());
+          }
+          if (snapshot.hasError) {
+            return ListTile(
+              leading: const Icon(Icons.memory_outlined),
+              title: Text(t.downloadAll),
+              subtitle: Text(snapshot.error.toString()),
+              trailing: IconButton(
+                icon: const Icon(Icons.refresh),
+                tooltip: t.refresh,
+                onPressed: () => setState(() => _catalog = _loadCatalog()),
+              ),
+            );
+          }
+          final models = snapshot.data ?? const [];
+          return Column(
+            children: [
+              ListTile(
+                leading: const Icon(Icons.memory_outlined),
+                title: Text(t.downloadAll),
+                subtitle: Text(t.useBuiltInEngineDesc),
+                trailing: IconButton(
+                  icon: const Icon(Icons.refresh),
+                  tooltip: t.refresh,
+                  onPressed: () => setState(() => _catalog = _loadCatalog()),
+                ),
+              ),
+              for (final model in models)
+                ListTile(
+                  title: Text('${model['id'] ?? ''}'),
+                  subtitle: Text(
+                    _installedMetadata.containsKey(model['id'])
+                        ? t.downloadComplete
+                        : '${model['languages'] ?? ''}',
+                  ),
+                  trailing: IconButton(
+                    icon: Icon(
+                      _installedMetadata.containsKey(model['id'])
+                          ? Icons.delete_outline
+                          : Icons.download_outlined,
+                    ),
+                    tooltip: _installedMetadata.containsKey(model['id'])
+                        ? t.remove
+                        : t.downloadAll,
+                    onPressed: () => _installedMetadata.containsKey(model['id'])
+                        ? _remove('${model['id']}')
+                        : _install('${model['id']}'),
+                  ),
+                ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  Future<void> _remove(String modelId) async {
+    try {
+      await ref
+          .read(embeddedConverterProvider)
+          .removeTtsModel(modelId: modelId, root: await _modelRoot());
+      if (mounted) setState(() => _catalog = _loadCatalog());
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(error.toString())));
+      }
+    }
+  }
+}
+
 class _SectionHeader extends StatelessWidget {
   const _SectionHeader(this.text);
   final String text;
@@ -405,9 +576,9 @@ class _SectionHeader extends StatelessWidget {
         child: Text(
           text,
           style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                color: Theme.of(context).colorScheme.primary,
-                fontWeight: FontWeight.w600,
-              ),
+            color: Theme.of(context).colorScheme.primary,
+            fontWeight: FontWeight.w600,
+          ),
         ),
       ),
     );
@@ -425,8 +596,8 @@ class _FooterText extends StatelessWidget {
       child: Text(
         text,
         style: Theme.of(context).textTheme.bodySmall?.copyWith(
-              color: Theme.of(context).colorScheme.onSurfaceVariant,
-            ),
+          color: Theme.of(context).colorScheme.onSurfaceVariant,
+        ),
       ),
     );
   }

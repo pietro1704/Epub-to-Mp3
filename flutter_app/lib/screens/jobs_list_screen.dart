@@ -3,7 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../l10n/app_localizations.dart';
 import '../state/providers.dart';
-import 'player_reader_screen.dart';
+import 'job_detail_screen.dart';
 import 'settings_screen.dart';
 
 class JobsListScreen extends ConsumerWidget {
@@ -19,9 +19,9 @@ class JobsListScreen extends ConsumerWidget {
         actions: [
           IconButton(
             icon: const Icon(Icons.settings),
-            onPressed: () => Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const SettingsScreen()),
-            ),
+            onPressed: () => Navigator.of(
+              context,
+            ).push(MaterialPageRoute(builder: (_) => const SettingsScreen())),
           ),
         ],
       ),
@@ -30,15 +30,11 @@ class JobsListScreen extends ConsumerWidget {
         child: sessions.when(
           loading: () => const Center(child: CircularProgressIndicator()),
           error: (e, _) => ListView(
-            children: [
-              ListTile(title: Text(t.errorWithMessage('$e'))),
-            ],
+            children: [ListTile(title: Text(t.errorWithMessage('$e')))],
           ),
           data: (list) {
             if (list.isEmpty) {
-              return ListView(
-                children: [ListTile(title: Text(t.noJobs))],
-              );
+              return ListView(children: [ListTile(title: Text(t.noJobs))]);
             }
             return ListView.separated(
               itemCount: list.length,
@@ -49,12 +45,14 @@ class JobsListScreen extends ConsumerWidget {
                 return ListTile(
                   title: Text(s.bookTitle),
                   subtitle: Text(
-                      '${s.engine ?? '-'} • ${s.outcome ?? '-'} • ${s.timestamp}'),
+                    '${s.engine ?? '-'} • ${s.outcome ?? '-'} • ${s.timestamp}',
+                  ),
                   onTap: () {
-                    // The session log doesn't expose jobId — use timestamp slug.
-                    Navigator.of(context).push(MaterialPageRoute(
-                      builder: (_) => PlayerReaderScreen(jobId: s.id),
-                    ));
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => JobDetailScreen(session: s),
+                      ),
+                    );
                   },
                 );
               },

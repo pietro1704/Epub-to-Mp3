@@ -58,6 +58,20 @@ def _fallback_engine_override() -> Optional[str]:
     return None
 
 
+def _piper_model_available(language: Optional[str]) -> bool:
+    """Return whether a compatible Piper model is already installed."""
+    from python_app import server as _srv
+
+    finder = getattr(_srv.tts_factory, "_find_piper_model", None)
+    if not callable(finder):
+        return False
+    try:
+        finder(preferred_code=language)
+    except (FileNotFoundError, OSError, ValueError):
+        return False
+    return True
+
+
 def degrade_edge_chunk_chars(
     current: Optional[int],
     *,
@@ -271,7 +285,11 @@ def _build_engine_chain(config: ConversionConfig) -> list[ConversionConfig]:
         if override is None and not _engine_chain_fallback_enabled(config):
             return chain
         fallback_candidates = []
-        if _srv._has_piper_support() and not _piper_fallback_disabled():
+        if (
+            _srv._has_piper_support()
+            and not _piper_fallback_disabled()
+            and _piper_model_available(config.primary_language)
+        ):
             fallback_candidates.append("piper")
         if override and override in fallback_candidates:
             fallback_candidates = [override]

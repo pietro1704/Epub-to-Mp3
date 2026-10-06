@@ -18,14 +18,15 @@
 import XCTest
 @testable import EpubToMp3
 
-@MainActor
 final class ChapterCacheManagerTests: XCTestCase {
 
     // MARK: - Helpers
 
-    private var tempDirs: [URL] = []
+    // XCTest invokes lifecycle hooks outside the MainActor but serially for a
+    // test case; this fixture bridges that documented boundary only.
+    nonisolated(unsafe) private var tempDirs: [URL] = []
 
-    override func tearDown() async throws {
+    nonisolated override func tearDown() async throws {
         for dir in tempDirs {
             try? FileManager.default.removeItem(at: dir)
         }
@@ -35,6 +36,7 @@ final class ChapterCacheManagerTests: XCTestCase {
 
     /// Create an isolated cache root and a matching `ChapterCacheManager`.
     /// The manager uses the Caches directory with `epub2mp3-tts/<bookId>`.
+    @MainActor
     private func makeManager(
         chapters: [EbookFulltext.Chapter],
         bookId: String? = nil
@@ -62,6 +64,7 @@ final class ChapterCacheManagerTests: XCTestCase {
 
     // MARK: - Initial state
 
+    @MainActor
     func testInitialStatusIsNotStartedForAllChapters() {
         let chapters = (1...3).map { makeChapter(index: $0) }
         let (mgr, _, _) = makeManager(chapters: chapters)
@@ -72,6 +75,7 @@ final class ChapterCacheManagerTests: XCTestCase {
         }
     }
 
+    @MainActor
     func testGeneratingIndicesIsEmptyOnInit() {
         let (mgr, _, _) = makeManager(chapters: [makeChapter(index: 1)])
 
@@ -80,6 +84,7 @@ final class ChapterCacheManagerTests: XCTestCase {
 
     // MARK: - refreshCachedIndices
 
+    @MainActor
     func testRefreshDetectsFakeMP3OnDisk() throws {
         let chapters = [makeChapter(index: 1)]
         let (mgr, _, cacheRoot) = makeManager(chapters: chapters)
@@ -97,6 +102,22 @@ final class ChapterCacheManagerTests: XCTestCase {
         XCTAssertEqual(mgr.status(for: 0), .cached)
     }
 
+    @MainActor
+    func testRefreshDetectsSparseBackendIndexUsingZeroBasedCacheIndex() throws {
+        let chapters = [makeChapter(index: 1), makeChapter(index: 3), makeChapter(index: 5)]
+        let (mgr, _, cacheRoot) = makeManager(chapters: chapters)
+
+        try FileManager.default.createDirectory(at: cacheRoot, withIntermediateDirectories: true)
+        try Data(repeating: 0xFF, count: 200)
+            .write(to: cacheRoot.appendingPathComponent("chapter_2.mp3"))
+
+        mgr.refreshCachedIndices()
+
+        XCTAssertEqual(mgr.cachedIndices, [2],
+                       "backend index 3 must use EPUB zero-based cache index 2")
+    }
+
+    @MainActor
     func testRefreshIgnoresTinyFiles() throws {
         let chapters = [makeChapter(index: 1)]
         let (mgr, _, cacheRoot) = makeManager(chapters: chapters)
@@ -113,6 +134,7 @@ final class ChapterCacheManagerTests: XCTestCase {
         XCTAssertEqual(mgr.status(for: 0), .notStarted)
     }
 
+    @MainActor
     func testRefreshDoesNotMarkAbsentChaptersAsCached() {
         let chapters = (1...5).map { makeChapter(index: $0) }
         let (mgr, _, _) = makeManager(chapters: chapters)
@@ -126,6 +148,7 @@ final class ChapterCacheManagerTests: XCTestCase {
 
     // MARK: - Status transitions
 
+    @MainActor
     func testStatusReturnsCachedAfterRefreshFindsFile() throws {
         let chapters = [makeChapter(index: 2)]
         let (mgr, _, cacheRoot) = makeManager(chapters: chapters)
@@ -139,6 +162,7 @@ final class ChapterCacheManagerTests: XCTestCase {
         XCTAssertEqual(mgr.status(for: 1), .cached)
     }
 
+    @MainActor
     func testStatusNotStartedForChapterWithNoFile() {
         let (mgr, _, _) = makeManager(chapters: [makeChapter(index: 3)])
         XCTAssertEqual(mgr.status(for: 2), .notStarted)
@@ -146,6 +170,7 @@ final class ChapterCacheManagerTests: XCTestCase {
 
     // MARK: - cancelAll
 
+    @MainActor
     func testCancelAllClearsGeneratingIndices() {
         let (mgr, _, _) = makeManager(chapters: [makeChapter(index: 1)])
 
@@ -162,17 +187,57 @@ final class ChapterCacheManagerTests: XCTestCase {
             "cancelAll must clear generatingIndices immediately")
     }
 
+    @MainActor
     func testCancelAllIsIdempotent() {
         let (mgr, _, _) = makeManager(chapters: [makeChapter(index: 1)])
-
         mgr.cancelAll()
-        mgr.cancelAll()   // must not crash or throw
+        mgr.cancelAll()
 
         XCTAssertTrue(mgr.generatingIndices.isEmpty)
     }
 
+    @MainActor
+    func testClearNotificationHopsToMainActor() async throws {
+        let chapters = [makeChapter(index: 1)]
+        let (mgr, _, cacheRoot) = makeManager(chapters: chapters)
+        try FileManager.default.createDirectory(at: cacheRoot, withIntermediateDirectories: true)
+        try Data(repeating: 0xAB, count: 300)
+            .write(to: cacheRoot.appendingPathComponent("chapter_0.mp3"))
+        mgr.refreshCachedIndices()
+        XCTAssertEqual(mgr.status(for: 0), .cached)
+
+        NotificationCenter.default.post(name: ChapterCacheManager.clearAllNotification, object: nil)
+        await Task.yield()
+
+        XCTAssertEqual(mgr.status(for: 0), .notStarted)
+    }
+
+    @MainActor
+    func testClearNotificationObserverSchedulesMainActorCleanup() throws {
+        let sourceURL = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("EpubToMp3/Features/Offline/Services/ChapterCacheManager.swift")
+        let source = try readSourceFileIfAvailable(at: sourceURL)
+
+        XCTAssertTrue(source.contains("guard let manager = self else { return }"))
+        XCTAssertTrue(source.contains("self.clearObserver = nil"))
+        XCTAssertTrue(source.contains("Task { @MainActor in"))
+        XCTAssertTrue(source.contains("manager.clearAll()"))
+    }
+
+    @MainActor
+    func testClearAllCancelsAndRemovesCachedIndices() {
+        let (mgr, _, _) = makeManager(chapters: [makeChapter(index: 1)])
+        mgr.downloadAll()
+        mgr.clearAll()
+        XCTAssertTrue(mgr.generatingIndices.isEmpty)
+        XCTAssertTrue(mgr.cachedIndices.isEmpty)
+    }
+
     // MARK: - prefetchNext / downloadAll guard against empty text
 
+    @MainActor
     func testPrefetchNextSkipsChaptersWithTooShortText() {
         // Chapters with < 10 chars are skipped by the guard in synthesizeChapter.
         let chapters = [
@@ -190,6 +255,7 @@ final class ChapterCacheManagerTests: XCTestCase {
             "Chapters < 10 chars must not enter generatingIndices")
     }
 
+    @MainActor
     func testDownloadAllSkipsCachedChapters() throws {
         let chapters = (1...3).map { makeChapter(index: $0, text: "Long enough text here.") }
         let (mgr, _, cacheRoot) = makeManager(chapters: chapters)
@@ -208,8 +274,21 @@ final class ChapterCacheManagerTests: XCTestCase {
             "Chapter 0 is already cached — must not be re-enqueued")
     }
 
+    @MainActor
+    func testDownloadChapterEnqueuesOnlyRequestedUncachedChapter() {
+        let chapters = (1...3).map { makeChapter(index: $0, text: "Long enough text here.") }
+        let (mgr, _, _) = makeManager(chapters: chapters)
+
+        mgr.downloadChapter(1)
+        defer { mgr.cancelAll() }
+
+        XCTAssertEqual(mgr.generatingIndices, [1],
+                       "downloadChapter must enqueue only the requested zero-based chapter index.")
+    }
+
     // MARK: - Multiple chapters refreshed correctly
 
+    @MainActor
     func testRefreshHandlesMultipleCachedChapters() throws {
         let chapters = (1...5).map { makeChapter(index: $0) }
         let (mgr, _, cacheRoot) = makeManager(chapters: chapters)

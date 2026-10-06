@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_app/l10n/app_localizations.dart';
+import 'package:flutter_app/l10n/app_localizations_en.dart';
+import 'package:flutter_app/l10n/app_localizations_es.dart';
+import 'package:flutter_app/l10n/app_localizations_pt.dart';
 import 'package:flutter_app/screens/root_screen.dart';
 import 'package:flutter_app/state/providers.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -24,17 +27,25 @@ Widget _wrap(SharedPreferences prefs) {
 
 void main() {
   group('RootScreen', () {
-    testWidgets('has 3 navigation destinations', (t) async {
+    test('provides a localized label for the Convert destination in every locale', () {
+      expect(AppLocalizationsEn().convertTitle, 'Convert');
+      expect(AppLocalizationsPt().convertTitle, 'Converter');
+      expect(AppLocalizationsEs().convertTitle, 'Convertir');
+    });
+
+    testWidgets('has Reader, Library, Convert, Jobs, and Settings destinations', (t) async {
       final prefs = await _mockPrefs();
       await t.pumpWidget(_wrap(prefs));
       await t.pumpAndSettle();
 
-      expect(find.byType(NavigationDestination), findsNWidgets(3));
+      expect(find.byType(NavigationDestination), findsNWidgets(5));
       // "Reader" appears both in the nav bar label and the AppBar title,
       // so we check at least one. Same for "Library" vs library tab content.
       expect(find.text('Reader'), findsWidgets);
       expect(find.text('Library'), findsWidgets);
       expect(find.text('Settings'), findsWidgets);
+      expect(find.text('Convert'), findsWidgets);
+      expect(find.text('Jobs'), findsWidgets);
     });
 
     testWidgets('reader tab is shown by default (index 0)', (t) async {
@@ -44,6 +55,32 @@ void main() {
 
       // Reader tab empty state text
       expect(find.text('Pick a book to read'), findsOneWidget);
+    });
+
+    testWidgets('convert destination is localized in every supported locale', (t) async {
+      const expectedTitles = {
+        'en': 'Convert',
+        'es': 'Convertir',
+        'pt': 'Converter',
+      };
+
+      for (final entry in expectedTitles.entries) {
+        final prefs = await _mockPrefs();
+        await t.pumpWidget(
+          ProviderScope(
+            overrides: [sharedPrefsProvider.overrideWithValue(prefs)],
+            child: MaterialApp(
+              locale: Locale(entry.key),
+              localizationsDelegates: AppLocalizations.localizationsDelegates,
+              supportedLocales: AppLocalizations.supportedLocales,
+              home: const RootScreen(),
+            ),
+          ),
+        );
+        await t.pumpAndSettle();
+
+        expect(find.text(entry.value), findsWidgets);
+      }
     });
 
     testWidgets('tapping Library navigates to library tab', (t) async {

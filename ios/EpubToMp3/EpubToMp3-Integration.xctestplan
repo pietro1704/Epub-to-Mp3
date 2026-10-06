@@ -1,0 +1,34 @@
+{
+  "configurations" : [
+    {
+      "id" : "A1B2C3D4-0003-4A1E-AAE4-642A4DE056C3",
+      "name" : "Configuration 1",
+      "options" : {
+
+      }
+    }
+  ],
+  "defaultOptions" : {
+    "codeCoverage" : false,
+    "performanceAntipatternCheckerEnabled" : true,
+    "targetForVariableExpansion" : {
+      "containerPath" : "container:EpubToMp3.xcodeproj",
+      "identifier" : "CD8ED7F73C55278E3E34A04F",
+      "name" : "EpubToMp3"
+    }
+  },
+  "testTargets" : [
+    {
+      "parallelizable" : false,
+      "selectedTests" : [
+        "IntegrationTests"
+      ],
+      "target" : {
+        "containerPath" : "container:EpubToMp3.xcodeproj",
+        "identifier" : "7D3059A2E88F7FFB87350B78",
+        "name" : "EpubToMp3Tests"
+      }
+    }
+  ],
+  "version" : 1
+}

@@ -28,7 +28,7 @@ Run these in parallel when invoked:
 | CRITICAL | RCE, exposed secret in history, supply-chain compromise | Stop everything; alert user immediately; do not auto-fix without confirmation |
 | HIGH | Known-exploitable CVE in direct dep, CodeQL high, exposed token | Auto-patch + commit + push if scope ≤ 50 lines and a test exists/can be added |
 | MEDIUM | CodeQL medium, transitive CVE with patch available | Bump pin; commit + push |
-| LOW | Stylistic CodeQL, deprecated API warning | Surface only; defer to docs-curator if cosmetic |
+| LOW | Stylistic CodeQL, deprecated API warning | Surface only; defer to documentation-engineer if cosmetic |
 
 ## Auto-fix recipes (proven)
 

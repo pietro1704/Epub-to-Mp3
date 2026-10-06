@@ -38,15 +38,15 @@ platform family:
 
 | Surface | Platforms | Where | Status |
 |---|---|---|---|
-| **SwiftUI native** | macOS · iPadOS · iOS | `ios/EpubToMp3/` | **Official Apple client** — Library-first reader, embedded Python sidecar on macOS, streaming TTS chapter-by-chapter |
+| **SwiftUI native** | macOS · iPadOS · iOS | `ios/EpubToMp3/` | **Official Apple client** — Library-first reader, embedded Rust server on macOS, streaming TTS chapter-by-chapter |
 | **Flutter native** | Linux · Windows · Android | `flutter_app/` | **Official non-Apple client** — single codebase, calls the same FastAPI backend. macOS/iOS are handled by SwiftUI, not Flutter. |
 
-### SwiftUI app (Apple)
+### UIKit/AppKit app (Apple)
 
 Headless build (no Xcode UI needed):
 
 ```bash
-mise run mac:build      # builds sidecar + .app, opens path at end
+mise run mac:build      # builds the app with its embedded Python runtime
 ```
 
 Or open the project in Xcode:
@@ -57,8 +57,17 @@ xcodegen generate
 open EpubToMp3.xcodeproj
 ```
 
-The `mise run sidecar:build` task builds the embedded Python server
+The `mise run sidecar:build` task builds the embedded Rust server
 that the macOS build copies inside the `.app`'s Resources.
+
+#### Build artifact hygiene
+
+Build directories are temporary. After a build or test, remove unused or stale
+generated trees such as `build/`, `.build/`, `DerivedData/`, and equivalent
+temporary output. Prefer keeping at most one active build cache for faster
+iteration, and delete it when it becomes old or unused. Do not remove the
+project's intentional persistent data (`.cache/`, `output/`, models, or user
+inputs), and verify that a directory is not active or tracked before deleting it.
 
 #### iOS companion features
 
@@ -74,7 +83,10 @@ that the macOS build copies inside the `.app`'s Resources.
 ### Flutter app
 
 ```bash
-mise run flutter:run                # host platform
+mise run mac:run                    # native macOS app, Debug
+mise run ios:run                    # native iOS app on the paired iPhone, Debug
+IOS_ALLOW_LOW_RESOURCE_SIMULATOR=1 IOS_TARGET=simulator mise run ios:run # iOS Simulator, Debug (accepts the risk on this Intel 8 GiB Mac)
+mise run flutter:run                # Android phone, or the lightest available Android AVD, Debug
 mise run flutter:build-linux        # Linux desktop release
 mise run flutter:build-windows      # Windows desktop release
 mise run flutter:build-apk          # Android (release)
@@ -84,8 +96,8 @@ mise run flutter:build-apk          # Android (release)
 
 ## Features
 
-- **Three TTS engines**: Edge-TTS (cloud, fastest), Kokoro (local neural, EN/JA/ZH), Piper (offline ONNX, all languages)
-- **Edge-only by default**: per-chunk single-sentence fallback recovers transient failures and returns to Edge. Opt-in to the legacy multi-engine cascade via `--engine-chain-fallback` or `ENGINE_CHAIN_FALLBACK=1`.
+- **Two TTS engines**: Edge-TTS (cloud, multilingual) and Piper (offline ONNX, one model per language). `auto` is an alias for the Edge-first selection.
+- **Edge-first by default**: per-chunk single-sentence fallback recovers transient failures and returns to Edge. Opt-in to the legacy Edge → Piper cascade via `--engine-chain-fallback` or `ENGINE_CHAIN_FALLBACK=1`.
 - **Smart cache**: parsed text cached per-book — re-runs skip re-parsing
 - **Chapter structure**: preserves TOC hierarchy (NCX / EPUB3 nav), numbered `1.0 / 1.1 / 1.2`
 - **Batch conversion**: queue multiple EPUB/PDF files or entire folders
@@ -102,7 +114,7 @@ mise run flutter:build-apk          # Android (release)
 ```bash
 git clone https://github.com/pietro1704/Epub-to-Mp3.git
 cd Epub-to-Mp3
-mise run install        # Sets up Python 3.11 venv + npm + Piper binary
+mise run install        # Sets up the Python 3.12.10 venv, npm, and Piper binary
 ```
 
 ### Manual
@@ -117,31 +129,32 @@ brew install ffmpeg espeak-ng   # macOS; use apt on Linux
 ## CLI Usage
 
 ```bash
-source .venv/bin/activate   # Required for Piper fallback
-
-# Basic conversion
-python -m python_app.main convert book.epub
+# Native Rust CLI (canonical production entrypoint)
+cargo run --release -p converter-cli -- convert book.epub
 
 # Force a specific engine
-python -m python_app.main convert book.epub --engine edge
-python -m python_app.main convert book.epub --engine piper
+cargo run --release -p converter-cli -- convert book.epub --engine edge
+cargo run --release -p converter-cli -- convert book.epub --engine piper
 
 # Single chapter or range
-python -m python_app.main convert book.epub --chapter 3
-python -m python_app.main convert book.epub --chapter 5.1,5.2,5.3
+cargo run --release -p converter-cli -- convert book.epub --chapter 3
+cargo run --release -p converter-cli -- convert book.epub --chapter 5.1,5.2,5.3
 
 # Preview chapter structure (saves parsed text to cache)
-python -m python_app.main convert book.epub --show-structure
+cargo run --release -p converter-cli -- convert book.epub --show-structure
 
 # Force re-parse (ignore cache)
-python -m python_app.main convert book.epub --clear-cache
+cargo run --release -p converter-cli -- convert book.epub --clear-cache
 
 # Batch: multiple files or folder
-python -m python_app.main convert book1.epub book2.pdf --batch ~/folder/
+cargo run --release -p converter-cli -- convert book1.epub book2.pdf --batch ~/folder/
 
 # Interactive menu (pick engine/voice/settings)
-python -m python_app.main convert book.epub --menu
+cargo run --release -p converter-cli -- convert book.epub --menu
 ```
+
+The Python CLI remains in `python_app/` as the migration oracle until
+differential coverage and the final cutover validation are complete.
 
 ### Shell Autocomplete (Optional)
 
@@ -157,10 +170,12 @@ Tab-completes `.epub`/`.pdf` file paths and `--engine` values.
 ## Web Server
 
 ```bash
-mise run web                            # Recommended
-uvicorn python_app.server:app --port 8000   # Direct
-python hf_app.py                        # HF Spaces entry (port 7860)
+mise run rust:server                   # Native Rust server (canonical)
+cargo run --release -p converter-server # Direct Rust server
 ```
+
+The legacy Python server and HF entrypoint remain available as migration
+oracles only; they are not production packaging entrypoints.
 
 Frontend dev server (hot reload):
 
@@ -207,9 +222,8 @@ CHAPTER_PARALLEL_COUNT=0         # 0 = auto-detect from CPU cores
 ### Engine Fallback Thresholds
 
 ```bash
-EDGE_MIN_CHARS_PER_SECOND=45     # Slow-mode trigger (HF: 100)
-EDGE_SLOW_RATIO_THRESHOLD=2.5    # Elapsed/estimated ratio trigger (HF: 1.5)
-_CHAPTER_TIMEOUT_MAX=300         # Max timeout per chapter (HF: 120s)
+EDGE_MIN_CHARS_PER_SECOND=45     # Example local slow-mode trigger (HF differs)
+EDGE_SLOW_RATIO_THRESHOLD=2.5    # Example local elapsed/estimated ratio (HF differs)
 ```
 
 ### Oversized Chapter Handling
@@ -219,10 +233,9 @@ MAX_CHAPTER_CHARS=0              # Skip chapters larger than N chars (0 = disabl
                                   # Auto-warns when a chapter is >5× median size
 ```
 
-### Local Engines
+### Local Engine
 
 ```bash
-KOKORO_MAX_WORKERS=0             # 0 = auto-detect from CPU
 PIPER_MAX_PROCS=0                # 0 = auto-detect from CPU
 ```
 
@@ -247,12 +260,11 @@ mise run audit          # Scan Python dependencies for CVEs
 | Engine | Languages | Quality | Speed | Requires |
 |--------|-----------|---------|-------|----------|
 | **Edge-TTS** | All | ⭐⭐⭐ | Fastest | Internet |
-| **Kokoro** | EN, JA, ZH | ⭐⭐⭐ | Fast | `espeak-ng` |
-| **Piper** | All | ⭐⭐ | Moderate | ONNX model file |
+| **Piper** | pt, en, es, fr, de, it | ⭐⭐ | Moderate | Piper binary + ONNX model |
 
-**Default behavior (CLI + web):** Edge-only. Per-chunk failures are retried as a single sentence and synthesis returns to Edge. The chapter never cascades to Kokoro/Piper.
+**Default behavior (CLI + web):** Edge-first. Per-chunk failures are retried as a single sentence and synthesis returns to Edge. Piper is available when its binary and model are installed.
 
-**Opt-in legacy cascade:** set `ENGINE_CHAIN_FALLBACK=1` (or pass `--engine-chain-fallback` on the CLI) to restore Edge multilingual → Edge monolingual → Kokoro → Piper. Use `FALLBACK_ENGINE_OVERRIDE=piper|kokoro|coqui|none|auto` to pin or strip the offline tier.
+**Optional legacy cascade:** set `ENGINE_CHAIN_FALLBACK=1` (or pass `--engine-chain-fallback` on the CLI) to enable Edge → Piper fallback. Use `FALLBACK_ENGINE_OVERRIDE=piper|none|auto` to control that offline tier.
 
 ---
 
@@ -290,7 +302,6 @@ Epub-to-Mp3/
 │   │   ├── routes_uploads.py   # /api/uploads routes
 │   │   └── tts/
 │   │       ├── edge_engine.py
-│   │       ├── kokoro_engine.py
 │   │       └── piper_engine.py
 │   └── tests/              # 1076+ tests
 ├── web/                    # React/TypeScript frontend (Vite)
@@ -312,7 +323,7 @@ The Space runs via Docker. GitHub CI syncs code → HF rebuilds the image.
 
 Key auto-applied settings when `SPACE_ID` is set:
 - `EDGE_MAX_CONCURRENCY=1`, `CHAPTER_PARALLEL_MAX=1` (shared CPU)
-- `EDGE_MIN_CHARS_PER_SECOND=100`, `_CHAPTER_TIMEOUT_MAX=120s`
+- `EDGE_MIN_CHARS_PER_SECOND=100`; timeout behavior is selected by the HF runtime profile
 - `COMPLETED_JOB_TTL_HOURS=48` (outputs survive overnight on `/data`)
 
 Persistent storage at `/data/epub-to-mp3/` survives Space restarts.

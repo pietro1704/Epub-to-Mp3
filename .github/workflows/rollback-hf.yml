@@ -37,7 +37,7 @@ jobs:
           fi
 
       - name: Checkout target commit
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
           ref: ${{ steps.target.outputs.sha }}
@@ -94,20 +94,19 @@ jobs:
           fi
 
           git remote add hf "$REMOTE_URL" || true
-          git push --force hf "HEAD:refs/heads/master"
           git push --force hf "HEAD:refs/heads/main"
 
       - name: Wait and verify rollback
         run: |
-          sleep 90
+          sleep 30
           URL="https://pi1704-epub-to-mp3.hf.space/api/health"
-          for i in $(seq 1 6); do
+          for i in $(seq 1 20); do
             HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "$URL" --max-time 15 || echo "000")
             if [ "$HTTP_CODE" = "200" ]; then
               echo "Rollback successful — HF Space is healthy"
               exit 0
             fi
-            echo "Attempt $i: HTTP $HTTP_CODE, retrying in 30s..."
-            sleep 30
+            echo "Attempt $i: HTTP $HTTP_CODE, retrying in 15s..."
+            sleep 15
           done
           echo "::warning::HF Space may still be rebuilding after rollback"

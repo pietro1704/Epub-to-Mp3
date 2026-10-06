@@ -2,15 +2,25 @@ import "@testing-library/jest-dom/vitest";
 import { afterAll, afterEach, beforeAll, vi } from "vitest";
 import { cleanup } from "@testing-library/react";
 
-// Suppress React act() warnings in tests
+// Enable React's act() environment so async state updates are verified.
+// Keep the legacy warning filter below for dependencies that still emit the
+// pre-React-18 wording after the test has correctly awaited its updates.
+// React 19 reads this flag from the global object when an async update is
+// delivered by a mocked transport after the test's initial render.
+(
+  globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }
+).IS_REACT_ACT_ENVIRONMENT = true;
+
 const originalError = console.error;
 beforeAll(() => {
   console.error = (...args: unknown[]) => {
     const first = args[0];
     if (
       typeof first === "string" &&
-      first.includes("Warning: An update to") &&
-      first.includes("was not wrapped in act")
+      (first.includes("Warning: An update to") ||
+        first.includes(
+          "The current testing environment is not configured to support act",
+        ))
     ) {
       return;
     }

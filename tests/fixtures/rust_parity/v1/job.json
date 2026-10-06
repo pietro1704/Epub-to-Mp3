@@ -1,0 +1,14 @@
+{
+  "failed": {
+    "error": "fixture failure",
+    "jobId": "<uuid>",
+    "outputs": [],
+    "state": "failed"
+  },
+  "finished": {
+    "error": null,
+    "jobId": "<uuid>",
+    "outputs": [],
+    "state": "finished"
+  }
+}

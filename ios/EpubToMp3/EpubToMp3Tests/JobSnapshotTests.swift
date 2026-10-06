@@ -63,6 +63,24 @@ final class JobSnapshotTests: XCTestCase {
         XCTAssertEqual(snap.playableChapters.first?.displayTitle, "ch1")
     }
 
+    func testDisplayTitleFallbackIsLocalizedWhenNameMissing() throws {
+        // The fallback feeds MPMediaItemPropertyTitle (lock screen) — it must
+        // go through L10n, never a hardcoded English literal.
+        let json = """
+        {
+          "jobId": "j",
+          "state": "running",
+          "chapterProgress": [
+            {"index": 2, "status": "running"},
+            {"index": 3, "name": "", "status": "running"}
+          ]
+        }
+        """.data(using: .utf8)!
+        let snap = try JSONDecoder().decode(JobSnapshot.self, from: json)
+        XCTAssertEqual(snap.chapterProgress?[0].displayTitle, L10n.string("player.chapter", 3))
+        XCTAssertEqual(snap.chapterProgress?[1].displayTitle, L10n.string("player.chapter", 4))
+    }
+
     func testPlayableChaptersFallsBackToOutputsWhenChapterProgressEmpty() throws {
         let json = """
         {

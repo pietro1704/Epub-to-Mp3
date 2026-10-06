@@ -78,6 +78,7 @@ class TestLocalUploadEndpoint(unittest.TestCase):
         uploads_dir.mkdir()
         srv.uploads_dir = uploads_dir
         srv._pending_uploads.clear()
+        self._original_upload_limits = (srv.MAX_UPLOAD_BYTES, srv.MAX_UPLOAD_MB)
         srv.MAX_UPLOAD_BYTES = 100 * 1024 * 1024
         srv.MAX_UPLOAD_MB = 100
         # TestClient sends requests from host "testclient"; allow it in tests.
@@ -90,6 +91,8 @@ class TestLocalUploadEndpoint(unittest.TestCase):
         if hasattr(self, "_orig_hosts"):
             mod._LOCAL_ALLOWED_HOSTS.clear()
             mod._LOCAL_ALLOWED_HOSTS.update(self._orig_hosts)
+        if hasattr(self, "_original_upload_limits"):
+            srv.MAX_UPLOAD_BYTES, srv.MAX_UPLOAD_MB = self._original_upload_limits
 
     # ------------------------------------------------------------------
     # Happy path
@@ -127,7 +130,7 @@ class TestLocalUploadEndpoint(unittest.TestCase):
         assert resp.status_code == 200
         assert resp.json()["fileName"] == "report.pdf"
 
-    def test_file_is_copied_to_uploads_dir(self):
+    def test_file_is_copied_to_uploads_dir_with_fixed_internal_name(self):
         client, srv = _make_client()
         self._patch_server(srv)
         epub = _minimal_epub(self.tmp / "copy_test.epub")
@@ -138,8 +141,45 @@ class TestLocalUploadEndpoint(unittest.TestCase):
         self._restore_server(srv)
         assert resp.status_code == 200
         upload_id = resp.json()["uploadId"]
-        dest = srv.uploads_dir / upload_id / "copy_test.epub"
+        dest = srv.uploads_dir / upload_id / "source.epub"
         assert dest.exists(), "File should be copied to uploads dir"
+
+    def test_local_upload_storage_name_does_not_reuse_user_filename(self):
+        import src.routes_uploads as mod
+
+        assert mod._local_upload_storage_name(Path("../../untrusted.EPUB")) == "source.epub"
+        assert mod._local_upload_storage_name(Path("report.pdf")) == "source.pdf"
+
+    def test_local_upload_storage_name_supports_all_book_formats(self):
+        import src.routes_uploads as mod
+
+        expected = {
+            "book.fb2": "source.fb2",
+            "book.docx": "source.docx",
+            "book.cbz": "source.cbz",
+            "book.cbr": "source.cbr",
+            "book.mobi": "source.mobi",
+            "book.prc": "source.mobi",
+            "book.azw": "source.azw3",
+            "book.azw3": "source.azw3",
+        }
+        for filename, stored in expected.items():
+            assert mod._local_upload_storage_name(Path(filename)) == stored
+
+    def test_fulltext_route_precedes_generic_asset_route(self):
+        import src.routes_uploads as mod
+
+        source = Path(mod.__file__).read_text(encoding="utf-8")
+        assert source.index('@router.get("/uploads/{upload_id}/fulltext")') < source.index(
+            '@router.get("/uploads/{upload_id}/{filename}")'
+        )
+
+    def test_estimate_scan_includes_server_only_book_formats(self):
+        import python_app.server as server
+
+        source = Path(server.__file__).read_text(encoding="utf-8")
+        for suffix in (".fb2", ".docx", ".cbz", ".cbr", ".mobi", ".azw3"):
+            assert suffix in source
 
     def test_fallback_title_is_stem_when_reader_fails(self):
         client, srv = _make_client()
@@ -181,13 +221,27 @@ class TestLocalUploadEndpoint(unittest.TestCase):
         self._restore_server(srv)
         assert resp.status_code == 400
 
-    def test_400_for_symlink(self):
+    def test_allows_symlink_resolving_within_allowed_root(self):
         client, srv = _make_client()
         self._patch_server(srv)
         target = _minimal_epub(self.tmp / "target.epub")
         link = self.tmp / "linked.epub"
         link.symlink_to(target)
+
+        with patch("src.ebook_reader.EbookReader", return_value=_fake_reader()):
+            resp = client.post("/api/uploads/local", json={"path": str(link)})
+
+        self._restore_server(srv)
+        assert resp.status_code == 200
+
+    def test_400_for_symlink_resolving_outside_allowed_roots(self):
+        client, srv = _make_client()
+        self._patch_server(srv)
+        link = self.tmp / "outside.epub"
+        link.symlink_to("/etc/passwd")
+
         resp = client.post("/api/uploads/local", json={"path": str(link)})
+
         self._restore_server(srv)
         assert resp.status_code == 400
 
@@ -208,6 +262,21 @@ class TestLocalUploadEndpoint(unittest.TestCase):
         resp = client.post("/api/uploads/local", json={"path": str(epub)})
         self._restore_server(srv)
         assert resp.status_code == 413
+
+    def test_web_upload_413_when_stream_exceeds_size_limit(self):
+        client, srv = _make_client()
+        self._patch_server(srv)
+        srv.MAX_UPLOAD_BYTES = 5
+        srv.MAX_UPLOAD_MB = 0
+
+        resp = client.post(
+            "/api/uploads",
+            files={"file": ("big.epub", b"x" * 10, "application/epub+zip")},
+        )
+
+        self._restore_server(srv)
+        assert resp.status_code == 413
+        assert list(srv.uploads_dir.iterdir()) == []
 
     # ------------------------------------------------------------------
     # Security: reject non-localhost callers

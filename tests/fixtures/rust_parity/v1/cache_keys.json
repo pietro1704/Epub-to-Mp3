@@ -1,0 +1,9 @@
+{
+  "algorithm": "sha256",
+  "inputs": [
+    "rust-parity-v1\u0000test_multifeature.epub"
+  ],
+  "keys": [
+    "ec2722549977861d13190c422458d237723c0825342dc1af0875550c7772e8f8"
+  ]
+}

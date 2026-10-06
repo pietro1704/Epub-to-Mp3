@@ -41,7 +41,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           ref: ${{ env.RELEASE_REF }}
 
@@ -65,7 +65,7 @@ jobs:
         uses: docker/setup-buildx-action@v4
 
       - name: Log in to GHCR
-        uses: docker/login-action@v4
+        uses: docker/login-action@v4.6.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -101,28 +101,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           ref: ${{ env.RELEASE_REF }}
 
       - name: Set up Java 21
-        uses: actions/setup-java@v5
+        uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: "21"
-
-      - name: Setup Python 3.13 (Chaquopy buildPython requirement)
-        # Chaquopy needs a Python 3.13 on the build host to resolve
-        # pip dependencies before bundling them into the APK.
-        # Without this step the build dies with "Couldn't find Python 3.13".
-        uses: actions/setup-python@v6
-        with:
-          python-version: "3.13"
-
-      - name: Bootstrap python_app into android/app/src/main/python
-        # Mirrors python_app/src/ into the Chaquopy source set so the
-        # APK's embedded Python can import python_app.src.*.
-        run: bash flutter_app/scripts/bootstrap-android-python.sh
 
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
@@ -133,15 +120,9 @@ jobs:
 
       - name: Build APK (release)
         working-directory: flutter_app
-        env:
-          # Point Chaquopy at the just-installed Python 3.13. The
-          # actions/setup-python step exposes it on PATH; we resolve
-          # the absolute path here so Gradle's `buildPython()` finds it.
-          PYTHON_EXE: ${{ env.pythonLocation }}/bin/python3.13
         run: |
           flutter pub get
-          flutter build apk --release \
-            -Pchaquopy.buildPython="${PYTHON_EXE}"
+          flutter build apk --release
 
       - name: Rename APK
         run: |
@@ -158,8 +139,9 @@ jobs:
   # ──────────────────────────────────────────────────────────────────────
   # SwiftUI native Apple build (macOS .app + iOS .ipa unsigned)
   #
-  # Builds the official Apple client out of `ios/EpubToMp3/`. Builds the
-  # PyInstaller sidecar inline (no longer reused from a Tauri build).
+  # Builds the official Apple client out of `ios/EpubToMp3/`. macOS embeds
+  # the Rust converter-server. Legacy Python bridge sources remain in the
+  # repository as oracle tests but are excluded from the production target.
   # The iOS build is unsigned — users sideload via AltStore.
   # ──────────────────────────────────────────────────────────────────────
   swiftui-apple:
@@ -168,34 +150,25 @@ jobs:
     timeout-minutes: 40
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           ref: ${{ env.RELEASE_REF }}
 
       - name: Install xcodegen
+        env:
+          HOMEBREW_GITHUB_API_TOKEN: ${{ github.token }}
         run: brew install xcodegen
 
-      - name: Setup Python
-        uses: actions/setup-python@v6
-        with:
-          python-version: "3.11"
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
 
-      - name: Build PyInstaller sidecar
+      - name: Build Rust macOS sidecar
         run: |
-          python -m venv .venv
-          source .venv/bin/activate
-          pip install pyinstaller --quiet
-          pip install -r requirements-desktop.txt --quiet
-          pyinstaller desktop.spec --noconfirm --clean
+          cargo build --release -p converter-server
+          mkdir -p dist
+          cp target/release/converter-server dist/epub-to-mp3-server
+          chmod 755 dist/epub-to-mp3-server
           ls -lh dist/epub-to-mp3-server
-
-      - name: Bootstrap iOS Python.xcframework + python_app embed
-        # Downloads Beeware's Python-Apple-support, grafts the macOS
-        # slice in, copies python_app/src into Vendor/site-packages.
-        # The xcframework is too big to commit (~150 MB) so each CI
-        # run rebuilds it from cached upstream tarballs.
-        run: |
-          bash ios/EpubToMp3/scripts/bootstrap-ios-python.sh
 
       - name: Generate Xcode project
         working-directory: ios/EpubToMp3
@@ -251,8 +224,9 @@ jobs:
   # ──────────────────────────────────────────────────────────────────────
   # Flutter desktop builds (Linux + Windows)
   #
-  # Official non-Apple desktop client. macOS/iOS are NOT supported by
-  # the Flutter app — the SwiftUI app owns Apple platforms.
+  # Official non-Apple desktop client. Builds the Rust-backed Flutter client;
+  # macOS/iOS are NOT supported by the Flutter app — the native Apple app
+  # owns those platforms.
   # ──────────────────────────────────────────────────────────────────────
   flutter-desktop:
     name: Flutter · ${{ matrix.label }}
@@ -270,7 +244,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           ref: ${{ env.RELEASE_REF }}
 
@@ -291,17 +265,6 @@ jobs:
         working-directory: flutter_app
         run: |
           flutter config --enable-${{ matrix.target }}-desktop
-
-      - name: Bootstrap python_app into flutter_app/assets
-        # pubspec.yaml declares `assets/python_app/src/` as a Flutter
-        # asset directory. The repo doesn't commit it (it's a synced
-        # copy of python_app/src/), so without this step the Windows
-        # build dies with "unable to find directory entry in
-        # pubspec.yaml: assets/python_app/src/". Linux happens to
-        # tolerate the missing dir on some runner generations, but
-        # Windows MSBuild fails hard — run it on both for symmetry.
-        shell: bash
-        run: bash flutter_app/scripts/bootstrap-desktop-python.sh
 
       - name: Build
         working-directory: flutter_app

@@ -7,7 +7,7 @@ accessed via lazy imports inside each handler to avoid circular imports.
 
 from __future__ import annotations
 
-import hashlib
+import os
 import shutil
 import time
 import uuid
@@ -16,9 +16,24 @@ from pathlib import Path
 from fastapi import APIRouter, BackgroundTasks, File, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
+from src.upload_streaming import UploadTooLarge, hash_file_incremental, stream_upload_to_path
 
 router = APIRouter(prefix="/api", tags=["uploads"])
 _VALID_UPLOAD_ID_CHARS = frozenset("0123456789abcdef-")
+
+
+async def _stream_upload_to_path(
+    upload: UploadFile, destination: Path, max_bytes: int, max_mb: int | None = None
+) -> dict:
+    """Compatibility wrapper for bounded upload streaming."""
+    try:
+        file_hash, total = await stream_upload_to_path(upload, destination, max_bytes=max_bytes)
+    except UploadTooLarge:
+        raise HTTPException(
+            status_code=413,
+            detail=f"File exceeds the {max_mb if max_mb is not None else max_bytes // (1024 * 1024)} MB limit",
+        )
+    return {"size": total, "sha1": file_hash}
 
 
 def _validate_upload_id(upload_id: str) -> str:
@@ -26,29 +41,6 @@ def _validate_upload_id(upload_id: str) -> str:
     if not value or any(ch.lower() not in _VALID_UPLOAD_ID_CHARS for ch in value):
         raise HTTPException(status_code=400, detail="Invalid upload ID")
     return value
-
-
-def _allowed_local_source_roots() -> tuple[Path, ...]:
-    roots = [Path.cwd(), Path.home(), Path("/tmp"), Path("/private/tmp"), Path("/var/folders")]
-    if Path("/Volumes").exists():
-        roots.append(Path("/Volumes"))
-    return tuple(root.resolve() for root in roots if root.exists())
-
-
-def _resolve_allowed_local_source(raw_path: str) -> Path:
-    import python_app.server as _srv
-
-    candidate = Path(str(raw_path or ""))
-    if not candidate.is_absolute():
-        raise HTTPException(status_code=400, detail="Invalid file path")
-    if candidate.is_symlink():
-        raise HTTPException(status_code=400, detail="Symlinks are not supported")
-    for root in _allowed_local_source_roots():
-        try:
-            return _srv._resolve_path_within_root(root, candidate, must_exist=False)
-        except ValueError:
-            continue
-    raise HTTPException(status_code=400, detail="File path is outside allowed local roots")
 
 
 def _precache_uploaded_book(upload_path: Path, book_title: str, book_author: str) -> None:
@@ -76,6 +68,35 @@ def _precache_uploaded_book(upload_path: Path, book_title: str, book_author: str
         _srv.get_cache_manager().save_chapters_to_cache(upload_path, chapters_data)
     except Exception as cache_error:
         _srv.logger.warning(f"Failed to cache chapters during upload: {cache_error}")
+
+
+@router.get("/uploads/{upload_id}/fulltext")
+async def get_uploaded_fulltext(upload_id: str) -> dict:
+    """Return parsed fulltext for a still-pending uploaded book."""
+    from src.ebook_reader import parse_epub_to_dict
+
+    import python_app.server as _srv
+
+    safe_upload_id = _validate_upload_id(upload_id)
+    with _srv._pending_lock:
+        upload_info = _srv._pending_uploads.get(safe_upload_id)
+    if not upload_info:
+        upload_info = _srv._load_pending_upload_from_disk(safe_upload_id)
+    if not upload_info:
+        raise HTTPException(status_code=404, detail="Upload not found or expired")
+
+    upload_root = _srv._resolve_relative_path_within_root(
+        _srv.uploads_dir, safe_upload_id, must_exist=True
+    )
+    stored_name = Path(upload_info.get("file_path") or upload_info.get("file_name") or "").name
+    file_path = _srv._resolve_relative_path_within_root(upload_root, stored_name, must_exist=True)
+    try:
+        return parse_epub_to_dict(file_path, safe_upload_id)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Unable to parse uploaded book: {exc}",
+        ) from exc
 
 
 @router.get("/uploads/{upload_id}/{filename}")
@@ -106,13 +127,6 @@ async def upload_ebook(background_tasks: BackgroundTasks, file: UploadFile = Fil
     if file is None:
         raise HTTPException(status_code=400, detail="No file uploaded")
 
-    raw_payload = await file.read()
-    if _srv.MAX_UPLOAD_BYTES and len(raw_payload) > _srv.MAX_UPLOAD_BYTES:
-        raise HTTPException(
-            status_code=413,
-            detail=f"File exceeds the {_srv.MAX_UPLOAD_MB} MB limit",
-        )
-
     _srv._cleanup_pending_uploads()
     upload_id = f"{uuid.uuid4()}"
     upload_dir = _srv._resolve_relative_path_within_root(
@@ -121,8 +135,14 @@ async def upload_ebook(background_tasks: BackgroundTasks, file: UploadFile = Fil
     upload_dir.mkdir(parents=True, exist_ok=True)
     original_name = Path(file.filename or "ebook").name
     temp_path = _srv._resolve_relative_path_within_root(upload_dir, original_name, must_exist=False)
-    temp_path.write_bytes(raw_payload)
-    file_hash = hashlib.sha1(raw_payload).hexdigest() if raw_payload else None
+    try:
+        file_hash, _ = await stream_upload_to_path(file, temp_path, max_bytes=_srv.MAX_UPLOAD_BYTES)
+    except UploadTooLarge:
+        shutil.rmtree(upload_dir, ignore_errors=True)
+        raise HTTPException(
+            status_code=413,
+            detail=f"File exceeds the {_srv.MAX_UPLOAD_MB} MB limit",
+        )
 
     book_title = Path(original_name).stem
     book_author = "Unknown Author"
@@ -180,8 +200,33 @@ class LocalUploadRequest(BaseModel):
     path: str
 
 
-_LOCAL_ALLOWED_SUFFIXES = {".epub", ".pdf"}
 _LOCAL_ALLOWED_HOSTS = {"127.0.0.1", "::1", "localhost", "::ffff:127.0.0.1"}
+
+
+def _local_upload_storage_name(source: Path) -> str:
+    """Return a fixed internal filename for every supported book format.
+
+    The original filename is retained in upload metadata for display, while
+    the stored basename is deliberately fixed to prevent path traversal and
+    keep downstream parser paths predictable.
+    """
+    suffix = source.suffix.lower()
+    canonical_suffixes = {
+        ".epub": ".epub",
+        ".pdf": ".pdf",
+        ".fb2": ".fb2",
+        ".docx": ".docx",
+        ".cbz": ".cbz",
+        ".cbr": ".cbr",
+        ".mobi": ".mobi",
+        ".prc": ".mobi",
+        ".azw": ".azw3",
+        ".azw3": ".azw3",
+    }
+    canonical_suffix = canonical_suffixes.get(suffix)
+    if canonical_suffix is None:
+        raise HTTPException(status_code=400, detail="Unsupported book format")
+    return f"source{canonical_suffix}"
 
 
 @router.post("/uploads/local")
@@ -207,13 +252,32 @@ async def upload_ebook_local(
             status_code=403, detail="Local uploads are only available from localhost"
         )
 
-    raw = body.path
-    src = _resolve_allowed_local_source(raw)
-    if not src.exists() or not src.is_file():
-        raise HTTPException(status_code=404, detail="File not found")
+    raw_path = str(body.path or "")
+    if not os.path.isabs(raw_path):
+        raise HTTPException(status_code=400, detail="Invalid file path")
 
-    if src.suffix.lower() not in _LOCAL_ALLOWED_SUFFIXES:
-        raise HTTPException(status_code=400, detail="Only .epub and .pdf files are supported")
+    resolved_source = os.path.realpath(raw_path)
+    allowed_roots = [
+        Path.cwd(),
+        Path.home(),
+        Path("/tmp"),
+        Path("/private/tmp"),
+        Path("/var/folders"),
+    ]
+    if Path("/Volumes").exists():
+        allowed_roots.append(Path("/Volumes"))
+    for root in allowed_roots:
+        resolved_root = os.path.realpath(root)
+        if resolved_source.startswith(f"{resolved_root}{os.sep}"):
+            break
+    else:
+        raise HTTPException(status_code=400, detail="File path is outside allowed local roots")
+
+    if not os.path.isfile(resolved_source):
+        raise HTTPException(status_code=404, detail="File not found")
+    src = Path(resolved_source)
+
+    storage_name = _local_upload_storage_name(src)
 
     if _srv.MAX_UPLOAD_BYTES and src.stat().st_size > _srv.MAX_UPLOAD_BYTES:
         raise HTTPException(
@@ -228,10 +292,10 @@ async def upload_ebook_local(
     )
     upload_dir.mkdir(parents=True, exist_ok=True)
 
-    dest_path = _srv._resolve_relative_path_within_root(upload_dir, src.name, must_exist=False)
+    dest_path = _srv._resolve_relative_path_within_root(upload_dir, storage_name, must_exist=False)
     shutil.copy2(src, dest_path)
-
-    file_hash = hashlib.sha1(src.read_bytes()).hexdigest()
+    with dest_path.open("rb") as handle:
+        file_hash = hash_file_incremental(handle)
 
     book_title = src.stem
     book_author = "Unknown Author"

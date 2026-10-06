@@ -1,0 +1,5 @@
+source "https://rubygems.org"
+ruby ">= 2.6"
+# The gateway intentionally uses Ruby's standard library in this first vertical slice.
+gem "webrick"
+gem "minitest"

@@ -5,6 +5,9 @@ Spawned as a Tauri sidecar. Starts FastAPI on a fixed local port.
 
 import os
 import sys
+import threading
+import time
+from pathlib import Path
 
 # When running as a PyInstaller onefile binary, __file__ points inside _MEIPASS.
 # Add the project root (parent of this file's directory) to sys.path so that
@@ -74,8 +77,47 @@ def setup_ffmpeg() -> None:
 DESKTOP_PORT = int(os.environ.get("EPUB_TO_MP3_PORT", "47860"))
 
 
+def write_sidecar_pid_file() -> None:
+    """Publish the actual PyInstaller child PID for host-side teardown."""
+    path = os.environ.get("EPUB_TO_MP3_SIDECAR_PID_FILE")
+    if path:
+        Path(path).write_text(str(os.getpid()), encoding="utf-8")
+
+
+def should_watch_pyinstaller_parent(
+    *, frozen: bool, parent_pid: int, pid_file_configured: bool
+) -> bool:
+    """Return whether the embedded worker must exit with its bootloader parent."""
+    return parent_pid > 1 and (frozen or pid_file_configured)
+
+
+def start_parent_exit_watchdog(*, poll_interval: float = 0.25) -> None:
+    """Exit the onefile worker when its PyInstaller bootloader disappears.
+
+    PyInstaller's macOS onefile bootloader launches this Python process as a
+    child. Terminating only the bootloader can orphan the worker, leaving a
+    FastAPI server and its listening port behind after the GUI quits.
+    """
+    parent_pid = os.getppid()
+    if not should_watch_pyinstaller_parent(
+        frozen=bool(getattr(sys, "frozen", False)),
+        parent_pid=parent_pid,
+        pid_file_configured=bool(os.environ.get("EPUB_TO_MP3_SIDECAR_PID_FILE")),
+    ):
+        return
+
+    def watch() -> None:
+        while os.getppid() == parent_pid:
+            time.sleep(poll_interval)
+        os._exit(0)
+
+    threading.Thread(target=watch, name="sidecar-parent-watchdog", daemon=True).start()
+
+
 def main() -> None:
     _apply_desktop_env_defaults()
+    write_sidecar_pid_file()
+    start_parent_exit_watchdog()
     setup_ffmpeg()
 
     import uvicorn

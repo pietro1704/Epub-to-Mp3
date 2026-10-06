@@ -7,6 +7,20 @@ final class VoiceSelectorTests: XCTestCase {
 
     // MARK: - English
 
+    func testDeclaredEnglishLanguageOverridesAmbiguousText() {
+        XCTAssertEqual(
+            VoiceSelector.edgeVoice(for: "The Fellowship of the Ring", declaredLanguage: "en"),
+            "en-US-AriaNeural"
+        )
+    }
+
+    func testDeclaredPortugueseLanguageSelectsPortugueseVoice() {
+        XCTAssertEqual(
+            VoiceSelector.edgeVoice(for: "The Fellowship of the Ring", declaredLanguage: "pt-BR"),
+            "pt-BR-FranciscaNeural"
+        )
+    }
+
     func testEnglishTextReturnsAriaNeural() {
         let text = """
         The sun rose over the distant mountains, casting long shadows across \

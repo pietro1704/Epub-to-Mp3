@@ -3,50 +3,43 @@ FROM node:26-slim AS frontend-builder
 
 WORKDIR /app/web
 COPY web/package*.json ./
-# Use npm install to update dependencies automatically
 RUN npm install --legacy-peer-deps
 COPY web/ ./
-# Build with error output
-RUN npm run build || (echo "Frontend build failed!" && exit 1)
-# Verify build output
-RUN ls -la dist/ && echo "Frontend build successful!"
+RUN npm run build
 
-# Stage 2: Python runtime
-FROM python:3.11-slim
+# Stage 2: Build the Rust production server
+FROM rust:1-slim-bookworm AS server-builder
+
+WORKDIR /app
+COPY Cargo.toml Cargo.lock ./
+COPY crates ./crates
+RUN cargo build --release -p converter-server
+
+# Stage 3: Minimal Rust runtime
+FROM debian:bookworm-slim
 
 WORKDIR /app
 
-# Install system dependencies
-RUN apt-get update && apt-get install -y \
+# ffmpeg and libsndfile are required by the conversion pipeline.
+RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
     libsndfile1 \
+    ca-certificates \
+    wget \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy requirements first for caching
-COPY requirements.txt .
-# Upgrade pip first to fix CVE-2025-8869, CVE-2026-1703
-RUN pip install --upgrade pip
-RUN pip install --no-cache-dir -r requirements.txt
-
-# Copy application code
-COPY python_app/ ./python_app/
-COPY hf_app.py ./
-
-# Copy built frontend from stage 1
+COPY --from=server-builder /app/target/release/converter-server /usr/local/bin/converter-server
 COPY --from=frontend-builder /app/web/dist ./web/dist
 
-# Verify frontend files were copied
-RUN ls -la web/dist/ && echo "Frontend files copied successfully"
+# Hugging Face Spaces persists this root across restarts.
+ENV PORT=7860 \
+    SPACE_ID=1 \
+    PERSISTENT_ROOT=/data/epub-to-mp3
+RUN mkdir -p /data/epub-to-mp3/.cache /data/epub-to-mp3/output /data/epub-to-mp3/.uploads /data/epub-to-mp3/.job_inputs
 
-# Create output directory
-RUN mkdir -p /tmp/output
-
-# Expose port for HF Spaces
 EXPOSE 7860
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
-  CMD python -c "import requests; requests.get('http://localhost:7860/api/health', timeout=5)" || exit 1
+HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
+  CMD wget --no-verbose --tries=1 --spider http://localhost:7860/api/health || exit 1
 
-# Run the FastAPI server with React frontend
-CMD ["python", "-u", "hf_app.py"]
+CMD ["/usr/local/bin/converter-server"]

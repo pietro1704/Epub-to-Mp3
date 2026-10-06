@@ -392,7 +392,10 @@ export default function DownloadsPanel({
                       className="chapter-item chapter-item--expanded"
                     >
                       <div className="chapter-item__header">
-                        <span className="chapter-item__name" title={asset.name}>
+                        <span
+                          className="chapter-item__name chapter-item__name--multiline"
+                          title={asset.name}
+                        >
                           {asset.name}
                         </span>
                         {typeof asset.durationSeconds === "number" && (

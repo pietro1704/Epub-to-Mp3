@@ -1,0 +1,30 @@
+[package]
+name = "converter-ffi"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+description = "Stable C ABI for embedded conversion"
+
+[features]
+default = []
+android-jni = ["dep:jni"]
+piper-runtime = ["dep:piper_runtime"]
+kokoro-tract-runtime = ["converter-core/kokoro-tract-runtime"]
+kokoro-sherpa-runtime = ["converter-core/kokoro-sherpa-runtime"]
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+converter-core = { path = "../converter-core" }
+serde_json = "1"
+serde = { version = "1", features = ["derive"] }
+jni = { version = "0.21", optional = true }
+piper_runtime = { package = "piper-runtime", path = "../../native/piper-runtime", optional = true, features = ["onnxruntime", "piper-inference"] }
+rustls = { version = "0.23", default-features = false, features = ["ring"] }
+tokio = { version = "1", features = ["rt", "time", "net", "sync"] }
+
+[dev-dependencies]
+tempfile = "3"
+zip = "2"

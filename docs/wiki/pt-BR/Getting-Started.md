@@ -5,10 +5,10 @@
 Recomendado:
 
 - `mise`
-- `Python 3.11`
+- a versão do Python fixada em `mise.toml` (atualmente 3.12.10)
 - `Node.js`
 - `ffmpeg`
-- `espeak-ng` para Kokoro
+
 
 ## Instalação recomendada
 
@@ -33,13 +33,13 @@ pip install -r requirements.txt -r python_app/requirements.txt
 No macOS:
 
 ```bash
-brew install ffmpeg espeak-ng
+brew install ffmpeg
 ```
 
 No Linux:
 
 ```bash
-sudo apt-get install -y ffmpeg espeak-ng
+sudo apt-get install -y ffmpeg
 ```
 
 ## Validando a instalação
@@ -61,7 +61,7 @@ python -m python_app.main convert livro.epub
 Servidor web:
 
 ```bash
-mise run web
+mise run dev
 ```
 
 Frontend em desenvolvimento:

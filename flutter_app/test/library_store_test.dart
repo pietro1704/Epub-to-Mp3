@@ -25,6 +25,17 @@ void main() {
     expect(h, await LibraryStore.contentHash(f.path));
   });
 
+  test('importBook preserves an incoming display filename', () async {
+    final prefs = await SharedPreferences.getInstance();
+    final store = LibraryStore(prefs: prefs);
+    final f = await _tempEpub('copied_123.epub', [1, 2, 3, 4, 5]);
+    final book = await store.importBook(
+      f.path,
+      displayFilename: 'Original Book.epub',
+    );
+    expect(book.displayFilename, 'Original Book.epub');
+  });
+
   test('importBook dedupes by hash', () async {
     final prefs = await SharedPreferences.getInstance();
     final store = LibraryStore(prefs: prefs);
@@ -75,5 +86,18 @@ void main() {
         isA<LibraryStoreException>().having((e) => e.code, 'code', 410),
       ),
     );
+  });
+
+  test('ensureSupportedBookPath repairs extensionless Android imports', () async {
+    final prefs = await SharedPreferences.getInstance();
+    final store = LibraryStore(prefs: prefs);
+    final f = await _tempEpub('Documento de Pietro', [0x50, 0x4b, 0x03, 0x04]);
+    final book = await store.importBook(f.path);
+
+    final repaired = await store.ensureSupportedBookPath(book);
+
+    expect(repaired, endsWith('.epub'));
+    expect(await File(repaired).exists(), isTrue);
+    expect(book.filePath, repaired);
   });
 }

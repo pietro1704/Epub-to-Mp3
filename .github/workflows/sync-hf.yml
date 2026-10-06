@@ -13,31 +13,72 @@ on:
 
 permissions:
   contents: read
-  issues: write
 
 concurrency:
   group: sync-hf
   cancel-in-progress: true
 
 jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      should_sync: ${{ steps.paths.outputs.should_sync }}
+    steps:
+      - name: Checkout validated revision
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 2
+          lfs: false
+          # Check out the exact successful CI revision, not whichever commit
+          # happens to be current on master when this workflow starts.
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
+
+      - name: Detect Space-relevant changes
+        id: paths
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${{ github.event_name }}" == "workflow_run" ]]; then
+            # A successful CI workflow_run is already the trust boundary.
+            # Do not re-derive changed paths from a shallow checkout.
+            echo "should_sync=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            echo "should_sync=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          base=$(git rev-parse HEAD^)
+          changed=$(git diff --name-only "$base" HEAD)
+          if grep -Eq '^(crates/|Cargo\.toml$|Cargo\.lock$|web/|Dockerfile$|\.github/workflows/sync-hf\.yml$)' <<< "$changed"; then
+            echo "should_sync=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "should_sync=false" >> "$GITHUB_OUTPUT"
+          fi
+
   sync:
+    needs: changes
     runs-on: ubuntu-latest
     # Run automatically on successful CI for master; allow manual override
     if: >
-      (github.event_name == 'workflow_run' &&
+      ((github.event_name == 'workflow_run' &&
        github.event.workflow_run.conclusion == 'success' &&
        github.event.workflow_run.event == 'push' &&
        github.event.workflow_run.head_branch == 'master' &&
        github.event.workflow_run.head_repository.full_name == github.repository) ||
-      github.event_name == 'workflow_dispatch'
+      github.event_name == 'workflow_dispatch') &&
+      needs.changes.outputs.should_sync == 'true'
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
           # Avoid LFS fetch (budget exceeded)
           lfs: false
-          ref: ${{ github.event.workflow_run.head_sha || github.ref }}
+          # The job only syncs the exact trusted revision after successful CI.
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
 
       - name: Build HF-only repo snapshot
         run: |
@@ -48,6 +89,12 @@ jobs:
             --exclude ".git" \
             --exclude "pretrained_models" \
             --exclude "voice_samples" \
+            --exclude "python_app" \
+            --exclude "hf_app.py" \
+            --exclude "requirements.txt" \
+            --exclude "paths.py" \
+            --exclude "pyproject.toml" \
+            --exclude "pytest.ini" \
             --exclude "output" \
             --exclude "node_modules" \
             --exclude "web/node_modules" \
@@ -58,7 +105,22 @@ jobs:
             --exclude ".cache" \
             --exclude "desktop" \
             --exclude "flutter_app" \
-            --exclude "ios"
+            --exclude "ios" \
+            --exclude ".hermes" \
+            --exclude ".qa" \
+            --exclude "*.png" \
+            --exclude "*.jpg" \
+            --exclude "*.jpeg" \
+            --exclude "*.gif" \
+            --exclude "*.webp" \
+            --exclude "*.bin" \
+            --exclude "*.so" \
+            --exclude "*.dylib" \
+            --exclude "*.dll" \
+            --exclude "*.a" \
+            --exclude "*.o" \
+            --exclude "*.onnx" \
+            --exclude "target"
           cd "$HF_SYNC_DIR"
           git init
           git config user.name "hf-sync-bot"
@@ -90,14 +152,14 @@ jobs:
           echo "Push to Hugging Face completed successfully."
 
       - name: Wait for HF Space rebuild
-        run: sleep 90
+        run: sleep 30
 
       - name: Health check HF Space
         id: healthcheck
         run: |
           set -euo pipefail
-          MAX_RETRIES=10
-          RETRY_DELAY=30
+          MAX_RETRIES=20
+          RETRY_DELAY=15
           URL="https://pi1704-epub-to-mp3.hf.space/api/health"
 
           for i in $(seq 1 $MAX_RETRIES); do
@@ -106,8 +168,6 @@ jobs:
             if [ "$HTTP_CODE" = "200" ]; then
               echo "HF Space is healthy"
               cat /tmp/hf_health.json
-              VERSION=$(python3 -c "import json; print(json.load(open('/tmp/hf_health.json')).get('version', 'unknown'))" 2>/dev/null || echo "unknown")
-              echo "Deployed version: $VERSION"
               exit 0
             fi
             echo "Got HTTP $HTTP_CODE, retrying in ${RETRY_DELAY}s..."
@@ -115,5 +175,3 @@ jobs:
           done
           echo "::error::HF Space health check failed after $MAX_RETRIES attempts"
           exit 1
-
-

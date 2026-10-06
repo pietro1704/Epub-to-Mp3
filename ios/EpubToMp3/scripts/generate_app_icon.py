@@ -206,11 +206,17 @@ def main() -> int:
         print(f"error: iconset not found at {ICONSET}", file=sys.stderr)
         return 1
     master = draw_icon()
+    # macOS applies its own rounded presentation; keep the artwork inside the
+    # platform safe area so it does not look larger than neighbouring apps.
+    mac_master = Image.new("RGBA", (BASE, BASE), (0, 0, 0, 0))
+    mac_art = master.resize((int(BASE * 0.80), int(BASE * 0.80)), Image.LANCZOS)
+    mac_master.alpha_composite(mac_art, (int(BASE * 0.10), int(BASE * 0.10)))
     preview = Path("/tmp/app_icon_preview.png")
     master.save(preview)
     print(f"master preview -> {preview}")
     for name, px in SIZES.items():
-        master.resize((px, px), Image.LANCZOS).save(ICONSET / name)
+        source = mac_master if name.startswith("icon-mac-") else master
+        source.resize((px, px), Image.LANCZOS).save(ICONSET / name)
     print(f"wrote {len(SIZES)} icon files to {ICONSET}")
     return 0
 

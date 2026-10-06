@@ -9,7 +9,6 @@ import AVFoundation
 /// They exercise the AVQueuePlayer queue-count behaviour, multi-chapter
 /// ordering, and the embedded-TTS bootstrap state flags that were broken
 /// when no backend URL was configured on a real iPhone.
-@MainActor
 final class AudioPlayerEnqueueSegmentTests: XCTestCase {
 
     // MARK: - Helpers
@@ -30,6 +29,7 @@ final class AudioPlayerEnqueueSegmentTests: XCTestCase {
     /// playback — the user must tap Play explicitly. The first
     /// segment only flips the "ready" latches so the Play button
     /// enables in the UI.
+    @MainActor
     func testThreeSegmentsEnqueuedItemCount() {
         let player = AudioPlayer()
         for i in 0..<3 {
@@ -45,6 +45,7 @@ final class AudioPlayerEnqueueSegmentTests: XCTestCase {
     }
 
     /// Segments from different chapters are all accepted without crashing.
+    @MainActor
     func testMultiChapterSegmentsAccepted() {
         let player = AudioPlayer()
         // Chapter 0, segment 0 — creates the queue.
@@ -63,6 +64,7 @@ final class AudioPlayerEnqueueSegmentTests: XCTestCase {
 
     // MARK: - firstSegmentReady is a session latch
 
+    @MainActor
     func testFirstSegmentReadyLatchSurvivesClearConversionState() {
         let player = AudioPlayer()
         player.enqueueSegment(data: fakeMP3(), chapterIndex: 0, segmentIndex: 0)
@@ -85,6 +87,7 @@ final class AudioPlayerEnqueueSegmentTests: XCTestCase {
 
     /// The MiniPlayerBar spinner must disappear as soon as the first
     /// segment lands — regardless of whether isConverting is still true.
+    @MainActor
     func testIsLoadingDropsAfterFirstSegment() {
         let player = AudioPlayer()
         player.isConverting = true
@@ -97,8 +100,207 @@ final class AudioPlayerEnqueueSegmentTests: XCTestCase {
             "isLoading must drop to false once firstChapterReady becomes true")
     }
 
-    // MARK: - No crash on empty data
+    // MARK: - Background pre-synthesis must not march the chapter cursor
 
+    /// Regression: while PAUSED (background conversion — reader open but the
+    /// user hasn't tapped Play), `BookOpenView.synthesizeOneChapter` streams
+    /// segments for the whole book in chapter order. Each new chapter used to
+    /// clobber `currentChapterIndex`, marching the user's cursor 0→N across
+    /// every chapter. A follow-mode reader observing the player then followed
+    /// that runaway and re-rendered ~60×/s (device log: 86 ReaderView.init on
+    /// a stationary chapter). A paused player MUST keep its cursor put.
+    @MainActor
+    func testBackgroundEnqueueDoesNotMoveCursorWhilePaused() {
+        let player = AudioPlayer()
+        XCTAssertFalse(player.isPlaying)
+        XCTAssertEqual(player.currentChapterIndex, 0)
+
+        // Simulate whole-book background synthesis: segments for many
+        // chapters, out of and in order, all while paused.
+        for ch in [0, 1, 2, 5, 9, 20, 47] {
+            player.enqueueSegment(data: fakeMP3(), chapterIndex: ch, segmentIndex: 0)
+            XCTAssertFalse(player.isPlaying,
+                "enqueue must never auto-start playback")
+            XCTAssertEqual(player.currentChapterIndex, 0,
+                "a paused player must not move its chapter cursor to chapter \(ch) " +
+                "just because a background-synthesized segment was enqueued")
+        }
+    }
+
+    /// Buffered chapters must not pull the reader/Now Playing cursor ahead of
+    /// the item AVQueuePlayer is actually playing.
+    @MainActor
+    func testBufferingAheadWhilePlayingDoesNotMoveCurrentChapter() {
+        let player = AudioPlayer()
+        player.testHook_setIsPlaying(true)
+
+        player.enqueueSegment(data: fakeMP3(), chapterIndex: 0, segmentIndex: 0)
+        player.enqueueSegment(data: fakeMP3(), chapterIndex: 1, segmentIndex: 0)
+
+        XCTAssertEqual(player.currentChapterIndex, 0,
+            "Buffer-ahead enqueue must not claim chapter 1 before its item becomes current")
+    }
+
+    /// Future chapter segments may be buffered while chapter 0 is audible,
+    /// but they must not replace the active chapter's sentence timing state
+    /// before AVQueuePlayer advances to that chapter.
+    @MainActor
+    func testBufferingAheadPreservesActiveSegmentTimingChapter() {
+        let player = AudioPlayer()
+        player.enqueueSegment(data: fakeMP3(), chapterIndex: 0, segmentIndex: 0, sentenceId: "ch0-s0")
+        player.enqueueSegment(data: fakeMP3(), chapterIndex: 1, segmentIndex: 0, sentenceId: "ch1-s0")
+
+        XCTAssertEqual(player.testHook_segmentChapterIndex(), 0)
+        XCTAssertEqual(player.testHook_activeSegmentSentenceCount(), 1)
+    }
+
+    @MainActor
+    func testSegmentsWithoutSentenceIDsPreserveTimingAlignment() {
+        let player = AudioPlayer()
+        player.enqueueSegment(data: fakeMP3(), chapterIndex: 0, segmentIndex: 0)
+        player.enqueueSegment(data: fakeMP3(), chapterIndex: 0, segmentIndex: 1, sentenceId: "ch0-s1")
+
+        XCTAssertEqual(
+            player.testHook_activeSegmentSentenceCount(),
+            2,
+            "Every queued segment must occupy a timing slot, even when it has no sentence ID"
+        )
+    }
+
+    @MainActor
+    func testActivatingNewChapterDiscardsPlayedChapterSentenceMetadata() {
+        let player = AudioPlayer()
+        player.enqueueSegment(data: fakeMP3(), chapterIndex: 0, segmentIndex: 0, sentenceId: "ch0-s0")
+        player.enqueueSegment(data: fakeMP3(), chapterIndex: 1, segmentIndex: 0, sentenceId: "ch1-s0")
+
+        player.testHook_activateSegmentChapter(1)
+
+        XCTAssertEqual(player.testHook_bufferedSegmentChapterCount(), 1)
+        XCTAssertEqual(player.activeSentenceId, "ch1-s0")
+    }
+
+    @MainActor
+    func testDelayedCompletionFromPreviousChapterDoesNotAdvanceNewChapterCursor() {
+        let player = AudioPlayer()
+        player.enqueueSegment(data: fakeMP3(), chapterIndex: 0, segmentIndex: 0, sentenceId: "ch0-s0")
+        player.enqueueSegment(data: fakeMP3(), chapterIndex: 1, segmentIndex: 0, sentenceId: "ch1-s0")
+        player.enqueueSegment(data: fakeMP3(), chapterIndex: 1, segmentIndex: 1, sentenceId: "ch1-s1")
+
+        player.testHook_activateSegmentChapter(1)
+        player.testHook_completeSegmentTiming(chapterIndex: 0)
+
+        XCTAssertEqual(player.activeSentenceId, "ch1-s0")
+        XCTAssertEqual(player.testHook_activeSegmentSentenceCount(), 2)
+    }
+
+    @MainActor
+    func testOwnedSegmentItemRequiresSameInstanceAndCanBeRemovedWhenSkipped() {
+        let player = AudioPlayer()
+        let owned = AVPlayerItem(url: URL(fileURLWithPath: "/tmp/owned-segment.mp3"))
+        let unrelated = AVPlayerItem(url: URL(fileURLWithPath: "/tmp/unrelated-segment.mp3"))
+
+        player.testHook_registerOwnedSegmentItem(owned)
+
+        XCTAssertTrue(player.testHook_isOwnedSegmentItem(owned))
+        XCTAssertFalse(player.testHook_isOwnedSegmentItem(unrelated))
+
+        player.testHook_removeOwnedSegmentItem(owned)
+
+        XCTAssertFalse(player.testHook_isOwnedSegmentItem(owned))
+    }
+
+    @MainActor
+    func testTeardownClearsDeferredSegmentsBeforeDeletingSessionDirectory() {
+        let player = AudioPlayer()
+
+        for segmentIndex in 0...5 {
+            player.enqueueSegment(
+                data: fakeMP3(),
+                chapterIndex: 0,
+                segmentIndex: segmentIndex,
+                sentenceId: "s\(segmentIndex)"
+            )
+        }
+
+        XCTAssertGreaterThan(player.testHook_backlogCount(), 0)
+
+        player.testHook_teardownPlayer()
+
+        XCTAssertEqual(
+            player.testHook_backlogCount(),
+            0,
+            "A new playback session must not inherit deferred files from the previous queue"
+        )
+    }
+
+    @MainActor
+    func testSegmentProducerWaitsAtBoundedBacklogUntilQueueAdvances() async {
+        let player = AudioPlayer()
+        let total = AudioPlayer.testHook_maxQueueAhead()
+            + SegmentBacklog.maximumDeferredSegmentCount
+        for segmentIndex in 0..<total {
+            player.enqueueSegment(
+                data: fakeMP3(),
+                chapterIndex: 0,
+                segmentIndex: segmentIndex
+            )
+        }
+        XCTAssertEqual(
+            player.testHook_backlogCount(),
+            SegmentBacklog.maximumDeferredSegmentCount
+        )
+
+        let resumed = expectation(description: "segment capacity resumed")
+        let waiting = expectation(description: "segment producer is waiting")
+        Task { @MainActor in
+            waiting.fulfill()
+            if await player.waitForSegmentCapacity() {
+                resumed.fulfill()
+            }
+        }
+        await fulfillment(of: [waiting], timeout: 1)
+        XCTAssertEqual(
+            player.testHook_backlogCount(),
+            SegmentBacklog.maximumDeferredSegmentCount,
+            "The producer must remain paused while the deferred backlog is full"
+        )
+        XCTAssertEqual(player.testHook_segmentCapacityWaiterCount(), 1)
+
+        XCTAssertTrue(player.testHook_finishCurrentSegment())
+        await fulfillment(of: [resumed], timeout: 1)
+    }
+
+    @MainActor
+    func testTeardownCancelsAProducerWaitingForSegmentCapacity() async {
+        let player = AudioPlayer()
+        let total = AudioPlayer.testHook_maxQueueAhead()
+            + SegmentBacklog.maximumDeferredSegmentCount
+        for segmentIndex in 0..<total {
+            player.enqueueSegment(
+                data: fakeMP3(),
+                chapterIndex: 0,
+                segmentIndex: segmentIndex
+            )
+        }
+
+        let cancelled = expectation(description: "segment capacity cancelled")
+        let waiting = expectation(description: "segment producer is waiting")
+        Task { @MainActor in
+            waiting.fulfill()
+            if !(await player.waitForSegmentCapacity()) {
+                cancelled.fulfill()
+            }
+        }
+        await fulfillment(of: [waiting], timeout: 1)
+        XCTAssertEqual(player.testHook_segmentCapacityWaiterCount(), 1)
+
+        player.testHook_teardownPlayer()
+        await fulfillment(of: [cancelled], timeout: 1)
+    }
+
+    // MARK: No crash on empty data
+
+    @MainActor
     func testEmptySegmentDataIsGracefullyIgnored() {
         let player = AudioPlayer()
         // Must not crash; firstSegmentReady stays false.
@@ -115,6 +317,7 @@ final class AudioPlayerEnqueueSegmentTests: XCTestCase {
     /// Updated contract: no auto-play. We verify a new player was
     /// created by observing `firstSegmentReady` flipping back to true
     /// after `clearConversionState()` reset it.
+    @MainActor
     func testReenqueueAfterStopCreatesNewPlayer() {
         let player = AudioPlayer()
         player.enqueueSegment(data: fakeMP3(), chapterIndex: 0, segmentIndex: 0)

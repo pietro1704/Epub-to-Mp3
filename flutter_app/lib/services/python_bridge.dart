@@ -7,16 +7,13 @@ import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 
 import '../models/ebook_fulltext.dart';
+import 'api_client.dart';
 
-/// Bridges Dart to the Python pipeline (`python_app/src/...`).
+/// Preserves the legacy bridge API while routing Android work to the backend.
 ///
 /// Three runtime modes, picked at call time:
 ///
-/// * **Android** — embedded CPython via Chaquopy. The Kotlin side
-///   (`MainActivity.kt`) handles `Python.getInstance()` and invokes the
-///   functions in `python_app.src.android_entrypoints`. Talks to Dart
-///   over the `epub_to_mp3/python` MethodChannel. (See
-///   `flutter_app/PYTHON-EMBED-ANDROID.md`.)
+/// * **Android** — canonical Rust HTTP backend via [ApiClient].
 /// * **Linux / Windows desktop** — system Python 3.10+. The Flutter
 ///   bundle ships `python_app/src/` as an asset; on first call we extract
 ///   it to a temp dir, then invoke `python3 -c '...'` (or `python` on
@@ -32,6 +29,9 @@ class PythonBridge {
   factory PythonBridge() => instance;
 
   static const MethodChannel _channel = MethodChannel('epub_to_mp3/python');
+  ApiClient? _androidApi;
+
+  void configureAndroidBackend(ApiClient api) => _androidApi = api;
 
   // Lazily-resolved desktop state. Populated on first desktop call.
   String? _desktopPythonAppPath;
@@ -57,16 +57,15 @@ class PythonBridge {
     }
   }
 
-  /// True only where this bridge can actually execute Python. On
-  /// unsupported platforms (iOS, macOS, web) callers should fall back to
-  /// the remote FastAPI backend.
-  bool get isSupported => _isAndroid || _isDesktop;
+  /// True only where this bridge can actually execute Python.
+  bool get isSupported => _isAndroid ? _androidApi != null : _isDesktop;
 
   // ---------------------------------------------------------------- public
 
   /// Boots the Python runtime and confirms it responds. Returns the
   /// Python `sys.version` string on success.
   Future<String> bootstrap() async {
+    if (_isAndroid) return 'remote-backend';
     if (_isDesktop) {
       await _ensureDesktopPython();
       final result = await _runDesktopScript(
@@ -91,6 +90,7 @@ class PythonBridge {
   /// Parses an EPUB / PDF located at [filePath] off the main isolate
   /// and decodes the resulting JSON payload into an [EbookFulltext].
   Future<EbookFulltext> parseEpub(String filePath, {String jobId = ''}) async {
+
     if (_isDesktop) {
       await _ensureDesktopPython();
       // Pass the file path via stdin (NUL-terminated) so we don't have
@@ -105,6 +105,7 @@ class PythonBridge {
       );
       return _decodeFulltext(raw, jobId);
     }
+
     // Android (or test host) — MethodChannel path.
     final raw = await _channel.invokeMethod<String>(
       'parseEpub',
@@ -131,6 +132,9 @@ class PythonBridge {
         stdinPayload: text,
       );
       return jsonDecode(raw) as Map<String, dynamic>;
+    }
+    if (_isAndroid) {
+      throw UnsupportedError('Android chapter conversion is performed by the backend job');
     }
     final raw = await _channel.invokeMethod<String>(
       'convertChapter',
@@ -159,6 +163,7 @@ class PythonBridge {
       );
       return raw.trim();
     }
+    if (_isAndroid) return 'pt';
     final raw = await _channel.invokeMethod<String>(
       'detectLanguage',
       <String, dynamic>{'text': text},

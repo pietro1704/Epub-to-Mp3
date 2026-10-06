@@ -28,7 +28,12 @@ class TestTTSFactory(unittest.TestCase):
 
     def test_create_edge_engine(self):
         """Test creating Edge TTS engine"""
-        config = ConversionConfig(engine="edge", voice="pt-BR-FranciscaNeural")
+        sink = object()
+        config = ConversionConfig(
+            engine="edge",
+            voice="pt-BR-FranciscaNeural",
+            segment_metric_sink=sink,
+        )
 
         with patch("src.tts.edge_engine.EdgeTTSEngine") as mock_engine:
             engine = self.factory.create_engine(config)
@@ -41,6 +46,7 @@ class TestTTSFactory(unittest.TestCase):
             self.assertEqual(kwargs.get("verbose"), False)
             self.assertEqual(kwargs.get("max_segment_seconds"), config.edge_max_segment_seconds)
             self.assertEqual(kwargs.get("chunk_char_limit"), config.edge_chunk_chars)
+            self.assertIs(kwargs.get("metric_callback"), sink)
 
     def test_create_piper_engine(self):
         """Test creating Piper TTS engine"""
@@ -83,14 +89,15 @@ class TestTTSFactory(unittest.TestCase):
 
         self.assertIn("Unsupported engine", str(context.exception))
 
-    def test_available_engines_includes_piper_without_models(self):
-        """Piper should be advertised when the binary exists even if no models are cached."""
+    def test_available_engines_excludes_piper_without_models(self):
+        """Piper requires an explicitly installed local model."""
         with (
             patch("shutil.which", return_value="/usr/bin/piper"),
             patch("src.tts.factory.is_piper_supported_environment", return_value=True),
+            patch.object(self.factory, "_find_piper_model", side_effect=FileNotFoundError),
         ):
             engines = self.factory.available_engines()
-        self.assertIn("piper", engines)
+        self.assertNotIn("piper", engines)
 
     def test_find_piper_model_success(self):
         """Test finding Piper model successfully"""
@@ -107,58 +114,17 @@ class TestTTSFactory(unittest.TestCase):
 
                 self.assertEqual(result.name, "test_model.onnx")
 
-    def test_find_piper_model_not_found(self):
-        """Test finding Piper model when none exists and download also fails"""
+    def test_find_piper_model_not_found_without_download(self):
+        """Missing local Piper models fail without attempting network access."""
         with tempfile.TemporaryDirectory() as temp_dir:
             models_dir = Path(temp_dir) / "nonexistent"
 
         with patch("src.tts.factory.Path") as mock_path:
             mock_path.return_value = models_dir
-            # Simulate download failure so FileNotFoundError is still raised
-            with patch("urllib.request.urlretrieve", side_effect=OSError("network error")):
+            with patch("urllib.request.urlretrieve") as mock_download:
                 with self.assertRaises(FileNotFoundError):
                     self.factory._find_piper_model()
-
-    def test_find_piper_model_preferred_language_not_found_downloads_instead_of_wrong_model(self):
-        """When models exist but not for the preferred language, download the right one
-        instead of silently returning a wrong-language model."""
-        with tempfile.TemporaryDirectory() as temp_dir:
-            # Test via _download_default_piper_model: "es" → ES model, not EN fallback.
-            # Use PIPER_MODEL_DIR to avoid writing to the real models directory.
-            with patch("urllib.request.urlretrieve") as mock_dl:
-
-                def fake_urlretrieve(url, dest):
-                    Path(dest).write_text("dummy")
-
-                mock_dl.side_effect = fake_urlretrieve
-                with patch.dict("os.environ", {"PIPER_MODEL_DIR": temp_dir}):
-                    result = self.factory._download_default_piper_model("es")
-                    self.assertIsNotNone(result)
-                    self.assertIn("es_ES", str(result))
-
-    def test_find_piper_model_unknown_language_fallback_downloads_english_not_portuguese(self):
-        """Unknown language fallback downloads English model, not Portuguese."""
-        with patch("urllib.request.urlretrieve") as mock_dl:
-            downloaded_paths = []
-
-            def fake_urlretrieve(url, dest):
-                downloaded_paths.append(url)
-                Path(dest).write_text("dummy")
-
-            mock_dl.side_effect = fake_urlretrieve
-            # "xx" is unknown — should fall back to "en", not "pt"
-            with tempfile.TemporaryDirectory() as temp_dir:
-                with patch.dict("os.environ", {"PIPER_MODEL_DIR": temp_dir}):
-                    result = self.factory._download_default_piper_model("xx")
-                    self.assertIsNotNone(result)
-                    self.assertTrue(
-                        any("en_US" in url for url in downloaded_paths),
-                        f"Expected English model download, got: {downloaded_paths}",
-                    )
-                    self.assertFalse(
-                        any("pt_BR" in url for url in downloaded_paths),
-                        f"Should not download Portuguese model for unknown language: {downloaded_paths}",
-                    )
+            mock_download.assert_not_called()
 
 
 class TestEdgeTTSEngine(unittest.IsolatedAsyncioTestCase):
@@ -210,7 +176,7 @@ class TestEdgeTTSEngine(unittest.IsolatedAsyncioTestCase):
 
             mock_edge_tts.Communicate.side_effect = lambda text, voice: DummyCommunicate(
                 [
-                    {"type": "audio", "data": b"DATA"},
+                    {"type": "audio", "data": b"D" * 2048},
                     {"type": "WordBoundary", "data": {}},
                 ]
             )
@@ -221,7 +187,7 @@ class TestEdgeTTSEngine(unittest.IsolatedAsyncioTestCase):
             result = await engine.synthesize_async("Hello world", output_path)
 
             self.assertEqual(result, output_path)
-            self.assertEqual(output_path.read_bytes(), b"DATA")
+            self.assertEqual(output_path.read_bytes(), b"D" * 2048)
             mock_edge_tts.Communicate.assert_called_once_with("Hello world", "test-voice")
 
     async def test_synthesize_async_multilingual(self):
@@ -243,7 +209,7 @@ class TestEdgeTTSEngine(unittest.IsolatedAsyncioTestCase):
                 calls.append((text, voice))
                 return DummyCommunicate(
                     [
-                        {"type": "audio", "data": b"X"},
+                        {"type": "audio", "data": b"X" * 2048},
                     ]
                 )
 
@@ -303,7 +269,7 @@ class TestEdgeTTSEngine(unittest.IsolatedAsyncioTestCase):
                     captured.append((text, voice))
 
                 async def stream(self):
-                    yield {"type": "audio", "data": b"X"}
+                    yield {"type": "audio", "data": b"X" * 2048}
 
             mock_edge_tts.Communicate.side_effect = lambda text, voice: DummyCommunicate(
                 text, voice
@@ -340,7 +306,7 @@ class TestEdgeTTSEngine(unittest.IsolatedAsyncioTestCase):
                     calls.append((text, voice))
 
                 async def stream(self):
-                    yield {"type": "audio", "data": b"X"}
+                    yield {"type": "audio", "data": b"X" * 2048}
 
             mock_edge_tts.Communicate.side_effect = lambda text, voice: DummyCommunicate(
                 text, voice

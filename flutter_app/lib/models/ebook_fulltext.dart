@@ -46,8 +46,22 @@ class FulltextChapter with _$FulltextChapter {
   factory FulltextChapter.fromJson(Map<String, dynamic> json) =>
       _$FulltextChapterFromJson(json);
 
-  String get displayTitle =>
-      (name != null && name!.isNotEmpty) ? cleanTitle(name!) : 'Chapter $index';
+  String get displayTitle {
+    final candidate = name?.trim();
+    if (candidate == null || candidate.isEmpty || _looksLikeMimeType(candidate)) {
+      return 'Chapter $index';
+    }
+    return cleanTitle(candidate);
+  }
+
+  static bool _looksLikeMimeType(String value) {
+    final normalized = value.trim().toLowerCase();
+    return normalized.startsWith('application/') ||
+        normalized.startsWith('text/') ||
+        normalized.startsWith('image/') ||
+        normalized.startsWith('audio/') ||
+        normalized.startsWith('video/');
+  }
 
   /// Port of iOS EbookFulltext.Chapter.cleanTitle: insert spaces before
   /// uppercase runs glued to lowercase and before digits glued to letters,

@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -41,25 +42,37 @@ class JobManager:
         Returns:
             True if successful, False otherwise
         """
+        job_file = self._get_job_file(job_id)
+        # Per-pid suffix so two workers writing the same job_id don't
+        # clobber each other's in-flight tmp file. os.replace is the
+        # atomic primitive; the tmp filename just needs to be unique.
+        tmp_file = job_file.with_suffix(f".json.{os.getpid()}.tmp")
+
+        # Add timestamp for cleanup purposes
+        job_data_with_meta = {
+            **job_data,
+            "_saved_at": datetime.utcnow().isoformat(),
+        }
+
         try:
-            job_file = self._get_job_file(job_id)
-
-            # Add timestamp for cleanup purposes
-            job_data_with_meta = {
-                **job_data,
-                "_saved_at": datetime.utcnow().isoformat(),
-            }
-
-            with open(job_file, "w", encoding="utf-8") as f:
+            with open(tmp_file, "w", encoding="utf-8") as f:
                 json.dump(job_data_with_meta, f, ensure_ascii=False, indent=2)
-
-            # Update memory cache
-            self._memory_cache[job_id] = job_data
-
-            return True
+                f.flush()
+                os.fsync(f.fileno())
+            os.replace(tmp_file, job_file)
         except Exception as e:
             logger.error(f"Failed to save job {job_id}: {e}", exc_info=True)
+            # Drop the half-written tmp so the jobs dir never accumulates
+            # orphan *.tmp files after a SIGTERM/disk-full sequence.
+            try:
+                tmp_file.unlink(missing_ok=True)
+            except OSError:
+                pass
             return False
+
+        # Update memory cache only after the on-disk swap succeeded.
+        self._memory_cache[job_id] = job_data
+        return True
 
     def load_job(self, job_id: str) -> Optional[dict]:
         """

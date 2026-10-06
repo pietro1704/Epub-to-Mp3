@@ -1,8 +1,8 @@
 import XCTest
 @testable import EpubToMp3
 
-/// Tests for the on-disk `EbookFulltext` JSON cache. The cache is a
-/// thin Swift wrapper around `~/Library/Caches/.../fulltext/*.json`
+/// Tests for the durable `EbookFulltext` JSON cache. The cache is a
+/// thin Swift wrapper around Application Support reader payloads
 /// and is intentionally NOT replaced by `python_app.src.cache_manager`
 /// — that module manages the conversion pipeline's parsed-text
 /// checkpoints (different lifecycle, different keying, lives under
@@ -46,5 +46,49 @@ final class LocalFulltextCacheTests: XCTestCase {
         XCTAssertNotNil(LocalFulltextCache.read(bookId: id))
         LocalFulltextCache.evict(bookId: id)
         XCTAssertNil(LocalFulltextCache.read(bookId: id))
+    }
+
+    func testReaderPayloadUsesDurableApplicationSupportStorage() throws {
+        let id = uniqueId()
+        defer { LocalFulltextCache.evict(bookId: id) }
+
+        let url = try XCTUnwrap(LocalFulltextCache.storageURL(bookId: id))
+        let applicationSupport = try FileManager.default.url(
+            for: .applicationSupportDirectory,
+            in: .userDomainMask,
+            appropriateFor: nil,
+            create: false
+        )
+
+        XCTAssertTrue(
+            url.standardizedFileURL.path.hasPrefix(applicationSupport.standardizedFileURL.path + "/"),
+            "Prepared reader content must survive the OS cache purge."
+        )
+    }
+
+    func testReclaimsOldRebuildablePayloadsWithoutTouchingThePreservedBook() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("rebuildable-fulltext-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let oldest = directory.appendingPathComponent("oldest.json")
+        let current = directory.appendingPathComponent("current.json")
+        try Data(repeating: 0xA5, count: 100).write(to: oldest)
+        try Data(repeating: 0x5A, count: 100).write(to: current)
+        try FileManager.default.setAttributes(
+            [.modificationDate: Date(timeIntervalSince1970: 1)],
+            ofItemAtPath: oldest.path
+        )
+
+        let removed = LocalFulltextCache.reclaimRebuildablePayloads(
+            toMaximumBytes: 100,
+            preservingBookIDs: ["current"],
+            directory: directory
+        )
+
+        XCTAssertEqual(removed, ["oldest"])
+        XCTAssertFalse(FileManager.default.fileExists(atPath: oldest.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: current.path))
     }
 }

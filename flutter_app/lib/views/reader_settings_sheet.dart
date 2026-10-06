@@ -25,170 +25,168 @@ class ReaderSettingsSheet extends ConsumerWidget {
         top: false,
         child: SingleChildScrollView(
           child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Center(
-              child: Container(
-                width: 36,
-                height: 4,
-                margin: const EdgeInsets.only(bottom: 16),
-                decoration: BoxDecoration(
-                  color: Colors.grey[400],
-                  borderRadius: BorderRadius.circular(2),
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Center(
+                child: Container(
+                  width: 36,
+                  height: 4,
+                  margin: const EdgeInsets.only(bottom: 16),
+                  decoration: BoxDecoration(
+                    color: Colors.grey[400],
+                    borderRadius: BorderRadius.circular(2),
+                  ),
                 ),
               ),
-            ),
 
-            // Theme
-            Text(t.themeLabel,
-                style: Theme.of(context).textTheme.titleSmall),
-            const SizedBox(height: 8),
-            _ThemeGrid(
-              selected: settings.readerTheme,
-              onSelect: (t) => notifier.setReaderTheme(t),
-            ),
-            const SizedBox(height: 16),
+              // Theme
+              Text(t.themeLabel, style: Theme.of(context).textTheme.titleSmall),
+              const SizedBox(height: 8),
+              _ThemeGrid(
+                selected: settings.readerTheme,
+                onSelect: (t) => notifier.setReaderTheme(t),
+              ),
+              const SizedBox(height: 16),
 
-            // Font family
-            Text(t.fontLabel,
-                style: Theme.of(context).textTheme.titleSmall),
-            const SizedBox(height: 8),
-            SegmentedButton<ReaderFontFamily>(
-              segments: ReaderFontFamily.values.map((f) {
-                return ButtonSegment(
-                  value: f,
-                  label: Text(f.displayName),
-                );
-              }).toList(),
-              selected: {settings.readerFontFamily},
-              onSelectionChanged: (s) =>
-                  notifier.setReaderFontFamily(s.first),
-              showSelectedIcon: false,
-            ),
-            const SizedBox(height: 12),
+              // Font family
+              Text(t.fontLabel, style: Theme.of(context).textTheme.titleSmall),
+              const SizedBox(height: 8),
+              SegmentedButton<ReaderFontFamily>(
+                segments: ReaderFontFamily.values.map((f) {
+                  return ButtonSegment(value: f, label: Text(f.displayName));
+                }).toList(),
+                selected: {settings.readerFontFamily},
+                onSelectionChanged: (s) =>
+                    notifier.setReaderFontFamily(s.first),
+                showSelectedIcon: false,
+              ),
+              const SizedBox(height: 12),
 
-            // Font size
-            Row(
-              children: [
-                Text(t.sizeLabel),
-                const Spacer(),
-                IconButton(
-                  icon: const Icon(Icons.text_decrease),
-                  onPressed: settings.readerFontSize > 0
-                      ? () => notifier.setReaderFontSize(
-                            settings.readerFontSize - 1)
-                      : null,
-                ),
-                SizedBox(
-                  width: 50,
-                  child: Text(
-                    '${settings.readerPointSize.toInt()}pt',
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(
-                        fontFeatures: [FontFeature.tabularFigures()]),
+              // Font size
+              Row(
+                children: [
+                  Text(t.sizeLabel),
+                  const Spacer(),
+                  IconButton(
+                    icon: const Icon(Icons.text_decrease),
+                    onPressed: settings.readerFontSize > 0
+                        ? () => notifier.setReaderFontSize(
+                            settings.readerFontSize - 1,
+                          )
+                        : null,
                   ),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.text_increase),
-                  onPressed: settings.readerFontSize < 4
-                      ? () => notifier.setReaderFontSize(
-                            settings.readerFontSize + 1)
-                      : null,
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
-
-            // Layout
-            Text(t.layoutLabel,
-                style: Theme.of(context).textTheme.titleSmall),
-            const SizedBox(height: 8),
-            SegmentedButton<ReaderLayout>(
-              segments: ReaderLayout.values.map((l) {
-                return ButtonSegment(
-                  value: l,
-                  label: Text(l.displayName),
-                );
-              }).toList(),
-              selected: {settings.readerLayout},
-              onSelectionChanged: (s) =>
-                  notifier.setReaderLayout(s.first),
-              showSelectedIcon: false,
-            ),
-            const SizedBox(height: 12),
-
-            // Line spacing
-            Row(
-              children: [
-                Text(t.lineSpacingLabel),
-                const Spacer(),
-                SizedBox(
-                  width: 160,
-                  child: Slider(
-                    value: settings.readerLineSpacing,
-                    min: 0,
-                    max: 16,
-                    divisions: 8,
-                    onChanged: (v) => notifier.setReaderLineSpacing(v),
+                  SizedBox(
+                    width: 50,
+                    child: Text(
+                      '${settings.readerPointSize.toInt()}pt',
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        fontFeatures: [FontFeature.tabularFigures()],
+                      ),
+                    ),
                   ),
-                ),
-              ],
-            ),
-
-            // Margin
-            Row(
-              children: [
-                Text(t.marginLabel),
-                const Spacer(),
-                SizedBox(
-                  width: 160,
-                  child: Slider(
-                    value: settings.readerMargin,
-                    // Floor 8 matches `AppSettings.readerMargin`'s
-                    // clamp range. Lowered from 16 so the default
-                    // 12 pt (iOS parity) is reachable and stale
-                    // persisted values do not assert at build time.
-                    min: 8,
-                    max: 80,
-                    divisions: 18,
-                    onChanged: (v) => notifier.setReaderMargin(v),
+                  IconButton(
+                    icon: const Icon(Icons.text_increase),
+                    onPressed: settings.readerFontSize < 4
+                        ? () => notifier.setReaderFontSize(
+                            settings.readerFontSize + 1,
+                          )
+                        : null,
                   ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
+                ],
+              ),
+              const SizedBox(height: 16),
 
-            // Show page numbers (paginated layout only)
-            SwitchListTile(
-              contentPadding: EdgeInsets.zero,
-              title: Text(t.readerShowPageNumbers),
-              value: settings.readerShowPageNumbers,
-              onChanged: (v) => notifier.setReaderShowPageNumbers(v),
-            ),
-            const SizedBox(height: 8),
+              // Layout
+              Text(
+                t.layoutLabel,
+                style: Theme.of(context).textTheme.titleSmall,
+              ),
+              const SizedBox(height: 8),
+              SegmentedButton<ReaderLayout>(
+                segments: ReaderLayout.values.map((l) {
+                  return ButtonSegment(value: l, label: Text(l.displayName));
+                }).toList(),
+                selected: {settings.readerLayout},
+                onSelectionChanged: (s) => notifier.setReaderLayout(s.first),
+                showSelectedIcon: false,
+              ),
+              const SizedBox(height: 12),
 
-            // Text alignment
-            Text(t.readerAlignmentLabel,
-                style: Theme.of(context).textTheme.titleSmall),
-            const SizedBox(height: 8),
-            SegmentedButton<ReaderTextAlignment>(
-              segments: [
-                ButtonSegment(
-                  value: ReaderTextAlignment.justified,
-                  label: Text(t.readerAlignmentJustified),
-                ),
-                ButtonSegment(
-                  value: ReaderTextAlignment.left,
-                  label: Text(t.readerAlignmentLeft),
-                ),
-              ],
-              selected: {settings.readerTextAlignment},
-              onSelectionChanged: (s) =>
-                  notifier.setReaderTextAlignment(s.first),
-              showSelectedIcon: false,
-            ),
-          ],
+              // Line spacing
+              Row(
+                children: [
+                  Text(t.lineSpacingLabel),
+                  const Spacer(),
+                  SizedBox(
+                    width: 160,
+                    child: Slider(
+                      value: settings.readerLineSpacing,
+                      min: 0,
+                      max: 16,
+                      divisions: 8,
+                      onChanged: (v) => notifier.setReaderLineSpacing(v),
+                    ),
+                  ),
+                ],
+              ),
+
+              // Margin
+              Row(
+                children: [
+                  Text(t.marginLabel),
+                  const Spacer(),
+                  SizedBox(
+                    width: 160,
+                    child: Slider(
+                      value: settings.readerMargin,
+                      // Floor 8 matches `AppSettings.readerMargin`'s
+                      // clamp range. Lowered from 16 so the default
+                      // 12 pt (iOS parity) is reachable and stale
+                      // persisted values do not assert at build time.
+                      min: 8,
+                      max: 80,
+                      divisions: 18,
+                      onChanged: (v) => notifier.setReaderMargin(v),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+
+              // Show page numbers (paginated layout only)
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                title: Text(t.readerShowPageNumbers),
+                value: settings.readerShowPageNumbers,
+                onChanged: (v) => notifier.setReaderShowPageNumbers(v),
+              ),
+              const SizedBox(height: 8),
+
+              // Text alignment
+              Text(
+                t.readerAlignmentLabel,
+                style: Theme.of(context).textTheme.titleSmall,
+              ),
+              const SizedBox(height: 8),
+              SegmentedButton<ReaderTextAlignment>(
+                segments: [
+                  ButtonSegment(
+                    value: ReaderTextAlignment.justified,
+                    label: Text(t.readerAlignmentJustified),
+                  ),
+                  ButtonSegment(
+                    value: ReaderTextAlignment.left,
+                    label: Text(t.readerAlignmentLeft),
+                  ),
+                ],
+                selected: {settings.readerTextAlignment},
+                onSelectionChanged: (s) =>
+                    notifier.setReaderTextAlignment(s.first),
+                showSelectedIcon: false,
+              ),
+            ],
           ),
         ),
       ),

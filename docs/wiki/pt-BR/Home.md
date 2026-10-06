@@ -32,7 +32,7 @@ Os modos local CLI e web compartilham os mesmos diretórios persistentes por pad
 ## Recursos principais
 
 - Conversão de `EPUB` e `PDF` para `MP3`
-- Cadeia de fallback entre `Edge-TTS`, `Kokoro` e `Piper`
+- Síntese Edge-first com fallback opcional para Piper
 - Preservação da estrutura do sumário e hierarquia de capítulos
 - Cache agressivo para evitar reprocessamento de texto
 - Reprodução progressiva no frontend conforme os chunks são sintetizados

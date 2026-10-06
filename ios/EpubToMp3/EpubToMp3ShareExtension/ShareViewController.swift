@@ -29,6 +29,7 @@ final class ShareViewController: UIViewController {
     static let acceptedTypeIdentifiers: [String] = [
         UTType.epub.identifier,
         "org.idpf.epub-container",
+        "com.apple.ibooks.epub",
         UTType.pdf.identifier,
     ]
 
@@ -66,7 +67,7 @@ final class ShareViewController: UIViewController {
                         from: provider,
                         typeIdentifier: typeID
                     )
-                    _ = try SharedContainerImporter.dropIntoInbox(
+                    _ = try SharedContainerInbox.dropIntoInbox(
                         source: materialized
                     )
                     imported += 1
@@ -158,14 +159,14 @@ final class ShareViewController: UIViewController {
         }
     }
 
-    private static func copyToTemp(source: URL) throws -> URL {
+    private nonisolated static func copyToTemp(source: URL) throws -> URL {
         let ext = source.pathExtension.isEmpty ? "epub" : source.pathExtension
         let dest = tempURL(extension: ext, suggested: source.lastPathComponent)
         try FileManager.default.copyItem(at: source, to: dest)
         return dest
     }
 
-    private static func tempURL(extension ext: String, suggested: String? = nil) -> URL {
+    private nonisolated static func tempURL(extension ext: String, suggested: String? = nil) -> URL {
         let tmp = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
         let name: String
         if let suggested, !suggested.isEmpty {

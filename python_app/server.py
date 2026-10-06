@@ -21,8 +21,6 @@ except ImportError:
 
 import asyncio
 import contextlib
-import hashlib
-import html
 import json
 import logging
 import random
@@ -39,7 +37,7 @@ from typing import Dict, List, Optional
 
 from fastapi import BackgroundTasks, FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, PlainTextResponse, StreamingResponse
 from main import ConverterApplication
 from pydantic import BaseModel
 from src._health_watchdog_mixin import (
@@ -52,7 +50,7 @@ from src.benchmark_profile import recommend_parallel_slots
 from src.cache_manager import CacheManager
 from src.chapter_utils import deduplicate_chapters_by_content
 from src.config import CACHE_DIR, ConversionConfig
-from src.ebook_reader import EbookReader
+from src.ebook_reader import EbookReader, TextProcessor
 from src.engine_pool import JobEnginePool, ResourceSnapshot
 from src.error_classifier import classify_error
 from src.hardware_detector import HardwareDetector
@@ -66,12 +64,36 @@ from src.paths import (
     SOURCE_BACKUPS_DIR,
     UPLOADS_DIR,
 )
+from src.reader_sanitizer import chapter_html_fallback, sanitize_reader_css, sanitize_reader_html
+from src.stream_attempt_observation import observe_synthesis
+from src.stream_http_observation import (
+    ObservedFileResponse,
+    stream_http_observations,
+    validate_journey_id,
+)
 from src.telemetry import TelemetryRecorder
 from src.text_formatting import TextFormattingProcessor
 from src.tts.edge_engine import reset_adaptive_settings
 from src.tts.factory import TTSFactory
 from src.tts.piper_guard import is_piper_supported_environment
 from src.utils import AudioProcessor, FileManager, TextValidator, TimeFormatter
+
+
+def _chapter_display_name(name: Optional[str], html: Optional[str], index: int) -> str:
+    """Return the canonical TOC/heading title emitted to every client surface."""
+    candidate = TextProcessor.clean_chapter_title((name or "").strip())
+    normalized = re.sub(r"\s+", " ", candidate).strip().casefold()
+    generic = normalized in {"chapter", "capitulo", "capítulo"} or bool(
+        re.fullmatch(r"(?:chapter|cap[ií]tulo)\s+\d+", normalized)
+    )
+    if not generic and candidate:
+        return candidate
+    heading = TextProcessor.extract_first_heading(html)
+    if heading:
+        heading = TextProcessor.clean_chapter_title(heading)
+        if heading:
+            return heading
+    return candidate or f"Chapter {index}"
 
 
 def _detect_test_environment() -> bool:
@@ -273,6 +295,18 @@ CLEANUP_INTERVAL_SECONDS = max(
         or _DEFAULT_CLEANUP_INTERVAL
     ),
 )
+
+
+def get_cleanup_interval_seconds() -> int:
+    """Resolve the cleanup interval at call time without reloading the module."""
+    default = 60 if os.getenv("SPACE_ID") else 300
+    raw = os.getenv("CLEANUP_INTERVAL_SECONDS", str(default)) or str(default)
+    try:
+        return max(10, int(raw))
+    except ValueError:
+        return max(10, default)
+
+
 TELEMETRY_RETENTION_HOURS = max(
     24, int(os.getenv("TELEMETRY_RETENTION_HOURS", "720") or "720")
 )  # 30 days
@@ -599,10 +633,40 @@ def _job_output_dir(job_id: str, job: Optional[dict] = None, ensure: bool = Fals
 
 
 def _job_stream_dir(job_id: str, ensure: bool = False) -> Path:
+    # Keep the allow-list as the product policy, then normalize and verify the
+    # concrete filesystem paths at this boundary. The explicit checks also
+    # protect against a pre-existing symlink that points outside the job root.
+    _validate_job_id(job_id)
     base = _job_output_dir(job_id, ensure=ensure)
-    target = _resolve_relative_path_within_root(base, Path("streams"), must_exist=False)
+    base_path = os.path.realpath(os.fspath(base))
+    streams_root_path = os.path.realpath(os.path.join(base_path, "streams"))
+    if not streams_root_path.startswith(f"{base_path}{os.sep}"):
+        raise ValueError(f"Invalid job_id: {job_id!r}")
+    target_path = os.path.realpath(os.path.join(streams_root_path, job_id))
+    if not target_path.startswith(f"{streams_root_path}{os.sep}"):
+        raise ValueError(f"Invalid job_id: {job_id!r}")
+    target = Path(target_path)
+    streams_root = target.parent
     if ensure:
         target.mkdir(parents=True, exist_ok=True)
+        return target
+
+    if target.exists():
+        return target
+
+    # Streams created before per-job isolation lived directly in
+    # `<book-output>/streams`. Keep those readable only when the legacy
+    # manifest explicitly belongs to this job; sharing a book title must
+    # never make one job publish another job's audio chunks.
+    legacy_index = streams_root / "index.json"
+    if legacy_index.exists():
+        try:
+            legacy_payload = json.loads(legacy_index.read_text(encoding="utf-8"))
+        except Exception:
+            legacy_payload = None
+        if isinstance(legacy_payload, dict) and legacy_payload.get("jobId") == job_id:
+            return streams_root
+
     return target
 
 
@@ -627,10 +691,76 @@ def _load_stream_index(job_id: str) -> dict:
     return payload
 
 
+def _atomic_write_text(path: Path, data: str, encoding: str = "utf-8") -> None:
+    """Write `data` to `path` via a sibling tmp file + `os.replace`.
+
+    A direct `Path.write_text` (or `open(path, "w")`) is non-atomic: a
+    SIGTERM, ENOMEM or disk-full landing mid-write leaves the target
+    file half-written, so the next reader sees a JSON parse error and
+    treats persisted state as lost. `os.replace` is atomic on POSIX and
+    atomic-since-3.3 on Windows: either the new bytes are fully in
+    place, or the previous bytes (or non-existence) are still there.
+    fsync the fd before the rename so the bytes are durable on disk
+    before the swap is published; PID-suffixed tmp filename keeps
+    concurrent writers from clobbering each other's in-flight stream.
+    On any failure the tmp file is unlinked so the parent directory
+    never accumulates `*.tmp` orphans.
+    """
+    tmp_path = path.with_suffix(path.suffix + f".{os.getpid()}.tmp")
+    try:
+        with open(tmp_path, "w", encoding=encoding) as handle:
+            handle.write(data)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(tmp_path, path)
+    except Exception:
+        try:
+            tmp_path.unlink(missing_ok=True)
+        except OSError:
+            pass
+        raise
+
+
+def _retired_stream_chunks(chapter: object, active_ids: frozenset[str] = frozenset()) -> list[dict]:
+    """Preserve valid publication aliases without carrying corrupt history forward."""
+    if not isinstance(chapter, dict):
+        return []
+    retired: dict[str, dict] = {}
+    for field in ("retiredChunks", "chunks"):
+        entries = chapter.get(field)
+        if not isinstance(entries, list):
+            continue
+        for chunk in entries:
+            if not isinstance(chunk, dict):
+                continue
+            chunk_id = chunk.get("id")
+            filename = chunk.get("file")
+            if isinstance(chunk_id, bool) or not isinstance(chunk_id, (str, int)):
+                continue
+            identity = str(chunk_id)
+            if not identity or not all(char.isalnum() or char in "_-" for char in identity):
+                continue
+            if not isinstance(filename, str) or not filename or filename in (".", ".."):
+                continue
+            if any(char in filename for char in ("/", "\\", "\0")) or identity in active_ids:
+                continue
+            retired[identity] = {"id": chunk_id, "file": filename}
+    return list(retired.values())
+
+
 def _save_stream_index(job_id: str, payload: dict) -> None:
     index_path = _stream_index_path(job_id, ensure=True)
     payload.setdefault("chapters", {})
-    index_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    _atomic_write_text(
+        index_path,
+        json.dumps(payload, ensure_ascii=False, indent=2),
+    )
+
+
+# Parallel chapter conversion performs read-modify-write updates to one
+# per-job manifest. Serialize those updates so chapters cannot erase each
+# other's published chunks.
+_stream_manifest_lock = threading.Lock()
 
 
 def _load_cover_cache() -> Dict[str, dict]:
@@ -642,7 +772,7 @@ def _load_cover_cache() -> Dict[str, dict]:
 
 def _save_cover_cache(index: Dict[str, dict]) -> None:
     try:
-        cover_index_path.write_text(json.dumps(index))
+        _atomic_write_text(cover_index_path, json.dumps(index))
     except Exception:
         pass
 
@@ -713,6 +843,7 @@ _JOB_WORKERS = max(1, int(os.getenv("JOB_WORKERS", "1") or "1"))  # Processar 1 
 _job_queue: Optional[asyncio.Queue[str]] = None
 _job_workers: list[asyncio.Task] = []
 _jobs_in_queue: set[str] = set()
+_job_tasks: dict[str, asyncio.Task] = {}
 _worker_scale_lock = asyncio.Lock()
 
 _pending_uploads: Dict[str, dict] = {}
@@ -983,14 +1114,6 @@ def _resolve_chapter_timeout(estimated_seconds: float, text_chars: int = 0) -> f
         synthesis_min = (text_chars / 30.0) * 1.5
         timeout = max(timeout, synthesis_min)
     return min(timeout, _CHAPTER_TIMEOUT_MAX)
-
-
-def _chapter_html_fallback(text: str) -> str:
-    paragraphs = [segment.strip() for segment in (text or "").split("\n\n")]
-    blocks = [segment for segment in paragraphs if segment]
-    if not blocks:
-        return "<p></p>"
-    return "".join(f"<p>{html.escape(block).replace(chr(10), '<br />')}</p>" for block in blocks)
 
 
 def _collect_resumable_job_entries() -> list[dict]:
@@ -1538,6 +1661,22 @@ def _enqueue_job(job_id: str) -> bool:
         return False
 
 
+def _schedule_job_conversion(job_id: str) -> bool:
+    """Start at most one in-process conversion task for a job."""
+    task = _job_tasks.get(job_id)
+    if task is not None and not task.done():
+        return False
+    task = asyncio.create_task(process_conversion(job_id))
+    _job_tasks[job_id] = task
+
+    def _clear(done: asyncio.Task, *, expected: asyncio.Task = task) -> None:
+        if _job_tasks.get(job_id) is expected:
+            _job_tasks.pop(job_id, None)
+
+    task.add_done_callback(_clear)
+    return True
+
+
 async def _job_worker(worker_id: int) -> None:
     """Dedicated worker that processes jobs from the global queue."""
     assert _job_queue is not None
@@ -1553,7 +1692,10 @@ async def _job_worker(worker_id: int) -> None:
             if state in {"finished", "cancelled"}:
                 continue
             logger.info("Worker %s converting job %s (%s)", worker_id, job_id, state or "queued")
-            await process_conversion(job_id)
+            _schedule_job_conversion(job_id)
+            task = _job_tasks.get(job_id)
+            if task is not None:
+                await task
         except Exception as exc:  # pragma: no cover - defensive
             logger.error(
                 "Worker %s failed processing job %s: %s", worker_id, job_id, exc, exc_info=True
@@ -1609,7 +1751,7 @@ async def _resume_pending_jobs() -> None:
             pass
         if not _enqueue_job(job_id):
             logger.warning("Job queue unavailable during resume, executing inline for %s", job_id)
-            asyncio.create_task(process_conversion(job_id))
+            _schedule_job_conversion(job_id)
 
 
 # Load existing jobs from disk on startup
@@ -1800,7 +1942,7 @@ async def _periodic_job_cleanup():
     """Periodically clean up old completed jobs."""
     while True:
         try:
-            await asyncio.sleep(CLEANUP_INTERVAL_SECONDS)
+            await asyncio.sleep(get_cleanup_interval_seconds())
 
             current_time = time.time()
             jobs_to_remove = []
@@ -2134,7 +2276,7 @@ async def _job_watchdog():
             await _scale_worker_pool(target_workers)
             stalled_inline = _detect_stalled_jobs()
             for stalled_id in stalled_inline:
-                asyncio.create_task(process_conversion(stalled_id))
+                _schedule_job_conversion(stalled_id)
         except Exception as exc:  # pragma: no cover - defensive
             logger.error("Job watchdog encountered an error: %s", exc, exc_info=True)
 
@@ -2234,6 +2376,28 @@ class JobStatus(BaseModel):
     uiLanguage: Optional[str] = None
     lastActivityAt: Optional[float] = None
     noParallel: Optional[bool] = None
+    journeyObservations: list[dict] = []
+
+
+class JourneyObservationInput(BaseModel):
+    """A privacy-safe client timing record for one conversion journey."""
+
+    journeyId: str
+    transition: str
+    elapsedNanoseconds: int
+
+
+_JOURNEY_TRANSITIONS = frozenset(
+    {
+        "play_requested",
+        "audio_queued",
+        "audio_audible",
+        "seek_requested",
+        "seek_target_reached",
+        "cancelled",
+    }
+)
+_JOURNEY_OBSERVATION_LIMIT = 200
 
 
 class RestartOptions(BaseModel):
@@ -2292,6 +2456,7 @@ async def convert_ebook(
     narrator_voice: Optional[str] = Form(None),
     character_voice: Optional[str] = Form(None),
     export_to_iphone: Optional[str] = Form(None),
+    priority_chapter_index: Optional[str] = Form(None),
 ) -> dict[str, str]:
     enable_character_voices_flag = _parse_form_optional_bool(enable_character_voices)
     narrator_voice_value = (narrator_voice or "").strip() or None
@@ -2328,6 +2493,7 @@ async def convert_ebook(
     channels_override = _parse_form_int(channels, min_value=1, max_value=2)
     clear_cache_flag = _parse_form_bool(clear_cache, False)
     force_reprocess_flag = _parse_form_bool(force_reprocess, False)
+    priority_chapter_index_value = _parse_form_int(priority_chapter_index, min_value=0)
     filter_chapters_flag = _parse_form_bool(filter_chapters, False)
     verbose_flag = _parse_form_optional_bool(verbose)
     use_language_detection_flag = _parse_form_optional_bool(use_language_detection)
@@ -2451,15 +2617,16 @@ async def convert_ebook(
             Path(file.filename or "ebook.epub").name,
             must_exist=False,
         )
-        raw_payload = await file.read()
-        if MAX_UPLOAD_BYTES and len(raw_payload) > MAX_UPLOAD_BYTES:
+        from src.upload_streaming import UploadTooLarge, stream_upload_to_path
+
+        try:
+            file_hash, _ = await stream_upload_to_path(file, temp_file, max_bytes=MAX_UPLOAD_BYTES)
+        except UploadTooLarge:
+            shutil.rmtree(job_input_dir, ignore_errors=True)
             raise HTTPException(
                 status_code=413,
                 detail=f"File exceeds the {MAX_UPLOAD_MB} MB limit",
             )
-        with temp_file.open("wb") as buffer:
-            buffer.write(raw_payload)
-        file_hash = hashlib.sha1(raw_payload).hexdigest() if raw_payload else None
 
         cover_name = None
         cover_url = None
@@ -2530,6 +2697,7 @@ async def convert_ebook(
         "footnote_mode": footnote_mode,
         "language": language,
         "priority": priority,
+        "priorityChapterIndex": priority_chapter_index_value,
         "formattingCues": speak_cues,
         "uiLanguage": ui_lang,
         "outputs": [],
@@ -2604,7 +2772,7 @@ async def convert_ebook(
         logger.info(f"Job {job_id} created and persisted successfully")
 
     if not _enqueue_job(job_id):
-        background_tasks.add_task(process_conversion, job_id)
+        background_tasks.add_task(_schedule_job_conversion, job_id)
     return {"jobId": job_id}
 
 
@@ -2635,6 +2803,47 @@ async def cancel_job(job_id: str) -> dict:
         _persist_job(job_id, force=True)
 
     return {"status": job["state"]}
+
+
+@app.post("/api/jobs/{job_id}/journey-observations")
+async def record_journey_observation(
+    job_id: str, observation: JourneyObservationInput
+) -> dict[str, str]:
+    """Persist one redacted listener-visible timing boundary for a job.
+
+    The client owns its monotonic clock, while this endpoint only associates
+    its random short-lived journey identifier with the server conversion job.
+    It deliberately rejects arbitrary metadata so book content, listener
+    identity, URLs, and audio payloads cannot enter diagnostics.
+    """
+    _validate_job_id(job_id)
+    job = jobs.get(job_id) or job_manager.load_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    jobs[job_id] = job
+
+    try:
+        journey_id = str(uuid.UUID(observation.journeyId))
+    except (ValueError, AttributeError):
+        raise HTTPException(status_code=422, detail="journeyId must be a UUID")
+    if observation.transition not in _JOURNEY_TRANSITIONS:
+        raise HTTPException(status_code=422, detail="Unsupported journey transition")
+    if observation.elapsedNanoseconds < 0:
+        raise HTTPException(status_code=422, detail="elapsedNanoseconds must be non-negative")
+
+    records = job.setdefault("journeyObservations", [])
+    records.append(
+        {
+            "journeyId": journey_id,
+            "transition": observation.transition,
+            "elapsedNanoseconds": observation.elapsedNanoseconds,
+            "recordedAt": time.time(),
+        }
+    )
+    if len(records) > _JOURNEY_OBSERVATION_LIMIT:
+        del records[:-_JOURNEY_OBSERVATION_LIMIT]
+    _persist_job(job_id)
+    return {"status": "recorded"}
 
 
 @app.post("/api/jobs/{job_id}/resume")
@@ -2689,7 +2898,76 @@ async def delete_job(job_id: str) -> dict:
     return {"status": "deleted"}
 
 
-@app.get("/api/outputs/{job_id}/{filename}")
+@app.get("/api/jobs/{job_id}/log")
+async def get_job_log(job_id: str):
+    """Return the persistent conversion log for a job.
+
+    The SwiftUI macOS client calls this endpoint from LogsView. Prefer the
+    on-disk conversion.log so completed jobs remain inspectable after memory
+    trimming, then fall back to the in-memory raw log/events for active jobs
+    that have not flushed a log file yet.
+    """
+    try:
+        _validate_job_id(job_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid job id")
+    job_data = jobs.get(job_id) or job_manager.load_job(job_id)
+    if not job_data:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    # Re-anchor the resolved output dir inside `output_dir` at the sink
+    # site so CodeQL's data-flow recognises the containment check that
+    # `_job_output_dir` already performs internally. Without this the
+    # `.resolve()` below trips py/path-injection alert #80.
+    try:
+        base_dir = _resolve_path_within_root(
+            output_dir, _job_output_dir(job_id, job_data), must_exist=False
+        )
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid job id")
+    legacy_base = _resolve_relative_path_within_root(output_dir, job_id, must_exist=False)
+    for candidate_root in (base_dir, legacy_base):
+        log_path = candidate_root / "conversion.log"
+        if not (log_path.exists() and log_path.is_file()):
+            continue
+        try:
+            resolved_log = _resolve_path_within_root(
+                candidate_root, "conversion.log", must_exist=False
+            )
+        except ValueError:
+            # Symlink resolves outside the candidate root — skip and
+            # fall back to the raw log path. Matches the original
+            # `is_relative_to(root)` guard.
+            continue
+        if resolved_log == log_path.resolve():
+            return FileResponse(
+                path=log_path,
+                media_type="text/plain; charset=utf-8",
+                filename="conversion.log",
+            )
+
+    raw_log = job_data.get("_raw_log")
+    if isinstance(raw_log, list) and raw_log:
+        lines = [str(line) for line in raw_log]
+    else:
+        events = job_data.get("events")
+        lines = (
+            [_sanitize_event_message(str(event)) for event in events]
+            if isinstance(events, list)
+            else []
+        )
+    body = "\n".join(lines)
+    if body:
+        body += "\n"
+    return PlainTextResponse(body)
+
+
+# GET + HEAD: mobile clients (iOS background URLSession, Flutter
+# offline cache) issue HEAD to learn `Content-Length` + `Accept-Ranges`
+# before scheduling a resumable, ranged background download. Starlette's
+# FileResponse already short-circuits the body on HEAD — we only need
+# the route to accept the verb.
+@app.api_route("/api/outputs/{job_id}/{filename}", methods=["GET", "HEAD"])
 async def download_output(job_id: str, filename: str) -> FileResponse:
     _validate_job_id(job_id)
     job_data = jobs.get(job_id) or job_manager.load_job(job_id)
@@ -2740,9 +3018,20 @@ async def stream_manifest(job_id: str, chapter_index: int) -> dict:
 
 
 @app.get("/api/streams/{job_id}/chapters/{chapter_index}/chunks/{chunk_id}")
-async def stream_chunk(job_id: str, chapter_index: int, chunk_id: str):
+async def stream_chunk(job_id: str, chapter_index: int, chunk_id: str, request: Request):
     """Serve an individual synthesized chunk for progressive playback."""
     import re as _re
+
+    journey_headers = request.headers.getlist("X-Playback-Journey-ID")
+    received_at = stream_http_observations.received_at() if journey_headers else None
+    journey_id = None
+    if journey_headers:
+        try:
+            if len(journey_headers) != 1:
+                raise ValueError("Duplicate playback journey IDs")
+            journey_id = validate_journey_id(journey_headers[0])
+        except ValueError:
+            raise HTTPException(status_code=422, detail="Invalid playback journey ID") from None
 
     _validate_job_id(job_id)
     if not _re.match(r"^[\w\-]+$", chunk_id):
@@ -2753,8 +3042,11 @@ async def stream_chunk(job_id: str, chapter_index: int, chunk_id: str):
 
     index_payload = _load_stream_index(job_id)
     chapter_payload = index_payload.get("chapters", {}).get(str(int(chapter_index))) or {}
+    publications = (chapter_payload.get("chunks") or []) + (
+        chapter_payload.get("retiredChunks") or []
+    )
     chunk_entry = next(
-        (item for item in chapter_payload.get("chunks") or [] if str(item.get("id")) == chunk_id),
+        (item for item in publications if str(item.get("id")) == chunk_id),
         None,
     )
     if chunk_entry is None:
@@ -2774,24 +3066,35 @@ async def stream_chunk(job_id: str, chapter_index: int, chunk_id: str):
     if served_entry is None:
         raise HTTPException(status_code=404, detail="Chunk not found")
 
-    return FileResponse(
+    response = FileResponse(
         path=served_entry,
         media_type=_guess_media_type(served_entry.name),
+    )
+    if journey_id is None:
+        return response
+    return ObservedFileResponse(
+        response, stream_http_observations, journey_id, chunk_id, received_at=received_at
     )
 
 
 def _build_fulltext_chapters_from_cache(cached: dict) -> list[dict]:
-    return [
-        {
-            "index": idx,
-            "name": ch.get("title") or f"Chapter {idx}",
-            "text": ch.get("text") or "",
-            "html": ch.get("html") or _chapter_html_fallback(ch.get("text") or ""),
-            "css": ch.get("css") or "",
-            "charCount": len(ch.get("text") or ""),
-        }
-        for idx, ch in enumerate(cached.get("chapters") or [], 1)
-    ]
+    result = []
+    for idx, ch in enumerate(cached.get("chapters") or [], 1):
+        html = sanitize_reader_html(ch.get("html") or chapter_html_fallback(ch.get("text") or ""))
+        result.append(
+            {
+                "index": idx,
+                "name": _chapter_display_name(ch.get("title"), html, idx),
+                "sourcePath": ch.get("sourcePath"),
+                "text": ch.get("text") or "",
+                "html": html,
+                "css": sanitize_reader_css(ch.get("css") or ""),
+                "resources": ch.get("resources") or [],
+                "footnotes": ch.get("footnotes") or None,
+                "charCount": len(ch.get("text") or ""),
+            }
+        )
+    return result
 
 
 @app.get("/api/jobs/{job_id}/fulltext")
@@ -2883,18 +3186,22 @@ async def get_job_fulltext(job_id: str) -> dict:
         for idx, chapter in enumerate(book_chapters, 1):
             chapter_text = getattr(chapter, "speech_text", None) or chapter.text or ""
             clean_text = TextFormattingProcessor.strip_inline_markdown(chapter_text)
-            chapter_html = (getattr(chapter, "raw_html", None) or "").strip()
+            chapter_html = sanitize_reader_html((getattr(chapter, "raw_html", None) or "").strip())
             if not chapter_html:
-                chapter_html = _chapter_html_fallback(clean_text)
-            chapter_css = reader.extract_chapter_stylesheet(chapter)
+                chapter_html = sanitize_reader_html(chapter_html_fallback(clean_text))
+            chapter_css = sanitize_reader_css(reader.extract_chapter_stylesheet(chapter))
+            chapter_resources = reader.extract_chapter_resources(chapter)
 
             chapters.append(
                 {
                     "index": idx,
-                    "name": chapter.name or f"Chapter {idx}",
+                    "name": _chapter_display_name(chapter.name, chapter_html, idx),
+                    "sourcePath": getattr(chapter, "source_path", None) or None,
                     "text": clean_text,
                     "html": chapter_html,
                     "css": chapter_css,
+                    "resources": chapter_resources,
+                    "footnotes": list(getattr(chapter, "footnotes", None) or []) or None,
                     "charCount": len(clean_text),
                 }
             )
@@ -2923,9 +3230,12 @@ async def get_job_fulltext(job_id: str) -> dict:
                     "chapters": [
                         {
                             "title": chapter["name"],
+                            "sourcePath": chapter["sourcePath"],
                             "text": chapter["text"],
                             "html": chapter["html"],
                             "css": chapter["css"],
+                            "resources": chapter["resources"],
+                            "footnotes": chapter["footnotes"],
                         }
                         for chapter in chapters
                     ],
@@ -2951,7 +3261,7 @@ async def cleanup_old_files(max_age_hours: int = 48) -> dict:
 
     This endpoint should be called periodically (e.g., via cron job).
     """
-    result = {"local_deleted": 0, "errors": []}
+    result = {"local_deleted": 0, "errors": 0}
 
     # Cleanup local files
     import time
@@ -2971,8 +3281,9 @@ async def cleanup_old_files(max_age_hours: int = 48) -> dict:
                 shutil.rmtree(job_dir)
                 result["local_deleted"] += 1
                 logger.info(f"Deleted old job directory: {job_dir.name}")
-            except Exception as e:
-                result["errors"].append(f"Failed to delete {job_dir.name}: {str(e)}")
+            except Exception:
+                result["errors"] += 1
+                logger.exception("Failed to delete old job directory: %s", job_dir.name)
 
     # Cleanup old job state files
     jobs_deleted = job_manager.cleanup_old_jobs(max_age_hours=max_age_hours)
@@ -3341,7 +3652,18 @@ async def estimate_conversion(
         upload_dir = uploads_dir / upload_id
         if upload_dir.exists():
             for candidate in upload_dir.iterdir():
-                if candidate.suffix.lower() in {".epub", ".pdf"}:
+                if candidate.suffix.lower() in {
+                    ".epub",
+                    ".pdf",
+                    ".fb2",
+                    ".docx",
+                    ".cbz",
+                    ".cbr",
+                    ".mobi",
+                    ".prc",
+                    ".azw",
+                    ".azw3",
+                }:
                     file_path = str(candidate)
                     break
 
@@ -3790,6 +4112,7 @@ async def process_conversion(job_id: str) -> None:
         _detection_fell_back = False
         job_language = job.get("language")
         previously_detected = job.get("detectedLanguage")
+        declared_language = getattr(reader, "language", None)
         if job_language and job_language.lower() not in ("auto", ""):
             detected_lang = job_language
             language_profile = LanguageProfile(
@@ -3799,6 +4122,15 @@ async def process_conversion(job_id: str) -> None:
                 analysed_chars=0,
             )
             _append_event(job, f"🌐 User-selected language: {detected_lang}")
+        elif declared_language and str(declared_language).lower() not in {"auto", "unknown"}:
+            detected_lang = str(declared_language)
+            language_profile = LanguageProfile(
+                primary=detected_lang,
+                languages=[detected_lang],
+                predictions=[],
+                analysed_chars=0,
+            )
+            _append_event(job, f"🌐 EPUB metadata language: {detected_lang}")
         elif (
             previously_detected
             and job.get("resumeRequested")
@@ -4168,7 +4500,11 @@ async def process_conversion(job_id: str) -> None:
 
         chapter_progress_entries: list[dict] = []
         for idx, chapter in enumerate(chapters, 1):
-            chapter_name = getattr(chapter, "name", f"Chapter {idx}")
+            chapter_name = _chapter_display_name(
+                getattr(chapter, "name", None),
+                getattr(chapter, "raw_html", None),
+                idx,
+            )
             chapter_text = (
                 getattr(chapter, "speech_text", None) or getattr(chapter, "text", "") or ""
             )
@@ -4273,8 +4609,12 @@ async def process_conversion(job_id: str) -> None:
 
             if not engine_seeds or active_config is None:
                 job["state"] = "failed"
-                _set_job_error(job, "No TTS engine available")
-                _append_event(job, "❌ No TTS engine available to start conversion")
+                no_engine_message = (
+                    "No TTS engine available. Install a compatible voice model in Settings "
+                    "or enable Edge-TTS."
+                )
+                _set_job_error(job, no_engine_message)
+                _append_event(job, f"❌ {no_engine_message}")
                 _persist_job(job_id, force=True)
                 return
 
@@ -4835,15 +5175,16 @@ async def process_conversion(job_id: str) -> None:
                 stream_index = _load_stream_index(job_id)
                 chapter_key = str(idx)
                 try:
-                    previous_chapter = stream_index.get("chapters", {}).get(chapter_key) or {}
-                    for chunk in previous_chapter.get("chunks") or []:
-                        old_name = _safe_leaf_name(str(chunk.get("file") or ""), field_name="chunk")
-                        old_path = _resolve_relative_path_within_root(
-                            stream_dir, old_name, must_exist=False
-                        )
-                        old_path.unlink(missing_ok=True)
-                    stream_index.setdefault("chapters", {}).pop(chapter_key, None)
-                    _save_stream_index(job_id, stream_index)
+                    with _stream_manifest_lock:
+                        stream_index = _load_stream_index(job_id)
+                        previous_chapter = stream_index.get("chapters", {}).get(chapter_key) or {}
+                        retired = _retired_stream_chunks(previous_chapter)
+                        stream_index.setdefault("chapters", {})[chapter_key] = {
+                            "chapterIndex": idx,
+                            "chunks": [],
+                            "retiredChunks": retired,
+                        }
+                        _save_stream_index(job_id, stream_index)
                 except Exception:
                     pass
 
@@ -4851,36 +5192,58 @@ async def process_conversion(job_id: str) -> None:
                 _manifest_chunks: dict[int, dict] = {}
 
                 def _chunk_callback(
-                    segment_index: int, temp_path: Path, segment_text: str = ""
+                    segment_index: int, temp_path: Path, segment_text: str = "", *, observation=None
                 ) -> None:
                     """Save synthesized segment for streaming playback."""
+                    published_target = None
+                    previous_chunk = _manifest_chunks.get(segment_index)
                     try:
-                        chunk_id = str(segment_index)
+                        # A publication identity must not alias a replacement's
+                        # bytes when a client still holds an earlier manifest.
+                        chunk_id = uuid.uuid4().hex
                         target_name = f"stream_{uuid.uuid4().hex}{temp_path.suffix.lower()}"
                         target = _resolve_relative_path_within_root(
                             stream_dir, target_name, must_exist=False
                         )
-                        shutil.copy2(temp_path, target)
+                        if observation is None:
+                            raise RuntimeError("Missing segment publication context")
+                        observation_payload = observation.publish_audio(temp_path, target)
+                        published_target = target
                         chunk_entry: dict = {
                             "id": chunk_id,
                             "index": segment_index,
                             "file": target.name,
                             "url": f"/api/streams/{job_id}/chapters/{idx}/chunks/{chunk_id}",
+                            "observation": observation_payload,
                         }
                         if segment_text:
                             chunk_entry["text"] = segment_text
                         _manifest_chunks[segment_index] = chunk_entry
-                        stream_index.setdefault("jobId", job_id)
-                        stream_index.setdefault("chapters", {})[chapter_key] = {
-                            "chapterIndex": idx,
-                            "chunks": sorted(
-                                _manifest_chunks.values(), key=lambda x: x.get("index", 0)
-                            ),
-                            "updatedAt": time.time(),
-                            "baseUrl": f"/api/streams/{job_id}/chapters/{idx}",
-                        }
-                        _save_stream_index(job_id, stream_index)
+                        with _stream_manifest_lock:
+                            stream_index = _load_stream_index(job_id)
+                            stream_index.setdefault("jobId", job_id)
+                            previous_chapter = stream_index.get("chapters", {}).get(chapter_key) or {}
+                            active_ids = frozenset(chunk["id"] for chunk in _manifest_chunks.values())
+                            retired = _retired_stream_chunks(previous_chapter, active_ids)
+                            stream_index.setdefault("chapters", {})[chapter_key] = {
+                                "chapterIndex": idx,
+                                "retiredChunks": retired,
+                                "chunks": sorted(
+                                    _manifest_chunks.values(), key=lambda x: x.get("index", 0)
+                                ),
+                                "updatedAt": time.time(),
+                                "baseUrl": f"/api/streams/{job_id}/chapters/{idx}",
+                            }
+                            _save_stream_index(job_id, stream_index)
+                        published_target = None
                     except Exception as exc:
+                        if previous_chunk is None:
+                            _manifest_chunks.pop(segment_index, None)
+                        else:
+                            _manifest_chunks[segment_index] = previous_chunk
+                        if published_target is not None:
+                            with contextlib.suppress(OSError):
+                                published_target.unlink(missing_ok=True)
                         logger.debug("Chunk callback error for segment %d: %s", segment_index, exc)
 
                 auto_order: list[str] = []
@@ -5142,16 +5505,19 @@ async def process_conversion(job_id: str) -> None:
                                 output_file, engine_config.engine
                             )
                             try:
-                                try:
-                                    synth_coro = engine_obj.synthesize_async(
-                                        clean_text,
-                                        tts_path,
-                                        progress_callback=_progress_callback,
-                                        chunk_callback=_chunk_callback,
-                                    )
-                                except TypeError:
-                                    # Fallback for engines that don't support callbacks
-                                    synth_coro = engine_obj.synthesize_async(clean_text, tts_path)
+                                def invoke(observed_callback):
+                                    try:
+                                        return engine_obj.synthesize_async(
+                                            clean_text,
+                                            tts_path,
+                                            progress_callback=_progress_callback,
+                                            chunk_callback=observed_callback,
+                                        )
+                                    except TypeError:
+                                        # Fallback for engines that don't support callbacks
+                                        return engine_obj.synthesize_async(clean_text, tts_path)
+
+                                synth_coro = observe_synthesis(invoke, _chunk_callback)
                                 synth_task = asyncio.ensure_future(synth_coro)
                                 # Per-chapter idle watchdog — aborts when the
                                 # engine goes silent mid-synthesis even if the
@@ -5789,6 +6155,14 @@ async def process_conversion(job_id: str) -> None:
             for idx, chapter in enumerate(chapters, 1)
             if idx not in completed_indices
         ]
+        priority_chapter_index = job.get("priorityChapterIndex")
+        if isinstance(priority_chapter_index, int) and priority_chapter_index >= 0:
+            priority_one_based = priority_chapter_index + 1
+            if any(idx == priority_one_based for idx, _ in pending_chapters):
+                pivot = next(
+                    i for i, (idx, _) in enumerate(pending_chapters) if idx == priority_one_based
+                )
+                pending_chapters = pending_chapters[pivot:] + pending_chapters[:pivot]
 
         # Compute multi-engine slot affinity for the first pass.
         # Affinity maps each physical slot to an engine so Edge and a local engine
@@ -6251,6 +6625,11 @@ async def process_conversion(job_id: str) -> None:
                 _ch_done = job.get("chaptersCompleted") or 0
                 _ch_failed = _ch_total - _ch_done
             _chapter_details = _extract_chapter_details(job)
+            # Mirrors the CLI's `errors` trace field (main.py) — the job can
+            # reach "finished" with lingering validationIssues (see the
+            # auto-validate block above), and without this the log can't
+            # explain a "success" outcome that's actually incomplete.
+            _validation_issues = job.get("validationIssues")
             log_session(
                 book_title=job.get("bookTitle", ""),
                 book_author=job.get("bookAuthor", ""),
@@ -6266,6 +6645,7 @@ async def process_conversion(job_id: str) -> None:
                 output_dir=str(job.get("outputDir", "")),
                 started_at=job.get("startedAt", ""),
                 chapter_details=_chapter_details or None,
+                extra={"validationIssues": _validation_issues[:20]} if _validation_issues else None,
             )
         except Exception:
             pass  # Never let logging break a conversion

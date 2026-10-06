@@ -210,9 +210,19 @@ def _detect_short_audio_output(
 
     # Mirror the CLI truncation check so both conversion paths use the same
     # short-chapter cutoff and EXPECTED_WPM-based completeness heuristic.
-    from src.converter import validate_audio_completeness
+    from src.converter import (
+        LENIENT_COVERAGE_THRESHOLD_PERCENT,
+        validate_audio_completeness,
+    )
 
     is_complete, coverage_percent = validate_audio_completeness(audio_path, len(stripped))
+    # Lenient acceptance — mirror the CLI so the SAME coverage value never
+    # disagrees between paths on whether the audio is truncated. Without
+    # this, an 82% coverage chapter is kept by the CLI but deleted +
+    # retried by the server, leading to wasted Edge-TTS quota and
+    # divergent user-facing behaviour.
+    if not is_complete and coverage_percent >= LENIENT_COVERAGE_THRESHOLD_PERCENT:
+        is_complete = True
     if is_complete:
         return None
 

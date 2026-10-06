@@ -19,6 +19,7 @@ import sys
 import threading
 import time
 import unicodedata
+import uuid
 import weakref
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, replace
@@ -31,6 +32,9 @@ from mutagen.mp3 import MP3
 from ._cache_mixin import _CacheMixin
 from ._edge_throttle_mixin import _EdgeThrottleMixin
 from ._engine_selection_mixin import _EngineSelectionMixin
+from ._env_utils import env_bool as _env_bool
+from ._env_utils import env_float as _env_float
+from ._env_utils import env_int as _env_int
 from ._health_watchdog_mixin import (
     _await_task_with_deadline,
     _HealthWatchdogMixin,
@@ -45,6 +49,7 @@ from .adaptive_performance import AdaptivePerformanceController
 from .audio_postprocess import add_silence_padding
 from .auto_tuner import AutoTuner
 from .cache_manager import CacheManager
+from .chapter_identity import assign_chapter_identities, chapter_identity_fields
 from .chapter_utils import deduplicate_chapters_by_content
 from .config import ConversionConfig
 from .ebook_reader import Chapter, EbookReader
@@ -55,6 +60,7 @@ from .i18n import Localization, get_localization
 from .performance_profile_store import PerformanceProfileStore
 from .progress import ProgressTracker
 from .speed_controller import AdaptiveSpeedController
+from .stream_attempt_observation import atomic_copy_audio, atomic_write_manifest, observe_synthesis
 from .text_integrity_validator import TextIntegrityValidator
 from .tts.factory import TTSFactory
 from .tts.piper_guard import is_piper_supported_environment
@@ -75,33 +81,6 @@ def _has_piper_support() -> bool:
 def _has_coqui_support() -> bool:
     """Stub kept for back-compat after the Coqui engine was removed."""
     return False
-
-
-def _env_bool(name: str, default: bool = False) -> bool:
-    raw = os.getenv(name)
-    if raw is None:
-        return default
-    return raw.strip().lower() in {"1", "true", "yes", "on"}
-
-
-def _env_int(name: str, default: int) -> int:
-    raw = os.getenv(name)
-    if raw is None or raw == "":
-        return default
-    try:
-        return int(raw)
-    except (TypeError, ValueError):
-        return default
-
-
-def _env_float(name: str, default: float) -> float:
-    raw = os.getenv(name)
-    if raw is None or raw == "":
-        return default
-    try:
-        return float(raw)
-    except (TypeError, ValueError):
-        return default
 
 
 async def _apply_silence_padding(
@@ -205,6 +184,14 @@ TRUNCATION_THRESHOLD_PERCENT = _env_float(
 EXPECTED_WPM = _env_int(
     "EXPECTED_WPM", 200
 )  # Expected words per minute for TTS (Edge-TTS neural voices ~200 WPM)
+# Lenient acceptance floor: audio that misses the strict TRUNCATION
+# threshold but covers ≥ this much of the text is still considered
+# complete. Edge-TTS WPM varies by content type (verse reads slower,
+# dialogue faster), so a strict 90% bar causes repeated re-synthesis
+# of already-adequate audio. Genuine truncations typically show <60%.
+# Both CLI (converter.py) and server (_server_audio_helpers.py) read
+# this constant — keep them in lock-step.
+LENIENT_COVERAGE_THRESHOLD_PERCENT = _env_float("LENIENT_COVERAGE_THRESHOLD_PERCENT", 80.0)
 CHARS_PER_WORD = _env_float("CHARS_PER_WORD", 5.0)  # Average characters per word
 # Chapters larger than this are skipped entirely (0 = disabled).
 # Useful for EPUBs with footnote-container files that hold the entire book text.
@@ -307,12 +294,16 @@ class AudioConverter(
         self.verbose = False
         self._current_book_path: Optional[Path] = None
         self._active_config: Optional[ConversionConfig] = None
+        self._runtime_run_id = ""
+        self._runtime_metric_dedupe: Dict[str, Dict[str, Any]] = {}
         # Persistent chapter checkpoint — survives process restarts
         self._checkpoint_done_set: set[int] = set()
         self._checkpoint_total: int = 0
         self._checkpoint_interval: int = int(os.getenv("CHECKPOINT_INTERVAL", "5"))
         self._auto_fix_guard: bool = False
         self._final_validation_passed: bool = True
+        self._last_validation_stats: Optional[Dict[str, int]] = None
+        self._last_validation_issues: Optional[List[str]] = None
         self._last_output_dir: Optional[Path] = None
         self.show_tts_output = False  # Only show TTS output in verbose mode
         self._retry_original_texts: Dict[str, str] = {}
@@ -589,6 +580,8 @@ class AudioConverter(
         """
         if os.getenv("DISABLE_PIPER_FALLBACK", "").strip().lower() in {"1", "true", "yes"}:
             return
+        if str(getattr(self, "_cli_fallback_engine", "") or "").lower() != "piper":
+            return
         if getattr(self, "_piper_prefetch_started", False):
             return
         self._piper_prefetch_started = True
@@ -716,6 +709,10 @@ class AudioConverter(
             return
         event = dict(payload or {})
         event.setdefault("ts", time.time())
+        if self._runtime_run_id:
+            event.setdefault("run_id", self._runtime_run_id)
+        if self._should_skip_runtime_metric(event):
+            return
         try:
             self._rotate_runtime_metrics_if_needed(path)
             with path.open("a", encoding="utf-8") as handle:
@@ -723,6 +720,28 @@ class AudioConverter(
         except Exception:
             if self.verbose:
                 print("⚠️ Failed to persist runtime metric")
+
+    def _should_skip_runtime_metric(self, event: Dict[str, Any]) -> bool:
+        """Drop high-frequency cap chatter that carries no new information."""
+        name = str(event.get("event") or "")
+        if name not in {"resource_budget_cap", "thermal_guard_cap"}:
+            return False
+
+        dedupe_fields = {
+            "event": name,
+            "engine": event.get("engine"),
+            "mode": event.get("mode"),
+            "from_parallel": event.get("from_parallel"),
+            "to_parallel": event.get("to_parallel"),
+            "reason": event.get("reason"),
+        }
+        now = float(event.get("ts") or time.time())
+        key = json.dumps(dedupe_fields, sort_keys=True, ensure_ascii=False, default=str)
+        previous = self._runtime_metric_dedupe.get(key)
+        self._runtime_metric_dedupe[key] = {"ts": now}
+        if previous is None:
+            return False
+        return (now - float(previous.get("ts") or 0.0)) < 15.0
 
     def _segment_metrics_path(self, output_dir: Optional[Path] = None) -> Optional[Path]:
         target_dir = output_dir or self._last_output_dir
@@ -743,6 +762,8 @@ class AudioConverter(
             return
         event = dict(payload or {})
         event.setdefault("ts", time.time())
+        if self._runtime_run_id:
+            event.setdefault("run_id", self._runtime_run_id)
         try:
             self._rotate_runtime_metrics_if_needed(path, max_bytes=4_000_000)
             with path.open("a", encoding="utf-8") as handle:
@@ -750,6 +771,21 @@ class AudioConverter(
         except Exception:
             if self.verbose:
                 print("⚠️ Failed to persist segment metric")
+
+    def _attach_edge_metric_sink(self, engine: object, output_dir: Path) -> None:
+        """Route Edge lifecycle records to this conversion's isolated metric file."""
+        if engine is None:
+            return
+        previous = getattr(engine, "metric_callback", None)
+
+        def _sink(payload: Dict[str, Any]) -> None:
+            self._append_segment_metric(payload, output_dir=output_dir)
+            if callable(previous):
+                with contextlib.suppress(Exception):
+                    previous(payload)
+
+        with contextlib.suppress(Exception):
+            setattr(engine, "metric_callback", _sink)
 
     def _eta_baseline_key_for_config(self, config: Optional[ConversionConfig]) -> str:
         cfg = config or self._active_config
@@ -1036,6 +1072,153 @@ class AudioConverter(
                     with contextlib.suppress(Exception):
                         setattr(engine_obj, "_semaphore", asyncio.Semaphore(target))
 
+    def _record_effective_runtime_profile(
+        self,
+        *,
+        config: ConversionConfig,
+        edge_engine: Optional[object],
+        chapter_parallel_count: int,
+        network_tier: str,
+        edge_cap: int,
+        output_dir: Optional[Path] = None,
+        cap_reasons: Optional[Iterable[str]] = None,
+    ) -> None:
+        """Persist the applied runtime profile once, without exposing sensitive config."""
+        run_id = str(self._runtime_run_id or "")
+        if run_id and getattr(self, "_runtime_profile_recorded_run_id", "") == run_id:
+            return
+
+        def _as_int(value: Any, default: int = 0) -> int:
+            try:
+                return int(value)
+            except (TypeError, ValueError):
+                return default
+
+        def _as_float(value: Any, default: float = 0.0) -> float:
+            try:
+                return float(value)
+            except (TypeError, ValueError):
+                return default
+
+        profile = self.hardware_profile
+        cpu_logical = _as_int(getattr(profile, "cpu_count", 0) or os.cpu_count() or 0)
+        cpu_physical = _as_int(getattr(profile, "cpu_physical", 0) or 0)
+        ram_total = _as_float(getattr(profile, "ram_total_gb", 0.0) or 0.0)
+        ram_available = _as_float(getattr(profile, "ram_available_gb", 0.0) or 0.0)
+        tier = str(network_tier or getattr(profile, "network_speed_estimate", "unknown"))
+        tier = tier.strip().lower() or "unknown"
+
+        tuner = getattr(edge_engine, "_network_tuner", None)
+        stats = getattr(tuner, "stats", None)
+        requests = _as_int(getattr(stats, "requests", 0) or 0)
+        successes = _as_int(getattr(stats, "successes", 0) or 0)
+        failures = _as_int(getattr(stats, "failures", 0) or 0)
+        total_latency = _as_float(getattr(stats, "total_latency", 0.0) or 0.0)
+        network_summary = {
+            "tier": tier,
+            "requests": requests,
+            "successes": successes,
+            "failures": failures,
+            "rate_limits": _as_int(getattr(stats, "rate_limits", 0) or 0),
+            "timeouts": _as_int(getattr(stats, "timeouts", 0) or 0),
+            "avg_latency_s": round(total_latency / requests, 4) if requests else 0.0,
+        }
+
+        active_segment_getter = getattr(edge_engine, "_active_segment_seconds", None)
+        active_segment_seconds = (
+            active_segment_getter()
+            if callable(active_segment_getter)
+            else getattr(edge_engine, "_max_segment_seconds", None)
+            or getattr(config, "edge_max_segment_seconds", 0)
+            or 0.0
+        )
+        edge_limits = {
+            "chunk_chars": _as_int(
+                getattr(edge_engine, "_chunk_char_limit", None)
+                or getattr(config, "edge_chunk_chars", 0)
+                or 0
+            ),
+            "max_segment_seconds": _as_float(
+                getattr(edge_engine, "_max_segment_seconds", None)
+                or getattr(config, "edge_max_segment_seconds", 0)
+                or 0.0
+            ),
+            "active_segment_seconds": _as_float(active_segment_seconds),
+            "adaptive_segment_seconds": bool(
+                getattr(config, "edge_adaptive_segment_seconds", False)
+            ),
+            "adaptive_segment_max_seconds": _as_float(
+                getattr(config, "edge_adaptive_segment_max_seconds", 0) or 0.0
+            ),
+            "enable_parallel": bool(
+                getattr(
+                    edge_engine, "_enable_parallel", getattr(config, "edge_enable_parallel", True)
+                )
+            ),
+            "parallel_slots": _as_int(getattr(edge_engine, "_parallel_slots", 0) or 0),
+            "configured_max_concurrency": _as_int(getattr(config, "edge_max_concurrency", 0) or 0),
+            "request_concurrency_cap": _as_int(edge_cap or 0),
+            "safe_profile": dict(self._edge_auto_state.get("safe_profile") or {}),
+        }
+        limits = {
+            "chapter_parallel_effective": max(1, _as_int(chapter_parallel_count or 1, 1)),
+            "chapter_parallel_state_current": _as_int(
+                self._parallel_state.get("current") or chapter_parallel_count or 1
+            ),
+            "edge": edge_limits,
+            "piper_max_procs": _as_int(getattr(config, "piper_max_procs", 0) or 0),
+            "piper_chunk_chars": _as_int(getattr(config, "piper_chunk_chars", 0) or 0),
+        }
+
+        thermal_state = getattr(self, "_thermal_guard_state", {}) or {}
+        thermal_mode = str(thermal_state.get("mode", "normal") or "normal")
+        thermal_cap = thermal_state.get("cap")
+        reasons = {
+            str(reason).strip().lower() for reason in (cap_reasons or []) if str(reason).strip()
+        }
+        if not reasons:
+            if ram_total <= 8.5 or (ram_available and ram_available <= 2.5):
+                reasons.add("ram")
+            if tier in {"slow", "medium"}:
+                reasons.add("network")
+            if thermal_cap or thermal_mode != "normal":
+                reasons.add("thermal")
+            chapter_source = str(os.getenv("CHAPTER_PARALLEL_COUNT_SOURCE", "") or "").strip()
+            chapter_override = chapter_source == "explicit" or (
+                not chapter_source
+                and bool(str(os.getenv("CHAPTER_PARALLEL_COUNT", "") or "").strip())
+            )
+            edge_source = str(os.getenv("EDGE_MAX_CONCURRENCY_SOURCE", "") or "").strip()
+            edge_override = edge_source == "explicit" or (
+                not edge_source and bool(str(os.getenv("EDGE_MAX_CONCURRENCY", "") or "").strip())
+            )
+            if chapter_override or edge_override:
+                reasons.add("explicit_env")
+
+        self._append_runtime_metric(
+            {
+                "event": "runtime_profile",
+                "hardware": {
+                    "cpu_logical": cpu_logical,
+                    "cpu_physical": cpu_physical,
+                    "ram_total_gb": round(ram_total, 3),
+                    "ram_available_gb": round(ram_available, 3),
+                    "os_type": str(getattr(profile, "os_type", "unknown") or "unknown"),
+                },
+                "network": network_summary,
+                "max_performance": _env_bool("MAX_PERFORMANCE", True),
+                "limits": limits,
+                "thermal_power": {
+                    "cap": _as_int(thermal_cap) if thermal_cap else None,
+                    "mode": thermal_mode,
+                },
+                "cap_reasons": sorted(reasons),
+            },
+            output_dir=output_dir,
+        )
+        if run_id:
+            self._runtime_profile_recorded_run_id = run_id
+
     @staticmethod
     def _chapter_display_name(chapter: Chapter, index: int) -> str:
         """Return the label consistently used when reporting chapter status."""
@@ -1043,6 +1226,11 @@ class AudioConverter(
         if name:
             return str(name)
         return f"Chapter {index}"
+
+    @staticmethod
+    def _chapter_identity_fields(chapter: Chapter, fallback_index: int) -> Dict[str, str]:
+        """Return stable telemetry identity fields without coercing TOC labels."""
+        return chapter_identity_fields(chapter, fallback_index)
 
     @staticmethod
     def _build_error_map(errors: Iterable[str]) -> Dict[str, str]:
@@ -1723,12 +1911,59 @@ class AudioConverter(
 
         return filtered
 
+    @staticmethod
+    def _audio_files_exist(directory: Optional[Path]) -> bool:
+        """Return whether a directory contains a non-empty cached MP3."""
+        if not directory or not directory.exists():
+            return False
+        try:
+            return any(
+                path.is_file() and path.stat().st_size > 0 for path in directory.rglob("*.mp3")
+            )
+        except OSError:
+            return False
+
+    def _should_run_initial_validation(
+        self, output_dir: Optional[Path], config: ConversionConfig
+    ) -> bool:
+        """Only run the expensive initial validator for genuinely new runs."""
+        if getattr(config, "clear_cache", False):
+            return False
+        if self._audio_files_exist(output_dir):
+            return False
+        cache_dir = getattr(config, "cache_dir", None)
+        if self._current_book_path:
+            try:
+                cache_dir = self.cache_manager._get_cache_path(self._current_book_path)
+            except Exception:
+                pass
+        elif cache_dir and Path(cache_dir) == Path(resolve_cache_root()):
+            # The global cache root is not evidence for this book without a
+            # resolved source path; avoid scanning unrelated audiobooks.
+            cache_dir = None
+        return not self._audio_files_exist(Path(cache_dir) if cache_dir else None)
+
+    @staticmethod
+    def _duplicate_cleanup_enabled(config: ConversionConfig) -> bool:
+        """Read the destructive duplicate cleanup opt-in."""
+        if bool(getattr(config, "cleanup_duplicate_files", False)):
+            return True
+        extra = getattr(config, "extra", {}) or {}
+        return str(extra.get("cleanup_duplicate_files", "")).strip().lower() in {
+            "1",
+            "true",
+            "yes",
+            "on",
+        }
+
     async def convert(self, reader: EbookReader, config: ConversionConfig) -> ConversionResult:
         """Convert all chapters in ``reader`` according to ``config``."""
 
         # Enable verbose mode if requested
         self.verbose = getattr(config, "verbose", False)
         self._active_config = config
+        self._runtime_run_id = f"run-{uuid.uuid4().hex[:16]}"
+        self._runtime_profile_recorded_run_id = ""
         self._final_validation_passed = True
         self._startup_guardrail_applied = False
         self._canary_profile_done = False
@@ -1780,21 +2015,30 @@ class AudioConverter(
                 if self.verbose:
                     print(f"Warning: could not remove cache directory: {exc}")
         else:
-            # Only validate previous output when NOT clearing cache
-            await self._auto_validate_output(output_dir, stage="initial")
+            # Cache-first reruns must reach the cache splitter before the
+            # expensive full-book validator. Final validation remains explicit.
+            if self._should_run_initial_validation(output_dir, config):
+                await self._auto_validate_output(output_dir, stage="initial")
+            elif self.verbose:
+                print(
+                    "♻️ Existing audio detected; deferring initial validation until conversion completes"
+                )
 
-        # **CLEANUP**: Remove duplicate files (dup-1, dup-2, etc.) from output and cache
-        if self.verbose:
+        # Duplicate cleanup can delete user files, so it is opt-in.
+        cleanup_duplicates = self._duplicate_cleanup_enabled(config)
+        if cleanup_duplicates and self.verbose:
             print("🧹 Scanning for duplicate files to clean up...")
 
-        # Clean output directory
-        cleanup_count = self._cleanup_duplicate_files(output_dir, verbose=self.verbose)
+        cleanup_count = 0
+        if cleanup_duplicates:
+            # Clean output directory
+            cleanup_count = self._cleanup_duplicate_files(output_dir, verbose=self.verbose)
 
-        # Clean cache directory if exists
-        if self._current_book_path and self.cache_manager.cache_dir:
-            cache_path = self.cache_manager._get_cache_path(self._current_book_path)
-            if cache_path.exists():
-                cleanup_count += self._cleanup_duplicate_files(cache_path, verbose=False)
+            # Clean cache directory if exists
+            if self._current_book_path and self.cache_manager.cache_dir:
+                cache_path = self.cache_manager._get_cache_path(self._current_book_path)
+                if cache_path.exists():
+                    cleanup_count += self._cleanup_duplicate_files(cache_path, verbose=False)
 
         if cleanup_count > 0 and not self.verbose:
             print(f"🧹 Cleaned up {cleanup_count} duplicate file(s)")
@@ -1807,12 +2051,24 @@ class AudioConverter(
         chapters = list(
             reader.get_chapter_structure(preserve_all=config.preserve_all_chapters) or []
         )
+        assign_chapter_identities(chapters)
         # Store original before deduplication for potential restoration
         original_chapters = chapters.copy()
 
         chapters, duplicates_removed = deduplicate_chapters_by_content(chapters)
         if duplicates_removed:
             print(f"  🧹 Removed {duplicates_removed} duplicate chapter(s) automatically")
+
+        if not chapters:
+            empty_result = ConversionResult(
+                success=False,
+                total_chapters=0,
+                converted_chapters=0,
+                output_files=[],
+                errors=[f"No readable chapters were extracted from {reader.title}"],
+            )
+            await self._report_results(empty_result)
+            return empty_result
 
         chapter_stats = self._analyze_chapter_stats(chapters)
         self._chapter_stats = chapter_stats
@@ -2039,6 +2295,7 @@ class AudioConverter(
         # Auto-parallel: prefer env override, else derive from hardware profile
         # Aggressive defaults: use all available CPU cores for maximum throughput
         chapter_parallel_count = int(os.getenv("CHAPTER_PARALLEL_COUNT", "0") or "0")
+        network_tier = ""
         if chapter_parallel_count <= 0:
             cpu_logical = os.cpu_count() or 1
             cpu_physical = 0
@@ -2046,7 +2303,6 @@ class AudioConverter(
                 cpu_physical = psutil.cpu_count(logical=False) or 0
             ram_total = 0.0
             ram_available = 0.0
-            network_tier = ""
             if self.hardware_profile is not None:
                 ram_total = float(getattr(self.hardware_profile, "ram_total_gb", 0.0) or 0.0)
                 ram_available = float(
@@ -2080,8 +2336,22 @@ class AudioConverter(
         self._reset_parallel_state(chapter_parallel_count)
 
         if total_chapters == 0:
-            empty_result = ConversionResult(True, 0, 0, [], [])
-            self._report_results(empty_result)
+            self._record_effective_runtime_profile(
+                config=config,
+                edge_engine=None,
+                chapter_parallel_count=chapter_parallel_count,
+                network_tier=network_tier or "unknown",
+                edge_cap=0,
+                output_dir=temp_dir,
+            )
+            empty_result = ConversionResult(
+                False,
+                0,
+                0,
+                [],
+                [f"No readable chapters were extracted from {reader.title}"],
+            )
+            await self._report_results(empty_result)
             return empty_result
 
         # Fast-path cache check before heavy prep (uses existing text/cache index if present)
@@ -2129,11 +2399,12 @@ class AudioConverter(
             # skip it entirely, so leftover duplicates from earlier runs
             # accumulated forever (the v0.3.18 Carl conversion ended up
             # with 64 MP3s for 61 chapters because of this).
-            dedup_removed = self._dedup_chapter_outputs(output_dir)
-            if dedup_removed:
-                print(
-                    f"   🧹 Auto-dedup (cache-hit path): removed {dedup_removed} duplicate MP3(s)"
-                )
+            if self._duplicate_cleanup_enabled(config):
+                dedup_removed = self._dedup_chapter_outputs(output_dir)
+                if dedup_removed:
+                    print(
+                        f"   🧹 Auto-dedup (cache-hit path): removed {dedup_removed} duplicate MP3(s)"
+                    )
             result = ConversionResult(
                 success=True,
                 total_chapters=total_chapters,
@@ -2200,6 +2471,9 @@ class AudioConverter(
                     engine_seeds[(config.engine or "").lower()] = tts_engine
             else:
                 raise
+        for engine_name, engine_obj in engine_seeds.items():
+            if engine_name.lower() == "edge":
+                self._attach_edge_metric_sink(engine_obj, temp_dir)
         if is_auto_engine:
             voice_label = "Auto (Edge/Piper)"
         else:
@@ -2337,6 +2611,14 @@ class AudioConverter(
         except ValueError:
             edge_cap = 0
         parallel_slots = max(1, int(self._parallel_state.get("current") or chapter_parallel_count))
+        self._record_effective_runtime_profile(
+            config=config,
+            edge_engine=engine_seeds.get("edge"),
+            chapter_parallel_count=chapter_parallel_count,
+            network_tier=edge_network_tier,
+            edge_cap=edge_cap,
+            output_dir=temp_dir,
+        )
         engine_pool = JobEnginePool(
             create_engine=self.tts_factory.create_engine,
             parallel_slots=parallel_slots,
@@ -2911,6 +3193,15 @@ class AudioConverter(
             return ConversionResult(True, 0, 0, [], [])
 
         chapters_for_text = list(chapters_list)
+        bounded_prepare_enabled = _env_bool("CLI_BOUNDED_PREPARE", False)
+        bounded_prepare_raw = (getattr(config, "extra", {}) or {}).get("bounded_prepare")
+        if bounded_prepare_raw is not None:
+            bounded_prepare_enabled = str(bounded_prepare_raw).strip().lower() in {
+                "1",
+                "true",
+                "yes",
+                "on",
+            }
 
         # Bucketize by size (largest first) to reduce tail latency and lock contention
         chapters_sorted = sorted(chapters_list, key=self._estimate_chapter_chars, reverse=True)
@@ -2935,7 +3226,7 @@ class AudioConverter(
             cleanup_existing = bool(
                 getattr(config, "force_reprocess", False) or getattr(config, "clear_cache", False)
             )
-            if getattr(config, "auto_validate_output", True):
+            if not bounded_prepare_enabled and getattr(config, "auto_validate_output", True):
                 self._generate_all_text_files(
                     chapters_for_text, output_dir, config, cleanup_existing=cleanup_existing
                 )
@@ -2947,7 +3238,7 @@ class AudioConverter(
             )
 
             # Generate all text files (once for all chapters) if needed
-            if pending_chapters and not generated_text:
+            if pending_chapters and not generated_text and not bounded_prepare_enabled:
                 self._generate_all_text_files(
                     chapters_for_text, output_dir, config, cleanup_existing=cleanup_existing
                 )
@@ -3362,7 +3653,16 @@ class AudioConverter(
                 allowed = {k: v for k, v in kwargs.items() if k in sig.parameters}
             except Exception:
                 allowed = kwargs
-            return await engine_obj.synthesize_async(text, output_path, **allowed)
+            callback = allowed.get("chunk_callback")
+            if callback is None:
+                return await engine_obj.synthesize_async(text, output_path, **allowed)
+
+            def invoke(observed_callback):
+                return engine_obj.synthesize_async(
+                    text, output_path, **{**allowed, "chunk_callback": observed_callback}
+                )
+
+            return await observe_synthesis(invoke, callback)
 
         # If preprocessing already done by caller, skip duplicate work
         if not skip_preprocessing:
@@ -3719,12 +4019,14 @@ class AudioConverter(
                 assert stage_pipeline_queue is not None
                 for pidx, pchapter in enumerate(chapters_list):
                     pchapter_num = self._chapter_number(pchapter, pidx + 1)
+                    pchapter_identity = self._chapter_identity_fields(pchapter, pidx + 1)
                     started = time.time()
                     self._append_runtime_metric(
                         {
                             "event": "pipeline_stage_start",
                             "stage": "prepare",
                             "chapter": pchapter_num,
+                            **pchapter_identity,
                         },
                         output_dir=output_dir,
                     )
@@ -3743,6 +4045,7 @@ class AudioConverter(
                                 "stage": "prepare",
                                 "chapter": pchapter_num,
                                 "elapsed_s": round(time.time() - started, 3),
+                                **pchapter_identity,
                             },
                             output_dir=output_dir,
                         )
@@ -3770,6 +4073,7 @@ class AudioConverter(
                 return
             next_chapter = chapters_list[next_idx]
             next_chapter_num = self._chapter_number(next_chapter, next_idx + 1)
+            next_chapter_identity = self._chapter_identity_fields(next_chapter, next_idx + 1)
             prefetch_for_idx = next_idx
             prefetch_task = asyncio.create_task(
                 asyncio.to_thread(
@@ -3784,6 +4088,7 @@ class AudioConverter(
                 {
                     "event": "prefetch_request",
                     "chapter": next_chapter_num,
+                    **next_chapter_identity,
                 },
                 output_dir=output_dir,
             )
@@ -3852,6 +4157,7 @@ class AudioConverter(
                             {
                                 "event": "prefetch_hit",
                                 "chapter": chapter_num,
+                                **self._chapter_identity_fields(chapter, idx + 1),
                             },
                             output_dir=output_dir,
                         )
@@ -3861,6 +4167,7 @@ class AudioConverter(
                             {
                                 "event": "prefetch_fallback",
                                 "chapter": chapter_num,
+                                **self._chapter_identity_fields(chapter, idx + 1),
                             },
                             output_dir=output_dir,
                         )
@@ -3900,7 +4207,15 @@ class AudioConverter(
                 )
             progress_started = False
             chapter_attempt = 0
-            max_chapter_attempts = 4 if deferred_safe_pass else 6
+            configured_max_attempts = None
+            if getattr(config, "extra", None):
+                raw_max_attempts = config.extra.get("max_chapter_attempts")
+                if raw_max_attempts is not None:
+                    try:
+                        configured_max_attempts = max(1, min(6, int(raw_max_attempts)))
+                    except (TypeError, ValueError):
+                        configured_max_attempts = None
+            max_chapter_attempts = configured_max_attempts or (4 if deferred_safe_pass else 6)
             forced_auto_engine: Optional[str] = None
             blocked_engines_for_chapter: Set[str] = set()
             edge_connectivity_recorded = False
@@ -4173,6 +4488,14 @@ class AudioConverter(
                                 current_engine_label
                             )
                             engine_instance["object"] = engine_obj
+                            restore_policy = getattr(
+                                engine_obj, "restore_segment_policy_state", None
+                            )
+                            saved_policy = self._segment_adaptive_state.get(
+                                "segment_duration_policy"
+                            )
+                            if callable(restore_policy) and isinstance(saved_policy, dict):
+                                restore_policy(saved_policy)
                             engine_name_used = current_engine_label
                             if engine_config and engine_config.engine:
                                 engine_tracker["label"] = (
@@ -4529,7 +4852,10 @@ class AudioConverter(
                                     except Exception:
                                         pass
                                 try:
-                                    existing_chunks = list(chunk_root.glob("chunk_*.mp3"))
+                                    existing_chunks = [
+                                        path for path in chunk_root.glob("chunk_*.mp3")
+                                        if re.fullmatch(r"chunk_\d+\.mp3", path.name)
+                                    ]
                                 except Exception:
                                     existing_chunks = []
                                 if existing_chunks:
@@ -4541,6 +4867,8 @@ class AudioConverter(
                                 segment_index: int,
                                 temp_path: Path,
                                 segment_text: Optional[str] = None,
+                                *,
+                                observation=None,
                             ) -> None:
                                 segment_progress_state["hits"] += 1
                                 # Update bar with completed chunks
@@ -4552,15 +4880,21 @@ class AudioConverter(
 
                                 if chunk_root is None:
                                     return
+                                published_target = None
                                 try:
-                                    target = (
+                                    canonical = (
                                         chunk_root / f"chunk_{segment_index:04d}{temp_path.suffix}"
                                     )
-                                    try:
-                                        if temp_path.resolve() != target.resolve():
-                                            shutil.copy2(temp_path, target)
-                                    except OSError:
-                                        shutil.copy2(temp_path, target)
+                                    if observation is None:
+                                        raise RuntimeError("Missing segment publication context")
+                                    if temp_path.resolve() != canonical.resolve():
+                                        atomic_copy_audio(temp_path, canonical)
+                                    # Keep resume-cache naming unchanged while every
+                                    # manifest points to immutable published bytes.
+                                    publication_id = uuid.uuid4().hex
+                                    target = chunk_root / f"chunk_stream_{publication_id}{temp_path.suffix}"
+                                    observation_payload = observation.publish_audio(temp_path, target)
+                                    published_target = target
                                     manifest_path = chunk_root / "manifest.json"
                                     manifest = {
                                         "jobId": job_id or "cli",
@@ -4587,13 +4921,15 @@ class AudioConverter(
                                     }
                                     previous = existing_by_index.get(segment_index) or {}
                                     entry = {
+                                        "id": publication_id,
                                         "index": segment_index,
                                         "file": target.name,
+                                        "observation": observation_payload,
                                     }
                                     if job_id:
                                         entry["url"] = (
                                             f"/api/streams/{job_id}/chapters/"
-                                            f"{chapter_num}/chunks/{segment_index}"
+                                            f"{chapter_num}/chunks/{publication_id}"
                                         )
                                     if segment_text:
                                         entry["text"] = segment_text
@@ -4610,11 +4946,12 @@ class AudioConverter(
                                         if job_id
                                         else ""
                                     )
-                                    manifest_path.write_text(
-                                        json.dumps(manifest, ensure_ascii=False, indent=2),
-                                        encoding="utf-8",
-                                    )
+                                    atomic_write_manifest(manifest_path, manifest)
+                                    published_target = None
                                 except Exception as exc:
+                                    if published_target is not None:
+                                        with contextlib.suppress(OSError):
+                                            published_target.unlink(missing_ok=True)
                                     if self.verbose:
                                         print(f"   ⚠️ Failure saving chunk {segment_index}: {exc}")
 
@@ -5361,12 +5698,14 @@ class AudioConverter(
                                 is_complete, coverage_percent = validate_audio_completeness(
                                     output_path, chapter_chars
                                 )
-                                # Accept ≥80% coverage to avoid infinite retry loops.
-                                # Edge-TTS WPM varies by content type (verse reads
-                                # slower, dialogue faster), so strict thresholds cause
-                                # repeated re-synthesis of already-adequate audio.
-                                # Genuine truncations typically show <60% coverage.
-                                if not is_complete and coverage_percent >= 80.0:
+                                # Lenient acceptance — shared with the server path
+                                # via LENIENT_COVERAGE_THRESHOLD_PERCENT so a
+                                # given coverage value never disagrees between
+                                # CLI and web on whether the audio is truncated.
+                                if (
+                                    not is_complete
+                                    and coverage_percent >= LENIENT_COVERAGE_THRESHOLD_PERCENT
+                                ):
                                     if self.verbose:
                                         print(
                                             f"   ✅ Accepted {coverage_percent:.1f}% coverage "
@@ -5768,6 +6107,7 @@ class AudioConverter(
                 )
                 if message:
                     print(message)
+                chapter_identity = self._chapter_identity_fields(chapter, idx + 1)
                 self._append_runtime_metric(
                     {
                         "event": "chapter_complete",
@@ -5779,6 +6119,7 @@ class AudioConverter(
                         "cached": bool(chapter_cached),
                         "attempt": chapter_attempt,
                         "error": (chapter_error or "")[:240] if chapter_error else "",
+                        **chapter_identity,
                     },
                     output_dir=output_dir,
                 )
@@ -5817,6 +6158,7 @@ class AudioConverter(
                             engine=_engine_label,
                             elapsed_seconds=float(elapsed or 0.0),
                             char_count=int(chapter_chars or 0),
+                            chapter_id=chapter_identity["chapter_id"],
                         )
                     elif not chapter_success:
                         log_chapter_error(
@@ -5826,6 +6168,7 @@ class AudioConverter(
                             engine=_engine_label,
                             error=chapter_error or "",
                             elapsed_seconds=float(elapsed or 0.0),
+                            chapter_id=chapter_identity["chapter_id"],
                         )
                 except Exception:
                     pass
@@ -5834,6 +6177,12 @@ class AudioConverter(
                     chapter_success,
                     chapter_error,
                 )
+                policy_getter = getattr(engine_obj, "get_segment_policy_state", None)
+                if callable(policy_getter):
+                    with contextlib.suppress(Exception):
+                        policy_state = policy_getter()
+                        if isinstance(policy_state, dict):
+                            self._segment_adaptive_state["segment_duration_policy"] = policy_state
                 self._save_conversion_checkpoint(
                     chapter_num, output_dir, config, success=chapter_success
                 )
@@ -6704,9 +7053,19 @@ class AudioConverter(
         if not final_validation_ok:
             result.success = False
             validation_error = "Final validation failed: conversion is not 100% complete"
+            stats = self._last_validation_stats
+            if stats:
+                bad_buckets = {
+                    key: count
+                    for key, count in stats.items()
+                    if key != "perfect" and key != "total_chapters" and count
+                }
+                if bad_buckets:
+                    breakdown = ", ".join(f"{k}={v}" for k, v in sorted(bad_buckets.items()))
+                    validation_error += f" ({breakdown})"
             if validation_error not in result.errors:
                 result.errors.append(validation_error)
-            print("❌ Final validation failed: conversion is incomplete (not 100%).")
+            print(f"❌ {validation_error}")
 
     def _announce_stage(self, index: int, chapter_name: str, status: str) -> None:
         clean_status = status.strip()

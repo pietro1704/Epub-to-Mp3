@@ -59,6 +59,43 @@ class TestDesktopEnvDefaults(unittest.TestCase):
             os.environ.update(env_before)
 
 
+class TestSidecarPIDFile(unittest.TestCase):
+    def test_writes_current_process_id_when_requested(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            pid_file = Path(tmp) / "sidecar.pid"
+            with patch.dict(os.environ, {"EPUB_TO_MP3_SIDECAR_PID_FILE": str(pid_file)}):
+                desktop_main.write_sidecar_pid_file()
+            self.assertEqual(pid_file.read_text(encoding="utf-8"), str(os.getpid()))
+
+
+class TestSidecarParentWatchdog(unittest.TestCase):
+    def test_only_runs_for_a_pyinstaller_worker_with_a_live_parent(self):
+        self.assertTrue(
+            desktop_main.should_watch_pyinstaller_parent(
+                frozen=True, parent_pid=123, pid_file_configured=False
+            )
+        )
+        self.assertFalse(
+            desktop_main.should_watch_pyinstaller_parent(
+                frozen=False, parent_pid=123, pid_file_configured=False
+            )
+        )
+        self.assertFalse(
+            desktop_main.should_watch_pyinstaller_parent(
+                frozen=True, parent_pid=1, pid_file_configured=True
+            )
+        )
+
+    def test_does_not_start_thread_outside_pyinstaller(self):
+        with (
+            patch.object(desktop_main.os, "getppid", return_value=123),
+            patch.object(desktop_main.sys, "frozen", False, create=True),
+            patch.object(desktop_main.threading, "Thread") as thread,
+        ):
+            desktop_main.start_parent_exit_watchdog()
+        thread.assert_not_called()
+
+
 class TestSetupFfmpeg(unittest.TestCase):
     def test_passes_cache_dir_when_available(self):
         fake_ffmpeg = MagicMock()

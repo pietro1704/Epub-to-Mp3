@@ -1,0 +1,21 @@
+{
+  "chapters": [
+    {
+      "chunks": [
+        {
+          "id": "<id>",
+          "index": 0,
+          "url": "<url>"
+        }
+      ],
+      "index": 0,
+      "retiredChunks": [
+        {
+          "file": "<path>",
+          "id": "<id>"
+        }
+      ]
+    }
+  ],
+  "jobId": "<uuid>"
+}

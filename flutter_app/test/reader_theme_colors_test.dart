@@ -51,6 +51,24 @@ void main() {
       expect(ReaderThemeColors.brightness(ReaderTheme.paper), Brightness.light);
       expect(ReaderThemeColors.brightness(ReaderTheme.dark), Brightness.dark);
       expect(ReaderThemeColors.brightness(ReaderTheme.black), Brightness.dark);
+      expect(ReaderThemeColors.brightness(ReaderTheme.custom), Brightness.dark);
+    });
+
+    test('app theme mode follows the system for auto reader theme', () {
+      expect(
+        ReaderThemeColors.themeMode(
+          ReaderTheme.auto,
+          platformBrightness: Brightness.dark,
+        ),
+        ThemeMode.system,
+      );
+      expect(
+        ReaderThemeColors.themeMode(
+          ReaderTheme.auto,
+          platformBrightness: Brightness.light,
+        ),
+        ThemeMode.system,
+      );
     });
 
     test('auto theme resolves to light in light mode', () {

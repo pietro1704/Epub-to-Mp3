@@ -1,8 +1,9 @@
-import { screen, waitFor } from "@testing-library/react";
+import { act, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import EbookReaderPanel from "../components/EbookReaderPanel";
 import { conversionClient } from "../services/ConversionService";
+import { latencyObservations } from "../services/LatencyObservation";
 import { renderWithProviders } from "./testUtils";
 
 describe("EbookReaderPanel", () => {
@@ -63,6 +64,45 @@ describe("EbookReaderPanel", () => {
       expect(shadowText).toContain("Segundo trecho em destaque.");
     });
     expect(screen.getByText(/Segmento 3/i)).toBeInTheDocument();
+  });
+
+  it("records reader usability without retaining the book or job identity", async () => {
+    const existingObservationCount = latencyObservations.snapshot().length;
+    vi.spyOn(conversionClient, "getJobFullTextResult").mockResolvedValue({
+      kind: "ok",
+      document: {
+        jobId: "private-reader-job",
+        bookTitle: "Private reader title",
+        chapters: [
+          {
+            index: 1,
+            name: "Private chapter",
+            text: "Private reader content.",
+            html: "<p>Private reader content.</p>",
+            charCount: 23,
+          },
+        ],
+      },
+    });
+
+    renderWithProviders(<EbookReaderPanel jobId="private-reader-job" />, {
+      locale: "en",
+    });
+
+    await screen.findByRole("heading", { name: "Private chapter" });
+
+    const observation = latencyObservations
+      .snapshot()
+      .slice(existingObservationCount)
+      .find((entry) => entry.kind === "reader_open");
+    expect(observation?.records.map((record) => record.transition)).toEqual([
+      "open_requested",
+      "readable_content",
+      "controls_usable",
+    ]);
+    expect(JSON.stringify(observation)).not.toContain("private-reader-job");
+    expect(JSON.stringify(observation)).not.toContain("Private reader title");
+    expect(JSON.stringify(observation)).not.toContain("Private reader content");
   });
 
   it("lets the user disable follow-audio and manually switch chapters", async () => {
@@ -290,9 +330,11 @@ describe("EbookReaderPanel", () => {
     renderWithProviders(<EbookReaderPanel jobId="job-reader" />);
 
     // Advance through the first two backoff windows so the retries run.
-    await vi.advanceTimersByTimeAsync(800);
-    await vi.advanceTimersByTimeAsync(1500);
-    await vi.advanceTimersByTimeAsync(0);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(800);
+      await vi.advanceTimersByTimeAsync(1500);
+      await vi.advanceTimersByTimeAsync(0);
+    });
 
     expect(spy).toHaveBeenCalledTimes(3);
     vi.useRealTimers();
@@ -302,6 +344,109 @@ describe("EbookReaderPanel", () => {
         screen.getByRole("heading", { name: "Capítulo 1" }),
       ).toBeInTheDocument(),
     );
+  });
+
+  it("keeps the previous document visible while a new jobId is being loaded (no flicker)", async () => {
+    let resolveSecond: ((value: unknown) => void) | undefined;
+    vi.spyOn(conversionClient, "getJobFullTextResult")
+      .mockResolvedValueOnce({
+        kind: "ok",
+        document: {
+          jobId: "job-A",
+          bookTitle: "Livro A",
+          bookAuthor: "Autora A",
+          chapters: [
+            {
+              index: 1,
+              name: "Capítulo Antigo",
+              text: "Alpha.",
+              html: "<p>Alpha.</p>",
+              charCount: 6,
+            },
+          ],
+        },
+      })
+      .mockImplementationOnce(
+        () =>
+          new Promise((res) => {
+            resolveSecond = res as (value: unknown) => void;
+          }),
+      );
+
+    const { rerender } = renderWithProviders(
+      <EbookReaderPanel jobId="job-A" />,
+    );
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: /Capítulo Antigo/i }),
+      ).toBeInTheDocument(),
+    );
+
+    rerender(<EbookReaderPanel jobId="job-B" />);
+
+    // Critical: previous chapter list MUST remain visible during the pending
+    // fetch — replacing it with a "loading…" placeholder is the flicker we
+    // are trying to avoid.
+    expect(
+      screen.getByRole("button", { name: /Capítulo Antigo/i }),
+    ).toBeInTheDocument();
+
+    resolveSecond?.({
+      kind: "ok",
+      document: {
+        jobId: "job-B",
+        chapters: [
+          {
+            index: 2,
+            name: "Capítulo Novo",
+            text: "Beta.",
+            html: "<p>Beta.</p>",
+            charCount: 5,
+          },
+        ],
+      },
+    });
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: /Capítulo Novo/i }),
+      ).toBeInTheDocument(),
+    );
+  });
+
+  it("renders long chapter titles without clipping to a single line", async () => {
+    const longTitle =
+      "Capítulo extraordinariamente longo com subtítulo descritivo que jamais cabe em uma linha";
+    vi.spyOn(conversionClient, "getJobFullTextResult").mockResolvedValue({
+      kind: "ok",
+      document: {
+        jobId: "job-reader",
+        chapters: [
+          {
+            index: 1,
+            name: longTitle,
+            text: "Texto.",
+            html: "<p>Texto.</p>",
+            charCount: 6,
+          },
+        ],
+      },
+    });
+
+    const { container } = renderWithProviders(
+      <EbookReaderPanel jobId="job-reader" />,
+    );
+
+    const strong = await waitFor(() => {
+      const el = container.querySelector(".ebook-reader__chapter-copy strong");
+      if (!el) {
+        throw new Error("strong not yet rendered");
+      }
+      return el;
+    });
+    expect(strong.textContent).toBe(longTitle);
+    expect(strong.classList.contains("ebook-reader__chapter-name")).toBe(true);
   });
 
   it("surfaces the permanent extraction-failed message after a 422", async () => {

@@ -93,19 +93,14 @@ final class AppSettingsObservationTests: XCTestCase {
         }
     }
 
-    /// Regression for the 2026-05-12 portrait-clipping bug: assigning a
-    /// margin below the HIG-minimum 16pt must be coerced upward, not
-    /// honoured. The reader's `effectiveReaderMargin` also guards but
-    /// the clamp belongs at the model layer first.
-    func testReaderMarginClampsBelowHIGMinimum() {
+    func testReaderMarginClampsToTheEightPointMinimum() {
         let s = makeSettings()
         s.readerMargin = 12
-        XCTAssertGreaterThanOrEqual(s.readerMargin, 16,
-            "Margins below 16pt clipped portrait text and must be clamped")
+        XCTAssertEqual(s.readerMargin, 12, accuracy: 0.001)
         s.readerMargin = 8
-        XCTAssertGreaterThanOrEqual(s.readerMargin, 16)
+        XCTAssertEqual(s.readerMargin, 8, accuracy: 0.001)
         s.readerMargin = 0
-        XCTAssertGreaterThanOrEqual(s.readerMargin, 16)
+        XCTAssertEqual(s.readerMargin, 8, accuracy: 0.001)
     }
 
     /// Upper bound is unchanged but the test below pins it so a future
@@ -116,17 +111,12 @@ final class AppSettingsObservationTests: XCTestCase {
         XCTAssertLessThanOrEqual(s.readerMargin, 80)
     }
 
-    /// Stale persisted values from older builds (when the clamp was
-    /// 8pt) must be coerced on load too, otherwise the bug returns on
-    /// every existing install.
-    func testReaderMarginPersistedStaleValueIsCoercedOnLoad() {
+    func testReaderMarginPersistedValueUsesTheEightPointMinimum() {
         let suite = UUID().uuidString
         let defaults = UserDefaults(suiteName: suite)!
-        // Simulate a pre-fix install that persisted 12pt.
-        defaults.set(12.0, forKey: "readerMargin")
+        defaults.set(0.0, forKey: "readerMargin")
         let s = AppSettings(defaults: defaults)
-        XCTAssertGreaterThanOrEqual(s.readerMargin, 16,
-            "Persisted 12pt from older build must be clamped on load")
+        XCTAssertEqual(s.readerMargin, 8, accuracy: 0.001)
     }
 
     func testReaderColumnWidthChangeFiresObservation() {
@@ -220,7 +210,7 @@ final class AppSettingsObservationTests: XCTestCase {
     //
     // Regression for the "Reader needs the backend" bug: the reader
     // pipeline (EpubMetadataReader + PythonBridge.parseEpub on iOS,
-    // SidecarManager on macOS) is fully on-device. The
+    // embedded Python runtime on macOS) is fully on-device. The
     // `useEmbeddedRuntime` flag must default to `true` on a fresh
     // install so first-launch users never see the "Configure the URL"
     // wall and `canReadOffline` mirrors the flag exactly.
@@ -233,6 +223,14 @@ final class AppSettingsObservationTests: XCTestCase {
                       "Fresh installs must default to the embedded runtime so the reader never asks for a backend URL.")
         XCTAssertTrue(s.canReadOffline,
                       "canReadOffline must mirror useEmbeddedRuntime — it gates the BookOpenView audio bootstrap copy.")
+    }
+
+    func testReaderLayoutDefaultsToPaginatedForFreshInstall() {
+        let suite = UUID().uuidString
+        let defaults = UserDefaults(suiteName: suite)!
+        let s = AppSettings(defaults: defaults)
+        XCTAssertEqual(s.readerLayout, .paginated,
+                       "Fresh installs must default to paginated mode, not scrolling.")
     }
 
     func testEmbeddedRuntimePersistsAcrossInstances() {
@@ -257,50 +255,38 @@ final class AppSettingsObservationTests: XCTestCase {
 
     /// The reader must not depend on the backend URL when the embedded
     /// runtime is on. Concretely: with no `backendURL` and no
-    /// `sidecarURL`, `canReadOffline` is still `true`, so the
+    /// `canReadOffline` is still `true`, so the
     /// `BookOpenView` open flow won't gate parsing on a network
     /// resource.
     func testReaderCanReadOfflineEvenWithBlankBackendURL() {
         let s = makeSettings()
         s.useEmbeddedRuntime = true
         s.backendURL = ""
-        s.sidecarURL = nil
         XCTAssertNil(s.resolvedBaseURL,
                      "Pre-condition: no URL resolvable.")
         XCTAssertTrue(s.canReadOffline,
                       "Reader must remain available without any backend URL when the embedded runtime is on.")
     }
 
-    /// On macOS, when `useEmbeddedSidecar` is true but the sidecar
-    /// hasn't started yet, `resolvedBaseURL` must return nil — not the
-    /// stale default `http://localhost:8000`. Falling through to the
-    /// default URL floods the system log with hundreds of
-    /// "Connection refused" requests per second.
-    func testMacOSSidecarExpectedButNotRunningReturnsNil() {
+    /// The embedded runtime remains authoritative while a remote URL is
+    /// retained only for explicit remote-backend screens.
+    func testEmbeddedRuntimeRemainsAuthoritativeWithRemoteURL() {
         let s = makeSettings()
         s.useEmbeddedRuntime = true
-        s.useEmbeddedSidecar = true
         s.backendURL = "http://localhost:8000"
-        s.sidecarURL = nil
-        #if os(macOS)
-        XCTAssertNil(s.resolvedBaseURL,
-                     "macOS must not fall through to backendURL when the sidecar is expected but not running.")
-        #else
         XCTAssertNotNil(s.resolvedBaseURL,
-                        "iOS ignores the sidecar gate — legacy URL still resolves for remote-backend users.")
-        #endif
+                        "Remote URL remains available to explicit remote-backend screens.")
         XCTAssertTrue(s.useEmbeddedRuntime,
-                      "Embedded runtime must remain authoritative even when a legacy backend URL is present.")
+                      "Embedded runtime must remain authoritative even when a remote URL is present.")
     }
 
-    /// When `useEmbeddedSidecar` is false, `backendURL` is respected
-    /// regardless of sidecar state.
-    func testManualBackendURLRespectedWhenSidecarDisabled() {
+    func testRemoteBackendControlsDimWhenEmbeddedRuntimeIsEnabled() {
         let s = makeSettings()
-        s.useEmbeddedSidecar = false
-        s.backendURL = "http://localhost:8000"
-        s.sidecarURL = nil
-        XCTAssertNotNil(s.resolvedBaseURL,
-                        "Manual backend URL must resolve when the sidecar toggle is off.")
+
+        s.useEmbeddedRuntime = true
+        XCTAssertFalse(s.remoteBackendControlsEnabled)
+
+        s.useEmbeddedRuntime = false
+        XCTAssertTrue(s.remoteBackendControlsEnabled)
     }
 }

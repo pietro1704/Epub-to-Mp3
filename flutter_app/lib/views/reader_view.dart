@@ -22,6 +22,23 @@ double cappedHeadingSize(double bodyFontSize, {double scale = 1.5}) {
   return designed < maximum ? designed : maximum;
 }
 
+/// Content equality for two span lists. Mirrors the iOS reader's
+/// CONTENT-vs-pointer gate (TextKitPageView.swift, commit d473109): a
+/// re-render that rebuilds the spans list with fresh-but-identical
+/// instances must NOT trigger a repagination/relayout (which flickers).
+/// `SentenceSpan` is a freezed value type, so `==` compares by content;
+/// `identical()` would return false on a freshly-built equal list and
+/// fire a needless relayout. Pure helper so it can be unit-tested
+/// without a Flutter binding.
+bool spansContentEqual(List<SentenceSpan> a, List<SentenceSpan> b) {
+  if (identical(a, b)) return true;
+  if (a.length != b.length) return false;
+  for (var i = 0; i < a.length; i++) {
+    if (a[i] != b[i]) return false;
+  }
+  return true;
+}
+
 /// Convert the persisted `ReaderTextAlignment` enum to Flutter's
 /// `TextAlign`. Default `.justified` matches Apple Books / print
 /// typography.
@@ -41,9 +58,11 @@ class ReaderView extends ConsumerStatefulWidget {
   final void Function(SentenceSpan)? onJumpToSentence;
   final ChapterStepCallback? onAdvanceChapter;
   final ChapterStepCallback? onPreviousChapter;
+
   /// Called when the user taps the center zone of the reader. Used by
   /// the hosting screen to toggle chrome visibility (AppBar + player bar).
   final VoidCallback? onCenterTap;
+
   /// Called whenever the user turns a page (tap zone, keyboard, or
   /// swipe). The host screen should dim its chrome (AppBar, player
   /// bar, status bar) for an immersive reading experience. Mirrors
@@ -77,16 +96,38 @@ class _ReaderViewState extends ConsumerState<ReaderView> {
   @override
   void initState() {
     super.initState();
+    _committedChapterToken = widget.chapter.index;
     _pages = Paginator.paginate(spans: widget.spans);
   }
+
+  /// The chapter the currently-displayed `_pages` were paginated from.
+  /// Mirrors the iOS `committedChapterToken` latch (TextKitPageView.swift,
+  /// commits 6ab6609 / d069e9a): the page swap is driven deterministically
+  /// off the chapter id, not off a page-count delta (two adjacent chapters
+  /// can share a count) nor list pointer identity. When the token changes
+  /// we repaginate and re-seed to page 0 exactly once, so the new chapter's
+  /// first page is shown once and never preceded by a stale frame.
+  late int _committedChapterToken;
 
   @override
   void didUpdateWidget(covariant ReaderView oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.chapter.index != widget.chapter.index) {
+    final token = widget.chapter.index;
+    if (token != _committedChapterToken) {
+      // Chapter swap. Re-seed from the FRESH pages and commit the new
+      // token. Resetting to page 0 here (rather than carrying a stale
+      // index) is what stops the "wrong interleaved page" flash where
+      // the previous chapter's content was shown during the new
+      // chapter's repagination window (iOS d069e9a).
       _pages = Paginator.paginate(spans: widget.spans);
       _currentPage = 0;
-    } else if (oldWidget.spans != widget.spans) {
+      _committedChapterToken = token;
+    } else if (!spansContentEqual(oldWidget.spans, widget.spans)) {
+      // Same chapter, genuinely different content (e.g. settings-driven
+      // re-split). Repaginate but keep the reader near its current page.
+      // Gating on CONTENT equality (not list identity) mirrors iOS
+      // d473109: a parent rebuild that hands a fresh-but-identical
+      // spans list must NOT trigger a relayout/flicker.
       _pages = Paginator.paginate(spans: widget.spans);
       if (_currentPage >= _pages.length) {
         _currentPage = _pages.isEmpty ? 0 : _pages.length - 1;
@@ -151,10 +192,14 @@ class _ReaderViewState extends ConsumerState<ReaderView> {
   @override
   Widget build(BuildContext context) {
     final settings = ref.watch(settingsProvider);
-    final bg = ReaderThemeColors.background(settings.readerTheme,
-        custom: settings.readerCustomColors);
-    final fg = ReaderThemeColors.foreground(settings.readerTheme,
-        custom: settings.readerCustomColors);
+    final bg = ReaderThemeColors.background(
+      settings.readerTheme,
+      custom: settings.readerCustomColors,
+    );
+    final fg = ReaderThemeColors.foreground(
+      settings.readerTheme,
+      custom: settings.readerCustomColors,
+    );
     final fontSize = settings.readerPointSize;
     final lineSpacing = settings.readerLineSpacing;
     final margin = settings.readerMargin.clamp(16.0, 80.0);
@@ -180,11 +225,23 @@ class _ReaderViewState extends ConsumerState<ReaderView> {
 
     if (settings.readerLayout == ReaderLayout.scrolling) {
       return _scrollingLayout(
-        context, settings, bg, fg, bodyStyle, headingStyle, margin,
+        context,
+        settings,
+        bg,
+        fg,
+        bodyStyle,
+        headingStyle,
+        margin,
       );
     }
     return _paginatedLayout(
-      context, settings, bg, fg, bodyStyle, headingStyle, margin,
+      context,
+      settings,
+      bg,
+      fg,
+      bodyStyle,
+      headingStyle,
+      margin,
     );
   }
 
@@ -218,23 +275,41 @@ class _ReaderViewState extends ConsumerState<ReaderView> {
     final html = widget.chapter.html;
     final hasHtml = html != null && html.trim().isNotEmpty;
 
+    // Safe area as an inviolable floor — see `_paginatedLayout`. When
+    // chrome hides, the top toolbar's SafeArea goes with it, so honour
+    // the system insets here too (iOS fbe8ea3).
+    final media = MediaQuery.of(context);
+    const scrollVerticalPad = 16.0;
+
     return GestureDetector(
       onTap: widget.onCenterTap,
       behavior: HitTestBehavior.translucent,
       child: Container(
+        // Paint the reader theme background behind the WHOLE scroll
+        // region — not just behind the (content-sized) scroll child.
+        // Mirrors iOS 371b204: `continuousBookScroll` got
+        // `.background(themeBackground.ignoresSafeArea())` so a chapter
+        // shorter than the viewport, or the overscroll-stretch zone on a
+        // fast fling, never exposes the white system background. Without
+        // the `width/height: infinity` the Container shrink-wraps the
+        // SingleChildScrollView and a short chapter leaves a white strip
+        // below the text.
+        width: double.infinity,
+        height: double.infinity,
         color: bg,
         child: Scrollbar(
           controller: _scrollController,
           child: SingleChildScrollView(
             controller: _scrollController,
-            padding: EdgeInsets.symmetric(
-              horizontal: margin,
-              vertical: 16,
+            padding: EdgeInsets.only(
+              left: margin,
+              right: margin,
+              top: media.padding.top + scrollVerticalPad,
+              bottom: media.padding.bottom + scrollVerticalPad,
             ),
             child: hasHtml
                 ? _htmlBody(html, settings, bg, fg, bodyStyle, headingStyle)
-                : _spanBody(
-                    settings, fg, bodyStyle, headingStyle, activeId),
+                : _spanBody(settings, fg, bodyStyle, headingStyle, activeId),
           ),
         ),
       ),
@@ -321,8 +396,7 @@ class _ReaderViewState extends ConsumerState<ReaderView> {
               onTap: () => widget.onJumpToSentence?.call(s),
               child: Container(
                 width: double.infinity,
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(6),
                   color: isActive
@@ -368,6 +442,18 @@ class _ReaderViewState extends ConsumerState<ReaderView> {
         ? 0
         : _currentPage.clamp(0, _pages.length - 1);
 
+    // Safe area is an INVIOLABLE floor. Mirrors iOS `topCorridor`
+    // (ReaderLayoutMath.swift, commit fbe8ea3): when the host hides
+    // the reader chrome the top toolbar (which provided the SafeArea
+    // top) disappears, and the first line would render under the
+    // status bar / notch. Add the system top/bottom insets on top of
+    // the reader's own breathing pad so text always clears the notch
+    // and the home indicator, chrome shown or hidden.
+    final media = MediaQuery.of(context);
+    const readerVerticalPad = 24.0;
+    final topPad = media.padding.top + readerVerticalPad;
+    final bottomPad = media.padding.bottom + readerVerticalPad;
+
     return Container(
       color: bg,
       child: Focus(
@@ -402,29 +488,31 @@ class _ReaderViewState extends ConsumerState<ReaderView> {
                   behavior: HitTestBehavior.opaque,
                   onTap: widget.onCenterTap,
                   child: SingleChildScrollView(
-                    padding: EdgeInsets.symmetric(
-                      horizontal: margin,
-                      vertical: 24,
+                    padding: EdgeInsets.only(
+                      left: margin,
+                      right: margin,
+                      top: topPad,
+                      bottom: bottomPad,
                     ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        if (pageIndex == 0)
-                          _chapterHeader(headingStyle, fg),
-                        ...page.spans.map((s) => Padding(
-                              padding:
-                                  const EdgeInsets.symmetric(vertical: 2),
-                              child: GestureDetector(
-                                onTap: () =>
-                                    widget.onJumpToSentence?.call(s),
-                                child: Text(
-                                  s.text,
-                                  style: bodyStyle,
-                                  textAlign: flutterTextAlign(
-                                      settings.readerTextAlignment),
+                        if (pageIndex == 0) _chapterHeader(headingStyle, fg),
+                        ...page.spans.map(
+                          (s) => Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 2),
+                            child: GestureDetector(
+                              onTap: () => widget.onJumpToSentence?.call(s),
+                              child: Text(
+                                s.text,
+                                style: bodyStyle,
+                                textAlign: flutterTextAlign(
+                                  settings.readerTextAlignment,
                                 ),
                               ),
-                            )),
+                            ),
+                          ),
+                        ),
                       ],
                     ),
                   ),
@@ -463,7 +551,9 @@ class _ReaderViewState extends ConsumerState<ReaderView> {
                   child: Center(
                     child: Container(
                       padding: const EdgeInsets.symmetric(
-                          horizontal: 8, vertical: 3),
+                        horizontal: 8,
+                        vertical: 3,
+                      ),
                       decoration: BoxDecoration(
                         borderRadius: BorderRadius.circular(10),
                         color: fg.withValues(alpha: 0.1),
@@ -473,9 +563,7 @@ class _ReaderViewState extends ConsumerState<ReaderView> {
                         style: TextStyle(
                           fontSize: 11,
                           color: fg.withValues(alpha: 0.5),
-                          fontFeatures: const [
-                            FontFeature.tabularFigures()
-                          ],
+                          fontFeatures: const [FontFeature.tabularFigures()],
                         ),
                       ),
                     ),

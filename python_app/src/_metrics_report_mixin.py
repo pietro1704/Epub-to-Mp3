@@ -46,6 +46,7 @@ class _MetricsReportMixin:
         chapters_ok = 0
         switches = 0
         total_events = 0
+        runtime_profile: Optional[Dict[str, Any]] = None
         try:
             with metrics_path.open("r", encoding="utf-8") as handle:
                 for line in handle:
@@ -59,6 +60,8 @@ class _MetricsReportMixin:
                     total_events += 1
                     event = str(payload.get("event") or "unknown")
                     event_counts[event] += 1
+                    if event == "runtime_profile" and runtime_profile is None:
+                        runtime_profile = dict(payload)
                     engine = str(payload.get("engine") or "").strip().lower()
                     if engine:
                         engine_counts[engine] += 1
@@ -90,6 +93,7 @@ class _MetricsReportMixin:
                 "event_counts": dict(sorted(event_counts.items())),
                 "failures": dict(sorted(failure_counts.items())),
                 "engine_switches": switches,
+                "runtime_profile": runtime_profile or {},
                 "edge_blocked_chapters": {
                     "count": len(edge_blocked_chapters),
                     "chapters": sorted(edge_blocked_chapters),
@@ -139,15 +143,22 @@ class _MetricsReportMixin:
                         continue
                     if str(payload.get("event") or "") != "chapter_complete":
                         continue
-                    chapter = str(payload.get("chapter") or "").strip()
+                    chapter_id = str(
+                        payload.get("chapter_id") or payload.get("chapter") or ""
+                    ).strip()
+                    chapter_label = str(
+                        payload.get("chapter_label") or payload.get("chapter") or ""
+                    ).strip()
                     engine = str(payload.get("engine") or "").strip().lower()
-                    if not chapter or not engine:
+                    if not chapter_id or not engine:
                         continue
-                    key = (chapter, engine)
+                    key = (chapter_id, engine)
                     row = chapter_engine_rows.setdefault(
                         key,
                         {
-                            "chapter": chapter,
+                            "chapter": chapter_label,
+                            "chapter_id": chapter_id,
+                            "chapter_label": chapter_label,
                             "engine": engine,
                             "attempts": 0,
                             "successes": 0,
@@ -171,6 +182,8 @@ class _MetricsReportMixin:
             csv_path = metrics_path.with_name("metrics-chapter-engine.csv")
             fieldnames = [
                 "chapter",
+                "chapter_id",
+                "chapter_label",
                 "engine",
                 "attempts",
                 "successes",
@@ -195,6 +208,8 @@ class _MetricsReportMixin:
                     writer.writerow(
                         {
                             "chapter": row["chapter"],
+                            "chapter_id": row["chapter_id"],
+                            "chapter_label": row["chapter_label"],
                             "engine": row["engine"],
                             "attempts": row["attempts"],
                             "successes": row["successes"],
@@ -311,7 +326,7 @@ class _MetricsReportMixin:
         if metrics_path is None or not metrics_path.exists():
             return
         counts: Counter[str] = Counter()
-        per_engine: Dict[str, Dict[str, float]] = {}
+        per_engine: Dict[str, Dict[str, Any]] = {}
         try:
             with metrics_path.open("r", encoding="utf-8") as handle:
                 for line in handle:
@@ -324,7 +339,11 @@ class _MetricsReportMixin:
                         continue
                     event = str(payload.get("event") or "unknown")
                     counts[event] += 1
-                    if event != "segment_success":
+                    if event not in {
+                        "segment_success",
+                        "edge_request",
+                        "edge_segment_validation",
+                    }:
                         continue
                     engine = str(payload.get("engine") or "unknown").lower()
                     bucket = per_engine.setdefault(
@@ -335,8 +354,50 @@ class _MetricsReportMixin:
                             "total_elapsed_s": 0.0,
                             "cps_values": [],
                             "elapsed_values": [],
+                            "request_count": 0,
+                            "successful_requests": 0,
+                            "failed_requests": 0,
+                            "request_ms_values": [],
+                            "queue_wait_ms_values": [],
+                            "write_ms_values": [],
+                            "retry_values": [],
+                            "error_categories": Counter(),
+                            "validation_count": 0,
+                            "failed_validations": 0,
+                            "validation_ms_values": [],
                         },
                     )
+                    if event == "edge_request":
+                        status = str(payload.get("status") or "failed").strip().lower()
+                        bucket["request_count"] += 1
+                        if status == "success":
+                            bucket["successful_requests"] += 1
+                        else:
+                            bucket["failed_requests"] += 1
+                            category = str(payload.get("error_category") or "unknown").strip()
+                            if category:
+                                bucket["error_categories"][category] += 1
+                        bucket["request_ms_values"].append(
+                            max(0.0, float(payload.get("request_ms") or 0.0))
+                        )
+                        bucket["queue_wait_ms_values"].append(
+                            max(0.0, float(payload.get("queue_wait_ms") or 0.0))
+                        )
+                        bucket["write_ms_values"].append(
+                            max(0.0, float(payload.get("write_ms") or 0.0))
+                        )
+                        bucket["retry_values"].append(
+                            max(0.0, float(payload.get("retry_count") or 0.0))
+                        )
+                        continue
+                    if event == "edge_segment_validation":
+                        bucket["validation_count"] += 1
+                        if str(payload.get("status") or "failed").lower() != "success":
+                            bucket["failed_validations"] += 1
+                        bucket["validation_ms_values"].append(
+                            max(0.0, float(payload.get("validation_ms") or 0.0))
+                        )
+                        continue
                     elapsed = float(payload.get("elapsed_s") or 0.0)
                     chars = float(payload.get("segment_chars") or 0.0)
                     cps = (chars / elapsed) if elapsed > 0 else 0.0
@@ -348,7 +409,7 @@ class _MetricsReportMixin:
                     if elapsed > 0:
                         bucket["elapsed_values"].append(elapsed)
 
-            engine_summary: Dict[str, Dict[str, float]] = {}
+            engine_summary: Dict[str, Dict[str, Any]] = {}
             for engine, row in sorted(per_engine.items()):
                 elapsed = max(0.001, float(row.get("total_elapsed_s") or 0.0))
                 chars = float(row.get("total_chars") or 0.0)
@@ -356,6 +417,17 @@ class _MetricsReportMixin:
                 cps_values = [float(v) for v in (row.get("cps_values") or []) if float(v) > 0]
                 elapsed_values = [
                     float(v) for v in (row.get("elapsed_values") or []) if float(v) > 0
+                ]
+                request_ms_values = [
+                    max(0.0, float(v)) for v in (row.get("request_ms_values") or [])
+                ]
+                queue_wait_ms_values = [
+                    max(0.0, float(v)) for v in (row.get("queue_wait_ms_values") or [])
+                ]
+                write_ms_values = [max(0.0, float(v)) for v in (row.get("write_ms_values") or [])]
+                retry_values = [max(0.0, float(v)) for v in (row.get("retry_values") or [])]
+                validation_ms_values = [
+                    max(0.0, float(v)) for v in (row.get("validation_ms_values") or [])
                 ]
                 p50_cps = self._percentile(cps_values, 0.5)
                 p95_cps = self._percentile(cps_values, 0.95)
@@ -373,6 +445,24 @@ class _MetricsReportMixin:
                     "p50_elapsed_s": round(p50_elapsed, 3),
                     "p95_elapsed_s": round(p95_elapsed, 3),
                     "jitter_ratio": round(jitter_ratio, 3),
+                    "request_count": int(row.get("request_count", 0) or 0),
+                    "successful_requests": int(row.get("successful_requests", 0) or 0),
+                    "failed_requests": int(row.get("failed_requests", 0) or 0),
+                    "request_p50_ms": round(self._percentile(request_ms_values, 0.5), 3),
+                    "request_p95_ms": round(self._percentile(request_ms_values, 0.95), 3),
+                    "queue_wait_p50_ms": round(self._percentile(queue_wait_ms_values, 0.5), 3),
+                    "queue_wait_p95_ms": round(self._percentile(queue_wait_ms_values, 0.95), 3),
+                    "write_p50_ms": round(self._percentile(write_ms_values, 0.5), 3),
+                    "write_p95_ms": round(self._percentile(write_ms_values, 0.95), 3),
+                    "avg_retry_count": round(
+                        sum(retry_values) / len(retry_values) if retry_values else 0.0, 3
+                    ),
+                    "retry_p95": round(self._percentile(retry_values, 0.95), 3),
+                    "error_categories": dict(sorted(row["error_categories"].items())),
+                    "validation_count": int(row.get("validation_count", 0) or 0),
+                    "failed_validations": int(row.get("failed_validations", 0) or 0),
+                    "validation_p50_ms": round(self._percentile(validation_ms_values, 0.5), 3),
+                    "validation_p95_ms": round(self._percentile(validation_ms_values, 0.95), 3),
                 }
 
             summary = {

@@ -1,0 +1,168 @@
+name: CodeQL
+
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+  schedule:
+    - cron: "27 3 * * 1"
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+  security-events: write
+
+concurrency:
+  group: codeql-${{ github.workflow }}-${{ github.ref }}
+  # A cancelled CodeQL run uploads an unsuccessful SARIF and leaves a
+  # configuration error in code scanning. Queue newer pushes instead.
+  cancel-in-progress: false
+
+jobs:
+  static-analysis:
+    name: CodeQL · ${{ matrix.language }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        language:
+          - actions
+          - javascript-typescript
+          - python
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v4
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: none
+
+      - name: Analyze
+        uses: github/codeql-action/analyze@v4
+        with:
+          category: /language:${{ matrix.language }}
+
+  java-kotlin:
+    name: CodeQL · java-kotlin
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Set up Java 21
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v4
+        with:
+          languages: java-kotlin
+          build-mode: manual
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: 3.41.9
+          cache: true
+
+      - name: Report Kotlin coverage scope
+        run: |
+          printf 'Kotlin source files compiled by the Android app target: '
+          find flutter_app/android/app/src -type f -name '*.kt' | wc -l
+
+      - name: Build Android app
+        working-directory: flutter_app
+        run: |
+          flutter pub get
+          flutter build apk --debug
+
+      - name: Analyze
+        uses: github/codeql-action/analyze@v4
+        with:
+          category: /language:java-kotlin
+
+  swift:
+    name: CodeQL · swift (${{ matrix.coverage }} · ${{ matrix.platform }})
+    runs-on: macos-latest
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # The production macOS build reaches every shared source that is
+          # conditionally compiled for AppKit.
+          - coverage: app
+            platform: macOS
+            destination: generic/platform=macOS
+            derived_data: .build-codeql-macos
+            scheme: EpubToMp3
+            action: build
+          # Test targets are validated by the native test workflow. CodeQL
+          # scans production Swift once, avoiding duplicate databases and
+          # fragile test-only compilation failures.
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Install mise
+        uses: jdx/mise-action@v4.3.0
+
+      - name: Install toolchain
+        run: mise install
+
+      - name: Install XcodeGen
+        env:
+          HOMEBREW_GITHUB_API_TOKEN: ${{ github.token }}
+        run: arch -arm64 brew install xcodegen
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v4
+        with:
+          languages: swift
+          build-mode: manual
+
+      - name: Generate Xcode project
+        working-directory: ios/EpubToMp3
+        run: xcodegen generate
+
+      - name: Build Rust macOS sidecar
+        if: matrix.platform == 'macOS'
+        run: mise run sidecar:build
+
+      - name: Report Swift coverage scope
+        working-directory: ios/EpubToMp3
+        run: |
+          printf 'Production Swift files: '
+          find EpubToMp3 EpubToMp3ShareExtension EpubToMp3Widget -type f -name '*.swift' | wc -l
+          printf 'Unit-test Swift files: '
+          find EpubToMp3Tests -type f -name '*.swift' | wc -l
+          printf 'UI-test Swift files: '
+          find EpubToMp3UITests -type f -name '*.swift' | wc -l
+
+      - name: Build Swift target
+        working-directory: ios/EpubToMp3
+        run: |
+          xcodebuild \
+            -project EpubToMp3.xcodeproj \
+            -scheme '${{ matrix.scheme }}' \
+            -destination '${{ matrix.destination }}' \
+            -configuration Debug \
+            -derivedDataPath '${{ matrix.derived_data }}' \
+            CODE_SIGNING_ALLOWED=NO \
+            ${{ matrix.action }}
+
+
+
+      - name: Analyze
+        uses: github/codeql-action/analyze@v4
+        with:
+          category: /language:swift/coverage:${{ matrix.coverage }}/platform:${{ matrix.platform }}

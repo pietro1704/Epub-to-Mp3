@@ -1,8 +1,11 @@
-name: Auto-merge Dependabot
+name: Auto-merge eligible pull requests
 
 on:
   pull_request_target:
     types: [opened, reopened, synchronize, ready_for_review]
+  schedule:
+    - cron: "17 * * * *"
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -10,39 +13,23 @@ permissions:
 
 jobs:
   auto-merge:
-    name: Enable auto-merge for dependabot PRs
+    name: Enable auto-merge after required checks
     runs-on: ubuntu-latest
-    if: >
-      github.event.pull_request.user.login == 'dependabot[bot]' &&
-      github.event.pull_request.draft == false
     steps:
-      - name: Skip major bumps
-        id: classify
+      - name: Enable squash auto-merge for eligible internal pull requests
         env:
-          TITLE: ${{ github.event.pull_request.title }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          EVENT_NAME: ${{ github.event_name }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
-          from=$(echo "$TITLE" | grep -oE 'from [0-9]+' | grep -oE '[0-9]+' | head -1)
-          to=$(echo "$TITLE" | grep -oE 'to [0-9]+' | grep -oE '[0-9]+' | head -1)
-          if [ -n "$from" ] && [ -n "$to" ] && [ "$from" != "$to" ]; then
-            echo "major=true" >> "$GITHUB_OUTPUT"
-            echo "Skipping major bump: $TITLE"
-            exit 0
+          set -euo pipefail
+          if [[ "$EVENT_NAME" == "pull_request_target" ]]; then
+            prs="$PR_NUMBER"
+          else
+            prs=$(gh pr list --repo "$REPO" --state open --json number,isDraft,headRepository | \
+              jq -r --arg owner "${REPO%%/*}" '.[] | select(.isDraft | not) | select(.headRepository.owner.login == $owner) | .number')
           fi
-
-          echo "major=false" >> "$GITHUB_OUTPUT"
-
-      - name: Approve PR
-        if: steps.classify.outputs.major == 'false'
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          REPO: ${{ github.repository }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-        run: gh pr review "$PR_NUMBER" --repo "$REPO" --approve || true
-
-      - name: Enable auto-merge
-        if: steps.classify.outputs.major == 'false'
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          REPO: ${{ github.repository }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-        run: gh pr merge "$PR_NUMBER" --repo "$REPO" --auto --squash --delete-branch
+          for pr in $prs; do
+            gh pr merge "$pr" --repo "$REPO" --auto --squash --delete-branch || true
+          done

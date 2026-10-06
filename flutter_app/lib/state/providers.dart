@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -6,13 +7,26 @@ import '../models/ebook_fulltext.dart';
 import '../models/job_snapshot.dart';
 import '../models/session_record.dart';
 import '../services/api_client.dart';
+import '../services/android_speech_fallback.dart';
 import '../services/audio_player_service.dart';
+import '../services/background_audio_handler.dart';
 import '../services/bookmark_store.dart';
 import '../services/download_manager.dart';
+import '../services/embedded_converter.dart';
 import '../services/fulltext_store.dart';
 import '../services/local_fulltext_cache.dart';
+import '../services/playback_snapshot.dart';
 import '../services/resume_store.dart';
 import '../services/sync_engine.dart';
+
+class AudioStartupState extends ChangeNotifier {
+  BackgroundAudioHandler? handler;
+
+  void attach(BackgroundAudioHandler value) {
+    handler = value;
+    notifyListeners();
+  }
+}
 
 /// `SharedPreferences` is asynchronously initialised once at app start.
 final sharedPrefsProvider = Provider<SharedPreferences>(
@@ -31,8 +45,8 @@ typedef AppSettings = MirrorAppSettings;
 /// setter call refreshes state via `_emit`.
 class SettingsNotifier extends StateNotifier<AppSettings> {
   SettingsNotifier(SharedPreferences prefs)
-      : _prefs = prefs,
-        super(MirrorAppSettings(prefs));
+    : _prefs = prefs,
+      super(MirrorAppSettings(prefs));
 
   final SharedPreferences _prefs;
 
@@ -126,17 +140,53 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
   }
 }
 
-final settingsProvider =
-    StateNotifierProvider<SettingsNotifier, AppSettings>((ref) {
+final settingsProvider = StateNotifierProvider<SettingsNotifier, AppSettings>((
+  ref,
+) {
   final prefs = ref.watch(sharedPrefsProvider);
   return SettingsNotifier(prefs);
 });
 
 final apiClientProvider = Provider<ApiClient>((ref) {
   final settings = ref.watch(settingsProvider);
-  return ApiClient(settings.backendURL);
+  final baseUrl = settings.resolvedBaseURL;
+  final api = ApiClient(
+    baseUrl?.toString() ?? settings.backendURL,
+    configurationError: baseUrl == null
+        ? 'No reachable backend is configured. Set the backend URL to an '
+            'HTTP(S) LAN address or deployed backend in Settings.'
+        : null,
+  );
+  return api;
 });
 
+/// Explicit conversion seam. Embedded mode never silently falls back to HTTP.
+final converterModeProvider = Provider<ConverterMode>((ref) {
+  final settings = ref.watch(settingsProvider);
+  // Mobile conversion is always handled by the embedded Rust runtime. HTTP is
+  // an explicit compatibility mode for desktop/remote deployments only.
+  if (defaultTargetPlatform == TargetPlatform.android ||
+      defaultTargetPlatform == TargetPlatform.iOS) {
+    return ConverterMode.embedded;
+  }
+  return settings.useEmbeddedRuntime ? ConverterMode.embedded : ConverterMode.http;
+});
+
+final embeddedConverterProvider = Provider<EmbeddedConverter>((ref) {
+  return EmbeddedConverterRegistry.current;
+});
+
+final localConverterAdapterProvider = Provider<LocalConverterAdapter>((ref) {
+  final api = ref.watch(apiClientProvider);
+  return LocalConverterAdapter(
+    mode: ref.watch(converterModeProvider),
+    embedded: ref.watch(embeddedConverterProvider),
+    httpFallback: ({required inputPath, required outputPath}) async {
+      await api.parseDocument(inputPath);
+      return outputPath;
+    },
+  );
+});
 final downloadManagerProvider = Provider<DownloadManager>((ref) {
   final dm = DownloadManager();
   ref.onDispose(dm.dispose);
@@ -147,8 +197,7 @@ final resumeStoreProvider = Provider<ResumeStore>((ref) {
   return ResumeStore(ref.watch(sharedPrefsProvider));
 });
 
-final bookmarkStoreProvider =
-    ChangeNotifierProvider<BookmarkStore>((ref) {
+final bookmarkStoreProvider = ChangeNotifierProvider<BookmarkStore>((ref) {
   return BookmarkStore(prefs: ref.watch(sharedPrefsProvider));
 });
 
@@ -161,28 +210,36 @@ final sessionsProvider = FutureProvider<List<SessionRecord>>((ref) async {
   return api.fetchSessions(last: 50);
 });
 
-final jobSnapshotProvider =
-    FutureProvider.family<JobSnapshot, String>((ref, jobId) async {
+final jobSnapshotProvider = FutureProvider.family<JobSnapshot, String>((
+  ref,
+  jobId,
+) async {
   final api = ref.watch(apiClientProvider);
   return api.fetchJob(jobId);
 });
 
-final fulltextProvider =
-    FutureProvider.family<EbookFulltext, String>((ref, jobId) async {
+final fulltextProvider = FutureProvider.family<EbookFulltext, String>((
+  ref,
+  jobId,
+) async {
   final store = ref.watch(fulltextStoreProvider);
   return store.fetch(jobId);
 });
 
 /// Live SSE stream for a running job. Emits [JobSnapshot] on every backend
 /// event. The stream auto-disposes when the last listener goes away.
-final jobStreamProvider =
-    StreamProvider.family<JobSnapshot, String>((ref, jobId) {
+final jobStreamProvider = StreamProvider.family<JobSnapshot, String>((
+  ref,
+  jobId,
+) {
   final api = ref.watch(apiClientProvider);
   return api.jobStream(jobId);
 });
 
-final audioPlayerProvider =
-    Provider.family<AudioPlayerService, String>((ref, jobId) {
+final audioPlayerProvider = Provider.family<AudioPlayerService, String>((
+  ref,
+  jobId,
+) {
   final settings = ref.watch(settingsProvider);
   final p = AudioPlayerService(backendBase: settings.backendURL);
   ref.onDispose(p.dispose);
@@ -197,8 +254,10 @@ final syncEngineProvider = Provider.family<SyncEngine, String>((ref, jobId) {
 });
 
 /// Drives `currentSentenceId` from the player position stream.
-final currentSentenceProvider =
-    StreamProvider.family<String?, String>((ref, jobId) {
+final currentSentenceProvider = StreamProvider.family<String?, String>((
+  ref,
+  jobId,
+) {
   final engine = ref.watch(syncEngineProvider(jobId));
   return engine.currentSentence;
 });
@@ -211,13 +270,24 @@ const _currentlyReadingKey = 'currentlyReadingBookId';
 
 /// The book currently open in the Reader tab. Persisted across launches.
 final currentlyReadingBookIdProvider =
-    StateNotifierProvider<_PersistedStringNotifier, String?>((ref) {
-  final prefs = ref.watch(sharedPrefsProvider);
-  return _PersistedStringNotifier(prefs, _currentlyReadingKey);
-});
+    StateNotifierProvider<_ReaderSessionNotifier, String?>((ref) {
+      final prefs = ref.watch(sharedPrefsProvider);
+      return _ReaderSessionNotifier(prefs, _currentlyReadingKey);
+    });
 
 /// The book whose audio is actively playing/paused. Ephemeral (not persisted).
-final currentlyPlayingBookIdProvider = StateProvider<String?>((ref) => null);
+final StateProvider<String?> currentlyPlayingBookIdProvider =
+    StateProvider<String?>((ref) {
+      ref.listen<String?>(currentlyReadingBookIdProvider, (_, next) {
+        ref.read(currentlyPlayingBookIdProvider.notifier).state = next;
+      });
+      return ref.read(currentlyReadingBookIdProvider);
+    });
+
+/// Starts local conversion when the persistent player is pressed before the
+/// book has any playable audio queued.
+final playbackRequestProvider =
+    StateProvider<Future<void> Function()?>((ref) => null);
 
 /// Singleton audio player for on-device playback. Not keyed by jobId — this
 /// Flutter app runs everything locally, so one player instance suffices.
@@ -229,6 +299,28 @@ final globalAudioPlayerProvider = Provider<AudioPlayerInterface>((ref) {
   return p;
 });
 
+/// Immutable playback state consumed by every Flutter playback surface.
+final playbackCoordinatorProvider = Provider<PlaybackCoordinator>((ref) {
+  final coordinator = PlaybackCoordinator(ref.watch(globalAudioPlayerProvider));
+  ref.onDispose(coordinator.dispose);
+  return coordinator;
+});
+
+/// Android MediaSession adapter. Null on desktop/iOS and in host tests.
+final audioStartupStateProvider = ChangeNotifierProvider<AudioStartupState>(
+  (ref) => AudioStartupState(),
+);
+
+final backgroundAudioHandlerProvider = Provider<BackgroundAudioHandler?>(
+  (ref) => ref.watch(audioStartupStateProvider).handler,
+);
+
+/// Android offline TTS fallback. The default adapter is a no-op on iOS,
+/// desktop, web, and host tests; tests can override this provider.
+final androidSpeechFallbackProvider = Provider<SpeechEngine>((ref) {
+  return AndroidSpeechFallback();
+});
+
 /// Shared fulltext cache singleton.
 final localFulltextCacheProvider = Provider<LocalFulltextCache>((ref) {
   return LocalFulltextCache();
@@ -238,14 +330,19 @@ final localFulltextCacheProvider = Provider<LocalFulltextCache>((ref) {
 /// the reader tab programmatically.
 final rootTabIndexProvider = StateProvider<int>((ref) => 0);
 
+/// Reader chrome visibility shared with the root shell so the persistent
+/// mini-player and navigation bar follow the reader's immersive mode.
+final readerChromeVisibleProvider = StateProvider<bool>((ref) => true);
+
 /// A trivial persisted String? notifier. Reads a SharedPreferences key on
 /// construction and writes on every `set`.
-class _PersistedStringNotifier extends StateNotifier<String?> {
-  _PersistedStringNotifier(this._prefs, this._key)
-      : super(_prefs.getString(_key));
+class _ReaderSessionNotifier extends StateNotifier<String?> {
+  _ReaderSessionNotifier(this._prefs, this._key)
+    : super(_prefs.getString(_key));
 
   final SharedPreferences _prefs;
   final String _key;
+
 
   void set(String? value) {
     state = value;
@@ -254,5 +351,6 @@ class _PersistedStringNotifier extends StateNotifier<String?> {
     } else {
       _prefs.setString(_key, value);
     }
+
   }
 }

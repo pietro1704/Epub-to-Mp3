@@ -16,7 +16,15 @@ def test_save_chapters_writes_metadata_without_indent(tmp_path):
     fake_epub = tmp_path / "book.epub"
     fake_epub.write_bytes(b"PK\x03\x04")
     chapters = [{"title": f"C{i}", "text": f"Body {i}"} for i in range(5)]
-    ok = cm.save_chapters_to_cache(fake_epub, {"title": "X", "author": "Y", "chapters": chapters})
+    ok = cm.save_chapters_to_cache(
+        fake_epub,
+        {
+            "title": "X",
+            "author": "Y",
+            "source_format": "pdf_scan_ocr",
+            "chapters": chapters,
+        },
+    )
     assert ok is True
     metadata_path = cm._get_cache_path(fake_epub) / "metadata.json"
     raw = metadata_path.read_text(encoding="utf-8")
@@ -24,6 +32,7 @@ def test_save_chapters_writes_metadata_without_indent(tmp_path):
     assert "\n" not in raw.strip()
     parsed = json.loads(raw)
     assert parsed["chapters_count"] == 5
+    assert parsed["source_format"] == "pdf_scan_ocr"
 
 
 def test_save_chapters_parallel_writes_all_files(tmp_path):

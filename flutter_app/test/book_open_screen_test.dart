@@ -1,3 +1,4 @@
+
 import 'package:flutter/material.dart';
 import 'package:flutter_app/l10n/app_localizations.dart';
 import 'package:flutter_app/models/book_entity.dart';
@@ -18,7 +19,16 @@ class _FakeApiClient extends ApiClient {
   _FakeApiClient() : super('http://fake');
 
   @override
-  Future<String> uploadAndConvert(String filePath) async {
+  Future<String> uploadAndConvert(
+    String filePath, {
+    int? chapterEnd,
+    int? chapterStart,
+    String engine = 'edge',
+    bool? includeCover,
+    String? language,
+    bool? normalizeAudio,
+    String? voice,
+  }) async {
     throw Exception('Backend unreachable');
   }
 
@@ -68,10 +78,8 @@ Widget _wrap(
     overrides: [
       sharedPrefsProvider.overrideWithValue(prefs),
       localFulltextCacheProvider.overrideWithValue(cache),
-      if (apiClient != null)
-        apiClientProvider.overrideWithValue(apiClient),
-      if (player != null)
-        globalAudioPlayerProvider.overrideWithValue(player),
+      if (apiClient != null) apiClientProvider.overrideWithValue(apiClient),
+      if (player != null) globalAudioPlayerProvider.overrideWithValue(player),
     ],
     child: MaterialApp(
       localizationsDelegates: AppLocalizations.localizationsDelegates,
@@ -135,7 +143,8 @@ void main() {
       expect(find.text('Retry'), findsOneWidget);
     });
 
-    testWidgets('play button visible in bottom bar when ready', (t) async {
+    testWidgets('BookOpenScreen does not render a duplicate play button',
+        (t) async {
       final book = BookEntity(
         id: 'play-book',
         title: 'Play Book',
@@ -164,22 +173,23 @@ void main() {
       final fakeApi = _FakeApiClient();
       final fakePlayer = FakeAudioPlayerService();
 
-      await t.pumpWidget(_wrap(
-        prefs,
-        'play-book',
-        cache: cache,
-        apiClient: fakeApi,
-        player: fakePlayer,
-      ));
+      await t.pumpWidget(
+        _wrap(
+          prefs,
+          'play-book',
+          cache: cache,
+          apiClient: fakeApi,
+          player: fakePlayer,
+        ),
+      );
       await t.pump();
       await t.pump();
 
       // The play button should be visible in the bottom bar.
-      expect(find.byIcon(Icons.play_circle_filled), findsOneWidget);
+      expect(find.byIcon(Icons.play_circle_filled), findsNothing);
     });
 
-    testWidgets('conversion falls back to local when backend fails',
-        (t) async {
+    testWidgets('conversion falls back to local when backend fails', (t) async {
       final book = BookEntity(
         id: 'fallback-book',
         title: 'Fallback Book',
@@ -206,25 +216,20 @@ void main() {
       final fakeApi = _FakeApiClient();
       final fakePlayer = FakeAudioPlayerService();
 
-      await t.pumpWidget(_wrap(
-        prefs,
-        'fallback-book',
-        cache: cache,
-        apiClient: fakeApi,
-        player: fakePlayer,
-      ));
+      await t.pumpWidget(
+        _wrap(
+          prefs,
+          'fallback-book',
+          cache: cache,
+          apiClient: fakeApi,
+          player: fakePlayer,
+        ),
+      );
       await t.pump();
       await t.pump();
 
-      // Tap play button to trigger conversion
-      await t.tap(find.byIcon(Icons.play_circle_filled));
-      await t.pump();
-      await t.pump();
-      await t.pump();
-
-      // Backend throws → PythonBridge not supported on macOS test host →
-      // error banner appears in the bottom bar with a warning icon.
-      expect(find.byIcon(Icons.warning_amber_rounded), findsOneWidget);
+      // Audio conversion is intentionally controlled by the global shell.
+      expect(find.byIcon(Icons.play_circle_filled), findsNothing);
     });
   });
 }

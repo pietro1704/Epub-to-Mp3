@@ -1,0 +1,14 @@
+{
+  "regular": {
+    "chunks": [
+      "First paragraph.\n\nSecond paragraph with enough words to remain deterministic."
+    ],
+    "voice": "en-US-AriaNeural"
+  },
+  "streaming": {
+    "chunks": [
+      "First paragraph.\n\nSecond paragraph with enough words to remain deterministic."
+    ],
+    "voice": "en-US-AriaNeural"
+  }
+}

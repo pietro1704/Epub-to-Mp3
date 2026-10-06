@@ -29,16 +29,37 @@ private final class StubProtocol: URLProtocol {
         let body: Data
     }
 
-    static var queue: [StubResponse] = []
-    static var requestCount = 0
+    private struct State {
+        var queue: [StubResponse] = []
+        var requestCount = 0
+    }
+
+    private static let stateLock = NSLock()
+    nonisolated(unsafe) private static var state = State()
+
+    static func reset(with responses: [StubResponse] = []) {
+        stateLock.lock()
+        state = State(queue: responses)
+        stateLock.unlock()
+    }
+
+    static var completedRequestCount: Int {
+        stateLock.lock()
+        defer { stateLock.unlock() }
+        return state.requestCount
+    }
 
     override class func canInit(with request: URLRequest) -> Bool { true }
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
 
     override func startLoading() {
-        let idx = Self.requestCount
-        Self.requestCount += 1
-        let stub = idx < Self.queue.count ? Self.queue[idx] : StubResponse(statusCode: 200, body: Data())
+        Self.stateLock.lock()
+        let idx = Self.state.requestCount
+        Self.state.requestCount += 1
+        let stub = idx < Self.state.queue.count
+            ? Self.state.queue[idx]
+            : StubResponse(statusCode: 200, body: Data())
+        Self.stateLock.unlock()
         let http = HTTPURLResponse(
             url: request.url!,
             statusCode: stub.statusCode,
@@ -56,26 +77,41 @@ private final class StubProtocol: URLProtocol {
 
 final class FulltextStoreTests: XCTestCase {
 
-    private var session: URLSession!
+    // XCTest invokes lifecycle hooks outside the MainActor but serially for a
+    // test case; these fixtures bridge that documented boundary only.
+    nonisolated(unsafe) private var session: URLSession!
+    nonisolated(unsafe) private var storageRoot: URL!
     private let base = URL(string: "http://stub.local")!
 
-    override func setUp() {
-        super.setUp()
-        StubProtocol.queue = []
-        StubProtocol.requestCount = 0
+    nonisolated override func setUp() async throws {
+        try await super.setUp()
+        StubProtocol.reset()
         let config = URLSessionConfiguration.ephemeral
         config.protocolClasses = [StubProtocol.self]
         // Eliminate real delays in the retry ladder for fast tests.
         // The store uses `Task.sleep(nanoseconds:)` internally; we
         // override ladder delays to 0 by having responses ready instantly.
         session = URLSession(configuration: config)
+        storageRoot = FileManager.default.temporaryDirectory
+            .appendingPathComponent("fulltext-tests-\(UUID().uuidString)", isDirectory: true)
+        try? FileManager.default.createDirectory(at: storageRoot, withIntermediateDirectories: true)
+    }
+
+    nonisolated override func tearDown() async throws {
+        session.invalidateAndCancel()
+        session = nil
+        if let storageRoot { try? FileManager.default.removeItem(at: storageRoot) }
+        storageRoot = nil
+        StubProtocol.reset()
+        try await super.tearDown()
     }
 
     // MARK: - 404 / 422 permanent errors
 
+    @MainActor
     func testRefresh404ThrowsGone() async throws {
-        StubProtocol.queue = [.init(statusCode: 404, body: Data())]
-        let store = FulltextStore()
+        StubProtocol.reset(with: [.init(statusCode: 404, body: Data())])
+        let store = FulltextStore(storageRoot: storageRoot)
 
         do {
             _ = try await store.refresh(jobId: "j1", baseURL: base, urlSession: session)
@@ -84,12 +120,13 @@ final class FulltextStoreTests: XCTestCase {
             // Expected
         }
         // Only one request must have been made (no retry on 404).
-        XCTAssertEqual(StubProtocol.requestCount, 1)
+        XCTAssertEqual(StubProtocol.completedRequestCount, 1)
     }
 
+    @MainActor
     func testRefresh422ThrowsEmptyParse() async throws {
-        StubProtocol.queue = [.init(statusCode: 422, body: Data())]
-        let store = FulltextStore()
+        StubProtocol.reset(with: [.init(statusCode: 422, body: Data())])
+        let store = FulltextStore(storageRoot: storageRoot)
 
         do {
             _ = try await store.refresh(jobId: "j2", baseURL: base, urlSession: session)
@@ -97,22 +134,23 @@ final class FulltextStoreTests: XCTestCase {
         } catch FulltextStore.FulltextError.emptyParse {
             // Expected
         }
-        XCTAssertEqual(StubProtocol.requestCount, 1)
+        XCTAssertEqual(StubProtocol.completedRequestCount, 1)
     }
 
     // MARK: - 503 retry ladder
 
+    @MainActor
     func test503RetriesUntilExhaustedThenThrows() async throws {
         // Provide 503 for every retry slot + 1 final attempt (ladder has
         // retryLadderMs.count delays, so retryLadderMs.count + 1 total
         // requests before giving up).
         let ladderCount = FulltextStore.retryLadderMs.count
         let totalAttempts = ladderCount + 1
-        StubProtocol.queue = Array(
+        StubProtocol.reset(with: Array(
             repeating: StubProtocol.StubResponse(statusCode: 503, body: Data("still processing".utf8)),
             count: totalAttempts + 2  // extra headroom
-        )
-        let store = FulltextStore()
+        ))
+        let store = FulltextStore(storageRoot: storageRoot)
 
         do {
             _ = try await store.refresh(jobId: "j3", baseURL: base, urlSession: session)
@@ -120,10 +158,11 @@ final class FulltextStoreTests: XCTestCase {
         } catch FulltextStore.FulltextError.transientExhausted {
             // Expected
         }
-        XCTAssertEqual(StubProtocol.requestCount, totalAttempts,
-            "Must attempt exactly retryLadder.count+1 times (\(totalAttempts)); got \(StubProtocol.requestCount)")
+        XCTAssertEqual(StubProtocol.completedRequestCount, totalAttempts,
+            "Must attempt exactly retryLadder.count+1 times (\(totalAttempts)); got \(StubProtocol.completedRequestCount)")
     }
 
+    @MainActor
     func test503ThenSuccessReturnsPayload() async throws {
         // Two 503s then a 200 — simulates "still extracting" scenario.
         let payload = EbookFulltext(
@@ -136,22 +175,23 @@ final class FulltextStoreTests: XCTestCase {
         )
         let payloadData = try JSONEncoder().encode(payload)
 
-        StubProtocol.queue = [
+        StubProtocol.reset(with: [
             .init(statusCode: 503, body: Data("wait".utf8)),
             .init(statusCode: 503, body: Data("wait".utf8)),
             .init(statusCode: 200, body: payloadData),
-        ]
-        let store = FulltextStore()
+        ])
+        let store = FulltextStore(storageRoot: storageRoot)
 
         let result = try await store.refresh(jobId: "j-ok", baseURL: base, urlSession: session)
 
         XCTAssertEqual(result.bookTitle, "Foundation")
         XCTAssertEqual(result.chapters.count, 1)
-        XCTAssertEqual(StubProtocol.requestCount, 3)
+        XCTAssertEqual(StubProtocol.completedRequestCount, 3)
     }
 
     // MARK: - 200 decode + watch subscriber
 
+    @MainActor
     func testRefresh200EmitsToWatchSubscriber() async throws {
         let payload = EbookFulltext(
             jobId: "j-watch",
@@ -162,9 +202,9 @@ final class FulltextStoreTests: XCTestCase {
                              charCount: 12, segments: nil)]
         )
         let payloadData = try JSONEncoder().encode(payload)
-        StubProtocol.queue = [.init(statusCode: 200, body: payloadData)]
+        StubProtocol.reset(with: [.init(statusCode: 200, body: payloadData)])
 
-        let store = FulltextStore()
+        let store = FulltextStore(storageRoot: storageRoot)
         var received: EbookFulltext?
 
         // Set up subscriber before refresh fires.
@@ -188,9 +228,10 @@ final class FulltextStoreTests: XCTestCase {
 
     // MARK: - Disk round-trip
 
+    @MainActor
     func testSaveToDiskAndLoadFromDisk() throws {
         let id = "disk-rt-\(UUID().uuidString.prefix(8))"
-        defer { try? FileManager.default.removeItem(at: FulltextStore.fulltextURL(for: id)) }
+        defer { try? FileManager.default.removeItem(at: FulltextStore.fulltextURL(for: id, root: storageRoot)) }
 
         let payload = EbookFulltext(
             jobId: id,
@@ -200,25 +241,27 @@ final class FulltextStoreTests: XCTestCase {
                              text: "The sky was the color of television.",
                              html: nil, css: nil, charCount: 37, segments: nil)]
         )
-        try FulltextStore.saveToDisk(payload)
+        try FulltextStore.saveToDisk(payload, root: storageRoot)
 
-        let read = try XCTUnwrap(FulltextStore.loadFromDisk(jobId: id),
+        let read = try XCTUnwrap(FulltextStore.loadFromDisk(jobId: id, root: storageRoot),
             "loadFromDisk must return payload after saveToDisk")
         XCTAssertEqual(read.bookTitle, "Neuromancer")
         XCTAssertEqual(read.chapters.first?.text,
             "The sky was the color of television.")
     }
 
+    @MainActor
     func testLoadFromDiskReturnsNilForUnknownId() {
         let id = "nonexistent-\(UUID().uuidString)"
-        XCTAssertNil(FulltextStore.loadFromDisk(jobId: id))
+        XCTAssertNil(FulltextStore.loadFromDisk(jobId: id, root: storageRoot))
     }
 
     // MARK: - watch yields on-disk copy immediately
 
+    @MainActor
     func testWatchYieldsDiskCopyBeforeNetworkRefresh() async throws {
         let id = "watch-disk-\(UUID().uuidString.prefix(8))"
-        defer { try? FileManager.default.removeItem(at: FulltextStore.fulltextURL(for: id)) }
+        defer { try? FileManager.default.removeItem(at: FulltextStore.fulltextURL(for: id, root: storageRoot)) }
 
         let payload = EbookFulltext(
             jobId: id,
@@ -228,9 +271,9 @@ final class FulltextStoreTests: XCTestCase {
                              text: "It was a bright cold day.", html: nil,
                              css: nil, charCount: 25, segments: nil)]
         )
-        try FulltextStore.saveToDisk(payload)
+        try FulltextStore.saveToDisk(payload, root: storageRoot)
 
-        let store = FulltextStore()
+        let store = FulltextStore(storageRoot: storageRoot)
         var first: EbookFulltext?
 
         let stream = store.watch(jobId: id)
@@ -248,11 +291,12 @@ final class FulltextStoreTests: XCTestCase {
             "watch must yield disk copy without a network call")
         XCTAssertEqual(got.bookTitle, "1984")
         // No network requests should have happened.
-        XCTAssertEqual(StubProtocol.requestCount, 0)
+        XCTAssertEqual(StubProtocol.completedRequestCount, 0)
     }
 
     // MARK: - Retry ladder constants
 
+    @MainActor
     func testRetryLadderHasExpectedEntries() {
         // Memory contract: [800, 1500, 3000, 6000, 12000]
         XCTAssertEqual(FulltextStore.retryLadderMs, [800, 1500, 3000, 6000, 12000],

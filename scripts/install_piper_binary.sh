@@ -64,22 +64,4 @@ else
   rm -f "$TMP_FILE"
 fi
 
-MODELS_DIR="models"
-mkdir -p "$MODELS_DIR"
-MODEL_FILE="$MODELS_DIR/pt_BR-faber-medium.onnx"
-CONFIG_FILE="$MODELS_DIR/pt_BR-faber-medium.onnx.json"
-
-if [ ! -f "$MODEL_FILE" ] || [ ! -f "$CONFIG_FILE" ]; then
-  echo "⬇️  Downloading default Piper model (pt_BR-faber-medium)..."
-  MODEL_BASE="${PIPER_MODEL_BASE:-https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/pt/pt_BR/faber/medium}"
-  if curl -fL "${MODEL_BASE}/pt_BR-faber-medium.onnx" -o "$MODEL_FILE" \
-     && curl -fL "${MODEL_BASE}/pt_BR-faber-medium.onnx.json" -o "$CONFIG_FILE"; then
-    echo "✅ Model saved to $MODEL_FILE"
-  else
-    echo "⚠️  Failed to download default model (HTTP error from ${MODEL_BASE})."
-    echo "    Falling back to runtime download via python_app/src/tts/factory.py on first use."
-    rm -f "$MODEL_FILE" "$CONFIG_FILE"
-  fi
-else
-  echo "ℹ️  Model pt_BR-faber-medium already present."
-fi
+echo "ℹ️  Piper voice models are not downloaded by install; install one explicitly from Settings."

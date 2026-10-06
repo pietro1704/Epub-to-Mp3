@@ -1,0 +1,512 @@
+--------- beginning of main
+09-28 14:08:26.562  4076  4465 D GeolocationCon: handleMessage : what = 4
+09-28 14:08:26.562  4076  4465 D GeolocationCon: onServiceStateChanged({mVoiceRegState=0(IN_SERVICE), mDataRegState=0(IN_SERVICE), mChannelNumber=-1, duplexMode()=0, mCellBandwidths=[], mVoiceRoamingType=home, mDataRoamingType=home, isManualNetworkSelection=false(automatic), mRilVoiceRadioTechnology=14(LTE), mRilDataRadioTechnology=14(LTE), mCssIndicator=unsupported, mCdmaRoamingIndicator=-1, mCdmaDefaultRoamingIndicator=-1, VoiceRegType=0, ImsVoiceAvail=1, IsEbSupport=1, IsEaBarred=0, Snap=0, MobileVoice=IN_SERVICE, MobileVoiceRat=LTE, MobileData=IN_SERVICE, MobileDataRoamingType=home, MobileDataRat=LTE PsOnly=false FemtocellInd=0 EndcStatus=0 RestrictDcnr=1 NrBearerStatus=0, mIsEmergencyOnly=false, mIsDataRoamingFromRegistration=false, mIsUsingCarrierAggregation=false, mLteEarfcnRsrpBoost=0, mNetworkRegistrationStates=[NetworkRegistrationState{transportType=1 domain=PS regState=HOME accessNetworkTechnology=LTE reasonForDenial=0 emergencyEnabled=false supportedServices=[I@304e848 cellIdentity=CellIdentityLte:{ mCi=<MASKED> mPci=447 mTac=<MASKED> mEarfcn=-1 mBandwidth=0 mMcc=724 mMnc=03 mAlphaLong=TIMBRASIL mAlphaShort=TIMBRASIL} voiceSpecificStates=null dataSpecificStates=DataSpecificRegistrationStates { mMaxDataCalls=4 mLac=0 mCid=20428899 mTac=31351 mSnapshotStatus=0 mMobileState=1 mMobileRat=14 mMobileOptionalRat=0 isDcNrRestricted = true isNrAvailable = false isEnDcAvailable = false} nrStatus=NONE}, NetworkRegistrationState{transportType=1 domain=CS regState=HOME accessNetworkTechnology=LTE reasonForDenial=0 emergencyEnabled=false supportedServices=[I@78d06e1 cellIdentity=CellIdentityLte:{ mCi=<MASKED> mPci=447 mTac=<MASKED> mEarfcn=-1 mBandwidth=0 mMcc=724 mMnc=03 mAlphaLong=TIMBRASIL mAlphaShort=TIMBRASIL} voiceSpecificStates=VoiceSpecificRegistrationStates { mCssSupported=false mRoamingIndicator=0 mSystemIsInPrl=0 mDefaultRoamingIndicator=0 mLac=31351 mCid=20428899 mPsVoiceSupport1 mImsEmergencyCallSupport1 mImsEmergencyCallBarring0 mMobileState1 mMobileRat14 mIsPsOnlyRegfalse} dataSpecificStates=null nrStatus=NONE}], mNrFrequencyRange=-1})
+09-28 14:08:26.563  4076  4465 D GeolocationCon: onServiceStateChanged : {mVoiceRegState=0(IN_SERVICE), mDataRegState=0(IN_SERVICE), mChannelNumber=-1, duplexMode()=0, mCellBandwidths=[], mVoiceRoamingType=home, mDataRoamingType=home, isManualNetworkSelection=false(automatic), mRilVoiceRadioTechnology=14(LTE), mRilDataRadioTechnology=14(LTE), mCssIndicator=unsupported, mCdmaRoamingIndicator=-1, mCdmaDefaultRoamingIndicator=-1, VoiceRegType=0, ImsVoiceAvail=1, IsEbSupport=1, IsEaBarred=0, Snap=0, MobileVoice=IN_SERVICE, MobileVoiceRat=LTE, MobileData=IN_SERVICE, MobileDataRoamingType=home, MobileDataRat=LTE PsOnly=false FemtocellInd=0 EndcStatus=0 RestrictDcnr=1 NrBearerStatus=0, mIsEmergencyOnly=false, mIsDataRoamingFromRegistration=false, mIsUsingCarrierAggregation=false, mLteEarfcnRsrpBoost=0, mNetworkRegistrationStates=[NetworkRegistrationState{transportType=1 domain=PS regState=HOME accessNetworkTechnology=LTE reasonForDenial=0 emergencyEnabled=false supportedServices=[I@304e848 cellIdentity=CellIdentityLte:{ mCi=<MASKED> mPci=447 mTac=<MASKED> mEarfcn=-1 mBandwidth=0 mMcc=724 mMnc=03 mAlphaLong=TIMBRASIL mAlphaShort=TIMBRASIL} voiceSpecificStates=null dataSpecificStates=DataSpecificRegistrationStates { mMaxDataCalls=4 mLac=0 mCid=20428899 mTac=31351 mSnapshotStatus=0 mMobileState=1 mMobileRat=14 mMobileOptionalRat=0 isDcNrRestricted = true isNrAvailable = false isEnDcAvailable = false} nrStatus=NONE}, NetworkRegistrationState{transportType=1 domain=CS regState=HOME accessNetworkTechnology=LTE reasonForDenial=0 emergencyEnabled=false supportedServices=[I@78d06e1 cellIdentity=CellIdentityLte:{ mCi=<MASKED> mPci=447 mTac=<MASKED> mEarfcn=-1 mBandwidth=0 mMcc=724 mMnc=03 mAlphaLong=TIMBRASIL mAlphaShort=TIMBRASIL} voiceSpecificStates=VoiceSpecificRegistrationStates { mCssSupported=false mRoamingIndicator=0 mSystemIsInPrl=0 mDefaultRoamingIndicator=0 mLac=31351 mCid=20428899 mPsVoiceSupport1 mImsEmergencyCallSupport1 mImsEmergencyCallBarring0 mMobileState1 mMobileRat14 mIsPsOnlyRegfalse} dataSpecificStates=null nrStatus=NONE}], mNrFrequencyRange=-1}
+09-28 14:08:26.575  4076  4465 D GeolocationCon: onServiceStateChanged[0] : mCountryIso = br, iso = br
+09-28 14:08:26.579  3865  3865 D KeyguardUpdateMonitor: received broadcast android.intent.action.SERVICE_STATE
+09-28 14:08:26.580  3865  3865 V KeyguardUpdateMonitor: action android.intent.action.SERVICE_STATE serviceState={mVoiceRegState=0(IN_SERVICE), mDataRegState=0(IN_SERVICE), mChannelNumber=-1, duplexMode()=0, mCellBandwidths=[], mVoiceRoamingType=home, mDataRoamingType=home, isManualNetworkSelection=false(automatic), mRilVoiceRadioTechnology=14(LTE), mRilDataRadioTechnology=14(LTE), mCssIndicator=unsupported, mCdmaRoamingIndicator=-1, mCdmaDefaultRoamingIndicator=-1, VoiceRegType=0, ImsVoiceAvail=1, IsEbSupport=1, IsEaBarred=0, Snap=0, MobileVoice=IN_SERVICE, MobileVoiceRat=LTE, MobileData=IN_SERVICE, MobileDataRoamingType=home, MobileDataRat=LTE PsOnly=false FemtocellInd=0 EndcStatus=0 RestrictDcnr=1 NrBearerStatus=0, mIsEmergencyOnly=false, mIsDataRoamingFromRegistration=false, mIsUsingCarrierAggregation=false, mLteEarfcnRsrpBoost=0, mNetworkRegistrationStates=[], mNrFrequencyRange=0} subId=1
+09-28 14:08:26.580  3865  3865 D Tile.AirplaneModeTile: onReceive: android.intent.action.SERVICE_STATE
+09-28 14:08:26.581  3865  3865 D KeyguardUpdateMonitor: handleServiceStateChange(subId=1, serviceState={mVoiceRegState=0(IN_SERVICE), mDataRegState=0(IN_SERVICE), mChannelNumber=-1, duplexMode()=0, mCellBandwidths=[], mVoiceRoamingType=home, mDataRoamingType=home, isManualNetworkSelection=false(automatic), mRilVoiceRadioTechnology=14(LTE), mRilDataRadioTechnology=14(LTE), mCssIndicator=unsupported, mCdmaRoamingIndicator=-1, mCdmaDefaultRoamingIndicator=-1, VoiceRegType=0, ImsVoiceAvail=1, IsEbSupport=1, IsEaBarred=0, Snap=0, MobileVoice=IN_SERVICE, MobileVoiceRat=LTE, MobileData=IN_SERVICE, MobileDataRoamingType=home, MobileDataRat=LTE PsOnly=false FemtocellInd=0 EndcStatus=0 RestrictDcnr=1 NrBearerStatus=0, mIsEmergencyOnly=false, mIsDataRoamingFromRegistration=false, mIsUsingCarrierAggregation=false, mLteEarfcnRsrpBoost=0, mNetworkRegistrationStates=[], mNrFrequencyRange=0}
+09-28 14:08:26.582 27029 27029 I ORC/PermissionUtil: hasRequiredLegacyMsgPermissions done,Elapsed time : 16.795155 ms
+09-28 14:08:26.582 27029 27029 D ORC/CbCmasReceiver: onReceive : action = android.intent.action.SERVICE_STATE
+09-28 14:08:26.582  3546  3982 D SLocation: onCellLocationChanged 1 / 0
+09-28 14:08:26.582  3865  4220 D Tile.AirplaneModeTile:  handleUpdateState: airplane mode is disabled
+09-28 14:08:26.583  3865  4220 D Tile.AirplaneModeTile:  handleUpdateState:  value = false, state = 1
+09-28 14:08:26.583 27029 27029 D ORC/MethodReflector: newFromBundle is called
+09-28 14:08:26.583 27029 27029 D ORC/ScpmChannelUtil: getCurrentNetworkMCC() : 724
+09-28 14:08:26.583 27029 27029 D ORC/CbCmasReceiver: handleRoamingCMAS : prevMCC = null, curMCC = 724, simSlot = 0
+09-28 14:08:26.583 27029 27029 D ORC/ScpmChannelUtil: getCurrentNetworkMCC() : 724
+09-28 14:08:26.583 27029 27029 D ORC/CmasUtil: isSupportGlobalPws : checkGlobalPwsChecked is UN_SUPPORT
+09-28 14:08:26.583 27029 27029 D ORC/CbCmasReceiver: serviceState = 0
+09-28 14:08:26.591  3546  3982 D TelephonyManager: getAllCellInfo : Caller (PID / UID / TID): 3546 / 1000 / 3982
+09-28 14:08:26.592  4076  4076 D PdnController<1>: onCellLocationChanged:
+09-28 14:08:26.592  4076  4076 D VolteServiceModule: onCellLocationChanged, phoneId: 1
+09-28 14:08:26.592  4076  4465 I RegiMgrBase: handleMessage: CELL_LOCATION_CHANGED
+09-28 14:08:26.592  4076  4465 D RegiMgrBase<1>: updatePani:
+09-28 14:08:26.592  4076  4465 D RegiMgrBase<1>: notifyNetworkEvent:
+09-28 14:08:26.592  3828  3828 I Telephony: TelecomAccountRegistry$4: onServiceStateChanged, {mVoiceRegState=0(IN_SERVICE), mDataRegState=0(IN_SERVICE), mChannelNumber=-1, duplexMode()=0, mCellBandwidths=[], mVoiceRoamingType=home, mDataRoamingType=home, isManualNetworkSelection=false(automatic), mRilVoiceRadioTechnology=14(LTE), mRilDataRadioTechnology=14(LTE), mCssIndicator=unsupported, mCdmaRoamingIndicator=-1, mCdmaDefaultRoamingIndicator=-1, VoiceRegType=0, ImsVoiceAvail=1, IsEbSupport=1, IsEaBarred=0, Snap=0, MobileVoice=IN_SERVICE, MobileVoiceRat=LTE, MobileData=IN_SERVICE, MobileDataRoamingType=home, MobileDataRat=LTE PsOnly=false FemtocellInd=0 EndcStatus=0 RestrictDcnr=1 NrBearerStatus=0, mIsEmergencyOnly=false, mIsDataRoamingFromRegistration=false, mIsUsingCarrierAggregation=false, mLteEarfcnRsrpBoost=0, mNetworkRegistrationStates=[NetworkRegistrationState{transportType=1 domain=PS regState=HOME accessNetworkTechnology=LTE reasonForDenial=0 emergencyEnabled=false supportedServices=[I@dd460d8 cellIdentity=CellIdentityLte:{ mCi=<MASKED> mPci=447 mTac=<MASKED> mEarfcn=-1 mBandwidth=0 mMcc=724 mMnc=03 mAlphaLong=TIMBRASIL mAlphaShort=TIMBRASIL} voiceSpecificStates=null dataSpecificStates=DataSpecificRegistrationStates { mMaxDataCalls=4 mLac=0 mCid=20428899 mTac=31351 mSnapshotStatus=0 mMobileState=1 mMobileRat=14 mMobileOptionalRat=0 isDcNrRestricted = true isNrAvailable = false isEnDcAvailable = false} nrStatus=NONE}, NetworkRegistrationState{transportType=1 domain=CS regState=HOME accessNetworkTechnology=LTE reasonForDenial=0 emergencyEnabled=false supportedServices=[I@7ff3c31 cellIdentity=CellIdentityLte:{ mCi=<MASKED> mPci=447 mTac=<MASKED> mEarfcn=-1 mBandwidth=0 mMcc=724 mMnc=03 mAlphaLong=TIMBRASIL mAlphaShort=TIMBRASIL} voiceSpecificStates=VoiceSpecificRegistrationStates { mCssSupported=false mRoamingIndicator=0 mSystemIsInPrl=0 mDefaultRoamingIndicator=0 mLac=31351 mCid=20428899 mPsVoiceSupport1 mImsEmergencyCallSupport1 mImsEmergencyCallBarring0 mMobileState1 mMobileRat14 mIsPsOnlyRegfalse} dataSpecificStates=null nrStatus=NONE}], mNrFrequencyRange=-1}
+09-28 14:08:26.592  4076  4465 D RegiMgrBase<1>: buildNetworkEvent:
+09-28 14:08:26.592  3828  3828 D ImsAdaptorImpl2: onServiceStateChanged(): data regstate 0, network type 13
+09-28 14:08:26.592  3865  3865 D KeyguardClockPage: isNetworkRoamingState id=1 roaming=false
+09-28 14:08:26.592  3865  3865 D KeyguardClockPage: onRefreshCarrierInfo(pre, now): false, false
+09-28 14:08:26.592  4076  4465 I RegiMgrBase: handleMessage: PLANI_IN_TIME_CHANGED
+09-28 14:08:26.592  3828  3828 D ImsAdaptorImpl: onServiceStateChanged(): data regstate 0, network type 13
+09-28 14:08:26.592  3865  3865 D CarrierText: updateCarrierText(): 1
+09-28 14:08:26.593  3828  3828 V PhoneGlobals: handleServiceStateChanged
+09-28 14:08:26.593  3828  3828 D Telephony:SamsungTelephonyUIManager: updateNetworkSelection subid : 1
+09-28 14:08:26.593  4076  4465 D PdnController<0>: onCellLocationChanged:
+09-28 14:08:26.594  4076  4465 D VolteServiceModule: onCellLocationChanged, phoneId: 0
+09-28 14:08:26.594  4076  4465 I RegiMgrBase: handleMessage: CELL_LOCATION_CHANGED
+09-28 14:08:26.594  4076  4465 D RegiMgrBase<0>: updatePani:
+09-28 14:08:26.596  4076  4465 D PaniGenerator<0>: generate: subId - 1
+09-28 14:08:26.597  3865  3865 D DeviceState: isReadySimSlot() slotNum : 0 (true)
+09-28 14:08:26.597  3865  3865 D DeviceState: getSystemPropertySimState() simStateProp : LOADED
+09-28 14:08:26.597  3865  3865 D CarrierText: Handling (subId=1): simState = READY, carrierName = TIMBRASIL | TIM
+09-28 14:08:26.597  3865  3865 D CarrierText: carrierTextForSimState = TIMBRASIL | TIM
+09-28 14:08:26.597  3865  3865 D CarrierText: SIM ready and in service: subId = 1, ServiceState = {mVoiceRegState=0(IN_SERVICE), mDataRegState=0(IN_SERVICE), mChannelNumber=-1, duplexMode()=0, mCellBandwidths=[], mVoiceRoamingType=home, mDataRoamingType=home, isManualNetworkSelection=false(automatic), mRilVoiceRadioTechnology=14(LTE), mRilDataRadioTechnology=14(LTE), mCssIndicator=unsupported, mCdmaRoamingIndicator=-1, mCdmaDefaultRoamingIndicator=-1, VoiceRegType=0, ImsVoiceAvail=1, IsEbSupport=1, IsEaBarred=0, Snap=0, MobileVoice=IN_SERVICE, MobileVoiceRat=LTE, MobileData=IN_SERVICE, MobileDataRoamingType=home, MobileDataRat=LTE PsOnly=false FemtocellInd=0 EndcStatus=0 RestrictDcnr=1 NrBearerStatus=0, mIsEmergencyOnly=false, mIsDataRoamingFromRegistration=false, mIsUsingCarrierAggregation=false, mLteEarfcnRsrpBoost=0, mNetworkRegistrationStates=[], mNrFrequencyRange=0}
+09-28 14:08:26.597  3865  3865 D CarrierText: setText : TIMBRASIL | TIM
+09-28 14:08:26.599 26974 26992 D InternalContentProvider: update_network_selection null
+09-28 14:08:26.599 26974 26992 D InternalContentProvider: Take CarrierUiCallFunctions
+09-28 14:08:26.600 26974 26992 D CarrierUiCallFunctions: call update_network_selection null Bundle[mParcelledData.dataSize=28]
+09-28 14:08:26.600 26974 26992 V UT.Worker-General: schedule job 882e25d
+09-28 14:08:26.600 26974 27001 V UT.Worker-General: handle job 882e25d
+09-28 14:08:26.601  3828  3828 V PhoneGlobals: subId=1,mDefaultDataSubId=1,ss roaming=false
+09-28 14:08:26.601 27029 27029 I ORC/PermissionUtil: hasRequiredLegacyMsgPermissions done,Elapsed time : 11.254077 ms
+09-28 14:08:26.601  3828  3828 V PhoneGlobals: updateDataRoamingStatus
+09-28 14:08:26.601 27029 27029 D ORC/SmsAppReceiver: DefaultSmsAppSmsReceiver : action = android.intent.action.SERVICE_STATE
+09-28 14:08:26.601 26974 27001 V UT.Worker-General: completed job 882e25d
+09-28 14:08:26.602 26974 26974 V UT.Worker-General: issue callback for job 882e25d
+09-28 14:08:26.602 26974 26974 D FT.TuiSalesCodeFeature: NONE.isCurrentCountry
+09-28 14:08:26.605  3828  3828 V PhoneGlobals: dataAllowed=false, reasons=Data disallowed, reasons: DATA_DISABLED
+09-28 14:08:26.606  3828  3828 I Telephony: TelecomAccountRegistry$3: Receive ServiceStateChanged, {mVoiceRegState=0(IN_SERVICE), mDataRegState=0(IN_SERVICE), mChannelNumber=-1, duplexMode()=0, mCellBandwidths=[], mVoiceRoamingType=home, mDataRoamingType=home, isManualNetworkSelection=false(automatic), mRilVoiceRadioTechnology=14(LTE), mRilDataRadioTechnology=14(LTE), mCssIndicator=unsupported, mCdmaRoamingIndicator=-1, mCdmaDefaultRoamingIndicator=-1, VoiceRegType=0, ImsVoiceAvail=1, IsEbSupport=1, IsEaBarred=0, Snap=0, MobileVoice=IN_SERVICE, MobileVoiceRat=LTE, MobileData=IN_SERVICE, MobileDataRoamingType=home, MobileDataRat=LTE PsOnly=false FemtocellInd=0 EndcStatus=0 RestrictDcnr=1 NrBearerStatus=0, mIsEmergencyOnly=false, mIsDataRoamingFromRegistration=false, mIsUsingCarrierAggregation=false, mLteEarfcnRsrpBoost=0, mNetworkRegistrationStates=[], mNrFrequencyRange=0}
+09-28 14:08:26.606  3828  3828 I Telephony: TelecomAccountRegistry$3: subId: 1, operatorAlphaShort: TIMBRASIL, voiceNetwokType: 13 -> 13, dataNetwokType: 13 -> 13
+09-28 14:08:26.611  4076  4465 D PaniGenerator<0>: generate: network=13, fallbackPlmn=72402, subId=1
+09-28 14:08:26.614  4076  4465 D PaniGenerator<0>: getPsPlmn: subId = 1
+09-28 14:08:26.614 26974 26974 V UT.TelephonyUtils: getServiceState 0, subId 1
+09-28 14:08:26.615 26974 26992 D InternalContentProvider: service_state_changed null
+09-28 14:08:26.615 26974 26992 D InternalContentProvider: Take CarrierUiCallFunctions
+09-28 14:08:26.615 26974 26992 D CarrierUiCallFunctions: call service_state_changed null Bundle[mParcelledData.dataSize=2640]
+09-28 14:08:26.615 26974 26974 D CU.NetworkSelectionNotificationMgr: getNetworkSelection :   subId : 1
+09-28 14:08:26.615 26974 26974 D CU.NetworkSelectionNotificationMgr: updateNetworkSelection()... isManualSelection : false , isSelectedOperatoraEmpty : true , selectedNetworkOperatorName :  PhoneId: 0
+09-28 14:08:26.616 26974 26992 V UT.Worker-General: schedule job 882e25d
+09-28 14:08:26.616 26974 27001 V UT.Worker-General: handle job 882e25d
+09-28 14:08:26.616 26974 27001 V UT.Worker-General: completed job 882e25d
+09-28 14:08:26.617  3828  4440 I Telephony:SamsungPhoneInterfaceManager: getCellLocationBySubId: is active user
+09-28 14:08:26.623  4076  4465 D PaniGenerator: getDataPlmn returns null
+09-28 14:08:26.625 26974 26974 V FT.PhoneUtilsMultiSim: getMultiSimIccType phoneId 0 icctype 2 
+09-28 14:08:26.625 26974 26974 V FT.PhoneUtilsMultiSim: isSimCardInserted[slot0] true
+09-28 14:08:26.625 26974 26974 V FT.PhoneUtilsMultiSim: isSimCardStatusOn[slot0] true
+09-28 14:08:26.625 26974 26974 D FT.TuiSalesCodeFeature: UNKNOWN.isCurrentOperator
+09-28 14:08:26.625  4076  4465 D PaniGenerator: generate: change to NW PLMN(72403)
+09-28 14:08:26.625 26974 26974 V UT.Worker-General: issue callback for job 882e25d
+09-28 14:08:26.625 26974 26974 D FT.TuiSalesCodeFeature: NONE.isCurrentCountry
+09-28 14:08:26.627 26974 26974 D FT.TuiUtilFeature: isAirplaneModeOn = false
+09-28 14:08:26.627 26974 26974 D FT.TuiSalesCodeFeature: UNKNOWN.isCurrentOperator
+09-28 14:08:26.627 26974 26974 D FT.TuiSalesCodeFeature: NONE.isCurrentCountry
+09-28 14:08:26.627 26974 26974 D FT.TuiSalesCodeFeature: NONE.isCurrentCountry
+09-28 14:08:26.629  3546  3982 D SLocation: cellList : 7
+09-28 14:08:26.632 26974 26974 D FT.TuiUtilFeature: isAirplaneModeOn = false
+09-28 14:08:26.632 26974 26974 D FT.TuiSalesCodeFeature: NONE.isCurrentCountry
+09-28 14:08:26.635  3828  4098 I Telephony:SamsungPhoneInterfaceManager: getCellLocationBySubId: is active user
+09-28 14:08:26.635  4076  4087 I .sec.imsservic: Background concurrent copying GC freed 47220(9MB) AllocSpace objects, 0(0B) LOS objects, 49% free, 9MB/19MB, paused 427us total 100.742ms
+09-28 14:08:26.641 26974 26974 V FT.PhoneUtilsMultiSim: getMultiSimIccType phoneId 0 icctype 2 
+09-28 14:08:26.641 26974 26974 V FT.PhoneUtilsMultiSim: isSimCardInserted[slot0] true
+09-28 14:08:26.641 26974 26974 V FT.PhoneUtilsMultiSim: isSimCardStatusOn[slot0] true
+09-28 14:08:26.641 26974 26974 V FT.PhoneUtilsMultiSim: getMultiSimIccType phoneId 1 icctype 0 
+09-28 14:08:26.641 26974 26974 V FT.PhoneUtilsMultiSim: isSimCardInserted[slot1] false
+09-28 14:08:26.643  3828  4098 I Telephony:SamsungPhoneInterfaceManager: getCellLocationBySubId: is active user
+09-28 14:08:26.648  4076  4465 D PaniGenerator: setLkcForLastPani: No Last PANI header for ZTM IMS VoLTE
+09-28 14:08:26.648  4076  4522 D Mno     : fromName: Tim_BR
+09-28 14:08:26.649  4076  4522 D Mno     : fromName: found mno : Tim_BR, BR
+09-28 14:08:26.649  4076  4522 D StackIF : updatePani: 28682 pani: [3GPP-E-UTRAN-FDD;utran-cell-id-3gpp=724037a77137b863]
+09-28 14:08:26.649  4076  4522 D SECIMSJ : [3250]> 140
+09-28 14:08:26.649  4076  4562 D [IMS6.0]: IMS_onResponse()
+09-28 14:08:26.650  4076  4562 D StackIF : processMessage 2
+09-28 14:08:26.650  4076  4562 D StackIF : Processing Response
+09-28 14:08:26.650  4076  4562 D SECIMSJ : [3250]< 600
+09-28 14:08:26.650  4076  4562 D StackIF : processResponse: reqId 600
+09-28 14:08:26.650  4076  4562 D StackIF : processResponse: handle 28682 result 0 reason 0
+09-28 14:08:26.650  5188  5188 I SKBD    : and isTosAccept false
+09-28 14:08:26.651  4076  4465 D PaniGenerator<0>: generate: subId - 1
+09-28 14:08:26.657  4076  4465 D PaniGenerator<0>: generate: network=13, fallbackPlmn=72402, subId=1
+09-28 14:08:26.658 26974 26974 V UT.TelephonyUtils: getSimApplicationState 10, subId 1
+09-28 14:08:26.659 26974 26974 D FT.TuiUtilFeature: isAirplaneModeOn = false
+09-28 14:08:26.659  4076  4465 D PaniGenerator<0>: getPsPlmn: subId = 1
+09-28 14:08:26.661  3828  4510 I Telephony:SamsungPhoneInterfaceManager: getCellLocationBySubId: is active user
+09-28 14:08:26.664  4076  4465 D PaniGenerator: getDataPlmn returns null
+09-28 14:08:26.666  4076  4465 D PaniGenerator: generate: change to NW PLMN(72403)
+09-28 14:08:26.671  3828  4510 I Telephony:SamsungPhoneInterfaceManager: getCellLocationBySubId: is active user
+09-28 14:08:26.678  3828  4510 I Telephony:SamsungPhoneInterfaceManager: getCellLocationBySubId: is active user
+09-28 14:08:26.682  4076  4465 D PaniGenerator: setLkcForLastPani: No Last PANI header for ZTM RCS
+09-28 14:08:26.682  4076  4465 D RegiMgrBase<0>: notifyNetworkEvent:
+09-28 14:08:26.682  4076  4465 D RegiMgrBase<0>: buildNetworkEvent:
+09-28 14:08:26.683  4076  4465 I RegiMgrBase: handleMessage: PLANI_IN_TIME_CHANGED
+09-28 14:08:26.851  5188  5188 I SKBD    : and isTosAccept false
+09-28 14:08:27.452  5188  5188 I chatty  : uid=10160(com.sec.android.inputmethod) identical 3 lines
+09-28 14:08:27.653  5188  5188 I SKBD    : and isTosAccept false
+09-28 14:08:27.691  3828  3961 I System.out: Broadcasting: Intent { act=com.sec.android.LTE_CA_PARAMETER flg=0x10000000 (has extras) }
+09-28 14:08:27.694  3828  4510 I System.out: Broadcast completed: result=0
+09-28 14:08:27.701  3865  4220 D NetworkController.MobileSignalController(0/1): onSignalStrengthsChanged signalStrength=SignalStrength: 3 99 -3 -200 -3 -200 -1 0 -111 -7 100 12 0 2147483647 3 14 -106 0x2000 P gsm|lte use_rsrp_and_rssnr_for_lte_level  [-128, -118, -108, -98] [-115, -105, -95, -85] level=2
+09-28 14:08:27.701  3865  4220 D NetworkController.MobileSignalController(0/1): getMobileIconGroup(): 13
+09-28 14:08:27.853  5188  5188 I SKBD    : and isTosAccept false
+09-28 14:08:27.879  3207  3288 D Netd    : notify() code: 613, msg: IfaceClass active 1 867503242061490 10174
+09-28 14:08:28.054  5188  5188 I SKBD    : and isTosAccept false
+--------- beginning of system
+09-28 14:08:29.121  4850  5130 D SDHMS:s : SIOP:: AP:237(336,87) BAT:288(288,0) CHG:346(346,0) USB:0(0,0) WIFI:217(273,50) ATC:0(0,-999) 
+09-28 14:08:29.458  5188  5188 I chatty  : uid=10160(com.sec.android.inputmethod) identical 7 lines
+09-28 14:08:29.658  5188  5188 I SKBD    : and isTosAccept false
+09-28 14:08:29.685  4663  4663 D io_stats: !@ 179,0 r 2718203 135493812 w 1398714 73953400 d 116553 82777116 f 422866 441569 iot 3013680 2642426 th 51200 0 0 pt 0 inp 0 0 375793.330
+09-28 14:08:29.849  3014 23266 V APM_AudioPolicyManager: AudioPolicyManager:setRecordSilenced(uid:10019, silenced:1)
+09-28 14:08:29.858  5188  5188 I SKBD    : and isTosAccept false
+09-28 14:08:30.460  5188  5188 I chatty  : uid=10160(com.sec.android.inputmethod) identical 3 lines
+09-28 14:08:30.660  5188  5188 I SKBD    : and isTosAccept false
+09-28 14:08:30.809 28694 28694 D BoundBrokerSvc: onUnbind: Intent { act=com.google.android.gms.common.BIND_SHARED_PREFS pkg=com.google.android.gms }
+09-28 14:08:30.861  5188  5188 I SKBD    : and isTosAccept false
+09-28 14:08:32.303  3546  6542 E BartenderActivityManager: BarTender: pid : 643 cached=true abnormal=false kill=false stay=false release=false
+09-28 14:08:32.306  3546  6542 E BartenderActivityManager: BarTender: pid : 786 cached=true abnormal=false kill=false stay=false release=false
+09-28 14:08:32.309  3546  6542 E BartenderActivityManager: BarTender: pid : 833 cached=true abnormal=false kill=false stay=false release=false
+09-28 14:08:32.311  3546  6542 E BartenderActivityManager: BarTender: pid : 863 cached=true abnormal=false kill=false stay=false release=false
+09-28 14:08:32.314  3546  6542 E BartenderActivityManager: BarTender: pid : 5947 cached=true abnormal=false kill=false stay=false release=false
+09-28 14:08:32.465  5188  5188 I chatty  : uid=10160(com.sec.android.inputmethod) identical 8 lines
+09-28 14:08:32.666  5188  5188 I SKBD    : and isTosAccept false
+09-28 14:08:32.815  3865  4220 D NetworkController.MobileSignalController(0/1): onSignalStrengthsChanged signalStrength=SignalStrength: 3 99 -3 -200 -3 -200 -1 2 -109 -6 80 12 0 2147483647 3 14 -106 0x2000 P gsm|lte use_rsrp_and_rssnr_for_lte_level  [-128, -118, -108, -98] [-115, -105, -95, -85] level=2
+09-28 14:08:32.815  3865  4220 D NetworkController.MobileSignalController(0/1): getMobileIconGroup(): 13
+09-28 14:08:32.866  5188  5188 I SKBD    : and isTosAccept false
+09-28 14:08:33.067   696   717 I Finsky:background: [29355] Stats for Executor: bgExecutor xyc@aa6fa95[Running, pool size = 4, active threads = 0, queued tasks = 0, completed tasks = 18]
+09-28 14:08:33.067  5188  5188 I SKBD    : and isTosAccept false
+09-28 14:08:33.099  3546  6542 D WifiPermissionsUtil: canAccessScanResults: pkgName = com.sec.android.sdhms, uid = 1000
+09-28 14:08:33.175   696   717 I Finsky:background: [29355] Stats for Executor: LightweightExecutor xyc@db047aa[Running, pool size = 4, active threads = 0, queued tasks = 0, completed tasks = 10]
+09-28 14:08:33.267  5188  5188 I SKBD    : and isTosAccept false
+09-28 14:08:33.439   696   717 I Finsky:background: [29355] Stats for Executor: BlockingExecutor xyc@1607f9b[Running, pool size = 1, active threads = 0, queued tasks = 0, completed tasks = 5]
+09-28 14:08:33.468  5188  5188 I SKBD    : and isTosAccept false
+09-28 14:08:34.687  4663  4663 D io_stats: !@ 179,0 r 2718204 135493940 w 1398871 74020340 d 116553 82777116 f 422867 441570 iot 3014164 2642892 th 51200 0 0 pt 0 inp 0 0 375798.332
+09-28 14:08:35.673  5188  5188 I chatty  : uid=10160(com.sec.android.inputmethod) identical 11 lines
+09-28 14:08:35.873  5188  5188 I SKBD    : and isTosAccept false
+09-28 14:08:35.977  3207  3293 D EnterpriseController: netId is 0
+09-28 14:08:35.977  3207  3293 E Netd    : getNetworkForDns: getNetId from enterpriseCtrl is netid 0
+09-28 14:08:35.977  3207  3293 D DnsProxyListener: DNSDBG::dns addrinfo af 2
+09-28 14:08:36.074  5188  5188 I SKBD    : and isTosAccept false
+09-28 14:08:36.099  3207  3293 D EnterpriseController: netId is 0
+09-28 14:08:36.099  3207  3293 E Netd    : getNetworkForDns: getNetId from enterpriseCtrl is netid 0
+09-28 14:08:36.099  3207  3293 D DnsProxyListener: DNSDBG::dns addrinfo af 2
+09-28 14:08:36.274  5188  5188 I SKBD    : and isTosAccept false
+09-28 14:08:36.475  5188  5188 I SKBD    : and isTosAccept false
+09-28 14:08:36.595   898   898 D ViewRootImpl@4e3965c[MainActivity]: stopped(true) old=false
+09-28 14:08:36.599  3014 23266 V APM_AudioPolicyManager: getAudioPolicyConfig: audioParam;outDevice
+09-28 14:08:36.599  3014 23266 V APM_AudioPolicyManager: getNewOutputDevice() selected device 0
+09-28 14:08:36.599  3014 23266 V APM_AudioPolicyManager: ### curdevice : 2
+09-28 14:08:36.675  5188  5188 I SKBD    : and isTosAccept false
+09-28 14:08:37.483  5188  5188 I chatty  : uid=10160(com.sec.android.inputmethod) identical 4 lines
+09-28 14:08:37.683  5188  5188 I SKBD    : and isTosAccept false
+09-28 14:08:37.720   898   898 I Choreographer: Skipped 1611 frames!  The application may be doing too much work on its main thread.
+09-28 14:08:37.884  5188  5188 I SKBD    : and isTosAccept false
+09-28 14:08:37.889   898   898 I mp3.flutter_ap: Rejecting re-init on previously-failed class java.lang.Class<androidx.window.layout.adapter.sidecar.DistinctElementSidecarCallback>: java.lang.NoClassDefFoundError: Failed resolution of: Landroidx/window/sidecar/SidecarInterface$SidecarCallback;
+09-28 14:08:37.889   898   898 I mp3.flutter_ap:   at androidx.window.layout.adapter.sidecar.ExtensionInterfaceCompat androidx.window.layout.adapter.sidecar.SidecarWindowBackend$Companion.initAndVerifyExtension(android.content.Context) (SidecarWindowBackend.kt:207)
+09-28 14:08:37.889   898   898 I mp3.flutter_ap:   at androidx.window.layout.adapter.sidecar.SidecarWindowBackend androidx.window.layout.adapter.sidecar.SidecarWindowBackend$Companion.getInstance(android.content.Context) (SidecarWindowBackend.kt:191)
+09-28 14:08:37.889   898   898 I mp3.flutter_ap:   at androidx.window.layout.WindowInfoTracker androidx.window.layout.WindowInfoTracker$Companion.getOrCreate(android.content.Context) (WindowInfoTracker.kt:135)
+09-28 14:08:37.889   898   898 I mp3.flutter_ap:   at io.flutter.embedding.android.WindowInfoRepositoryCallbackAdapterWrapper io.flutter.embedding.android.FlutterView.createWindowInfoRepo() (FlutterView.java:559)
+09-28 14:08:37.889   898   898 I mp3.flutter_ap:   at void io.flutter.embedding.android.FlutterView.onAttachedToWindow() (FlutterView.java:580)
+09-28 14:08:37.889   898   898 I mp3.flutter_ap:   at void android.view.View.dispatchAttachedToWindow(android.view.View$AttachInfo, int) (View.java:20001)
+09-28 14:08:37.889   898   898 I mp3.flutter_ap:   at void android.view.ViewGroup.dispatchAttachedToWindow(android.view.View$AttachInfo, int) (ViewGroup.java:3589)
+09-28 14:08:37.889   898   898 I mp3.flutter_ap:   at void android.view.ViewGroup.dispatchAttachedToWindow(android.view.View$AttachInfo, int) (ViewGroup.java:3596)
+09-28 14:08:37.889   898   898 I chatty  : uid=10198(com.pietrocode.epubtomp3.flutter_app) identical 1 line
+09-28 14:08:37.889   898   898 I mp3.flutter_ap:   at void android.view.ViewGroup.dispatchAttachedToWindow(android.view.View$AttachInfo, int) (ViewGroup.java:3596)
+09-28 14:08:37.889   898   898 I mp3.flutter_ap:   at void android.view.ViewRootImpl.performTraversals() (ViewRootImpl.java:2243)
+09-28 14:08:37.889   898   898 I mp3.flutter_ap:   at void android.view.ViewRootImpl.doTraversal() (ViewRootImpl.java:1908)
+09-28 14:08:37.889   898   898 I mp3.flutter_ap:   at void android.view.ViewRootImpl$TraversalRunnable.run() (ViewRootImpl.java:8523)
+09-28 14:08:37.889   898   898 I mp3.flutter_ap:   at void android.view.Choreographer$CallbackRecord.run(long) (Choreographer.java:949)
+09-28 14:08:37.889   898   898 I mp3.flutter_ap:   at void android.view.Choreographer.doCallbacks(int, long) (Choreographer.java:761)
+09-28 14:08:37.889   898   898 I mp3.flutter_ap:   at void android.view.Choreographer.doFrame(long, int) (Choreographer.java:696)
+09-28 14:08:37.889   898   898 I mp3.flutter_ap:   at void android.view.Choreographer$FrameDisplayEventReceiver.run() (Choreographer.java:935)
+09-28 14:08:37.889   898   898 I mp3.flutter_ap:   at void android.os.Handler.handleCallback(android.os.Message) (Handler.java:873)
+09-28 14:08:37.889   898   898 I mp3.flutter_ap:   at void android.os.Handler.dispatchMessage(android.os.Message) (Handler.java:99)
+09-28 14:08:37.889   898   898 I mp3.flutter_ap:   at void android.os.Looper.loop() (Looper.java:214)
+09-28 14:08:37.889   898   898 I mp3.flutter_ap:   at void android.app.ActivityThread.main(java.lang.String[]) (ActivityThread.java:7078)
+09-28 14:08:37.889   898   898 I mp3.flutter_ap:   at java.lang.Object java.lang.reflect.Method.invoke(java.lang.Object, java.lang.Object[]) (Method.java:-2)
+09-28 14:08:37.889   898   898 I mp3.flutter_ap:   at void com.android.internal.os.RuntimeInit$MethodAndArgsCaller.run() (RuntimeInit.java:494)
+09-28 14:08:37.889   898   898 I mp3.flutter_ap:   at void com.android.internal.os.ZygoteInit.main(java.lang.String[]) (ZygoteInit.java:964)
+09-28 14:08:37.889   898   898 I mp3.flutter_ap: Caused by: java.lang.ClassNotFoundException: Didn't find class "androidx.window.sidecar.SidecarInterface$SidecarCallback" on path: DexPathList[[zip file "/data/app/com.pietrocode.epubtomp3.flutter_app-dOzOHI80UfOlguQG9fsvyQ==/base.apk"],nativeLibraryDirectories=[/data/app/com.pietrocode.epubtomp3.flutter_app-dOzOHI80UfOlguQG9fsvyQ==/lib/arm64, /data/app/com.pietrocode.epubtomp3.flutter_app-dOzOHI80UfOlguQG9fsvyQ==/base.apk!/lib/arm64-v8a, /system/lib64, /system/vendor/lib64]]
+09-28 14:08:37.889   898   898 I mp3.flutter_ap:   at java.lang.Class dalvik.system.BaseDexClassLoader.findClass(java.lang.String) (BaseDexClassLoader.java:134)
+09-28 14:08:37.889   898   898 I mp3.flutter_ap:   at java.lang.Class java.lang.ClassLoader.loadClass(java.lang.String, boolean) (ClassLoader.java:379)
+09-28 14:08:37.889   898   898 I mp3.flutter_ap:   at java.lang.Class java.lang.ClassLoader.loadClass(java.lang.String) (ClassLoader.java:312)
+09-28 14:08:37.889   898   898 I mp3.flutter_ap:   at androidx.window.layout.adapter.sidecar.ExtensionInterfaceCompat androidx.window.layout.adapter.sidecar.SidecarWindowBackend$Companion.initAndVerifyExtension(android.content.Context) (SidecarWindowBackend.kt:207)
+09-28 14:08:37.889   898   898 I mp3.flutter_ap:   at androidx.window.layout.adapter.sidecar.SidecarWindowBackend androidx.window.layout.adapter.sidecar.SidecarWindowBackend$Companion.getInstance(android.content.Context) (SidecarWindowBackend.kt:191)
+09-28 14:08:37.889   898   898 I mp3.flutter_ap:   at androidx.window.layout.WindowInfoTracker androidx.window.layout.WindowInfoTracker$Companion.getOrCreate(android.content.Context) (WindowInfoTracker.kt:135)
+09-28 14:08:37.889   898   898 I mp3.flutter_ap:   at io.flutter.embedding.android.WindowInfoRepositoryCallbackAdapterWrapper io.flutter.embedding.android.FlutterView.createWindowInfoRepo() (FlutterView.java:559)
+09-28 14:08:37.889   898   898 I mp3.flutter_ap:   at void io.flutter.embedding.android.FlutterView.onAttachedToWindow() (FlutterView.java:580)
+09-28 14:08:37.889   898   898 I mp3.flutter_ap:   at void android.view.View.dispatchAttachedToWindow(android.view.View$AttachInfo, int) (View.java:20001)
+09-28 14:08:37.889   898   898 I mp3.flutter_ap:   at void android.view.ViewGroup.dispatchAttachedToWindow(android.view.View$AttachInfo, int) (ViewGroup.java:3589)
+09-28 14:08:37.889   898   898 I mp3.flutter_ap:   at void android.view.ViewGroup.dispatchAttachedToWindow(android.view.View$AttachInfo, int) (ViewGroup.java:3596)
+09-28 14:08:37.889   898   898 I chatty  : uid=10198(com.pietrocode.epubtomp3.flutter_app) identical 1 line
+09-28 14:08:37.889   898   898 I mp3.flutter_ap:   at void android.view.ViewGroup.dispatchAttachedToWindow(android.view.View$AttachInfo, int) (ViewGroup.java:3596)
+09-28 14:08:37.889   898   898 I mp3.flutter_ap:   at void android.view.ViewRootImpl.performTraversals() (ViewRootImpl.java:2243)
+09-28 14:08:37.889   898   898 I mp3.flutter_ap:   at void android.view.ViewRootImpl.doTraversal() (ViewRootImpl.java:1908)
+09-28 14:08:37.889   898   898 I mp3.flutter_ap:   at void android.view.ViewRootImpl$TraversalRunnable.run() (ViewRootImpl.java:8523)
+09-28 14:08:37.889   898   898 I mp3.flutter_ap:   at void android.view.Choreographer$CallbackRecord.run(long) (Choreographer.java:949)
+09-28 14:08:37.889   898   898 I mp3.flutter_ap:   at void android.view.Choreographer.doCallbacks(int, long) (Choreographer.java:761)
+09-28 14:08:37.889   898   898 I mp3.flutter_ap:   at void android.view.Choreographer.doFrame(long, int) (Choreographer.java:696)
+09-28 14:08:37.889   898   898 I mp3.flutter_ap:   at void android.view.Choreographer$FrameDisplayEventReceiver.run() (Choreographer.java:935)
+09-28 14:08:37.889   898   898 I mp3.flutter_ap:   at void android.os.Handler.handleCallback(android.os.Message) (Handler.java:873)
+09-28 14:08:37.889   898   898 I mp3.flutter_ap:   at void android.os.Handler.dispatchMessage(android.os.Message) (Handler.java:99)
+09-28 14:08:37.889   898   898 I mp3.flutter_ap:   at void android.os.Looper.loop() (Looper.java:214)
+09-28 14:08:37.889   898   898 I mp3.flutter_ap:   at void android.app.ActivityThread.main(java.lang.String[]) (ActivityThread.java:7078)
+09-28 14:08:37.889   898   898 I mp3.flutter_ap:   at java.lang.Object java.lang.reflect.Method.invoke(java.lang.Object, java.lang.Object[]) (Method.java:-2)
+09-28 14:08:37.889   898   898 I mp3.flutter_ap:   at void com.android.internal.os.RuntimeInit$MethodAndArgsCaller.run() (RuntimeInit.java:494)
+09-28 14:08:37.889   898   898 I mp3.flutter_ap:   at void com.android.internal.os.ZygoteInit.main(java.lang.String[]) (ZygoteInit.java:964)
+09-28 14:08:37.889   898   898 I mp3.flutter_ap: 
+09-28 14:08:37.891   898   898 I mp3.flutter_ap: Rejecting re-init on previously-failed class java.lang.Class<androidx.window.layout.adapter.sidecar.DistinctElementSidecarCallback>: java.lang.NoClassDefFoundError: Failed resolution of: Landroidx/window/sidecar/SidecarInterface$SidecarCallback;
+09-28 14:08:37.891   898   898 I mp3.flutter_ap:   at androidx.window.layout.adapter.sidecar.ExtensionInterfaceCompat androidx.window.layout.adapter.sidecar.SidecarWindowBackend$Companion.initAndVerifyExtension(android.content.Context) (SidecarWindowBackend.kt:207)
+09-28 14:08:37.891   898   898 I mp3.flutter_ap:   at androidx.window.layout.adapter.sidecar.SidecarWindowBackend androidx.window.layout.adapter.sidecar.SidecarWindowBackend$Companion.getInstance(android.content.Context) (SidecarWindowBackend.kt:191)
+09-28 14:08:37.891   898   898 I mp3.flutter_ap:   at androidx.window.layout.WindowInfoTracker androidx.window.layout.WindowInfoTracker$Companion.getOrCreate(android.content.Context) (WindowInfoTracker.kt:135)
+09-28 14:08:37.891   898   898 I mp3.flutter_ap:   at io.flutter.embedding.android.WindowInfoRepositoryCallbackAdapterWrapper io.flutter.embedding.android.FlutterView.createWindowInfoRepo() (FlutterView.java:559)
+09-28 14:08:37.891   898   898 I mp3.flutter_ap:   at void io.flutter.embedding.android.FlutterView.onAttachedToWindow() (FlutterView.java:580)
+09-28 14:08:37.891   898   898 I mp3.flutter_ap:   at void android.view.View.dispatchAttachedToWindow(android.view.View$AttachInfo, int) (View.java:20001)
+09-28 14:08:37.891   898   898 I mp3.flutter_ap:   at void android.view.ViewGroup.dispatchAttachedToWindow(android.view.View$AttachInfo, int) (ViewGroup.java:3589)
+09-28 14:08:37.891   898   898 I mp3.flutter_ap:   at void android.view.ViewGroup.dispatchAttachedToWindow(android.view.View$AttachInfo, int) (ViewGroup.java:3596)
+09-28 14:08:37.891   898   898 I chatty  : uid=10198(com.pietrocode.epubtomp3.flutter_app) identical 1 line
+09-28 14:08:37.891   898   898 I mp3.flutter_ap:   at void android.view.ViewGroup.dispatchAttachedToWindow(android.view.View$AttachInfo, int) (ViewGroup.java:3596)
+09-28 14:08:37.891   898   898 I mp3.flutter_ap:   at void android.view.ViewRootImpl.performTraversals() (ViewRootImpl.java:2243)
+09-28 14:08:37.891   898   898 I mp3.flutter_ap:   at void android.view.ViewRootImpl.doTraversal() (ViewRootImpl.java:1908)
+09-28 14:08:37.891   898   898 I mp3.flutter_ap:   at void android.view.ViewRootImpl$TraversalRunnable.run() (ViewRootImpl.java:8523)
+09-28 14:08:37.891   898   898 I mp3.flutter_ap:   at void android.view.Choreographer$CallbackRecord.run(long) (Choreographer.java:949)
+09-28 14:08:37.891   898   898 I mp3.flutter_ap:   at void android.view.Choreographer.doCallbacks(int, long) (Choreographer.java:761)
+09-28 14:08:37.891   898   898 I mp3.flutter_ap:   at void android.view.Choreographer.doFrame(long, int) (Choreographer.java:696)
+09-28 14:08:37.891   898   898 I mp3.flutter_ap:   at void android.view.Choreographer$FrameDisplayEventReceiver.run() (Choreographer.java:935)
+09-28 14:08:37.891   898   898 I mp3.flutter_ap:   at void android.os.Handler.handleCallback(android.os.Message) (Handler.java:873)
+09-28 14:08:37.891   898   898 I mp3.flutter_ap:   at void android.os.Handler.dispatchMessage(android.os.Message) (Handler.java:99)
+09-28 14:08:37.891   898   898 I mp3.flutter_ap:   at void android.os.Looper.loop() (Looper.java:214)
+09-28 14:08:37.891   898   898 I mp3.flutter_ap:   at void android.app.ActivityThread.main(java.lang.String[]) (ActivityThread.java:7078)
+09-28 14:08:37.891   898   898 I mp3.flutter_ap:   at java.lang.Object java.lang.reflect.Method.invoke(java.lang.Object, java.lang.Object[]) (Method.java:-2)
+09-28 14:08:37.891   898   898 I mp3.flutter_ap:   at void com.android.internal.os.RuntimeInit$MethodAndArgsCaller.run() (RuntimeInit.java:494)
+09-28 14:08:37.891   898   898 I mp3.flutter_ap:   at void com.android.internal.os.ZygoteInit.main(java.lang.String[]) (ZygoteInit.java:964)
+09-28 14:08:37.891   898   898 I mp3.flutter_ap: Caused by: java.lang.ClassNotFoundException: Didn't find class "androidx.window.sidecar.SidecarInterface$SidecarCallback" on path: DexPathList[[zip file "/data/app/com.pietrocode.epubtomp3.flutter_app-dOzOHI80UfOlguQG9fsvyQ==/base.apk"],nativeLibraryDirectories=[/data/app/com.pietrocode.epubtomp3.flutter_app-dOzOHI80UfOlguQG9fsvyQ==/lib/arm64, /data/app/com.pietrocode.epubtomp3.flutter_app-dOzOHI80UfOlguQG9fsvyQ==/base.apk!/lib/arm64-v8a, /system/lib64, /system/vendor/lib64]]
+09-28 14:08:37.891   898   898 I mp3.flutter_ap:   at java.lang.Class dalvik.system.BaseDexClassLoader.findClass(java.lang.String) (BaseDexClassLoader.java:134)
+09-28 14:08:37.891   898   898 I mp3.flutter_ap:   at java.lang.Class java.lang.ClassLoader.loadClass(java.lang.String, boolean) (ClassLoader.java:379)
+09-28 14:08:37.891   898   898 I mp3.flutter_ap:   at java.lang.Class java.lang.ClassLoader.loadClass(java.lang.String) (ClassLoader.java:312)
+09-28 14:08:37.891   898   898 I mp3.flutter_ap:   at androidx.window.layout.adapter.sidecar.ExtensionInterfaceCompat androidx.window.layout.adapter.sidecar.SidecarWindowBackend$Companion.initAndVerifyExtension(android.content.Context) (SidecarWindowBackend.kt:207)
+09-28 14:08:37.891   898   898 I mp3.flutter_ap:   at androidx.window.layout.adapter.sidecar.SidecarWindowBackend androidx.window.layout.adapter.sidecar.SidecarWindowBackend$Companion.getInstance(android.content.Context) (SidecarWindowBackend.kt:191)
+09-28 14:08:37.891   898   898 I mp3.flutter_ap:   at androidx.window.layout.WindowInfoTracker androidx.window.layout.WindowInfoTracker$Companion.getOrCreate(android.content.Context) (WindowInfoTracker.kt:135)
+09-28 14:08:37.891   898   898 I mp3.flutter_ap:   at io.flutter.embedding.android.WindowInfoRepositoryCallbackAdapterWrapper io.flutter.embedding.android.FlutterView.createWindowInfoRepo() (FlutterView.java:559)
+09-28 14:08:37.891   898   898 I mp3.flutter_ap:   at void io.flutter.embedding.android.FlutterView.onAttachedToWindow() (FlutterView.java:580)
+09-28 14:08:37.891   898   898 I mp3.flutter_ap:   at void android.view.View.dispatchAttachedToWindow(android.view.View$AttachInfo, int) (View.java:20001)
+09-28 14:08:37.891   898   898 I mp3.flutter_ap:   at void android.view.ViewGroup.dispatchAttachedToWindow(android.view.View$AttachInfo, int) (ViewGroup.java:3589)
+09-28 14:08:37.891   898   898 I mp3.flutter_ap:   at void android.view.ViewGroup.dispatchAttachedToWindow(android.view.View$AttachInfo, int) (ViewGroup.java:3596)
+09-28 14:08:37.891   898   898 I chatty  : uid=10198(com.pietrocode.epubtomp3.flutter_app) identical 1 line
+09-28 14:08:37.891   898   898 I mp3.flutter_ap:   at void android.view.ViewGroup.dispatchAttachedToWindow(android.view.View$AttachInfo, int) (ViewGroup.java:3596)
+09-28 14:08:37.891   898   898 I mp3.flutter_ap:   at void android.view.ViewRootImpl.performTraversals() (ViewRootImpl.java:2243)
+09-28 14:08:37.891   898   898 I mp3.flutter_ap:   at void android.view.ViewRootImpl.doTraversal() (ViewRootImpl.java:1908)
+09-28 14:08:37.891   898   898 I mp3.flutter_ap:   at void android.view.ViewRootImpl$TraversalRunnable.run() (ViewRootImpl.java:8523)
+09-28 14:08:37.891   898   898 I mp3.flutter_ap:   at void android.view.Choreographer$CallbackRecord.run(long) (Choreographer.java:949)
+09-28 14:08:37.891   898   898 I mp3.flutter_ap:   at void android.view.Choreographer.doCallbacks(int, long) (Choreographer.java:761)
+09-28 14:08:37.891   898   898 I mp3.flutter_ap:   at void android.view.Choreographer.doFrame(long, int) (Choreographer.java:696)
+09-28 14:08:37.891   898   898 I mp3.flutter_ap:   at void android.view.Choreographer$FrameDisplayEventReceiver.run() (Choreographer.java:935)
+09-28 14:08:37.891   898   898 I mp3.flutter_ap:   at void android.os.Handler.handleCallback(android.os.Message) (Handler.java:873)
+09-28 14:08:37.891   898   898 I mp3.flutter_ap:   at void android.os.Handler.dispatchMessage(android.os.Message) (Handler.java:99)
+09-28 14:08:37.891   898   898 I mp3.flutter_ap:   at void android.os.Looper.loop() (Looper.java:214)
+09-28 14:08:37.891   898   898 I mp3.flutter_ap:   at void android.app.ActivityThread.main(java.lang.String[]) (ActivityThread.java:7078)
+09-28 14:08:37.891   898   898 I mp3.flutter_ap:   at java.lang.Object java.lang.reflect.Method.invoke(java.lang.Object, java.lang.Object[]) (Method.java:-2)
+09-28 14:08:37.891   898   898 I mp3.flutter_ap:   at void com.android.internal.os.RuntimeInit$MethodAndArgsCaller.run() (RuntimeInit.java:494)
+09-28 14:08:37.891   898   898 I mp3.flutter_ap:   at void com.android.internal.os.ZygoteInit.main(java.lang.String[]) (ZygoteInit.java:964)
+09-28 14:08:37.891   898   898 I mp3.flutter_ap: 
+09-28 14:08:37.960   898   898 W mp3.flutter_ap: Accessing hidden method Landroid/content/Context;->getOpPackageName()Ljava/lang/String; (light greylist, linking)
+09-28 14:08:38.084  5188  5188 I SKBD    : and isTosAccept false
+09-28 14:08:38.171   898   898 D FlutterRenderer: Width is zero. 0,0
+09-28 14:08:38.183  3546  6542 V WindowManager: Relayout Window{54014a u0 com.pietrocode.epubtomp3.flutter_app/com.pietrocode.epubtomp3.flutter_app.MainActivity}: viewVisibility=8 req=0x0 {(0,0)(fillxfill) sim={adjust=resize forwardNavigation} ty=BASE_APPLICATION fmt=TRANSLUCENT wanim=0x1030001
+09-28 14:08:38.183  3546  6542 V WindowManager:   fl=LAYOUT_IN_SCREEN LAYOUT_INSET_DECOR SPLIT_TOUCH HARDWARE_ACCELERATED DRAWS_SYSTEM_BAR_BACKGROUNDS
+09-28 14:08:38.183  3546  6542 V WindowManager:   pfl=FORCE_DRAW_STATUS_BAR_BACKGROUND  remains{ 0x1000000 }
+09-28 14:08:38.183  3546  6542 V WindowManager:   vsysui=LAYOUT_STABLE LAYOUT_FULLSCREEN LIGHT_NAVIGATION_BAR naviIconColor=0}
+09-28 14:08:38.193   898   898 D ViewRootImpl@4e3965c[MainActivity]: Relayout returned: old=[0,0][1080,2220] new=[0,0][1080,2220] result=0x1 surface={false 0} changed=false
+09-28 14:08:38.264  3546  3566 D CodecSolution: isMaxAspectPackageEx: com.pietrocode.epubtomp3.flutter_app : true(2)
+09-28 14:08:38.265  4059 13749 D ForegroundUtils: could not check pending caller
+09-28 14:08:38.285  5188  5188 I SKBD    : and isTosAccept false
+09-28 14:08:38.395   898   898 I TextToSpeech: Connected to ComponentInfo{com.samsung.SMT/com.samsung.SMT.SamsungTTSService}
+09-28 14:08:38.397  3546  4008 D MdnieScenarioControlService:  packageName : com.pietrocode.epubtomp3.flutter_app    className : com.pietrocode.epubtomp3.flutter_app.MainActivity
+09-28 14:08:38.397  3546  4008 V MdnieScenarioControlService: setUIMode from UI function(3)
+09-28 14:08:38.403   952   966 I SamsungTTS: [IsAvailable] por-BRA-null is LANG_COUNTRY_AVAILABLE
+09-28 14:08:38.411   898  1008 I TextToSpeech: Set up connection to ComponentInfo{com.samsung.SMT/com.samsung.SMT.SamsungTTSService}
+09-28 14:08:38.485  5188  5188 I SKBD    : and isTosAccept false
+09-28 14:08:38.681  3546  6542 I ActivityManager: Activity reported stop, but no longer stopping: ActivityRecord{372a842 u0 com.pietrocode.epubtomp3.flutter_app/.MainActivity t224}
+09-28 14:08:38.686  5188  5188 I SKBD    : and isTosAccept false
+09-28 14:08:38.769   898   898 I Choreographer: Skipped 35 frames!  The application may be doing too much work on its main thread.
+09-28 14:08:38.781  3546  6542 V WindowManager: Relayout Window{54014a u0 com.pietrocode.epubtomp3.flutter_app/com.pietrocode.epubtomp3.flutter_app.MainActivity}: viewVisibility=8 req=0x0 {(0,0)(fillxfill) sim={adjust=resize forwardNavigation} ty=BASE_APPLICATION fmt=TRANSLUCENT wanim=0x1030001
+09-28 14:08:38.781  3546  6542 V WindowManager:   fl=LAYOUT_IN_SCREEN LAYOUT_INSET_DECOR SPLIT_TOUCH HARDWARE_ACCELERATED DRAWS_SYSTEM_BAR_BACKGROUNDS
+09-28 14:08:38.781  3546  6542 V WindowManager:   pfl=FORCE_DRAW_STATUS_BAR_BACKGROUND
+09-28 14:08:38.781  3546  6542 V WindowManager:   vsysui=LAYOUT_STABLE LAYOUT_FULLSCREEN LIGHT_STATUS_BAR naviIconColor=0}
+09-28 14:08:38.791   898   898 D ViewRootImpl@4e3965c[MainActivity]: Relayout returned: old=[0,0][1080,2220] new=[0,0][1080,2220] result=0x1 surface={false 0} changed=false
+09-28 14:08:38.793   898   898 D FlutterRenderer: Width is zero. 0,0
+09-28 14:08:38.844  3546  6542 D MediaSessionStack: updateMediaButtonSessionIfNeeded, callers=com.android.server.media.MediaSessionStack.addSession:114 com.android.server.media.MediaSessionService.createSessionLocked:730 
+09-28 14:08:38.844  3546  6542 D MediaSessionService: Created session for com.pietrocode.epubtomp3.flutter_app with tag media-session
+09-28 14:08:38.845  3865  4650 D vol.MediaSessions: updateRemoteControllerH null
+09-28 14:08:38.846  3865  4650 D vol.MediaSessions: onActiveSessionsUpdatedH n=0
+09-28 14:08:38.846  3865  3865 D PlaybackStateMonitor_LOCK: onActiveSessionsChanged() controllers: Size: 0
+09-28 14:08:38.847  3865  3865 D PlaybackStateMonitor_LOCK: onActiveSessionsChanged() no active session pkg
+09-28 14:08:38.847  3865  3865 D PlaybackStateMonitor_LOCK: updateController: , current controller = 
+09-28 14:08:38.847  3865  4650 D vol.MediaSessions: onActiveSessionsUpdatedH n=0
+09-28 14:08:38.847  3865  3865 D MusicController_LOCK: onSessionEnabled() enabled = true, mEnabled = true, lastSession = app.revanced.android.youtube, activeSession = null
+09-28 14:08:38.884   898   898 I System.out: flutterEngine warmed up
+09-28 14:08:38.886  5188  5188 I SKBD    : and isTosAccept false
+09-28 14:08:38.888  3546  3566 D CodecSolution: isMaxAspectPackageEx: com.pietrocode.epubtomp3.flutter_app : true(2)
+09-28 14:08:38.889  4059 13749 D ForegroundUtils: could not check pending caller
+09-28 14:08:38.966   898   898 D FlutterRenderer: Width is zero. 0,0
+09-28 14:08:39.021  3546  4008 D MdnieScenarioControlService:  packageName : com.pietrocode.epubtomp3.flutter_app    className : com.pietrocode.epubtomp3.flutter_app.MainActivity
+09-28 14:08:39.022  3546  4008 V MdnieScenarioControlService: setUIMode from UI function(3)
+09-28 14:08:39.087  5188  5188 I SKBD    : and isTosAccept false
+09-28 14:08:39.182  4850  5130 D SDHMS:s : SIOP:: AP:240(328,87) BAT:288(288,0) CHG:340(340,0) USB:0(0,0) WIFI:217(272,50) ATC:0(0,-999) 
+09-28 14:08:39.219  3212  3281 E storaged: getDiskStats failed with result NOT_SUPPORTED and size 0
+09-28 14:08:39.488  5188  5188 I chatty  : uid=10160(com.sec.android.inputmethod) identical 2 lines
+09-28 14:08:39.689  4663  4663 D io_stats: !@ 179,0 r 2718298 135501748 w 1398963 74061336 d 116553 82777116 f 422868 441571 iot 3014504 2643203 th 51200 0 0 pt 0 inp 0 0 375803.334
+09-28 14:08:39.690  5188  5188 I SKBD    : and isTosAccept false
+09-28 14:08:39.776  1013  1013 D AndroidRuntime: >>>>>> START com.android.internal.os.RuntimeInit uid 2000 <<<<<<
+09-28 14:08:39.786  1013  1013 D SecNativeFeatureCppIf: encoded
+09-28 14:08:39.786  1013  1013 D SecNativeFeatureCppIf: decoding and unzip finish
+09-28 14:08:39.786  1013  1013 D SecNativeFeatureCppIf: use unCompDataBuff. encoded
+09-28 14:08:39.786  1013  1013 D SecNativeFeatureCppIf: Free unCompDataBuff
+09-28 14:08:39.786  1013  1013 D SecNativeFeatureCppIf: encoded
+09-28 14:08:39.786  1013  1013 D SecNativeFeatureCppIf: decoding and unzip finish
+09-28 14:08:39.786  1013  1013 D SecNativeFeatureCppIf: use unCompDataBuff. encoded
+09-28 14:08:39.786  1013  1013 D SecNativeFeatureCppIf: Free unCompDataBuff
+09-28 14:08:39.890  5188  5188 I SKBD    : and isTosAccept false
+09-28 14:08:40.056  1013  1013 I app_process: report jit thread pid = 1015
+09-28 14:08:40.071  1013  1013 I app_process: The ClassLoaderContext is a special shared library.
+09-28 14:08:40.077  1013  1013 I app_process: The ClassLoaderContext is a special shared library.
+09-28 14:08:40.091  5188  5188 I SKBD    : and isTosAccept false
+09-28 14:08:40.166  1013  1013 D SemCscFeature: Encoded
+09-28 14:08:40.169  1013  1013 I chatty  : uid=2000(shell) identical 1 line
+09-28 14:08:40.171  1013  1013 D SemCscFeature: Encoded
+09-28 14:08:40.175  1013  1013 E SemAffinityControl: SemAffinityControl: registerfunction enter
+09-28 14:08:40.187  1013  1013 D AndroidRuntime: Calling main entry com.android.commands.uiautomator.Launcher
+09-28 14:08:40.203  3017  3017 I SurfaceFlinger: id=5851 createSurf (4440x4440),2 flag=4, WindowToken{1b93287 android.os.Binder@17982c6}#0
+09-28 14:08:40.209  3546  4027 I AccessibilityManagerService: semIsAccessibilityServiceEnabled()
+09-28 14:08:40.209  3546  4027 I AccessibilityManagerService: accesibilityService is null
+09-28 14:08:40.212  3546  3575 D SamsungPhoneWindowManager: settings changed : new doubleTapLaunchBehavior=3 old doubleTapLaunchBehavior=3
+09-28 14:08:40.214  3546  5390 I AccessibilityManagerService: semIsAccessibilityServiceEnabled()
+09-28 14:08:40.215  3546  5390 I AccessibilityManagerService: accesibilityService is null
+09-28 14:08:40.215  3546  5390 I AccessibilityManagerService: semIsAccessibilityServiceEnabled()
+09-28 14:08:40.215  3546  5390 I AccessibilityManagerService: accesibilityService is null
+09-28 14:08:40.218  3865  3865 D Tile.NavigationBarTile: onAccessibilityStateChanged:  false
+09-28 14:08:40.222  3865  4220 D Tile.NavigationBarTile: handleUpdateState  value =true
+09-28 14:08:40.225  3546  4027 I AccessibilityManagerService: semIsAccessibilityServiceEnabled()
+09-28 14:08:40.226  3546  4027 I AccessibilityManagerService: accesibilityService is null
+09-28 14:08:40.236  3546  3546 D BatterySaverPolicy: [api] refreshSettings: deviceSpecificSetting:  ((overlay))
+09-28 14:08:40.237  3546  3546 I AccessibilityManagerService: semIsAccessibilityServiceEnabled()
+09-28 14:08:40.237  3546  3546 I AccessibilityManagerService: accesibilityService is null
+09-28 14:08:40.237  3546  3546 I AccessibilityManagerService: semIsAccessibilityServiceEnabled()
+09-28 14:08:40.237  3546  3546 I AccessibilityManagerService: accesibilityService is null
+09-28 14:08:40.238  3546  3546 D AudioService: Accessibility volume enabled = false
+09-28 14:08:40.243  3546  4926 I AccessibilityManagerService: semIsAccessibilityServiceEnabled()
+09-28 14:08:40.243  3546  4926 I AccessibilityManagerService: accesibilityService is null
+09-28 14:08:40.243  3546  4926 I AccessibilityManagerService: semIsAccessibilityServiceEnabled()
+09-28 14:08:40.243  3546  4926 I AccessibilityManagerService: accesibilityService is null
+09-28 14:08:40.244  3865  3865 D vol.SecVolumeDialogImpl: onAccessibilityStateChanged: mIsTalkbackEnabled : false
+09-28 14:08:40.244  3546  4926 I AccessibilityManagerService: semIsAccessibilityServiceEnabled()
+09-28 14:08:40.244  3546  4926 I AccessibilityManagerService: accesibilityService is null
+09-28 14:08:40.245  3546  4926 I AccessibilityManagerService: semIsAccessibilityServiceEnabled()
+09-28 14:08:40.245  3546  4926 I AccessibilityManagerService: accesibilityService is null
+09-28 14:08:40.245  3865  3865 D Tile.NavigationBarTile: onAccessibilityStateChanged:  false
+09-28 14:08:40.246  3865  4220 D Tile.NavigationBarTile: handleUpdateState  value =true
+09-28 14:08:40.291  5188  5188 I SKBD    : and isTosAccept false
+09-28 14:08:40.492  5188  5188 I chatty  : uid=10160(com.sec.android.inputmethod) identical 1 line
+09-28 14:08:40.692  5188  5188 I SKBD    : and isTosAccept false
+09-28 14:08:40.755   696   769 I PlayCommon: [29388] Preparing logs for uploading
+09-28 14:08:40.756  3546  4926 D ConnectivityService: filterNetworkStateForUid() uid: 10057, pid: 696
+09-28 14:08:40.756  3546  4926 D ConnectivityService: isNetworkWithLinkPropertiesBlocked: uid=10057, vpn=DISCONNECTED,false
+09-28 14:08:40.756  3546  4926 D ConnectivityService: filterNetworkStateForUid() uid: 10057, pid: 696, networkInfo: [type: WIFI[], state: CONNECTED/CONNECTED, reason: (unspecified), extra: (none), failover: false, available: true, roaming: false]
+09-28 14:08:40.787   696   769 I PlayCommon: [29388] Connecting to server for timestamp: https://play.googleapis.com/play/log/timestamp
+09-28 14:08:40.789   696   769 D NetworkSecurityConfig: No Network Security Config specified, using platform default
+09-28 14:08:40.796   696   769 I System.out: (HTTPLog)-Static: isSBSettingEnabled false
+09-28 14:08:40.797   696   769 I System.out: (HTTPLog)-Static: isSBSettingEnabled false
+09-28 14:08:40.799  3207  3293 D EnterpriseController: netId is 0
+09-28 14:08:40.799  3207  3293 E Netd    : getNetworkForDns: getNetId from enterpriseCtrl is netid 0
+09-28 14:08:40.799  3207  3293 D DnsProxyListener: DNSDBG::dns addrinfo af 2
+09-28 14:08:40.819   696   769 D NetworkManagementSocketTagger: tagSocket(69) with statsTag=0xffffffff, statsUid=-1
+09-28 14:08:40.893  5188  5188 I SKBD    : and isTosAccept false
+09-28 14:08:41.094  5188  5188 I chatty  : uid=10160(com.sec.android.inputmethod) identical 1 line
+09-28 14:08:41.294  5188  5188 I SKBD    : and isTosAccept false
+09-28 14:08:41.381  1013  1013 I AccessibilityNodeInfoDumper: Skipping invisible child: android.view.accessibility.AccessibilityNodeInfo@a60e; boundsInParent: Rect(0, 0 - 58, 0); boundsInScreen: Rect(72, 525 - 130, 525); packageName: com.android.systemui; className: android.widget.LinearLayout; text: null; error: null; maxTextLength: -1; contentDescription: null; tooltipText: null; viewIdResName: com.android.systemui:id/notification_preview_icon_slot_view; checkable: false; checked: false; focusable: true; focused: false; selected: false; clickable: true; longClickable: false; contextClickable: false; enabled: true; password: false; scrollable: false; importantForAccessibility: true; visible: false; actions: [AccessibilityAction: ACTION_FOCUS - null, AccessibilityAction: ACTION_SELECT - null, AccessibilityAction: ACTION_CLEAR_SELECTION - null, AccessibilityAction: ACTION_CLICK - null, AccessibilityAction: ACTION_ACCESSIBILITY_FOCUS - null, AccessibilityAction: ACTION_SHOW_ON_SCREEN - null]
+09-28 14:08:41.386  3865  3865 W View    : couldn't find view with id 2131362853
+09-28 14:08:41.415  1013  1013 I AccessibilityNodeInfoDumper: Skipping invisible child: android.view.accessibility.AccessibilityNodeInfo@14779; boundsInParent: Rect(0, 0 - 1080, 396); boundsInScreen: Rect(0, 0 - 1080, 0); packageName: com.android.systemui; className: android.widget.FrameLayout; text: null; error: null; maxTextLength: -1; contentDescription: null; tooltipText: null; viewIdResName: com.android.systemui:id/quick_settings_container; checkable: false; checked: false; focusable: false; focused: false; selected: false; clickable: false; longClickable: false; contextClickable: false; enabled: true; password: false; scrollable: false; importantForAccessibility: false; visible: false; actions: [AccessibilityAction: ACTION_SELECT - null, AccessibilityAction: ACTION_CLEAR_SELECTION - null, AccessibilityAction: ACTION_ACCESSIBILITY_FOCUS - null, AccessibilityAction: ACTION_SHOW_ON_SCREEN - null]
+09-28 14:08:41.426  1013  1013 I AccessibilityNodeInfoDumper: Skipping invisible child: android.view.accessibility.AccessibilityNodeInfo@152bc; boundsInParent: Rect(0, 0 - 123, 72); boundsInScreen: Rect(249, 0 - 372, 72); packageName: com.android.systemui; className: android.widget.TextView; text: 14:07; error: null; maxTextLength: -1; contentDescription: 14:07; tooltipText: null; viewIdResName: com.android.systemui:id/keyguard_clock; checkable: false; checked: false; focusable: false; focused: false; selected: false; clickable: false; longClickable: false; contextClickable: false; enabled: true; password: false; scrollable: false; importantForAccessibility: true; visible: false; actions: [AccessibilityAction: ACTION_SELECT - null, AccessibilityAction: ACTION_CLEAR_SELECTION - null, AccessibilityAction: ACTION_ACCESSIBILITY_FOCUS - null, AccessibilityAction: ACTION_NEXT_AT_MOVEMENT_GRANULARITY - null, AccessibilityAction: ACTION_PREVIOUS_AT_MOVEMENT_GRANULARITY - null, AccessibilityAction: ACTION_SET_SELECTION - null, AccessibilityAction: ACTION_SHOW_ON_SCREEN - null]
+09-28 14:08:41.455  1013  1013 I AccessibilityNodeInfoDumper: Skipping invisible child: android.view.accessibility.AccessibilityNodeInfo@a395b; boundsInParent: Rect(0, 0 - 0, 0); boundsInScreen: Rect(940, 36 - 940, 36); packageName: com.android.systemui; className: android.widget.FrameLayout; text: null; error: null; maxTextLength: -1; contentDescription: null; tooltipText: null; viewIdResName: com.android.systemui:id/data_combo; checkable: false; checked: false; focusable: false; focused: false; selected: false; clickable: false; longClickable: false; contextClickable: false; enabled: true; password: false; scrollable: false; importantForAccessibility: false; visible: false; actions: [AccessibilityAction: ACTION_SELECT - null, AccessibilityAction: ACTION_CLEAR_SELECTION - null, AccessibilityAction: ACTION_ACCESSIBILITY_FOCUS - null, AccessibilityAction: ACTION_SHOW_ON_SCREEN - null]
+09-28 14:08:41.457  1013  1013 I AccessibilityNodeInfoDumper: Skipping invisible child: android.view.accessibility.AccessibilityNodeInfo@f8a4; boundsInParent: Rect(0, 0 - 1080, 339); boundsInScreen: Rect(1080, 186 - 1080, 525); packageName: com.android.systemui; className: android.widget.FrameLayout; text: null; error: null; maxTextLength: -1; contentDescription: null; tooltipText: null; viewIdResName: null; checkable: false; checked: false; focusable: true; focused: false; selected: false; clickable: false; longClickable: false; contextClickable: false; enabled: true; password: false; scrollable: false; importantForAccessibility: true; visible: false; actions: [AccessibilityAction: ACTION_FOCUS - null, AccessibilityAction: ACTION_SELECT - null, AccessibilityAction: ACTION_CLEAR_SELECTION - null, AccessibilityAction: ACTION_ACCESSIBILITY_FOCUS - null, AccessibilityAction: ACTION_SHOW_ON_SCREEN - null]
+09-28 14:08:41.458  1013  1013 I AccessibilityNodeInfoDumper: Skipping invisible child: android.view.accessibility.AccessibilityNodeInfo@f122; boundsInParent: Rect(0, 0 - 1080, 0); boundsInScreen: Rect(0, 525 - 1080, 525); packageName: com.android.systemui; className: android.widget.LinearLayout; text: null; error: null; maxTextLength: -1; contentDescription: null; tooltipText: null; viewIdResName: com.android.systemui:id/keyguard_owner_info_container; checkable: false; checked: false; focusable: false; focused: false; selected: false; clickable: false; longClickable: false; contextClickable: false; enabled: true; password: false; scrollable: false; importantForAccessibility: false; visible: false; actions: [AccessibilityAction: ACTION_SELECT - null, AccessibilityAction: ACTION_CLEAR_SELECTION - null, AccessibilityAction: ACTION_ACCESSIBILITY_FOCUS - null, AccessibilityAction: ACTION_SHOW_ON_SCREEN - null]
+09-28 14:08:41.465  1013  1013 I AccessibilityNodeInfoDumper: Skipping invisible child: android.view.accessibility.AccessibilityNodeInfo@ae609; boundsInParent: Rect(0, 0 - 195, 195); boundsInScreen: Rect(443, 1850 - 638, 2045); packageName: com.android.systemui; className: android.widget.LinearLayout; text: null; error: null; maxTextLength: -1; contentDescription: null; tooltipText: null; viewIdResName: null; checkable: false; checked: false; focusable: false; focused: false; selected: false; clickable: false; longClickable: false; contextClickable: false; enabled: true; password: false; scrollable: false; importantForAccessibility: false; visible: false; actions: [AccessibilityAction: ACTION_SELECT - null, AccessibilityAction: ACTION_CLEAR_SELECTION - null, AccessibilityAction: ACTION_ACCESSIBILITY_FOCUS - null, AccessibilityAction: ACTION_SHOW_ON_SCREEN - null]
+09-28 14:08:41.466  1013  1013 I AccessibilityNodeInfoDumper: Skipping invisible child: android.view.accessibility.AccessibilityNodeInfo@ae9ca; boundsInParent: Rect(0, 0 - 195, 195); boundsInScreen: Rect(443, 1850 - 638, 2045); packageName: com.android.systemui; className: android.widget.LinearLayout; text: null; error: null; maxTextLength: -1; contentDescription: null; tooltipText: null; viewIdResName: null; checkable: false; checked: false; focusable: false; focused: false; selected: false; clickable: false; longClickable: false; contextClickable: false; enabled: true; password: false; scrollable: false; importantForAccessibility: false; visible: false; actions: [AccessibilityAction: ACTION_SELECT - null, AccessibilityAction: ACTION_CLEAR_SELECTION - null, AccessibilityAction: ACTION_ACCESSIBILITY_FOCUS - null, AccessibilityAction: ACTION_SHOW_ON_SCREEN - null]
+09-28 14:08:41.471  1013  1013 I AccessibilityNodeInfoDumper: Skipping invisible child: android.view.accessibility.AccessibilityNodeInfo@ae248; boundsInParent: Rect(0, 0 - 48, 48); boundsInScreen: Rect(0, 0 - 48, 48); packageName: com.android.systemui; className: android.widget.ImageView; text: null; error: null; maxTextLength: -1; contentDescription: null; tooltipText: null; viewIdResName: null; checkable: false; checked: false; focusable: false; focused: false; selected: false; clickable: false; longClickable: false; contextClickable: false; enabled: true; password: false; scrollable: false; importantForAccessibility: false; visible: false; actions: [AccessibilityAction: ACTION_SELECT - null, AccessibilityAction: ACTION_CLEAR_SELECTION - null, AccessibilityAction: ACTION_CLICK - null, AccessibilityAction: ACTION_ACCESSIBILITY_FOCUS - null, AccessibilityAction: ACTION_SHOW_ON_SCREEN - null]
+09-28 14:08:41.476  1013  1013 I AccessibilityNodeInfoDumper: Skipping invisible child: android.view.accessibility.AccessibilityNodeInfo@b8d3; boundsInParent: Rect(0, 0 - 204, 204); boundsInScreen: Rect(438, 1845 - 642, 2049); packageName: com.android.systemui; className: android.widget.FrameLayout; text: null; error: null; maxTextLength: -1; contentDescription: null; tooltipText: null; viewIdResName: com.android.systemui:id/floating_app_shortcut_image_container; checkable: false; checked: false; focusable: false; focused: false; selected: false; clickable: false; longClickable: false; contextClickable: false; enabled: true; password: false; scrollable: false; importantForAccessibility: false; visible: false; actions: [AccessibilityAction: ACTION_SELECT - null, AccessibilityAction: ACTION_CLEAR_SELECTION - null, AccessibilityAction: ACTION_ACCESSIBILITY_FOCUS - null, AccessibilityAction: ACTION_SHOW_ON_SCREEN - null]
+09-28 14:08:41.478  1013  1013 I AccessibilityNodeInfoDumper: Skipping invisible child: android.view.accessibility.AccessibilityNodeInfo@d6db; boundsInParent: Rect(0, 0 - 0, 72); boundsInScreen: Rect(56, 0 - 56, 72); packageName: com.android.systemui; className: android.widget.LinearLayout; text: null; error: null; maxTextLength: -1; contentDescription: null; tooltipText: null; viewIdResName: com.android.systemui:id/left_clock_container; checkable: false; checked: false; focusable: false; focused: false; selected: false; clickable: false; longClickable: false; contextClickable: false; enabled: true; password: false; scrollable: false; importantForAccessibility: false; visible: false; actions: [AccessibilityAction: ACTION_SELECT - null, AccessibilityAction: ACTION_CLEAR_SELECTION - null, AccessibilityAction: ACTION_ACCESSIBILITY_FOCUS - null, AccessibilityAction: ACTION_SHOW_ON_SCREEN - null]
+09-28 14:08:41.478  1013  1013 I AccessibilityNodeInfoDumper: Skipping invisible child: android.view.accessibility.AccessibilityNodeInfo@c7d7; boundsInParent: Rect(0, 0 - 0, 72); boundsInScreen: Rect(540, 0 - 540, 72); packageName: com.android.systemui; className: android.widget.LinearLayout; text: null; error: null; maxTextLength: -1; contentDescription: null; tooltipText: null; viewIdResName: com.android.systemui:id/middle_clock_container; checkable: false; checked: false; focusable: false; focused: false; selected: false; clickable: false; longClickable: false; contextClickable: false; enabled: true; password: false; scrollable: false; importantForAccessibility: false; visible: false; actions: [AccessibilityAction: ACTION_SELECT - null, AccessibilityAction: ACTION_CLEAR_SELECTION - null, AccessibilityAction: ACTION_ACCESSIBILITY_FOCUS - null, AccessibilityAction: ACTION_SHOW_ON_SCREEN - null]
+09-28 14:08:41.479  1013  1013 W AccessibilityNodeInfoDumper: Fetch time: 170ms
+09-28 14:08:41.481  3546  4926 W WindowManager: removeWindowToken: Attempted to remove non-existing token: android.os.Binder@17982c6
+09-28 14:08:41.482  3546  4926 I AccessibilityManagerService: semIsAccessibilityServiceEnabled()
+09-28 14:08:41.483  3546  4926 I AccessibilityManagerService: accesibilityService is null
+09-28 14:08:41.483  3546  3575 D SamsungPhoneWindowManager: settings changed : new doubleTapLaunchBehavior=3 old doubleTapLaunchBehavior=3
+09-28 14:08:41.483  3546  3546 D AccessibilityManagerService: checkUniversalSwitchState start:
+09-28 14:08:41.483  3546  3546 I AccessibilityManagerService: semIsAccessibilityServiceEnabled()
+09-28 14:08:41.483  3546  3546 I AccessibilityManagerService: accesibilityService is null
+09-28 14:08:41.484  3546  3546 D AccessibilityManagerService: checkUniversalSwitchState universalSwitchEnabled:false
+09-28 14:08:41.484  3546  3546 D AccessibilityManagerService: updateInputFilter universalSwitchState:false
+09-28 14:08:41.484  3546  3546 D AccessibilityManagerService: updateInputFilter userState.mIsUniversalSwitchEnabled:false
+09-28 14:08:41.486  3865  3865 D AccessibilityManager: accessibility service is not enabled
+09-28 14:08:41.486  3865  3865 D AccessibilityManager: accessibility service is not enabled
+09-28 14:08:41.486  3865  3865 D Tile.NavigationBarTile: onAccessibilityStateChanged:  false
+09-28 14:08:41.486  3865  4220 D Tile.NavigationBarTile: handleUpdateState  value =true
+09-28 14:08:41.487  3546  4926 V WindowManager: rotationForOrientationLw(orient=5, last=0); user=0  sensorRotation=-1 mLidState=-1 mDockMode=0 mHdmiPlugged=false
+09-28 14:08:41.490  3546  3546 D BatterySaverPolicy: [api] refreshSettings: deviceSpecificSetting:  ((overlay))
+09-28 14:08:41.492  3017  9286 I SurfaceFlinger: id=5851 Removed WindowToken{1b93287 android.os.Binder@17982c6}#0 (6/63)
+09-28 14:08:41.492  3865  3865 D AccessibilityManager: accessibility service is not enabled
+09-28 14:08:41.493  3865  3865 D AccessibilityManager: accessibility service is not enabled
+09-28 14:08:41.493  3865  3865 D vol.SecVolumeDialogImpl: onAccessibilityStateChanged: mIsTalkbackEnabled : false
+09-28 14:08:41.493  3865  3865 D AccessibilityManager: accessibility service is not enabled
+09-28 14:08:41.493  3865  3865 D AccessibilityManager: accessibility service is not enabled
+09-28 14:08:41.493  3865  3865 D Tile.NavigationBarTile: onAccessibilityStateChanged:  false
+09-28 14:08:41.493  3865  4220 D Tile.NavigationBarTile: handleUpdateState  value =true
+09-28 14:08:41.495  3017  3017 I Layer   : id=5851 onRemoved WindowToken{1b93287 android.os.Binder@17982c6}#0 
+09-28 14:08:41.497  5188  5188 I SKBD    : and isTosAccept false
+09-28 14:08:41.498  1013  1013 D AndroidRuntime: Shutting down VM
+09-28 14:08:41.575  3546  4926 D AccountManagerService: getUserAccounts0
+09-28 14:08:41.611  3546  4926 I chatty  : uid=1000(system) Binder:3546_B identical 6 lines
+09-28 14:08:41.612  3546  4926 D AccountManagerService: getUserAccounts0
+09-28 14:08:41.619   696   769 I PlayCommon: [29388] Connecting to server: https://play.googleapis.com/play/log?format=raw&proto_v2=true
+09-28 14:08:41.620   696   769 I System.out: (HTTPLog)-Static: isSBSettingEnabled false
+09-28 14:08:41.620   696   769 I System.out: (HTTPLog)-Static: isSBSettingEnabled false
+09-28 14:08:41.697  5188  5188 I SKBD    : and isTosAccept false
+09-28 14:08:41.897  3546  3616 I PersonaServiceHelper: installStageForKnox(user:-1 installerUid:2000)
+09-28 14:08:41.897  3546  3616 D PackageManager: START INSTALL PACKAGE: observer{9169791}
+09-28 14:08:41.897  3546  3616 D PackageManager:           stagedDir{/data/app/vmdl552784741.tmp}
+09-28 14:08:41.897  3546  3616 D PackageManager:           stagedCid{null}
+09-28 14:08:41.897  3546  3616 D PackageManager:           Request from{null}
+09-28 14:08:41.897  3546  3616 D PackageManager:           VerificationInfo{,originatingUid=-1,installerUid=2000}
+09-28 14:08:41.898  5188  5188 I SKBD    : and isTosAccept false
+09-28 14:08:41.902  3014 23266 V APM_AudioPolicyManager: AudioPolicyManager:setRecordSilenced(uid:10019, silenced:0)
+09-28 14:08:41.923   696   769 I PlayCommon: [29388] Successfully uploaded logs.
+09-28 14:08:41.951  3546  4975 I EDMNativeHelperService: isScreenCaptureEnabled
+09-28 14:08:41.952  3546  4975 D RestrictionPolicy: isScreenCaptureEnabled : ret=true userId=0
+09-28 14:08:41.968  1033  1033 D vndksupport: Loading /vendor/lib64/hw/android.hardware.graphics.mapper@2.0-impl.so from current namespace instead of sphal namespace.
+09-28 14:08:42.033  3546  3589 D PackageManager: EAS IT Policy com.pietrocode.epubtomp3.flutter_app isPackageSignedByPlatform = false
+09-28 14:08:42.035  3546  3589 I PackageManager: EAS IT Policy AllowList = ,,,
+09-28 14:08:42.035  3546  3589 I PackageManager: isAppBlockedByDPM?? = false
+09-28 14:08:42.098  5188  5188 I SKBD    : and isTosAccept false
+09-28 14:08:42.111  3546  3589 D PowerManagerService: [api] setDeviceIdleTempWhitelist: appids: [0]10057  (uid: 1000 pid: 3546)
+09-28 14:08:42.112  3014 23266 V APM_AudioPolicyManager: AudioPolicyManager:setRecordSilenced(uid:10057, silenced:0)
+09-28 14:08:42.146  3546  3589 D PackageManager: sendBroadcastAsUser. PACKAGE_INSTALL_STARTED
+09-28 14:08:42.147  3546  3589 I HarmonyEASService: Updating for all 1
+09-28 14:08:42.147  3546  3589 D PackageManager: EAS IT Policy com.pietrocode.epubtomp3.flutter_app isPackageSignedByPlatform = false
+09-28 14:08:42.147 28135 28135 I Finsky  : [2] VerifyApps: Install-time verification requested for package com.pietrocode.epubtomp3.flutter_app, PackageManager id = 78, Verifier id = ced2f67c-7e64-4318-8331-1d3728f4d089
+09-28 14:08:42.150 30138 30138 D GOS:GameServiceReceiver: action : com.samsung.android.intent.action.PACKAGE_INSTALL_STARTED
+09-28 14:08:42.150 30138 30138 D GOS:GameServiceReceiver:  PkgInstallStarted for com.pietrocode.epubtomp3.flutter_app UserID : 0
+09-28 14:08:42.154 28135 28159 I Finsky  : [23746] RECEIVER_PACKAGE_VERIFICATION#logWorkEndAndFinishGoAsync: SUCCESS
+09-28 14:08:42.163 30138 30138 D GOS:MainIntentService: onCreate
+09-28 14:08:42.164 30138  1038 D GOS:MainIntentService: onHandleIntent. begin
+09-28 14:08:42.164 30138  1038 D GOS:MainIntentService: onHandleIntent(). type(PACKAGE_CHANGED) from 2
+09-28 14:08:42.165  3546  3546 D PackageManager: [VERIFY] onReceive for RequiredVerifier id=78, mUid = 10057
+09-28 14:08:42.166 30138  1038 D GOS:MainIntentService: onHandleIntent(). type(PACKAGE_CHANGED), changeType(INSTALL_STARTED), packageName(com.pietrocode.epubtomp3.flutter_app), UserHandle(0), Installed(true)
+09-28 14:08:42.166 30138  1038 D GOS:SystemEventReactor: onPackageInstallStarted(). packageName: com.pietrocode.epubtomp3.flutter_app
+09-28 14:08:42.166 30138  1038 D GOS:SystemEventReactor: addPkgDataFromServer(), packageName : com.pietrocode.epubtomp3.flutter_app
+09-28 14:08:42.166  3546  3546 D PackageManager: [VERIFY] sendMessageDelayed(CHECK_PENDING_VERIFICATION, 78, 17000)
+09-28 14:08:42.169 30138  1038 D GOS:RequestHeader: device_name : jackpotlte
+09-28 14:08:42.169 30138  1038 D GOS:RequestHeader: model_name : SM-A530F
+09-28 14:08:42.169 30138  1038 D GOS:RequestHeader: version_r : 9
+09-28 14:08:42.169 30138  1038 D GOS:RequestHeader: version_i : A530FXXULCVB1
+09-28 14:08:42.169 30138  1038 D GOS:RequestHeader: is_test : false
+09-28 14:08:42.169 30138  1038 D GOS:RequestHeader: gms_version : 90.015
+09-28 14:08:42.170 30138  1038 D GOS:RequestHeader: appVersionNameFull : 2.1.02.0
+09-28 14:08:42.170 30138  1038 D GOS:RequestHeader: appVersionCodeFull : 210200000
+09-28 14:08:42.174 30138  1038 D GOS:RequestHeader: mcc : 724
+09-28 14:08:42.174 30138  1038 D GOS:RequestHeader: mnc : 03
+09-28 14:08:42.299  5188  5188 I SKBD    : and isTosAccept false
+09-28 14:08:42.320 28135  1037 W PackageParser: Unknown element under <manifest>: queries at /data/app/vmdl552784741.tmp/base.apk Binary XML file line #27
+09-28 14:08:42.361 30138  1038 D GOS:RequestHeader: installed_sec_game_family : com.sec.android.app.samsungapps:enabled,com.samsung.android.game.gamehome:disabled,com.samsung.android.game.gametools:disabled
+09-28 14:08:42.361 30138  1038 D GOS:DataManager: getUUID(), UUID: 8eca486a94c14b4bae58b2c53d6074bf
+09-28 14:08:42.361 30138  1038 D GOS:RequestHeader: android_id_md5 (The actual value is UUID. android_id_md5 is just the key name for API header) : 8eca486a94c14b4bae58b2c53d6074bf
+09-28 14:08:42.375 30138  1038 D GOS:GlobalDAO: LoggingPolicy(). mTestGroupName: null, mMaxSessionInSec: 3600
+09-28 14:08:42.375 30138  1038 D GOS:RequestHeader: available_feature_flag : 2216981588704564227
+09-28 14:08:42.375 30138  1038 D GOS:RequestHeader: server_feature_flag_policy : NNNNN000NNNNNNNN1NN0NN1000NN00NNNNNN0NNNNNN100NNNN1NNNNNNNNNN0
+09-28 14:08:42.375 30138  1038 D GOS:RequestHeader: default_feature_flag : 342277969730895875
+09-28 14:08:42.375 30138  1038 D GOS:RequestHeader: enabled_feature_flag : 342277969730895875
+09-28 14:08:42.375 30138  1038 D GOS:NetworkConnector: mBaseUrl: https://service.game-mode.net/gamemode/
+09-28 14:08:42.375 30138  1038 D GOS:NetworkConnector: mBaseUrlForPost: https://c-api.game-mode.net/v3/
+09-28 14:08:42.378 30138  1038 D GOS:NetworkConnector: getPkgData(), packageName : com.pietrocode.epubtomp3.flutter_app
+09-28 14:08:42.399  3207  3293 D EnterpriseController: netId is 0
+09-28 14:08:42.399  3207  3293 E Netd    : getNetworkForDns: getNetId from enterpriseCtrl is netid 0
+09-28 14:08:42.399  3207  3293 D DnsProxyListener: DNSDBG::dns addrinfo af 2
+09-28 14:08:42.416 30138  1038 D NetworkManagementSocketTagger: tagSocket(63) with statsTag=0xffffffff, statsUid=-1

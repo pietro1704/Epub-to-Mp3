@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import unittest
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -17,10 +19,34 @@ except ModuleNotFoundError:  # pragma: no cover - optional dependency
 
 from src.config import ConversionConfig
 from src.job_manager import JobManager
+from src.stream_http_observation import StreamHTTPObservationStore
 from src.telemetry import TelemetryRecorder
 
 from python_app import server
 from python_app.src import _server_audio_helpers as server_audio_helpers
+
+
+def test_chapter_display_name_recovers_real_heading_from_generic_name():
+    assert (
+        server._chapter_display_name(
+            "Chapter 1",
+            "<html><body><h1>The Fellowship of the Ring</h1><p>Text</p></body></html>",
+            1,
+        )
+        == "The Fellowship of the Ring"
+    )
+
+
+def test_chapter_display_name_preserves_substantive_toc_name():
+    assert (
+        server._chapter_display_name(
+            "The Council of Elrond",
+            "<h1>Different body heading</h1>",
+            2,
+        )
+        == "The Council of Elrond"
+    )
+
 
 FIXTURE_BOOK = Path(__file__).resolve().parents[2] / "web" / "public" / "sample.epub"
 MINIMAL_MP3 = (
@@ -63,11 +89,13 @@ def _configure_server_paths(tmp_path, monkeypatch):
     monkeypatch.setattr(server, "job_manager", JobManager(jobs_dir))
 
 
-def test_process_conversion_generates_chapters(tmp_path, monkeypatch):
+@pytest.mark.parametrize("retry_first", [False, True])
+def test_process_conversion_generates_chapters(tmp_path, monkeypatch, retry_first):
     """Test server conversion with mocked TTS engine."""
     job_id = str(uuid4())
 
     _configure_server_paths(tmp_path, monkeypatch)
+    monkeypatch.setattr(server, "_CHAPTER_RETRY_BACKOFF_SECONDS", 0)
 
     upload_path = tmp_path / f"{job_id}_book.epub"
     upload_path.write_bytes(FIXTURE_BOOK.read_bytes())
@@ -86,7 +114,12 @@ def test_process_conversion_generates_chapters(tmp_path, monkeypatch):
     }
 
     # Mock the TTS engine to create dummy audio files
-    async def mock_synthesize(self, text, output_path):
+    recorded_callbacks = []
+    expected_stream_bytes = {}
+    failed_attempt_ids = set()
+    publication_responses = []
+
+    async def mock_synthesize(self, text, output_path, progress_callback=None, chunk_callback=None):
         output_path = Path(output_path)
         output_path.parent.mkdir(parents=True, exist_ok=True)
         # Create a minimal valid MP3 file (ID3 header + silence)
@@ -101,6 +134,49 @@ def test_process_conversion_generates_chapters(tmp_path, monkeypatch):
             + [0x00] * 417
         )  # Padding to make valid frame
         output_path.write_bytes(mp3_header * 10)  # Multiple frames
+        if chunk_callback is not None:
+            recorded_callbacks.append((chunk_callback, output_path))
+            for index in (1, 0):
+                segment = output_path.with_name(f"fixture-segment-{index}.mp3")
+                segment.write_bytes(mp3_header * (10 + index))
+                expected_stream_bytes[index] = segment.read_bytes()
+                chunk_callback(index, segment, "Private fixture text")
+                segment.unlink()
+            chapter_index = int(output_path.name.split(" - ", 1)[0])
+            client = TestClient(server.app)
+            manifest_url = f"/api/streams/{job_id}/chapters/{chapter_index}"
+            first_chunk = next(chunk for chunk in client.get(manifest_url).json()["chunks"] if chunk["index"] == 0)
+            first_bytes = expected_stream_bytes[0]
+            replacement = output_path.with_name("republished-segment.mp3")
+            replacement.write_bytes(mp3_header * 12)
+            expected_stream_bytes[0] = replacement.read_bytes()
+            chunk_callback(0, replacement, "Republished fixture segment")
+            replacement.unlink()
+            public_manifest = client.get(manifest_url).json()
+            assert "retiredChunks" not in public_manifest
+            new_chunk = next(chunk for chunk in public_manifest["chunks"] if chunk["index"] == 0)
+            private_chapter = server._load_stream_index(job_id)["chapters"][str(chapter_index)]
+            assert all(set(chunk) == {"id", "file"} for chunk in private_chapter["retiredChunks"])
+            assert sum(chunk["id"] == first_chunk["id"] for chunk in private_chapter["retiredChunks"]) == 1
+            old_response = client.get(first_chunk["url"])
+            new_response = client.get(new_chunk["url"])
+            publication_responses.append((first_chunk, new_chunk, first_bytes, expected_stream_bytes[0],
+                                          old_response.status_code, old_response.content,
+                                          new_response.status_code, new_response.content))
+            previous_manifest = server._stream_index_path(job_id, ensure=False).read_bytes()
+            stream_root = server._job_stream_dir(job_id, ensure=False)
+            previous_files = {path.name: path.read_bytes() for path in stream_root.glob("stream_*")}
+            replacement = output_path.with_name("publication-failure.mp3")
+            replacement.write_bytes(b"replacement must stay unpublished")
+            with patch.object(server, "_save_stream_index", side_effect=OSError("manifest failure")):
+                chunk_callback(0, replacement, "Private replacement")
+            replacement.unlink()
+            assert server._stream_index_path(job_id, ensure=False).read_bytes() == previous_manifest
+            assert {path.name: path.read_bytes() for path in stream_root.glob("stream_*")} == previous_files
+            if retry_first and len(recorded_callbacks) == 1:
+                for chapter in server._load_stream_index(job_id)["chapters"].values():
+                    failed_attempt_ids.update(chunk["observation"]["attemptId"] for chunk in chapter["chunks"])
+                raise RuntimeError("Temporary stream transport interruption")
         return output_path
 
     _make_telemetry(tmp_path, monkeypatch)
@@ -126,7 +202,106 @@ def test_process_conversion_generates_chapters(tmp_path, monkeypatch):
     zip_name = job["outputs"][0]["name"]
     assert zip_name.endswith(".zip")
 
+    stream_index = server._load_stream_index(job_id)
+    assert stream_index["chapters"]
+    observed_attempts = []
+    for chapter in stream_index["chapters"].values():
+        assert [chunk["index"] for chunk in chapter["chunks"]] == [0, 1]
+        attempts = set()
+        for chunk in chapter["chunks"]:
+            assert (server._job_stream_dir(job_id, ensure=False) / chunk["file"]).read_bytes() == expected_stream_bytes[chunk["index"]]
+            observation = chunk["observation"]
+            assert set(observation) == {"version", "attemptId", "segmentReadyElapsedNanoseconds", "artifactPublishedElapsedNanoseconds"}
+            assert observation["artifactPublishedElapsedNanoseconds"] >= observation["segmentReadyElapsedNanoseconds"] >= 0
+            attempts.add(observation["attemptId"])
+        assert len(attempts) == 1
+        observed_attempts.extend(attempts)
+    assert len(set(observed_attempts)) == len(observed_attempts)
+    assert publication_responses
+    for old, new, old_bytes, new_bytes, old_status, old_content, new_status, new_content in publication_responses:
+        assert old["observation"]
+        assert new["observation"]
+        assert old_status == 200
+        assert old_content == old_bytes, "An old manifest URL must keep serving its original publication bytes"
+        assert new_status == 200
+        assert new_content == new_bytes
+        assert old["id"] != new["id"]
+        assert old["index"] == new["index"] == 0
+        # Earlier URLs must also survive subsequent engine attempts.
+        response = TestClient(server.app).get(old["url"])
+        assert response.status_code == 200
+        assert response.content == old_bytes
+    if retry_first:
+        assert failed_attempt_ids
+        assert failed_attempt_ids.isdisjoint(observed_attempts)
+    before_late_callback = server._load_stream_index(job_id)
+    for callback, source in recorded_callbacks:
+        callback(99, source, "Late obsolete callback")
+    assert server._load_stream_index(job_id) == before_late_callback
+
     server.jobs.pop(job_id, None)
+
+
+@pytest.mark.parametrize("missing_field", ["id", "file", "non_dict"])
+def test_process_conversion_recovers_malformed_previous_stream(tmp_path, monkeypatch, missing_field):
+    _configure_server_paths(tmp_path, monkeypatch)
+    _make_telemetry(tmp_path, monkeypatch)
+    job_id = str(uuid4())
+    upload_path = tmp_path / "book.epub"
+    upload_path.write_bytes(FIXTURE_BOOK.read_bytes())
+    server.jobs[job_id] = {
+        "jobId": job_id, "state": "queued", "events": [],
+        "file_path": str(upload_path), "engine": "edge", "voice": None,
+        "chapters": None, "footnote_mode": "inline", "language": "pt-BR", "outputs": [],
+        "resumeRequested": True,
+    }
+    malformed = {"id": "legacy", "file": "old.mp3"}
+    if missing_field == "non_dict":
+        malformed = None
+    else:
+        malformed.pop(missing_field)
+    retained = {"id": 0, "file": "retained.mp3"}
+    (server._job_stream_dir(job_id, ensure=True) / retained["file"]).write_bytes(b"prior audio")
+    server._save_stream_index(job_id, {
+        "chapters": {str(index): {"chunks": [malformed, retained],
+                                  "retiredChunks": [malformed, retained]}
+                     for index in range(1, 5)}
+    })
+    audio_bytes = (bytes([0xFF, 0xFB, 0x90, 0x00]) + bytes(417)) * 10
+    emitted_chapters = []
+
+    async def synthesize(self, text, output_path, progress_callback=None, chunk_callback=None):
+        output_path = Path(output_path)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_bytes(audio_bytes)
+        if chunk_callback is not None:
+            chunk_callback(0, output_path, "Fresh segment")
+            emitted_chapters.append(int(output_path.name.split(" - ", 1)[0]))
+        return output_path
+
+    monkeypatch.setattr(server.AudioProcessor, "convert_to_mp3", staticmethod(_fake_convert_to_mp3))
+    try:
+        with patch("src.tts.edge_engine.EdgeTTSEngine.synthesize_async", synthesize):
+            asyncio.run(server.process_conversion(job_id))
+        assert server.jobs[job_id]["state"] == "finished"
+        assert emitted_chapters
+        with TestClient(server.app) as client:
+            for index in emitted_chapters:
+                response = client.get(f"/api/streams/{job_id}/chapters/{index}")
+                assert response.status_code == 200
+                chunks = response.json()["chunks"]
+                assert len(chunks) == 1
+                assert "observation" in chunks[0], "Fresh publication must replace malformed history"
+                audio = client.get(chunks[0]["url"])
+                assert audio.status_code == 200
+                assert audio.content == audio_bytes
+                previous_audio = client.get(f"/api/streams/{job_id}/chapters/{index}/chunks/0")
+                assert previous_audio.status_code == 200
+                assert previous_audio.content == b"prior audio"
+                history = server._load_stream_index(job_id)["chapters"][str(index)]["retiredChunks"]
+                assert history == [retained]
+    finally:
+        server.jobs.pop(job_id, None)
 
 
 def test_job_output_dir_rejects_stored_path_outside_output_root(tmp_path, monkeypatch):
@@ -152,6 +327,33 @@ def test_resolve_relative_path_within_root_rejects_absolute_candidate(tmp_path, 
 
     with pytest.raises(ValueError, match="Expected relative path"):
         server._resolve_relative_path_within_root(tmp_path, "/tmp/escape", must_exist=False)
+
+
+@pytest.mark.parametrize("job_id", ["../escape", "folder/child", r"folder\\child", ".", ".."])
+def test_job_stream_dir_rejects_non_component_job_ids(tmp_path, monkeypatch, job_id):
+    _configure_server_paths(tmp_path, monkeypatch)
+
+    with pytest.raises(ValueError, match="Invalid job_id"):
+        server._job_stream_dir(job_id, ensure=True)
+
+
+def test_cleanup_does_not_expose_filesystem_exceptions(tmp_path, monkeypatch):
+    _configure_server_paths(tmp_path, monkeypatch)
+    expired_dir = tmp_path / "expired-job"
+    expired_dir.mkdir()
+    os.utime(expired_dir, (0, 0))
+
+    monkeypatch.setattr("python_app.server.time.time", lambda: 10_000)
+
+    def fail_removal(_: Path) -> None:
+        raise OSError("/secret/path")
+
+    monkeypatch.setattr("python_app.server.shutil.rmtree", fail_removal)
+
+    result = asyncio.run(server.cleanup_old_files(max_age_hours=0))
+
+    assert result["errors"] == 1
+    assert "/secret/path" not in str(result)
 
 
 def test_get_job_fulltext_rejects_source_path_outside_allowed_roots(tmp_path, monkeypatch):
@@ -372,6 +574,8 @@ def test_job_fulltext_uses_file_path_when_input_file_is_missing(tmp_path, monkey
     assert payload["chapters"][0]["index"] == 1
     assert "html" in payload["chapters"][0]
     assert "css" in payload["chapters"][0]
+    assert "sourcePath" in payload["chapters"][0]
+    assert "footnotes" in payload["chapters"][0]
 
     server.jobs.pop(job_id, None)
 
@@ -402,7 +606,7 @@ def test_job_fulltext_prefers_cached_chapters(tmp_path, monkeypatch):
                     {
                         "title": "Cached Chapter",
                         "text": "Cached text body.",
-                        "html": "<p class='chapter'>Cached text body.</p>",
+                        "html": '<p class="chapter">Cached text body.</p>',
                         "css": ".chapter { font-style: italic; }",
                     },
                 ],
@@ -429,9 +633,12 @@ def test_job_fulltext_prefers_cached_chapters(tmp_path, monkeypatch):
         {
             "index": 1,
             "name": "Cached Chapter",
+            "sourcePath": None,
             "text": "Cached text body.",
-            "html": "<p class='chapter'>Cached text body.</p>",
+            "html": '<p class="chapter">Cached text body.</p>',
             "css": ".chapter { font-style: italic; }",
+            "resources": [],
+            "footnotes": None,
             "charCount": len("Cached text body."),
         }
     ]
@@ -605,6 +812,11 @@ def test_edge_fallbacks_to_piper(tmp_path, monkeypatch):
     job_id = str(uuid4())
     _configure_server_paths(tmp_path, monkeypatch)
     monkeypatch.setenv("ENGINE_CHAIN_FALLBACK", "1")
+    monkeypatch.delenv("FALLBACK_ENGINE_OVERRIDE", raising=False)
+    monkeypatch.delenv("DISABLE_PIPER_FALLBACK", raising=False)
+    # This test supplies a dummy Piper engine, so do not depend on the
+    # process-level native Piper capability probe or on test collection order.
+    monkeypatch.setattr(server, "_has_piper_support", lambda: True)
 
     upload_path = tmp_path / f"{job_id}_book.epub"
     upload_path.write_bytes(FIXTURE_BOOK.read_bytes())
@@ -615,6 +827,7 @@ def test_edge_fallbacks_to_piper(tmp_path, monkeypatch):
         "events": [],
         "file_path": str(upload_path),
         "engine": "edge",
+        "engineChainFallback": True,
         "voice": None,
         "chapters": None,
         "footnote_mode": "inline",
@@ -623,9 +836,15 @@ def test_edge_fallbacks_to_piper(tmp_path, monkeypatch):
     }
 
     _make_telemetry(tmp_path, monkeypatch)
+    monkeypatch.setattr(server, "_has_piper_support", lambda: True)
+    monkeypatch.setattr(
+        server,
+        "_build_engine_chain",
+        lambda config: [config, replace(config, engine="piper", voice=None, model_path=None)],
+    )
 
     creators = {
-        "edge": lambda: DummyTTSEngine("edge", fail_times=1),
+        "edge": lambda: DummyTTSEngine("edge", fail_times=1000),
         "piper": lambda: DummyTTSEngine("piper"),
     }
     dummy_factory = DummyFactory(creators, server.tts_factory.voice_provider)
@@ -730,6 +949,139 @@ def test_convert_endpoint_success_flow(tmp_path, monkeypatch):
     server.jobs.pop(job_id, None)
 
 
+def test_convert_endpoint_persists_priority_chapter_index(tmp_path, monkeypatch):
+    _configure_server_paths(tmp_path, monkeypatch)
+    _make_telemetry(tmp_path, monkeypatch)
+    monkeypatch.setattr(server, "_enqueue_job", lambda job_id: True)
+
+    client = TestClient(server.app)
+    response = client.post(
+        "/api/convert",
+        files={"file": ("book.epub", FIXTURE_BOOK.read_bytes(), "application/epub+zip")},
+        data={"engine": "edge", "priority_chapter_index": "3"},
+    )
+    assert response.status_code == 200
+
+    job_id = response.json()["jobId"]
+    assert server.jobs[job_id]["priorityChapterIndex"] == 3
+
+    saved = server.job_manager.load_job(job_id)
+    assert saved is not None
+    assert saved["priorityChapterIndex"] == 3
+
+    server.jobs.pop(job_id, None)
+
+
+def test_journey_observations_keep_only_redacted_timing_boundaries(tmp_path, monkeypatch):
+    _configure_server_paths(tmp_path, monkeypatch)
+    _make_telemetry(tmp_path, monkeypatch)
+    job_id = "journey-job"
+    server.jobs[job_id] = {"jobId": job_id, "state": "running", "events": []}
+    client = TestClient(server.app)
+
+    response = client.post(
+        f"/api/jobs/{job_id}/journey-observations",
+        json={
+            "journeyId": "123e4567-e89b-12d3-a456-426614174000",
+            "transition": "audio_audible",
+            "elapsedNanoseconds": 42,
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "recorded"}
+    assert server.jobs[job_id]["journeyObservations"] == [
+        {
+            "journeyId": "123e4567-e89b-12d3-a456-426614174000",
+            "transition": "audio_audible",
+            "elapsedNanoseconds": 42,
+            "recordedAt": server.jobs[job_id]["journeyObservations"][0]["recordedAt"],
+        }
+    ]
+    server.jobs.pop(job_id, None)
+
+
+def test_journey_observations_correlate_playback_delay_and_cancelled_seek(tmp_path, monkeypatch):
+    _configure_server_paths(tmp_path, monkeypatch)
+    _make_telemetry(tmp_path, monkeypatch)
+    job_id = "journey-sequence"
+    server.jobs[job_id] = {"jobId": job_id, "state": "running", "events": []}
+    client = TestClient(server.app)
+
+    playback_id = "123e4567-e89b-12d3-a456-426614174001"
+    seek_id = "123e4567-e89b-12d3-a456-426614174002"
+    for journey_id, transition, elapsed in [
+        (playback_id, "play_requested", 0),
+        (playback_id, "audio_queued", 1_000_000_000),
+        (playback_id, "audio_audible", 1_500_000_000),
+        (seek_id, "seek_requested", 0),
+        (seek_id, "cancelled", 250_000_000),
+    ]:
+        response = client.post(
+            f"/api/jobs/{job_id}/journey-observations",
+            json={
+                "journeyId": journey_id,
+                "transition": transition,
+                "elapsedNanoseconds": elapsed,
+            },
+        )
+        assert response.status_code == 200
+
+    records = server.jobs[job_id]["journeyObservations"]
+    assert [(record["journeyId"], record["transition"], record["elapsedNanoseconds"])
+            for record in records] == [
+        (playback_id, "play_requested", 0),
+        (playback_id, "audio_queued", 1_000_000_000),
+        (playback_id, "audio_audible", 1_500_000_000),
+        (seek_id, "seek_requested", 0),
+        (seek_id, "cancelled", 250_000_000),
+    ]
+    assert all(set(record) == {"journeyId", "transition", "elapsedNanoseconds", "recordedAt"}
+               for record in records)
+    server.jobs.pop(job_id, None)
+
+
+def test_journey_observations_reject_untrusted_metadata(tmp_path, monkeypatch):
+    _configure_server_paths(tmp_path, monkeypatch)
+    _make_telemetry(tmp_path, monkeypatch)
+    job_id = "journey-invalid"
+    server.jobs[job_id] = {"jobId": job_id, "state": "running", "events": []}
+    client = TestClient(server.app)
+
+    response = client.post(
+        f"/api/jobs/{job_id}/journey-observations",
+        json={
+            "journeyId": "not-a-uuid",
+            "transition": "book_title_leak",
+            "elapsedNanoseconds": 0,
+            "title": "must be ignored",
+        },
+    )
+
+    assert response.status_code == 422
+    assert "journeyObservations" not in server.jobs[job_id]
+    server.jobs.pop(job_id, None)
+
+
+def test_convert_endpoint_ignores_invalid_priority_chapter_index(tmp_path, monkeypatch):
+    _configure_server_paths(tmp_path, monkeypatch)
+    _make_telemetry(tmp_path, monkeypatch)
+    monkeypatch.setattr(server, "_enqueue_job", lambda job_id: True)
+
+    client = TestClient(server.app)
+    response = client.post(
+        "/api/convert",
+        files={"file": ("book.epub", FIXTURE_BOOK.read_bytes(), "application/epub+zip")},
+        data={"engine": "edge", "priority_chapter_index": "abc"},
+    )
+    assert response.status_code == 200
+
+    job_id = response.json()["jobId"]
+    assert server.jobs[job_id].get("priorityChapterIndex") is None
+
+    server.jobs.pop(job_id, None)
+
+
 def test_convert_endpoint_failure_flow(tmp_path, monkeypatch):
     """Ensure job state is marked failed when engine raises."""
     _configure_server_paths(tmp_path, monkeypatch)
@@ -760,6 +1112,90 @@ def test_convert_endpoint_failure_flow(tmp_path, monkeypatch):
     payload = job_response.json()
     assert payload["state"] == "failed"
     assert "edge boom" in payload.get("error", "")
+
+    server.jobs.pop(job_id, None)
+
+
+def test_process_conversion_prioritizes_requested_chapter_first(tmp_path, monkeypatch):
+    job_id = str(uuid4())
+
+    _configure_server_paths(tmp_path, monkeypatch)
+    _make_telemetry(tmp_path, monkeypatch)
+
+    upload_path = tmp_path / f"{job_id}_book.epub"
+    upload_path.write_bytes(FIXTURE_BOOK.read_bytes())
+
+    server.jobs[job_id] = {
+        "jobId": job_id,
+        "state": "queued",
+        "events": [],
+        "file_path": str(upload_path),
+        "engine": "edge",
+        "voice": None,
+        "chapters": None,
+        "footnote_mode": "inline",
+        "language": "pt-BR",
+        "outputs": [],
+        "priorityChapterIndex": 2,
+    }
+
+    class StubChapter:
+        def __init__(self, name: str, text: str):
+            self.name = name
+            self.text = text
+            self.speech_text = text
+            self.source_path = f"{name}.xhtml"
+            self.level = 1
+            self.raw_html = None
+            self.formatting_segments = None
+            self.footnotes = None
+
+    class StubReader:
+        def __init__(self, *args, **kwargs):
+            self.title = "Priority Book"
+            self.author = "Tester"
+            self.book = SimpleNamespace(chapters=[])
+
+        def extract_cover_image(self):
+            return None
+
+        def get_chapter_structure(self, preserve_all=False):
+            return []
+
+        def get_chapters(self):
+            return [
+                StubChapter("Chapter 1", "Text 1" * 400),
+                StubChapter("Chapter 2", "Text 2" * 400),
+                StubChapter("Chapter 3", "Text 3" * 400),
+                StubChapter("Chapter 4", "Text 4" * 400),
+            ]
+
+    conversion_order: list[str] = []
+
+    async def mock_synthesize(self, text, output_path):
+        conversion_order.append(Path(output_path).name)
+        output_path = Path(output_path)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        payload = f"ID3-{Path(output_path).stem}-{text[:32]}".encode("utf-8") + MINIMAL_MP3
+        output_path.write_bytes(payload)
+        return output_path
+
+    monkeypatch.setattr(server, "EbookReader", StubReader)
+    monkeypatch.setattr(server.AudioProcessor, "convert_to_mp3", staticmethod(_fake_convert_to_mp3))
+    monkeypatch.setattr("src.tts.edge_engine.EdgeTTSEngine.synthesize_async", mock_synthesize)
+
+    asyncio.run(server.process_conversion(job_id))
+
+    assert server.jobs[job_id]["state"] == "finished", (
+        server.jobs[job_id].get("error"),
+        server.jobs[job_id].get("events", [])[-10:],
+    )
+    assert conversion_order, "Expected at least one synthesized chapter."
+    assert conversion_order[
+        0
+    ].startswith(
+        "003 - "
+    ), "Priority chapter index 2 (EPUB zero-based) must synthesize chapter 3 first in the remote path."
 
     server.jobs.pop(job_id, None)
 
@@ -870,6 +1306,150 @@ def test_stream_endpoints_serve_manifest_and_chunk_from_job_stream_dir(tmp_path,
     chunk_response = client.get(f"/api/streams/{job_id}/chapters/1/chunks/0")
     assert chunk_response.status_code == 200
     assert chunk_response.content == MINIMAL_MP3
+
+
+def test_stream_chunk_optional_journey_header_correlates_actual_publication(tmp_path, monkeypatch):
+    _configure_server_paths(tmp_path, monkeypatch)
+    store = StreamHTTPObservationStore()
+    monkeypatch.setattr(server, "stream_http_observations", store, raising=False)
+    job_id = str(uuid4())
+    monkeypatch.setattr(server, "jobs", {job_id: {"jobId": job_id, "outputDir": str(tmp_path / "Book")}})
+    stream_dir = server._job_stream_dir(job_id, ensure=True)
+    old_id, new_id = str(uuid4()), str(uuid4())
+    (stream_dir / "old.mp3").write_bytes(b"old audio")
+    (stream_dir / "new.mp3").write_bytes(b"new audio")
+    server._save_stream_index(job_id, {"chapters": {"1": {
+        "chunks": [{"id": new_id, "index": 0, "file": "new.mp3"}],
+        "retiredChunks": [{"id": old_id, "file": "old.mp3"}],
+    }}})
+    with TestClient(server.app) as client:
+        old_url = f"/api/streams/{job_id}/chapters/1/chunks/{old_id}"
+        new_url = f"/api/streams/{job_id}/chapters/1/chunks/{new_id}"
+        ordinary = client.get(new_url)
+        assert ordinary.content == b"new audio"
+        assert "x-stream-request-id" not in ordinary.headers
+        assert "cache-control" not in ordinary.headers
+        assert store.export() == []
+        for value in ("not-a-uuid", "", str(uuid4()).replace("-", "")):
+            invalid = client.get(new_url, headers={"X-Playback-Journey-ID": value})
+            assert invalid.status_code == 422
+        assert store.export() == []
+        journeys = [str(uuid4()), str(uuid4())]
+        responses = [client.get(url, headers={"X-Playback-Journey-ID": journey})
+                     for url, journey in zip((old_url, new_url), journeys)]
+        assert [response.content for response in responses] == [b"old audio", b"new audio"]
+        records = store.export()
+        assert len(records) == 2
+        assert len({record["requestId"] for record in records}) == 2
+        for record, response, journey, publication in zip(records, responses, journeys, (old_id, new_id)):
+            assert response.headers["cache-control"] == "no-store"
+            assert response.headers["x-playback-journey-id"] == record["journeyId"] == journey
+            assert response.headers["x-stream-publication-id"] == record["publicationId"] == publication
+            assert response.headers["x-stream-request-id"] == record["requestId"]
+            assert record["outcome"] == "body_sent"
+            assert record["responseBytes"] == len(response.content)
+            assert set(record) == {"version", "requestId", "journeyId", "publicationId",
+                                   "requestReceivedElapsedNanoseconds", "outcome", "responseStatus",
+                                   "responseBytes", "responseCompletedElapsedNanoseconds"}
+        assert "journeyObservations" not in server.jobs[job_id]
+
+
+def test_streams_are_isolated_for_jobs_sharing_one_book_output_dir(tmp_path, monkeypatch):
+    """A second conversion of the same title must not expose the first job's chunks."""
+    _configure_server_paths(tmp_path, monkeypatch)
+    first_job_id = str(uuid4())
+    second_job_id = str(uuid4())
+    output_book_dir = tmp_path / "Shared Streaming Book"
+
+    for job_id in (first_job_id, second_job_id):
+        server.jobs[job_id] = {
+            "jobId": job_id,
+            "state": "finished",
+            "outputDir": str(output_book_dir),
+        }
+
+    first_stream_dir = server._job_stream_dir(first_job_id, ensure=True)
+    second_stream_dir = server._job_stream_dir(second_job_id, ensure=True)
+    assert first_stream_dir != second_stream_dir
+
+    first_chunk = first_stream_dir / "first.mp3"
+    second_chunk = second_stream_dir / "second.mp3"
+    first_chunk.write_bytes(b"FIRST" + MINIMAL_MP3)
+    second_chunk.write_bytes(b"SECOND" + MINIMAL_MP3)
+
+    for job_id, chunk in ((first_job_id, first_chunk), (second_job_id, second_chunk)):
+        server._save_stream_index(
+            job_id,
+            {
+                "jobId": job_id,
+                "chapters": {
+                    "1": {
+                        "chapterIndex": 1,
+                        "chunks": [
+                            {
+                                "id": "0",
+                                "index": 0,
+                                "file": chunk.name,
+                                "url": f"/api/streams/{job_id}/chapters/1/chunks/0",
+                            }
+                        ],
+                    }
+                },
+            },
+        )
+
+    client = TestClient(server.app)
+    for job_id, expected in ((first_job_id, b"FIRST"), (second_job_id, b"SECOND")):
+        manifest = client.get(f"/api/streams/{job_id}/chapters/1")
+        assert manifest.status_code == 200
+        assert manifest.json()["chunks"][0]["url"] == f"/api/streams/{job_id}/chapters/1/chunks/0"
+        chunk = client.get(f"/api/streams/{job_id}/chapters/1/chunks/0")
+        assert chunk.status_code == 200
+        assert chunk.content.startswith(expected)
+
+
+def test_legacy_shared_stream_manifest_never_leaks_to_another_job(tmp_path, monkeypatch):
+    """Old title-level manifests remain readable only by their owning job."""
+    _configure_server_paths(tmp_path, monkeypatch)
+    owner_job_id = str(uuid4())
+    other_job_id = str(uuid4())
+    output_book_dir = tmp_path / "Legacy Shared Streaming Book"
+    legacy_stream_dir = output_book_dir / "streams"
+    legacy_stream_dir.mkdir(parents=True, exist_ok=True)
+
+    for job_id in (owner_job_id, other_job_id):
+        server.jobs[job_id] = {
+            "jobId": job_id,
+            "state": "finished",
+            "outputDir": str(output_book_dir),
+        }
+
+    chunk_path = legacy_stream_dir / "owner.mp3"
+    chunk_path.write_bytes(b"OWNER" + MINIMAL_MP3)
+    (legacy_stream_dir / "index.json").write_text(
+        json.dumps(
+            {
+                "jobId": owner_job_id,
+                "chapters": {
+                    "1": {
+                        "chapterIndex": 1,
+                        "chunks": [{"id": "0", "index": 0, "file": chunk_path.name}],
+                    }
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    client = TestClient(server.app)
+    owner_manifest = client.get(f"/api/streams/{owner_job_id}/chapters/1")
+    assert owner_manifest.status_code == 200
+    assert owner_manifest.json()["chunks"][0]["file"] == chunk_path.name
+
+    other_manifest = client.get(f"/api/streams/{other_job_id}/chapters/1")
+    assert other_manifest.status_code == 200
+    assert other_manifest.json()["chunks"] == []
+    assert client.get(f"/api/streams/{other_job_id}/chapters/1/chunks/0").status_code == 404
 
 
 def test_stream_chunk_rejects_path_traversal_in_manifest_file_field(tmp_path, monkeypatch):
@@ -1385,3 +1965,17 @@ class TestChapterBroadcastOnStatusChange:
         job["chapterProgress"][0]["status"] = "completed"
 
         assert captured[0]["status"] == "processing"
+
+
+def test_direct_convert_rejects_oversize_stream_without_partial_input(tmp_path, monkeypatch):
+    _configure_server_paths(tmp_path, monkeypatch)
+    monkeypatch.setattr(server, "MAX_UPLOAD_BYTES", 5)
+    monkeypatch.setattr(server, "MAX_UPLOAD_MB", 0)
+
+    response = TestClient(server.app).post(
+        "/api/convert",
+        files={"file": ("too-large.epub", b"x" * 10, "application/epub+zip")},
+    )
+
+    assert response.status_code == 413
+    assert list((tmp_path / ".job_inputs").iterdir()) == []

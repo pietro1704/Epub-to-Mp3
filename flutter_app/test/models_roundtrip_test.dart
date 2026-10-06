@@ -1,6 +1,9 @@
+import 'dart:convert';
+
 import 'package:flutter_app/models/ebook_fulltext.dart';
 import 'package:flutter_app/models/job_snapshot.dart';
 import 'package:flutter_app/models/session_record.dart';
+import 'package:flutter_app/services/api_client.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -23,6 +26,7 @@ void main() {
       'outputs': [
         {'name': 'book.zip', 'url': '/files/book.zip', 'sizeBytes': 1024},
       ],
+      'futureRustField': true,
     };
     final snap = JobSnapshot.fromJson(json);
     expect(snap.jobId, 'abc');
@@ -96,5 +100,23 @@ void main() {
       ],
     });
     expect(ft.chapters.first.name, 'Ch1');
+  });
+
+  test('SSE data frames decode as snapshots and ignore event labels', () {
+    final payload = jsonEncode({'jobId': 'sse', 'state': 'finished'});
+    const event = 'event: chapter_update';
+    final data = 'data: $payload';
+    expect(event.startsWith('data:'), false);
+    final decoded = JobSnapshot.fromJson(
+      jsonDecode(data.substring(5).trim()) as Map<String, dynamic>,
+    );
+    expect(decoded.jobId, 'sse');
+    expect(decoded.isTerminal, true);
+  });
+
+  test('fulltext status exceptions preserve retry and terminal semantics', () {
+    expect(const FulltextTransient(), isA<FulltextTransient>());
+    expect(const FulltextGone(), isA<FulltextGone>());
+    expect(const FulltextEmpty(), isA<FulltextEmpty>());
   });
 }

@@ -12,15 +12,10 @@ Verifique:
 Comandos úteis:
 
 ```bash
-mise run web
+mise run dev
 uvicorn python_app.server:app --port 8000
 ```
 
-## Kokoro não funciona
-
-Causa comum:
-
-- `espeak-ng` ausente
 
 ## Piper não funciona
 
@@ -29,13 +24,13 @@ Verifique:
 - ambiente virtual ativo
 - binário/modelo disponível
 
-## App SwiftUI no macOS falha no startup
+## App nativo no macOS falha no startup
 
 Verifique:
 
-- sidecar Python empacotado em `EpubToMp3.app/Contents/Resources/epub-to-mp3-server`
-- Console.app filtrando por `EpubToMp3` para ver stderr do sidecar
-- Refazer `mise run sidecar:build && mise run mac:build` para atualizar o embed
+- runtime Python e recursos do app empacotados
+- Console.app filtrando por `EpubToMp3` para ver stderr do servidor embutido
+- refaça `mise run mac:build` para atualizar o bundle
 
 ## CodeQL acusa path-injection
 
@@ -68,5 +63,5 @@ export VITE_MAX_UPLOAD_MB=200
 mise run test
 mise run test:unit
 mise run test:web
-mise run test:desktop
+mise run test
 ```

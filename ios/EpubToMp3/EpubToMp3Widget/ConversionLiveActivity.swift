@@ -9,6 +9,7 @@ import WidgetKit
 
 // MARK: - Widget
 
+@available(iOS 16.2, *)
 struct ConversionLiveActivityWidget: Widget {
     var body: some WidgetConfiguration {
         ActivityConfiguration(for: ConversionActivityAttributes.self) { context in
@@ -75,6 +76,7 @@ struct ConversionLiveActivityWidget: Widget {
 
 // MARK: - Lock Screen / Banner Layout
 
+@available(iOS 16.2, *)
 private struct LockScreenLiveActivityView: View {
     let context: ActivityViewContext<ConversionActivityAttributes>
 

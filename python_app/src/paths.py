@@ -167,7 +167,7 @@ def _resolve_output_dir() -> Path:
     override = _as_path(os.getenv("OUTPUT_DIR"))
     if override:
         return override
-    if SPACE_ID or is_frozen_bundle():
+    if SPACE_ID or is_frozen_bundle() or _persistent_override is not None:
         return PERSISTENT_ROOT / "output"
     return PROJECT_ROOT / "output"
 
@@ -176,7 +176,7 @@ def _resolve_cache_dir() -> Path:
     override = _as_path(os.getenv("CACHE_DIR"))
     if override:
         return override
-    if SPACE_ID or is_frozen_bundle():
+    if SPACE_ID or is_frozen_bundle() or _persistent_override is not None:
         return PERSISTENT_ROOT / ".cache"
     return PROJECT_ROOT / ".cache"
 
@@ -184,7 +184,10 @@ def _resolve_cache_dir() -> Path:
 # Directories rooted at the project root (with shared overrides)
 CACHE_DIR = _resolve_cache_dir()  # Temporary per-book data only
 OUTPUT_DIR = _resolve_output_dir()
-MODELS_DIR = PROJECT_ROOT / "models"  # TTS models (Piper)
+# The embedded Apple runtime supplies PERSISTENT_ROOT because its package lives
+# inside a signed, read-only app bundle. Keep source/CLI models project-local,
+# but put downloaded embedded models beside the other writable runtime data.
+MODELS_DIR = PERSISTENT_ROOT / "models" if _persistent_override is not None else PROJECT_ROOT / "models"
 JOBS_DIR = PERSISTENT_ROOT / ".jobs"
 UPLOADS_DIR = PERSISTENT_ROOT / ".uploads"
 JOB_INPUTS_DIR = PERSISTENT_ROOT / ".job_inputs"

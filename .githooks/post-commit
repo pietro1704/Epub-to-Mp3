@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+if ! ./scripts/reader-change-check.sh --commit HEAD; then
+    echo "Reader evidence check failed after commit; amend with the required native test." >&2
+fi

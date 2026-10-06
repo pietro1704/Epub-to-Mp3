@@ -93,26 +93,22 @@ class TestPiperFallbackMonitoring(unittest.TestCase):
             result = mixin._resolve_offline_fallback_engine()
         self.assertIsNone(result)
 
-    def test_prints_disable_message_when_piper_skipped(self):
-        """A human-readable message is printed when Piper is skipped via env var."""
+    def test_does_not_print_or_select_piper_without_explicit_override(self):
+        """Piper is never selected implicitly, even when installed."""
         mixin = _make_mixin()
         with (
             patch.dict(os.environ, {"DISABLE_PIPER_FALLBACK": "1"}),
             patch("src._engine_selection_mixin._has_piper_support", return_value=True),
             patch("src._engine_selection_mixin._has_coqui_support", return_value=False),
         ):
-            captured = io.StringIO()
-            with patch("sys.stdout", captured):
-                mixin._resolve_offline_fallback_engine()
-            output = captured.getvalue()
-        self.assertIn("DISABLE_PIPER_FALLBACK", output)
+            self.assertIsNone(mixin._resolve_offline_fallback_engine())
 
     # ------------------------------------------------------------------
     # _resolve_offline_fallback_engine — piper available path
     # ------------------------------------------------------------------
 
-    def test_returns_piper_when_piper_available_and_not_disabled(self):
-        """Returns 'piper' when Piper is available and DISABLE_PIPER_FALLBACK is not set."""
+    def test_returns_none_when_piper_available_without_explicit_override(self):
+        """Installed Piper does not become an implicit fallback."""
         mixin = _make_mixin()
         env = {k: v for k, v in os.environ.items() if k != "DISABLE_PIPER_FALLBACK"}
         with (
@@ -121,11 +117,12 @@ class TestPiperFallbackMonitoring(unittest.TestCase):
             patch("src._engine_selection_mixin._has_coqui_support", return_value=False),
         ):
             result = mixin._resolve_offline_fallback_engine()
-        self.assertEqual(result, "piper")
+        self.assertIsNone(result)
 
-    def test_prints_piper_warning_when_piper_used(self):
-        """A warning is printed to stdout when falling back to Piper."""
+    def test_cli_override_prints_piper_warning_when_explicitly_used(self):
+        """A warning is printed only for an explicit Piper fallback."""
         mixin = _make_mixin()
+        mixin._cli_fallback_engine = "piper"
         env = {k: v for k, v in os.environ.items() if k != "DISABLE_PIPER_FALLBACK"}
         with (
             patch.dict(os.environ, env, clear=True),
@@ -183,7 +180,7 @@ class TestCliFallbackEngineOverride(unittest.TestCase):
             patch("src._engine_selection_mixin._has_piper_support", return_value=True),
         ):
             result = mixin._resolve_offline_fallback_engine(available={"piper"})
-        self.assertEqual(result, "piper")
+        self.assertIsNone(result)
 
 
 if __name__ == "__main__":

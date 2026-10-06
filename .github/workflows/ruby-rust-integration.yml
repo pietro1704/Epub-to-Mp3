@@ -1,0 +1,38 @@
+name: Ruby Rust Integration
+
+on:
+  push:
+    branches: [master, "feat/**"]
+  pull_request:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  ruby-rust:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "4.0"
+          bundler-cache: false
+      - name: Install Ruby gateway dependencies
+        working-directory: ruby_app
+        run: bundle install --jobs 4 --retry 3
+      - name: Install Rails gateway dependencies
+        working-directory: ruby_app/rails_gateway
+        run: bundle install --jobs 4 --retry 3
+      - name: Ruby gateway tests
+        working-directory: ruby_app
+        run: bundle exec ruby -I. test/rust_client_test.rb
+      - name: Rails gateway tests
+        working-directory: ruby_app/rails_gateway
+        run: bundle exec rails test
+      - name: Rust tests
+        run: cargo test -p converter-core -p converter-server --locked
+      - name: Rust format
+        run: cargo fmt --all -- --check

@@ -1,8 +1,35 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:just_audio/just_audio.dart';
 
+import 'package:flutter_app/models/job_snapshot.dart';
 import 'package:flutter_app/services/audio_player_service.dart';
 
 void main() {
+  group('AudioPlayerService readiness boundaries', () {
+    test('reports playable only when the platform player is ready', () {
+      expect(
+        AudioPlayerService.isPlayableProcessingState(ProcessingState.ready),
+        isTrue,
+      );
+      expect(
+        AudioPlayerService.isPlayableProcessingState(ProcessingState.loading),
+        isFalse,
+      );
+      expect(
+        AudioPlayerService.isPlayableProcessingState(ProcessingState.buffering),
+        isFalse,
+      );
+      expect(
+        AudioPlayerService.isPlayableProcessingState(ProcessingState.completed),
+        isFalse,
+      );
+      expect(
+        AudioPlayerService.isPlayableProcessingState(ProcessingState.idle),
+        isFalse,
+      );
+    });
+  });
+
   group('FakeAudioPlayerService', () {
     late FakeAudioPlayerService player;
 
@@ -96,6 +123,18 @@ void main() {
       await player.setQueue([]);
       expect(player.chapters, isEmpty);
     });
+
+    test(
+      'setQueue exposes the first chapter for now-playing metadata',
+      () async {
+        await player.setQueue([
+          const ChapterProgress(index: 4, name: 'A Real Chapter'),
+        ]);
+
+        expect(player.currentIndexValue, 0);
+        expect(player.chapters.single.displayTitle, 'A Real Chapter');
+      },
+    );
 
     test('skipForward advances position', () async {
       final values = <Duration>[];

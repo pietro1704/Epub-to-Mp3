@@ -147,7 +147,7 @@ async def main() -> int:
     )
     parser.add_argument(
         "--engines",
-        default="edge,piper,coqui",
+        default="edge,piper",
         help="Comma-separated engines to benchmark",
     )
     parser.add_argument(

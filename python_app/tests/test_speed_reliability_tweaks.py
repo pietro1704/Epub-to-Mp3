@@ -9,7 +9,6 @@
 
 from __future__ import annotations
 
-import importlib
 import os
 import random
 
@@ -20,38 +19,35 @@ from python_app.src.error_classifier import classify_error
 # ── CLEANUP_INTERVAL_SECONDS ───────────────────────────────────────────────
 
 
-def _reload_server():
-    """Re-import server.py so module-level env reads pick up new values."""
-    import python_app.server as server_module
-
-    return importlib.reload(server_module)
-
-
 class TestCleanupInterval:
     def test_default_local(self, monkeypatch):
         monkeypatch.delenv("SPACE_ID", raising=False)
         monkeypatch.delenv("CLEANUP_INTERVAL_SECONDS", raising=False)
-        srv = _reload_server()
-        assert srv.CLEANUP_INTERVAL_SECONDS == 300
+        from python_app import server
+
+        assert server.get_cleanup_interval_seconds() == 300
 
     def test_default_hf(self, monkeypatch):
         monkeypatch.setenv("SPACE_ID", "example/space")
         monkeypatch.delenv("CLEANUP_INTERVAL_SECONDS", raising=False)
-        srv = _reload_server()
-        assert srv.CLEANUP_INTERVAL_SECONDS == 60
+        from python_app import server
+
+        assert server.get_cleanup_interval_seconds() == 60
 
     def test_env_override(self, monkeypatch):
         monkeypatch.delenv("SPACE_ID", raising=False)
         monkeypatch.setenv("CLEANUP_INTERVAL_SECONDS", "45")
-        srv = _reload_server()
-        assert srv.CLEANUP_INTERVAL_SECONDS == 45
+        from python_app import server
+
+        assert server.get_cleanup_interval_seconds() == 45
 
     def test_env_override_min_clamp(self, monkeypatch):
         monkeypatch.delenv("SPACE_ID", raising=False)
         monkeypatch.setenv("CLEANUP_INTERVAL_SECONDS", "0")
-        srv = _reload_server()
+        from python_app import server
+
         # Minimum clamp is 10 so the cleanup loop can't run too hot.
-        assert srv.CLEANUP_INTERVAL_SECONDS == 10
+        assert server.get_cleanup_interval_seconds() == 10
 
 
 # ── Error classifier short-circuits ────────────────────────────────────────

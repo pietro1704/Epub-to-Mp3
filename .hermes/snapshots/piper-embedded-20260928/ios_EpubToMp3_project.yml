@@ -1,0 +1,553 @@
+name: EpubToMp3
+options:
+  bundleIdPrefix: com.pietrocode
+  deploymentTarget:
+    iOS: "15.0"
+    macOS: "12.0"
+  createIntermediateGroups: true
+  developmentLanguage: en
+  knownRegions: [en, pt-BR, es]
+  # XcodeGen maps this semantic version to Xcode 15's compatible project format.
+  xcodeVersion: "15.4"
+  # XcodeGen 2.46 defaults to Xcode 16 (objectVersion 77), which Xcode 15.4
+  # cannot open. Explicitly emit the newest project format supported by it.
+  projectFormat: xcode15_3
+
+settings:
+  base:
+    # Xcode 15.4 provides Swift 5.10; use the Swift 5 language mode.
+    SWIFT_VERSION: "5.0"
+    PRODUCT_BUNDLE_IDENTIFIER: com.pietrocode.epubtomp3
+    MARKETING_VERSION: "0.3.0"
+    CURRENT_PROJECT_VERSION: "1"
+    DEVELOPMENT_TEAM: "HHRZ35A37Y"
+    CODE_SIGN_STYLE: Automatic
+    SUPPORTED_PLATFORMS: "iphoneos iphonesimulator macosx"
+    SUPPORTS_MACCATALYST: NO
+    GENERATE_INFOPLIST_FILE: YES
+    # Build-speed: Intel Macs benefit from a single-arch Debug build
+    # (skip x86_64h and any cross-compile to arm64). Release stays
+    # universal so a CI-built artefact runs on Apple Silicon too.
+    ONLY_ACTIVE_ARCH: NO
+    # Faster Swift incremental compiles. The whole-module mode is
+    # locked in for Release for runtime speed.
+    SWIFT_COMPILATION_MODE: incremental
+    SWIFT_OPTIMIZATION_LEVEL: "-Onone"
+    DEBUG_INFORMATION_FORMAT: dwarf
+    GCC_OPTIMIZATION_LEVEL: 0
+    # Disable index-while-building during xcodebuild CLI runs (Xcode
+    # GUI uses its own index regardless). Cuts ~25% off cold builds.
+    COMPILER_INDEX_STORE_ENABLE: NO
+    ENABLE_TESTABILITY: YES
+    # Strip nothing in Debug — speeds linker; Release strips debug.
+    STRIP_INSTALLED_PRODUCT: NO
+    # Warnings are errors. This keeps deprecations, concurrency diagnostics,
+    # and unsafe API usage from accumulating behind a green build.
+    SWIFT_TREAT_WARNINGS_AS_ERRORS: YES
+    # Disable asset catalog thinning for device builds. Xcode 26.3 actool
+    # unconditionally requires an iOS Simulator runtime to produce the
+    # "thinned" variant even for device-only builds, causing a build failure
+    # when the simulator runtime is not installed. Setting this to NO
+    # produces a single fat asset catalog that is valid for both device
+    # and simulator without the simulator runtime check.
+    ENABLE_ON_DEMAND_RESOURCES: NO
+    GCC_TREAT_WARNINGS_AS_ERRORS: YES
+    # Xcode 15.4 compiles Swift Package dependencies with this target's
+    # concurrency mode. Keep the Xcode 15-compatible baseline for the native
+    # HTTP client and Rust sidecar integration.
+    SWIFT_STRICT_CONCURRENCY: minimal
+    # The main app contains AVFoundation/Objective-C handles whose lifetime
+    # is intentionally controlled by AudioPlayer.
+    SWIFT_STRICT_MEMORY_SAFETY: NO
+    SWIFT_ENFORCE_EXCLUSIVE_ACCESS: full
+    # Custom launch storyboard (was UILaunchScreen_Generation=YES auto).
+    # The storyboard is iOS-only; excluding it from macOS avoids compiling
+    # a CocoaTouch storyboard for the native AppKit destination.
+    "EXCLUDED_SOURCE_FILE_NAMES[sdk=macosx*]": "EpubToMp3Widget.appex EpubToMp3ShareExtension.appex LaunchScreen.storyboard"
+    "INFOPLIST_KEY_UILaunchStoryboardName[sdk=iphoneos*]": LaunchScreen
+    "INFOPLIST_KEY_UILaunchStoryboardName[sdk=iphonesimulator*]": LaunchScreen
+    INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad: "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight"
+    INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone: "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight"
+    INFOPLIST_KEY_UIBackgroundModes: "audio"
+    INFOPLIST_KEY_UIFileSharingEnabled: YES
+    INFOPLIST_KEY_LSSupportsOpeningDocumentsInPlace: YES
+    # NSAppTransportSecurity is a dict — INFOPLIST_KEY_* only supports
+    # scalar/list values, so the dict goes in a real Info.plist file
+    # merged via INFOPLIST_FILE. xcodegen merges this with the
+    # auto-generated INFOPLIST_KEY_* entries at build time.
+    INFOPLIST_FILE: EpubToMp3/Resources/Info.plist
+    INFOPLIST_KEY_NSHumanReadableCopyright: "© 2026 Pietro Pugliesi"
+    INFOPLIST_KEY_LSApplicationCategoryType: "public.app-category.productivity"
+    # A native AppKit target needs NSApplication as its principal class so the
+    # @main delegate receives applicationDidFinishLaunching and creates a window.
+    "INFOPLIST_KEY_NSPrincipalClass[sdk=macosx*]": "NSApplication"
+    # Intel Macs with discrete + integrated GPU: tell macOS we don't
+    # need the dGPU for this native AppKit renderer.
+    INFOPLIST_KEY_NSSupportsAutomaticGraphicsSwitching: YES
+    TARGETED_DEVICE_FAMILY: "1,2"
+    ENABLE_PREVIEWS: NO
+    # Xcode 26 recommended-settings (auto-applied via "Perform Changes"
+    # dialog). Promoted here so xcodegen regeneration doesn't undo them.
+    # - Dead-code stripping: smaller binaries.
+    # - Symbol stripping defaults: smaller release binary.
+    # - User-script sandboxing: build correctness — scripts can only
+    #   touch files they declare.
+    # - String catalog symbol generation: Swift code-gen for localised
+    #   strings.
+    # --- Xcode 26 "Perform Changes" recommended settings ----------
+    # Pre-applied here so the dialog stops nagging on every regenerate.
+    DEAD_CODE_STRIPPING: YES
+    STRIP_STYLE: all
+    STRIP_SWIFT_SYMBOLS: YES
+    ENABLE_USER_SCRIPT_SANDBOXING: YES
+    LOCALIZED_STRING_SWIFTUI_SUPPORT: YES
+    LOCALIZED_STRING_MACRO_NAMES: "String LocalizedStringResource"
+    # Whole-module optimisation in Release was the dialog's #1 ask.
+    # Already locked per-config below; setting it at base level too so
+    # the dialog stops listing it.
+    SWIFT_COMPILATION_MODE_release: wholemodule
+    # Xcode 26 recommends explicit module verification + ARC-explicit
+    # warnings on the modernisation track. Defaults at the project
+    # level so any new file inherits them.
+    ENABLE_MODULE_VERIFIER: YES
+    CLANG_ANALYZER_NONNULL: YES
+    CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION: YES_AGGRESSIVE
+    CLANG_ENABLE_OBJC_WEAK: YES
+    CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER: YES
+    CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF: YES
+    CLANG_WARN_COMMA: YES
+    CLANG_WARN_RANGE_LOOP_ANALYSIS: YES
+    CLANG_WARN_NON_LITERAL_NULL_CONVERSION: YES
+    CLANG_WARN_STRICT_PROTOTYPES: YES
+    CLANG_WARN_OBJC_LITERAL_CONVERSION: YES
+    CLANG_WARN_INFINITE_RECURSION: YES
+    GCC_WARN_64_TO_32_BIT_CONVERSION: YES
+    GCC_WARN_ABOUT_RETURN_TYPE: YES_ERROR
+    GCC_WARN_UNDECLARED_SELECTOR: YES
+    GCC_WARN_UNINITIALIZED_AUTOS: YES_AGGRESSIVE
+    GCC_WARN_UNUSED_FUNCTION: YES
+    GCC_WARN_UNUSED_VARIABLE: YES
+    GCC_NO_COMMON_BLOCKS: YES
+    ENABLE_STRICT_OBJC_MSGSEND: YES
+    # Mac Catalyst stays off (we ship native macOS via the same target);
+    # but the recommended-settings dialog asks for an explicit answer.
+    DERIVE_MACCATALYST_PRODUCT_BUNDLE_IDENTIFIER: NO
+    # Asset catalogue colour space stays sRGB (default) — set explicitly
+    # to silence the dialog.
+    ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS: YES
+    # Performance / debug correctness defaults the dialog flips on:
+    CLANG_ENABLE_MODULE_DEBUGGING: NO
+    SWIFT_EMIT_LOC_STRINGS: YES
+    # --- Base build hygiene (perf + correctness) -----------------------
+    # Pure-Swift app: skip Objective-C generated header. Cuts a tool
+    # invocation per module and avoids copying the .h into Frameworks/.
+    SWIFT_INSTALL_OBJC_HEADER: NO
+    # Bitcode was deprecated in Xcode 14 and removed in 15+. Explicit NO
+    # keeps the project file deterministic on a clean machine.
+    ENABLE_BITCODE: NO
+    # Default already NO but pin it — user paths in framework search slow
+    # the dependency scanner and have caused odd misses in the past.
+    ALWAYS_SEARCH_USER_PATHS: NO
+
+  configs:
+    Debug:
+      # One architecture keeps local incremental builds light on the
+      # constrained Intel development machine. Release is universal below.
+      ONLY_ACTIVE_ARCH: YES
+      # Skip the codesign / framework validation pass on every Debug build.
+      # Saves ~2-5s per incremental rebuild; Release still validates.
+      VALIDATE_BUILT_PRODUCT: NO
+      # Correctness over speed in Debug — keep Swift safety checks ON
+      # (overflow / array bounds / nil-deref). Pinned so Xcode's
+      # "recommended settings" auto-applier doesn't flip it.
+      SWIFT_DISABLE_SAFETY_CHECKS: NO
+    Release:
+      ONLY_ACTIVE_ARCH: NO
+      # ThinLTO: cross-module inlining without full LTO's link-time cost.
+      # Typical 5-8% runtime win in Swift-heavy apps + ~10-15% smaller binary.
+      LLVM_LTO: YES_THIN
+      # NOTE: ENABLE_PREVIEWS stays ON (inherited from base) for Release.
+      # The codebase has #Preview blocks that reference fixtures gated by
+      # `#if DEBUG` (Views/PreviewFixtures.swift). Flipping previews off
+      # in Release would compile the #Preview body but strip the symbols
+      # it depends on, breaking the Release link. The metadata overhead
+      # is negligible vs the breakage risk.
+      # @testable expands the exported symbol surface; off in Release
+      # shrinks the binary and removes a re-export pass at link time.
+      ENABLE_TESTABILITY: NO
+      # Optimise asset catalogue for binary size (xcassets). Slightly
+      # slower compile, smaller .car payload on disk + in RAM.
+      ASSETCATALOG_COMPILER_OPTIMIZATION: space
+
+targets:
+  EpubToMp3:
+    type: application
+    supportedDestinations: [iOS, macOS]
+    deploymentTarget:
+      iOS: "15.0"
+      macOS: "12.0"
+    sources:
+      - path: EpubToMp3
+        excludes:
+          - "Resources/EpubToMp3.entitlements"
+          - "Resources/EpubToMp3-Debug.entitlements"
+          - "Resources/Info.plist"
+          - "Resources/LaunchScreen.storyboard"
+          # Claude agent-memory must never be swept into the app bundle.
+          # An agent once wrote .claude/agent-memory/ inside the source
+          # root and xcodegen recursed it, bundling MEMORY.md as an app
+          # Resource. Agent memory belongs at ios/EpubToMp3/.claude/.
+          - ".claude"
+          # Vendor/ is referenced explicitly below as folder-refs (opaque).
+          # Without this exclude, xcodegen recurses into it from the parent
+          # `path: EpubToMp3` and adds every .py as an individual resource,
+          # causing duplicate-output errors on common names (helpers.py,
+          # exceptions.py, etc.).
+          - "Vendor"
+          # Legacy Python oracle sources stay excluded from production.
+          - "Features/Conversion/Services/PythonBridge.swift"
+          - "Features/Conversion/Services/PythonEmbed.swift"
+          - "Features/Conversion/Services/PythonRunner.swift"
+
+      # Optional CI-supplied converter-ffi dylib. No binary is checked in;
+      # builds without the artifact retain the typed unavailable seam.
+      - path: EpubToMp3/Features/Conversion/Services/ConverterFFIAdapter.swift
+
+
+      - path: EpubToMp3/Resources/LaunchScreen.storyboard
+        buildPhase: resources
+    dependencies:
+
+      # Widget extension — embedded in the main app bundle so iOS can
+      # offer it in the widget gallery. iOS-only: the widget target's
+      # own `supportedDestinations: [iOS]` keeps it out of the macOS
+      # build, but a plain `embed: true` here still wires up the
+      # macOS copy phase and Xcode then rejects the .appex at
+      # `ValidateEmbeddedBinary` time with "Your target is built for
+      # macOS but contains embedded content built for the iOS
+      # platform". `destinationFilters: [iOS]` tells xcodegen to emit the
+      # filter clause on the PBXBuildFile entry so the embed runs
+      # only for iOS destinations.
+      - target: EpubToMp3Widget
+        embed: true
+        codeSign: true
+        destinationFilters: [iOS]
+      # Share Extension — embedded only for iOS. Keep it out of the
+      # macOS app bundle; the extension target has no macOS destination.
+      - target: EpubToMp3ShareExtension
+        embed: true
+        codeSign: true
+        destinationFilters: [iOS]
+    settings:
+      base:
+        SUPPORTED_PLATFORMS: "iphoneos iphonesimulator macosx"
+        ENABLE_HARDENED_RUNTIME: YES
+        # AVFoundation exposes legacy non-Sendable handles and the player
+        # intentionally isolates them behind locked nonisolated storage.
+        # Keep Swift 6 concurrency checking and warnings-as-errors enabled.
+        # Xcode 16 does not support the newer strict-memory-safety compiler
+        # flag, so extensions must remain compatible with both toolchains.
+        SWIFT_STRICT_MEMORY_SAFETY: NO
+        # Keep both runpaths for native frameworks and the macOS sidecar.
+        LD_RUNPATH_SEARCH_PATHS: "$(inherited) @executable_path/Frameworks @executable_path/../Frameworks"
+        # Keep iOS-only extensions out of the macOS app bundle. The
+        # EpubToMp3Widget
+        # extension is iOS-only by `supportedDestinations: [iOS]`; we
+        # also have to strip it from the macOS embed copy phase or the
+        # Release build fails ValidateEmbeddedBinary with "Your target
+        # is built for macOS but contains embedded content built for
+        # the iOS platform".
+        "EXCLUDED_SOURCE_FILE_NAMES[sdk=macosx*]": "EpubToMp3Widget.appex EpubToMp3ShareExtension.appex LaunchScreen.storyboard"
+
+      configs:
+        Debug:
+          # Unsigned local Debug builds can't activate the App Sandbox,
+          # so we ship a sandbox-disabled entitlement file. Without
+          # this, every `bookmarkData(.withSecurityScope)` fails and
+          # imports break silently.
+          CODE_SIGN_ENTITLEMENTS: EpubToMp3/Resources/EpubToMp3-Debug.entitlements
+          # iOS device builds REQUIRE a valid signature — Apple's launchd
+          # refuses to install unsigned IPAs (LaunchExecutableValidationError).
+          # macOS local Debug stays unsigned for App-Sandbox off + faster
+          # turnaround; iOS device falls back to Automatic signing with
+          # whatever Development Team is configured in Xcode.
+          "CODE_SIGN_IDENTITY[sdk=macosx*]": "-"
+          "CODE_SIGNING_REQUIRED[sdk=macosx*]": NO
+          "CODE_SIGNING_ALLOWED[sdk=macosx*]": NO
+          "CODE_SIGN_IDENTITY[sdk=iphoneos*]": "Apple Development"
+          "CODE_SIGNING_REQUIRED[sdk=iphoneos*]": YES
+          "CODE_SIGNING_ALLOWED[sdk=iphoneos*]": YES
+          "CODE_SIGN_STYLE[sdk=iphoneos*]": Automatic
+          # Simulator apps are installed by CoreSimulator and must not be
+          # signed with the device identity. Keep device signing unchanged.
+          "CODE_SIGNING_REQUIRED[sdk=iphonesimulator*]": NO
+          "CODE_SIGNING_ALLOWED[sdk=iphonesimulator*]": NO
+          # On a 2018 Intel Mac the discrete Radeon Pro draws the
+          # native AppKit window without software-rendering stalls.
+          ENABLE_HARDENED_RUNTIME: NO
+        Release:
+          CODE_SIGN_ENTITLEMENTS: EpubToMp3/Resources/EpubToMp3.entitlements
+          CODE_SIGN_STYLE: Automatic
+          SWIFT_COMPILATION_MODE: wholemodule
+          SWIFT_OPTIMIZATION_LEVEL: "-O"
+          GCC_OPTIMIZATION_LEVEL: s
+          DEBUG_INFORMATION_FORMAT: "dwarf-with-dsym"
+          STRIP_INSTALLED_PRODUCT: YES
+    postBuildScripts:
+      - name: "Embed Rust converter sidecar (macOS only)"
+        shell: /bin/bash
+        basedOnDependencyAnalysis: false
+        alwaysOutOfDate: true
+        inputFiles:
+          - "${SRCROOT}/../../dist/epub-to-mp3-server"
+        outputFiles:
+          - "${BUILT_PRODUCTS_DIR}/${CONTENTS_FOLDER_PATH}/Resources/epub-to-mp3-server"
+        script: |
+          set -euo pipefail
+          if [ "${PLATFORM_NAME}" != "macosx" ]; then exit 0; fi
+          SIDECAR="${SRCROOT}/../../dist/epub-to-mp3-server"
+          if [ ! -x "${SIDECAR}" ]; then
+            echo "error: Rust sidecar missing at ${SIDECAR}; run mise run sidecar:build" >&2
+            exit 1
+          fi
+          RESOURCES_DIR="${BUILT_PRODUCTS_DIR}/${CONTENTS_FOLDER_PATH}/Resources"
+          install -d "${RESOURCES_DIR}"
+          install -m 755 "${SIDECAR}" "${RESOURCES_DIR}/epub-to-mp3-server"
+
+  EpubToMp3Tests:
+    type: bundle.unit-test
+    supportedDestinations: [iOS, macOS]
+    # Test bundle only — it loads into the host app on the dev/CI
+    # machine, so it can target a newer OS than the shipping app
+    # (which stays macOS 12). macOS 14 matches the toolchain's
+    # XCTest / Testing dylibs and silences the "building for
+    # macOS-12.0, but linking with dylib ... built for newer
+    # version 14.0" linker warnings.
+    deploymentTarget:
+      iOS: "15.0"
+      macOS: "14.0"
+    sources:
+      - path: EpubToMp3Tests
+      - path: EpubToMp3Tests/ConverterFFIAdapterTests.swift
+    dependencies:
+      - target: EpubToMp3
+    settings:
+      base:
+        SUPPORTED_PLATFORMS: "iphoneos iphonesimulator macosx"
+        PRODUCT_BUNDLE_IDENTIFIER: com.pietrocode.epubtomp3.tests
+        BUNDLE_LOADER: "$(TEST_HOST)"
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/EpubToMp3.app/EpubToMp3"
+        # The host owns NSApplication. The test bundle must not inherit the
+        # app's principal class or XCTest creates a second application.
+        "INFOPLIST_KEY_NSPrincipalClass[sdk=macosx*]": "NSObject"
+        "TEST_HOST[sdk=macosx*]": "$(BUILT_PRODUCTS_DIR)/EpubToMp3.app/Contents/MacOS/EpubToMp3"
+        #
+        # xcodegen's per-target `deploymentTarget` does not reliably
+        # emit MACOSX_DEPLOYMENT_TARGET on Xcode 26 — it inherits the
+        # project root (macOS 12). Set it explicitly so the test bundle
+        # is genuinely macOS 14 and the XCTest/Testing dylib linker
+        # warnings disappear.
+        MACOSX_DEPLOYMENT_TARGET: "14.0"
+        # Use a generated Info.plist, NOT the app's hand-written one
+        # (which the base settings point every target at). The app's
+        # plist hardcodes LSMinimumSystemVersion 12.0, which clashes
+        # with the test bundle's MACOSX_DEPLOYMENT_TARGET 14.0 and
+        # warns. GENERATE_INFOPLIST_FILE then derives the key from the
+        # deployment target — no mismatch.
+        INFOPLIST_FILE: ""
+        # XCTest's SDK annotations still produce Swift-6 migration warnings
+        # for the existing @MainActor test cases under Xcode 15.4. Keep the
+        # app target strict while allowing the test bundle to compile them.
+        SWIFT_TREAT_WARNINGS_AS_ERRORS: "NO"
+        GCC_TREAT_WARNINGS_AS_ERRORS: "NO"
+      configs:
+        Debug:
+          SWIFT_TREAT_WARNINGS_AS_ERRORS: "NO"
+          GCC_TREAT_WARNINGS_AS_ERRORS: "NO"
+        Release:
+          SWIFT_TREAT_WARNINGS_AS_ERRORS: "NO"
+          GCC_TREAT_WARNINGS_AS_ERRORS: "NO"
+
+  EpubToMp3UITests:
+    type: bundle.ui-testing
+    supportedDestinations: [iOS]
+    deploymentTarget:
+      iOS: "15.0"
+    sources:
+      - path: EpubToMp3UITests
+    dependencies:
+      - target: EpubToMp3
+    settings:
+      base:
+        SUPPORTED_PLATFORMS: "iphoneos iphonesimulator"
+        SWIFT_VERSION: "5.0"
+        SWIFT_STRICT_CONCURRENCY: minimal
+        SWIFT_TREAT_WARNINGS_AS_ERRORS: "NO"
+        GCC_TREAT_WARNINGS_AS_ERRORS: "NO"
+        SWIFT_STRICT_MEMORY_SAFETY: NO
+        PRODUCT_BUNDLE_IDENTIFIER: com.pietrocode.epubtomp3.uitests
+        TEST_TARGET_NAME: EpubToMp3
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_FILE: ""
+      configs:
+        Debug:
+          "CODE_SIGN_IDENTITY[sdk=iphoneos*]": "Apple Development"
+          "CODE_SIGNING_REQUIRED[sdk=iphoneos*]": YES
+          "CODE_SIGN_STYLE[sdk=iphoneos*]": Automatic
+
+  EpubToMp3ShareExtension:
+    type: app-extension
+    supportedDestinations: [iOS]
+    deploymentTarget:
+      iOS: "15.0"
+    sources:
+      - path: EpubToMp3ShareExtension
+        excludes:
+          - "Info.plist"
+          - "ShareExtension.entitlements"
+      # Foundation-only inbox contract shared with the main app target.
+      - path: EpubToMp3/Shared/Integrations/SharedContainerInbox.swift
+    dependencies: []
+    settings:
+      base:
+        SUPPORTED_PLATFORMS: "iphoneos iphonesimulator"
+        SWIFT_STRICT_MEMORY_SAFETY: NO
+        IPHONEOS_DEPLOYMENT_TARGET: "15.0"
+        PRODUCT_BUNDLE_IDENTIFIER: com.pietrocode.epubtomp3.share
+        INFOPLIST_FILE: EpubToMp3ShareExtension/Info.plist
+        CODE_SIGN_ENTITLEMENTS: EpubToMp3ShareExtension/ShareExtension.entitlements
+        TARGETED_DEVICE_FAMILY: "1,2"
+        SWIFT_VERSION: "5.0"
+        APPLICATION_EXTENSION_API_ONLY: YES
+        ENABLE_USER_SCRIPT_SANDBOXING: YES
+      configs:
+        Debug:
+          "CODE_SIGN_IDENTITY[sdk=iphoneos*]": "Apple Development"
+          "CODE_SIGNING_REQUIRED[sdk=iphoneos*]": YES
+          "CODE_SIGN_STYLE[sdk=iphoneos*]": Automatic
+        Release:
+          CODE_SIGN_STYLE: Automatic
+          SWIFT_COMPILATION_MODE: wholemodule
+          SWIFT_OPTIMIZATION_LEVEL: "-O"
+
+  EpubToMp3Widget:
+    type: app-extension
+    # WidgetKit runs on iOS 14+. Keep the extension at the app's iOS 15
+    # floor; individual widgets are gated with @available for their real
+    # API minimums (iOS 16 lock-screen, 16.2 Live Activities, 17 home
+    # widgets using `.containerBackground`).
+    supportedDestinations: [iOS]
+    deploymentTarget:
+      iOS: "15.0"
+    sources:
+      - path: EpubToMp3Widget
+        excludes:
+          - "Resources/EpubToMp3Widget.entitlements"
+          - "Info.plist"
+      # Shared with the main app target. Same Codable shape on both ends —
+      # ActivityKit serialises by name + Codable, not nominal cross-module.
+      - path: EpubToMp3/Shared/Integrations/ConversionActivityAttributes.swift
+    dependencies: []
+    settings:
+      base:
+        SUPPORTED_PLATFORMS: "iphoneos iphonesimulator"
+        # xcodegen's per-target `deploymentTarget` doesn't always emit
+        # `IPHONEOS_DEPLOYMENT_TARGET` per configuration on Xcode 26.
+        # Force the extension's iOS minimum explicitly; API-specific
+        # widget entry points are guarded with @available in Swift.
+        IPHONEOS_DEPLOYMENT_TARGET: "15.0"
+        PRODUCT_BUNDLE_IDENTIFIER: com.pietrocode.epubtomp3.widget
+        # Hand-written Info.plist with the full NSExtension dict.
+        # xcodegen's `INFOPLIST_KEY_NSExtension_NSExtensionPointIdentifier`
+        # synthesiser does NOT emit the nested `NSExtension` dictionary
+        # on Xcode 26, which the iOS simulator's app-extension
+        # placeholder verifier requires — installing the host app fails
+        # with "extensionDictionary must be set in placeholder
+        # attributes". The plist is small; explicit beats clever here.
+        INFOPLIST_FILE: EpubToMp3Widget/Info.plist
+        CODE_SIGN_ENTITLEMENTS: EpubToMp3Widget/Resources/EpubToMp3Widget.entitlements
+        TARGETED_DEVICE_FAMILY: "1,2"
+        SWIFT_VERSION: "5.0"
+        # Widget extensions must not import UIKit directly. WidgetKit and
+        # SwiftUI provides the only rendering surface for this target.
+        ENABLE_USER_SCRIPT_SANDBOXING: YES
+      configs:
+        Debug:
+          "CODE_SIGN_IDENTITY[sdk=iphoneos*]": "Apple Development"
+          "CODE_SIGNING_REQUIRED[sdk=iphoneos*]": YES
+          "CODE_SIGN_STYLE[sdk=iphoneos*]": Automatic
+        Release:
+          CODE_SIGN_STYLE: Automatic
+          SWIFT_COMPILATION_MODE: wholemodule
+          SWIFT_OPTIMIZATION_LEVEL: "-O"
+
+schemes:
+  EpubToMp3:
+    build:
+      targets:
+        EpubToMp3: all
+        EpubToMp3Tests: [test]
+    run:
+      config: Debug
+    test:
+      config: Debug
+      targets:
+        - EpubToMp3Tests
+        - EpubToMp3UITests
+    profile:
+      config: Release
+    analyze:
+      config: Debug
+    archive:
+      config: Release
+  # Split-out schemes so unit / UI / integration tests can run
+  # independently instead of always paying for the full EpubToMp3Tests +
+  # EpubToMp3UITests bundle. Each points at its own dedicated .xctestplan
+  # (single plan, no picker) rather than duplicating target lists here.
+  EpubToMp3-UnitTests:
+    build:
+      targets:
+        EpubToMp3: all
+        EpubToMp3Tests: [test]
+    run:
+      config: Debug
+    test:
+      config: Debug
+      testPlans:
+        - path: EpubToMp3-Unit.xctestplan
+          defaultPlan: true
+  EpubToMp3-UITests:
+    build:
+      targets:
+        EpubToMp3: all
+        EpubToMp3UITests: [test]
+    run:
+      config: Debug
+    test:
+      config: Debug
+      testPlans:
+        - path: EpubToMp3-UI.xctestplan
+          defaultPlan: true
+  EpubToMp3-IntegrationTests:
+    build:
+      targets:
+        EpubToMp3: all
+        EpubToMp3Tests: [test]
+    run:
+      config: Debug
+    test:
+      config: Debug
+      testPlans:
+        - path: EpubToMp3-Integration.xctestplan
+          defaultPlan: true
+  EpubToMp3Mac:
+    build:
+      targets:
+        EpubToMp3: all
+        EpubToMp3Tests: [test]
+    run:
+      config: Debug
+    test:
+      config: Debug
+      targets:
+        - EpubToMp3Tests

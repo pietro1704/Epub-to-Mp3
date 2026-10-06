@@ -49,10 +49,10 @@ class TestEdgeTruncationBug(unittest.IsolatedAsyncioTestCase):
             path = Path(path)
             if append and path.exists():
                 with path.open("ab") as f:
-                    f.write(b"audio" * 100)
+                    f.write(b"audio" * 300)
             else:
                 with path.open("wb") as f:
-                    f.write(b"audio" * 100)
+                    f.write(b"audio" * 300)
             return True
 
         self.engine._synthesize_segment = mock_synthesize_segment
@@ -121,10 +121,10 @@ class TestEdgeTruncationBug(unittest.IsolatedAsyncioTestCase):
             path = Path(path)
             if append and path.exists():
                 with path.open("ab") as f:
-                    f.write(b"audio" * 100)
+                    f.write(b"audio" * 300)
             else:
                 with path.open("wb") as f:
-                    f.write(b"audio" * 100)
+                    f.write(b"audio" * 300)
             return True
 
         self.engine._synthesize_segment = tracking_synthesize_segment
@@ -178,10 +178,10 @@ class TestEdgeTruncationBug(unittest.IsolatedAsyncioTestCase):
             path = Path(path)
             if append and path.exists():
                 with path.open("ab") as f:
-                    f.write(b"audio" * 100)
+                    f.write(b"audio" * 300)
             else:
                 with path.open("wb") as f:
-                    f.write(b"audio" * 100)
+                    f.write(b"audio" * 300)
             return True
 
         self.engine._synthesize_segment = failing_segment_2

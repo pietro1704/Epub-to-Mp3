@@ -54,6 +54,30 @@ CLI and web-local automatically share cache because both use `PROJECT_ROOT` as `
 
 ---
 
+## Build Artifact Hygiene
+
+- Build directories are temporary working artifacts, not project storage.
+- Remove unused build directories after verification; do not accumulate `build/`,
+  `.build/`, `DerivedData/`, `dist/`, or equivalent generated build trees.
+- Prefer keeping at most one active build cache when it materially improves
+  iteration speed. Remove that cache when it is stale, old, or no longer used.
+- Before deleting anything, verify it is not an active process workspace, a
+  required source directory, a tracked file, or a release/output artifact.
+- Preserve the project's intentional persistent data (`.cache/`, `output/`,
+  models, and user inputs) unless the task explicitly authorizes cleanup.
+- After a build/test cycle, report what temporary artifacts were retained or
+  removed and verify the workspace is clean enough for the next task.
+- `mise run clean:build` reclaims `ios/EpubToMp3/.build`, this project's
+  Xcode `DerivedData`, `dist/`, and `flutter_app/build` in one shot — run it
+  periodically or when disk is low. It's deliberately NOT wired into
+  `mac:build`/`mac:build:dev` themselves, since `mac:run` and other callers
+  consume the just-built `.build/**/EpubToMp3.app` immediately after. The
+  most common leak: opening `EpubToMp3.xcodeproj` directly in Xcode.app
+  grows a second, parallel `~/Library/Developer/Xcode/DerivedData/EpubToMp3-*`
+  cache that the headless `mise run mac:build` never touches or cleans.
+
+---
+
 ## #1 Priority: Speed
 
 **Speed is the most critical requirement.** Every design decision must optimize for maximum throughput:
@@ -112,40 +136,64 @@ or common word in the opening paragraph.
 
 ## Testing Policy
 
-**MANDATORY: every code modification MUST ship with tests.** This is enforced by
-`.claude/hooks/test_coverage_gate.sh` (Stop hook). If you edit any file under
-`python_app/*.py` (excluding `__init__.py`, `__main__.py`) or
-`web/src/**/*.{ts,tsx}` (excluding `.test.*`, `.d.ts`), you MUST also add or
-update at least one test file (`python_app/tests/**` or `web/src/**/*.test.{ts,tsx}`)
-in the same turn. The Stop hook blocks completion otherwise.
+**Tests live next to the runtime they verify — never cross the CLI/app boundary.**
 
-Rules:
-- **Every code change ships with tests** — new file → new test; bug fix → regression test; refactor → tests still cover the refactored path
-- **All code must be covered** — no source file should exist without at least one test exercising its public surface
+- **Python tests (`python_app/tests/`) cover CLI/backend business logic ONLY**
+  — `python_app/`, `web/` (via its own suite), conversion pipeline, engines,
+  cache/job/storage logic. A Python test must never open, grep, or otherwise
+  assert against a `.swift` file. If a change lives in `ios/EpubToMp3/`, no
+  Python test is the right response to it, ever — not even a "source-contract"
+  test that parses Swift source as text. That pattern (used historically
+  because this Mac can't safely boot CoreSimulator — see "Local iOS Simulator
+  Safety") was removed; it produced tests that couldn't catch real regressions
+  and gave false coverage signal.
+- **iOS/macOS app tests live in Xcode** — `ios/EpubToMp3/EpubToMp3Tests/`
+  (unit + integration) and `ios/EpubToMp3/EpubToMp3UITests/` (UI). Written in
+  Swift, run via `xcodebuild test` / Xcode's Test Navigator, never via
+  `pytest`. Claude does not run these itself by default (see "Local iOS
+  Simulator Safety" / "Lessons From Previous Apple UI Migration" — no
+  automatic builds/simulator boots); the user runs them in Xcode on-device.
+  When proposing a Swift-side regression test, write it as a normal XCTest in
+  the Tests target and tell the user to run it — don't reach for Python as a
+  substitute because it's runnable from the terminal.
+- **`mise run test`** (Python + web + lint + build) remains the full CLI/web
+  gate and must stay green before committing changes to `python_app/` or
+  `web/`. It does not and should not attempt to build or test the iOS/macOS
+  targets.
+
+Rules (CLI/backend scope):
+- **Every Python/web code change ships with a Python/web test** — new file → new test; bug fix → regression test; refactor → tests still cover the refactored path
+- **All Python/web code must be covered** — no source file should exist without at least one test exercising its public surface
 - **Always run the full suite before committing**
-- **Add tests for every new feature AND every bug fix**
 - Critical paths need both unit tests AND integration tests
 - Test edge cases: empty chapters, oversized chapters, engine failures
 
-Before committing:
+Before committing (Python/web changes):
 ```bash
 mise run test           # Full suite: Python + web + lint + build
 # OR individually:
-pytest -v --tb=short    # Python only (581+ tests)
+pytest -v --tb=short    # Python only
 pytest -v --tb=short python_app/tests/test_edge_engine.py  # Single test file
 pytest -v --tb=short -k "test_name"                        # Single test by name
-cd web && npm run test  # Web only (17 tests)
+cd web && npm run test  # Web only
 ```
 
-Escape hatch: if a change is genuinely untestable (comment-only edit, pure
-formatting, README update), justify explicitly in the commit message and the
-hook's reason field will be acknowledged.
+Escape hatch: if a Python/web change is genuinely untestable (comment-only
+edit, pure formatting, README update), justify explicitly in the commit
+message.
 
 ---
 
 ## CI Monitoring Policy
 
 **After every `git push`, monitor GitHub CI and fix failures before stopping.**
+
+**Implementation completion is an inferred gate.** At the end of every feature
+or bug fix, independently run the delivery-hygiene loop in
+`docs/implementation-completion-spec.md`: clean worktree, Actions green, no
+untriaged PRs/issues, and no Code Scanning or Dependabot alerts. Never wait for
+the user to ask for these checks; a security finding is P0 and is fixed and
+rescanned before the task is called complete.
 
 1. After pushing, the `ci_watch.sh` hook (async PostToolUse) auto-watches the run and injects the result.
 2. If CI fails, immediately diagnose via `gh run view <run_id> --log-failed` and push a fix.
@@ -212,18 +260,18 @@ Each one is its own codebase; the backend is the single source of truth.
 
 | Client | Path | Platforms | Role |
 |---|---|---|---|
-| **SwiftUI** | `ios/EpubToMp3/` | macOS · iPadOS · iOS | Official Apple client. Library-first reader. macOS embeds the Python server as a sidecar (PyInstaller binary copied into `Contents/Resources/` at build time). iOS / iPadOS talk to a remote backend (`mise run web` or HF Spaces). |
-| **Flutter** | `flutter_app/` | Linux · Windows · Android | Official non-Apple client. Single Dart codebase. Talks to the same FastAPI surface. **macOS/iOS are NOT supported** — the SwiftUI app owns those platforms. |
+| **UIKit/AppKit** | `ios/EpubToMp3/` | macOS · iPadOS · iOS | Official Apple client. Native UIKit/AppKit library-first reader. macOS embeds the Python server as a sidecar (PyInstaller binary copied into `Contents/Resources/` at build time). iOS / iPadOS talk to a remote backend (`mise run web` or HF Spaces). SwiftUI is restricted to WidgetKit and Live Activities. |
+| **Flutter** | `flutter_app/` | Linux · Windows · Android | Official non-Apple client. Single Dart codebase. Talks to the same FastAPI surface. **macOS/iOS are NOT supported** — the UIKit/AppKit app owns those platforms. |
 
 Generic rules:
 
 - **Backend contract is the only shared API** — never reach across
   clients (e.g. don't import Swift types from the Flutter Dart side).
 - **`/api/jobs/{id}/stream` (SSE)** drives chapter-by-chapter streaming
-  playback in SwiftUI's `PlayerReaderView` — `AudioPlayer.updateSnapshot`
+  playback in the native UIKit/AppKit reader — `AudioPlayer.updateSnapshot`
   appends new chapters to the `AVQueuePlayer` queue without
   interrupting playback.
-- The **SwiftUI Library hero** persists imported EPUBs in
+- The **native Library screen** persists imported EPUBs in
   `UserDefaults` via `LibraryStore`. Books are identified by SHA-256 of
   file content (survives renames). macOS uses security-scoped
   bookmarks; iOS uses `suitableForBookmarkFile`.
@@ -517,6 +565,54 @@ These features exist specifically to improve the audiobook listening experience:
 
 ---
 
+## Agent Pipeline & Subagent Workflow
+
+Full contract: `docs/agent-pipeline-prompt-portable.md` (tool-agnostic; also the
+canonical source for the `portable-agent-pipeline` skill installed in Claude
+Code, Codex CLI, and Hermes). Summary:
+
+```
+clarify gate → Planner → Executor → Verifier → Critic/QA → Test-author → Review gate
+```
+
+- **Clarify gate**: ask only when a fact materially changes scope/risk/
+  authorization/acceptance and the repo/conversation/defaults can't resolve
+  it, or before irreversible/costly/remote actions. Otherwise state one
+  assumption and proceed.
+- **Planner → Executor**: skip the plan when it'd be the same length as the
+  diff. Domain work goes to the matching specialist in
+  `docs/agents/reader-specialists.md` when it touches the native reader;
+  there is no generic coder role.
+- **Verifier**: proves the golden path now (run it, show evidence) — never
+  writes permanent tests.
+- **Critic/QA**: adversarial pass after Verifier signs off — edge cases,
+  cross-feature regressions, not a re-check of the happy path.
+- **Test-author**: writes the permanent suite after Verifier + Critic (or
+  alongside, if TDD).
+- **Review gate**: commit → push → PR → CI green → automated/human review
+  before merge; a small self-contained fix may go direct.
+- **Parallel delegation**: only when sub-tasks are genuinely independent,
+  each has pre-assigned file/module ownership, and you state the
+  parallelism explicitly — this repo's default is to fan out via the
+  `Agent` tool per specialist rather than working serially.
+- **Security/perf findings are P0**: checkpoint current work, fix ahead of
+  the rest of the task, add a regression gate (CI/audit/benchmark) so it's
+  caught automatically next time. A perf claim needs a before/after number,
+  not a feeling.
+- Keep the pipeline proportional — a one-line fix doesn't need all six
+  stages named explicitly.
+- For AI-assisted task framing, delegation, experimentation, and verification,
+  follow `docs/ai-assisted-development-akita-research-2026-08-17.md`.
+
+## Native Reader Dispatch
+
+For native reader, pagination, chrome, safe-area, page-turn, EPUB/PDF-open,
+or expanded-player changes, read `ios/EpubToMp3/AGENTS.md` and use the
+`native-reader-regression` skill. The reader's behavioral invariants live in
+`CONTEXT.md`; architecture decisions live in `docs/adr/`.
+
+---
+
 ## Development Guidelines
 
 - **All code in English** — no exceptions
@@ -531,6 +627,25 @@ These features exist specifically to improve the audiobook listening experience:
 
 ---
 
+## Local iOS Simulator Safety
+
+This user's local Mac is a MacBookPro15,2 Intel 2018 with 8 GiB RAM. Recent iOS Simulator/CoreSimulator workloads (especially iOS 26.x) have triggered kernel panics (`AppleEmbeddedPCIeUpLinkMgmt::_linkInterruptAction` link timeout). Do **not** run local iOS Simulator builds/tests or boot recent simulators on this Mac by default.
+
+Rules:
+- Prefer GitHub Actions / Release Desktop for iOS artifacts and simulator validation.
+- Local `mise run ios:build` is guarded and must fail fast on Intel Macs with <12 GiB RAM unless `IOS_ALLOW_LOW_RESOURCE_SIMULATOR=1` is explicitly set.
+- `scripts/select_ios_simulator.py` must not choose iOS >17 by default; opt in only with `IOS_ALLOW_RECENT_SIMULATOR=1` or `IOS_MAX_SIMULATOR_MAJOR=<major>`.
+- Local macOS builds (`mise run mac:build`) are OK; avoid booting Simulator.app/CoreSimulator unless the user explicitly accepts the risk.
+
+## Lessons From Previous Apple UI Migration
+
+- Never run `xcodebuild`, `mise run mac:build`, iOS simulator tasks, or any automatic build unless the user explicitly asks for a build. Static parsing, project generation, and source-contract tests are allowed without that request.
+- A SwiftUI migration is complete only when the legacy implementation is removed from the app target. Do not keep duplicate SwiftUI screens behind flags, compatibility aliases, hosting controllers, or representable wrappers when UIKit/AppKit owns the same surface.
+- Before deleting a source file, search all source, tests, project manifests, and CI source-contract tests for references. Update or remove tests whose contract describes the deleted implementation; do not leave CI to discover stale paths after the push.
+- Treat a clean local commit as separate from verification. Report each verification state independently: local checks, CI tests, CI lint, CI smoke tests, and any external/API monitoring failure. Never call CI green while any required job is pending or its result is unavailable.
+- After pushing, monitor the exact commit's CI. If the provider rate-limits status queries, state that limitation explicitly and do not infer the final conclusion from partial logs.
+- Prefer a small number of native entry points over compatibility layers. When a replacement is ready, remove the old file, its obsolete tests, snapshots, and manifest exclusions in the same change, while preserving tests for behavior that still exists.
+
 ## Tooling Policy
 
 **Always use `mise` for all toolchain management and task execution — never install or invoke tools natively.**
@@ -540,8 +655,8 @@ These features exist specifically to improve the audiobook listening experience:
 - Adding a new tool: add it to `[tools]` in `mise.toml`, then `mise install`
 - Adding a new task: add it to `mise.toml` under `[tasks."name"]`, not as a standalone script
 
-### Native macOS build (SwiftUI)
-- Local: `mise run mac:build` — runs `sidecar:build` then `xcodebuild` headlessly, producing `ios/EpubToMp3/.build/Build/Products/Release/EpubToMp3.app`
+### Native macOS build (AppKit)
+- Local: `mise run mac:build` — runs `sidecar:build` then `xcodebuild` headlessly, reporting the produced `.app` path (usually `ios/EpubToMp3/.build/Release/EpubToMp3.app` with the current `SYMROOT` layout)
 - Sidecar only: `mise run sidecar:build` — produces `dist/epub-to-mp3-server` (PyInstaller onefile)
 - Requires `xcodegen` (brew install xcodegen). Xcode is optional — `mac:build` is fully headless
 
@@ -554,3 +669,13 @@ These features exist specifically to improve the audiobook listening experience:
 - Tasks: `mise run flutter:run`, `flutter:test`, `flutter:analyze`, `flutter:build-apk`.
 - Models use freezed + json_serializable. Regenerate with `mise exec -- dart run build_runner build --delete-conflicting-outputs` after editing any class under `flutter_app/lib/models/`.
 - Wire format mirrors iOS slice 3: `JobSnapshot` / `EbookFulltext` are camelCase; `SessionRecord` is snake_case (legacy session log).
+
+## Agent skills
+
+### Issue tracker
+
+Issues and PRDs live in this repository's GitHub Issues. See `docs/agents/issue-tracker.md`.
+
+### Domain docs
+
+This repository uses a single-context domain-doc layout. See `docs/agents/domain.md`.

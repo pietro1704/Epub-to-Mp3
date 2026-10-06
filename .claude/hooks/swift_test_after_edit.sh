@@ -22,7 +22,8 @@ fi
 echo "$NOW" > "$STAMP"
 
 LOG="/tmp/claude-swift-test.log"
-cd /Users/pietropugliesi/Developer/Epub-to-Mp3/ios/EpubToMp3 || exit 0
+ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || exit 0
+cd "$ROOT/ios/EpubToMp3" || exit 0
 {
     echo "=== $(date) :: edited $FILE"
     swift test 2>&1 | tail -5

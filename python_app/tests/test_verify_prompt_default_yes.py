@@ -36,3 +36,27 @@ def test_carriage_return_stripped_before_compare():
     src = MAIN_PY.read_text(encoding="utf-8")
     # `\\r` from Windows/SSH terminals must not tip the comparison.
     assert '.rstrip("\\r")' in src
+
+
+def test_verify_prompt_uses_terminal_prompt_not_bare_input():
+    """Fix for ^M appearing after the prompt when called from ./convert.
+
+    ./convert uses tty.setcbreak() for the menu which leaves the terminal in
+    cbreak mode.  Plain ``input()`` then sees CR (^M) as the line terminator
+    and echoes it visibly instead of advancing the line.  The verify-mode
+    prompt must use TerminalPrompt._read() which restores canonical mode
+    before reading so that Enter always produces a clean newline.
+    """
+    src = MAIN_PY.read_text(encoding="utf-8")
+    # The verify-mode prompt block must import and use TerminalPrompt._read.
+    assert "TerminalPrompt" in src or "from src.ui.prompt import" in src
+    # The TerminalPrompt import must appear inside the verify confirm block
+    # (i.e. near the Do you want to fix string), not just at module level.
+    fix_block_start = src.find("Do you want to fix the issues now?")
+    assert fix_block_start != -1, "Verify prompt string not found in main.py"
+    # Look back up to 600 chars before the prompt string for TerminalPrompt usage
+    context = src[max(0, fix_block_start - 600) : fix_block_start + 200]
+    assert "TerminalPrompt" in context or "_TP" in context, (
+        "The verify confirm prompt must use TerminalPrompt, not bare input(), "
+        "so that ^M from tty.setcbreak() is handled correctly."
+    )

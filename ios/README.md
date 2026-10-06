@@ -2,9 +2,9 @@
 
 The official Apple client for the project. Single SwiftUI codebase
 that ships to **macOS, iPadOS and iOS** out of the same Xcode project.
-On macOS the app embeds the Python backend (PyInstaller sidecar) so it
-runs offline; on iOS / iPadOS it talks to a remote backend (`mise run
-web` locally, or HF Spaces).
+On macOS the app embeds the Rust `converter-server` so it runs offline; on
+iOS / iPadOS it talks to a remote backend (`mise run rust:server` locally,
+or the hosted deployment).
 
 ## Mental model
 
@@ -32,8 +32,7 @@ open EpubToMp3.xcodeproj
 ```
 
 Pick **My Mac** for native macOS, **iPhone/iPad simulator** for iOS.
-For the macOS sidecar to be embedded, build the PyInstaller binary
-first:
+For the macOS sidecar to be embedded, build the Rust server binary first:
 
 ```bash
 mise run sidecar:build      # writes dist/epub-to-mp3-server
@@ -45,7 +44,7 @@ Or do both steps in one shot:
 mise run mac:build          # sidecar:build + headless xcodebuild
 ```
 
-The Xcode `postBuildScripts` phase copies the most recent binary into
+The Xcode `postBuildScripts` phase copies the most recent Rust binary into
 the `.app`'s Resources folder. Without it the macOS app falls back to
 the user-configured backend URL (Settings → Backend).
 
@@ -280,14 +279,14 @@ first open. So instead:
    - Interface: **SwiftUI**
    - Language: **Swift**
    - Storage: **None**
-   - Deployment Target: **iOS 17.0**
+   - Deployment Target: **iOS 15.0**
 3. Save the new project on top of `ios/EpubToMp3/`. When Xcode asks about
    overwriting `EpubToMp3App.swift`, **cancel and replace it instead** by
    deleting Xcode's generated `EpubToMp3App.swift` and dragging the existing
    `EpubToMp3/` folder (with **"Create groups"**, target = `EpubToMp3`) into
    the project navigator.
 4. In Build Settings:
-   - `IPHONEOS_DEPLOYMENT_TARGET` → `17.0`
+   - `IPHONEOS_DEPLOYMENT_TARGET` → `15.0`
    - `PRODUCT_BUNDLE_IDENTIFIER` → `com.pietrocode.epubtomp3`
 5. App Transport Security: to hit `http://localhost:8000` from the simulator,
    add to Info.plist:
@@ -297,9 +296,10 @@ first open. So instead:
      <key>NSAllowsLocalNetworking</key><true/>
    </dict>
    ```
-6. Build & run on an iOS 17 simulator. First launch shows the empty Jobs
-   list — switch to **Settings**, leave the URL as `http://localhost:8000`
-   (or point to a tunnel), then pull-to-refresh on **Jobs**.
+6. Build & run on the smallest available compatible iPhone simulator. First launch shows
+   the empty Jobs list — switch to **Settings**, leave the URL as
+   `http://localhost:8000` for the local backend, then pull-to-refresh
+   on **Jobs**.
 
 ## Headless validation
 

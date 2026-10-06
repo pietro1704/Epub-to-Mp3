@@ -7,11 +7,11 @@ import XCTest
 ///
 /// All tests are `@MainActor` because `ConversionStatus` is isolated to
 /// the main actor.
-@MainActor
 final class ConversionStatusTests: XCTestCase {
 
     // MARK: - Initial state
 
+    @MainActor
     func testInitialStateIsIdle() {
         let status = ConversionStatus()
         XCTAssertTrue(status.events.isEmpty)
@@ -24,6 +24,7 @@ final class ConversionStatusTests: XCTestCase {
 
     // MARK: - beginSession / endSession
 
+    @MainActor
     func testBeginSessionSetsStartedAt() {
         let status = ConversionStatus()
         let before = Date()
@@ -34,6 +35,7 @@ final class ConversionStatusTests: XCTestCase {
         XCTAssertLessThanOrEqual(status.startedAt!, after)
     }
 
+    @MainActor
     func testBeginSessionClearsPriorState() {
         let status = ConversionStatus()
         status.beginSession()
@@ -51,6 +53,7 @@ final class ConversionStatusTests: XCTestCase {
         XCTAssertNotNil(status.startedAt, "beginSession must set a new startedAt")
     }
 
+    @MainActor
     func testEndSessionClearsStartedAt() {
         let status = ConversionStatus()
         status.beginSession()
@@ -62,6 +65,7 @@ final class ConversionStatusTests: XCTestCase {
 
     // MARK: - record events
 
+    @MainActor
     func testRecordAppendsSingleEvent() {
         let status = ConversionStatus()
         status.record(.info, "Hello")
@@ -70,6 +74,7 @@ final class ConversionStatusTests: XCTestCase {
         XCTAssertEqual(status.events[0].kind, .info)
     }
 
+    @MainActor
     func testRecordMultipleEventsInOrder() {
         let status = ConversionStatus()
         status.record(.chunkStart, "start")
@@ -81,6 +86,7 @@ final class ConversionStatusTests: XCTestCase {
         XCTAssertEqual(status.events[2].kind, .chapterComplete)
     }
 
+    @MainActor
     func testErrorEventSetsLastError() {
         let status = ConversionStatus()
         XCTAssertNil(status.lastError)
@@ -88,12 +94,14 @@ final class ConversionStatusTests: XCTestCase {
         XCTAssertEqual(status.lastError, "TTS timeout")
     }
 
+    @MainActor
     func testNonErrorEventDoesNotSetLastError() {
         let status = ConversionStatus()
         status.record(.info, "Just info")
         XCTAssertNil(status.lastError)
     }
 
+    @MainActor
     func testMultipleErrorsLastErrorIsNewest() {
         let status = ConversionStatus()
         status.record(.error, "First error")
@@ -103,6 +111,7 @@ final class ConversionStatusTests: XCTestCase {
 
     // MARK: - Ring buffer cap (max 50 events)
 
+    @MainActor
     func testRingBufferCapAt50() {
         let status = ConversionStatus()
         for i in 0..<60 {
@@ -112,6 +121,7 @@ final class ConversionStatusTests: XCTestCase {
             "Ring buffer must not exceed 50 events")
     }
 
+    @MainActor
     func testRingBufferRetainsNewestEvents() {
         let status = ConversionStatus()
         for i in 0..<60 {
@@ -124,6 +134,7 @@ final class ConversionStatusTests: XCTestCase {
         XCTAssertEqual(status.events.last?.message, "event 59")
     }
 
+    @MainActor
     func testRingBufferExactlyAtCapNoDrop() {
         let status = ConversionStatus()
         for i in 0..<50 {
@@ -135,6 +146,7 @@ final class ConversionStatusTests: XCTestCase {
 
     // MARK: - Chapter tracking
 
+    @MainActor
     func testSetCurrentChapter() {
         let status = ConversionStatus()
         status.setCurrentChapter(index: 5, name: "The Battle of Five Armies")
@@ -142,6 +154,7 @@ final class ConversionStatusTests: XCTestCase {
         XCTAssertEqual(status.currentChapterName, "The Battle of Five Armies")
     }
 
+    @MainActor
     func testSetCurrentChapterOverwritesPrevious() {
         let status = ConversionStatus()
         status.setCurrentChapter(index: 0, name: "Prologue")
@@ -152,6 +165,7 @@ final class ConversionStatusTests: XCTestCase {
 
     // MARK: - clearError
 
+    @MainActor
     func testClearErrorRemovesLastError() {
         let status = ConversionStatus()
         status.record(.error, "Something failed")
@@ -162,11 +176,13 @@ final class ConversionStatusTests: XCTestCase {
 
     // MARK: - elapsedSeconds
 
+    @MainActor
     func testElapsedSecondsIsNilWhenNotStarted() {
         let status = ConversionStatus()
         XCTAssertNil(status.elapsedSeconds)
     }
 
+    @MainActor
     func testElapsedSecondsIsNonNegativeWhenStarted() {
         let status = ConversionStatus()
         status.beginSession()
@@ -180,6 +196,7 @@ final class ConversionStatusTests: XCTestCase {
 
     // MARK: - EventKind.systemImage (coverage)
 
+    @MainActor
     func testAllKindsHaveNonEmptySystemImage() {
         let kinds: [ConversionStatus.EventKind] = [
             .chunkStart, .chunkComplete, .chapterComplete, .error, .info
@@ -192,6 +209,7 @@ final class ConversionStatusTests: XCTestCase {
 
     // MARK: - AudioPlayer integration
 
+    @MainActor
     func testAudioPlayerExposesConversionStatus() throws {
         // Ensure AudioPlayer owns a ConversionStatus instance.
         let player = AudioPlayer()
@@ -200,6 +218,7 @@ final class ConversionStatusTests: XCTestCase {
         XCTAssertTrue(status.events.isEmpty, "Fresh player status must be idle")
     }
 
+    @MainActor
     func testClearConversionStateCallsEndSession() {
         let player = AudioPlayer()
         player.conversionStatus.beginSession()
@@ -209,6 +228,7 @@ final class ConversionStatusTests: XCTestCase {
             "clearConversionState must call endSession on conversionStatus")
     }
 
+    @MainActor
     func testEnqueueSegmentRecordsChunkCompleteEvent() {
         let player = AudioPlayer()
         // Start a session so events are meaningful.
@@ -221,6 +241,7 @@ final class ConversionStatusTests: XCTestCase {
         )
     }
 
+    @MainActor
     func testMarkFirstChapterReadyRecordsChapterCompleteEvent() {
         let player = AudioPlayer()
         player.conversionStatus.beginSession()
@@ -231,6 +252,7 @@ final class ConversionStatusTests: XCTestCase {
         )
     }
 
+    @MainActor
     func testRecordConversionErrorSetsLastError() {
         let player = AudioPlayer()
         player.recordConversionError("Chapter 3 timeout")

@@ -1,19 +1,18 @@
 # Desktop, Mobile, and Releases
 
-## Apple (macOS / iPadOS / iOS) — SwiftUI
+## Apple (macOS / iPadOS / iOS) — UIKit/AppKit
 
-The official Apple client lives in `ios/EpubToMp3/`. macOS embeds the
-Python server as a PyInstaller sidecar inside the `.app`; iPadOS and iOS
-talk to a remote backend.
+The official Apple client lives in `ios/EpubToMp3/`. macOS embeds the Rust
+`converter-server` inside the `.app`; iPadOS and iOS talk to a remote backend.
 
 Headless macOS build:
 
 ```bash
 mise run mac:build
-# → ios/EpubToMp3/.build/Build/Products/Release/EpubToMp3.app
+# → task prints the produced .app path, usually ios/EpubToMp3/.build/Release/EpubToMp3.app
 ```
 
-Sidecar-only build (PyInstaller onefile):
+Sidecar-only build (Rust release binary):
 
 ```bash
 mise run sidecar:build
@@ -43,7 +42,7 @@ mise run flutter:build-apk          # Android (release)
 
 `release-desktop.yml` runs on every `v*.*.*` tag and publishes:
 
-- macOS `.zip` (SwiftUI, sidecar-embedded)
+- macOS `.zip` (native Apple app with embedded Python runtime)
 - Linux `.tar.gz` (Flutter)
 - Windows `.zip` (Flutter)
 - Android `.apk` (Flutter)

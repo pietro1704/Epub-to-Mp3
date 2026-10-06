@@ -1,0 +1,4 @@
+interface:
+  display_name: "Native Reader Regression"
+  short_description: "Verify native reader viewport and pagination regressions."
+  default_prompt: "Use $native-reader-regression to validate this native reader change."

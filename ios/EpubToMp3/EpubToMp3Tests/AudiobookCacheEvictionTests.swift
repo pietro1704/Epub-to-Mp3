@@ -3,7 +3,7 @@
 // Unit tests for `AudiobookCacheEviction`.
 //
 // All tests run entirely on a temporary directory that replaces the real
-// Documents/Audiobooks root via `DownloadManager.audiobooksRoot()` override
+// app-owned audiobook root via the explicit `root:` eviction helpers
 // — but since `audiobooksRoot()` is a nonisolated static that calls
 // FileManager directly, we instead build synthetic on-disk fixtures inside
 // a temp folder and call the internal scan/eviction helpers through the
@@ -21,21 +21,146 @@ import XCTest
 
 final class AudiobookCacheEvictionTests: XCTestCase {
 
+    func testStorageUsageBudgetFractionIsClamped() {
+        XCTAssertEqual(
+            StorageUsageSnapshot(offlineAudioBytes: 3, ttsCacheBytes: 2, totalBytes: 5, budgetBytes: 10).budgetFraction,
+            0.5,
+            accuracy: 0.001
+        )
+        XCTAssertEqual(
+            StorageUsageSnapshot(offlineAudioBytes: 20, ttsCacheBytes: 0, totalBytes: 20, budgetBytes: 10).budgetFraction,
+            1.0,
+            accuracy: 0.001
+        )
+    }
+
+    // MARK: - Real-root round-trips (locallyDownloadedIndices / staleOfflineBookIds)
+    //
+    // These two helpers operate on the app-owned audiobook root, so we exercise them end-to-end with unique jobIds and
+    // clean up via deleteAudiobook.
+
+    private func makeBook(
+        id: String, lastJobId: String?, cachedOffline: Bool
+    ) -> BookEntity {
+        BookEntity(
+            id: id, title: id, bookmark: Data(),
+            displayFilename: "\(id).epub", addedAt: Date(),
+            lastJobId: lastJobId, cachedOffline: cachedOffline
+        )
+    }
+
+    /// Plant a manifest + selected MP3 files on the REAL audiobooks root.
+    private func plantRealAudiobook(
+        jobId: String, entries: [(index: Int, fileName: String, onDisk: Bool)]
+    ) throws {
+        let folder = DownloadManager.audiobookFolder(for: jobId)
+        var chapters: [AudiobookManifest.ChapterEntry] = []
+        for entry in entries {
+            if entry.onDisk {
+                try Data(repeating: 0xFF, count: 128)
+                    .write(to: folder.appendingPathComponent(entry.fileName))
+            }
+            chapters.append(AudiobookManifest.ChapterEntry(
+                index: entry.index, title: "ch\(entry.index)",
+                mp3FileName: entry.fileName, mp3Bytes: 128, downloadedAt: Date()
+            ))
+        }
+        try DownloadManager.saveManifest(AudiobookManifest(
+            jobId: jobId, bookTitle: jobId, chapters: chapters,
+            totalBytes: Int64(entries.count * 128), completedAt: Date()
+        ))
+    }
+
+    func testLocallyDownloadedIndicesVerifiesFilesOnDisk() throws {
+        let jobId = "test-local-\(UUID().uuidString)"
+        defer { AudiobookCacheEviction.deleteAudiobook(jobId: jobId) }
+        try plantRealAudiobook(jobId: jobId, entries: [
+            (index: 0, fileName: "a.mp3", onDisk: true),
+            (index: 2, fileName: "b.mp3", onDisk: true),
+            (index: 5, fileName: "gone.mp3", onDisk: false) // manifest says yes, disk says no
+        ])
+        XCTAssertEqual(DownloadManager.locallyDownloadedIndices(for: jobId), [0, 2])
+    }
+
+    func testLocallyDownloadedIndicesEmptyWithoutManifest() {
+        XCTAssertEqual(
+            DownloadManager.locallyDownloadedIndices(for: "test-missing-\(UUID().uuidString)"),
+            []
+        )
+    }
+
+    func testStaleOfflineBookIdsFlagsEvictedAndUnlinkedBooks() throws {
+        let liveJobId = "test-stale-\(UUID().uuidString)"
+        defer { AudiobookCacheEviction.deleteAudiobook(jobId: liveJobId) }
+        try plantRealAudiobook(jobId: liveJobId, entries: [
+            (index: 0, fileName: "a.mp3", onDisk: true)
+        ])
+
+        let books = [
+            makeBook(id: "kept", lastJobId: liveJobId, cachedOffline: true),
+            makeBook(id: "evicted", lastJobId: "test-gone-\(UUID().uuidString)", cachedOffline: true),
+            makeBook(id: "never-linked", lastJobId: nil, cachedOffline: true),
+            makeBook(id: "not-offline", lastJobId: nil, cachedOffline: false)
+        ]
+        XCTAssertEqual(
+            AudiobookCacheEviction.staleOfflineBookIds(books: books),
+            ["evicted", "never-linked"]
+        )
+    }
+
+    func testStaleOfflineBookIdsFlagsMissingChapterFileAndIncompleteManifest() throws {
+        let missingFileJobId = "test-missing-file-\(UUID().uuidString)"
+        let incompleteJobId = "test-incomplete-\(UUID().uuidString)"
+        defer {
+            AudiobookCacheEviction.deleteAudiobook(jobId: missingFileJobId)
+            AudiobookCacheEviction.deleteAudiobook(jobId: incompleteJobId)
+        }
+
+        try plantRealAudiobook(jobId: missingFileJobId, entries: [
+            (index: 0, fileName: "present.mp3", onDisk: true),
+            (index: 1, fileName: "missing.mp3", onDisk: false)
+        ])
+        try plantRealAudiobook(jobId: incompleteJobId, entries: [
+            (index: 0, fileName: "partial.mp3", onDisk: true)
+        ])
+        guard var missingManifest = DownloadManager.loadManifest(for: missingFileJobId),
+              var incompleteManifest = DownloadManager.loadManifest(for: incompleteJobId) else {
+            XCTFail("Fixtures must have manifests")
+            return
+        }
+        missingManifest.completedAt = Date()
+        incompleteManifest.completedAt = nil
+        try DownloadManager.saveManifest(missingManifest)
+        try DownloadManager.saveManifest(incompleteManifest)
+
+        let books = [
+            makeBook(id: "missing-file", lastJobId: missingFileJobId, cachedOffline: true),
+            makeBook(id: "incomplete", lastJobId: incompleteJobId, cachedOffline: true)
+        ]
+
+        XCTAssertEqual(
+            AudiobookCacheEviction.staleOfflineBookIds(books: books),
+            ["missing-file", "incomplete"]
+        )
+    }
+
     // MARK: - Helpers
 
     /// Isolated temp folder used as the audiobooks root.
     private var tempRoot: URL!
 
-    override func setUp() async throws {
-        try await super.setUp()
+    override func setUpWithError() throws {
+        try super.setUpWithError()
         tempRoot = FileManager.default.temporaryDirectory
             .appendingPathComponent("CacheEvictionTests-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: tempRoot, withIntermediateDirectories: true)
+        DownloadManager.rootOverrideForTesting = tempRoot
     }
 
-    override func tearDown() async throws {
+    override func tearDownWithError() throws {
+        DownloadManager.rootOverrideForTesting = nil
         try? FileManager.default.removeItem(at: tempRoot)
-        try await super.tearDown()
+        try super.tearDownWithError()
     }
 
     /// Plant a fake audiobook folder + manifest under `tempRoot`.
@@ -103,9 +228,9 @@ final class AudiobookCacheEvictionTests: XCTestCase {
         // building entries from `tempRoot` manually and calling `deleteAudiobook`.
         //
         // Since `AudiobookCacheEviction.scanEntries()` reads from
-        // `DownloadManager.audiobooksRoot()` (Documents/Audiobooks), we cannot
-        // redirect it without modifying production code. Instead we test the
-        // algorithm via the *structural* helpers:
+        // `DownloadManager.audiobooksRoot()`, we cannot redirect it without
+        // modifying production code. Instead we test the algorithm via the
+        // *structural* helpers:
         //   - Read manifests from tempRoot ourselves.
         //   - Apply LRU+TTL algorithm.
         //   - Call deleteAudiobook (which uses DownloadManager.audiobooksRoot).
@@ -266,6 +391,44 @@ final class AudiobookCacheEvictionTests: XCTestCase {
 
         XCTAssertFalse(evicted.contains("book1"), "Active playback job must never be evicted")
         XCTAssertTrue(evicted.contains("book2"), "Non-active expired job must be evicted")
+    }
+
+    func testProductionPassNeverEvictsLegacyOfflineAudio() throws {
+        let activeJobId = "active-registry-\(UUID().uuidString)"
+        let expiredJobId = "expired-registry-\(UUID().uuidString)"
+        let oldDate = Date().addingTimeInterval(-48 * 3600)
+        defer {
+            CacheActivityRegistry.end(jobId: activeJobId)
+        }
+
+        try plantAudiobook(
+            jobId: activeJobId,
+            totalBytes: 128,
+            downloadedAt: oldDate,
+            lastAccessedAt: oldDate
+        )
+        try plantAudiobook(
+            jobId: expiredJobId,
+            totalBytes: 128,
+            downloadedAt: oldDate,
+            lastAccessedAt: oldDate
+        )
+
+        CacheActivityRegistry.begin(jobId: activeJobId)
+        let evicted = AudiobookCacheEviction.runEviction(
+            root: tempRoot,
+            budgetBytes: Int64.max,
+            ttlSeconds: 24 * 3600
+        )
+
+        XCTAssertFalse(evicted.contains(activeJobId), "An actively opened/synthesised job must be protected")
+        XCTAssertFalse(evicted.contains(expiredJobId), "Legacy audio is protected until the listener removes it")
+        XCTAssertTrue(FileManager.default.fileExists(
+            atPath: tempRoot.appendingPathComponent(activeJobId, isDirectory: true).path
+        ))
+        XCTAssertTrue(FileManager.default.fileExists(
+            atPath: tempRoot.appendingPathComponent(expiredJobId, isDirectory: true).path
+        ))
     }
 
     func testBudgetOverrunEvictsMultiple() throws {

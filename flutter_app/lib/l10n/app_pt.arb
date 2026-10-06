@@ -1,6 +1,7 @@
 {
   "@@locale": "pt",
   "appTitle": "Epub para MP3",
+  "convertTitle": "Converter",
   "settingsTitle": "Configurações",
   "backendUrl": "URL do servidor",
   "wpmLabel": "Palavras por minuto",
@@ -8,6 +9,7 @@
   "fontSizeLabel": "Tamanho da fonte",
   "themeLabel": "Tema",
   "jobsTitle": "Conversões",
+  "convertTitle": "Converter",
   "noJobs": "Nenhuma conversão ainda",
   "refresh": "Atualizar",
   "playerTitle": "Reprodutor",
@@ -66,6 +68,7 @@
   "projectOnGithub": "Projeto no GitHub",
   "readerPrefsFooter": "Estas preferências se aplicam a todos os livros da biblioteca.",
   "invalidUrl": "URL inválida",
+  "backendUnavailable": "Configure uma URL HTTP(S) acessível por este dispositivo.",
   "nOfSteps": "{n} de {total}",
   "@nOfSteps": {
     "placeholders": {

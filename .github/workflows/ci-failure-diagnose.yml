@@ -28,14 +28,15 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          set +e
+          set -euo pipefail
           RUN_ID="${{ github.event.workflow_run.id }}"
           # Capture failed-job names + last 80 lines of the first failing
-          # step's log. Trimmed to fit a single PR comment.
+          # step's log. GitHub can expose workflow completion before logs are
+          # available, so retry before creating a diagnostic with no evidence.
           gh run view "$RUN_ID" --json jobs \
             -q '.jobs[] | select(.conclusion=="failure") | "- " + .name + " (id=" + (.databaseId|tostring) + ")"' \
             > failed_jobs.txt
-          FAILED_LOG=$(gh run view "$RUN_ID" --log-failed 2>/dev/null | tail -n 80 | head -n 80)
+          FAILED_LOG=$(gh run view "$RUN_ID" --log-failed 2>/dev/null | awk 'BEGIN{n=0} {lines[n%80]=$0; n++} END{start=(n>80?n-80:0); for(i=start;i<n;i++) print lines[i%80]}')
           {
             echo "log<<DIAG_EOF"
             echo "$FAILED_LOG"
@@ -54,63 +55,75 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          set +e
+          set -euo pipefail
           # workflow_run gives us the head SHA — find any PR with that head.
           SHA="${{ github.event.workflow_run.head_sha }}"
-          PR_NUMBER=$(gh api "repos/${{ github.repository }}/commits/$SHA/pulls" -q '.[0].number' 2>/dev/null)
+          PR_NUMBER=$(gh api "repos/${{ github.repository }}/commits/$SHA/pulls" -q '.[0].number' 2>/dev/null || true)
           echo "number=${PR_NUMBER:-}" >> "$GITHUB_OUTPUT"
 
       - name: Comment on PR
         if: steps.pr.outputs.number != ''
         uses: actions/github-script@v9
+        env:
+          SUMMARY_NAME: ${{ steps.summary.outputs.name }}
+          SUMMARY_JOBS: ${{ steps.summary.outputs.jobs }}
+          SUMMARY_LOG: ${{ steps.summary.outputs.log }}
+          SUMMARY_URL: ${{ steps.summary.outputs.url }}
+          PR_NUMBER: ${{ steps.pr.outputs.number }}
         with:
           script: |
-            const body = `🔴 **CI failure: ${{ steps.summary.outputs.name }}**
+            const body = `🔴 **CI failure: ${process.env.SUMMARY_NAME}**
 
             Failed jobs:
-            ${{ steps.summary.outputs.jobs }}
+            ${process.env.SUMMARY_JOBS}
 
             <details><summary>Last 80 lines of the failing step</summary>
 
             \`\`\`
-            ${{ steps.summary.outputs.log }}
+            ${process.env.SUMMARY_LOG}
             \`\`\`
 
             </details>
 
-            Full log: ${{ steps.summary.outputs.url }}
+            Full log: ${process.env.SUMMARY_URL}
             `;
             const { owner, repo } = context.repo;
             await github.rest.issues.createComment({
               owner, repo,
-              issue_number: ${{ steps.pr.outputs.number }},
+              issue_number: Number(process.env.PR_NUMBER),
               body,
             });
 
       - name: Open issue for master failures
         if: steps.pr.outputs.number == '' && github.event.workflow_run.head_branch == 'master'
         uses: actions/github-script@v9
+        env:
+          SUMMARY_NAME: ${{ steps.summary.outputs.name }}
+          SUMMARY_JOBS: ${{ steps.summary.outputs.jobs }}
+          SUMMARY_LOG: ${{ steps.summary.outputs.log }}
+          SUMMARY_URL: ${{ steps.summary.outputs.url }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
         with:
           script: |
-            const body = `Workflow **${{ steps.summary.outputs.name }}** failed on master push.
+            const body = `Workflow **${process.env.SUMMARY_NAME}** failed on master push.
 
             Failed jobs:
-            ${{ steps.summary.outputs.jobs }}
+            ${process.env.SUMMARY_JOBS}
 
             <details><summary>Last 80 lines of the failing step</summary>
 
             \`\`\`
-            ${{ steps.summary.outputs.log }}
+            ${process.env.SUMMARY_LOG}
             \`\`\`
 
             </details>
 
-            Full log: ${{ steps.summary.outputs.url }}
+            Full log: ${process.env.SUMMARY_URL}
             `;
             const { owner, repo } = context.repo;
             await github.rest.issues.create({
               owner, repo,
-              title: `CI failure on master: ${{ steps.summary.outputs.name }} (run ${{ github.event.workflow_run.id }})`,
+              title: `CI failure on master: ${process.env.SUMMARY_NAME} (run ${process.env.RUN_ID})`,
               body,
               labels: ["ci-failure", "automated"],
             });

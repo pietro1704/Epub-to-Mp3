@@ -1,8 +1,13 @@
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties } from "react";
 import { conversionClient } from "../services/ConversionService";
+import { latencyObservations } from "../services/LatencyObservation";
 import { reportUiIssue } from "../services/uiIssueMonitor";
 import { safeScrollIntoView } from "../utils/safeScrollIntoView";
+import {
+  sanitizeReaderCss,
+  sanitizeReaderHtml,
+} from "../utils/readerSanitizer";
 import StreamingAudioPlayer from "./StreamingAudioPlayer";
 import {
   BookTextDocument,
@@ -175,6 +180,7 @@ export default function EbookReaderPanel({
   const [followPaused, setFollowPaused] = useState(false);
   const articleHostRef = useRef<HTMLDivElement | null>(null);
   const articleShellRef = useRef<HTMLDivElement | null>(null);
+  const readerJourneyRef = useRef<string | null>(null);
   const deferredSearch = useDeferredValue(search.trim());
 
   useEffect(() => {
@@ -228,6 +234,8 @@ export default function EbookReaderPanel({
 
     async function loadDocument(attempt = 0) {
       if (!jobId) {
+        if (readerJourneyRef.current) latencyObservations.cancel(readerJourneyRef.current);
+        readerJourneyRef.current = null;
         setDocument(null);
         return;
       }
@@ -239,6 +247,11 @@ export default function EbookReaderPanel({
         return;
       }
       if (attempt === 0) {
+        if (readerJourneyRef.current) latencyObservations.cancel(readerJourneyRef.current);
+        readerJourneyRef.current = latencyObservations.begin(
+          "reader_open",
+          "open_requested",
+        );
         setLoading(true);
         setLoadError(null);
       }
@@ -260,6 +273,12 @@ export default function EbookReaderPanel({
         });
         setLoading(false);
         setLoadError(null);
+        if (readerJourneyRef.current) {
+          latencyObservations.record(readerJourneyRef.current, "readable_content");
+          latencyObservations.record(readerJourneyRef.current, "controls_usable");
+          latencyObservations.finish(readerJourneyRef.current);
+          readerJourneyRef.current = null;
+        }
         return;
       }
       const isTransient =
@@ -296,6 +315,8 @@ export default function EbookReaderPanel({
 
     return () => {
       cancelled = true;
+      if (readerJourneyRef.current) latencyObservations.cancel(readerJourneyRef.current);
+      readerJourneyRef.current = null;
       if (retryTimer !== null) {
         clearTimeout(retryTimer);
       }
@@ -426,8 +447,8 @@ export default function EbookReaderPanel({
     }
     const shadow = host.shadowRoot ?? host.attachShadow({ mode: "open" });
     shadow.innerHTML = `
-      <style>${READER_CONTENT_BASE_CSS}\n${renderedCss}</style>
-      <div class="reader-root">${currentPage?.html || "<p></p>"}</div>
+      <style>${READER_CONTENT_BASE_CSS}\n${sanitizeReaderCss(renderedCss)}</style>
+      <div class="reader-root">${sanitizeReaderHtml(currentPage?.html || "<p></p>")}</div>
     `;
     // Scroll the article shell into view at the top whenever page content changes.
     safeScrollIntoView(articleShellRef.current, {
@@ -628,10 +649,10 @@ export default function EbookReaderPanel({
             <h4>{t.status.readerChaptersTitle}</h4>
             <span>{chapters.length}</span>
           </div>
-          {loading && (
+          {loading && chapters.length === 0 && (
             <div className="ebook-reader__state">{t.status.readerLoading}</div>
           )}
-          {!loading && loadError && (
+          {!loading && loadError && chapters.length === 0 && (
             <div className="ebook-reader__state ebook-reader__state--error">
               <div className="ebook-reader__state-copy">{loadError}</div>
               <button
@@ -643,8 +664,11 @@ export default function EbookReaderPanel({
               </button>
             </div>
           )}
-          {!loading && !loadError && (
-            <div className="ebook-reader__chapter-list">
+          {chapters.length > 0 && (
+            <div
+              className={`ebook-reader__chapter-list${loading ? " is-reloading" : ""}`}
+              aria-busy={loading || undefined}
+            >
               {chapters.map((chapter) => {
                 const status = chapterStatusMap.get(chapter.index);
                 const isSelected = selectedChapterIndex === chapter.index;
@@ -673,7 +697,12 @@ export default function EbookReaderPanel({
                       {chapter.index}
                     </span>
                     <span className="ebook-reader__chapter-copy">
-                      <strong>{chapter.name}</strong>
+                      <strong
+                        className="ebook-reader__chapter-name"
+                        title={chapter.name}
+                      >
+                        {chapter.name}
+                      </strong>
                       <small>
                         {chapter.charCount.toLocaleString(
                           locale === "pt" ? "pt-BR" : "en-US",

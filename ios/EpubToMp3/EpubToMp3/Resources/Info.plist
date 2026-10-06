@@ -8,18 +8,7 @@
 		     a private LAN IP — bypass ATS for loopback/.local only. -->
 		<key>NSAllowsLocalNetworking</key>
 		<true/>
-		<!-- Reader WebView renders EPUB chapter HTML extracted from the
-		     archive: data: / file:// URIs plus inline images. WKWebView
-		     enforces ATS otherwise, breaking the in-app reader. -->
-		<key>NSAllowsArbitraryLoadsInWebContent</key>
-		<true/>
 	</dict>
-	<!-- Custom launch storyboard. Build setting
-	     INFOPLIST_KEY_UILaunchStoryboardName already injects this, but we
-	     also pin it in the merged plist to make the launch sequence
-	     deterministic across xcodebuild / Xcode IDE / archive flows. -->
-	<key>UILaunchStoryboardName</key>
-	<string>LaunchScreen</string>
 	<!-- Edge-TTS conversion is network-intensive; this hints iOS to keep
 	     Wi-Fi awake during long jobs instead of dropping the radio. -->
 	<key>UIRequiresPersistentWiFi</key>
@@ -27,6 +16,29 @@
 	<!-- iPadOS trackpad / Magic Mouse hover + scrub support for the
 	     player scrubber and library list. -->
 	<key>UIApplicationSupportsIndirectInputEvents</key>
+	<true/>
+	<key>UIApplicationSceneManifest</key>
+	<dict>
+		<key>UIApplicationSupportsMultipleScenes</key>
+		<false/>
+		<key>UISceneConfigurations</key>
+		<dict>
+			<key>UIWindowSceneSessionRoleApplication</key>
+			<array>
+				<dict>
+					<key>UISceneConfigurationName</key>
+					<string>Default Configuration</string>
+					<key>UISceneDelegateClassName</key>
+					<string>$(PRODUCT_MODULE_NAME).IOSSceneDelegate</string>
+				</dict>
+			</array>
+		</dict>
+	</dict>
+	<!-- WidgetDataSync.swift calls Activity.request(...) to start a
+	     conversion-progress Live Activity. Without this key every call
+	     silently no-ops (no error, the Dynamic Island/Lock Screen entry
+	     just never appears). -->
+	<key>NSSupportsLiveActivities</key>
 	<true/>
 	<!-- App ships pt-BR + en-US side-by-side; allow runtime mixing so a
 	     pt-BR user on an en-US device still sees localised strings. -->
@@ -75,6 +87,7 @@
 			<array>
 				<string>org.idpf.epub-container</string>
 				<string>com.apple.ibooks.epub</string>
+				<string>public.epub</string>
 			</array>
 		</dict>
 		<dict>
@@ -87,6 +100,7 @@
 			<key>LSItemContentTypes</key>
 			<array>
 				<string>com.adobe.pdf</string>
+				<string>public.pdf</string>
 			</array>
 		</dict>
 	</array>

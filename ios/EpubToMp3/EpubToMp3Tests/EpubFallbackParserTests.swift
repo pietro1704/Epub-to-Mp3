@@ -110,6 +110,14 @@ final class EpubFallbackParserTests: XCTestCase {
             "&hellip; must decode; got: \(text.prefix(80))")
     }
 
+    func testLargeEntityHeavyChapterDoesNotMultiplyWholeStringMemory() throws {
+        let body = String(repeating: "word&amp;word ", count: 100_000)
+        let text = try parsed(html: "<p>\(body)</p>")
+
+        XCTAssertTrue(text.contains("word&word"))
+        XCTAssertFalse(text.contains("&amp;"))
+    }
+
     // MARK: - Script / style exclusion
 
     func testScriptContentExcluded() throws {
@@ -160,9 +168,17 @@ final class EpubFallbackParserTests: XCTestCase {
             "End text must be present; got: \(text.prefix(120))")
     }
 
-    // MARK: - Title extraction
+    // MARK: - Minimal-safety-net contract
+    //
+    // This parser is a plain-text-only fallback for when the embedded
+    // Python pipeline (the sole source of truth for book structure) is
+    // unavailable. It intentionally does NOT extract TOC-derived titles,
+    // CSS, or image resources — that logic lives in
+    // `python_app/src/ebook_reader.py` and duplicating it here is exactly
+    // what caused the multi-GB `stripHTML` regex crash on a pathological
+    // chapter. These tests pin the *absence* of that duplicated surface.
 
-    func testH1TitleUsedAsChapterName() throws {
+    func testChapterNamePreservesDocumentHeading() throws {
         let url = try EpubFixture.createWithChapter(
             chapterTitle: "My Chapter",
             body: "<h1>My Chapter</h1><p>Body text here.</p>"
@@ -170,11 +186,54 @@ final class EpubFallbackParserTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: url) }
 
         let result = EpubFallbackParser.parse(url: url, bookId: "t")
-        let chapter = result.chapters.first
-        let name = try XCTUnwrap(chapter?.name)
+        let name = try XCTUnwrap(result.chapters.first?.name)
 
-        XCTAssertTrue(name.contains("My Chapter") || name.contains("Chapter"),
-            "Chapter name must derive from <h1>; got: \(name)")
+        XCTAssertEqual(name, "My Chapter")
+    }
+
+    func testChapterPreservesSourceHTMLForFaithfulRendering() throws {
+        let url = try EpubFixture.createWithChapter(
+            body: "<img src=\"../images/cover.png\"/><p>Body text here.</p>",
+            stylesheet: "body { height: 100vh; overflow: hidden; }"
+        )
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        let chapter = try XCTUnwrap(EpubFallbackParser.parse(url: url, bookId: "image-test").chapters.first)
+
+        XCTAssertNotNil(chapter.html, "Fallback chapters must retain source markup")
+        XCTAssertNil(chapter.css, "Fallback must never pass clipping EPUB CSS to the reader")
+        XCTAssertEqual(chapter.resources?.first?.mediaType, "image/png")
+        XCTAssertNotNil(chapter.resources?.first?.dataBase64)
+        XCTAssertTrue(chapter.text.contains("Body text here"))
+    }
+
+    func testPreservesSourcePathAndLinkedFootnote() throws {
+        let url = try EpubFixture.createWithChapter(
+            body: "Body text here.",
+            footnote: (reference: "*", text: "The linked footnote body.")
+        )
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        let chapter = try XCTUnwrap(EpubFallbackParser.parse(url: url, bookId: "note-test").chapters.first)
+
+        XCTAssertEqual(chapter.sourcePath, "OEBPS/text/chapter1.xhtml")
+        XCTAssertEqual(chapter.footnotes, [
+            .init(number: "*", text: "The linked footnote body.")
+        ])
+    }
+
+    func testPreservesSameDocumentLinkedFootnote() throws {
+        let url = try EpubFixture.createWithChapter(
+            body: "Body text here.",
+            footnote: (reference: "#note1", text: "Same-document footnote body.")
+        )
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        let chapter = try XCTUnwrap(EpubFallbackParser.parse(url: url, bookId: "same-note-test").chapters.first)
+
+        XCTAssertEqual(chapter.footnotes, [
+            .init(number: "#note1", text: "Same-document footnote body.")
+        ])
     }
 
     // MARK: - Large single paragraph

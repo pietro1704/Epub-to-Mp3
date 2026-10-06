@@ -50,6 +50,22 @@ Widget _wrap(SharedPreferences prefs, Widget child) {
 
 void main() {
   group('InstantReaderView', () {
+    testWidgets('renders short non-empty front matter', (t) async {
+      final prefs = await _mockPrefs();
+      final fulltext = EbookFulltext.fromJson({
+        'jobId': 'short-front-matter',
+        'chapters': [
+          {'index': 0, 'name': 'Dedication', 'text': 'To Ana.'},
+          {'index': 1, 'name': 'Chapter 1', 'text': 'The story begins here.'},
+        ],
+      });
+      await t.pumpWidget(_wrap(prefs, InstantReaderView(fulltext: fulltext)));
+      await t.pump();
+      await t.pump(const Duration(milliseconds: 100));
+      expect(find.text('To Ana.'), findsOneWidget);
+      expect(find.text('Dedication'), findsOneWidget);
+    });
+
     testWidgets('shows settings button', (t) async {
       final prefs = await _mockPrefs();
       await t.pumpWidget(_wrap(
@@ -61,7 +77,7 @@ void main() {
       expect(find.byIcon(Icons.text_format), findsOneWidget);
     });
 
-    testWidgets('shows author in bottom bar', (t) async {
+    testWidgets('renders reader content without a player bar', (t) async {
       final prefs = await _mockPrefs();
       await t.pumpWidget(_wrap(
         prefs,
@@ -69,24 +85,18 @@ void main() {
       ));
       await t.pump();
       await t.pump(const Duration(milliseconds: 100));
-      expect(find.text('Author Name'), findsOneWidget);
+      expect(find.text('Author Name'), findsNothing);
     });
 
-    testWidgets('shows play button when onRequestPlay provided', (t) async {
+    testWidgets('does not render a play button in the reader', (t) async {
       final prefs = await _mockPrefs();
-      var tapped = false;
       await t.pumpWidget(_wrap(
         prefs,
-        InstantReaderView(
-          fulltext: _sampleFulltext(),
-          onRequestPlay: () => tapped = true,
-        ),
+        InstantReaderView(fulltext: _sampleFulltext()),
       ));
       await t.pump();
       await t.pump(const Duration(milliseconds: 100));
-      expect(find.byIcon(Icons.play_circle_filled), findsOneWidget);
-      await t.tap(find.byIcon(Icons.play_circle_filled));
-      expect(tapped, isTrue);
+      expect(find.byIcon(Icons.play_circle_filled), findsNothing);
     });
 
     testWidgets('shows no content when fulltext is empty', (t) async {
@@ -104,43 +114,5 @@ void main() {
       expect(find.text('No content available'), findsOneWidget);
     });
 
-    testWidgets('error banner shows warning icon', (t) async {
-      final prefs = await _mockPrefs();
-      await t.pumpWidget(_wrap(
-        prefs,
-        InstantReaderView(
-          fulltext: _sampleFulltext(),
-          statusBanner: 'Conversion failed',
-        ),
-      ));
-      await t.pump();
-      await t.pump(const Duration(milliseconds: 100));
-      expect(find.byIcon(Icons.warning_amber_rounded), findsOneWidget);
-    });
-
-    testWidgets('converting banner shows progress indicator', (t) async {
-      final prefs = await _mockPrefs();
-      await t.pumpWidget(_wrap(
-        prefs,
-        InstantReaderView(
-          fulltext: _sampleFulltext(),
-          statusBanner: 'Converting 2/3',
-        ),
-      ));
-      await t.pump();
-      await t.pump(const Duration(milliseconds: 100));
-      expect(find.byType(CircularProgressIndicator), findsOneWidget);
-    });
-
-    testWidgets('headphones icon shown when no cover art', (t) async {
-      final prefs = await _mockPrefs();
-      await t.pumpWidget(_wrap(
-        prefs,
-        InstantReaderView(fulltext: _sampleFulltext()),
-      ));
-      await t.pump();
-      await t.pump(const Duration(milliseconds: 100));
-      expect(find.byIcon(Icons.headphones), findsOneWidget);
-    });
   });
 }

@@ -7,25 +7,69 @@ import '../models/ebook_fulltext.dart';
 import '../models/job_snapshot.dart';
 import '../models/session_record.dart';
 
-/// Thin wrapper over `dio` for the FastAPI backend.
+class ApiContract {
+  const ApiContract({
+    required this.version,
+    required this.backend,
+    required this.capabilities,
+  });
+
+  factory ApiContract.fromJson(Map<String, dynamic> json) {
+    return ApiContract(
+      version: json['version'] as String? ?? '',
+      backend: json['backend'] as String? ?? '',
+      capabilities: (json['capabilities'] as List<dynamic>? ?? const [])
+          .whereType<String>()
+          .toSet(),
+    );
+  }
+
+  final String version;
+  final String backend;
+  final Set<String> capabilities;
+
+  bool supports(String capability) => capabilities.contains(capability);
+}
+
+/// Thin wrapper over the versioned Rust-compatible conversion API.
 class ApiClient {
-  ApiClient(this.baseUrl)
-      : _dio = Dio(BaseOptions(
+  ApiClient(this.baseUrl, {this.configurationError})
+    : _dio = Dio(
+        BaseOptions(
           baseUrl: baseUrl,
           connectTimeout: const Duration(seconds: 10),
           receiveTimeout: const Duration(seconds: 30),
-        )),
-        _streamDio = Dio(BaseOptions(
+        ),
+      ),
+      _streamDio = Dio(
+        BaseOptions(
           baseUrl: baseUrl,
           connectTimeout: const Duration(seconds: 10),
           // SSE streams are long-lived — no receive timeout.
-        ));
+        ),
+      );
 
   final String baseUrl;
+  final String? configurationError;
   final Dio _dio;
   final Dio _streamDio;
 
+  Future<EbookFulltext> parseDocument(
+    String filePath, {
+    String jobId = '',
+  }) async {
+    final convertedJobId = await uploadAndConvert(filePath, engine: 'edge');
+    return fetchFulltext(convertedJobId);
+  }
+
+  Future<ApiContract> fetchContract() async {
+    _throwIfMisconfigured();
+    final r = await _dio.get<Map<String, dynamic>>('/api/contract');
+    return ApiContract.fromJson(r.data ?? const {});
+  }
+
   Future<List<SessionRecord>> fetchSessions({int last = 50}) async {
+    _throwIfMisconfigured();
     final r = await _dio.get<Map<String, dynamic>>(
       '/api/sessions',
       queryParameters: {'last': last},
@@ -35,6 +79,7 @@ class ApiClient {
   }
 
   Future<JobSnapshot> fetchJob(String jobId) async {
+    _throwIfMisconfigured();
     final r = await _dio.get<Map<String, dynamic>>('/api/jobs/$jobId');
     return JobSnapshot.fromJson(r.data ?? const {});
   }
@@ -42,6 +87,7 @@ class ApiClient {
   /// Reader text contract per memory `project_reader_fulltext.md`.
   /// 503 -> transient (caller retries); 404/422 -> terminal.
   Future<EbookFulltext> fetchFulltext(String jobId) async {
+    _throwIfMisconfigured();
     final r = await _dio.get<Map<String, dynamic>>(
       '/api/jobs/$jobId/fulltext',
       options: Options(validateStatus: (s) => s != null && s < 500),
@@ -61,7 +107,17 @@ class ApiClient {
   /// Upload an EPUB file and start conversion. Returns the job ID.
   ///
   /// Two-step: POST multipart `/api/uploads` then POST form `/api/convert`.
-  Future<String> uploadAndConvert(String filePath) async {
+  Future<String> uploadAndConvert(
+    String filePath, {
+    String engine = 'edge',
+    String? voice,
+    String? language,
+    int? chapterStart,
+    int? chapterEnd,
+    bool? includeCover,
+    bool? normalizeAudio,
+  }) async {
+    _throwIfMisconfigured();
     final fileName = filePath.split('/').last;
     final uploadForm = FormData.fromMap({
       'file': await MultipartFile.fromFile(filePath, filename: fileName),
@@ -72,13 +128,22 @@ class ApiClient {
     );
     final uploadId = uploadResp.data?['uploadId'] as String;
 
-    final convertForm = FormData.fromMap({
+    final convertFields = <String, dynamic>{
       'upload_id': uploadId,
-      'engine': 'edge',
-    });
+      'engine': engine,
+    };
+    if (voice != null) convertFields['voice'] = voice;
+    if (language != null) convertFields['language'] = language;
+    if (chapterStart != null) convertFields['chapter_start'] = chapterStart;
+    if (chapterEnd != null) convertFields['chapter_end'] = chapterEnd;
+    if (includeCover != null) convertFields['include_cover'] = includeCover;
+    if (normalizeAudio != null) {
+      convertFields['normalize_audio'] = normalizeAudio;
+    }
     final convertResp = await _dio.post<Map<String, dynamic>>(
       '/api/convert',
-      data: convertForm,
+      data: convertFields,
+      options: Options(contentType: Headers.jsonContentType),
     );
     return convertResp.data?['jobId'] as String;
   }
@@ -91,8 +156,8 @@ class ApiClient {
         options: Options(responseType: ResponseType.bytes),
       );
       return response.data;
-    } catch (_) {
-      return null;
+    } on DioException catch (error) {
+      throw ApiHttpException.fromDio(error);
     }
   }
 
@@ -100,6 +165,7 @@ class ApiClient {
   /// Uses a dedicated Dio instance with no receive timeout since SSE
   /// connections are long-lived.
   Stream<JobSnapshot> jobStream(String jobId) async* {
+    _throwIfMisconfigured();
     final response = await _streamDio.get<ResponseBody>(
       '/api/jobs/$jobId/stream',
       options: Options(
@@ -120,11 +186,42 @@ class ApiClient {
       try {
         final json = jsonDecode(payload) as Map<String, dynamic>;
         yield JobSnapshot.fromJson(json);
-      } catch (_) {
-        // Ignore malformed frames — keep stream alive.
+      } catch (error) {
+        throw SseProtocolException('Invalid job stream frame: $error');
       }
     }
   }
+
+  void _throwIfMisconfigured() {
+    final error = configurationError;
+    if (error != null) throw StateError(error);
+  }
+}
+
+class ApiHttpException implements Exception {
+  const ApiHttpException(this.statusCode, this.message);
+
+  factory ApiHttpException.fromDio(DioException error) {
+    return ApiHttpException(
+      error.response?.statusCode,
+      error.message ?? 'HTTP request failed',
+    );
+  }
+
+  final int? statusCode;
+  final String message;
+
+  @override
+  String toString() => 'ApiHttpException($statusCode): $message';
+}
+
+class SseProtocolException implements Exception {
+  const SseProtocolException(this.message);
+
+  final String message;
+
+  @override
+  String toString() => 'SseProtocolException: $message';
 }
 
 class FulltextTransient implements Exception {

@@ -1,0 +1,26 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/converter-core",
+    "crates/converter-ffi",
+    "crates/converter-server",
+    "crates/converter-cli",
+    "native/piper-runtime",
+    "benches",
+]
+
+[workspace.package]
+edition = "2021"
+license = "MIT"
+version = "0.1.0"
+
+[workspace.dependencies]
+
+[patch.crates-io]
+espeak-rs-sys = { path = "native/vendor/espeak-rs-sys" }
+
+[profile.release]
+codegen-units = 1
+lto = "thin"
+strip = true
+

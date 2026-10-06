@@ -104,6 +104,57 @@ final class BookmarkStoreTests: XCTestCase {
         XCTAssertEqual(store.highlights(for: "b1").count, 1)
     }
 
+    // MARK: - pruneOrphans (slice 45)
+
+    func testPruneOrphansDropsBookmarksMissingFromLibrary() {
+        let store = makeStore()
+        store.addBookmark(bookId: "b1", chapterIndex: 1, chapterTitle: "Ch 1")
+        store.addBookmark(bookId: "b2", chapterIndex: 1, chapterTitle: "Ch 1")
+        store.addBookmark(bookId: "b3", chapterIndex: 1, chapterTitle: "Ch 1")
+        XCTAssertEqual(store.bookmarks.count, 3)
+
+        let removed = store.pruneOrphans(validBookIds: ["b1", "b3"])
+        XCTAssertEqual(removed, 1)
+        XCTAssertEqual(store.bookmarks.count, 2)
+        XCTAssertFalse(store.bookmarks.contains { $0.bookId == "b2" })
+    }
+
+    func testPruneOrphansNoOpWhenAllValid() {
+        let suite = "test.bookmarks.prune.noop.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defaults.removePersistentDomain(forName: suite)
+        let key = "bookmarks.prune.noop.test"
+
+        let store = BookmarkStore(defaults: defaults, storageKey: key)
+        store.addBookmark(bookId: "b1", chapterIndex: 1, chapterTitle: "Ch 1")
+        // Read the blob written by the addBookmark persist so we can
+        // assert prune doesn't rewrite it on a clean library.
+        let beforeBlob = defaults.data(forKey: key)
+        XCTAssertNotNil(beforeBlob)
+
+        let removed = store.pruneOrphans(validBookIds: ["b1"])
+        XCTAssertEqual(removed, 0)
+        XCTAssertEqual(store.bookmarks.count, 1)
+        // Same on-disk bytes — no spurious encode.
+        XCTAssertEqual(defaults.data(forKey: key), beforeBlob)
+    }
+
+    func testPruneOrphansSurvivesReload() {
+        let suite = "test.bookmarks.prune.reload.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defaults.removePersistentDomain(forName: suite)
+        let key = "bookmarks.prune.reload.test"
+
+        let store1 = BookmarkStore(defaults: defaults, storageKey: key)
+        store1.addBookmark(bookId: "b1", chapterIndex: 1, chapterTitle: "Ch 1")
+        store1.addBookmark(bookId: "orphan", chapterIndex: 1, chapterTitle: "Ch 1")
+        XCTAssertEqual(store1.pruneOrphans(validBookIds: ["b1"]), 1)
+
+        let store2 = BookmarkStore(defaults: defaults, storageKey: key)
+        XCTAssertEqual(store2.bookmarks.count, 1)
+        XCTAssertEqual(store2.bookmarks[0].bookId, "b1")
+    }
+
     /// Verifies that corrupt data on disk does not get overwritten with an
     /// empty array — the store must refuse to persist until it has
     /// successfully decoded the stored bookmarks at least once.

@@ -1,6 +1,8 @@
 import WidgetKit
 import SwiftUI
 import AppIntents
+import ImageIO
+import UniformTypeIdentifiers
 
 // MARK: - Shared constants
 
@@ -8,11 +10,16 @@ private let appGroupID = "group.com.pietrocode.epubtomp3"
 private let libraryKey = "library.books.v1"
 private let nowPlayingKey = "currentlyPlayingBookId"
 private let nowPlayingChapterNameKey = "widget.nowPlayingChapterName"
+private let nowPlayingAuthorKey = "widget.nowPlayingAuthor"
 private let nowPlayingProgressKey = "widget.nowPlayingProgress"
 private let nowPlayingIsPlayingKey = "widget.nowPlayingIsPlaying"
+private let nowPlayingChapterRemainingKey = "widget.nowPlayingChapterRemainingSeconds"
+private let nowPlayingBookRemainingKey = "widget.nowPlayingBookRemainingSeconds"
+private let nowPlayingTotalChaptersKey = "widget.nowPlayingTotalChapters"
 private let lastReadBookIdKey = "widget.lastReadBookId"
 private let lastReadChapterIndexKey = "widget.lastReadChapterIndex"
 private let lastReadTotalChaptersKey = "widget.lastReadTotalChapters"
+private let lastReadChapterLabelKey = "widget.lastReadChapterLabel"
 
 // MARK: - Minimal BookEntity copy (widget runs in a separate process)
 
@@ -54,6 +61,47 @@ private func sharedDefaults() -> UserDefaults? {
     UserDefaults(suiteName: appGroupID)
 }
 
+private func formatWidgetTime(_ seconds: Double) -> String {
+    let total = max(0, Int(seconds.rounded()))
+    let h = total / 3600
+    let m = (total % 3600) / 60
+    let s = total % 60
+    if h > 0 { return m > 0 ? "\(h)h \(m)m" : "\(h)h" }
+    if m > 0 { return "\(m)m" }
+    return "\(s)s"
+}
+
+/// Re-encode a stored cover blob to a small thumbnail via ImageIO so
+/// WidgetKit never holds a full-resolution decoded bitmap. Widget
+/// extensions are killed by `widgetkitd` at ~30 MB; covers are already
+/// downsampled to <=80 KB JPEG on the app side, but `UIImage(data:)`
+/// STILL decompresses to full pixel dimensions at render. Bounding the
+/// decode edge to `widgetCoverMaxPixels` keeps the render pass under
+/// the jetsam limit even when several widgets reload on a play burst.
+/// Returns the input untouched if ImageIO cannot read it.
+private let widgetCoverMaxPixels = 600
+
+private func downsampledWidgetCover(_ data: Data?) -> Data? {
+    guard let data, !data.isEmpty else { return nil }
+    let srcOptions = [kCGImageSourceShouldCache: false] as CFDictionary
+    guard let source = CGImageSourceCreateWithData(data as CFData, srcOptions) else {
+        return data
+    }
+    let thumbOptions = [
+        kCGImageSourceCreateThumbnailFromImageAlways: true,
+        kCGImageSourceShouldCacheImmediately: true,
+        kCGImageSourceCreateThumbnailWithTransform: true,
+        kCGImageSourceThumbnailMaxPixelSize: widgetCoverMaxPixels,
+    ] as CFDictionary
+    guard let cg = CGImageSourceCreateThumbnailAtIndex(source, 0, thumbOptions),
+          let out = CFDataCreateMutable(nil, 0),
+          let dest = CGImageDestinationCreateWithData(out, "public.jpeg" as CFString, 1, nil)
+    else { return data }
+    CGImageDestinationAddImage(dest, cg, [kCGImageDestinationLossyCompressionQuality: 0.7] as CFDictionary)
+    guard CGImageDestinationFinalize(dest) else { return data }
+    return out as Data
+}
+
 // MARK: - Cross-platform UIImage/NSImage shim
 
 #if canImport(UIKit)
@@ -89,7 +137,7 @@ private func coverImage(from data: Data?, size: CGFloat = 28) -> some View {
     if let data, let img = PlatformImage(data: data) {
         Image(platformImage: img)
             .resizable()
-            .scaledToFill()
+            .scaledToFit()
     } else {
         Rectangle()
             .fill(
@@ -121,6 +169,9 @@ struct NowPlayingEntry: TimelineEntry {
     let isPlaying: Bool
     let coverData: Data?
     let bookId: String?
+    let chapterRemainingSeconds: Double
+    let bookRemainingSeconds: Double
+    let totalChapters: Int?
 
     static var placeholder: NowPlayingEntry {
         NowPlayingEntry(
@@ -132,7 +183,10 @@ struct NowPlayingEntry: TimelineEntry {
             progress: 0.35,
             isPlaying: true,
             coverData: nil,
-            bookId: nil
+            bookId: nil,
+            chapterRemainingSeconds: 42 * 60,
+            bookRemainingSeconds: 9 * 3600,
+            totalChapters: 18
         )
     }
 
@@ -146,7 +200,10 @@ struct NowPlayingEntry: TimelineEntry {
             progress: 0,
             isPlaying: false,
             coverData: nil,
-            bookId: nil
+            bookId: nil,
+            chapterRemainingSeconds: 0,
+            bookRemainingSeconds: 0,
+            totalChapters: nil
         )
     }
 }
@@ -174,17 +231,29 @@ struct NowPlayingProvider: TimelineProvider {
         let chapterName = defaults.string(forKey: nowPlayingChapterNameKey)
         let progress = defaults.double(forKey: nowPlayingProgressKey)
         let isPlaying = defaults.bool(forKey: nowPlayingIsPlayingKey)
+        let chapterRemaining = defaults.double(forKey: nowPlayingChapterRemainingKey)
+        let bookRemaining = defaults.double(forKey: nowPlayingBookRemainingKey)
+        let totalChapters = defaults.object(forKey: nowPlayingTotalChaptersKey) as? Int
+        // Only THIS book's cover survives into the entry. `loadBooks()`
+        // has already decoded the whole array, but keeping a single
+        // reference lets the rest (and their cover blobs) be released
+        // before the SwiftUI render pass in the memory-capped
+        // (~30 MB) widget process.
+        let cover = downsampledWidgetCover(book.coverPNG)
 
         return NowPlayingEntry(
             date: Date(),
             title: book.title,
-            author: book.author,
+            author: defaults.string(forKey: nowPlayingAuthorKey) ?? book.author,
             chapterName: chapterName,
             chapterIndex: book.lastChapterIndex,
             progress: progress,
             isPlaying: isPlaying,
-            coverData: book.coverPNG,
-            bookId: book.id
+            coverData: cover,
+            bookId: book.id,
+            chapterRemainingSeconds: chapterRemaining,
+            bookRemainingSeconds: bookRemaining,
+            totalChapters: totalChapters
         )
     }
 }
@@ -199,6 +268,7 @@ private struct NowPlayingSmallView: View {
             ZStack(alignment: .bottomLeading) {
                 coverImage(from: entry.coverData)
                     .frame(width: geo.size.width, height: geo.size.height)
+                    .padding(8)
                     .clipped()
 
                 LinearGradient(
@@ -229,6 +299,19 @@ private struct NowPlayingSmallView: View {
                             .foregroundStyle(.white)
                             .lineLimit(2)
                             .minimumScaleFactor(0.8)
+                        if let chapter = entry.chapterName, !chapter.isEmpty {
+                            Text(
+                                entry.totalChapters.flatMap { total in
+                                    entry.chapterIndex.map { "\(chapter) · Cap. \($0 + 1) de \(total)" }
+                                } ?? chapter
+                            )
+                                .font(.caption2)
+                                .foregroundStyle(.white.opacity(0.75))
+                                .lineLimit(1)
+                        }
+                        Text("\(formatWidgetTime(entry.chapterRemainingSeconds)) restantes · livro \(formatWidgetTime(entry.bookRemainingSeconds))")
+                            .font(.system(size: 9, design: .rounded))
+                            .foregroundStyle(.white.opacity(0.7))
                     }
                 }
                 .padding(10)
@@ -239,6 +322,7 @@ private struct NowPlayingSmallView: View {
 
 // MARK: Now Playing — Medium
 
+@available(iOS 17.0, *)
 private struct NowPlayingMediumView: View {
     let entry: NowPlayingEntry
 
@@ -247,6 +331,7 @@ private struct NowPlayingMediumView: View {
             GeometryReader { geo in
                 coverImage(from: entry.coverData)
                     .frame(width: geo.size.width, height: geo.size.height)
+                    .padding(8)
                     .clipped()
             }
             .frame(maxWidth: .infinity)
@@ -295,6 +380,10 @@ private struct NowPlayingMediumView: View {
                     }
                 }
 
+                Text("\(formatWidgetTime(entry.chapterRemainingSeconds)) restantes · livro \(formatWidgetTime(entry.bookRemainingSeconds))")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+
                 Spacer(minLength: 0)
 
                 // Progress bar + playback controls
@@ -337,6 +426,7 @@ private struct NowPlayingMediumView: View {
 
 // MARK: Now Playing — Widget
 
+@available(iOS 17.0, *)
 struct NowPlayingWidget: Widget {
     let kind = "NowPlayingWidget"
 
@@ -353,6 +443,7 @@ struct NowPlayingWidget: Widget {
     }
 }
 
+@available(iOS 17.0, *)
 private struct NowPlayingEntryView: View {
     @Environment(\.widgetFamily) private var family
     let entry: NowPlayingEntry
@@ -367,28 +458,56 @@ private struct NowPlayingEntryView: View {
     }
 }
 
-// MARK: - Widget Intents (trampoline via App Group UserDefaults)
+// MARK: - Widget Intents (trampoline via App Group UserDefaults + Darwin notification)
 
-/// Play/Pause: writes a flag the main app reads on foreground.
+/// Darwin notification name posted after writing an intent flag. The main
+/// app registers a `CFNotificationCenter` observer for this on launch (see
+/// `EpubToMp3App.registerWidgetIntentObserver`) so the flag is drained
+/// immediately — including while the app is merely backgrounded (it holds
+/// the `audio` UIBackgroundMode, so it isn't suspended during playback).
+///
+/// Without this, the flag was only drained on a `scenePhase` transition to
+/// `.active`, which never fires if the app is already frontmost/backgrounded
+/// when the widget button is tapped — the widget button appeared to do
+/// nothing.
+private let widgetIntentDarwinNotification = "com.pietrocode.epubtomp3.widgetIntent"
+
+private func postWidgetIntentNotification() {
+    CFNotificationCenterPostNotification(
+        CFNotificationCenterGetDarwinNotifyCenter(),
+        CFNotificationName(widgetIntentDarwinNotification as CFString),
+        nil, nil, true
+    )
+}
+
+/// Play/Pause: writes a flag the main app reads on foreground, and pings
+/// it immediately via Darwin notification so it doesn't have to wait for
+/// a scene-phase transition.
+@available(iOS 16.0, *)
 struct TogglePlayPauseIntent: AppIntent {
     static let title: LocalizedStringResource = "Play / Pause"
-    static let description = IntentDescription("Toggles audio playback.")
+    static var description: IntentDescription { IntentDescription("Toggles audio playback.") }
+    static let openAppWhenRun = true
 
     func perform() async throws -> some IntentResult {
         UserDefaults(suiteName: appGroupID)?
             .set(true, forKey: "widget.intent.togglePlayPause")
+        postWidgetIntentNotification()
         return .result()
     }
 }
 
 /// Skip forward 30 seconds.
+@available(iOS 16.0, *)
 struct SkipForward30Intent: AppIntent {
     static let title: LocalizedStringResource = "Skip Forward 30s"
-    static let description = IntentDescription("Skips forward 30 seconds in the audiobook.")
+    static var description: IntentDescription { IntentDescription("Skips forward 30 seconds in the audiobook.") }
+    static let openAppWhenRun = true
 
     func perform() async throws -> some IntentResult {
         UserDefaults(suiteName: appGroupID)?
             .set(true, forKey: "widget.intent.skipForward30")
+        postWidgetIntentNotification()
         return .result()
     }
 }
@@ -405,6 +524,11 @@ struct ContinueReadingEntry: TimelineEntry {
     let totalChapters: Int?
     let coverData: Data?
     let bookId: String?
+    // Pre-localized in the host app (the extension bundles no
+    // Localizable.strings); nil only for stale pre-update payloads.
+    var localizedChapterLabel: String? = nil
+    var chapterRemainingSeconds: Double = 0
+    var bookRemainingSeconds: Double = 0
 
     var progressPercent: Int? {
         guard let total = totalChapters, total > 0,
@@ -413,6 +537,9 @@ struct ContinueReadingEntry: TimelineEntry {
     }
 
     var chapterLabel: String? {
+        if let localizedChapterLabel, !localizedChapterLabel.isEmpty {
+            return localizedChapterLabel
+        }
         guard let idx = chapterIndex else { return nil }
         if let total = totalChapters, total > 0 {
             return "Chapter \(idx + 1) of \(total)"
@@ -479,6 +606,7 @@ struct ContinueReadingProvider: TimelineProvider {
         let chapterIndex = defaults.object(forKey: lastReadChapterIndexKey) as? Int
             ?? book.lastChapterIndex
         let totalChapters = defaults.object(forKey: lastReadTotalChaptersKey) as? Int
+        let isNowPlaying = defaults.string(forKey: nowPlayingKey) == bookId
 
         return ContinueReadingEntry(
             date: Date(),
@@ -487,7 +615,10 @@ struct ContinueReadingProvider: TimelineProvider {
             chapterIndex: chapterIndex,
             totalChapters: totalChapters,
             coverData: book.coverPNG,
-            bookId: book.id
+            bookId: book.id,
+            localizedChapterLabel: defaults.string(forKey: lastReadChapterLabelKey),
+            chapterRemainingSeconds: isNowPlaying ? defaults.double(forKey: nowPlayingChapterRemainingKey) : 0,
+            bookRemainingSeconds: isNowPlaying ? defaults.double(forKey: nowPlayingBookRemainingKey) : 0
         )
     }
 }
@@ -502,6 +633,7 @@ private struct ContinueReadingSmallView: View {
             ZStack(alignment: .bottomLeading) {
                 coverImage(from: entry.coverData)
                     .frame(width: geo.size.width, height: geo.size.height)
+                    .padding(8)
                     .clipped()
 
                 LinearGradient(
@@ -533,6 +665,11 @@ private struct ContinueReadingSmallView: View {
                                 .font(.system(size: 10, weight: .medium, design: .rounded))
                                 .foregroundStyle(.white.opacity(0.7))
                         }
+                        if entry.chapterRemainingSeconds > 0 || entry.bookRemainingSeconds > 0 {
+                            Text("\(formatWidgetTime(entry.chapterRemainingSeconds)) restantes · livro \(formatWidgetTime(entry.bookRemainingSeconds))")
+                                .font(.system(size: 9, design: .rounded))
+                                .foregroundStyle(.white.opacity(0.7))
+                        }
                     }
                 }
                 .padding(10)
@@ -551,6 +688,7 @@ private struct ContinueReadingMediumView: View {
             GeometryReader { geo in
                 coverImage(from: entry.coverData)
                     .frame(width: geo.size.width, height: geo.size.height)
+                    .padding(8)
                     .clipped()
             }
             .frame(maxWidth: .infinity)
@@ -610,6 +748,11 @@ private struct ContinueReadingMediumView: View {
                         Text("\(pct)% complete")
                             .font(.system(size: 10, design: .rounded))
                             .foregroundStyle(.tertiary)
+                        if entry.chapterRemainingSeconds > 0 || entry.bookRemainingSeconds > 0 {
+                            Text("\(formatWidgetTime(entry.chapterRemainingSeconds)) restantes · livro \(formatWidgetTime(entry.bookRemainingSeconds))")
+                                .font(.system(size: 10, design: .rounded))
+                                .foregroundStyle(.tertiary)
+                        }
                     }
                 }
             }
@@ -622,6 +765,7 @@ private struct ContinueReadingMediumView: View {
 
 // MARK: Continue Reading — Widget
 
+@available(iOS 17.0, *)
 struct ContinueReadingWidget: Widget {
     let kind = "ContinueReadingWidget"
 
@@ -728,6 +872,7 @@ private struct LibraryBookCell: View {
             VStack(spacing: 4) {
                 coverImage(from: book.coverData, size: 20)
                     .frame(maxWidth: .infinity)
+                    .padding(4)
                     .aspectRatio(0.7, contentMode: .fill)
                     .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
 
@@ -837,6 +982,7 @@ private struct LibraryLargeView: View {
 
 // MARK: Library — Widget
 
+@available(iOS 17.0, *)
 struct LibraryWidget: Widget {
     let kind = "LibraryWidget"
 
@@ -874,6 +1020,7 @@ private struct LibraryEntryView: View {
 /// string. If a user had the old widget on their home screen, this ensures
 /// it keeps working after the update. Identical to `NowPlayingWidget` in
 /// behaviour — the only difference is the `kind` identifier.
+@available(iOS 17.0, *)
 struct EpubToMp3Widget: Widget {
     let kind = "EpubToMp3Widget"
 
@@ -896,18 +1043,21 @@ struct EpubToMp3Widget: Widget {
 
 #if os(iOS)
 // Now Playing
+@available(iOS 17.0, *)
 #Preview("Now Playing — small", as: .systemSmall) {
     NowPlayingWidget()
 } timeline: {
     NowPlayingEntry.placeholder
 }
 
+@available(iOS 17.0, *)
 #Preview("Now Playing — medium", as: .systemMedium) {
     NowPlayingWidget()
 } timeline: {
     NowPlayingEntry.placeholder
 }
 
+@available(iOS 17.0, *)
 #Preview("Now Playing — empty", as: .systemSmall) {
     NowPlayingWidget()
 } timeline: {
@@ -915,18 +1065,21 @@ struct EpubToMp3Widget: Widget {
 }
 
 // Continue Reading
+@available(iOS 17.0, *)
 #Preview("Continue Reading — small", as: .systemSmall) {
     ContinueReadingWidget()
 } timeline: {
     ContinueReadingEntry.placeholder
 }
 
+@available(iOS 17.0, *)
 #Preview("Continue Reading — medium", as: .systemMedium) {
     ContinueReadingWidget()
 } timeline: {
     ContinueReadingEntry.placeholder
 }
 
+@available(iOS 17.0, *)
 #Preview("Continue Reading — empty", as: .systemSmall) {
     ContinueReadingWidget()
 } timeline: {
@@ -934,18 +1087,21 @@ struct EpubToMp3Widget: Widget {
 }
 
 // Library
+@available(iOS 17.0, *)
 #Preview("Library — medium", as: .systemMedium) {
     LibraryWidget()
 } timeline: {
     LibraryEntry.placeholder
 }
 
+@available(iOS 17.0, *)
 #Preview("Library — large", as: .systemLarge) {
     LibraryWidget()
 } timeline: {
     LibraryEntry.placeholder
 }
 
+@available(iOS 17.0, *)
 #Preview("Library — empty", as: .systemMedium) {
     LibraryWidget()
 } timeline: {

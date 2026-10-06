@@ -317,6 +317,42 @@ async def inject_silence_at_offset(
         shutil.rmtree(tmp_dir, ignore_errors=True)
 
 
+def _probe_audio_duration_seconds(audio_file: Path) -> Optional[float]:
+    """Probe ``audio_file`` for its total decodable duration in seconds.
+
+    Returns ``None`` if probing fails. Used to detect when concat-copy
+    silently truncates a byte-concatenated multi-header MP3 (Edge chunks
+    glued together): the concat demuxer with ``-c copy`` only demuxes the
+    first MPEG stream, dropping everything after the second header, so the
+    padded file ends up seconds long instead of minutes.
+    """
+    import subprocess
+
+    _ensure_ffmpeg_paths()
+    try:
+        result = subprocess.run(
+            (
+                "ffprobe",
+                "-v",
+                "error",
+                "-show_entries",
+                "format=duration",
+                "-of",
+                "default=nw=1:nk=1",
+                str(audio_file),
+            ),
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        if result.returncode != 0:
+            return None
+        line = result.stdout.strip().splitlines()[0] if result.stdout.strip() else ""
+        return float(line)
+    except (subprocess.SubprocessError, OSError, ValueError):
+        return None
+
+
 def _detect_audio_sample_rate(audio_file: Path) -> Optional[int]:
     """Probe ``audio_file`` for its first audio stream's sample rate.
 
@@ -520,6 +556,13 @@ async def _pad_with_concat(
     list_path = tmp_dir / "concat.txt"
     final_path = tmp_dir / f"joined{audio_file.suffix or '.mp3'}"
 
+    # Probe the source duration up front. The concat demuxer with -c copy
+    # only demuxes the FIRST MPEG stream of a byte-concatenated multi-header
+    # MP3 (Edge glues per-chunk MP3s together), silently dropping the rest.
+    # We use this baseline to reject a truncated result and fall through to
+    # the full decode+encode path, which handles multi-header input.
+    source_duration = _probe_audio_duration_seconds(audio_file)
+
     parts: list[Path] = []
     if intro_ms > 0:
         rc, err = await _run(_silence_cmd(intro_path, intro_ms / 1000.0))
@@ -551,6 +594,24 @@ async def _pad_with_concat(
     rc, err = await _run(concat_cmd)
     if rc != 0 or not final_path.exists() or final_path.stat().st_size < 100:
         return False, f"concat: {err.strip() or f'exit {rc}'}"
+
+    # **TRUNCATION GUARD**: If the source is a multi-header MP3, concat-copy
+    # drops all but the first stream. Verify the padded result is at least as
+    # long as the source (plus the silence we asked for, minus a tolerance).
+    # If it shrank, reject so the caller re-decodes the whole file instead.
+    if source_duration is not None:
+        padded_duration = _probe_audio_duration_seconds(final_path)
+        expected_min = source_duration + (intro_ms + outro_ms) / 1000.0 - 1.0
+        if padded_duration is None or padded_duration < max(expected_min, source_duration - 1.0):
+            return (
+                False,
+                (
+                    "concat-copy truncated multi-header source "
+                    f"({padded_duration}s < {source_duration}s); "
+                    "falling back to decode+encode"
+                ),
+            )
+
     shutil.move(str(final_path), str(audio_file))
     return True, None
 

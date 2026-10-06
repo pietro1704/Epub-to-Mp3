@@ -16,9 +16,10 @@ import ssl as _ssl_module
 import threading
 from contextlib import AsyncExitStack, suppress
 from pathlib import Path
-from typing import Callable, Dict, List, Optional, Set, Tuple
+from typing import Any, Callable, Dict, List, Optional, Set, Tuple
 from unittest.mock import Mock
 
+from ..error_classifier import classify_error
 from ..speed_monitor import AdaptiveEdgeTuner, get_edge_tuner
 from ..synthesis_tracker import SynthesisTracker
 from ..utils import TextValidator
@@ -53,6 +54,98 @@ MAX_SEGMENT_SPLIT_ATTEMPTS = 2
 MIN_SEGMENT_RETRY_CHARS = 600
 SIMPLIFIED_SEGMENT_MAX_CHARS = 1800
 _SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?])\s+")
+SAFE_ADAPTIVE_SEGMENT_SECONDS = 85.0
+
+
+class AdaptiveSegmentDurationPolicy:
+    """Chapter-boundary controller for opt-in Edge segment duration changes."""
+
+    def __init__(
+        self,
+        *,
+        enabled: bool,
+        initial_seconds: float,
+        hard_max_seconds: float,
+        promote_after: int = 3,
+        promotion_step_seconds: float = 35.0,
+        demotion_step_seconds: float = 35.0,
+    ) -> None:
+        self.enabled = bool(enabled)
+        self.hard_max_seconds = max(
+            30.0,
+            min(float(hard_max_seconds or SAFE_ADAPTIVE_SEGMENT_SECONDS), MAX_EDGE_SEGMENT_SECONDS),
+        )
+        self.safe_floor_seconds = min(SAFE_ADAPTIVE_SEGMENT_SECONDS, self.hard_max_seconds)
+        self.target_seconds = max(
+            self.safe_floor_seconds,
+            min(float(initial_seconds or SAFE_ADAPTIVE_SEGMENT_SECONDS), self.hard_max_seconds),
+        )
+        self.promote_after = max(1, int(promote_after or 1))
+        self.promotion_step_seconds = max(1.0, float(promotion_step_seconds or 1.0))
+        self.demotion_step_seconds = max(1.0, float(demotion_step_seconds or 1.0))
+        self.success_streak = 0
+
+    def observe_chapter(self, *, success: bool, reason: str = "") -> Optional[Dict[str, Any]]:
+        """Apply one completed chapter result; callers invoke this only at boundaries."""
+        if not self.enabled:
+            return None
+        if success:
+            self.success_streak += 1
+            if self.success_streak < self.promote_after:
+                return None
+            self.success_streak = 0
+            new_target = min(
+                self.hard_max_seconds,
+                self.target_seconds + self.promotion_step_seconds,
+            )
+            if new_target <= self.target_seconds:
+                return None
+            self.target_seconds = new_target
+            return {
+                "event": "edge_segment_policy",
+                "action": "promote",
+                "target_seconds": float(self.target_seconds),
+                "reason": "stable_success_streak",
+            }
+
+        self.success_streak = 0
+        new_target = max(
+            self.safe_floor_seconds,
+            self.target_seconds - self.demotion_step_seconds,
+        )
+        if new_target >= self.target_seconds:
+            return None
+        self.target_seconds = new_target
+        return {
+            "event": "edge_segment_policy",
+            "action": "demote",
+            "target_seconds": float(self.target_seconds),
+            "reason": str(reason or "chapter_failure"),
+        }
+
+    def snapshot(self) -> Dict[str, Any]:
+        """Return serializable policy state for runtime tuning checkpoints."""
+        return {
+            "enabled": self.enabled,
+            "target_seconds": float(self.target_seconds),
+            "hard_max_seconds": float(self.hard_max_seconds),
+            "success_streak": int(self.success_streak),
+        }
+
+    def restore(self, state: Dict[str, Any]) -> None:
+        """Restore only bounded policy state; malformed state is ignored."""
+        if not self.enabled or not isinstance(state, dict):
+            return
+        try:
+            target = float(state.get("target_seconds", self.target_seconds))
+            self.target_seconds = max(
+                self.safe_floor_seconds,
+                min(target, self.hard_max_seconds),
+            )
+            self.success_streak = max(0, int(state.get("success_streak", 0) or 0))
+        except (TypeError, ValueError):
+            return
+
 
 # If Edge returns no audio at all, it's often a connectivity / service issue.
 # Use a short circuit-breaker to avoid spending minutes retrying the same request.
@@ -62,6 +155,10 @@ EDGE_NETWORK_ABORT_AFTER_FAILS = max(
     1, int(os.getenv("EDGE_NETWORK_ABORT_AFTER_FAILS", "1") or "1")
 )
 EDGE_STREAM_MAX_RETRIES = max(1, int(os.getenv("EDGE_STREAM_MAX_RETRIES", "1") or "1"))
+# Minimum byte size for a synthesised chunk/segment to be considered valid.
+# Anything below this is an empty or truncated MP3 fragment that would corrupt
+# the concatenated chapter output; mirrors the >=1024 resume pre-scan threshold.
+_MIN_VALID_CHUNK_BYTES = max(1, int(os.getenv("EDGE_MIN_VALID_CHUNK_BYTES", "1024") or "1024"))
 
 # Import SSL/Certificate error types
 try:
@@ -430,11 +527,14 @@ class EdgeTTSEngine:
         language_voices: Optional[Dict[str, str]] = None,
         verbose: bool = False,
         max_segment_seconds: Optional[float] = None,
+        adaptive_segment_seconds: bool = False,
+        adaptive_segment_max_seconds: float = 180.0,
         chunk_char_limit: Optional[int] = None,
         enable_parallel: bool = True,
         formatting_cues_enabled: bool = True,
         formatting_locale: str = "pt",
         log_callback: Optional[Callable[[str], None]] = None,
+        metric_callback: Optional[Callable[[Dict[str, Any]], None]] = None,
         enable_character_voices: bool = False,
         narrator_voice: Optional[str] = None,
         character_voice: Optional[str] = None,
@@ -481,10 +581,17 @@ class EdgeTTSEngine:
         self.last_error: Optional[str] = None
         self.verbose = verbose
         self.log_callback = log_callback
+        self.metric_callback = metric_callback
         max_seconds = (
             max_segment_seconds if max_segment_seconds is not None else DEFAULT_EDGE_SEGMENT_SECONDS
         )
         self._max_segment_seconds = max(30.0, min(float(max_seconds), MAX_EDGE_SEGMENT_SECONDS))
+        self._segment_duration_policy = AdaptiveSegmentDurationPolicy(
+            enabled=adaptive_segment_seconds,
+            initial_seconds=self._max_segment_seconds,
+            hard_max_seconds=adaptive_segment_max_seconds,
+        )
+        self._pending_segment_policy_result: Optional[Tuple[bool, str]] = None
         # Use adaptive chunk size if no override provided
         if chunk_char_limit is not None:
             try:
@@ -592,6 +699,53 @@ class EdgeTTSEngine:
             self.log_callback(message)
         else:
             print(message)
+
+    def _emit_metric(self, payload: Dict[str, Any]) -> None:
+        """Emit compact telemetry without allowing observers to affect synthesis."""
+        callback = getattr(self, "metric_callback", None)
+        if not callable(callback):
+            return
+        try:
+            callback(dict(payload))
+        except Exception:
+            return
+
+    def _emit_validation_metric(
+        self, *, segment_index: int, elapsed_ms: float, valid: bool
+    ) -> None:
+        """Record the post-synthesis audio validation phase."""
+        self._emit_metric(
+            {
+                "event": "edge_segment_validation",
+                "engine": "edge",
+                "segment_index": int(segment_index),
+                "status": "success" if valid else "failed",
+                "validation_ms": round(max(0.0, float(elapsed_ms or 0.0)), 3),
+            }
+        )
+
+    def _measure_segment_validation(self, audio_path: Optional[Path], segment_index: int) -> float:
+        """Validate one generated segment and emit timing without changing failure semantics."""
+        started = asyncio.get_running_loop().time()
+        valid = False
+        duration = 0.0
+        try:
+            from ..audio_validator import AudioValidator
+
+            if audio_path is None:
+                raise ValueError("missing_audio_path")
+            duration = float(AudioValidator().get_audio_duration(audio_path) or 0.0)
+            valid = duration > 0.0
+        except Exception:
+            duration = 0.0
+        finally:
+            elapsed_ms = (asyncio.get_running_loop().time() - started) * 1000.0
+            self._emit_validation_metric(
+                segment_index=segment_index,
+                elapsed_ms=elapsed_ms,
+                valid=valid,
+            )
+        return duration
 
     def get_synthesis_log(self) -> List[Dict]:
         """Return log of all segments processed during last synthesis."""
@@ -830,7 +984,73 @@ class EdgeTTSEngine:
         cleaned = cleaned.strip()
         return cleaned
 
+    def _apply_pending_segment_policy(self) -> None:
+        """Apply the previous chapter result immediately before the next chapter boundary."""
+        pending = self._pending_segment_policy_result
+        if pending is None:
+            return
+        self._pending_segment_policy_result = None
+        success, reason = pending
+        event = self._segment_duration_policy.observe_chapter(success=success, reason=reason)
+        if event:
+            self._emit_metric(event)
+
+    def get_segment_policy_state(self) -> Dict[str, Any]:
+        """Return bounded adaptive segment state for runtime tuning checkpoints."""
+        return self._segment_duration_policy.snapshot()
+
+    def restore_segment_policy_state(self, state: Dict[str, Any]) -> None:
+        """Restore adaptive segment state without touching content cache files."""
+        self._segment_duration_policy.restore(state)
+
+    @staticmethod
+    def _segment_policy_failure_reason(error: Optional[str]) -> str:
+        text = str(error or "").lower()
+        if "timeout" in text:
+            return "timeout"
+        if "no_audio" in text or "noaudioreceived" in text:
+            return "no_audio"
+        if "incomplete" in text or "truncat" in text:
+            return "truncation"
+        if "429" in text or "rate" in text or "thrott" in text:
+            return "rate_limit"
+        return "chapter_failure"
+
     async def synthesize_async(
+        self,
+        text: str,
+        output_path: Path,
+        formatting_segments=None,
+        progress_callback=None,
+        chunk_callback=None,
+        pre_segment_callback=None,
+        resume_chunks_dir: Optional[Path] = None,
+    ) -> Optional[Path]:
+        """Synthesize one chapter and defer policy adjustment to the next boundary."""
+        self._apply_pending_segment_policy()
+        try:
+            result = await self._synthesize_async_impl(
+                text,
+                output_path,
+                formatting_segments=formatting_segments,
+                progress_callback=progress_callback,
+                chunk_callback=chunk_callback,
+                pre_segment_callback=pre_segment_callback,
+                resume_chunks_dir=resume_chunks_dir,
+            )
+        except BaseException:
+            self._pending_segment_policy_result = (
+                False,
+                self._segment_policy_failure_reason(self.last_error),
+            )
+            raise
+        self._pending_segment_policy_result = (
+            result is not None,
+            "" if result is not None else self._segment_policy_failure_reason(self.last_error),
+        )
+        return result
+
+    async def _synthesize_async_impl(
         self,
         text: str,
         output_path: Path,
@@ -930,6 +1150,21 @@ class EdgeTTSEngine:
         use_chunk_files = bool(chunk_callback) or bool(resume_chunks_dir)
 
         def _append_chunk_file(chunk_path: Path, first: bool) -> bool:
+            # **DEFENSE-IN-DEPTH**: Never append a missing or empty/tiny chunk;
+            # a 0-byte fragment produces an undecodable MP3 that fails coverage
+            # validation. Report failure so the caller re-synthesises instead of
+            # persisting corrupt audio.
+            try:
+                if (not chunk_path.exists()) or chunk_path.stat().st_size < _MIN_VALID_CHUNK_BYTES:
+                    self.last_error = "empty_chunk_skipped"
+                    if self.verbose:
+                        size = chunk_path.stat().st_size if chunk_path.exists() else 0
+                        self._log(
+                            f"❌ Refusing to append empty/tiny chunk {chunk_path.name} ({size} bytes)"
+                        )
+                    return False
+            except OSError:
+                return False
             try:
                 mode = "wb" if first else "ab"
                 with output_path.open(mode) as outfile, chunk_path.open("rb") as infile:
@@ -1211,6 +1446,16 @@ class EdgeTTSEngine:
             self.last_error = "no_audio"
             return None
 
+        # **EMPTY-OUTPUT GUARD**: A non-zero segment count but an empty/tiny
+        # concatenated file means every appended chunk was corrupt. Fail clean
+        # instead of returning a 0s MP3 that passes as "success".
+        with suppress(OSError):
+            if output_path.stat().st_size < _MIN_VALID_CHUNK_BYTES:
+                self.partial_failure_detected = True
+                self.last_error = "empty_output_all_segments"
+                output_path.unlink(missing_ok=True)
+                return None
+
         expected_segments = total_segments + failed_segments
         self.last_segment_report = {
             "expected": expected_segments,
@@ -1363,10 +1608,7 @@ class EdgeTTSEngine:
 
                         if self._synthesis_tracker:
                             try:
-                                from ..audio_validator import AudioValidator
-
-                                validator = AudioValidator()
-                                duration = validator.get_audio_duration(retry_path)
+                                duration = self._measure_segment_validation(retry_path, fail_idx)
                                 self._synthesis_tracker.record_segment(
                                     index=fail_idx,
                                     text=segment_text,
@@ -1451,10 +1693,7 @@ class EdgeTTSEngine:
                     # **INTEGRITY TRACKING**: Mark resumed segment as success
                     if self._synthesis_tracker:
                         try:
-                            from ..audio_validator import AudioValidator
-
-                            validator = AudioValidator()
-                            duration = validator.get_audio_duration(segment_files[i])
+                            duration = self._measure_segment_validation(segment_files[i], i)
                             _, seg_text = segments_to_process[i]
                             self._synthesis_tracker.record_segment(
                                 index=i,
@@ -1532,10 +1771,7 @@ class EdgeTTSEngine:
                         # **INTEGRITY TRACKING**: Record successful segment
                         if self._synthesis_tracker:
                             try:
-                                from ..audio_validator import AudioValidator
-
-                                validator = AudioValidator()
-                                duration = validator.get_audio_duration(temp_file)
+                                duration = self._measure_segment_validation(temp_file, segment_idx)
                                 _, seg_text = segments_to_process[segment_idx]
                                 self._synthesis_tracker.record_segment(
                                     index=segment_idx,
@@ -1628,18 +1864,35 @@ class EdgeTTSEngine:
         try:
             # **OPTIMIZED**: Buffered chunked I/O to reduce memory pressure
             CHUNK_SIZE = 1024 * 1024  # 1MB chunks
+            concatenated_segments = 0
             with output_path.open("wb") as outfile:
                 for temp_file in temp_files:
-                    if temp_file.exists():
-                        with temp_file.open("rb") as infile:
-                            while True:
-                                chunk = infile.read(CHUNK_SIZE)
-                                if not chunk:
-                                    break
-                                outfile.write(chunk)
-                        # Clean up temp file
+                    # **DEFENSE-IN-DEPTH**: Skip missing or empty/tiny fragments
+                    # so a single corrupt segment never poisons the whole MP3.
+                    try:
+                        seg_size = temp_file.stat().st_size if temp_file.exists() else 0
+                    except OSError:
+                        seg_size = 0
+                    if seg_size < _MIN_VALID_CHUNK_BYTES:
+                        if self.verbose:
+                            self._log(
+                                f"⚠️ [PARALLEL] Skipping empty/tiny segment "
+                                f"{temp_file.name} ({seg_size} bytes)"
+                            )
+                        successful_segments = max(0, successful_segments - 1)
                         with suppress(OSError):
                             temp_file.unlink()
+                        continue
+                    with temp_file.open("rb") as infile:
+                        while True:
+                            chunk = infile.read(CHUNK_SIZE)
+                            if not chunk:
+                                break
+                            outfile.write(chunk)
+                    concatenated_segments += 1
+                    # Clean up temp file
+                    with suppress(OSError):
+                        temp_file.unlink()
         except Exception as exc:
             self.last_error = f"concatenation_failed: {exc}"
             if self.verbose:
@@ -1648,6 +1901,18 @@ class EdgeTTSEngine:
             for temp_file in temp_files:
                 with suppress(OSError):
                     temp_file.unlink()
+            return None
+
+        # **EMPTY-OUTPUT GUARD**: If every segment was skipped as empty/tiny the
+        # output file is 0 bytes — fail clean instead of returning a corrupt MP3
+        # that only gets caught by late coverage validation.
+        if concatenated_segments == 0 or (
+            output_path.exists() and output_path.stat().st_size < _MIN_VALID_CHUNK_BYTES
+        ):
+            self.partial_failure_detected = True
+            self.last_error = "no_audio_generated_parallel"
+            with suppress(OSError):
+                output_path.unlink(missing_ok=True)
             return None
 
         # Update statistics
@@ -1696,10 +1961,19 @@ class EdgeTTSEngine:
 
         # Limits: minimum 45s, dynamic maximum to avoid cutting long segments
         timeout = max(timeout, 45.0)
-        timeout_cap = max(300.0, self._max_segment_seconds * 1.5 + 60.0)
+        timeout_cap = max(300.0, self._active_segment_seconds() * 1.5 + 60.0)
         timeout = min(timeout, timeout_cap)
 
         return int(round(timeout))
+
+    def _active_segment_seconds(self) -> float:
+        """Return the current target while preserving the configured hard limit."""
+        if self._segment_duration_policy.enabled:
+            return min(
+                self._segment_duration_policy.target_seconds,
+                self._segment_duration_policy.hard_max_seconds,
+            )
+        return self._max_segment_seconds
 
     def _chunk_text_with_dialogue(self, base_voice: str, text: str) -> list[tuple[str, str]]:
         """Like ``_chunk_text`` but routes dialogue spans to ``character_voice``.
@@ -1943,10 +2217,11 @@ class EdgeTTSEngine:
             return []
 
         duration = self._estimate_duration(text)
-        if duration <= self._max_segment_seconds:
+        active_segment_seconds = self._active_segment_seconds()
+        if duration <= active_segment_seconds:
             return [(voice, text)]
 
-        segments = self._split_text_by_duration(text, self._max_segment_seconds)
+        segments = self._split_text_by_duration(text, active_segment_seconds)
         return [(voice, segment) for segment in segments if segment]
 
     def _split_text_by_duration(self, text: str, max_seconds: float) -> List[str]:
@@ -2165,6 +2440,82 @@ class EdgeTTSEngine:
         *,
         append: bool,
     ) -> bool:
+        """Synthesize one segment and emit one failure-safe lifecycle metric."""
+        started = asyncio.get_running_loop().time()
+        metric_state: Dict[str, Any] = {
+            "queue_wait_ms": 0.0,
+            "request_start": started,
+            "request_end": started,
+            "retry_count": 0,
+            "received_chunks": 0,
+            "write_ms": 0.0,
+            "active_requests": 0,
+        }
+        result = False
+        cancelled = False
+        error_text = ""
+        try:
+            result = await self._synthesize_segment_core(
+                text,
+                voice,
+                output_path,
+                append=append,
+                _metric_state=metric_state,
+            )
+            return result
+        except asyncio.CancelledError:
+            cancelled = True
+            error_text = "cancelled"
+            raise
+        except Exception as exc:
+            error_text = str(exc or exc.__class__.__name__)
+            raise
+        finally:
+            finished = asyncio.get_running_loop().time()
+            metric_state["request_end"] = finished
+            error_text = error_text or str(self.last_error or "")
+            if cancelled:
+                status = "cancelled"
+                error_category = "cancelled"
+            elif result:
+                status = "success"
+                error_category = ""
+            else:
+                status = "failed"
+                error_category = classify_error(error_text)
+            request_start = float(metric_state.get("request_start", started) or started)
+            request_end = float(metric_state.get("request_end", finished) or finished)
+            self._emit_metric(
+                {
+                    "event": "edge_request",
+                    "engine": "edge",
+                    "status": status,
+                    "error_category": error_category,
+                    "segment_chars": len(text or ""),
+                    "queue_wait_ms": round(
+                        max(0.0, float(metric_state.get("queue_wait_ms", 0.0) or 0.0)), 3
+                    ),
+                    "request_ms": round(max(0.0, request_end - request_start) * 1000.0, 3),
+                    "retry_count": int(metric_state.get("retry_count", 0) or 0),
+                    "received_chunks": int(metric_state.get("received_chunks", 0) or 0),
+                    "write_ms": round(
+                        max(0.0, float(metric_state.get("write_ms", 0.0) or 0.0)) * 1000.0,
+                        3,
+                    ),
+                    "validation_ms": 0.0,
+                    "active_requests": int(metric_state.get("active_requests", 0) or 0),
+                }
+            )
+
+    async def _synthesize_segment_core(
+        self,
+        text: str,
+        voice: str,
+        output_path: Path,
+        *,
+        append: bool,
+        _metric_state: Optional[Dict[str, Any]] = None,
+    ) -> bool:
         # Validate inputs
         if text is None:
             self.last_error = "text_is_none"
@@ -2207,6 +2558,11 @@ class EdgeTTSEngine:
                 await stack.enter_async_context(global_limiter)
             await stack.enter_async_context(self._rate_limiter)
             wait_time = loop.time() - waiting_start
+            if _metric_state is not None:
+                _metric_state["queue_wait_ms"] = max(0.0, wait_time * 1000.0)
+                _metric_state["active_requests"] = max(
+                    1, int(self._parallel_slots) - int(self._rate_limiter._value)
+                )
             if self.verbose and wait_time > 1:
                 self._log(f"   🚀 Slot acquired after {wait_time:.1f}s")
 
@@ -2219,6 +2575,8 @@ class EdgeTTSEngine:
                 return False
             try:
                 # SSL bypass already applied at the top of the module via monkeypatch
+                if _metric_state is not None:
+                    _metric_state["request_start"] = loop.time()
                 communicator = self._edge_tts.Communicate(text, voice)
 
             except Exception as exc:  # pragma: no cover - defensive logging
@@ -2280,14 +2638,19 @@ class EdgeTTSEngine:
                     self._log("   ❌ Invalid stream (not async)")
                 return False
             chunks_received = 0
+            write_seconds = 0.0
 
             async def _consume_stream(out_file) -> None:
-                nonlocal received_audio, chunks_received
+                nonlocal received_audio, chunks_received, write_seconds
                 try:
                     async for chunk in stream:
                         chunks_received += 1
+                        if _metric_state is not None:
+                            _metric_state["received_chunks"] = chunks_received
                         if chunk["type"] == "audio":
+                            write_started = loop.time()
                             out_file.write(chunk["data"])
+                            write_seconds += max(0.0, loop.time() - write_started)
                             received_audio = True
                 finally:
                     with suppress(Exception):
@@ -2411,6 +2774,8 @@ class EdgeTTSEngine:
                             self._parallel_slots = min(self._parallel_slots, _edge_max_concurrency)
                             if retry_count < max_retries - 1:
                                 retry_count += 1
+                                if _metric_state is not None:
+                                    _metric_state["retry_count"] = retry_count
                                 await asyncio.sleep(backoff_time)
                                 try:
                                     voice = self._rotate_retry_voice(voice)
@@ -2433,6 +2798,8 @@ class EdgeTTSEngine:
 
                         if is_transient and allow_retry and retry_count < max_retries - 1:
                             retry_count += 1
+                            if _metric_state is not None:
+                                _metric_state["retry_count"] = retry_count
                             backoff_time = 2**retry_count  # 2s, 4s, 8s
 
                             # Detailed SSL error logging
@@ -2508,6 +2875,37 @@ class EdgeTTSEngine:
             synthesis_end = asyncio.get_event_loop().time()
             segment_duration = synthesis_end - synthesis_start
             text_chars = len(text) if text else 0
+            if _metric_state is not None:
+                _metric_state["received_chunks"] = chunks_received
+                _metric_state["write_ms"] = max(0.0, write_seconds * 1000.0)
+
+            # **EMPTY-SEGMENT GUARD**: Even when the stream reported audio, the
+            # file on disk may be empty or a truncated fragment (Edge can flush a
+            # single sub-1KB frame then drop the connection). An empty/tiny chunk
+            # concatenated into the chapter output produces an undecodable MP3
+            # that later fails coverage validation as "0.3% of text". Treat it as
+            # a hard segment failure so the caller re-synthesises instead of
+            # persisting a corrupt chunk on disk.
+            if received_audio:
+                try:
+                    written_bytes = output_path.stat().st_size if output_path.exists() else 0
+                except OSError:
+                    written_bytes = 0
+                if written_bytes < _MIN_VALID_CHUNK_BYTES:
+                    received_audio = False
+                    self.last_error = "empty_audio_written"
+                    if self.verbose:
+                        self._log(
+                            f"   ⚠️ Segment reported audio but wrote only "
+                            f"{written_bytes} bytes (<{_MIN_VALID_CHUNK_BYTES}); treating as failure"
+                        )
+                    # Never leave a 0-byte/tiny chunk on disk when we own the
+                    # file (append=False). In append mode we cannot safely
+                    # truncate the caller's accumulating output, so we leave it
+                    # and rely on the caller's size guard before concatenation.
+                    if not append:
+                        with suppress(OSError):
+                            output_path.unlink(missing_ok=True)
 
             if received_audio:
                 with suppress(Exception):
@@ -2521,7 +2919,8 @@ class EdgeTTSEngine:
                     latency=segment_duration,
                 )
             else:
-                self.last_error = "no_audio"
+                if not self.last_error:
+                    self.last_error = "no_audio"
                 # Record failed segment timing
                 self._record_segment_timing(text_chars, segment_duration, success=False)
                 # Record failure to network tuner for automatic adjustment
@@ -2530,6 +2929,17 @@ class EdgeTTSEngine:
                     latency=segment_duration,
                     error_msg="no_audio",
                 )
+                # Never leave a truncated 0-byte file behind when we own it
+                # (append=False). The 'wb' open above truncates output_path even
+                # when no audio arrives; a stray 0-byte chunk would be reused by
+                # the resume path or corrupt the concatenated chapter.
+                if not append:
+                    with suppress(OSError):
+                        if (
+                            output_path.exists()
+                            and output_path.stat().st_size < _MIN_VALID_CHUNK_BYTES
+                        ):
+                            output_path.unlink(missing_ok=True)
 
             return received_audio
 

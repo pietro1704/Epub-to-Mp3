@@ -9,15 +9,8 @@ import shutil
 from pathlib import Path
 from typing import List, Optional, Set
 
+from ._env_utils import env_bool as _env_bool
 from .config import ConversionConfig
-
-
-def _env_bool(name: str, default: bool = False) -> bool:
-    raw = os.getenv(name)
-    if raw is None:
-        return default
-    return raw.strip().lower() in {"1", "true", "yes", "on"}
-
 
 LEGACY_FINAL_FALLBACK_ENABLED = _env_bool("LEGACY_FINAL_FALLBACK_ENABLED", False)
 
@@ -88,6 +81,13 @@ class _ValidationMixin:
                 )
             finally:
                 os.environ["SUPPRESS_VALIDATION_ERRORS"] = old_verbose
+
+            # Snapshot the latest validate_book() result on the instance so
+            # the caller (session logging) can explain *why* a run ended up
+            # "partial" instead of just recording that it did — see
+            # `feedback_validation_trace_visibility.md`.
+            self._last_validation_stats = stats
+            self._last_validation_issues = issues
 
             # Check if passed (duration_mismatch also critical)
             has_critical_problems = bool(

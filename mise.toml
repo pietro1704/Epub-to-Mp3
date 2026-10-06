@@ -1,9 +1,11 @@
 [tools]
-# Exact Python version required for Coqui TTS (requires 3.11)
-python = { version = "3.11.11", virtualenv = ".venv" }
-# Node LTS for frontend (Vite 7.x requires >=20.19.0)
-node = "latest"
+python = "3.12.10"
+# Node LTS for frontend (Vite 8.x requires >=20.19.0)
+node = "lts"
 npm = "latest"
+# Runtimes required by the cargo:git-cliff and cocoapods backends below.
+rust = "stable"
+ruby = "4.0.7"
 # Changelog generator (conventional commits → CHANGELOG.md)
 "cargo:git-cliff" = "latest"
 # Flutter SDK for the cross-platform companion app under flutter_app/.
@@ -15,10 +17,75 @@ cocoapods = "1.16.2"
 # requires JAVA_HOME to be set; mise handles that when java is in [tools].
 java = "21.0.2"
 android-sdk = "11.0"
+ninja = "latest"
+
+[env]
+# Keep the project virtualenv managed by mise without the deprecated tool option.
+_.python.venv = { path = ".venv", create = true }
 
 [tasks.dev]
 description = "Start backend (uvicorn) and frontend (Vite) together"
 run = "./scripts/dev.sh"
+
+[tasks."rust:health"]
+description = "Run the Rust health-only CLI"
+run = "mise exec -- cargo run -p converter-cli"
+
+[tasks."rust:server"]
+description = "Run the Rust Axum health and metadata server"
+run = "PIPER_BINARY=\"$MISE_PROJECT_ROOT/.venv/bin/piper\" PIPER_MODEL=\"$MISE_PROJECT_ROOT/models/piper/en_US-lessac-medium.onnx\" mise exec -- cargo run -p converter-server"
+
+[tasks.convert]
+description = "Run the canonical Rust conversion CLI"
+run = "mise exec -- cargo run --release -p converter-cli --bin converter-cli --"
+
+[tasks."guard:no-python-production"]
+description = "Fail if production packaging reintroduces the legacy Python runtime or bridge"
+run = "bash scripts/guard_no_python_production.sh"
+
+[tasks."migration:gate"]
+description = "Report Rust migration readiness, packaging artifacts, and remaining blockers"
+run = "bash scripts/check_rust_migration_gate.sh"
+
+[tasks."check:rust-migration"]
+description = "Check Rust migration readiness, packaging artifacts, and remaining blockers"
+run = "bash scripts/check_rust_migration_gate.sh"
+
+[tasks."converter-ffi:validate"]
+description = "Validate converter-ffi native target mapping and artifact names on the host"
+run = "mise exec -- python scripts/validate_converter_ffi_targets.py"
+
+[tasks."converter-ffi:targets"]
+description = "List converter-ffi native target mappings and exact output paths"
+run = "mise exec -- python scripts/build_converter_ffi.py --list"
+
+[tasks."converter-ffi:build"]
+description = "Build the shared converter-ffi Rust library for the host"
+run = "mise exec -- cargo build -p converter-ffi --release"
+
+[tasks."converter-ffi:android-arm64"]
+description = "Build converter-ffi for Android arm64 with mise-managed Rust and NDK"
+run = "NDK=\"${ANDROID_NDK_HOME:-$HOME/.local/share/mise/installs/android-sdk/11.0/ndk/28.2.13676358}\"; TOOLCHAIN=\"$NDK/toolchains/llvm/prebuilt/darwin-x86_64/bin\"; SYSROOT=\"$NDK/toolchains/llvm/prebuilt/darwin-x86_64/sysroot\"; NINJA=\"$HOME/.local/share/mise/installs/ninja/1.13.2/ninja\"; export ANDROID_NDK_HOME=\"$NDK\" ANDROID_NDK_ROOT=\"$NDK\" PATH=\"$TOOLCHAIN:$HOME/.local/share/mise/installs/ninja/1.13.2:$HOME/.cargo/bin:$PATH\"; export CC_aarch64_linux_android=\"$TOOLCHAIN/aarch64-linux-android24-clang\" CXX_aarch64_linux_android=\"$TOOLCHAIN/aarch64-linux-android24-clang++\" AR_aarch64_linux_android=\"$TOOLCHAIN/llvm-ar\" CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER=\"$TOOLCHAIN/aarch64-linux-android24-clang\" BINDGEN_EXTRA_CLANG_ARGS_aarch64_linux_android=\"--target=aarch64-linux-android24 --sysroot=$SYSROOT -I$SYSROOT/usr/include -include stdio.h\" BINDGEN_EXTRA_CLANG_ARGS=\"--target=aarch64-linux-android24 --sysroot=$SYSROOT -I$SYSROOT/usr/include -include stdio.h\" CFLAGS_aarch64_linux_android=\"--sysroot=$SYSROOT\" CMAKE_TOOLCHAIN_FILE=\"$NDK/build/cmake/android.toolchain.cmake\" CMAKE_GENERATOR=Ninja CMAKE_MAKE_PROGRAM=\"$NINJA\" TARGET_CC=\"$TOOLCHAIN/aarch64-linux-android24-clang\" CC=\"$TOOLCHAIN/aarch64-linux-android24-clang\" RUSTUP_TOOLCHAIN=stable; cargo build -p converter-ffi --features android-jni --release --target aarch64-linux-android --target-dir target/edge-android"
+
+[tasks."converter-ffi:android-check"]
+description = "Check Android converter-ffi without linking unsupported Piper inference dependencies"
+run = "env -u CC -u CFLAGS -u CXX -u AR -u CMAKE_TOOLCHAIN_FILE -u CMAKE_GENERATOR -u CMAKE_MAKE_PROGRAM mise exec -- cargo check -p converter-ffi --features android-jni"
+
+[tasks."converter-ffi:android-install"]
+description = "Install the cached Android arm64 converter-ffi artifact into the APK source tree"
+run = "mkdir -p flutter_app/android/app/src/main/jniLibs/arm64-v8a && cp target/edge-android/aarch64-linux-android/release/libconverter_ffi.so flutter_app/android/app/src/main/jniLibs/arm64-v8a/libconverter_ffi.so"
+
+[tasks."android:embedded-deps"]
+description = "Install Android NDK dependencies through mise-managed sdkmanager"
+run = "SDKMANAGER=\"$HOME/.local/share/mise/installs/android-sdk/11.0/cmdline-tools/11.0/bin/sdkmanager\"; test -x \"$SDKMANAGER\"; \"$SDKMANAGER\" \"platform-tools\" \"platforms;android-35\" \"build-tools;35.0.0\" \"ndk;28.2.13676358\"; mise install ninja@latest"
+
+[tasks."android:runtime-audit"]
+description = "Audit the optional embedded Piper Android runtime"
+run = "mise exec -- bash -lc 'set -e; test -d flutter_app/android/app/src/main/jniLibs/arm64-v8a; if find flutter_app/android/app/src/main/jniLibs -type f -name \"libpiper_runtime.so\" -print -quit | grep -q .; then echo \"optional Piper runtime present\"; else echo \"Piper runtime absent: Edge-only Android artifact is active\"; fi'"
+
+[tasks."piper:android-arm64"]
+description = "Build Piper Embedded runtime for Android arm64 with the mise-managed NDK"
+run = "NDK=\"${ANDROID_NDK_HOME:-$HOME/.local/share/mise/installs/android-sdk/11.0/ndk/28.2.13676358}\"; TOOLCHAIN=\"$NDK/toolchains/llvm/prebuilt/darwin-x86_64/bin\"; SYSROOT=\"$NDK/toolchains/llvm/prebuilt/darwin-x86_64/sysroot\"; NINJA=\"$HOME/.local/share/mise/installs/ninja/1.13.2/ninja\"; export ANDROID_NDK_HOME=\"$NDK\" ANDROID_NDK_ROOT=\"$NDK\" PATH=\"$TOOLCHAIN:$HOME/.local/share/mise/installs/ninja/1.13.2:$HOME/.cargo/bin:$PATH\"; export CC_aarch64_linux_android=\"$TOOLCHAIN/aarch64-linux-android24-clang\" CXX_aarch64_linux_android=\"$TOOLCHAIN/aarch64-linux-android24-clang++\" AR_aarch64_linux_android=\"$TOOLCHAIN/llvm-ar\" CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER=\"$TOOLCHAIN/aarch64-linux-android24-clang\" BINDGEN_EXTRA_CLANG_ARGS_aarch64_linux_android=\"--target=aarch64-linux-android24 --sysroot=$SYSROOT -I$SYSROOT/usr/include -include stdio.h\" BINDGEN_EXTRA_CLANG_ARGS=\"--target=aarch64-linux-android24 --sysroot=$SYSROOT -I$SYSROOT/usr/include -include stdio.h\" CFLAGS_aarch64_linux_android=\"--sysroot=$SYSROOT\" CMAKE_TOOLCHAIN_FILE=\"$NDK/build/cmake/android.toolchain.cmake\" CMAKE_GENERATOR=Ninja CMAKE_MAKE_PROGRAM=\"$NINJA\" TARGET_CC=\"$TOOLCHAIN/aarch64-linux-android24-clang\" CC=\"$TOOLCHAIN/aarch64-linux-android24-clang\" RUSTUP_TOOLCHAIN=stable; cargo build -p piper-runtime --features onnxruntime,piper-inference --release --target aarch64-linux-android --target-dir target/piper-android"
 
 [tasks.clean]
 description = "Clean backend cache, pycache, and completed outputs"
@@ -81,6 +148,65 @@ echo "  - book cache (.cache/<book>), models preserved"
 echo "  - .mise-cache"
 """
 
+[tasks."clean:build"]
+description = "Reclaim disk from iOS/macOS/Flutter build artifacts (DerivedData, .build, dist, flutter build/) — run periodically or when disk is low, NOT wired into mac:build itself since mac:run/CI consume its .build output immediately after."
+run = """
+#!/bin/bash
+set -e
+
+echo "🧹 Cleaning build artifacts..."
+
+# xcodebuild -derivedDataPath output for the headless mac:build/ios:build
+# tasks. Not auto-run after mac:build/mac:build:dev — mac:run and other
+# immediate consumers read the just-built .app straight out of here.
+echo "  → Removing ios/EpubToMp3/.build..."
+rm -rf ios/EpubToMp3/.build 2>/dev/null || true
+
+# Xcode.app's own DerivedData for this project, only if Xcode.app was ever
+# opened directly on it (headless builds above never populate this — see
+# "Build Artifact Hygiene" in CLAUDE.md: don't let two build caches for the
+# same project accumulate in parallel).
+echo "  → Removing Xcode DerivedData for EpubToMp3..."
+rm -rf "$HOME/Library/Developer/Xcode/DerivedData"/EpubToMp3-* 2>/dev/null || true
+
+echo "  → Removing Rust sidecar dist/..."
+rm -rf dist 2>/dev/null || true
+
+echo "  → Removing flutter_app/build..."
+rm -rf flutter_app/build 2>/dev/null || true
+
+echo "✅ Build artifacts cleaned!"
+"""
+
+[tasks."clean:build:if-low"]
+description = "Run clean:build only when free disk is below threshold and no build is active. Invoked every 6h by the com.pietro.epub-to-mp3-disk-guard LaunchAgent (~/bin/epub-to-mp3-disk-guard.sh)."
+run = """
+#!/bin/bash
+set -e
+
+THRESHOLD_GB="${DISK_GUARD_THRESHOLD_GB:-20}"
+# /System/Volumes/Data, not /: `df /` reports the sealed System snapshot
+# (barely moves regardless of real usage) — actual builds/caches live on
+# the Data volume. Checking `/` made this threshold nearly meaningless.
+AVAIL_GB="$(df -g /System/Volumes/Data | tail -1 | awk '{print $4}')"
+
+echo "Available: ${AVAIL_GB}Gi (threshold: ${THRESHOLD_GB}Gi)"
+
+if [ "$AVAIL_GB" -ge "$THRESHOLD_GB" ]; then
+  echo "Above threshold — nothing to do."
+  exit 0
+fi
+
+# Never delete a build's own output out from under it.
+if pgrep -f xcodebuild >/dev/null 2>&1; then
+  echo "xcodebuild is running — skipping this cycle."
+  exit 0
+fi
+
+echo "Below threshold — running clean:build"
+mise run clean:build
+"""
+
 [tasks.install]
 description = "Install Python and web dependencies (venv + npm)"
 run = """
@@ -96,13 +222,15 @@ if [ ! -x ".venv/bin/python" ]; then
 fi
 
 echo "🐍 Installing Python dependencies (root)..."
-.venv/bin/python -m pip install -r requirements.txt
+UV_BIN="${UV_BIN:-$HOME/.hermes/bin/uv}"
+test -x "$UV_BIN"
+"$UV_BIN" pip install --python .venv/bin/python -r requirements.txt
 
 echo "🐍 Installing Python dependencies (python_app)..."
-.venv/bin/python -m pip install -r python_app/requirements.txt
+"$UV_BIN" pip install --python .venv/bin/python -r python_app/requirements.txt
 
 echo "🔍 Installing lint/format tools..."
-.venv/bin/python -m pip install ruff pre-commit
+"$UV_BIN" pip install --python .venv/bin/python ruff pre-commit
 
 echo "🎙️ Configuring native Piper..."
 bash scripts/install_piper_binary.sh
@@ -132,7 +260,7 @@ if [ ! -x ".venv/bin/python" ]; then
   mise run install
 fi
 
-.venv/bin/python -m pytest python_app/tests test_ambiguous_languages.py test_new_features.py -k "not benchmark"
+.venv/bin/python -m pytest --ignore=.ai-jail python_app/tests test_ambiguous_languages.py test_new_features.py -k "not benchmark"
 """
 
 [tasks."test:integration"]
@@ -145,7 +273,7 @@ if [ ! -x ".venv/bin/python" ]; then
   mise run install
 fi
 
-.venv/bin/python -m pytest python_app/tests -k "benchmark"
+.venv/bin/python -m pytest --ignore=.ai-jail python_app/tests -k "benchmark"
 """
 
 [tasks."trim-log"]
@@ -189,19 +317,19 @@ run = """
 #!/bin/bash
 set -euo pipefail
 
-echo "🔍 Python CVE scan (OSV service — installed env)..."
-if ! .venv/bin/python -m pip show pip-audit &>/dev/null; then
-    echo "Installing pip-audit..."
-    .venv/bin/python -m pip install pip-audit --quiet
-fi
-# OSV service avoids pip-audit's broken venv-creation path on local
-# macOS installs (subprocess SIGABRT on ensurepip). Scans the *installed*
-# environment, which catches stale local pins requirements.txt has
-# already addressed but which pip install --upgrade would clear.
-.venv/bin/python -m pip_audit -s osv || {
+echo "🔍 Python CVE scan (PyPI service — declared requirements)..."
+# Resolve in a temporary Python 3.12 environment because the project requires
+# numpy 2.5+ and the managed project venv intentionally has no pip.
+UV_BIN="${UV_BIN:-$HOME/.hermes/bin/uv}"
+AUDIT_TMP="$(mktemp -d "${TMPDIR:-/tmp}/epub-audit.XXXXXX")"
+trap 'rm -rf "$AUDIT_TMP"' EXIT
+"$UV_BIN" venv --python 3.12 "$AUDIT_TMP/venv" >/dev/null
+"$UV_BIN" pip install --python "$AUDIT_TMP/venv/bin/python" \
+    -r requirements.txt -r python_app/requirements.txt >/dev/null
+"$UV_BIN" tool run --from pip-audit pip-audit --path \
+    "$AUDIT_TMP/venv/lib/python3.12/site-packages" -s pypi || {
     echo ""
-    echo "⚠️  CVEs surfaced. Common cause: local venv is stale relative to requirements.txt."
-    echo "💡 Try: source .venv/bin/activate && pip install --upgrade -r requirements.txt"
+    echo "⚠️ CVEs surfaced in the resolved Python dependencies."
     exit 1
 }
 echo "✅ Python: no known vulnerabilities."
@@ -233,7 +361,7 @@ description = "Harvest conversion + CI logs, surface anomalies (slow chapters, f
 run = "python scripts/analyze_logs.py"
 
 [tasks."hooks-test"]
-description = "Validate Claude Code hook scripts are syntactically valid and executable"
+description = "Validate repository and Claude Code hook scripts"
 run = """
 #!/bin/bash
 set -euo pipefail
@@ -241,7 +369,8 @@ set -euo pipefail
 HOOKS_DIR=".claude/hooks"
 ok=0
 fail=0
-for script in "$HOOKS_DIR"/*.sh; do
+for script in "$HOOKS_DIR"/*.sh .githooks/* scripts/reader-change-check.sh; do
+    [[ -e "$script" ]] || continue
     name=$(basename "$script")
     if [[ ! -x "$script" ]]; then
         echo "❌ $name: not executable"
@@ -257,10 +386,30 @@ for script in "$HOOKS_DIR"/*.sh; do
         ((fail++)) || true
     fi
 done
+./scripts/test_reader_change_check.sh
 echo ""
 echo "Result: $ok OK, $fail failed"
 [[ $fail -eq 0 ]]
 """
+
+[tasks."hooks:install"]
+description = "Install versioned repository Git hooks"
+run = """
+#!/bin/bash
+set -euo pipefail
+
+chmod +x .githooks/pre-commit .githooks/post-commit scripts/reader-change-check.sh scripts/test_reader_change_check.sh
+git config core.hooksPath .githooks
+echo "Installed repository hooks from .githooks."
+"""
+
+[tasks."hooks:reader-check"]
+description = "Check native reader changes against their native test pairing"
+run = "./scripts/reader-change-check.sh --cached"
+
+[tasks."benchmark:rust"]
+description = "Measure Rust migration parser, chunker, cache, and orchestration throughput"
+run = "mise exec -- cargo bench --manifest-path benches/Cargo.toml --bench rust_migration -- --save-baseline rust-migration"
 
 [tasks."benchmark:check"]
 description = "Compare live telemetry throughput against benchmarks/baseline.json"
@@ -270,45 +419,53 @@ set -euo pipefail
 .venv/bin/python scripts/benchmark_regression.py "$@"
 """
 
-# ── Python sidecar + native macOS build ───────────────────────────────────────
-# The PyInstaller sidecar binary is consumed by the SwiftUI macOS app
-# (ios/EpubToMp3/) via its post-build script. Linux/Windows users run the
-# Flutter app under flutter_app/ — Flutter builds its own native packages.
-
-[tasks."vendor:python"]
-description = "Download + splice Beeware Python.xcframework into ios/EpubToMp3/Vendor (idempotent; iOS embed)"
-# `sources` + `outputs` let mise skip re-running when the xcframework is
-# already present and the bootstrap script itself hasn't changed.
-sources = ["ios/EpubToMp3/scripts/bootstrap-ios-python.sh"]
-outputs = ["ios/EpubToMp3/Vendor/Python/Python.xcframework/Info.plist"]
-run = "bash ios/EpubToMp3/scripts/bootstrap-ios-python.sh"
-
-[tasks."sidecar:build"]
-description = "Build PyInstaller sidecar binary (epub-to-mp3-server, Edge-TTS only) into dist/"
+[tasks."benchmark:journeys"]
+description = "Validate recorded cross-client cold/warm journey evidence"
 run = """
 #!/bin/bash
 set -euo pipefail
-source .venv/bin/activate
-pip install pyinstaller -q
-pip install -r requirements-desktop.txt -q
-pyinstaller desktop.spec --noconfirm --clean
-echo "Sidecar ready: dist/epub-to-mp3-server"
+.venv/bin/python scripts/performance_evidence_gate.py "$@"
+"""
+
+[tasks."benchmark:cross-client"]
+description = "Evaluate the complete cross-client performance evidence matrix"
+run = """
+#!/bin/bash
+set -euo pipefail
+.venv/bin/python scripts/cross_client_performance_gate.py "$@"
+"""
+
+# ── Native macOS build ────────────────────────────────────────────────────────
+# Apple clients use the native Swift reader and the Rust backend/sidecar.
+
+[tasks."sidecar:build"]
+description = "Build the Rust macOS converter-server sidecar"
+sources = ["Cargo.toml", "Cargo.lock", "crates/**"]
+outputs = ["dist/epub-to-mp3-server"]
+run = """
+#!/bin/bash
+set -euo pipefail
+mkdir -p dist
+mise exec -- cargo build --release -p converter-server
+cp target/release/converter-server dist/epub-to-mp3-server
+chmod 755 dist/epub-to-mp3-server
+echo "Built Rust sidecar: dist/epub-to-mp3-server"
 """
 
 [tasks."mac:build"]
-description = "Build SwiftUI macOS app with embedded Python sidecar"
-# Ensure Python.xcframework is on disk before xcodebuild evaluates the
-# `Vendor/Python/Python.xcframework` framework dependency. The Xcode
-# pre-build run-script phase is a second safety net (covers users who
-# open the .xcodeproj directly in Xcode without going through mise).
-depends = ["vendor:python"]
+description = "Build native AppKit macOS app with the Rust converter-server sidecar (MAC_BUILD_CONFIG=Release|Debug, default Release)"
+depends = ["sidecar:build"]
 run = """
 #!/bin/bash
 set -euo pipefail
-# 1. Regenerate the Python sidecar (PyInstaller onefile).
-mise run sidecar:build
+export PATH="/usr/bin:/bin:/usr/sbin:/sbin:${PATH}"
+# Default stays Release so this task keeps producing the same distributable
+# artifact release-desktop.yml expects. Debug (wholemodule/-O/ThinLTO/dSYM
+# all skipped — see project.yml's own Debug tuning) is dramatically faster
+# for local iteration; use `mise run mac:build:dev` or set the var directly.
+CONFIG="${MAC_BUILD_CONFIG:-Release}"
 
-# 2. Build the SwiftUI app headlessly via xcodebuild.
+# Build the AppKit/UIKit app headlessly via xcodebuild.
 cd ios/EpubToMp3
 # Ensure project.yml is materialized to .xcodeproj.
 if ! command -v xcodegen >/dev/null 2>&1; then
@@ -316,20 +473,27 @@ if ! command -v xcodegen >/dev/null 2>&1; then
   exit 1
 fi
 xcodegen generate
+# Slice 18 preflight: widget must be embedded in the app bundle.
+"${MISE_PROJECT_ROOT:-../..}/scripts/verify_widget_embedded.sh"
+# Hold the single-heavy-job lock around xcodebuild (CPU CATERR / PCIe panic
+# guard on constrained Intel Macs — never let it race another heavy job).
+python3 "${MISE_PROJECT_ROOT:-../..}/scripts/heavy_job_guard.py" mac:build -- \\
 xcodebuild \\
   -project EpubToMp3.xcodeproj \\
   -scheme EpubToMp3 \\
-  -configuration Release \\
+  -configuration "$CONFIG" \\
   -destination 'platform=macOS' \\
   -derivedDataPath ./.build \\
-  SYMROOT=$(pwd)/.build \\
+  -showBuildTimingSummary \\
   build | tail -20
 
-APP_OUT="ios/EpubToMp3/.build/Build/Products/Release/EpubToMp3.app"
+APP_OUT=".build/${CONFIG}/EpubToMp3.app"
+if [[ ! -d "$APP_OUT" && -d ".build/Build/Products/${CONFIG}/EpubToMp3.app" ]]; then
+  APP_OUT=".build/Build/Products/${CONFIG}/EpubToMp3.app"
+fi
 if [[ -d "$APP_OUT" ]]; then
   echo ""
-  echo "Built: $APP_OUT"
-  echo "   Sidecar embedded: $(ls -lh "$APP_OUT/Contents/Resources/epub-to-mp3-server" 2>/dev/null | awk '{print $5}')"
+  echo "Built ($CONFIG): $APP_OUT"
   echo ""
   echo "To install, copy to /Applications:"
   echo "   cp -R \\"$APP_OUT\\" /Applications/"
@@ -339,28 +503,593 @@ else
 fi
 """
 
-[tasks."ios:build"]
-description = "Build SwiftUI iOS app (Simulator) with embedded Python.xcframework"
-# vendor:python must finish before xcodebuild resolves the framework
-# dependency declared in project.yml.
-depends = ["vendor:python"]
+[tasks."mac:build:dev"]
+description = "Fast local-iteration macOS build (Debug config — incremental, -Onone, no LTO/dSYM). Not for distribution."
+run = "MAC_BUILD_CONFIG=Debug mise run mac:build"
+
+[tasks."mac:run"]
+description = "Build and launch the native macOS app in Debug for local development"
 run = """
 #!/bin/bash
 set -euo pipefail
+mise run mac:build:dev
+APP_PATH="ios/EpubToMp3/.build/Debug/EpubToMp3.app"
+if [[ ! -d "$APP_PATH" ]]; then
+  APP_PATH="ios/EpubToMp3/.build/Build/Products/Debug/EpubToMp3.app"
+fi
+if [[ ! -d "$APP_PATH" ]]; then
+  echo "mac:run error: Debug app was not produced." >&2
+  exit 1
+fi
+APP_EXECUTABLE="$APP_PATH/Contents/MacOS/EpubToMp3"
+# `open -n` starts another copy on every run. That leaves duplicate AppKit
+# windows competing for resources.
+if pgrep -f "$APP_EXECUTABLE" >/dev/null 2>&1; then
+  pkill -TERM -f "$APP_EXECUTABLE" || true
+  for _ in {1..20}; do
+    pgrep -f "$APP_EXECUTABLE" >/dev/null 2>&1 || break
+    sleep 0.1
+  done
+fi
+open "$APP_PATH"
+"""
+
+[tasks."ios:build"]
+description = "Build native UIKit iOS app on the best installed iOS Simulator"
+run = """
+#!/bin/bash
+set -euo pipefail
+"${MISE_PROJECT_ROOT:-.}/scripts/ios_disk_guard.sh"
 cd ios/EpubToMp3
 if ! command -v xcodegen >/dev/null 2>&1; then
   echo "error: xcodegen not installed. Install via: brew install xcodegen"
   exit 1
 fi
 xcodegen generate
-DEST="${IOS_DEST:-platform=iOS Simulator,name=iPhone 16}"
-xcodebuild \\
-  -project EpubToMp3.xcodeproj \\
-  -scheme EpubToMp3 \\
-  -configuration Debug \\
-  -destination "${DEST}" \\
-  -derivedDataPath ./.build \\
-  build | tail -20
+
+# Local low-resource Intel Macs have kernel-panicked under recent iOS
+# Simulator/CoreSimulator load. Refuse local simulator builds by default on
+# those machines; CI and explicitly opted-in developers can override.
+python3 ../../scripts/guard_ios_simulator_resources.py
+
+# Slice 18 preflight: confirm the widget extension is wired into the
+# app bundle. xcodegen has silently dropped this dependency in the past,
+# producing a release .app with no PlugIns/EpubToMp3Widget.appex and
+# zero widgets in the gallery.
+"${MISE_PROJECT_ROOT:-../..}/scripts/verify_widget_embedded.sh"
+
+# Preflight: confirm the scheme actually has an iOS Simulator
+# destination. Xcode 26.x ships the iOS Simulator SDK but the
+# matching iOS runtime must be downloaded separately. Without it,
+# xcodebuild fails with a generic "Unable to find a destination
+# matching..." 50 seconds into the run — surface the real cause now
+# instead.
+if ! xcodebuild \\
+       -project EpubToMp3.xcodeproj \\
+       -scheme EpubToMp3 \\
+       -showdestinations 2>&1 \\
+     | grep -q "platform:iOS Simulator,"; then
+  cat >&2 <<'EOF'
+ios:build error: no iOS Simulator destination is eligible for the scheme.
+
+Likely cause: the iOS Simulator runtime matching the installed iOS
+Simulator SDK is missing. Xcode 26.x ships SDK iOS 26.x but no runtime
+by default. The pre-existing iOS 17.2 simulator volume (if any) is
+ABI-incompatible with the 26.x SDK and is therefore listed as
+"Ineligible".
+
+Fix on this Mac:
+  mise run ios:device:run             # install/launch an existing iphoneos build on the paired iPhone
+  mise run mac:build                  # validate the Apple app without iOS simulator work
+
+No local simulator download is required for the normal Hermes loop. Do not run
+`xcodebuild -downloadPlatform ...` or open Xcode Components unless the user
+explicitly asks to install a simulator/runtime. Use CI for simulator validation.
+
+CI (release-desktop.yml) installs the runtime before building, so this
+guard only fires for local simulator builds on developer machines without it.
+EOF
+  exit 2
+fi
+
+# Pick the simulator destination dynamically — the previous hard-coded
+# `name=iPhone SE,OS=17.2` broke silently when the installed runtime was
+# named, e.g., `iPhone SE (2nd generation),OS=17.2`. The Python selector
+# is unit-tested (`test_select_ios_simulator.py`) and reads
+# `xcrun simctl list -j devices available`. Override with `IOS_DEST` to
+# pin a specific target in CI.
+if [ -n "${IOS_DEST:-}" ]; then
+  DEST="${IOS_DEST}"
+else
+  DEST=$(python3 ../../scripts/select_ios_simulator.py)
+fi
+echo "ios:build → destination: ${DEST}"
+
+BUILD_LOG="${TMPDIR:-/tmp}/epub-to-mp3-ios-build.log"
+if ! xcodebuild \\
+       -project EpubToMp3.xcodeproj \\
+       -scheme EpubToMp3 \\
+       -configuration Debug \\
+       -destination "${DEST}" \\
+       -derivedDataPath ./.build \\
+       -showBuildTimingSummary \\
+       build >"${BUILD_LOG}" 2>&1; then
+  echo "** BUILD FAILED **"
+  echo "Build log: ${BUILD_LOG}"
+  grep -nE "error:|fatal error:|BUILD FAILED|SwiftCompile|SwiftEmitModule" "${BUILD_LOG}" | tail -200 || true
+  exit 65
+fi
+tail -20 "${BUILD_LOG}"
+"""
+
+[tasks."ios:device:run"]
+description = "Install and launch the newest existing iphoneos EpubToMp3.app on the paired iPhone; never downloads or boots simulators"
+run = """
+#!/bin/bash
+set -euo pipefail
+"${MISE_PROJECT_ROOT:-.}/scripts/ios_disk_guard.sh"
+cd ios/EpubToMp3
+# Keep the generated .xcodeproj in sync with project.yml before locating the
+# built app (harmless when only launching a prebuilt .app, cheap otherwise).
+if command -v xcodegen >/dev/null 2>&1; then xcodegen generate; fi
+DEVICE="${IOS_DEVICE_ID:-44B2CFBD-2193-5086-8E8D-BF7A2876C321}"
+BUNDLE_ID="com.pietrocode.epubtomp3"
+APP_PATH="${IOS_APP_PATH:-}"
+if [[ -z "$APP_PATH" ]]; then
+  APP_PATH=$(python3 - <<'PY'
+from pathlib import Path
+apps = [p for p in Path('.').glob('.build*/Build/Products/*-iphoneos/EpubToMp3.app') if p.is_dir()]
+if not apps:
+    raise SystemExit(1)
+apps.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+print(apps[0])
+PY
+  ) || {
+    echo "ios:device:run error: no existing iphoneos EpubToMp3.app found." >&2
+    echo "Build on CI/release workflow or provide IOS_APP_PATH=/path/to/EpubToMp3.app." >&2
+    echo "This task intentionally does not download simulator runtimes or boot CoreSimulator." >&2
+    exit 2
+  }
+fi
+if [[ ! -d "$APP_PATH" ]]; then
+  echo "ios:device:run error: app not found: $APP_PATH" >&2
+  exit 2
+fi
+echo "ios:device:run → device: $DEVICE"
+echo "ios:device:run → app: $APP_PATH"
+xcrun devicectl device install app --device "$DEVICE" "$APP_PATH"
+SEED_LAUNCH=0
+if [[ "${IOS_DEVELOPMENT_SEED_BOOK:-1}" != "0" ]]; then
+  if python3 ../../scripts/seed_ios_development_book.py --target device --identifier "$DEVICE"; then
+    SEED_LAUNCH=1
+  else
+    SEED_STATUS=$?
+    if [[ "$SEED_STATUS" -ne 3 ]]; then
+      exit "$SEED_STATUS"
+    fi
+  fi
+fi
+RETRY_SECONDS="${IOS_LAUNCH_RETRY_SECONDS:-10}"
+if ! [[ "$RETRY_SECONDS" =~ ^[1-9][0-9]*$ ]]; then
+  echo "ios:device:run error: IOS_LAUNCH_RETRY_SECONDS must be a positive integer." >&2
+  exit 2
+fi
+
+# A physical device rejects launches while locked. The app is already installed,
+# so keep this inexpensive launch queue alive until the listener unlocks it.
+while true; do
+  if [[ "$SEED_LAUNCH" == "1" ]]; then
+    if xcrun devicectl device process launch --device "$DEVICE" --terminate-existing "$BUNDLE_ID" -- -developmentSeedBook; then
+      break
+    fi
+  elif xcrun devicectl device process launch --device "$DEVICE" --terminate-existing "$BUNDLE_ID"; then
+    break
+  fi
+  echo "ios:device:run → launch deferred; retrying in ${RETRY_SECONDS}s (unlock the iPhone to continue)." >&2
+  sleep "$RETRY_SECONDS"
+done
+"""
+
+[tasks."ios:device:build"]
+description = "Build the native iOS app for a connected physical device using persistent incremental cache"
+run = """
+#!/bin/bash
+set -euo pipefail
+"${MISE_PROJECT_ROOT:-.}/scripts/ios_disk_guard.sh"
+cd ios/EpubToMp3
+if ! command -v xcodegen >/dev/null 2>&1; then
+  echo "ios:device:build error: xcodegen is required. Install it through mise or the project toolchain." >&2
+  exit 1
+fi
+DEVICE="${IOS_DEVICE_ID:-}"
+if [[ -z "$DEVICE" ]]; then
+  echo "ios:device:build error: set IOS_DEVICE_ID to the connected iPhone UDID." >&2
+  echo "Find it with: xcrun devicectl list devices" >&2
+  exit 2
+fi
+# CoreDevice uses a stable device identifier while xcodebuild expects the
+# traditional hardware UDID. Resolve the latter from the paired CoreDevice so
+# callers can use the same IOS_DEVICE_ID for build, install, and launch.
+XCODE_DEVICE="${IOS_XCODE_DEVICE_ID:-}"
+if [[ -z "$XCODE_DEVICE" ]]; then
+  XCODE_DEVICE=$(xcrun devicectl device info details --device "$DEVICE" 2>/dev/null \
+    | awk -F': ' '/• udid:/ { print $2 }')
+fi
+if [[ -z "$XCODE_DEVICE" ]]; then
+  echo "ios:device:build error: could not resolve xcodebuild UDID for device $DEVICE." >&2
+  echo "Set IOS_XCODE_DEVICE_ID to the physical device UDID from xcrun xctrace list devices." >&2
+  exit 2
+fi
+PROJECT_YML="project.yml"
+GENERATED_PROJECT="EpubToMp3.xcodeproj/EpubToMp3.xcodeproj/project.pbxproj"
+if [[ ! -f "$GENERATED_PROJECT" || "$PROJECT_YML" -nt "$GENERATED_PROJECT" ]]; then
+  xcodegen generate
+else
+  echo "ios:device:build → reusing generated Xcode project"
+fi
+"${MISE_PROJECT_ROOT:-../..}/scripts/verify_widget_embedded.sh"
+BUILD_LOG="${TMPDIR:-/tmp}/epub-to-mp3-ios-device-build.log"
+if ! xcodebuild \\
+       -project EpubToMp3.xcodeproj \\
+       -scheme EpubToMp3 \\
+       -configuration Debug \\
+       -destination "id=$XCODE_DEVICE" \\
+       -derivedDataPath ./.build-device \\
+       -parallelizeTargets \\
+       -showBuildTimingSummary \\
+       build >"${BUILD_LOG}" 2>&1; then
+  echo "** DEVICE BUILD FAILED **"
+  echo "Build log: ${BUILD_LOG}"
+  grep -nE "error:|fatal error:|BUILD FAILED|SwiftCompile|SwiftEmitModule" "${BUILD_LOG}" | tail -200 || true
+  exit 65
+fi
+tail -20 "${BUILD_LOG}"
+"""
+
+[tasks."ios:run"]
+description = "Build and launch the iOS app in Debug; physical iPhone by default, use IOS_TARGET=simulator for Simulator"
+run = """
+#!/bin/bash
+set -euo pipefail
+TARGET="${IOS_TARGET:-device}"
+case "$TARGET" in
+  device)
+    DEVICE="${IOS_DEVICE_ID:-44B2CFBD-2193-5086-8E8D-BF7A2876C321}"
+    IOS_DEVICE_ID="$DEVICE" mise run ios:device:build
+    IOS_DEVICE_ID="$DEVICE" mise run ios:device:run
+    ;;
+  simulator)
+    mise run ios:build
+    mise run ios:simulator:run
+    ;;
+  *)
+    echo "ios:run error: IOS_TARGET must be device or simulator." >&2
+    exit 2
+    ;;
+esac
+"""
+
+[tasks."ios:simulator:run"]
+description = "Install and launch an existing iphonesimulator EpubToMp3.app; never builds or downloads runtimes"
+run = """
+#!/bin/bash
+set -euo pipefail
+
+# This task intentionally launches only an existing artifact. Use
+# `mise run ios:build` separately when a new simulator build is required.
+python3 "${MISE_PROJECT_ROOT:-.}/scripts/guard_ios_simulator_resources.py"
+cd ios/EpubToMp3
+
+if [[ -n "${IOS_APP_PATH:-}" ]]; then
+  APP_PATH="$IOS_APP_PATH"
+else
+  APP_PATH=$(python3 - <<'PY'
+from pathlib import Path
+
+apps = []
+for pattern in (".build/Build/Products/*-iphonesimulator/EpubToMp3.app", ".build/*-iphonesimulator/EpubToMp3.app"):
+    apps.extend(path for path in Path(".").glob(pattern) if path.is_dir())
+if not apps:
+    raise SystemExit(1)
+apps.sort(key=lambda path: path.stat().st_mtime, reverse=True)
+print(apps[0])
+PY
+  ) || {
+    echo "ios:simulator:run error: no existing iphonesimulator EpubToMp3.app found." >&2
+    echo "Run `mise run ios:build` first, or provide IOS_APP_PATH=/path/to/EpubToMp3.app." >&2
+    exit 2
+  }
+fi
+if [[ ! -d "$APP_PATH" ]]; then
+  echo "ios:simulator:run error: app not found: $APP_PATH" >&2
+  exit 2
+fi
+
+if [[ -n "${IOS_SIMULATOR_UDID:-}" ]]; then
+  UDID="$IOS_SIMULATOR_UDID"
+  DEST="id=$UDID"
+else
+  DEST="${IOS_DEST:-$(python3 ../../scripts/select_ios_simulator.py)}"
+  UDID="${DEST##*id=}"
+fi
+if [[ -z "$UDID" || "$UDID" == "$DEST" ]]; then
+  echo "ios:simulator:run error: could not resolve a simulator UDID." >&2
+  exit 2
+fi
+
+echo "ios:simulator:run → device: $UDID"
+echo "ios:simulator:run → app: $APP_PATH"
+xcrun simctl boot "$UDID" >/dev/null 2>&1 || true
+xcrun simctl bootstatus "$UDID" -b
+xcrun simctl install "$UDID" "$APP_PATH"
+SEED_LAUNCH=0
+if [[ "${IOS_DEVELOPMENT_SEED_BOOK:-1}" != "0" ]]; then
+  if python3 ../../scripts/seed_ios_development_book.py --target simulator --identifier "$UDID"; then
+    SEED_LAUNCH=1
+  else
+    SEED_STATUS=$?
+    if [[ "$SEED_STATUS" -ne 3 ]]; then
+      exit "$SEED_STATUS"
+    fi
+  fi
+fi
+if [[ "$SEED_LAUNCH" == "1" ]]; then
+  xcrun simctl launch "$UDID" com.pietrocode.epubtomp3 -developmentSeedBook
+else
+  xcrun simctl launch "$UDID" com.pietrocode.epubtomp3
+fi
+"""
+
+[tasks."ios:simulator:resume"]
+description = "Launch the EpubToMp3 app already installed in a selected Simulator; never builds or installs an artifact"
+run = """
+#!/bin/bash
+set -euo pipefail
+
+# This task is deliberately distinct from `ios:run`: it is useful when a
+# legacy simulator can boot an already-installed build but the selected Xcode
+# cannot compile current source for that runtime.
+python3 "${MISE_PROJECT_ROOT:-.}/scripts/guard_ios_simulator_resources.py"
+cd ios/EpubToMp3
+
+BUNDLE_ID="com.pietrocode.epubtomp3"
+if [[ -n "${IOS_SIMULATOR_UDID:-}" ]]; then
+  UDID="$IOS_SIMULATOR_UDID"
+  DEST="id=$UDID"
+else
+  DEST="${IOS_DEST:-$(python3 ../../scripts/select_ios_simulator.py)}"
+  UDID="${DEST##*id=}"
+fi
+if [[ -z "$UDID" || "$UDID" == "$DEST" ]]; then
+  echo "ios:simulator:resume error: could not resolve a simulator UDID." >&2
+  exit 2
+fi
+
+echo "ios:simulator:resume → device: $UDID"
+xcrun simctl boot "$UDID" >/dev/null 2>&1 || true
+xcrun simctl bootstatus "$UDID" -b
+
+APP_PATH=$(xcrun simctl get_app_container "$UDID" "$BUNDLE_ID" app 2>/dev/null) || {
+  echo "ios:simulator:resume error: $BUNDLE_ID is not installed on $UDID." >&2
+  echo "Use a build-capable simulator with `mise run ios:run`, or install an existing app with `mise run ios:simulator:run`." >&2
+  exit 2
+}
+if [[ ! -d "$APP_PATH" ]]; then
+  echo "ios:simulator:resume error: installed app container is missing: $APP_PATH" >&2
+  exit 2
+fi
+
+BUILT_WITH_XCODE=$(/usr/libexec/PlistBuddy -c 'Print :DTXcode' "$APP_PATH/Info.plist" 2>/dev/null || true)
+if [[ -n "$BUILT_WITH_XCODE" ]]; then
+  echo "ios:simulator:resume warning: launching installed build made with Xcode $BUILT_WITH_XCODE; current source was not rebuilt."
+fi
+open -a Simulator
+xcrun simctl launch "$UDID" "$BUNDLE_ID"
+"""
+
+[tasks."ios:simulator:test"]
+description = "Build and run iOS XCTest/UI tests on a selected Simulator. Set IOS_TESTS=Target/Class or Target/Class/test."
+depends = ["vendor:python"]
+run = """
+#!/bin/bash
+set -euo pipefail
+"${MISE_PROJECT_ROOT:-.}/scripts/ios_disk_guard.sh"
+python3 "${MISE_PROJECT_ROOT:-.}/scripts/guard_ios_simulator_resources.py"
+cd ios/EpubToMp3
+
+if ! command -v xcodegen >/dev/null 2>&1; then
+  echo "error: xcodegen not installed. Install via: brew install xcodegen" >&2
+  exit 1
+fi
+xcodegen generate
+
+if [[ -n "${IOS_SIMULATOR_UDID:-}" ]]; then
+  DEST="id=${IOS_SIMULATOR_UDID}"
+else
+  DEST="${IOS_DEST:-$(python3 ../../scripts/select_ios_simulator.py)}"
+fi
+UDID="${DEST##*id=}"
+if [[ -z "$UDID" || "$UDID" == "$DEST" ]]; then
+  echo "ios:simulator:test error: could not resolve a simulator UDID." >&2
+  exit 2
+fi
+xcrun simctl boot "$UDID" >/dev/null 2>&1 || true
+xcrun simctl bootstatus "$UDID" -b
+# iOS 26 may report Booted before testmanagerd has established its socket.
+sleep 5
+
+DD="${IOS_DERIVED_DATA_PATH:-./.build}"
+run_simulator_tests() {
+  local only=()
+  if [[ -n "${IOS_TESTS:-}" ]]; then
+    local tests=()
+    IFS=',' read -r -a tests <<< "$IOS_TESTS"
+    for test in "${tests[@]}"; do
+      only+=("-only-testing:$test")
+    done
+  fi
+  if [[ "${IOS_SKIP_BUILD:-0}" != "1" ]]; then
+    xcodebuild -project EpubToMp3.xcodeproj -scheme EpubToMp3 -configuration Debug \
+      -destination "$DEST" -derivedDataPath "$DD" build-for-testing
+  fi
+  if [[ -n "${IOS_TESTS:-}" ]]; then
+    xcodebuild -project EpubToMp3.xcodeproj -scheme EpubToMp3 -configuration Debug \
+      -destination "$DEST" -derivedDataPath "$DD" -parallel-testing-enabled NO \
+      test-without-building "${only[@]}"
+    return
+  fi
+  if [[ "${IOS_TEST_SHARDS:-4}" =~ ^[1-9][0-9]*$ ]]; then
+    local shard_count="${IOS_TEST_SHARDS:-4}"
+    local shard_index
+    local -a unit_classes=()
+    local -a ui_classes=()
+    if [[ -z "${IOS_TESTS:-}" ]]; then
+      while IFS= read -r -d '' file; do
+        while read -r class_name; do
+          [[ -n "$class_name" ]] && unit_classes+=("EpubToMp3Tests/$class_name")
+        done < <(sed -nE 's/^[[:space:]]*(final[[:space:]]+)?class[[:space:]]+([A-Za-z0-9_]+):[[:space:]]*XCTestCase.*/\\2/p' "$file")
+      done < <(find EpubToMp3Tests -maxdepth 1 -name '*.swift' -print0 | sort -z)
+    fi
+    if [[ -z "${IOS_TESTS:-}" ]]; then
+      while IFS= read -r -d '' file; do
+        while read -r class_name; do
+          [[ -n "$class_name" ]] && ui_classes+=("EpubToMp3UITests/$class_name")
+        done < <(sed -nE 's/^[[:space:]]*(final[[:space:]]+)?class[[:space:]]+([A-Za-z0-9_]+):[[:space:]]*XCTestCase.*/\\2/p' "$file")
+      done < <(find EpubToMp3UITests -maxdepth 1 -name '*.swift' -print0 | sort -z)
+    fi
+    local -a isolated_classes=()
+    local -a grouped_classes=()
+    local class_name
+    for class_name in "${unit_classes[@]}" "${ui_classes[@]}"; do
+      if [[ "$class_name" == *Audiobook* || "$class_name" == *AudioPlayerStreamingTests || "$class_name" == *AudioPlayerSleepTimerTests || "$class_name" == *AudioPlayerSpeechFallbackTests || "$class_name" == *AudioUITests ]]; then
+        isolated_classes+=("$class_name")
+      else
+        grouped_classes+=("$class_name")
+      fi
+    done
+    for class_name in "${isolated_classes[@]}"; do
+      echo "ios:simulator:test → isolated $class_name"
+      xcodebuild -project EpubToMp3.xcodeproj -scheme EpubToMp3 -configuration Debug \
+        -destination "$DEST" -derivedDataPath "$DD" -parallel-testing-enabled NO \
+        test-without-building "-only-testing:$class_name"
+    done
+    local -a all_classes=("${grouped_classes[@]}")
+    for ((shard_index=0; shard_index<shard_count; shard_index++)); do
+      local -a shard_only=()
+      local class_position
+      for class_position in "${!all_classes[@]}"; do
+        if (( class_position % shard_count == shard_index )); then
+          shard_only+=("-only-testing:${all_classes[$class_position]}")
+        fi
+      done
+      if [[ -n "${shard_only[*]}" ]]; then
+        echo "ios:simulator:test → shard $((shard_index + 1))/$shard_count"
+        xcodebuild -project EpubToMp3.xcodeproj -scheme EpubToMp3 -configuration Debug \
+          -destination "$DEST" -derivedDataPath "$DD" \
+          -parallel-testing-enabled NO test-without-building "${shard_only[@]}"
+      fi
+    done
+    return 0
+  fi
+  xcodebuild -project EpubToMp3.xcodeproj -scheme EpubToMp3 -configuration Debug \
+    -destination "$DEST" -derivedDataPath "$DD" test-without-building "${only[@]}"
+}
+
+export DEST DD IOS_SKIP_BUILD
+export -f run_simulator_tests
+python3 ../../scripts/heavy_job_guard.py ios:simulator:test -- bash -e -c run_simulator_tests
+"""
+
+[tasks."ios:device:test"]
+description = "Build-for-testing + run UITests on the paired iPhone (real device). Set IOS_TESTS=... to filter, e.g. EpubToMp3UITests/ReaderFlickerUITests"
+run = """
+#!/bin/bash
+set -euo pipefail
+"${MISE_PROJECT_ROOT:-.}/scripts/ios_disk_guard.sh"
+cd ios/EpubToMp3
+# The .xcodeproj is generated (project.yml is the source of truth) and is
+# gitignored — regenerate it here so a device test never builds against a
+# stale project (e.g. a file deleted in project.yml but lingering in an old
+# .xcodeproj → "Build input file cannot be found").
+if ! command -v xcodegen >/dev/null 2>&1; then
+  echo "error: xcodegen not installed. Install via: brew install xcodegen"
+  exit 1
+fi
+xcodegen generate
+# Constrained Intel Macs panic under concurrent load — serialize this and warn.
+python3 ../../scripts/guard_ios_simulator_resources.py --device-test || exit $?
+DEVICE="${IOS_XCODE_DEVICE_ID:-${IOS_DEVICE_ID:-00008140-001128A022BA801C}}"
+# `devicectl` accepts either the CoreDevice identifier or hardware UDID, while
+# `xcodebuild` only accepts the latter. Keep the test task aligned with the
+# build task so the one device identifier works consistently across the iOS
+# workflow.
+if [[ -z "${IOS_XCODE_DEVICE_ID:-}" ]]; then
+  RESOLVED_DEVICE=$(xcrun devicectl device info details --device "$DEVICE" 2>/dev/null | awk -F': ' '/• udid:/ { print $2 }')
+  if [[ -n "$RESOLVED_DEVICE" ]]; then
+    DEVICE="$RESOLVED_DEVICE"
+  fi
+fi
+DD="./.build"
+ONLY=""
+if [[ -n "${IOS_TESTS:-}" ]]; then
+  IFS=',' read -ra T <<< "$IOS_TESTS"
+  for t in "${T[@]}"; do ONLY+=" -only-testing:$t"; done
+fi
+echo "ios:device:test → device: $DEVICE"
+run_device_tests() {
+  set -euo pipefail
+  if [[ "${IOS_SKIP_BUILD:-0}" != "1" ]]; then
+    BUILD_LOG="${TMPDIR:-/tmp}/epub-to-mp3-ios-device-test-build.log"
+    if ! xcodebuild -project EpubToMp3.xcodeproj -scheme EpubToMp3 -configuration Debug \\
+      -destination "id=$DEVICE" -derivedDataPath "$DD" -showBuildTimingSummary \\
+      build-for-testing >"$BUILD_LOG" 2>&1; then
+      echo "** DEVICE TEST BUILD FAILED **" >&2
+      echo "Build log: $BUILD_LOG" >&2
+      grep -nE "error:|fatal error:|BUILD FAILED|SwiftCompile|SwiftEmitModule" "$BUILD_LOG" | tail -200 || true
+      return 65
+    fi
+    tail -40 "$BUILD_LOG"
+  fi
+  TEST_LOG="${TMPDIR:-/tmp}/epub-to-mp3-ios-device-test-run.log"
+  # shellcheck disable=SC2086
+  if ! xcodebuild -project EpubToMp3.xcodeproj -scheme EpubToMp3 \\
+    -destination "id=$DEVICE" -derivedDataPath "$DD" $ONLY \\
+    test-without-building >"$TEST_LOG" 2>&1; then
+    echo "** DEVICE TESTS FAILED **" >&2
+    echo "Test log: $TEST_LOG" >&2
+    grep -iE "Test Suite|Test Case|passed|failed|error:|XCTAssert|skip|flicker" "$TEST_LOG" | tail -300 || true
+    return 65
+  fi
+  grep -iE "Test Suite|Test Case|passed|failed|error:|XCTAssert|skip|flicker" "$TEST_LOG" | tail -300 || true
+}
+export -f run_device_tests
+# The test runner executes in a child shell; export the destination so the
+# function cannot silently turn `id=$DEVICE` into the invalid `id=`.
+export DEVICE DD ONLY
+# Hold the single-heavy-job lock for the whole device run (PCIe panic guard).
+python3 ../../scripts/heavy_job_guard.py ios:device:test -- bash -c run_device_tests
+"""
+
+[tasks."ios:test"]
+description = "Run all iOS XCTest/UI tests on a connected device, falling back to Simulator only when no device is available"
+run = """
+#!/bin/bash
+set -euo pipefail
+ROOT="${MISE_PROJECT_ROOT:-.}"
+if [[ -n "${IOS_DEVICE_ID:-}" ]]; then
+  IOS_DEVICE_ID="$IOS_DEVICE_ID" mise run ios:device:test
+  exit $?
+fi
+
+DEVICE=$(xcrun devicectl list devices 2>/dev/null | awk '$4 == "available" { print $3; exit }')
+if [[ -n "$DEVICE" ]]; then
+  echo "ios:test → physical device available; using the Xcode destination configured by ios:device:test"
+  mise run ios:device:test
+  exit $?
+fi
+
+echo "ios:test → no available physical device; falling back to Simulator" >&2
+IOS_ALLOW_LOW_RESOURCE_SIMULATOR=1 mise run ios:simulator:test
 """
 
 # ── Docker ───────────────────────────────────────────────────────────────────────
@@ -420,8 +1149,38 @@ description = "Regenerate CHANGELOG.md from git history using git-cliff"
 run = "git-cliff -o CHANGELOG.md"
 
 [tasks."flutter:run"]
-description = "Run the Flutter companion app on the connected device"
-run = "cd flutter_app && flutter run"
+description = "Run Flutter in Debug on a connected Android device, or start the lightest available AVD"
+run = """
+#!/bin/bash
+set -euo pipefail
+SELECTOR="${MISE_PROJECT_ROOT:-.}/scripts/select_android_target.py"
+DEVICE="${FLUTTER_DEVICE_ID:-}"
+if [[ -z "$DEVICE" ]]; then
+  DEVICES_JSON="$(mise exec -- flutter devices --machine)"
+  DEVICE="$(printf '%s' "$DEVICES_JSON" | mise exec -- python "$SELECTOR" --devices-json || true)"
+fi
+if [[ -z "$DEVICE" ]]; then
+  AVD="$(mise exec -- python "$SELECTOR" --lightest-avd)" || {
+    echo "flutter:run error: no Android device or AVD is available." >&2
+    exit 2
+  }
+  echo "flutter:run → starting lightest AVD: $AVD"
+  mise exec -- emulator -avd "$AVD" -no-boot-anim -no-snapshot >/tmp/epub-to-mp3-android-emulator.log 2>&1 &
+  for _ in $(seq 1 90); do
+    DEVICES_JSON="$(mise exec -- flutter devices --machine)"
+    DEVICE="$(printf '%s' "$DEVICES_JSON" | mise exec -- python "$SELECTOR" --devices-json || true)"
+    [[ -n "$DEVICE" ]] && break
+    sleep 2
+  done
+fi
+if [[ -z "$DEVICE" ]]; then
+  echo "flutter:run error: Android emulator did not become available within 180 seconds." >&2
+  exit 1
+fi
+echo "flutter:run → device: $DEVICE"
+cd flutter_app
+mise exec -- flutter run -d "$DEVICE"
+"""
 
 [tasks."flutter:test"]
 description = "Run Flutter unit + widget tests"
@@ -432,8 +1191,8 @@ description = "Static analysis of the Flutter app (lints + type errors)"
 run = "cd flutter_app && flutter analyze"
 
 [tasks."flutter:build-apk-debug"]
-description = "Build a debug APK for Android"
-run = "cd flutter_app && flutter build apk --debug"
+description = "Build a debug APK for Android using Flutter's incremental build cache"
+run = "cd flutter_app && flutter build apk --debug --build-number=${FLUTTER_BUILD_NUMBER:-1} --no-pub"
 
 [tasks."flutter:build-linux"]
 description = "Build the Flutter Linux desktop app (release)"
@@ -445,7 +1204,11 @@ run = "cd flutter_app && flutter build windows --release"
 
 [tasks."flutter:build-apk"]
 description = "Build the Flutter Android APK (release)"
-run = "cd flutter_app && flutter build apk --release"
+run = "cd flutter_app && flutter build apk --release --no-pub"
+
+[tasks."flutter:build-apk-debug:clean"]
+description = "Explicitly clean Flutter Android artifacts before a debug build"
+run = "cd flutter_app && flutter clean && flutter build apk --debug --build-number=${FLUTTER_BUILD_NUMBER:-1}"
 
 [tasks."android:bootstrap-python"]
 description = "Sync python_app/src into the Flutter Android Chaquopy source set"
@@ -458,3 +1221,6 @@ run = "bash flutter_app/scripts/bootstrap-desktop-python.sh"
 [tasks."flutter:run-desktop"]
 description = "Run the Flutter desktop app on the host platform (Linux/Windows only)"
 run = "cd flutter_app && flutter run -d $(uname | tr '[:upper:]' 'a-z')"
+[tasks."piper:build-runtime"]
+description = "Build the native Piper Embedded runtime without external executable fallback"
+run = "mise exec -- cargo build -p piper-runtime --features onnxruntime,piper-inference --release"

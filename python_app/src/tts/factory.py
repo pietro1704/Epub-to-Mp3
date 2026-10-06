@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import os
 import pathlib
-import urllib.request
+
 from pathlib import Path
 from typing import Optional, Protocol
 
@@ -30,49 +30,23 @@ class TTSEngine(Protocol):
         ...
 
 
-DEFAULT_PIPER_SOURCES = {
-    "pt": {
-        "model": "pt_BR-faber-medium.onnx",
-        "config": "pt_BR-faber-medium.onnx.json",
-        "model_url": "https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/pt/pt_BR/faber/medium/pt_BR-faber-medium.onnx",
-        "config_url": "https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/pt/pt_BR/faber/medium/pt_BR-faber-medium.onnx.json",
-    },
-    "en": {
-        "model": "en_US-lessac-medium.onnx",
-        "config": "en_US-lessac-medium.onnx.json",
-        "model_url": "https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/en/en_US/lessac/medium/en_US-lessac-medium.onnx",
-        "config_url": "https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/en/en_US/lessac/medium/en_US-lessac-medium.onnx.json",
-    },
-    "es": {
-        "model": "es_ES-davefx-medium.onnx",
-        "config": "es_ES-davefx-medium.onnx.json",
-        "model_url": "https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/es/es_ES/davefx/medium/es_ES-davefx-medium.onnx",
-        "config_url": "https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/es/es_ES/davefx/medium/es_ES-davefx-medium.onnx.json",
-    },
-    "fr": {
-        "model": "fr_FR-mls-medium.onnx",
-        "config": "fr_FR-mls-medium.onnx.json",
-        "model_url": "https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/fr/fr_FR/mls/medium/fr_FR-mls-medium.onnx",
-        "config_url": "https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/fr/fr_FR/mls/medium/fr_FR-mls-medium.onnx.json",
-    },
-    "de": {
-        "model": "de_DE-mls-medium.onnx",
-        "config": "de_DE-mls-medium.onnx.json",
-        "model_url": "https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/de/de_DE/mls/medium/de_DE-mls-medium.onnx",
-        "config_url": "https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/de/de_DE/mls/medium/de_DE-mls-medium.onnx.json",
-    },
-    "it": {
-        "model": "it_IT-riccardo-x_low.onnx",
-        "config": "it_IT-riccardo-x_low.onnx.json",
-        "model_url": "https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/it/it_IT/riccardo/x_low/it_IT-riccardo-x_low.onnx",
-        "config_url": "https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/it/it_IT/riccardo/x_low/it_IT-riccardo-x_low.onnx.json",
-    },
-}
-
 
 class TTSFactory:
+    #: Engines allowed to honour a narrator/character voice split
+    #: (`enable_character_voices`). Checked by `create_engine` before
+    #: dispatch so an unsupported engine gets one clear warning instead
+    #: of silently dropping the config.
+    _ENGINES_WITH_MULTI_VOICE = {"edge", "piper"}
+
     def __init__(self) -> None:
         self.voice_provider = VoiceConfigProvider()
+        # Open/Closed: a new engine registers a builder here instead of
+        # extending an if/elif chain in create_engine. Each builder has
+        # the exact signature `(config: ConversionConfig) -> TTSEngine`.
+        self._engine_builders: dict = {
+            "edge": self._build_edge_engine,
+            "piper": self._build_piper_engine,
+        }
 
     def available_engines(self) -> list[str]:
         """Return list of available TTS engines."""
@@ -88,8 +62,14 @@ class TTSFactory:
                 shutil.which("piper") or (Path(sys.executable).parent / "piper").exists()
             )
         if piper_available:
-            # Piper downloads models on demand, so expose it whenever the binary exists.
-            engines.append("piper")
+            # A binary alone is not enough: model installation is explicit in
+            # Settings and conversion must not download model weights.
+            try:
+                self._find_piper_model()
+            except FileNotFoundError:
+                pass
+            else:
+                engines.append("piper")
 
         return engines
 
@@ -103,108 +83,115 @@ class TTSFactory:
 
     def create_engine(self, config: ConversionConfig) -> TTSEngine:
         engine = (config.engine or "").lower()
+        self._warn_if_multi_voice_unsupported(engine, config)
+        builder = self._engine_builders.get(engine)
+        if builder is None:
+            raise ValueError(f"Unsupported engine: {config.engine}")
+        return builder(config)
 
+    def _warn_if_multi_voice_unsupported(self, engine: str, config: ConversionConfig) -> None:
         # Multi-voice narration support matrix:
         #   * edge   — dialogue splitter (v0.3.7).
         #   * piper  — two ONNX model paths (v0.3.18).
         # When the user configured a narrator/character split but picked
         # an engine that won't honour it, surface a clear warning so the
         # config isn't silently dropped.
-        _ENGINES_WITH_MULTI_VOICE = {"edge", "piper"}
-        if engine not in _ENGINES_WITH_MULTI_VOICE:
-            wants_split = bool(getattr(config, "enable_character_voices", False))
-            has_distinct_voices = (
-                getattr(config, "narrator_voice", None)
-                and getattr(config, "character_voice", None)
-                and config.narrator_voice != config.character_voice
-            )
-            if wants_split and has_distinct_voices:
-                import sys as _sys
+        if engine in self._ENGINES_WITH_MULTI_VOICE:
+            return
+        wants_split = bool(getattr(config, "enable_character_voices", False))
+        has_distinct_voices = (
+            getattr(config, "narrator_voice", None)
+            and getattr(config, "character_voice", None)
+            and config.narrator_voice != config.character_voice
+        )
+        if wants_split and has_distinct_voices:
+            import sys as _sys
 
-                print(
-                    "⚠️  Multi-voice narration (narrator/character split) is only "
-                    f"supported by Edge-TTS and Piper. Engine '{engine}' "
-                    "will use a single voice; narrator_voice and character_voice are ignored.",
-                    file=_sys.stderr,
-                )
-
-        if engine == "edge":
-            from .edge_engine import EdgeTTSEngine
-
-            voice = (
-                config.voice
-                or self.voice_provider.get_voice("edge", config.primary_language)
-                or "pt-BR-ThalitaMultilingualNeural"
-            )
-            chunk_chars = config.edge_chunk_chars or None
-            max_segment = config.edge_max_segment_seconds or None
-            if getattr(config, "edge_aggressive_mode", False):
-                chunk_chars = 8_000
-                max_segment = 40
-
-            # **PARALLEL MODE**: Enable parallel processing by default, disable for HF Space if needed
-            enable_parallel = getattr(config, "edge_enable_parallel", True)
-
-            # Multi-voice narration: prefer the operator-provided narrator/character
-            # voices, falling back to the primary `voice` so a partial config
-            # (only one slot set) still works.
-            narrator_voice = getattr(config, "narrator_voice", None) or voice
-            character_voice = getattr(config, "character_voice", None) or voice
-            enable_character_voices = bool(
-                getattr(config, "enable_character_voices", False)
-                and narrator_voice
-                and character_voice
-                and narrator_voice != character_voice
+            print(
+                "⚠️  Multi-voice narration (narrator/character split) is only "
+                f"supported by Edge-TTS and Piper. Engine '{engine}' "
+                "will use a single voice; narrator_voice and character_voice are ignored.",
+                file=_sys.stderr,
             )
 
-            return EdgeTTSEngine(
-                voice,
-                primary_language=config.primary_language,
-                language_voices=config.language_voices,
-                verbose=config.verbose,
-                max_segment_seconds=max_segment,
-                chunk_char_limit=chunk_chars,
-                enable_parallel=enable_parallel,
-                formatting_cues_enabled=getattr(config, "speak_formatting_cues", True),
-                formatting_locale=getattr(config, "formatting_locale", "pt"),
-                log_callback=config.log_callback,
-                enable_character_voices=enable_character_voices,
-                narrator_voice=narrator_voice,
-                character_voice=character_voice,
+    def _build_edge_engine(self, config: ConversionConfig) -> TTSEngine:
+        from .edge_engine import EdgeTTSEngine
+
+        voice = (
+            config.voice
+            or self.voice_provider.get_voice("edge", config.primary_language)
+            or "pt-BR-ThalitaMultilingualNeural"
+        )
+        chunk_chars = config.edge_chunk_chars or None
+        max_segment = config.edge_max_segment_seconds or None
+        if getattr(config, "edge_aggressive_mode", False):
+            chunk_chars = 8_000
+            max_segment = 40
+
+        # **PARALLEL MODE**: Enable parallel processing by default, disable for HF Space if needed
+        enable_parallel = getattr(config, "edge_enable_parallel", True)
+
+        # Multi-voice narration: prefer the operator-provided narrator/character
+        # voices, falling back to the primary `voice` so a partial config
+        # (only one slot set) still works.
+        narrator_voice = getattr(config, "narrator_voice", None) or voice
+        character_voice = getattr(config, "character_voice", None) or voice
+        enable_character_voices = bool(
+            getattr(config, "enable_character_voices", False)
+            and narrator_voice
+            and character_voice
+            and narrator_voice != character_voice
+        )
+
+        return EdgeTTSEngine(
+            voice,
+            primary_language=config.primary_language,
+            language_voices=config.language_voices,
+            verbose=config.verbose,
+            max_segment_seconds=max_segment,
+            adaptive_segment_seconds=getattr(config, "edge_adaptive_segment_seconds", False),
+            adaptive_segment_max_seconds=getattr(config, "edge_adaptive_segment_max_seconds", 180),
+            chunk_char_limit=chunk_chars,
+            enable_parallel=enable_parallel,
+            formatting_cues_enabled=getattr(config, "speak_formatting_cues", True),
+            formatting_locale=getattr(config, "formatting_locale", "pt"),
+            log_callback=config.log_callback,
+            metric_callback=getattr(config, "segment_metric_sink", None),
+            enable_character_voices=enable_character_voices,
+            narrator_voice=narrator_voice,
+            character_voice=character_voice,
+        )
+
+    def _build_piper_engine(self, config: ConversionConfig) -> TTSEngine:
+        piper_supported = is_piper_supported_environment()
+        if not piper_supported and not _is_testing_environment():
+            raise RuntimeError(
+                "Piper TTS unavailable on this system. "
+                "Ensure the 'piper' binary is installed (pip install piper-tts) "
+                "or set ENABLE_PIPER=1 to force."
             )
+        from .piper_engine import PiperTTSEngine
 
-        if engine == "piper":
-            piper_supported = is_piper_supported_environment()
-            if not piper_supported and not _is_testing_environment():
-                raise RuntimeError(
-                    "Piper TTS unavailable on this system. "
-                    "Ensure the 'piper' binary is installed (pip install piper-tts) "
-                    "or set ENABLE_PIPER=1 to force."
-                )
-            from .piper_engine import PiperTTSEngine
-
-            model_path = config.model_path
-            if model_path is None and config.voice:
-                candidate = Path(str(config.voice))
-                if candidate.suffix.lower() == ".onnx" and candidate.exists():
-                    model_path = candidate
-            preferred_code = (config.primary_language or "").split("-", 1)[0]
-            model_path = model_path or self._find_piper_model(preferred_code=preferred_code)
-            engine_instance = PiperTTSEngine(
-                model_path,
-                primary_language=config.primary_language,
-                language_voices=config.language_voices,
-                formatting_cues_enabled=getattr(config, "speak_formatting_cues", True),
-                formatting_locale=getattr(config, "formatting_locale", "pt"),
-                max_procs=getattr(config, "piper_max_procs", None),
-                enable_character_voices=bool(getattr(config, "enable_character_voices", False)),
-                narrator_voice=getattr(config, "narrator_voice", None),
-                character_voice=getattr(config, "character_voice", None),
-            )
-            engine_instance.verbose = config.verbose
-            return engine_instance
-
-        raise ValueError(f"Unsupported engine: {config.engine}")
+        model_path = config.model_path
+        if model_path is None and config.voice:
+            candidate = Path(str(config.voice))
+            if candidate.suffix.lower() == ".onnx" and candidate.exists():
+                model_path = candidate
+        preferred_code = (config.primary_language or "").split("-", 1)[0]
+        model_path = model_path or self._find_piper_model(preferred_code=preferred_code)
+        engine_instance = PiperTTSEngine(
+            model_path,
+            primary_language=config.primary_language,
+            language_voices=config.language_voices,
+            formatting_cues_enabled=getattr(config, "speak_formatting_cues", True),
+            formatting_locale=getattr(config, "formatting_locale", "pt"),
+            max_procs=getattr(config, "piper_max_procs", None),
+            enable_character_voices=bool(getattr(config, "enable_character_voices", False)),
+            narrator_voice=getattr(config, "narrator_voice", None),
+            character_voice=getattr(config, "character_voice", None),
+        )
+        engine_instance.verbose = config.verbose
+        return engine_instance
 
     def _find_piper_model(
         self, preferred_code: Optional[str] = None, models_dir: Optional[Path] = None
@@ -255,18 +242,18 @@ class TTSFactory:
                     name = candidate.stem.lower()
                     if any(name.startswith(prefix) for prefix in preferred_prefixes):
                         return candidate
-                # Preferred language not found — try downloading before using wrong-language fallback
+                # Preferred language not found: model installation belongs to
+                # Settings/ModelStore, never to the conversion path.
                 continue
 
             # No language preference: use first available model in directory
             return candidates[0]
 
-        downloaded = self._download_default_piper_model(preferred_code)
-        if downloaded:
-            return downloaded
-
-        # No model in the requested language is available and the on-demand
-        # download failed. Picking *any* installed model here used to be the
+        # No model in the requested language is installed. Picking *any* model
+        # here would be a silent wrong-language fallback and conversion must
+        # never download a model as a side effect.
+        #
+        # Picking *any* installed model here used to be the
         # silent fallback, but it produces unlistenable output: a pt-BR
         # audiobook narrated by `en_US-lessac-medium` reads Portuguese with
         # English phonemes (the Carl regression). Refuse instead so the
@@ -289,30 +276,5 @@ class TTSFactory:
                 return candidates[0]
 
         raise FileNotFoundError("No Piper models were found")
-
-    def _download_default_piper_model(self, preferred_code: Optional[str]) -> Optional[Path]:
-        code = (preferred_code or "").split("-", 1)[0].lower()
-        sources = DEFAULT_PIPER_SOURCES.get(code) or DEFAULT_PIPER_SOURCES.get("en")
-        if not sources:
-            return None
-
-        # Prioridade: PIPER_MODEL_DIR env, depois root/models
-        project_root = self._resolve_project_root()
-        target_dir = Path(os.getenv("PIPER_MODEL_DIR") or project_root / "models")
-        target_dir.mkdir(parents=True, exist_ok=True)
-
-        model_path = target_dir / sources["model"]
-        config_path = target_dir / sources["config"]
-
-        try:
-            if not model_path.exists():
-                urllib.request.urlretrieve(sources["model_url"], model_path)
-            if not config_path.exists():
-                urllib.request.urlretrieve(sources["config_url"], config_path)
-        except Exception:
-            return None
-
-        return model_path if model_path.exists() else None
-
 
 __all__ = ["TTSFactory", "TTSEngine"]

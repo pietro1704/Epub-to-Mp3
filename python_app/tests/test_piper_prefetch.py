@@ -15,6 +15,7 @@ from src.converter import AudioConverter
 class TestPiperPrefetch(unittest.TestCase):
     def test_prefetch_idempotent(self):
         conv = AudioConverter()
+        conv._cli_fallback_engine = "piper"
         with patch("src.tts.factory.TTSFactory") as factory:
             with patch.dict(os.environ, {"DISABLE_PIPER_FALLBACK": "0"}, clear=False):
                 conv._kick_off_piper_prefetch()
@@ -34,6 +35,7 @@ class TestPiperPrefetch(unittest.TestCase):
 
     def test_prefetch_swallows_factory_errors(self):
         conv = AudioConverter()
+        conv._cli_fallback_engine = "piper"
 
         def _boom(*_a, **_k):
             raise RuntimeError("no net")

@@ -718,7 +718,7 @@ export const translations: Record<Locale, Translations> = {
         "Envie o arquivo, escolha a voz preferida e deixe o serviço Python narrar a história para você ouvir onde quiser.",
       highlights: [
         {
-          title: "Edge → XTTS → Piper",
+          title: "Edge → Piper",
           description:
             "Escolhemos automaticamente o motor mais estável para manter qualidade e velocidade.",
         },
@@ -840,10 +840,10 @@ export const translations: Record<Locale, Translations> = {
             "Todos (automático) — pt, en, es, fr, de, it, ja, zh e mais",
         },
         piper: {
-          tagline: "Leve, offline e garantido — o fallback confiável",
+          tagline: "Leve e offline — opção local instalada pelo usuário",
           quality: "Básica — voz robótica mas inteligível",
           speed: "~25 chars/s — moderado",
-          requirements: "Nenhum — funciona em qualquer máquina",
+          requirements: "Runtime Piper e modelo compatível instalados",
           bestVoice: "pt_BR-faber-medium.onnx",
           bestVoiceNote:
             "Faber é a melhor voz pt-BR disponível. Para inglês, Lessac-medium tem qualidade superior.",
@@ -851,7 +851,7 @@ export const translations: Record<Locale, Translations> = {
             "100% offline — sem internet necessária",
             "Extremamente leve (~15 MB por modelo)",
             "Funciona em qualquer hardware",
-            "Nunca falha — é o fallback final do sistema",
+            "Pode funcionar sem internet após a instalação explícita",
           ],
           cons: [
             "Qualidade de voz mais robótica",
@@ -1249,7 +1249,7 @@ export const translations: Record<Locale, Translations> = {
           "A conversão demorou mais do que o esperado. Tente um engine diferente.",
         network: "Falha de rede. Verifique sua conexão e tente novamente.",
         engine_unavailable:
-          "Nenhum engine TTS disponível. Verifique os logs do servidor.",
+          "Nenhum engine TTS disponível. Instale um modelo de voz compatível em Configurações ou habilite o Edge-TTS.",
         audio_truncation:
           "Áudio gerado mais curto que o esperado. Tente diminuir o capítulo.",
         incomplete_segments:
@@ -1553,7 +1553,7 @@ export const translations: Record<Locale, Translations> = {
         "Upload the file, pick a voice you like, and let the Python service narrate the story so you can listen anywhere.",
       highlights: [
         {
-          title: "Edge → XTTS → Piper",
+          title: "Edge → Piper",
           description:
             "Automatically picks the most reliable engine to keep quality and speed high.",
         },
@@ -1684,7 +1684,7 @@ export const translations: Record<Locale, Translations> = {
             "100% offline — no internet needed",
             "Extremely lightweight (~15 MB per model)",
             "Works on any hardware",
-            "Never fails — the system's final fallback",
+            "Works offline after an explicit compatible model install",
           ],
           cons: [
             "More robotic voice quality",
@@ -2068,7 +2068,8 @@ export const translations: Record<Locale, Translations> = {
         rate_limit: "Rate limit reached. Please try again in a few minutes.",
         timeout: "Conversion took too long. Try a different engine.",
         network: "Network error. Check your connection and try again.",
-        engine_unavailable: "No TTS engine available. Check the server logs.",
+        engine_unavailable:
+          "No TTS engine available. Install a compatible voice model in Settings or enable Edge-TTS.",
         audio_truncation:
           "Generated audio is shorter than expected. Try a shorter chapter.",
         incomplete_segments:

@@ -654,11 +654,7 @@ class ConverterApplication:
             temp_dir = self.cache_root / book_name
 
             if getattr(args, "no_cache", False):
-                # Completely clear the .cache directory
-                if self.cache_root.exists():
-                    shutil.rmtree(self.cache_root)
-                self.cache_root.mkdir(exist_ok=True)
-                print("🗑️ .cache directory cleared due to --no-cache")
+                self._clear_no_cache_target(cache_manager, input_path, reader)
 
             # Ensure the temp directory is inside .cache
             book_name = Path(args.input_file).stem
@@ -862,6 +858,16 @@ class ConverterApplication:
                         except Exception:
                             pass
 
+                # Surface *why* an otherwise-complete run ended up "partial"
+                # (e.g. final cross-validation caught a duration/text
+                # mismatch after every chapter loop-reported success) —
+                # without this, outcome=partial + chapters_failed=0 is
+                # unexplainable from the log alone.
+                _result_errors = result.errors if isinstance(result, ConversionResult) else None
+                _log_extra: dict = {}
+                if _result_errors:
+                    _log_extra["errors"] = list(_result_errors)[:20]
+
                 log_session(
                     book_title=reader.title or Path(args.input_file).stem,
                     book_author=getattr(reader, "author", "") or "",
@@ -880,6 +886,7 @@ class ConverterApplication:
                         conversion_start, tz=timezone.utc
                     ).isoformat(),
                     chapter_details=_chapter_details or None,
+                    extra=_log_extra or None,
                 )
             except Exception:
                 pass  # Never let logging break a conversion
@@ -1018,12 +1025,20 @@ class ConverterApplication:
                 # common case and the user reported that pressing `y`
                 # didn't register on their terminal. Empty input now
                 # confirms; only an explicit `n`/`no` cancels.
-                # Strip Windows-style \r and any trailing whitespace
-                # so a CR-only line (common over SSH) still confirms.
+                # Use TerminalPrompt so that CR-only lines (^M, common in
+                # tmux/SSH or after a tty.setcbreak() menu) are handled
+                # correctly — plain input() leaves CR in the buffer.
                 try:
-                    raw = input("\n🔧 Do you want to fix the issues now? [Y/n] ")
-                except (EOFError, KeyboardInterrupt):
-                    raw = ""
+                    from src.ui.prompt import TerminalPrompt as _TP
+
+                    _tp = _TP()
+                    _result = _tp._read("\n🔧 Do you want to fix the issues now? [Y/n] ")
+                    raw = _result.text if not _result.eof else ""
+                except Exception:
+                    try:
+                        raw = input("\n🔧 Do you want to fix the issues now? [Y/n] ")
+                    except (EOFError, KeyboardInterrupt):
+                        raw = ""
                 answer = (raw or "").strip().rstrip("\r").lower()
                 if answer in ("", "y", "yes", "s", "sim"):
                     return self._run_fix_mode(input_path, config)
@@ -2909,7 +2924,13 @@ class ConverterApplication:
 
     def _apply_language_preferences(self, config: ConversionConfig) -> None:
         profile = self.language_profile
-        fallback_lang = self.localization.language or "pt"
+        # UI language controls labels/formatting only. It must never select
+        # the narration language for an EPUB whose detection is uncertain.
+        fallback_lang = (
+            config.primary_language
+            if config.primary_language and config.primary_language not in {"auto", "unknown"}
+            else "unknown"
+        )
         if profile is None:
             profile = LanguageProfile(
                 primary=config.primary_language,
@@ -3221,6 +3242,23 @@ class ConverterApplication:
         base_name = getattr(reader, "title", None) or getattr(reader, "file_path", None) or "livro"
         sanitized = FileManager.sanitize_filename(base_name) or "livro"
         return resolve_cache_root() / sanitized
+
+    @staticmethod
+    def _clear_no_cache_target(cache_manager, input_path: Path, reader: EbookReader) -> bool:
+        """Clear only the selected book's cache for ``--no-cache``.
+
+        The cache root is shared by conversions, so removing it would destroy
+        resumable state for unrelated books (especially in batch mode).
+        ``CacheManager`` knows both the source-filename and metadata-title
+        cache identities and removes the matching checkpoint as well.
+        """
+        cleared = cache_manager.clear_cache(
+            input_path,
+            title=getattr(reader, "title", None),
+        )
+        if cleared:
+            print("🗑️ Cache cleared for the selected book due to --no-cache")
+        return cleared
 
     def _handle_clear_cache(self, args: Optional[argparse.Namespace] = None) -> int:
         """Clear cache/output for a specific book, or globally with confirmation."""
@@ -3593,6 +3631,8 @@ class ConverterApplication:
             "author": reader.author or "Unknown",
             "chapters": [],
         }
+        if getattr(getattr(reader, "book", None), "source_format", None) == "pdf_scan_ocr":
+            chapters_data["source_format"] = "pdf_scan_ocr"
 
         for item in structure_items:
             cleaned_text = str(item.text_override or "")
@@ -4468,11 +4508,15 @@ class ConverterApplication:
         if getattr(args, "auto_fix_output", None) is not None:
             overrides["auto_fix_output"] = bool(getattr(args, "auto_fix_output"))
 
-        # "auto" is a UI-friendly alias kept for parity with the web form; it
-        # means "let the default (Edge) engine handle it" at the CLI layer.
+        # "auto" is a UI-friendly alias kept for parity with the web form.
         engine_choice = args.engine or "edge"
         if engine_choice == "auto":
             engine_choice = "edge"
+        if engine_choice == "rust":
+            raise RuntimeError(
+                "The Rust backend is invoked through the Rust CLI; use "
+                "./convert-rust or mise exec -- cargo run -p converter-cli -- ..."
+            )
         config = self.config.create_conversion_config(
             engine=engine_choice,
             voice=args.voice,
@@ -4836,7 +4880,7 @@ def _add_conversion_arguments(
         "--engine",
         choices=["auto", "edge", "piper"],
         default="edge",
-        help="TTS engine to use (default: edge). auto=edge (alias), edge=fast cloud, piper=offline fallback",
+        help="TTS engine to use (default: edge). rust uses the embedded Rust backend",
     )
     parser.add_argument(
         "--fallback-engine",
@@ -4853,7 +4897,7 @@ def _add_conversion_arguments(
     parser.add_argument(
         "--engine-chain-fallback",
         action="store_true",
-        help="Enable the legacy multi-engine cascade (Edge -> Piper). Default is Edge-only with per-chunk fallback. Mirrors ENGINE_CHAIN_FALLBACK=1.",
+        help="Enable the legacy Edge -> Piper cascade. Default is Edge-first with per-chunk fallback. Mirrors ENGINE_CHAIN_FALLBACK=1.",
     )
     parser.add_argument(
         "--prewarm-edge",
@@ -5010,7 +5054,7 @@ def _add_conversion_arguments(
         "--no-cache",
         dest="no_cache",
         action="store_true",
-        help="Ignore existing cache/output and regenerate everything from scratch (also clears .cache for this run)",
+        help="Ignore existing cache/output and regenerate only the selected book from scratch (use --clear-cache without a book for explicit global cleanup)",
     )
     resume_group = parser.add_mutually_exclusive_group()
     resume_group.add_argument(

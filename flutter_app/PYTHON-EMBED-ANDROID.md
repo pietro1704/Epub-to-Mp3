@@ -1,14 +1,16 @@
-# Embedded Python on Android (Chaquopy)
+# Android backend runtime
 
-The Flutter Android app embeds **CPython 3.13** inside the APK via
-[Chaquopy](https://chaquo.com/chaquopy/) so it can reuse the exact same
-pipeline modules (`python_app/src/…`) that power the iOS app, the macOS
-sidecar, and the HF Spaces backend.
+Android document ingestion and conversion use the configured Rust HTTP backend.
 
-This document mirrors `ios/PYTHON-EMBED.md` — read both side-by-side if
-you're cross-referencing the two clients.
+The Flutter client uploads EPUB/PDF documents through `ApiClient` and consumes
+job/fulltext/SSE responses from the configured backend URL. Android does not
+embed Python or Chaquopy.
 
-## Architecture
+## Runtime prerequisite
+
+Set the backend URL in Flutter Settings. The default is `http://10.0.2.2:8000`
+for the Android emulator; a physical Samsung device needs a reachable LAN
+address or deployed HTTPS backend, for example `http://192.168.1.20:8000`.
 
 ```
 ┌────────────────────────────┐

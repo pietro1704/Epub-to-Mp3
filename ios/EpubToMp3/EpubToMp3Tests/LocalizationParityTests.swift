@@ -43,7 +43,7 @@ final class LocalizationParityTests: XCTestCase {
             XCTFail("Could not locate \(locale).lproj/Localizable.strings")
             return [:]
         }
-        let data = try Data(contentsOf: url)
+        let data = try readSourceDataIfAvailable(at: url)
         guard let dict = try PropertyListSerialization.propertyList(
             from: data, options: [], format: nil) as? [String: String]
         else {
@@ -94,6 +94,14 @@ final class LocalizationParityTests: XCTestCase {
                 .filter { $0.value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
                 .keys.sorted()
             XCTAssertTrue(empty.isEmpty, "\(locale) keys with empty values: \(empty)")
+        }
+    }
+
+    func testReaderLoadingKeyExistsInEveryLocale() throws {
+        let tables = try loadAllTables()
+        for locale in Self.locales {
+            XCTAssertNotEqual(tables[locale]?["reader.loading"], "reader.loading")
+            XCTAssertFalse(tables[locale]?["reader.loading"]?.isEmpty ?? true)
         }
     }
 

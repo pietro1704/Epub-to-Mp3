@@ -1,0 +1,18 @@
+{
+  "chapters": [
+    {
+      "index": 1,
+      "speechText": "Capítulo 1 - Começo.\nEste é o início do nosso experimento em itálico: itálico fim do itálico. com notas de rodapé.\n\nnota de rodapé 1...\nEsta nota explica o contexto histórico mencionado no texto principal.\nfim da nota de rodapé...\n\n. em itálico: “Olhe além do esperado” fim do itálico. , sussurrou a narradora, reforçando a mensagem com um olhar cúmplice.\nO mentor respondeu com firmeza: em itálico: “Continue acreditando” fim do itálico. , mesmo quando tudo parecer perdido.\nSeção 1 - Diário.\nO narrador descreve um cenário em português, preparando o leitor para os trechos em outros idiomas.\nSeção 2 - Correspondência.\nO protagonista recebe uma carta enigmática com instruções para continuar a jornada.\nNotas.",
+      "text": "Capítulo 1 - Começo\nEste é o início do nosso experimento _itálico_ com notas de rodapé\n\nnota de rodapé 1...\nEsta nota explica o contexto histórico mencionado no texto principal.\nfim da nota de rodapé...\n\n.\n_“Olhe além do esperado”_, sussurrou a narradora, reforçando a mensagem com um olhar cúmplice.\nO mentor respondeu com firmeza: _“Continue acreditando”_, mesmo quando tudo parecer perdido.\nSeção 1 - Diário\nO narrador descreve um cenário em português, preparando o leitor para os trechos em outros idiomas.\nSeção 2 - Correspondência\nO protagonista recebe uma carta enigmática com instruções para continuar a jornada.\nNotas"
+    },
+    {
+      "index": 2,
+      "speechText": "Capítulo 2 - Correspondências.\n[[lang:en]]The letter begins with a confident tone, urging the reader to em itálico: “look beyond the obvious” fim do itálico. .[[/lang]].\n[[lang:es]]Más adelante, el remitente cambia al español para susurrar: em itálico: “Confía en tu instinto” fim do itálico. .[[/lang]].\n[[lang:pt-BR]]O destinatário sorri e responde em voz baixa: em itálico: “Seguirei acreditando” fim do itálico. , prometendo não desistir.[[/lang]].\nO capítulo termina com uma revelação surpreendente.",
+      "text": "Capítulo 2 - Correspondências\n[[lang:en]]The letter begins with a confident tone, urging the reader to _“look beyond the obvious”_.[[/lang]]\n[[lang:es]]Más adelante, el remitente cambia al español para susurrar: _“Confía en tu instinto”_.[[/lang]]\n[[lang:pt-BR]]O destinatário sorri e responde em voz baixa: _“Seguirei acreditando”_, prometendo não desistir.[[/lang]]\nO capítulo termina com uma revelação surpreendente."
+    }
+  ],
+  "sentences": [
+    "One sentence.",
+    "Two sentences!"
+  ]
+}

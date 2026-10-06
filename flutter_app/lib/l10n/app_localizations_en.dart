@@ -12,6 +12,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get appTitle => 'Epub to MP3';
 
   @override
+  String get convertTitle => 'Convert';
+
+  @override
   String get settingsTitle => 'Settings';
 
   @override
@@ -193,6 +196,10 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get invalidUrl => 'URL is not valid';
+
+  @override
+  String get backendUnavailable =>
+      'Set an HTTP(S) backend URL reachable from this device.';
 
   @override
   String nOfSteps(int n, int total) {

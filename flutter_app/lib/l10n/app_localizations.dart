@@ -106,6 +106,12 @@ abstract class AppLocalizations {
   /// **'Epub to MP3'**
   String get appTitle;
 
+  /// No description provided for @convertTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Convert'**
+  String get convertTitle;
+
   /// No description provided for @settingsTitle.
   ///
   /// In en, this message translates to:
@@ -459,6 +465,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'URL is not valid'**
   String get invalidUrl;
+
+  /// No description provided for @backendUnavailable.
+  ///
+  /// In en, this message translates to:
+  /// **'Set an HTTP(S) backend URL reachable from this device.'**
+  String get backendUnavailable;
 
   /// No description provided for @nOfSteps.
   ///

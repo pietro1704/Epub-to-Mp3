@@ -1,0 +1,111 @@
+name: Converter FFI portability
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/converter-ffi.yml"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "crates/converter-core/**"
+      - "crates/converter-ffi/**"
+      - "scripts/build_converter_ffi.py"
+      - "scripts/validate_converter_ffi_targets.py"
+      - "mise.toml"
+  push:
+    branches:
+      - master
+    paths:
+      - ".github/workflows/converter-ffi.yml"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "crates/converter-core/**"
+      - "crates/converter-ffi/**"
+      - "scripts/build_converter_ffi.py"
+      - "scripts/validate_converter_ffi_targets.py"
+      - "mise.toml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  host-validation:
+    name: Host target mapping and converter-ffi tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Install mise
+        uses: jdx/mise-action@v4.3.0
+
+      - name: Install project toolchain
+        env:
+          MISE_GITHUB_TOKEN: ${{ github.token }}
+        run: mise install
+
+      - name: Validate target mappings
+        run: mise run converter-ffi:validate
+
+      - name: Run converter-ffi tests
+        run: mise exec -- cargo test -p converter-ffi
+
+  artifact-build:
+    name: Build converter-ffi native artifacts
+    needs: host-validation
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-14
+            logical_target: ios-device
+            rust_target: aarch64-apple-ios
+          - os: macos-14
+            logical_target: ios-simulator-arm64
+            rust_target: aarch64-apple-ios-sim
+          - os: macos-14
+            logical_target: ios-simulator-x64
+            rust_target: x86_64-apple-ios
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Install mise
+        uses: jdx/mise-action@v4.3.0
+
+      - name: Install project toolchain
+        env:
+          MISE_GITHUB_TOKEN: ${{ github.token }}
+        run: mise install
+
+      - name: Install Rust target
+        run: rustup target add "${{ matrix.rust_target }}"
+
+      - name: Build converter-ffi artifact (verification only)
+        run: |
+          if [[ "${{ matrix.logical_target }}" == "ios-device" ]]; then
+            echo "Skipping unsupported direct iOS-device verification; iOS packaging performs the Xcode link."
+            exit 0
+          fi
+          mise exec -- cargo build -p converter-ffi --release --target "${{ matrix.rust_target }}"
+
+      - name: Verify expected artifact exists
+        shell: bash
+        run: |
+          if [[ "${{ matrix.logical_target }}" == "ios-device" ]]; then
+            exit 0
+          fi
+          set -euo pipefail
+          case '${{ matrix.rust_target }}' in
+            *apple*) library=libconverter_ffi.dylib ;;
+            *) library=libconverter_ffi.so ;;
+          esac
+          artifact="target/${{ matrix.rust_target }}/release/${library}"
+          test -f "$artifact" || { echo "::error::Expected converter-ffi artifact was not produced: $artifact"; exit 1; }
+          echo "Verified $artifact"
+          echo "No release artifact is published by this workflow."

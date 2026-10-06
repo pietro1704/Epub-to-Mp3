@@ -1,0 +1,505 @@
+--------- beginning of main
+09-28 14:04:23.394  4076  4465 D PdnController<0>: onCellLocationChanged:
+09-28 14:04:23.395  4076  4465 D VolteServiceModule: onCellLocationChanged, phoneId: 0
+09-28 14:04:23.395  4076  4465 I RegiMgrBase: handleMessage: PLANI_IN_TIME_CHANGED
+09-28 14:04:23.395  4076  4465 I RegiMgrBase: handleMessage: CELL_LOCATION_CHANGED
+09-28 14:04:23.395  4076  4465 D RegiMgrBase<0>: updatePani:
+09-28 14:04:23.396 26974 27002 D InternalContentProvider: update_network_selection null
+09-28 14:04:23.396  3865  3865 D DeviceState: isReadySimSlot() slotNum : 0 (true)
+09-28 14:04:23.396  3865  3865 D DeviceState: getSystemPropertySimState() simStateProp : LOADED
+09-28 14:04:23.396  3865  3865 D CarrierText: Handling (subId=1): simState = READY, carrierName = TIMBRASIL | TIM
+09-28 14:04:23.396 26974 27002 D InternalContentProvider: Take CarrierUiCallFunctions
+09-28 14:04:23.396  3865  3865 D CarrierText: carrierTextForSimState = TIMBRASIL | TIM
+09-28 14:04:23.396 26974 27002 D CarrierUiCallFunctions: call update_network_selection null Bundle[mParcelledData.dataSize=28]
+09-28 14:04:23.397 26974 27002 V UT.Worker-General: schedule job 882e25d
+09-28 14:04:23.397  3865  3865 D CarrierText: SIM ready and in service: subId = 1, ServiceState = {mVoiceRegState=0(IN_SERVICE), mDataRegState=0(IN_SERVICE), mChannelNumber=-1, duplexMode()=0, mCellBandwidths=[], mVoiceRoamingType=home, mDataRoamingType=home, isManualNetworkSelection=false(automatic), mRilVoiceRadioTechnology=14(LTE), mRilDataRadioTechnology=14(LTE), mCssIndicator=unsupported, mCdmaRoamingIndicator=-1, mCdmaDefaultRoamingIndicator=-1, VoiceRegType=0, ImsVoiceAvail=1, IsEbSupport=1, IsEaBarred=0, Snap=0, MobileVoice=IN_SERVICE, MobileVoiceRat=LTE, MobileData=IN_SERVICE, MobileDataRoamingType=home, MobileDataRat=LTE PsOnly=false FemtocellInd=0 EndcStatus=0 RestrictDcnr=1 NrBearerStatus=0, mIsEmergencyOnly=false, mIsDataRoamingFromRegistration=false, mIsUsingCarrierAggregation=false, mLteEarfcnRsrpBoost=0, mNetworkRegistrationStates=[], mNrFrequencyRange=0}
+09-28 14:04:23.397 26974 27001 V UT.Worker-General: handle job 882e25d
+09-28 14:04:23.397  3865  3865 D CarrierText: setText : TIMBRASIL | TIM
+09-28 14:04:23.397 26974 27001 V UT.Worker-General: completed job 882e25d
+09-28 14:04:23.397 26974 26974 V UT.Worker-General: issue callback for job 882e25d
+09-28 14:04:23.397 26974 26974 D FT.TuiSalesCodeFeature: NONE.isCurrentCountry
+09-28 14:04:23.397  3865  3865 D Tile.AirplaneModeTile: onReceive: android.intent.action.SERVICE_STATE
+09-28 14:04:23.399  4076  4465 D PaniGenerator<0>: generate: subId - 1
+09-28 14:04:23.399  3865  4220 D Tile.AirplaneModeTile:  handleUpdateState: airplane mode is disabled
+09-28 14:04:23.400  3865  4220 D Tile.AirplaneModeTile:  handleUpdateState:  value = false, state = 1
+09-28 14:04:23.402  3828  3828 V PhoneGlobals: subId=1,mDefaultDataSubId=1,ss roaming=false
+09-28 14:04:23.403  3828  3828 V PhoneGlobals: updateDataRoamingStatus
+09-28 14:04:23.403  3865  3865 I StackScroller: ADJUST STACK.TRANSLATION
+09-28 14:04:23.406 26974 26974 V UT.TelephonyUtils: getServiceState 0, subId 1
+09-28 14:04:23.407 26974 26974 D CU.NetworkSelectionNotificationMgr: getNetworkSelection :   subId : 1
+09-28 14:04:23.407 26974 26974 D CU.NetworkSelectionNotificationMgr: updateNetworkSelection()... isManualSelection : false , isSelectedOperatoraEmpty : true , selectedNetworkOperatorName :  PhoneId: 0
+09-28 14:04:23.407  3865  3865 I StackScroller: ADJUST STACK.TRANSLATION
+09-28 14:04:23.407  3828  3828 V PhoneGlobals: dataAllowed=false, reasons=Data disallowed, reasons: DATA_DISABLED
+09-28 14:04:23.408  3865  3865 I StackScroller: ADJUST STACK.TRANSLATION
+09-28 14:04:23.408  3828  3828 I Telephony: TelecomAccountRegistry$3: Receive ServiceStateChanged, {mVoiceRegState=0(IN_SERVICE), mDataRegState=0(IN_SERVICE), mChannelNumber=-1, duplexMode()=0, mCellBandwidths=[], mVoiceRoamingType=home, mDataRoamingType=home, isManualNetworkSelection=false(automatic), mRilVoiceRadioTechnology=14(LTE), mRilDataRadioTechnology=14(LTE), mCssIndicator=unsupported, mCdmaRoamingIndicator=-1, mCdmaDefaultRoamingIndicator=-1, VoiceRegType=0, ImsVoiceAvail=1, IsEbSupport=1, IsEaBarred=0, Snap=0, MobileVoice=IN_SERVICE, MobileVoiceRat=LTE, MobileData=IN_SERVICE, MobileDataRoamingType=home, MobileDataRat=LTE PsOnly=false FemtocellInd=0 EndcStatus=0 RestrictDcnr=1 NrBearerStatus=0, mIsEmergencyOnly=false, mIsDataRoamingFromRegistration=false, mIsUsingCarrierAggregation=false, mLteEarfcnRsrpBoost=0, mNetworkRegistrationStates=[], mNrFrequencyRange=0}
+09-28 14:04:23.408  3828  3828 I Telephony: TelecomAccountRegistry$3: subId: 1, operatorAlphaShort: TIMBRASIL, voiceNetwokType: 13 -> 13, dataNetwokType: 13 -> 13
+09-28 14:04:23.409  4076  4465 D PaniGenerator<0>: generate: network=13, fallbackPlmn=72402, subId=1
+09-28 14:04:23.412  4076  4465 D PaniGenerator<0>: getPsPlmn: subId = 1
+09-28 14:04:23.413 26974 26974 V FT.PhoneUtilsMultiSim: getMultiSimIccType phoneId 0 icctype 2 
+09-28 14:04:23.413 26974 26974 V FT.PhoneUtilsMultiSim: isSimCardInserted[slot0] true
+09-28 14:04:23.414 26974 26974 V FT.PhoneUtilsMultiSim: isSimCardStatusOn[slot0] true
+09-28 14:04:23.414 26974 26974 D FT.TuiSalesCodeFeature: UNKNOWN.isCurrentOperator
+09-28 14:04:23.415  3828  4440 I Telephony:SamsungPhoneInterfaceManager: getCellLocationBySubId: is active user
+09-28 14:04:23.416 26974 27002 D InternalContentProvider: service_state_changed null
+09-28 14:04:23.417 26974 27002 D InternalContentProvider: Take CarrierUiCallFunctions
+09-28 14:04:23.417 26974 27002 D CarrierUiCallFunctions: call service_state_changed null Bundle[mParcelledData.dataSize=2640]
+09-28 14:04:23.417 26974 27002 V UT.Worker-General: schedule job 882e25d
+09-28 14:04:23.418  4076  4465 D PaniGenerator: getDataPlmn returns null
+09-28 14:04:23.418 26974 27001 V UT.Worker-General: handle job 882e25d
+09-28 14:04:23.418 26974 27001 V UT.Worker-General: completed job 882e25d
+09-28 14:04:23.418 26974 26974 V UT.Worker-General: issue callback for job 882e25d
+09-28 14:04:23.418 26974 26974 D FT.TuiSalesCodeFeature: NONE.isCurrentCountry
+09-28 14:04:23.419  4076  4465 D PaniGenerator: generate: change to NW PLMN(72403)
+09-28 14:04:23.419  3546  3982 D SLocation: cellList : 6
+09-28 14:04:23.419 26974 26974 D FT.TuiUtilFeature: isAirplaneModeOn = false
+09-28 14:04:23.419 26974 26974 D FT.TuiSalesCodeFeature: UNKNOWN.isCurrentOperator
+09-28 14:04:23.419 26974 26974 D FT.TuiSalesCodeFeature: NONE.isCurrentCountry
+09-28 14:04:23.419 26974 26974 D FT.TuiSalesCodeFeature: NONE.isCurrentCountry
+09-28 14:04:23.423 26974 26974 D FT.TuiUtilFeature: isAirplaneModeOn = false
+09-28 14:04:23.423 26974 26974 D FT.TuiSalesCodeFeature: NONE.isCurrentCountry
+09-28 14:04:23.424  3828  4510 I Telephony:SamsungPhoneInterfaceManager: getCellLocationBySubId: is active user
+09-28 14:04:23.427 26974 26974 V FT.PhoneUtilsMultiSim: getMultiSimIccType phoneId 0 icctype 2 
+09-28 14:04:23.427 26974 26974 V FT.PhoneUtilsMultiSim: isSimCardInserted[slot0] true
+09-28 14:04:23.427 26974 26974 V FT.PhoneUtilsMultiSim: isSimCardStatusOn[slot0] true
+09-28 14:04:23.427 26974 26974 V FT.PhoneUtilsMultiSim: getMultiSimIccType phoneId 1 icctype 0 
+09-28 14:04:23.427 26974 26974 V FT.PhoneUtilsMultiSim: isSimCardInserted[slot1] false
+09-28 14:04:23.430  3828  4510 I Telephony:SamsungPhoneInterfaceManager: getCellLocationBySubId: is active user
+09-28 14:04:23.432  4076  4465 D PaniGenerator: setLkcForLastPani: No Last PANI header for ZTM IMS VoLTE
+09-28 14:04:23.432  4076  4522 D Mno     : fromName: Tim_BR
+09-28 14:04:23.433  4076  4522 D Mno     : fromName: found mno : Tim_BR, BR
+09-28 14:04:23.433  4076  4522 D StackIF : updatePani: 28682 pani: [3GPP-E-UTRAN-FDD;utran-cell-id-3gpp=724037a77137b863]
+09-28 14:04:23.433  4076  4522 D SECIMSJ : [3175]> 140
+09-28 14:04:23.433  4076  4562 D [IMS6.0]: IMS_onResponse()
+09-28 14:04:23.433  4076  4562 D StackIF : processMessage 2
+09-28 14:04:23.434  4076  4562 D StackIF : Processing Response
+09-28 14:04:23.434  4076  4562 D SECIMSJ : [3175]< 600
+09-28 14:04:23.434  4076  4562 D StackIF : processResponse: reqId 600
+09-28 14:04:23.434  4076  4562 D StackIF : processResponse: handle 28682 result 0 reason 0
+09-28 14:04:23.434  4076  4465 D PaniGenerator<0>: generate: subId - 1
+09-28 14:04:23.438  4076  4465 D PaniGenerator<0>: generate: network=13, fallbackPlmn=72402, subId=1
+09-28 14:04:23.439  4076  4465 D PaniGenerator<0>: getPsPlmn: subId = 1
+09-28 14:04:23.440 26974 26974 V UT.TelephonyUtils: getSimApplicationState 10, subId 1
+09-28 14:04:23.440 26974 26974 D FT.TuiUtilFeature: isAirplaneModeOn = false
+09-28 14:04:23.440  3828  4440 I Telephony:SamsungPhoneInterfaceManager: getCellLocationBySubId: is active user
+09-28 14:04:23.443  4076  4465 D PaniGenerator: getDataPlmn returns null
+09-28 14:04:23.443  4076  4465 D PaniGenerator: generate: change to NW PLMN(72403)
+09-28 14:04:23.447  3828  4440 I Telephony:SamsungPhoneInterfaceManager: getCellLocationBySubId: is active user
+09-28 14:04:23.452  3828  4440 I Telephony:SamsungPhoneInterfaceManager: getCellLocationBySubId: is active user
+09-28 14:04:23.454  4076  4465 D PaniGenerator: setLkcForLastPani: No Last PANI header for ZTM RCS
+09-28 14:04:23.454  4076  4465 D RegiMgrBase<0>: notifyNetworkEvent:
+09-28 14:04:23.454  4076  4465 D RegiMgrBase<0>: buildNetworkEvent:
+09-28 14:04:23.454  4076  4465 I RegiMgrBase: handleMessage: PLANI_IN_TIME_CHANGED
+09-28 14:04:23.471 32501 32501 I Choreographer: Skipped 443 frames!  The application may be doing too much work on its main thread.
+09-28 14:04:23.512 32501 32501 I mp3.flutter_ap: Rejecting re-init on previously-failed class java.lang.Class<androidx.window.layout.adapter.sidecar.DistinctElementSidecarCallback>: java.lang.NoClassDefFoundError: Failed resolution of: Landroidx/window/sidecar/SidecarInterface$SidecarCallback;
+09-28 14:04:23.512 32501 32501 I mp3.flutter_ap:   at androidx.window.layout.adapter.sidecar.ExtensionInterfaceCompat androidx.window.layout.adapter.sidecar.SidecarWindowBackend$Companion.initAndVerifyExtension(android.content.Context) (SidecarWindowBackend.kt:207)
+09-28 14:04:23.512 32501 32501 I mp3.flutter_ap:   at androidx.window.layout.adapter.sidecar.SidecarWindowBackend androidx.window.layout.adapter.sidecar.SidecarWindowBackend$Companion.getInstance(android.content.Context) (SidecarWindowBackend.kt:191)
+09-28 14:04:23.512 32501 32501 I mp3.flutter_ap:   at androidx.window.layout.WindowInfoTracker androidx.window.layout.WindowInfoTracker$Companion.getOrCreate(android.content.Context) (WindowInfoTracker.kt:135)
+09-28 14:04:23.512 32501 32501 I mp3.flutter_ap:   at io.flutter.embedding.android.WindowInfoRepositoryCallbackAdapterWrapper io.flutter.embedding.android.FlutterView.createWindowInfoRepo() (FlutterView.java:559)
+09-28 14:04:23.512 32501 32501 I mp3.flutter_ap:   at void io.flutter.embedding.android.FlutterView.onAttachedToWindow() (FlutterView.java:580)
+09-28 14:04:23.512 32501 32501 I mp3.flutter_ap:   at void android.view.View.dispatchAttachedToWindow(android.view.View$AttachInfo, int) (View.java:20001)
+09-28 14:04:23.512 32501 32501 I mp3.flutter_ap:   at void android.view.ViewGroup.dispatchAttachedToWindow(android.view.View$AttachInfo, int) (ViewGroup.java:3589)
+09-28 14:04:23.512 32501 32501 I mp3.flutter_ap:   at void android.view.ViewGroup.dispatchAttachedToWindow(android.view.View$AttachInfo, int) (ViewGroup.java:3596)
+09-28 14:04:23.512 32501 32501 I chatty  : uid=10198(com.pietrocode.epubtomp3.flutter_app) identical 1 line
+09-28 14:04:23.512 32501 32501 I mp3.flutter_ap:   at void android.view.ViewGroup.dispatchAttachedToWindow(android.view.View$AttachInfo, int) (ViewGroup.java:3596)
+09-28 14:04:23.512 32501 32501 I mp3.flutter_ap:   at void android.view.ViewRootImpl.performTraversals() (ViewRootImpl.java:2243)
+09-28 14:04:23.512 32501 32501 I mp3.flutter_ap:   at void android.view.ViewRootImpl.doTraversal() (ViewRootImpl.java:1908)
+09-28 14:04:23.512 32501 32501 I mp3.flutter_ap:   at void android.view.ViewRootImpl$TraversalRunnable.run() (ViewRootImpl.java:8523)
+09-28 14:04:23.512 32501 32501 I mp3.flutter_ap:   at void android.view.Choreographer$CallbackRecord.run(long) (Choreographer.java:949)
+09-28 14:04:23.512 32501 32501 I mp3.flutter_ap:   at void android.view.Choreographer.doCallbacks(int, long) (Choreographer.java:761)
+09-28 14:04:23.512 32501 32501 I mp3.flutter_ap:   at void android.view.Choreographer.doFrame(long, int) (Choreographer.java:696)
+09-28 14:04:23.512 32501 32501 I mp3.flutter_ap:   at void android.view.Choreographer$FrameDisplayEventReceiver.run() (Choreographer.java:935)
+09-28 14:04:23.512 32501 32501 I mp3.flutter_ap:   at void android.os.Handler.handleCallback(android.os.Message) (Handler.java:873)
+09-28 14:04:23.512 32501 32501 I mp3.flutter_ap:   at void android.os.Handler.dispatchMessage(android.os.Message) (Handler.java:99)
+09-28 14:04:23.512 32501 32501 I mp3.flutter_ap:   at void android.os.Looper.loop() (Looper.java:214)
+09-28 14:04:23.512 32501 32501 I mp3.flutter_ap:   at void android.app.ActivityThread.main(java.lang.String[]) (ActivityThread.java:7078)
+09-28 14:04:23.512 32501 32501 I mp3.flutter_ap:   at java.lang.Object java.lang.reflect.Method.invoke(java.lang.Object, java.lang.Object[]) (Method.java:-2)
+09-28 14:04:23.512 32501 32501 I mp3.flutter_ap:   at void com.android.internal.os.RuntimeInit$MethodAndArgsCaller.run() (RuntimeInit.java:494)
+09-28 14:04:23.512 32501 32501 I mp3.flutter_ap:   at void com.android.internal.os.ZygoteInit.main(java.lang.String[]) (ZygoteInit.java:964)
+09-28 14:04:23.512 32501 32501 I mp3.flutter_ap: Caused by: java.lang.ClassNotFoundException: Didn't find class "androidx.window.sidecar.SidecarInterface$SidecarCallback" on path: DexPathList[[zip file "/data/app/com.pietrocode.epubtomp3.flutter_app-C-4Y9ZCXe1GmMi2SdkFBBg==/base.apk"],nativeLibraryDirectories=[/data/app/com.pietrocode.epubtomp3.flutter_app-C-4Y9ZCXe1GmMi2SdkFBBg==/lib/arm64, /data/app/com.pietrocode.epubtomp3.flutter_app-C-4Y9ZCXe1GmMi2SdkFBBg==/base.apk!/lib/arm64-v8a, /system/lib64, /system/vendor/lib64]]
+09-28 14:04:23.512 32501 32501 I mp3.flutter_ap:   at java.lang.Class dalvik.system.BaseDexClassLoader.findClass(java.lang.String) (BaseDexClassLoader.java:134)
+09-28 14:04:23.512 32501 32501 I mp3.flutter_ap:   at java.lang.Class java.lang.ClassLoader.loadClass(java.lang.String, boolean) (ClassLoader.java:379)
+09-28 14:04:23.512 32501 32501 I mp3.flutter_ap:   at java.lang.Class java.lang.ClassLoader.loadClass(java.lang.String) (ClassLoader.java:312)
+09-28 14:04:23.512 32501 32501 I mp3.flutter_ap:   at androidx.window.layout.adapter.sidecar.ExtensionInterfaceCompat androidx.window.layout.adapter.sidecar.SidecarWindowBackend$Companion.initAndVerifyExtension(android.content.Context) (SidecarWindowBackend.kt:207)
+09-28 14:04:23.512 32501 32501 I mp3.flutter_ap:   at androidx.window.layout.adapter.sidecar.SidecarWindowBackend androidx.window.layout.adapter.sidecar.SidecarWindowBackend$Companion.getInstance(android.content.Context) (SidecarWindowBackend.kt:191)
+09-28 14:04:23.512 32501 32501 I mp3.flutter_ap:   at androidx.window.layout.WindowInfoTracker androidx.window.layout.WindowInfoTracker$Companion.getOrCreate(android.content.Context) (WindowInfoTracker.kt:135)
+09-28 14:04:23.512 32501 32501 I mp3.flutter_ap:   at io.flutter.embedding.android.WindowInfoRepositoryCallbackAdapterWrapper io.flutter.embedding.android.FlutterView.createWindowInfoRepo() (FlutterView.java:559)
+09-28 14:04:23.512 32501 32501 I mp3.flutter_ap:   at void io.flutter.embedding.android.FlutterView.onAttachedToWindow() (FlutterView.java:580)
+09-28 14:04:23.512 32501 32501 I mp3.flutter_ap:   at void android.view.View.dispatchAttachedToWindow(android.view.View$AttachInfo, int) (View.java:20001)
+09-28 14:04:23.512 32501 32501 I mp3.flutter_ap:   at void android.view.ViewGroup.dispatchAttachedToWindow(android.view.View$AttachInfo, int) (ViewGroup.java:3589)
+09-28 14:04:23.512 32501 32501 I mp3.flutter_ap:   at void android.view.ViewGroup.dispatchAttachedToWindow(android.view.View$AttachInfo, int) (ViewGroup.java:3596)
+09-28 14:04:23.512 32501 32501 I chatty  : uid=10198(com.pietrocode.epubtomp3.flutter_app) identical 1 line
+09-28 14:04:23.512 32501 32501 I mp3.flutter_ap:   at void android.view.ViewGroup.dispatchAttachedToWindow(android.view.View$AttachInfo, int) (ViewGroup.java:3596)
+09-28 14:04:23.512 32501 32501 I mp3.flutter_ap:   at void android.view.ViewRootImpl.performTraversals() (ViewRootImpl.java:2243)
+09-28 14:04:23.512 32501 32501 I mp3.flutter_ap:   at void android.view.ViewRootImpl.doTraversal() (ViewRootImpl.java:1908)
+09-28 14:04:23.512 32501 32501 I mp3.flutter_ap:   at void android.view.ViewRootImpl$TraversalRunnable.run() (ViewRootImpl.java:8523)
+09-28 14:04:23.512 32501 32501 I mp3.flutter_ap:   at void android.view.Choreographer$CallbackRecord.run(long) (Choreographer.java:949)
+09-28 14:04:23.512 32501 32501 I mp3.flutter_ap:   at void android.view.Choreographer.doCallbacks(int, long) (Choreographer.java:761)
+09-28 14:04:23.512 32501 32501 I mp3.flutter_ap:   at void android.view.Choreographer.doFrame(long, int) (Choreographer.java:696)
+09-28 14:04:23.512 32501 32501 I mp3.flutter_ap:   at void android.view.Choreographer$FrameDisplayEventReceiver.run() (Choreographer.java:935)
+09-28 14:04:23.512 32501 32501 I mp3.flutter_ap:   at void android.os.Handler.handleCallback(android.os.Message) (Handler.java:873)
+09-28 14:04:23.512 32501 32501 I mp3.flutter_ap:   at void android.os.Handler.dispatchMessage(android.os.Message) (Handler.java:99)
+09-28 14:04:23.512 32501 32501 I mp3.flutter_ap:   at void android.os.Looper.loop() (Looper.java:214)
+09-28 14:04:23.512 32501 32501 I mp3.flutter_ap:   at void android.app.ActivityThread.main(java.lang.String[]) (ActivityThread.java:7078)
+09-28 14:04:23.512 32501 32501 I mp3.flutter_ap:   at java.lang.Object java.lang.reflect.Method.invoke(java.lang.Object, java.lang.Object[]) (Method.java:-2)
+09-28 14:04:23.512 32501 32501 I mp3.flutter_ap:   at void com.android.internal.os.RuntimeInit$MethodAndArgsCaller.run() (RuntimeInit.java:494)
+09-28 14:04:23.512 32501 32501 I mp3.flutter_ap:   at void com.android.internal.os.ZygoteInit.main(java.lang.String[]) (ZygoteInit.java:964)
+09-28 14:04:23.512 32501 32501 I mp3.flutter_ap: 
+09-28 14:04:23.513 32501 32501 I mp3.flutter_ap: Rejecting re-init on previously-failed class java.lang.Class<androidx.window.layout.adapter.sidecar.DistinctElementSidecarCallback>: java.lang.NoClassDefFoundError: Failed resolution of: Landroidx/window/sidecar/SidecarInterface$SidecarCallback;
+09-28 14:04:23.513 32501 32501 I mp3.flutter_ap:   at androidx.window.layout.adapter.sidecar.ExtensionInterfaceCompat androidx.window.layout.adapter.sidecar.SidecarWindowBackend$Companion.initAndVerifyExtension(android.content.Context) (SidecarWindowBackend.kt:207)
+09-28 14:04:23.513 32501 32501 I mp3.flutter_ap:   at androidx.window.layout.adapter.sidecar.SidecarWindowBackend androidx.window.layout.adapter.sidecar.SidecarWindowBackend$Companion.getInstance(android.content.Context) (SidecarWindowBackend.kt:191)
+09-28 14:04:23.513 32501 32501 I mp3.flutter_ap:   at androidx.window.layout.WindowInfoTracker androidx.window.layout.WindowInfoTracker$Companion.getOrCreate(android.content.Context) (WindowInfoTracker.kt:135)
+09-28 14:04:23.513 32501 32501 I mp3.flutter_ap:   at io.flutter.embedding.android.WindowInfoRepositoryCallbackAdapterWrapper io.flutter.embedding.android.FlutterView.createWindowInfoRepo() (FlutterView.java:559)
+09-28 14:04:23.513 32501 32501 I mp3.flutter_ap:   at void io.flutter.embedding.android.FlutterView.onAttachedToWindow() (FlutterView.java:580)
+09-28 14:04:23.513 32501 32501 I mp3.flutter_ap:   at void android.view.View.dispatchAttachedToWindow(android.view.View$AttachInfo, int) (View.java:20001)
+09-28 14:04:23.513 32501 32501 I mp3.flutter_ap:   at void android.view.ViewGroup.dispatchAttachedToWindow(android.view.View$AttachInfo, int) (ViewGroup.java:3589)
+09-28 14:04:23.513 32501 32501 I mp3.flutter_ap:   at void android.view.ViewGroup.dispatchAttachedToWindow(android.view.View$AttachInfo, int) (ViewGroup.java:3596)
+09-28 14:04:23.513 32501 32501 I chatty  : uid=10198(com.pietrocode.epubtomp3.flutter_app) identical 1 line
+09-28 14:04:23.513 32501 32501 I mp3.flutter_ap:   at void android.view.ViewGroup.dispatchAttachedToWindow(android.view.View$AttachInfo, int) (ViewGroup.java:3596)
+09-28 14:04:23.513 32501 32501 I mp3.flutter_ap:   at void android.view.ViewRootImpl.performTraversals() (ViewRootImpl.java:2243)
+09-28 14:04:23.513 32501 32501 I mp3.flutter_ap:   at void android.view.ViewRootImpl.doTraversal() (ViewRootImpl.java:1908)
+09-28 14:04:23.513 32501 32501 I mp3.flutter_ap:   at void android.view.ViewRootImpl$TraversalRunnable.run() (ViewRootImpl.java:8523)
+09-28 14:04:23.513 32501 32501 I mp3.flutter_ap:   at void android.view.Choreographer$CallbackRecord.run(long) (Choreographer.java:949)
+09-28 14:04:23.513 32501 32501 I mp3.flutter_ap:   at void android.view.Choreographer.doCallbacks(int, long) (Choreographer.java:761)
+09-28 14:04:23.513 32501 32501 I mp3.flutter_ap:   at void android.view.Choreographer.doFrame(long, int) (Choreographer.java:696)
+09-28 14:04:23.513 32501 32501 I mp3.flutter_ap:   at void android.view.Choreographer$FrameDisplayEventReceiver.run() (Choreographer.java:935)
+09-28 14:04:23.513 32501 32501 I mp3.flutter_ap:   at void android.os.Handler.handleCallback(android.os.Message) (Handler.java:873)
+09-28 14:04:23.513 32501 32501 I mp3.flutter_ap:   at void android.os.Handler.dispatchMessage(android.os.Message) (Handler.java:99)
+09-28 14:04:23.513 32501 32501 I mp3.flutter_ap:   at void android.os.Looper.loop() (Looper.java:214)
+09-28 14:04:23.513 32501 32501 I mp3.flutter_ap:   at void android.app.ActivityThread.main(java.lang.String[]) (ActivityThread.java:7078)
+09-28 14:04:23.513 32501 32501 I mp3.flutter_ap:   at java.lang.Object java.lang.reflect.Method.invoke(java.lang.Object, java.lang.Object[]) (Method.java:-2)
+09-28 14:04:23.513 32501 32501 I mp3.flutter_ap:   at void com.android.internal.os.RuntimeInit$MethodAndArgsCaller.run() (RuntimeInit.java:494)
+09-28 14:04:23.513 32501 32501 I mp3.flutter_ap:   at void com.android.internal.os.ZygoteInit.main(java.lang.String[]) (ZygoteInit.java:964)
+09-28 14:04:23.513 32501 32501 I mp3.flutter_ap: Caused by: java.lang.ClassNotFoundException: Didn't find class "androidx.window.sidecar.SidecarInterface$SidecarCallback" on path: DexPathList[[zip file "/data/app/com.pietrocode.epubtomp3.flutter_app-C-4Y9ZCXe1GmMi2SdkFBBg==/base.apk"],nativeLibraryDirectories=[/data/app/com.pietrocode.epubtomp3.flutter_app-C-4Y9ZCXe1GmMi2SdkFBBg==/lib/arm64, /data/app/com.pietrocode.epubtomp3.flutter_app-C-4Y9ZCXe1GmMi2SdkFBBg==/base.apk!/lib/arm64-v8a, /system/lib64, /system/vendor/lib64]]
+09-28 14:04:23.513 32501 32501 I mp3.flutter_ap:   at java.lang.Class dalvik.system.BaseDexClassLoader.findClass(java.lang.String) (BaseDexClassLoader.java:134)
+09-28 14:04:23.513 32501 32501 I mp3.flutter_ap:   at java.lang.Class java.lang.ClassLoader.loadClass(java.lang.String, boolean) (ClassLoader.java:379)
+09-28 14:04:23.513 32501 32501 I mp3.flutter_ap:   at java.lang.Class java.lang.ClassLoader.loadClass(java.lang.String) (ClassLoader.java:312)
+09-28 14:04:23.513 32501 32501 I mp3.flutter_ap:   at androidx.window.layout.adapter.sidecar.ExtensionInterfaceCompat androidx.window.layout.adapter.sidecar.SidecarWindowBackend$Companion.initAndVerifyExtension(android.content.Context) (SidecarWindowBackend.kt:207)
+09-28 14:04:23.513 32501 32501 I mp3.flutter_ap:   at androidx.window.layout.adapter.sidecar.SidecarWindowBackend androidx.window.layout.adapter.sidecar.SidecarWindowBackend$Companion.getInstance(android.content.Context) (SidecarWindowBackend.kt:191)
+09-28 14:04:23.513 32501 32501 I mp3.flutter_ap:   at androidx.window.layout.WindowInfoTracker androidx.window.layout.WindowInfoTracker$Companion.getOrCreate(android.content.Context) (WindowInfoTracker.kt:135)
+09-28 14:04:23.513 32501 32501 I mp3.flutter_ap:   at io.flutter.embedding.android.WindowInfoRepositoryCallbackAdapterWrapper io.flutter.embedding.android.FlutterView.createWindowInfoRepo() (FlutterView.java:559)
+09-28 14:04:23.513 32501 32501 I mp3.flutter_ap:   at void io.flutter.embedding.android.FlutterView.onAttachedToWindow() (FlutterView.java:580)
+09-28 14:04:23.513 32501 32501 I mp3.flutter_ap:   at void android.view.View.dispatchAttachedToWindow(android.view.View$AttachInfo, int) (View.java:20001)
+09-28 14:04:23.513 32501 32501 I mp3.flutter_ap:   at void android.view.ViewGroup.dispatchAttachedToWindow(android.view.View$AttachInfo, int) (ViewGroup.java:3589)
+09-28 14:04:23.513 32501 32501 I mp3.flutter_ap:   at void android.view.ViewGroup.dispatchAttachedToWindow(android.view.View$AttachInfo, int) (ViewGroup.java:3596)
+09-28 14:04:23.513 32501 32501 I chatty  : uid=10198(com.pietrocode.epubtomp3.flutter_app) identical 1 line
+09-28 14:04:23.513 32501 32501 I mp3.flutter_ap:   at void android.view.ViewGroup.dispatchAttachedToWindow(android.view.View$AttachInfo, int) (ViewGroup.java:3596)
+09-28 14:04:23.513 32501 32501 I mp3.flutter_ap:   at void android.view.ViewRootImpl.performTraversals() (ViewRootImpl.java:2243)
+09-28 14:04:23.513 32501 32501 I mp3.flutter_ap:   at void android.view.ViewRootImpl.doTraversal() (ViewRootImpl.java:1908)
+09-28 14:04:23.513 32501 32501 I mp3.flutter_ap:   at void android.view.ViewRootImpl$TraversalRunnable.run() (ViewRootImpl.java:8523)
+09-28 14:04:23.513 32501 32501 I mp3.flutter_ap:   at void android.view.Choreographer$CallbackRecord.run(long) (Choreographer.java:949)
+09-28 14:04:23.513 32501 32501 I mp3.flutter_ap:   at void android.view.Choreographer.doCallbacks(int, long) (Choreographer.java:761)
+09-28 14:04:23.513 32501 32501 I mp3.flutter_ap:   at void android.view.Choreographer.doFrame(long, int) (Choreographer.java:696)
+09-28 14:04:23.513 32501 32501 I mp3.flutter_ap:   at void android.view.Choreographer$FrameDisplayEventReceiver.run() (Choreographer.java:935)
+09-28 14:04:23.513 32501 32501 I mp3.flutter_ap:   at void android.os.Handler.handleCallback(android.os.Message) (Handler.java:873)
+09-28 14:04:23.513 32501 32501 I mp3.flutter_ap:   at void android.os.Handler.dispatchMessage(android.os.Message) (Handler.java:99)
+09-28 14:04:23.513 32501 32501 I mp3.flutter_ap:   at void android.os.Looper.loop() (Looper.java:214)
+09-28 14:04:23.513 32501 32501 I mp3.flutter_ap:   at void android.app.ActivityThread.main(java.lang.String[]) (ActivityThread.java:7078)
+09-28 14:04:23.513 32501 32501 I mp3.flutter_ap:   at java.lang.Object java.lang.reflect.Method.invoke(java.lang.Object, java.lang.Object[]) (Method.java:-2)
+09-28 14:04:23.513 32501 32501 I mp3.flutter_ap:   at void com.android.internal.os.RuntimeInit$MethodAndArgsCaller.run() (RuntimeInit.java:494)
+09-28 14:04:23.513 32501 32501 I mp3.flutter_ap:   at void com.android.internal.os.ZygoteInit.main(java.lang.String[]) (ZygoteInit.java:964)
+09-28 14:04:23.513 32501 32501 I mp3.flutter_ap: 
+09-28 14:04:23.524 32501 32501 W mp3.flutter_ap: Accessing hidden method Landroid/content/Context;->getOpPackageName()Ljava/lang/String; (light greylist, linking)
+09-28 14:04:23.569 32501 32501 D SurfaceView: onWindowVisibilityChanged(0) true io.flutter.embedding.android.FlutterSurfaceView{fab5d54 V.E...... ......I. 0,0-0,0} of ViewRootImpl@a0027bf[MainActivity]
+09-28 14:04:23.574 32501 32501 D FlutterRenderer: Width is zero. 0,0
+09-28 14:04:23.578  5188  5188 I SKBD    : and isTosAccept false
+--------- beginning of system
+09-28 14:04:23.598  3546  4977 V WindowManager: Relayout Window{31ab16a u0 com.pietrocode.epubtomp3.flutter_app/com.pietrocode.epubtomp3.flutter_app.MainActivity}: viewVisibility=0 req=1080x2220 {(0,0)(fillxfill) sim={adjust=resize forwardNavigation} ty=BASE_APPLICATION fmt=TRANSLUCENT wanim=0x1030001
+09-28 14:04:23.598  3546  4977 V WindowManager:   fl=LAYOUT_IN_SCREEN LAYOUT_INSET_DECOR SPLIT_TOUCH HARDWARE_ACCELERATED DRAWS_SYSTEM_BAR_BACKGROUNDS
+09-28 14:04:23.598  3546  4977 V WindowManager:   pfl=FORCE_DRAW_STATUS_BAR_BACKGROUND  remains{ 0x1000000 }
+09-28 14:04:23.598  3546  4977 V WindowManager:   vsysui=LAYOUT_STABLE LAYOUT_FULLSCREEN LIGHT_NAVIGATION_BAR naviIconColor=0}
+09-28 14:04:23.602  3546  4977 V WindowManager: Resize reasons for w=Window{31ab16a u0 com.pietrocode.epubtomp3.flutter_app/com.pietrocode.epubtomp3.flutter_app.MainActivity}:  contentInsetsChanged=false [0,72][0,144] visibleInsetsChanged=false [0,72][0,144] stableInsetsChanged=false [0,72][0,144] outsetsChanged=false [0,0][0,0] surfaceResized=false configChanged=true dragResizingChanged=false reportOrientationChanged=false displayCutoutChanged=false nextForceRelayoutToClient=false
+09-28 14:04:23.606  3546  4977 D WindowManager: preserveSurfaceLocked: Not has surfaceWindowStateAnimator{e80c2f com.pietrocode.epubtomp3.flutter_app/com.pietrocode.epubtomp3.flutter_app.MainActivity}
+09-28 14:04:23.608  3017  3017 I SurfaceFlinger: id=5837 createSurf (1080x2220),1 flag=4, com.pietrocode.epubtomp3.flutter_app/com.pietrocode.epubtomp3.flutter_app.MainActivity[32501]#0
+09-28 14:04:23.610  3546  4977 D WindowManager: makeSurface duration=4 name=com.pietrocode.epubtomp3.flutter_app/com.pietrocode.epubtomp3.flutter_app.MainActivity[32501]
+09-28 14:04:23.610  3546  4977 V WindowManager: Changing focus from null to Window{31ab16a u0 com.pietrocode.epubtomp3.flutter_app/com.pietrocode.epubtomp3.flutter_app.MainActivity} Callers=com.android.server.wm.WindowManagerService.relayoutWindow:2577 com.android.server.wm.Session.relayoutForTranslate:302 android.view.IWindowSession$Stub.onTransact:518 com.android.server.wm.Session.onTransact:186 
+09-28 14:04:23.611  3546  4977 D StatusBarManagerService: notifyRequestedSystemKey recent=false home=false
+09-28 14:04:23.611  3546  3566 D WindowManager: setSystemUiVisibility: vis= 0x518, fullscreenVis= 0x0, dockedVis= 0x0, win=Window{31ab16a u0 com.pietrocode.epubtomp3.flutter_app/com.pietrocode.epubtomp3.flutter_app.MainActivity}
+09-28 14:04:23.612  3546  4977 D InputDispatcher: Focus entered window (32501): 31ab16a 0
+09-28 14:04:23.613  3865  3865 D LightBarController: onNavigationVisibilityChanged : vis = 518, nbModeChanged = false navigationBarMode = 0
+09-28 14:04:23.613  3546  8998 D SamsungPhoneWindowManager: adjustSystemUiVisibilityLw: vis=0x518
+09-28 14:04:23.613  3546  8998 D InputManager-JNI: setSystemUiVisibility dexmode: false changed: true displayid: 0 visibility: 0x518 DD: 0x518 OD: 0x0
+09-28 14:04:23.613  3546  3575 D WindowManager: reportFocusChangedSerialized, focused=true, inTouchMode=true, win=Window{31ab16a u0 com.pietrocode.epubtomp3.flutter_app/com.pietrocode.epubtomp3.flutter_app.MainActivity}
+09-28 14:04:23.616 32501 32501 D ViewRootImpl@a0027bf[MainActivity]: Relayout returned: old=[0,0][1080,2220] new=[0,0][1080,2220] result=0x7 surface={true 495344111616} changed=true
+09-28 14:04:23.617 32501 32569 I OpenGLRenderer: Initialized EGL, version 1.4
+09-28 14:04:23.617 32501 32569 D OpenGLRenderer: Swap behavior 2
+09-28 14:04:23.620 32501 32501 D FlutterJNI: Sending viewport metrics to the engine.
+09-28 14:04:23.637 32501 32569 D mali_winsys: EGLint new_window_surface(egl_winsys_display *, void *, EGLSurface, EGLConfig, egl_winsys_surface **, EGLBoolean) returns 0x3000
+09-28 14:04:23.638 32501 32569 D OpenGLRenderer: eglCreateWindowSurface = 0x73657bf280, 0x7354cf5010
+09-28 14:04:23.650  3017  3017 I SurfaceFlinger: id=5838 createSurf (1080x2076),4 flag=404, SurfaceView - com.pietrocode.epubtomp3.flutter_app/com.pietrocode.epubtomp3.flutter_app.MainActivity@fab5d54@0[32501]#0
+09-28 14:04:23.653  3017  3017 I SurfaceFlinger: id=5839 createSurf (1080x2076),1024 flag=20404, Background for -SurfaceView - com.pietrocode.epubtomp3.flutter_app/com.pietrocode.epubtomp3.flutter_app.MainActivity@fab5d54@0[32501]#0
+09-28 14:04:23.653 32501 32501 D SurfaceView: show() Surface(name=SurfaceView - com.pietrocode.epubtomp3.flutter_app/com.pietrocode.epubtomp3.flutter_app.MainActivity@fab5d54@0[32501])/@0x55e84fd io.flutter.embedding.android.FlutterSurfaceView{fab5d54 V.E...... ......ID 0,0-1080,2076}
+09-28 14:04:23.669 32501 32501 D SurfaceView: surfaceCreated 1 #8 io.flutter.embedding.android.FlutterSurfaceView{fab5d54 V.E...... ......ID 0,0-1080,2076}
+09-28 14:04:23.671 32501 32525 D mali_winsys: EGLint new_window_surface(egl_winsys_display *, void *, EGLSurface, EGLConfig, egl_winsys_surface **, EGLBoolean) returns 0x3000
+09-28 14:04:23.679 32501 32501 D SurfaceView: surfaceChanged (1080,2076) 1 #8 io.flutter.embedding.android.FlutterSurfaceView{fab5d54 V.E...... ......ID 0,0-1080,2076}
+09-28 14:04:23.778  5188  5188 I SKBD    : and isTosAccept false
+09-28 14:04:24.112  3546 32587 D TspStateManagerInternal: update cmd=set_grip_data,1,30,7,7,0
+09-28 14:04:24.180  5188  5188 I chatty  : uid=10160(com.sec.android.inputmethod) identical 2 lines
+09-28 14:04:24.381  5188  5188 I SKBD    : and isTosAccept false
+09-28 14:04:24.490  3828  3961 I System.out: Broadcasting: Intent { act=com.sec.android.LTE_CA_PARAMETER flg=0x10000000 (has extras) }
+09-28 14:04:24.492  3828  4440 I System.out: Broadcast completed: result=0
+09-28 14:04:24.496  3865  4220 D NetworkController.MobileSignalController(0/1): onSignalStrengthsChanged signalStrength=SignalStrength: 3 99 -3 -200 -3 -200 -1 2 -109 -7 80 12 0 2147483647 3 14 -106 0x2000 P gsm|lte use_rsrp_and_rssnr_for_lte_level  [-128, -118, -108, -98] [-115, -105, -95, -85] level=2
+09-28 14:04:24.496  3865  4220 D NetworkController.MobileSignalController(0/1): getMobileIconGroup(): 13
+09-28 14:04:24.497  4663  4663 D io_stats: !@ 179,0 r 2710719 135191612 w 1394518 72806972 d 116396 82377296 f 422520 441214 iot 3000108 2629753 th 51200 0 0 pt 0 inp 0 0 375548.142
+09-28 14:04:24.581  5188  5188 I SKBD    : and isTosAccept false
+09-28 14:04:24.672  3546  3739 D WifiStateMachine: enter getWifiLinkLayerStats
+09-28 14:04:24.673  3546  3739 I WifiVendorHal: getWifiLinkLayerStats(l.2973) before calling iface.getLinkLayerStats
+09-28 14:04:24.673  3002  3002 I android.hardware.wifi@1.0-service: enter getLinkLayerStats
+09-28 14:04:24.674  3002  3002 I android.hardware.wifi@1.0-service: enter getLinkLayerStatsInternal
+09-28 14:04:24.681  3002  3002 I android.hardware.wifi@1.0-service: Successfully getLinkLayerStats.
+09-28 14:04:24.682  3546  3739 I WifiVendorHal: getWifiLinkLayerStats(l.2973) after calling iface.getLinkLayerStats
+09-28 14:04:24.697  3546  3739 I WifiStateMachine: checkScoreBasedQuality -  mPreviousScore[0]:78 mPreviousScore[1]:78 mPreviousScore[2]:78 s2Score:79mPrevoiusScoreAverage:78
+09-28 14:04:24.782  5188  5188 I SKBD    : and isTosAccept false
+09-28 14:04:25.108  3546  3565 W ActivityManager: Launch timeout has expired, giving up wake lock!
+09-28 14:04:25.384  5188  5188 I chatty  : uid=10160(com.sec.android.inputmethod) identical 3 lines
+09-28 14:04:25.585  5188  5188 I SKBD    : and isTosAccept false
+09-28 14:04:25.644  3014  6788 V APM_AudioPolicyManager: getAudioPolicyConfig: audioParam;outDevice
+09-28 14:04:25.644  3014  6788 V APM_AudioPolicyManager: getNewOutputDevice() selected device 0
+09-28 14:04:25.644  3014  6788 V APM_AudioPolicyManager: ### curdevice : 2
+09-28 14:04:25.785  5188  5188 I SKBD    : and isTosAccept false
+09-28 14:04:25.986  5188  5188 I SKBD    : and isTosAccept false
+09-28 14:04:26.006 28694 26172 W AOSP-MdnsDiscoveryManag: Error while decoding multicast packet (5216): 1 [CONTEXT service_id=168 ]
+09-28 14:04:26.187  5188  5188 I SKBD    : and isTosAccept false
+09-28 14:04:26.387  5188  5188 I SKBD    : and isTosAccept false
+09-28 14:04:26.495  4114  4477 D EPDG -- EpdgSecChannelCallback: receive
+09-28 14:04:26.495  4114  4477 D EPDG -- EpdgIpcMessageFactory: ipcMainCmd: 112
+09-28 14:04:26.496  4114  4477 D EPDG -- SIM0 [RILRECEIVER]: [Rx]: Main: IPC_IIL_CMD Sub: IPC_IIL_SSAC_INFO
+09-28 14:04:26.496  4114  4477 D EPDG -- SIM0 [RILRECEIVER]: [Rx]: Param: FF 00 00 FF 00 00 
+09-28 14:04:26.496  4114  4477 D EPDG -- [NETIPCMESSAGE]: decodeIilSsacInfo()
+09-28 14:04:26.496  4114  4477 E EPDG -- SIM0 [RILRECEIVER]: Incorrect EpdgIilIpcMessage IPC Message -- not initialized
+09-28 14:04:26.498  3828  4378 E ImsAdaptorImpl: setSSACInfo : ImsAdaptorImpl.
+09-28 14:04:26.499  4076  4626 D SsacManager: updateSSACInfo[0] : Voice(-1:0) Video(-1:0)
+09-28 14:04:26.499  4076  4626 D SsacManager: Voice Call updateSSACInfo[0] : f[100], t[0]
+09-28 14:04:26.500  4076  4626 D SsacManager: Video Call updateSSACInfo[0] : f[100], t[0]
+09-28 14:04:26.501  4076  4626 D Mno     : fromName: Tim_BR
+09-28 14:04:26.502  4076  4626 D Mno     : fromName: found mno : Tim_BR, BR
+09-28 14:04:26.506  3828  4378 E ImsAdaptorImpl: setSSACInfo : ImsAdaptorImpl.
+09-28 14:04:26.507  4114  4477 D EPDG -- EpdgSecChannelCallback: receive
+09-28 14:04:26.507  4114  4477 D EPDG -- EpdgIpcMessageFactory: ipcMainCmd: 112
+09-28 14:04:26.508  4114  4477 D EPDG -- SIM0 [RILRECEIVER]: [Rx]: Main: IPC_IIL_CMD Sub: IPC_IIL_SSAC_INFO
+09-28 14:04:26.508  4114  4477 D EPDG -- SIM0 [RILRECEIVER]: [Rx]: Param: FF 00 00 FF 00 00 
+09-28 14:04:26.508  4114  4477 D EPDG -- [NETIPCMESSAGE]: decodeIilSsacInfo()
+09-28 14:04:26.508  4114  4477 E EPDG -- SIM0 [RILRECEIVER]: Incorrect EpdgIilIpcMessage IPC Message -- not initialized
+09-28 14:04:26.509  4076  4626 D SsacManager: updateSSACInfo[0] : Voice(-1:0) Video(-1:0)
+09-28 14:04:26.509  4076  4626 D SsacManager: Voice Call updateSSACInfo[0] : f[100], t[0]
+09-28 14:04:26.509  4076  4626 D SsacManager: Video Call updateSSACInfo[0] : f[100], t[0]
+09-28 14:04:26.509  4076  4724 D Mno     : fromName: Tim_BR
+09-28 14:04:26.509  4076  4724 D Mno     : fromName: found mno : Tim_BR, BR
+09-28 14:04:26.510  4076  4626 D Mno     : fromName: Tim_BR
+09-28 14:04:26.510  4076  4626 D Mno     : fromName: found mno : Tim_BR, BR
+09-28 14:04:26.514  4114  4477 D EPDG -- EpdgSecChannelCallback: receive
+09-28 14:04:26.514  4114  4477 D EPDG -- EpdgIpcMessageFactory: ipcMainCmd: 8
+09-28 14:04:26.517  4114  4477 D EPDG -- SIM0 [RILRECEIVER]: [Rx]: Main: IPC_NET_CMD Sub: IPC_NET_REGIST
+09-28 14:04:26.517  4114  4477 D EPDG -- SIM0 [RILRECEIVER]: [Rx]: Param: FF 03 
+09-28 14:04:26.517  4114  4477 E EPDG -- SIM0 [RILRECEIVER]: RX [NET_REGIST] -- RESPONSE -- not initialized
+09-28 14:04:26.518  4114  4477 D EPDG -- [NETIPCMESSAGE]: encodeNetRegist
+09-28 14:04:26.519  4114  4477 D EPDG -- SIM0 [IPCDISPATCHER]: [Tx]: Main: IPC_NET_CMD Sub: IPC_NET_REGIST Cmd Type: IPC_CMD_RESP
+09-28 14:04:26.519  4114  4477 D EPDG -- SIM0 [IPCDISPATCHER]: [Tx]: Param: 30 03 01 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 
+09-28 14:04:26.519  4114  4476 D EPDG -- SIM0 [MODEM]: EpdgModemSender(): send
+09-28 14:04:26.525  3546  8998 I KG.KnoxGuardService: call setNetRegistRejectCause. slotNum : 0, state : 0
+09-28 14:04:26.530  4076  4626 D Mno     : fromName: Tim_BR
+09-28 14:04:26.530  4076  4626 D Mno     : fromName: found mno : Tim_BR, BR
+09-28 14:04:26.548  3546  3546 D WifiService: onServiceStateChanged : 0
+09-28 14:04:26.548  3546  3546 D WifiService: [FCC]NOT IN STATE_OUT_OF_SERVICE & Airplane off, Disable setFccChannel()
+09-28 14:04:26.548  3546  3546 D WifiStateMachine: syncSetFccChannel: enable = false
+09-28 14:04:26.549  3865  4220 D NetworkController.MobileSignalController(0/1): onServiceStateChanged voiceState=0 dataState=0
+09-28 14:04:26.551  4076  4565 D ImsPhoneStateManager<0>: onServiceStateChanged E
+09-28 14:04:26.551  4076  4565 D ImsPhoneStateManager<0>: onServiceStateChanged X
+09-28 14:04:26.551  4076  4076 D ImsPhoneStateManager<1>: onServiceStateChanged E
+09-28 14:04:26.551  4076  4565 D VolteServiceModule: onServiceStateChanged({mVoiceRegState=0(IN_SERVICE), mDataRegState=0(IN_SERVICE), mChannelNumber=-1, duplexMode()=0, mCellBandwidths=[], mVoiceRoamingType=home, mDataRoamingType=home, isManualNetworkSelection=false(automatic), mRilVoiceRadioTechnology=14(LTE), mRilDataRadioTechnology=14(LTE), mCssIndicator=unsupported, mCdmaRoamingIndicator=-1, mCdmaDefaultRoamingIndicator=-1, VoiceRegType=0, ImsVoiceAvail=1, IsEbSupport=1, IsEaBarred=0, Snap=0, MobileVoice=IN_SERVICE, MobileVoiceRat=LTE, MobileData=IN_SERVICE, MobileDataRoamingType=home, MobileDataRat=LTE PsOnly=false FemtocellInd=0 EndcStatus=0 RestrictDcnr=1 NrBearerStatus=0, mIsEmergencyOnly=false, mIsDataRoamingFromRegistration=false, mIsUsingCarrierAggregation=false, mLteEarfcnRsrpBoost=0, mNetworkRegistrationStates=[NetworkRegistrationState{transportType=1 domain=PS regState=HOME accessNetworkTechnology=LTE reasonForDenial=0 emergencyEnabled=false supportedServices=[I@d341945 cellIdentity=CellIdentityLte:{ mCi=<MASKED> mPci=447 mTac=<MASKED> mEarfcn=-1 mBandwidth=0 mMcc=724 mMnc=03 mAlphaLong=TIMBRASIL mAlphaShort=TIMBRASIL} voiceSpecificStates=null dataSpecificStates=DataSpecificRegistrationStates { mMaxDataCalls=4 mLac=0 mCid=20429019 mTac=31351 mSnapshotStatus=0 mMobileState=1 mMobileRat=14 mMobileOptionalRat=0 isDcNrRestricted = true isNrAvailable = false isEnDcAvailable = false} nrStatus=NONE}, NetworkRegistrationState{transportType=1 domain=CS regState=HOME accessNetworkTechnology=LTE reasonForDenial=0 emergencyEnabled=false supportedServices=[I@f3ff89a cellIdentity=CellIdentityLte:{ mCi=<MASKED> mPci=447 mTac=<MASKED> mEarfcn=-1 mBandwidth=0 mMcc=724 mMnc=03 mAlphaLong=TIMBRASIL mAlphaShort=TIMBRASIL} voiceSpecificStates=VoiceSpecificRegistrationStates { mCssSupported=false mRoamingIndicator=0 mSystemIsInPrl=0 mDefaultRoamingIndicator=0 mLac=31351 mCid=20429019 mPsVoiceSupport1 mImsEmergencyCallSupport1 mImsEmergencyCallBarring0 mMobileState1 mMobileRat14 mIsPsOnlyRegfalse} dataSpecificStates=null nrStatus=NONE}], mNrFrequencyRange=-1})
+09-28 14:04:26.551  4076  4076 D ImsPhoneStateManager<1>: onServiceStateChanged X
+09-28 14:04:26.552  4076  4076 D PdnController<1>: onServiceStateChanged({mVoiceRegState=0(IN_SERVICE), mDataRegState=0(IN_SERVICE), mChannelNumber=-1, duplexMode()=0, mCellBandwidths=[], mVoiceRoamingType=home, mDataRoamingType=home, isManualNetworkSelection=false(automatic), mRilVoiceRadioTechnology=14(LTE), mRilDataRadioTechnology=14(LTE), mCssIndicator=unsupported, mCdmaRoamingIndicator=-1, mCdmaDefaultRoamingIndicator=-1, VoiceRegType=0, ImsVoiceAvail=1, IsEbSupport=1, IsEaBarred=0, Snap=0, MobileVoice=IN_SERVICE, MobileVoiceRat=LTE, MobileData=IN_SERVICE, MobileDataRoamingType=home, MobileDataRat=LTE PsOnly=false FemtocellInd=0 EndcStatus=0 RestrictDcnr=1 NrBearerStatus=0, mIsEmergencyOnly=false, mIsDataRoamingFromRegistration=false, mIsUsingCarrierAggregation=false, mLteEarfcnRsrpBoost=0, mNetworkRegistrationStates=[NetworkRegistrationState{transportType=1 domain=PS regState=HOME accessNetworkTechnology=LTE reasonForDenial=0 emergencyEnabled=false supportedServices=[I@d17f5cb cellIdentity=CellIdentityLte:{ mCi=<MASKED> mPci=447 mTac=<MASKED> mEarfcn=-1 mBandwidth=0 mMcc=724 mMnc=03 mAlphaLong=TIMBRASIL mAlphaShort=TIMBRASIL} voiceSpecificStates=null dataSpecificStates=DataSpecificRegistrationStates { mMaxDataCalls=4 mLac=0 mCid=20429019 mTac=31351 mSnapshotStatus=0 mMobileState=1 mMobileRat=14 mMobileOptionalRat=0 isDcNrRestricted = true isNrAvailable = false isEnDcAvailable = false} nrStatus=NONE}, NetworkRegistrationState{transportType=1 domain=CS regState=HOME accessNetworkTechnology=LTE reasonForDenial=0 emergencyEnabled=false supportedServices=[I@619b1a8 cellIdentity=CellIdentityLte:{ mCi=<MASKED> mPci=447 mTac=<MASKED> mEarfcn=-1 mBandwidth=0 mMcc=724 mMnc=03 mAlphaLong=TIMBRASIL mAlphaShort=TIMBRASIL} voiceSpecificStates=VoiceSpecificRegistrationStates { mCssSupported=false mRoamingIndicator=0 mSystemIsInPrl=0 mDefaultRoamingIndicator=0 mLac=31351 mCid=20429019 mPsVoiceSupport1 mImsEmergencyCallSupport1 mImsEmergencyCallBarring0 mMobileState1 mMobileRat14 mIsPsOnlyRegfalse} dataSpecificStates=null nrStatus=NONE}], mNrFrequencyRange=-1})
+09-28 14:04:26.552  4076  4465 D ImsPhoneStateManager<0>: onServiceStateChanged E
+09-28 14:04:26.552  4076  4565 D VolteServiceModule: mIsLteEpsOnlyAttached(0):false
+09-28 14:04:26.552  4076  4465 D ImsPhoneStateManager<0>: onServiceStateChanged X
+09-28 14:04:26.552  4076  4076 D PdnController: Default Phone Id = :0
+09-28 14:04:26.552  4076  4465 D PdnController<0>: onServiceStateChanged({mVoiceRegState=0(IN_SERVICE), mDataRegState=0(IN_SERVICE), mChannelNumber=-1, duplexMode()=0, mCellBandwidths=[], mVoiceRoamingType=home, mDataRoamingType=home, isManualNetworkSelection=false(automatic), mRilVoiceRadioTechnology=14(LTE), mRilDataRadioTechnology=14(LTE), mCssIndicator=unsupported, mCdmaRoamingIndicator=-1, mCdmaDefaultRoamingIndicator=-1, VoiceRegType=0, ImsVoiceAvail=1, IsEbSupport=1, IsEaBarred=0, Snap=0, MobileVoice=IN_SERVICE, MobileVoiceRat=LTE, MobileData=IN_SERVICE, MobileDataRoamingType=home, MobileDataRat=LTE PsOnly=false FemtocellInd=0 EndcStatus=0 RestrictDcnr=1 NrBearerStatus=0, mIsEmergencyOnly=false, mIsDataRoamingFromRegistration=false, mIsUsingCarrierAggregation=false, mLteEarfcnRsrpBoost=0, mNetworkRegistrationStates=[NetworkRegistrationState{transportType=1 domain=PS regState=HOME accessNetworkTechnology=LTE reasonForDenial=0 emergencyEnabled=false supportedServices=[I@d0204c1 cellIdentity=CellIdentityLte:{ mCi=<MASKED> mPci=447 mTac=<MASKED> mEarfcn=-1 mBandwidth=0 mMcc=724 mMnc=03 mAlphaLong=TIMBRASIL mAlphaShort=TIMBRASIL} voiceSpecificStates=null dataSpecificStates=DataSpecificRegistrationStates { mMaxDataCalls=4 mLac=0 mCid=20429019 mTac=31351 mSnapshotStatus=0 mMobileState=1 mMobileRat=14 mMobileOptionalRat=0 isDcNrRestricted = true isNrAvailable = false isEnDcAvailable = false} nrStatus=NONE}, NetworkRegistrationState{transportType=1 domain=CS regState=HOME accessNetworkTechnology=LTE reasonForDenial=0 emergencyEnabled=false supportedServices=[I@5950466 cellIdentity=CellIdentityLte:{ mCi=<MASKED> mPci=447 mTac=<MASKED> mEarfcn=-1 mBandwidth=0 mMcc=724 mMnc=03 mAlphaLong=TIMBRASIL mAlphaShort=TIMBRASIL} voiceSpecificStates=VoiceSpecificRegistrationStates { mCssSupported=false mRoamingIndicator=0 mSystemIsInPrl=0 mDefaultRoamingIndicator=0 mLac=31351 mCid=20429019 mPsVoiceSupport1 mImsEmergencyCallSupport1 mImsEmergencyCallBarring0 mMobileState1 mMobileRat14 mIsPsOnlyRegfalse} dataSpecificStates=null nrStatus=NONE}], mNrFrequencyRange=-1})
+09-28 14:04:26.552  4076  4076 D PdnController:  Non DDS SIM = :
+09-28 14:04:26.552  4076  4076 D PdnController<1>: Prev Mobile Connected=: falsenew MobileConnected=:false
+09-28 14:04:26.554  4076  4076 D PdnController<1>: notifyDataConnectionState
+09-28 14:04:26.554  4076  4076 D PdnController<1>: initialize PendedEPDGWeakSignal flag
+09-28 14:04:26.554  4076  4076 D PdnController<1>: setPendedEPDGWeakSignal
+09-28 14:04:26.554  4076  4076 D PdnController<1>: mDataNetworkType: 13, mDataRegState:0
+09-28 14:04:26.554  4076  4076 D PdnController<1>: notifySnapshotState: snapshotState=0 old=0
+09-28 14:04:26.554  3865  4220 D NetworkController.MobileSignalController(0/1): getMobileIconGroup(): 13
+09-28 14:04:26.555  4076  4465 D PdnController: Default Phone Id = :0
+09-28 14:04:26.555  3865  4220 D NetworkController.MobileSignalController(0/1): CB received on channel 50 from slot = 0
+09-28 14:04:26.556  3865  4220 D CarrierLabel: updateNetworkNameLatin showSpn=true spn=TIM dataSpn=TIM showPlmn=true plmn=TIMBRASIL efspn=1 showCB=false CBmsg=null mDataNetType=13
+09-28 14:04:26.556  3865  4220 D CarrierLabel: updateNetworkNameLatin mNetworkManuallySelected=null null
+09-28 14:04:26.556  3865  4220 D CarrierLabel: updateNetworkNameLatinCB showSpn=true spn=TIM dataSpn=TIM showPlmn=true plmn=TIMBRASIL efspn=1 showCB=false CBmsg=null
+09-28 14:04:26.556  3865  4220 D CarrierLabel: updateNetworkNameLatin CBmsg=null mMultiSimCarrierText = TIMBRASIL | TIM mSlotId = 0
+09-28 14:04:26.556  3865  4220 D NetworkController: updateCarrierText : TIMBRASIL | TIM, slotId = 0 numberOfSim = 1 airplane = false
+09-28 14:04:26.556  3865  4220 D NetworkController: updateCarrierText final  : TIMBRASIL | TIM
+09-28 14:04:26.557  3865  3865 D KeyguardUpdateMonitor: updateCarrierTextInfo
+09-28 14:04:26.557  4076  4076 D ImsPhoneStateManager<1>: onServiceStateChanged E
+09-28 14:04:26.557  3546  8998 D ConnectivityService: filterNetworkStateForUid() uid: 1000, pid: 4076
+09-28 14:04:26.557  4076  4076 D ImsPhoneStateManager<1>: onServiceStateChanged X
+09-28 14:04:26.557  3546  8998 D ConnectivityService: filterNetworkStateForUid() uid: 1000, pid: 4076, networkInfo: [type: MOBILE[LTE], state: CONNECTED/CONNECTED, reason: (unspecified), extra: ims, failover: false, available: true, roaming: false]
+09-28 14:04:26.557  4076  4076 D VolteServiceModule: onServiceStateChanged({mVoiceRegState=0(IN_SERVICE), mDataRegState=0(IN_SERVICE), mChannelNumber=-1, duplexMode()=0, mCellBandwidths=[], mVoiceRoamingType=home, mDataRoamingType=home, isManualNetworkSelection=false(automatic), mRilVoiceRadioTechnology=14(LTE), mRilDataRadioTechnology=14(LTE), mCssIndicator=unsupported, mCdmaRoamingIndicator=-1, mCdmaDefaultRoamingIndicator=-1, VoiceRegType=0, ImsVoiceAvail=1, IsEbSupport=1, IsEaBarred=0, Snap=0, MobileVoice=IN_SERVICE, MobileVoiceRat=LTE, MobileData=IN_SERVICE, MobileDataRoamingType=home, MobileDataRat=LTE PsOnly=false FemtocellInd=0 EndcStatus=0 RestrictDcnr=1 NrBearerStatus=0, mIsEmergencyOnly=false, mIsDataRoamingFromRegistration=false, mIsUsingCarrierAggregation=false, mLteEarfcnRsrpBoost=0, mNetworkRegistrationStates=[NetworkRegistrationState{transportType=1 domain=PS regState=HOME accessNetworkTechnology=LTE reasonForDenial=0 emergencyEnabled=false supportedServices=[I@4ae23a7 cellIdentity=CellIdentityLte:{ mCi=<MASKED> mPci=447 mTac=<MASKED> mEarfcn=-1 mBandwidth=0 mMcc=724 mMnc=03 mAlphaLong=TIMBRASIL mAlphaShort=TIMBRASIL} voiceSpecificStates=null dataSpecificStates=DataSpecificRegistrationStates { mMaxDataCalls=4 mLac=0 mCid=20429019 mTac=31351 mSnapshotStatus=0 mMobileState=1 mMobileRat=14 mMobileOptionalRat=0 isDcNrRestricted = true isNrAvailable = false isEnDcAvailable = false} nrStatus=NONE}, NetworkRegistrationState{transportType=1 domain=CS regState=HOME accessNetworkTechnology=LTE reasonForDenial=0 emergencyEnabled=false supportedServices=[I@72c4054 cellIdentity=CellIdentityLte:{ mCi=<MASKED> mPci=447 mTac=<MASKED> mEarfcn=-1 mBandwidth=0 mMcc=724 mMnc=03 mAlphaLong=TIMBRASIL mAlphaShort=TIMBRASIL} voiceSpecificStates=VoiceSpecificRegistrationStates { mCssSupported=false mRoamingIndicator=0 mSystemIsInPrl=0 mDefaultRoamingIndicator=0 mLac=31351 mCid=20429019 mPsVoiceSupport1 mImsEmergencyCallSupport1 mImsEmergencyCallBarring0 mMobileState1 mMobileRat14 mIsPsOnlyRegfalse} dataSpecificStates=null nrStatus=NONE}], mNrFrequencyRange=-1})
+09-28 14:04:26.557  4076  4076 D VolteServiceModule: mIsLteEpsOnlyAttached(1):false
+09-28 14:04:26.557  4076  4465 D PdnController: isMobileDataConnected = :true
+09-28 14:04:26.558  4076  4465 D PdnController<0>: Prev Mobile Connected=: truenew MobileConnected=:true
+09-28 14:04:26.558  4076  4465 D PdnController<0>: notifyDataConnectionState
+09-28 14:04:26.558  4076  4465 D PdnController<0>: initialize PendedEPDGWeakSignal flag
+09-28 14:04:26.558  4076  4465 D PdnController<0>: setPendedEPDGWeakSignal
+09-28 14:04:26.558  4076  4465 D PdnController<0>: mDataNetworkType: 13, mDataRegState:0
+09-28 14:04:26.559  4076  4465 D PdnController<0>: notifySnapshotState: snapshotState=0 old=0
+09-28 14:04:26.559  4076  4465 D ImsPhoneStateManager<0>: onServiceStateChanged E
+09-28 14:04:26.559  3546  3813 D ConnectivityManager: getMobileDataEnabled()+ subId=1
+09-28 14:04:26.559  4076  4465 D ImsPhoneStateManager<0>: onServiceStateChanged X
+09-28 14:04:26.560  4076  4465 I ImsIconManager<0>: onServiceStateChanged({mVoiceRegState=0(IN_SERVICE), mDataRegState=0(IN_SERVICE), mChannelNumber=-1, duplexMode()=0, mCellBandwidths=[], mVoiceRoamingType=home, mDataRoamingType=home, isManualNetworkSelection=false(automatic), mRilVoiceRadioTechnology=14(LTE), mRilDataRadioTechnology=14(LTE), mCssIndicator=unsupported, mCdmaRoamingIndicator=-1, mCdmaDefaultRoamingIndicator=-1, VoiceRegType=0, ImsVoiceAvail=1, IsEbSupport=1, IsEaBarred=0, Snap=0, MobileVoice=IN_SERVICE, MobileVoiceRat=LTE, MobileData=IN_SERVICE, MobileDataRoamingType=home, MobileDataRat=LTE PsOnly=false FemtocellInd=0 EndcStatus=0 RestrictDcnr=1 NrBearerStatus=0, mIsEmergencyOnly=false, mIsDataRoamingFromRegistration=false, mIsUsingCarrierAggregation=false, mLteEarfcnRsrpBoost=0, mNetworkRegistrationStates=[NetworkRegistrationState{transportType=1 domain=PS regState=HOME accessNetworkTechnology=LTE reasonForDenial=0 emergencyEnabled=false supportedServices=[I@e692bfd cellIdentity=CellIdentityLte:{ mCi=<MASKED> mPci=447 mTac=<MASKED> mEarfcn=-1 mBandwidth=0 mMcc=724 mMnc=03 mAlphaLong=TIMBRASIL mAlphaShort=TIMBRASIL} voiceSpecificStates=null dataSpecificStates=DataSpecificRegistrationStates { mMaxDataCalls=4 mLac=0 mCid=20429019 mTac=31351 mSnapshotStatus=0 mMobileState=1 mMobileRat=14 mMobileOptionalRat=0 isDcNrRestricted = true isNrAvailable = false isEnDcAvailable = false} nrStatus=NONE}, NetworkRegistrationState{transportType=1 domain=CS regState=HOME accessNetworkTechnology=LTE reasonForDenial=0 emergencyEnabled=false supportedServices=[I@dd00f2 cellIdentity=CellIdentityLte:{ mCi=<MASKED> mPci=447 mTac=<MASKED> mEarfcn=-1 mBandwidth=0 mMcc=724 mMnc=03 mAlphaLong=TIMBRASIL mAlphaShort=TIMBRASIL} voiceSpecificStates=VoiceSpecificRegistrationStates { mCssSupported=false mRoamingIndicator=0 mSystemIsInPrl=0 mDefaultRoamingIndicator=0 mLac=31351 mCid=20429019 mPsVoiceSupport1 mImsEmergencyCallSupport1 mImsEmergencyCallBarring0 mMobileState1 mMobileRat14 mIsPsOnlyRegfalse} dataSpecificStates=null nrStatus=NONE}], mNrFrequencyRange=-1})
+09-28 14:04:26.560  4076  4465 D ImsIconManager<0>: setCurrentNetworkType:13
+09-28 14:04:26.560  4076  4465 D ImsIconManager<0>: setCurrentServiceState:0
+09-28 14:04:26.561  4076  4465 D ImsIconManager<0>: setCurrentRoamingState:false
+09-28 14:04:26.562  3546  3813 D ConnectivityManager: getMobileDataEnabled()- subId=1 retVal=false
+09-28 14:04:26.562  3546  8998 D ConnectivityService: filterNetworkStateForUid() uid: 1000, pid: 4076
+09-28 14:04:26.562  3546  8998 D ConnectivityService: filterNetworkStateForUid() uid: 1000, pid: 4076, networkInfo: [type: WIFI_P2P[], state: UNKNOWN/IDLE, reason: (unspecified), extra: (none), failover: false, available: true, roaming: false]
+09-28 14:04:26.563  4076  4465 I PdnController: isSuspended [false] networktype [13]
+09-28 14:04:26.563  4076  4465 D GeolocationCon: handleMessage : what = 4
+09-28 14:04:26.563  4076  4465 D GeolocationCon: onServiceStateChanged({mVoiceRegState=0(IN_SERVICE), mDataRegState=0(IN_SERVICE), mChannelNumber=-1, duplexMode()=0, mCellBandwidths=[], mVoiceRoamingType=home, mDataRoamingType=home, isManualNetworkSelection=false(automatic), mRilVoiceRadioTechnology=14(LTE), mRilDataRadioTechnology=14(LTE), mCssIndicator=unsupported, mCdmaRoamingIndicator=-1, mCdmaDefaultRoamingIndicator=-1, VoiceRegType=0, ImsVoiceAvail=1, IsEbSupport=1, IsEaBarred=0, Snap=0, MobileVoice=IN_SERVICE, MobileVoiceRat=LTE, MobileData=IN_SERVICE, MobileDataRoamingType=home, MobileDataRat=LTE PsOnly=false FemtocellInd=0 EndcStatus=0 RestrictDcnr=1 NrBearerStatus=0, mIsEmergencyOnly=false, mIsDataRoamingFromRegistration=false, mIsUsingCarrierAggregation=false, mLteEarfcnRsrpBoost=0, mNetworkRegistrationStates=[NetworkRegistrationState{transportType=1 domain=PS regState=HOME accessNetworkTechnology=LTE reasonForDenial=0 emergencyEnabled=false supportedServices=[I@d17f5cb cellIdentity=CellIdentityLte:{ mCi=<MASKED> mPci=447 mTac=<MASKED> mEarfcn=-1 mBandwidth=0 mMcc=724 mMnc=03 mAlphaLong=TIMBRASIL mAlphaShort=TIMBRASIL} voiceSpecificStates=null dataSpecificStates=DataSpecificRegistrationStates { mMaxDataCalls=4 mLac=0 mCid=20429019 mTac=31351 mSnapshotStatus=0 mMobileState=1 mMobileRat=14 mMobileOptionalRat=0 isDcNrRestricted = true isNrAvailable = false isEnDcAvailable = false} nrStatus=NONE}, NetworkRegistrationState{transportType=1 domain=CS regState=HOME accessNetworkTechnology=LTE reasonForDenial=0 emergencyEnabled=false supportedServices=[I@619b1a8 cellIdentity=CellIdentityLte:{ mCi=<MASKED> mPci=447 mTac=<MASKED> mEarfcn=-1 mBandwidth=0 mMcc=724 mMnc=03 mAlphaLong=TIMBRASIL mAlphaShort=TIMBRASIL} voiceSpecificStates=VoiceSpecificRegistrationStates { mCssSupported=false mRoamingIndicator=0 mSystemIsInPrl=0 mDefaultRoamingIndicator=0 mLac=31351 mCid=20429019 mPsVoiceSupport1 mImsEmergencyCallSupport1 mImsEmergencyCallBarring0 mMobileState1 mMobileRat14 mIsPsOnlyRegfalse} dataSpecificStates=null nrStatus=NONE}], mNrFrequencyRange=-1})
+09-28 14:04:26.564  3865  3865 D KeyguardClockPage: isNetworkRoamingState id=1 roaming=false
+09-28 14:04:26.564  3865  3865 D KeyguardClockPage: onRefreshCarrierInfo(pre, now): false, false
+09-28 14:04:26.564  4076  4465 D GeolocationCon: onServiceStateChanged : {mVoiceRegState=0(IN_SERVICE), mDataRegState=0(IN_SERVICE), mChannelNumber=-1, duplexMode()=0, mCellBandwidths=[], mVoiceRoamingType=home, mDataRoamingType=home, isManualNetworkSelection=false(automatic), mRilVoiceRadioTechnology=14(LTE), mRilDataRadioTechnology=14(LTE), mCssIndicator=unsupported, mCdmaRoamingIndicator=-1, mCdmaDefaultRoamingIndicator=-1, VoiceRegType=0, ImsVoiceAvail=1, IsEbSupport=1, IsEaBarred=0, Snap=0, MobileVoice=IN_SERVICE, MobileVoiceRat=LTE, MobileData=IN_SERVICE, MobileDataRoamingType=home, MobileDataRat=LTE PsOnly=false FemtocellInd=0 EndcStatus=0 RestrictDcnr=1 NrBearerStatus=0, mIsEmergencyOnly=false, mIsDataRoamingFromRegistration=false, mIsUsingCarrierAggregation=false, mLteEarfcnRsrpBoost=0, mNetworkRegistrationStates=[NetworkRegistrationState{transportType=1 domain=PS regState=HOME accessNetworkTechnology=LTE reasonForDenial=0 emergencyEnabled=false supportedServices=[I@d17f5cb cellIdentity=CellIdentityLte:{ mCi=<MASKED> mPci=447 mTac=<MASKED> mEarfcn=-1 mBandwidth=0 mMcc=724 mMnc=03 mAlphaLong=TIMBRASIL mAlphaShort=TIMBRASIL} voiceSpecificStates=null dataSpecificStates=DataSpecificRegistrationStates { mMaxDataCalls=4 mLac=0 mCid=20429019 mTac=31351 mSnapshotStatus=0 mMobileState=1 mMobileRat=14 mMobileOptionalRat=0 isDcNrRestricted = true isNrAvailable = false isEnDcAvailable = false} nrStatus=NONE}, NetworkRegistrationState{transportType=1 domain=CS regState=HOME accessNetworkTechnology=LTE reasonForDenial=0 emergencyEnabled=false supportedServices=[I@619b1a8 cellIdentity=CellIdentityLte:{ mCi=<MASKED> mPci=447 mTac=<MASKED> mEarfcn=-1 mBandwidth=0 mMcc=724 mMnc=03 mAlphaLong=TIMBRASIL mAlphaShort=TIMBRASIL} voiceSpecificStates=VoiceSpecificRegistrationStates { mCssSupported=false mRoamingIndicator=0 mSystemIsInPrl=0 mDefaultRoamingIndicator=0 mLac=31351 mCid=20429019 mPsVoiceSupport1 mImsEmergencyCallSupport1 mImsEmergencyCallBarring0 mMobileState1 mMobileRat14 mIsPsOnlyRegfalse} dataSpecificStates=null nrStatus=NONE}], mNrFrequencyRange=-1}
+09-28 14:04:26.564  3865  3865 D CarrierText: updateCarrierText(): 1
+09-28 14:04:26.566  3865  3865 D DeviceState: isReadySimSlot() slotNum : 0 (true)
+09-28 14:04:26.566  3865  3865 D DeviceState: getSystemPropertySimState() simStateProp : LOADED
+09-28 14:04:26.566  3865  3865 D CarrierText: Handling (subId=1): simState = READY, carrierName = TIMBRASIL | TIM
+09-28 14:04:26.567  3865  3865 D CarrierText: carrierTextForSimState = TIMBRASIL | TIM
+09-28 14:04:26.567  3865  3865 D CarrierText: SIM ready and in service: subId = 1, ServiceState = {mVoiceRegState=0(IN_SERVICE), mDataRegState=0(IN_SERVICE), mChannelNumber=-1, duplexMode()=0, mCellBandwidths=[], mVoiceRoamingType=home, mDataRoamingType=home, isManualNetworkSelection=false(automatic), mRilVoiceRadioTechnology=14(LTE), mRilDataRadioTechnology=14(LTE), mCssIndicator=unsupported, mCdmaRoamingIndicator=-1, mCdmaDefaultRoamingIndicator=-1, VoiceRegType=0, ImsVoiceAvail=1, IsEbSupport=1, IsEaBarred=0, Snap=0, MobileVoice=IN_SERVICE, MobileVoiceRat=LTE, MobileData=IN_SERVICE, MobileDataRoamingType=home, MobileDataRat=LTE PsOnly=false FemtocellInd=0 EndcStatus=0 RestrictDcnr=1 NrBearerStatus=0, mIsEmergencyOnly=false, mIsDataRoamingFromRegistration=false, mIsUsingCarrierAggregation=false, mLteEarfcnRsrpBoost=0, mNetworkRegistrationStates=[], mNrFrequencyRange=0}
+09-28 14:04:26.567  3865  3865 D CarrierText: setText : TIMBRASIL | TIM
+09-28 14:04:26.569  3828  3828 D ServiceStateProvider: subId=1
+09-28 14:04:26.571  4076  4465 D GeolocationCon: onServiceStateChanged[1] : mCountryIso = br, iso = br
+09-28 14:04:26.571  4076  4465 D GeolocationCon: handleMessage : what = 4
+09-28 14:04:26.572  4076  4465 D GeolocationCon: onServiceStateChanged({mVoiceRegState=0(IN_SERVICE), mDataRegState=0(IN_SERVICE), mChannelNumber=-1, duplexMode()=0, mCellBandwidths=[], mVoiceRoamingType=home, mDataRoamingType=home, isManualNetworkSelection=false(automatic), mRilVoiceRadioTechnology=14(LTE), mRilDataRadioTechnology=14(LTE), mCssIndicator=unsupported, mCdmaRoamingIndicator=-1, mCdmaDefaultRoamingIndicator=-1, VoiceRegType=0, ImsVoiceAvail=1, IsEbSupport=1, IsEaBarred=0, Snap=0, MobileVoice=IN_SERVICE, MobileVoiceRat=LTE, MobileData=IN_SERVICE, MobileDataRoamingType=home, MobileDataRat=LTE PsOnly=false FemtocellInd=0 EndcStatus=0 RestrictDcnr=1 NrBearerStatus=0, mIsEmergencyOnly=false, mIsDataRoamingFromRegistration=false, mIsUsingCarrierAggregation=false, mLteEarfcnRsrpBoost=0, mNetworkRegistrationStates=[NetworkRegistrationState{transportType=1 domain=PS regState=HOME accessNetworkTechnology=LTE reasonForDenial=0 emergencyEnabled=false supportedServices=[I@d0204c1 cellIdentity=CellIdentityLte:{ mCi=<MASKED> mPci=447 mTac=<MASKED> mEarfcn=-1 mBandwidth=0 mMcc=724 mMnc=03 mAlphaLong=TIMBRASIL mAlphaShort=TIMBRASIL} voiceSpecificStates=null dataSpecificStates=DataSpecificRegistrationStates { mMaxDataCalls=4 mLac=0 mCid=20429019 mTac=31351 mSnapshotStatus=0 mMobileState=1 mMobileRat=14 mMobileOptionalRat=0 isDcNrRestricted = true isNrAvailable = false isEnDcAvailable = false} nrStatus=NONE}, NetworkRegistrationState{transportType=1 domain=CS regState=HOME accessNetworkTechnology=LTE reasonForDenial=0 emergencyEnabled=false supportedServices=[I@5950466 cellIdentity=CellIdentityLte:{ mCi=<MASKED> mPci=447 mTac=<MASKED> mEarfcn=-1 mBandwidth=0 mMcc=724 mMnc=03 mAlphaLong=TIMBRASIL mAlphaShort=TIMBRASIL} voiceSpecificStates=VoiceSpecificRegistrationStates { mCssSupported=false mRoamingIndicator=0 mSystemIsInPrl=0 mDefaultRoamingIndicator=0 mLac=31351 mCid=20429019 mPsVoiceSupport1 mImsEmergencyCallSupport1 mImsEmergencyCallBarring0 mMobileState1 mMobileRat14 mIsPsOnlyRegfalse} dataSpecificStates=null nrStatus=NONE}], mNrFrequencyRange=-1})
+09-28 14:04:26.572  4076  4465 D GeolocationCon: onServiceStateChanged : {mVoiceRegState=0(IN_SERVICE), mDataRegState=0(IN_SERVICE), mChannelNumber=-1, duplexMode()=0, mCellBandwidths=[], mVoiceRoamingType=home, mDataRoamingType=home, isManualNetworkSelection=false(automatic), mRilVoiceRadioTechnology=14(LTE), mRilDataRadioTechnology=14(LTE), mCssIndicator=unsupported, mCdmaRoamingIndicator=-1, mCdmaDefaultRoamingIndicator=-1, VoiceRegType=0, ImsVoiceAvail=1, IsEbSupport=1, IsEaBarred=0, Snap=0, MobileVoice=IN_SERVICE, MobileVoiceRat=LTE, MobileData=IN_SERVICE, MobileDataRoamingType=home, MobileDataRat=LTE PsOnly=false FemtocellInd=0 EndcStatus=0 RestrictDcnr=1 NrBearerStatus=0, mIsEmergencyOnly=false, mIsDataRoamingFromRegistration=false, mIsUsingCarrierAggregation=false, mLteEarfcnRsrpBoost=0, mNetworkRegistrationStates=[NetworkRegistrationState{transportType=1 domain=PS regState=HOME accessNetworkTechnology=LTE reasonForDenial=0 emergencyEnabled=false supportedServices=[I@d0204c1 cellIdentity=CellIdentityLte:{ mCi=<MASKED> mPci=447 mTac=<MASKED> mEarfcn=-1 mBandwidth=0 mMcc=724 mMnc=03 mAlphaLong=TIMBRASIL mAlphaShort=TIMBRASIL} voiceSpecificStates=null dataSpecificStates=DataSpecificRegistrationStates { mMaxDataCalls=4 mLac=0 mCid=20429019 mTac=31351 mSnapshotStatus=0 mMobileState=1 mMobileRat=14 mMobileOptionalRat=0 isDcNrRestricted = true isNrAvailable = false isEnDcAvailable = false} nrStatus=NONE}, NetworkRegistrationState{transportType=1 domain=CS regState=HOME accessNetworkTechnology=LTE reasonForDenial=0 emergencyEnabled=false supportedServices=[I@5950466 cellIdentity=CellIdentityLte:{ mCi=<MASKED> mPci=447 mTac=<MASKED> mEarfcn=-1 mBandwidth=0 mMcc=724 mMnc=03 mAlphaLong=TIMBRASIL mAlphaShort=TIMBRASIL} voiceSpecificStates=VoiceSpecificRegistrationStates { mCssSupported=false mRoamingIndicator=0 mSystemIsInPrl=0 mDefaultRoamingIndicator=0 mLac=31351 mCid=20429019 mPsVoiceSupport1 mImsEmergencyCallSupport1 mImsEmergencyCallBarring0 mMobileState1 mMobileRat14 mIsPsOnlyRegfalse} dataSpecificStates=null nrStatus=NONE}], mNrFrequencyRange=-1}
+09-28 14:04:26.576  3865  3865 I StackScroller: ADJUST STACK.TRANSLATION
+09-28 14:04:26.579  3865  3865 I chatty  : uid=10072(com.samsung.android.app.aodservice) com.android.systemui identical 1 line
+09-28 14:04:26.579  3865  3865 I StackScroller: ADJUST STACK.TRANSLATION
+09-28 14:04:26.579 27029 27029 I ORC/PermissionUtil: hasRequiredLegacyMsgPermissions done,Elapsed time : 3.593076 ms
+09-28 14:04:26.580 27029 27029 D ORC/CbCmasReceiver: onReceive : action = android.intent.action.SERVICE_STATE
+09-28 14:04:26.580 27029 27029 D ORC/MethodReflector: newFromBundle is called
+09-28 14:04:26.580 27029 27029 D ORC/ScpmChannelUtil: getCurrentNetworkMCC() : 724
+09-28 14:04:26.580 27029 27029 D ORC/CbCmasReceiver: handleRoamingCMAS : prevMCC = null, curMCC = 724, simSlot = 0
+09-28 14:04:26.581 27029 27029 D ORC/ScpmChannelUtil: getCurrentNetworkMCC() : 724
+09-28 14:04:26.581 27029 27029 D ORC/CmasUtil: isSupportGlobalPws : checkGlobalPwsChecked is UN_SUPPORT
+09-28 14:04:26.581 27029 27029 D ORC/CbCmasReceiver: serviceState = 0
+09-28 14:04:26.581  3865  3865 D KeyguardUpdateMonitor: received broadcast android.intent.action.SERVICE_STATE
+09-28 14:04:26.582  3865  3865 V KeyguardUpdateMonitor: action android.intent.action.SERVICE_STATE serviceState={mVoiceRegState=0(IN_SERVICE), mDataRegState=0(IN_SERVICE), mChannelNumber=-1, duplexMode()=0, mCellBandwidths=[], mVoiceRoamingType=home, mDataRoamingType=home, isManualNetworkSelection=false(automatic), mRilVoiceRadioTechnology=14(LTE), mRilDataRadioTechnology=14(LTE), mCssIndicator=unsupported, mCdmaRoamingIndicator=-1, mCdmaDefaultRoamingIndicator=-1, VoiceRegType=0, ImsVoiceAvail=1, IsEbSupport=1, IsEaBarred=0, Snap=0, MobileVoice=IN_SERVICE, MobileVoiceRat=LTE, MobileData=IN_SERVICE, MobileDataRoamingType=home, MobileDataRat=LTE PsOnly=false FemtocellInd=0 EndcStatus=0 RestrictDcnr=1 NrBearerStatus=0, mIsEmergencyOnly=false, mIsDataRoamingFromRegistration=false, mIsUsingCarrierAggregation=false, mLteEarfcnRsrpBoost=0, mNetworkRegistrationStates=[], mNrFrequencyRange=0} subId=1
+09-28 14:04:26.582  3865  3865 D Tile.AirplaneModeTile: onReceive: android.intent.action.SERVICE_STATE
+09-28 14:04:26.582  3865  3865 D KeyguardUpdateMonitor: handleServiceStateChange(subId=1, serviceState={mVoiceRegState=0(IN_SERVICE), mDataRegState=0(IN_SERVICE), mChannelNumber=-1, duplexMode()=0, mCellBandwidths=[], mVoiceRoamingType=home, mDataRoamingType=home, isManualNetworkSelection=false(automatic), mRilVoiceRadioTechnology=14(LTE), mRilDataRadioTechnology=14(LTE), mCssIndicator=unsupported, mCdmaRoamingIndicator=-1, mCdmaDefaultRoamingIndicator=-1, VoiceRegType=0, ImsVoiceAvail=1, IsEbSupport=1, IsEaBarred=0, Snap=0, MobileVoice=IN_SERVICE, MobileVoiceRat=LTE, MobileData=IN_SERVICE, MobileDataRoamingType=home, MobileDataRat=LTE PsOnly=false FemtocellInd=0 EndcStatus=0 RestrictDcnr=1 NrBearerStatus=0, mIsEmergencyOnly=false, mIsDataRoamingFromRegistration=false, mIsUsingCarrierAggregation=false, mLteEarfcnRsrpBoost=0, mNetworkRegistrationStates=[], mNrFrequencyRange=0}
+09-28 14:04:26.583  3865  4220 D Tile.AirplaneModeTile:  handleUpdateState: airplane mode is disabled
+09-28 14:04:26.584  3865  4220 D Tile.AirplaneModeTile:  handleUpdateState:  value = false, state = 1
+09-28 14:04:26.587  4076  4465 D GeolocationCon: onServiceStateChanged[0] : mCountryIso = br, iso = br
+09-28 14:04:26.587  3865  3865 D KeyguardClockPage: isNetworkRoamingState id=1 roaming=false
+09-28 14:04:26.587  3865  3865 D KeyguardClockPage: onRefreshCarrierInfo(pre, now): false, false
+09-28 14:04:26.587  3865  3865 D CarrierText: updateCarrierText(): 1
+09-28 14:04:26.588  5188  5188 I SKBD    : and isTosAccept false
+09-28 14:04:26.588  3865  3865 D DeviceState: isReadySimSlot() slotNum : 0 (true)
+09-28 14:04:26.588  3546  3982 D SLocation: onCellLocationChanged 1 / 0
+09-28 14:04:26.589  3865  3865 D DeviceState: getSystemPropertySimState() simStateProp : LOADED
+09-28 14:04:26.589  3865  3865 D CarrierText: Handling (subId=1): simState = READY, carrierName = TIMBRASIL | TIM
+09-28 14:04:26.589  3865  3865 D CarrierText: carrierTextForSimState = TIMBRASIL | TIM
+09-28 14:04:26.589  3865  3865 D CarrierText: SIM ready and in service: subId = 1, ServiceState = {mVoiceRegState=0(IN_SERVICE), mDataRegState=0(IN_SERVICE), mChannelNumber=-1, duplexMode()=0, mCellBandwidths=[], mVoiceRoamingType=home, mDataRoamingType=home, isManualNetworkSelection=false(automatic), mRilVoiceRadioTechnology=14(LTE), mRilDataRadioTechnology=14(LTE), mCssIndicator=unsupported, mCdmaRoamingIndicator=-1, mCdmaDefaultRoamingIndicator=-1, VoiceRegType=0, ImsVoiceAvail=1, IsEbSupport=1, IsEaBarred=0, Snap=0, MobileVoice=IN_SERVICE, MobileVoiceRat=LTE, MobileData=IN_SERVICE, MobileDataRoamingType=home, MobileDataRat=LTE PsOnly=false FemtocellInd=0 EndcStatus=0 RestrictDcnr=1 NrBearerStatus=0, mIsEmergencyOnly=false, mIsDataRoamingFromRegistration=false, mIsUsingCarrierAggregation=false, mLteEarfcnRsrpBoost=0, mNetworkRegistrationStates=[], mNrFrequencyRange=0}
+09-28 14:04:26.589  3865  3865 D CarrierText: setText : TIMBRASIL | TIM
+09-28 14:04:26.592 27029 27029 I ORC/PermissionUtil: hasRequiredLegacyMsgPermissions done,Elapsed time : 4.712192 ms
+09-28 14:04:26.593 27029 27029 D ORC/SmsAppReceiver: DefaultSmsAppSmsReceiver : action = android.intent.action.SERVICE_STATE
+09-28 14:04:26.593  3546  3982 D TelephonyManager: getAllCellInfo : Caller (PID / UID / TID): 3546 / 1000 / 3982
+09-28 14:04:26.593  4076  4076 D PdnController<1>: onCellLocationChanged:
+09-28 14:04:26.593  4076  4076 D VolteServiceModule: onCellLocationChanged, phoneId: 1
+09-28 14:04:26.593  4076  4465 I RegiMgrBase: handleMessage: CELL_LOCATION_CHANGED
+09-28 14:04:26.593  4076  4465 D RegiMgrBase<1>: updatePani:
+09-28 14:04:26.593  4076  4465 D RegiMgrBase<1>: notifyNetworkEvent:
+09-28 14:04:26.594  4076  4465 D RegiMgrBase<1>: buildNetworkEvent:
+09-28 14:04:26.594  4076  4465 D PdnController<0>: onCellLocationChanged:
+09-28 14:04:26.594  4076  4465 D VolteServiceModule: onCellLocationChanged, phoneId: 0
+09-28 14:04:26.594  4076  4465 I RegiMgrBase: handleMessage: PLANI_IN_TIME_CHANGED
+09-28 14:04:26.594  4076  4465 I RegiMgrBase: handleMessage: CELL_LOCATION_CHANGED
+09-28 14:04:26.594  4076  4465 D RegiMgrBase<0>: updatePani:
+09-28 14:04:26.595  3828  3828 I Telephony: TelecomAccountRegistry$4: onServiceStateChanged, {mVoiceRegState=0(IN_SERVICE), mDataRegState=0(IN_SERVICE), mChannelNumber=-1, duplexMode()=0, mCellBandwidths=[], mVoiceRoamingType=home, mDataRoamingType=home, isManualNetworkSelection=false(automatic), mRilVoiceRadioTechnology=14(LTE), mRilDataRadioTechnology=14(LTE), mCssIndicator=unsupported, mCdmaRoamingIndicator=-1, mCdmaDefaultRoamingIndicator=-1, VoiceRegType=0, ImsVoiceAvail=1, IsEbSupport=1, IsEaBarred=0, Snap=0, MobileVoice=IN_SERVICE, MobileVoiceRat=LTE, MobileData=IN_SERVICE, MobileDataRoamingType=home, MobileDataRat=LTE PsOnly=false FemtocellInd=0 EndcStatus=0 RestrictDcnr=1 NrBearerStatus=0, mIsEmergencyOnly=false, mIsDataRoamingFromRegistration=false, mIsUsingCarrierAggregation=false, mLteEarfcnRsrpBoost=0, mNetworkRegistrationStates=[NetworkRegistrationState{transportType=1 domain=PS regState=HOME accessNetworkTechnology=LTE reasonForDenial=0 emergencyEnabled=false supportedServices=[I@e34c881 cellIdentity=CellIdentityLte:{ mCi=<MASKED> mPci=447 mTac=<MASKED> mEarfcn=-1 mBandwidth=0 mMcc=724 mMnc=03 mAlphaLong=TIMBRASIL mAlphaShort=TIMBRASIL} voiceSpecificStates=null dataSpecificStates=DataSpecificRegistrationStates { mMaxDataCalls=4 mLac=0 mCid=20429019 mTac=31351 mSnapshotStatus=0 mMobileState=1 mMobileRat=14 mMobileOptionalRat=0 isDcNrRestricted = true isNrAvailable = false isEnDcAvailable = false} nrStatus=NONE}, NetworkRegistrationState{transportType=1 domain=CS regState=HOME accessNetworkTechnology=LTE reasonForDenial=0 emergencyEnabled=false supportedServices=[I@656dd26 cellIdentity=CellIdentityLte:{ mCi=<MASKED> mPci=447 mTac=<MASKED> mEarfcn=-1 mBandwidth=0 mMcc=724 mMnc=03 mAlphaLong=TIMBRASIL mAlphaShort=TIMBRASIL} voiceSpecificStates=VoiceSpecificRegistrationStates { mCssSupported=false mRoamingIndicator=0 mSystemIsInPrl=0 mDefaultRoamingIndicator=0 mLac=31351 mCid=20429019 mPsVoiceSupport1 mImsEmergencyCallSupport1 mImsEmergencyCallBarring0 mMobileState1 mMobileRat14 mIsPsOnlyRegfalse} dataSpecificStates=null nrStatus=NONE}], mNrFrequencyRange=-1}
+09-28 14:04:26.595  3828  3828 D ImsAdaptorImpl2: onServiceStateChanged(): data regstate 0, network type 13
+09-28 14:04:26.595  3828  3828 D ImsAdaptorImpl: onServiceStateChanged(): data regstate 0, network type 13
+09-28 14:04:26.595  3828  3828 V PhoneGlobals: handleServiceStateChanged
+09-28 14:04:26.596  4076  4465 D PaniGenerator<0>: generate: subId - 1
+09-28 14:04:26.596  3828  3828 D Telephony:SamsungTelephonyUIManager: updateNetworkSelection subid : 1
+09-28 14:04:26.602 26974 27002 D InternalContentProvider: update_network_selection null
+09-28 14:04:26.602 26974 27002 D InternalContentProvider: Take CarrierUiCallFunctions
+09-28 14:04:26.603 26974 27002 D CarrierUiCallFunctions: call update_network_selection null Bundle[mParcelledData.dataSize=28]
+09-28 14:04:26.603 26974 27002 V UT.Worker-General: schedule job 882e25d
+09-28 14:04:26.603 26974 27001 V UT.Worker-General: handle job 882e25d
+09-28 14:04:26.603 26974 27001 V UT.Worker-General: completed job 882e25d
+09-28 14:04:26.603 26974 26974 V UT.Worker-General: issue callback for job 882e25d
+09-28 14:04:26.603 26974 26974 D FT.TuiSalesCodeFeature: NONE.isCurrentCountry
+09-28 14:04:26.603  4076  4465 D PaniGenerator<0>: generate: network=13, fallbackPlmn=72402, subId=1
+09-28 14:04:26.604  3828  3828 V PhoneGlobals: subId=1,mDefaultDataSubId=1,ss roaming=false
+09-28 14:04:26.604  3828  3828 V PhoneGlobals: updateDataRoamingStatus
+09-28 14:04:26.605  4076  4465 D PaniGenerator<0>: getPsPlmn: subId = 1
+09-28 14:04:26.606  3828  3828 V PhoneGlobals: dataAllowed=false, reasons=Data disallowed, reasons: DATA_DISABLED
+09-28 14:04:26.607  3828  4440 I Telephony:SamsungPhoneInterfaceManager: getCellLocationBySubId: is active user
+09-28 14:04:26.607  3828  3828 I Telephony: TelecomAccountRegistry$3: Receive ServiceStateChanged, {mVoiceRegState=0(IN_SERVICE), mDataRegState=0(IN_SERVICE), mChannelNumber=-1, duplexMode()=0, mCellBandwidths=[], mVoiceRoamingType=home, mDataRoamingType=home, isManualNetworkSelection=false(automatic), mRilVoiceRadioTechnology=14(LTE), mRilDataRadioTechnology=14(LTE), mCssIndicator=unsupported, mCdmaRoamingIndicator=-1, mCdmaDefaultRoamingIndicator=-1, VoiceRegType=0, ImsVoiceAvail=1, IsEbSupport=1, IsEaBarred=0, Snap=0, MobileVoice=IN_SERVICE, MobileVoiceRat=LTE, MobileData=IN_SERVICE, MobileDataRoamingType=home, MobileDataRat=LTE PsOnly=false FemtocellInd=0 EndcStatus=0 RestrictDcnr=1 NrBearerStatus=0, mIsEmergencyOnly=false, mIsDataRoamingFromRegistration=false, mIsUsingCarrierAggregation=false, mLteEarfcnRsrpBoost=0, mNetworkRegistrationStates=[], mNrFrequencyRange=0}
+09-28 14:04:26.607  3865  3865 I StackScroller: ADJUST STACK.TRANSLATION
+09-28 14:04:26.607  3828  3828 I Telephony: TelecomAccountRegistry$3: subId: 1, operatorAlphaShort: TIMBRASIL, voiceNetwokType: 13 -> 13, dataNetwokType: 13 -> 13
+09-28 14:04:26.609  3865  3865 I StackScroller: ADJUST STACK.TRANSLATION
+09-28 14:04:26.610  4076  4465 D PaniGenerator: getDataPlmn returns null
+09-28 14:04:26.610 26974 26974 V UT.TelephonyUtils: getServiceState 0, subId 1
+09-28 14:04:26.610  3865  3865 I StackScroller: ADJUST STACK.TRANSLATION
+09-28 14:04:26.611 26974 26974 D CU.NetworkSelectionNotificationMgr: getNetworkSelection :   subId : 1
+09-28 14:04:26.611 26974 26974 D CU.NetworkSelectionNotificationMgr: updateNetworkSelection()... isManualSelection : false , isSelectedOperatoraEmpty : true , selectedNetworkOperatorName :  PhoneId: 0
+09-28 14:04:26.611  4076  4465 D PaniGenerator: generate: change to NW PLMN(72403)
+09-28 14:04:26.614 26974 27002 D InternalContentProvider: service_state_changed null
+09-28 14:04:26.614 26974 27002 D InternalContentProvider: Take CarrierUiCallFunctions
+09-28 14:04:26.614 26974 27002 D CarrierUiCallFunctions: call service_state_changed null Bundle[mParcelledData.dataSize=2640]
+09-28 14:04:26.614 26974 27002 V UT.Worker-General: schedule job 882e25d
+09-28 14:04:26.614 26974 27001 V UT.Worker-General: handle job 882e25d
+09-28 14:04:26.614 26974 27001 V UT.Worker-General: completed job 882e25d
+09-28 14:04:26.617  3828  4440 I Telephony:SamsungPhoneInterfaceManager: getCellLocationBySubId: is active user
+09-28 14:04:26.617 26974 26974 V FT.PhoneUtilsMultiSim: getMultiSimIccType phoneId 0 icctype 2 
+09-28 14:04:26.618 26974 26974 V FT.PhoneUtilsMultiSim: isSimCardInserted[slot0] true
+09-28 14:04:26.618 26974 26974 V FT.PhoneUtilsMultiSim: isSimCardStatusOn[slot0] true
+09-28 14:04:26.618 26974 26974 D FT.TuiSalesCodeFeature: UNKNOWN.isCurrentOperator
+09-28 14:04:26.618 26974 26974 V UT.Worker-General: issue callback for job 882e25d
+09-28 14:04:26.618 26974 26974 D FT.TuiSalesCodeFeature: NONE.isCurrentCountry
+09-28 14:04:26.619  3546  3982 D SLocation: cellList : 5
+09-28 14:04:26.620 26974 26974 D FT.TuiUtilFeature: isAirplaneModeOn = false
+09-28 14:04:26.620 26974 26974 D FT.TuiSalesCodeFeature: UNKNOWN.isCurrentOperator
+09-28 14:04:26.620 26974 26974 D FT.TuiSalesCodeFeature: NONE.isCurrentCountry
+09-28 14:04:26.620 26974 26974 D FT.TuiSalesCodeFeature: NONE.isCurrentCountry
+09-28 14:04:26.622 26974 26974 D FT.TuiUtilFeature: isAirplaneModeOn = false
+09-28 14:04:26.622 26974 26974 D FT.TuiSalesCodeFeature: NONE.isCurrentCountry
+09-28 14:04:26.623  3828  4510 I Telephony:SamsungPhoneInterfaceManager: getCellLocationBySubId: is active user
+09-28 14:04:26.625  4076  4465 D PaniGenerator: setLkcForLastPani: No Last PANI header for ZTM IMS VoLTE
+09-28 14:04:26.625  4076  4522 D Mno     : fromName: Tim_BR
+09-28 14:04:26.626  4076  4522 D Mno     : fromName: found mno : Tim_BR, BR
+09-28 14:04:26.626  4076  4522 D StackIF : updatePani: 28682 pani: [3GPP-E-UTRAN-FDD;utran-cell-id-3gpp=724037a77137b8db]
+09-28 14:04:26.626  4076  4522 D SECIMSJ : [3176]> 140
+09-28 14:04:26.626 26974 26974 V FT.PhoneUtilsMultiSim: getMultiSimIccType phoneId 0 icctype 2 
+09-28 14:04:26.626 26974 26974 V FT.PhoneUtilsMultiSim: isSimCardInserted[slot0] true
+09-28 14:04:26.626  4076  4562 D [IMS6.0]: IMS_onResponse()
+09-28 14:04:26.626 26974 26974 V FT.PhoneUtilsMultiSim: isSimCardStatusOn[slot0] true
+09-28 14:04:26.626  4076  4562 D StackIF : processMessage 2
+09-28 14:04:26.626 26974 26974 V FT.PhoneUtilsMultiSim: getMultiSimIccType phoneId 1 icctype 0 
+09-28 14:04:26.626  4076  4562 D StackIF : Processing Response
+09-28 14:04:26.626 26974 26974 V FT.PhoneUtilsMultiSim: isSimCardInserted[slot1] false
+09-28 14:04:26.627  4076  4562 D SECIMSJ : [3176]< 600
+09-28 14:04:26.627  4076  4562 D StackIF : processResponse: reqId 600
+09-28 14:04:26.627  4076  4562 D StackIF : processResponse: handle 28682 result 0 reason 0
+09-28 14:04:26.627  4076  4465 D PaniGenerator<0>: generate: subId - 1
+09-28 14:04:26.630  4076  4465 D PaniGenerator<0>: generate: network=13, fallbackPlmn=72402, subId=1
+09-28 14:04:26.632  4076  4465 D PaniGenerator<0>: getPsPlmn: subId = 1
+09-28 14:04:26.634  3828  4440 I Telephony:SamsungPhoneInterfaceManager: getCellLocationBySubId: is active user
+09-28 14:04:26.636  4076  4465 D PaniGenerator: getDataPlmn returns null
+09-28 14:04:26.637  4076  4465 D PaniGenerator: generate: change to NW PLMN(72403)
+09-28 14:04:26.638 26974 26974 V UT.TelephonyUtils: getSimApplicationState 10, subId 1
+09-28 14:04:26.638 26974 26974 D FT.TuiUtilFeature: isAirplaneModeOn = false
+09-28 14:04:26.641  3828  4440 I Telephony:SamsungPhoneInterfaceManager: getCellLocationBySubId: is active user
+09-28 14:04:26.645  3828  4440 I Telephony:SamsungPhoneInterfaceManager: getCellLocationBySubId: is active user
+09-28 14:04:26.647  4076  4465 D PaniGenerator: setLkcForLastPani: No Last PANI header for ZTM RCS
+09-28 14:04:26.647  4076  4465 D RegiMgrBase<0>: notifyNetworkEvent:
+09-28 14:04:26.647  4076  4465 D RegiMgrBase<0>: buildNetworkEvent:
+09-28 14:04:26.647  4076  4465 I RegiMgrBase: handleMessage: PLANI_IN_TIME_CHANGED
+09-28 14:04:26.679  3546  3738 D WifiTrafficPoller: TrafficStats TxPkts=851364 RxPkts=3681689 TxBytes=95665242 RxBytes=4897207383 , Foreground uid=10198 pkgName=com.pietrocode.epubtomp3.flutter_app TxPackets=135 RxPackets=102 TxBytes=12732 RxBytes=5180
+09-28 14:04:26.681  3865  3865 D SecStatusBarWifiView: updateState: WifiIconState(resId=2131232678, visible=true, activityId=2131232683)
+09-28 14:04:26.788  5188  5188 I SKBD    : and isTosAccept false
+09-28 14:04:26.989  5188  5188 I SKBD    : and isTosAccept false
+09-28 14:04:27.051  3828  3961 I System.out: Broadcasting: Intent { act=com.sec.android.LTE_CA_PARAMETER flg=0x10000000 (has extras) }
+09-28 14:04:27.055  3828  4440 I System.out: Broadcast completed: result=0
+09-28 14:04:27.060  3865  4220 D NetworkController.MobileSignalController(0/1): onSignalStrengthsChanged signalStrength=SignalStrength: 3 99 -3 -200 -3 -200 -1 0 -112 -8 100 12 0 2147483647 3 14 -106 0x2000 P gsm|lte use_rsrp_and_rssnr_for_lte_level  [-128, -118, -108, -98] [-115, -105, -95, -85] level=2
+09-28 14:04:27.061  3865  4220 D NetworkController.MobileSignalController(0/1): getMobileIconGroup(): 13
