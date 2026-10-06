@@ -49,6 +49,10 @@ run = "bash scripts/build_web_wasm.sh"
 description = "Fail if production packaging reintroduces the legacy Python runtime or bridge"
 run = "bash scripts/guard_no_python_production.sh"
 
+[tasks."migration:build-and-gate"]
+description = "Build Rust production artifacts and run the migration readiness gate"
+run = "mise exec -- cargo build -p converter-cli -p converter-server --release && mkdir -p dist && cp target/release/converter-server dist/epub-to-mp3-server && mise run migration:gate"
+
 [tasks."migration:gate"]
 description = "Report Rust migration readiness, packaging artifacts, and remaining blockers"
 run = "bash scripts/check_rust_migration_gate.sh"

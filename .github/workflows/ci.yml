@@ -138,6 +138,8 @@ jobs:
           restore-keys: rust-${{ runner.os }}-
       - name: Check Rust workspace
         run: mise exec -- cargo check --workspace
+      - name: Run migration build gate
+        run: mise run migration:build-and-gate
       - name: Test Rust workspace
         run: mise exec -- cargo test --workspace
       - name: Rust formatting
