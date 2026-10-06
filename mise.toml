@@ -249,14 +249,25 @@ fi
 
 echo "🐍 Installing Python dependencies (root)..."
 UV_BIN="${UV_BIN:-$HOME/.hermes/bin/uv}"
-test -x "$UV_BIN"
-"$UV_BIN" pip install --python .venv/bin/python -r requirements.txt
+if [ -x "$UV_BIN" ]; then
+  "$UV_BIN" pip install --python .venv/bin/python -r requirements.txt
+else
+  mise exec -- python -m pip install -r requirements.txt
+fi
 
 echo "🐍 Installing Python dependencies (python_app)..."
-"$UV_BIN" pip install --python .venv/bin/python -r python_app/requirements.txt
+if [ -x "$UV_BIN" ]; then
+  "$UV_BIN" pip install --python .venv/bin/python -r python_app/requirements.txt
+else
+  mise exec -- python -m pip install -r python_app/requirements.txt
+fi
 
 echo "🔍 Installing lint/format tools..."
-"$UV_BIN" pip install --python .venv/bin/python ruff pre-commit
+if [ -x "$UV_BIN" ]; then
+  "$UV_BIN" pip install --python .venv/bin/python ruff pre-commit
+else
+  mise exec -- python -m pip install ruff pre-commit
+fi
 
 echo "🎙️ Configuring native Piper..."
 bash scripts/install_piper_binary.sh
