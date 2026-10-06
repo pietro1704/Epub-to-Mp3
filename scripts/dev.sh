@@ -110,8 +110,8 @@ cleanup_port_listeners() {
 }
 
 cleanup_stale_dev_processes() {
-  cleanup_port_listeners "$BACKEND_PORT" 'python .*uvicorn .*python_app\.server:app'
-  cleanup_matching_processes 'python .*uvicorn .*python_app\.server:app'
+  cleanup_port_listeners "$BACKEND_PORT" 'cargo run .*converter-server|converter-server'
+  cleanup_matching_processes 'cargo run .*converter-server|converter-server'
   cleanup_matching_processes 'node .*/vite([^[:alnum:]_]|$)'
   cleanup_matching_processes 'npm run dev -- --host|npm run dev --host'
 }
@@ -119,9 +119,9 @@ cleanup_stale_dev_processes() {
 backend_watch_targets() {
   local target=""
   for target in \
-    "$PROJECT_ROOT/python_app" \
-    "$PROJECT_ROOT/hf_app.py" \
-    "$PROJECT_ROOT/convert"
+    "$PROJECT_ROOT/crates/converter-core" \
+    "$PROJECT_ROOT/crates/converter-server" \
+    "$PROJECT_ROOT/crates/converter-ffi"
   do
     [[ -e "$target" ]] && printf '%s\n' "$target"
   done
@@ -131,19 +131,13 @@ backend_watch_files() {
   if command -v rg >/dev/null 2>&1; then
     (
       cd "$PROJECT_ROOT"
-      rg --files python_app \
-        -g '*.py' \
-        -g '*.json' \
-        -g '*.yaml' \
-        -g '*.yml'
+      rg --files crates -g '*.rs' -g '*.toml'
     )
   else
-    find "$PROJECT_ROOT/python_app" -type f \
-      \( -name '*.py' -o -name '*.json' -o -name '*.yaml' -o -name '*.yml' \) \
+    find "$PROJECT_ROOT/crates" -type f \
+      \( -name '*.rs' -o -name '*.toml' \) \
       -print | sed "s#^$PROJECT_ROOT/##"
   fi
-  [[ -f "$PROJECT_ROOT/hf_app.py" ]] && printf '%s\n' 'hf_app.py'
-  [[ -f "$PROJECT_ROOT/convert" ]] && printf '%s\n' 'convert'
 }
 
 backend_watch_signature() {
@@ -192,7 +186,7 @@ start_backend_watcher() {
 }
 
 start_backend() {
-  local -a backend_cmd=(python -m uvicorn python_app.server:app --host "$BACKEND_HOST" --port "$BACKEND_PORT")
+  local -a backend_cmd=(env HOST="$BACKEND_HOST" PORT="$BACKEND_PORT" mise exec -- cargo run -p converter-server)
   if [[ "$BACKEND_RELOAD" == "1" || "$BACKEND_RELOAD" == "true" || "$BACKEND_RELOAD" == "yes" ]]; then
     backend_cmd+=(--reload)
   fi
