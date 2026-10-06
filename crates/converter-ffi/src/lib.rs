@@ -126,20 +126,27 @@ pub unsafe extern "C" fn converter_session_convert_json(
         no_parallel: true,
     };
     let progress_log = generated_output_dir.join("conversion.log");
-    let worker = match converter_core::worker::ConversionWorker::new(config) {
-        Ok(worker) => worker,
-        Err(error) => return fail(error.to_string()),
-    }.with_progress(Arc::new(move |event| {
-        let line = format!(
+    let worker =
+        match converter_core::worker::ConversionWorker::new(config) {
+            Ok(worker) => worker,
+            Err(error) => return fail(error.to_string()),
+        }
+        .with_progress(Arc::new(move |event| {
+            let line =
+                format!(
             "[Rust] state={} chapter={:?} completed={} total={} percent={:.1} engine={:?} {}\n",
             event.state, event.chapter_index, event.chapters_completed, event.chapters_total,
             event.percent, event.engine, event.message
         );
-        use std::io::Write;
-        if let Ok(mut file) = std::fs::OpenOptions::new().create(true).append(true).open(&progress_log) {
-            let _ = file.write_all(line.as_bytes());
-        }
-    }));
+            use std::io::Write;
+            if let Ok(mut file) = std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(&progress_log)
+            {
+                let _ = file.write_all(line.as_bytes());
+            }
+        }));
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| worker.run(request)));
     match result {
         Err(payload) => {
@@ -222,7 +229,10 @@ pub unsafe extern "C" fn converter_job_log_json(job_id: *const c_char) -> *mut c
         Ok(value) => value,
         Err(error) => return fail(error),
     };
-    let paths = resolve_paths_from(std::env::vars(), Path::new(env!("CARGO_MANIFEST_DIR")).to_path_buf());
+    let paths = resolve_paths_from(
+        std::env::vars(),
+        Path::new(env!("CARGO_MANIFEST_DIR")).to_path_buf(),
+    );
     let manager = match converter_core::jobs::JobManager::new(paths.jobs_dir) {
         Ok(manager) => manager,
         Err(error) => return fail(error.to_string()),
@@ -917,22 +927,46 @@ mod android_jni {
         #[cfg(feature = "piper-runtime")]
         {
             let mut error = vec![0_u8; 2048];
-            let initialized = piper_runtime::piper_runtime_init(model.as_ptr(), config.as_ptr(), error.as_mut_ptr(), error.len() as u32);
+            let initialized = piper_runtime::piper_runtime_init(
+                model.as_ptr(),
+                config.as_ptr(),
+                error.as_mut_ptr(),
+                error.len() as u32,
+            );
             if initialized == 0 {
-                let message = unsafe { std::ffi::CStr::from_ptr(error.as_ptr()) }.to_string_lossy().into_owned();
+                let message = unsafe { std::ffi::CStr::from_ptr(error.as_ptr()) }
+                    .to_string_lossy()
+                    .into_owned();
                 fail::<jboolean>(message);
                 return 0;
             }
-            let synthesized = piper_runtime::piper_synthesize(text.as_ptr(), output.as_ptr(), error.as_mut_ptr(), error.len() as u32);
+            let synthesized = piper_runtime::piper_synthesize(
+                text.as_ptr(),
+                output.as_ptr(),
+                error.as_mut_ptr(),
+                error.len() as u32,
+            );
             if synthesized == 0 {
-                let message = unsafe { std::ffi::CStr::from_ptr(error.as_ptr()) }.to_string_lossy().into_owned();
+                let message = unsafe { std::ffi::CStr::from_ptr(error.as_ptr()) }
+                    .to_string_lossy()
+                    .into_owned();
                 fail::<jboolean>(message);
                 return 0;
             }
             return 1;
         }
         #[cfg(not(feature = "piper-runtime"))]
-        unsafe { if piper_runtime_init(model.as_ptr(), config.as_ptr()) { if piper_synthesize(text.as_ptr(), output.as_ptr()) { 1 } else { 0 } } else { 0 } }
+        unsafe {
+            if piper_runtime_init(model.as_ptr(), config.as_ptr()) {
+                if piper_synthesize(text.as_ptr(), output.as_ptr()) {
+                    1
+                } else {
+                    0
+                }
+            } else {
+                0
+            }
+        }
     }
 
     #[no_mangle]
@@ -1039,9 +1073,12 @@ mod android_jni {
             Ok(value) => value,
             Err(_) => return std::ptr::null_mut(),
         };
-        let path = std::env::temp_dir().join("converter-ffi/jobs").join(format!("{job_id}.json"));
+        let path = std::env::temp_dir()
+            .join("converter-ffi/jobs")
+            .join(format!("{job_id}.json"));
         let value = std::fs::read_to_string(path).unwrap_or_else(|_| "[]".to_owned());
-        env.new_string(value).map_or(std::ptr::null_mut(), |value| value.into_raw())
+        env.new_string(value)
+            .map_or(std::ptr::null_mut(), |value| value.into_raw())
     }
 
     #[no_mangle]
