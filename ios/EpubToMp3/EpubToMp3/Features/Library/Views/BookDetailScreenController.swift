@@ -188,28 +188,17 @@ final class BookDetailScreenController: UIViewController {
     }
 
     @objc private func tapDownload() {
-        if let baseURL = settings.resolvedBaseURL {
-            guard let url = try? library.openBookFile(id: book.id) else { return }
+        if let url = try? library.openBookFile(id: book.id) {
             let bookID = book.id
             Task { [weak self] in
                 guard let self else { return }
                 do {
-                    let data = try Data(contentsOf: url, options: .mappedIfSafe)
-                    let response = try await APIClient(baseURL: baseURL).submitConversion(
-                        uploadedFile: (data: data, filename: url.lastPathComponent),
-                        options: APIClient.ConvertOptions()
-                    )
-                    self.book.lastJobId = response.jobId
-                    self.library.recordConversion(jobId: response.jobId, for: bookID)
-                    let isCompleteDownload = (try? await LocalAudioArtifactStore.shared.hasCompleteDownloadedAudio(
-                        bookID: bookID
-                    )) ?? false
-                    self.book.cachedOffline = isCompleteDownload
-                    self.library.recordConversion(
-                        jobId: response.jobId,
-                        for: bookID,
-                        cachedOffline: isCompleteDownload
-                    )
+                    let result = try await RustConversionCoordinator().convert(bookURL: url)
+                    self.book.lastJobId = result.jobID
+                    self.library.recordConversion(jobId: result.jobID, for: bookID)
+                    let snapshot = try result.snapshot()
+                    self.player.setSnapshot(snapshot)
+                    self.player.play(snapshot: snapshot, restoreAutoplay: false)
                     self.render()
                 } catch {
                     let alert = UIAlertController(

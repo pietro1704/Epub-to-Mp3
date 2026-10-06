@@ -53,8 +53,13 @@ final class ConverterFFIAdapter: EmbeddedConverter {
     private var convertJSON: ConverterSessionConvert?
 
     init(bundle: Bundle = .main) {
+        let frameworkURLs = [
+            bundle.bundleURL.appendingPathComponent("Frameworks/libconverter_ffi.dylib"),
+            bundle.bundleURL.appendingPathComponent("Frameworks/converter_ffi.dylib"),
+        ]
         let url = bundle.url(forResource: "converter_ffi", withExtension: "dylib")
-            ?? bundle.privateFrameworksURL?.appendingPathComponent("converter_ffi.dylib")
+            ?? bundle.url(forResource: "libconverter_ffi", withExtension: "dylib")
+            ?? frameworkURLs.first(where: { FileManager.default.fileExists(atPath: $0.path) })
         guard let url,
               let library = dlopen(url.path, RTLD_NOW | RTLD_LOCAL) else {
             handle = nil; close = { _ in }; metadata = { _ in nil }; freeString = { _ in }; lastError = { nil }; ttsModelsJSON = { nil }; ttsDefaultEngine = { _, _, _ in nil }; ttsInstalledReadyEngine = nil; ttsModelInstall = nil; ttsModelRemove = nil; ttsModelMetadata = nil; ttsModelInstallManifest = nil; ttsModelInstallCatalogManifest = nil; return

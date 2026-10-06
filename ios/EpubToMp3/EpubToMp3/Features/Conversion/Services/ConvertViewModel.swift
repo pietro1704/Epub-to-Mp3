@@ -16,7 +16,7 @@ final class ConvertViewModel {
     var error: String?
 
     func submit(
-        client: APIClient?,
+        client: APIClient? = nil,
         useEmbeddedRuntime: Bool = false,
         player: AudioPlayer? = nil
     ) async {
@@ -24,14 +24,10 @@ final class ConvertViewModel {
             error = L10n.string("convert.error.pickFileFirst")
             return
         }
-        // Apple production clients use the canonical Rust HTTP backend for
-        // every conversion. Keep the parameter for source compatibility with
-        // existing controllers while ignoring the obsolete embedded path.
+        // Keep the legacy parameters source-compatible for callers during the
+        // migration, but never resolve or use an HTTP client on Apple.
+        _ = client
         _ = useEmbeddedRuntime
-        guard client != nil else {
-            error = L10n.string("convert.error.engineWarmingUp")
-            return
-        }
 
         isSubmitting = true
         error = nil
@@ -39,28 +35,30 @@ final class ConvertViewModel {
         defer { isSubmitting = false }
 
         do {
-            var options = APIClient.ConvertOptions()
-            options.engine = engine
-            if !voice.isEmpty { options.voice = voice }
-            if !language.isEmpty { options.language = language }
-            if !chapters.isEmpty { options.chapters = chapters }
-            options.clearCache = clearCache
-            options.forceReprocess = forceReprocess
-            options.maxPerformance = maxPerformance
-#if os(macOS)
-            submittedJobId = try await client!.submitConversion(
-                localPath: file,
-                options: options
-            ).jobId
-#else
+            let chapterRange: (Int32, Int32) = {
+                let values = chapters
+                    .split(separator: "-")
+                    .compactMap { Int32($0.trimmingCharacters(in: .whitespaces)) }
+                guard values.count == 2 else { return (-1, -1) }
+                return (values[0], values[1])
+            }()
+#if os(iOS)
             let accessing = file.startAccessingSecurityScopedResource()
             defer { if accessing { file.stopAccessingSecurityScopedResource() } }
-            let data = try Data(contentsOf: file, options: .mappedIfSafe)
-            submittedJobId = try await client!.submitConversion(
-                uploadedFile: (data: data, filename: file.lastPathComponent),
-                options: options
-            ).jobId
+            _ = accessing
 #endif
+            let result = try await RustConversionCoordinator().convert(
+                bookURL: file,
+                chapterStart: chapterRange.0,
+                chapterEnd: chapterRange.1
+            )
+            submittedJobId = result.jobID
+            if let player {
+                let snapshot = try result.snapshot()
+                player.setSnapshot(snapshot)
+                player.play(snapshot: snapshot, restoreAutoplay: true)
+                player.resume()
+            }
         } catch {
             self.error = (error as? LocalizedError)?.errorDescription
                 ?? error.localizedDescription

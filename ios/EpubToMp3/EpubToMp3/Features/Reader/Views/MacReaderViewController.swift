@@ -591,23 +591,7 @@ final class MacReaderViewController: NSViewController, NSTableViewDataSource, NS
                         recordControlsUsable()
                         return
                     }
-                    if book.fileType.requiresServerConversion {
-                        guard let baseURL = settings.resolvedBaseURL else {
-                            throw APIError.invalidBaseURL
-                        }
-                        let client = APIClient(baseURL: baseURL)
-                        let uploadID = try await client.uploadBook(at: fileURL)
-                        payload = try await client.fetchUploadedFulltext(uploadID: uploadID)
-                    } else {
-                        guard let baseURL = settings.resolvedBaseURL else {
-                            throw APIError.invalidBaseURL
-                        }
-                        payload = try await MacEpubParser.parse(
-                            at: fileURL,
-                            client: APIClient(baseURL: baseURL),
-                            bookId: book.id
-                        )
-                    }
+                    payload = try await MacEpubParser.parse(at: fileURL, bookId: book.id)
                 }
                 guard self.isActiveLoad(generation, bookID: book.id) else { return }
                 LocalFulltextCache.save(payload, bookId: book.id)

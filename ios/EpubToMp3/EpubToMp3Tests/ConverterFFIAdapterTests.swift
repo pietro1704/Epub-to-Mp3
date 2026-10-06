@@ -1,5 +1,6 @@
 import Foundation
 import XCTest
+@testable import EpubToMp3
 
 final class ConverterFFIAdapterTests: XCTestCase {
     func testMissingArtifactReturnsTypedUnavailableError() {

@@ -1055,12 +1055,7 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
                         hideLoadingOverlay()
                         return
                     }
-                    guard let baseURL = settings.resolvedBaseURL else {
-                        throw APIError.invalidBaseURL
-                    }
-                    let client = APIClient(baseURL: baseURL)
-                    let uploadID = try await client.uploadBook(at: url)
-                    payload = try await client.fetchUploadedFulltext(uploadID: uploadID)
+                    payload = EpubFallbackParser.parse(url: url, bookId: loadingBookID)
                     if registeredFontURLs.isEmpty {
                         registeredFontURLs = await Task.detached(priority: .userInitiated) {
                             EpubFontManager.registerFonts(from: url, bookID: loadingBookID)

@@ -97,15 +97,16 @@ settings:
     # --- Xcode 26 "Perform Changes" recommended settings ----------
     # Pre-applied here so the dialog stops nagging on every regenerate.
     DEAD_CODE_STRIPPING: YES
-    STRIP_STYLE: all
-    STRIP_SWIFT_SYMBOLS: YES
+    REGISTER_APP_GROUPS_IN_MACOS: YES
+    "ENABLE_APP_SANDBOX[sdk=macosx*]": YES
+    "ENABLE_HARDENED_RUNTIME[sdk=macosx*]": YES
     ENABLE_USER_SCRIPT_SANDBOXING: YES
     LOCALIZED_STRING_SWIFTUI_SUPPORT: YES
     LOCALIZED_STRING_MACRO_NAMES: "String LocalizedStringResource"
     # Whole-module optimisation in Release was the dialog's #1 ask.
     # Already locked per-config below; setting it at base level too so
     # the dialog stops listing it.
-    SWIFT_COMPILATION_MODE_release: wholemodule
+
     # Xcode 26 recommends explicit module verification + ARC-explicit
     # warnings on the modernisation track. Defaults at the project
     # level so any new file inherits them.
@@ -196,6 +197,8 @@ targets:
           - "Resources/EpubToMp3-Debug.entitlements"
           - "Resources/Info.plist"
           - "Resources/LaunchScreen.storyboard"
+          - "Resources/PrivacyInfo.xcprivacy"
+          - "Resources/EpubToMp3-iOS.entitlements"
           # Claude agent-memory must never be swept into the app bundle.
           # An agent once wrote .claude/agent-memory/ inside the source
           # root and xcodegen recursed it, bundling MEMORY.md as an app
@@ -215,6 +218,7 @@ targets:
           - "Assets.xcassets/**"
           - "Resources/**/*.lproj"
 
+
       # Optional CI-supplied converter-ffi dylib. No binary is checked in;
       # builds without the artifact retain the typed unavailable seam.
       - path: EpubToMp3/Features/Conversion/Services/ConverterFFIAdapter.swift
@@ -228,24 +232,24 @@ targets:
         buildPhase: resources
       - path: EpubToMp3/Resources/es.lproj
         buildPhase: resources
-    dependencies:
+      - path: ../../target/aarch64-apple-ios/release/libconverter_ffi.dylib
+        destinationFilters: [iOS]
+        buildPhase:
+          copyFiles:
+            destination: frameworks
+        attributes: [CodeSignOnCopy]
+      - path: ../../target/release/libconverter_ffi.dylib
+        destinationFilters: [macOS]
+        buildPhase:
+          copyFiles:
+            destination: frameworks
+        attributes: [CodeSignOnCopy]
 
-      # Widget extension — embedded in the main app bundle so iOS can
-      # offer it in the widget gallery. iOS-only: the widget target's
-      # own `supportedDestinations: [iOS]` keeps it out of the macOS
-      # build, but a plain `embed: true` here still wires up the
-      # macOS copy phase and Xcode then rejects the .appex at
-      # `ValidateEmbeddedBinary` time with "Your target is built for
-      # macOS but contains embedded content built for the iOS
-      # platform". `destinationFilters: [iOS]` tells xcodegen to emit the
-      # filter clause on the PBXBuildFile entry so the embed runs
-      # only for iOS destinations.
+    dependencies:
       - target: EpubToMp3Widget
         embed: true
         codeSign: true
         destinationFilters: [iOS]
-      # Share Extension — embedded only for iOS. Keep it out of the
-      # macOS app bundle; the extension target has no macOS destination.
       - target: EpubToMp3ShareExtension
         embed: true
         codeSign: true
@@ -282,6 +286,7 @@ targets:
           # this, every `bookmarkData(.withSecurityScope)` fails and
           # imports break silently.
           CODE_SIGN_ENTITLEMENTS: EpubToMp3/Resources/EpubToMp3-Debug.entitlements
+          "CODE_SIGN_ENTITLEMENTS[sdk=iphoneos*]": EpubToMp3/Resources/EpubToMp3-iOS.entitlements
           # iOS device builds REQUIRE a valid signature — Apple's launchd
           # refuses to install unsigned IPAs (LaunchExecutableValidationError).
           # macOS local Debug stays unsigned for App-Sandbox off + faster
@@ -294,6 +299,9 @@ targets:
           "CODE_SIGNING_REQUIRED[sdk=iphoneos*]": YES
           "CODE_SIGNING_ALLOWED[sdk=iphoneos*]": YES
           "CODE_SIGN_STYLE[sdk=iphoneos*]": Automatic
+          "OTHER_CODE_SIGN_FLAGS[sdk=iphoneos*]": ""
+          "ENABLE_DEBUG_DYLIB[sdk=iphoneos*]": NO
+
           # Simulator apps are installed by CoreSimulator and must not be
           # signed with the device identity. Keep device signing unchanged.
           "CODE_SIGNING_REQUIRED[sdk=iphonesimulator*]": NO
@@ -303,42 +311,13 @@ targets:
           ENABLE_HARDENED_RUNTIME: NO
         Release:
           CODE_SIGN_ENTITLEMENTS: EpubToMp3/Resources/EpubToMp3.entitlements
+          "CODE_SIGN_ENTITLEMENTS[sdk=iphoneos*]": EpubToMp3/Resources/EpubToMp3-iOS.entitlements
           CODE_SIGN_STYLE: Automatic
           SWIFT_COMPILATION_MODE: wholemodule
           SWIFT_OPTIMIZATION_LEVEL: "-O"
           GCC_OPTIMIZATION_LEVEL: s
           DEBUG_INFORMATION_FORMAT: "dwarf-with-dsym"
           STRIP_INSTALLED_PRODUCT: YES
-    postBuildScripts:
-      - name: "Embed Rust converter runtime"
-        shell: /bin/bash
-        basedOnDependencyAnalysis: false
-        alwaysOutOfDate: true
-        inputFiles:
-          - "${SRCROOT}/../../target/release/libconverter_ffi.dylib"
-          - "${SRCROOT}/../../target/aarch64-apple-ios/release/libconverter_ffi.dylib"
-        outputFiles:
-          - "${BUILT_PRODUCTS_DIR}/${CONTENTS_FOLDER_PATH}/Resources/converter_ffi.dylib"
-        script: |
-          set -euo pipefail
-          if [ "${PLATFORM_NAME}" = "macosx" ]; then
-            RESOURCES_DIR="${BUILT_PRODUCTS_DIR}/${CONTENTS_FOLDER_PATH}/Resources"
-            install -d "${RESOURCES_DIR}"
-            FFI="${SRCROOT}/../../target/release/libconverter_ffi.dylib"
-          elif [ "${PLATFORM_NAME}" = "iphoneos" ]; then
-            RESOURCES_DIR="${BUILT_PRODUCTS_DIR}/${FRAMEWORKS_FOLDER_PATH}"
-            install -d "${RESOURCES_DIR}"
-            FFI="${SRCROOT}/../../target/aarch64-apple-ios/release/libconverter_ffi.dylib"
-          else
-            exit 0
-          fi
-          if [ -f "${FFI}" ]; then
-            install -m 755 "${FFI}" "${RESOURCES_DIR}/converter_ffi.dylib"
-          else
-            echo "error: embedded Rust converter missing at ${FFI}" >&2
-            exit 1
-          fi
-
   EpubToMp3Tests:
     type: bundle.unit-test
     supportedDestinations: [iOS, macOS]
