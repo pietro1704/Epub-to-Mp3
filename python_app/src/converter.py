@@ -4816,14 +4816,22 @@ class AudioConverter(
                                 print(
                                     f"[DEBUG] Converting WAV→MP3: {last_tts_output_path.name} → {output_path.name} (bitrate={config.bitrate})"
                                 )
-                            converted = await self.audio_processor.convert_to_audio(
-                                last_tts_output_path,
-                                output_path,
-                                bitrate=config.bitrate,
-                                audio_format=getattr(config, "audio_format", "mp3"),
-                                sample_rate=getattr(config, "sample_rate", 16000),
-                                channels=getattr(config, "channels", 1),
-                            )
+                            audio_format = getattr(config, "audio_format", "mp3")
+                            if audio_format == "mp3":
+                                converted = await self.audio_processor.convert_to_mp3(
+                                    last_tts_output_path,
+                                    output_path,
+                                    bitrate=config.bitrate,
+                                )
+                            else:
+                                converted = await self.audio_processor.convert_to_audio(
+                                    last_tts_output_path,
+                                    output_path,
+                                    bitrate=config.bitrate,
+                                    audio_format=audio_format,
+                                    sample_rate=getattr(config, "sample_rate", 16000),
+                                    channels=getattr(config, "channels", 1),
+                                )
                             if self.verbose and converted is None:
                                 self._append_runtime_metric(
                                     {
@@ -4956,14 +4964,22 @@ class AudioConverter(
                                         print(
                                             f"[DEBUG] Converting WAV→MP3 (fallback): {tts_output_path.name} → {output_path.name} (bitrate={config.bitrate})"
                                         )
-                                    converted = await self.audio_processor.convert_to_audio(
-                                        tts_output_path,
-                                        output_path,
-                                        bitrate=config.bitrate,
-                                        audio_format=getattr(config, "audio_format", "mp3"),
-                                        sample_rate=getattr(config, "sample_rate", 16000),
-                                        channels=getattr(config, "channels", 1),
-                                    )
+                                    audio_format = getattr(config, "audio_format", "mp3")
+                                    if audio_format == "mp3":
+                                        converted = await self.audio_processor.convert_to_mp3(
+                                            tts_output_path,
+                                            output_path,
+                                            bitrate=config.bitrate,
+                                        )
+                                    else:
+                                        converted = await self.audio_processor.convert_to_audio(
+                                            tts_output_path,
+                                            output_path,
+                                            bitrate=config.bitrate,
+                                            audio_format=audio_format,
+                                            sample_rate=getattr(config, "sample_rate", 16000),
+                                            channels=getattr(config, "channels", 1),
+                                        )
                                     if self.verbose and converted is None:
                                         self._append_runtime_metric(
                                             {
@@ -6261,14 +6277,23 @@ class AudioConverter(
 
                 status_holder["text"] = self.loc.t("status_convert_mp3")
                 self._announce_stage(index, chapter_label, status_holder["text"])
-                converted = await self.audio_processor.convert_to_audio(
-                    temp_wav,
-                    output_path,
-                    bitrate=config.bitrate,
-                    audio_format=getattr(config, "audio_format", "mp3"),
-                    sample_rate=getattr(config, "sample_rate", 16000),
-                    channels=getattr(config, "channels", 1),
-                )
+                audio_format = getattr(config, "audio_format", "mp3")
+                if audio_format == "mp3":
+                    # Preserve the MP3-only override seam used by integrations.
+                    converted = await self.audio_processor.convert_to_mp3(
+                        temp_wav,
+                        output_path,
+                        bitrate=config.bitrate,
+                    )
+                else:
+                    converted = await self.audio_processor.convert_to_audio(
+                        temp_wav,
+                        output_path,
+                        bitrate=config.bitrate,
+                        audio_format=audio_format,
+                        sample_rate=getattr(config, "sample_rate", 16000),
+                        channels=getattr(config, "channels", 1),
+                    )
                 if converted is None:
                     status_holder["text"] = self.loc.t("status_mp3_failed")
                     self._announce_stage(index, chapter_label, status_holder["text"])

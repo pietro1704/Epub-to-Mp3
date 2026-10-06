@@ -4,6 +4,7 @@ Unit tests for main application
 """
 
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -41,9 +42,11 @@ class TestConverterApplication(unittest.TestCase):
         self.temp_dir = tempfile.mkdtemp()
         self.test_file = os.path.join(self.temp_dir, "test.epub")
 
-        # Create dummy file
-        with open(self.test_file, "w") as f:
-            f.write("dummy content")
+        # Use a valid EPUB so application tests reach their intended branches.
+        shutil.copy(
+            Path(__file__).parent / "fixtures/epubs/sample_multilang.epub",
+            self.test_file,
+        )
 
         self.app = ConverterApplication()
 
@@ -123,8 +126,8 @@ class TestConverterApplication(unittest.TestCase):
         mock_reader_instance.title = "Test Book"
         mock_reader_instance.author = "Test Author"
         mock_reader_instance.get_chapters.return_value = [
-            Mock(name="Chapter 1", text="Conteúdo em português para detecção"),
-            Mock(name="Chapter 2", text="Mais texto para análise"),
+            Mock(name="Chapter 1", text="Conteúdo em português para detecção. " * 10),
+            Mock(name="Chapter 2", text="Mais texto para análise. " * 10),
         ]
         mock_reader.return_value = mock_reader_instance
 
@@ -172,8 +175,11 @@ class TestConverterApplication(unittest.TestCase):
         """Test running with specific engine"""
         mock_reader_instance = Mock()
         mock_reader_instance.title = "Test Book"
+        mock_reader_instance.author = "Test Author"
+        mock_reader_instance.get_chapters.return_value = [
+            Mock(name="Chapter 1", text=("Este capítulo apresenta uma história em português, com palavras comuns, frases completas e contexto suficiente para que o detector reconheça claramente o idioma brasileiro. " * 8))
+        ]
         mock_reader_instance.file_path = Path(self.test_file)
-        mock_reader_instance.get_chapters.return_value = []
         mock_reader.return_value = mock_reader_instance
 
         mock_asyncio_run.side_effect = _asyncio_run_stub
@@ -183,6 +189,7 @@ class TestConverterApplication(unittest.TestCase):
             show_structure=False,
             engine="edge",
             voice="test-voice",
+            language="pt",
             model=None,
             output_dir="test_output",
             filter_chapters=False,
@@ -219,8 +226,11 @@ class TestConverterApplication(unittest.TestCase):
         """Test running with interactive menu"""
         mock_reader_instance = Mock()
         mock_reader_instance.title = "Test Book"
+        mock_reader_instance.author = "Test Author"
+        mock_reader_instance.get_chapters.return_value = [
+            Mock(name="Chapter 1", text=("Este capítulo apresenta uma história em português, com palavras comuns, frases completas e contexto suficiente para que o detector reconheça claramente o idioma brasileiro. " * 8))
+        ]
         mock_reader_instance.file_path = Path(self.test_file)
-        mock_reader_instance.get_chapters.return_value = []
         mock_reader.return_value = mock_reader_instance
 
         args = Namespace(
@@ -1786,7 +1796,7 @@ class TestCliE2E(unittest.TestCase):
             check=False,
         )
         self.assertEqual(proc.returncode, 0, msg=proc.stderr or proc.stdout)
-        self.assertIn("Chapters:", proc.stdout)
+        self.assertIn("Capítulos:", proc.stdout)
 
 
 class TestSectionNumberDisplay(unittest.TestCase):

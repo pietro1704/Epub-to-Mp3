@@ -1,0 +1,15 @@
+[package]
+name = "converter-ffi"
+description = "C ABI bridge for converter-core on macOS and iOS"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+crate-type = ["staticlib", "cdylib"]
+
+[dependencies]
+converter-core = { path = "../converter-core" }
+
+[lints]
+workspace = true

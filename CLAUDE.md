@@ -40,7 +40,7 @@ and never runs the conversion.
 
 ## Project Overview
 
-Full-stack EPUB/PDF to MP3 audiobook converter. Python backend (FastAPI) + React/TypeScript frontend. Three deployment modes that **share the same cache and output directories**:
+Full-stack EPUB/PDF to MP3 audiobook converter. Rust is the product runtime and shared core; all product surfaces execute embedded/direct Rust with no Python backend, FastAPI, Uvicorn, or remote server dependency. Python remains transitional tooling only and must not be required by CLI, web, Flutter Android, or Flutter Linux.
 
 | Mode | Entry point | Paths |
 |------|-------------|-------|
@@ -53,6 +53,15 @@ CLI and web-local automatically share cache because both use `PROJECT_ROOT` as `
 **TTS Engines** (fastest → slowest): Edge-TTS (cloud) → Piper (offline ONNX, all languages)
 
 ---
+
+## Runtime Architecture Decision — authoritative
+
+- Do not run, ship, or add a Python/FastAPI/Uvicorn backend for product execution.
+- CLI, web, Flutter Android, and Flutter Linux must call the shared Rust core directly through embedded binaries, FFI, WASM, or platform bindings as appropriate.
+- The React web client must use a Rust/WASM or equivalent direct local/runtime adapter, not HTTP to `python_app.server`.
+- Flutter clients must use Rust FFI/platform bindings, not HTTP to a Python service.
+- Treat `python_app/server.py`, `hf_app.py`, and `scripts/dev.sh` backend orchestration as transitional migration material; remove or quarantine it only after each surface has a verified Rust path.
+- Any new feature must land in the Rust core first and be exposed to each surface without reintroducing a backend.
 
 ## #1 Priority: Speed
 

@@ -5342,14 +5342,22 @@ async def process_conversion(job_id: str) -> None:
 
                             target_file = output_file
                             if needs_transcode:
-                                converted = await AudioProcessor.convert_to_audio(
-                                    tts_path,
-                                    output_file,
-                                    bitrate=config.bitrate,
-                                    audio_format=getattr(config, "audio_format", "mp3"),
-                                    sample_rate=getattr(config, "sample_rate", 16000),
-                                    channels=getattr(config, "channels", 1),
-                                )
+                                audio_format = getattr(config, "audio_format", "mp3")
+                                if audio_format == "mp3":
+                                    converted = await AudioProcessor.convert_to_mp3(
+                                        tts_path,
+                                        output_file,
+                                        bitrate=config.bitrate,
+                                    )
+                                else:
+                                    converted = await AudioProcessor.convert_to_audio(
+                                        tts_path,
+                                        output_file,
+                                        bitrate=config.bitrate,
+                                        audio_format=audio_format,
+                                        sample_rate=getattr(config, "sample_rate", 16000),
+                                        channels=getattr(config, "channels", 1),
+                                    )
                                 if not converted:
                                     with contextlib.suppress(OSError):
                                         tts_path.unlink(missing_ok=True)

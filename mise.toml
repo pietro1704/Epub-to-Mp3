@@ -484,3 +484,33 @@ run = "bash flutter_app/scripts/bootstrap-desktop-python.sh"
 [tasks."flutter:run-desktop"]
 description = "Run the Flutter desktop app on the host platform (Linux/Windows only)"
 run = "cd flutter_app && flutter run -d $(uname | tr '[:upper:]' 'a-z')"
+
+# ── Rust foundation ────────────────────────────────────────────────────────────
+
+[tasks."rust:check"]
+description = "Check the shared Rust core and CLI"
+run = "cargo check --workspace --all-targets"
+
+[tasks."rust:test"]
+description = "Run shared Rust core and CLI tests"
+run = "cargo test --workspace"
+
+[tasks."rust:cli"]
+description = "Run the Rust CLI foundation"
+run = "cargo run -p epub2mp3-cli --"
+
+[tasks."rust:ffi:check"]
+description = "Check converter-core and converter-ffi for the host"
+run = "cargo check -p converter-ffi"
+
+[tasks."rust:ffi:test"]
+description = "Test converter-core and converter-ffi"
+run = "cargo test -p converter-core -p converter-ffi"
+
+[tasks."rust:ffi:build"]
+description = "Build macOS converter FFI artifacts"
+run = "cargo build -p converter-ffi --release"
+
+[tasks."rust:ffi:ios"]
+description = "Build converter FFI for aarch64 iOS when the target is installed"
+run = "cargo build -p converter-ffi --release --target aarch64-apple-ios"

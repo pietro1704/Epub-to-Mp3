@@ -97,6 +97,8 @@ Thumbs.db
 *.swo
 *~
 
+target/
+
 # Audio files and output
 *.mp3
 *.wav

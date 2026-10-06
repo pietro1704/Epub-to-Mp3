@@ -1,0 +1,12 @@
+[package]
+name = "epub2mp3-cli"
+description = "Rust command-line adapter for the shared audiobook conversion domain"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+converter-core = { path = "../converter-core" }
+
+[lints]
+workspace = true

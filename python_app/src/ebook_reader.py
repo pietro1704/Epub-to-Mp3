@@ -612,6 +612,15 @@ class TextProcessor:
         # so that the full footnote block is removed (not just the anchor).
         cleanup_targets: Dict[str, any] = {}
 
+        # Index fragment targets once. Calling ``soup.find(id=...)`` for every
+        # backlink makes footnote-heavy EPUBs quadratic and can stall books
+        # with hundreds of notes (for example, The Lord of the Rings).
+        fragment_targets = {
+            node.get("id"): node
+            for node in soup.find_all(id=True)
+            if node.get("id")
+        }
+
         for anchor in list(soup.find_all("a")):
             if anchor is None or not hasattr(anchor, "get"):
                 continue
@@ -621,7 +630,7 @@ class TextProcessor:
                 continue
 
             # Try to find note in current document
-            note_node = soup.find(id=fragment)
+            note_node = fragment_targets.get(fragment)
 
             # If not found and href points to external file, try to load it
             if not note_node and external_file_resolver and "#" in href:

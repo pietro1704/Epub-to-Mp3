@@ -2959,6 +2959,17 @@ class ConverterApplication:
     def _apply_language_preferences(self, config: ConversionConfig) -> None:
         profile = self.language_profile
         fallback_lang = self.localization.language or "pt"
+        explicit_language = self._normalise_language_code(config.primary_language)
+        if explicit_language and explicit_language != "auto":
+            # An explicit --language is an operator override. Do not let a
+            # low-confidence sample (for example an English cover page) pick
+            # a different fallback voice or language.
+            profile = LanguageProfile(
+                primary=explicit_language,
+                languages=[explicit_language],
+                predictions=profile.predictions if profile else [],
+                analysed_chars=profile.analysed_chars if profile else 0,
+            )
         if profile is None:
             profile = LanguageProfile(
                 primary=config.primary_language,
@@ -2966,7 +2977,9 @@ class ConverterApplication:
                 predictions=[],
                 analysed_chars=0,
             )
-        elif not profile.is_confident:
+        elif not profile.is_confident and not (
+            profile.primary and not profile.predictions and profile.analysed_chars == 0
+        ):
             profile = LanguageProfile(
                 primary=fallback_lang,
                 languages=[fallback_lang],

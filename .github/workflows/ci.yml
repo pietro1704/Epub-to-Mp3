@@ -115,3 +115,74 @@ jobs:
       - name: Run web build
         working-directory: web
         run: mise exec -- npm run build
+
+  rust:
+    name: Rust
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Install mise
+        uses: jdx/mise-action@v4
+
+      - name: Check Rust workspace
+        run: mise run rust:check
+
+      - name: Test Rust workspace
+        run: mise run rust:test
+
+  flutter:
+    name: Flutter
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Install mise
+        uses: jdx/mise-action@v4
+
+      - name: Analyze Flutter app
+        run: mise run flutter:analyze
+
+      - name: Test Flutter app
+        run: mise run flutter:test
+
+  flutter-platforms:
+    name: Flutter ${{ matrix.target }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [android, linux]
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Install Linux desktop dependencies
+        if: matrix.target == 'linux'
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libgtk-3-dev
+
+      - name: Install mise
+        uses: jdx/mise-action@v4
+
+      - name: Bootstrap Android Python assets
+        if: matrix.target == 'android'
+        run: mise run android:bootstrap-python
+
+      - name: Build Android debug APK
+        if: matrix.target == 'android'
+        run: mise run flutter:build-apk-debug
+
+      - name: Build Linux release
+        if: matrix.target == 'linux'
+        run: mise run flutter:build-linux
