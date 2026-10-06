@@ -45,6 +45,10 @@ run = "mise exec -- cargo run --release -p converter-cli --bin converter-cli --"
 description = "Build and verify the direct Rust EPUB WASM adapter"
 run = "bash scripts/build_web_wasm.sh"
 
+[tasks."branches:cleanup-preview"]
+description = "Preview safe remote branch cleanup without deleting anything"
+run = "bash scripts/cleanup_remote_branches.sh --remote origin"
+
 [tasks."guard:no-python-production"]
 description = "Fail if production packaging reintroduces the legacy Python runtime or bridge"
 run = "bash scripts/guard_no_python_production.sh"
