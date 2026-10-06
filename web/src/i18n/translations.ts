@@ -1442,10 +1442,10 @@ export const translations: Record<Locale, Translations> = {
       skipConfirm: "Deseja pular este livro e continuar com o próximo da fila?",
       backendOffline: "Servidor de conversão indisponível",
       backendOfflineDetails:
-        "Não foi possível contatar a API. Inicie o backend local (`python -m uvicorn python_app.server:app --reload --port 8000`) ou use `python app.py` (porta 7860) e configure VITE_API_BASE para essa porta.",
+        "Não foi possível contatar o runtime de conversão Rust. Verifique se o runtime local está disponível e recarregue a página.",
       backendConnecting: "Conectando ao servidor de conversão…",
       backendOfflineBanner:
-        "Servidor Python não está respondendo. Inicie o backend local (porta 8000) ou use `python app.py` na porta 7860 e ajuste VITE_API_BASE. Depois recarregue esta página.",
+        "O runtime Rust de conversão não está respondendo. Verifique o runtime local e recarregue esta página.",
       cachedRestoredSuccess:
         "Restaurado do cache local. Os downloads podem estar indisponíveis se o servidor foi reiniciado.",
       cancelConfirm:
@@ -2261,10 +2261,10 @@ export const translations: Record<Locale, Translations> = {
         "Do you want to skip this book and continue with the next one in the queue?",
       backendOffline: "Conversion server unavailable",
       backendOfflineDetails:
-        "Unable to reach the API. Start the backend (`python -m uvicorn python_app.server:app --reload --port 8000`) or use `python app.py` (port 7860) and set VITE_API_BASE accordingly.",
+        "Unable to reach the Rust conversion runtime. Check that the local runtime is available and reload the page.",
       backendConnecting: "Connecting to the conversion server…",
       backendOfflineBanner:
-        "Python backend is offline. Start it locally on port 8000, or use `python app.py` on port 7860 and set VITE_API_BASE, then reload this page.",
+        "The Rust conversion runtime is not responding. Check the local runtime and reload the page.",
       cachedRestoredSuccess:
         "Restored from local cache — downloads may be unavailable if the server was restarted.",
       cancelConfirm:
