@@ -178,6 +178,8 @@ jobs:
           install: false
       - name: Install toolchain
         run: mise install
+      - name: Install Rust WASM target
+        run: rustup target add wasm32-unknown-unknown
       - name: Build direct Rust WASM adapter
         run: mise run web:wasm-build
       - name: Install web dependencies
