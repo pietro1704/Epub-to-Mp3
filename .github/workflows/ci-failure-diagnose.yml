@@ -25,6 +25,7 @@ jobs:
     steps:
       - name: Fetch failed run summary
         id: summary
+        working-directory: ${{ github.workspace }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
