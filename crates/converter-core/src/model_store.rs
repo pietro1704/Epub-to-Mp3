@@ -191,13 +191,16 @@ impl ModelStore {
                 }
                 if artifact.name.ends_with(".tar.bz2") {
                     #[cfg(feature = "kokoro-sherpa-runtime")]
-                    extract_model_archive(&temporary, &staging)?;
+                    {
+                        extract_model_archive(&temporary, &staging)?;
+                        tokio::fs::remove_file(&temporary).await?;
+                    }
                     #[cfg(not(feature = "kokoro-sherpa-runtime"))]
                     return Err(ModelStoreError::InvalidArchive(
                         "archive extraction requires kokoro-sherpa-runtime".to_owned(),
                     ));
-                    tokio::fs::remove_file(&temporary).await?;
                 } else {
+                    tokio::fs::remove_file(&temporary).await?;
                     tokio::fs::rename(&temporary, &destination).await?;
                 }
                 installed.push(InstalledModel {
