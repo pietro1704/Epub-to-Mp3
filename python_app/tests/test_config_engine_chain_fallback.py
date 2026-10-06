@@ -24,8 +24,9 @@ class TestEngineChainFallbackConfigOverride(unittest.TestCase):
         env.pop("ENGINE_CHAIN_FALLBACK", None)
         env.pop("FALLBACK_ENGINE_OVERRIDE", None)
         with patch.dict(os.environ, env, clear=True):
-            self.assertTrue(_engine_chain_fallback_enabled(cfg))
-            chain = _build_engine_chain(cfg)
+            with patch("src._server_engine_helpers._piper_model_available", return_value=True):
+                self.assertTrue(_engine_chain_fallback_enabled(cfg))
+                chain = _build_engine_chain(cfg)
         engines = {c.engine for c in chain}
         self.assertTrue(engines - {"edge"}, f"expected offline tiers, got {engines}")
 

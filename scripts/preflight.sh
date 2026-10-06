@@ -29,6 +29,11 @@ echo "Branch: $branch"
 echo 'Rust formatting...'
 cargo fmt --all -- --check
 
+if [[ ! -f ios/EpubToMp3/Vendor/site-packages/python_app/src/ebook_reader.py ]]; then
+  echo 'Bootstrapping embedded iOS Python vendor...'
+  (cd ios/EpubToMp3 && bash scripts/bootstrap-ios-python.sh)
+fi
+
 echo 'Python, integration, and Web tests...'
 mise run test
 

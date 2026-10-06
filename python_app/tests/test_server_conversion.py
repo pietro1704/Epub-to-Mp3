@@ -417,6 +417,7 @@ def test_build_engine_chain_includes_supported_fallbacks(monkeypatch):
     config = ConversionConfig(engine="edge", primary_language="pt-BR")
 
     monkeypatch.setattr(server, "_has_piper_support", lambda: True)
+    monkeypatch.setattr("src._server_engine_helpers._piper_model_available", lambda _lang: True)
     monkeypatch.setenv("ENGINE_CHAIN_FALLBACK", "1")
 
     chain = server._build_engine_chain(config)
@@ -438,6 +439,7 @@ def test_rank_fallbacks_includes_piper(monkeypatch):
     base = ConversionConfig(engine="edge", primary_language="pt-BR")
 
     monkeypatch.setattr(server, "_has_piper_support", lambda: True)
+    monkeypatch.setattr("src._server_engine_helpers._piper_model_available", lambda _lang: True)
     monkeypatch.setenv("ENGINE_CHAIN_FALLBACK", "1")
 
     chain = server._build_engine_chain(replace(base))
