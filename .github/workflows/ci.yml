@@ -164,6 +164,8 @@ jobs:
         uses: jdx/mise-action@v4.3.0
       - name: Install toolchain
         run: mise install
+      - name: Build direct Rust WASM adapter
+        run: mise run web:wasm-build
       - name: Install web dependencies
         working-directory: web
         run: mise exec -- npm ci --prefer-offline --no-audit --no-fund

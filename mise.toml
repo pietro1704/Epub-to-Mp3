@@ -41,6 +41,10 @@ run = "PIPER_BINARY=\"$MISE_PROJECT_ROOT/.venv/bin/piper\" PIPER_MODEL=\"$MISE_P
 description = "Run the canonical Rust conversion CLI"
 run = "mise exec -- cargo run --release -p converter-cli --bin converter-cli --"
 
+[tasks."web:wasm-build"]
+description = "Build and verify the direct Rust EPUB WASM adapter"
+run = "bash scripts/build_web_wasm.sh"
+
 [tasks."guard:no-python-production"]
 description = "Fail if production packaging reintroduces the legacy Python runtime or bridge"
 run = "bash scripts/guard_no_python_production.sh"
