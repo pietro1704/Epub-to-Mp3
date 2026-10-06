@@ -24,7 +24,7 @@ ninja = "latest"
 _.python.venv = { path = ".venv", create = true }
 
 [tasks.dev]
-description = "Start backend (uvicorn) and frontend (Vite) together"
+description = "Start the Rust converter server and frontend (Vite) together"
 run = "./scripts/dev.sh"
 
 [tasks."rust:health"]
