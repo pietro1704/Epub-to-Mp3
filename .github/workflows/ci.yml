@@ -175,13 +175,9 @@ jobs:
             '858555e3a064209c57088fe6bd70c4c3dc54d03eaa00c45d5ecaf43a33f95aa7' \
             'models/piper/pt_BR-faber-medium.onnx' | sha256sum --check --status
           curl --fail --location --retry 3 "$model_base/pt_BR-faber-medium.onnx.json" -o models/piper/pt_BR-faber-medium.onnx.json
-      - name: Locate eSpeak-NG phoneme data
-        run: |
-          data_directory="$(find target/debug/build/espeak-rs-sys-* -type d -name espeak-ng-data -print -quit)"
-          test -n "$data_directory"
-          test -f "$data_directory/phontab"
-          echo "ESPEAK_DATA_PATH=$data_directory" >> "$GITHUB_ENV"
       - name: Piper Embedded runtime smoke test
+        env:
+          ESPEAK_DATA_PATH: ${{ github.workspace }}/native/vendor/espeak-rs-sys/espeak-ng/espeak-ng-data
         run: mise exec -- cargo test --manifest-path native/piper-runtime/Cargo.toml --features onnxruntime,piper-inference,heavy-runtime-tests piper_inference_generates_valid_wav_from_vendored_model -- --nocapture
   web:
     name: Web
