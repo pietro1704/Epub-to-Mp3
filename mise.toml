@@ -45,6 +45,10 @@ run = "mise exec -- cargo run --release -p converter-cli --bin converter-cli --"
 description = "Build and verify the direct Rust EPUB WASM adapter"
 run = "bash scripts/build_web_wasm.sh"
 
+[tasks."migration:product-boundary-audit"]
+description = "Audit remaining web and Flutter HTTP/Python product boundaries"
+run = "bash scripts/check_direct_runtime_boundary.sh"
+
 [tasks."branches:cleanup-preview"]
 description = "Preview safe remote branch cleanup without deleting anything"
 run = "bash scripts/cleanup_remote_branches.sh --remote origin"
