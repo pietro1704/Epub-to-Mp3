@@ -177,7 +177,7 @@ jobs:
           curl --fail --location --retry 3 "$model_base/pt_BR-faber-medium.onnx.json" -o models/piper/pt_BR-faber-medium.onnx.json
       - name: Piper Embedded runtime smoke test
         env:
-          ESPEAK_DATA_PATH: ${{ github.workspace }}/native/vendor/espeak-rs-sys/espeak-ng/espeak-ng-data
+          PIPER_ESPEAKNG_DATA_DIRECTORY: ${{ github.workspace }}/native/vendor/espeak-rs-sys/espeak-ng
         run: mise exec -- cargo test --manifest-path native/piper-runtime/Cargo.toml --features onnxruntime,piper-inference,heavy-runtime-tests piper_inference_generates_valid_wav_from_vendored_model -- --nocapture
   web:
     name: Web
