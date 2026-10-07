@@ -13,6 +13,7 @@ final class MacLibraryViewController: NSViewController, NSSearchFieldDelegate,
     private let bookmarkStore: BookmarkStore
     private let onOpenBook: (String) -> Void
     private let onDownloadBook: (String) -> Void
+    private let onConvertBook: (String) -> Void
     private var cancellables: Set<AnyCancellable> = []
     private var sortMode: LibraryGridModel.SortMode = .lastOpened
     private var selectedTag: String?
@@ -31,12 +32,14 @@ final class MacLibraryViewController: NSViewController, NSSearchFieldDelegate,
         library: LibraryStore,
         bookmarkStore: BookmarkStore,
         onOpenBook: @escaping (String) -> Void,
-        onDownloadBook: @escaping (String) -> Void
+        onDownloadBook: @escaping (String) -> Void,
+        onConvertBook: @escaping (String) -> Void
     ) {
         self.library = library
         self.bookmarkStore = bookmarkStore
         self.onOpenBook = onOpenBook
         self.onDownloadBook = onDownloadBook
+        self.onConvertBook = onConvertBook
         super.init(nibName: nil, bundle: nil)
         title = L10n.string("library.title")
     }
@@ -237,7 +240,11 @@ final class MacLibraryViewController: NSViewController, NSSearchFieldDelegate,
                         itemForRepresentedObjectAt indexPath: IndexPath) -> NSCollectionViewItem {
         let bookItem = MacBookCollectionItem(nibName: nil, bundle: nil)
         let book = books[indexPath.item]
-        bookItem.configure(with: book, onOpen: { [weak self] in self?.open(book) })
+        bookItem.configure(
+            with: book,
+            onOpen: { [weak self] in self?.open(book) },
+            onConvert: { [weak self] in self?.onConvertBook(book.id) }
+        )
         return bookItem
     }
 
@@ -270,7 +277,18 @@ final class MacLibraryViewController: NSViewController, NSSearchFieldDelegate,
         download.target = self
         download.representedObject = book.id
         menu.insertItem(download, at: 0)
+        let convert = NSMenuItem(title: L10n.string("library.convertWholeBook"),
+                                 action: #selector(convertSelectedBook(_:)), keyEquivalent: "")
+        convert.target = self
+        convert.representedObject = book.id
+        menu.insertItem(convert, at: 0)
         return menu
+    }
+
+    @objc
+    private func convertSelectedBook(_ sender: NSMenuItem) {
+        guard let id = sender.representedObject as? String else { return }
+        onConvertBook(id)
     }
 
     @objc
@@ -304,6 +322,7 @@ private final class MacBookCollectionItem: NSCollectionViewItem {
     private let titleField = NSTextField(labelWithString: "")
     private let authorField = NSTextField(labelWithString: "")
     private let openButton = NSButton()
+    private let convertButton = NSButton()
     private var onOpen: (() -> Void)?
 
     override func loadView() {
@@ -315,7 +334,13 @@ private final class MacBookCollectionItem: NSCollectionViewItem {
         titleField.maximumNumberOfLines = 2
         authorField.textColor = .secondaryLabelColor
         authorField.lineBreakMode = .byTruncatingTail
-        let stack = NSStackView(views: [coverView, titleField, authorField])
+        convertButton.title = L10n.string("library.convertWholeBook")
+        convertButton.bezelStyle = .rounded
+        convertButton.setAccessibilityIdentifier("library.book.convert")
+        convertButton.translatesAutoresizingMaskIntoConstraints = false
+        convertButton.target = self
+        convertButton.action = #selector(convertBook)
+        let stack = NSStackView(views: [coverView, titleField, authorField, convertButton])
         stack.orientation = .vertical
         stack.spacing = 5
         stack.translatesAutoresizingMaskIntoConstraints = false
@@ -336,19 +361,22 @@ private final class MacBookCollectionItem: NSCollectionViewItem {
             openButton.leadingAnchor.constraint(equalTo: root.leadingAnchor),
             openButton.trailingAnchor.constraint(equalTo: root.trailingAnchor),
             openButton.topAnchor.constraint(equalTo: root.topAnchor),
-            openButton.bottomAnchor.constraint(equalTo: root.bottomAnchor),
+            openButton.bottomAnchor.constraint(equalTo: authorField.bottomAnchor),
         ])
         view = root
     }
 
-    func configure(with book: BookEntity, onOpen: @escaping () -> Void) {
+    func configure(with book: BookEntity, onOpen: @escaping () -> Void, onConvert: @escaping () -> Void) {
         self.onOpen = onOpen
+        self.onConvert = onConvert
         view.setAccessibilityElement(false)
-        view.setAccessibilityChildren([openButton])
+        view.setAccessibilityChildren([openButton, convertButton])
         view.setAccessibilityIdentifier("library.book.\(book.id)")
         openButton.setAccessibilityIdentifier("library.book.open.\(book.id)")
         openButton.setAccessibilityLabel(book.resolvedTitle)
         openButton.setAccessibilityHelp(L10n.string("library.openBook"))
+        convertButton.setAccessibilityLabel(L10n.string("library.convertWholeBook"))
+        convertButton.setAccessibilityIdentifier("library.book.convert.\(book.id)")
         titleField.stringValue = book.resolvedTitle
         authorField.stringValue = book.author ?? ""
         authorField.isHidden = book.author?.isEmpty ?? true
@@ -357,6 +385,9 @@ private final class MacBookCollectionItem: NSCollectionViewItem {
                        accessibilityDescription: nil)
     }
 
+    private var onConvert: (() -> Void)?
+
     @objc private func openBook() { onOpen?() }
+    @objc private func convertBook() { onConvert?() }
 }
 #endif

@@ -264,10 +264,14 @@ final class MacAppKitRootController: NSSplitViewController, NSToolbarDelegate {
                     library: library,
                     bookmarkStore: bookmarkStore,
                 onOpenBook: { [weak self] bookID in self?.showReader(bookID: bookID) },
-                onDownloadBook: { [weak self] bookID in
-                    self?.showBookDetail(bookID: bookID)
-                    (self?.detailController as? MacBookDetailViewController)?.downloadWholeBook()
-                }
+                    onDownloadBook: { [weak self] bookID in
+                        self?.showBookDetail(bookID: bookID)
+                        (self?.detailController as? MacBookDetailViewController)?.downloadWholeBook()
+                    },
+                    onConvertBook: { [weak self] bookID in
+                        self?.showBookDetail(bookID: bookID)
+                        (self?.detailController as? MacBookDetailViewController)?.convertWholeBook()
+                    }
                 )
             case .jobs: controller = MacJobsListViewController()
             case .settings: controller = MacSettingsViewController(settings: settings, library: library)

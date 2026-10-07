@@ -231,6 +231,10 @@ final class MacBookDetailViewController: NSViewController {
         }
     }
 
+    func convertWholeBook() {
+        tapConvert()
+    }
+
     private func startRustConversion(url: URL, autoPlay: Bool) {
         let library = self.library
         let bookID = self.book.id

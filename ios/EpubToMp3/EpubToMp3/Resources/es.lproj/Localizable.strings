@@ -44,6 +44,7 @@
 "library.cancel" = "Cancelar";
 "library.removeBook" = "Eliminar libro";
 "library.downloadWholeBook" = "Descargar libro entero";
+"library.convertWholeBook" = "Convertir libro entero";
 "library.all" = "Todos";
 "library.allBooks" = "Todos los libros";
 "library.importError" = "Error de importación";
