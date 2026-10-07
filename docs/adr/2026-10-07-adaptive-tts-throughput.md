@@ -69,3 +69,14 @@ to `conversion.log`; truncating it destroys the chunk-speed and provider
 pressure evidence needed for diagnosis and future tuning. The orphaned
 FFmpeg cover temporary was excluded from the archive and removed after the
 recovery checks passed.
+
+After the adaptive-threshold change, the release `converter-ffi` and the
+`EpubToMp3Mac` XCTest host were rebuilt, then
+`testOptInResumeCompletedChristieBookInMacAppWithoutChangingAudio` passed on
+macOS (1/1). It loaded the completed 113-chapter Christie manifest through the
+AppKit conversion handoff, verified all chapter outputs and terminal 100%
+state, and confirmed the MP3 fingerprint was unchanged. This validates the
+updated artifact in the Mac app path and full-book GUI handoff without making
+another Edge request or repeating synthesis. The adaptive policy itself is
+covered by `cargo test -p converter-core --lib`, including the measured
+degraded-throughput regression.
