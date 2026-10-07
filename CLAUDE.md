@@ -192,6 +192,9 @@ or common word in the opening paragraph.
   When proposing a Swift-side regression test, write it as a normal XCTest in
   the Tests target and tell the user to run it — don't reach for Python as a
   substitute because it's runnable from the terminal.
+- **Native UI automation** uses XCTest UI, integration, or unit tests; choose
+  the narrowest test that proves the requested behavior. Drive the app through
+  XCTest, not `osascript` or ad hoc accessibility scripting.
 - **`mise run test`** (Python + web + lint + build) remains the full CLI/web
   gate and must stay green before committing changes to `python_app/` or
   `web/`. It does not and should not attempt to build or test the iOS/macOS
