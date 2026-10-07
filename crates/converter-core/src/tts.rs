@@ -28,6 +28,8 @@ pub const DEFAULT_OUTPUT_FORMAT: &str = "audio-24khz-48kbitrate-mono-mp3";
 pub const DEFAULT_CHUNK_CHARS: usize = 12_000;
 pub const DEFAULT_CONCURRENCY: usize = 8;
 const EDGE_BROWSER_VERSION: &str = "1-143.0.3650.75";
+const REFERENCE_MAX_RETRIES: usize = 3;
+const REFERENCE_MAX_DEADLINE: Duration = Duration::from_secs(3_600);
 
 pub type Telemetry = Arc<dyn Fn(TelemetryEvent) + Send + Sync>;
 pub type EdgeSocket = WebSocketStream<MaybeTlsStream<tokio::net::TcpStream>>;
@@ -48,8 +50,15 @@ pub async fn synthesize_with_reference_client(
     let result = timeout(total_timeout, client.synthesize(text))
         .await
         .map_err(|_| EdgeError::Timeout)?
-        .map_err(|error| EdgeError::Transport(error.to_string()))?;
+        .map_err(map_reference_synthesis_error)?;
     Ok(result)
+}
+
+fn map_reference_synthesis_error(error: EdgeError) -> EdgeError {
+    match error {
+        EdgeError::Timeout | EdgeError::RateLimited { .. } => error,
+        other => EdgeError::Transport(other.to_string()),
+    }
 }
 
 pub(crate) fn reference_synthesis_timeout_for_text(text_bytes: usize) -> Duration {
@@ -57,8 +66,8 @@ pub(crate) fn reference_synthesis_timeout_for_text(text_bytes: usize) -> Duratio
         text_bytes,
         crate::adaptive::MIN_CHUNK_CHARS,
         Duration::from_secs(if cfg!(target_os = "android") { 60 } else { 25 }),
-        1,
-        Duration::from_secs(1_500),
+        REFERENCE_MAX_RETRIES,
+        REFERENCE_MAX_DEADLINE,
     )
 }
 
@@ -216,7 +225,7 @@ impl EdgeConfig {
             volume: "+0%".into(),
             pitch: "+0Hz".into(),
             timeout: Duration::from_secs(60),
-            max_retries: 1,
+            max_retries: REFERENCE_MAX_RETRIES,
             chunk_chars: DEFAULT_CHUNK_CHARS,
             concurrency: DEFAULT_CONCURRENCY,
             trusted_client_token: TRUSTED_CLIENT_TOKEN.into(),
@@ -1078,6 +1087,22 @@ mod protocol_tests {
             }
         );
         assert_eq!(error.retry_category(), RetryCategory::RateLimit);
+    }
+
+    #[test]
+    fn reference_client_preserves_timeout_classification() {
+        let error = map_reference_synthesis_error(EdgeError::Timeout);
+
+        assert_eq!(error, EdgeError::Timeout);
+        assert_eq!(error.retry_category(), RetryCategory::Timeout);
+    }
+
+    #[test]
+    fn reference_deadline_includes_three_request_retries() {
+        assert_eq!(
+            reference_synthesis_timeout(2_000, 2_048, Duration::from_secs(25), 3, Duration::from_secs(3_600)),
+            Duration::from_secs(154)
+        );
     }
 
     #[test]
