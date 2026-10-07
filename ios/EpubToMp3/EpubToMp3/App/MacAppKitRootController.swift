@@ -216,7 +216,7 @@ final class MacAppKitRootController: NSSplitViewController, NSToolbarDelegate {
         title.font = .boldSystemFont(ofSize: 16)
         let menu = NSStackView()
         menu.orientation = .vertical
-        menu.alignment = .width
+        menu.alignment = .leading
         menu.spacing = 4
         for destination in Destination.allCases {
             let button = NSButton(title: destination.title, target: self, action: #selector(sidebarButtonActivated(_:)))
@@ -224,6 +224,8 @@ final class MacAppKitRootController: NSSplitViewController, NSToolbarDelegate {
             button.alignment = .left
             button.image = NSImage(systemSymbolName: destination.icon, accessibilityDescription: destination.title)
             button.imagePosition = .imageLeading
+            button.setContentHuggingPriority(.required, for: .horizontal)
+            button.setContentCompressionResistancePriority(.required, for: .horizontal)
             button.isBordered = false
             button.focusRingType = .none
             button.wantsLayer = true

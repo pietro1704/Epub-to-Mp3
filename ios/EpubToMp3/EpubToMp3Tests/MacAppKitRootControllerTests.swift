@@ -180,5 +180,45 @@ final class MacAppKitRootControllerTests: XCTestCase {
         XCTAssertNotNil(detailView.window)
         XCTAssertGreaterThan(detailView.frame.width, 0)
     }
+
+    @MainActor
+    func testSidebarNavigationRowsUseLabelWidthInsteadOfFillingSidebar() throws {
+        let suiteName = "MacSidebarSizing.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let root = MacAppKitRootController(
+            settings: AppSettings(defaults: defaults),
+            library: LibraryStore(defaults: defaults, defaultsKey: "library.\(suiteName)"),
+            player: AudioPlayer(
+                resumeStore: ResumeStore(storage: UserDefaultsResumeStorage(defaults: defaults))
+            ),
+            bookmarkStore: BookmarkStore(defaults: defaults, storageKey: "bookmarks.\(suiteName)"),
+            playerPresentation: PlayerPresentation(defaults: defaults)
+        )
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 1_000, height: 720),
+            styleMask: [.titled, .closable, .miniaturizable, .resizable],
+            backing: .buffered,
+            defer: false
+        )
+        window.contentViewController = root
+        window.makeKeyAndOrderFront(nil)
+        window.layoutIfNeeded()
+
+        let sidebar = root.splitViewItems[0].viewController.view
+        func buttons(in view: NSView) -> [NSButton] {
+            ((view as? NSButton).map { [$0] } ?? []) + view.subviews.flatMap(buttons(in:))
+        }
+        let rows = buttons(in: sidebar).filter { (0...2).contains($0.tag) }
+        XCTAssertEqual(rows.count, 3)
+        for row in rows {
+            XCTAssertLessThanOrEqual(
+                row.frame.width,
+                row.fittingSize.width + 1,
+                "Sidebar row should size to its icon and label, not leave an empty trailing button area."
+            )
+        }
+    }
 }
 #endif
