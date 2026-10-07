@@ -220,5 +220,76 @@ final class MacAppKitRootControllerTests: XCTestCase {
             )
         }
     }
+
+    @MainActor
+    func testLocalConversionFinalizationPersistsJobAndKeepsCompleteProgressVisible() throws {
+        let suiteName = "MacConversionFinish.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let book = BookEntity(
+            id: suiteName,
+            title: "Conversion completion fixture",
+            bookmark: Data([1]),
+            displayFilename: "fixture.epub",
+            addedAt: Date()
+        )
+        let libraryKey = "library.\(suiteName)"
+        defaults.set(try JSONEncoder().encode([book]), forKey: libraryKey)
+        let library = LibraryStore(defaults: defaults, defaultsKey: libraryKey)
+        let player = AudioPlayer(
+            resumeStore: ResumeStore(storage: UserDefaultsResumeStorage(defaults: defaults))
+        )
+        let detail = MacBookDetailViewController(
+            book: book,
+            library: library,
+            settings: AppSettings(defaults: defaults),
+            player: player,
+            playerPresentation: PlayerPresentation(defaults: defaults),
+            onRead: { _ in },
+            onShowJobs: {}
+        )
+        let detailView = detail.view
+        detailView.layoutSubtreeIfNeeded()
+
+        let jobID = UUID().uuidString
+        let outputDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("\(suiteName).output", isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: outputDirectory,
+            withIntermediateDirectories: true
+        )
+        defer { try? FileManager.default.removeItem(at: outputDirectory) }
+
+        let manifestJSON = Data("""
+        {"manifest":{"jobId":"\(jobID)","title":"Conversion completion fixture","author":"Test","chapters":[{"title":"Chapter 1","filename":"chapter.mp3","textChars":8000,"sourceIndex":0}],"cover":null}}
+        """.utf8)
+        let result = RustConversionCoordinator.Result(
+            jobID: jobID,
+            manifestJSON: manifestJSON,
+            outputDirectory: outputDirectory
+        )
+
+        let snapshot = try detail.finalizeLocalConversion(result)
+
+        XCTAssertTrue(snapshot.isTerminal)
+        XCTAssertEqual(snapshot.chaptersCompleted, 1)
+        XCTAssertEqual(library.books.first?.lastJobId, jobID)
+        let restoredLibrary = LibraryStore(defaults: defaults, defaultsKey: libraryKey)
+        XCTAssertEqual(restoredLibrary.books.first?.lastJobId, jobID)
+
+        func findProgressLabel(in view: NSView) -> NSTextField? {
+            if let label = view as? NSTextField,
+               label.accessibilityIdentifier() == "bookDetail.progress" {
+                return label
+            }
+            return view.subviews.lazy.compactMap(findProgressLabel(in:)).first
+        }
+        let progressLabel = try XCTUnwrap(findProgressLabel(in: detailView))
+        XCTAssertEqual(
+            progressLabel.stringValue,
+            L10n.string("bookDetail.progressPercent", 100)
+        )
+    }
 }
 #endif

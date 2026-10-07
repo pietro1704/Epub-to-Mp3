@@ -21,6 +21,7 @@ final class MacBookDetailViewController: NSViewController {
     private var streamDeliveryGeneration: UUID?
     private var autoPlayStream = false
     private var localConversionGeneration: String?
+    private var localConversionProgress: Int?
     private var localStreamChapters: [JobSnapshot.Chapter] = []
 
     private let coverView = NSImageView()
@@ -179,7 +180,9 @@ final class MacBookDetailViewController: NSViewController {
         authorLabel.stringValue = book.author ?? ""
         authorLabel.isHidden = (book.author ?? "").isEmpty
         coverView.image = book.coverPNG.flatMap(NSImage.init(data:))
-        if let entry = ReaderProgressStore.read(bookId: book.id) {
+        if let localConversionProgress {
+            progressLabel.stringValue = L10n.string("bookDetail.progressPercent", localConversionProgress)
+        } else if let entry = ReaderProgressStore.read(bookId: book.id) {
             let percent = Int((entry.offsetFraction * 100).rounded())
             progressLabel.stringValue = L10n.string("bookDetail.progressPercent", percent)
         } else {
@@ -236,10 +239,10 @@ final class MacBookDetailViewController: NSViewController {
     }
 
     private func startRustConversion(url: URL, autoPlay: Bool) {
-        let library = self.library
         let bookID = self.book.id
         let jobID = UUID().uuidString
         localConversionGeneration = jobID
+        localConversionProgress = 0
         localStreamChapters.removeAll()
         progressLabel.stringValue = L10n.string("bookDetail.progressPercent", 0)
         if autoPlay {
@@ -289,10 +292,9 @@ final class MacBookDetailViewController: NSViewController {
                                 event.chaptersTotal
                             )
                         } else if event.chaptersTotal > 0 {
-                            self.progressLabel.stringValue = L10n.string(
-                                "bookDetail.progressPercent",
-                                Int(event.percent.rounded())
-                            )
+                            let percent = Int(event.percent.rounded())
+                            self.localConversionProgress = percent
+                            self.progressLabel.stringValue = L10n.string("bookDetail.progressPercent", percent)
                         }
                     },
                     onChapterCompleted: { [weak self] event in
@@ -306,6 +308,7 @@ final class MacBookDetailViewController: NSViewController {
                         }
                         self.localStreamChapters.sort { $0.index < $1.index }
                         let percent = Int(event.progressPercent.rounded())
+                        self.localConversionProgress = percent
                         self.progressLabel.stringValue = L10n.string("bookDetail.progressPercent", percent)
                         if autoPlay {
                             self.player.updateSnapshot(
@@ -317,18 +320,14 @@ final class MacBookDetailViewController: NSViewController {
                         }
                     }
                 )
-                let snapshot = try result.snapshot()
-                library.recordConversion(jobId: result.jobID, for: bookID)
                 guard !Task.isCancelled else { return }
-                localConversionGeneration = nil
-                progressLabel.stringValue = L10n.string("bookDetail.progressPercent", 100)
+                let snapshot = try finalizeLocalConversion(result)
                 if autoPlay {
                     player.finishStreaming(snapshot: snapshot)
                 } else {
                     player.stop()
                     player.play(snapshot: snapshot, restoreAutoplay: false)
                 }
-                render()
             } catch {
                 guard !Task.isCancelled else { return }
                 localConversionGeneration = nil
@@ -346,6 +345,18 @@ final class MacBookDetailViewController: NSViewController {
                 alert.runModal()
             }
         }
+    }
+
+    func finalizeLocalConversion(
+        _ result: RustConversionCoordinator.Result
+    ) throws -> JobSnapshot {
+        let snapshot = try result.snapshot()
+        library.recordConversion(jobId: result.jobID, for: book.id)
+        localConversionGeneration = nil
+        localConversionProgress = 100
+        progressLabel.stringValue = L10n.string("bookDetail.progressPercent", 100)
+        render()
+        return snapshot
     }
 
     private func terminalSnapshot(from snapshot: JobSnapshot, state: String, error: String) -> JobSnapshot {

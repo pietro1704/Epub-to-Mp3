@@ -36,3 +36,9 @@ handoff. XCTest must wait for that terminal record as well as validating the
 expected audio artifacts. In this run all chapter callbacks and artifacts were
 verified, but the test host exited on the 100% label before the terminal job
 record was persisted, so that persistence handoff remains unverified here.
+The follow-up focused macOS XCTest
+`testLocalConversionFinalizationPersistsJobAndKeepsCompleteProgressVisible`
+now exercises that exact finalization path with a completed manifest and
+verifies the terminal snapshot, `LibraryStore` job ID after reload, and the
+100% label after the view re-renders. This closes the controller-level
+handoff check without repeating the expensive live conversion.
