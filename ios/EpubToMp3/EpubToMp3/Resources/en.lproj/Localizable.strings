@@ -501,6 +501,7 @@
 "bookDetail.listenResume" = "Resume audio";
 "bookDetail.notStarted" = "Not started";
 "bookDetail.progressPercent" = "%d%% complete";
+"bookDetail.progressChapter" = "Converting chapter %1$d of %2$d";
 "bookDetail.downloadRequiresConversion" = "Convert this book to audio first.";
 
 /* === LocalEpubReaderView === */

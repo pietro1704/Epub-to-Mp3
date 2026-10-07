@@ -20,6 +20,8 @@ final class MacBookDetailViewController: NSViewController {
     private var playbackGeneration: UUID?
     private var streamDeliveryGeneration: UUID?
     private var autoPlayStream = false
+    private var localConversionGeneration: String?
+    private var localStreamChapters: [JobSnapshot.Chapter] = []
 
     private let coverView = NSImageView()
     private let titleLabel = NSTextField(labelWithString: "")
@@ -123,6 +125,7 @@ final class MacBookDetailViewController: NSViewController {
         progressLabel.font = .systemFont(ofSize: 12)
         progressLabel.textColor = .secondaryLabelColor
         progressLabel.alignment = .center
+        progressLabel.setAccessibilityIdentifier("bookDetail.progress")
 
         readButton.title = L10n.string("bookDetail.read")
         readButton.bezelStyle = .rounded
@@ -135,6 +138,7 @@ final class MacBookDetailViewController: NSViewController {
 
         convertButton.title = L10n.string("convert.title")
         convertButton.bezelStyle = .rounded
+        convertButton.setAccessibilityIdentifier("bookDetail.convert")
         convertButton.target = self
         convertButton.action = #selector(tapConvert)
 
@@ -230,19 +234,107 @@ final class MacBookDetailViewController: NSViewController {
     private func startRustConversion(url: URL, autoPlay: Bool) {
         let library = self.library
         let bookID = self.book.id
-        Task {
+        let jobID = UUID().uuidString
+        localConversionGeneration = jobID
+        localStreamChapters.removeAll()
+        progressLabel.stringValue = L10n.string("bookDetail.progressPercent", 0)
+        if autoPlay {
+            let pending = JobSnapshot(
+                jobId: jobID,
+                state: "running",
+                bookTitle: book.resolvedTitle,
+                bookAuthor: book.author,
+                coverUrl: nil,
+                coverMimeType: nil,
+                engine: "edge",
+                voice: nil,
+                language: nil,
+                progressPercent: 0,
+                chaptersTotal: nil,
+                chaptersCompleted: 0,
+                chapterProgress: [],
+                outputs: nil,
+                logUrl: nil,
+                error: nil,
+                lastActivityAt: Date().timeIntervalSince1970
+            )
+            player.play(snapshot: pending, startingAt: 0, restoreAutoplay: false)
+            player.isConverting = true
+            player.resume()
+        }
+
+        Task { [weak self] in
+            guard let self else { return }
             do {
-                let result = try await RustConversionCoordinator().convert(bookURL: url)
+                let chapterStart = autoPlay
+                    ? Int32(exactly: ReaderPlaybackPriorityChapter.index(bookID: bookID)) ?? 0
+                    : -1
+                let result = try await RustConversionCoordinator().convert(
+                    bookURL: url,
+                    jobID: jobID,
+                    chapterStart: chapterStart,
+                    chapterEnd: -1,
+                    onProgress: { [weak self] event in
+                        guard let self, self.localConversionGeneration == jobID else { return }
+                        if event.message.hasPrefix("converting chapter"),
+                           let chapterIndex = event.chapterIndex,
+                           event.chaptersTotal > 0 {
+                            self.progressLabel.stringValue = L10n.string(
+                                "bookDetail.progressChapter",
+                                chapterIndex + 1,
+                                event.chaptersTotal
+                            )
+                        } else if event.chaptersTotal > 0 {
+                            self.progressLabel.stringValue = L10n.string(
+                                "bookDetail.progressPercent",
+                                Int(event.percent.rounded())
+                            )
+                        }
+                    },
+                    onChapterCompleted: { [weak self] event in
+                        guard let self, self.localConversionGeneration == jobID else { return }
+                        let firstPlayableChapter = self.localStreamChapters.isEmpty
+                        let chapter = event.playableChapter
+                        if let existing = self.localStreamChapters.firstIndex(where: { $0.index == chapter.index }) {
+                            self.localStreamChapters[existing] = chapter
+                        } else {
+                            self.localStreamChapters.append(chapter)
+                        }
+                        self.localStreamChapters.sort { $0.index < $1.index }
+                        let percent = Int(event.progressPercent.rounded())
+                        self.progressLabel.stringValue = L10n.string("bookDetail.progressPercent", percent)
+                        if autoPlay {
+                            self.player.updateSnapshot(
+                                event.snapshot(chapters: self.localStreamChapters)
+                            )
+                            if firstPlayableChapter {
+                                self.playerPresentation.showFullPlayer()
+                            }
+                        }
+                    }
+                )
                 let snapshot = try result.snapshot()
                 library.recordConversion(jobId: result.jobID, for: bookID)
                 guard !Task.isCancelled else { return }
-                await MainActor.run {
-                    self.player.setSnapshot(snapshot)
-                    self.player.play(snapshot: snapshot, restoreAutoplay: autoPlay)
-                    if autoPlay { self.player.resume() }
+                localConversionGeneration = nil
+                progressLabel.stringValue = L10n.string("bookDetail.progressPercent", 100)
+                if autoPlay {
+                    player.finishStreaming(snapshot: snapshot)
+                } else {
+                    player.stop()
+                    player.play(snapshot: snapshot, restoreAutoplay: false)
                 }
+                render()
             } catch {
                 guard !Task.isCancelled else { return }
+                localConversionGeneration = nil
+                if autoPlay, let current = player.snapshot, current.jobId == jobID {
+                    player.finishStreaming(snapshot: terminalSnapshot(
+                        from: current,
+                        state: "failed",
+                        error: error.localizedDescription
+                    ))
+                }
                 let alert = NSAlert()
                 alert.messageText = L10n.string("bookDetail.listenStart")
                 alert.informativeText = error.localizedDescription
@@ -250,6 +342,28 @@ final class MacBookDetailViewController: NSViewController {
                 alert.runModal()
             }
         }
+    }
+
+    private func terminalSnapshot(from snapshot: JobSnapshot, state: String, error: String) -> JobSnapshot {
+        JobSnapshot(
+            jobId: snapshot.jobId,
+            state: state,
+            bookTitle: snapshot.bookTitle,
+            bookAuthor: snapshot.bookAuthor,
+            coverUrl: snapshot.coverUrl,
+            coverMimeType: snapshot.coverMimeType,
+            engine: snapshot.engine,
+            voice: snapshot.voice,
+            language: snapshot.language,
+            progressPercent: snapshot.progressPercent,
+            chaptersTotal: snapshot.chaptersTotal,
+            chaptersCompleted: snapshot.chaptersCompleted,
+            chapterProgress: snapshot.chapterProgress,
+            outputs: snapshot.outputs,
+            logUrl: snapshot.logUrl,
+            error: error,
+            lastActivityAt: Date().timeIntervalSince1970
+        )
     }
 
     @objc private func tapDownload() {

@@ -5,9 +5,9 @@
 //! identical on every conversion surface. `EdgeTransport` is injectable so
 //! protocol tests can use a local deterministic server without network calls.
 
-use std::{fmt, sync::Arc, time::Duration};
+use std::{fmt, sync::Arc, time::Duration, time::Instant};
 
-use futures_util::{SinkExt, StreamExt};
+use futures_util::{stream::FuturesUnordered, SinkExt, StreamExt};
 use http::{header::HeaderValue, Request};
 use rand::Rng;
 use sha2::{Digest, Sha256};
@@ -18,6 +18,8 @@ use tokio_tungstenite::{
     Connector, MaybeTlsStream, WebSocketStream,
 };
 use url::Url;
+
+use crate::adaptive::{AdaptiveThroughputController, ProviderFailure};
 
 pub const DEFAULT_ENDPOINT: &str =
     "wss://speech.platform.bing.com/consumer/speech/synthesize/readaloud/edge/v1";
@@ -33,25 +35,55 @@ pub type EdgeSocket = WebSocketStream<MaybeTlsStream<tokio::net::TcpStream>>;
 pub async fn synthesize_with_reference_client(
     text: &str,
     voice: &str,
+    adaptive: Arc<AdaptiveThroughputController>,
+    telemetry: Option<Telemetry>,
 ) -> Result<Vec<u8>, EdgeError> {
     let _ = rustls::crypto::ring::default_provider().install_default();
     let mut config = EdgeConfig::new(voice)?;
-    config.chunk_chars = if cfg!(target_os = "android") {
-        4096
-    } else {
-        12000
-    };
-    config.concurrency = 1;
-    config.timeout = Duration::from_secs(if cfg!(target_os = "android") { 60 } else { 30 });
-    let client = EdgeTtsClient::new(config);
-    let result = timeout(
-        Duration::from_secs(if cfg!(target_os = "android") { 120 } else { 45 }),
-        client.synthesize(text),
-    )
-    .await
-    .map_err(|_| EdgeError::Timeout)?
-    .map_err(|error| EdgeError::Transport(error.to_string()))?;
+    config.chunk_chars = adaptive.snapshot().chunk_chars;
+    config.concurrency = adaptive.snapshot().max_in_flight;
+    config.timeout = Duration::from_secs(if cfg!(target_os = "android") { 60 } else { 25 });
+    let total_timeout = reference_synthesis_timeout_for_text(text.len());
+    let client = EdgeTtsClient::with_adaptive_controller(config, adaptive, telemetry);
+    let result = timeout(total_timeout, client.synthesize(text))
+        .await
+        .map_err(|_| EdgeError::Timeout)?
+        .map_err(|error| EdgeError::Transport(error.to_string()))?;
     Ok(result)
+}
+
+pub(crate) fn reference_synthesis_timeout_for_text(text_bytes: usize) -> Duration {
+    reference_synthesis_timeout(
+        text_bytes,
+        crate::adaptive::MIN_CHUNK_CHARS,
+        Duration::from_secs(if cfg!(target_os = "android") { 60 } else { 25 }),
+        1,
+        Duration::from_secs(1_500),
+    )
+}
+
+fn reference_synthesis_timeout(
+    text_bytes: usize,
+    chunk_bytes: usize,
+    request_timeout: Duration,
+    max_retries: usize,
+    maximum: Duration,
+) -> Duration {
+    let chunks = text_bytes.div_ceil(chunk_bytes.max(1)).max(1) as u64;
+    let attempts = max_retries as u64 + 1;
+    let retry_backoff = (1..=max_retries)
+        .map(|retry| 2u64.saturating_pow(retry.min(10) as u32))
+        .sum::<u64>();
+    // A request can spend its entire timeout in DNS/TLS negotiation on Apple
+    // hosts before audio starts. Budget each chunk independently, with enough
+    // room for a successful response after a failed attempt and backoff.
+    let per_chunk = request_timeout
+        .as_secs()
+        .saturating_mul(attempts)
+        .saturating_add(retry_backoff)
+        .saturating_add(30);
+    let budget = per_chunk.saturating_mul(chunks).saturating_add(10);
+    Duration::from_secs(budget.min(maximum.as_secs()))
 }
 const EDGE_ORIGIN: &str = "chrome-extension://jdiccldimpdaibmpdkjnbmckianbfold";
 
@@ -75,7 +107,7 @@ impl RetryCategory {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum TelemetryEvent {
     RequestStarted {
         request_id: String,
@@ -98,6 +130,19 @@ pub enum TelemetryEvent {
     Cancelled {
         request_id: String,
     },
+    ChunkMetrics {
+        provider: String,
+        chunk_index: usize,
+        total_chunks: usize,
+        chars: usize,
+        elapsed_ms: u64,
+        chars_per_second: f64,
+        retries: usize,
+        chunk_limit: usize,
+        max_in_flight: usize,
+        cooldown_ms: u64,
+        result: String,
+    },
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -105,6 +150,10 @@ pub enum EdgeError {
     InvalidInput(String),
     Url(String),
     Transport(String),
+    RateLimited {
+        status: u16,
+        retry_after: Option<Duration>,
+    },
     Protocol(String),
     Timeout,
     NoAudio,
@@ -117,6 +166,7 @@ impl fmt::Display for EdgeError {
             Self::InvalidInput(v) => write!(f, "invalid input: {v}"),
             Self::Url(v) => write!(f, "invalid Edge URL: {v}"),
             Self::Transport(v) => write!(f, "Edge transport: {v}"),
+            Self::RateLimited { status, .. } => write!(f, "Edge request throttled (HTTP {status})"),
             Self::Protocol(v) => write!(f, "Edge protocol: {v}"),
             Self::Timeout => f.write_str("Edge synthesis timed out"),
             Self::NoAudio => f.write_str("Edge returned no audio"),
@@ -132,6 +182,7 @@ impl EdgeError {
         match self {
             Self::Timeout => RetryCategory::Timeout,
             Self::NoAudio => RetryCategory::NoAudio,
+            Self::RateLimited { .. } => RetryCategory::RateLimit,
             Self::Transport(_) => RetryCategory::Transport,
             Self::Protocol(_) => RetryCategory::Protocol,
             Self::Cancelled => RetryCategory::Cancelled,
@@ -286,9 +337,29 @@ impl EdgeTransport for WebSocketTransport {
                 Some(tls_connector),
             )
             .await
-            .map_err(|e| EdgeError::Transport(e.to_string()))?;
+            .map_err(map_websocket_error)?;
             Ok(socket)
         })
+    }
+}
+
+fn map_websocket_error(error: tokio_tungstenite::tungstenite::Error) -> EdgeError {
+    use tokio_tungstenite::tungstenite::Error as WebSocketError;
+
+    match error {
+        WebSocketError::Http(response) if matches!(response.status().as_u16(), 403 | 429 | 503) => {
+            let retry_after = response
+                .headers()
+                .get("retry-after")
+                .and_then(|value| value.to_str().ok())
+                .and_then(|value| value.parse::<u64>().ok())
+                .map(Duration::from_secs);
+            EdgeError::RateLimited {
+                status: response.status().as_u16(),
+                retry_after,
+            }
+        }
+        other => EdgeError::Transport(other.to_string()),
     }
 }
 
@@ -297,12 +368,25 @@ pub struct EdgeTtsClient<T = WebSocketTransport> {
     transport: Arc<T>,
     limiter: Arc<Semaphore>,
     telemetry: Option<Telemetry>,
+    adaptive: Option<Arc<AdaptiveThroughputController>>,
 }
 
 impl EdgeTtsClient<WebSocketTransport> {
     pub fn new(config: EdgeConfig) -> Self {
         let permits = config.concurrency.max(1);
         Self::with_transport(config, Arc::new(WebSocketTransport), permits, None)
+    }
+
+    pub fn with_adaptive_controller(
+        config: EdgeConfig,
+        adaptive: Arc<AdaptiveThroughputController>,
+        telemetry: Option<Telemetry>,
+    ) -> Self {
+        let permits = config.concurrency.max(1);
+        let mut client =
+            Self::with_transport(config, Arc::new(WebSocketTransport), permits, telemetry);
+        client.adaptive = Some(adaptive);
+        client
     }
 }
 
@@ -318,6 +402,7 @@ impl<T: EdgeTransport + 'static> EdgeTtsClient<T> {
             transport,
             limiter: Arc::new(Semaphore::new(concurrency.max(1))),
             telemetry,
+            adaptive: None,
         }
     }
 
@@ -329,24 +414,39 @@ impl<T: EdgeTransport + 'static> EdgeTtsClient<T> {
         if text.trim().is_empty() {
             return Err(EdgeError::InvalidInput("text is empty".into()));
         }
-        let _permit = self
-            .limiter
-            .acquire()
-            .await
-            .map_err(|_| EdgeError::Cancelled)?;
-        let chunks = split_protocol_chunks(text, self.config.chunk_chars);
-        let mut output = Vec::new();
-        for chunk in chunks {
-            let ssml = make_ssml_escaped(
-                &chunk,
-                &self.config.voice,
-                &self.config.rate,
-                &self.config.volume,
-                &self.config.pitch,
-                true,
+        let chunk_limit = self
+            .adaptive
+            .as_ref()
+            .map(|controller| controller.snapshot().chunk_chars)
+            .unwrap_or(self.config.chunk_chars);
+        let chunks = split_protocol_chunks(text, chunk_limit);
+        let total_chunks = chunks.len();
+        let mut pending = FuturesUnordered::new();
+        for (chunk_index, chunk) in chunks.into_iter().enumerate() {
+            eprintln!(
+                "[Rust][Edge] synthesizing chunk {}/{} ({} chars)",
+                chunk_index + 1,
+                total_chunks,
+                chunk.len()
             );
-            output.extend(self.synthesize_request(&ssml, chunk.len()).await?);
+            let client = self;
+            pending.push(async move {
+                let audio = client
+                    .synthesize_text_chunk(&chunk, chunk_index + 1, total_chunks)
+                    .await?;
+                Ok::<_, EdgeError>((chunk_index, audio))
+            });
         }
+        let mut ordered_audio = (0..total_chunks).map(|_| None).collect::<Vec<_>>();
+        while let Some(result) = pending.next().await {
+            let (chunk_index, audio) = result?;
+            ordered_audio[chunk_index] = Some(audio);
+        }
+        let output = ordered_audio
+            .into_iter()
+            .flatten()
+            .flatten()
+            .collect::<Vec<_>>();
         if output.is_empty() {
             Err(EdgeError::NoAudio)
         } else {
@@ -358,18 +458,75 @@ impl<T: EdgeTransport + 'static> EdgeTtsClient<T> {
         if ssml.trim().is_empty() {
             return Err(EdgeError::InvalidInput("SSML is empty".into()));
         }
-        let _permit = self
-            .limiter
-            .acquire()
-            .await
-            .map_err(|_| EdgeError::Cancelled)?;
-        self.synthesize_request(ssml, ssml.len()).await
+        self.synthesize_request(ssml, ssml.len(), 1, 1).await
     }
 
-    async fn synthesize_request(&self, ssml: &str, chars: usize) -> Result<Vec<u8>, EdgeError> {
+    async fn synthesize_text_chunk(
+        &self,
+        text: &str,
+        chunk_index: usize,
+        total_chunks: usize,
+    ) -> Result<Vec<u8>, EdgeError> {
+        let ssml = make_ssml_escaped(
+            text,
+            &self.config.voice,
+            &self.config.rate,
+            &self.config.volume,
+            &self.config.pitch,
+            true,
+        );
+        match self
+            .synthesize_request(&ssml, text.len(), chunk_index, total_chunks)
+            .await
+        {
+            Ok(audio) => Ok(audio),
+            Err(error)
+                if matches!(
+                    error.retry_category(),
+                    RetryCategory::RateLimit | RetryCategory::Timeout
+                ) && text.len() > crate::adaptive::MIN_CHUNK_CHARS =>
+            {
+                let reduced_limit = (text.len() / 2).max(crate::adaptive::MIN_CHUNK_CHARS);
+                let smaller_chunks = split_protocol_chunks(text, reduced_limit);
+                if smaller_chunks.len() < 2 {
+                    return Err(error);
+                }
+                eprintln!(
+                    "[Rust][TTS] provider=edge pressure=retry-smaller-chunks previous_chars={} next_limit={reduced_limit}",
+                    text.len()
+                );
+                let mut output = Vec::new();
+                for (sub_index, chunk) in smaller_chunks.iter().enumerate() {
+                    output.extend(
+                        Box::pin(self.synthesize_text_chunk(
+                            chunk,
+                            sub_index + 1,
+                            smaller_chunks.len(),
+                        ))
+                        .await?,
+                    );
+                }
+                Ok(output)
+            }
+            Err(error) => Err(error),
+        }
+    }
+
+    async fn synthesize_request(
+        &self,
+        ssml: &str,
+        chars: usize,
+        chunk_index: usize,
+        total_chunks: usize,
+    ) -> Result<Vec<u8>, EdgeError> {
         let request_id = random_id();
         let mut retries = 0;
         loop {
+            let local_permit = self
+                .limiter
+                .acquire()
+                .await
+                .map_err(|_| EdgeError::Cancelled)?;
             let connection_id = random_id();
             let url = request_url(
                 &self.config.endpoint,
@@ -381,8 +538,40 @@ impl<T: EdgeTransport + 'static> EdgeTtsClient<T> {
                 request_id: request_id.clone(),
                 chars,
             });
-            match self.run_request(request.clone(), &request_id, ssml).await {
-                Ok(audio) => {
+            let permit = match &self.adaptive {
+                Some(controller) => Some(controller.acquire_request().await),
+                None => None,
+            };
+            // Measure provider service time only. Queueing behind local
+            // concurrency or adaptive cooldown is not provider slowness.
+            let request_started = Instant::now();
+            match timeout(
+                self.config.timeout,
+                self.run_request(request.clone(), &request_id, ssml),
+            )
+            .await
+            {
+                Ok(Ok(audio)) => {
+                    drop(local_permit);
+                    drop(permit);
+                    let elapsed = request_started.elapsed();
+                    if let Some(controller) = &self.adaptive {
+                        controller.observe_success(chars, elapsed, retries);
+                        let snapshot = controller.snapshot();
+                        self.emit(TelemetryEvent::ChunkMetrics {
+                            provider: "edge".into(),
+                            chunk_index,
+                            total_chunks,
+                            chars,
+                            elapsed_ms: elapsed.as_millis().min(u64::MAX as u128) as u64,
+                            chars_per_second: chars as f64 / elapsed.as_secs_f64().max(0.001),
+                            retries,
+                            chunk_limit: snapshot.chunk_chars,
+                            max_in_flight: snapshot.max_in_flight,
+                            cooldown_ms: snapshot.cooldown_remaining.as_millis() as u64,
+                            result: "success".into(),
+                        });
+                    }
                     self.emit(TelemetryEvent::RequestFinished {
                         request_id: request_id.clone(),
                         bytes: audio.len(),
@@ -390,20 +579,44 @@ impl<T: EdgeTransport + 'static> EdgeTtsClient<T> {
                     });
                     return Ok(audio);
                 }
-                Err(error)
+                Ok(Err(error))
                     if error.retry_category().retryable() && retries < self.config.max_retries =>
                 {
+                    drop(local_permit);
+                    drop(permit);
                     let category = error.retry_category();
                     retries += 1;
+                    self.observe_failure(
+                        &error,
+                        chars,
+                        chunk_index,
+                        total_chunks,
+                        retries,
+                        request_started.elapsed(),
+                    );
                     self.emit(TelemetryEvent::RequestFailed {
                         request_id: request_id.clone(),
                         category,
                         retries,
                     });
-                    tokio::time::sleep(Duration::from_secs(2u64.saturating_pow(retries as u32)))
+                    if self.adaptive.is_none() {
+                        tokio::time::sleep(Duration::from_secs(
+                            2u64.saturating_pow(retries as u32),
+                        ))
                         .await;
+                    }
                 }
-                Err(error) => {
+                Ok(Err(error)) => {
+                    drop(local_permit);
+                    drop(permit);
+                    self.observe_failure(
+                        &error,
+                        chars,
+                        chunk_index,
+                        total_chunks,
+                        retries,
+                        request_started.elapsed(),
+                    );
                     self.emit(TelemetryEvent::RequestFailed {
                         request_id: request_id.clone(),
                         category: error.retry_category(),
@@ -411,8 +624,89 @@ impl<T: EdgeTransport + 'static> EdgeTtsClient<T> {
                     });
                     return Err(error);
                 }
+                Err(_) if retries < self.config.max_retries => {
+                    drop(local_permit);
+                    drop(permit);
+                    retries += 1;
+                    self.observe_failure(
+                        &EdgeError::Timeout,
+                        chars,
+                        chunk_index,
+                        total_chunks,
+                        retries,
+                        request_started.elapsed(),
+                    );
+                    self.emit(TelemetryEvent::RequestFailed {
+                        request_id: request_id.clone(),
+                        category: RetryCategory::Timeout,
+                        retries,
+                    });
+                    if self.adaptive.is_none() {
+                        tokio::time::sleep(Duration::from_secs(
+                            2u64.saturating_pow(retries as u32),
+                        ))
+                        .await;
+                    }
+                }
+                Err(_) => {
+                    drop(local_permit);
+                    drop(permit);
+                    self.observe_failure(
+                        &EdgeError::Timeout,
+                        chars,
+                        chunk_index,
+                        total_chunks,
+                        retries,
+                        request_started.elapsed(),
+                    );
+                    self.emit(TelemetryEvent::RequestFailed {
+                        request_id: request_id.clone(),
+                        category: RetryCategory::Timeout,
+                        retries,
+                    });
+                    self.emit(TelemetryEvent::Cancelled {
+                        request_id: request_id.clone(),
+                    });
+                    return Err(EdgeError::Timeout);
+                }
             }
         }
+    }
+
+    fn observe_failure(
+        &self,
+        error: &EdgeError,
+        chars: usize,
+        chunk_index: usize,
+        total_chunks: usize,
+        retries: usize,
+        elapsed: Duration,
+    ) {
+        let Some(controller) = &self.adaptive else {
+            return;
+        };
+        let failure = match error {
+            EdgeError::RateLimited { retry_after, .. } => ProviderFailure::Throttled {
+                retry_after: *retry_after,
+            },
+            EdgeError::Timeout => ProviderFailure::Timeout,
+            _ => ProviderFailure::Transient,
+        };
+        controller.observe_failure(failure);
+        let snapshot = controller.snapshot();
+        self.emit(TelemetryEvent::ChunkMetrics {
+            provider: "edge".into(),
+            chunk_index,
+            total_chunks,
+            chars,
+            elapsed_ms: elapsed.as_millis().min(u64::MAX as u128) as u64,
+            chars_per_second: chars as f64 / elapsed.as_secs_f64().max(0.001),
+            retries,
+            chunk_limit: snapshot.chunk_chars,
+            max_in_flight: snapshot.max_in_flight,
+            cooldown_ms: snapshot.cooldown_remaining.as_millis() as u64,
+            result: format!("pressure:{:?}", error.retry_category()),
+        });
     }
 
     async fn run_request(
@@ -453,6 +747,16 @@ impl<T: EdgeTransport + 'static> EdgeTtsClient<T> {
                                 "Edge returned unexpected text frame {path}"
                             )));
                         }
+                        None if {
+                            let lower = text.to_ascii_lowercase();
+                            lower.contains("429") || lower.contains("toomanyrequests")
+                        } =>
+                        {
+                            return Err(EdgeError::RateLimited {
+                                status: 429,
+                                retry_after: None,
+                            });
+                        }
                         None if text.to_ascii_lowercase().contains("error") => {
                             return Err(EdgeError::Protocol(format!(
                                 "Edge returned an error frame: {text}"
@@ -485,15 +789,7 @@ impl<T: EdgeTransport + 'static> EdgeTtsClient<T> {
             }
             Err(EdgeError::Transport("socket ended before turn.end".into()))
         };
-        match timeout(self.config.timeout, receive).await {
-            Ok(result) => result,
-            Err(_) => {
-                self.emit(TelemetryEvent::Cancelled {
-                    request_id: request_id.into(),
-                });
-                Err(EdgeError::Timeout)
-            }
-        }
+        receive.await
     }
 
     fn emit(&self, event: TelemetryEvent) {
@@ -544,7 +840,21 @@ fn make_ssml_escaped(
     } else {
         text.to_owned()
     };
-    format!("<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xml:lang='en-US'><voice name='{}'><prosody pitch='{}' rate='{}' volume='{}'>{}</prosody></voice></speak>", xml_escape(voice), xml_escape(rate), xml_escape(volume), xml_escape(pitch), text)
+    let voice = normalize_voice_for_ssml(voice);
+    format!("<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xml:lang='en-US'><voice name='{}'><prosody pitch='{}' rate='{}' volume='{}'>{}</prosody></voice></speak>", xml_escape(&voice), xml_escape(pitch), xml_escape(rate), xml_escape(volume), text)
+}
+
+fn normalize_voice_for_ssml(voice: &str) -> String {
+    const SERVER_VOICE_PREFIX: &str = "Microsoft Server Speech Text to Speech Voice (";
+    if voice.starts_with(SERVER_VOICE_PREFIX) {
+        return voice.to_owned();
+    }
+    let mut parts = voice.splitn(3, '-');
+    let (Some(language), Some(region), Some(name)) = (parts.next(), parts.next(), parts.next())
+    else {
+        return voice.to_owned();
+    };
+    format!("{SERVER_VOICE_PREFIX}{language}-{region}, {name})")
 }
 
 pub fn split_protocol_chunks(text: &str, limit: usize) -> Vec<String> {
@@ -725,6 +1035,90 @@ pub fn sec_ms_gec(filetime_ticks: u64, token: &str) -> String {
 mod protocol_tests {
     use super::*;
 
+    struct StalledConnectTransport;
+
+    impl EdgeTransport for StalledConnectTransport {
+        fn connect<'a>(&'a self, _request: Request<()>) -> TransportFuture<'a> {
+            Box::pin(async {
+                std::future::pending::<()>().await;
+                unreachable!("a stalled connection must be cancelled by its request timeout")
+            })
+        }
+    }
+
+    #[tokio::test]
+    async fn request_timeout_covers_a_stalled_connection_handshake() {
+        let mut config = EdgeConfig::new("en-US-GuyNeural").unwrap();
+        config.timeout = Duration::from_millis(10);
+        config.max_retries = 0;
+        let client =
+            EdgeTtsClient::with_transport(config, Arc::new(StalledConnectTransport), 1, None);
+
+        let started = tokio::time::Instant::now();
+        let error = client.synthesize("hello").await.unwrap_err();
+
+        assert_eq!(error, EdgeError::Timeout);
+        assert!(started.elapsed() < Duration::from_secs(1));
+    }
+
+    #[test]
+    fn provider_http_throttle_is_classified_and_honors_retry_after() {
+        let response = http::Response::builder()
+            .status(429)
+            .header("retry-after", "17")
+            .body(Some(Vec::new()))
+            .unwrap();
+        let error = map_websocket_error(tokio_tungstenite::tungstenite::Error::Http(response));
+
+        assert_eq!(
+            error,
+            EdgeError::RateLimited {
+                status: 429,
+                retry_after: Some(Duration::from_secs(17)),
+            }
+        );
+        assert_eq!(error.retry_category(), RetryCategory::RateLimit);
+    }
+
+    #[test]
+    fn total_synthesis_deadline_scales_with_chunk_count_and_stays_bounded() {
+        let one_chunk = reference_synthesis_timeout(
+            2_000,
+            2_048,
+            Duration::from_secs(25),
+            1,
+            Duration::from_secs(150),
+        );
+        let two_chunks = reference_synthesis_timeout(
+            8_000,
+            2_048,
+            Duration::from_secs(25),
+            1,
+            Duration::from_secs(1_500),
+        );
+        let huge_chapter = reference_synthesis_timeout(
+            200_000,
+            2_048,
+            Duration::from_secs(25),
+            1,
+            Duration::from_secs(1_500),
+        );
+
+        assert_eq!(one_chunk, Duration::from_secs(92));
+        assert_eq!(two_chunks, Duration::from_secs(338));
+        assert_eq!(
+            reference_synthesis_timeout(
+                53_852,
+                2_048,
+                Duration::from_secs(25),
+                1,
+                Duration::from_secs(1_500),
+            ),
+            Duration::from_secs(1_500)
+        );
+        assert_eq!(huge_chapter, Duration::from_secs(1_500));
+    }
+
     #[test]
     fn ssml_escapes_xml_content_and_attributes() {
         let ssml = make_ssml("A & <B>", "en-US-GuyNeural", "+0%", "+0%", "+0Hz");
@@ -744,9 +1138,15 @@ mod protocol_tests {
         let ssml = make_ssml("A & <B> 'quoted'", "en-US-GuyNeural", "+0%", "+0%", "+0Hz");
         assert_eq!(
             ssml,
-            "<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xml:lang='en-US'><voice name='en-US-GuyNeural'><prosody pitch='+0%' rate='+0%' volume='+0Hz'>A &amp; &lt;B&gt; &apos;quoted&apos;</prosody></voice></speak>"
+            "<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xml:lang='en-US'><voice name='Microsoft Server Speech Text to Speech Voice (en-US, GuyNeural)'><prosody pitch='+0Hz' rate='+0%' volume='+0%'>A &amp; &lt;B&gt; &apos;quoted&apos;</prosody></voice></speak>"
         );
         assert!(!ssml.contains("xmlns:mstts"));
+    }
+
+    #[test]
+    fn ssml_keeps_an_already_qualified_server_voice_unchanged() {
+        let voice = "Microsoft Server Speech Text to Speech Voice (en-US, GuyNeural)";
+        assert_eq!(normalize_voice_for_ssml(voice), voice);
     }
 
     #[test]

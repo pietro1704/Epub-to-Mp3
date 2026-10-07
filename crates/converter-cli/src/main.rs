@@ -624,6 +624,7 @@ mod tests {
             author: "Author".into(),
             chapters: vec![converter_core::audio::ChapterMetadata {
                 index: 1,
+                source_index: 0,
                 title: "Chapter 1".into(),
                 filename: "0001-Chapter_1.mp3".into(),
                 text_chars: 10,

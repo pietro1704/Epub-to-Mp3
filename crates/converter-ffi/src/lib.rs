@@ -21,7 +21,7 @@ use serde::Deserialize;
 use serde_json::json;
 use std::{
     collections::HashMap,
-    ffi::{c_char, CStr, CString},
+    ffi::{c_char, c_void, CStr, CString},
     path::Path,
     ptr,
     sync::Arc,
@@ -31,6 +31,80 @@ use std::{
 #[repr(C)]
 pub struct ConverterSession {
     session: EmbeddedConversionSession,
+}
+
+/// Receives a UTF-8 JSON chapter event. The string is borrowed only for the
+/// duration of the callback and must be copied by the caller.
+pub type ConverterChapterCompletedCallback =
+    Option<unsafe extern "C" fn(event_json: *const c_char, context: *mut c_void)>;
+pub type ConverterProgressCallback =
+    Option<unsafe extern "C" fn(event_json: *const c_char, context: *mut c_void)>;
+
+fn positional_chapter_selection(
+    session: &ConverterSession,
+    chapter_start: i32,
+    chapter_end: i32,
+) -> Option<Vec<String>> {
+    if chapter_start < 0 {
+        return None;
+    }
+    let start = chapter_start as usize;
+    let chapter_count = session.session.metadata().chapters.len();
+    let end = if chapter_end < 0 {
+        chapter_count.saturating_sub(1)
+    } else if chapter_end >= chapter_start {
+        chapter_end as usize
+    } else {
+        start
+    };
+    Some(
+        (start..=end)
+            .map(|index| format!("position:{index}"))
+            .collect(),
+    )
+}
+
+/// Embedded Apple clients use two concurrent chapter workers by default.
+/// Edge TTS is a shared remote service, so this keeps the throughput gain
+/// bounded while allowing `RUST_CHAPTER_PARALLELISM=1` for serial benchmarks.
+fn embedded_chapter_parallelism_cap() -> usize {
+    if cfg!(target_os = "macos") || cfg!(target_os = "ios") {
+        2
+    } else {
+        1
+    }
+}
+
+fn progress_log_line(
+    event: &converter_core::worker::ProgressEvent,
+    started: std::time::Instant,
+    previous_event: &std::sync::Mutex<std::time::Instant>,
+) -> String {
+    let now = std::time::Instant::now();
+    let since_previous = previous_event
+        .lock()
+        .map(|mut previous| {
+            let elapsed = now.duration_since(*previous);
+            *previous = now;
+            elapsed
+        })
+        .unwrap_or_default();
+    let unix_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis();
+    format!(
+        "[Rust] unix_ms={unix_ms} elapsed_ms={} since_event_ms={} state={} chapter={:?} completed={} total={} percent={:.1} engine={:?} {}\n",
+        started.elapsed().as_millis(),
+        since_previous.as_millis(),
+        event.state,
+        event.chapter_index,
+        event.chapters_completed,
+        event.chapters_total,
+        event.percent,
+        event.engine,
+        event.message
+    )
 }
 
 /// Opens and parses an EPUB at a NUL-terminated UTF-8 path.
@@ -94,10 +168,11 @@ pub unsafe extern "C" fn converter_session_convert_json(
         Ok(value) => value,
         Err(error) => return fail(error),
     };
-    let config = AppConfig::from_paths(resolve_paths_from(
+    let mut config = AppConfig::from_paths(resolve_paths_from(
         [("OUTPUT_DIR".to_owned(), output_dir.clone())],
         std::path::PathBuf::from(output_dir.clone()),
     ));
+    config.max_parallel = config.max_parallel.min(embedded_chapter_parallelism_cap());
     let output = Path::new(&output_dir);
     if let Err(error) = std::fs::create_dir_all(output) {
         return fail(format!("failed to create output directory: {error}"));
@@ -112,42 +187,39 @@ pub unsafe extern "C" fn converter_session_convert_json(
         engine: Some("edge".to_owned()),
         voice: None,
         language: None,
-        chapter_indices: if chapter_start >= 0 {
-            Some(if chapter_end >= chapter_start {
-                (chapter_start..=chapter_end)
-                    .map(|index| index.to_string())
-                    .collect()
-            } else {
-                vec![chapter_start.to_string()]
-            })
-        } else {
-            None
-        },
-        no_parallel: true,
+        chapter_indices: positional_chapter_selection(session, chapter_start, chapter_end),
+        no_parallel: chapter_start >= 0,
     };
     let progress_log = generated_output_dir.join("conversion.log");
-    let worker =
-        match converter_core::worker::ConversionWorker::new(config) {
-            Ok(worker) => worker,
-            Err(error) => return fail(error.to_string()),
+    let conversion_started = std::time::Instant::now();
+    let previous_event = std::sync::Mutex::new(conversion_started);
+    let worker = match converter_core::worker::ConversionWorker::new(config) {
+        Ok(worker) => worker,
+        Err(error) => return fail(error.to_string()),
+    }
+    .with_progress(Arc::new(move |event| {
+        let line = progress_log_line(&event, conversion_started, &previous_event);
+        use std::io::Write;
+        if let Ok(mut file) = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&progress_log)
+        {
+            let _ = file.write_all(line.as_bytes());
         }
-        .with_progress(Arc::new(move |event| {
-            let line =
-                format!(
-            "[Rust] state={} chapter={:?} completed={} total={} percent={:.1} engine={:?} {}\n",
-            event.state, event.chapter_index, event.chapters_completed, event.chapters_total,
-            event.percent, event.engine, event.message
-        );
-            use std::io::Write;
-            if let Ok(mut file) = std::fs::OpenOptions::new()
-                .create(true)
-                .append(true)
-                .open(&progress_log)
-            {
-                let _ = file.write_all(line.as_bytes());
-            }
-        }));
-    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| worker.run(request)));
+    }));
+    let conversion_thread = match std::thread::Builder::new()
+        .name("converter-ffi-conversion".into())
+        .stack_size(8 * 1024 * 1024)
+        .spawn(move || {
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| worker.run(request)))
+        }) {
+        Ok(thread) => thread,
+        Err(error) => return fail(format!("failed to start conversion thread: {error}")),
+    };
+    let result = conversion_thread
+        .join()
+        .unwrap_or_else(|payload| Err(payload));
     match result {
         Err(payload) => {
             let message = payload
@@ -165,6 +237,140 @@ pub unsafe extern "C" fn converter_session_convert_json(
                 .chapters
                 .first()
                 .map(|chapter| generated_output_dir.join(&chapter.filename));
+            let response = serde_json::json!({
+                "audioPath": audio_path.map(|path| path.to_string_lossy().into_owned()),
+                "manifest": manifest,
+            });
+            match serde_json::to_string(&response)
+                .ok()
+                .and_then(|value| CString::new(value).ok())
+            {
+                Some(value) => value.into_raw(),
+                None => fail("failed to serialize conversion manifest".to_owned()),
+            }
+        }
+    }
+}
+
+/// Converts a book through the shared Rust worker and publishes each complete,
+/// ffprobe-validated chapter in conversion order. `output_dir` must be the
+/// directory named by `job_id`; event strings are valid only during callback.
+#[no_mangle]
+pub unsafe extern "C" fn converter_session_convert_job_json(
+    handle: *const ConverterSession,
+    output_dir: *const c_char,
+    job_id: *const c_char,
+    chapter_start: i32,
+    chapter_end: i32,
+    progress_callback: ConverterProgressCallback,
+    callback: ConverterChapterCompletedCallback,
+    context: *mut c_void,
+) -> *mut c_char {
+    clear_last_error();
+    let _ = rustls::crypto::ring::default_provider().install_default();
+    let session = match handle.as_ref() {
+        Some(handle) => handle,
+        None => return fail("invalid null session handle".to_owned()),
+    };
+    let output_dir = match c_string(output_dir, "output directory") {
+        Ok(value) => Path::new(&value).to_path_buf(),
+        Err(error) => return fail(error),
+    };
+    let job_id = match c_string(job_id, "job ID") {
+        Ok(value) if !value.is_empty() => value,
+        Ok(_) => return fail("job ID must not be empty".to_owned()),
+        Err(error) => return fail(error),
+    };
+    let Some(output_parent) = output_dir.parent() else {
+        return fail("output directory must have a parent".to_owned());
+    };
+    if output_dir.file_name().and_then(|name| name.to_str()) != Some(job_id.as_str()) {
+        return fail("output directory name must match the job ID".to_owned());
+    }
+    if let Err(error) = std::fs::create_dir_all(&output_dir) {
+        return fail(format!("failed to create output directory: {error}"));
+    }
+    let output_root = output_parent.to_string_lossy().into_owned();
+    let mut config = AppConfig::from_paths(resolve_paths_from(
+        [("OUTPUT_DIR".to_owned(), output_root.clone())],
+        output_parent.to_path_buf(),
+    ));
+    config.max_parallel = config.max_parallel.min(embedded_chapter_parallelism_cap());
+    #[cfg(feature = "piper-runtime")]
+    piper_runtime_register_embedded();
+    let request = converter_core::worker::ConversionRequest {
+        input: session.session.input_path().to_path_buf(),
+        job_id: job_id.clone(),
+        engine: Some("edge".to_owned()),
+        voice: None,
+        language: None,
+        chapter_indices: positional_chapter_selection(session, chapter_start, chapter_end),
+        no_parallel: chapter_start >= 0,
+    };
+    let progress_log = output_dir.join("conversion.log");
+    let context_address = context as usize;
+    let progress_callback = progress_callback;
+    let conversion_started = std::time::Instant::now();
+    let previous_event = std::sync::Mutex::new(conversion_started);
+    let worker = match converter_core::worker::ConversionWorker::new(config) {
+        Ok(worker) => worker,
+        Err(error) => return fail(error.to_string()),
+    }
+    .with_progress(Arc::new(move |event| {
+        use std::io::Write;
+        let line = progress_log_line(&event, conversion_started, &previous_event);
+        if let Ok(mut file) = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&progress_log)
+        {
+            let _ = file.write_all(line.as_bytes());
+        }
+        if let Some(callback) = progress_callback {
+            if let Ok(json) = serde_json::to_string(&event) {
+                if let Ok(json) = CString::new(json) {
+                    unsafe { callback(json.as_ptr(), context_address as *mut c_void) };
+                }
+            }
+        }
+    }))
+    .with_chapter_completed(Arc::new(move |event| {
+        let Some(callback) = callback else { return };
+        let Ok(json) = serde_json::to_string(&event) else {
+            return;
+        };
+        let Ok(json) = CString::new(json) else { return };
+        unsafe { callback(json.as_ptr(), context_address as *mut c_void) };
+    }));
+    let conversion_thread = match std::thread::Builder::new()
+        .name("converter-ffi-conversion".into())
+        .stack_size(8 * 1024 * 1024)
+        .spawn(move || {
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| worker.run(request)))
+        }) {
+        Ok(thread) => thread,
+        Err(error) => return fail(format!("failed to start conversion thread: {error}")),
+    };
+    let result = conversion_thread
+        .join()
+        .unwrap_or_else(|payload| Err(payload));
+    match result {
+        Err(payload) => {
+            let message = payload
+                .downcast_ref::<&str>()
+                .copied()
+                .or_else(|| payload.downcast_ref::<String>().map(String::as_str))
+                .unwrap_or("unknown panic payload");
+            fail(format!(
+                "Rust converter panicked during embedded conversion: {message}"
+            ))
+        }
+        Ok(Err(error)) => fail(error.to_string()),
+        Ok(Ok(manifest)) => {
+            let audio_path = manifest
+                .chapters
+                .first()
+                .map(|chapter| output_dir.join(&chapter.filename));
             let response = serde_json::json!({
                 "audioPath": audio_path.map(|path| path.to_string_lossy().into_owned()),
                 "manifest": manifest,
@@ -1423,6 +1629,39 @@ mod tests {
             .unwrap();
         zip.finish().unwrap();
         file
+    }
+
+    #[test]
+    fn embedded_apple_conversion_uses_bounded_two_chapter_parallelism() {
+        assert_eq!(
+            embedded_chapter_parallelism_cap(),
+            if cfg!(target_os = "macos") || cfg!(target_os = "ios") {
+                2
+            } else {
+                1
+            }
+        );
+    }
+
+    #[test]
+    fn progress_log_line_contains_wall_and_relative_timing() {
+        let started = std::time::Instant::now();
+        let previous = std::sync::Mutex::new(started);
+        let event = converter_core::worker::ProgressEvent {
+            job_id: "timing-test".into(),
+            state: "running".into(),
+            chapter_index: Some(3),
+            chapters_total: 10,
+            chapters_completed: 2,
+            percent: 20.0,
+            engine: Some("edge".into()),
+            message: "converting chapter 4".into(),
+        };
+        let line = progress_log_line(&event, started, &previous);
+        assert!(line.contains("unix_ms="));
+        assert!(line.contains("elapsed_ms="));
+        assert!(line.contains("since_event_ms="));
+        assert!(line.contains("converting chapter 4"));
     }
 
     #[test]

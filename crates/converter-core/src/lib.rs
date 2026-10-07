@@ -1,6 +1,8 @@
 //! Domain types for the conversion pipeline.
 
 #[cfg(not(target_arch = "wasm32"))]
+pub mod adaptive;
+#[cfg(not(target_arch = "wasm32"))]
 pub mod archive;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod audio;

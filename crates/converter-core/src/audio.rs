@@ -57,7 +57,8 @@ impl ProcessSpec {
 }
 
 fn run(spec: &ProcessSpec) -> Result<Output, AudioError> {
-    let output = Command::new(&spec.program)
+    let program = resolve_program(&spec.program);
+    let output = Command::new(&program)
         .args(&spec.args)
         .stdin(Stdio::null())
         .output()?;
@@ -69,6 +70,55 @@ fn run(spec: &ProcessSpec) -> Result<Output, AudioError> {
         });
     }
     Ok(output)
+}
+
+fn resolve_program(program: &str) -> PathBuf {
+    let override_name = match program {
+        "ffprobe" => Some("FFPROBE"),
+        "ffmpeg" => Some("FFMPEG"),
+        _ => None,
+    };
+    let override_path = override_name.and_then(std::env::var_os).map(PathBuf::from);
+    let path_directories = std::env::var_os("PATH")
+        .into_iter()
+        .flat_map(|value| std::env::split_paths(&value).collect::<Vec<_>>())
+        .collect::<Vec<_>>();
+
+    #[cfg(target_os = "macos")]
+    let fallback_directories = ["/opt/homebrew/bin", "/usr/local/bin", "/opt/local/bin"]
+        .into_iter()
+        .map(PathBuf::from)
+        .collect::<Vec<_>>();
+    #[cfg(not(target_os = "macos"))]
+    let fallback_directories = Vec::new();
+
+    resolve_program_in(
+        program,
+        override_path,
+        path_directories,
+        fallback_directories,
+    )
+}
+
+fn resolve_program_in(
+    program: &str,
+    override_path: Option<PathBuf>,
+    path_directories: impl IntoIterator<Item = PathBuf>,
+    fallback_directories: impl IntoIterator<Item = PathBuf>,
+) -> PathBuf {
+    if let Some(path) = override_path.filter(|path| path.is_file()) {
+        return path;
+    }
+    let requested = Path::new(program);
+    if requested.components().count() > 1 {
+        return requested.to_path_buf();
+    }
+    path_directories
+        .into_iter()
+        .chain(fallback_directories)
+        .map(|directory| directory.join(program))
+        .find(|path| path.is_file())
+        .unwrap_or_else(|| requested.to_path_buf())
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -247,8 +297,11 @@ pub fn concatenate(
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
 pub struct ChapterMetadata {
     pub index: usize,
+    #[serde(default)]
+    pub source_index: usize,
     pub title: String,
     pub filename: String,
     pub text_chars: usize,
@@ -355,5 +408,22 @@ mod tests {
                 args: vec!["-y".into(), "-i".into(), "input".into()]
             }
         );
+    }
+
+    #[test]
+    fn resolves_probe_from_package_manager_paths_when_app_path_is_restricted() {
+        let path_dir = tempfile::tempdir().unwrap();
+        let fallback_dir = tempfile::tempdir().unwrap();
+        let expected = fallback_dir.path().join("ffprobe");
+        fs::write(&expected, b"test executable placeholder").unwrap();
+
+        let resolved = resolve_program_in(
+            "ffprobe",
+            None,
+            [path_dir.path().to_path_buf()],
+            [fallback_dir.path().to_path_buf()],
+        );
+
+        assert_eq!(resolved, expected);
     }
 }

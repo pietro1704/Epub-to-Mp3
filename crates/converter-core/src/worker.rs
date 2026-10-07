@@ -6,7 +6,7 @@ use crate::{
     epub,
     jobs::{JobError, JobManager, JobRecord, JobState},
     piper::{self, CancellationToken, PiperConfig},
-    tts::EdgeError,
+    tts::{EdgeError, Telemetry, TelemetryEvent},
 };
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
@@ -50,6 +50,22 @@ pub struct OutputManifest {
     pub archive: String,
     pub cover: Option<String>,
 }
+
+/// A complete, validated chapter that is safe to add to the playback queue.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ChapterCompletionEvent {
+    pub job_id: String,
+    pub book_title: String,
+    pub book_author: String,
+    pub chapter_index: usize,
+    pub chapters_total: usize,
+    pub chapters_completed: usize,
+    pub chapter_title: String,
+    pub filename: String,
+    pub audio_path: PathBuf,
+    pub text_chars: usize,
+}
 #[derive(Debug, Error)]
 pub enum WorkerError {
     #[error("job error: {0}")]
@@ -72,25 +88,40 @@ pub enum WorkerError {
     Unsupported(String),
 }
 pub type ProgressSink = Arc<dyn Fn(ProgressEvent) + Send + Sync>;
+pub type ChapterCompletionSink = Arc<dyn Fn(ChapterCompletionEvent) + Send + Sync>;
 
 pub struct ConversionWorker {
     pub config: AppConfig,
     pub jobs: JobManager,
     pub cancel: CancellationToken,
     pub progress: Option<ProgressSink>,
+    pub chapter_completed: Option<ChapterCompletionSink>,
+    pub adaptive: Arc<crate::adaptive::AdaptiveThroughputController>,
 }
 impl ConversionWorker {
     pub fn new(config: AppConfig) -> Result<Self, WorkerError> {
         let jobs = JobManager::new(&config.paths.jobs_dir)?;
+        let adaptive = Arc::new(crate::adaptive::AdaptiveThroughputController::new(
+            crate::adaptive::AdaptiveConfig {
+                initial_chunk_chars: config.edge_chunk_chars,
+                ..crate::adaptive::AdaptiveConfig::default()
+            },
+        ));
         Ok(Self {
             config,
             jobs,
             cancel: CancellationToken::default(),
             progress: None,
+            chapter_completed: None,
+            adaptive,
         })
     }
     pub fn with_progress(mut self, sink: ProgressSink) -> Self {
         self.progress = Some(sink);
+        self
+    }
+    pub fn with_chapter_completed(mut self, sink: ChapterCompletionSink) -> Self {
+        self.chapter_completed = Some(sink);
         self
     }
     pub fn with_cancellation(mut self, cancel: CancellationToken) -> Self {
@@ -110,12 +141,42 @@ impl ConversionWorker {
         let result = self.run_inner(&request);
         match &result {
             Ok(_) => {
+                self.emit(ProgressEvent {
+                    job_id: request.job_id.clone(),
+                    state: "completed".into(),
+                    chapter_index: None,
+                    chapters_total: 0,
+                    chapters_completed: 0,
+                    percent: 100.0,
+                    engine: request.engine.clone(),
+                    message: "conversion completed".into(),
+                });
                 self.jobs.transition(&request.job_id, JobState::Completed)?;
             }
             Err(WorkerError::Cancelled) => {
+                self.emit(ProgressEvent {
+                    job_id: request.job_id.clone(),
+                    state: "cancelled".into(),
+                    chapter_index: None,
+                    chapters_total: 0,
+                    chapters_completed: 0,
+                    percent: 0.0,
+                    engine: request.engine.clone(),
+                    message: "conversion cancelled".into(),
+                });
                 let _ = self.jobs.transition(&request.job_id, JobState::Cancelled);
             }
             Err(_) => {
+                self.emit(ProgressEvent {
+                    job_id: request.job_id.clone(),
+                    state: "failed".into(),
+                    chapter_index: None,
+                    chapters_total: 0,
+                    chapters_completed: 0,
+                    percent: 0.0,
+                    engine: request.engine.clone(),
+                    message: "conversion failed".into(),
+                });
                 let _ = self.jobs.transition(&request.job_id, JobState::Failed);
             }
         }
@@ -155,28 +216,34 @@ impl ConversionWorker {
                     .chapter_indices
                     .as_ref()
                     .map(|wanted| {
-                        wanted.iter().any(|value| {
-                            value == &chapter.index
-                                || value
-                                    .parse::<usize>()
-                                    .map(|index| index == *position)
-                                    .unwrap_or(false)
-                        })
+                        wanted
+                            .iter()
+                            .any(|value| chapter_matches_selector(value, &chapter.index, *position))
                     })
                     .unwrap_or(true)
             })
-            .map(|(_, chapter)| chapter)
+            .map(|(source_position, chapter)| (source_position, chapter))
             .collect();
         let total = chapters.len();
         let source_text_chars: usize = chapters
             .iter()
-            .map(|chapter| chapter.text.chars().count())
+            .map(|(_, chapter)| chapter.text.chars().count())
             .sum();
         if total == 0 || source_text_chars == 0 {
             return Err(WorkerError::Piper(
                 "selected chapters have no readable text".into(),
             ));
         }
+        self.emit(ProgressEvent {
+            job_id: request.job_id.clone(),
+            state: "running".into(),
+            chapter_index: None,
+            chapters_total: total,
+            chapters_completed: 0,
+            percent: 0.0,
+            engine: request.engine.clone(),
+            message: "conversion started".into(),
+        });
         let detected_language = request
             .language
             .as_deref()
@@ -186,33 +253,37 @@ impl ConversionWorker {
                     .first()
                     .and_then(|chapter| detect_language(&chapter.text))
             });
-        let parallelism = if request.no_parallel {
-            1
-        } else {
-            let configured = std::env::var("RUST_CHAPTER_PARALLELISM")
-                .ok()
-                .and_then(|value| value.parse().ok())
-                .filter(|value| *value > 0)
-                .unwrap_or_else(|| {
-                    std::thread::available_parallelism()
-                        .map(|v| v.get())
-                        .unwrap_or(1)
-                });
-            let cap = std::env::var("RUST_CHAPTER_PARALLELISM_CAP")
-                .ok()
-                .and_then(|value| value.parse().ok())
-                .filter(|value| *value > 0)
-                .unwrap_or(8);
-            configured.min(self.config.max_parallel).min(cap).max(1)
-        };
+        let configured = std::env::var("RUST_CHAPTER_PARALLELISM")
+            .ok()
+            .and_then(|value| value.parse().ok())
+            .filter(|value| *value > 0)
+            .unwrap_or_else(|| {
+                std::thread::available_parallelism()
+                    .map(|v| v.get())
+                    .unwrap_or(1)
+            });
+        let cap = std::env::var("RUST_CHAPTER_PARALLELISM_CAP")
+            .ok()
+            .and_then(|value| value.parse().ok())
+            .filter(|value| *value > 0)
+            .unwrap_or(8);
+        let parallelism = resolve_chapter_parallelism(
+            request.no_parallel,
+            configured,
+            self.config.max_parallel,
+            cap,
+        );
         let pool = rayon::ThreadPoolBuilder::new()
             .num_threads(parallelism)
             .build()
             .map_err(|error| WorkerError::Piper(error.to_string()))?;
         let results = Mutex::new(Vec::with_capacity(total));
+        let completed_chapters = Arc::new(std::sync::atomic::AtomicUsize::new(0));
         pool.install(|| {
             chapters.par_iter().enumerate().try_for_each(
-                |(position, chapter)| -> Result<(), WorkerError> {
+                |(position, (source_position, chapter))| -> Result<(), WorkerError> {
+                    let source_position = *source_position;
+                    let chapter = *chapter;
                     if self.cancel.is_cancelled()
                         || self.jobs.is_cancellation_requested(&request.job_id)?
                     {
@@ -236,6 +307,21 @@ impl ConversionWorker {
                     let mp3 = output_dir.join(format!("{stem}.mp3"));
                     let language = detected_language;
                     let engine = select_engine(request.engine.as_deref(), &self.config);
+                    self.emit(ProgressEvent {
+                        job_id: request.job_id.clone(),
+                        state: "running".into(),
+                        chapter_index: Some(position),
+                        chapters_total: total,
+                        chapters_completed: completed_chapters
+                            .load(std::sync::atomic::Ordering::Acquire),
+                        percent: completed_chapters.load(std::sync::atomic::Ordering::Acquire)
+                            as f64
+                            / total as f64
+                            * 100.0,
+                        engine: Some(engine.clone()),
+                        message: format!("converting chapter {}", position + 1),
+                    });
+                    let synthesis_started = std::time::Instant::now();
                     if !mp3.is_file() {
                         eprintln!("synthesizing chapter {}/{}", position + 1, total);
                         self.synthesize_with_timeout(
@@ -244,8 +330,47 @@ impl ConversionWorker {
                             &mp3,
                             request.voice.as_deref(),
                             request.language.as_deref().or(language),
+                            request.job_id.clone(),
+                            position,
+                            total,
+                            Arc::clone(&completed_chapters),
                         )?;
                     }
+                    let chapter_name = chapter.name.clone();
+                    let text_chars = text.chars().count();
+                    let filename = mp3.file_name().unwrap().to_string_lossy().to_string();
+                    let completed =
+                        completed_chapters.fetch_add(1, std::sync::atomic::Ordering::AcqRel) + 1;
+                    let event = ChapterCompletionEvent {
+                        job_id: request.job_id.clone(),
+                        book_title: book.title.clone(),
+                        book_author: book.author.clone(),
+                        chapter_index: source_position,
+                        chapters_total: total,
+                        chapters_completed: completed,
+                        chapter_title: chapter_name.clone(),
+                        filename: filename.clone(),
+                        audio_path: mp3.clone(),
+                        text_chars,
+                    };
+                    validate_chapter_and_emit(&mp3, event, self.chapter_completed.as_ref())?;
+                    let synthesis_elapsed = synthesis_started.elapsed().as_secs_f64();
+                    let synthesis_rate = text_chars as f64 / synthesis_elapsed.max(0.001);
+                    self.emit(ProgressEvent {
+                        job_id: request.job_id.clone(),
+                        state: "running".into(),
+                        chapter_index: Some(position),
+                        chapters_total: total,
+                        chapters_completed: completed,
+                        percent: completed as f64 / total as f64 * 100.0,
+                        engine: Some(engine),
+                        message: format!(
+                            "completed chapter {} in {:.1}s ({:.1} chars/s)",
+                            position + 1,
+                            synthesis_elapsed,
+                            synthesis_rate
+                        ),
+                    });
                     let name = mp3.file_name().unwrap().to_string_lossy().to_string();
                     results.lock().unwrap().push((
                         position,
@@ -253,9 +378,10 @@ impl ConversionWorker {
                         name.clone(),
                         ChapterMetadata {
                             index: position + 1,
-                            title: chapter.name.clone(),
+                            source_index: source_position,
+                            title: chapter_name,
                             filename: name,
-                            text_chars: text.chars().count(),
+                            text_chars,
                         },
                     ));
                     Ok(())
@@ -332,13 +458,22 @@ impl ConversionWorker {
         out: &Path,
         voice: Option<&str>,
         language: Option<&str>,
+        telemetry: Option<Telemetry>,
     ) -> Result<(), WorkerError> {
         if engine == "edge" {
             let voice = voice.unwrap_or_else(|| default_edge_voice(language));
-            let rt = tokio::runtime::Builder::new_current_thread()
+            let rt = tokio::runtime::Builder::new_multi_thread()
+                .worker_threads(2)
                 .enable_all()
                 .build()?;
-            match rt.block_on(crate::tts::synthesize_with_reference_client(text, voice)) {
+            let result = rt.block_on(crate::tts::synthesize_with_reference_client(
+                text,
+                voice,
+                Arc::clone(&self.adaptive),
+                telemetry,
+            ));
+            rt.shutdown_timeout(std::time::Duration::from_secs(1));
+            match result {
                 Ok(bytes) => {
                     fs::write(out, bytes).map_err(|error| {
                         WorkerError::Edge(EdgeError::Transport(format!(
@@ -395,47 +530,259 @@ impl ConversionWorker {
         out: &Path,
         voice: Option<&str>,
         language: Option<&str>,
+        job_id: String,
+        chapter_index: usize,
+        chapters_total: usize,
+        completed_chapters: Arc<std::sync::atomic::AtomicUsize>,
     ) -> Result<(), WorkerError> {
+        let default_timeout = if engine == "edge" {
+            let synthesis_budget = crate::tts::reference_synthesis_timeout_for_text(text.len())
+                .as_secs()
+                .saturating_add(10);
+            synthesis_budget
+        } else if cfg!(target_os = "android") {
+            300
+        } else {
+            180
+        };
         let timeout_secs = std::env::var("RUST_CHAPTER_TIMEOUT_SECONDS")
             .ok()
             .and_then(|value| value.parse::<u64>().ok())
-            .unwrap_or(if cfg!(target_os = "android") {
-                300
-            } else {
-                180
-            });
-        let result = std::thread::scope(|scope| {
-            let handle = scope.spawn(|| self.synthesize(engine, text, out, voice, language));
-            let started = std::time::Instant::now();
-            while !handle.is_finished() {
-                if self.cancel.is_cancelled()
-                    || started.elapsed() >= std::time::Duration::from_secs(timeout_secs)
-                {
-                    return Err(if engine == "edge" {
-                        WorkerError::Edge(EdgeError::Transport(
-                            "chapter synthesis timed out".into(),
-                        ))
-                    } else {
-                        WorkerError::Piper("chapter synthesis timed out".into())
-                    });
-                }
-                std::thread::sleep(std::time::Duration::from_millis(100));
-            }
-            handle.join().unwrap_or_else(|_| {
-                Err(if engine == "edge" {
-                    WorkerError::Edge(EdgeError::Transport("synthesis thread panicked".into()))
-                } else {
-                    WorkerError::Piper("synthesis thread panicked".into())
-                })
-            })
+            .unwrap_or(default_timeout);
+        let cancel = self.cancel.clone();
+        let engine_owned = engine.to_owned();
+        let text_owned = text.to_owned();
+        static SYNTHESIS_ATTEMPT_ID: std::sync::atomic::AtomicU64 =
+            std::sync::atomic::AtomicU64::new(0);
+        let attempt_id = SYNTHESIS_ATTEMPT_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let mut temporary_output = out.as_os_str().to_os_string();
+        temporary_output.push(format!(".{}.{}.partial", std::process::id(), attempt_id));
+        let temporary_output = PathBuf::from(temporary_output);
+        let out_owned = temporary_output.clone();
+        let voice_owned = voice.map(str::to_owned);
+        let language_owned = language.map(str::to_owned);
+        let synthesis_config = self.config.clone();
+        let adaptive = Arc::clone(&self.adaptive);
+        let progress = self.progress.clone();
+        let telemetry: Option<Telemetry> = progress.as_ref().map(|sink| {
+            let sink = Arc::clone(sink);
+            let job_id = job_id.clone();
+            let completed_chapters = Arc::clone(&completed_chapters);
+            Arc::new(move |event| {
+                let TelemetryEvent::ChunkMetrics {
+                    provider,
+                    chunk_index: chunk_number,
+                    total_chunks,
+                    chars,
+                    elapsed_ms,
+                    chars_per_second,
+                    retries,
+                    chunk_limit,
+                    max_in_flight,
+                    cooldown_ms,
+                    result,
+                } = event
+                else {
+                    return;
+                };
+                let completed = completed_chapters
+                    .load(std::sync::atomic::Ordering::Acquire);
+                sink(ProgressEvent {
+                    job_id: job_id.clone(),
+                    state: "running".into(),
+                    chapter_index: Some(chapter_index),
+                    chapters_total,
+                    chapters_completed: completed,
+                    percent: completed as f64 / chapters_total.max(1) as f64 * 100.0,
+                    engine: Some(provider.clone()),
+                    message: format!(
+                        "tts chunk={chunk_number}/{total_chunks} chars={chars} elapsed_ms={elapsed_ms} chars_per_second={chars_per_second:.1} retries={retries} chunk_limit={chunk_limit} max_in_flight={max_in_flight} cooldown_ms={cooldown_ms} result={result}"
+                    ),
+                });
+            }) as Telemetry
         });
-        result
+        let (sender, receiver) = std::sync::mpsc::sync_channel(1);
+        let spawn = std::thread::Builder::new()
+            .name("converter-chapter-synthesis".into())
+            .stack_size(8 * 1024 * 1024)
+            .spawn(move || {
+                let worker = Self::new(synthesis_config);
+                let result = worker.map_or_else(Err, |mut worker| {
+                    worker.cancel = cancel;
+                    worker.adaptive = adaptive;
+                    worker.progress = progress;
+                    worker.synthesize(
+                        &engine_owned,
+                        &text_owned,
+                        &out_owned,
+                        voice_owned.as_deref(),
+                        language_owned.as_deref(),
+                        telemetry,
+                    )
+                });
+                if sender.send(result).is_err() {
+                    let _ = fs::remove_file(&out_owned);
+                }
+            });
+        if let Err(error) = spawn {
+            return Err(WorkerError::Piper(format!(
+                "failed to start synthesis thread: {error}"
+            )));
+        }
+        match receiver.recv_timeout(std::time::Duration::from_secs(timeout_secs)) {
+            Ok(Ok(())) => fs::rename(&temporary_output, out).map_err(WorkerError::Io),
+            Ok(Err(error)) => {
+                let _ = fs::remove_file(&temporary_output);
+                Err(error)
+            }
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+                self.cancel.cancel();
+                Err(if engine == "edge" {
+                    WorkerError::Edge(EdgeError::Transport("chapter synthesis timed out".into()))
+                } else {
+                    WorkerError::Piper("chapter synthesis timed out".into())
+                })
+            }
+            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+                let _ = fs::remove_file(&temporary_output);
+                Err(WorkerError::Piper(
+                    "synthesis thread exited without a result".into(),
+                ))
+            }
+        }
     }
     #[allow(dead_code)]
     fn emit(&self, event: ProgressEvent) {
         if let Some(sink) = &self.progress {
             sink(event)
         }
+    }
+}
+
+fn validate_chapter_and_emit(
+    audio_path: &Path,
+    event: ChapterCompletionEvent,
+    sink: Option<&ChapterCompletionSink>,
+) -> Result<(), WorkerError> {
+    audio::validate_audio(audio_path, 100)?;
+    if let Some(sink) = sink {
+        sink(event);
+    }
+    Ok(())
+}
+
+fn chapter_matches_selector(selector: &str, toc_index: &str, position: usize) -> bool {
+    if let Some(value) = selector.strip_prefix("position:") {
+        return value.parse::<usize>().ok() == Some(position);
+    }
+    if let Some(value) = selector.strip_prefix("toc:") {
+        return value == toc_index;
+    }
+    selector == toc_index || selector.parse::<usize>().ok() == Some(position)
+}
+
+fn resolve_chapter_parallelism(
+    no_parallel: bool,
+    configured: usize,
+    max_parallel: usize,
+    cap: usize,
+) -> usize {
+    if no_parallel {
+        return 1;
+    }
+    configured.min(max_parallel).min(cap).max(1)
+}
+
+#[cfg(test)]
+mod streaming_tests {
+    use super::*;
+
+    fn write_test_wav(path: &Path) {
+        let sample_rate = 8_000u32;
+        let samples = vec![0u8; sample_rate as usize * 2];
+        let mut bytes = Vec::with_capacity(44 + samples.len());
+        bytes.extend_from_slice(b"RIFF");
+        bytes.extend_from_slice(&(36u32 + samples.len() as u32).to_le_bytes());
+        bytes.extend_from_slice(b"WAVEfmt ");
+        bytes.extend_from_slice(&16u32.to_le_bytes());
+        bytes.extend_from_slice(&1u16.to_le_bytes());
+        bytes.extend_from_slice(&1u16.to_le_bytes());
+        bytes.extend_from_slice(&sample_rate.to_le_bytes());
+        bytes.extend_from_slice(&(sample_rate * 2).to_le_bytes());
+        bytes.extend_from_slice(&2u16.to_le_bytes());
+        bytes.extend_from_slice(&16u16.to_le_bytes());
+        bytes.extend_from_slice(b"data");
+        bytes.extend_from_slice(&(samples.len() as u32).to_le_bytes());
+        bytes.extend_from_slice(&samples);
+        fs::write(path, bytes).unwrap();
+    }
+
+    fn event(index: usize, path: PathBuf) -> ChapterCompletionEvent {
+        ChapterCompletionEvent {
+            job_id: "stream-test".into(),
+            book_title: "Fixture".into(),
+            book_author: "Author".into(),
+            chapter_index: index,
+            chapters_total: 2,
+            chapters_completed: index + 1,
+            chapter_title: format!("Chapter {index}"),
+            filename: format!("chapter-{index}.mp3"),
+            audio_path: path,
+            text_chars: 100,
+        }
+    }
+
+    #[test]
+    fn validated_chapters_are_published_in_conversion_order() {
+        let temp = tempfile::tempdir().unwrap();
+        let first = temp.path().join("first.mp3");
+        let second = temp.path().join("second.mp3");
+        write_test_wav(&first);
+        write_test_wav(&second);
+        let observed = Arc::new(Mutex::new(Vec::new()));
+        let captured = Arc::clone(&observed);
+        let sink: ChapterCompletionSink = Arc::new(move |item| {
+            captured.lock().unwrap().push(item.chapter_index);
+        });
+
+        validate_chapter_and_emit(&first, event(0, first.clone()), Some(&sink)).unwrap();
+        validate_chapter_and_emit(&second, event(1, second.clone()), Some(&sink)).unwrap();
+
+        assert_eq!(*observed.lock().unwrap(), vec![0, 1]);
+    }
+
+    #[test]
+    fn invalid_audio_is_never_published_to_playback() {
+        let temp = tempfile::tempdir().unwrap();
+        let invalid = temp.path().join("invalid.mp3");
+        fs::write(&invalid, b"not audio").unwrap();
+        let published = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let captured = Arc::clone(&published);
+        let sink: ChapterCompletionSink = Arc::new(move |_| {
+            captured.store(true, std::sync::atomic::Ordering::Release);
+        });
+
+        assert!(
+            validate_chapter_and_emit(&invalid, event(0, invalid.clone()), Some(&sink)).is_err()
+        );
+        assert!(!published.load(std::sync::atomic::Ordering::Acquire));
+    }
+
+    #[test]
+    fn positional_selector_does_not_collide_with_numeric_toc_index() {
+        assert!(!chapter_matches_selector("position:1", "1", 0));
+        assert!(chapter_matches_selector("position:1", "2", 1));
+        assert!(!chapter_matches_selector("position:1", "3", 2));
+        assert!(chapter_matches_selector("toc:1", "1", 0));
+        assert!(!chapter_matches_selector("toc:1", "2", 1));
+    }
+
+    #[test]
+    fn chapter_parallelism_honors_serial_mode_and_all_caps() {
+        assert_eq!(resolve_chapter_parallelism(true, 8, 4, 2), 1);
+        assert_eq!(resolve_chapter_parallelism(false, 8, 4, 2), 2);
+        assert_eq!(resolve_chapter_parallelism(false, 2, 8, 8), 2);
+        assert_eq!(resolve_chapter_parallelism(false, 8, 8, 0), 1);
     }
 }
 
@@ -475,6 +822,7 @@ fn select_engine(request: Option<&str>, config: &AppConfig) -> String {
         _ => "edge".into(),
     }
 }
+
 fn sanitize(value: &str) -> String {
     let mut s = value
         .chars()

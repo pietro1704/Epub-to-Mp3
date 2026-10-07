@@ -36,6 +36,9 @@ final class MacAppKitRootController: NSSplitViewController, NSToolbarDelegate {
     private var fullPlayerController: MacFullPlayerViewController?
     private var controllers: [Destination: NSViewController] = [:]
     private var sidebarButtons: [Destination: NSButton] = [:]
+    private var isStartingLocalPlayback = false
+    private var localPlaybackGeneration: String?
+    private var localPlaybackChapters: [JobSnapshot.Chapter] = []
 
     static func shouldShowPlayerBar(
         hasSnapshot: Bool,
@@ -361,22 +364,102 @@ final class MacAppKitRootController: NSSplitViewController, NSToolbarDelegate {
 
     private func startPlaybackForCurrentBook() {
         playerPresentation.dismissFullPlayer()
+        guard !isStartingLocalPlayback else { return }
         guard let bookID = UserDefaults.standard.string(forKey: ReaderSessionState.currentlyReadingBookIDKey),
               let book = library.books.first(where: { $0.id == bookID }) else { return }
+        isStartingLocalPlayback = true
         Task { [weak self] in
             guard let self else { return }
+            defer { isStartingLocalPlayback = false }
+            let jobID = UUID().uuidString
             do {
                 let url = try await library.openBookFileAsync(id: book.id)
-                let result = try await RustConversionCoordinator().convert(bookURL: url)
+                localPlaybackGeneration = jobID
+                localPlaybackChapters.removeAll()
+                let pending = JobSnapshot(
+                    jobId: jobID,
+                    state: "running",
+                    bookTitle: book.resolvedTitle,
+                    bookAuthor: book.author,
+                    coverUrl: nil,
+                    coverMimeType: nil,
+                    engine: "edge",
+                    voice: nil,
+                    language: nil,
+                    progressPercent: 0,
+                    chaptersTotal: nil,
+                    chaptersCompleted: 0,
+                    chapterProgress: [],
+                    outputs: nil,
+                    logUrl: nil,
+                    error: nil,
+                    lastActivityAt: Date().timeIntervalSince1970
+                )
+                player.play(snapshot: pending, startingAt: 0, restoreAutoplay: false)
+                player.isConverting = true
+                player.resume()
+                let chapterStart = Int32(exactly: ReaderPlaybackPriorityChapter.index(bookID: book.id)) ?? 0
+                let result = try await RustConversionCoordinator().convert(
+                    bookURL: url,
+                    jobID: jobID,
+                    chapterStart: chapterStart,
+                    chapterEnd: -1,
+                    onProgress: { [weak self] event in
+                        guard let self,
+                              self.localPlaybackGeneration == jobID,
+                              event.state == "running",
+                              let snapshot = self.player.snapshot,
+                              snapshot.jobId == jobID else { return }
+                        self.player.updateSnapshot(event.updating(snapshot))
+                    },
+                    onChapterCompleted: { [weak self] event in
+                        guard let self, self.localPlaybackGeneration == event.jobId else { return }
+                        let firstPlayableChapter = self.localPlaybackChapters.isEmpty
+                        let chapter = event.playableChapter
+                        if let existing = self.localPlaybackChapters.firstIndex(where: { $0.index == chapter.index }) {
+                            self.localPlaybackChapters[existing] = chapter
+                        } else {
+                            self.localPlaybackChapters.append(chapter)
+                        }
+                        self.localPlaybackChapters.sort { $0.index < $1.index }
+                        self.player.updateSnapshot(
+                            event.snapshot(chapters: self.localPlaybackChapters)
+                        )
+                        if firstPlayableChapter {
+                            self.playerPresentation.showFullPlayer()
+                        }
+                    }
+                )
                 let snapshot = try result.snapshot()
                 library.recordConversion(jobId: result.jobID, for: book.id)
+                localPlaybackGeneration = nil
                 await MainActor.run {
-                    self.player.setSnapshot(snapshot)
-                    self.player.play(snapshot: snapshot, restoreAutoplay: true)
-                    self.player.resume()
+                    self.player.finishStreaming(snapshot: snapshot)
                     self.playerPresentation.showFullPlayer()
                 }
             } catch {
+                localPlaybackGeneration = nil
+                if let current = player.snapshot, current.jobId == jobID {
+                    player.finishStreaming(snapshot: JobSnapshot(
+                        jobId: current.jobId,
+                        state: "failed",
+                        bookTitle: current.bookTitle,
+                        bookAuthor: current.bookAuthor,
+                        coverUrl: current.coverUrl,
+                        coverMimeType: current.coverMimeType,
+                        engine: current.engine,
+                        voice: current.voice,
+                        language: current.language,
+                        progressPercent: current.progressPercent,
+                        chaptersTotal: current.chaptersTotal,
+                        chaptersCompleted: current.chaptersCompleted,
+                        chapterProgress: current.chapterProgress,
+                        outputs: current.outputs,
+                        logUrl: current.logUrl,
+                        error: error.localizedDescription,
+                        lastActivityAt: Date().timeIntervalSince1970
+                    ))
+                }
                 let alert = NSAlert()
                 alert.messageText = L10n.string("bookDetail.listenStart")
                 alert.informativeText = error.localizedDescription

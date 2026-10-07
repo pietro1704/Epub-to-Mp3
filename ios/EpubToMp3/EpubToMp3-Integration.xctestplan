@@ -4,7 +4,8 @@
       "id" : "A1B2C3D4-0003-4A1E-AAE4-642A4DE056C3",
       "name" : "Configuration 1",
       "options" : {
-
+        "environmentVariableEntries" : [
+        ]
       }
     }
   ],
@@ -21,7 +22,7 @@
     {
       "parallelizable" : false,
       "selectedTests" : [
-        "IntegrationTests"
+            "RustConversionCoordinatorTests/testOptInImportedLordOfTheRingsConvertsAndPublishesPlayableAudio"
       ],
       "target" : {
         "containerPath" : "container:EpubToMp3.xcodeproj",

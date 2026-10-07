@@ -1083,6 +1083,7 @@ final class AudioPlayer: ObservableObject {
         // new chapter while listening), or the user tapped Play while waiting
         // for the first streamed MP3 URL, preserve that intent.
         if wasPlaying || pendingAutoPlay || (restoreAutoplay && resumeMarker?.wasPlaying == true) {
+            ensureAudioSession()
             queue.rate = rate.rawValue
             isPlaying = true
             pendingAutoPlay = false

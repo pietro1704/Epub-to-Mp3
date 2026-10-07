@@ -499,6 +499,7 @@
 "bookDetail.listenResume" = "Reanudar audio";
 "bookDetail.notStarted" = "Sin comenzar";
 "bookDetail.progressPercent" = "%d%% completado";
+"bookDetail.progressChapter" = "Convirtiendo capítulo %1$d de %2$d";
 "bookDetail.downloadRequiresConversion" = "Convierte este libro a audio primero.";
 
 /* === LocalEpubReaderView === */

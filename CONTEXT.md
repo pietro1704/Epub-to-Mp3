@@ -40,6 +40,19 @@ architecture.
 This is a hard architecture invariant. Do not reintroduce an external backend,
 platform-specific converter, or separate online/offline conversion pipeline.
 
+## Provider feedback
+
+**Provider pressure**:
+A TTS provider's signal that current request size or rate exceeds its present capacity, including throttling, timeouts, and sustained slow responses.
+_Avoid_: generic conversion failure
+
+**Adaptive throughput**:
+The conversion run's observed characters-per-second and provider pressure, used to keep remote request size and concurrency near the fastest reliable operating point.
+_Avoid_: fixed concurrency tuning
+
+The accepted runtime policy and measured starting profile are recorded in
+[`docs/adr/2026-10-07-adaptive-tts-throughput.md`](docs/adr/2026-10-07-adaptive-tts-throughput.md).
+
 ## Repository trust surface
 
 The collection of repository-facing automation, documentation, hooks, and

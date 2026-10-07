@@ -4,7 +4,14 @@ import Darwin
 private typealias ConverterSessionOpen = @convention(c) (UnsafePointer<CChar>?) -> UnsafeMutableRawPointer?
 private typealias ConverterSessionMetadata = @convention(c) (UnsafeRawPointer?) -> UnsafeMutablePointer<CChar>?
 private typealias ConverterSessionFree = @convention(c) (UnsafeMutableRawPointer?) -> Void
-private typealias ConverterSessionConvert = @convention(c) (UnsafeRawPointer?, UnsafePointer<CChar>?, Int32, Int32) -> UnsafeMutablePointer<CChar>?
+private typealias ConverterChapterCallback = @convention(c) (UnsafePointer<CChar>?, UnsafeMutableRawPointer?) -> Void
+private typealias ConverterSessionConvertJob = @convention(c) (
+    UnsafeRawPointer?, UnsafePointer<CChar>?, UnsafePointer<CChar>?, Int32, Int32,
+    ConverterChapterCallback?, ConverterChapterCallback?, UnsafeMutableRawPointer?
+) -> UnsafeMutablePointer<CChar>?
+private typealias ConverterSessionConvert = @convention(c) (
+    UnsafeRawPointer?, UnsafePointer<CChar>?, Int32, Int32
+) -> UnsafeMutablePointer<CChar>?
 private typealias ConverterStringFree = @convention(c) (UnsafeMutablePointer<CChar>?) -> Void
 private typealias ConverterLastError = @convention(c) () -> UnsafeMutablePointer<CChar>?
 private typealias ConverterTtsModels = @convention(c) () -> UnsafeMutablePointer<CChar>?
@@ -31,6 +38,19 @@ enum EmbeddedConverterError: Error, LocalizedError, Equatable {
     }
 }
 
+private final class ChapterCallbackBox: @unchecked Sendable {
+    let progressHandler: (@Sendable (Data) -> Void)?
+    let chapterHandler: (@Sendable (Data) -> Void)?
+
+    init(
+        progressHandler: (@Sendable (Data) -> Void)?,
+        chapterHandler: (@Sendable (Data) -> Void)?
+    ) {
+        self.progressHandler = progressHandler
+        self.chapterHandler = chapterHandler
+    }
+}
+
 protocol EmbeddedConverter { func openBook(at url: URL) throws -> EmbeddedBook }
 struct EmbeddedBook { let metadataJSON: Data }
 
@@ -50,18 +70,55 @@ final class ConverterFFIAdapter: EmbeddedConverter {
     private let ttsModelInstallManifest: ((UnsafePointer<CChar>?, UnsafePointer<CChar>?, UnsafePointer<CChar>?) -> UnsafeMutablePointer<CChar>?)?
     private let ttsModelInstallCatalogManifest: ((UnsafePointer<CChar>?, UnsafePointer<CChar>?) -> UnsafeMutablePointer<CChar>?)?
     private var _open: ConverterSessionOpen = { _ in nil }
+    private var convertJobJSON: ConverterSessionConvertJob?
     private var convertJSON: ConverterSessionConvert?
+    private var loadError: String?
 
-    init(bundle: Bundle = .main) {
-        let frameworkURLs = [
-            bundle.bundleURL.appendingPathComponent("Frameworks/libconverter_ffi.dylib"),
-            bundle.bundleURL.appendingPathComponent("Frameworks/converter_ffi.dylib"),
-        ]
-        let url = bundle.url(forResource: "converter_ffi", withExtension: "dylib")
-            ?? bundle.url(forResource: "libconverter_ffi", withExtension: "dylib")
-            ?? frameworkURLs.first(where: { FileManager.default.fileExists(atPath: $0.path) })
+    private static let progressCallback: ConverterChapterCallback = { eventJSON, context in
+        guard let eventJSON, let context else { return }
+        let box = Unmanaged<ChapterCallbackBox>
+            .fromOpaque(context)
+            .takeUnretainedValue()
+        box.progressHandler?(Data(String(cString: eventJSON).utf8))
+    }
+
+    private static let chapterCallback: ConverterChapterCallback = { eventJSON, context in
+        guard let eventJSON, let context else { return }
+        let box = Unmanaged<ChapterCallbackBox>
+            .fromOpaque(context)
+            .takeUnretainedValue()
+        box.chapterHandler?(Data(String(cString: eventJSON).utf8))
+    }
+
+    init(bundle: Bundle = .main, libraryURL overrideURL: URL? = nil) {
+        let productsAppFramework = URL(fileURLWithPath: CommandLine.arguments[0])
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("EpubToMp3.app/Contents/Frameworks/libconverter_ffi.dylib")
+        let parentBundle = Bundle(url: bundle.bundleURL.deletingLastPathComponent())
+        let appBundle = Bundle(url: bundle.bundleURL.deletingLastPathComponent().deletingLastPathComponent())
+        let bundles = [bundle, parentBundle, appBundle].compactMap { $0 }
+        let configuredPath = ProcessInfo.processInfo.environment["EPUB2MP3_CONVERTER_FFI_DYLIB"]
+        let configuredURL = configuredPath.flatMap { path -> URL? in
+            guard !path.contains("${"), FileManager.default.fileExists(atPath: path) else { return nil }
+            return URL(fileURLWithPath: path)
+        }
+        let url = overrideURL ?? configuredURL ?? ([productsAppFramework] + bundles.flatMap { candidate -> [URL] in
+            let frameworkURLs = [
+                candidate.bundleURL.appendingPathComponent("Frameworks/libconverter_ffi.dylib"),
+                candidate.bundleURL.appendingPathComponent("Frameworks/converter_ffi.dylib"),
+            ]
+            return frameworkURLs + [
+                candidate.url(forResource: "converter_ffi", withExtension: "dylib"),
+                candidate.url(forResource: "libconverter_ffi", withExtension: "dylib"),
+            ].compactMap { $0 }
+        }).first(where: { FileManager.default.fileExists(atPath: $0.path) })
         guard let url,
               let library = dlopen(url.path, RTLD_NOW | RTLD_LOCAL) else {
+            let error = dlerror()
+            loadError = error.map { String(cString: $0) } ?? "dylib path not found"
             handle = nil; close = { _ in }; metadata = { _ in nil }; freeString = { _ in }; lastError = { nil }; ttsModelsJSON = { nil }; ttsDefaultEngine = { _, _, _ in nil }; ttsInstalledReadyEngine = nil; ttsModelInstall = nil; ttsModelRemove = nil; ttsModelMetadata = nil; ttsModelInstallManifest = nil; ttsModelInstallCatalogManifest = nil; return
         }
         func symbol<T>(_ name: String, as: T.Type) -> T? { dlsym(library, name).map { unsafeBitCast($0, to: T.self) } }
@@ -72,6 +129,7 @@ final class ConverterFFIAdapter: EmbeddedConverter {
               let error: ConverterLastError = symbol("converter_last_error", as: ConverterLastError.self),
               let models: ConverterTtsModels = symbol("converter_tts_models_json", as: ConverterTtsModels.self),
               let defaultEngine: ConverterTtsDefaultEngine = symbol("converter_tts_default_engine", as: ConverterTtsDefaultEngine.self) else {
+            loadError = "dylib missing one or more required ABI symbols"
             dlclose(library); handle = nil; close = { _ in }; metadata = { _ in nil }; freeString = { _ in }; lastError = { nil }; ttsModelsJSON = { nil }; ttsDefaultEngine = { _, _, _ in nil }; ttsInstalledReadyEngine = nil; ttsModelInstall = nil; ttsModelRemove = nil; ttsModelMetadata = nil; ttsModelInstallManifest = nil; ttsModelInstallCatalogManifest = nil; return
         }
         handle = library
@@ -88,11 +146,18 @@ final class ConverterFFIAdapter: EmbeddedConverter {
         ttsModelInstallManifest = symbol("converter_tts_model_install_manifest", as: ConverterTtsModelInstallManifest.self)
         ttsModelInstallCatalogManifest = symbol("converter_tts_model_install_catalog_manifest", as: ConverterTtsModelInstallCatalogManifest.self)
         _open = open
+        convertJobJSON = symbol("converter_session_convert_job_json", as: ConverterSessionConvertJob.self)
         convertJSON = symbol("converter_session_convert_json", as: ConverterSessionConvert.self)
     }
 
+    convenience init(libraryURL: URL) {
+        self.init(bundle: .main, libraryURL: libraryURL)
+    }
+
     func openBook(at url: URL) throws -> EmbeddedBook {
-        guard handle != nil else { throw EmbeddedConverterError.artifactUnavailable }
+        guard handle != nil else {
+            throw EmbeddedConverterError.artifactInvalid("Converter dylib could not be loaded: \(loadError ?? "unknown dlopen error")")
+        }
         guard let session = _open(url.path) else { throw EmbeddedConverterError.conversionFailed(readError()) }
         defer { close(session) }
         guard let value = metadata(session), let json = String(validatingUTF8: value) else { throw EmbeddedConverterError.conversionFailed(readError()) }
@@ -105,18 +170,55 @@ final class ConverterFFIAdapter: EmbeddedConverter {
     func convertBook(
         at url: URL,
         outputDirectory: URL,
+        jobID: String,
         chapterStart: Int32 = -1,
-        chapterEnd: Int32 = -1
+        chapterEnd: Int32 = -1,
+        onProgress: (@Sendable (Data) -> Void)? = nil,
+        onChapterCompleted: (@Sendable (Data) -> Void)? = nil
     ) throws -> Data {
-        guard handle != nil, let convertJSON else {
-            throw EmbeddedConverterError.artifactUnavailable
+        guard handle != nil, convertJobJSON != nil || convertJSON != nil else {
+            throw EmbeddedConverterError.artifactInvalid(
+                "Loaded converter library lacks conversion symbols (job: \(convertJobJSON != nil), legacy: \(convertJSON != nil))."
+            )
         }
         guard let session = _open(url.path) else {
             throw EmbeddedConverterError.conversionFailed(readError())
         }
         defer { close(session) }
-        let result = outputDirectory.path.withCString { outputPointer in
-            convertJSON(session, outputPointer, chapterStart, chapterEnd)
+        let result: UnsafeMutablePointer<CChar>?
+        if let convertJobJSON {
+            let callbackBox: ChapterCallbackBox? = (onProgress != nil || onChapterCompleted != nil)
+                ? ChapterCallbackBox(progressHandler: onProgress, chapterHandler: onChapterCompleted)
+                : nil
+            let context = callbackBox.map { Unmanaged.passRetained($0).toOpaque() }
+            defer {
+                if let context {
+                    Unmanaged<ChapterCallbackBox>.fromOpaque(context).release()
+                }
+            }
+            result = outputDirectory.path.withCString { outputPointer in
+                jobID.withCString { jobPointer in
+                    convertJobJSON(
+                        session,
+                        outputPointer,
+                        jobPointer,
+                        chapterStart,
+                        chapterEnd,
+                        onProgress == nil ? nil : Self.progressCallback,
+                        onChapterCompleted == nil ? nil : Self.chapterCallback,
+                        context
+                    )
+                }
+            }
+        } else {
+            guard onProgress == nil, onChapterCompleted == nil, let convertJSON else {
+                throw EmbeddedConverterError.artifactInvalid(
+                    "Loaded converter library lacks the callback conversion symbol."
+                )
+            }
+            result = outputDirectory.path.withCString { outputPointer in
+                convertJSON(session, outputPointer, chapterStart, chapterEnd)
+            }
         }
         guard let value = result, let json = String(validatingUTF8: value) else {
             throw EmbeddedConverterError.conversionFailed(readError())

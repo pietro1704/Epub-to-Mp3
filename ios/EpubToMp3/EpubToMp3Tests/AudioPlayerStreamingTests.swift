@@ -1,5 +1,6 @@
 #if canImport(AVFoundation) && canImport(MediaPlayer)
 import XCTest
+import AVFoundation
 @testable import EpubToMp3
 
 /// Tests for the segment-streaming additions to `AudioPlayer`:
@@ -79,6 +80,68 @@ final class AudioPlayerStreamingTests: XCTestCase {
                       "A queued explicit Listen action must start the first streamed segment")
     }
 
+    @MainActor
+    func testValidatedRustChapterSnapshotsStartOnListenAndAppendInOrder() throws {
+        let player = AudioPlayer()
+        let jobID = UUID().uuidString
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("rust-chapter-stream-\(jobID)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer {
+            player.stop()
+            try? FileManager.default.removeItem(at: root)
+        }
+        let firstURL = root.appendingPathComponent("0001-first.mp3")
+        let secondURL = root.appendingPathComponent("0002-second.mp3")
+        try fakeMP3().write(to: firstURL)
+        try fakeMP3().write(to: secondURL)
+
+        let pending = JobSnapshot(
+            jobId: jobID, state: "running", bookTitle: "Rust stream", bookAuthor: "Author",
+            coverUrl: nil, coverMimeType: nil, engine: "edge", voice: nil, language: "en",
+            progressPercent: 0, chaptersTotal: 2, chaptersCompleted: 0,
+            chapterProgress: [], outputs: nil, logUrl: nil, error: nil, lastActivityAt: nil
+        )
+        player.play(snapshot: pending, startingAt: 0, restoreAutoplay: false)
+        player.isConverting = true
+        player.resume()
+
+        let first = JobSnapshot.Chapter(
+            index: 0, name: "First", status: "completed", downloadUrl: firstURL.path,
+            chars: 3_000, charsProcessed: 3_000, progressRatio: 1,
+            durationSeconds: nil, startedAt: nil, completedAt: nil
+        )
+        let firstUpdate = JobSnapshot(
+            jobId: jobID, state: "running", bookTitle: "Rust stream", bookAuthor: "Author",
+            coverUrl: nil, coverMimeType: nil, engine: "edge", voice: nil, language: "en",
+            progressPercent: 50, chaptersTotal: 2, chaptersCompleted: 1,
+            chapterProgress: [first], outputs: nil, logUrl: nil, error: nil, lastActivityAt: nil
+        )
+        player.updateSnapshot(firstUpdate)
+
+        XCTAssertTrue(player.isPlaying, "Listen intent must start as soon as a validated Rust chapter is queued.")
+        XCTAssertEqual(player.testHook_playbackChapterCount(), 1)
+        XCTAssertEqual((player.testHook_currentPlayerItem()?.asset as? AVURLAsset)?.url, firstURL)
+
+        let second = JobSnapshot.Chapter(
+            index: 1, name: "Second", status: "completed", downloadUrl: secondURL.path,
+            chars: 3_200, charsProcessed: 3_200, progressRatio: 1,
+            durationSeconds: nil, startedAt: nil, completedAt: nil
+        )
+        let secondUpdate = JobSnapshot(
+            jobId: jobID, state: "running", bookTitle: "Rust stream", bookAuthor: "Author",
+            coverUrl: nil, coverMimeType: nil, engine: "edge", voice: nil, language: "en",
+            progressPercent: 100, chaptersTotal: 2, chaptersCompleted: 2,
+            chapterProgress: [first, second], outputs: nil, logUrl: nil, error: nil, lastActivityAt: nil
+        )
+        player.updateSnapshot(secondUpdate)
+
+        XCTAssertTrue(player.isPlaying)
+        XCTAssertEqual(player.testHook_playbackChapterCount(), 2,
+                       "Later validated chapters must append without resetting the active chapter.")
+        XCTAssertTrue(player.isConverting, "The stream remains live until Rust reports a terminal snapshot.")
+    }
+
     /// Regression: `play(snapshot:startingAt:)` used to call `queue.play()`
     /// unconditionally. Now it only sets up the queue; playback only starts
     /// on explicit user intent.
@@ -90,6 +153,35 @@ final class AudioPlayerStreamingTests: XCTestCase {
         player.play(snapshot: snap, startingAt: 0)
         XCTAssertFalse(player.isPlaying,
             "play(snapshot:startingAt:) must load without auto-starting playback")
+    }
+
+    @MainActor
+    func testManualRustConversionSnapshotStaysPaused() throws {
+        let player = AudioPlayer()
+        let fileURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("manual-rust-\(UUID().uuidString).mp3")
+        try fakeMP3().write(to: fileURL)
+        defer {
+            player.stop()
+            try? FileManager.default.removeItem(at: fileURL)
+        }
+        let snapshot = JobSnapshot(
+            jobId: UUID().uuidString, state: "finished", bookTitle: "Manual Rust",
+            bookAuthor: nil, coverUrl: nil, coverMimeType: nil, engine: "edge",
+            voice: nil, language: "en", progressPercent: 100, chaptersTotal: 1,
+            chaptersCompleted: 1,
+            chapterProgress: [.init(
+                index: 0, name: "Chapter", status: "completed", downloadUrl: fileURL.path,
+                chars: 3_000, charsProcessed: 3_000, progressRatio: 1,
+                durationSeconds: nil, startedAt: nil, completedAt: nil
+            )],
+            outputs: nil, logUrl: nil, error: nil, lastActivityAt: nil
+        )
+
+        player.play(snapshot: snapshot, restoreAutoplay: false)
+
+        XCTAssertNotNil(player.testHook_currentPlayerItem())
+        XCTAssertFalse(player.isPlaying, "Manual conversion prepares audio without autoplay.")
     }
 
     // MARK: - firstChapterReady co-advancement

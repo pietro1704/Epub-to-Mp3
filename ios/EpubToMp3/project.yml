@@ -499,6 +499,7 @@ schemes:
       config: Debug
       environmentVariables:
         IDEPreferLogStreaming: YES
+        EPUB2MP3_LOTR_IMPORTED_EPUB: "${EPUB2MP3_LOTR_IMPORTED_EPUB}"
       targets:
         - EpubToMp3Tests
         - EpubToMp3UITests
