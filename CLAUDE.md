@@ -195,6 +195,11 @@ or common word in the opening paragraph.
 - **Native UI automation** uses XCTest UI, integration, or unit tests; choose
   the narrowest test that proves the requested behavior. Drive the app through
   XCTest, not `osascript` or ad hoc accessibility scripting.
+- **Long-running native conversion tests** must wait for the terminal success
+  state and persisted job/artifact record; a displayed `100%` can arrive before
+  the conversion task finishes its final persistence and playback handoff.
+  Validate the expected output artifacts as well, and terminate any prior app
+  process before starting another run on memory-constrained Macs.
 - **`mise run test`** (Python + web + lint + build) remains the full CLI/web
   gate and must stay green before committing changes to `python_app/` or
   `web/`. It does not and should not attempt to build or test the iOS/macOS

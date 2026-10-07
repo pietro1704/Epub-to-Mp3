@@ -142,6 +142,13 @@ impl AdaptiveThroughputController {
     }
 
     pub fn observe_success(&self, chars: usize, elapsed: Duration, retries: usize) {
+        // Tiny chapters and tail fragments are latency-dominated and do not
+        // indicate the provider's sustainable request throughput. Let them
+        // complete without steering the shared controller; a retried fragment
+        // still carries a real pressure signal.
+        if chars < self.config.min_chunk_chars && retries == 0 {
+            return;
+        }
         let chars_per_second = chars as f64 / elapsed.as_secs_f64().max(0.001);
         let mut state = self.lock_state();
         state.throttles = 0;
@@ -316,6 +323,17 @@ mod tests {
         let adapted = controller.snapshot();
         assert_eq!(adapted.chunk_chars, 3_072);
         assert_eq!(adapted.max_in_flight, 1);
+    }
+
+    #[test]
+    fn short_chapters_do_not_reduce_remote_request_capacity() {
+        let controller = AdaptiveThroughputController::default();
+        controller.observe_success(74, Duration::from_millis(1_327), 0);
+        controller.observe_success(2, Duration::from_millis(1_116), 0);
+
+        let adapted = controller.snapshot();
+        assert_eq!(adapted.chunk_chars, 4_096);
+        assert_eq!(adapted.max_in_flight, 2);
     }
 
     #[test]
