@@ -194,10 +194,15 @@ final class FullPlayerScreenController: UIViewController {
             $0.font = .monospacedDigitSystemFont(ofSize: 12, weight: .regular)
             $0.textColor = .secondaryLabel
         }
+        slider.accessibilityIdentifier = "fullPlayer.progress"
+        slider.accessibilityLabel = L10n.string("player.playbackPosition")
+        elapsedLabel.accessibilityIdentifier = "fullPlayer.elapsed"
+        remainingLabel.accessibilityIdentifier = "fullPlayer.remaining"
 
         configureTransportButton(previousChapterButton, image: "backward.end.fill", action: #selector(previousChapterTapped))
         previousChapterButton.accessibilityIdentifier = "fullPlayer.previousChapter"
         configureTransportButton(skipBackButton, image: "gobackward.15", action: #selector(skipBackTapped), pointSize: 28)
+        skipBackButton.accessibilityIdentifier = "fullPlayer.skipBack"
         configureTransportButton(playPauseButton, image: "play.fill", action: #selector(playPauseTapped), pointSize: 64)
         let playWidth = playPauseButton.widthAnchor.constraint(greaterThanOrEqualToConstant: 64)
         let playHeight = playPauseButton.heightAnchor.constraint(greaterThanOrEqualToConstant: 64)
@@ -205,6 +210,7 @@ final class FullPlayerScreenController: UIViewController {
         playHeight.priority = .required - 2
         NSLayoutConstraint.activate([playWidth, playHeight])
         configureTransportButton(skipForwardButton, image: "goforward.15", action: #selector(skipForwardTapped), pointSize: 28)
+        skipForwardButton.accessibilityIdentifier = "fullPlayer.skipForward"
         configureTransportButton(nextChapterButton, image: "forward.end.fill", action: #selector(nextChapterTapped))
         nextChapterButton.accessibilityIdentifier = "fullPlayer.nextChapter"
 
@@ -463,9 +469,24 @@ final class FullPlayerScreenController: UIViewController {
         }
 
         renderPlaybackPosition()
+        renderSkipButtons()
         renderPlayPauseButton()
         renderRateMenu()
         renderSleepMenu()
+    }
+
+    private func renderSkipButtons() {
+        let backward = Self.configuredSkipInterval(forKey: AppSettings.playbackBackwardSecondsKey)
+        let forward = Self.configuredSkipInterval(forKey: AppSettings.playbackForwardSecondsKey)
+        skipBackButton.setImage(UIImage(systemName: "gobackward.\(backward)"), for: .normal)
+        skipForwardButton.setImage(UIImage(systemName: "goforward.\(forward)"), for: .normal)
+        skipBackButton.accessibilityLabel = L10n.string("player.skipBack.seconds", backward)
+        skipForwardButton.accessibilityLabel = L10n.string("player.skipForward.seconds", forward)
+    }
+
+    private static func configuredSkipInterval(forKey key: String) -> Int {
+        let value = UserDefaults.standard.object(forKey: key) as? Double ?? 15
+        return AppSettings.playbackSkipIntervals.contains(value) ? Int(value) : 15
     }
 
     private func renderPlaybackPosition() {

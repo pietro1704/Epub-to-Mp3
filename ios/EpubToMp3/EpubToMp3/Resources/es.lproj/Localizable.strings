@@ -118,6 +118,7 @@
 "player.playbackPosition" = "Posición de reproducción";
 "player.previousChapter" = "Capítulo anterior";
 "player.skipBack15" = "Retroceder 15 segundos";
+"player.skipBack.seconds" = "Retroceder %d segundos";
 "player.pause" = "Pausa";
 "player.play" = "Reproducir";
 "player.nothingPlaying" = "Nada en reproducción";
@@ -125,6 +126,7 @@
 "player.preparingAudio" = "Preparando audio…";
 "player.fullPlayer" = "Reproductor completo";
 "player.skipForward15" = "Avanzar 15 segundos";
+"player.skipForward.seconds" = "Avanzar %d segundos";
 "player.skipForward30" = "Avanzar 30 segundos";
 "player.nextChapter" = "Siguiente capítulo";
 "menu.playback" = "Reproducción";

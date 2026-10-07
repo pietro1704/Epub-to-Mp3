@@ -3,10 +3,10 @@ import Combine
 import UIKit
 
 enum MiniPlayerLayoutMetrics {
-    static let contentHeight: CGFloat = 52
+    static let contentHeight: CGFloat = 92
     static let maximumBottomSafeAreaInset: CGFloat = 44
-    /// Keeps the overlay compact while allowing the 52-point controls and a
-    /// large iPhone bottom safe-area inset.
+    /// Keeps the transport, chapter seek bar, and labels above the bottom
+    /// safe area on iPhone.
     static let maximumOverlayHeight = contentHeight + maximumBottomSafeAreaInset
 }
 
@@ -22,11 +22,17 @@ final class MiniPlayerBarUIKitView: UIView, UIGestureRecognizerDelegate {
     private let openButton = UIButton(type: .system)
     private let playPauseButton = UIButton(type: .system)
     private let previousButton = UIButton(type: .system)
+    private let skipBackButton = UIButton(type: .system)
     private let nextButton = UIButton(type: .system)
+    private let skipForwardButton = UIButton(type: .system)
     private let rateButton = UIButton(type: .system)
+    private let progressSlider = UISlider()
+    private let elapsedLabel = UILabel()
+    private let remainingLabel = UILabel()
     private let spinner = UIActivityIndicatorView(style: .medium)
     private let chromeStack = UIStackView()
     private var minimumHeightConstraint: NSLayoutConstraint?
+    private var isScrubbing = false
 
     private var player: AudioPlayer?
     private var playbackClock: PlaybackClock?
@@ -151,16 +157,22 @@ final class MiniPlayerBarUIKitView: UIView, UIGestureRecognizerDelegate {
         previousButton.tintColor = .label
         previousButton.accessibilityIdentifier = "miniPlayer.previous"
         previousButton.accessibilityLabel = L10n.string("player.previousChapter")
+        skipBackButton.tintColor = .label
+        skipBackButton.accessibilityIdentifier = "miniPlayer.skipBack"
         nextButton.tintColor = .label
         nextButton.accessibilityIdentifier = "miniPlayer.next"
         nextButton.accessibilityLabel = L10n.string("player.nextChapter")
+        skipForwardButton.tintColor = .label
+        skipForwardButton.accessibilityIdentifier = "miniPlayer.skipForward"
         rateButton.tintColor = .label
         rateButton.accessibilityIdentifier = "miniPlayer.rate"
         rateButton.accessibilityLabel = L10n.string("player.speed")
         playPauseButton.addTarget(self, action: #selector(playPauseTapped), for: .touchUpInside)
         previousButton.addTarget(self, action: #selector(previousTapped), for: .touchUpInside)
         nextButton.addTarget(self, action: #selector(nextTapped), for: .touchUpInside)
-        for button in [playPauseButton, previousButton, nextButton, rateButton] {
+        skipBackButton.addTarget(self, action: #selector(skipBackTapped), for: .touchUpInside)
+        skipForwardButton.addTarget(self, action: #selector(skipForwardTapped), for: .touchUpInside)
+        for button in [playPauseButton, previousButton, skipBackButton, nextButton, skipForwardButton, rateButton] {
             button.translatesAutoresizingMaskIntoConstraints = false
             NSLayoutConstraint.activate([
                 button.widthAnchor.constraint(equalToConstant: 44),
@@ -169,11 +181,22 @@ final class MiniPlayerBarUIKitView: UIView, UIGestureRecognizerDelegate {
         }
         previousButton.setImage(UIImage(systemName: "backward.end.fill"), for: .normal)
         nextButton.setImage(UIImage(systemName: "forward.end.fill"), for: .normal)
+        progressSlider.accessibilityIdentifier = "miniPlayer.progress"
+        progressSlider.accessibilityLabel = L10n.string("player.playbackPosition")
+        progressSlider.addTarget(self, action: #selector(scrubBegan), for: .touchDown)
+        progressSlider.addTarget(self, action: #selector(scrubChanged), for: .valueChanged)
+        progressSlider.addTarget(self, action: #selector(scrubEnded), for: [.touchUpInside, .touchUpOutside, .touchCancel])
+        [elapsedLabel, remainingLabel].forEach {
+            $0.font = .monospacedDigitSystemFont(ofSize: 11, weight: .regular)
+            $0.textColor = .secondaryLabel
+        }
+        elapsedLabel.accessibilityIdentifier = "miniPlayer.elapsed"
+        remainingLabel.accessibilityIdentifier = "miniPlayer.remaining"
 
         spinner.hidesWhenStopped = true
         spinner.translatesAutoresizingMaskIntoConstraints = false
 
-        let trailingStack = UIStackView(arrangedSubviews: [previousButton, playPauseButton, spinner, nextButton, rateButton])
+        let trailingStack = UIStackView(arrangedSubviews: [previousButton, skipBackButton, playPauseButton, spinner, skipForwardButton, nextButton, rateButton])
         trailingStack.axis = .horizontal
         trailingStack.alignment = .center
         trailingStack.spacing = 4
@@ -184,15 +207,23 @@ final class MiniPlayerBarUIKitView: UIView, UIGestureRecognizerDelegate {
         chromeStack.translatesAutoresizingMaskIntoConstraints = false
         chromeStack.addArrangedSubview(openButton)
         chromeStack.addArrangedSubview(trailingStack)
-        addSubview(chromeStack)
-        bringSubviewToFront(chromeStack)
+        let timeRow = UIStackView(arrangedSubviews: [elapsedLabel, UIView(), remainingLabel])
+        timeRow.axis = .horizontal
+        timeRow.alignment = .center
+        let playbackStack = UIStackView(arrangedSubviews: [chromeStack, progressSlider, timeRow])
+        playbackStack.axis = .vertical
+        playbackStack.alignment = .fill
+        playbackStack.spacing = 0
+        playbackStack.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(playbackStack)
+        bringSubviewToFront(playbackStack)
 
         NSLayoutConstraint.activate([
-            chromeStack.leadingAnchor.constraint(equalTo: layoutMarginsGuide.leadingAnchor),
-            chromeStack.trailingAnchor.constraint(equalTo: layoutMarginsGuide.trailingAnchor),
-            chromeStack.centerYAnchor.constraint(equalTo: materialView.centerYAnchor),
-            chromeStack.topAnchor.constraint(greaterThanOrEqualTo: materialView.topAnchor, constant: 4),
-            chromeStack.bottomAnchor.constraint(lessThanOrEqualTo: materialView.bottomAnchor, constant: -4),
+            playbackStack.leadingAnchor.constraint(equalTo: layoutMarginsGuide.leadingAnchor),
+            playbackStack.trailingAnchor.constraint(equalTo: layoutMarginsGuide.trailingAnchor),
+            playbackStack.centerYAnchor.constraint(equalTo: materialView.centerYAnchor),
+            playbackStack.topAnchor.constraint(greaterThanOrEqualTo: materialView.topAnchor, constant: 3),
+            playbackStack.bottomAnchor.constraint(lessThanOrEqualTo: materialView.bottomAnchor, constant: -3),
         ])
         updateTypographyForContentSizeCategory()
     }
@@ -227,12 +258,18 @@ final class MiniPlayerBarUIKitView: UIView, UIGestureRecognizerDelegate {
     private func bindIfNeeded(player: AudioPlayer, playbackClock: PlaybackClock, library: LibraryStore) {
         guard cancellables.isEmpty else { return }
         player.objectWillChange
+            .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in self?.render() }
             .store(in: &cancellables)
-        playbackClock.objectWillChange
+        playbackClock.$snapshot
             .sink { [weak self] _ in self?.render() }
             .store(in: &cancellables)
         library.objectWillChange
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in self?.render() }
+            .store(in: &cancellables)
+        NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)
+            .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in self?.render() }
             .store(in: &cancellables)
     }
@@ -280,7 +317,47 @@ final class MiniPlayerBarUIKitView: UIView, UIGestureRecognizerDelegate {
             ? L10n.string("player.pause")
             : L10n.string("player.play")
         rateButton.setTitle(player.rate.shortLabel, for: .normal)
+        updateSkipButton(skipBackButton, seconds: Self.configuredSkipInterval(forKey: AppSettings.playbackBackwardSecondsKey), forward: false)
+        updateSkipButton(skipForwardButton, seconds: Self.configuredSkipInterval(forKey: AppSettings.playbackForwardSecondsKey), forward: true)
+        renderPlaybackPosition()
         accessibilityIdentifier = "miniPlayer.bar"
+    }
+
+    private static func configuredSkipInterval(forKey key: String) -> Int {
+        let value = UserDefaults.standard.object(forKey: key) as? Double ?? 15
+        return AppSettings.playbackSkipIntervals.contains(value) ? Int(value) : 15
+    }
+
+    private func updateSkipButton(_ button: UIButton, seconds: Int, forward: Bool) {
+        let symbol = forward ? "goforward" : "gobackward"
+        button.setImage(UIImage(systemName: "\(symbol).\(seconds)"), for: .normal)
+        button.accessibilityLabel = L10n.string(
+            forward ? "player.skipForward.seconds" : "player.skipBack.seconds",
+            seconds
+        )
+    }
+
+    private func renderPlaybackPosition() {
+        guard let player, let playbackClock else { return }
+        let position = player.isSeeking ? player.positionSeconds : playbackClock.snapshot.positionSeconds
+        let duration = playbackClock.snapshot.durationSeconds
+        progressSlider.maximumValue = Float(max(duration, 1))
+        if !isScrubbing && !player.isSeeking {
+            progressSlider.value = Float(position)
+        }
+        elapsedLabel.text = formatTime(position)
+        remainingLabel.text = "−\(formatTime(max(0, duration - position) / Double(player.rate.rawValue)))"
+    }
+
+    private func formatTime(_ seconds: TimeInterval) -> String {
+        guard seconds.isFinite, seconds >= 0 else { return "0:00" }
+        let total = Int(seconds)
+        let hours = total / 3600
+        let minutes = (total % 3600) / 60
+        let remainder = total % 60
+        return hours > 0
+            ? String(format: "%d:%02d:%02d", hours, minutes, remainder)
+            : String(format: "%d:%02d", minutes, remainder)
     }
 
     func refresh() {
@@ -310,7 +387,8 @@ final class MiniPlayerBarUIKitView: UIView, UIGestureRecognizerDelegate {
             // The whole pill opens the full player. Only the playback
             // controls remain exempt so tapping play/next/rate keeps its
             // local action instead of expanding the player.
-            if view === playPauseButton || view === previousButton || view === nextButton || view === rateButton {
+            if view === playPauseButton || view === previousButton || view === skipBackButton
+                || view === nextButton || view === skipForwardButton || view === rateButton || view === progressSlider {
                 return false
             }
             current = view.superview
@@ -356,6 +434,35 @@ final class MiniPlayerBarUIKitView: UIView, UIGestureRecognizerDelegate {
     @objc
     private func nextTapped() {
         player?.nextChapter()
+        render()
+    }
+
+    @objc
+    private func skipBackTapped() {
+        player?.skipBackward()
+        render()
+    }
+
+    @objc
+    private func skipForwardTapped() {
+        player?.skipForward()
+        render()
+    }
+
+    @objc
+    private func scrubBegan() {
+        isScrubbing = true
+    }
+
+    @objc
+    private func scrubChanged() {
+        elapsedLabel.text = formatTime(TimeInterval(progressSlider.value))
+    }
+
+    @objc
+    private func scrubEnded() {
+        isScrubbing = false
+        player?.seek(to: TimeInterval(progressSlider.value))
         render()
     }
 

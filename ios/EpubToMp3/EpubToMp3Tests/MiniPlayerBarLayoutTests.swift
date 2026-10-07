@@ -272,13 +272,62 @@ final class MiniPlayerBarLayoutTests: XCTestCase {
         XCTAssertFalse(next.allTargets.isEmpty)
         XCTAssertEqual(controller.view.gestureRecognizers?.count, 1)
         XCTAssertFalse(controller.view.gestureRecognizers?.first?.cancelsTouchesInView ?? true)
+        XCTAssertNotNil(view(in: controller.view, identifier: "fullPlayer.progress"))
+        XCTAssertNotNil(view(in: controller.view, identifier: "fullPlayer.elapsed"))
+        XCTAssertNotNil(view(in: controller.view, identifier: "fullPlayer.remaining"))
+        XCTAssertNotNil(button(in: controller.view, identifier: "fullPlayer.skipBack"))
+        XCTAssertNotNil(button(in: controller.view, identifier: "fullPlayer.skipForward"))
+    }
+
+    @MainActor
+    func testMiniPlayerExposesSeekTimesBothSkipDirectionsAndChapterNavigation() throws {
+        let player = AudioPlayer()
+        let miniPlayer = MiniPlayerBarUIKitView()
+        miniPlayer.configure(
+            player: player,
+            playbackClock: player.playbackClock,
+            library: LibraryStore(),
+            onTap: {}
+        )
+
+        XCTAssertNotNil(view(in: miniPlayer, identifier: "miniPlayer.progress"))
+        XCTAssertNotNil(view(in: miniPlayer, identifier: "miniPlayer.elapsed"))
+        XCTAssertNotNil(view(in: miniPlayer, identifier: "miniPlayer.remaining"))
+        for identifier in [
+            "miniPlayer.previous",
+            "miniPlayer.skipBack",
+            "miniPlayer.playPause",
+            "miniPlayer.skipForward",
+            "miniPlayer.next",
+        ] {
+            let control = try XCTUnwrap(button(in: miniPlayer, identifier: identifier))
+            XCTAssertFalse(control.allTargets.isEmpty, "Expected \(identifier) to dispatch its playback command")
+        }
+        let defaults = UserDefaults.standard
+        let previousBackward = defaults.object(forKey: AppSettings.playbackBackwardSecondsKey)
+        let previousForward = defaults.object(forKey: AppSettings.playbackForwardSecondsKey)
+        defer {
+            restore(defaults, key: AppSettings.playbackBackwardSecondsKey, value: previousBackward)
+            restore(defaults, key: AppSettings.playbackForwardSecondsKey, value: previousForward)
+        }
+        defaults.set(30.0, forKey: AppSettings.playbackBackwardSecondsKey)
+        defaults.set(45.0, forKey: AppSettings.playbackForwardSecondsKey)
+        miniPlayer.refresh()
+        XCTAssertEqual(
+            button(in: miniPlayer, identifier: "miniPlayer.skipBack")?.accessibilityLabel,
+            L10n.string("player.skipBack.seconds", 30)
+        )
+        XCTAssertEqual(
+            button(in: miniPlayer, identifier: "miniPlayer.skipForward")?.accessibilityLabel,
+            L10n.string("player.skipForward.seconds", 45)
+        )
     }
 
     @MainActor
     func testSystemAccessoryExcludesAnAdditionalBottomSafeAreaInset() {
         let miniPlayer = MiniPlayerBarUIKitView(usesSystemManagedBottomInset: true)
 
-        XCTAssertEqual(miniPlayer.intrinsicContentSize.height, 52, accuracy: 0.5)
+        XCTAssertEqual(miniPlayer.intrinsicContentSize.height, MiniPlayerLayoutMetrics.contentHeight, accuracy: 0.5)
     }
 
     @MainActor
@@ -365,14 +414,14 @@ final class MiniPlayerBarLayoutTests: XCTestCase {
 
     @MainActor
     func testOverlayMaximumHeightPreservesCompactControlsAndLargeSafeArea() {
-        XCTAssertEqual(MiniPlayerLayoutMetrics.contentHeight, 52, accuracy: 0.5)
+        XCTAssertEqual(MiniPlayerLayoutMetrics.contentHeight, 92, accuracy: 0.5)
         XCTAssertEqual(MiniPlayerLayoutMetrics.maximumBottomSafeAreaInset, 44, accuracy: 0.5)
         XCTAssertEqual(
             MiniPlayerLayoutMetrics.maximumOverlayHeight,
             MiniPlayerLayoutMetrics.contentHeight + MiniPlayerLayoutMetrics.maximumBottomSafeAreaInset,
             accuracy: 0.5
         )
-        XCTAssertEqual(MiniPlayerLayoutMetrics.maximumOverlayHeight, 96, accuracy: 0.5)
+        XCTAssertEqual(MiniPlayerLayoutMetrics.maximumOverlayHeight, 136, accuracy: 0.5)
     }
 
     private func button(in view: UIView, identifier: String) -> UIButton? {
@@ -383,6 +432,14 @@ final class MiniPlayerBarLayoutTests: XCTestCase {
             if let button = button(in: subview, identifier: identifier) {
                 return button
             }
+        }
+        return nil
+    }
+
+    private func view(in root: UIView, identifier: String) -> UIView? {
+        if root.accessibilityIdentifier == identifier { return root }
+        for subview in root.subviews {
+            if let match = view(in: subview, identifier: identifier) { return match }
         }
         return nil
     }

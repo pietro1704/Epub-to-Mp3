@@ -121,6 +121,7 @@
 "player.playbackPosition" = "Playback position";
 "player.previousChapter" = "Previous chapter";
 "player.skipBack15" = "Skip back 15 seconds";
+"player.skipBack.seconds" = "Skip back %d seconds";
 "player.pause" = "Pause";
 "player.play" = "Play";
 "player.nothingPlaying" = "Nothing playing";
@@ -128,6 +129,7 @@
 "player.preparingAudio" = "Preparing audio…";
 "player.fullPlayer" = "Full player";
 "player.skipForward15" = "Skip forward 15 seconds";
+"player.skipForward.seconds" = "Skip forward %d seconds";
 "player.skipForward30" = "Skip forward 30 seconds";
 "player.nextChapter" = "Next chapter";
 "menu.playback" = "Playback";
