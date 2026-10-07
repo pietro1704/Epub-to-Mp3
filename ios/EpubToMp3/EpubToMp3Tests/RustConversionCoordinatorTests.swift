@@ -4,6 +4,19 @@ import AVFoundation
 import Darwin
 
 final class RustConversionCoordinatorTests: XCTestCase {
+    func testConversionLogAppendPreservesPreviousChunkTrace() throws {
+        let logURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("conversion-log-\(UUID().uuidString).log")
+        defer { try? FileManager.default.removeItem(at: logURL) }
+        let previousTrace = "chunk=1 chars=4096 elapsed=12.4s\n"
+        try Data(previousTrace.utf8).write(to: logURL)
+
+        try RustConversionCoordinator().appendLogLine("[Rust] conversion resumed", to: logURL)
+
+        let contents = try String(contentsOf: logURL, encoding: .utf8)
+        XCTAssertEqual(contents, previousTrace + "[Rust] conversion resumed\n")
+    }
+
     func testOptInImportedLordOfTheRingsConvertsAndPublishesPlayableAudio() async throws {
         let bookPath = ProcessInfo.processInfo.environment["EPUB2MP3_LOTR_IMPORTED_EPUB"]
         let resolvedBookPath = bookPath.flatMap { $0.contains("${") ? nil : $0 }

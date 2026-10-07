@@ -133,11 +133,35 @@ impl ConversionWorker {
     }
     pub fn run(&self, request: ConversionRequest) -> Result<OutputManifest, WorkerError> {
         let metadata = serde_json::json!({"input":request.input,"engine":request.engine,"voice":request.voice,"language":request.language});
-        self.jobs.create(JobRecord::new(
-            &request.job_id,
-            metadata.as_object().cloned().unwrap_or_default(),
-        ))?;
-        self.jobs.transition(&request.job_id, JobState::Running)?;
+        let metadata = metadata.as_object().cloned().unwrap_or_default();
+        match self.jobs.load(&request.job_id) {
+            Ok(record) => {
+                if record.metadata != metadata {
+                    return Err(WorkerError::Piper(format!(
+                        "job {} already exists with different conversion metadata",
+                        request.job_id
+                    )));
+                }
+                match record.state {
+                    JobState::Queued => {
+                        self.jobs.transition(&request.job_id, JobState::Running)?;
+                    }
+                    JobState::Running => {}
+                    state => {
+                        return Err(WorkerError::Piper(format!(
+                            "job {} cannot resume from state {state:?}",
+                            request.job_id
+                        )));
+                    }
+                }
+            }
+            Err(JobError::NotFound(_)) => {
+                self.jobs
+                    .create(JobRecord::new(&request.job_id, metadata))?;
+                self.jobs.transition(&request.job_id, JobState::Running)?;
+            }
+            Err(error) => return Err(error.into()),
+        }
         let result = self.run_inner(&request);
         match &result {
             Ok(_) => {
@@ -322,7 +346,8 @@ impl ConversionWorker {
                         message: format!("converting chapter {}", position + 1),
                     });
                     let synthesis_started = std::time::Instant::now();
-                    if !mp3.is_file() {
+                    let synthesized = !mp3.is_file();
+                    if synthesized {
                         eprintln!("synthesizing chapter {}/{}", position + 1, total);
                         self.synthesize_with_timeout(
                             &engine,
@@ -383,6 +408,7 @@ impl ConversionWorker {
                             filename: name,
                             text_chars,
                         },
+                        synthesized,
                     ));
                     Ok(())
                 },
@@ -392,11 +418,11 @@ impl ConversionWorker {
         results.sort_by_key(|item| item.0);
         let files: Vec<_> = results
             .iter()
-            .map(|(_, path, name, _)| (path.clone(), name.clone()))
+            .map(|(_, path, name, _, _)| (path.clone(), name.clone()))
             .collect();
         let manifest: Vec<_> = results
             .iter()
-            .map(|(_, _, _, metadata)| metadata.clone())
+            .map(|(_, _, _, metadata, _)| metadata.clone())
             .collect();
         let output_text_chars: usize = manifest.iter().map(|chapter| chapter.text_chars).sum();
         if output_text_chars != source_text_chars {
@@ -424,8 +450,10 @@ impl ConversionWorker {
         };
         if let Some(cover_name) = &cover {
             let cover_path = output_dir.join(cover_name);
-            for (_, path, _, _) in &results {
-                audio::embed_cover(path, &cover_path)?;
+            for (_, path, _, _, synthesized) in &results {
+                if *synthesized {
+                    audio::embed_cover(path, &cover_path)?;
+                }
             }
         }
         let archive = output_dir.join(format!("{}.zip", sanitize(&book.title)));
@@ -696,6 +724,8 @@ fn resolve_chapter_parallelism(
 #[cfg(test)]
 mod streaming_tests {
     use super::*;
+    use std::io::Write;
+    use zip::{write::SimpleFileOptions, ZipWriter};
 
     fn write_test_wav(path: &Path) {
         let sample_rate = 8_000u32;
@@ -730,6 +760,85 @@ mod streaming_tests {
             audio_path: path,
             text_chars: 100,
         }
+    }
+
+    fn write_test_epub(path: &Path) {
+        let file = fs::File::create(path).unwrap();
+        let mut zip = ZipWriter::new(file);
+        let stored =
+            SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
+        let options = SimpleFileOptions::default();
+        zip.start_file("mimetype", stored).unwrap();
+        zip.write_all(b"application/epub+zip").unwrap();
+        zip.start_file("META-INF/container.xml", options).unwrap();
+        zip.write_all(br#"<container xmlns="urn:oasis:names:tc:opendocument:xmlns:container"><rootfiles><rootfile full-path="OPS/package.opf"/></rootfiles></container>"#).unwrap();
+        zip.start_file("OPS/package.opf", options).unwrap();
+        zip.write_all(br#"<package xmlns="http://www.idpf.org/2007/opf"><metadata><dc:title xmlns:dc="http://purl.org/dc/elements/1.1/">Resume fixture</dc:title><dc:creator xmlns:dc="http://purl.org/dc/elements/1.1/">Test</dc:creator></metadata><manifest><item id="chapter" href="chapter.xhtml" media-type="application/xhtml+xml"/></manifest><spine><itemref idref="chapter"/></spine></package>"#).unwrap();
+        zip.start_file("OPS/chapter.xhtml", options).unwrap();
+        zip.write_all(br#"<html xmlns="http://www.w3.org/1999/xhtml"><body><h1>Chapter One</h1><p>Existing validated audio can be resumed.</p></body></html>"#).unwrap();
+        zip.finish().unwrap();
+    }
+
+    #[test]
+    fn resumes_running_job_from_existing_audio_without_rewriting_it() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path();
+        let input = root.join("resume.epub");
+        write_test_epub(&input);
+        let paths = crate::paths::Paths {
+            project_root: root.to_path_buf(),
+            persistent_root: root.to_path_buf(),
+            cache_dir: root.join(".cache"),
+            output_dir: root.join("outputs"),
+            jobs_dir: root.join(".jobs"),
+            uploads_dir: root.join(".uploads"),
+            job_inputs_dir: root.join(".job_inputs"),
+            source_backups_dir: root.join(".source_backups"),
+            logs_dir: root.join(".logs"),
+            telemetry_dir: root.join(".telemetry"),
+            models_dir: root.join("models"),
+            piper_models_dir: root.join("models/piper"),
+        };
+        let worker = ConversionWorker::new(AppConfig::from_paths(paths)).unwrap();
+        let job_id = "resume-existing-job";
+        let input_text = input.to_string_lossy().into_owned();
+        let metadata = serde_json::json!({
+            "input": input_text,
+            "engine": "edge",
+            "voice": null,
+            "language": null
+        })
+        .as_object()
+        .unwrap()
+        .clone();
+        worker
+            .jobs
+            .create(JobRecord::new(job_id, metadata))
+            .unwrap();
+        worker.jobs.transition(job_id, JobState::Running).unwrap();
+
+        let output_directory = root.join("outputs").join(job_id);
+        fs::create_dir_all(&output_directory).unwrap();
+        let book = epub::parse_epub(fs::File::open(&input).unwrap()).unwrap();
+        let existing_audio =
+            output_directory.join(format!("0001-{}.mp3", sanitize(&book.chapters[0].name)));
+        write_test_wav(&existing_audio);
+        let original_audio = fs::read(&existing_audio).unwrap();
+
+        let result = worker.run(ConversionRequest {
+            input,
+            job_id: job_id.into(),
+            engine: Some("edge".into()),
+            voice: None,
+            language: None,
+            chapter_indices: None,
+            no_parallel: true,
+        });
+
+        assert!(result.is_ok(), "active jobs should resume: {result:?}");
+        assert_eq!(worker.jobs.load(job_id).unwrap().state, JobState::Completed);
+        assert_eq!(fs::read(&existing_audio).unwrap(), original_audio);
+        assert!(output_directory.join("manifest.json").is_file());
     }
 
     #[test]

@@ -204,7 +204,7 @@ final class RustConversionCoordinator {
             .appendingPathComponent(jobID, isDirectory: true)
         try fileManager.createDirectory(at: outputDirectory, withIntermediateDirectories: true)
         let logURL = outputDirectory.appendingPathComponent("conversion.log")
-        try? Data("[Rust] conversion started: \(bookURL.lastPathComponent)\n".utf8).write(to: logURL)
+        try? appendLogLine("[Rust] conversion started: \(bookURL.lastPathComponent)", to: logURL)
 
         do {
             let manifest = try await withCheckedThrowingContinuation { continuation in
@@ -247,16 +247,22 @@ final class RustConversionCoordinator {
                     )
                 }
             }
-            if let existing = try? String(contentsOf: logURL, encoding: .utf8) {
-                try? Data((existing + "[Rust] conversion finished\n").utf8).write(to: logURL)
-            }
+            try? appendLogLine("[Rust] conversion finished", to: logURL)
             return Result(jobID: jobID, manifestJSON: manifest, outputDirectory: outputDirectory)
         } catch {
-            if let existing = try? String(contentsOf: logURL, encoding: .utf8) {
-                try? Data((existing + "[Rust] conversion failed: \(error.localizedDescription)\n").utf8).write(to: logURL)
-            }
+            try? appendLogLine("[Rust] conversion failed: \(error.localizedDescription)", to: logURL)
             throw error
         }
+    }
+
+    func appendLogLine(_ line: String, to url: URL) throws {
+        if !fileManager.fileExists(atPath: url.path) {
+            fileManager.createFile(atPath: url.path, contents: nil)
+        }
+        let handle = try FileHandle(forWritingTo: url)
+        defer { try? handle.close() }
+        try handle.seekToEnd()
+        try handle.write(contentsOf: Data((line + "\n").utf8))
     }
 
     func convertFirstSubstantiveChapter(

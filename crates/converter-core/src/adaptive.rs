@@ -57,7 +57,7 @@ impl Default for AdaptiveConfig {
             max_max_in_flight: INITIAL_MAX_IN_FLIGHT,
             success_window: 4,
             fast_chars_per_second: 500.0,
-            slow_chars_per_second: 250.0,
+            slow_chars_per_second: 450.0,
             throttle_cooldown: Duration::from_secs(12),
             max_cooldown: Duration::from_secs(120),
             timeout_cooldown: Duration::from_secs(3),
@@ -319,6 +319,18 @@ mod tests {
         controller.observe_success(4_096, Duration::from_secs(20), 0);
         assert_eq!(controller.snapshot().chunk_chars, 4_096);
         controller.observe_success(4_096, Duration::from_secs(20), 0);
+
+        let adapted = controller.snapshot();
+        assert_eq!(adapted.chunk_chars, 3_072);
+        assert_eq!(adapted.max_in_flight, 1);
+    }
+
+    #[test]
+    fn sustained_degraded_chunk_throughput_reduces_capacity_before_retry_or_timeout() {
+        let controller = AdaptiveThroughputController::default();
+        controller.observe_success(6_144, Duration::from_secs(17), 0);
+        assert_eq!(controller.snapshot().chunk_chars, 4_096);
+        controller.observe_success(6_144, Duration::from_secs(14), 0);
 
         let adapted = controller.snapshot();
         assert_eq!(adapted.chunk_chars, 3_072);

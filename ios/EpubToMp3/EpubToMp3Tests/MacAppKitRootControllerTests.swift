@@ -4,6 +4,7 @@ import XCTest
 #if os(macOS)
 import AppKit
 import AVFoundation
+import CryptoKit
 
 final class MacAppKitRootControllerTests: XCTestCase {
     @MainActor
@@ -288,6 +289,123 @@ final class MacAppKitRootControllerTests: XCTestCase {
         let progressLabel = try XCTUnwrap(findProgressLabel(in: detailView))
         XCTAssertEqual(
             progressLabel.stringValue,
+            L10n.string("bookDetail.progressPercent", 100)
+        )
+    }
+
+    @MainActor
+    func testOptInResumeCompletedChristieBookInMacAppWithoutChangingAudio() async throws {
+        guard ProcessInfo.processInfo.environment["EPUB2MP3_RESUME_EXISTING_CHRISTIE_JOB"] == "1" else {
+            throw XCTSkip("Set EPUB2MP3_RESUME_EXISTING_CHRISTIE_JOB=1 to resume the saved full-book conversion.")
+        }
+
+        let jobID = "EE78A887-F360-48E4-8D8F-E9FDF2A2E00B"
+        let bookID = "55417053355de78768a0823d3cd203fd"
+        let bookURL = URL(fileURLWithPath:
+            NSHomeDirectory() + "/Library/Application Support/EpubToMp3/ImportedBooks/" +
+                bookID + "/E não sobrou nenhum (Agatha Christie [Christie, Agatha]) " +
+                "(z-library.sk, 1lib.sk, z-lib.sk).epub"
+        )
+        let outputDirectory = URL(fileURLWithPath:
+            NSHomeDirectory() + "/Library/Application Support/EpubToMp3/RustConversions/" + jobID,
+            isDirectory: true
+        )
+        let jobRecordURL = outputDirectory
+            .deletingLastPathComponent()
+            .appendingPathComponent(".jobs/\(jobID).json")
+        let fileManager = FileManager.default
+        XCTAssertTrue(fileManager.isReadableFile(atPath: bookURL.path))
+        XCTAssertTrue(fileManager.fileExists(atPath: jobRecordURL.path))
+        let previousJob = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: Data(contentsOf: jobRecordURL)) as? [String: Any]
+        )
+        let previousState = try XCTUnwrap(previousJob["state"] as? String)
+        XCTAssertTrue(["running", "completed"].contains(previousState))
+
+        let mp3URLs = try fileManager.contentsOfDirectory(
+            at: outputDirectory,
+            includingPropertiesForKeys: nil
+        ).filter { $0.pathExtension.lowercased() == "mp3" }
+            .sorted { $0.lastPathComponent < $1.lastPathComponent }
+        let chapterPrefixes = Set(mp3URLs.compactMap { url -> Int? in
+            guard !url.lastPathComponent.contains(".cover-") else { return nil }
+            return Int(url.lastPathComponent.prefix(4))
+        })
+        XCTAssertEqual(chapterPrefixes, Set(1...113), "Every chapter audio file must exist before resume.")
+
+        func audioFingerprint() throws -> Data {
+            var input = Data()
+            for url in mp3URLs {
+                input.append(Data(url.lastPathComponent.utf8))
+                input.append(try Data(contentsOf: url))
+            }
+            return Data(SHA256.hash(data: input))
+        }
+        let originalAudioFingerprint = try audioFingerprint()
+
+        let result: RustConversionCoordinator.Result
+        if previousState == "running" {
+            result = try await RustConversionCoordinator().convert(
+                bookURL: bookURL,
+                jobID: jobID,
+                chapterStart: -1,
+                chapterEnd: -1
+            )
+        } else {
+            let manifestURL = outputDirectory.appendingPathComponent("manifest.json")
+            let manifest = try JSONSerialization.jsonObject(with: Data(contentsOf: manifestURL))
+            let response = try JSONSerialization.data(withJSONObject: ["manifest": manifest])
+            result = RustConversionCoordinator.Result(
+                jobID: jobID,
+                manifestJSON: response,
+                outputDirectory: outputDirectory
+            )
+        }
+        let snapshot = try result.snapshot()
+
+        XCTAssertEqual(snapshot.chaptersTotal, 113)
+        XCTAssertEqual(snapshot.chaptersCompleted, 113)
+        XCTAssertEqual(snapshot.playableChapters.count, 113)
+        XCTAssertEqual(try audioFingerprint(), originalAudioFingerprint, "Resume must not rewrite existing chapter audio.")
+        let resumedMP3Names = try fileManager.contentsOfDirectory(
+            at: outputDirectory,
+            includingPropertiesForKeys: nil
+        ).filter { $0.pathExtension.lowercased() == "mp3" }.map(\.lastPathComponent)
+        XCTAssertEqual(Set(resumedMP3Names), Set(mp3URLs.map(\.lastPathComponent)))
+        let jobRecord = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: Data(contentsOf: jobRecordURL)) as? [String: Any]
+        )
+        XCTAssertEqual(jobRecord["state"] as? String, "completed")
+        XCTAssertTrue(fileManager.fileExists(atPath: outputDirectory.appendingPathComponent("manifest.json").path))
+
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: "group.com.pietrocode.epubtomp3"))
+        let library = LibraryStore(defaults: defaults)
+        let book = try XCTUnwrap(library.books.first(where: { $0.id == bookID }))
+        let detail = MacBookDetailViewController(
+            book: book,
+            library: library,
+            settings: AppSettings(defaults: defaults),
+            player: AudioPlayer(resumeStore: ResumeStore(storage: UserDefaultsResumeStorage(defaults: defaults))),
+            playerPresentation: PlayerPresentation(defaults: defaults),
+            onRead: { _ in },
+            onShowJobs: {}
+        )
+        let detailView = detail.view
+        detailView.layoutSubtreeIfNeeded()
+        let terminalSnapshot = try detail.finalizeLocalConversion(result)
+        XCTAssertTrue(terminalSnapshot.isTerminal)
+        XCTAssertEqual(library.books.first(where: { $0.id == bookID })?.lastJobId, jobID)
+        XCTAssertEqual(LibraryStore(defaults: defaults).books.first(where: { $0.id == bookID })?.lastJobId, jobID)
+
+        func progressLabel(in view: NSView) -> NSTextField? {
+            if let label = view as? NSTextField,
+               label.accessibilityIdentifier() == "bookDetail.progress" {
+                return label
+            }
+            return view.subviews.lazy.compactMap(progressLabel(in:)).first
+        }
+        XCTAssertEqual(
+            try XCTUnwrap(progressLabel(in: detailView)).stringValue,
             L10n.string("bookDetail.progressPercent", 100)
         )
     }
