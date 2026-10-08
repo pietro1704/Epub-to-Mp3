@@ -267,10 +267,15 @@ pub fn create_archive(
     files: &[(PathBuf, String)],
 ) -> Result<(), AudioError> {
     let output = output.as_ref();
-    if let Some(parent) = output.parent() {
-        fs::create_dir_all(parent)?;
-    }
-    let temp = output.with_extension(format!("zip.tmp-{}", std::process::id()));
+    let parent = output
+        .parent()
+        .filter(|path| !path.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+    fs::create_dir_all(parent)?;
+    let staging = tempfile::Builder::new()
+        .prefix(".archive-")
+        .tempdir_in(parent)?;
+    let temp = staging.path().join("archive.zip");
     let file = File::create(&temp)?;
     let mut archive = ZipWriter::new(file);
     let options = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
@@ -288,6 +293,7 @@ pub fn create_archive(
     }
     let file = archive.finish()?;
     file.sync_all()?;
+    drop(file);
     fs::rename(temp, output)?;
     Ok(())
 }
@@ -330,6 +336,72 @@ pub fn embed_cover(input: &Path, cover: &Path) -> Result<(), AudioError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn concurrent_archives_publish_a_complete_zip_without_staging_collisions() {
+        let root = tempfile::tempdir().unwrap();
+        let output = root.path().join("book.zip");
+        let sources: Vec<_> = (0..8)
+            .map(|index| {
+                let path = root.path().join(format!("chapter-{index}.mp3"));
+                fs::write(&path, vec![index as u8; 1024 * 1024]).unwrap();
+                (path, format!("chapter-{index}.mp3"))
+            })
+            .collect();
+        let barrier = std::sync::Barrier::new(sources.len());
+        std::thread::scope(|scope| {
+            let handles: Vec<_> = sources
+                .iter()
+                .map(|source| {
+                    let output = &output;
+                    let barrier = &barrier;
+                    scope.spawn(move || {
+                        barrier.wait();
+                        create_archive(output, std::slice::from_ref(source))
+                    })
+                })
+                .collect();
+            for handle in handles {
+                handle.join().unwrap().unwrap();
+            }
+        });
+
+        let mut archive = zip::ZipArchive::new(File::open(output).unwrap()).unwrap();
+        assert_eq!(archive.len(), 1);
+        let mut chapter = archive.by_index(0).unwrap();
+        let index = sources
+            .iter()
+            .position(|(_, name)| name == chapter.name())
+            .unwrap();
+        let mut bytes = Vec::new();
+        chapter.read_to_end(&mut bytes).unwrap();
+        assert_eq!(bytes, vec![index as u8; 1024 * 1024]);
+        assert_eq!(
+            fs::read_dir(root.path()).unwrap().count(),
+            sources.len() + 1
+        );
+    }
+
+    #[test]
+    fn failed_archive_preserves_previous_zip_and_removes_temporary_files() {
+        let root = tempfile::tempdir().unwrap();
+        let source = root.path().join("chapter.mp3");
+        let output = root.path().join("book.zip");
+        fs::write(&source, b"complete chapter").unwrap();
+        create_archive(&output, &[(source, "chapter.mp3".into())]).unwrap();
+        let previous = fs::read(&output).unwrap();
+        assert!(create_archive(
+            &output,
+            &[(root.path().join("missing.mp3"), "missing.mp3".into())]
+        )
+        .is_err());
+        assert_eq!(fs::read(output).unwrap(), previous);
+        assert_eq!(
+            fs::read_dir(root.path()).unwrap().count(),
+            2,
+            "failed archive creation must not leave temporary files"
+        );
+    }
+
     #[test]
     fn zero_padding_is_noop() {
         assert_eq!(
