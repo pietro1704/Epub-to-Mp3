@@ -122,7 +122,7 @@ enum EpubFixture {
             <meta name="cover" content="cover-img"/>
           </metadata>
           <manifest>
-            <item id="cover-img" href="cover.png" media-type="image/png" \
+            <item id="cover-img" href="images/cover.png" media-type="image/png" \
         properties="cover-image"/>
             <item id="ch1" href="text/chapter1.xhtml" \
         media-type="application/xhtml+xml"/>

@@ -7,6 +7,29 @@ import XCTest
 #endif
 
 final class ConversionOptionsInteropTests: XCTestCase {
+    private func runtimeAdapter() throws -> ConverterFFIAdapter {
+        #if APP_FOUNDATION_HOST_TESTS
+        guard let path = ProcessInfo.processInfo.environment["APP_FOUNDATION_FFI_LIBRARY"] else {
+            throw XCTSkip("Run apple:foundation:ffi:test for the real host dylib boundary.")
+        }
+        return ConverterFFIAdapter(libraryURL: URL(fileURLWithPath: path))
+        #else
+        return ConverterFFIAdapter()
+        #endif
+    }
+
+    func testChapterFixtureHasReadableSpineAndCoverInActualRustParser() throws {
+        let source = try EpubFixture.createWithChapter()
+        defer { try? FileManager.default.removeItem(at: source) }
+        let metadata = try runtimeAdapter().openBook(at: source).metadataJSON
+        let fields = try XCTUnwrap(JSONSerialization.jsonObject(with: metadata) as? [String: Any])
+        let chapters = try XCTUnwrap(fields["chapters"] as? [[String: Any]])
+        XCTAssertEqual(chapters.count, 1)
+        XCTAssertEqual(fields["title"] as? String, EpubFixture.title)
+        // Rust validates the referenced cover while opening, unlike a metadata-
+        // only fixture that can hide an empty spine or unresolved cover path.
+    }
+
     func testExplicitModelConfigurationPreservesLiteralScopedPaths() throws {
         let options = ConversionOptions(engine: "piper", modelsRoot: "/app/tts-models",
                                         modelID: "pt_BR-edresson-low", modelPath: "model.onnx",
@@ -53,13 +76,11 @@ final class ConversionOptionsInteropTests: XCTestCase {
     }
 
     func testCoordinatorRejectsInvalidOptionsBeforeBookOrOutputAccess() async throws {
-        guard let path = ProcessInfo.processInfo.environment["APP_FOUNDATION_FFI_LIBRARY"] else {
-            throw XCTSkip("Run apple:foundation:ffi:test for the real host dylib boundary.")
-        }
+        let adapter = try runtimeAdapter()
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("ffi-coordinator-tests-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: directory) }
         let manager = ObservedSupportManager(root: directory)
-        let coordinator = RustConversionCoordinator(adapter: ConverterFFIAdapter(libraryURL: URL(fileURLWithPath: path)), fileManager: manager)
+        let coordinator = RustConversionCoordinator(adapter: adapter, fileManager: manager)
         do {
             _ = try await coordinator.convert(bookURL: URL(fileURLWithPath: "/must-not-open-book.epub"),
                                               options: ConversionOptions(engine: "coqui"))
@@ -72,13 +93,11 @@ final class ConversionOptionsInteropTests: XCTestCase {
     }
 
     func testExplicitPiperRequiresModelReadinessBeforeBookOrOutputAccess() async throws {
-        guard let path = ProcessInfo.processInfo.environment["APP_FOUNDATION_FFI_LIBRARY"] else {
-            throw XCTSkip("Run apple:foundation:ffi:test for the real host dylib boundary.")
-        }
+        let adapter = try runtimeAdapter()
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("piper-preflight-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: directory) }
         let manager = ObservedSupportManager(root: directory)
-        let coordinator = RustConversionCoordinator(adapter: ConverterFFIAdapter(libraryURL: URL(fileURLWithPath: path)),
+        let coordinator = RustConversionCoordinator(adapter: adapter,
                                                      fileManager: manager)
         for options in [
             ConversionOptions(engine: "piper"),
@@ -122,12 +141,9 @@ final class ConversionOptionsInteropTests: XCTestCase {
     }
 
     func testActualSwiftRustOptionsRejectUnsupportedValuesBeforeOutputWork() throws {
-        guard let path = ProcessInfo.processInfo.environment["APP_FOUNDATION_FFI_LIBRARY"],
-              let fixture = ProcessInfo.processInfo.environment["APP_FOUNDATION_FFI_FIXTURE"] else {
-            throw XCTSkip("Run apple:foundation:ffi:test for the real host dylib boundary.")
-        }
-        let adapter = ConverterFFIAdapter(libraryURL: URL(fileURLWithPath: path))
-        let bookURL = URL(fileURLWithPath: fixture)
+        let adapter = try runtimeAdapter()
+        let bookURL = try EpubFixture.createWithChapter()
+        defer { try? FileManager.default.removeItem(at: bookURL) }
         _ = try adapter.openBook(at: bookURL)
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("ffi-options-tests-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false)

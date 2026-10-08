@@ -424,3 +424,23 @@ Review and diff checks passed. No user-data cleanup or book synthesis.
 Initial library load is still synchronous. Lifecycle flush hooks are a separate
 pending Apple validation change; index-write completion is not fsync/power-loss
 durability. Performance and physical-iPhone gates remain open.
+
+### Native fixture and portable FFI regression
+
+Physical run `364BEC13-3B6B-49E7-B9FA-C1D598DF9055` executed 109 tests:
+98 passed, 11 failed, zero skipped. One FFI failure was the metadata-only EPUB
+fixture's empty spine. Follow-up `65846453-6579-4B64-A7D7-F00A4029CEC8`
+exposed its chapter fixture's unresolved cover reference. The chapter OPF now
+matches `OEBPS/images/cover.png`. Both host and app interop tests use this actual
+chapter fixture and real adapters; app tests no longer need host-only dylib paths.
+
+Final `apple:foundation:test` with the existing debug dylib passed 20 tests,
+zero failures/skips (2.33 seconds incremental compile; 0.111 seconds XCTest).
+The new parser regression verifies readable spine/title; opening also validates
+the referenced cover. The same fixture exercises all execution flags against a
+blocked output, without network synthesis. Diff review/checks passed.
+
+Physical playback failures remain unresolved. A two-instance session-release
+regression is prepared and typechecks for iOS but has not run on the phone.
+Lifecycle hooks and actual latency/memory measurements remain uncommitted and
+unverified; no goal completion or performance improvement is claimed.

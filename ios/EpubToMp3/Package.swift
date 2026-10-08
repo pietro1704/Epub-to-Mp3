@@ -17,7 +17,7 @@ let production = ["Features/Conversion/Models/SessionRecord.swift", "Features/Co
                   "Features/Conversion/Services/ConversionChapterSelection.swift", "Features/Conversion/Services/ConversionOptions.swift",
                   "Features/Conversion/Services/ConverterFFIAdapter.swift", "Features/Conversion/Services/RustConversionCoordinator.swift",
                   "Features/Conversion/Models/JobSnapshot.swift", "Shared/Localization/L10n.swift"]
-let tests = ["ConversionHistoryReaderTests.swift", "ConversionChapterSelectionTests.swift", "ConversionOptionsInteropTests.swift"]
+let tests = ["ConversionHistoryReaderTests.swift", "ConversionChapterSelectionTests.swift", "ConversionOptionsInteropTests.swift", "EpubFixture.swift"]
 let package = Package(
     name: "AppFoundation",
     platforms: [.macOS(.v12)],
