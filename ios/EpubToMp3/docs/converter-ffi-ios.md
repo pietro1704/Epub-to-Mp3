@@ -23,7 +23,13 @@ Schema is required, unknown fields fail, and voice/language remain literal.
 regenerates only selected audio through validated same-volume staging, preserving
 prior audio on failure. `max_performance` permits parallel selected chapters
 within configured/platform resource caps. All three flags default to false.
-Provider support does not imply an installed, ready offline model.
+Explicit Piper requires `models_root` (absolute), `model_id` (one namespace
+component), and relative `model_path`/`model_config_path` within that installed
+namespace. Rust rejects traversal, missing files and symlink escapes, then checks
+actual runtime initialization/readiness before book/output work. Edge/auto reject
+model fields. Model paths are request-local, not process environment overrides;
+initialization and synthesis share a transaction lock. A missing linked runtime
+fails clearly; this interface does not install models or enable optional engines.
 
 Rust validation precedes book/output access. Missing symbols never cause explicit
 options to fall back to an unconfigured ABI. Only `(-1,-1)` means whole book;

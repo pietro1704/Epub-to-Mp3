@@ -202,3 +202,131 @@ fn force_and_clear_apply_only_to_selected_chapter_through_actual_worker() {
     assert_eq!(fs::read(downloads).unwrap(), b"listener download");
     println!("FLAGS_ASSERTIONS_COMPLETED");
 }
+
+struct ExplicitRuntime {
+    model_calls: Mutex<Vec<(std::path::PathBuf, std::path::PathBuf)>>,
+    text_calls: Mutex<Vec<String>>,
+}
+impl piper::PiperRuntime for ExplicitRuntime {
+    fn supports_explicit_model_paths(&self) -> bool {
+        true
+    }
+    fn status(&self) -> piper::PiperRuntimeStatus {
+        piper::PiperRuntimeStatus {
+            runtime_loaded: true,
+            model_available: true,
+            abi_compatible: true,
+            engine_ready: true,
+        }
+    }
+    fn init(&self, model: &Path, config: &Path) -> Result<(), piper::PiperError> {
+        self.model_calls
+            .lock()
+            .unwrap()
+            .push((model.to_owned(), config.to_owned()));
+        Ok(())
+    }
+    fn synthesize(&self, text: &str, output: &Path) -> Result<(), piper::PiperError> {
+        self.text_calls.lock().unwrap().push(text.to_owned());
+        fs::write(output, waveform()).map_err(|error| piper::PiperError::Io(error.to_string()))
+    }
+    fn shutdown(&self) {}
+}
+
+#[test]
+fn explicit_model_reaches_worker_thread_without_environment_override() {
+    const GUARD: &str = "EPUB_MODEL_ISOLATED_TEST";
+    if std::env::var(GUARD).as_deref() != Ok("1") {
+        let output = Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "explicit_model_reaches_worker_thread_without_environment_override",
+                "--nocapture",
+                "--test-threads=1",
+            ])
+            .env(GUARD, "1")
+            .env("PIPER_MODEL", "/must-not-use-process-model")
+            .env("PATH", "/no-tools")
+            .env("FFMPEG", "/no-tools/ffmpeg")
+            .env("FFPROBE", "/no-tools/ffprobe")
+            .env("CONVERTER_AUDIO_DISABLE_EXTERNAL_TOOLS", "1")
+            .env("RUST_CHAPTER_TIMEOUT_SECONDS", "30")
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}\n{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert!(
+            String::from_utf8_lossy(&output.stdout).contains("EXPLICIT_MODEL_ASSERTIONS_COMPLETED")
+        );
+        return;
+    }
+    let fixture = tempfile::tempdir().unwrap();
+    let root = fixture.path();
+    let input = root.join("source.epub");
+    book(&input);
+    let parsed = epub::parse_epub(fs::File::open(&input).unwrap()).unwrap();
+    let models = root.join("installed");
+    let namespace = models.join("chosen-literal-id");
+    fs::create_dir_all(&namespace).unwrap();
+    let model_path = namespace.join("chosen.onnx");
+    let config_path = namespace.join("chosen.config.json");
+    fs::write(&model_path, b"synthetic installed model").unwrap();
+    fs::write(&config_path, b"{}").unwrap();
+    let runtime = Arc::new(ExplicitRuntime {
+        model_calls: Mutex::new(Vec::new()),
+        text_calls: Mutex::new(Vec::new()),
+    });
+    let model = piper::PreparedPiperModel::prepare(
+        &models,
+        "chosen-literal-id",
+        Path::new("chosen.onnx"),
+        Path::new("chosen.config.json"),
+        runtime.clone(),
+    )
+    .unwrap();
+    let paths = paths::resolve_paths_from(
+        [("PERSISTENT_ROOT", root.to_string_lossy().into_owned())],
+        root.to_owned(),
+    );
+    let worker = ConversionWorker::new(AppConfig::from_paths(paths))
+        .unwrap()
+        .with_piper_model(Some(Arc::new(model)));
+    let result = worker
+        .run(ConversionRequest {
+            input,
+            job_id: "explicit-model-job".into(),
+            engine: Some("piper".into()),
+            voice: None,
+            language: None,
+            chapter_indices: Some(vec!["position:1".into()]),
+            no_parallel: true,
+        })
+        .unwrap();
+    assert_eq!(result.chapters.len(), 1);
+    assert_eq!(result.chapters[0].source_index, 1);
+    assert_eq!(
+        *runtime.text_calls.lock().unwrap(),
+        vec![parsed.chapters[1].text.clone()]
+    );
+    let expected = (
+        model_path.canonicalize().unwrap(),
+        config_path.canonicalize().unwrap(),
+    );
+    let calls = runtime.model_calls.lock().unwrap();
+    assert_eq!(
+        calls.len(),
+        2,
+        "preflight and synthesis must both initialize the requested model"
+    );
+    assert!(calls.iter().all(|paths| paths == &expected));
+    assert_eq!(
+        std::env::var("PIPER_MODEL").unwrap(),
+        "/must-not-use-process-model"
+    );
+    assert_eq!(fs::read(model_path).unwrap(), b"synthetic installed model");
+    println!("EXPLICIT_MODEL_ASSERTIONS_COMPLETED");
+}

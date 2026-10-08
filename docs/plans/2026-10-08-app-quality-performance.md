@@ -381,3 +381,27 @@ iOS/macOS streaming sinks await the async API.
 
 Limits: successful file writing is not an fsync/power-loss guarantee. Physical
 iPhone verification and latency/memory comparisons are still pending.
+
+### Slice 3e — explicit model readiness and request-local paths
+
+Piper options require absolute `models_root`, single-component `model_id`, and
+relative `model_path`/`model_config_path`. Rust resolves the installed namespace,
+rejects missing/unreadable files and escapes, initializes the actual runtime and
+checks readiness before book/output access. Edge/auto reject model fields.
+Prepared requests pin paths/runtime through the worker thread; init+synthesis
+share a transaction lock rather than process environment model selection.
+Legacy calls without explicit options retain compatibility.
+
+Focused verification: five Piper unit tests, two isolated actual-worker tests,
+21 FFI tests and 19 native Swift/real-dylib tests passed, zero failures/skips.
+Regressions cover failed initialization/unready runtime, unsafe paths, concurrent
+model requests, literal Swift encoding and early coordinator rejection without
+book/output access. Worker fixture deliberately supplies an incompatible model
+environment to prove request-local routing. Rustfmt/diff and two-axis owned diff
+review passed. No model download, optional runtime dependency build or synthesis
+of user books.
+
+Limits: the feature-enabled native Piper adapter is not compiled/exercised in
+this host pass; shipping Apple builds without that runtime fail clearly rather
+than pretending installed files enable inference. Frontend installed-model
+selection and final physical-device embedding remain pending.

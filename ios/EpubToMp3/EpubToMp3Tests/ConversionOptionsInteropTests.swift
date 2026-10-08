@@ -7,6 +7,19 @@ import XCTest
 #endif
 
 final class ConversionOptionsInteropTests: XCTestCase {
+    func testExplicitModelConfigurationPreservesLiteralScopedPaths() throws {
+        let options = ConversionOptions(engine: "piper", modelsRoot: "/app/tts-models",
+                                        modelID: "pt_BR-edresson-low", modelPath: "model.onnx",
+                                        modelConfigPath: "model.onnx.json")
+        let data = Data(try options.encodedJSON().utf8)
+        let fields = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        XCTAssertEqual(fields["models_root"] as? String, "/app/tts-models")
+        XCTAssertEqual(fields["model_id"] as? String, "pt_BR-edresson-low")
+        XCTAssertEqual(fields["model_path"] as? String, "model.onnx")
+        XCTAssertEqual(fields["model_config_path"] as? String, "model.onnx.json")
+        XCTAssertEqual(try JSONDecoder().decode(ConversionOptions.self, from: data), options)
+    }
+
     func testScopedManifestRequiresExactOrderedChapterIdentities() throws {
         func result(_ indices: [Int?], jobID: String = "selected-job") throws -> RustConversionCoordinator.Result {
             let chapters: [[String: Any]] = indices.enumerated().map { offset, index in
@@ -53,6 +66,33 @@ final class ConversionOptionsInteropTests: XCTestCase {
             XCTFail("Unsupported provider unexpectedly accepted")
         } catch {
             XCTAssertTrue(error.localizedDescription.contains("unsupported conversion engine"))
+        }
+        XCTAssertEqual(manager.supportLookups, 0)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: directory.path))
+    }
+
+    func testExplicitPiperRequiresModelReadinessBeforeBookOrOutputAccess() async throws {
+        guard let path = ProcessInfo.processInfo.environment["APP_FOUNDATION_FFI_LIBRARY"] else {
+            throw XCTSkip("Run apple:foundation:ffi:test for the real host dylib boundary.")
+        }
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("piper-preflight-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let manager = ObservedSupportManager(root: directory)
+        let coordinator = RustConversionCoordinator(adapter: ConverterFFIAdapter(libraryURL: URL(fileURLWithPath: path)),
+                                                     fileManager: manager)
+        for options in [
+            ConversionOptions(engine: "piper"),
+            ConversionOptions(engine: "piper", modelsRoot: directory.path, modelID: "fixture",
+                              modelPath: "model.onnx", modelConfigPath: "model.onnx.json"),
+            ConversionOptions(engine: "edge", modelID: "must-not-ignore-model"),
+        ] {
+            do {
+                _ = try await coordinator.convert(bookURL: URL(fileURLWithPath: "/must-not-open-unready-piper.epub"),
+                                                  options: options)
+                XCTFail("Unready or incompatible model configuration was accepted")
+            } catch {
+                XCTAssertTrue(error.localizedDescription.lowercased().contains("piper"), "Unexpected preflight error: \(error)")
+            }
         }
         XCTAssertEqual(manager.supportLookups, 0)
         XCTAssertFalse(FileManager.default.fileExists(atPath: directory.path))

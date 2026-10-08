@@ -125,6 +125,7 @@ pub struct ConversionWorker {
     pub chapter_completed: Option<ChapterCompletionSink>,
     pub adaptive: Arc<crate::adaptive::AdaptiveThroughputController>,
     pub execution_options: ExecutionOptions,
+    pub piper_model: Option<Arc<piper::PreparedPiperModel>>,
 }
 impl ConversionWorker {
     pub fn new(config: AppConfig) -> Result<Self, WorkerError> {
@@ -143,6 +144,7 @@ impl ConversionWorker {
             chapter_completed: None,
             adaptive,
             execution_options: ExecutionOptions::default(),
+            piper_model: None,
         })
     }
     pub fn with_progress(mut self, sink: ProgressSink) -> Self {
@@ -151,6 +153,10 @@ impl ConversionWorker {
     }
     pub fn with_execution_options(mut self, options: ExecutionOptions) -> Self {
         self.execution_options = options;
+        self
+    }
+    pub fn with_piper_model(mut self, model: Option<Arc<piper::PreparedPiperModel>>) -> Self {
+        self.piper_model = model;
         self
     }
     pub fn with_chapter_completed(mut self, sink: ChapterCompletionSink) -> Self {
@@ -577,6 +583,11 @@ impl ConversionWorker {
     }
 
     fn synthesize_with_piper(&self, text: &str, out: &Path) -> Result<(), WorkerError> {
+        if let Some(model) = &self.piper_model {
+            return model
+                .synthesize(text, out, &self.cancel)
+                .map_err(|error| WorkerError::Piper(error.to_string()));
+        }
         if cfg!(target_os = "android") {
             return Err(WorkerError::Piper(
                 "Piper is disabled on Android; Edge TTS is required".into(),
@@ -648,6 +659,7 @@ impl ConversionWorker {
         let voice_owned = voice.map(str::to_owned);
         let language_owned = language.map(str::to_owned);
         let synthesis_config = self.config.clone();
+        let piper_model = self.piper_model.clone();
         let adaptive = Arc::clone(&self.adaptive);
         let progress = self.progress.clone();
         let telemetry: Option<Telemetry> = progress.as_ref().map(|sink| {
@@ -698,6 +710,7 @@ impl ConversionWorker {
                 let worker = Self::new(synthesis_config);
                 let result = worker.map_or_else(Err, |mut worker| {
                     worker.cancel = cancel;
+                    worker.piper_model = piper_model;
                     worker.adaptive = adaptive;
                     worker.progress = progress;
                     worker.synthesize(

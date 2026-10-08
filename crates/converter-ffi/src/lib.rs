@@ -48,6 +48,12 @@ struct ConversionOptionsV1 {
     engine: Option<String>,
     voice: Option<String>,
     language: Option<String>,
+    models_root: Option<String>,
+    model_id: Option<String>,
+    model_path: Option<String>,
+    model_config_path: Option<String>,
+    #[serde(skip)]
+    prepared_model: Option<Arc<piper::PreparedPiperModel>>,
     #[serde(default)]
     clear_cache: bool,
     #[serde(default)]
@@ -82,7 +88,43 @@ impl ConversionOptionsV1 {
                 }
             }
         }
+        let has_model_fields = options.models_root.is_some()
+            || options.model_id.is_some()
+            || options.model_path.is_some()
+            || options.model_config_path.is_some();
+        if has_model_fields && options.engine.as_deref() != Some("piper") {
+            return Err(
+                "Piper model fields require explicit engine 'piper'; edge/auto cannot use them"
+                    .into(),
+            );
+        }
         Ok(options)
+    }
+
+    fn prepare(mut self) -> Result<Self, String> {
+        if self.engine.as_deref() != Some("piper") {
+            return Ok(self);
+        }
+        let required = |value: &Option<String>, name: &str| -> Result<String, String> {
+            value.as_ref().filter(|value| !value.trim().is_empty() && !value.chars().any(char::is_control))
+                .cloned().ok_or_else(|| format!("explicit Piper requires nonempty {name}; select an installed model and linked runtime"))
+        };
+        let root = required(&self.models_root, "models_root")?;
+        let id = required(&self.model_id, "model_id")?;
+        let model = required(&self.model_path, "model_path")?;
+        let config = required(&self.model_config_path, "model_config_path")?;
+        let runtime = explicit_piper_runtime()?;
+        self.prepared_model = Some(Arc::new(
+            piper::PreparedPiperModel::prepare(
+                Path::new(&root),
+                &id,
+                Path::new(&model),
+                Path::new(&config),
+                runtime,
+            )
+            .map_err(|error| format!("Piper preflight failed: {error}"))?,
+        ));
+        Ok(self)
     }
 
     fn execution_options(&self) -> converter_core::worker::ExecutionOptions {
@@ -120,6 +162,7 @@ pub unsafe extern "C" fn converter_conversion_options_validate_json_v1(
     clear_last_error();
     match c_string(options_json, "conversion options")
         .and_then(|json| ConversionOptionsV1::parse(&json))
+        .and_then(ConversionOptionsV1::prepare)
     {
         Ok(_) => true,
         Err(error) => fail(error),
@@ -384,8 +427,10 @@ pub unsafe extern "C" fn converter_session_convert_job_json(
 /// rejected. `clear_cache` rebuilds selected derived text, `force_reprocess`
 /// regenerates selected audio using validated staging, and `max_performance`
 /// permits parallel selected chapters within configured resource caps. All
-/// flags default to false. No model install
-/// or inference-readiness assertion is performed by this configuration boundary.
+/// flags default to false. Explicit Piper requires all four model fields:
+/// absolute models_root, single-component model_id, and relative model_path and
+/// model_config_path within that installed namespace. Preflight checks actual
+/// runtime initialization and readiness; no model is downloaded or inferred.
 /// Options and chapter bounds are checked before output creation. Returned
 /// strings and callbacks retain the existing ownership contract.
 #[no_mangle]
@@ -403,6 +448,7 @@ pub unsafe extern "C" fn converter_session_convert_job_options_json_v1(
     clear_last_error();
     let options = match c_string(options_json, "conversion options")
         .and_then(|json| ConversionOptionsV1::parse(&json))
+        .and_then(ConversionOptionsV1::prepare)
     {
         Ok(options) => options,
         Err(error) => return fail(error),
@@ -468,6 +514,7 @@ unsafe fn convert_job_with_options(
     #[cfg(feature = "piper-runtime")]
     piper_runtime_register_embedded();
     let execution_options = options.execution_options();
+    let prepared_model = options.prepared_model.clone();
     let request =
         options.into_request(session, job_id.clone(), chapter_indices, chapter_start >= 0);
     let progress_log = output_dir.join("conversion.log");
@@ -483,6 +530,7 @@ unsafe fn convert_job_with_options(
         Err(error) => return fail(error.to_string()),
     }
     .with_execution_options(execution_options)
+    .with_piper_model(prepared_model)
     .with_progress(Arc::new(move |event| {
         use std::io::Write;
         let line = progress_log_line(&event, conversion_started, &previous_event);
@@ -553,6 +601,78 @@ unsafe fn convert_job_with_options(
                 None => fail("failed to serialize conversion manifest".to_owned()),
             }
         }
+    }
+}
+
+fn explicit_piper_runtime() -> Result<Arc<dyn piper::PiperRuntime>, String> {
+    #[cfg(feature = "piper-runtime")]
+    {
+        return Ok(Arc::new(ExplicitEmbeddedPiperRuntime));
+    }
+    #[cfg(not(feature = "piper-runtime"))]
+    {
+        piper::registered_runtime().filter(|runtime| runtime.supports_explicit_model_paths())
+            .ok_or_else(|| "Piper runtime unavailable: link the embedded Piper runtime before selecting an installed model".into())
+    }
+}
+
+#[cfg(feature = "piper-runtime")]
+struct ExplicitEmbeddedPiperRuntime;
+
+#[cfg(feature = "piper-runtime")]
+impl piper::PiperRuntime for ExplicitEmbeddedPiperRuntime {
+    fn supports_explicit_model_paths(&self) -> bool {
+        true
+    }
+
+    fn status(&self) -> piper::PiperRuntimeStatus {
+        let status = piper_runtime::piper_runtime_status();
+        piper::PiperRuntimeStatus {
+            runtime_loaded: status.runtime_loaded != 0,
+            model_available: status.model_available != 0,
+            abi_compatible: status.abi_compatible != 0,
+            engine_ready: status.engine_ready != 0,
+        }
+    }
+
+    fn init(&self, model: &Path, config: &Path) -> Result<(), piper::PiperError> {
+        let model = CString::new(model.to_string_lossy().as_bytes())
+            .map_err(|error| piper::PiperError::Synthesis(error.to_string()))?;
+        let config = CString::new(config.to_string_lossy().as_bytes())
+            .map_err(|error| piper::PiperError::Synthesis(error.to_string()))?;
+        let mut error = vec![0_u8; 2048];
+        if piper_runtime::piper_runtime_init(
+            model.as_ptr(),
+            config.as_ptr(),
+            error.as_mut_ptr(),
+            error.len() as u32,
+        ) == 0
+        {
+            return Err(piper::PiperError::Synthesis(c_error(&error)));
+        }
+        Ok(())
+    }
+
+    fn synthesize(&self, text: &str, output: &Path) -> Result<(), piper::PiperError> {
+        let text =
+            CString::new(text).map_err(|error| piper::PiperError::Synthesis(error.to_string()))?;
+        let output = CString::new(output.to_string_lossy().as_bytes())
+            .map_err(|error| piper::PiperError::Synthesis(error.to_string()))?;
+        let mut error = vec![0_u8; 2048];
+        if piper_runtime::piper_synthesize(
+            text.as_ptr(),
+            output.as_ptr(),
+            error.as_mut_ptr(),
+            error.len() as u32,
+        ) == 0
+        {
+            return Err(piper::PiperError::Synthesis(c_error(&error)));
+        }
+        Ok(())
+    }
+
+    fn shutdown(&self) {
+        piper_runtime::piper_runtime_shutdown();
     }
 }
 
@@ -1954,6 +2074,15 @@ mod tests {
                 (r#"{}"#, "schema_version"),
                 (r#"{"schema_version":1,"unknown":false}"#, "unknown field"),
                 (r#"{"schema_version":1,"voice":""}"#, "voice"),
+                (r#"{"schema_version":1,"engine":"piper"}"#, "models_root"),
+                (
+                    r#"{"schema_version":1,"engine":"edge","model_id":"installed"}"#,
+                    "require explicit engine",
+                ),
+                (
+                    r#"{"schema_version":1,"engine":"auto","models_root":"/models"}"#,
+                    "require explicit engine",
+                ),
                 (r#"{"schema_version":1,"language":"\u0000"}"#, "language"),
                 ("{", "JSON"),
             ] {
@@ -1980,6 +2109,91 @@ mod tests {
         }
         assert_eq!(std::fs::read(blocked).unwrap(), b"prior output");
         assert_eq!(std::fs::read_dir(directory.path()).unwrap().count(), 1);
+    }
+
+    #[test]
+    fn explicit_piper_preflight_fails_before_session_or_output_and_never_defaults_to_edge() {
+        let fixture = tempfile::tempdir().unwrap();
+        let output_path = fixture.path().join("must-not-create");
+        let output = CString::new(output_path.to_string_lossy().as_bytes()).unwrap();
+        let job = CString::new("must-not-create").unwrap();
+        for (json, expected) in [
+            (r#"{"schema_version":1,"engine":"piper"}"#, "models_root"),
+            (
+                r#"{"schema_version":1,"engine":"piper","models_root":"/models"}"#,
+                "model_id",
+            ),
+            (
+                r#"{"schema_version":1,"engine":"piper","models_root":"/models","model_id":"literal"}"#,
+                "model_path",
+            ),
+            (
+                r#"{"schema_version":1,"engine":"piper","models_root":"/models","model_id":"literal","model_path":"voice.onnx"}"#,
+                "model_config_path",
+            ),
+            (
+                r#"{"schema_version":1,"models_root":"/models"}"#,
+                "require explicit engine",
+            ),
+        ] {
+            let options = CString::new(json).unwrap();
+            unsafe {
+                assert!(!converter_conversion_options_validate_json_v1(
+                    options.as_ptr()
+                ));
+                let error = converter_last_error();
+                assert!(!error.is_null());
+                assert!(CStr::from_ptr(error).to_str().unwrap().contains(expected));
+                converter_string_free(error);
+                // No book session exists: readiness must fail before session access.
+                assert!(converter_session_convert_job_options_json_v1(
+                    ptr::null(),
+                    output.as_ptr(),
+                    job.as_ptr(),
+                    options.as_ptr(),
+                    -1,
+                    -1,
+                    None,
+                    None,
+                    ptr::null_mut()
+                )
+                .is_null());
+                let error = converter_last_error();
+                assert!(!error.is_null());
+                assert!(CStr::from_ptr(error).to_str().unwrap().contains(expected));
+                converter_string_free(error);
+            }
+        }
+        assert!(!output_path.exists());
+        assert_eq!(std::fs::read_dir(fixture.path()).unwrap().count(), 0);
+    }
+
+    #[cfg(not(feature = "piper-runtime"))]
+    #[test]
+    fn explicit_installed_piper_is_not_ready_without_linked_runtime() {
+        let fixture = tempfile::tempdir().unwrap();
+        let installed = fixture.path().join("selected");
+        std::fs::create_dir(&installed).unwrap();
+        std::fs::write(installed.join("voice.onnx"), b"installed model").unwrap();
+        std::fs::write(installed.join("voice.json"), b"{}").unwrap();
+        let options = CString::new(serde_json::json!({"schema_version":1,"engine":"piper",
+            "models_root":fixture.path(),"model_id":"selected","model_path":"voice.onnx","model_config_path":"voice.json"}).to_string()).unwrap();
+        unsafe {
+            assert!(!converter_conversion_options_validate_json_v1(
+                options.as_ptr()
+            ));
+            let error = converter_last_error();
+            assert!(!error.is_null());
+            assert!(CStr::from_ptr(error)
+                .to_str()
+                .unwrap()
+                .contains("runtime unavailable"));
+            converter_string_free(error);
+        }
+        assert_eq!(
+            std::fs::read(installed.join("voice.onnx")).unwrap(),
+            b"installed model"
+        );
     }
 
     #[test]
@@ -2064,7 +2278,6 @@ mod tests {
             assert!(!handle.is_null());
             for json in [
                 r#"{"schema_version":1}"#,
-                r#"{"schema_version":1,"engine":"piper","voice":"speaker-0","language":"pt-BR"}"#,
                 r#"{"schema_version":1,"engine":"auto"}"#,
                 r#"{"schema_version":1,"clear_cache":true,"force_reprocess":true,"max_performance":true}"#,
             ] {
