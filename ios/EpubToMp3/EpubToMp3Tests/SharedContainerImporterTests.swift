@@ -85,6 +85,42 @@ final class SharedContainerImporterTests: XCTestCase {
 
     // MARK: - drain → LibraryStore
 
+    @MainActor
+    func testAsyncInboxCallerPublishesDurableBookAndPreservesFailedSource() async throws {
+        let source = try makeExpandedEpubDirectory(named: "Async.epub")
+        let broken = try makeExpandedEpubDirectory(named: "Async Broken.epub", includeOPF: false)
+        let suite = "library.async-inbox.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let library = LibraryStore(defaults: defaults, importDirectory: tempDir.appendingPathComponent("library"))
+        let outcomes = await SharedContainerImporter.drainAsync(urls: [source, broken], into: library)
+        XCTAssertNotNil(outcomes[0].importedBookID)
+        XCTAssertNil(outcomes[0].error)
+        XCTAssertNotNil(outcomes[1].error)
+        XCTAssertEqual(library.books.count, 1)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: source.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: broken.path))
+        let durable = try library.openBookFile(id: XCTUnwrap(outcomes[0].importedBookID))
+        XCTAssertEqual(try EpubMetadataReader.readMetadata(from: durable).title, EpubFixture.title)
+        XCTAssertEqual(LibraryStore(defaults: defaults).books.count, 1)
+    }
+
+    @MainActor
+    func testAsyncDocumentsCallerPreservesSourceAndDoesNotReimportUnchangedBooks() async throws {
+        let source = try makeExpandedEpubDirectory(named: "Async Finder.epub")
+        let suite = "library.async-documents.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let library = LibraryStore(defaults: defaults, importDirectory: tempDir.appendingPathComponent("library"))
+        let first = await DocumentsBookImporter.importPendingAsync(in: tempDir, into: library, defaults: defaults)
+        XCTAssertEqual(first.count, 1)
+        XCTAssertNotNil(first[0].importedBookID)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: source.path))
+        let second = await DocumentsBookImporter.importPendingAsync(in: tempDir, into: library, defaults: defaults)
+        XCTAssertTrue(second.isEmpty)
+        XCTAssertEqual(library.books.count, 1)
+    }
+
     func testDrainImportsIntoLibraryAndDeletesSource() throws {
         // Use the same in-memory hashable fixture LibraryStoreTests
         // uses — the EpubMetadataReader returns empty metadata for a

@@ -246,18 +246,20 @@ final class LibraryScreenController: UIViewController, UIDocumentPickerDelegate,
     }
 
     func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
-        var firstError: String?
-        for url in urls {
-            do {
-                _ = try library.importBook(from: url)
-            } catch {
-                if firstError == nil { firstError = error.localizedDescription }
+        Task { [weak self] in
+            guard let self else { return }
+            let outcomes = await self.importSelectedBooks(from: urls)
+            if let error = outcomes.compactMap(\.error).first {
+                self.presentMessage(title: L10n.string("library.importError"), message: error)
             }
         }
-        reloadGrid(animated: true)
-        if let firstError {
-            presentMessage(title: L10n.string("library.importError"), message: firstError)
-        }
+    }
+
+    /// The picker and native tests share the actual asynchronous import boundary.
+    func importSelectedBooks(from urls: [URL]) async -> [LibraryStore.ImportOutcome] {
+        let outcomes = await library.importBooks(from: urls)
+        if isViewLoaded { reloadGrid(animated: true) }
+        return outcomes
     }
 
     func updateSearchResults(for searchController: UISearchController) {

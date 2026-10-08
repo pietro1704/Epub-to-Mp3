@@ -203,14 +203,22 @@ final class MacLibraryViewController: NSViewController, NSSearchFieldDelegate,
         panel.canChooseDirectories = false
         panel.allowedContentTypes = Self.acceptedTypes
         guard panel.runModal() == .OK else { return }
-        var firstError: Error?
-        for url in panel.urls {
-            do { _ = try library.importBook(from: url) }
-            catch { firstError = firstError ?? error }
+        let urls = panel.urls
+        Task { [weak self] in
+            guard let self else { return }
+            let outcomes = await self.importSelectedBooks(from: urls)
+            if let error = outcomes.compactMap(\.error).first {
+                self.presentImportError(NSError(domain: "LibraryStore", code: 6,
+                    userInfo: [NSLocalizedDescriptionKey: error]))
+            }
         }
-        if let firstError {
-            presentImportError(firstError)
-        }
+    }
+
+    /// The picker and native tests share the actual asynchronous import boundary.
+    func importSelectedBooks(from urls: [URL]) async -> [LibraryStore.ImportOutcome] {
+        let outcomes = await library.importBooks(from: urls)
+        if isViewLoaded { reload() }
+        return outcomes
     }
 
     func importBooks() {

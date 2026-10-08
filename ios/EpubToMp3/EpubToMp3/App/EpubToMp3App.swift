@@ -27,6 +27,7 @@ final class EpubToMp3App: NSObject, PlatformApplicationDelegate {
     let bookmarkStore = BookmarkStore()
 
     private static var sharedPlayerForWidgetIntents: AudioPlayer?
+    private var libraryImportTask: Task<Void, Never>?
 
     override init() {
         super.init()
@@ -388,8 +389,7 @@ final class EpubToMp3App: NSObject, PlatformApplicationDelegate {
 
     private func activateRuntime() {
         Self.sharedPlayerForWidgetIntents = player
-        drainSharedInbox()
-        importDocumentsBooks()
+        importPendingLibraryBooks()
         drainPendingIntent()
         drainWidgetIntents()
         WidgetDataSync.reloadAll()
@@ -410,31 +410,33 @@ final class EpubToMp3App: NSObject, PlatformApplicationDelegate {
 #endif
     }
 
-    private func drainSharedInbox() {
+    private func importPendingLibraryBooks() {
 #if os(iOS)
-        guard SharedContainerImporter.isAppGroupAvailable else { return }
-        let outcomes = SharedContainerImporter.drain(into: library)
-        for outcome in outcomes {
-            if let error = outcome.error {
-                print("[ShareInbox] failed \(outcome.url.lastPathComponent): \(error)")
+        guard libraryImportTask == nil else { return }
+        libraryImportTask = Task { [weak self] in
+            guard let self else { return }
+            defer { self.libraryImportTask = nil }
+            let shared = await SharedContainerImporter.drainAsync(into: self.library)
+            for outcome in shared {
+                if let error = outcome.error {
+                    print("[ShareInbox] failed \(outcome.url.lastPathComponent): \(error)")
+                }
             }
-        }
-#endif
-    }
-
-    private func importDocumentsBooks() {
-#if os(iOS)
-        let outcomes = DocumentsBookImporter.importPending(into: library)
-        for outcome in outcomes where outcome.error != nil {
-            print("[DocumentsImport] failed \(outcome.url.lastPathComponent): \(outcome.error!)")
+            let documents = await DocumentsBookImporter.importPendingAsync(into: self.library)
+            for outcome in documents where outcome.error != nil {
+                print("[DocumentsImport] failed \(outcome.url.lastPathComponent): \(outcome.error!)")
+            }
         }
 #endif
     }
 
     func handleIncomingURL(_ url: URL) {
         if url.isFileURL {
-            if let book = try? library.importBook(from: url) {
-                UserDefaults.standard.set(book.id, forKey: ReaderSessionState.currentlyReadingBookIDKey)
+            Task { [weak self] in
+                guard let self else { return }
+                if let book = try? await self.library.importBookAsync(from: url) {
+                    UserDefaults.standard.set(book.id, forKey: ReaderSessionState.currentlyReadingBookIDKey)
+                }
             }
             return
         }

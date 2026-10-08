@@ -57,7 +57,7 @@ enum SharedContainerImporter {
     static let inboxSubpath = SharedContainerInbox.inboxSubpath
 
     /// Result of importing a single shared file.
-    struct ImportOutcome: Equatable {
+    struct ImportOutcome: Equatable, Sendable {
         let url: URL
         let importedBookID: String?
         let error: String?
@@ -176,6 +176,35 @@ enum SharedContainerImporter {
             try? fileManager.removeItem(at: url)
         }
         return outcomes
+    }
+
+    /// UI entry point: enumerate, prepare and clean up on the bounded import worker.
+    @MainActor
+    static func drainAsync(
+        into library: LibraryStore,
+        fileManager: FileManager = .default,
+        groupID: String = appGroupID
+    ) async -> [ImportOutcome] {
+        let resources = LibraryStore.ImportResources(fileManager: fileManager, defaults: nil)
+        let urls = (try? await LibraryStore.performImportIO {
+            pendingFiles(fileManager: resources.fileManager, groupID: groupID)
+        }) ?? []
+        return await drainAsync(urls: urls, into: library, fileManager: fileManager)
+    }
+
+    @MainActor
+    static func drainAsync(
+        urls: [URL], into library: LibraryStore, fileManager: FileManager = .default
+    ) async -> [ImportOutcome] {
+        let resources = LibraryStore.ImportResources(fileManager: fileManager, defaults: nil)
+        let results = await library.importBooks(from: urls)
+        // Preserve failed/cancelled sources. Only a published durable copy permits
+        // deleting a payload owned by this inbox handoff.
+        let completed = results.filter { $0.book != nil }.map(\.url)
+        _ = try? await LibraryStore.performImportIO {
+            for url in completed { try? resources.fileManager.removeItem(at: url) }
+        }
+        return results.map { ImportOutcome(url: $0.url, importedBookID: $0.book?.id, error: $0.error) }
     }
 
     /// Used by the Share Extension to drop a file into the Inbox.

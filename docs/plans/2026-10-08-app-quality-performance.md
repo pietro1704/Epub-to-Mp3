@@ -338,3 +338,27 @@ checks passed. No user book synthesis, release rebuild or model download.
 Host execution/interop is verified; final Apple artifact embedding, offline
 model-path/readiness and physical performance remain pending. This is not a
 measured speedup or a guarantee of full worker cancellation.
+
+### Slice 6a — asynchronous bounded library import
+
+Picker, incoming-URL, Documents and shared-inbox paths now await serial worker
+preparation (scope/hash/archive/copy/metadata/cover). Only immutable resource
+references and prepared values cross that boundary. One main-actor publication
+and persistence occur per batch; edits made during preparation survive, removed
+books are not resurrected, and failed reimports preserve previous bytes/index.
+Documents keep sources; inbox removes only successfully imported payloads.
+
+Shared native macOS verification: 60 tests passed, zero failures/skips across
+LibraryStore, SharedContainerImporter, AudioPlayerEnqueueSegment and
+JobDetailViewModelStreaming. Evidence:
+`Test-EpubToMp3Mac-2026.10.08_15-40-15--0300.xcresult` (68.6 seconds total;
+3.684 seconds test interval). Library regressions exercise actual Mac controller,
+worker copy thread, partial batch failure, one persistence, concurrent edits and
+removal, failed replacement and both importer callers. Initial compilation found
+Foundation Sendable captures/type inference; fixed with a narrow immutable IO
+resource carrier, without marking the store Sendable or relaxing compiler checks.
+Final diff review and whitespace checks passed. No user-data cleanup/synthesis.
+
+Limits: index JSON encoding/loading still synchronous; iOS-only UI branches and
+physical-device responsiveness/performance remain pending. Synchronous legacy
+import remains compatible and is not claimed to be nonblocking.
