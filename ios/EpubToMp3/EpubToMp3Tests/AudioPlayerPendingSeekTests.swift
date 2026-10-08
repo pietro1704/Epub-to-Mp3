@@ -14,6 +14,7 @@ final class AudioPlayerPendingSeekTests: XCTestCase {
         embeddedJob: Bool = false,
         snapshotIndexBase: Int = 0,
         streamPublications: [Int: LatencyObservation.StreamPublication] = [:],
+        afterResume: @MainActor () -> Void = {},
         _ body: (AudioPlayer, (Bool) -> JobSnapshot) async throws -> Void
     ) async throws {
         let identifier = embeddedJob ? UUID().uuidString : "PendingSeek-\(UUID().uuidString)"
@@ -102,11 +103,18 @@ final class AudioPlayerPendingSeekTests: XCTestCase {
             player.play(snapshot: snapshot(targetReady: false), startingAt: 0)
         }
         player.resume()
+        afterResume()
         for _ in 0..<100 {
             if player.positionSeconds > 0 && player.durationSeconds > 0 { break }
             try await Task.sleep(nanoseconds: 50_000_000)
         }
-        XCTAssertGreaterThan(player.positionSeconds, 0, "The available chapter must actually advance.")
+        let initialItem = player.testHook_currentPlayerItem()
+        let initialError = initialItem?.error as NSError?
+        XCTAssertGreaterThan(player.positionSeconds, 0,
+            "The available chapter must actually advance. "
+            + "itemTime=\(initialItem?.currentTime().seconds ?? -1) status=\(initialItem?.status.rawValue ?? -1) "
+            + "playing=\(player.isPlaying) duration=\(player.durationSeconds) "
+            + "error=\(initialError?.domain ?? "none"):\(initialError?.code ?? 0)")
         XCTAssertGreaterThan(player.durationSeconds, 0, "Seeking must use the real media duration.")
         do {
             try await body(player, { snapshot(targetReady: $0) })
@@ -160,6 +168,30 @@ final class AudioPlayerPendingSeekTests: XCTestCase {
             XCTAssertFalse(player.isPlaying)
         }
     }
+
+    #if os(iOS)
+    @MainActor
+    func testRetiredPlayerDeinitCannotDeactivateNewPlayersAudioSession() async throws {
+        var retired: AudioPlayer?
+        weak var released: AudioPlayer?
+        try await withPlayingFixture { player, _ in
+            retired = player
+            released = player
+            player.stop()
+        }
+        XCTAssertNotNil(retired)
+        // Release the old instance after the new one activated its session,
+        // before its first media tick. This pins the real replacement pattern.
+        try await withPlayingFixture(afterResume: { retired = nil }) { player, _ in
+            XCTAssertNil(released, "The old player must actually deinitialize.")
+            XCTAssertTrue(player.isPlaying)
+            let position = player.positionSeconds
+            try await Task.sleep(nanoseconds: 500_000_000)
+            XCTAssertGreaterThan(player.positionSeconds, position,
+                                 "Retiring another player must not deactivate this instance's audio session.")
+        }
+    }
+    #endif
 
     @MainActor
     func testNextAndPreviousStreamedChapterUseRetainedFilesAndPreservePause() async throws {

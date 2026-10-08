@@ -24,6 +24,9 @@ this board and `handoff.md` before crossing ownership or changing shared contrac
   relaunch readiness and bounded device conversion/performance comparison.
   Latest device evidence: `0132B263-6FB2-49B1-A195-9627078459AE` (two tests passed)
   and `B882C802-84BE-4447-A0BD-23387F54BFF1` (35 seek tests passed), zero skips.
+  Replacement-player regression and initial AVPlayer diagnostics verified on iPhone;
+  the suspected old-player session failure did not reproduce. Full-sequence evidence
+  remains required; this does not establish the earlier failure's root cause.
 - [x] **APP-20261008-03 — Shared request tracking and platform parity policy.**
   Registered in `CLAUDE.md`/`AGENTS.md`, this board and `handoff.md` for Codex/Arch.
   Verified by documentation read-back and scoped `git diff --check`; historical instructions
