@@ -38,8 +38,8 @@ jobs:
       - name: Check production packaging boundary
         run: mise run guard:no-python-production
 
-  python:
-    name: Python
+  python-tests:
+    name: Python tests
     needs: production-packaging-guard
     runs-on: ubuntu-24.04
     permissions:
@@ -207,15 +207,15 @@ jobs:
         run: rustup target add wasm32-unknown-unknown
       - name: Build direct Rust WASM adapter
         run: mise run web:wasm-build
-      - name: Install web dependencies
-        working-directory: web
-        run: mise exec -- npm ci --prefer-offline --no-audit --no-fund
       - name: Cache npm downloads
         uses: actions/cache@v6
         with:
           path: ~/.npm
           key: npm-${{ runner.os }}-${{ hashFiles('web/package-lock.json', 'web/package.json') }}
           restore-keys: npm-${{ runner.os }}-
+      - name: Install web dependencies
+        working-directory: web
+        run: mise exec -- npm ci --prefer-offline --no-audit --no-fund
       - name: Run web tests
         working-directory: web
         run: mise exec -- npm test
@@ -259,3 +259,25 @@ jobs:
       - name: Run Flutter analyzer
         working-directory: flutter_app
         run: mise exec -- flutter analyze
+
+
+  python:
+    name: Python
+    needs: [production-packaging-guard, python-tests, rust, flutter, web]
+    if: always()
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - name: Require all CI jobs
+        env:
+          PACKAGING_RESULT: ${{ needs.production-packaging-guard.result }}
+          PYTHON_TESTS_RESULT: ${{ needs.python-tests.result }}
+          RUST_RESULT: ${{ needs.rust.result }}
+          FLUTTER_RESULT: ${{ needs.flutter.result }}
+          WEB_RESULT: ${{ needs.web.result }}
+        run: |
+          if [[ "$PACKAGING_RESULT" != "success" || "$PYTHON_TESTS_RESULT" != "success" || "$RUST_RESULT" != "success" || "$FLUTTER_RESULT" != "success" || "$WEB_RESULT" != "success" ]]; then
+            echo "Required CI job failed: packaging=$PACKAGING_RESULT python=$PYTHON_TESTS_RESULT rust=$RUST_RESULT flutter=$FLUTTER_RESULT web=$WEB_RESULT" >&2
+            exit 1
+          fi
