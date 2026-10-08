@@ -9,6 +9,15 @@ this board and `handoff.md` before crossing ownership or changing shared contrac
 
 ## Active requests — 2026-10-08
 
+- [ ] **APP-20261008-06 — Investigate slower LOTR adaptive conversion on Arch.** Pending.
+  Physical candidate `699FF2AE-0A79-406A-889C-FEF3EF01110F` passed one benchmark,
+  zero skips, exact LOTR 8–9/Christie 6–7, no audio reuse. LOTR 310.40→432.12 s
+  (+39.2%); Christie 6.34→6.35 s. Initial Edge replies were much slower than baseline;
+  profile shrank 4096/2→2048/1 without recorded retries/throttles. This one network
+  sample does not isolate policy causality. Arch owns Rust diagnosis/verification;
+  retain ordered output and pressure/cancellation behavior, measure controlled
+  throughput before changing adaptation. Apple revalidates the resulting artifact.
+
 - [x] **APP-20261008-05 — Preserve manual Mac conversion inbox inputs.** Verified.
   Audit found `ConvertViewModel.importForConversion` removes the entire inbox
   before copying. Acceptance: earlier files survive successful/failed subsequent
@@ -31,7 +40,10 @@ this board and `handoff.md` before crossing ownership or changing shared contrac
 - [ ] **APP-20261008-02 — Quality/performance goal.** In progress.
   Acceptance/evidence: `docs/plans/2026-10-08-app-quality-performance.md`.
   Remaining: physical/full-sequence playback verification, lifecycle flush behavior,
-  relaunch readiness and bounded device conversion/performance comparison.
+  relaunch readiness and the observed conversion performance regression.
+  Bounded physical synthesis comparison completed: `699FF2AE-0A79-406A-889C-FEF3EF01110F`,
+  exact four playable chapters, one passing test, zero skips, 451.39 s total,
+  no rebuild/audio reuse. See APP-20261008-06; performance is not marked resolved.
   Latest device evidence: `0132B263-6FB2-49B1-A195-9627078459AE` (two tests passed)
   and `B882C802-84BE-4447-A0BD-23387F54BFF1` (35 seek tests passed), zero skips.
   Replacement-player regression and initial AVPlayer diagnostics verified on iPhone;

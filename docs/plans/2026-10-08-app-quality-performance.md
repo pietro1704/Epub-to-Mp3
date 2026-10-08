@@ -52,6 +52,29 @@ uncontrolled comparison or extrapolate whole-book duration.
 
 ## Progress
 
+### Physical conversion comparison — candidate completed
+
+Run `699FF2AE-0A79-406A-889C-FEF3EF01110F`: one benchmark passed, zero skips,
+four exact requested chapters with playable MP3s. Source hashes/ranges and character
+counts match baseline (112357/5778). Build reused; fresh jobs, no audio reuse.
+Total 451.39 s; synthesis 438.48 s, test interval 444.83 s, verification 0.052 s
+(overlapping intervals, not additive). Temporary staging cleanup was verified.
+
+LOTR synthesis 310.397→432.123 s (+39.2%); Christie 6.339→6.353 s. Candidate
+first published chapter callback 206.256/3.197 s, not acoustic playback. Footprint
+point samples before→after synthesis: LOTR 70.81→57.60 MiB, Christie 57.77→46.24
+MiB; Mach calls succeeded. These are not peak measurements or before/after-code
+memory comparisons: baseline did not record delivery/footprint fields. Snapshot
+provider/voice metadata remain null; telemetry identifies Edge, not a verified
+matching voice/configuration. Parsed-text cache reuse remains unmeasured.
+
+Candidate LOTR's initial 4095-character call took 14.47 s versus baseline's early
+4092-character call taking 2.53 s. Candidate adaptation changed 4096/2 to 2048/1;
+both selected chapters finished with no recorded retry/throttle events. This is
+evidence of a slower observed sample and active adaptation, not proof that policy
+caused the slowdown. Controlled Rust throughput investigation is routed to Arch
+as APP-20261008-06. Do not declare performance resolved or synthesize larger ranges.
+
 ### Current acceptance checkpoint — 2026-10-08
 
 Historical slice limits below describe their original verification time, not the
