@@ -48,6 +48,8 @@ pub struct OutputManifest {
     pub title: String,
     pub author: String,
     pub chapters: Vec<ChapterMetadata>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_chapters_total: Option<usize>,
     pub archive: String,
     pub cover: Option<String>,
 }
@@ -75,6 +77,8 @@ struct ChapterJournal {
     schema_version: u32,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     source_sha256: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    source_chapters_total: Option<usize>,
     job_id: String,
     book_title: String,
     book_author: String,
@@ -355,6 +359,7 @@ impl ConversionWorker {
             ));
         }
         recovered_journal.source_sha256 = Some(book_key.clone());
+        recovered_journal.source_chapters_total = Some(book.chapters.len());
         let completed_chapters = Arc::new(std::sync::atomic::AtomicUsize::new(0));
         let control = self.control.clone().unwrap_or_default();
         if let Some(source_job) = control.recover_job() {
@@ -581,6 +586,7 @@ impl ConversionWorker {
         audio::create_archive(&archive, &archive_files)?;
         let output_name = archive.file_name().unwrap().to_string_lossy().to_string();
         let result = OutputManifest {
+            source_chapters_total: Some(book.chapters.len()),
             job_id: request.job_id.clone(),
             title: book.title,
             author: book.author,
@@ -1053,6 +1059,7 @@ fn recover_chapter_journal(
         return Ok(ChapterJournal {
             schema_version: 1,
             source_sha256: None,
+            source_chapters_total: Some(book.chapters.len()),
             job_id: job_id.to_owned(),
             book_title: book.title.clone(),
             book_author: book.author.clone(),
@@ -1274,6 +1281,7 @@ mod streaming_tests {
         Mutex::new(ChapterJournal {
             schema_version: 1,
             source_sha256: None,
+            source_chapters_total: None,
             job_id: "stream-test".into(),
             book_title: "Fixture".into(),
             book_author: "Author".into(),
@@ -1661,6 +1669,7 @@ mod streaming_tests {
         let journal = Mutex::new(ChapterJournal {
             schema_version: 1,
             source_sha256: None,
+            source_chapters_total: None,
             job_id: "stream-test".into(),
             book_title: "Fixture".into(),
             book_author: "Author".into(),
@@ -1752,6 +1761,7 @@ mod streaming_tests {
         let journal = Mutex::new(ChapterJournal {
             schema_version: 1,
             source_sha256: None,
+            source_chapters_total: None,
             job_id: "stream-test".into(),
             book_title: "Fixture".into(),
             book_author: "Author".into(),
@@ -1799,6 +1809,7 @@ mod streaming_tests {
         let journal = ChapterJournal {
             schema_version: 1,
             source_sha256: None,
+            source_chapters_total: None,
             job_id: "resume-partial".into(),
             book_title: book.title.clone(),
             book_author: book.author.clone(),
@@ -1885,6 +1896,7 @@ mod streaming_tests {
         let mut journal = ChapterJournal {
             schema_version: 1,
             source_sha256: None,
+            source_chapters_total: None,
             job_id: "expected".into(),
             book_title: book.title.clone(),
             book_author: book.author.clone(),
@@ -1949,6 +1961,7 @@ mod streaming_tests {
             let source_journal = ChapterJournal {
                 schema_version: 1,
                 source_sha256: None,
+                source_chapters_total: None,
                 job_id: "old-job".into(),
                 book_title: book.title.clone(),
                 book_author: book.author.clone(),
@@ -1965,6 +1978,7 @@ mod streaming_tests {
                 cache::atomic_write_json(
                     source_output.join("manifest.json"),
                     &OutputManifest {
+                        source_chapters_total: None,
                         job_id: "old-job".into(),
                         title: book.title.clone(),
                         author: book.author.clone(),
@@ -2026,6 +2040,7 @@ mod streaming_tests {
                 })
                 .unwrap();
             assert_eq!(result.chapters.len(), 1);
+            assert_eq!(result.source_chapters_total, Some(2));
             assert_eq!(result.chapters[0].source_index, 0);
             let destination = source_output
                 .parent()
@@ -2062,8 +2077,34 @@ mod streaming_tests {
             )
             .unwrap();
             assert_eq!(journal.chapters.len(), 1);
+            assert_eq!(journal.source_chapters_total, Some(2));
+            assert_eq!(journal.chapters_total, 1);
             assert!(journal.source_sha256.is_some());
         }
+    }
+
+    #[test]
+    fn legacy_manifest_and_journal_decode_without_source_chapter_count() {
+        let manifest: OutputManifest = serde_json::from_value(serde_json::json!({
+            "jobId":"legacy-job", "title":"Legacy", "author":"Author",
+            "chapters":[], "archive":"legacy.zip", "cover":null
+        }))
+        .unwrap();
+        assert_eq!(manifest.source_chapters_total, None);
+        let journal: ChapterJournal = serde_json::from_value(serde_json::json!({
+            "schemaVersion":1, "jobId":"legacy-job", "bookTitle":"Legacy",
+            "bookAuthor":"Author", "chaptersTotal":1, "chapters":[]
+        }))
+        .unwrap();
+        assert_eq!(journal.source_chapters_total, None);
+        assert!(serde_json::to_value(manifest)
+            .unwrap()
+            .get("sourceChaptersTotal")
+            .is_none());
+        assert!(serde_json::to_value(journal)
+            .unwrap()
+            .get("sourceChaptersTotal")
+            .is_none());
     }
 
     #[test]
@@ -2082,6 +2123,7 @@ mod streaming_tests {
             let journal = ChapterJournal {
                 schema_version: 1,
                 source_sha256: Some("incorrect-source-hash".into()),
+                source_chapters_total: None,
                 job_id: "old-job".into(),
                 book_title: book.title,
                 book_author: book.author,
@@ -2149,6 +2191,7 @@ mod streaming_tests {
         let journal = ChapterJournal {
             schema_version: 1,
             source_sha256: Some(cache::sha256_file(&input).unwrap()),
+            source_chapters_total: None,
             job_id: "old-job".into(),
             book_title: book.title.clone(),
             book_author: book.author.clone(),

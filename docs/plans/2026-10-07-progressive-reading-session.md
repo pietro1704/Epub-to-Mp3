@@ -214,3 +214,44 @@ runtimes), .reports/progressive/reviewed-runtime-tests.log. Formatting checked
 with the actual Rust2021 workspace edition. Existing ABI/envelopes preserved.
 Explicit Edge retry configuration is verified; historical unresolved engine/model
 metadata and local synchronous inference's cooperative bound remain limitations.
+
+### 2026-10-08 queue acceptance checkpoint
+
+ProgressiveChapterQueue is integrated into AudioPlayer, not merely an unused
+helper. Session now publishes raw availability; queue admission is contiguous
+and source-indexed. Next/previous/beginning/current-page commands retain pending
+intent and seek anchors; queue exhaustion waits rather than skipping ready
+prefix audio. Pause prevents pending autoplay. Standby relaunch preserves the
+saved audio destination even before the first file exists. Existing segment and
+remote compatibility paths remain. No reader geometry implementation changed.
+
+Final focused macOS task exited0; native xcresult summary proves126passed,
+0failed,0skipped. Evidence exported to
+.reports/progressive/native-queue-summary.json; full log:
+.reports/progressive/native-queue-final-tests.log. Native xcresult:
+ios/EpubToMp3/.build/Logs/Test/Test-EpubToMp3Mac-2026.10.07_23-59-29--0300.xcresult.
+This includes ten real-AVPlayerItem queue/navigation tests, eight value-queue
+regressions, the existing shared-state tests and callback barrier tests. The
+initial queue build failed an unused binding under warnings-as-errors; that
+binding was corrected before the successful run.
+
+A selected manual range cannot define the full book domain. Added optional
+sourceChaptersTotal to Rust terminal manifests/journals and native snapshots;
+selected chaptersTotal/progress keep their existing meanings. Old formats
+remain readable with unknown source count. Cached legacy metadata discovery is
+background-only and never synthesizes. Scoped managed Rust verification:
+91core+13FFI+2CLIprincipalpassed (5.65s+0.64s+0.00s test runtime), log
+.reports/progressive/source-domain-scoped-tests.log. The broader --bins attempt
+failed an existing embedded_edge_probe call to the old TTS signature; that
+unrelated probe was not changed or executed. Main product CLI was explicitly
+compiled and tested instead. No real book/provider synthesis was run.
+
+Rust control/recovery slice4bbfa6e4f8 has been pushed. Native work is still
+uncommitted pending the iPhone gate and final review. Remaining implementation:
+confirmed immutable versioned transport snapshot consumed coherently by every
+surface; replace process-local reader/playback event delivery through persisted
+keys; finish offline legacy-cache reconciliation and network-interruption UI.
+Remaining evidence: iOS typecheck/build and XCTest/UI, true relaunch/background/
+system-control behavior, seeded reader geometry, and live two-chapter bounded
+synthesis after the embedded-audio fix. The physical gate remains the recorded
+passcode block; do not query it again until readiness evidence changes.
