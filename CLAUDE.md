@@ -31,7 +31,11 @@ use `docs/agents/issue-tracker.md`.
 ## Execution and delivery
 
 Inspect branch, status, applicable instructions, and relevant diff before editing.
-Preserve unrelated changes and delegated file ownership; implement a focused slice.
+Preserve unrelated changes and delegated file ownership. Always deliver the
+smallest complete, atomic behavior change with its relevant regression test.
+Reuse valid build artifacts and run only the checks needed to prove that change;
+commit/push verified slices before expanding scope. Keep planning, delegation,
+and documentation proportional to the task.
 Use actual task definitions in `mise.toml`; run project tasks through `mise run`
 and managed tools through `mise exec`.
 Choose the smallest verification that proves acceptance; inspect the final diff.
