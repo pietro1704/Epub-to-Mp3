@@ -23,6 +23,10 @@ this board and `handoff.md` before crossing ownership or changing shared contrac
   LOTR read/decode 241 ms, HTML render 537 ms, TextKit fit 1.6 ms; Christie
   18/16/10 ms. Temporary probes removed. Relaunch test remains uncommitted;
   decoding/render preparation, not viewport layout, needs further work.
+  Codec experiment verified: actual typed JSON/plist roundtrips preserve all fields,
+  one native test passed with zero skips (`reader-relaunch-3071CE3E-E1C4-4571-9172-948B12E9C8B1`).
+  LOTR JSON decode ~213 ms versus binary ~104–118 ms; binary grew 25.09→26.54 MB.
+  No production cache migration: this alone cannot fix the 537 ms HTML render.
 
 - [x] **APP-20261008-08 — Avoid redundant Mac reader cache writes.** Verified.
   Disk-prepared content no longer reencodes/writes/enumerates cache on MainActor.

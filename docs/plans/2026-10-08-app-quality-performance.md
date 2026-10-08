@@ -52,6 +52,22 @@ uncontrolled comparison or extrapolate whole-book duration.
 
 ## Progress
 
+### Reader codec experiment — no production migration
+
+`PreparedReaderCodecBenchmarkTests` compares actual typed payload decoding for
+the same hash-checked EPUBs and asserts canonical JSON equality after each
+JSON/plist roundtrip, including text, HTML, CSS and resources. Three observations
+per codec/book; no synthesis or user cache writes. Final native test passed once,
+zero skips in `reader-relaunch-3071CE3E-E1C4-4571-9172-948B12E9C8B1/codec.xcresult`.
+
+Initial experiment (`reader-relaunch-A03CCD77-2B7C-43B7-B874-7897EEDEF06D`):
+LOTR JSON decode 212.8–214.6 ms, binary 104.2–117.9 ms, sizes 25,090,570 versus
+26,535,196 bytes. Christie JSON 14.4–15.2 ms, binary 11.5–12.2 ms; sizes
+1,161,728 versus 2,051,479 bytes. These are Debug in-memory decode observations,
+not full reader readiness or a production speedup. Binary is faster but larger
+and does not eliminate the separately measured 537 ms HTML render. Keep the
+current durable format until a complete, compatible readiness fix is verified.
+
 ### Prepared disk reader IO — verified narrow correction
 
 macOS now skips redundant JSON encoding, atomic rewrite and cache inventory when
