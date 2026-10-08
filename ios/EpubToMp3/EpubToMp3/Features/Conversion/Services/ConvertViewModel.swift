@@ -2,6 +2,14 @@ import Foundation
 
 @MainActor
 final class ConvertViewModel {
+    typealias ConversionExecutor = @MainActor (URL, Int32, Int32, ConversionOptions?) async throws -> RustConversionCoordinator.Result
+    private let converter: ConversionExecutor
+
+    init(converter: @escaping ConversionExecutor = { file, start, end, options in
+        try await RustConversionCoordinator().convert(bookURL: file, chapterStart: start, chapterEnd: end, options: options)
+    }) {
+        self.converter = converter
+    }
     var selectedFile: URL?
     var engine = "edge"
     var voice = ""
@@ -36,6 +44,7 @@ final class ConvertViewModel {
         // migration, but never resolve or use an HTTP client on Apple.
         _ = client
         _ = useEmbeddedRuntime
+        _ = player // Manual conversion never owns or changes the playback session.
 
         isSubmitting = true
         error = nil
@@ -49,18 +58,16 @@ final class ConvertViewModel {
             defer { if accessing { file.stopAccessingSecurityScopedResource() } }
             _ = accessing
 #endif
-            let result = try await RustConversionCoordinator().convert(
-                bookURL: file,
-                chapterStart: chapterRange.start,
-                chapterEnd: chapterRange.end
+            let options = ConversionOptions(
+                engine: engine,
+                voice: voice.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : voice,
+                language: language.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : language,
+                clearCache: clearCache,
+                forceReprocess: forceReprocess,
+                maxPerformance: maxPerformance
             )
+            let result = try await converter(file, chapterRange.start, chapterRange.end, options)
             submittedJobId = result.jobID
-            if let player {
-                let snapshot = try result.snapshot()
-                player.setSnapshot(snapshot)
-                player.play(snapshot: snapshot, restoreAutoplay: true)
-                player.resume()
-            }
         } catch {
             self.error = (error as? LocalizedError)?.errorDescription
                 ?? error.localizedDescription

@@ -268,3 +268,21 @@ Specialist final review found no blocking issue; whitespace checks passed.
 This is host runtime/interop evidence, not a physical-iPhone packaging or full
 conversion run. The view-model form still needs options forwarding and removal
 of manual autoplay. Item 3 remains partial; all other open acceptance gates remain.
+
+### Slice 3c — manual form configuration and playback isolation
+
+The actual form now forwards literal engine/voice/language and all three flags
+through the configured Rust coordinator. Manual success records the job without
+setting a player snapshot, starting playback or resuming an existing session.
+The injectable executor defaults to the real embedded coordinator.
+
+Native macOS app XCTest: six passed, zero failed/skipped in
+`Test-EpubToMp3Mac-2026.10.08_15-20-48--0300.xcresult` (12.2 seconds wallclock).
+Coverage includes exact options/range forwarding, an existing paused snapshot
+remaining unchanged, and real bundled Swift/Rust rejection of Coqui before
+opening a nonexistent book. Earlier failing tests reproduced missing options
+and replacement of the playback snapshot. Final diff and specialist review found
+no blocking issue. Reused incremental native build and the completed Rust dylib.
+
+Limits: active audible playback was not exercised; true flag semantics and model
+readiness are still pending, as is device conversion/performance verification.
