@@ -255,3 +255,102 @@ Remaining evidence: iOS typecheck/build and XCTest/UI, true relaunch/background/
 system-control behavior, seeded reader geometry, and live two-chapter bounded
 synthesis after the embedded-audio fix. The physical gate remains the recorded
 passcode block; do not query it again until readiness evidence changes.
+
+### 2026-10-08 session authority and transport checkpoint (verification pending)
+
+ReaderSessionState now owns the process-local reading cursor and generation;
+compatible persisted keys are recovery storage only. Opening reader B preserves
+reader A's active audio item, cursor, and transport. Reader and playback remain
+separate authorities. Native reader tests cover late callbacks and opening B
+with an actual advancing/paused WAV item; execution is still pending.
+
+PlaybackSnapshot publishes immutable epoch/revision, confirmed native transport,
+explicit intent, pending navigation and position through the dedicated clock.
+Mini/expanded/macOS transport surfaces consume that state; waiting preserves a
+Pause command. Cross-book Play preserves the existing start-position choices,
+with reader/session guards on delayed choices. None of these edits changes
+reader viewport geometry. Full physical lifecycle/system-control/geometry
+acceptance remains blocked by the recorded locked iPhone, without a new query.
+
+Canonical offline playback identities are explicitly excluded from Rust
+successor-job lineage; a native regression covers immediate cached-item
+admission without invalid recovery identity. Canonical cache reconciliation
+and consistent primary-job/source-bound merging are the next dependency.
+
+The original embedded-mobile-audio checkout remains unchanged at its six WIP
+paths. Because external probes are a proven iPhone runtime blocker, an
+independent in-process Rust audio implementation is now explicitly in scope:
+new owned code/dependency edits/tests in this isolated worktree, without copying
+or overwriting the original WIP. This is a reviewed integration dependency,
+not an assertion that embedded playback or device acceptance already passed.
+
+Executed for this checkpoint: git diff --check and focused Swift syntax parsing
+passed. These checks do not prove runtime behavior. Last completed suites remain
+91 core + 13 FFI + 2 principal CLI + 126 native macOS tests; new edits require a
+fresh scoped runtime run before being counted as verified.
+
+Fresh scoped native execution: `MAC_TESTS=EpubToMp3Tests/AudioPlayerPlaybackSnapshotTests,EpubToMp3Tests/PlaybackClockTests,EpubToMp3Tests/SpeechFallbackPlayerTests,EpubToMp3Tests/ReaderSessionStateTests,EpubToMp3Tests/ReaderProgressStoreTests,EpubToMp3Tests/ProgressiveNarrationSessionTests,EpubToMp3Tests/AudioPlayerNarrationQueueTests CARGO_TARGET_DIR=/Users/pips/Developer/epubtomp3/target CARGO_BUILD_JOBS=1 mise run mac:test` passed: 63 tests, zero failures/skips. Exported local summary `.reports/progressive/native-authority-summary.json`, log `.reports/progressive/native-authority-tests.log`; result `Test-EpubToMp3Mac-2026.10.08_00-17-33--0300.xcresult`. Real AVPlayer advancement/pause and obsolete queue callbacks passed on macOS. UIKit-only reader/player controls and physical lifecycle acceptance remain unexecuted.
+
+Independent in-process audio verification passed under the existing heavy-job
+lease: managed `cargo test -p converter-core --lib --test in_process_audio --
+--test-threads=1` (91 core + 2 integration tests; 3.69s + 0.97s), followed serially
+by converter-ffi --lib (13 passed; 0.38s) and converter-cli --bin converter-cli
+(2 passed; 0.00s). No failures/skips. New integration tests execute real MP3/WAV
+probes and JPEG/PNG/WebP/WAV cover mutation in a child process with sentinel
+external tools, including truncated streams, repeated/front/back cover and
+metadata preservation, and unchanged audio payload/invalid-input mutation.
+Log: .reports/progressive/in-process-audio-tests.log. Cargo lock was resolved
+only in the isolated worktree. This is host evidence, not iPhone synthesis.
+
+Adversarial native review found and addressed explicit-intent retry after a
+producer fails, cross-book asynchronous command replacement, canonical partial
+queue restoration, and incompatible legacy remote/local chapter axes. The
+latter retains the validated remote snapshot intact instead of mixing source
+indices silently. Remaining implementation limit: missing chapters in a legacy
+remote collection cannot be filled from a differently indexed canonical cache
+until an explicit compatible source-identity projection is implemented and
+tested. Existing manifests, identities and bytes remain intact.
+
+Expanded native gate ran 179 tests: 178 passed, one failed (canonical partial
+restoration). The failure was real: the public seek end tolerance advanced a
+restored 1.25-second cursor in a 2-second fixture into the next chapter. Exact
+restoration/page anchors now bypass explicit-seek chapter advancement, and old
+seek completions cannot overwrite EOF pending navigation. Rerun is required;
+.do not count the failed gate as acceptance. Log/native summary retained locally.
+
+A legacy macOS Book Detail path still owned a competing Listen conversion and
+replaced another audio queue after manual conversion. Listen now uses the same
+progressive session; manual conversion preserves the existing AVPlayer item and
+cursor. New native AppKit/player tests cover both paths. A source-parsing listen
+assertion has been replaced by runtime tests, not broadened into source checks.
+
+Legacy remote origin was checked against both producers: normal Python server
+uses selected ordinal 1...N, its recovery uses ordinal 0...N-1, and Rust HTTP
+exposes selected ordinal instead of sourceIndex. Old download manifests contain
+no provenance. Such audio is kept for legacy playlist/cursor recovery, never
+seeded into the zero-based Rust source queue. Current-page/beginning commands
+use the actual book source through Rust; no heuristic migration or data deletion.
+
+Reviewed in-process audio rerun passed: 91 core + 3 audio integration + 13 FFI +
+2 CLI principal, zero failures/skips (3.73s + 1.24s + 0.40s + 0.00s), log
+.reports/progressive/in-process-audio-reviewed-tests.log. Unsupported native WAV
+codecs retain the desktop/Android external capability; valid PCM/MP3 stays fully
+in process. Cover input/decoded allocations are bounded, JPEG main-container
+termination is checked separately from thumbnails, and invalid covers leave
+existing audio unchanged. Independent fixtures and dependencies were reviewed;
+original embedded-mobile-audio WIP is still not incorporated or altered.
+
+Fresh expanded native run: 211 tests, 210 passed, one existing AppKit root
+pause/resume regression failed. Exact canonical near-end restore and all three
+new Mac Book Detail runtime tests passed. The root fixture still writes reader
+selection through old defaults and omits the explicit playback book identity;
+verify and update it at the new authority seam before treating this gate as
+passed. Log .reports/progressive/native-reviewed-tests.log; summary exported.
+
+Additional proven execution gap: the single native Rust invocation queue holds
+an entire manual conversion, preventing interactive narration from starting
+until it ends. Next focused slice reuses the resource scheduler and Rust controls
+to yield background manual synthesis to narration at existing chapter boundaries,
+without creating another session owner or parallel converter implementation.
+Default book-conversion ABI explicitly selects online Edge; offline routing is
+a separate configuration capability and must not be guessed from platform.
