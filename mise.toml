@@ -1072,6 +1072,26 @@ run = "bash scripts/device-workflow.sh status"
 description = "Run offline executable tests of scope, readiness, xctestrun isolation and workflow reports"
 run = "bash scripts/device-workflow.sh host-tests"
 
+[tasks."apple:foundation:test"]
+description = "Run focused XCTest on the app's actual Foundation production files without launching an app"
+run = '''
+xcrun swift -e '
+import Foundation
+import Darwin
+let lease = open("/tmp/epub2mp3.heavy-job.lock", O_CREAT | O_RDWR, 0o600)
+guard lease >= 0 && flock(lease, LOCK_EX | LOCK_NB) == 0 else { exit(75) }
+defer { close(lease) }
+let taskRoot = ProcessInfo.processInfo.environment["MISE_PROJECT_ROOT"] ?? FileManager.default.currentDirectoryPath
+let child = Process()
+child.executableURL = URL(fileURLWithPath: "/usr/bin/xcrun")
+child.arguments = ["swift", "test", "--package-path", taskRoot + "/ios/EpubToMp3",
+                   "--scratch-path", taskRoot + "/ios/EpubToMp3/.build/app-foundation", "--jobs", "1"]
+try child.run()
+child.waitUntilExit()
+exit(child.terminationStatus)
+'
+'''
+
 [tasks."ios:test"]
 description = "Run all iOS XCTest/UI tests on a connected device, falling back to Simulator only when no device is available"
 run = """

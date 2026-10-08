@@ -150,3 +150,37 @@ and cancellation-during-cooldown stress coverage is not yet performed. This
 verifies dispatch behavior, not full native cancellation or a speedup. Physical
 FFI rebuild/embedding and exact-book before/after measurements remain required
 for item 5 and all latency/memory acceptance gates.
+
+### Slice 6a — bounded, asynchronous conversion-history reads
+
+The Mac history controller now calls an asynchronous Foundation reader rather
+than reading/ splitting the entire log on the main thread. The reader scans
+16 KiB blocks backwards, selects the latest nonempty records, and enforces a
+1 MiB byte budget. Partial leading records are discarded before UTF-8 JSON
+decoding; malformed or unfinished records do not discard valid recent rows.
+Cancellation is checked before IO, between reads and around decode. Refreshes
+cancel prior work and discard results from stale generations; UI updates remain
+on MainActor. A localized read-limit message distinguishes oversized history.
+
+The lightweight `apple:foundation:test` task compiles the actual production
+reader and DTO alongside native XCTest, without an app, Simulator or device.
+Its SwiftPM scratch directory is nested inside the single `.build` tree and
+the task holds the same native heavy-job lease. Seven tests passed, including
+IO outside main, cancellation before opening, UTF-8/CRLF, oversized records,
+zero-read limits and trailing blank-line compatibility. Specialist QA caught
+the initial LF-only counting regression; its new native test failed before
+counting nonempty records and passed after correction.
+
+Controlled local measurement, identical synthetic 10,000-record content:
+8,407,780 bytes / 2,628.59 ms before versus 98,304 bytes / 6.94 ms after, with
+the same latest 100 records. Logs: `.reports/mobile-audio/history-before.log`
+and `history-final.log`. These are single Debug service observations, not a
+production-app speedup ratio or resident-memory measurement.
+The four real Mac controller/reader/model/localization files also passed
+`swiftc -typecheck -swift-version 5 -strict-concurrency=complete` for macOS 12.
+Working/staged diff checks passed. No UI process was launched or user log changed.
+
+Limits: full AppKit screen responsiveness/reload integration is not yet exercised;
+the controller retains its legacy-compatible local log source (a native-history
+producer was not added). Batch import, audio persistence and whole-app
+latency/memory gates remain pending. This slice does not complete items 6–7.

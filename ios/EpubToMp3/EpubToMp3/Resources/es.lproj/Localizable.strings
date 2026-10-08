@@ -422,6 +422,7 @@
 "jobs.cannotReachBackend" = "No se puede acceder al backend";
 "jobs.noConversions" = "Sin conversiones aún";
 "jobs.noConversionsDescription" = "Ejecuta una conversión mediante la CLI o la app web para llenar el historial.";
+"jobs.historyReadLimit" = "El historial reciente supera el límite de lectura.";
 "jobs.refresh" = "Actualizar trabajos";
 "jobs.chaptersAbbrev" = "%d cap.";
 

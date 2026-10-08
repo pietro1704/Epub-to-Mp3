@@ -425,6 +425,7 @@
 "jobs.cannotReachBackend" = "Cannot reach backend";
 "jobs.noConversions" = "No conversions yet";
 "jobs.noConversionsDescription" = "Run a conversion via the CLI or web app to populate the history.";
+"jobs.historyReadLimit" = "Recent history exceeds the read limit.";
 "jobs.refresh" = "Refresh jobs";
 "jobs.chaptersAbbrev" = "%d ch";
 
