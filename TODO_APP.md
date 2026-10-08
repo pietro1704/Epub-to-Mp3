@@ -27,6 +27,15 @@ this board and `handoff.md` before crossing ownership or changing shared contrac
   Replacement-player regression and initial AVPlayer diagnostics verified on iPhone;
   the suspected old-player session failure did not reproduce. Full-sequence evidence
   remains required; this does not establish the earlier failure's root cause.
+  Lifecycle termination barrier: one macOS XCTest passed, zero skips,
+  `Test-EpubToMp3Mac-2026.10.08_19-25-41--0300.xcresult`. The isolated regression
+  invokes the real termination callback while index encoding is blocked.
+  iOS grant completion/expired-generation checks are implemented but unverified;
+  current device preflight reports locked. No benchmark was started.
+  Conversion report instrumentation: three native report/monotonic delivery tests
+  passed (`19-28-01` macOS xcresult), plus real task_info capture passed (`19-28-53`),
+  zero skips. Added point-sampled footprint and first published-chapter callback
+  latency; neither is acoustic latency/peak memory or a baseline comparison.
 - [x] **APP-20261008-03 — Shared request tracking and platform parity policy.**
   Registered in `CLAUDE.md`/`AGENTS.md`, this board and `handoff.md` for Codex/Arch.
   Verified by documentation read-back and scoped `git diff --check`; historical instructions

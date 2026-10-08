@@ -124,6 +124,50 @@ private struct BenchmarkInputCopies {
     }
 }
 
+private struct BenchmarkFootprintSample: Encodable {
+    let physicalFootprintBytes: UInt64?
+    let memoryStatus: Int32
+
+    static func capture() -> Self {
+        var info = task_vm_info_data_t()
+        var count = mach_msg_type_number_t(MemoryLayout<task_vm_info_data_t>.size / MemoryLayout<integer_t>.size)
+        let status = withUnsafeMutablePointer(to: &info) { pointer in
+            pointer.withMemoryRebound(to: integer_t.self, capacity: Int(count)) {
+                task_info(mach_task_self_, task_flavor_t(TASK_VM_INFO), $0, &count)
+            }
+        }
+        return Self(physicalFootprintBytes: status == KERN_SUCCESS ? info.phys_footprint : nil,
+                    memoryStatus: status)
+    }
+}
+
+private struct BenchmarkConversionMeasurements: Encodable {
+    let semantics = "Client monotonic callback delivery of a published chapter MP3, not acoustic playback; process footprint point samples, not peak. Missing optional values are unmeasured."
+    var beforeSynthesis: BenchmarkFootprintSample?
+    var afterSynthesis: BenchmarkFootprintSample?
+    var firstPlayableChapterDeliverySeconds: Double?
+    var firstPlayableChapterIndex: Int?
+}
+
+@MainActor
+private final class BenchmarkDeliveryRecorder {
+    let startedAt: UInt64
+    var measurements: BenchmarkConversionMeasurements
+
+    init(startedAt: UInt64, before: BenchmarkFootprintSample) {
+        self.startedAt = startedAt
+        measurements = BenchmarkConversionMeasurements(beforeSynthesis: before)
+    }
+
+    /// Record only the first delivery, using the same monotonic clock as native latency helpers.
+    func record(chapterIndex: Int, deliveredAt: UInt64) -> Bool {
+        guard measurements.firstPlayableChapterIndex == nil, deliveredAt >= startedAt else { return false }
+        measurements.firstPlayableChapterIndex = chapterIndex
+        measurements.firstPlayableChapterDeliverySeconds = Double(deliveredAt - startedAt) / 1_000_000_000
+        return true
+    }
+}
+
 private struct DeviceBenchmarkReport: Encodable {
     struct Case: Encodable {
         struct CacheReuse: Encodable {
@@ -147,11 +191,13 @@ private struct DeviceBenchmarkReport: Encodable {
         var throttles = 0
         let cacheReuse = CacheReuse()
         var chunkMetrics: [String] = []
+        var conversionMeasurements = BenchmarkConversionMeasurements()
 
         private enum CodingKeys: String, CodingKey {
             case bookPath, chapterStart, chapterEnd, engine, voice, language, error
             case chaptersRequested, chaptersCompleted, characters, synthesisSeconds, verificationSeconds
             case audioDurationSeconds, retryAttempts, throttles, cacheReuse, chunkMetrics
+            case conversionMeasurements
         }
 
         func encode(to encoder: Encoder) throws {
@@ -174,6 +220,7 @@ private struct DeviceBenchmarkReport: Encodable {
             try container.encode(throttles, forKey: .throttles)
             try container.encode(cacheReuse, forKey: .cacheReuse)
             try container.encode(chunkMetrics, forKey: .chunkMetrics)
+            try container.encode(conversionMeasurements, forKey: .conversionMeasurements)
         }
 
         mutating func readTelemetry(output: URL) throws {
@@ -315,6 +362,10 @@ final class DeviceConversionBenchmarkTests: XCTestCase {
                 try require(reserved == 0, "Could not exclusively reserve a fresh output job directory (errno=\(errno)).")
                 createdOutputs.append(output)
                 print("[Device benchmark] starting book=\(selection.bookPath) chapters=\(report.cases[index].chaptersRequested)")
+                let beforeSynthesis = BenchmarkFootprintSample.capture()
+                let delivery = BenchmarkDeliveryRecorder(startedAt: DispatchTime.now().uptimeNanoseconds,
+                                                         before: beforeSynthesis)
+                let firstDelivery = expectation(description: "First published chapter delivered for case \(index)")
                 let synthesisStart = ProcessInfo.processInfo.systemUptime
                 phase = "conversion"
                 let result: RustConversionCoordinator.Result
@@ -324,15 +375,39 @@ final class DeviceConversionBenchmarkTests: XCTestCase {
                         chapterStart: Int32(selection.chapterStart), chapterEnd: Int32(selection.chapterEnd),
                         onProgress: { event in
                             print("[Device benchmark] book=\(selection.bookPath) completed=\(event.chaptersCompleted)/\(event.chaptersTotal) \(event.message)")
+                        },
+                        onChapterCompleted: { event in
+                            let deliveredAt = DispatchTime.now().uptimeNanoseconds
+                            let audio = event.audioPath.resolvingSymlinksInPath().standardizedFileURL
+                            guard event.jobId == selection.jobID,
+                                  event.chapterIndex >= 0,
+                                  selection.chapterStart == -1
+                                    || (selection.chapterStart...selection.chapterEnd).contains(event.chapterIndex),
+                                  audio.deletingLastPathComponent().path == output.standardizedFileURL.path,
+                                  audio.pathExtension.lowercased() == "mp3",
+                                  manager.isReadableFile(atPath: audio.path) else { return }
+                            if delivery.record(chapterIndex: event.chapterIndex, deliveredAt: deliveredAt) {
+                                firstDelivery.fulfill()
+                            }
                         }
                     )
                 } catch {
                     report.cases[index].synthesisSeconds = ProcessInfo.processInfo.systemUptime - synthesisStart
+                    delivery.measurements.afterSynthesis = BenchmarkFootprintSample.capture()
+                    report.cases[index].conversionMeasurements = delivery.measurements
                     report.cases[index].error = error.localizedDescription
                     try? report.cases[index].readTelemetry(output: output)
                     throw error
                 }
                 report.cases[index].synthesisSeconds = ProcessInfo.processInfo.systemUptime - synthesisStart
+                delivery.measurements.afterSynthesis = BenchmarkFootprintSample.capture()
+                // The coordinator dispatches callbacks to MainActor tasks; drain delivery
+                // independently of synthesis timing before snapshotting measurements.
+                phase = "chapter delivery"
+                await fulfillment(of: [firstDelivery], timeout: 2)
+                report.cases[index].conversionMeasurements = delivery.measurements
+                try require(delivery.measurements.firstPlayableChapterIndex != nil,
+                            "Missing published chapter delivery callback.")
                 _ = try report.save(to: reportURL)
                 let verificationStart = ProcessInfo.processInfo.systemUptime
                 phase = "audio verification"
@@ -352,6 +427,8 @@ final class DeviceConversionBenchmarkTests: XCTestCase {
                     let indices = selection.chapterStart == -1 ? Array(0..<expected)
                         : Array(selection.chapterStart...selection.chapterEnd)
                     try require(snapshot.playableChapters.map(\.index) == indices, "Unexpected source chapter indices.")
+                    try require(indices.contains(try XCTUnwrap(delivery.measurements.firstPlayableChapterIndex)),
+                                "Delivered chapter was not part of the verified selection.")
                     try require(result.outputDirectory.standardizedFileURL == output.standardizedFileURL,
                                 "Unexpected output job directory.")
                     var verifiedPaths = Set<String>()
@@ -483,6 +560,62 @@ final class DeviceConversionBenchmarkTests: XCTestCase {
         XCTAssertEqual(populated["engine"] as? String, entry.engine)
         XCTAssertEqual(populated["voice"] as? String, entry.voice)
         XCTAssertEqual(populated["language"] as? String, entry.language)
+    }
+
+    func testFootprintCaptureReportsNativeStatusAndPositiveBytes() throws {
+        let sample = BenchmarkFootprintSample.capture()
+        XCTAssertEqual(sample.memoryStatus, KERN_SUCCESS)
+        guard sample.memoryStatus == KERN_SUCCESS else { return }
+        let bytes = try XCTUnwrap(sample.physicalFootprintBytes)
+        XCTAssertGreaterThan(bytes, 0)
+    }
+
+    @MainActor
+    func testDeliveryMetricKeepsFirstChapterAndMonotonicElapsedTime() {
+        let recorder = BenchmarkDeliveryRecorder(startedAt: 1_000_000_000,
+            before: .init(physicalFootprintBytes: 4096, memoryStatus: KERN_SUCCESS))
+        XCTAssertFalse(recorder.record(chapterIndex: 4, deliveredAt: 999_999_999))
+        XCTAssertNil(recorder.measurements.firstPlayableChapterDeliverySeconds)
+        XCTAssertTrue(recorder.record(chapterIndex: 5, deliveredAt: 1_250_000_000))
+        XCTAssertFalse(recorder.record(chapterIndex: 4, deliveredAt: 2_000_000_000))
+        XCTAssertEqual(recorder.measurements.firstPlayableChapterIndex, 5)
+        XCTAssertEqual(recorder.measurements.firstPlayableChapterDeliverySeconds, 0.25)
+    }
+
+    func testReportAddsFootprintAndDeliveryWithoutChangingExistingSchema() throws {
+        var entry = DeviceBenchmarkReport.Case(bookPath: "fixture.epub", chapterStart: 4, chapterEnd: 5)
+        entry.conversionMeasurements.beforeSynthesis = .init(physicalFootprintBytes: 8192, memoryStatus: KERN_SUCCESS)
+        entry.conversionMeasurements.afterSynthesis = .init(physicalFootprintBytes: 4096, memoryStatus: KERN_SUCCESS)
+        entry.conversionMeasurements.firstPlayableChapterDeliverySeconds = 0.25
+        entry.conversionMeasurements.firstPlayableChapterIndex = 4
+        let report = DeviceBenchmarkReport(runID: UUID().uuidString, cases: [entry])
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: report.encoded()) as? [String: Any])
+        XCTAssertEqual(object["schemaVersion"] as? Int, 1)
+        let cases = try XCTUnwrap(object["cases"] as? [[String: Any]])
+        XCTAssertEqual(cases[0]["chapterStart"] as? Int, 4)
+        XCTAssertEqual(cases[0]["chapterEnd"] as? Int, 5)
+        XCTAssertEqual(cases[0]["synthesisSeconds"] as? Double, 0)
+        XCTAssertTrue(cases[0]["engine"] is NSNull)
+        let metrics = try XCTUnwrap(cases[0]["conversionMeasurements"] as? [String: Any])
+        let before = try XCTUnwrap(metrics["beforeSynthesis"] as? [String: Any])
+        let after = try XCTUnwrap(metrics["afterSynthesis"] as? [String: Any])
+        XCTAssertEqual(before["physicalFootprintBytes"] as? UInt64, 8192)
+        XCTAssertEqual(after["physicalFootprintBytes"] as? UInt64, 4096)
+        XCTAssertEqual(metrics["firstPlayableChapterDeliverySeconds"] as? Double, 0.25)
+        XCTAssertEqual(metrics["firstPlayableChapterIndex"] as? Int, 4)
+        XCTAssertTrue(try XCTUnwrap(metrics["semantics"] as? String).contains("not acoustic"))
+    }
+
+    func testReportDoesNotInventMissingDeliveryOrUnavailableFootprint() throws {
+        var metrics = BenchmarkConversionMeasurements()
+        metrics.beforeSynthesis = .init(physicalFootprintBytes: nil, memoryStatus: KERN_FAILURE)
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(metrics)) as? [String: Any])
+        XCTAssertNil(object["firstPlayableChapterDeliverySeconds"])
+        XCTAssertNil(object["firstPlayableChapterIndex"])
+        XCTAssertNil(object["afterSynthesis"])
+        let before = try XCTUnwrap(object["beforeSynthesis"] as? [String: Any])
+        XCTAssertNil(before["physicalFootprintBytes"])
+        XCTAssertEqual(before["memoryStatus"] as? Int32, KERN_FAILURE)
     }
 
     func testReportPreservesConversionErrorWhenCleanupAlsoFails() throws {

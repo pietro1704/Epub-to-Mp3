@@ -52,6 +52,24 @@ uncontrolled comparison or extrapolate whole-book duration.
 
 ## Progress
 
+### Current acceptance checkpoint — 2026-10-08
+
+Historical slice limits below describe their original verification time, not the
+current task status. Physical runs `0132B263-6FB2-49B1-A195-9627078459AE`
+(two tests) and `B882C802-84BE-4447-A0BD-23387F54BFF1` (35 playback tests)
+passed with zero skips. Replacement-player session deactivation did not reproduce;
+the earlier 109-test sequence is not yet verified green. Do not claim its cause fixed.
+Lifecycle termination passed one isolated native macOS test; iOS background grant
+completion/expiration and physical conversion comparison remain pending.
+This Mac runs only Apple work; Rust/Flutter validation belongs to Arch.
+Conversion measurement instrumentation passed three native report/delivery tests
+and one real Mach footprint capture test (macOS xcresults `19-28-01`/`19-28-53`,
+zero skips). Additive report fields distinguish callback delivery from acoustic
+playback and two footprint samples from peak memory. This is harness verification,
+not measured synthesis improvement; the original device baseline lacks these fields.
+Current device preflight `E67CA26B-E4D9-447A-BC9E-3E671039F838` is terminal
+locked, without test/build/synthesis. Wait for explicit unlock confirmation.
+
 ### Slice 1 — durable import safety
 
 Implemented: copy into an exclusively reserved same-volume staging directory;
