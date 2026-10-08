@@ -16,6 +16,7 @@ import '../services/embedded_converter.dart';
 import '../services/fulltext_store.dart';
 import '../services/local_fulltext_cache.dart';
 import '../services/playback_snapshot.dart';
+import '../services/playback_resume_persistence.dart';
 import '../services/resume_store.dart';
 import '../services/sync_engine.dart';
 
@@ -286,6 +287,22 @@ final playbackRequestProvider = StateProvider<Future<void> Function()?>(
 
 /// One-shot request created by a Library long-press to download the full book.
 final manualDownloadRequestProvider = StateProvider<String?>((ref) => null);
+
+final playbackResumePersistenceProvider = Provider<PlaybackResumePersistence>((
+  ref,
+) {
+  var currentBookId = ref.read(currentlyPlayingBookIdProvider);
+  ref.listen<String?>(currentlyPlayingBookIdProvider, (_, next) {
+    currentBookId = next;
+  });
+  final persistence = PlaybackResumePersistence(
+    player: ref.watch(globalAudioPlayerProvider),
+    preferences: ref.watch(sharedPrefsProvider),
+    bookId: () => currentBookId,
+  );
+  ref.onDispose(persistence.dispose);
+  return persistence;
+});
 
 /// Singleton audio player for on-device playback. Not keyed by jobId — this
 /// Flutter app runs everything locally, so one player instance suffices.

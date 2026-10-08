@@ -1,7 +1,13 @@
 name: Auto-merge eligible pull requests
 
 on:
+  push:
+    branches: [master]
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
   pull_request_target:
+    branches: [master]
     types: [opened, reopened, synchronize, ready_for_review]
   schedule:
     - cron: "17 * * * *"
@@ -10,22 +16,38 @@ on:
 permissions:
   contents: write
   pull-requests: write
+  actions: write
+
+concurrency:
+  group: auto-merge-queue
+  cancel-in-progress: false
 
 jobs:
   auto-merge:
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     name: Enable auto-merge after required checks
     runs-on: ubuntu-24.04
     steps:
-      - name: Enable squash auto-merge for eligible internal pull requests
+      - name: Enable auto-merge and refresh one outdated branch
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
-          prs=$(gh pr list --repo "$REPO" --state open \
-            --json number,isDraft,author,headRepository | \
-            jq -r --arg owner "${REPO%%/*}" \
-              '.[] | select(.isDraft | not) | select(.author.login == "dependabot[bot]") | select(.headRepository.owner.login == $owner) | .number')
-          for pr in $prs; do
+          prs=$(gh pr list --repo "$REPO" --state open --base master --limit 100 \
+            --json number,isDraft,author,headRepository,headRefName,headRefOid,mergeStateStatus | \
+            jq -c --arg owner "${REPO%%/*}" --arg repo "$REPO" \
+              '[.[] | select(.isDraft | not) | select(.author.login == $owner or .author.login == "app/dependabot" or .author.login == "dependabot[bot]") | select(.headRepository.nameWithOwner == $repo)] | sort_by(.number)')
+          for pr in $(jq -r '.[].number' <<< "$prs"); do
             gh pr merge "$pr" --repo "$REPO" --auto --squash --delete-branch || true
           done
+          next=$(jq -r '[.[] | select(.mergeStateStatus == "BEHIND")][0] | if . == null then empty else [.number, .headRefOid, .headRefName] | @tsv end' <<< "$prs")
+          if [[ -n "$next" ]]; then
+            IFS=$'\t' read -r pr head_sha head_ref <<< "$next"
+            if gh api --method PUT "repos/$REPO/pulls/$pr/update-branch" -f expected_head_sha="$head_sha"; then
+              # GITHUB_TOKEN branch updates do not start unattended PR checks.
+              gh workflow run ci.yml --repo "$REPO" --ref "$head_ref"
+            else
+              echo "::warning::Could not refresh PR #$pr; retrying on the next event."
+            fi
+          fi
