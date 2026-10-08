@@ -2,6 +2,29 @@ import XCTest
 @testable import EpubToMp3
 
 final class ConvertViewModelTests: XCTestCase {
+#if os(macOS)
+    private final class PartialCopyFailureFileManager: FileManager, @unchecked Sendable {
+        override func copyItem(at source: URL, to destination: URL) throws {
+            try Data("Partial copy".utf8).write(to: destination)
+            throw NSError(domain: NSCocoaErrorDomain, code: NSFileWriteOutOfSpaceError)
+        }
+    }
+
+    private func withConversionInbox(
+        _ body: (URL, URL, URL) throws -> Void
+    ) throws {
+        let manager = FileManager.default
+        let root = manager.temporaryDirectory
+            .appendingPathComponent("convert-\(UUID().uuidString)", isDirectory: true)
+        let inbox = root.appendingPathComponent("Inbox", isDirectory: true)
+        let source = root.appendingPathComponent("Book.epub")
+        try manager.createDirectory(at: inbox, withIntermediateDirectories: true)
+        defer { try? manager.removeItem(at: root) }
+        try Data("Original selected source".utf8).write(to: source)
+        try body(root, inbox, source)
+    }
+#endif
+
     private func manualResult(jobID: String = "manual-only") -> RustConversionCoordinator.Result {
         .init(jobID: jobID, manifestJSON: Data("{\"manifest\":{\"jobId\":\"\(jobID)\",\"title\":\"Fixture\",\"author\":\"Author\",\"chapters\":[]}}".utf8),
               outputDirectory: URL(fileURLWithPath: "/unused-manual-output"))
@@ -101,10 +124,70 @@ final class ConvertViewModelTests: XCTestCase {
 
 #if os(macOS)
     @MainActor
+    func testImportSuccessPreservesPriorInboxInputsWithSameFilename() throws {
+        try withConversionInbox { _, inbox, source in
+            let first = try ConvertViewModel.importForConversion(source, baseDirectory: inbox)
+            let original = try Data(contentsOf: first)
+            let next = Data("Next selected source".utf8)
+            try next.write(to: source)
+
+            let second = try ConvertViewModel.importForConversion(source, baseDirectory: inbox)
+
+            XCTAssertNotEqual(first.standardizedFileURL, second.standardizedFileURL)
+            XCTAssertEqual(try Data(contentsOf: first), original)
+            XCTAssertEqual(try Data(contentsOf: second), next)
+            XCTAssertEqual(try Data(contentsOf: source), next)
+        }
+    }
+
+    @MainActor
+    func testPartialCopyFailurePreservesPriorInboxInputsAndSource() throws {
+        try withConversionInbox { _, inbox, source in
+            let prior = try ConvertViewModel.importForConversion(source, baseDirectory: inbox)
+            let priorBytes = try Data(contentsOf: prior)
+            let unrelated = inbox.appendingPathComponent("Other.epub")
+            let unrelatedBytes = Data("Another pending input".utf8)
+            try unrelatedBytes.write(to: unrelated)
+            let entries = try FileManager.default.contentsOfDirectory(atPath: inbox.path).sorted()
+            let sourceBytes = Data("Source for failed import".utf8)
+            try sourceBytes.write(to: source)
+
+            XCTAssertThrowsError(try ConvertViewModel.importForConversion(
+                source, fileManager: PartialCopyFailureFileManager(), baseDirectory: inbox
+            ))
+
+            XCTAssertEqual(try Data(contentsOf: source), sourceBytes)
+            XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: inbox.path).sorted(), entries,
+                           "Failed staging must leave no partial copy or remove any prior input")
+            XCTAssertEqual(try Data(contentsOf: prior), priorBytes)
+            XCTAssertEqual(try Data(contentsOf: unrelated), unrelatedBytes)
+        }
+    }
+
+    @MainActor
+    func testImportFromInboxPreservesSourceAndOtherInputs() throws {
+        try withConversionInbox { _, inbox, source in
+            let prior = try ConvertViewModel.importForConversion(source, baseDirectory: inbox)
+            let priorBytes = try Data(contentsOf: prior)
+            let unrelated = inbox.appendingPathComponent("Other.epub")
+            let unrelatedBytes = Data("Another pending input".utf8)
+            try unrelatedBytes.write(to: unrelated)
+
+            let copied = try ConvertViewModel.importForConversion(prior, baseDirectory: inbox)
+
+            XCTAssertNotEqual(copied.standardizedFileURL, prior.standardizedFileURL)
+            XCTAssertEqual(try Data(contentsOf: copied), priorBytes)
+            XCTAssertEqual(try Data(contentsOf: prior), priorBytes)
+            XCTAssertEqual(try Data(contentsOf: unrelated), unrelatedBytes)
+            XCTAssertEqual(try Data(contentsOf: source), Data("Original selected source".utf8))
+        }
+    }
+
+    @MainActor
     func testImportForConversionCopiesIntoOwnedInbox() throws {
         let fileManager = FileManager.default
         let root = fileManager.temporaryDirectory
-            .appendingPathComponent("convert-(UUID().uuidString)", isDirectory: true)
+            .appendingPathComponent("convert-\(UUID().uuidString)", isDirectory: true)
         let source = root.appendingPathComponent("Book.epub")
         let inbox = root.appendingPathComponent("Inbox", isDirectory: true)
         try fileManager.createDirectory(at: root, withIntermediateDirectories: true)

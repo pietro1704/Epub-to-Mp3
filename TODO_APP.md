@@ -9,6 +9,16 @@ this board and `handoff.md` before crossing ownership or changing shared contrac
 
 ## Active requests — 2026-10-08
 
+- [x] **APP-20261008-05 — Preserve manual Mac conversion inbox inputs.** Verified.
+  Audit found `ConvertViewModel.importForConversion` removes the entire inbox
+  before copying. Acceptance: earlier files survive successful/failed subsequent
+  imports and reimport from within the inbox; cleanup targets only owned staging.
+  Verify at the actual native import boundary with isolated files.
+  Compatibility helper only: current UI has no caller. Three native regressions
+  reproduced lost prior inputs/source (`19-31-29` macOS xcresult, all three failed).
+  Green: four native tests passed, zero skips (`19-32-33` macOS xcresult).
+  Each import retains its own UUID directory; failed copies remove only that directory.
+
 - [ ] **APP-20261008-01 — Two books per library row.** In progress.
   Acceptance: exactly two book cards per row on iOS, macOS and Flutter, including
   narrow/wide widths and resizing; retain cover ratio, labels and existing actions.

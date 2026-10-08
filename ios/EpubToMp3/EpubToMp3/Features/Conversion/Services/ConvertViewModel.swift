@@ -89,14 +89,17 @@ final class ConvertViewModel {
             fileManager: fileManager,
             baseDirectory: baseDirectory
         )
-        if fileManager.fileExists(atPath: inbox.path) {
-            try fileManager.removeItem(at: inbox)
-        }
-        try fileManager.createDirectory(at: inbox, withIntermediateDirectories: true)
-
+        let staging = inbox.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try fileManager.createDirectory(at: staging, withIntermediateDirectories: true)
         let name = url.lastPathComponent.isEmpty ? "Book" : url.lastPathComponent
-        let destination = inbox.appendingPathComponent(name, isDirectory: false)
-        try fileManager.copyItem(at: url, to: destination)
+        let destination = staging.appendingPathComponent(name, isDirectory: false)
+        do {
+            try fileManager.copyItem(at: url, to: destination)
+        } catch {
+            // Only this import owns staging; prior inbox inputs remain usable.
+            try? fileManager.removeItem(at: staging)
+            throw error
+        }
         return destination
     }
 
