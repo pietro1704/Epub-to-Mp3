@@ -40,8 +40,11 @@ this board and `handoff.md` before crossing ownership or changing shared contrac
   Lifecycle termination barrier: one macOS XCTest passed, zero skips,
   `Test-EpubToMp3Mac-2026.10.08_19-25-41--0300.xcresult`. The isolated regression
   invokes the real termination callback while index encoding is blocked.
-  iOS grant completion/expired-generation checks are implemented but unverified;
-  current device preflight reports locked. No benchmark was started.
+  iOS lifecycle: three physical tests passed, zero skips,
+  `E06BBEA9-291E-41F8-A2B8-8BBE5D3890E9` (33.64 s total, 24.51 s build,
+  7.51 s test interval). Real termination/background callbacks flush isolated
+  queued changes; stale generation cannot end its replacement grant. Expiration
+  logic is invoked directly, not delivered by the OS. Conversion comparison pending.
   Conversion report instrumentation: three native report/monotonic delivery tests
   passed (`19-28-01` macOS xcresult), plus real task_info capture passed (`19-28-53`),
   zero skips. Added point-sampled footprint and first published-chapter callback

@@ -20,7 +20,7 @@ private typealias PlatformApplicationDelegate = UIApplicationDelegate
 @MainActor
 final class EpubToMp3App: NSObject, PlatformApplicationDelegate {
     let settings = AppSettings()
-    let library = LibraryStore()
+    let library: LibraryStore
     let player = AudioPlayer()
     let audioWarmup = AudioEngineWarmup()
     let playerPresentation = PlayerPresentation()
@@ -28,8 +28,18 @@ final class EpubToMp3App: NSObject, PlatformApplicationDelegate {
 
     private static var sharedPlayerForWidgetIntents: AudioPlayer?
     private var libraryImportTask: Task<Void, Never>?
+#if os(iOS)
+    private var libraryPersistenceWindow: UIBackgroundTaskIdentifier = .invalid
+    private var libraryPersistenceGeneration: UUID?
+
+    var libraryPersistenceBackgroundState: (generation: UUID, identifier: UIBackgroundTaskIdentifier)? {
+        guard let generation = libraryPersistenceGeneration else { return nil }
+        return (generation, libraryPersistenceWindow)
+    }
+#endif
 
     override init() {
+        library = LibraryStore()
         super.init()
 #if os(iOS)
         library.installUITestFixtureIfRequested()
@@ -37,6 +47,12 @@ final class EpubToMp3App: NSObject, PlatformApplicationDelegate {
         installUITestPlaybackFixtureIfRequested()
 #endif
         Self.registerWidgetIntentObserver()
+    }
+
+    /// An injected library bypasses launch fixtures and their real-storage writes.
+    init(library: LibraryStore) {
+        self.library = library
+        super.init()
     }
 
 #if os(iOS)
@@ -370,6 +386,26 @@ final class EpubToMp3App: NSObject, PlatformApplicationDelegate {
 
     func deactivateRuntimeForScene() {
         deactivateRuntime()
+        guard libraryPersistenceWindow == .invalid else { return }
+        let generation = UUID()
+        libraryPersistenceGeneration = generation
+        libraryPersistenceWindow = UIApplication.shared.beginBackgroundTask(withName: "Persist library") { [weak self] in
+            Task { @MainActor [weak self] in self?.endLibraryPersistenceWindow(generation: generation) }
+        }
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            defer { self.endLibraryPersistenceWindow(generation: generation) }
+            do { try await self.library.flushPersistence() }
+            catch { NSLog("Library background persistence failed: %@", error.localizedDescription) }
+        }
+    }
+
+    func endLibraryPersistenceWindow(generation: UUID) {
+        guard libraryPersistenceGeneration == generation else { return }
+        let window = libraryPersistenceWindow
+        libraryPersistenceWindow = .invalid
+        libraryPersistenceGeneration = nil
+        if window != .invalid { UIApplication.shared.endBackgroundTask(window) }
     }
 #endif
 
@@ -380,10 +416,14 @@ final class EpubToMp3App: NSObject, PlatformApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         player.persistResumePoint(force: true)
+        do { try library.flushPersistenceSync() }
+        catch { NSLog("Library termination persistence failed: %@", error.localizedDescription) }
     }
 #else
     func applicationWillTerminate(_ application: UIApplication) {
         player.persistResumePoint(force: true)
+        do { try library.flushPersistenceSync() }
+        catch { NSLog("Library termination persistence failed: %@", error.localizedDescription) }
     }
 #endif
 

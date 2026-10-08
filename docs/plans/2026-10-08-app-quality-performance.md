@@ -59,16 +59,18 @@ current task status. Physical runs `0132B263-6FB2-49B1-A195-9627078459AE`
 (two tests) and `B882C802-84BE-4447-A0BD-23387F54BFF1` (35 playback tests)
 passed with zero skips. Replacement-player session deactivation did not reproduce;
 the earlier 109-test sequence is not yet verified green. Do not claim its cause fixed.
-Lifecycle termination passed one isolated native macOS test; iOS background grant
-completion/expiration and physical conversion comparison remain pending.
+Lifecycle termination passed one isolated native macOS test; three physical iOS
+tests passed in `E06BBEA9-291E-41F8-A2B8-8BBE5D3890E9`, zero skips. The real
+callbacks flush queued isolated writes; expiration's generation-check method is
+invoked directly, not by OS timeout. Physical conversion comparison remains pending.
 This Mac runs only Apple work; Rust/Flutter validation belongs to Arch.
 Conversion measurement instrumentation passed three native report/delivery tests
 and one real Mach footprint capture test (macOS xcresults `19-28-01`/`19-28-53`,
 zero skips). Additive report fields distinguish callback delivery from acoustic
 playback and two footprint samples from peak memory. This is harness verification,
 not measured synthesis improvement; the original device baseline lacks these fields.
-Current device preflight `E67CA26B-E4D9-447A-BC9E-3E671039F838` is terminal
-locked, without test/build/synthesis. Wait for explicit unlock confirmation.
+After explicit retry, preflight `F7484961-F505-48EC-9245-237ECACF5D40` reported
+ready and the lifecycle run above completed. The earlier locked report is historical.
 
 ### Slice 1 — durable import safety
 
