@@ -27,6 +27,12 @@ this board and `handoff.md` before crossing ownership or changing shared contrac
   one native test passed with zero skips (`reader-relaunch-3071CE3E-E1C4-4571-9172-948B12E9C8B1`).
   LOTR JSON decode ~213 ms versus binary ~104–118 ms; binary grew 25.09→26.54 MB.
   No production cache migration: this alone cannot fix the 537 ms HTML render.
+  Prepared native attributed-text experiment passed one test, zero skips
+  (`reader-relaunch-39737E0E-1C15-4C50-9581-006E94EEEB92`): LOTR chapter 8
+  HTML render 594 ms vs secure archive decode 0.40–0.65 ms (11,702 bytes);
+  Christie chapter 6 16.16 ms vs 0.38–0.55 ms (17,194 bytes).
+  Full text/attribute equality checked on each decode. In-memory experiment only;
+  durable integration, settings invalidation and actual relaunch remain pending.
 
 - [x] **APP-20261008-08 — Avoid redundant Mac reader cache writes.** Verified.
   Disk-prepared content no longer reencodes/writes/enumerates cache on MainActor.

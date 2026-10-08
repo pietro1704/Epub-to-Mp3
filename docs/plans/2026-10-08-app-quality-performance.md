@@ -52,6 +52,23 @@ uncontrolled comparison or extrapolate whole-book duration.
 
 ## Progress
 
+### Prepared attributed chapter — measured fidelity-preserving mechanism
+
+Native opt-in test passed once with zero skips in
+`reader-relaunch-39737E0E-1C15-4C50-9581-006E94EEEB92/attributed.xcresult`.
+Same hash-checked sources, native chapter positions LOTR 8 / Christie 6; no
+synthesis, cache writes or replacement of user data. Secure NSAttributedString
+archiving/restoration preserved complete text and attributes by equality in all
+three decodes per chapter. Initial compilation referenced a private safe-subscript
+helper; replaced with an explicit index guard before the passing run.
+
+LOTR HTML render 594.02 ms, archive decode 0.40–0.65 ms, archive 11,702 bytes.
+Christie 16.16 ms, decode 0.38–0.55 ms, 17,194 bytes. These are same-process
+Debug mechanism measurements, not across-relaunch reader performance. They
+justify investigating durable prepared rendering rather than losing EPUB styling.
+Production integration must invalidate changed settings/source/chapter, survive
+corrupt/missing data safely, preserve attachments and keep IO off the main thread.
+
 ### Reader codec experiment — no production migration
 
 `PreparedReaderCodecBenchmarkTests` compares actual typed payload decoding for

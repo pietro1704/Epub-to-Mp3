@@ -4,6 +4,51 @@ import XCTest
 
 @MainActor
 final class PreparedReaderCodecBenchmarkTests: XCTestCase {
+    func testOptInPreparedAttributedChapterDecodeCostAndFidelity() async throws {
+        struct Sample: Encodable {
+            let book: String
+            let chapter: Int
+            let renderMilliseconds: Double
+            let archiveBytes: Int
+            let decodeMilliseconds: [Double]
+        }
+        let input = try NativePlaybackBenchmarkInput.optIn()
+        let defaultsID = "PreparedAttributedChapter.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: defaultsID))
+        defer { defaults.removePersistentDomain(forName: defaultsID) }
+        let settings = AppSettings(defaults: defaults)
+        var samples: [Sample] = []
+        for book in input.books {
+            let payload = try await MacEpubParser.parse(at: URL(fileURLWithPath: book.sourcePath),
+                                                        bookId: UUID().uuidString)
+            guard payload.chapters.indices.contains(book.chapterStart) else {
+                throw NativePlaybackBenchmarkInput.invalid("Requested prepared chapter is missing")
+            }
+            let chapter = payload.chapters[book.chapterStart]
+            let startRender = ProcessInfo.processInfo.systemUptime
+            let rendered = try XCTUnwrap(EpubHtmlRenderer.render(html: try XCTUnwrap(chapter.html),
+                css: chapter.css, settings: settings, resources: chapter.resources))
+            let attributed = NSAttributedString(rendered)
+            let renderTime = (ProcessInfo.processInfo.systemUptime - startRender) * 1000
+            let archive = try NSKeyedArchiver.archivedData(withRootObject: attributed, requiringSecureCoding: true)
+            var decodeTimes: [Double] = []
+            for _ in 0..<3 {
+                let startDecode = ProcessInfo.processInfo.systemUptime
+                let restored = try XCTUnwrap(NSKeyedUnarchiver.unarchivedObject(ofClass: NSAttributedString.self,
+                                                                               from: archive))
+                decodeTimes.append((ProcessInfo.processInfo.systemUptime - startDecode) * 1000)
+                XCTAssertTrue(restored.isEqual(to: attributed),
+                              "Prepared restoration must preserve complete text and native attributes")
+            }
+            samples.append(Sample(book: book.name, chapter: book.chapterStart, renderMilliseconds: renderTime,
+                                  archiveBytes: archive.count, decodeMilliseconds: decodeTimes))
+        }
+        let attachment = XCTAttachment(data: try JSONEncoder().encode(samples), uniformTypeIdentifier: "public.json")
+        attachment.name = "native-prepared-attributed-chapter-comparison.json"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+    }
+
     func testOptInPreparedReaderCodecDecodeCost() async throws {
         struct Sample: Encodable {
             let book: String
