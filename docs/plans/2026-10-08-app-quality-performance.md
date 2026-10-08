@@ -208,3 +208,25 @@ This verifies the form's production parsing boundary on the native host, not its
 full UIKit integration. The matching view-model XCTest is checked in but has not
 run since the locked-device preflight. Swift coordinator / FFI start-to-end
 sentinel consistency and native embedding remain pending, so item 2 stays partial.
+
+### Slice 2c — reconcile raw bounds with book metadata
+
+The coordinator now validates raw sentinel/range syntax before opening metadata,
+then resolves a nonnegative start / `-1` end to the actual last chapter. It no
+longer substitutes a single chapter for reversed or to-end requests. Invalid
+sentinels, reversal, empty scoped books and out-of-book indices are rejected
+before output creation; the resolved inclusive range drives post-manifest counts.
+
+Red: the extracted production resolution behavior failed eight native assertions,
+including `1..-1` resolving to `1..1` for a three-chapter book. Final green:
+`apple:foundation:test` passed 12 tests (five chapter-selection, seven history).
+Evidence: `.reports/mobile-audio/chapter-bounds-red.log` / `chapter-bounds-green.log`.
+The actual coordinator, adapter, snapshot, parser and localization files passed
+strict-concurrency Swift typechecking for macOS 12. Specialist review found no
+blocking bounds issue and confirmed existing start-to-end callers remain compatible.
+Whitespace/diff checks passed. No user book was synthesized or modified.
+
+Limits: host resolver tests and typechecking are not a full native coordinator
+conversion run. Manifest validation still checks count, not chapter identity;
+device integration and final artifact embedding remain acceptance gates. Item 2
+is therefore not closed merely from these host checks.

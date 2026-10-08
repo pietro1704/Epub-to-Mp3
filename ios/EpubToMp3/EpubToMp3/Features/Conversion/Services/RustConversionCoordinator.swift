@@ -182,16 +182,11 @@ final class RustConversionCoordinator {
         onProgress: (@MainActor @Sendable (ConversionProgressEvent) -> Void)? = nil,
         onChapterCompleted: (@MainActor @Sendable (ChapterCompletionEvent) -> Void)? = nil
     ) async throws -> Result {
-        let requestedChapterPositions = requestedChapterRange(
+        let requestedChapterPositions = try requestedChapterRange(
+            in: bookURL,
             chapterStart: chapterStart,
             chapterEnd: chapterEnd
         )
-        if let requestedChapterPositions {
-            try validateChapterSelection(
-                in: bookURL,
-                requestedPositions: requestedChapterPositions
-            )
-        }
         let root = try fileManager.url(
             for: .applicationSupportDirectory,
             in: .userDomainMask,
@@ -313,10 +308,17 @@ final class RustConversionCoordinator {
         ].contains(where: normalized.contains)
     }
 
-    private func validateChapterSelection(
+    private func requestedChapterRange(
         in bookURL: URL,
-        requestedPositions: ClosedRange<Int>
-    ) throws {
+        chapterStart: Int32,
+        chapterEnd: Int32
+    ) throws -> ClosedRange<Int>? {
+        do {
+            try ConversionChapterSelection.validateBounds(start: chapterStart, end: chapterEnd)
+        } catch {
+            throw EmbeddedConverterError.conversionFailed("Invalid Rust chapter selection.")
+        }
+        if chapterStart == -1 && chapterEnd == -1 { return nil }
         let book = try adapter.openBook(at: bookURL)
         guard
             let metadata = try JSONSerialization.jsonObject(with: book.metadataJSON) as? [String: Any],
@@ -326,18 +328,13 @@ final class RustConversionCoordinator {
                 "Rust chapter metadata is missing or invalid."
             )
         }
-        guard requestedPositions.upperBound < chapters.count else {
+        do {
+            return try ConversionChapterSelection.resolve(start: chapterStart, end: chapterEnd,
+                                                          chapterCount: chapters.count)
+        } catch {
             throw EmbeddedConverterError.conversionFailed(
                 "The selected Rust chapter range exceeds the EPUB chapter count."
             )
         }
-    }
-
-    private func requestedChapterRange(chapterStart: Int32, chapterEnd: Int32) -> ClosedRange<Int>? {
-        guard chapterStart >= 0 else { return nil }
-        let start = Int(chapterStart)
-        let end = Int(chapterEnd)
-        guard end >= start else { return start...start }
-        return start...end
     }
 }

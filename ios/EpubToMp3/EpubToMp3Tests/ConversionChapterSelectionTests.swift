@@ -6,6 +6,19 @@ import XCTest
 #endif
 
 final class ConversionChapterSelectionTests: XCTestCase {
+    func testStartToEndUsesBookMetadataInsteadOfSelectingOnlyOneChapter() throws {
+        XCTAssertEqual(try ConversionChapterSelection.resolve(start: 1, end: -1, chapterCount: 3), 1...2)
+        XCTAssertEqual(try ConversionChapterSelection.resolve(start: 0, end: 0, chapterCount: 3), 0...0)
+        XCTAssertNil(try ConversionChapterSelection.resolve(start: -1, end: -1, chapterCount: 3))
+    }
+
+    func testRawBoundsRejectMixedSentinelsReversalAndOutOfBookIndices() {
+        for bounds: (Int32, Int32) in [(-2, -1), (-1, 0), (0, -2), (1, 0), (3, 3), (0, 3)] {
+            XCTAssertThrowsError(try ConversionChapterSelection.resolve(start: bounds.0, end: bounds.1, chapterCount: 3))
+        }
+        XCTAssertThrowsError(try ConversionChapterSelection.resolve(start: 0, end: 0, chapterCount: 0))
+    }
+
     func testMalformedNonemptySelectionsNeverBecomeWholeBook() {
         for input in ["invalid", "8-", "-1", "9-8", "8-9-10", "2147483648", "8-bad-9", "8--9", "-2--1",
                       "0-2147483648", "2147483648-1", "-", "+8", "８", "8.0"] {
