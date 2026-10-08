@@ -26,7 +26,7 @@ import AppKit
 final class LibraryStore: ObservableObject {
     private static let importQueue = DispatchQueue(label: "com.epubtomp3.library-import", qos: .userInitiated,
                                                   autoreleaseFrequency: .workItem)
-    private let persistenceQueue = DispatchQueue(label: "com.epubtomp3.library-persistence", qos: .utility)
+    private let indexPersistence: LibraryIndexPersistence
     private let importDirectory: URL?
     private var removalGenerations: [String: Int] = [:]
     private static let applicationSupportFolderName = "EpubToMp3"
@@ -47,7 +47,8 @@ final class LibraryStore: ObservableObject {
         defaults: UserDefaults? = nil,
         defaultsKey: String = "library.books.v1",
         fileManager: FileManager = .default,
-        importDirectory: URL? = nil
+        importDirectory: URL? = nil,
+        indexEncoder: @escaping @Sendable ([BookEntity]) throws -> Data = { try JSONEncoder().encode($0) }
     ) {
         // Prefer the App Group suite so the WidgetKit extension can
         // share the same UserDefaults store. Falls back to `.standard`
@@ -65,6 +66,8 @@ final class LibraryStore: ObservableObject {
         self.defaultsKey = defaultsKey
         self.fileManager = fileManager
         self.importDirectory = importDirectory
+        self.indexPersistence = LibraryIndexPersistence(defaults: resolvedDefaults, key: defaultsKey,
+                                                       encoder: indexEncoder)
         // UI tests install a deterministic fixture immediately after app
         // launch. Skip decoding the user's persisted library in that mode:
         // it can contain large cover payloads and makes launch timing and
@@ -160,6 +163,8 @@ final class LibraryStore: ObservableObject {
         let baseline = books.first(where: { $0.id == prepared.book.id })
         let book = Self.mergeImport(prepared, baseline: baseline, into: &books)
         persist()
+        // This legacy blocking API retains its immediate-reload contract.
+        try flushPersistenceSync()
         return book
     }
 
@@ -221,6 +226,17 @@ final class LibraryStore: ObservableObject {
         if changed {
             books = mergedBooks
             persist()
+            do {
+                // Inbox callers may delete their source only after this task
+                // completes with a published and committed durable index entry.
+                try await flushPersistence()
+            } catch {
+                return outcomes.map { outcome in
+                    guard outcome.book != nil else { return outcome }
+                    return ImportOutcome(url: outcome.url, book: nil,
+                                         error: "Library persistence failed: \(error.localizedDescription)")
+                }
+            }
         }
         return outcomes
     }
@@ -744,16 +760,19 @@ final class LibraryStore: ObservableObject {
     // MARK: - Persistence
 
     private func persist() {
-        let snapshot = books
-        do {
-            let data = try JSONEncoder().encode(snapshot)
-            defaults.set(data, forKey: defaultsKey)
-        } catch {
-            NSLog("Library persistence failed: %@", error.localizedDescription)
-        }
-        persistenceQueue.async(execute: DispatchWorkItem {
-            WidgetDataSync.reloadLibraryWidgets()
-        })
+        indexPersistence.enqueue(books)
+    }
+
+    /// Flushes submissions preceding this call without blocking the main actor.
+    /// UserDefaults acceptance is not an fsync or power-loss durability guarantee.
+    func flushPersistence() async throws {
+        try await indexPersistence.flush()
+    }
+
+    /// For synchronous compatibility callers/tests or a termination hook only.
+    /// Interactive mutation paths must never wait on this barrier.
+    func flushPersistenceSync() throws {
+        try indexPersistence.flushSync()
     }
 
     // MARK: - Durable import storage
@@ -988,6 +1007,54 @@ final class LibraryStore: ObservableObject {
             properties: [.compressionFactor: coverJPEGQuality]
         ) ?? data
         #endif
+    }
+}
+
+/// Queue-confined writer. Foundation UserDefaults is thread-safe; mutable error
+/// state is accessed only on the serial queue. No LibraryStore reference crosses
+/// this boundary, and queued snapshots are immutable Sendable values.
+private final class LibraryIndexPersistence: @unchecked Sendable {
+    private let queue = DispatchQueue(label: "com.epubtomp3.library-index", qos: .utility,
+                                      autoreleaseFrequency: .workItem)
+    private let defaults: UserDefaults
+    private let key: String
+    private let encoder: @Sendable ([BookEntity]) throws -> Data
+    private var lastFailure: Error?
+
+    init(defaults: UserDefaults, key: String,
+         encoder: @escaping @Sendable ([BookEntity]) throws -> Data) {
+        self.defaults = defaults
+        self.key = key
+        self.encoder = encoder
+    }
+
+    func enqueue(_ snapshot: [BookEntity]) {
+        queue.async { [self] in
+            do {
+                let data = try encoder(snapshot)
+                defaults.set(data, forKey: key)
+                lastFailure = nil
+                WidgetDataSync.reloadLibraryWidgets()
+            } catch {
+                lastFailure = error
+                NSLog("Library persistence failed: %@", error.localizedDescription)
+            }
+        }
+    }
+
+    func flush() async throws {
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            queue.async { [self] in
+                if let lastFailure { continuation.resume(throwing: lastFailure) }
+                else { continuation.resume(returning: ()) }
+            }
+        }
+    }
+
+    func flushSync() throws {
+        try queue.sync {
+            if let lastFailure { throw lastFailure }
+        }
     }
 }
 

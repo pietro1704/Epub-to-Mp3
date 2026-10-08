@@ -70,19 +70,148 @@ private final class ObservedImportFileManager: FileManager, @unchecked Sendable 
 private final class ObservedLibraryDefaults: UserDefaults, @unchecked Sendable {
     private let lock = NSLock()
     private var writes = 0
+    private var writeThreads: [Bool] = []
     var libraryWrites: Int {
         lock.lock(); defer { lock.unlock() }
         return writes
     }
+    var libraryWriteThreads: [Bool] {
+        lock.lock(); defer { lock.unlock() }
+        return writeThreads
+    }
     override func set(_ value: Any?, forKey key: String) {
         if key == "library.books.v1" {
-            lock.lock(); writes += 1; lock.unlock()
+            lock.lock(); writes += 1; writeThreads.append(Thread.isMainThread); lock.unlock()
         }
         super.set(value, forKey: key)
     }
 }
 
+private final class LibraryEncoderProbe: @unchecked Sendable {
+    private let lock = NSLock()
+    private let resume = DispatchSemaphore(value: 0)
+    private var waiting: XCTestExpectation?
+    private var observations: [(Bool, String?)] = []
+
+    func pauseNextEncoding(until expectation: XCTestExpectation) {
+        lock.lock(); defer { lock.unlock() }
+        waiting = expectation
+    }
+    func releaseEncoding() { resume.signal() }
+    var encodedSnapshots: [(Bool, String?)] {
+        lock.lock(); defer { lock.unlock() }
+        return observations
+    }
+    func encode(_ books: [BookEntity]) throws -> Data {
+        lock.lock()
+        observations.append((Thread.isMainThread, books.first?.title))
+        let entered = waiting
+        waiting = nil
+        lock.unlock()
+        if let entered {
+            entered.fulfill()
+            guard resume.wait(timeout: .now() + 5) == .success else {
+                throw NSError(domain: "LibraryPersistenceTests", code: 1)
+            }
+        }
+        return try JSONEncoder().encode(books)
+    }
+}
+
 final class LibraryStoreTests: XCTestCase {
+
+    @MainActor
+    func testIndexWorkerDoesNotBlockMainAndPersistsSnapshotsInOrder() async throws {
+        let suite = "library.index-worker.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        var book = BookEntity(id: "index-book", title: "Initial", bookmark: Data([1]),
+                              displayFilename: "Book.epub", addedAt: .now)
+        defaults.set(try JSONEncoder().encode([book]), forKey: "library.books.v1")
+        let probe = LibraryEncoderProbe()
+        let store = LibraryStore(defaults: defaults, indexEncoder: { try probe.encode($0) })
+        defer { try? store.flushPersistenceSync() }
+        let entered = expectation(description: "index encoding is blocked on its worker")
+        probe.pauseNextEncoding(until: entered)
+        book.title = "First"
+        store.update(book)
+        await fulfillment(of: [entered], timeout: 3)
+        let heartbeat = expectation(description: "main actor can mutate while encoder is blocked")
+        Task { @MainActor in
+            XCTAssertTrue(Thread.isMainThread)
+            var latest = book
+            latest.title = "Latest"
+            latest.tags = ["Kept"]
+            store.update(latest)
+            heartbeat.fulfill()
+        }
+        await fulfillment(of: [heartbeat], timeout: 2)
+        probe.releaseEncoding()
+        try await store.flushPersistence()
+        XCTAssertEqual(probe.encodedSnapshots.map { $0.0 }, [false, false])
+        XCTAssertEqual(probe.encodedSnapshots.map { $0.1 }, ["First", "Latest"])
+        let reloaded = LibraryStore(defaults: defaults)
+        XCTAssertEqual(reloaded.books.first?.title, "Latest")
+        XCTAssertEqual(reloaded.books.first?.tags, ["Kept"])
+    }
+
+    @MainActor
+    func testIndexEncodingFailurePreservesCommittedIndexAndFlushReportsIt() async throws {
+        let suite = "library.index-failure.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        var book = BookEntity(id: "index-book", title: "Committed", bookmark: Data([1]),
+                              displayFilename: "Book.epub", addedAt: .now)
+        let committed = try JSONEncoder().encode([book])
+        defaults.set(committed, forKey: "library.books.v1")
+        let store = LibraryStore(defaults: defaults)
+        defer { try? store.flushPersistenceSync() }
+        book.lastPositionSeconds = .nan
+        store.update(book)
+        do {
+            try await store.flushPersistence()
+            XCTFail("Failed encoding must be reported by flush")
+        } catch {
+            XCTAssertTrue(error is EncodingError)
+        }
+        XCTAssertEqual(defaults.data(forKey: "library.books.v1"), committed)
+        XCTAssertThrowsError(try store.flushPersistenceSync())
+        book.lastPositionSeconds = 42
+        book.title = "Recovered"
+        store.update(book)
+        try await store.flushPersistence()
+        XCTAssertEqual(LibraryStore(defaults: defaults).books.first?.title, "Recovered")
+    }
+
+    func testCompatibilitySyncFlushMakesRemovalVisibleToImmediateReload() throws {
+        let (store, defaults, _) = ephemeralStore()
+        store.installUITestFixtureIfRequested(arguments: ["-uiTestFixture"])
+        store.remove(id: "ui-test-book")
+        try store.flushPersistenceSync()
+        XCTAssertTrue(LibraryStore(defaults: defaults).books.isEmpty)
+    }
+
+    @MainActor
+    func testAsyncImportReportsIndexFailureAndPreservesItsSource() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("library-index-import-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let suite = "library.index-import.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let store = LibraryStore(defaults: defaults, importDirectory: root, indexEncoder: { _ in
+            throw NSError(domain: "LibraryPersistenceTests", code: 2,
+                          userInfo: [NSLocalizedDescriptionKey: "Index encoding failed"])
+        })
+        defer { try? store.flushPersistenceSync() }
+        let source = try EpubFixture.create()
+        defer { try? FileManager.default.removeItem(at: source) }
+        let bytes = try Data(contentsOf: source)
+        let outcomes = await store.importBooks(from: [source])
+        XCTAssertNil(outcomes.first?.book, "Inbox cleanup must not see a successful import before index commit")
+        XCTAssertTrue(outcomes.first?.error?.contains("Index encoding failed") == true)
+        XCTAssertNil(defaults.data(forKey: "library.books.v1"))
+        XCTAssertEqual(try Data(contentsOf: source), bytes)
+    }
 
     @MainActor
     func testAsyncBatchPreparesOffMainAndPersistsSuccessfulBooksOnce() async throws {
@@ -95,6 +224,7 @@ final class LibraryStoreTests: XCTestCase {
         let manager = ObservedImportFileManager()
         let store = LibraryStore(defaults: defaults, fileManager: manager,
                                  importDirectory: root.appendingPathComponent("library"))
+        defer { try? store.flushPersistenceSync() }
         let epub = try EpubFixture.create()
         let pdf = try PdfFixture.createSinglePage(title: "Batch PDF", author: "Batch Author")
         defer { try? FileManager.default.removeItem(at: epub); try? FileManager.default.removeItem(at: pdf) }
@@ -110,6 +240,7 @@ final class LibraryStoreTests: XCTestCase {
         XCTAssertEqual(store.books.count, 2)
         XCTAssertEqual(manager.copyThreads, [false, false, false])
         XCTAssertEqual(defaults.libraryWrites - before, 1)
+        XCTAssertEqual(defaults.libraryWriteThreads, [false])
         let reloaded = LibraryStore(defaults: defaults)
         XCTAssertEqual(Set(reloaded.books.map(\.id)), Set(store.books.map(\.id)))
         XCTAssertTrue(FileManager.default.fileExists(atPath: epub.path))
@@ -125,6 +256,7 @@ final class LibraryStoreTests: XCTestCase {
         defer { defaults.removePersistentDomain(forName: suite) }
         let manager = ObservedImportFileManager()
         let store = LibraryStore(defaults: defaults, fileManager: manager, importDirectory: root)
+        defer { try? store.flushPersistenceSync() }
         let source = try EpubFixture.create()
         defer { try? FileManager.default.removeItem(at: source) }
         let original = try store.importBook(from: source)
@@ -180,6 +312,7 @@ final class LibraryStoreTests: XCTestCase {
         defer { defaults.removePersistentDomain(forName: suite) }
         let manager = ObservedImportFileManager()
         let store = LibraryStore(defaults: defaults, fileManager: manager, importDirectory: root)
+        defer { try? store.flushPersistenceSync() }
         let source = try EpubFixture.create()
         defer { try? FileManager.default.removeItem(at: source) }
         let original = try store.importBook(from: source)
@@ -209,6 +342,7 @@ final class LibraryStoreTests: XCTestCase {
         defer { defaults.removePersistentDomain(forName: suite) }
         let manager = ObservedImportFileManager()
         let store = LibraryStore(defaults: defaults, fileManager: manager, importDirectory: root)
+        defer { try? store.flushPersistenceSync() }
         let source = try EpubFixture.create()
         defer { try? FileManager.default.removeItem(at: source) }
         let controller = MacLibraryViewController(library: store, bookmarkStore: BookmarkStore(defaults: defaults),
@@ -225,6 +359,10 @@ final class LibraryStoreTests: XCTestCase {
         let defaults = UserDefaults(suiteName: suite)!
         defaults.removePersistentDomain(forName: suite)
         let store = LibraryStore(defaults: defaults, defaultsKey: "library.books.v1")
+        addTeardownBlock {
+            try? store.flushPersistenceSync()
+            defaults.removePersistentDomain(forName: suite)
+        }
         return (store, defaults, suite)
     }
 
@@ -250,6 +388,7 @@ final class LibraryStoreTests: XCTestCase {
         defaults.set(try JSONEncoder().encode([book]), forKey: "library.books.v1")
 
         let store = LibraryStore(defaults: defaults, defaultsKey: "library.books.v1")
+        defer { try? store.flushPersistenceSync() }
         XCTAssertNil(store.books.first?.author)
     }
 

@@ -405,3 +405,22 @@ Limits: the feature-enabled native Piper adapter is not compiled/exercised in
 this host pass; shipping Apple builds without that runtime fail clearly rather
 than pretending installed files enable inference. Frontend installed-model
 selection and final physical-device embedding remain pending.
+
+### Slice 6c — asynchronous library index persistence
+
+JSON encoding and UserDefaults writes now use ordered immutable snapshots on a
+serial worker. Async flush reports the last committed snapshot/error without
+blocking UI; synchronous flush preserves the legacy import/reload contract.
+Async imports flush before returning success so inbox callers retain sources on
+index failure. Explicit flush barriers make integration reload tests deterministic.
+
+Native macOS XCTest: 45 passed, zero failures/skips; evidence
+`Test-EpubToMp3Mac-2026.10.08_15-52-17--0300.xcresult` (68.2 seconds total,
+2.397 seconds test interval). Tests cover blocked encoder/main responsiveness,
+encode/write threads, ordered/latest snapshots, failed encode preserving prior
+index, recovery, source preservation, batch callers and persistence across reload.
+Review and diff checks passed. No user-data cleanup or book synthesis.
+
+Initial library load is still synchronous. Lifecycle flush hooks are a separate
+pending Apple validation change; index-write completion is not fsync/power-loss
+durability. Performance and physical-iPhone gates remain open.

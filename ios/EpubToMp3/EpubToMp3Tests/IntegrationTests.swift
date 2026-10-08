@@ -124,6 +124,7 @@ final class IntegrationTests: XCTestCase {
         let store = LibraryStore(defaults: defaults, defaultsKey: "library.books.v1")
         let book = try store.importBook(from: url)
         store.remove(id: book.id)
+        try store.flushPersistenceSync()
 
         let reloaded = LibraryStore(defaults: defaults, defaultsKey: "library.books.v1")
         XCTAssertTrue(reloaded.books.isEmpty)
