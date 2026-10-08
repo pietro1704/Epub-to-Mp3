@@ -286,3 +286,14 @@ no blocking issue. Reused incremental native build and the completed Rust dylib.
 
 Limits: active audible playback was not exercised; true flag semantics and model
 readiness are still pending, as is device conversion/performance verification.
+
+### Chapter scope — exact output identity
+
+Scoped coordinator success now requires the requested job ID and exact ordered
+`sourceIndex` list, not just an equal chapter count. Missing identities,
+duplicates, reversed/substituted selections and excess/missing chapters fail.
+`apple:foundation:test` with the existing release dylib/fixture environment passed
+17 native tests, zero failures/skips (4.90 seconds incremental compile; 0.475
+seconds tests). The added regression exercises the production result validator;
+the scoped conversion calls this validator before publishing success. No synthesis
+or Rust rebuild. Physical-device integration remains pending.

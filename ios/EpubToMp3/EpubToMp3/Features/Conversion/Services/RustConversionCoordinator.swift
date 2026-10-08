@@ -103,6 +103,23 @@ final class RustConversionCoordinator {
         let manifestJSON: Data
         let outputDirectory: URL
 
+        func validateSelectedChapters(_ positions: ClosedRange<Int>) throws {
+            let envelope = try JSONDecoder().decode(Envelope.self, from: manifestJSON)
+            guard envelope.manifest.jobId == jobID else {
+                throw EmbeddedConverterError.conversionFailed("Rust returned a different conversion job ID.")
+            }
+            // Count alone cannot distinguish the requested chapters from an
+            // equally sized, duplicated or reordered selection. Scoped jobs
+            // require the explicit source identity emitted by the Rust worker.
+            let actual = envelope.manifest.chapters.map(\.sourceIndex)
+            let expected = positions.map { Optional($0) }
+            guard actual == expected else {
+                throw EmbeddedConverterError.conversionFailed(
+                    "Rust chapter identities do not match the selected range \(positions.lowerBound)...\(positions.upperBound)."
+                )
+            }
+        }
+
         func snapshot() throws -> JobSnapshot {
             let envelope = try JSONDecoder().decode(Envelope.self, from: manifestJSON)
             guard envelope.manifest.jobId == jobID else {
@@ -238,17 +255,12 @@ final class RustConversionCoordinator {
                     }
                 }
             }
+            let result = Result(jobID: jobID, manifestJSON: manifest, outputDirectory: outputDirectory)
             if let requestedChapterPositions {
-                let envelope = try JSONDecoder().decode(Envelope.self, from: manifest)
-                guard envelope.manifest.chapters.count == requestedChapterPositions.count else {
-                    throw EmbeddedConverterError.conversionFailed(
-                        "Rust converted \(envelope.manifest.chapters.count) chapters; " +
-                            "the request selected \(requestedChapterPositions.count)."
-                    )
-                }
+                try result.validateSelectedChapters(requestedChapterPositions)
             }
             try? appendLogLine("[Rust] conversion finished", to: logURL)
-            return Result(jobID: jobID, manifestJSON: manifest, outputDirectory: outputDirectory)
+            return result
         } catch {
             try? appendLogLine("[Rust] conversion failed: \(error.localizedDescription)", to: logURL)
             throw error

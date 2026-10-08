@@ -7,6 +7,27 @@ import XCTest
 #endif
 
 final class ConversionOptionsInteropTests: XCTestCase {
+    func testScopedManifestRequiresExactOrderedChapterIdentities() throws {
+        func result(_ indices: [Int?], jobID: String = "selected-job") throws -> RustConversionCoordinator.Result {
+            let chapters: [[String: Any]] = indices.enumerated().map { offset, index in
+                var chapter: [String: Any] = ["filename": "chapter-\(offset).mp3", "textChars": 42]
+                if let index { chapter["sourceIndex"] = index }
+                return chapter
+            }
+            let data = try JSONSerialization.data(withJSONObject: ["manifest": [
+                "jobId": jobID, "title": "Fixture", "author": "Author", "chapters": chapters,
+            ]])
+            return .init(jobID: "selected-job", manifestJSON: data,
+                         outputDirectory: URL(fileURLWithPath: "/unused-selection-output"))
+        }
+        try result([8, 9]).validateSelectedChapters(8...9)
+        try result([8]).validateSelectedChapters(8...8)
+        for indices: [Int?] in [[0, 1], [8, 8], [9, 8], [8], [8, 9, 10], [nil, nil], [8, nil]] {
+            XCTAssertThrowsError(try result(indices).validateSelectedChapters(8...9), "Accepted \(indices)")
+        }
+        XCTAssertThrowsError(try result([8, 9], jobID: "different-job").validateSelectedChapters(8...9))
+    }
+
     private final class ObservedSupportManager: FileManager, @unchecked Sendable {
         let root: URL
         var supportLookups = 0
