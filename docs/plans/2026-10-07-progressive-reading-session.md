@@ -143,3 +143,74 @@ Rollback: revert verified owned commits; Apple changes remain separately
 reviewable until their gate passes. Ignore the additive chapters.json journal
 with old binaries; v1 markers remain readable. Keep books, models, audio and
 manifests intact. No cleanup/reset of the original checkout is authorized here.
+
+Delivery checkpoint: Rust worker + this plan committed/pushed as ddb1a27e46
+on origin/feature/progressive-reading-session. Apple code/tests are uncommitted
+in this isolated worktree, intentionally pending the native gate. Additional
+isolated XCTest typecheck including ResumeStoreTests could not complete because
+that file also includes DownloadManager/AudiobookManifest helper tests outside
+the small helper module. Do not count it as app test/build evidence. No PR opened,
+CI monitored, issue closed or release published. The original dirty worktree
+status still matches the initial inventory exactly.
+
+### Controlled runtime and native checkpoint
+
+The second execution implements a per-invocation shared ConversionControl:
+real cancellation, priority of unstarted source chapters, and pause at the
+existing resource-policy boundaries. Additive owned C handles preserve legacy
+ABI. Edge cancellation unwinds its pending async request and cleans partial
+output; synchronous local inference retains its existing cooperative limit.
+
+Explicit retry creates a new job with recoveryJobId, validates input hash and
+provider/voice/language, and reuses validated predecessor audio by hardlink.
+Terminal predecessor records/manifests/audio are unchanged. Source selection is
+persisted in new job metadata; sourceSha256 is additive in the chapter journal.
+
+Native delivery is serialized and flushed before final handoff. The existing
+scheduler publishes network/resource permission without submitting a second
+conversion; the native control forwards that permission to Rust. Explicit
+Book Detail Listen shares narration; Download retains artifacts without touching
+transport. The offline store registers validated audio by hardlink, preserving
+its v1 manifest and protecting audible retention through existing cleanup/UI.
+Book-level resume keys and pending chapter intent survive successor job IDs.
+
+Evidence: guarded managed cargo test of converter-core + converter-ffi --lib:
+88 + 13 passed, no failures/skips (5.92s + 0.66s test runtimes). The initial FFI
+fixture failures were fixed by giving the synthetic EPUB a real .epub suffix;
+no real books or provider synthesis were executed. Durable logs:
+.reports/progressive/controlled-runtime-final-tests.log.
+
+Added mise run mac:test with explicit MAC_TESTS scope and the existing shared
+heavy-job lock/load policy. First native macOS run built the shared FFI and app,
+ran104 tests:102passed2failed. Those assertions incorrectly assumed raw error
+text and that sorted availability equalled the real queue cursor; product
+behavior was preserved and expectations corrected. The subsequent run includes
+two callback-delivery regressions. Its xcresult is
+ios/EpubToMp3/.build/Logs/Test/Test-EpubToMp3Mac-2026.10.07_23-16-17--0300.xcresult.
+Its native summary proves106passed,0failed,0skipped; the task exited0. This
+proves that candidate, not subsequent queue integration or protected-media
+reconciliation changes.
+
+Next queue slice: keep raw artifact availability separate from queue ordering.
+A validated future/prefix file must not skip an unavailable next chapter.
+ProgressiveChapterQueue and native tests define this seam; integrate into
+AudioPlayer before removing Session's masking projections, then exercise pending
+next/previous/beginning/current-page commands and automatic queue exhaustion.
+No layout refactor is needed. Confirm source identity on real AVPlayerItem,
+not on the first entry of a sorted JobSnapshot.
+
+The iPhone gate is still the previously recorded passcode blocker; no new device
+query has been made without changed readiness evidence. Live iPhone synthesis
+still depends on the separate embedded-audio work. Remaining gates include
+confirmed versioned transport snapshot/UI adoption, full native lifecycle/UI,
+network recovery and reader geometry evidence. Do not mark the goal complete.
+
+Adversarial Rust review fixed two actual faults: resource pause on an empty
+queue could stall terminal completion; successor recovery could accept an
+existing same-hash symlink outside its output. New regressions prove empty
+queue completion and rejection without changing outsider/source data. Final
+managed guarded core/FFI --lib run:90+13passed,0failures/skips (6.11s+0.64s test
+runtimes), .reports/progressive/reviewed-runtime-tests.log. Formatting checked
+with the actual Rust2021 workspace edition. Existing ABI/envelopes preserved.
+Explicit Edge retry configuration is verified; historical unresolved engine/model
+metadata and local synchronous inference's cooperative bound remain limitations.

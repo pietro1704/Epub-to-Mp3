@@ -3,6 +3,7 @@ use crate::{
     audio::{self, ChapterMetadata},
     cache,
     config::AppConfig,
+    conversion_control::{ConversionControl, ConversionControlError},
     epub,
     jobs::{JobError, JobManager, JobRecord, JobState},
     piper::{self, CancellationToken, PiperConfig},
@@ -72,6 +73,8 @@ pub struct ChapterCompletionEvent {
 #[serde(rename_all = "camelCase")]
 struct ChapterJournal {
     schema_version: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    source_sha256: Option<String>,
     job_id: String,
     book_title: String,
     book_author: String,
@@ -80,6 +83,8 @@ struct ChapterJournal {
 }
 #[derive(Debug, Error)]
 pub enum WorkerError {
+    #[error("conversion control error: {0}")]
+    Control(#[from] ConversionControlError),
     #[error("job error: {0}")]
     Job(#[from] JobError),
     #[error("EPUB error: {0}")]
@@ -106,6 +111,7 @@ pub struct ConversionWorker {
     pub config: AppConfig,
     pub jobs: JobManager,
     pub cancel: CancellationToken,
+    control: Option<ConversionControl>,
     pub progress: Option<ProgressSink>,
     pub chapter_completed: Option<ChapterCompletionSink>,
     pub adaptive: Arc<crate::adaptive::AdaptiveThroughputController>,
@@ -123,6 +129,7 @@ impl ConversionWorker {
             config,
             jobs,
             cancel: CancellationToken::default(),
+            control: None,
             progress: None,
             chapter_completed: None,
             adaptive,
@@ -140,15 +147,31 @@ impl ConversionWorker {
         self.cancel = cancel;
         self
     }
+    pub fn with_control(mut self, control: ConversionControl) -> Self {
+        self.cancel = control.cancellation_token();
+        self.control = Some(control);
+        self
+    }
     pub fn cancel(&self) {
-        self.cancel.cancel();
+        if let Some(control) = &self.control {
+            control.cancel();
+        } else {
+            self.cancel.cancel();
+        }
     }
     pub fn run(&self, request: ConversionRequest) -> Result<OutputManifest, WorkerError> {
-        let metadata = serde_json::json!({"input":request.input,"engine":request.engine,"voice":request.voice,"language":request.language});
+        let metadata = serde_json::json!({"input":request.input,"engine":request.engine,"voice":request.voice,"language":request.language,"chapterIndices":request.chapter_indices,"recoveryJobId":self.control.as_ref().and_then(ConversionControl::recover_job)});
         let metadata = metadata.as_object().cloned().unwrap_or_default();
         match self.jobs.load(&request.job_id) {
             Ok(record) => {
-                if record.metadata != metadata {
+                if ["input", "engine", "voice", "language"]
+                    .iter()
+                    .any(|key| record.metadata.get(*key) != metadata.get(*key))
+                    || record
+                        .metadata
+                        .get("chapterIndices")
+                        .is_some_and(|selection| Some(selection) != metadata.get("chapterIndices"))
+                {
                     return Err(WorkerError::Piper(format!(
                         "job {} already exists with different conversion metadata",
                         request.job_id
@@ -320,135 +343,189 @@ impl ConversionWorker {
             .map_err(|error| WorkerError::Piper(error.to_string()))?;
         let results = Mutex::new(Vec::with_capacity(total));
         let journal_path = output_dir.join("chapters.json");
-        let chapter_journal = Mutex::new(recover_chapter_journal(
-            &journal_path,
-            &output_dir,
-            &request.job_id,
-            &book,
-            total,
-        )?);
+        let mut recovered_journal =
+            recover_chapter_journal(&journal_path, &output_dir, &request.job_id, &book, total)?;
+        if recovered_journal
+            .source_sha256
+            .as_ref()
+            .is_some_and(|hash| hash != &book_key)
+        {
+            return Err(WorkerError::Piper(
+                "chapter journal source hash mismatch".into(),
+            ));
+        }
+        recovered_journal.source_sha256 = Some(book_key.clone());
         let completed_chapters = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let control = self.control.clone().unwrap_or_default();
+        if let Some(source_job) = control.recover_job() {
+            self.hydrate_successor(
+                &source_job,
+                request,
+                &book,
+                &book_key,
+                &output_dir,
+                &mut recovered_journal,
+                &chapters
+                    .iter()
+                    .map(|(source, _)| *source)
+                    .collect::<Vec<_>>(),
+            )?;
+            cache::atomic_write_json(&journal_path, &recovered_journal)?;
+        }
+        let chapter_journal = Mutex::new(recovered_journal);
+        control.attach(
+            &chapters
+                .iter()
+                .map(|(source, _)| *source)
+                .collect::<Vec<_>>(),
+        )?;
         pool.install(|| {
-            chapters.par_iter().enumerate().try_for_each(
-                |(position, (source_position, chapter))| -> Result<(), WorkerError> {
-                    let source_position = *source_position;
-                    let chapter = *chapter;
-                    if self.cancel.is_cancelled()
-                        || self.jobs.is_cancellation_requested(&request.job_id)?
-                    {
-                        return Err(WorkerError::Cancelled);
+            (0..parallelism)
+                .into_par_iter()
+                .try_for_each(|_| -> Result<(), WorkerError> {
+                    let outcome = (|| -> Result<(), WorkerError> {
+                        loop {
+                            if self.cancel.is_cancelled()
+                                || self.jobs.is_cancellation_requested(&request.job_id)?
+                            {
+                                return Err(WorkerError::Cancelled);
+                            }
+                            let Some(source_position) = control.take()? else {
+                                if self.cancel.is_cancelled() {
+                                    return Err(WorkerError::Cancelled);
+                                }
+                                return Ok(());
+                            };
+                            let (position, (_, chapter)) = chapters
+                                .iter()
+                                .enumerate()
+                                .find(|(_, (source, _))| *source == source_position)
+                                .ok_or(ConversionControlError::UnavailableChapter(
+                                    source_position,
+                                ))?;
+                            let chapter = *chapter;
+                            let text_path =
+                                cache_dir.join(format!("{}.json", chapter.index.replace('.', "_")));
+                            let text = if text_path.is_file() {
+                                cache::read_json::<String>(&text_path)?
+                            } else {
+                                cache::atomic_write_json(&text_path, &chapter.text)?;
+                                chapter.text.clone()
+                            };
+                            if text.chars().count() != chapter.text.chars().count() {
+                                return Err(WorkerError::Piper(format!(
+                                    "cached chapter text mismatch for '{}'",
+                                    chapter.name
+                                )));
+                            }
+                            let stem = format!("{:04}-{}", position + 1, sanitize(&chapter.name));
+                            let mp3 = chapter_output_path(
+                                &output_dir,
+                                &format!("{stem}.mp3"),
+                                source_position,
+                                &chapter_journal,
+                            )?;
+                            let language = detected_language;
+                            let engine = select_engine(request.engine.as_deref(), &self.config);
+                            self.emit(ProgressEvent {
+                                job_id: request.job_id.clone(),
+                                state: "running".into(),
+                                chapter_index: Some(position),
+                                chapters_total: total,
+                                chapters_completed: completed_chapters
+                                    .load(std::sync::atomic::Ordering::Acquire),
+                                percent: completed_chapters
+                                    .load(std::sync::atomic::Ordering::Acquire)
+                                    as f64
+                                    / total as f64
+                                    * 100.0,
+                                engine: Some(engine.clone()),
+                                message: format!("converting chapter {}", position + 1),
+                            });
+                            let synthesis_started = std::time::Instant::now();
+                            let synthesized = !mp3.is_file();
+                            if synthesized {
+                                eprintln!("synthesizing chapter {}/{}", position + 1, total);
+                                self.synthesize_with_timeout(
+                                    &engine,
+                                    &text,
+                                    &mp3,
+                                    request.voice.as_deref(),
+                                    request.language.as_deref().or(language),
+                                    request.job_id.clone(),
+                                    position,
+                                    total,
+                                    Arc::clone(&completed_chapters),
+                                )?;
+                            }
+                            let chapter_name = chapter.name.clone();
+                            let text_chars = text.chars().count();
+                            let filename = mp3.file_name().unwrap().to_string_lossy().to_string();
+                            let completed = completed_chapters
+                                .fetch_add(1, std::sync::atomic::Ordering::AcqRel)
+                                + 1;
+                            let event = ChapterCompletionEvent {
+                                job_id: request.job_id.clone(),
+                                book_title: book.title.clone(),
+                                book_author: book.author.clone(),
+                                chapter_index: source_position,
+                                chapters_total: total,
+                                chapters_completed: completed,
+                                chapter_title: chapter_name.clone(),
+                                filename: filename.clone(),
+                                audio_path: mp3.clone(),
+                                text_chars,
+                            };
+                            persist_chapter_and_emit(
+                                &journal_path,
+                                &chapter_journal,
+                                event,
+                                self.chapter_completed.as_ref(),
+                            )?;
+                            let synthesis_elapsed = synthesis_started.elapsed().as_secs_f64();
+                            let synthesis_rate = text_chars as f64 / synthesis_elapsed.max(0.001);
+                            self.emit(ProgressEvent {
+                                job_id: request.job_id.clone(),
+                                state: "running".into(),
+                                chapter_index: Some(position),
+                                chapters_total: total,
+                                chapters_completed: completed,
+                                percent: completed as f64 / total as f64 * 100.0,
+                                engine: Some(engine),
+                                message: format!(
+                                    "completed chapter {} in {:.1}s ({:.1} chars/s)",
+                                    position + 1,
+                                    synthesis_elapsed,
+                                    synthesis_rate
+                                ),
+                            });
+                            let name = mp3.file_name().unwrap().to_string_lossy().to_string();
+                            results.lock().unwrap().push((
+                                position,
+                                mp3,
+                                name.clone(),
+                                ChapterMetadata {
+                                    index: position + 1,
+                                    source_index: source_position,
+                                    title: chapter_name,
+                                    filename: name,
+                                    text_chars,
+                                },
+                                synthesized,
+                            ));
+                        }
+                    })();
+                    if outcome.is_err() {
+                        // A failing worker must also release other workers
+                        // waiting at a resource gate before rayon joins them.
+                        control.cancel();
                     }
-                    let text_path =
-                        cache_dir.join(format!("{}.json", chapter.index.replace('.', "_")));
-                    let text = if text_path.is_file() {
-                        cache::read_json::<String>(&text_path)?
-                    } else {
-                        cache::atomic_write_json(&text_path, &chapter.text)?;
-                        chapter.text.clone()
-                    };
-                    if text.chars().count() != chapter.text.chars().count() {
-                        return Err(WorkerError::Piper(format!(
-                            "cached chapter text mismatch for '{}'",
-                            chapter.name
-                        )));
-                    }
-                    let stem = format!("{:04}-{}", position + 1, sanitize(&chapter.name));
-                    let mp3 = chapter_output_path(
-                        &output_dir,
-                        &format!("{stem}.mp3"),
-                        source_position,
-                        &chapter_journal,
-                    )?;
-                    let language = detected_language;
-                    let engine = select_engine(request.engine.as_deref(), &self.config);
-                    self.emit(ProgressEvent {
-                        job_id: request.job_id.clone(),
-                        state: "running".into(),
-                        chapter_index: Some(position),
-                        chapters_total: total,
-                        chapters_completed: completed_chapters
-                            .load(std::sync::atomic::Ordering::Acquire),
-                        percent: completed_chapters.load(std::sync::atomic::Ordering::Acquire)
-                            as f64
-                            / total as f64
-                            * 100.0,
-                        engine: Some(engine.clone()),
-                        message: format!("converting chapter {}", position + 1),
-                    });
-                    let synthesis_started = std::time::Instant::now();
-                    let synthesized = !mp3.is_file();
-                    if synthesized {
-                        eprintln!("synthesizing chapter {}/{}", position + 1, total);
-                        self.synthesize_with_timeout(
-                            &engine,
-                            &text,
-                            &mp3,
-                            request.voice.as_deref(),
-                            request.language.as_deref().or(language),
-                            request.job_id.clone(),
-                            position,
-                            total,
-                            Arc::clone(&completed_chapters),
-                        )?;
-                    }
-                    let chapter_name = chapter.name.clone();
-                    let text_chars = text.chars().count();
-                    let filename = mp3.file_name().unwrap().to_string_lossy().to_string();
-                    let completed =
-                        completed_chapters.fetch_add(1, std::sync::atomic::Ordering::AcqRel) + 1;
-                    let event = ChapterCompletionEvent {
-                        job_id: request.job_id.clone(),
-                        book_title: book.title.clone(),
-                        book_author: book.author.clone(),
-                        chapter_index: source_position,
-                        chapters_total: total,
-                        chapters_completed: completed,
-                        chapter_title: chapter_name.clone(),
-                        filename: filename.clone(),
-                        audio_path: mp3.clone(),
-                        text_chars,
-                    };
-                    persist_chapter_and_emit(
-                        &journal_path,
-                        &chapter_journal,
-                        event,
-                        self.chapter_completed.as_ref(),
-                    )?;
-                    let synthesis_elapsed = synthesis_started.elapsed().as_secs_f64();
-                    let synthesis_rate = text_chars as f64 / synthesis_elapsed.max(0.001);
-                    self.emit(ProgressEvent {
-                        job_id: request.job_id.clone(),
-                        state: "running".into(),
-                        chapter_index: Some(position),
-                        chapters_total: total,
-                        chapters_completed: completed,
-                        percent: completed as f64 / total as f64 * 100.0,
-                        engine: Some(engine),
-                        message: format!(
-                            "completed chapter {} in {:.1}s ({:.1} chars/s)",
-                            position + 1,
-                            synthesis_elapsed,
-                            synthesis_rate
-                        ),
-                    });
-                    let name = mp3.file_name().unwrap().to_string_lossy().to_string();
-                    results.lock().unwrap().push((
-                        position,
-                        mp3,
-                        name.clone(),
-                        ChapterMetadata {
-                            index: position + 1,
-                            source_index: source_position,
-                            title: chapter_name,
-                            filename: name,
-                            text_chars,
-                        },
-                        synthesized,
-                    ));
-                    Ok(())
-                },
-            )
+                    outcome
+                })
         })?;
+        if self.cancel.is_cancelled() || self.jobs.is_cancellation_requested(&request.job_id)? {
+            return Err(WorkerError::Cancelled);
+        }
         let mut results = results.into_inner().unwrap();
         results.sort_by_key(|item| item.0);
         let files: Vec<_> = results
@@ -529,15 +606,21 @@ impl ConversionWorker {
                 .worker_threads(2)
                 .enable_all()
                 .build()?;
-            let result = rt.block_on(crate::tts::synthesize_with_reference_client(
-                text,
-                voice,
-                Arc::clone(&self.adaptive),
-                telemetry,
+            let result = rt.block_on(cancellable_edge_synthesis(
+                &self.cancel,
+                crate::tts::synthesize_with_reference_client(
+                    text,
+                    voice,
+                    Arc::clone(&self.adaptive),
+                    telemetry,
+                ),
             ));
             rt.shutdown_timeout(std::time::Duration::from_secs(1));
             match result {
                 Ok(bytes) => {
+                    if self.cancel.is_cancelled() {
+                        return Err(WorkerError::Cancelled);
+                    }
                     fs::write(out, bytes).map_err(|error| {
                         WorkerError::Edge(EdgeError::Transport(format!(
                             "failed to write synthesized audio {}: {error}",
@@ -547,7 +630,7 @@ impl ConversionWorker {
                     return Ok(());
                 }
                 Err(error) => {
-                    return Err(WorkerError::Edge(error));
+                    return Err(error);
                 }
             }
         }
@@ -627,11 +710,15 @@ impl ConversionWorker {
         let synthesis_config = self.config.clone();
         let adaptive = Arc::clone(&self.adaptive);
         let progress = self.progress.clone();
+        let telemetry_cancel = self.cancel.clone();
         let telemetry: Option<Telemetry> = progress.as_ref().map(|sink| {
             let sink = Arc::clone(sink);
             let job_id = job_id.clone();
             let completed_chapters = Arc::clone(&completed_chapters);
             Arc::new(move |event| {
+                if telemetry_cancel.is_cancelled() {
+                    return;
+                }
                 let TelemetryEvent::ChunkMetrics {
                     provider,
                     chunk_index: chunk_number,
@@ -671,7 +758,7 @@ impl ConversionWorker {
             .spawn(move || {
                 let worker = Self::new(synthesis_config);
                 let result = worker.map_or_else(Err, |mut worker| {
-                    worker.cancel = cancel;
+                    worker.cancel = cancel.clone();
                     worker.adaptive = adaptive;
                     worker.progress = progress;
                     worker.synthesize(
@@ -683,34 +770,225 @@ impl ConversionWorker {
                         telemetry,
                     )
                 });
+                if result.is_err() || cancel.is_cancelled() {
+                    let _ = fs::remove_file(&out_owned);
+                }
                 if sender.send(result).is_err() {
                     let _ = fs::remove_file(&out_owned);
                 }
             });
-        if let Err(error) = spawn {
-            return Err(WorkerError::Piper(format!(
-                "failed to start synthesis thread: {error}"
-            )));
+        let thread = spawn.map_err(|error| {
+            WorkerError::Piper(format!("failed to start synthesis thread: {error}"))
+        })?;
+        self.await_synthesis_attempt(
+            engine,
+            receiver,
+            thread,
+            &temporary_output,
+            out,
+            std::time::Duration::from_secs(timeout_secs),
+        )
+    }
+
+    fn hydrate_successor(
+        &self,
+        source_job: &str,
+        request: &ConversionRequest,
+        book: &epub::Book,
+        source_hash: &str,
+        output_dir: &Path,
+        journal: &mut ChapterJournal,
+        selected: &[usize],
+    ) -> Result<(), WorkerError> {
+        if source_job == request.job_id {
+            return Err(WorkerError::Piper(
+                "recovery requires a distinct successor job ID".into(),
+            ));
         }
-        match receiver.recv_timeout(std::time::Duration::from_secs(timeout_secs)) {
-            Ok(Ok(())) => fs::rename(&temporary_output, out).map_err(WorkerError::Io),
-            Ok(Err(error)) => {
-                let _ = fs::remove_file(&temporary_output);
-                Err(error)
+        let record = self.jobs.load(source_job)?;
+        let current = serde_json::json!({"engine":request.engine,"voice":request.voice,"language":request.language});
+        if ["engine", "voice", "language"]
+            .iter()
+            .any(|key| record.metadata.get(*key) != current.get(*key))
+        {
+            return Err(WorkerError::Piper(
+                "recovery provider configuration mismatch".into(),
+            ));
+        }
+        let source_dir = self.config.paths.output_dir.join(source_job);
+        let canonical_source = source_dir.canonicalize()?;
+        if canonical_source.parent() != Some(self.config.paths.output_dir.canonicalize()?.as_path())
+        {
+            return Err(WorkerError::Piper(
+                "recovery output escapes conversion root".into(),
+            ));
+        }
+        let source_journal_path = source_dir.join("chapters.json");
+        let mut source_journal = recover_chapter_journal(
+            &source_journal_path,
+            &source_dir,
+            source_job,
+            book,
+            selected.len(),
+        )?;
+        let verified_hash = match source_journal.source_sha256.as_deref() {
+            Some(hash) => hash.to_owned(),
+            None => {
+                let input = record
+                    .metadata
+                    .get("input")
+                    .and_then(|value| value.as_str())
+                    .ok_or_else(|| {
+                        WorkerError::Piper("recovery source identity is unavailable".into())
+                    })?;
+                cache::sha256_file(input)?
             }
-            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
-                self.cancel.cancel();
-                Err(if engine == "edge" {
+        };
+        if verified_hash != source_hash {
+            return Err(WorkerError::Piper("recovery source hash mismatch".into()));
+        }
+        let manifest_path = source_dir.join("manifest.json");
+        if manifest_path.exists() {
+            let manifest: OutputManifest = cache::read_json(&manifest_path)?;
+            if manifest.job_id != source_job
+                || manifest.title != book.title
+                || manifest.author != book.author
+            {
+                return Err(WorkerError::Piper(
+                    "recovery manifest identity mismatch".into(),
+                ));
+            }
+            for chapter in manifest.chapters {
+                if source_journal
+                    .chapters
+                    .iter()
+                    .any(|event| event.chapter_index == chapter.source_index)
+                {
+                    continue;
+                }
+                let event = ChapterCompletionEvent {
+                    job_id: source_job.to_owned(),
+                    book_title: book.title.clone(),
+                    book_author: book.author.clone(),
+                    chapter_index: chapter.source_index,
+                    chapters_total: source_journal.chapters_total,
+                    chapters_completed: 0,
+                    chapter_title: chapter.title,
+                    audio_path: source_dir.join(&chapter.filename),
+                    filename: chapter.filename,
+                    text_chars: chapter.text_chars,
+                };
+                if recovery_audio_valid(&event, &canonical_source, source_job, book) {
+                    source_journal.chapters.push(event);
+                }
+            }
+        }
+        let canonical_destination = output_dir.canonicalize()?;
+        for source_event in source_journal
+            .chapters
+            .into_iter()
+            .filter(|event| selected.contains(&event.chapter_index))
+        {
+            if journal
+                .chapters
+                .iter()
+                .any(|event| event.chapter_index == source_event.chapter_index)
+            {
+                continue;
+            }
+            let filename = format!(
+                "source-{:04}-{}.mp3",
+                source_event.chapter_index,
+                sanitize(&source_event.chapter_title)
+            );
+            let destination = output_dir.join(&filename);
+            if destination.exists() {
+                if destination.canonicalize()? != canonical_destination.join(&filename) {
+                    return Err(WorkerError::Piper(
+                        "recovery destination escapes successor output".into(),
+                    ));
+                }
+                if cache::sha256_file(&destination)?
+                    != cache::sha256_file(&source_event.audio_path)?
+                {
+                    return Err(WorkerError::Piper(
+                        "recovery destination contains different audio".into(),
+                    ));
+                }
+            } else {
+                fs::hard_link(&source_event.audio_path, &destination)?;
+            }
+            audio::validate_audio(&destination, 100)?;
+            journal.chapters.push(ChapterCompletionEvent {
+                job_id: request.job_id.clone(),
+                filename,
+                audio_path: destination,
+                chapters_total: selected.len(),
+                chapters_completed: journal.chapters.len() + 1,
+                ..source_event
+            });
+        }
+        journal.chapters_total = selected.len();
+        journal.chapters.sort_by_key(|event| event.chapter_index);
+        Ok(())
+    }
+
+    fn await_synthesis_attempt(
+        &self,
+        engine: &str,
+        receiver: std::sync::mpsc::Receiver<Result<(), WorkerError>>,
+        thread: std::thread::JoinHandle<()>,
+        temporary_output: &Path,
+        out: &Path,
+        timeout: std::time::Duration,
+    ) -> Result<(), WorkerError> {
+        let deadline = std::time::Instant::now() + timeout;
+        loop {
+            let cancelled = self.cancel.is_cancelled();
+            let remaining = deadline.saturating_duration_since(std::time::Instant::now());
+            if cancelled || remaining.is_zero() {
+                self.cancel();
+                drop(receiver);
+                // Edge cancellation drops its async request and owns callback
+                // teardown. Native synchronous inference retains its existing
+                // cooperative boundary; do not block cancellation on its join.
+                if engine == "edge" {
+                    let _ = thread.join();
+                }
+                let _ = fs::remove_file(temporary_output);
+                return Err(if cancelled {
+                    WorkerError::Cancelled
+                } else if engine == "edge" {
                     WorkerError::Edge(EdgeError::Transport("chapter synthesis timed out".into()))
                 } else {
                     WorkerError::Piper("chapter synthesis timed out".into())
-                })
+                });
             }
-            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
-                let _ = fs::remove_file(&temporary_output);
-                Err(WorkerError::Piper(
-                    "synthesis thread exited without a result".into(),
-                ))
+            match receiver.recv_timeout(remaining.min(std::time::Duration::from_millis(25))) {
+                Ok(result) => {
+                    let joined = thread.join();
+                    if self.cancel.is_cancelled() {
+                        let _ = fs::remove_file(temporary_output);
+                        return Err(WorkerError::Cancelled);
+                    }
+                    if joined.is_err() {
+                        let _ = fs::remove_file(temporary_output);
+                        return Err(WorkerError::Piper("synthesis thread panicked".into()));
+                    }
+                    if let Err(error) = result {
+                        let _ = fs::remove_file(temporary_output);
+                        return Err(error);
+                    }
+                    return fs::rename(temporary_output, out).map_err(WorkerError::Io);
+                }
+                Err(std::sync::mpsc::RecvTimeoutError::Timeout) => continue,
+                Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+                    let _ = thread.join();
+                    let _ = fs::remove_file(temporary_output);
+                    return Err(WorkerError::Piper(
+                        "synthesis thread exited without a result".into(),
+                    ));
+                }
             }
         }
     }
@@ -719,6 +997,20 @@ impl ConversionWorker {
         if let Some(sink) = &self.progress {
             sink(event)
         }
+    }
+}
+
+async fn cancellable_edge_synthesis<F>(
+    cancel: &CancellationToken,
+    synthesis: F,
+) -> Result<Vec<u8>, WorkerError>
+where
+    F: std::future::Future<Output = Result<Vec<u8>, EdgeError>>,
+{
+    tokio::select! {
+        biased;
+        _ = cancel.cancelled() => Err(WorkerError::Cancelled),
+        result = synthesis => result.map_err(WorkerError::Edge),
     }
 }
 
@@ -760,6 +1052,7 @@ fn recover_chapter_journal(
     if !journal_path.exists() {
         return Ok(ChapterJournal {
             schema_version: 1,
+            source_sha256: None,
             job_id: job_id.to_owned(),
             book_title: book.title.clone(),
             book_author: book.author.clone(),
@@ -778,34 +1071,43 @@ fn recover_chapter_journal(
         ));
     }
     let canonical_output = output_dir.canonicalize()?;
-    journal.chapters.retain(|event| {
-        let filename = Path::new(&event.filename);
-        let Some(chapter) = book.chapters.get(event.chapter_index) else {
-            return false;
-        };
-        if filename.components().count() != 1
-            || !matches!(
-                filename.components().next(),
-                Some(std::path::Component::Normal(_))
-            )
-            || event.job_id != job_id
-            || event.book_title != book.title
-            || event.book_author != book.author
-            || event.chapter_title != chapter.name
-            || event.text_chars != chapter.text.chars().count()
-        {
-            return false;
-        }
-        let expected = canonical_output.join(filename);
-        let Ok(actual) = event.audio_path.canonicalize() else {
-            return false;
-        };
-        actual == expected && audio::validate_audio(&actual, 100).is_ok()
-    });
+    journal
+        .chapters
+        .retain(|event| recovery_audio_valid(event, &canonical_output, job_id, book));
     journal.chapters.sort_by_key(|event| event.chapter_index);
     journal.chapters.dedup_by_key(|event| event.chapter_index);
     journal.chapters_total = journal.chapters_total.max(chapters_total);
     Ok(journal)
+}
+
+fn recovery_audio_valid(
+    event: &ChapterCompletionEvent,
+    canonical_output: &Path,
+    job_id: &str,
+    book: &epub::Book,
+) -> bool {
+    let filename = Path::new(&event.filename);
+    let Some(chapter) = book.chapters.get(event.chapter_index) else {
+        return false;
+    };
+    if filename.components().count() != 1
+        || !matches!(
+            filename.components().next(),
+            Some(std::path::Component::Normal(_))
+        )
+        || event.job_id != job_id
+        || event.book_title != book.title
+        || event.book_author != book.author
+        || event.chapter_title != chapter.name
+        || event.text_chars != chapter.text.chars().count()
+    {
+        return false;
+    }
+    let expected = canonical_output.join(filename);
+    let Ok(actual) = event.audio_path.canonicalize() else {
+        return false;
+    };
+    actual == expected && audio::validate_audio(&actual, 100).is_ok()
 }
 
 fn chapter_output_path(
@@ -862,9 +1164,116 @@ mod streaming_tests {
     use std::io::Write;
     use zip::{write::SimpleFileOptions, ZipWriter};
 
+    #[tokio::test]
+    async fn edge_cancellation_before_registration_rejects_ready_audio() {
+        let cancel = CancellationToken::default();
+        cancel.cancel();
+        let result = tokio::time::timeout(
+            std::time::Duration::from_secs(1),
+            cancellable_edge_synthesis(&cancel, async { Ok(vec![1u8]) }),
+        )
+        .await
+        .unwrap();
+        assert!(matches!(result, Err(WorkerError::Cancelled)));
+    }
+
+    #[tokio::test]
+    async fn edge_cancellation_drops_stalled_request_without_publishing_audio() {
+        struct RequestLifetime(Arc<std::sync::atomic::AtomicBool>);
+        impl Drop for RequestLifetime {
+            fn drop(&mut self) {
+                self.0.store(true, std::sync::atomic::Ordering::Release);
+            }
+        }
+        let cancel = CancellationToken::default();
+        let dropped = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let publication = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let (ready_tx, ready_rx) = tokio::sync::oneshot::channel();
+        let observed = Arc::clone(&dropped);
+        let published = Arc::clone(&publication);
+        let request = async move {
+            let _lifetime = RequestLifetime(observed);
+            ready_tx.send(()).unwrap();
+            std::future::pending::<()>().await;
+            published.store(true, std::sync::atomic::Ordering::Release);
+            Ok(vec![1u8])
+        };
+        let cancel_clone = cancel.clone();
+        let result = tokio::time::timeout(std::time::Duration::from_secs(1), async {
+            tokio::join!(cancellable_edge_synthesis(&cancel, request), async {
+                ready_rx.await.unwrap();
+                cancel_clone.cancel();
+            },)
+            .0
+        })
+        .await
+        .unwrap();
+        assert!(matches!(result, Err(WorkerError::Cancelled)));
+        assert!(dropped.load(std::sync::atomic::Ordering::Acquire));
+        assert!(!publication.load(std::sync::atomic::Ordering::Acquire));
+    }
+
+    #[test]
+    fn cancellation_unwinds_inflight_edge_attempt_before_return_and_never_renames_partial() {
+        let temp = tempfile::tempdir().unwrap();
+        let paths = crate::paths::resolve_paths_from(
+            std::iter::empty::<(String, String)>(),
+            temp.path().to_path_buf(),
+        );
+        let control = ConversionControl::new();
+        let worker = ConversionWorker::new(AppConfig::from_paths(paths))
+            .unwrap()
+            .with_control(control.clone());
+        let partial = temp.path().join("inflight.partial");
+        let final_audio = temp.path().join("inflight.mp3");
+        fs::write(&partial, b"partial provider bytes").unwrap();
+        let producer_path = partial.clone();
+        let cancel = control.cancellation_token();
+        let (ready_tx, ready_rx) = std::sync::mpsc::channel();
+        let (result_tx, result_rx) = std::sync::mpsc::sync_channel(1);
+        let unwound = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let observed = Arc::clone(&unwound);
+        let producer = std::thread::spawn(move || {
+            let runtime = tokio::runtime::Builder::new_current_thread()
+                .enable_time()
+                .build()
+                .unwrap();
+            let result = runtime.block_on(cancellable_edge_synthesis(&cancel, async {
+                ready_tx.send(()).unwrap();
+                std::future::pending::<Result<Vec<u8>, EdgeError>>().await
+            }));
+            observed.store(true, std::sync::atomic::Ordering::Release);
+            let result =
+                result.and_then(|bytes| fs::write(&producer_path, bytes).map_err(WorkerError::Io));
+            if result.is_err() {
+                let _ = fs::remove_file(&producer_path);
+            }
+            let _ = result_tx.send(result);
+        });
+        ready_rx
+            .recv_timeout(std::time::Duration::from_secs(1))
+            .unwrap();
+        let started = std::time::Instant::now();
+        control.cancel();
+        let result = worker.await_synthesis_attempt(
+            "edge",
+            result_rx,
+            producer,
+            &partial,
+            &final_audio,
+            std::time::Duration::from_secs(180),
+        );
+        assert!(matches!(result, Err(WorkerError::Cancelled)));
+        assert!(started.elapsed() < std::time::Duration::from_secs(1));
+        assert!(unwound.load(std::sync::atomic::Ordering::Acquire));
+        assert!(!partial.exists());
+        assert!(!final_audio.exists());
+    }
+
     fn test_journal(chapters_total: usize) -> Mutex<ChapterJournal> {
         Mutex::new(ChapterJournal {
             schema_version: 1,
+            source_sha256: None,
             job_id: "stream-test".into(),
             book_title: "Fixture".into(),
             book_author: "Author".into(),
@@ -1034,7 +1443,10 @@ mod streaming_tests {
             std::iter::empty::<(String, String)>(),
             temp.path().to_path_buf(),
         );
-        let worker = ConversionWorker::new(AppConfig::from_paths(paths)).unwrap();
+        let control = ConversionControl::new();
+        let worker = ConversionWorker::new(AppConfig::from_paths(paths))
+            .unwrap()
+            .with_control(control.clone());
         let jobs = worker.jobs.clone();
         let observed_jobs = jobs.clone();
         let worker = worker.with_progress(Arc::new(move |event| {
@@ -1047,7 +1459,7 @@ mod streaming_tests {
         }));
         let input = temp.path().join("cancel.epub");
         write_test_epub(&input);
-        worker.cancel();
+        control.cancel();
         let result = worker.run(ConversionRequest {
             input,
             job_id: "cancel-token".into(),
@@ -1063,6 +1475,150 @@ mod streaming_tests {
             JobState::Cancelled
         );
         assert!(jobs.recover_active().unwrap().is_empty());
+    }
+
+    #[test]
+    fn controlled_conversion_changes_priority_between_chapter_callbacks() {
+        let temp = tempfile::tempdir().unwrap();
+        let input = temp.path().join("controlled.epub");
+        write_test_epub_chapters(&input, 4);
+        let paths = crate::paths::resolve_paths_from(
+            std::iter::empty::<(String, String)>(),
+            temp.path().to_path_buf(),
+        );
+        let output = paths.output_dir.join("controlled-job");
+        fs::create_dir_all(&output).unwrap();
+        let book = epub::parse_epub(fs::File::open(&input).unwrap()).unwrap();
+        for (position, chapter) in book.chapters.iter().enumerate() {
+            write_test_wav(&output.join(format!(
+                "{:04}-{}.mp3",
+                position + 1,
+                sanitize(&chapter.name)
+            )));
+        }
+        let control = ConversionControl::new();
+        control.prioritize(2).unwrap();
+        let observed = Arc::new(Mutex::new(Vec::new()));
+        let captured = Arc::clone(&observed);
+        let callback_control = control.clone();
+        let worker = ConversionWorker::new(AppConfig::from_paths(paths))
+            .unwrap()
+            .with_control(control)
+            .with_chapter_completed(Arc::new(move |event| {
+                captured.lock().unwrap().push(event.chapter_index);
+                if event.chapter_index == 2 {
+                    assert!(callback_control.prioritize(99).is_err());
+                    callback_control.prioritize(0).unwrap();
+                }
+            }));
+        let result = worker.run(ConversionRequest {
+            input,
+            job_id: "controlled-job".into(),
+            engine: Some("edge".into()),
+            voice: None,
+            language: None,
+            chapter_indices: None,
+            no_parallel: true,
+        });
+        assert!(
+            result.is_ok(),
+            "controlled cached audio should finish: {result:?}"
+        );
+        assert_eq!(*observed.lock().unwrap(), vec![2, 0, 1, 3]);
+        assert_eq!(
+            result
+                .unwrap()
+                .chapters
+                .iter()
+                .map(|chapter| chapter.source_index)
+                .collect::<Vec<_>>(),
+            vec![0, 1, 2, 3],
+            "terminal manifest retains source order independently of synthesis priority"
+        );
+    }
+
+    #[test]
+    fn controlled_pause_gates_next_chapter_and_resume_or_cancel_wakes_worker() {
+        use std::sync::mpsc;
+        use std::time::Duration;
+
+        for cancel_while_paused in [false, true] {
+            let temp = tempfile::tempdir().unwrap();
+            let input = temp.path().join("paused.epub");
+            write_test_epub_chapters(&input, 2);
+            let paths = crate::paths::resolve_paths_from(
+                std::iter::empty::<(String, String)>(),
+                temp.path().to_path_buf(),
+            );
+            let output = paths.output_dir.join("paused-job");
+            fs::create_dir_all(&output).unwrap();
+            let book = epub::parse_epub(fs::File::open(&input).unwrap()).unwrap();
+            for (position, chapter) in book.chapters.iter().enumerate() {
+                write_test_wav(&output.join(format!(
+                    "{:04}-{}.mp3",
+                    position + 1,
+                    sanitize(&chapter.name)
+                )));
+            }
+            let control = ConversionControl::new();
+            let callback_control = control.clone();
+            let (events_tx, events_rx) = mpsc::channel();
+            let worker = ConversionWorker::new(AppConfig::from_paths(paths))
+                .unwrap()
+                .with_control(control.clone())
+                .with_chapter_completed(Arc::new(move |event| {
+                    if event.chapter_index == 0 {
+                        callback_control.set_paused(true);
+                    }
+                    events_tx.send(event.chapter_index).unwrap();
+                }));
+            let jobs = worker.jobs.clone();
+            let request = ConversionRequest {
+                input,
+                job_id: "paused-job".into(),
+                engine: Some("edge".into()),
+                voice: None,
+                language: None,
+                chapter_indices: None,
+                no_parallel: true,
+            };
+            std::thread::scope(|scope| {
+                let (result_tx, result_rx) = mpsc::channel();
+                let running = scope.spawn(move || {
+                    result_tx.send(worker.run(request)).unwrap();
+                });
+                let first = events_rx.recv_timeout(Duration::from_secs(5));
+                let blocked = events_rx.recv_timeout(Duration::from_millis(50)).is_err();
+                if cancel_while_paused {
+                    control.cancel();
+                } else {
+                    control.set_paused(false);
+                }
+                let result = result_rx.recv_timeout(Duration::from_secs(5));
+                // Always release the gate before assertions so a failed test
+                // cannot leave its scoped worker blocked during unwinding.
+                control.set_paused(false);
+                running.join().unwrap();
+                assert_eq!(first.unwrap(), 0);
+                assert!(
+                    blocked,
+                    "paused conversion must not publish the next chapter"
+                );
+                let result = result.expect("resume or cancellation must wake the paused worker");
+                if cancel_while_paused {
+                    assert!(matches!(result, Err(WorkerError::Cancelled)));
+                    assert_eq!(jobs.load("paused-job").unwrap().state, JobState::Cancelled);
+                    assert!(!output.join("manifest.json").exists());
+                } else {
+                    assert!(
+                        result.is_ok(),
+                        "resumed cached conversion should finish: {result:?}"
+                    );
+                    assert_eq!(events_rx.recv_timeout(Duration::from_secs(1)).unwrap(), 1);
+                    assert_eq!(jobs.load("paused-job").unwrap().state, JobState::Completed);
+                }
+            });
+        }
     }
 
     #[test]
@@ -1104,6 +1660,7 @@ mod streaming_tests {
         let path = temp.path().join("chapters.json");
         let journal = Mutex::new(ChapterJournal {
             schema_version: 1,
+            source_sha256: None,
             job_id: "stream-test".into(),
             book_title: "Fixture".into(),
             book_author: "Author".into(),
@@ -1194,6 +1751,7 @@ mod streaming_tests {
         let path = temp.path().join("chapters.json");
         let journal = Mutex::new(ChapterJournal {
             schema_version: 1,
+            source_sha256: None,
             job_id: "stream-test".into(),
             book_title: "Fixture".into(),
             book_author: "Author".into(),
@@ -1240,6 +1798,7 @@ mod streaming_tests {
         assert_eq!(book.chapters[0].name, book.chapters[1].name);
         let journal = ChapterJournal {
             schema_version: 1,
+            source_sha256: None,
             job_id: "resume-partial".into(),
             book_title: book.title.clone(),
             book_author: book.author.clone(),
@@ -1325,6 +1884,7 @@ mod streaming_tests {
         let path = output.join("chapters.json");
         let mut journal = ChapterJournal {
             schema_version: 1,
+            source_sha256: None,
             job_id: "expected".into(),
             book_title: book.title.clone(),
             book_author: book.author.clone(),
@@ -1356,6 +1916,304 @@ mod streaming_tests {
             cache::read_json::<ChapterJournal>(&path).unwrap().job_id,
             "another-session"
         );
+    }
+
+    #[test]
+    fn successor_retry_reuses_valid_audio_and_preserves_terminal_source_records() {
+        for source_state in [JobState::Failed, JobState::Cancelled, JobState::Completed] {
+            let temp = tempfile::tempdir().unwrap();
+            let input = temp.path().join("retry.epub");
+            write_test_epub_chapters(&input, 2);
+            let paths = crate::paths::resolve_paths_from(
+                std::iter::empty::<(String, String)>(),
+                temp.path().to_path_buf(),
+            );
+            let source_output = paths.output_dir.join("old-job");
+            fs::create_dir_all(&source_output).unwrap();
+            let book = epub::parse_epub(fs::File::open(&input).unwrap()).unwrap();
+            let audio = source_output.join("original.mp3");
+            write_test_wav(&audio);
+            let audio_hash = cache::sha256_file(&audio).unwrap();
+            let event = ChapterCompletionEvent {
+                job_id: "old-job".into(),
+                book_title: book.title.clone(),
+                book_author: book.author.clone(),
+                chapter_index: 0,
+                chapters_total: 2,
+                chapters_completed: 1,
+                chapter_title: book.chapters[0].name.clone(),
+                filename: "original.mp3".into(),
+                audio_path: audio.clone(),
+                text_chars: book.chapters[0].text.chars().count(),
+            };
+            let source_journal = ChapterJournal {
+                schema_version: 1,
+                source_sha256: None,
+                job_id: "old-job".into(),
+                book_title: book.title.clone(),
+                book_author: book.author.clone(),
+                chapters_total: 2,
+                chapters: if source_state == JobState::Completed {
+                    Vec::new()
+                } else {
+                    vec![event]
+                },
+            };
+            let source_journal_path = source_output.join("chapters.json");
+            cache::atomic_write_json(&source_journal_path, &source_journal).unwrap();
+            if source_state == JobState::Completed {
+                cache::atomic_write_json(
+                    source_output.join("manifest.json"),
+                    &OutputManifest {
+                        job_id: "old-job".into(),
+                        title: book.title.clone(),
+                        author: book.author.clone(),
+                        chapters: book
+                            .chapters
+                            .iter()
+                            .enumerate()
+                            .map(|(index, chapter)| ChapterMetadata {
+                                index: index + 1,
+                                source_index: index,
+                                title: chapter.name.clone(),
+                                filename: if index == 0 {
+                                    "original.mp3".into()
+                                } else {
+                                    "missing.mp3".into()
+                                },
+                                text_chars: chapter.text.chars().count(),
+                            })
+                            .collect(),
+                        archive: "original.zip".into(),
+                        cover: None,
+                    },
+                )
+                .unwrap();
+            }
+            let worker = ConversionWorker::new(AppConfig::from_paths(paths)).unwrap();
+            let metadata =
+                serde_json::json!({"input":input,"engine":"edge","voice":null,"language":null})
+                    .as_object()
+                    .unwrap()
+                    .clone();
+            worker
+                .jobs
+                .create(JobRecord::new("old-job", metadata))
+                .unwrap();
+            worker
+                .jobs
+                .transition("old-job", JobState::Running)
+                .unwrap();
+            if source_state == JobState::Cancelled {
+                worker.jobs.request_cancellation("old-job").unwrap();
+            }
+            worker.jobs.transition("old-job", source_state).unwrap();
+            let old_record = worker.jobs.load("old-job").unwrap();
+            let old_journal_bytes = fs::read(&source_journal_path).unwrap();
+            let old_manifest_bytes = fs::read(source_output.join("manifest.json")).ok();
+            let control = ConversionControl::new();
+            control.set_recovery_job("old-job").unwrap();
+            let result = worker
+                .with_control(control)
+                .run(ConversionRequest {
+                    input,
+                    job_id: "successor-job".into(),
+                    engine: Some("edge".into()),
+                    voice: None,
+                    language: None,
+                    chapter_indices: Some(vec!["position:0".into()]),
+                    no_parallel: true,
+                })
+                .unwrap();
+            assert_eq!(result.chapters.len(), 1);
+            assert_eq!(result.chapters[0].source_index, 0);
+            let destination = source_output
+                .parent()
+                .unwrap()
+                .join("successor-job")
+                .join(&result.chapters[0].filename);
+            assert_eq!(cache::sha256_file(destination).unwrap(), audio_hash);
+            assert_eq!(cache::sha256_file(&audio).unwrap(), audio_hash);
+            assert_eq!(fs::read(&source_journal_path).unwrap(), old_journal_bytes);
+            assert_eq!(
+                fs::read(source_output.join("manifest.json")).ok(),
+                old_manifest_bytes
+            );
+            let manager = JobManager::new(temp.path().join(".jobs")).unwrap();
+            assert_eq!(manager.load("old-job").unwrap(), old_record);
+            assert_eq!(
+                manager.load("successor-job").unwrap().state,
+                JobState::Completed
+            );
+            assert!(manager
+                .load("successor-job")
+                .unwrap()
+                .metadata
+                .contains_key("chapterIndices"));
+            assert_eq!(
+                manager.load("successor-job").unwrap().metadata["recoveryJobId"],
+                "old-job"
+            );
+            let journal: ChapterJournal = cache::read_json(
+                source_output
+                    .parent()
+                    .unwrap()
+                    .join("successor-job/chapters.json"),
+            )
+            .unwrap();
+            assert_eq!(journal.chapters.len(), 1);
+            assert!(journal.source_sha256.is_some());
+        }
+    }
+
+    #[test]
+    fn successor_retry_rejects_wrong_source_hash_or_provider_without_changing_old_job() {
+        for wrong_provider in [false, true] {
+            let temp = tempfile::tempdir().unwrap();
+            let input = temp.path().join("retry-rejected.epub");
+            write_test_epub(&input);
+            let paths = crate::paths::resolve_paths_from(
+                std::iter::empty::<(String, String)>(),
+                temp.path().to_path_buf(),
+            );
+            let source_output = paths.output_dir.join("old-job");
+            fs::create_dir_all(&source_output).unwrap();
+            let book = epub::parse_epub(fs::File::open(&input).unwrap()).unwrap();
+            let journal = ChapterJournal {
+                schema_version: 1,
+                source_sha256: Some("incorrect-source-hash".into()),
+                job_id: "old-job".into(),
+                book_title: book.title,
+                book_author: book.author,
+                chapters_total: 1,
+                chapters: Vec::new(),
+            };
+            let journal_path = source_output.join("chapters.json");
+            cache::atomic_write_json(&journal_path, &journal).unwrap();
+            let worker = ConversionWorker::new(AppConfig::from_paths(paths)).unwrap();
+            worker
+                .jobs
+                .create(JobRecord::new(
+                    "old-job",
+                    serde_json::json!({"input":input,"engine":"edge","voice":null,"language":null})
+                        .as_object()
+                        .unwrap()
+                        .clone(),
+                ))
+                .unwrap();
+            worker
+                .jobs
+                .transition("old-job", JobState::Running)
+                .unwrap();
+            worker.jobs.transition("old-job", JobState::Failed).unwrap();
+            let original_record = worker.jobs.load("old-job").unwrap();
+            let original_journal = fs::read(&journal_path).unwrap();
+            let manager = worker.jobs.clone();
+            let control = ConversionControl::new();
+            control.set_recovery_job("old-job").unwrap();
+            let result = worker.with_control(control).run(ConversionRequest {
+                input,
+                job_id: "rejected-successor".into(),
+                engine: Some(if wrong_provider { "piper" } else { "edge" }.into()),
+                voice: None,
+                language: None,
+                chapter_indices: None,
+                no_parallel: true,
+            });
+            assert!(matches!(result, Err(WorkerError::Piper(_))));
+            assert_eq!(manager.load("old-job").unwrap(), original_record);
+            assert_eq!(fs::read(&journal_path).unwrap(), original_journal);
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn successor_retry_rejects_external_destination_symlink_without_mutating_data() {
+        let temp = tempfile::tempdir().unwrap();
+        let input = temp.path().join("symlink-retry.epub");
+        write_test_epub(&input);
+        let paths = crate::paths::resolve_paths_from(
+            std::iter::empty::<(String, String)>(),
+            temp.path().to_path_buf(),
+        );
+        let source_output = paths.output_dir.join("old-job");
+        let successor_output = paths.output_dir.join("successor-job");
+        fs::create_dir_all(&source_output).unwrap();
+        fs::create_dir_all(&successor_output).unwrap();
+        let book = epub::parse_epub(fs::File::open(&input).unwrap()).unwrap();
+        let audio = source_output.join("original.mp3");
+        write_test_wav(&audio);
+        let outsider = temp.path().join("outside.mp3");
+        fs::copy(&audio, &outsider).unwrap();
+        let outsider_hash = cache::sha256_file(&outsider).unwrap();
+        let journal = ChapterJournal {
+            schema_version: 1,
+            source_sha256: Some(cache::sha256_file(&input).unwrap()),
+            job_id: "old-job".into(),
+            book_title: book.title.clone(),
+            book_author: book.author.clone(),
+            chapters_total: 1,
+            chapters: vec![ChapterCompletionEvent {
+                job_id: "old-job".into(),
+                book_title: book.title.clone(),
+                book_author: book.author.clone(),
+                chapter_index: 0,
+                chapters_total: 1,
+                chapters_completed: 1,
+                chapter_title: book.chapters[0].name.clone(),
+                filename: "original.mp3".into(),
+                audio_path: audio.clone(),
+                text_chars: book.chapters[0].text.chars().count(),
+            }],
+        };
+        let journal_path = source_output.join("chapters.json");
+        cache::atomic_write_json(&journal_path, &journal).unwrap();
+        let original_journal = fs::read(&journal_path).unwrap();
+        let destination = successor_output.join(format!(
+            "source-0000-{}.mp3",
+            sanitize(&book.chapters[0].name)
+        ));
+        std::os::unix::fs::symlink(&outsider, &destination).unwrap();
+        let worker = ConversionWorker::new(AppConfig::from_paths(paths)).unwrap();
+        worker
+            .jobs
+            .create(JobRecord::new(
+                "old-job",
+                serde_json::json!({"input":input,"engine":"edge","voice":null,"language":null})
+                    .as_object()
+                    .unwrap()
+                    .clone(),
+            ))
+            .unwrap();
+        worker
+            .jobs
+            .transition("old-job", JobState::Running)
+            .unwrap();
+        worker.jobs.transition("old-job", JobState::Failed).unwrap();
+        let manager = worker.jobs.clone();
+        let original_record = manager.load("old-job").unwrap();
+        let control = ConversionControl::new();
+        control.set_recovery_job("old-job").unwrap();
+        let result = worker.with_control(control).run(ConversionRequest {
+            input,
+            job_id: "successor-job".into(),
+            engine: Some("edge".into()),
+            voice: None,
+            language: None,
+            chapter_indices: None,
+            no_parallel: true,
+        });
+        assert!(matches!(result, Err(WorkerError::Piper(_))));
+        assert_eq!(cache::sha256_file(&outsider).unwrap(), outsider_hash);
+        assert_eq!(cache::sha256_file(&audio).unwrap(), outsider_hash);
+        assert_eq!(manager.load("old-job").unwrap(), original_record);
+        assert_eq!(fs::read(journal_path).unwrap(), original_journal);
+        assert!(fs::symlink_metadata(&destination)
+            .unwrap()
+            .file_type()
+            .is_symlink());
+        assert!(!successor_output.join("chapters.json").exists());
+        assert!(!successor_output.join("manifest.json").exists());
     }
 
     #[test]

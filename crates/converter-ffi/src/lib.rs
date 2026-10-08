@@ -13,6 +13,7 @@ extern crate piper_runtime;
 use converter_core::piper;
 use converter_core::{
     config::AppConfig,
+    conversion_control::ConversionControl,
     embedded::{EmbeddedBookMetadata, EmbeddedConversionSession},
     paths::resolve_paths_from,
 };
@@ -31,6 +32,95 @@ use std::{
 #[repr(C)]
 pub struct ConverterSession {
     session: EmbeddedConversionSession,
+}
+
+/// A thread-safe conversion control owned independently of the book session.
+/// Conversion clones the shared state before starting its worker. The caller
+/// must synchronize handle operations with free; the worker never keeps this pointer.
+#[repr(C)]
+pub struct ConverterJobControl {
+    control: ConversionControl,
+}
+
+#[no_mangle]
+pub extern "C" fn converter_job_control_create() -> *mut ConverterJobControl {
+    clear_last_error();
+    Box::into_raw(Box::new(ConverterJobControl {
+        control: ConversionControl::new(),
+    }))
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn converter_job_control_free(control: *mut ConverterJobControl) {
+    if !control.is_null() {
+        drop(Box::from_raw(control));
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn converter_job_control_cancel(control: *const ConverterJobControl) {
+    if let Some(control) = control.as_ref() {
+        control.control.cancel();
+    }
+}
+
+/// Suspends subsequent chapter boundaries without interrupting the current
+/// validated artifact. Cancellation wakes a suspended worker.
+#[no_mangle]
+pub unsafe extern "C" fn converter_job_control_set_paused(
+    control: *const ConverterJobControl,
+    paused: bool,
+) {
+    if let Some(control) = control.as_ref() {
+        control.control.set_paused(paused);
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn converter_job_control_prioritize(
+    control: *const ConverterJobControl,
+    chapter_index: usize,
+) -> bool {
+    clear_last_error();
+    let Some(control) = control.as_ref() else {
+        fail::<()>("invalid null job control".to_owned());
+        return false;
+    };
+    match control.control.prioritize(chapter_index) {
+        Ok(()) => true,
+        Err(error) => {
+            fail::<()>(error.to_string());
+            false
+        }
+    }
+}
+
+/// Selects a durable predecessor for a new job before its queue attaches.
+/// The ID is copied; the caller may immediately release its UTF-8 string.
+#[no_mangle]
+pub unsafe extern "C" fn converter_job_control_set_recovery_job(
+    control: *const ConverterJobControl,
+    source_job_id: *const c_char,
+) -> bool {
+    clear_last_error();
+    let Some(control) = control.as_ref() else {
+        fail::<()>("invalid null job control".to_owned());
+        return false;
+    };
+    let source_job_id = match c_string(source_job_id, "recovery job ID") {
+        Ok(value) => value,
+        Err(error) => {
+            fail::<()>(error);
+            return false;
+        }
+    };
+    match control.control.set_recovery_job(&source_job_id) {
+        Ok(()) => true,
+        Err(error) => {
+            fail::<()>(error.to_string());
+            false
+        }
+    }
 }
 
 /// Receives a UTF-8 JSON chapter event. The string is borrowed only for the
@@ -266,6 +356,62 @@ pub unsafe extern "C" fn converter_session_convert_job_json(
     callback: ConverterChapterCompletedCallback,
     context: *mut c_void,
 ) -> *mut c_char {
+    convert_job_json(
+        handle,
+        output_dir,
+        job_id,
+        chapter_start,
+        chapter_end,
+        progress_callback,
+        callback,
+        context,
+        None,
+    )
+}
+
+/// Additive controlled entry point. Control must be valid during this call's
+/// initial clone; cancellation and priority share state with the owned worker.
+#[no_mangle]
+pub unsafe extern "C" fn converter_session_convert_controlled_job_json(
+    handle: *const ConverterSession,
+    output_dir: *const c_char,
+    job_id: *const c_char,
+    chapter_start: i32,
+    chapter_end: i32,
+    progress_callback: ConverterProgressCallback,
+    callback: ConverterChapterCompletedCallback,
+    context: *mut c_void,
+    control: *const ConverterJobControl,
+) -> *mut c_char {
+    clear_last_error();
+    let Some(control) = control.as_ref() else {
+        return fail("invalid null job control".to_owned());
+    };
+    let owned_control = control.control.clone();
+    convert_job_json(
+        handle,
+        output_dir,
+        job_id,
+        chapter_start,
+        chapter_end,
+        progress_callback,
+        callback,
+        context,
+        Some(owned_control),
+    )
+}
+
+unsafe fn convert_job_json(
+    handle: *const ConverterSession,
+    output_dir: *const c_char,
+    job_id: *const c_char,
+    chapter_start: i32,
+    chapter_end: i32,
+    progress_callback: ConverterProgressCallback,
+    callback: ConverterChapterCompletedCallback,
+    context: *mut c_void,
+    control: Option<ConversionControl>,
+) -> *mut c_char {
     clear_last_error();
     let _ = rustls::crypto::ring::default_provider().install_default();
     let session = match handle.as_ref() {
@@ -305,7 +451,7 @@ pub unsafe extern "C" fn converter_session_convert_job_json(
         voice: None,
         language: None,
         chapter_indices: positional_chapter_selection(session, chapter_start, chapter_end),
-        no_parallel: chapter_start >= 0,
+        no_parallel: chapter_start >= 0 || control.is_some(),
     };
     let progress_log = output_dir.join("conversion.log");
     let context_address = context as usize;
@@ -342,6 +488,11 @@ pub unsafe extern "C" fn converter_session_convert_job_json(
         let Ok(json) = CString::new(json) else { return };
         unsafe { callback(json.as_ptr(), context_address as *mut c_void) };
     }));
+    let worker = if let Some(control) = control {
+        worker.with_control(control)
+    } else {
+        worker
+    };
     let conversion_thread = match std::thread::Builder::new()
         .name("converter-ffi-conversion".into())
         .stack_size(8 * 1024 * 1024)
@@ -1617,18 +1768,250 @@ mod tests {
     use zip::{write::FileOptions, ZipWriter};
 
     fn fixture() -> tempfile::NamedTempFile {
-        let file = tempfile::NamedTempFile::new().expect("temporary EPUB");
+        fixture_chapters(1)
+    }
+
+    fn fixture_chapters(count: usize) -> tempfile::NamedTempFile {
+        let file = tempfile::Builder::new()
+            .suffix(".epub")
+            .tempfile()
+            .expect("temporary EPUB");
         let mut zip = ZipWriter::new(file.reopen().expect("reopen fixture"));
         let options = FileOptions::<()>::default();
         zip.start_file("META-INF/container.xml", options).unwrap();
         zip.write_all(br#"<?xml version="1.0"?><container><rootfiles><rootfile full-path="OEBPS/content.opf"/></rootfiles></container>"#).unwrap();
         zip.start_file("OEBPS/content.opf", options).unwrap();
-        zip.write_all(br#"<package xmlns:dc="x"><metadata><title>Test Book</title><creator>Author</creator><language>en</language></metadata><manifest><item id="chapter" href="chapter.xhtml" media-type="application/xhtml+xml"/></manifest><spine><itemref idref="chapter"/></spine></package>"#).unwrap();
-        zip.start_file("OEBPS/chapter.xhtml", options).unwrap();
-        zip.write_all(b"<html><body><p>Hello world.</p></body></html>")
+        let manifest = (0..count).map(|index| format!(r#"<item id="chapter{index}" href="chapter{index}.xhtml" media-type="application/xhtml+xml"/>"#)).collect::<String>();
+        let spine = (0..count)
+            .map(|index| format!(r#"<itemref idref="chapter{index}"/>"#))
+            .collect::<String>();
+        let package = format!(
+            r#"<package xmlns:dc="x"><metadata><title>Test Book</title><creator>Author</creator><language>en</language></metadata><manifest>{manifest}</manifest><spine>{spine}</spine></package>"#
+        );
+        zip.write_all(package.as_bytes()).unwrap();
+        for index in 0..count {
+            zip.start_file(format!("OEBPS/chapter{index}.xhtml"), options)
+                .unwrap();
+            zip.write_all(
+                format!("<html><body><h1>Chapter {index}</h1><p>Hello world.</p></body></html>")
+                    .as_bytes(),
+            )
             .unwrap();
+        }
         zip.finish().unwrap();
         file
+    }
+
+    fn write_cached_wav(path: &Path) {
+        let sample_rate = 8_000u32;
+        let pcm = vec![0u8; sample_rate as usize * 2];
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(b"RIFF");
+        bytes.extend_from_slice(&(36 + pcm.len() as u32).to_le_bytes());
+        bytes.extend_from_slice(b"WAVEfmt ");
+        bytes.extend_from_slice(&16u32.to_le_bytes());
+        bytes.extend_from_slice(&1u16.to_le_bytes());
+        bytes.extend_from_slice(&1u16.to_le_bytes());
+        bytes.extend_from_slice(&sample_rate.to_le_bytes());
+        bytes.extend_from_slice(&(sample_rate * 2).to_le_bytes());
+        bytes.extend_from_slice(&2u16.to_le_bytes());
+        bytes.extend_from_slice(&16u16.to_le_bytes());
+        bytes.extend_from_slice(b"data");
+        bytes.extend_from_slice(&(pcm.len() as u32).to_le_bytes());
+        bytes.extend_from_slice(&pcm);
+        std::fs::write(path, bytes).unwrap();
+    }
+
+    struct ControlCallbackFixture {
+        handle: *mut ConverterJobControl,
+        chapters: Vec<usize>,
+        cancel_on_first: bool,
+        freed: bool,
+        recovery_rejected: bool,
+    }
+
+    unsafe extern "C" fn controlled_chapter_callback(json: *const c_char, context: *mut c_void) {
+        let fixture = &mut *(context as *mut ControlCallbackFixture);
+        let event = CStr::from_ptr(json).to_bytes();
+        if let Ok(event) = serde_json::from_slice::<serde_json::Value>(event) {
+            if let Some(index) = event["chapterIndex"].as_u64() {
+                fixture.chapters.push(index as usize);
+            }
+        }
+        if !fixture.freed {
+            let late_source = CString::new("late-predecessor").unwrap();
+            fixture.recovery_rejected =
+                !converter_job_control_set_recovery_job(fixture.handle, late_source.as_ptr());
+            if fixture.cancel_on_first {
+                converter_job_control_cancel(fixture.handle);
+            }
+            converter_job_control_free(fixture.handle);
+            fixture.handle = ptr::null_mut();
+            fixture.freed = true;
+        }
+    }
+
+    #[test]
+    fn controlled_ffi_rejects_null_control_and_keeps_null_cleanup_safe() {
+        unsafe {
+            converter_job_control_free(ptr::null_mut());
+            converter_job_control_cancel(ptr::null());
+            converter_job_control_set_paused(ptr::null(), true);
+            converter_job_control_set_paused(ptr::null(), false);
+            assert!(!converter_job_control_prioritize(ptr::null(), 0));
+            assert!(!converter_job_control_set_recovery_job(
+                ptr::null(),
+                ptr::null()
+            ));
+            assert!(converter_session_convert_controlled_job_json(
+                ptr::null(),
+                ptr::null(),
+                ptr::null(),
+                0,
+                -1,
+                None,
+                None,
+                ptr::null_mut(),
+                ptr::null()
+            )
+            .is_null());
+            let error = converter_last_error();
+            assert_eq!(
+                CStr::from_ptr(error).to_str().unwrap(),
+                "invalid null job control"
+            );
+            converter_string_free(error);
+        }
+    }
+
+    #[test]
+    fn controlled_ffi_recovery_copies_caller_string_without_mutating_another_handle() {
+        unsafe {
+            let predecessor = converter_job_control_create();
+            let successor = converter_job_control_create();
+            let job_id = CString::new("retained-predecessor").unwrap();
+            assert!(converter_job_control_set_recovery_job(
+                successor,
+                job_id.as_ptr()
+            ));
+            drop(job_id);
+            assert_eq!(
+                (*successor).control.recover_job().as_deref(),
+                Some("retained-predecessor")
+            );
+            assert_eq!((*predecessor).control.recover_job(), None);
+            assert!(!converter_job_control_set_recovery_job(
+                successor,
+                ptr::null()
+            ));
+            for invalid in ["", ".", "..", "../foreign", "a/b", "a\\b"] {
+                let invalid = CString::new(invalid).unwrap();
+                assert!(!converter_job_control_set_recovery_job(
+                    successor,
+                    invalid.as_ptr()
+                ));
+            }
+            assert_eq!(
+                (*successor).control.recover_job().as_deref(),
+                Some("retained-predecessor"),
+                "Rejected replacement must preserve the accepted recovery intent"
+            );
+            converter_job_control_free(successor);
+            converter_job_control_free(predecessor);
+        }
+    }
+
+    #[test]
+    fn controlled_ffi_priority_and_handle_release_preserve_the_active_worker() {
+        run_cached_controlled_ffi(false);
+    }
+
+    #[test]
+    fn controlled_ffi_cancellation_stops_after_validated_cached_chapter() {
+        run_cached_controlled_ffi(true);
+    }
+
+    fn run_cached_controlled_ffi(cancel_on_first: bool) {
+        let book = fixture_chapters(3);
+        let root = tempfile::tempdir().unwrap();
+        let directory = root.path().join("controlled-job");
+        std::fs::create_dir_all(&directory).unwrap();
+        let input = CString::new(book.path().to_str().unwrap()).unwrap();
+        let output = CString::new(directory.to_str().unwrap()).unwrap();
+        let job_id = CString::new("controlled-job").unwrap();
+        unsafe {
+            let session = converter_session_open(input.as_ptr());
+            assert!(!session.is_null());
+            for (index, chapter) in (*session).session.metadata().chapters.iter().enumerate() {
+                assert!(chapter
+                    .name
+                    .chars()
+                    .all(|c| c.is_alphanumeric() || matches!(c, '-' | '_' | ' ' | '.')));
+                write_cached_wav(&directory.join(format!("{:04}-{}.mp3", index + 1, chapter.name)));
+            }
+            let control = converter_job_control_create();
+            assert!(!control.is_null());
+            assert!(converter_job_control_prioritize(control, 2));
+            let mut fixture = ControlCallbackFixture {
+                handle: control,
+                chapters: Vec::new(),
+                cancel_on_first,
+                freed: false,
+                recovery_rejected: false,
+            };
+            let response = converter_session_convert_controlled_job_json(
+                session,
+                output.as_ptr(),
+                job_id.as_ptr(),
+                0,
+                -1,
+                None,
+                Some(controlled_chapter_callback),
+                &mut fixture as *mut ControlCallbackFixture as *mut c_void,
+                control,
+            );
+            if cancel_on_first {
+                assert!(response.is_null());
+                let error = converter_last_error();
+                let error_text = CStr::from_ptr(error).to_str().unwrap().to_owned();
+                converter_string_free(error);
+                assert!(
+                    error_text.contains("cancelled"),
+                    "actual controlled conversion error: {error_text}"
+                );
+                assert_eq!(fixture.chapters, [2]);
+            } else {
+                if response.is_null() {
+                    let error = converter_last_error();
+                    let error_text = CStr::from_ptr(error).to_str().unwrap().to_owned();
+                    converter_string_free(error);
+                    panic!("actual controlled conversion error: {error_text}");
+                }
+                assert_eq!(fixture.chapters, [2, 0, 1]);
+                converter_string_free(response);
+            }
+            assert!(
+                fixture.freed,
+                "The worker must own its control clone after the caller releases the handle"
+            );
+            assert!(
+                fixture.recovery_rejected,
+                "Recovery source cannot change after queue attachment"
+            );
+            let job: serde_json::Value = serde_json::from_slice(
+                &std::fs::read(root.path().join(".jobs/controlled-job.json")).unwrap(),
+            )
+            .unwrap();
+            assert_eq!(
+                job["state"],
+                if cancel_on_first {
+                    "cancelled"
+                } else {
+                    "completed"
+                }
+            );
+            converter_session_free(session);
+        }
     }
 
     #[test]

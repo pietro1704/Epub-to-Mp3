@@ -112,13 +112,25 @@ pub fn classify_stderr(stderr: &str) -> StderrClass {
 }
 
 #[derive(Debug, Clone, Default)]
-pub struct CancellationToken(Arc<std::sync::atomic::AtomicBool>);
+pub struct CancellationToken(Arc<std::sync::atomic::AtomicBool>, Arc<tokio::sync::Notify>);
 impl CancellationToken {
     pub fn cancel(&self) {
         self.0.store(true, std::sync::atomic::Ordering::Release);
+        self.1.notify_waiters();
     }
     pub fn is_cancelled(&self) -> bool {
         self.0.load(std::sync::atomic::Ordering::Acquire)
+    }
+    pub async fn cancelled(&self) {
+        loop {
+            let notified = self.1.notified();
+            tokio::pin!(notified);
+            notified.as_mut().enable();
+            if self.is_cancelled() {
+                return;
+            }
+            notified.await;
+        }
     }
 }
 
