@@ -86,6 +86,8 @@ pub enum WorkerError {
     Cancelled,
     #[error("unsupported input: {0}")]
     Unsupported(String),
+    #[error("unsupported conversion engine '{0}'; supported engines: edge, piper, auto")]
+    UnsupportedEngine(String),
 }
 pub type ProgressSink = Arc<dyn Fn(ProgressEvent) + Send + Sync>;
 pub type ChapterCompletionSink = Arc<dyn Fn(ChapterCompletionEvent) + Send + Sync>;
@@ -330,7 +332,7 @@ impl ConversionWorker {
                     let stem = format!("{:04}-{}", position + 1, sanitize(&chapter.name));
                     let mp3 = output_dir.join(format!("{stem}.mp3"));
                     let language = detected_language;
-                    let engine = select_engine(request.engine.as_deref(), &self.config);
+                    let engine = select_engine(request.engine.as_deref(), &self.config)?;
                     self.emit(ProgressEvent {
                         job_id: request.job_id.clone(),
                         state: "running".into(),
@@ -731,6 +733,37 @@ mod streaming_tests {
     use std::io::Write;
     use zip::{write::SimpleFileOptions, ZipWriter};
 
+    #[test]
+    fn unsupported_engine_configuration_never_silently_selects_edge() {
+        let root = PathBuf::from("/unused-engine-selection-fixture");
+        let mut config = AppConfig::from_paths(crate::paths::resolve_paths_from(
+            [("OUTPUT_DIR".to_owned(), root.to_string_lossy().into_owned())],
+            root,
+        ));
+        config.engine = "edge".into();
+        for engine in ["coqui", "unknown", "kokoro-unsupported", ""] {
+            assert!(
+                select_engine(Some(engine), &config).is_err(),
+                "unsupported requested engine {engine:?} silently selected Edge"
+            );
+        }
+        config.engine = "unknown".into();
+        assert!(
+            select_engine(None, &config).is_err(),
+            "unsupported configured engine selected Edge"
+        );
+        for (requested, expected) in [
+            ("edge", "edge"),
+            ("PIPER", "piper"),
+            ("auto", "edge"),
+            (" Edge ", "edge"),
+        ] {
+            assert_eq!(select_engine(Some(requested), &config).unwrap(), expected);
+        }
+        config.engine = "auto".into();
+        assert_eq!(select_engine(None, &config).unwrap(), "edge");
+    }
+
     fn write_test_wav(path: &Path) {
         let sample_rate = 8_000u32;
         let samples = vec![0u8; sample_rate as usize * 2];
@@ -925,14 +958,15 @@ fn default_edge_voice(language: Option<&str>) -> &'static str {
     }
 }
 
-fn select_engine(request: Option<&str>, config: &AppConfig) -> String {
-    match request
+fn select_engine(request: Option<&str>, config: &AppConfig) -> Result<String, WorkerError> {
+    let engine = request
         .unwrap_or(&config.engine)
-        .to_ascii_lowercase()
-        .as_str()
-    {
-        "piper" => "piper".into(),
-        _ => "edge".into(),
+        .trim()
+        .to_ascii_lowercase();
+    match engine.as_str() {
+        "piper" => Ok("piper".into()),
+        "edge" | "auto" => Ok("edge".into()),
+        _ => Err(WorkerError::UnsupportedEngine(engine)),
     }
 }
 

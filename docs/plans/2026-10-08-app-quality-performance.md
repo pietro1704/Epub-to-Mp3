@@ -113,3 +113,40 @@ included in its commit; native-form and adaptive-TTS changes remain separate.
 Independent Rust chunk-adaptation work may proceed while native readiness is
 blocked; ownership excludes the main agent's Swift files and no online synthesis
 is authorized beyond the prescribed comparison samples.
+
+### Slice 3a — reject unsupported provider configuration
+
+Red: the core selector accepted requested `coqui` as Edge in
+`unsupported_engine_configuration_never_silently_selects_edge` (0.00 s test).
+It now returns an explicit `UnsupportedEngine` error for unsupported requested
+or configured values instead of silently changing providers. Edge, Piper,
+case/whitespace normalization and existing auto-to-Edge behavior are preserved.
+This is only the core guard; UI/FFI options forwarding, runtime/model readiness,
+flags and manual-conversion playback intent are still pending (item 3 partial).
+
+Final serialized verification through mise: 70 core library tests, seven
+pending-adaptation integration tests, and 12 FFI tests passed. Evidence:
+`.reports/mobile-audio/quality-core-guards-and-adaptation.log`. No model download,
+external TTS request or user-artifact mutation was involved.
+
+### Slice 5a — dynamic pending chunks (host verified)
+
+Pending fragments are selected after acquiring current capacity, using the
+latest size limit. Retry fallback subfragments also honor subsequent reductions
+and make strict recursive progress. Feedback is published before permits are
+released, preventing waiters from seeing capacity before the pressure update.
+Blank fragments are consumed without speech requests or audio indices; spoken
+content, UTF-8 and audio order are retained. Chunk totals in telemetry are now
+estimates while adaptation is active, not a fixed progress denominator.
+
+Controlled local protocol regressions reproduced stale chunks after a size
+reduction, stale retry subfragments after repeated 429s, and feedback after permit
+release. Seven integration tests now cover those cases, whitespace-only request
+avoidance, capacity growth/out-of-order completion, retry recovery and dropping
+an active synthesis. Existing protocol tests also pass in the 70-test core suite.
+
+Specialist final QA found no blocking issue; additional shared-controller shrink
+and cancellation-during-cooldown stress coverage is not yet performed. This
+verifies dispatch behavior, not full native cancellation or a speedup. Physical
+FFI rebuild/embedding and exact-book before/after measurements remain required
+for item 5 and all latency/memory acceptance gates.
