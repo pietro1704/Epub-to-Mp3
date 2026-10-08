@@ -594,7 +594,8 @@ final class MacReaderViewController: NSViewController, NSTableViewDataSource, NS
                     payload = try await MacEpubParser.parse(at: fileURL, bookId: book.id)
                 }
                 guard self.isActiveLoad(generation, bookID: book.id) else { return }
-                LocalFulltextCache.save(payload, bookId: book.id)
+                // A validated disk payload is already durable; do not reencode it on MainActor.
+                if cachedPayload == nil { LocalFulltextCache.save(payload, bookId: book.id) }
                 LocalFulltextCache.recordWarmOpen(bookId: book.id)
                 fulltext = payload
                 statusLabel.stringValue = L10n.string("reader.chapterCount", payload.chapters.count)

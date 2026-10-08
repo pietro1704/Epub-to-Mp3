@@ -52,6 +52,22 @@ uncontrolled comparison or extrapolate whole-book duration.
 
 ## Progress
 
+### Prepared disk reader IO — verified narrow correction
+
+macOS now skips redundant JSON encoding, atomic rewrite and cache inventory when
+opening an already validated durable payload. Cold parsing still persists normally.
+One actual native window regression passed, zero skips (`20-20-19` macOS xcresult):
+disk cache supplies readable content/controls without resolving the unavailable
+fixture source; original cache bytes and modification date remain unchanged.
+The first fixture attempt used an empty bookmark and was pruned before opening;
+fixed to a nonempty unresolved bookmark and an explicit loaded-index assertion.
+
+The separate two-host relaunch measurement remains red: LOTR 2446 ms before,
+985 ms in one candidate observation, still above 200 ms; Christie initially167 ms.
+Focused timing identified LOTR read/decode 241 ms, HTML render 537 ms and TextKit
+fit 1.6 ms. Temporary probes removed. This slice repairs redundant interaction-
+thread IO; it does not establish relaunch budget completion or general speedup.
+
 ### Physical conversion comparison — candidate completed
 
 Run `699FF2AE-0A79-406A-889C-FEF3EF01110F`: one benchmark passed, zero skips,

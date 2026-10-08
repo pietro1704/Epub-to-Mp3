@@ -9,6 +9,28 @@ this board and `handoff.md` before crossing ownership or changing shared contrac
 
 ## Active requests — 2026-10-08
 
+- [ ] **APP-20261008-07 — Verify native reader readiness after process relaunch.** In progress.
+  Two separate native macOS XCTest host executions, same hash-checked LOTR/Christie
+  inputs and test-only book IDs. Require disk-prepared content and controls within
+  200 ms in the new process; no in-memory prewarm substitute. Preserve all existing
+  cache/library data, restore reader defaults and remove only owned test fixtures.
+  Red: prepare passed one native test; verify failed one (zero skips), actual
+  disk-prepared open 2446 ms >200 ms. Evidence:
+  `.reports/mobile-audio/reader-relaunch-628B5899-4B2F-442D-9526-C40779A7AA43`.
+  Relaunch test implemented; overall 200 ms acceptance remains unverified/failed.
+  Removing redundant MainActor cache rewrite reduced one LOTR sample to 985 ms,
+  still failing. Focused profile `reader-relaunch-17AFA62C-9C7B-44CF-951F-9AD1BC083342`:
+  LOTR read/decode 241 ms, HTML render 537 ms, TextKit fit 1.6 ms; Christie
+  18/16/10 ms. Temporary probes removed. Relaunch test remains uncommitted;
+  decoding/render preparation, not viewport layout, needs further work.
+
+- [x] **APP-20261008-08 — Avoid redundant Mac reader cache writes.** Verified.
+  Disk-prepared content no longer reencodes/writes/enumerates cache on MainActor.
+  Native window regression asserts readable content/controls and unchanged durable
+  bytes/mtime: one test passed, zero skips, `20-20-19` macOS xcresult.
+  Cold imports still persist; iOS persistence was already dispatched off-main.
+  This IO correction does not satisfy APP-20261008-07's 200 ms relaunch budget.
+
 - [ ] **APP-20261008-06 — Investigate slower LOTR adaptive conversion on Arch.** Pending.
   Physical candidate `699FF2AE-0A79-406A-889C-FEF3EF01110F` passed one benchmark,
   zero skips, exact LOTR 8–9/Christie 6–7, no audio reuse. LOTR 310.40→432.12 s
