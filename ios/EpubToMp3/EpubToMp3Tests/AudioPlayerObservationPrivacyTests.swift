@@ -127,6 +127,7 @@ struct NativePlaybackBenchmarkReport: Encodable {
     let input: NativePlaybackBenchmarkInput
     let executablePath: String
     let executableSHA256: String
+    let appCodeSHA256: String
     let baselineStatus: String
     let comparison = "unmeasured: requires paired reports from the actual baseline and candidate executables"
     let clock = "client monotonic; audio progress is not acoustic; memory is point sampled, not peak; cold means prepared-reader cache absent, not OS cache flushed"
@@ -138,6 +139,12 @@ struct NativePlaybackBenchmarkReport: Encodable {
         let executable = try XCTUnwrap(Bundle.main.executableURL).resolvingSymlinksInPath()
         executablePath = executable.path
         executableSHA256 = try NativePlaybackBenchmarkInput.hash(executable.path)
+        // Modern Debug builds use an identical launcher across revisions.
+        // Identify the loaded app code, not just that launcher stub.
+        let debugPayload = executable.deletingLastPathComponent()
+            .appendingPathComponent(executable.lastPathComponent + ".debug.dylib")
+        appCodeSHA256 = try NativePlaybackBenchmarkInput.hash(
+            FileManager.default.isReadableFile(atPath: debugPayload.path) ? debugPayload.path : executable.path)
         if let baseline = input.baselineExecutablePath, FileManager.default.isExecutableFile(atPath: baseline) {
             let sameExecutable = URL(fileURLWithPath: baseline).resolvingSymlinksInPath() == executable
             baselineStatus = sameExecutable
@@ -248,6 +255,12 @@ final class AudioPlayerObservationPrivacyTests: XCTestCase {
         XCTAssertThrowsError(try input.validateRequestedBooks(), "Named synthetic fixtures must not impersonate requested books")
         try input.validateScope()
         let roundTrip = try JSONDecoder().decode(NativePlaybackBenchmarkInput.self, from: JSONEncoder().encode(input))
+        let report = try NativePlaybackBenchmarkReport(input: roundTrip)
+        let executable = try XCTUnwrap(Bundle.main.executableURL).resolvingSymlinksInPath()
+        let payload = executable.deletingLastPathComponent()
+            .appendingPathComponent(executable.lastPathComponent + ".debug.dylib")
+        let code = FileManager.default.isReadableFile(atPath: payload.path) ? payload : executable
+        XCTAssertEqual(report.appCodeSHA256, try NativePlaybackBenchmarkInput.hash(code.path))
         try roundTrip.validateScope()
         try roundTrip.validateFiles()
         XCTAssertEqual(try NativePlaybackBenchmarkInput.hash(books[0].chapters[0].path), books[0].chapters[0].sha256)

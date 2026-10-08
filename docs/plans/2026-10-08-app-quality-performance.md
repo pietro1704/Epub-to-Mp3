@@ -466,3 +466,19 @@ in an isolated version-1 Mac xctestrun, and executed exactly one test. Inputs ar
 literal/hash-checked and reports retain executable identity and journeys.
 Baseline executable/report is unavailable, so comparison remains explicitly
 unmeasured. Book-opening and physical-phone measurements are still pending.
+
+### Baseline provenance audit and Debug payload identity
+
+A source archive of `0d3a8229` was built with the saved old macOS Rust artifact
+and identical measurement test/inputs. Its cached-playback test passed once,
+zero skips: `.reports/mobile-audio/cached-playback-baseline.Txt20v/tests.xcresult`.
+Production baseline source was not patched; instrumentation was copied only to
+the test file. The current app build was restored afterward in the shared cache.
+
+Report comparison found identical launcher hashes despite different production
+sources: modern Debug app code lives in `EpubToMp3.debug.dylib`, not the launcher.
+Reports now also identify that payload (or the executable for non-split builds).
+The native identity/scope regression passed once, zero skips, in
+`Test-EpubToMp3Mac-2026.10.08_18-45-26--0300.xcresult`.
+The older measurement reports lack this payload identity, so a strict paired
+comparison remains unproven and needs refreshed measurements. No speedup claim.
