@@ -502,3 +502,24 @@ memory is point-sampled, and this does not cover segment-mode or conversion spee
 No synthesis or user-data cleanup; current app products were restored in the
 single shared build cache after the baseline run. Physical playback failures,
 iPhone measurements, book-open budgets and conversion comparison remain open.
+
+### Native reader opening — measured macOS warm budget
+
+The existing book-open XCTest now also opens a real AppKit reader window, using
+the same literal/hash-checked books and test-only library/progress/cache identities.
+Production reader behavior is unchanged; native-reader-regression directed the
+real-surface verification rather than a parser-only latency proxy. No conversion.
+
+Initial measurement: LOTR prepared-cache cold 5124.20 ms, process warm 51.15 ms;
+Christie 513.01 / 93.46 ms. With the permanent 200 ms warm-open assertion, a
+second executed test passed (zero skips): LOTR 3975.75 / 47.42 ms, Christie
+460.84 / 91.89 ms. Evidence:
+`.reports/mobile-audio/native-book-open-budget.AYCSN7/tests.xcresult` and the
+permanent `native-existing-epub-open-benchmark` attachment. Ready milestones show
+both readable content and usable controls; memory is only point-sampled.
+
+Process-warm Mac readiness meets the budget in these runs. This is not an
+across-relaunch result, iPhone evidence, clipping/pagination verification, or a
+before/after reader comparison. Cold parsing remains seconds for LOTR and needs
+separate profiling if optimized. Physical playback failures and bounded device
+conversion/performance verification are still open.
