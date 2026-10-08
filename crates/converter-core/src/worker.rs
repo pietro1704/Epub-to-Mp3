@@ -92,6 +92,31 @@ pub enum WorkerError {
 pub type ProgressSink = Arc<dyn Fn(ProgressEvent) + Send + Sync>;
 pub type ChapterCompletionSink = Arc<dyn Fn(ChapterCompletionEvent) + Send + Sync>;
 
+/// Per-invocation controls. Defaults retain resume and serial-selection behavior.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct ExecutionOptions {
+    pub clear_cache: bool,
+    pub force_reprocess: bool,
+    pub max_performance: bool,
+}
+
+impl ExecutionOptions {
+    fn chapter_parallelism(
+        self,
+        no_parallel: bool,
+        configured: usize,
+        maximum: usize,
+        cap: usize,
+    ) -> usize {
+        resolve_chapter_parallelism(
+            no_parallel && !self.max_performance,
+            configured,
+            maximum,
+            cap,
+        )
+    }
+}
+
 pub struct ConversionWorker {
     pub config: AppConfig,
     pub jobs: JobManager,
@@ -99,6 +124,7 @@ pub struct ConversionWorker {
     pub progress: Option<ProgressSink>,
     pub chapter_completed: Option<ChapterCompletionSink>,
     pub adaptive: Arc<crate::adaptive::AdaptiveThroughputController>,
+    pub execution_options: ExecutionOptions,
 }
 impl ConversionWorker {
     pub fn new(config: AppConfig) -> Result<Self, WorkerError> {
@@ -116,10 +142,15 @@ impl ConversionWorker {
             progress: None,
             chapter_completed: None,
             adaptive,
+            execution_options: ExecutionOptions::default(),
         })
     }
     pub fn with_progress(mut self, sink: ProgressSink) -> Self {
         self.progress = Some(sink);
+        self
+    }
+    pub fn with_execution_options(mut self, options: ExecutionOptions) -> Self {
+        self.execution_options = options;
         self
     }
     pub fn with_chapter_completed(mut self, sink: ChapterCompletionSink) -> Self {
@@ -293,7 +324,7 @@ impl ConversionWorker {
             .and_then(|value| value.parse().ok())
             .filter(|value| *value > 0)
             .unwrap_or(8);
-        let parallelism = resolve_chapter_parallelism(
+        let parallelism = self.execution_options.chapter_parallelism(
             request.no_parallel,
             configured,
             self.config.max_parallel,
@@ -317,7 +348,14 @@ impl ConversionWorker {
                     }
                     let text_path =
                         cache_dir.join(format!("{}.json", chapter.index.replace('.', "_")));
-                    let text = if text_path.is_file() {
+                    let text = if self.execution_options.clear_cache {
+                        cache::refresh_chapter_text(
+                            &self.config.paths.cache_dir,
+                            &book_key,
+                            &format!("{}.json", chapter.index.replace('.', "_")),
+                            &chapter.text,
+                        )?
+                    } else if text_path.is_file() {
                         cache::read_json::<String>(&text_path)?
                     } else {
                         cache::atomic_write_json(&text_path, &chapter.text)?;
@@ -348,20 +386,33 @@ impl ConversionWorker {
                         message: format!("converting chapter {}", position + 1),
                     });
                     let synthesis_started = std::time::Instant::now();
-                    let synthesized = !mp3.is_file();
+                    let synthesized = self.execution_options.force_reprocess || !mp3.is_file();
                     if synthesized {
                         eprintln!("synthesizing chapter {}/{}", position + 1, total);
-                        self.synthesize_with_timeout(
-                            &engine,
-                            &text,
-                            &mp3,
-                            request.voice.as_deref(),
-                            request.language.as_deref().or(language),
-                            request.job_id.clone(),
-                            position,
-                            total,
-                            Arc::clone(&completed_chapters),
-                        )?;
+                        let synthesize = |target: &Path,
+                                          staging_owner: Option<
+                            Arc<cache::OwnedStagingDirectory>,
+                        >| {
+                            self.synthesize_with_timeout(
+                                &engine,
+                                &text,
+                                target,
+                                request.voice.as_deref(),
+                                request.language.as_deref().or(language),
+                                request.job_id.clone(),
+                                position,
+                                total,
+                                Arc::clone(&completed_chapters),
+                                staging_owner,
+                            )
+                        };
+                        if self.execution_options.force_reprocess {
+                            regenerate_chapter_audio(&mp3, |target, owner| {
+                                synthesize(target, Some(owner))
+                            })?;
+                        } else {
+                            synthesize(&mp3, None)?;
+                        }
                     }
                     let chapter_name = chapter.name.clone();
                     let text_chars = text.chars().count();
@@ -568,6 +619,7 @@ impl ConversionWorker {
         chapter_index: usize,
         chapters_total: usize,
         completed_chapters: Arc<std::sync::atomic::AtomicUsize>,
+        staging_owner: Option<Arc<cache::OwnedStagingDirectory>>,
     ) -> Result<(), WorkerError> {
         let default_timeout = if engine == "edge" {
             let synthesis_budget = crate::tts::reference_synthesis_timeout_for_text(text.len())
@@ -640,6 +692,9 @@ impl ConversionWorker {
             .name("converter-chapter-synthesis".into())
             .stack_size(8 * 1024 * 1024)
             .spawn(move || {
+                // A timed-out invocation may return before its worker stops.
+                // Retain its exclusive directory until late writes and cleanup finish.
+                let _staging_owner = staging_owner;
                 let worker = Self::new(synthesis_config);
                 let result = worker.map_or_else(Err, |mut worker| {
                     worker.cancel = cancel;
@@ -693,6 +748,21 @@ impl ConversionWorker {
     }
 }
 
+fn regenerate_chapter_audio(
+    destination: &Path,
+    synthesize: impl FnOnce(&Path, Arc<cache::OwnedStagingDirectory>) -> Result<(), WorkerError>,
+) -> Result<(), WorkerError> {
+    let parent = destination
+        .parent()
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "missing audio parent"))?;
+    let staging = Arc::new(cache::OwnedStagingDirectory::create(parent)?);
+    let path = staging.0.join("chapter.mp3");
+    synthesize(&path, Arc::clone(&staging))?;
+    audio::validate_audio(&path, 100)?;
+    fs::rename(path, destination)?;
+    Ok(())
+}
+
 fn validate_chapter_and_emit(
     audio_path: &Path,
     event: ChapterCompletionEvent,
@@ -732,6 +802,83 @@ mod streaming_tests {
     use super::*;
     use std::io::Write;
     use zip::{write::SimpleFileOptions, ZipWriter};
+
+    #[test]
+    fn max_performance_preserves_configured_and_platform_resource_caps() {
+        let normal = ExecutionOptions::default();
+        let fast = ExecutionOptions {
+            max_performance: true,
+            ..normal
+        };
+        assert_eq!(normal.chapter_parallelism(true, 8, 8, 2), 1);
+        assert_eq!(fast.chapter_parallelism(true, 8, 8, 2), 2);
+        assert_eq!(fast.chapter_parallelism(true, 1, 8, 2), 1);
+        assert_eq!(fast.chapter_parallelism(true, 8, 1, 2), 1);
+        assert_eq!(fast.chapter_parallelism(true, 8, 8, 1), 1);
+    }
+
+    #[test]
+    fn forced_audio_replacement_preserves_prior_bytes_on_failure_and_validates_before_publish() {
+        let fixture = tempfile::tempdir().unwrap();
+        let target = fixture.path().join("selected.mp3");
+        let untouched = fixture.path().join("unselected.mp3");
+        write_test_wav(&target);
+        fs::write(&untouched, b"unselected download").unwrap();
+        let prior = fs::read(&target).unwrap();
+        let failed = regenerate_chapter_audio(&target, |path, _owner| {
+            fs::write(path, b"partial new audio")?;
+            Err(WorkerError::Cancelled)
+        });
+        assert!(failed.is_err());
+        assert_eq!(fs::read(&target).unwrap(), prior);
+        assert!(regenerate_chapter_audio(&target, |path, _owner| {
+            fs::write(path, b"invalid")?;
+            Ok(())
+        })
+        .is_err());
+        assert_eq!(fs::read(&target).unwrap(), prior);
+        regenerate_chapter_audio(&target, |path, _owner| {
+            // A distinct, valid waveform must replace an already present chapter.
+            write_test_wav(path);
+            let mut waveform = fs::read(path)?;
+            waveform[44] = 1;
+            fs::write(path, waveform)?;
+            Ok(())
+        })
+        .unwrap();
+        assert_ne!(fs::read(&target).unwrap(), prior);
+        assert_eq!(fs::read(untouched).unwrap(), b"unselected download");
+        assert_eq!(fs::read_dir(fixture.path()).unwrap().count(), 2);
+    }
+
+    #[test]
+    fn timed_out_regeneration_keeps_staging_owned_until_late_writer_stops() {
+        let fixture = tempfile::tempdir().unwrap();
+        let target = fixture.path().join("selected.mp3");
+        fs::write(&target, b"prior audio").unwrap();
+        let (started, stage_path) = std::sync::mpsc::channel();
+        let (release, resume) = std::sync::mpsc::channel();
+        let mut writer = None;
+        let result = regenerate_chapter_audio(&target, |path, owner| {
+            let path = path.to_owned();
+            writer = Some(std::thread::spawn(move || {
+                started.send(owner.0.clone()).unwrap();
+                resume.recv().unwrap();
+                // Model/runtime work may still return after its invocation timed out.
+                fs::write(path, b"late owned bytes").unwrap();
+                drop(owner);
+            }));
+            Err(WorkerError::Cancelled)
+        });
+        assert!(result.is_err());
+        let staging = stage_path.recv().unwrap();
+        assert!(staging.is_dir());
+        assert_eq!(fs::read(&target).unwrap(), b"prior audio");
+        release.send(()).unwrap();
+        writer.unwrap().join().unwrap();
+        assert!(!staging.exists());
+        assert_eq!(fs::read(target).unwrap(), b"prior audio");
+    }
 
     #[test]
     fn unsupported_engine_configuration_never_silently_selects_edge() {
@@ -814,6 +961,61 @@ mod streaming_tests {
         zip.start_file("OPS/chapter.xhtml", options).unwrap();
         zip.write_all(br#"<html xmlns="http://www.w3.org/1999/xhtml"><body><h1>Chapter One</h1><p>Existing validated audio can be resumed.</p></body></html>"#).unwrap();
         zip.finish().unwrap();
+    }
+
+    #[test]
+    fn clear_cache_runs_at_selected_worker_boundary_without_rewriting_audio() {
+        let fixture = tempfile::tempdir().unwrap();
+        let root = fixture.path();
+        let input = root.join("source.epub");
+        write_test_epub(&input);
+        let source = fs::read(&input).unwrap();
+        let key = cache::sha256_bytes(&source);
+        let book = epub::parse_epub(std::io::Cursor::new(&source)).unwrap();
+        let paths = crate::paths::resolve_paths_from(
+            [("PERSISTENT_ROOT", root.to_string_lossy().into_owned())],
+            root.to_path_buf(),
+        );
+        let mut config = AppConfig::from_paths(paths);
+        config.max_parallel = 1;
+        let worker = ConversionWorker::new(config)
+            .unwrap()
+            .with_execution_options(ExecutionOptions {
+                clear_cache: true,
+                ..ExecutionOptions::default()
+            });
+        let cache_dir = worker.config.paths.cache_dir.join(&key);
+        let output_dir = worker.config.paths.output_dir.join("refresh-job");
+        fs::create_dir_all(&cache_dir).unwrap();
+        fs::create_dir_all(&output_dir).unwrap();
+        let chapter_file = format!("{}.json", book.chapters[0].index.replace('.', "_"));
+        fs::write(cache_dir.join(&chapter_file), b"malformed derived cache").unwrap();
+        let other = cache_dir.join("unselected.json");
+        fs::write(&other, b"unselected derived text").unwrap();
+        let audio = output_dir.join(format!("0001-{}.mp3", sanitize(&book.chapters[0].name)));
+        // The real worker reuses this valid local waveform; no provider is contacted.
+        write_test_wav(&audio);
+        let prior_audio = fs::read(&audio).unwrap();
+        let result = worker
+            .run(ConversionRequest {
+                input: input.clone(),
+                job_id: "refresh-job".into(),
+                engine: Some("edge".into()),
+                voice: None,
+                language: None,
+                chapter_indices: Some(vec!["position:0".into()]),
+                no_parallel: true,
+            })
+            .unwrap();
+        assert_eq!(result.chapters.len(), 1);
+        assert_eq!(result.chapters[0].source_index, 0);
+        assert_eq!(
+            cache::read_json::<String>(cache_dir.join(chapter_file)).unwrap(),
+            book.chapters[0].text
+        );
+        assert_eq!(fs::read(other).unwrap(), b"unselected derived text");
+        assert_eq!(fs::read(audio).unwrap(), prior_audio);
+        assert_eq!(fs::read(input).unwrap(), source);
     }
 
     #[test]

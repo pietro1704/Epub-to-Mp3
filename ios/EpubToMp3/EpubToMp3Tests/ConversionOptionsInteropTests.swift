@@ -97,9 +97,6 @@ final class ConversionOptionsInteropTests: XCTestCase {
         try original.write(to: blocked)
         for (options, expected) in [
             (ConversionOptions(engine: "coqui"), "unsupported conversion engine"),
-            (ConversionOptions(clearCache: true), "clear_cache"),
-            (ConversionOptions(forceReprocess: true), "force_reprocess"),
-            (ConversionOptions(maxPerformance: true), "max_performance"),
             (ConversionOptions(language: "\n"), "language"),
         ] {
             XCTAssertThrowsError(try adapter.convertBook(at: bookURL, outputDirectory: blocked, jobID: "blocked-output",
@@ -107,7 +104,14 @@ final class ConversionOptionsInteropTests: XCTestCase {
                 XCTAssertTrue($0.localizedDescription.contains(expected), "Unexpected boundary error: \($0)")
             }
         }
-        for options: ConversionOptions? in [nil, ConversionOptions(engine: "edge", voice: "pt-BR-FranciscaNeural", language: "pt-BR")] {
+        for options: ConversionOptions? in [
+            nil,
+            ConversionOptions(engine: "edge", voice: "pt-BR-FranciscaNeural", language: "pt-BR"),
+            ConversionOptions(clearCache: true),
+            ConversionOptions(forceReprocess: true),
+            ConversionOptions(maxPerformance: true),
+            ConversionOptions(clearCache: true, forceReprocess: true, maxPerformance: true),
+        ] {
             XCTAssertThrowsError(try adapter.convertBook(at: bookURL, outputDirectory: blocked, jobID: "blocked-output",
                                                        chapterStart: 0, chapterEnd: 0, options: options)) {
                 XCTAssertTrue($0.localizedDescription.contains("create output directory"), "Valid options did not reach the output boundary: \($0)")

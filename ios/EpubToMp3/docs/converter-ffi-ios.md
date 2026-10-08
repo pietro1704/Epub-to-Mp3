@@ -19,8 +19,10 @@ progress callback, chapter callback and context, in that order.
 
 Example: `{"schema_version":1,"engine":"edge","voice":"pt-BR-FranciscaNeural","language":"pt-BR"}`.
 Schema is required, unknown fields fail, and voice/language remain literal.
-`clear_cache`, `force_reprocess` and `max_performance` are accepted as false but
-explicitly rejected as true in this tracer; their effective semantics are pending.
+`clear_cache` refreshes only selected derived chapter text. `force_reprocess`
+regenerates only selected audio through validated same-volume staging, preserving
+prior audio on failure. `max_performance` permits parallel selected chapters
+within configured/platform resource caps. All three flags default to false.
 Provider support does not imply an installed, ready offline model.
 
 Rust validation precedes book/output access. Missing symbols never cause explicit

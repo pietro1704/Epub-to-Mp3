@@ -63,17 +63,6 @@ impl ConversionOptionsV1 {
         if options.schema_version != 1 {
             return Err("unsupported conversion options schema_version; expected 1".into());
         }
-        for (name, enabled) in [
-            ("clear_cache", options.clear_cache),
-            ("force_reprocess", options.force_reprocess),
-            ("max_performance", options.max_performance),
-        ] {
-            if enabled {
-                return Err(format!(
-                    "unsupported conversion option '{name}': true is not implemented"
-                ));
-            }
-        }
         if let Some(engine) = &mut options.engine {
             *engine = engine.trim().to_ascii_lowercase();
             match engine.as_str() {
@@ -94,6 +83,14 @@ impl ConversionOptionsV1 {
             }
         }
         Ok(options)
+    }
+
+    fn execution_options(&self) -> converter_core::worker::ExecutionOptions {
+        converter_core::worker::ExecutionOptions {
+            clear_cache: self.clear_cache,
+            force_reprocess: self.force_reprocess,
+            max_performance: self.max_performance,
+        }
     }
 
     fn into_request(
@@ -384,8 +381,10 @@ pub unsafe extern "C" fn converter_session_convert_job_json(
 /// or null preserves Edge, and auto retains the core's auto-to-Edge policy.
 /// Optional `voice` and `language` preserve literal nonblank, control-free text;
 /// omission or null lets the Rust worker choose its defaults. Unknown fields are
-/// rejected. `clear_cache`, `force_reprocess`, and `max_performance` default to
-/// false and reject true until their semantics are implemented. No model install
+/// rejected. `clear_cache` rebuilds selected derived text, `force_reprocess`
+/// regenerates selected audio using validated staging, and `max_performance`
+/// permits parallel selected chapters within configured resource caps. All
+/// flags default to false. No model install
 /// or inference-readiness assertion is performed by this configuration boundary.
 /// Options and chapter bounds are checked before output creation. Returned
 /// strings and callbacks retain the existing ownership contract.
@@ -468,6 +467,7 @@ unsafe fn convert_job_with_options(
     config.max_parallel = config.max_parallel.min(embedded_chapter_parallelism_cap());
     #[cfg(feature = "piper-runtime")]
     piper_runtime_register_embedded();
+    let execution_options = options.execution_options();
     let request =
         options.into_request(session, job_id.clone(), chapter_indices, chapter_start >= 0);
     let progress_log = output_dir.join("conversion.log");
@@ -482,6 +482,7 @@ unsafe fn convert_job_with_options(
         Ok(worker) => worker,
         Err(error) => return fail(error.to_string()),
     }
+    .with_execution_options(execution_options)
     .with_progress(Arc::new(move |event| {
         use std::io::Write;
         let line = progress_log_line(&event, conversion_started, &previous_event);
@@ -1952,15 +1953,6 @@ mod tests {
                 (r#"{"schema_version":2}"#, "schema_version"),
                 (r#"{}"#, "schema_version"),
                 (r#"{"schema_version":1,"unknown":false}"#, "unknown field"),
-                (r#"{"schema_version":1,"clear_cache":true}"#, "clear_cache"),
-                (
-                    r#"{"schema_version":1,"force_reprocess":true}"#,
-                    "force_reprocess",
-                ),
-                (
-                    r#"{"schema_version":1,"max_performance":true}"#,
-                    "max_performance",
-                ),
                 (r#"{"schema_version":1,"voice":""}"#, "voice"),
                 (r#"{"schema_version":1,"language":"\u0000"}"#, "language"),
                 ("{", "JSON"),
@@ -2034,6 +2026,31 @@ mod tests {
     }
 
     #[test]
+    fn true_flags_reach_worker_execution_policy_without_changing_selection() {
+        let options = ConversionOptionsV1::parse(r#"{"schema_version":1,"clear_cache":true,"force_reprocess":true,"max_performance":true}"#).unwrap();
+        assert_eq!(
+            options.execution_options(),
+            converter_core::worker::ExecutionOptions {
+                clear_cache: true,
+                force_reprocess: true,
+                max_performance: true,
+            }
+        );
+        let book = fixture_with_chapters(3);
+        let path = CString::new(book.path().to_string_lossy().as_bytes()).unwrap();
+        unsafe {
+            let handle = converter_session_open(path.as_ptr());
+            let session = handle.as_ref().expect("fixture session");
+            let selection = positional_chapter_selection(session, 1, 1).unwrap();
+            let request =
+                options.into_request(session, "flags-job".into(), selection.clone(), true);
+            assert_eq!(request.chapter_indices, selection);
+            assert_eq!(request.chapter_indices, Some(vec!["position:1".into()]));
+            converter_session_free(handle);
+        }
+    }
+
+    #[test]
     fn valid_options_abi_reaches_blocked_output_without_synthesis() {
         let book = fixture();
         let path = CString::new(book.path().to_string_lossy().as_bytes()).unwrap();
@@ -2049,6 +2066,7 @@ mod tests {
                 r#"{"schema_version":1}"#,
                 r#"{"schema_version":1,"engine":"piper","voice":"speaker-0","language":"pt-BR"}"#,
                 r#"{"schema_version":1,"engine":"auto"}"#,
+                r#"{"schema_version":1,"clear_cache":true,"force_reprocess":true,"max_performance":true}"#,
             ] {
                 let options = CString::new(json).unwrap();
                 assert!(converter_session_convert_job_options_json_v1(

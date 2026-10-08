@@ -317,3 +317,24 @@ passed. No book synthesis, Simulator, Python or user-data cleanup.
 
 This proves native player behavior on macOS, not physical-iPhone latency/memory.
 Segment persistence IO and final performance/device gates remain open.
+
+### Slice 3d — effective per-request execution flags
+
+True flags now reach the worker: selected derived text is refreshed atomically,
+selected audio is regenerated through validated staging, and maximum performance
+permits parallel selected chapters within existing configured/platform caps.
+Staging ownership survives late synthesis threads; failures preserve prior audio.
+Books, models, listening downloads and unselected chapters are untouched.
+
+Focused Rust passes: 10 worker tests, six cache tests, one actual-worker isolated
+synthetic-Piper integration and 19 FFI tests, all passed. Native
+`apple:foundation:ffi:test`: 17 passed, zero failures/skips with the freshly built
+debug dylib. True flags reach a blocked output boundary rather than rejecting or
+being silently ignored. Integration verifies forced synthesis versus resume,
+exact selected source identity and preserved artifacts; adversarial tests cover
+symlinks, partial/invalid audio and late-writer staging lifetime. Rustfmt and diff
+checks passed. No user book synthesis, release rebuild or model download.
+
+Host execution/interop is verified; final Apple artifact embedding, offline
+model-path/readiness and physical performance remain pending. This is not a
+measured speedup or a guarantee of full worker cancellation.
