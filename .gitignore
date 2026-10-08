@@ -39,6 +39,7 @@ pip-delete-this-directory.txt
 
 # Unit test / coverage reports
 .reports/device/
+.reports/mobile-audio/
 htmlcov/
 .tox/
 .nox/
@@ -100,6 +101,7 @@ Thumbs.db
 
 # Audio files and output
 *.mp3
+!tests/fixtures/audio/mono-24000-48k.mp3
 *.wav
 *.flac
 *.m4a

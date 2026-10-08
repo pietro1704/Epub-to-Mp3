@@ -448,11 +448,15 @@ impl ConversionWorker {
                 })
                 .flatten()
         };
-        if let Some(cover_name) = &cover {
+        if let Some(cover_name) = cover
+            .as_ref()
+            .filter(|_| results.iter().any(|result| result.4))
+        {
             let cover_path = output_dir.join(cover_name);
+            let artwork = audio::CoverArtwork::read(&cover_path)?;
             for (_, path, _, _, synthesized) in &results {
                 if *synthesized {
-                    audio::embed_cover(path, &cover_path)?;
+                    artwork.embed_into(path)?;
                 }
             }
         }
