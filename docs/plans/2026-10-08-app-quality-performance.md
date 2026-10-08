@@ -52,6 +52,23 @@ uncontrolled comparison or extrapolate whole-book duration.
 
 ## Progress
 
+### Prepared archive persistence — native storage boundary
+
+Added the shared Apple actor `PreparedChapterArchiveStore`: immutable opaque
+archive bytes, versioned binary envelope bound to book/chapter/signature,
+SHA256 filenames, 8 MiB bounded file reads/writes and 64 MiB default total budget.
+Budget rejection preserves earlier entries rather than evicting anything. Root/
+target symlinks and special files are rejected; replacement is atomic and removal
+targets exactly one owned book/chapter entry. Native archive creation/decoding
+remains the caller's MainActor responsibility; no UI integration yet.
+
+Nine native macOS tests passed, zero skips in `20-34-11` xcresult: reopened
+durability, scoped removal, mismatches/schema/corruption, size/budget preservation,
+symlink protection, invalid keys before directory creation and off-main inspection.
+Physical iOS attempt stopped at locked readiness with no build/test. Fixtures
+were isolated and removed; no books/models/downloads were targeted. This verifies
+storage mechanics on macOS, not native iOS behavior or the 200 ms reader budget.
+
 ### Prepared attributed chapter — measured fidelity-preserving mechanism
 
 Native opt-in test passed once with zero skips in

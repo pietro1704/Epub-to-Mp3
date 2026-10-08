@@ -9,6 +9,16 @@ this board and `handoff.md` before crossing ownership or changing shared contrac
 
 ## Active requests — 2026-10-08
 
+- [ ] **APP-20261008-09 — Safe prepared chapter archive persistence.** Verification.
+  Shared Apple actor; immutable archive bytes, book/chapter/signature binding,
+  bounded reads, atomic writes, corrupt/mismatch cache misses and owned-only removal.
+  Verify isolated native durability, preservation, symlink/size guards and off-main IO.
+  No reader fast-path integration or 200 ms claim in this storage slice.
+  Nine native macOS tests passed, zero skips (`20-34-11` xcresult). Default 64 MiB
+  budget rejects new writes without eviction; file reads/writes cap at 8 MiB.
+  Physical iOS attempt stopped at locked-device preflight; no build/test executed.
+  Storage helper is delivered separately; iOS verification/integration still pending.
+
 - [ ] **APP-20261008-07 — Verify native reader readiness after process relaunch.** In progress.
   Two separate native macOS XCTest host executions, same hash-checked LOTR/Christie
   inputs and test-only book IDs. Require disk-prepared content and controls within
