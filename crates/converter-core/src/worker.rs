@@ -332,13 +332,15 @@ impl ConversionWorker {
         out: &Path,
         voice: Option<&str>,
         language: Option<&str>,
+        timeout: std::time::Duration,
     ) -> Result<(), WorkerError> {
         if engine == "edge" {
             let voice = voice.unwrap_or_else(|| default_edge_voice(language));
-            let rt = tokio::runtime::Builder::new_current_thread()
-                .enable_all()
-                .build()?;
-            match rt.block_on(crate::tts::synthesize_with_reference_client(text, voice)) {
+            match run_edge_synthesis(
+                crate::tts::synthesize_with_reference_client(text, voice),
+                &self.cancel,
+                timeout,
+            ) {
                 Ok(bytes) => {
                     fs::write(out, bytes).map_err(|error| {
                         WorkerError::Edge(EdgeError::Transport(format!(
@@ -349,7 +351,7 @@ impl ConversionWorker {
                     return Ok(());
                 }
                 Err(error) => {
-                    return Err(WorkerError::Edge(error));
+                    return Err(error);
                 }
             }
         }
@@ -404,8 +406,13 @@ impl ConversionWorker {
             } else {
                 180
             });
+        let timeout = std::time::Duration::from_secs(timeout_secs);
+        if engine == "edge" {
+            return self.synthesize(engine, text, out, voice, language, timeout);
+        }
         let result = std::thread::scope(|scope| {
-            let handle = scope.spawn(|| self.synthesize(engine, text, out, voice, language));
+            let handle =
+                scope.spawn(|| self.synthesize(engine, text, out, voice, language, timeout));
             let started = std::time::Instant::now();
             while !handle.is_finished() {
                 if self.cancel.is_cancelled()
@@ -437,6 +444,52 @@ impl ConversionWorker {
             sink(event)
         }
     }
+}
+
+fn run_edge_synthesis<F>(
+    synthesis: F,
+    cancel: &CancellationToken,
+    timeout: std::time::Duration,
+) -> Result<Vec<u8>, WorkerError>
+where
+    F: std::future::Future<Output = Result<Vec<u8>, EdgeError>>,
+{
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()?;
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        runtime.block_on(async {
+            let cancelled = async {
+                loop {
+                    if cancel.is_cancelled() {
+                        return;
+                    }
+                    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+                }
+            };
+            tokio::select! {
+                biased;
+                _ = cancelled => Err(WorkerError::Cancelled),
+                result = tokio::time::timeout(timeout, synthesis) => {
+                    match result {
+                        Ok(result) => result.map_err(WorkerError::Edge),
+                        Err(_) => Err(WorkerError::Edge(EdgeError::Transport(
+                            "chapter synthesis timed out".into(),
+                        ))),
+                    }
+                }
+            }
+        })
+    }))
+    .unwrap_or_else(|_| {
+        Err(WorkerError::Edge(EdgeError::Transport(
+            "synthesis thread panicked".into(),
+        )))
+    });
+    // DNS resolution can use Tokio's blocking pool. Dropping the runtime would
+    // wait for those calls even after the network future has been cancelled.
+    runtime.shutdown_background();
+    result
 }
 
 fn detect_language(text: &str) -> Option<&'static str> {
@@ -491,5 +544,129 @@ fn sanitize(value: &str) -> String {
         "book".into()
     } else {
         s
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn edge_synthesis_panic_remains_a_typed_worker_error() {
+        let result = run_edge_synthesis(
+            async { panic!("simulated synthesis panic") },
+            &CancellationToken::default(),
+            std::time::Duration::from_secs(1),
+        );
+        assert!(matches!(
+            result,
+            Err(WorkerError::Edge(EdgeError::Transport(message)))
+                if message == "synthesis thread panicked"
+        ));
+    }
+
+    #[test]
+    fn edge_timeout_returns_before_the_pending_synthesis_finishes() {
+        let started = std::time::Instant::now();
+        let result = run_edge_synthesis(
+            async {
+                tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+                Ok(vec![1, 2, 3])
+            },
+            &CancellationToken::default(),
+            std::time::Duration::from_millis(20),
+        );
+        assert!(matches!(
+            result,
+            Err(WorkerError::Edge(EdgeError::Transport(_)))
+        ));
+        assert!(
+            started.elapsed() < std::time::Duration::from_millis(250),
+            "timeout waited for synthesis: {:?}",
+            started.elapsed()
+        );
+    }
+
+    #[test]
+    fn edge_timeout_does_not_wait_for_blocking_runtime_cleanup() {
+        let started = std::time::Instant::now();
+        let result = run_edge_synthesis(
+            async {
+                tokio::task::spawn_blocking(|| {
+                    std::thread::sleep(std::time::Duration::from_millis(500));
+                });
+                std::future::pending::<Result<Vec<u8>, EdgeError>>().await
+            },
+            &CancellationToken::default(),
+            std::time::Duration::from_millis(20),
+        );
+        assert!(matches!(
+            result,
+            Err(WorkerError::Edge(EdgeError::Transport(_)))
+        ));
+        assert!(
+            started.elapsed() < std::time::Duration::from_millis(250),
+            "timeout waited for blocking cleanup: {:?}",
+            started.elapsed()
+        );
+    }
+
+    #[test]
+    fn edge_cancellation_drops_active_synthesis_without_waiting_for_it() {
+        struct DropSignal(Arc<std::sync::atomic::AtomicBool>);
+        impl Drop for DropSignal {
+            fn drop(&mut self) {
+                self.0.store(true, std::sync::atomic::Ordering::SeqCst);
+            }
+        }
+        let dropped = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let signal = DropSignal(dropped.clone());
+        let cancel = CancellationToken::default();
+        let started = std::time::Instant::now();
+        let result = std::thread::scope(|scope| {
+            let token = cancel.clone();
+            scope.spawn(move || {
+                std::thread::sleep(std::time::Duration::from_millis(20));
+                token.cancel();
+            });
+            run_edge_synthesis(
+                async move {
+                    let _signal = signal;
+                    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+                    Ok(vec![1])
+                },
+                &cancel,
+                std::time::Duration::from_secs(1),
+            )
+        });
+        assert!(matches!(result, Err(WorkerError::Cancelled)));
+        assert!(started.elapsed() < std::time::Duration::from_millis(250));
+        assert!(dropped.load(std::sync::atomic::Ordering::SeqCst));
+    }
+
+    #[test]
+    fn edge_cancelled_request_does_not_poll_synthesis() {
+        let cancel = CancellationToken::default();
+        cancel.cancel();
+        let result = run_edge_synthesis(
+            async { panic!("cancelled requests must not start synthesis") },
+            &cancel,
+            std::time::Duration::from_secs(1),
+        );
+        assert!(matches!(result, Err(WorkerError::Cancelled)));
+    }
+
+    #[test]
+    fn edge_deadline_preserves_success_and_original_engine_error() {
+        let cancel = CancellationToken::default();
+        let timeout = std::time::Duration::from_secs(1);
+        assert_eq!(
+            run_edge_synthesis(async { Ok(vec![1, 2]) }, &cancel, timeout).unwrap(),
+            vec![1, 2]
+        );
+        assert!(matches!(
+            run_edge_synthesis(async { Err(EdgeError::NoAudio) }, &cancel, timeout),
+            Err(WorkerError::Edge(EdgeError::NoAudio))
+        ));
     }
 }
