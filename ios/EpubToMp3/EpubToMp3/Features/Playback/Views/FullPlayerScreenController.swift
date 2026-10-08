@@ -36,7 +36,7 @@ final class FullPlayerScreenController: UIViewController {
     private let titleLabel = UILabel()
     private let authorLabel = UILabel()
     private let chapterLabel = UILabel()
-    private let slider = UISlider()
+    private let slider = CompactSlider()
     private let elapsedLabel = UILabel()
     private let remainingLabel = UILabel()
     private let previousChapterButton = UIButton(type: .system)
@@ -189,6 +189,7 @@ final class FullPlayerScreenController: UIViewController {
         slider.addTarget(self, action: #selector(scrubBegan), for: .touchDown)
         slider.addTarget(self, action: #selector(scrubChanged), for: .valueChanged)
         slider.addTarget(self, action: #selector(scrubEnded), for: [.touchUpInside, .touchUpOutside, .touchCancel])
+        slider.addTarget(self, action: #selector(scrubEnded), for: .editingDidEnd)
 
         [elapsedLabel, remainingLabel].forEach {
             $0.font = .monospacedDigitSystemFont(ofSize: 12, weight: .regular)

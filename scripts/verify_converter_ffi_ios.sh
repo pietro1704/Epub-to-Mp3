@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT="${MISE_PROJECT_ROOT:-$(cd "$(dirname "$0")/.." && pwd)}"
-ARTIFACT="$ROOT/target/aarch64-apple-ios/release/libconverter_ffi.dylib"
+ARTIFACT="${CONVERTER_FFI_IOS_ARTIFACT:-$ROOT/target/aarch64-apple-ios/release/libconverter_ffi.dylib}"
 SYMBOL="converter_session_convert_json"
 
 if [[ ! -f "$ARTIFACT" ]]; then

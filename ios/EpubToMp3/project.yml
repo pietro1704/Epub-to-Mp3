@@ -239,11 +239,26 @@ targets:
             destination: frameworks
         attributes: [CodeSignOnCopy]
       - path: ../../target/release/libconverter_ffi.dylib
+        # Device-only work must not build the unrelated macOS artifact.
+        # macOS packaging below still rejects a generated project without it.
+        optional: true
         destinationFilters: [macOS]
         buildPhase:
           copyFiles:
             destination: frameworks
         attributes: [CodeSignOnCopy]
+
+    postBuildScripts:
+      - name: Verify macOS Rust packaging
+        basedOnDependencyAnalysis: false
+        script: |
+          if [ "$PLATFORM_NAME" = "macosx" ]; then
+            artifact="$TARGET_BUILD_DIR/$FRAMEWORKS_FOLDER_PATH/libconverter_ffi.dylib"
+            if [ ! -f "$artifact" ]; then
+              echo "error: missing embedded macOS Rust artifact; build converter-ffi and regenerate the project" >&2
+              exit 1
+            fi
+          fi
 
     dependencies:
       - target: EpubToMp3Widget

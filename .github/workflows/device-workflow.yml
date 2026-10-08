@@ -1,0 +1,30 @@
+name: Native device workflow
+
+on:
+  push:
+    branches: [master, develop, 'feature/**', 'hotfix/**', 'release/**']
+    paths:
+      - 'tools/DeviceWorkflow/**'
+      - 'scripts/device-workflow.sh'
+      - '.github/workflows/device-workflow.yml'
+  pull_request:
+    paths:
+      - 'tools/DeviceWorkflow/**'
+      - 'scripts/device-workflow.sh'
+      - '.github/workflows/device-workflow.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: native-device-workflow-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  native-host-tests:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v7
+      - name: Test native workflow without a device or TTS requests
+        run: xcrun swift test --package-path tools/DeviceWorkflow --jobs 1

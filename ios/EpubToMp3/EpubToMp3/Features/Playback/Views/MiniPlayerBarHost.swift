@@ -3,7 +3,7 @@ import Combine
 import UIKit
 
 enum MiniPlayerLayoutMetrics {
-    static let contentHeight: CGFloat = 92
+    static let contentHeight: CGFloat = 112
     static let maximumBottomSafeAreaInset: CGFloat = 44
     /// Keeps the transport, chapter seek bar, and labels above the bottom
     /// safe area on iPhone.
@@ -26,7 +26,7 @@ final class MiniPlayerBarUIKitView: UIView, UIGestureRecognizerDelegate {
     private let nextButton = UIButton(type: .system)
     private let skipForwardButton = UIButton(type: .system)
     private let rateButton = UIButton(type: .system)
-    private let progressSlider = UISlider()
+    private let progressSlider = CompactSlider()
     private let elapsedLabel = UILabel()
     private let remainingLabel = UILabel()
     private let spinner = UIActivityIndicatorView(style: .medium)
@@ -186,6 +186,7 @@ final class MiniPlayerBarUIKitView: UIView, UIGestureRecognizerDelegate {
         progressSlider.addTarget(self, action: #selector(scrubBegan), for: .touchDown)
         progressSlider.addTarget(self, action: #selector(scrubChanged), for: .valueChanged)
         progressSlider.addTarget(self, action: #selector(scrubEnded), for: [.touchUpInside, .touchUpOutside, .touchCancel])
+        progressSlider.addTarget(self, action: #selector(scrubEnded), for: .editingDidEnd)
         [elapsedLabel, remainingLabel].forEach {
             $0.font = .monospacedDigitSystemFont(ofSize: 11, weight: .regular)
             $0.textColor = .secondaryLabel

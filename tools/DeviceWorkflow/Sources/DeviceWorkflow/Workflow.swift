@@ -12,6 +12,7 @@ public final class Workflow {
     private let resourceCheck: () throws -> Void
     private let heavyLock: URL
     private let environment: [String: String]
+    private let scopeObserver: ([BenchmarkCase]) -> Void
     private var cases: [BenchmarkCase] = []
     private var timings: [String: Double] = ["deviceWaitSeconds": 0]
     private var staged: String?
@@ -22,10 +23,12 @@ public final class Workflow {
                 identity: @escaping (Int32) -> String = HostProcess.identity,
                 resourceCheck: @escaping () throws -> Void = HostProcess.resourceCheck,
                 heavyLock: URL = URL(fileURLWithPath: "/tmp/epub2mp3.heavy-job.lock"),
-                environment: [String: String] = ProcessInfo.processInfo.environment) {
+                environment: [String: String] = ProcessInfo.processInfo.environment,
+                scopeObserver: @escaping ([BenchmarkCase]) -> Void = { _ in }) {
         self.root = root; self.options = options; self.runID = runID
         self.runner = runner; self.identity = identity; self.resourceCheck = resourceCheck
         self.heavyLock = heavyLock; self.environment = environment
+        self.scopeObserver = scopeObserver
         directory = options.reportDirectory.appendingPathComponent(runID)
     }
 
@@ -34,6 +37,7 @@ public final class Workflow {
         guard UUID(uuidString: runID) != nil else { throw WorkflowError("Invalid run UUID.") }
         let scopeStart = ProcessInfo.processInfo.systemUptime
         if options.action == .benchmark { cases = try BenchmarkCase.validate(options.rawCases, wholeBook: options.wholeBook, runID: runID) }
+        if options.action == .benchmark && !options.preview { scopeObserver(cases) }
         timings["scopeValidationSeconds"] = ProcessInfo.processInfo.systemUptime - scopeStart
         if options.preview { return ["status": "preview", "runID": runID, "wholeBook": options.wholeBook, "cases": cases.map(\.report)] }
         // All mutations, including disk guard and device preparation, are inside both leases.

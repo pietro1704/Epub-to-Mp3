@@ -2,6 +2,12 @@
 set -euo pipefail
 
 ./scripts/reader-change-check.sh --cached
+git diff --cached --check
+
+# Local commits use read-only gates. Python-based tooling and Ruff belong in CI.
+if [[ "${CI:-false}" != "true" ]]; then
+    exit 0
+fi
 
 if [[ -x .venv/bin/pre-commit ]]; then
     .venv/bin/pre-commit run --hook-stage pre-commit

@@ -56,6 +56,22 @@ final class DeviceWorkflowTests: XCTestCase {
         }
     }
 
+    func testValidatedScopeIsDisplayedBeforeAnyDeviceCommand() throws {
+        let path = try book().path
+        let selected = try options(["benchmark", "--case", path, "8", "9"])
+        var observed: [[BenchmarkCase]] = []
+        let subject = Workflow(root: root, options: selected, runID: runID,
+            runner: { _, _ in XCTFail("Scope display must precede device commands"); return CommandResult() },
+            identity: { _ in "stable owner start" },
+            resourceCheck: { throw WorkflowError("Stop after scope display") },
+            heavyLock: root.appendingPathComponent("heavy.lock"), environment: [:],
+            scopeObserver: { observed.append($0) })
+        XCTAssertThrowsError(try subject.execute())
+        XCTAssertEqual(observed.count, 1)
+        XCTAssertEqual(observed.first?.first?.start, 8)
+        XCTAssertEqual(observed.first?.first?.end, 9)
+    }
+
     func testPreviewDoesNotAcquireLockWriteReportOrRunCommands() throws {
         let path = try book().path
         let lease = try FileLease(root.appendingPathComponent("heavy.lock"))

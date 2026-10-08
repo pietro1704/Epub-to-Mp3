@@ -1053,74 +1053,24 @@ python3 ../../scripts/heavy_job_guard.py ios:simulator:test -- bash -e -c run_si
 """
 
 [tasks."ios:device:test"]
-description = "Build-for-testing + run UITests on the paired iPhone (real device). Set IOS_TESTS=... to filter, e.g. EpubToMp3UITests/ReaderFlickerUITests"
-run = """
-#!/bin/bash
-set -euo pipefail
-"${MISE_PROJECT_ROOT:-.}/scripts/ios_disk_guard.sh"
-cd ios/EpubToMp3
-# The .xcodeproj is generated (project.yml is the source of truth) and is
-# gitignored — regenerate it here so a device test never builds against a
-# stale project (e.g. a file deleted in project.yml but lingering in an old
-# .xcodeproj → "Build input file cannot be found").
-if ! command -v xcodegen >/dev/null 2>&1; then
-  echo "error: xcodegen not installed. Install via: brew install xcodegen"
-  exit 1
-fi
-xcodegen generate
-# Constrained Intel Macs panic under concurrent load — serialize this and warn.
-python3 ../../scripts/guard_ios_simulator_resources.py --device-test || exit $?
-DEVICE="${IOS_XCODE_DEVICE_ID:-${IOS_DEVICE_ID:-00008140-001128A022BA801C}}"
-# `devicectl` accepts either the CoreDevice identifier or hardware UDID, while
-# `xcodebuild` only accepts the latter. Keep the test task aligned with the
-# build task so the one device identifier works consistently across the iOS
-# workflow.
-if [[ -z "${IOS_XCODE_DEVICE_ID:-}" ]]; then
-  RESOLVED_DEVICE=$(xcrun devicectl device info details --device "$DEVICE" 2>/dev/null | awk -F': ' '/• udid:/ { print $2 }')
-  if [[ -n "$RESOLVED_DEVICE" ]]; then
-    DEVICE="$RESOLVED_DEVICE"
-  fi
-fi
-DD="./.build"
-ONLY=""
-if [[ -n "${IOS_TESTS:-}" ]]; then
-  IFS=',' read -ra T <<< "$IOS_TESTS"
-  for t in "${T[@]}"; do ONLY+=" -only-testing:$t"; done
-fi
-echo "ios:device:test → device: $DEVICE"
-run_device_tests() {
-  set -euo pipefail
-  if [[ "${IOS_SKIP_BUILD:-0}" != "1" ]]; then
-    BUILD_LOG="${TMPDIR:-/tmp}/epub-to-mp3-ios-device-test-build.log"
-    if ! xcodebuild -project EpubToMp3.xcodeproj -scheme EpubToMp3 -configuration Debug \\
-      -destination "id=$DEVICE" -derivedDataPath "$DD" -showBuildTimingSummary \\
-      build-for-testing >"$BUILD_LOG" 2>&1; then
-      echo "** DEVICE TEST BUILD FAILED **" >&2
-      echo "Build log: $BUILD_LOG" >&2
-      grep -nE "error:|fatal error:|BUILD FAILED|SwiftCompile|SwiftEmitModule" "$BUILD_LOG" | tail -200 || true
-      return 65
-    fi
-    tail -40 "$BUILD_LOG"
-  fi
-  TEST_LOG="${TMPDIR:-/tmp}/epub-to-mp3-ios-device-test-run.log"
-  # shellcheck disable=SC2086
-  if ! xcodebuild -project EpubToMp3.xcodeproj -scheme EpubToMp3 \\
-    -destination "id=$DEVICE" -derivedDataPath "$DD" $ONLY \\
-    test-without-building >"$TEST_LOG" 2>&1; then
-    echo "** DEVICE TESTS FAILED **" >&2
-    echo "Test log: $TEST_LOG" >&2
-    grep -iE "Test Suite|Test Case|passed|failed|error:|XCTAssert|skip|flicker" "$TEST_LOG" | tail -300 || true
-    return 65
-  fi
-  grep -iE "Test Suite|Test Case|passed|failed|error:|XCTAssert|skip|flicker" "$TEST_LOG" | tail -300 || true
-}
-export -f run_device_tests
-# The test runner executes in a child shell; export the destination so the
-# function cannot silently turn `id=$DEVICE` into the invalid `id=`.
-export DEVICE DD ONLY
-# Hold the single-heavy-job lock for the whole device run (PCIe panic guard).
-python3 ../../scripts/heavy_job_guard.py ios:device:test -- bash -c run_device_tests
-"""
+description = "Run focused physical-iPhone tests with readiness, signing, durable reports and serialized build. IOS_TESTS filters tests."
+run = "bash scripts/device-workflow.sh test"
+
+[tasks."ios:device:preflight"]
+description = "Check physical device readiness once; fail immediately when locked"
+run = "bash scripts/device-workflow.sh preflight"
+
+[tasks."ios:device:benchmark"]
+description = "Benchmark explicit EPUB/ranges on iPhone; --case BOOK START END, at most two chapters unless --whole-book"
+run = "bash scripts/device-workflow.sh benchmark"
+
+[tasks."ios:device:status"]
+description = "Read persisted device-workflow state and recorded process without querying the iPhone"
+run = "bash scripts/device-workflow.sh status"
+
+[tasks."ios:device:workflow:test"]
+description = "Run offline executable tests of scope, readiness, xctestrun isolation and workflow reports"
+run = "bash scripts/device-workflow.sh host-tests"
 
 [tasks."ios:test"]
 description = "Run all iOS XCTest/UI tests on a connected device, falling back to Simulator only when no device is available"
