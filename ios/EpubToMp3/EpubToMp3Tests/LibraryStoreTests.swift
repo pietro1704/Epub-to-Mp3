@@ -1,6 +1,25 @@
 import XCTest
 @testable import EpubToMp3
 
+private final class FailingImportCopyFileManager: FileManager, @unchecked Sendable {
+    var failReplacement = false
+
+    override func copyItem(at srcURL: URL, to dstURL: URL) throws {
+        if failReplacement {
+            try super.copyItem(at: srcURL, to: dstURL)
+            return
+        }
+        try Data("Partial copy".utf8).write(to: dstURL)
+        throw NSError(domain: NSCocoaErrorDomain, code: NSFileWriteOutOfSpaceError)
+    }
+
+    override func replaceItem(at originalItemURL: URL, withItemAt newItemURL: URL,
+                             backupItemName: String?, options: ItemReplacementOptions,
+                             resultingItemURL: AutoreleasingUnsafeMutablePointer<NSURL?>?) throws {
+        throw NSError(domain: NSCocoaErrorDomain, code: NSFileWriteOutOfSpaceError)
+    }
+}
+
 final class LibraryStoreTests: XCTestCase {
 
     private func ephemeralStore() -> (LibraryStore, UserDefaults, String) {
@@ -286,6 +305,82 @@ final class LibraryStoreTests: XCTestCase {
         XCTAssertEqual(try Data(contentsOf: durable), Data("durable import payload".utf8))
         XCTAssertTrue(durable.path.hasPrefix(root.path))
         XCTAssertEqual(durable.lastPathComponent, "Picked Book.epub")
+    }
+
+    func testFailedDurableReplacementPreservesPreviousFile() throws {
+        let manager = FileManager.default
+        let root = manager.temporaryDirectory.appendingPathComponent("library-replacement-\(UUID().uuidString)", isDirectory: true)
+        defer { try? manager.removeItem(at: root) }
+        let picked = root.appendingPathComponent("picked", isDirectory: true)
+        try manager.createDirectory(at: picked, withIntermediateDirectories: true)
+        let source = picked.appendingPathComponent("Book.epub")
+        let previous = Data("Previous valid book".utf8)
+        try previous.write(to: source)
+        let storage = root.appendingPathComponent("library", isDirectory: true)
+        let durable = try LibraryStore.persistImportedFileForLibrary(
+            originalURL: source, id: "replacement", fileType: .epub, baseDirectory: storage
+        )
+        let replacement = Data("Replacement book".utf8)
+        try replacement.write(to: source)
+
+        for failReplacement in [false, true] {
+            let failingManager = FailingImportCopyFileManager()
+            failingManager.failReplacement = failReplacement
+            XCTAssertThrowsError(try LibraryStore.persistImportedFileForLibrary(
+                originalURL: source, id: "replacement", fileType: .epub,
+                fileManager: failingManager, baseDirectory: storage
+            ))
+            XCTAssertEqual(try Data(contentsOf: durable), previous)
+            XCTAssertEqual(try Data(contentsOf: source), replacement)
+            XCTAssertEqual(try manager.contentsOfDirectory(atPath: durable.deletingLastPathComponent().path), ["Book.epub"])
+        }
+    }
+
+    func testDurableSelfReimportPreservesTheImportedFile() throws {
+        let manager = FileManager.default
+        let root = manager.temporaryDirectory.appendingPathComponent("library-self-import-\(UUID().uuidString)", isDirectory: true)
+        defer { try? manager.removeItem(at: root) }
+        try manager.createDirectory(at: root, withIntermediateDirectories: true)
+        let source = root.appendingPathComponent("Book.epub")
+        let contents = Data("Valid imported book".utf8)
+        try contents.write(to: source)
+        let storage = root.appendingPathComponent("library", isDirectory: true)
+        let durable = try LibraryStore.persistImportedFileForLibrary(
+            originalURL: source, id: "self-import", fileType: .epub, baseDirectory: storage
+        )
+        let reimported = try LibraryStore.persistImportedFileForLibrary(
+            originalURL: durable, id: "self-import", fileType: .epub, baseDirectory: storage
+        )
+        XCTAssertEqual(reimported, durable)
+        XCTAssertEqual(try Data(contentsOf: durable), contents)
+        XCTAssertEqual(try manager.contentsOfDirectory(atPath: durable.deletingLastPathComponent().path), ["Book.epub"])
+    }
+
+    func testSuccessfulDurableReplacementPreservesBookmarkDestination() throws {
+        let manager = FileManager.default
+        let root = manager.temporaryDirectory.appendingPathComponent("library-successful-replacement-\(UUID().uuidString)", isDirectory: true)
+        defer { try? manager.removeItem(at: root) }
+        try manager.createDirectory(at: root, withIntermediateDirectories: true)
+        let source = root.appendingPathComponent("Book.epub")
+        try Data("Previous book".utf8).write(to: source)
+        let storage = root.appendingPathComponent("library", isDirectory: true)
+        let durable = try LibraryStore.persistImportedFileForLibrary(
+            originalURL: source, id: "replacement", fileType: .epub, baseDirectory: storage
+        )
+        let bookmark = try durable.bookmarkData(options: .minimalBookmark, includingResourceValuesForKeys: nil, relativeTo: nil)
+        let replacement = Data("New complete book".utf8)
+        try replacement.write(to: source)
+        let replaced = try LibraryStore.persistImportedFileForLibrary(
+            originalURL: source, id: "replacement", fileType: .epub, baseDirectory: storage
+        )
+        XCTAssertEqual(replaced, durable)
+        XCTAssertEqual(try Data(contentsOf: durable), replacement)
+        XCTAssertEqual(try Data(contentsOf: source), replacement)
+        var stale = false
+        let resolved = try URL(resolvingBookmarkData: bookmark, options: [], relativeTo: nil, bookmarkDataIsStale: &stale)
+        XCTAssertEqual(resolved.standardizedFileURL.path, durable.standardizedFileURL.path)
+        XCTAssertEqual(try Data(contentsOf: resolved), replacement)
+        XCTAssertEqual(try manager.contentsOfDirectory(atPath: durable.deletingLastPathComponent().path), ["Book.epub"])
     }
 
     #if os(macOS)

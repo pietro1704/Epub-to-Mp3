@@ -1,6 +1,7 @@
 import Foundation
 import CryptoKit
 import Combine
+import Darwin
 
 #if canImport(UIKit)
 import UIKit
@@ -664,10 +665,25 @@ final class LibraryStore: ObservableObject {
         let fallbackName = "Book.\(fileType.rawValue)"
         let fileName = originalURL.lastPathComponent.isEmpty ? fallbackName : originalURL.lastPathComponent
         let destination = bookDirectory.appendingPathComponent(fileName, isDirectory: false)
-        if fileManager.fileExists(atPath: destination.path) {
-            try fileManager.removeItem(at: destination)
+        if originalURL.resolvingSymlinksInPath().standardizedFileURL.path
+            == destination.resolvingSymlinksInPath().standardizedFileURL.path {
+            return destination
         }
-        try fileManager.copyItem(at: originalURL, to: destination)
+        // Reserve an owned sibling directory on the same volume. A failed or
+        // partial copy cannot damage the previously imported book.
+        let staging = bookDirectory.appendingPathComponent(".import-\(UUID().uuidString)", isDirectory: true)
+        let reserved = staging.path.withCString { mkdir($0, mode_t(0o700)) }
+        guard reserved == 0 else {
+            throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno))
+        }
+        defer { try? fileManager.removeItem(at: staging) }
+        let stagedFile = staging.appendingPathComponent(fileName)
+        try fileManager.copyItem(at: originalURL, to: stagedFile)
+        if fileManager.fileExists(atPath: destination.path) {
+            _ = try fileManager.replaceItemAt(destination, withItemAt: stagedFile)
+        } else {
+            try fileManager.moveItem(at: stagedFile, to: destination)
+        }
         return destination
     }
 
