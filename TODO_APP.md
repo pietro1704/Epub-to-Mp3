@@ -39,16 +39,18 @@ this board and `handoff.md` before crossing ownership or changing shared contrac
   - [ ] Delivery: inspected diff, synchronized behavior, commit/push.
 - [ ] **APP-20261008-02 — Quality/performance goal.** In progress.
   Acceptance/evidence: `docs/plans/2026-10-08-app-quality-performance.md`.
-  Remaining: physical/full-sequence playback verification, lifecycle flush behavior,
-  relaunch readiness and the observed conversion performance regression.
+  Remaining: relaunch readiness and the observed conversion performance regression.
+  Full physical seven-class sequence passed: `D379076E-DD02-49A1-9DA3-BAA4C728648F`,
+  112 passed, zero failures, one opt-in existing-audio measurement skipped;
+  no rebuild, 54.64 s total. Earlier playback failures did not reproduce.
   Bounded physical synthesis comparison completed: `699FF2AE-0A79-406A-889C-FEF3EF01110F`,
   exact four playable chapters, one passing test, zero skips, 451.39 s total,
   no rebuild/audio reuse. See APP-20261008-06; performance is not marked resolved.
   Latest device evidence: `0132B263-6FB2-49B1-A195-9627078459AE` (two tests passed)
   and `B882C802-84BE-4447-A0BD-23387F54BFF1` (35 seek tests passed), zero skips.
   Replacement-player regression and initial AVPlayer diagnostics verified on iPhone;
-  the suspected old-player session failure did not reproduce. Full-sequence evidence
-  remains required; this does not establish the earlier failure's root cause.
+  the suspected old-player session failure did not reproduce. The full sequence
+  also passed above; neither establishes the earlier failure's root cause.
   Lifecycle termination barrier: one macOS XCTest passed, zero skips,
   `Test-EpubToMp3Mac-2026.10.08_19-25-41--0300.xcresult`. The isolated regression
   invokes the real termination callback while index encoding is blocked.

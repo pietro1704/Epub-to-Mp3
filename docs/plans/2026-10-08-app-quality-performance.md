@@ -80,8 +80,12 @@ as APP-20261008-06. Do not declare performance resolved or synthesize larger ran
 Historical slice limits below describe their original verification time, not the
 current task status. Physical runs `0132B263-6FB2-49B1-A195-9627078459AE`
 (two tests) and `B882C802-84BE-4447-A0BD-23387F54BFF1` (35 playback tests)
-passed with zero skips. Replacement-player session deactivation did not reproduce;
-the earlier 109-test sequence is not yet verified green. Do not claim its cause fixed.
+passed with zero skips. Replacement-player session deactivation did not reproduce.
+The same seven-class sequence now passed physically in
+`D379076E-DD02-49A1-9DA3-BAA4C728648F`: 112 passed, zero failures, one skip
+(`AudioPlayerObservationPrivacyTests/testOptInExistingChapterPlaybackLatencyAndMemory`,
+requires explicit benchmark inputs). No rebuild; 54.64 s total, 51.92 s tests.
+Earlier playback failures did not recur; their root cause is not established.
 Lifecycle termination passed one isolated native macOS test; three physical iOS
 tests passed in `E06BBEA9-291E-41F8-A2B8-8BBE5D3890E9`, zero skips. The real
 callbacks flush queued isolated writes; expiration's generation-check method is
