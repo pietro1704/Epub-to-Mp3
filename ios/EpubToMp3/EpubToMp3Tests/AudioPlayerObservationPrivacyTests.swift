@@ -1,8 +1,166 @@
 #if canImport(AVFoundation) && canImport(MediaPlayer)
 import AVFoundation
 import Foundation
+import CryptoKit
+import Darwin
 import XCTest
 @testable import EpubToMp3
+
+// Shared only by the two existing native observation test suites. Inputs are
+// explicit local artifacts, not conversion jobs or whole-book manifests.
+struct NativePlaybackBenchmarkInput: Codable, Sendable {
+    struct Chapter: Codable, Sendable {
+        let sourceIndex: Int
+        let path: String
+        var sha256: String
+    }
+    struct Book: Codable, Sendable {
+        let name: String
+        let sourcePath: String
+        let sourceSHA256: String
+        var chapterStart: Int
+        var chapterEnd: Int
+        var chapters: [Chapter]
+    }
+    let schemaVersion: Int
+    let phase: String
+    let baselineExecutablePath: String?
+    var books: [Book]
+
+    static let environmentKey = "EPUB2MP3_NATIVE_PLAYBACK_BENCHMARK_SPEC"
+
+    static func optIn() throws -> Self {
+        guard let json = ProcessInfo.processInfo.environment[environmentKey] else {
+            throw XCTSkip("Provide \(environmentKey) with explicit local EPUB/MP3 paths and SHA-256 hashes.")
+        }
+        let input = try JSONDecoder().decode(Self.self, from: Data(json.utf8))
+        try input.validateScope()
+        try input.validateRequestedBooks()
+        try input.validateFiles()
+        return input
+    }
+
+    func validateRequestedBooks() throws {
+        let expected = [
+            "lotr": "3e1c676b270dfa3fe555eba4d0cb993486e9f00facb7cc92eef250e64efb7c9e",
+            "christie": "55417053355de78768a0823d3cd203fde5c80bd8026407ffb5766b3f730d11da",
+        ]
+        for book in books {
+            guard expected[book.name] == book.sourceSHA256.lowercased() else {
+                throw Self.invalid("Benchmark requires the literal requested EPUB, not a renamed fixture")
+            }
+        }
+    }
+
+    func validateFiles() throws {
+        for book in books {
+            guard try Self.hash(book.sourcePath) == book.sourceSHA256.lowercased() else {
+                throw Self.invalid("EPUB hash mismatch for \(book.name)")
+            }
+            for chapter in book.chapters {
+                guard try Self.hash(chapter.path) == chapter.sha256.lowercased() else {
+                    throw Self.invalid("MP3 hash mismatch at source index \(chapter.sourceIndex)")
+                }
+            }
+        }
+    }
+
+    func validateScope() throws {
+        guard schemaVersion == 1, ["baseline", "candidate"].contains(phase), books.count == 2,
+              Set(books.map(\.name)) == Set(["lotr", "christie"]),
+              Set(books.map { $0.sourceSHA256.lowercased() }).count == 2 else { throw Self.invalid("Invalid benchmark scope") }
+        var paths = Set<String>()
+        for book in books {
+            let range = book.name == "lotr" ? 8...9 : 6...7
+            guard book.chapterStart == range.lowerBound, book.chapterEnd == range.upperBound,
+                  book.chapters.count == 2, book.chapters.map(\.sourceIndex) == Array(range) else {
+                throw Self.invalid("Select only LOTR 8-9 and Christie 6-7 in source order")
+            }
+            for (path, digest, ext) in [(book.sourcePath, book.sourceSHA256, "epub")]
+                + book.chapters.map({ ($0.path, $0.sha256, "mp3") }) {
+                guard (path as NSString).isAbsolutePath, URL(fileURLWithPath: path).pathExtension.lowercased() == ext,
+                      paths.insert(path).inserted, digest.count == 64,
+                      digest.allSatisfy({ $0.isHexDigit }) else { throw Self.invalid("Invalid local path or SHA-256") }
+            }
+        }
+    }
+
+    static func hash(_ path: String) throws -> String {
+        let file = try FileHandle(forReadingFrom: URL(fileURLWithPath: path))
+        defer { try? file.close() }
+        var digest = SHA256()
+        while let data = try file.read(upToCount: 65_536), !data.isEmpty { digest.update(data: data) }
+        return digest.finalize().map { String(format: "%02x", $0) }.joined()
+    }
+
+    static func invalid(_ message: String) -> NSError {
+        NSError(domain: "NativePlaybackBenchmark", code: 1, userInfo: [NSLocalizedDescriptionKey: message])
+    }
+}
+
+struct NativePlaybackBenchmarkReport: Encodable {
+    struct Point: Encodable {
+        let book: String
+        let event: String
+        let elapsedNanoseconds: UInt64
+        let residentBytes: UInt64?
+        let physicalFootprintBytes: UInt64?
+        let memoryStatus: Int32
+        let journeys: [LatencyObservation.Journey]
+
+        static func capture(book: String, event: String, started: UInt64,
+                            journeys: [LatencyObservation.Journey] = []) -> Self {
+            let elapsed = DispatchTime.now().uptimeNanoseconds - started
+            var info = task_vm_info_data_t()
+            var count = mach_msg_type_number_t(MemoryLayout<task_vm_info_data_t>.size / MemoryLayout<integer_t>.size)
+            let status = withUnsafeMutablePointer(to: &info) { pointer in
+                pointer.withMemoryRebound(to: integer_t.self, capacity: Int(count)) {
+                    task_info(mach_task_self_, task_flavor_t(TASK_VM_INFO), $0, &count)
+                }
+            }
+            return Self(book: book, event: event, elapsedNanoseconds: elapsed,
+                        residentBytes: status == KERN_SUCCESS ? info.resident_size : nil,
+                        physicalFootprintBytes: status == KERN_SUCCESS ? info.phys_footprint : nil,
+                        memoryStatus: status, journeys: journeys)
+        }
+    }
+    let input: NativePlaybackBenchmarkInput
+    let executablePath: String
+    let executableSHA256: String
+    let baselineStatus: String
+    let comparison = "unmeasured: requires paired reports from the actual baseline and candidate executables"
+    let clock = "client monotonic; audio progress is not acoustic; memory is point sampled, not peak; cold means prepared-reader cache absent, not OS cache flushed"
+    var status = "partial"
+    var points: [Point] = []
+
+    init(input: NativePlaybackBenchmarkInput) throws {
+        self.input = input
+        let executable = try XCTUnwrap(Bundle.main.executableURL).resolvingSymlinksInPath()
+        executablePath = executable.path
+        executableSHA256 = try NativePlaybackBenchmarkInput.hash(executable.path)
+        if let baseline = input.baselineExecutablePath, FileManager.default.isExecutableFile(atPath: baseline) {
+            let sameExecutable = URL(fileURLWithPath: baseline).resolvingSymlinksInPath() == executable
+            baselineStatus = sameExecutable
+                ? (input.phase == "baseline" ? "this_run_is_baseline" : "unmeasured: baseline path is the current candidate")
+                : "available_not_executed"
+            if input.phase == "baseline", !sameExecutable {
+                throw NativePlaybackBenchmarkInput.invalid("Run the supplied baseline executable; do not label the candidate as baseline")
+            }
+        } else {
+            baselineStatus = "unmeasured: baseline executable unavailable"
+            if input.phase == "baseline" { throw NativePlaybackBenchmarkInput.invalid("Baseline executable is required") }
+        }
+    }
+
+    func attachment(_ name: String) throws -> XCTAttachment {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        let attachment = XCTAttachment(data: try encoder.encode(self), uniformTypeIdentifier: "public.json")
+        attachment.name = name
+        attachment.lifetime = .keepAlways
+        return attachment
+    }
+}
 
 #if os(iOS)
 private final class AudioSessionEventTrace: @unchecked Sendable {
@@ -70,6 +228,111 @@ private final class ObservationPrivacyProtocol: URLProtocol {
 }
 
 final class AudioPlayerObservationPrivacyTests: XCTestCase {
+    func testBenchmarkInputScopeAndHashesWithoutMeasuringPerformance() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let books = try ["lotr", "christie"].map { name -> NativePlaybackBenchmarkInput.Book in
+            let source = root.appendingPathComponent("\(name).epub")
+            try Data(name.utf8).write(to: source)
+            let range = name == "lotr" ? 8...9 : 6...7
+            let chapters = try range.map { index -> NativePlaybackBenchmarkInput.Chapter in
+                let path = root.appendingPathComponent("\(name)-\(index).mp3")
+                try Data("\(name)-\(index)".utf8).write(to: path)
+                return .init(sourceIndex: index, path: path.path, sha256: try NativePlaybackBenchmarkInput.hash(path.path))
+            }
+            return .init(name: name, sourcePath: source.path, sourceSHA256: try NativePlaybackBenchmarkInput.hash(source.path),
+                         chapterStart: range.lowerBound, chapterEnd: range.upperBound, chapters: chapters)
+        }
+        var input = NativePlaybackBenchmarkInput(schemaVersion: 1, phase: "candidate", baselineExecutablePath: nil, books: books)
+        XCTAssertThrowsError(try input.validateRequestedBooks(), "Named synthetic fixtures must not impersonate requested books")
+        try input.validateScope()
+        let roundTrip = try JSONDecoder().decode(NativePlaybackBenchmarkInput.self, from: JSONEncoder().encode(input))
+        try roundTrip.validateScope()
+        try roundTrip.validateFiles()
+        XCTAssertEqual(try NativePlaybackBenchmarkInput.hash(books[0].chapters[0].path), books[0].chapters[0].sha256)
+        try Data("changed fixture bytes".utf8).write(to: URL(fileURLWithPath: books[0].chapters[0].path))
+        XCTAssertThrowsError(try roundTrip.validateFiles())
+        input.books[0].chapterEnd = 10
+        XCTAssertThrowsError(try input.validateScope())
+        input.books[0] = books[0]
+        input.books[0].chapters.append(books[0].chapters[0])
+        XCTAssertThrowsError(try input.validateScope())
+    }
+
+    @MainActor
+    func testOptInExistingChapterPlaybackLatencyAndMemory() async throws {
+        let input = try NativePlaybackBenchmarkInput.optIn()
+        var report = try NativePlaybackBenchmarkReport(input: input)
+        let identifier = "NativePlaybackBenchmark-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: identifier))
+        let standard = UserDefaults.standard
+        let keys = [ReaderSessionState.currentlyReadingBookIDKey, AudioPlayer.currentBookIDDefaultsKey,
+                    AudioPlayer.currentChapterIndexDefaultsKey, AudioPlayer.readerCurrentChapterIndexDefaultsKey,
+                    AudioPlayer.readerCurrentPageRatioDefaultsKey, AudioPlayer.readerCurrentSentenceIdDefaultsKey]
+        let saved = keys.map { standard.object(forKey: $0) }
+        let widget = UserDefaults(suiteName: WidgetDataSync.appGroupID)
+        let previousWidgetBook = widget?.object(forKey: "currentlyPlayingBookId")
+        widget?.set("", forKey: "currentlyPlayingBookId")
+        defer {
+            for (key, value) in zip(keys, saved) { standard.set(value, forKey: key) }
+            widget?.set(previousWidgetBook, forKey: "currentlyPlayingBookId")
+            defaults.removePersistentDomain(forName: identifier)
+            do { add(try report.attachment("native-existing-audio-benchmark.json")) }
+            catch { XCTFail("Could not attach playback measurements: \(error)") }
+        }
+        for book in input.books {
+            let player = AudioPlayer(resumeStore: ResumeStore(storage: UserDefaultsResumeStorage(defaults: defaults)))
+            defer { player.stop() }
+            let knownIDs = Set(LatencyObservationStore.shared.snapshot().map(\.id))
+            let chapters = try await book.chapters.asyncBenchmarkChapters()
+            let snapshot = JobSnapshot(jobId: UUID().uuidString, state: "finished", bookTitle: book.name, bookAuthor: nil,
+                coverUrl: nil, coverMimeType: nil, engine: nil, voice: nil, language: nil,
+                progressPercent: 100, chaptersTotal: 2, chaptersCompleted: 2, chapterProgress: chapters,
+                outputs: nil, logUrl: nil, error: nil, lastActivityAt: nil)
+            standard.set(identifier, forKey: ReaderSessionState.currentlyReadingBookIDKey)
+            standard.set(identifier, forKey: AudioPlayer.currentBookIDDefaultsKey)
+            let started = DispatchTime.now().uptimeNanoseconds
+            report.points.append(.capture(book: book.name, event: "before_play", started: started))
+            player.play(snapshot: snapshot, restoreAutoplay: false)
+            player.resume()
+            try await benchmarkWait {
+                player.positionSeconds > 0 && LatencyObservationStore.shared.snapshot().contains {
+                    !knownIDs.contains($0.id) && $0.records.contains { $0.transition == .audioAudible }
+                }
+            }
+            report.points.append(.capture(book: book.name, event: "first_progressing_audio", started: started,
+                                          journeys: LatencyObservationStore.shared.snapshot().filter { !knownIDs.contains($0.id) }))
+            player.pause()
+            for (event, expectedIndex, target) in [("seek", 0, 2.0), ("next_chapter", 1, 0.0), ("previous_chapter", 0, 0.0)] {
+                let actionStart = DispatchTime.now().uptimeNanoseconds
+                if event == "seek" { player.seek(to: target) }
+                else if event == "next_chapter" { player.nextChapter() }
+                else { player.previousChapter() }
+                try await benchmarkWait {
+                    guard let item = player.testHook_currentPlayerItem(), let asset = item.asset as? AVURLAsset else { return false }
+                    let time = item.currentTime().seconds
+                    return !player.isSeeking && asset.url == URL(fileURLWithPath: book.chapters[expectedIndex].path)
+                        && item.status == .readyToPlay && time.isFinite
+                        && (event != "seek" || abs(time - target) < 0.1)
+                }
+                XCTAssertFalse(player.isPlaying, "Paused navigation must not autoplay.")
+                report.points.append(.capture(book: book.name, event: event, started: actionStart,
+                                              journeys: LatencyObservationStore.shared.snapshot().filter { !knownIDs.contains($0.id) }))
+            }
+        }
+        report.status = "completed"
+    }
+
+    @MainActor
+    private func benchmarkWait(_ ready: () -> Bool) async throws {
+        for _ in 0..<200 {
+            if ready() { return }
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+        throw NativePlaybackBenchmarkInput.invalid("Real AVPlayer readiness timed out; do not report a latency success")
+    }
+
     @MainActor
     func testPlaybackAndSeekKeepJourneyDiagnosticsLocalByDefault() async throws {
 #if os(iOS)
@@ -194,6 +457,25 @@ final class AudioPlayerObservationPrivacyTests: XCTestCase {
             $0.url?.lastPathComponent == "journey-observations"
         }
         XCTAssertTrue(diagnosticRequests.isEmpty, "Routine playback must not upload local journey diagnostics.")
+    }
+}
+
+private extension Array where Element == NativePlaybackBenchmarkInput.Chapter {
+    func asyncBenchmarkChapters() async throws -> [JobSnapshot.Chapter] {
+        var chapters: [JobSnapshot.Chapter] = []
+        for (offset, input) in enumerated() {
+            let asset = AVURLAsset(url: URL(fileURLWithPath: input.path))
+            let playable = try await asset.load(.isPlayable)
+            let time = try await asset.load(.duration)
+            let duration = time.seconds
+            guard playable, duration.isFinite, duration > 2 else {
+                throw NativePlaybackBenchmarkInput.invalid("Existing MP3 must be playable and longer than the seek target")
+            }
+            chapters.append(.init(index: offset, name: "source-\(input.sourceIndex)", status: "completed",
+                downloadUrl: URL(fileURLWithPath: input.path).absoluteString, chars: 0, charsProcessed: 0,
+                progressRatio: 1, durationSeconds: duration, startedAt: nil, completedAt: nil))
+        }
+        return chapters
     }
 }
 #endif

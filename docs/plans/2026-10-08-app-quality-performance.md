@@ -444,3 +444,25 @@ Physical playback failures remain unresolved. A two-instance session-release
 regression is prepared and typechecks for iOS but has not run on the phone.
 Lifecycle hooks and actual latency/memory measurements remain uncommitted and
 unverified; no goal completion or performance improvement is claimed.
+
+### Existing-audio playback measurement — macOS candidate only
+
+One actual native XCTest passed with zero skips using the requested EPUB hashes
+and exactly LOTR source indices 8–9 / Christie 6–7. It reused the four validated
+MP3s; no source, model, download or audio was replaced and no synthesis occurred.
+Evidence: `.reports/mobile-audio/cached-playback-candidate.b2TUaH/tests.xcresult`
+and its exported `native-existing-audio-benchmark` JSON attachment.
+
+Observed first progressing audio: LOTR 620.97 ms, Christie 343.86 ms. Seek:
+38.17 / 42.10 ms; next chapter: 27.62 / 28.35 ms; previous: 23.44 / 26.04 ms.
+Point-sampled physical footprint ranged from 10.18 to 14.21 MiB, RSS from 35.71
+to 43.12 MiB, with successful native task_info queries. Samples are not peak
+memory; AVPlayer progress is not an acoustic latency measurement. Debug macOS
+results cannot stand in for iPhone behavior or cold conversion latency.
+
+The initial run skipped because xcodebuild did not forward the process environment.
+The final run reused build-for-testing products with explicit input environment
+in an isolated version-1 Mac xctestrun, and executed exactly one test. Inputs are
+literal/hash-checked and reports retain executable identity and journeys.
+Baseline executable/report is unavailable, so comparison remains explicitly
+unmeasured. Book-opening and physical-phone measurements are still pending.
