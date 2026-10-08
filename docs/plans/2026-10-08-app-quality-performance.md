@@ -362,3 +362,22 @@ Final diff review and whitespace checks passed. No user-data cleanup/synthesis.
 Limits: index JSON encoding/loading still synchronous; iOS-only UI branches and
 physical-device responsiveness/performance remain pending. Synchronous legacy
 import remains compatible and is not claimed to be nonblocking.
+
+### Slice 6b — segment audio persistence off main
+
+Production streaming callbacks now await a per-player serial file writer before
+acknowledging a chunk. Playback publishes only after writing finishes; capacity,
+ordering, duplicate preservation and cancellation remain explicit. Session
+generation fences reject stale completions; old owned temporary directories are
+cleaned on the writer after cancellation. The disabled legacy coordinator is
+not a product caller and was left unchanged.
+
+The same 60-test native run above covers five new writer regressions plus the
+existing enqueue and real view-model callback tests: off-main blocked write with
+responsive main actor, ordered publication, stale-session cleanup, write failure,
+duplicate preservation and cancelled capacity waiters. Diff/ownership review
+passed. Synchronous enqueue remains only for compatibility/tests; production
+iOS/macOS streaming sinks await the async API.
+
+Limits: successful file writing is not an fsync/power-loss guarantee. Physical
+iPhone verification and latency/memory comparisons are still pending.

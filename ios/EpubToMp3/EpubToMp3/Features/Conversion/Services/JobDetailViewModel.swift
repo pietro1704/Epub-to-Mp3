@@ -16,7 +16,7 @@ final class JobDetailViewModel: ObservableObject {
     /// without coupling this view model to UIKit or AppKit.
     var onSnapshot: ((JobSnapshot) -> Void)?
     var onStreamRequestAuthorization: ((String, Int, Int) -> StreamingDiagnosticsSession.Authorization?)?
-    var onStreamChunk: ((Data, Int, Int, LatencyObservation.StreamPublication?, LatencyObservation.StreamRequestReceipt?) -> Void)?
+    var onStreamChunk: (@MainActor (Data, Int, Int, LatencyObservation.StreamPublication?, LatencyObservation.StreamRequestReceipt?) async -> Bool)?
     var onStreamFinished: ((JobSnapshot) -> Void)?
 
     private var streamTask: Task<Void, Never>?
@@ -102,14 +102,15 @@ final class JobDetailViewModel: ObservableObject {
                                 authorization: authorization
                             )
                             guard let self, !Task.isCancelled else { return }
-                            seen.insert(key)
                             // API chapter indexes are 1-based; AudioPlayer's
                             // segment queue is explicitly 0-based.
                             let publication = chunk.observation.flatMap {
                                 LatencyObservation.StreamPublication(publicationID: chunk.id, producer: $0)
                             }
-                            self.onStreamChunk?(download.data, max(0, chapter.index - 1), chunk.index,
-                                                publication, download.receipt)
+                            let accepted = await self.onStreamChunk?(download.data, max(0, chapter.index - 1), chunk.index,
+                                                                     publication, download.receipt) ?? true
+                            guard !Task.isCancelled, accepted else { return }
+                            seen.insert(key)
                         }
                     } catch {
                         // The manifest may not exist until synthesis starts;

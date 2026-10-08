@@ -97,8 +97,8 @@ final class JobDetailScreenController: UITableViewController {
                                                          chapterIndex: chapterIndex, segmentIndex: segmentIndex)
         }
         viewModel.onStreamChunk = { [weak self] data, chapterIndex, segmentIndex, publication, receipt in
-            guard let self, let generation = self.streamDeliveryGeneration else { return }
-            self.player.enqueueRemoteSegment(
+            guard let self, let generation = self.streamDeliveryGeneration else { return false }
+            return await self.player.enqueueRemoteSegmentAsync(
                 data: data,
                 jobID: self.jobId,
                 generation: generation,

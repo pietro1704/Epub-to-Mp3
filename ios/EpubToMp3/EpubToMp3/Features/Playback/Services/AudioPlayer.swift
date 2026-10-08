@@ -11,6 +11,34 @@ import AppKit
 
 private let audioLog = Logger(subsystem: "epub2mp3", category: "AudioPlayer")
 
+/// File IO is isolated from playback/UI state and serialized per player.
+actor SegmentFileWriter {
+    private let write: @Sendable (Data, URL) throws -> Void
+
+    init(write: @escaping @Sendable (Data, URL) throws -> Void = { data, url in
+        try data.write(to: url)
+    }) {
+        self.write = write
+    }
+
+    func persist(_ data: Data, to url: URL) throws {
+        try Task.checkCancellation()
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(),
+                                                withIntermediateDirectories: true)
+        do {
+            try write(data, url)
+            try Task.checkCancellation()
+        } catch {
+            try? FileManager.default.removeItem(at: url)
+            throw error
+        }
+    }
+
+    func remove(_ url: URL) {
+        try? FileManager.default.removeItem(at: url)
+    }
+}
+
 /// Playback rates surfaced by the horizontal rate picker.
 enum PlaybackRate: Float, CaseIterable, Identifiable {
     case x080 = 0.8
@@ -352,6 +380,7 @@ final class AudioPlayer: ObservableObject {
     /// Temp directory for segment MP3 files written by `enqueueSegment`.
     /// Created lazily; cleaned up in `teardownPlayer()`.
     private var segmentTempDir: URL?
+    private var segmentDirectoryUsesAsyncIO = false
 
     private let resumeStore: ResumeStore
     /// Resolved backend base URL used to turn relative `downloadUrl`
@@ -452,7 +481,10 @@ final class AudioPlayer: ObservableObject {
     /// bounded capacity. The continuations resume as AVQueuePlayer accepts
     /// deferred items, so conversion pauses without deleting audio or
     /// accumulating an unbounded number of temporary files.
-    private var segmentCapacityWaiters: [CheckedContinuation<Bool, Never>] = []
+    private var segmentCapacityWaiters: [(UUID, CheckedContinuation<Bool, Never>)] = []
+    private let segmentFileWriter: SegmentFileWriter
+    private var segmentPersistenceTail: Task<Bool, Never>?
+    private var segmentPersistenceTasks: [UUID: Task<Bool, Never>] = [:]
     /// Requested playable-list index from the last `play(snapshot:)`
     /// call that arrived before any MP3 URL existed. When the first
     /// playable snapshot lands via SSE, `updateSnapshot` uses this to
@@ -543,10 +575,12 @@ final class AudioPlayer: ObservableObject {
         backendBaseURL: URL? = nil,
         speechFallback: SpeechFallbackPlayer? = nil,
         playbackClock: PlaybackClock? = nil,
-        artifactStore: LocalAudioArtifactStore? = nil
+        artifactStore: LocalAudioArtifactStore? = nil,
+        segmentFileWriter: SegmentFileWriter? = nil
     ) {
         self.playbackClock = playbackClock ?? PlaybackClock()
         self.artifactStore = artifactStore
+        self.segmentFileWriter = segmentFileWriter ?? SegmentFileWriter()
         self.resumeStore = resumeStore
         self.backendBaseURL = backendBaseURL
         // Default-construct on MainActor (this init's isolation). A
@@ -2353,11 +2387,94 @@ final class AudioPlayer: ObservableObject {
                        publication: publication, receipt: receipt)
     }
 
+    /// Production callers await this acknowledgement before downloading more
+    /// bytes. A stale completion must never attach audio to another session.
+    func enqueueRemoteSegmentAsync(
+        data: Data, jobID: String, generation: UUID, chapterIndex: Int, segmentIndex: Int,
+        publication: LatencyObservation.StreamPublication?,
+        receipt: LatencyObservation.StreamRequestReceipt? = nil
+    ) async -> Bool {
+        guard generation == remoteSegmentGeneration, snapshot?.jobId == jobID else { return false }
+        return await enqueueSegmentAsync(data: data, chapterIndex: chapterIndex, segmentIndex: segmentIndex,
+                                         publication: publication, receipt: receipt)
+    }
+
+    func enqueueSegmentAsync(
+        data: Data, chapterIndex: Int, segmentIndex: Int, sentenceId: String? = nil,
+        publication: LatencyObservation.StreamPublication? = nil,
+        receipt: LatencyObservation.StreamRequestReceipt? = nil
+    ) async -> Bool {
+        guard !Task.isCancelled else { return false }
+        let generation = remotePlaybackGeneration
+        let requestID = UUID()
+        let previous = segmentPersistenceTail
+        let operation = Task { @MainActor [weak self] in
+            if let previous { _ = await previous.value }
+            guard let self, !Task.isCancelled, self.remotePlaybackGeneration == generation else { return false }
+            let identity = SegmentBacklog.Identity(chapterIndex: chapterIndex, segmentIndex: segmentIndex)
+            if self.segmentFiles[identity] != nil { return true }
+            guard self.prepareSegment(data: data, identity: identity),
+                  await self.waitForSegmentCapacity(), !Task.isCancelled,
+                  self.remotePlaybackGeneration == generation else { return false }
+            let file = self.segmentFileURL(identity: identity)
+            self.segmentDirectoryUsesAsyncIO = true
+            do {
+                try await self.segmentFileWriter.persist(data, to: file)
+            } catch {
+                if !Task.isCancelled, self.remotePlaybackGeneration == generation {
+                    self.lastError = .segmentWriteFailed
+                }
+                return false
+            }
+            guard !Task.isCancelled, self.remotePlaybackGeneration == generation else {
+                await self.segmentFileWriter.remove(file)
+                return false
+            }
+            // The synchronous compatibility API may have accepted a duplicate
+            // while this operation was suspended. Keep the original URL.
+            guard self.segmentFiles[identity] == nil else {
+                await self.segmentFileWriter.remove(file)
+                return true
+            }
+            self.acceptPersistedSegment(file, identity: identity, byteCount: data.count,
+                                        sentenceId: sentenceId, publication: publication, receipt: receipt)
+            return true
+        }
+        segmentPersistenceTail = operation
+        segmentPersistenceTasks[requestID] = operation
+        let accepted = await withTaskCancellationHandler {
+            await operation.value
+        } onCancel: {
+            operation.cancel()
+        }
+        segmentPersistenceTasks.removeValue(forKey: requestID)
+        if segmentPersistenceTasks.isEmpty { segmentPersistenceTail = nil }
+        return accepted
+    }
+
     func enqueueSegment(
         data: Data, chapterIndex: Int, segmentIndex: Int, sentenceId: String? = nil,
         publication: LatencyObservation.StreamPublication? = nil,
         receipt: LatencyObservation.StreamRequestReceipt? = nil
     ) {
+        let identity = SegmentBacklog.Identity(chapterIndex: chapterIndex, segmentIndex: segmentIndex)
+        guard prepareSegment(data: data, identity: identity) else { return }
+        let file = segmentFileURL(identity: identity)
+        do {
+            try FileManager.default.createDirectory(at: file.deletingLastPathComponent(),
+                                                    withIntermediateDirectories: true)
+            try data.write(to: file)
+        } catch {
+            lastError = .segmentWriteFailed
+            return
+        }
+        acceptPersistedSegment(file, identity: identity, byteCount: data.count,
+                               sentenceId: sentenceId, publication: publication, receipt: receipt)
+    }
+
+    private func prepareSegment(data: Data, identity: SegmentBacklog.Identity) -> Bool {
+        let chapterIndex = identity.chapterIndex
+        let segmentIndex = identity.segmentIndex
         ensureRemoteCommands()
         // Only activate the audio session if the user is already playing.
         // While conversion streams in the background, we may receive
@@ -2380,60 +2497,35 @@ final class AudioPlayer: ObservableObject {
             if backlog.recordEmpty() {
                 lastError = .emptySegmentData
             }
-            return
+            return false
         }
         backlog.resetEmptyStreak()
 
-        let identity = SegmentBacklog.Identity(
-            chapterIndex: chapterIndex,
-            segmentIndex: segmentIndex
-        )
         // Retried callbacks must not overwrite a URL that AVFoundation may
         // already be reading, nor enqueue a spoken passage twice.
         guard segmentFiles[identity] == nil else {
             audioLog.notice("[enqueueSegment] duplicate ignored ch=\(chapterIndex) seg=\(segmentIndex)")
-            return
+            return false
         }
+        return true
+    }
 
-        // Ensure a temp directory exists for this session. Bail
-        // explicitly when createDirectory fails — without this, every
-        // subsequent `data.write` would fail and we'd publish
-        // `lastError = .segmentWriteFailed` on every chunk.
-        if segmentTempDir == nil {
-            let candidate = URL(fileURLWithPath: NSTemporaryDirectory())
-                .appendingPathComponent("epub2mp3-segments-\(UUID().uuidString)")
-            do {
-                try FileManager.default.createDirectory(
-                    at: candidate, withIntermediateDirectories: true
-                )
-                segmentTempDir = candidate
-            } catch {
-                audioLog.error("[enqueueSegment] failed to create temp dir: \(error.localizedDescription)")
-                lastError = .segmentWriteFailed
-                return
-            }
-        }
-        guard let tmpDir = segmentTempDir else { return }
-
-        // Segment indexes reset for every chapter and a conversion can be
-        // restarted before an old AVURLAsset has released its file handle.
-        // The session directory plus a per-write UUID prevents an incoming
-        // retry or another stream from replacing an item already queued.
-        let segFile = tmpDir.appendingPathComponent(
-            "stream-\(UUID().uuidString)-ch\(chapterIndex)-seg\(segmentIndex)-\(UUID().uuidString).mp3"
+    private func segmentFileURL(identity: SegmentBacklog.Identity) -> URL {
+        let directory = segmentTempDir ?? URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("epub2mp3-segments-\(UUID().uuidString)")
+        segmentTempDir = directory
+        return directory.appendingPathComponent(
+            "stream-\(UUID().uuidString)-ch\(identity.chapterIndex)-seg\(identity.segmentIndex)-\(UUID().uuidString).mp3"
         )
-        do {
-            try data.write(to: segFile)
-        } catch {
-            // Non-fatal: segment is lost but subsequent ones still
-            // arrive. Surface so the host can warn the user if disk
-            // is full — repeated emptySegmentData / segmentWriteFailed
-            // toasts mean conversion will degrade further.
-            audioLog.error("[enqueueSegment] write failed: \(error.localizedDescription)")
-            lastError = .segmentWriteFailed
-            return
-        }
+    }
 
+    private func acceptPersistedSegment(
+        _ segFile: URL, identity: SegmentBacklog.Identity, byteCount: Int,
+        sentenceId: String?, publication: LatencyObservation.StreamPublication?,
+        receipt: LatencyObservation.StreamRequestReceipt?
+    ) {
+        let chapterIndex = identity.chapterIndex
+        let segmentIndex = identity.segmentIndex
         isSegmentMode = true
         segmentFiles[identity] = segFile
         if let publication { segmentPublications[identity] = publication }
@@ -2490,7 +2582,7 @@ final class AudioPlayer: ObservableObject {
                 segmentPublications.removeValue(forKey: identity)
                 segmentRequestReceipts.removeValue(forKey: identity)
                 segmentSentenceIDs.removeValue(forKey: identity)
-                try? FileManager.default.removeItem(at: segFile)
+                Task { await segmentFileWriter.remove(segFile) }
                 audioLog.notice("[enqueueSegment] duplicate backlog entry ignored ch=\(chapterIndex) seg=\(segmentIndex)")
                 return
             }
@@ -2512,7 +2604,7 @@ final class AudioPlayer: ObservableObject {
         }
         recordQueuedAudioIfNeeded()
         conversionStatus.record(.chunkComplete,
-            "ch\(chapterIndex) segment \(segmentIndex) ready (\(data.count) bytes)")
+            "ch\(chapterIndex) segment \(segmentIndex) ready (\(byteCount) bytes)")
         applyPendingChapterSeekIfAvailable()
     }
 
@@ -2541,25 +2633,36 @@ final class AudioPlayer: ObservableObject {
     /// deferred file queue to grow without bound. The embedded conversion
     /// bridge calls this before it writes a new temporary MP3.
     func waitForSegmentCapacity() async -> Bool {
+        guard !Task.isCancelled else { return false }
         guard backlog.count >= SegmentBacklog.maximumDeferredSegmentCount else {
             return true
         }
-        return await withCheckedContinuation { continuation in
-            segmentCapacityWaiters.append(continuation)
+        let waiterID = UUID()
+        return await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                if Task.isCancelled { continuation.resume(returning: false) }
+                else { segmentCapacityWaiters.append((waiterID, continuation)) }
+            }
+        } onCancel: {
+            Task { @MainActor [weak self] in
+                guard let self,
+                      let index = self.segmentCapacityWaiters.firstIndex(where: { $0.0 == waiterID }) else { return }
+                self.segmentCapacityWaiters.remove(at: index).1.resume(returning: false)
+            }
         }
     }
 
     private func resumeSegmentCapacityWaitersIfPossible() {
         while backlog.count < SegmentBacklog.maximumDeferredSegmentCount,
               !segmentCapacityWaiters.isEmpty {
-            segmentCapacityWaiters.removeFirst().resume(returning: true)
+            segmentCapacityWaiters.removeFirst().1.resume(returning: true)
         }
     }
 
     private func cancelSegmentCapacityWaiters() {
         let waiters = segmentCapacityWaiters
         segmentCapacityWaiters.removeAll()
-        for waiter in waiters {
+        for (_, waiter) in waiters {
             waiter.resume(returning: false)
         }
     }
@@ -2892,6 +2995,8 @@ final class AudioPlayer: ObservableObject {
     private func teardownPlayer() {
         lastPlaybackRetentionRequest = nil
         remotePlaybackGeneration = UUID()
+        for operation in segmentPersistenceTasks.values { operation.cancel() }
+        segmentPersistenceTail = nil
         cancelPendingPlaybackJourney()
         cancelPendingSeekJourney()
         activeSeekID = nil
@@ -2926,9 +3031,14 @@ final class AudioPlayer: ObservableObject {
         // Remove segment temp files from the previous session. Best-effort:
         // if the OS already cleaned /tmp, the removeItem call is a no-op.
         if let tmpDir = segmentTempDir {
-            try? FileManager.default.removeItem(at: tmpDir)
+            if segmentDirectoryUsesAsyncIO {
+                Task { await segmentFileWriter.remove(tmpDir) }
+            } else {
+                try? FileManager.default.removeItem(at: tmpDir)
+            }
             segmentTempDir = nil
         }
+        segmentDirectoryUsesAsyncIO = false
     }
 
     // MARK: Now Playing / Remote commands
@@ -3642,6 +3752,7 @@ final class AudioPlayer: ObservableObject {
     }
     func testHook_backlogCount() -> Int { backlog.count }
     func testHook_segmentCapacityWaiterCount() -> Int { segmentCapacityWaiters.count }
+    func testHook_segmentTempDirectory() -> URL? { segmentTempDir }
     nonisolated static func testHook_maxQueueAhead() -> Int { maxQueueAhead }
     func testHook_teardownPlayer() { teardownPlayer() }
     func testHook_finishCurrentSegment() -> Bool {

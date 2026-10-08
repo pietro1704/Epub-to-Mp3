@@ -149,6 +149,7 @@ final class JobDetailViewModelStreamingTests: XCTestCase {
             XCTAssertEqual(client.downloadedChapterIndices, [14])
             viewModel?.stop()
             received.fulfill()
+            return true
         }
         viewModel.start(client: client, jobId: identifier)
         await fulfillment(of: [received], timeout: 3)
@@ -197,6 +198,7 @@ final class JobDetailViewModelStreamingTests: XCTestCase {
             XCTAssertEqual(deliveredReceipt, receipt)
             viewModel?.stop()
             received.fulfill()
+            return true
         }
         viewModel.start(client: client, jobId: snapshot.jobId)
         await fulfillment(of: [received], timeout: 3)
@@ -282,6 +284,7 @@ final class JobDetailViewModelStreamingTests: XCTestCase {
                 state.viewModel?.stop()
                 state.viewModel = nil
                 chunkReceived.fulfill()
+                return true
             }
             viewModel.start(client: client, jobId: snapshot.jobId)
         }

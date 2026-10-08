@@ -93,8 +93,8 @@ final class MacBookDetailViewController: NSViewController {
             )
         }
         jobViewModel.onStreamChunk = { [weak self] data, chapterIndex, segmentIndex, publication, receipt in
-            guard let self, let generation = self.streamDeliveryGeneration else { return }
-            self.player.enqueueRemoteSegment(
+            guard let self, let generation = self.streamDeliveryGeneration else { return false }
+            return await self.player.enqueueRemoteSegmentAsync(
                 data: data, jobID: self.jobViewModel.snapshot?.jobId ?? "",
                 generation: generation, chapterIndex: chapterIndex,
                 segmentIndex: segmentIndex, publication: publication, receipt: receipt

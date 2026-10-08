@@ -21,6 +21,142 @@ final class AudioPlayerEnqueueSegmentTests: XCTestCase {
         return d
     }
 
+    @MainActor
+    func testAsyncPersistenceWritesOffMainAndPublishesOnlyAfterDurabilityInOrder() async throws {
+        let started = expectation(description: "First write is held off main")
+        let release = DispatchSemaphore(value: 0)
+        let writer = SegmentFileWriter { data, url in
+            XCTAssertFalse(Thread.isMainThread, "Disk writes must not run on the UI thread.")
+            try data.write(to: url)
+            if url.lastPathComponent.contains("-seg0-") {
+                started.fulfill()
+                guard release.wait(timeout: .now() + 3) == .success else {
+                    throw CocoaError(.fileWriteUnknown)
+                }
+            }
+        }
+        let player = AudioPlayer(segmentFileWriter: writer)
+        defer { release.signal(); player.stop() }
+        let bytes = fakeMP3()
+        let first = Task { @MainActor in
+            await player.enqueueSegmentAsync(data: bytes, chapterIndex: 0, segmentIndex: 0)
+        }
+        await fulfillment(of: [started], timeout: 2)
+        let second = Task { @MainActor in
+            await player.enqueueSegmentAsync(data: bytes, chapterIndex: 0, segmentIndex: 1)
+        }
+        await Task.yield()
+        XCTAssertFalse(player.firstSegmentReady, "Writing bytes alone must not publish an unfinished request.")
+        XCTAssertEqual(player.testHook_retainedSegmentCount(), 0)
+        release.signal()
+        let firstAccepted = await first.value
+        let secondAccepted = await second.value
+        XCTAssertTrue(firstAccepted)
+        XCTAssertTrue(secondAccepted)
+        XCTAssertEqual(player.testHook_activeSegmentIdentity()?.segmentIndex, 0)
+        XCTAssertEqual(player.testHook_retainedSegmentCount(), 2)
+        XCTAssertFalse(player.isPlaying)
+        for segment in 0...1 {
+            let url = try XCTUnwrap(player.testHook_segmentURL(chapterIndex: 0, segmentIndex: segment))
+            XCTAssertEqual(try Data(contentsOf: url), bytes)
+        }
+    }
+
+    @MainActor
+    func testStopFencesOffMainWriteAndRemovesOldSessionBeforeAcceptingNewAudio() async throws {
+        let started = expectation(description: "Old session write is in progress")
+        let release = DispatchSemaphore(value: 0)
+        let writer = SegmentFileWriter { data, url in
+            try data.write(to: url)
+            if url.lastPathComponent.contains("-seg0-") {
+                started.fulfill()
+                guard release.wait(timeout: .now() + 3) == .success else {
+                    throw CocoaError(.fileWriteUnknown)
+                }
+            }
+        }
+        let player = AudioPlayer(segmentFileWriter: writer)
+        defer { release.signal(); player.stop() }
+        let bytes = fakeMP3()
+        let old = Task { @MainActor in
+            await player.enqueueSegmentAsync(data: bytes, chapterIndex: 0, segmentIndex: 0)
+        }
+        await fulfillment(of: [started], timeout: 2)
+        let directory = try XCTUnwrap(player.testHook_segmentTempDirectory())
+        player.stop()
+        release.signal()
+        let oldAccepted = await old.value
+        XCTAssertFalse(oldAccepted)
+        XCTAssertNil(player.testHook_currentPlayerItem())
+        XCTAssertFalse(player.firstSegmentReady)
+        XCTAssertNil(player.lastError, "Session cancellation is not a write failure.")
+        let newAccepted = await player.enqueueSegmentAsync(data: bytes, chapterIndex: 0, segmentIndex: 1)
+        XCTAssertTrue(newAccepted)
+        XCTAssertEqual(player.testHook_retainedSegmentCount(), 1)
+        XCTAssertEqual(player.testHook_activeSegmentIdentity()?.segmentIndex, 1)
+        for _ in 0..<100 where FileManager.default.fileExists(atPath: directory.path) {
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+        XCTAssertFalse(FileManager.default.fileExists(atPath: directory.path))
+    }
+
+    @MainActor
+    func testAsyncPersistenceFailureDoesNotPublishOrRetainAudio() async {
+        let writer = SegmentFileWriter { _, _ in throw CocoaError(.fileWriteOutOfSpace) }
+        let player = AudioPlayer(segmentFileWriter: writer)
+        defer { player.stop() }
+        let accepted = await player.enqueueSegmentAsync(data: fakeMP3(), chapterIndex: 0, segmentIndex: 0)
+        XCTAssertFalse(accepted)
+        XCTAssertFalse(player.firstSegmentReady)
+        XCTAssertEqual(player.testHook_retainedSegmentCount(), 0)
+        XCTAssertNil(player.testHook_currentPlayerItem())
+        XCTAssertEqual(player.lastError, .segmentWriteFailed)
+    }
+
+    @MainActor
+    func testAsyncPersistenceDuplicateKeepsFirstDurableFile() async throws {
+        let player = AudioPlayer()
+        defer { player.stop() }
+        let original = fakeMP3()
+        let first = await player.enqueueSegmentAsync(data: original, chapterIndex: 0, segmentIndex: 0)
+        let url = try XCTUnwrap(player.testHook_segmentURL(chapterIndex: 0, segmentIndex: 0))
+        let duplicate = await player.enqueueSegmentAsync(data: fakeMP3(size: 1024), chapterIndex: 0, segmentIndex: 0)
+        XCTAssertTrue(first)
+        XCTAssertTrue(duplicate)
+        XCTAssertEqual(player.testHook_segmentURL(chapterIndex: 0, segmentIndex: 0), url)
+        XCTAssertEqual(try Data(contentsOf: url), original)
+        XCTAssertEqual(player.testHook_retainedSegmentCount(), 1)
+    }
+
+    @MainActor
+    func testCancellingAsyncPersistenceAtCapacityReleasesWaiterWithoutDroppingAudio() async throws {
+        let player = AudioPlayer()
+        defer { player.stop() }
+        let bytes = fakeMP3()
+        let total = AudioPlayer.testHook_maxQueueAhead() + SegmentBacklog.maximumDeferredSegmentCount
+        for segment in 0..<total {
+            player.enqueueSegment(data: bytes, chapterIndex: 0, segmentIndex: segment)
+        }
+        let operation = Task { @MainActor in
+            await player.enqueueSegmentAsync(data: bytes, chapterIndex: 0, segmentIndex: total)
+        }
+        for _ in 0..<100 {
+            if player.testHook_segmentCapacityWaiterCount() == 1 { break }
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+        XCTAssertEqual(player.testHook_segmentCapacityWaiterCount(), 1)
+        XCTAssertEqual(player.testHook_retainedSegmentCount(), total)
+        operation.cancel()
+        let accepted = await operation.value
+        XCTAssertFalse(accepted)
+        XCTAssertEqual(player.testHook_segmentCapacityWaiterCount(), 0)
+        XCTAssertEqual(player.testHook_retainedSegmentCount(), total)
+        XCTAssertTrue(player.testHook_finishCurrentSegment())
+        let retried = await player.enqueueSegmentAsync(data: bytes, chapterIndex: 0, segmentIndex: total)
+        XCTAssertTrue(retried)
+        XCTAssertEqual(player.testHook_backlogCount(), SegmentBacklog.maximumDeferredSegmentCount)
+    }
+
     // MARK: - Queue item count
 
     /// Enqueue 3 segments; AVQueuePlayer must hold all 3 items.
