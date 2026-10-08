@@ -36,6 +36,15 @@ smallest complete, atomic behavior change with its relevant regression test.
 Reuse valid build artifacts and run only the checks needed to prove that change;
 commit/push verified slices before expanding scope. Keep planning, delegation,
 and documentation proportional to the task.
+Track every concrete user request/correction in `TODO_APP.md` before implementation;
+keep stable task IDs, status, acceptance, platform checks and verification evidence.
+Tick completion only after the affected iOS, macOS and Flutter behavior is verified
+and delivered. Keep those clients synchronized; record explicit platform limitations.
+Coordinate Apple work with Arch (Rust/Flutter) through `TODO_APP.md` and `handoff.md`;
+preserve disjoint file ownership and read the current handoff before changing shared contracts.
+This Mac is reserved for macOS/iOS work. Route Flutter/Rust execution and validation
+to Arch; never run Flutter tests/builds/analyze locally here. Prepare the handoff
+and keep platform completion unchecked until Arch supplies real verification evidence.
 Use actual task definitions in `mise.toml`; run project tasks through `mise run`
 and managed tools through `mise exec`.
 Choose the smallest verification that proves acceptance; inspect the final diff.

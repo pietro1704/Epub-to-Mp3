@@ -1,4 +1,41 @@
-# TODO — Epub-to-Mp3
+# App delivery backlog
+
+Current user requirements override the historical backlog below. Workflow:
+Pending → In progress → Verification → Done, or Blocked with evidence/next action.
+Every concrete user request/correction belongs here. Completion requires relevant
+tests, cross-platform parity, and commit/push evidence; source presence is not done.
+Codex owns Apple implementation; Arch owns Rust/Flutter coordination. Both update
+this board and `handoff.md` before crossing ownership or changing shared contracts.
+
+## Active requests — 2026-10-08
+
+- [ ] **APP-20261008-01 — Two books per library row.** In progress.
+  Acceptance: exactly two book cards per row on iOS, macOS and Flutter, including
+  narrow/wide widths and resizing; retain cover ratio, labels and existing actions.
+  - [x] iOS: 18 physical XCTest passed, zero skips; `E539FCA1-3855-46EC-8AA2-C78BBC31D31D`.
+  - [ ] macOS: actual NSCollectionView layout regression + resize check.
+  - [ ] Flutter (Arch only): widget regression implemented for phone/wide resize;
+    run `flutter test test/library_screen_test.dart --plain-name 'library grid keeps two columns across phone and wide resize'` on Arch, not this Mac.
+  - [ ] Delivery: inspected diff, synchronized behavior, commit/push.
+- [ ] **APP-20261008-02 — Quality/performance goal.** In progress.
+  Acceptance/evidence: `docs/plans/2026-10-08-app-quality-performance.md`.
+  Remaining: physical/full-sequence playback verification, lifecycle flush behavior,
+  relaunch readiness and bounded device conversion/performance comparison.
+  Latest device evidence: `0132B263-6FB2-49B1-A195-9627078459AE` (two tests passed)
+  and `B882C802-84BE-4447-A0BD-23387F54BFF1` (35 seek tests passed), zero skips.
+- [x] **APP-20261008-03 — Shared request tracking and platform parity policy.**
+  Registered in `CLAUDE.md`/`AGENTS.md`, this board and `handoff.md` for Codex/Arch.
+  Verified by documentation read-back and scoped `git diff --check`; historical instructions
+  do not authorize CI/PR monitoring, Python/Ruff local execution or Simulator use.
+- [x] **APP-20261008-04 — Host ownership correction.** Registered.
+  This Mac performs macOS/iOS work only. Arch performs Rust/Flutter execution and
+  validation. Flutter checks remain pending until Arch returns actual test evidence.
+  Every future concrete user request/correction updates this board automatically.
+
+## Historical backlog (requires revalidation; not current platform scope)
+
+The original iOS-only scope and old verification recipes below are historical.
+Current work must keep iOS/macOS/Flutter parity and follow root instructions.
 
 > Gerado em 2026-07-10. Fonte: BUG_SPRINT.md/TDD_PLAN.md do iOS estão 100%
 > resolvidos (bugs 1-8, ver commits 2d0cf59..8a179ae) — não há bug conhecido

@@ -1,5 +1,30 @@
 # Hermes ↔ Claude Code Handoff
 
+## Current Codex ↔ Arch contract — 2026-10-08
+
+`TODO_APP.md` is the shared user-request/status board; root `AGENTS.md`/`CLAUDE.md`
+is authoritative. Codex coordinates Apple changes; Arch coordinates Rust/Flutter.
+Keep iOS, macOS and Flutter behavior synchronized. Claim Done only with relevant
+runtime tests and delivery evidence; record blocked/platform-limited verification.
+Use minimal atomic Gitflow changes, focused tests, and commit/push verified slices.
+No Python/Ruff local execution, osascript, Simulator or CI/PR monitoring.
+Preserve books, models and listening downloads; serialize heavy jobs.
+This Mac is Apple-only. Flutter/Rust execution belongs to Arch; no Flutter
+test/build/analyze command may run locally here. Return exact verification output
+before the shared task's Flutter checkbox can be marked complete.
+
+Active APP-20261008-01: library grid must show exactly two books per row on all
+three clients. Ownership is split between Apple layout and Flutter layout/tests.
+Flutter patch is ready in `flutter_app/lib/screens/library_screen.dart` and
+`flutter_app/test/library_screen_test.dart`. Arch: run only the widget regression
+`flutter test test/library_screen_test.dart --plain-name 'library grid keeps two columns across phone and wide resize'`.
+No Flutter command was executed on this Mac; Flutter acceptance remains pending.
+APP-20261008-02: shared Rust quality fixes are delivered; iPhone playback rerun
+passed 35 tests without rebuild, but full-sequence/benchmark/lifecycle gates remain.
+See `docs/plans/2026-10-08-app-quality-performance.md` for exact evidence/limits.
+
+The older prompts/log below are history, not current architecture or permissions.
+
 ## Quick Claude Prompt
 
 Use this when Claude needs a direct kickoff inside this repo:
