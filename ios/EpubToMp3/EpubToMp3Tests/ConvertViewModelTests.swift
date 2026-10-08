@@ -3,6 +3,22 @@ import XCTest
 
 final class ConvertViewModelTests: XCTestCase {
     @MainActor
+    func testChapterSelectionRejectsMalformedInputInsteadOfSelectingWholeBook() throws {
+        for input in ["invalid", "8-", "-1", "9-8", "8-9-10", "2147483648", "8-bad-9"] {
+            XCTAssertThrowsError(try ConvertViewModel.parseChapterSelection(input), "Accepted malformed selection: \(input)")
+        }
+        let single = try ConvertViewModel.parseChapterSelection("8")
+        XCTAssertEqual(single.start, 8)
+        XCTAssertEqual(single.end, 8)
+        let range = try ConvertViewModel.parseChapterSelection(" 8 - 9 ")
+        XCTAssertEqual(range.start, 8)
+        XCTAssertEqual(range.end, 9)
+        let whole = try ConvertViewModel.parseChapterSelection("   ")
+        XCTAssertEqual(whole.start, -1)
+        XCTAssertEqual(whole.end, -1)
+    }
+
+    @MainActor
     func testMissingClientAndFileProduceActionableErrors() async {
         let model = ConvertViewModel()
 

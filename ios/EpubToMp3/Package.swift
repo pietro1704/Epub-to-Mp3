@@ -13,8 +13,8 @@ func excludedFiles(_ directory: String, keeping sources: [String]) -> [String] {
     }
 }
 
-let production = ["Models/SessionRecord.swift", "Services/ConversionHistoryReader.swift"]
-let tests = ["ConversionHistoryReaderTests.swift"]
+let production = ["Models/SessionRecord.swift", "Services/ConversionHistoryReader.swift", "Services/ConversionChapterSelection.swift"]
+let tests = ["ConversionHistoryReaderTests.swift", "ConversionChapterSelectionTests.swift"]
 let package = Package(
     name: "AppFoundation",
     platforms: [.macOS(.v12)],

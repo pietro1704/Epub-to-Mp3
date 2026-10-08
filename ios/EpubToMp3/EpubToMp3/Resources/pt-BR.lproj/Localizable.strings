@@ -327,6 +327,7 @@
 "convert.chapters" = "Capítulos";
 "convert.chapterRangeOptional" = "Intervalo de capítulos (ex.: 3-7) — opcional";
 "convert.chapterRangeHelp" = "Deixe vazio para converter o livro inteiro.";
+"convert.error.invalidChapterRange" = "Informe um índice de capítulo não negativo ou um intervalo inclusivo (ex.: 3-7). Deixe vazio para o livro inteiro.";
 "convert.flags" = "Opções";
 "convert.clearCache" = "Limpar cache antes da execução";
 "convert.forceReprocess" = "Forçar reprocessamento";

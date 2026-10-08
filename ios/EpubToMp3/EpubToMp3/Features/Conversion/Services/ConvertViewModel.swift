@@ -15,6 +15,14 @@ final class ConvertViewModel {
     var submittedJobId: String?
     var error: String?
 
+    static func parseChapterSelection(_ input: String) throws -> (start: Int32, end: Int32) {
+        do {
+            return try ConversionChapterSelection.parse(input)
+        } catch {
+            throw EmbeddedConverterError.conversionFailed(L10n.string("convert.error.invalidChapterRange"))
+        }
+    }
+
     func submit(
         client: APIClient? = nil,
         useEmbeddedRuntime: Bool = false,
@@ -35,13 +43,7 @@ final class ConvertViewModel {
         defer { isSubmitting = false }
 
         do {
-            let chapterRange: (Int32, Int32) = {
-                let values = chapters
-                    .split(separator: "-")
-                    .compactMap { Int32($0.trimmingCharacters(in: .whitespaces)) }
-                guard values.count == 2 else { return (-1, -1) }
-                return (values[0], values[1])
-            }()
+            let chapterRange = try Self.parseChapterSelection(chapters)
 #if os(iOS)
             let accessing = file.startAccessingSecurityScopedResource()
             defer { if accessing { file.stopAccessingSecurityScopedResource() } }
@@ -49,8 +51,8 @@ final class ConvertViewModel {
 #endif
             let result = try await RustConversionCoordinator().convert(
                 bookURL: file,
-                chapterStart: chapterRange.0,
-                chapterEnd: chapterRange.1
+                chapterStart: chapterRange.start,
+                chapterEnd: chapterRange.end
             )
             submittedJobId = result.jobID
             if let player {

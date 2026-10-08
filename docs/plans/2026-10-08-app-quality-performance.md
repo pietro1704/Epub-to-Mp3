@@ -184,3 +184,27 @@ Limits: full AppKit screen responsiveness/reload integration is not yet exercise
 the controller retains its legacy-compatible local log source (a native-history
 producer was not added). Batch import, audio persistence and whole-app
 latency/memory gates remain pending. This slice does not complete items 6–7.
+
+### Slice 2b — fail-closed form chapter selection
+
+The form uses the shared production `ConversionChapterSelection` parser, also
+compiled unchanged by the native Foundation test target. Only an empty trimmed
+field selects `(-1,-1)` whole-book conversion; a single nonnegative ASCII Int32
+selects exactly itself, and an inclusive ordered range preserves its indices.
+Malformed, empty-component, negative, overflowing and extra-component inputs
+throw instead of being compacted or falling back to whole-book selection.
+The view model localizes that error before security-scoped access or conversion.
+
+Red: three native parser tests produced 13 failed assertions, reproducing invalid
+inputs and single indices silently becoming whole-book selection. Final green:
+`mise run apple:foundation:test` passed all 10 tests (three parser, seven history),
+including Int32 maximum, overflow on either endpoint, same-index ranges, plus
+signs, Unicode digits and decimal values. Logs are
+`.reports/mobile-audio/chapter-selection-red.log` and `chapter-selection-green.log`.
+Specialist review found no blocker; requested edge coverage was added. Working
+and staged whitespace checks passed; literals/locales were preserved.
+
+This verifies the form's production parsing boundary on the native host, not its
+full UIKit integration. The matching view-model XCTest is checked in but has not
+run since the locked-device preflight. Swift coordinator / FFI start-to-end
+sentinel consistency and native embedding remain pending, so item 2 stays partial.
