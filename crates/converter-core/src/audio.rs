@@ -166,6 +166,46 @@ pub fn validate_audio(path: impl AsRef<Path>, minimum_bytes: u64) -> Result<f64,
     Ok(duration)
 }
 
+/// Encode WAV audio as mono MP3 and replace the output after validation.
+pub fn wav_to_mp3(
+    input: impl AsRef<Path>,
+    output: impl AsRef<Path>,
+    bitrate: &str,
+) -> Result<(), AudioError> {
+    let input = input.as_ref();
+    let output = output.as_ref();
+    let parent = output
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+    fs::create_dir_all(parent)?;
+    let staging = tempfile::Builder::new()
+        .prefix(".encode-mp3-")
+        .tempdir_in(parent)?;
+    let encoded = staging.path().join("encoded.mp3");
+    run(&ProcessSpec::new("ffmpeg").args([
+        "-y",
+        "-i",
+        &input.to_string_lossy(),
+        "-vn",
+        "-c:a",
+        "libmp3lame",
+        "-b:a",
+        bitrate,
+        "-ac",
+        "1",
+        "-f",
+        "mp3",
+        &encoded.to_string_lossy(),
+    ]))?;
+    validate_audio(&encoded, 100)?;
+    let file = File::open(&encoded)?;
+    file.sync_all()?;
+    drop(file);
+    fs::rename(encoded, output)?;
+    Ok(())
+}
+
 pub fn add_silence_padding(
     path: impl AsRef<Path>,
     padding: Padding,
