@@ -220,18 +220,7 @@ impl ConversionWorker {
                     }
                     let text_path =
                         cache_dir.join(format!("{}.json", chapter.index.replace('.', "_")));
-                    let text = if text_path.is_file() {
-                        cache::read_json::<String>(&text_path)?
-                    } else {
-                        cache::atomic_write_json(&text_path, &chapter.text)?;
-                        chapter.text.clone()
-                    };
-                    if text.chars().count() != chapter.text.chars().count() {
-                        return Err(WorkerError::Piper(format!(
-                            "cached chapter text mismatch for '{}'",
-                            chapter.name
-                        )));
-                    }
+                    let text = cached_chapter_text(&text_path, &chapter.text)?;
                     let stem = format!("{:04}-{}", position + 1, sanitize(&chapter.name));
                     let mp3 = output_dir.join(format!("{stem}.mp3"));
                     let language = detected_language;
@@ -462,6 +451,16 @@ impl ConversionWorker {
     }
 }
 
+fn cached_chapter_text(path: &Path, expected: &str) -> Result<String, WorkerError> {
+    if let Ok(text) = cache::read_json::<String>(path) {
+        if text == expected {
+            return Ok(text);
+        }
+    }
+    cache::atomic_write_json(path, expected)?;
+    Ok(expected.to_owned())
+}
+
 fn chapter_audio_request_key(
     source_key: &str,
     chapter_index: &str,
@@ -655,6 +654,62 @@ mod tests {
     use super::*;
 
     #[test]
+    fn malformed_chapter_cache_is_rebuilt_from_source() {
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join("chapter.json");
+        fs::write(&path, b"{broken JSON").unwrap();
+        assert_eq!(
+            cached_chapter_text(&path, "Original chapter.").unwrap(),
+            "Original chapter."
+        );
+        assert_eq!(
+            cache::read_json::<String>(&path).unwrap(),
+            "Original chapter."
+        );
+    }
+
+    #[test]
+    fn matching_chapter_cache_is_reused_without_rewriting() {
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join("chapter.json");
+        let bytes = b"  \"Original chapter.\"\n";
+        fs::write(&path, bytes).unwrap();
+        assert_eq!(
+            cached_chapter_text(&path, "Original chapter.").unwrap(),
+            "Original chapter."
+        );
+        assert_eq!(fs::read(path).unwrap(), bytes);
+    }
+
+    #[test]
+    fn missing_chapter_cache_is_created_and_write_failures_are_reported() {
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join("chapter.json");
+        assert_eq!(
+            cached_chapter_text(&path, "Original chapter.").unwrap(),
+            "Original chapter."
+        );
+        assert_eq!(
+            cache::read_json::<String>(&path).unwrap(),
+            "Original chapter."
+        );
+        let blocked = root.path().join("blocked.json");
+        fs::create_dir(&blocked).unwrap();
+        assert!(cached_chapter_text(&blocked, "Original chapter.").is_err());
+    }
+
+    #[test]
+    fn same_length_cache_corruption_is_rebuilt_from_source() {
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join("chapter.json");
+        let expected = "The original chapter.";
+        let corrupted = "x".repeat(expected.chars().count());
+        cache::atomic_write_json(&path, &corrupted).unwrap();
+        assert_eq!(cached_chapter_text(&path, expected).unwrap(), expected);
+        assert_eq!(cache::read_json::<String>(&path).unwrap(), expected);
+    }
+
+    #[test]
     fn audio_request_key_changes_with_each_conversion_input() {
         let original = ("source", "1", "Text", "edge", Some("voice"), Some("en"));
         let key = |(source, chapter, text, engine, voice, language)| {
@@ -703,6 +758,13 @@ mod tests {
             Ok(())
         })
         .unwrap();
+        let cached_text = worker
+            .config
+            .paths
+            .cache_dir
+            .join(cache::sha256_bytes(&source))
+            .join(format!("{}.json", chapter.index.replace('.', "_")));
+        cache::atomic_write_json(&cached_text, &"x".repeat(chapter.text.chars().count())).unwrap();
 
         let request = ConversionRequest {
             input,
@@ -714,6 +776,10 @@ mod tests {
             no_parallel: true,
         };
         let manifest = worker.run(request.clone()).unwrap();
+        assert_eq!(
+            cache::read_json::<String>(&cached_text).unwrap(),
+            chapter.text
+        );
         assert_eq!(manifest.chapters.len(), 1);
         assert_eq!(
             worker.jobs.load("proven-existing-audio").unwrap().state,
