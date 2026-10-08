@@ -297,3 +297,23 @@ duplicates, reversed/substituted selections and excess/missing chapters fail.
 seconds tests). The added regression exercises the production result validator;
 the scoped conversion calls this validator before publishing success. No synthesis
 or Rust rebuild. Physical-device integration remains pending.
+
+### Slice 4 — chapter-relative segment navigation
+
+Segment seek resolves real AVFoundation durations over a contiguous ordinal
+prefix, rebuilds the bounded queue at the selected segment/local time and restores
+the chapter clock. Next/previous rebuild from retained files instead of consuming
+the live queue. Missing segments/chapters remain pending; pause, replacement and
+stop fence asynchronous duration loading and seek callbacks.
+
+Native macOS app XCTest: 42 passed, zero failures/skips, including 13 new
+regressions. Evidence: `Test-EpubToMp3Mac-2026.10.08_15-27-08--0300.xcresult`;
+82.3 seconds total, 37.0 seconds test interval. Real waveform fixtures verify
+segment-local and chapter-relative positions, backlog navigation, paused/playing
+intent, sparse arrivals, exact boundaries and cancellation. First compilation
+failed on an unused binding introduced by extraction; removed before the green
+run. Review covered ordinal gaps and pause changes across suspension. Diff checks
+passed. No book synthesis, Simulator, Python or user-data cleanup.
+
+This proves native player behavior on macOS, not physical-iPhone latency/memory.
+Segment persistence IO and final performance/device gates remain open.

@@ -43,6 +43,21 @@ final class AudioPlayerDurationTests: XCTestCase {
         XCTAssertTrue(AudioPlayer.shouldDrainSegmentBacklog(queueCount: 0, maxQueueAhead: 5))
     }
 
+    func testSegmentSeekBoundarySelectsFollowingSegment() {
+        let target = AudioPlayer.segmentSeekTarget(position: 15, durations: [15, 15, 15])
+        XCTAssertEqual(target?.segmentIndex, 1)
+        XCTAssertEqual(target?.offset, 0)
+        XCTAssertEqual(AudioPlayer.segmentSeekTarget(position: 0, durations: [15, 15])?.segmentIndex, 0)
+        XCTAssertEqual(AudioPlayer.segmentSeekTarget(position: -5, durations: [15, 15])?.offset, 0)
+    }
+
+    func testSegmentSeekDoesNotMapAcrossUnknownDurations() {
+        XCTAssertNil(AudioPlayer.segmentSeekTarget(position: 20, durations: [15, .nan, 15]))
+        XCTAssertNil(AudioPlayer.segmentSeekTarget(position: 20, durations: [15, 0, 15]))
+        XCTAssertNil(AudioPlayer.segmentSeekTarget(position: 20, durations: [15, .infinity]))
+        XCTAssertNil(AudioPlayer.segmentSeekTarget(position: 20, durations: []))
+    }
+
     @MainActor
     func testBufferedChapterDoesNotResetActiveChapterEstimate() {
         let player = AudioPlayer()
