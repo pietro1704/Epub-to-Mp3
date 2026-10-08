@@ -76,3 +76,40 @@ the regression uses the corresponding overridable Foundation method instead.
 `git diff --check` passed. No Mac UI or crash/power-loss durability claim is made.
 
 Item 1 is verified on the physical iPhone. Items 2–7 remain pending.
+
+### Slice 2 — chapter selection (in progress)
+
+The existing form parser has been extracted without changing its behavior so
+the exact production boundary is reachable by native tests. A regression now
+requires rejection of malformed/reversed/overflowing selections, single-chapter
+support and explicit empty-field whole-book selection. The first test attempt
+`EB930396-C4D2-46D6-AB40-3BD390C6DFBF` stopped at locked-device readiness;
+it did not compile or execute the regression. No parser fix or completion is
+claimed yet. Broader Swift/FFI sentinel consistency remains part of this item.
+
+Rust FFI boundary: the new regression reproduced acceptance of invalid
+`-2..-1` as whole-book selection. Validation now rejects mixed/invalid negative
+sentinels, reversed and out-of-bounds indices before allocation or output
+directory creation in both existing conversion ABIs. Explicit `-1,-1` whole-book
+and legacy nonnegative-start / `-1` to-end selection remain supported. A huge
+end bound is rejected before allocating positional selectors.
+`cargo test -p converter-ffi --lib --jobs 1` through mise and the native heavy
+lease passed 12 tests, zero failures, in 0.01 s (6.29 s incremental compilation
+after the cold dependency rebuild). Two public ABI regressions verify early
+rejection without touching their output fixture; a regular-file destination
+prevents any network synthesis even if that validation regresses.
+
+Review: the Rust-only guard is verified on the host. C ABI signatures are
+unchanged and successful explicit selection semantics are retained. Device
+FFI embedding, form behavior and Swift to-end range reconciliation remain
+pending; item 2 is not complete from this host evidence alone.
+Specialist QA found no blocking Rust guard issue and requested a multi-chapter
+fixture. The final 12-test run adds a three-chapter EPUB, verifies `1..2` and
+`1..-1`, and rejects `1..0` with a valid start. Final compilation was 3.99 s;
+evidence is `.reports/mobile-audio/quality-ffi-selection.log`. Rustfmt and
+working/staged whitespace checks pass. Only the guard and this evidence are
+included in its commit; native-form and adaptive-TTS changes remain separate.
+
+Independent Rust chunk-adaptation work may proceed while native readiness is
+blocked; ownership excludes the main agent's Swift files and no online synthesis
+is authorized beyond the prescribed comparison samples.

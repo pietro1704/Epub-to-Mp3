@@ -44,24 +44,31 @@ fn positional_chapter_selection(
     session: &ConverterSession,
     chapter_start: i32,
     chapter_end: i32,
-) -> Option<Vec<String>> {
-    if chapter_start < 0 {
-        return None;
+) -> Result<Option<Vec<String>>, String> {
+    if chapter_start == -1 && chapter_end == -1 {
+        return Ok(None);
+    }
+    if chapter_start < 0 || chapter_end < -1 {
+        return Err("invalid chapter selection sentinels".into());
     }
     let start = chapter_start as usize;
     let chapter_count = session.session.metadata().chapters.len();
-    let end = if chapter_end < 0 {
-        chapter_count.saturating_sub(1)
-    } else if chapter_end >= chapter_start {
-        chapter_end as usize
+    if start >= chapter_count {
+        return Err("chapter start exceeds the book's chapter count".into());
+    }
+    let end = if chapter_end == -1 {
+        chapter_count - 1
     } else {
-        start
+        chapter_end as usize
     };
-    Some(
+    if end < start || end >= chapter_count {
+        return Err("invalid or out-of-bounds chapter range".into());
+    }
+    Ok(Some(
         (start..=end)
             .map(|index| format!("position:{index}"))
             .collect(),
-    )
+    ))
 }
 
 /// Embedded Apple clients use two concurrent chapter workers by default.
@@ -168,6 +175,10 @@ pub unsafe extern "C" fn converter_session_convert_json(
         Ok(value) => value,
         Err(error) => return fail(error),
     };
+    let chapter_indices = match positional_chapter_selection(session, chapter_start, chapter_end) {
+        Ok(selection) => selection,
+        Err(error) => return fail(error),
+    };
     let mut config = AppConfig::from_paths(resolve_paths_from(
         [("OUTPUT_DIR".to_owned(), output_dir.clone())],
         std::path::PathBuf::from(output_dir.clone()),
@@ -187,7 +198,7 @@ pub unsafe extern "C" fn converter_session_convert_json(
         engine: Some("edge".to_owned()),
         voice: None,
         language: None,
-        chapter_indices: positional_chapter_selection(session, chapter_start, chapter_end),
+        chapter_indices,
         no_parallel: chapter_start >= 0,
     };
     let progress_log = generated_output_dir.join("conversion.log");
@@ -276,6 +287,10 @@ pub unsafe extern "C" fn converter_session_convert_job_json(
         Ok(value) => Path::new(&value).to_path_buf(),
         Err(error) => return fail(error),
     };
+    let chapter_indices = match positional_chapter_selection(session, chapter_start, chapter_end) {
+        Ok(selection) => selection,
+        Err(error) => return fail(error),
+    };
     let job_id = match c_string(job_id, "job ID") {
         Ok(value) if !value.is_empty() => value,
         Ok(_) => return fail("job ID must not be empty".to_owned()),
@@ -304,7 +319,7 @@ pub unsafe extern "C" fn converter_session_convert_job_json(
         engine: Some("edge".to_owned()),
         voice: None,
         language: None,
-        chapter_indices: positional_chapter_selection(session, chapter_start, chapter_end),
+        chapter_indices,
         no_parallel: chapter_start >= 0,
     };
     let progress_log = output_dir.join("conversion.log");
@@ -1617,16 +1632,27 @@ mod tests {
     use zip::{write::FileOptions, ZipWriter};
 
     fn fixture() -> tempfile::NamedTempFile {
+        fixture_with_chapters(1)
+    }
+
+    fn fixture_with_chapters(count: usize) -> tempfile::NamedTempFile {
         let file = tempfile::NamedTempFile::new().expect("temporary EPUB");
         let mut zip = ZipWriter::new(file.reopen().expect("reopen fixture"));
         let options = FileOptions::<()>::default();
         zip.start_file("META-INF/container.xml", options).unwrap();
         zip.write_all(br#"<?xml version="1.0"?><container><rootfiles><rootfile full-path="OEBPS/content.opf"/></rootfiles></container>"#).unwrap();
         zip.start_file("OEBPS/content.opf", options).unwrap();
-        zip.write_all(br#"<package xmlns:dc="x"><metadata><title>Test Book</title><creator>Author</creator><language>en</language></metadata><manifest><item id="chapter" href="chapter.xhtml" media-type="application/xhtml+xml"/></manifest><spine><itemref idref="chapter"/></spine></package>"#).unwrap();
-        zip.start_file("OEBPS/chapter.xhtml", options).unwrap();
-        zip.write_all(b"<html><body><p>Hello world.</p></body></html>")
-            .unwrap();
+        let manifest = (0..count).map(|index| format!(r#"<item id="chapter{index}" href="chapter{index}.xhtml" media-type="application/xhtml+xml"/>"#)).collect::<String>();
+        let spine = (0..count)
+            .map(|index| format!(r#"<itemref idref="chapter{index}"/>"#))
+            .collect::<String>();
+        zip.write_all(format!(r#"<package xmlns:dc="x"><metadata><title>Test Book</title><creator>Author</creator><language>en</language></metadata><manifest>{manifest}</manifest><spine>{spine}</spine></package>"#).as_bytes()).unwrap();
+        for index in 0..count {
+            zip.start_file(format!("OEBPS/chapter{index}.xhtml"), options)
+                .unwrap();
+            zip.write_all(b"<html><body><p>Hello world.</p></body></html>")
+                .unwrap();
+        }
         zip.finish().unwrap();
         file
     }
@@ -1641,6 +1667,94 @@ mod tests {
                 1
             }
         );
+    }
+
+    #[test]
+    fn chapter_selection_rejects_invalid_bounds() {
+        let book = fixture();
+        let path = CString::new(book.path().to_string_lossy().as_bytes()).unwrap();
+        unsafe {
+            let handle = converter_session_open(path.as_ptr());
+            let session = handle.as_ref().expect("fixture session");
+            assert_eq!(session.session.metadata().chapters.len(), 1);
+            for (start, end) in [(-2, -1), (-1, 0), (0, -2), (1, 0), (1, 1), (0, 1)] {
+                assert!(
+                    positional_chapter_selection(session, start, end).is_err(),
+                    "accepted invalid chapter bounds {start}..{end}"
+                );
+            }
+            converter_session_free(handle);
+        }
+    }
+
+    #[test]
+    fn chapter_selection_preserves_explicit_whole_single_and_to_end() {
+        let book = fixture_with_chapters(3);
+        let path = CString::new(book.path().to_string_lossy().as_bytes()).unwrap();
+        unsafe {
+            let handle = converter_session_open(path.as_ptr());
+            let session = handle.as_ref().expect("fixture session");
+            assert_eq!(session.session.metadata().chapters.len(), 3);
+            assert_eq!(positional_chapter_selection(session, -1, -1).unwrap(), None);
+            for bounds in [(0, 0)] {
+                assert_eq!(
+                    positional_chapter_selection(session, bounds.0, bounds.1).unwrap(),
+                    Some(vec!["position:0".to_owned()])
+                );
+            }
+            for bounds in [(1, 2), (1, -1)] {
+                assert_eq!(
+                    positional_chapter_selection(session, bounds.0, bounds.1).unwrap(),
+                    Some(vec!["position:1".to_owned(), "position:2".to_owned()])
+                );
+            }
+            assert!(positional_chapter_selection(session, 1, 0).is_err());
+            assert!(positional_chapter_selection(session, 0, i32::MAX).is_err());
+            converter_session_free(handle);
+        }
+    }
+
+    #[test]
+    fn conversion_abis_reject_invalid_selection_before_filesystem_work() {
+        let book = fixture();
+        let path = CString::new(book.path().to_string_lossy().as_bytes()).unwrap();
+        let directory = tempfile::tempdir().unwrap();
+        // A regular file prevents any synthesis if validation regresses.
+        let blocked = directory.path().join("blocked-output");
+        std::fs::write(&blocked, b"untouched output fixture").unwrap();
+        let output = CString::new(blocked.to_string_lossy().as_bytes()).unwrap();
+        let job = CString::new("blocked-output").unwrap();
+        unsafe {
+            let handle = converter_session_open(path.as_ptr());
+            assert!(!handle.is_null());
+            for use_job_abi in [false, true] {
+                let result = if use_job_abi {
+                    converter_session_convert_job_json(
+                        handle,
+                        output.as_ptr(),
+                        job.as_ptr(),
+                        -2,
+                        -1,
+                        None,
+                        None,
+                        ptr::null_mut(),
+                    )
+                } else {
+                    converter_session_convert_json(handle, output.as_ptr(), -2, -1)
+                };
+                assert!(result.is_null());
+                let error = converter_last_error();
+                assert!(!error.is_null());
+                assert!(CStr::from_ptr(error)
+                    .to_str()
+                    .unwrap()
+                    .contains("chapter selection"));
+                converter_string_free(error);
+            }
+            converter_session_free(handle);
+        }
+        assert_eq!(std::fs::read(blocked).unwrap(), b"untouched output fixture");
+        assert_eq!(std::fs::read_dir(directory.path()).unwrap().count(), 1);
     }
 
     #[test]
