@@ -27,6 +27,7 @@ class RootScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final t = AppLocalizations.of(context)!;
     final tabIndex = ref.watch(rootTabIndexProvider);
+    ref.watch(playbackResumePersistenceProvider);
 
     // Keep one Spotify-style player surface across every tab, including the
     // reader. The reader's inline controls remain contextual, while this
