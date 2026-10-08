@@ -3,30 +3,22 @@ import Foundation
 /// Pure layout metrics for the native library grid. Kept UIKit-free so it
 /// is unit-testable off-device.
 ///
-/// Packs adaptive tiles between `minTileWidth` and `maxTileWidth` with
-/// `spacing` gutters and `sectionInset` on each edge.
+/// All clients keep two books per row, with responsive tile widths.
 struct LibraryGridLayoutMetrics: Equatable {
-    var minTileWidth: CGFloat = 160
-    var maxTileWidth: CGFloat = 220
     var spacing: CGFloat = 20
     var sectionInset: CGFloat = 20
 
-    /// Number of columns that fit in `availableWidth`, packing as many
-    /// minimum-width tiles (plus gutters) as fit, at least one.
+    /// Width changes tile size, never the requested column count.
     func columnCount(forWidth availableWidth: CGFloat) -> Int {
-        let usable = availableWidth - 2 * sectionInset
-        guard usable > 0 else { return 1 }
-        // n tiles need n*min + (n-1)*spacing <= usable.
-        let n = Int((usable + spacing) / (minTileWidth + spacing))
-        return max(1, n)
+        2
     }
 
-    /// Actual tile width for a given column count, clamped to the max.
+    /// Fill available space after both edge insets and the column gutter.
     func tileWidth(forWidth availableWidth: CGFloat, columns: Int) -> CGFloat {
         let columns = max(1, columns)
         let usable = availableWidth - 2 * sectionInset - spacing * CGFloat(columns - 1)
         let raw = usable / CGFloat(columns)
-        return min(max(raw, 0), maxTileWidth)
+        return max(raw, 0)
     }
 }
 
@@ -59,24 +51,24 @@ final class LibraryGridController: UICollectionViewController {
         UICollectionViewCompositionalLayout { _, environment in
             let width = environment.container.effectiveContentSize.width
             let columns = metrics.columnCount(forWidth: width)
-            let fraction = 1.0 / CGFloat(columns)
             let tileWidth = metrics.tileWidth(forWidth: width, columns: columns)
             // The cover uses a 3:2 portrait ratio. Reserve label space so
             // titles never fall outside an estimated collection item.
             let tileHeight = tileWidth * 1.5 + 70
             let item = NSCollectionLayoutItem(
                 layoutSize: NSCollectionLayoutSize(
-                    widthDimension: .fractionalWidth(1.0),
+                    widthDimension: .absolute(tileWidth),
                     heightDimension: .fractionalHeight(1.0)
                 )
             )
             let group = NSCollectionLayoutGroup.horizontal(
                 layoutSize: NSCollectionLayoutSize(
-                    widthDimension: .fractionalWidth(fraction),
+                    widthDimension: .fractionalWidth(1.0),
                     heightDimension: .absolute(tileHeight)
                 ),
-                subitems: [item]
+                subitems: Array(repeating: item, count: columns)
             )
+            group.interItemSpacing = .fixed(metrics.spacing)
             let section = NSCollectionLayoutSection(group: group)
             section.interGroupSpacing = metrics.spacing
             section.contentInsets = NSDirectionalEdgeInsets(

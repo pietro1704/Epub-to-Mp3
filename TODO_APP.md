@@ -13,7 +13,8 @@ this board and `handoff.md` before crossing ownership or changing shared contrac
   Acceptance: exactly two book cards per row on iOS, macOS and Flutter, including
   narrow/wide widths and resizing; retain cover ratio, labels and existing actions.
   - [x] iOS: 18 physical XCTest passed, zero skips; `E539FCA1-3855-46EC-8AA2-C78BBC31D31D`.
-  - [ ] macOS: actual NSCollectionView layout regression + resize check.
+  - [x] macOS: actual NSCollectionView resize regression passed (1 test, zero skips),
+    `Test-EpubToMp3Mac-2026.10.08_19-22-48--0300.xcresult`; stale document width fixed.
   - [ ] Flutter (Arch only): widget regression implemented for phone/wide resize;
     run `flutter test test/library_screen_test.dart --plain-name 'library grid keeps two columns across phone and wide resize'` on Arch, not this Mac.
   - [ ] Delivery: inspected diff, synchronized behavior, commit/push.

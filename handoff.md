@@ -19,6 +19,8 @@ Flutter patch is ready in `flutter_app/lib/screens/library_screen.dart` and
 `flutter_app/test/library_screen_test.dart`. Arch: run only the widget regression
 `flutter test test/library_screen_test.dart --plain-name 'library grid keeps two columns across phone and wide resize'`.
 No Flutter command was executed on this Mac; Flutter acceptance remains pending.
+Apple grid acceptance passed: 18 physical iPhone tests and one macOS collection
+resize test (zero failures/skips). The overall task remains open for Arch evidence.
 APP-20261008-02: shared Rust quality fixes are delivered; iPhone playback rerun
 passed 35 tests without rebuild, but full-sequence/benchmark/lifecycle gates remain.
 See `docs/plans/2026-10-08-app-quality-performance.md` for exact evidence/limits.
