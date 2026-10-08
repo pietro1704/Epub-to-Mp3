@@ -179,9 +179,13 @@ final class RustConversionCoordinator {
         jobID: String = UUID().uuidString,
         chapterStart: Int32 = -1,
         chapterEnd: Int32 = -1,
+        options: ConversionOptions? = nil,
         onProgress: (@MainActor @Sendable (ConversionProgressEvent) -> Void)? = nil,
         onChapterCompleted: (@MainActor @Sendable (ChapterCompletionEvent) -> Void)? = nil
     ) async throws -> Result {
+        if options != nil {
+            try adapter.validateConversionSupport(options: options)
+        }
         let requestedChapterPositions = try requestedChapterRange(
             in: bookURL,
             chapterStart: chapterStart,
@@ -212,6 +216,7 @@ final class RustConversionCoordinator {
                     jobID: jobID,
                     chapterStart: chapterStart,
                     chapterEnd: chapterEnd,
+                    options: options,
                     onProgress: { data in
                         guard let onProgress,
                               let event = try? JSONDecoder().decode(ConversionProgressEvent.self, from: data) else {
@@ -264,8 +269,12 @@ final class RustConversionCoordinator {
         of bookURL: URL,
         minimumCharacters: Int = 2_500,
         jobID: String = UUID().uuidString,
+        options: ConversionOptions? = nil,
         onChapterCompleted: (@MainActor @Sendable (ChapterCompletionEvent) -> Void)? = nil
     ) async throws -> Result {
+        if options != nil {
+            try adapter.validateConversionSupport(options: options)
+        }
         let book = try adapter.openBook(at: bookURL)
         guard
             let metadata = try JSONSerialization.jsonObject(with: book.metadataJSON) as? [String: Any],
@@ -287,6 +296,7 @@ final class RustConversionCoordinator {
                 jobID: jobID,
                 chapterStart: selector,
                 chapterEnd: selector,
+                options: options,
                 onChapterCompleted: onChapterCompleted
             )
         }

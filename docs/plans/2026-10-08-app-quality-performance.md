@@ -230,3 +230,41 @@ Limits: host resolver tests and typechecking are not a full native coordinator
 conversion run. Manifest validation still checks count, not chapter identity;
 device integration and final artifact embedding remain acceptance gates. Item 2
 is therefore not closed merely from these host checks.
+
+### Slice 3b — versioned configuration and safe callback lifetime
+
+Added the optional `converter_session_convert_job_options_json_v1` ABI and
+`converter_conversion_options_validate_json_v1`. Version 1 JSON requires
+`schema_version`, rejects unknown fields and unsupported engines, and forwards
+engine/voice/language into the real worker request. Existing conversion symbols
+retain their signatures and Edge defaults. Explicit Swift options require both
+new symbols and never fall back to a legacy call that would ignore them.
+The coordinator validates with Rust before metadata access or output reservation.
+
+Flags `clear_cache`, `force_reprocess` and `max_performance` are represented and
+reject true explicitly in this tracer; their effective behavior is not implemented
+or waived. Runtime/model readiness and frontend choices remain pending.
+
+Adversarial QA exposed borrowed Swift callback context surviving a worker timeout.
+The common callback ABI now owns a synchronous shutdown scope: foreign callbacks
+run only while its mutex gate is active; scope drop drains a running call and
+blocks late worker clones before the Swift caller can release its context.
+Callbacks must not reenter the same gate or wait for this ABI to return. Late
+Rust log events outside the foreign gate may still occur; full worker cancellation
+is not established by this lifetime fix.
+
+Red evidence: unsupported Coqui options reached the output boundary before
+validation; three isolated callback-scope tests failed before closure/drain logic.
+Final integrated Rust FFI suite: 18 passed. Actual host Swift/FFI XCTest:
+`apple:foundation:ffi:test` builds the real dylib and passes 16 tests, zero skips,
+including schema encoding, both legacy and configured calls, missing-capability
+rejection and coordinator validation without book/output access. Synthetic EPUB
+and blocked-output fixtures prevent online synthesis even if validation regresses.
+Logs: `.reports/mobile-audio/ffi-options-callbacks-final.log` and
+`swift-rust-options-interop-final.log`. The actual Swift coordinator, adapter,
+options, selection, snapshot and localization sources also passed strict typecheck.
+Specialist final review found no blocking issue; whitespace checks passed.
+
+This is host runtime/interop evidence, not a physical-iPhone packaging or full
+conversion run. The view-model form still needs options forwarding and removal
+of manual autoplay. Item 3 remains partial; all other open acceptance gates remain.

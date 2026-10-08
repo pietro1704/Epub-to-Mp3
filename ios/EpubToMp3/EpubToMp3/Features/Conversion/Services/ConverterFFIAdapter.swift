@@ -9,11 +9,16 @@ private typealias ConverterSessionConvertJob = @convention(c) (
     UnsafeRawPointer?, UnsafePointer<CChar>?, UnsafePointer<CChar>?, Int32, Int32,
     ConverterChapterCallback?, ConverterChapterCallback?, UnsafeMutableRawPointer?
 ) -> UnsafeMutablePointer<CChar>?
+private typealias ConverterSessionConvertJobOptionsV1 = @convention(c) (
+    UnsafeRawPointer?, UnsafePointer<CChar>?, UnsafePointer<CChar>?, UnsafePointer<CChar>?, Int32, Int32,
+    ConverterChapterCallback?, ConverterChapterCallback?, UnsafeMutableRawPointer?
+) -> UnsafeMutablePointer<CChar>?
 private typealias ConverterSessionConvert = @convention(c) (
     UnsafeRawPointer?, UnsafePointer<CChar>?, Int32, Int32
 ) -> UnsafeMutablePointer<CChar>?
 private typealias ConverterStringFree = @convention(c) (UnsafeMutablePointer<CChar>?) -> Void
 private typealias ConverterLastError = @convention(c) () -> UnsafeMutablePointer<CChar>?
+private typealias ConverterOptionsValidateV1 = @convention(c) (UnsafePointer<CChar>?) -> Bool
 private typealias ConverterTtsModels = @convention(c) () -> UnsafeMutablePointer<CChar>?
 private typealias ConverterTtsDefaultEngine = @convention(c) (UnsafePointer<CChar>?, UnsafePointer<CChar>?, UInt32) -> UnsafeMutablePointer<CChar>?
 private typealias ConverterTtsInstalledReadyEngine = @convention(c) (UnsafePointer<CChar>?, UnsafePointer<CChar>?, UInt32, UnsafePointer<CChar>?, UnsafePointer<CChar>?) -> UnsafeMutablePointer<CChar>?
@@ -28,12 +33,15 @@ enum EmbeddedConverterError: Error, LocalizedError, Equatable {
     case artifactUnavailable
     case artifactInvalid(String)
     case conversionFailed(String)
+    case optionsABIUnavailable
 
     var errorDescription: String? {
         switch self {
         case .artifactUnavailable: return "Embedded converter artifact is unavailable"
         case .artifactInvalid(let reason): return "Embedded converter artifact is invalid: \(reason)"
         case .conversionFailed(let reason): return "Embedded conversion failed: \(reason)"
+        case .optionsABIUnavailable:
+            return "Explicit conversion options require converter_session_convert_job_options_json_v1; rebuild and embed a compatible Rust converter."
         }
     }
 }
@@ -72,6 +80,8 @@ final class ConverterFFIAdapter: EmbeddedConverter {
     private var _open: ConverterSessionOpen = { _ in nil }
     private var convertJobJSON: ConverterSessionConvertJob?
     private var convertJSON: ConverterSessionConvert?
+    private var convertJobOptionsJSON: ConverterSessionConvertJobOptionsV1? = nil
+    private var validateOptionsJSON: ConverterOptionsValidateV1? = nil
     private var loadError: String?
 
     private static let progressCallback: ConverterChapterCallback = { eventJSON, context in
@@ -148,6 +158,8 @@ final class ConverterFFIAdapter: EmbeddedConverter {
         _open = open
         convertJobJSON = symbol("converter_session_convert_job_json", as: ConverterSessionConvertJob.self)
         convertJSON = symbol("converter_session_convert_json", as: ConverterSessionConvert.self)
+        convertJobOptionsJSON = symbol("converter_session_convert_job_options_json_v1", as: ConverterSessionConvertJobOptionsV1.self)
+        validateOptionsJSON = symbol("converter_conversion_options_validate_json_v1", as: ConverterOptionsValidateV1.self)
     }
 
     convenience init(libraryURL: URL) {
@@ -166,27 +178,25 @@ final class ConverterFFIAdapter: EmbeddedConverter {
     }
 
     /// Converts an EPUB through the bundled Rust ABI and returns its manifest.
-    /// Chapter bounds are inclusive; -1 means all chapters.
+    /// Chapter bounds are inclusive; (-1, -1) means all, and (start, -1) means to the end.
     func convertBook(
         at url: URL,
         outputDirectory: URL,
         jobID: String,
         chapterStart: Int32 = -1,
         chapterEnd: Int32 = -1,
+        options: ConversionOptions? = nil,
         onProgress: (@Sendable (Data) -> Void)? = nil,
         onChapterCompleted: (@Sendable (Data) -> Void)? = nil
     ) throws -> Data {
-        guard handle != nil, convertJobJSON != nil || convertJSON != nil else {
-            throw EmbeddedConverterError.artifactInvalid(
-                "Loaded converter library lacks conversion symbols (job: \(convertJobJSON != nil), legacy: \(convertJSON != nil))."
-            )
-        }
+        try validateConversionSupport(options: options)
+        let optionsJSON = try options?.encodedJSON()
         guard let session = _open(url.path) else {
             throw EmbeddedConverterError.conversionFailed(readError())
         }
         defer { close(session) }
         let result: UnsafeMutablePointer<CChar>?
-        if let convertJobJSON {
+        if optionsJSON != nil || convertJobJSON != nil {
             let callbackBox: ChapterCallbackBox? = (onProgress != nil || onChapterCompleted != nil)
                 ? ChapterCallbackBox(progressHandler: onProgress, chapterHandler: onChapterCompleted)
                 : nil
@@ -196,14 +206,27 @@ final class ConverterFFIAdapter: EmbeddedConverter {
                     Unmanaged<ChapterCallbackBox>.fromOpaque(context).release()
                 }
             }
-            result = outputDirectory.path.withCString { outputPointer in
-                jobID.withCString { jobPointer in
-                    convertJobJSON(
-                        session,
-                        outputPointer,
-                        jobPointer,
-                        chapterStart,
-                        chapterEnd,
+            result = try outputDirectory.path.withCString { outputPointer in
+                try jobID.withCString { jobPointer in
+                    if let optionsJSON {
+                        guard let convertJobOptionsJSON else {
+                            throw EmbeddedConverterError.optionsABIUnavailable
+                        }
+                        return optionsJSON.withCString { optionsPointer in
+                            convertJobOptionsJSON(
+                                session, outputPointer, jobPointer, optionsPointer,
+                                chapterStart, chapterEnd,
+                                onProgress == nil ? nil : Self.progressCallback,
+                                onChapterCompleted == nil ? nil : Self.chapterCallback,
+                                context
+                            )
+                        }
+                    }
+                    guard let convertJobJSON else {
+                        throw EmbeddedConverterError.artifactInvalid("Loaded converter library lacks the callback conversion symbol.")
+                    }
+                    return convertJobJSON(
+                        session, outputPointer, jobPointer, chapterStart, chapterEnd,
                         onProgress == nil ? nil : Self.progressCallback,
                         onChapterCompleted == nil ? nil : Self.chapterCallback,
                         context
@@ -220,11 +243,33 @@ final class ConverterFFIAdapter: EmbeddedConverter {
                 convertJSON(session, outputPointer, chapterStart, chapterEnd)
             }
         }
-        guard let value = result, let json = String(validatingUTF8: value) else {
+        guard let value = result else {
             throw EmbeddedConverterError.conversionFailed(readError())
         }
         defer { freeString(value) }
+        guard let json = String(validatingUTF8: value) else {
+            throw EmbeddedConverterError.conversionFailed("Rust returned invalid UTF-8 manifest JSON.")
+        }
         return Data(json.utf8)
+    }
+
+    /// Capability check before book access or output reservation; never discard explicit options.
+    func validateConversionSupport(options: ConversionOptions? = nil) throws {
+        if let options {
+            guard handle != nil, convertJobOptionsJSON != nil, let validateOptionsJSON else {
+                throw EmbeddedConverterError.optionsABIUnavailable
+            }
+            let json = try options.encodedJSON()
+            guard json.withCString({ validateOptionsJSON($0) }) else {
+                throw EmbeddedConverterError.conversionFailed(readError())
+            }
+            return
+        }
+        guard handle != nil, convertJobJSON != nil || convertJSON != nil else {
+            throw EmbeddedConverterError.artifactInvalid(
+                "Loaded converter library lacks conversion symbols (job: \(convertJobJSON != nil), legacy: \(convertJSON != nil))."
+            )
+        }
     }
 
     func ttsModels() throws -> Data {

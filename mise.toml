@@ -1082,15 +1082,35 @@ let lease = open("/tmp/epub2mp3.heavy-job.lock", O_CREAT | O_RDWR, 0o600)
 guard lease >= 0 && flock(lease, LOCK_EX | LOCK_NB) == 0 else { exit(75) }
 defer { close(lease) }
 let taskRoot = ProcessInfo.processInfo.environment["MISE_PROJECT_ROOT"] ?? FileManager.default.currentDirectoryPath
+let ffiEnabled = ProcessInfo.processInfo.environment["APP_FOUNDATION_FFI_TESTS"] == "1"
+if ffiEnabled {
+    let build = Process()
+    build.currentDirectoryURL = URL(fileURLWithPath: taskRoot)
+    build.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+    build.arguments = ["mise", "exec", "--", "cargo", "build", "-p", "converter-ffi", "--jobs", "1"]
+    try build.run()
+    build.waitUntilExit()
+    guard build.terminationStatus == 0 else { exit(build.terminationStatus) }
+}
 let child = Process()
 child.executableURL = URL(fileURLWithPath: "/usr/bin/xcrun")
 child.arguments = ["swift", "test", "--package-path", taskRoot + "/ios/EpubToMp3",
                    "--scratch-path", taskRoot + "/ios/EpubToMp3/.build/app-foundation", "--jobs", "1"]
+if ffiEnabled {
+    var environment = ProcessInfo.processInfo.environment
+    environment["APP_FOUNDATION_FFI_LIBRARY"] = taskRoot + "/target/debug/libconverter_ffi.dylib"
+    environment["APP_FOUNDATION_FFI_FIXTURE"] = taskRoot + "/web/public/sample.epub"
+    child.environment = environment
+}
 try child.run()
 child.waitUntilExit()
 exit(child.terminationStatus)
 '
 '''
+
+[tasks."apple:foundation:ffi:test"]
+description = "Build the host Rust dylib and verify real Swift/FFI routing with offline native XCTest"
+run = "APP_FOUNDATION_FFI_TESTS=1 CARGO_BUILD_JOBS=1 mise run apple:foundation:test"
 
 [tasks."ios:test"]
 description = "Run all iOS XCTest/UI tests on a connected device, falling back to Simulator only when no device is available"

@@ -11,6 +11,7 @@
 extern crate piper_runtime;
 
 use converter_core::piper;
+mod callbacks;
 use converter_core::{
     config::AppConfig,
     embedded::{EmbeddedBookMetadata, EmbeddedConversionSession},
@@ -39,6 +40,94 @@ pub type ConverterChapterCompletedCallback =
     Option<unsafe extern "C" fn(event_json: *const c_char, context: *mut c_void)>;
 pub type ConverterProgressCallback =
     Option<unsafe extern "C" fn(event_json: *const c_char, context: *mut c_void)>;
+
+#[derive(Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ConversionOptionsV1 {
+    schema_version: u32,
+    engine: Option<String>,
+    voice: Option<String>,
+    language: Option<String>,
+    #[serde(default)]
+    clear_cache: bool,
+    #[serde(default)]
+    force_reprocess: bool,
+    #[serde(default)]
+    max_performance: bool,
+}
+
+impl ConversionOptionsV1 {
+    fn parse(json: &str) -> Result<Self, String> {
+        let mut options: Self = serde_json::from_str(json)
+            .map_err(|error| format!("invalid conversion options JSON: {error}"))?;
+        if options.schema_version != 1 {
+            return Err("unsupported conversion options schema_version; expected 1".into());
+        }
+        for (name, enabled) in [
+            ("clear_cache", options.clear_cache),
+            ("force_reprocess", options.force_reprocess),
+            ("max_performance", options.max_performance),
+        ] {
+            if enabled {
+                return Err(format!(
+                    "unsupported conversion option '{name}': true is not implemented"
+                ));
+            }
+        }
+        if let Some(engine) = &mut options.engine {
+            *engine = engine.trim().to_ascii_lowercase();
+            match engine.as_str() {
+                "edge" | "piper" | "auto" => {}
+                _ => {
+                    return Err(converter_core::worker::WorkerError::UnsupportedEngine(
+                        engine.clone(),
+                    )
+                    .to_string())
+                }
+            }
+        }
+        for (name, value) in [("voice", &options.voice), ("language", &options.language)] {
+            if let Some(value) = value {
+                if value.trim().is_empty() || value.chars().any(char::is_control) {
+                    return Err(format!("invalid conversion option '{name}': expected nonempty text without control characters"));
+                }
+            }
+        }
+        Ok(options)
+    }
+
+    fn into_request(
+        self,
+        session: &ConverterSession,
+        job_id: String,
+        chapter_indices: Option<Vec<String>>,
+        no_parallel: bool,
+    ) -> converter_core::worker::ConversionRequest {
+        converter_core::worker::ConversionRequest {
+            input: session.session.input_path().to_path_buf(),
+            job_id,
+            engine: Some(self.engine.unwrap_or_else(|| "edge".to_owned())),
+            voice: self.voice,
+            language: self.language,
+            chapter_indices,
+            no_parallel,
+        }
+    }
+}
+
+/// Validates options without opening a book or reserving output artifacts.
+#[no_mangle]
+pub unsafe extern "C" fn converter_conversion_options_validate_json_v1(
+    options_json: *const c_char,
+) -> bool {
+    clear_last_error();
+    match c_string(options_json, "conversion options")
+        .and_then(|json| ConversionOptionsV1::parse(&json))
+    {
+        Ok(_) => true,
+        Err(error) => fail(error),
+    }
+}
 
 fn positional_chapter_selection(
     session: &ConverterSession,
@@ -264,7 +353,7 @@ pub unsafe extern "C" fn converter_session_convert_json(
 }
 
 /// Converts a book through the shared Rust worker and publishes each complete,
-/// ffprobe-validated chapter in conversion order. `output_dir` must be the
+/// validated chapter in conversion order. `output_dir` must be the
 /// directory named by `job_id`; event strings are valid only during callback.
 #[no_mangle]
 pub unsafe extern "C" fn converter_session_convert_job_json(
@@ -276,6 +365,72 @@ pub unsafe extern "C" fn converter_session_convert_job_json(
     progress_callback: ConverterProgressCallback,
     callback: ConverterChapterCompletedCallback,
     context: *mut c_void,
+) -> *mut c_char {
+    convert_job_with_options(
+        handle,
+        output_dir,
+        job_id,
+        chapter_start,
+        chapter_end,
+        progress_callback,
+        callback,
+        context,
+        ConversionOptionsV1::default(),
+    )
+}
+
+/// Converts with strict version 1 JSON options. `schema_version: 1` is required.
+/// Optional `engine` accepts edge/piper/auto (trimmed, case-insensitive); omission
+/// or null preserves Edge, and auto retains the core's auto-to-Edge policy.
+/// Optional `voice` and `language` preserve literal nonblank, control-free text;
+/// omission or null lets the Rust worker choose its defaults. Unknown fields are
+/// rejected. `clear_cache`, `force_reprocess`, and `max_performance` default to
+/// false and reject true until their semantics are implemented. No model install
+/// or inference-readiness assertion is performed by this configuration boundary.
+/// Options and chapter bounds are checked before output creation. Returned
+/// strings and callbacks retain the existing ownership contract.
+#[no_mangle]
+pub unsafe extern "C" fn converter_session_convert_job_options_json_v1(
+    handle: *const ConverterSession,
+    output_dir: *const c_char,
+    job_id: *const c_char,
+    options_json: *const c_char,
+    chapter_start: i32,
+    chapter_end: i32,
+    progress_callback: ConverterProgressCallback,
+    callback: ConverterChapterCompletedCallback,
+    context: *mut c_void,
+) -> *mut c_char {
+    clear_last_error();
+    let options = match c_string(options_json, "conversion options")
+        .and_then(|json| ConversionOptionsV1::parse(&json))
+    {
+        Ok(options) => options,
+        Err(error) => return fail(error),
+    };
+    convert_job_with_options(
+        handle,
+        output_dir,
+        job_id,
+        chapter_start,
+        chapter_end,
+        progress_callback,
+        callback,
+        context,
+        options,
+    )
+}
+
+unsafe fn convert_job_with_options(
+    handle: *const ConverterSession,
+    output_dir: *const c_char,
+    job_id: *const c_char,
+    chapter_start: i32,
+    chapter_end: i32,
+    progress_callback: ConverterProgressCallback,
+    callback: ConverterChapterCompletedCallback,
+    context: *mut c_void,
+    options: ConversionOptionsV1,
 ) -> *mut c_char {
     clear_last_error();
     let _ = rustls::crypto::ring::default_provider().install_default();
@@ -313,18 +468,14 @@ pub unsafe extern "C" fn converter_session_convert_job_json(
     config.max_parallel = config.max_parallel.min(embedded_chapter_parallelism_cap());
     #[cfg(feature = "piper-runtime")]
     piper_runtime_register_embedded();
-    let request = converter_core::worker::ConversionRequest {
-        input: session.session.input_path().to_path_buf(),
-        job_id: job_id.clone(),
-        engine: Some("edge".to_owned()),
-        voice: None,
-        language: None,
-        chapter_indices,
-        no_parallel: chapter_start >= 0,
-    };
+    let request =
+        options.into_request(session, job_id.clone(), chapter_indices, chapter_start >= 0);
     let progress_log = output_dir.join("conversion.log");
     let context_address = context as usize;
     let progress_callback = progress_callback;
+    let callback_scope = callbacks::CallbackScope::new();
+    let progress_dispatcher = callback_scope.dispatcher();
+    let chapter_dispatcher = callback_scope.dispatcher();
     let conversion_started = std::time::Instant::now();
     let previous_event = std::sync::Mutex::new(conversion_started);
     let worker = match converter_core::worker::ConversionWorker::new(config) {
@@ -344,7 +495,9 @@ pub unsafe extern "C" fn converter_session_convert_job_json(
         if let Some(callback) = progress_callback {
             if let Ok(json) = serde_json::to_string(&event) {
                 if let Ok(json) = CString::new(json) {
-                    unsafe { callback(json.as_ptr(), context_address as *mut c_void) };
+                    progress_dispatcher.dispatch(|| unsafe {
+                        callback(json.as_ptr(), context_address as *mut c_void)
+                    });
                 }
             }
         }
@@ -355,7 +508,8 @@ pub unsafe extern "C" fn converter_session_convert_job_json(
             return;
         };
         let Ok(json) = CString::new(json) else { return };
-        unsafe { callback(json.as_ptr(), context_address as *mut c_void) };
+        chapter_dispatcher
+            .dispatch(|| unsafe { callback(json.as_ptr(), context_address as *mut c_void) });
     }));
     let conversion_thread = match std::thread::Builder::new()
         .name("converter-ffi-conversion".into())
@@ -1776,6 +1930,152 @@ mod tests {
         assert!(line.contains("elapsed_ms="));
         assert!(line.contains("since_event_ms="));
         assert!(line.contains("converting chapter 4"));
+    }
+
+    #[test]
+    fn options_abi_rejects_invalid_configuration_before_output_work() {
+        let book = fixture();
+        let path = CString::new(book.path().to_string_lossy().as_bytes()).unwrap();
+        let directory = tempfile::tempdir().unwrap();
+        let blocked = directory.path().join("blocked-options");
+        std::fs::write(&blocked, b"prior output").unwrap();
+        let output = CString::new(blocked.to_string_lossy().as_bytes()).unwrap();
+        let job = CString::new("blocked-options").unwrap();
+        unsafe {
+            let handle = converter_session_open(path.as_ptr());
+            assert!(!handle.is_null());
+            for (json, expected) in [
+                (
+                    r#"{"schema_version":1,"engine":"coqui"}"#,
+                    "unsupported conversion engine",
+                ),
+                (r#"{"schema_version":2}"#, "schema_version"),
+                (r#"{}"#, "schema_version"),
+                (r#"{"schema_version":1,"unknown":false}"#, "unknown field"),
+                (r#"{"schema_version":1,"clear_cache":true}"#, "clear_cache"),
+                (
+                    r#"{"schema_version":1,"force_reprocess":true}"#,
+                    "force_reprocess",
+                ),
+                (
+                    r#"{"schema_version":1,"max_performance":true}"#,
+                    "max_performance",
+                ),
+                (r#"{"schema_version":1,"voice":""}"#, "voice"),
+                (r#"{"schema_version":1,"language":"\u0000"}"#, "language"),
+                ("{", "JSON"),
+            ] {
+                let options = CString::new(json).unwrap();
+                assert!(converter_session_convert_job_options_json_v1(
+                    handle,
+                    output.as_ptr(),
+                    job.as_ptr(),
+                    options.as_ptr(),
+                    0,
+                    0,
+                    None,
+                    None,
+                    ptr::null_mut()
+                )
+                .is_null());
+                let error = converter_last_error();
+                assert!(!error.is_null());
+                let message = CStr::from_ptr(error).to_str().unwrap().to_owned();
+                converter_string_free(error);
+                assert!(message.contains(expected), "{json}: {message}");
+            }
+            converter_session_free(handle);
+        }
+        assert_eq!(std::fs::read(blocked).unwrap(), b"prior output");
+        assert_eq!(std::fs::read_dir(directory.path()).unwrap().count(), 1);
+    }
+
+    #[test]
+    fn options_request_forwards_provider_voice_language_and_selection() {
+        let book = fixture();
+        let path = CString::new(book.path().to_string_lossy().as_bytes()).unwrap();
+        unsafe {
+            let handle = converter_session_open(path.as_ptr());
+            let session = handle.as_ref().expect("fixture session");
+            for (engine, expected) in [("edge", "edge"), (" PiPeR ", "piper"), ("auto", "auto")] {
+                let json = serde_json::json!({"schema_version":1, "engine":engine,
+                    "voice":"pt-BR-FranciscaNeural", "language":"pt-BR",
+                    "clear_cache":false, "force_reprocess":false, "max_performance":false});
+                let options = ConversionOptionsV1::parse(&json.to_string()).unwrap();
+                let request = options.into_request(
+                    session,
+                    "options-job".into(),
+                    positional_chapter_selection(session, 0, 0).unwrap(),
+                    true,
+                );
+                assert_eq!(request.engine.as_deref(), Some(expected));
+                assert_eq!(request.voice.as_deref(), Some("pt-BR-FranciscaNeural"));
+                assert_eq!(request.language.as_deref(), Some("pt-BR"));
+                assert_eq!(request.job_id, "options-job");
+                assert_eq!(request.input, session.session.input_path());
+                assert_eq!(request.chapter_indices, Some(vec!["position:0".into()]));
+                assert!(request.no_parallel);
+            }
+            let defaults = ConversionOptionsV1::parse(r#"{"schema_version":1}"#)
+                .unwrap()
+                .into_request(session, "default-job".into(), None, false);
+            let legacy = ConversionOptionsV1::default().into_request(
+                session,
+                "default-job".into(),
+                None,
+                false,
+            );
+            assert_eq!(defaults.engine, legacy.engine);
+            assert_eq!(defaults.engine.as_deref(), Some("edge"));
+            assert!(defaults.voice.is_none() && defaults.language.is_none());
+            assert!(defaults.chapter_indices.is_none() && !defaults.no_parallel);
+            converter_session_free(handle);
+        }
+    }
+
+    #[test]
+    fn valid_options_abi_reaches_blocked_output_without_synthesis() {
+        let book = fixture();
+        let path = CString::new(book.path().to_string_lossy().as_bytes()).unwrap();
+        let directory = tempfile::tempdir().unwrap();
+        let blocked = directory.path().join("blocked-options");
+        std::fs::write(&blocked, b"prior output").unwrap();
+        let output = CString::new(blocked.to_string_lossy().as_bytes()).unwrap();
+        let job = CString::new("blocked-options").unwrap();
+        unsafe {
+            let handle = converter_session_open(path.as_ptr());
+            assert!(!handle.is_null());
+            for json in [
+                r#"{"schema_version":1}"#,
+                r#"{"schema_version":1,"engine":"piper","voice":"speaker-0","language":"pt-BR"}"#,
+                r#"{"schema_version":1,"engine":"auto"}"#,
+            ] {
+                let options = CString::new(json).unwrap();
+                assert!(converter_session_convert_job_options_json_v1(
+                    handle,
+                    output.as_ptr(),
+                    job.as_ptr(),
+                    options.as_ptr(),
+                    0,
+                    -1,
+                    None,
+                    None,
+                    ptr::null_mut()
+                )
+                .is_null());
+                let error = converter_last_error();
+                assert!(!error.is_null());
+                let message = CStr::from_ptr(error).to_str().unwrap().to_owned();
+                converter_string_free(error);
+                assert!(
+                    message.contains("failed to create output directory"),
+                    "{message}"
+                );
+            }
+            converter_session_free(handle);
+        }
+        assert_eq!(std::fs::read(blocked).unwrap(), b"prior output");
+        assert_eq!(std::fs::read_dir(directory.path()).unwrap().count(), 1);
     }
 
     #[test]
