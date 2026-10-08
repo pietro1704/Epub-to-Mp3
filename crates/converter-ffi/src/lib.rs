@@ -74,6 +74,25 @@ pub unsafe extern "C" fn converter_session_metadata_json(
     }
 }
 
+fn bounded_chapter_indices(
+    start: i32,
+    end: i32,
+    chapter_count: usize,
+) -> Result<Option<Vec<String>>, String> {
+    if start < 0 {
+        return Ok(None);
+    }
+    let last = end.max(start);
+    if last as usize >= chapter_count {
+        return Err(format!(
+            "chapter range {start}..{last} is outside the book ({chapter_count} chapters)"
+        ));
+    }
+    Ok(Some(
+        (start..=last).map(|index| index.to_string()).collect(),
+    ))
+}
+
 /// Converts the EPUB and returns the generated manifest as an owned JSON
 /// string. Audio files are written by the Rust worker under its configured
 /// persistent output directory.
@@ -94,6 +113,14 @@ pub unsafe extern "C" fn converter_session_convert_json(
         Ok(value) => value,
         Err(error) => return fail(error),
     };
+    let chapter_indices = match bounded_chapter_indices(
+        chapter_start,
+        chapter_end,
+        session.session.metadata().chapters.len(),
+    ) {
+        Ok(indices) => indices,
+        Err(error) => return fail(error),
+    };
     let config = AppConfig::from_paths(resolve_paths_from(
         [("OUTPUT_DIR".to_owned(), output_dir.clone())],
         std::path::PathBuf::from(output_dir.clone()),
@@ -112,17 +139,7 @@ pub unsafe extern "C" fn converter_session_convert_json(
         engine: Some("edge".to_owned()),
         voice: None,
         language: None,
-        chapter_indices: if chapter_start >= 0 {
-            Some(if chapter_end >= chapter_start {
-                (chapter_start..=chapter_end)
-                    .map(|index| index.to_string())
-                    .collect()
-            } else {
-                vec![chapter_start.to_string()]
-            })
-        } else {
-            None
-        },
+        chapter_indices,
         no_parallel: true,
     };
     let progress_log = generated_output_dir.join("conversion.log");
@@ -1409,6 +1426,62 @@ mod tests {
     use super::*;
     use std::{ffi::CString, io::Write, ptr};
     use zip::{write::FileOptions, ZipWriter};
+
+    #[test]
+    fn requested_chapter_must_exist_before_range_expansion() {
+        for (start, end, count) in [
+            (1, 1, 1),
+            (0, i32::MAX, 2),
+            (i32::MAX, i32::MAX, 2),
+            (0, 0, 0),
+        ] {
+            assert!(bounded_chapter_indices(start, end, count).is_err());
+        }
+    }
+
+    #[test]
+    fn bounded_range_preserves_v1_omission_and_single_chapter_conventions() {
+        assert_eq!(bounded_chapter_indices(-1, -1, 4).unwrap(), None);
+        assert_eq!(bounded_chapter_indices(-1, 3, 4).unwrap(), None);
+        assert_eq!(
+            bounded_chapter_indices(2, -1, 4).unwrap(),
+            Some(vec!["2".to_owned()])
+        );
+        assert_eq!(
+            bounded_chapter_indices(3, 1, 4).unwrap(),
+            Some(vec!["3".to_owned()])
+        );
+        assert_eq!(
+            bounded_chapter_indices(1, 3, 4).unwrap(),
+            Some(vec!["1".to_owned(), "2".to_owned(), "3".to_owned()])
+        );
+    }
+
+    #[test]
+    fn ffi_rejects_invalid_ranges_before_persisting_or_synthesizing() {
+        let input = fixture();
+        let input_path = CString::new(input.path().to_str().unwrap()).unwrap();
+        let root = tempfile::tempdir().unwrap();
+        let output = root.path().join("not-created");
+        let output_path = CString::new(output.to_str().unwrap()).unwrap();
+        unsafe {
+            let handle = converter_session_open(input_path.as_ptr());
+            assert!(!handle.is_null());
+            for (start, end) in [(1, 1), (0, i32::MAX), (i32::MAX, i32::MAX)] {
+                let result =
+                    converter_session_convert_json(handle, output_path.as_ptr(), start, end);
+                assert!(result.is_null());
+                let error = converter_last_error();
+                assert!(CStr::from_ptr(error)
+                    .to_str()
+                    .unwrap()
+                    .contains("outside the book"));
+                converter_string_free(error);
+                assert!(!output.exists());
+            }
+            converter_session_free(handle);
+        }
+    }
 
     fn fixture() -> tempfile::NamedTempFile {
         let file = tempfile::NamedTempFile::new().expect("temporary EPUB");
