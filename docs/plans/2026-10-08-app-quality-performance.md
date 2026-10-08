@@ -482,3 +482,23 @@ The native identity/scope regression passed once, zero skips, in
 `Test-EpubToMp3Mac-2026.10.08_18-45-26--0300.xcresult`.
 The older measurement reports lack this payload identity, so a strict paired
 comparison remains unproven and needs refreshed measurements. No speedup claim.
+
+### Matched macOS cached-playback before/after sample
+
+Refreshed baseline/current measurements each executed one test, zero failures or
+skips. EPUB/audio hashes, selected indices and inputs match; actual app-code
+hashes differ (`eb1ad816…` before, `4a17bd31…` after). Evidence directories:
+`.reports/mobile-audio/cached-playback-paired-baseline.NeVQpv` and
+`cached-playback-paired-candidate.KOIyxO`, including permanent XCTest attachments.
+
+LOTR before→after: first progressing audio 497.91→498.21 ms, seek
+39.34→44.36 ms, next 30.66→45.53 ms, previous 28.93→30.85 ms.
+Christie: 340.27→346.72 ms, seek 51.45→41.86 ms, next 44.35→46.61 ms,
+previous 27.61→28.33 ms. Largest sampled footprints: 14.28→14.22 MiB.
+
+This single Debug/macOS pair shows mixed small timing changes, not a demonstrated
+general speedup or causal regression. Audio is cached, progress is not acoustic,
+memory is point-sampled, and this does not cover segment-mode or conversion speed.
+No synthesis or user-data cleanup; current app products were restored in the
+single shared build cache after the baseline run. Physical playback failures,
+iPhone measurements, book-open budgets and conversion comparison remain open.
