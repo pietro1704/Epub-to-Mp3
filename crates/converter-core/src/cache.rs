@@ -124,7 +124,15 @@ pub fn atomic_write_json<T: Serialize + ?Sized>(
 }
 
 pub fn read_json<T: for<'de> Deserialize<'de>>(path: impl AsRef<Path>) -> Result<T, CacheError> {
-    Ok(serde_json::from_reader(File::open(path)?)?)
+    read_json_from(File::open(path)?)
+}
+
+fn read_json_from<T: for<'de> Deserialize<'de>>(mut reader: impl Read) -> Result<T, CacheError> {
+    let mut bytes = Vec::new();
+    reader
+        .read_to_end(&mut bytes)
+        .map_err(serde_json::Error::io)?;
+    Ok(serde_json::from_slice(&bytes)?)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -175,6 +183,88 @@ impl DuplicateTracker {
 mod tests {
     use super::*;
     use std::io::Write;
+
+    fn large_chapter_text() -> String {
+        "Audio chapter text. Unicode: é 🎵.\n".repeat(12_000)
+    }
+
+    #[test]
+    fn large_json_reads_batch_the_underlying_io() {
+        struct CountingReader<'a> {
+            input: io::Cursor<Vec<u8>>,
+            calls: &'a std::cell::Cell<usize>,
+        }
+        impl Read for CountingReader<'_> {
+            fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
+                self.calls.set(self.calls.get() + 1);
+                self.input.read(buffer)
+            }
+        }
+        let expected = large_chapter_text();
+        let calls = std::cell::Cell::new(0);
+        let reader = CountingReader {
+            input: io::Cursor::new(serde_json::to_vec(&expected).unwrap()),
+            calls: &calls,
+        };
+        let actual: String = read_json_from(reader).unwrap();
+        assert_eq!(actual, expected);
+        assert!(
+            calls.get() < 512,
+            "cache input must be read in batches; observed {} read calls",
+            calls.get()
+        );
+    }
+
+    #[test]
+    fn batched_json_read_preserves_parse_errors() {
+        for bytes in [b"".as_slice(), b"{broken}", b"true false", b"\"\xff\""] {
+            assert!(matches!(
+                read_json_from::<serde_json::Value>(io::Cursor::new(bytes)),
+                Err(CacheError::Json(_))
+            ));
+        }
+    }
+
+    #[test]
+    fn batched_json_read_preserves_storage_error_categories() {
+        struct FailedReader;
+        impl Read for FailedReader {
+            fn read(&mut self, _: &mut [u8]) -> io::Result<usize> {
+                Err(io::Error::other("simulated storage failure"))
+            }
+        }
+        assert!(matches!(
+            read_json_from::<serde_json::Value>(FailedReader),
+            Err(CacheError::Json(error)) if error.is_io()
+        ));
+        let root = tempfile::tempdir().unwrap();
+        assert!(matches!(
+            read_json::<serde_json::Value>(root.path().join("missing.json")),
+            Err(CacheError::Io(error)) if error.kind() == io::ErrorKind::NotFound
+        ));
+    }
+
+    #[test]
+    #[ignore = "manual timing benchmark for chapter JSON cache"]
+    fn benchmark_chapter_json_cache_read() {
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join("chapter.json");
+        let expected = large_chapter_text();
+        atomic_write_json(&path, &expected).unwrap();
+        let mut samples = Vec::new();
+        for _ in 0..9 {
+            let started = std::time::Instant::now();
+            let actual: String = std::hint::black_box(read_json(&path).unwrap());
+            samples.push(started.elapsed().as_micros());
+            assert_eq!(actual, expected);
+        }
+        samples.sort_unstable();
+        println!(
+            "chapter_json_cache bytes={} median_us={}",
+            fs::metadata(path).unwrap().len(),
+            samples[samples.len() / 2]
+        );
+    }
 
     #[test]
     fn hashes_are_deterministic() {
