@@ -234,6 +234,7 @@ final class DeviceWorkflowTests: XCTestCase {
             XCTAssertThrowsError(try FileLease(self.root.appendingPathComponent("heavy.lock")))
             XCTAssertThrowsError(try FileLease(self.root.appendingPathComponent(".reports/device/workflow.lock")))
             XCTAssertFalse(command.arguments.contains { $0.contains(".py") || $0 == "python" || $0 == "ruff" })
+            XCTAssertFalse(command.arguments.contains { $0.contains("Library/Application Support") })
             try observe(4321)
             let state = try DurableJSON.read(self.root.appendingPathComponent(".reports/device/latest.json"))
             XCTAssertEqual((state["processPid"] as? NSNumber)?.int32Value, getpid())
@@ -247,8 +248,14 @@ final class DeviceWorkflowTests: XCTestCase {
                     ["executable": "/apps/EpubToMp3.app/EpubToMp3", "processIdentifier": 42],
                     ["executable": "/apps/EpubToMp3.app/Other", "processIdentifier": 43],
                 ]]
-                case "inputCleanupVerification": result = ["files": cleanupAbsent ? [] : [["name": self.runID]]]
-                case "inputCleanupContents": result = ["files": [["name": "book-0.epub"]]]
+                case "inputCleanupVerification":
+                    XCTAssertEqual(command.arguments[command.arguments.firstIndex(of: "--subdirectory")! + 1],
+                                   "tmp/EpubToMp3/DeviceTestInputs")
+                    result = ["files": cleanupAbsent ? [] : [["name": self.runID]]]
+                case "inputCleanupContents":
+                    XCTAssertEqual(command.arguments[command.arguments.firstIndex(of: "--subdirectory")! + 1],
+                                   "tmp/EpubToMp3/DeviceTestInputs/\(self.runID)")
+                    result = ["files": [["name": "book-0.epub"]]]
                 default: XCTFail("Unexpected JSON query: \(command.phase)")
                 }
                 try DurableJSON.write(["info": ["outcome": "success"], "result": result], to: URL(fileURLWithPath: command.arguments[outputIndex + 1]))
@@ -265,13 +272,33 @@ final class DeviceWorkflowTests: XCTestCase {
             case "transfer":
                 let index = command.arguments.firstIndex(of: "--source")!
                 XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: command.arguments[index + 1]), ["book-0.epub"])
+                XCTAssertEqual(command.arguments[command.arguments.firstIndex(of: "--destination")! + 1],
+                               "tmp/EpubToMp3/DeviceTestInputs/\(self.runID)")
             case "testWall":
                 XCTAssertTrue(command.arguments.contains("-only-testing:EpubToMp3Tests/Smoke"))
+                if let index = command.arguments.firstIndex(of: "-xctestrun") {
+                    let plist = try PropertyListSerialization.propertyList(
+                        from: Data(contentsOf: URL(fileURLWithPath: command.arguments[index + 1])), format: nil) as! [String: Any]
+                    let configurations = plist["TestConfigurations"] as! [[String: Any]]
+                    let target = (configurations[0]["TestTargets"] as! [[String: Any]])[0]
+                    let environment = target["EnvironmentVariables"] as! [String: String]
+                    let spec = try JSONSerialization.jsonObject(with: Data(environment["EPUB2MP3_DEVICE_BENCHMARK_SPEC"]!.utf8)) as! [String: Any]
+                    XCTAssertEqual(spec["schemaVersion"] as? Int, 2)
+                    XCTAssertEqual(spec["inputBase"] as? String, "temporary")
+                    let cases = spec["cases"] as! [[String: Any]]
+                    XCTAssertEqual(cases[0]["bookPath"] as? String,
+                                   "EpubToMp3/DeviceTestInputs/\(self.runID)/book-0.epub")
+                    XCTAssertEqual(cases[0]["chapterStart"] as? Int, 8)
+                    XCTAssertEqual(cases[0]["chapterEnd"] as? Int, 9)
+                }
                 return CommandResult(code: failNative ? 65 : 0)
             case "build":
                 XCTAssertTrue(command.arguments.contains("-only-testing:EpubToMp3Tests/Smoke"))
                 XCTAssertTrue(command.arguments.contains("build-for-testing"))
-            case "nativeCollection": return CommandResult(code: 1)
+            case "nativeCollection":
+                XCTAssertEqual(command.arguments[command.arguments.firstIndex(of: "--source")! + 1],
+                               "tmp/DeviceBenchmarkReports/\(self.runID).json")
+                return CommandResult(code: 1)
             case "attachmentExport":
                 let index = command.arguments.firstIndex(of: "--output-path")!
                 let selections = try BenchmarkCase.validate([[self.root.appendingPathComponent("book.epub").path, "8", "9"]], wholeBook: false, runID: self.runID)
@@ -279,7 +306,11 @@ final class DeviceWorkflowTests: XCTestCase {
                 if failNative { evidence["status"] = "failed"; evidence["error"] = "ffprobe/ffmpeg: No such file (os error 2)" }
                 try DurableJSON.write(evidence, to: URL(fileURLWithPath: command.arguments[index + 1]).appendingPathComponent("native.json"))
             case "testSummary": return CommandResult(output: "{\"result\":\"Passed\",\"passedTests\":1,\"failedTests\":0,\"skippedTests\":0}")
-            case "inputCleanup": return CommandResult(code: 1, output: "CoreDevice error 7000: missing node")
+            case "inputCleanup":
+                XCTAssertEqual(command.arguments[command.arguments.firstIndex(of: "--destination")! + 1],
+                               "tmp/EpubToMp3/DeviceTestInputs/\(self.runID)")
+                XCTAssertEqual(Array(command.arguments.suffix(2)), ["--remove-existing-content", "true"])
+                return CommandResult(code: 1, output: "CoreDevice error 7000: missing node")
             default: break
             }
             return CommandResult()
@@ -337,6 +368,78 @@ final class DeviceWorkflowTests: XCTestCase {
         XCTAssertNil(report["childPid"])
         XCTAssertEqual((report["timings"] as? [String: Double])?["synthesisSeconds"], 10)
         XCTAssertTrue(FileManager.default.fileExists(atPath: work.directory.appendingPathComponent("native-report.json").path))
+    }
+
+    func testTwoBookTemporaryPathsPreserveExactChapterRanges() throws {
+        let first = try book()
+        let second = try book("second.epub", content: "Distinct second EPUB fixture")
+        let work = try workflow(["benchmark", "--preview", "--case", first.path, "8", "9",
+                                 "--case", second.path, "6", "7"], runner: { _, _ in
+            XCTFail("Preview must not invoke Apple tools")
+            return CommandResult()
+        })
+        let cases = try XCTUnwrap(try work.execute()["cases"] as? [[String: Any]])
+        XCTAssertEqual(cases.count, 2)
+        for (index, bounds) in [[8, 9], [6, 7]].enumerated() {
+            XCTAssertEqual(cases[index]["bookPath"] as? String,
+                           "EpubToMp3/DeviceTestInputs/\(runID)/book-\(index).epub")
+            XCTAssertEqual(cases[index]["chapterStart"] as? Int, bounds[0])
+            XCTAssertEqual(cases[index]["chapterEnd"] as? Int, bounds[1])
+        }
+    }
+
+    func testCleanupMissingParentRequiresReadableRootWithoutStagedRun() throws {
+        _ = try appFixture()
+        let path = try book().path
+        for state in ["absent", "retained", "unreadable"] {
+            let fallback = fakeRunner(phases: NSMutableArray())
+            var queriedRoot = false
+            let work = try workflow(["benchmark", "--skip-build", "--case", path, "8", "9"], runner: { command, observe in
+                if command.phase == "inputCleanupVerification" { return CommandResult(code: 1) }
+                if command.phase == "inputCleanupRootVerification" {
+                    queriedRoot = true
+                    XCTAssertEqual(command.arguments[command.arguments.firstIndex(of: "--subdirectory")! + 1], ".")
+                    if state == "unreadable" { return CommandResult(code: 1) }
+                    let names = state == "retained"
+                        ? ["tmp", "tmp/EpubToMp3/DeviceTestInputs/\(self.runID)/book-0.epub"] : ["tmp"]
+                    let destination = command.arguments[command.arguments.firstIndex(of: "--json-output")! + 1]
+                    try DurableJSON.write(["info": ["outcome": "success"],
+                                           "result": ["files": names.map { ["name": $0] }]],
+                                          to: URL(fileURLWithPath: destination))
+                    return CommandResult()
+                }
+                return try fallback(command, observe)
+            })
+            // Each mocked workflow owns an exclusive run directory.
+            defer { try? FileManager.default.removeItem(at: work.directory) }
+            if state == "absent" {
+                XCTAssertEqual(try work.execute()["status"] as? String, "passed")
+            } else {
+                XCTAssertThrowsError(try work.execute())
+            }
+            XCTAssertTrue(queriedRoot, "Must verify root rather than assume a missing parent means cleanup succeeded")
+        }
+    }
+
+    func testTemporaryNativeReportCollectionAvoidsAttachmentExport() throws {
+        _ = try appFixture()
+        let path = try book().path
+        let phases = NSMutableArray()
+        let fallback = fakeRunner(phases: phases)
+        let work = try workflow(["benchmark", "--skip-build", "--case", path, "8", "9"], runner: { command, observe in
+            if command.phase == "nativeCollection" {
+                phases.add(command.phase)
+                XCTAssertEqual(command.arguments[command.arguments.firstIndex(of: "--source")! + 1],
+                               "tmp/DeviceBenchmarkReports/\(self.runID).json")
+                let selections = try BenchmarkCase.validate([[path, "8", "9"]], wholeBook: false, runID: self.runID)
+                let destination = command.arguments[command.arguments.firstIndex(of: "--destination")! + 1]
+                try DurableJSON.write(self.native(selections), to: URL(fileURLWithPath: destination))
+                return CommandResult()
+            }
+            return try fallback(command, observe)
+        })
+        XCTAssertEqual(try work.execute()["status"] as? String, "passed")
+        XCTAssertFalse((phases as? [String] ?? []).contains("attachmentExport"))
     }
 
     func testPrimaryRustFailureSurvivesCleanupFailure() throws {

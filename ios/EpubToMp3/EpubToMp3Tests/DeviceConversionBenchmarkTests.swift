@@ -13,24 +13,26 @@ private struct DeviceBenchmarkSpec: Codable {
     }
 
     let schemaVersion: Int
+    let inputBase: String
     let runID: String
     let wholeBook: Bool
     let cases: [Selection]
 
-    static func decode(_ json: String, applicationSupport: URL) throws -> Self {
+    static func decode(_ json: String, temporaryRoot: URL) throws -> Self {
         let spec = try JSONDecoder().decode(Self.self, from: Data(json.utf8))
-        try spec.validate(applicationSupport: applicationSupport)
+        try spec.validate(temporaryRoot: temporaryRoot)
         return spec
     }
 
-    func validate(applicationSupport: URL) throws {
-        try require(schemaVersion == 1, "Unsupported benchmark schema.")
+    func validate(temporaryRoot: URL) throws {
+        try require(schemaVersion == 2, "Unsupported benchmark schema.")
+        try require(inputBase == "temporary", "Benchmark inputs require temporary storage.")
         try require(UUID(uuidString: runID) != nil, "Invalid run UUID.")
         try require(!cases.isEmpty, "At least one explicit case is required.")
         var jobs = Set<UUID>()
         var bookPaths = Set<String>()
-        let directory = stagedDirectory(applicationSupport: applicationSupport)
-        try require(directory.resolvingSymlinksInPath().standardizedFileURL == directory.standardizedFileURL,
+        let directory = stagedDirectory(temporaryRoot: temporaryRoot)
+        try require(directory.resolvingSymlinksInPath().standardizedFileURL.path == directory.standardizedFileURL.path,
                     "The staged run directory must not traverse symlinks.")
         for selection in cases {
             guard let job = UUID(uuidString: selection.jobID) else {
@@ -45,9 +47,9 @@ private struct DeviceBenchmarkSpec: Codable {
             try require(!parts.contains("..") && !parts.contains(".") && !parts.contains("")
                         && !selection.bookPath.contains("\\") && !selection.bookPath.contains("%")
                         && !selection.bookPath.contains("\0"), "Unsafe staged book path.")
-            let book = applicationSupport.appendingPathComponent(selection.bookPath)
+            let book = temporaryRoot.appendingPathComponent(selection.bookPath)
             try require(book.pathExtension.lowercased() == "epub"
-                        && book.resolvingSymlinksInPath().deletingLastPathComponent().standardizedFileURL == directory.standardizedFileURL,
+                        && book.resolvingSymlinksInPath().deletingLastPathComponent().standardizedFileURL.path == directory.standardizedFileURL.path,
                         "Staged EPUB escapes the run directory.")
             if selection.chapterStart == -1 && selection.chapterEnd == -1 {
                 try require(wholeBook, "Whole-book selection requires explicit opt-in.")
@@ -60,8 +62,8 @@ private struct DeviceBenchmarkSpec: Codable {
         }
     }
 
-    func stagedDirectory(applicationSupport: URL) -> URL {
-        applicationSupport.appendingPathComponent("EpubToMp3/DeviceTestInputs/\(runID)", isDirectory: true)
+    func stagedDirectory(temporaryRoot: URL) -> URL {
+        temporaryRoot.appendingPathComponent("EpubToMp3/DeviceTestInputs/\(runID)", isDirectory: true)
     }
 }
 
@@ -75,11 +77,39 @@ private func require(_ condition: Bool, _ message: String) throws {
     guard condition else { throw BenchmarkFailure(message) }
 }
 
+// Redirect only the benchmark coordinator's existing FileManager dependency.
+private final class BenchmarkFileManager: FileManager, @unchecked Sendable {
+    let supportRoot: URL
+
+    init(supportRoot: URL) {
+        self.supportRoot = supportRoot
+        super.init()
+    }
+
+    override func url(for directory: FileManager.SearchPathDirectory,
+                      in domain: FileManager.SearchPathDomainMask,
+                      appropriateFor url: URL?, create shouldCreate: Bool) throws -> URL {
+        if directory == .applicationSupportDirectory && domain == .userDomainMask {
+            return supportRoot
+        }
+        return try super.url(for: directory, in: domain, appropriateFor: url, create: shouldCreate)
+    }
+}
+
+private func validateBenchmarkOutputParent(_ output: URL) throws {
+    let parent = output.deletingLastPathComponent().standardizedFileURL
+    // URL equality also compares directory hints; resolving a missing directory
+    // drops its trailing slash. Compare filesystem paths while rejecting symlinks.
+    try require(parent.resolvingSymlinksInPath().standardizedFileURL.path == parent.path,
+                "Unsafe output directory.")
+}
+
 private struct BenchmarkInputCopies {
     let directory: URL
 
     init(temporaryRoot: URL = FileManager.default.temporaryDirectory) throws {
-        directory = temporaryRoot.appendingPathComponent("device-benchmark-\(UUID().uuidString)", isDirectory: true)
+        directory = temporaryRoot.resolvingSymlinksInPath().standardizedFileURL
+            .appendingPathComponent("device-benchmark-\(UUID().uuidString)", isDirectory: true)
         let reserved = directory.path.withCString { mkdir($0, mode_t(0o700)) }
         try require(reserved == 0, "Could not reserve app-owned benchmark inputs (errno=\(errno)).")
     }
@@ -195,11 +225,10 @@ final class DeviceConversionBenchmarkTests: XCTestCase {
             throw XCTSkip("Set EPUB2MP3_DEVICE_BENCHMARK_SPEC to an explicit benchmark JSON specification.")
         }
         let manager = FileManager.default
-        let support = try manager.url(for: .applicationSupportDirectory, in: .userDomainMask,
-                                      appropriateFor: nil, create: true).resolvingSymlinksInPath()
+        let temporaryRoot = manager.temporaryDirectory.resolvingSymlinksInPath()
         let spec = try JSONDecoder().decode(DeviceBenchmarkSpec.self, from: Data(json.utf8))
         try require(UUID(uuidString: spec.runID) != nil, "Invalid report run UUID.")
-        let reportURL = support.appendingPathComponent("EpubToMp3/DeviceBenchmarkReports/\(spec.runID).json")
+        let reportURL = temporaryRoot.appendingPathComponent("DeviceBenchmarkReports/\(spec.runID).json")
         var report = DeviceBenchmarkReport(runID: spec.runID, cases: spec.cases.map {
             .init(bookPath: $0.bookPath, chapterStart: $0.chapterStart, chapterEnd: $0.chapterEnd)
         })
@@ -240,20 +269,21 @@ final class DeviceConversionBenchmarkTests: XCTestCase {
         }
         do {
             _ = try report.save(to: reportURL)
-            try spec.validate(applicationSupport: support)
+            try spec.validate(temporaryRoot: temporaryRoot)
             let copies = try BenchmarkInputCopies()
             ownedInputs = copies
             var bookURLs: [URL] = []
             let adapter = ConverterFFIAdapter()
-            let coordinator = RustConversionCoordinator(adapter: adapter)
+            let isolatedManager = BenchmarkFileManager(supportRoot: copies.directory)
+            let coordinator = RustConversionCoordinator(adapter: adapter, fileManager: isolatedManager)
             let outputs = spec.cases.map {
-                support.appendingPathComponent("EpubToMp3/RustConversions/\($0.jobID)", isDirectory: true)
+                copies.directory.appendingPathComponent("EpubToMp3/RustConversions/\($0.jobID)", isDirectory: true)
             }
             // Preflight every case before the first synthesis, including metadata bounds.
             for (index, selection) in spec.cases.enumerated() {
                 activeCase = index
                 phase = "input copy and metadata preflight"
-                let source = support.appendingPathComponent(selection.bookPath)
+                let source = temporaryRoot.appendingPathComponent(selection.bookPath)
                 try require(manager.isReadableFile(atPath: source.path), "Staged EPUB is unreadable: \(selection.bookPath)")
                 let bookURL = try copies.copy(source: source, index: index)
                 bookURLs.append(bookURL)
@@ -261,8 +291,7 @@ final class DeviceConversionBenchmarkTests: XCTestCase {
                 try require(!manager.fileExists(atPath: output.path)
                             && (try? manager.destinationOfSymbolicLink(atPath: output.path)) == nil,
                             "Benchmark output already exists; audio reuse is forbidden.")
-                try require(output.deletingLastPathComponent().resolvingSymlinksInPath().standardizedFileURL
-                            == output.deletingLastPathComponent().standardizedFileURL, "Unsafe output directory.")
+                try validateBenchmarkOutputParent(output)
                 let book = try adapter.openBook(at: bookURL)
                 let metadata = try JSONSerialization.jsonObject(with: book.metadataJSON) as? [String: Any]
                 guard let chapters = metadata?["chapters"] as? [[String: Any]], !chapters.isEmpty else {
@@ -358,44 +387,44 @@ final class DeviceConversionBenchmarkTests: XCTestCase {
 
     private func specification(start: Int = 4, end: Int = 5, wholeBook: Bool = false) -> DeviceBenchmarkSpec {
         let run = UUID().uuidString
-        return .init(schemaVersion: 1, runID: run, wholeBook: wholeBook, cases: [
+        return .init(schemaVersion: 2, inputBase: "temporary", runID: run, wholeBook: wholeBook, cases: [
             .init(bookPath: "EpubToMp3/DeviceTestInputs/\(run)/book-0.epub",
                   chapterStart: start, chapterEnd: end, jobID: UUID().uuidString)
         ])
     }
 
     func testScopeAcceptsOneAndTwoChapters() throws {
-        try specification(start: 0, end: 0).validate(applicationSupport: validationRoot)
-        try specification().validate(applicationSupport: validationRoot)
+        try specification(start: 0, end: 0).validate(temporaryRoot: validationRoot)
+        try specification().validate(temporaryRoot: validationRoot)
     }
 
     func testScopeRejectsOversizedReversedAndMixedSentinels() {
         for (start, end) in [(0, 2), (5, 4), (-1, 0), (0, -1), (-2, -2), (Int.max, Int.max)] {
             for wholeBook in [false, true] {
                 XCTAssertThrowsError(try specification(start: start, end: end, wholeBook: wholeBook)
-                    .validate(applicationSupport: validationRoot))
+                    .validate(temporaryRoot: validationRoot))
             }
         }
     }
 
     func testScopeRequiresExplicitWholeBookOptIn() throws {
-        XCTAssertThrowsError(try specification(start: -1, end: -1).validate(applicationSupport: validationRoot))
-        try specification(start: -1, end: -1, wholeBook: true).validate(applicationSupport: validationRoot)
+        XCTAssertThrowsError(try specification(start: -1, end: -1).validate(temporaryRoot: validationRoot))
+        try specification(start: -1, end: -1, wholeBook: true).validate(temporaryRoot: validationRoot)
     }
 
     func testScopeRejectsMalformedMissingAndUnsupportedSchema() throws {
         let valid = try JSONEncoder().encode(specification())
         var object = try XCTUnwrap(JSONSerialization.jsonObject(with: valid) as? [String: Any])
-        for key in ["schemaVersion", "runID", "wholeBook", "cases"] {
+        for key in ["schemaVersion", "inputBase", "runID", "wholeBook", "cases"] {
             var missing = object
             missing.removeValue(forKey: key)
             let data = try JSONSerialization.data(withJSONObject: missing)
-            XCTAssertThrowsError(try DeviceBenchmarkSpec.decode(String(decoding: data, as: UTF8.self), applicationSupport: validationRoot))
+            XCTAssertThrowsError(try DeviceBenchmarkSpec.decode(String(decoding: data, as: UTF8.self), temporaryRoot: validationRoot))
         }
-        object["schemaVersion"] = 2
+        object["schemaVersion"] = 1
         let data = try JSONSerialization.data(withJSONObject: object)
-        XCTAssertThrowsError(try DeviceBenchmarkSpec.decode(String(decoding: data, as: UTF8.self), applicationSupport: validationRoot))
-        XCTAssertThrowsError(try DeviceBenchmarkSpec.decode("{", applicationSupport: validationRoot))
+        XCTAssertThrowsError(try DeviceBenchmarkSpec.decode(String(decoding: data, as: UTF8.self), temporaryRoot: validationRoot))
+        XCTAssertThrowsError(try DeviceBenchmarkSpec.decode("{", temporaryRoot: validationRoot))
     }
 
     func testScopeRejectsTraversalAndOtherRunPaths() {
@@ -405,24 +434,24 @@ final class DeviceConversionBenchmarkTests: XCTestCase {
                      "EpubToMp3/DeviceTestInputs/\(UUID().uuidString)/book.epub",
                      "EpubToMp3/DeviceTestInputs/\(spec.runID)/nested/book.epub",
                      "EpubToMp3/DeviceTestInputs/\(spec.runID)/book\\other.epub"] {
-            let invalid = DeviceBenchmarkSpec(schemaVersion: 1, runID: spec.runID, wholeBook: false, cases: [
+            let invalid = DeviceBenchmarkSpec(schemaVersion: 2, inputBase: "temporary", runID: spec.runID, wholeBook: false, cases: [
                 .init(bookPath: path, chapterStart: 0, chapterEnd: 1, jobID: UUID().uuidString)
             ])
-            XCTAssertThrowsError(try invalid.validate(applicationSupport: validationRoot), path)
+            XCTAssertThrowsError(try invalid.validate(temporaryRoot: validationRoot), path)
         }
     }
 
     func testScopeRejectsEmptyCasesInvalidUUIDsAndDuplicateJobs() {
         let spec = specification()
         for invalid in [
-            DeviceBenchmarkSpec(schemaVersion: 1, runID: spec.runID, wholeBook: false, cases: []),
-            DeviceBenchmarkSpec(schemaVersion: 1, runID: "invalid", wholeBook: false, cases: spec.cases),
-            DeviceBenchmarkSpec(schemaVersion: 1, runID: spec.runID, wholeBook: false, cases: spec.cases + spec.cases),
-            DeviceBenchmarkSpec(schemaVersion: 1, runID: spec.runID, wholeBook: false, cases: [
+            DeviceBenchmarkSpec(schemaVersion: 2, inputBase: "temporary", runID: spec.runID, wholeBook: false, cases: []),
+            DeviceBenchmarkSpec(schemaVersion: 2, inputBase: "temporary", runID: "invalid", wholeBook: false, cases: spec.cases),
+            DeviceBenchmarkSpec(schemaVersion: 2, inputBase: "temporary", runID: spec.runID, wholeBook: false, cases: spec.cases + spec.cases),
+            DeviceBenchmarkSpec(schemaVersion: 2, inputBase: "temporary", runID: spec.runID, wholeBook: false, cases: [
                 .init(bookPath: spec.cases[0].bookPath, chapterStart: 0, chapterEnd: 0, jobID: "invalid")
             ])
         ] {
-            XCTAssertThrowsError(try invalid.validate(applicationSupport: validationRoot))
+            XCTAssertThrowsError(try invalid.validate(temporaryRoot: validationRoot))
         }
     }
 
@@ -433,9 +462,9 @@ final class DeviceConversionBenchmarkTests: XCTestCase {
             jobID: UUID().uuidString
         )
         XCTAssertNotEqual(spec.cases[0].jobID, duplicate.jobID)
-        let invalid = DeviceBenchmarkSpec(schemaVersion: 1, runID: spec.runID, wholeBook: false,
+        let invalid = DeviceBenchmarkSpec(schemaVersion: 2, inputBase: "temporary", runID: spec.runID, wholeBook: false,
                                           cases: spec.cases + [duplicate])
-        XCTAssertThrowsError(try invalid.validate(applicationSupport: validationRoot)) { error in
+        XCTAssertThrowsError(try invalid.validate(temporaryRoot: validationRoot)) { error in
             XCTAssertEqual((error as? BenchmarkFailure)?.description,
                            "Duplicate book path would bypass the per-book chapter cap.")
         }
@@ -496,6 +525,63 @@ final class DeviceConversionBenchmarkTests: XCTestCase {
         XCTAssertTrue(FileManager.default.isWritableFile(atPath: copied.path))
         try FileManager.default.removeItem(at: copies.directory)
         XCTAssertEqual(try Data(contentsOf: source), contents)
+    }
+
+    func testOutputParentAcceptsMissingDirectoriesButRejectsSymlinks() throws {
+        let owned = try BenchmarkInputCopies()
+        defer { try? FileManager.default.removeItem(at: owned.directory) }
+        let output = owned.directory.appendingPathComponent("EpubToMp3/RustConversions/\(UUID().uuidString)", isDirectory: true)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: output.deletingLastPathComponent().path))
+        XCTAssertNoThrow(try validateBenchmarkOutputParent(output))
+        let target = owned.directory.appendingPathComponent("real", isDirectory: true)
+        try FileManager.default.createDirectory(at: target, withIntermediateDirectories: false)
+        let link = owned.directory.appendingPathComponent("linked", isDirectory: true)
+        try FileManager.default.createSymbolicLink(at: link, withDestinationURL: target)
+        XCTAssertThrowsError(try validateBenchmarkOutputParent(link.appendingPathComponent("job", isDirectory: true)))
+    }
+
+    func testTemporaryStorageSpecAndReportRoundTrip() throws {
+        let owned = try BenchmarkInputCopies()
+        defer { try? FileManager.default.removeItem(at: owned.directory) }
+        let spec = specification()
+        let json = String(decoding: try JSONEncoder().encode(spec), as: UTF8.self)
+        let decoded = try DeviceBenchmarkSpec.decode(json, temporaryRoot: owned.directory)
+        XCTAssertEqual(decoded.inputBase, "temporary")
+        XCTAssertEqual(decoded.stagedDirectory(temporaryRoot: owned.directory),
+                       owned.directory.appendingPathComponent("EpubToMp3/DeviceTestInputs/\(spec.runID)", isDirectory: true))
+        let invalid = DeviceBenchmarkSpec(schemaVersion: 2, inputBase: "applicationSupport",
+                                          runID: spec.runID, wholeBook: false, cases: spec.cases)
+        XCTAssertThrowsError(try invalid.validate(temporaryRoot: owned.directory))
+        let report = DeviceBenchmarkReport(runID: spec.runID, cases: [])
+        let destination = owned.directory.appendingPathComponent("DeviceBenchmarkReports/\(spec.runID).json")
+        let bytes = try report.save(to: destination)
+        XCTAssertEqual(try Data(contentsOf: destination), bytes)
+    }
+
+    @MainActor
+    func testRealCoordinatorUsesIsolatedTemporaryOutputOnInvalidEPUB() async throws {
+        let owned = try BenchmarkInputCopies()
+        defer { try? FileManager.default.removeItem(at: owned.directory) }
+        let manager = BenchmarkFileManager(supportRoot: owned.directory)
+        XCTAssertEqual(try manager.url(for: .applicationSupportDirectory, in: .userDomainMask,
+                                       appropriateFor: nil, create: true), owned.directory)
+        XCTAssertEqual(try manager.url(for: .cachesDirectory, in: .userDomainMask,
+                                       appropriateFor: nil, create: false),
+                       try FileManager.default.url(for: .cachesDirectory, in: .userDomainMask,
+                                                   appropriateFor: nil, create: false))
+        let input = owned.directory.appendingPathComponent("invalid.epub")
+        try Data("Invalid EPUB; no synthesis possible".utf8).write(to: input)
+        let job = UUID().uuidString
+        let coordinator = RustConversionCoordinator(fileManager: manager)
+        do {
+            _ = try await coordinator.convert(bookURL: input, jobID: job)
+            XCTFail("Invalid EPUB must fail before synthesis")
+        } catch {
+            let output = owned.directory.appendingPathComponent("EpubToMp3/RustConversions/\(job)")
+            XCTAssertTrue(manager.fileExists(atPath: output.appendingPathComponent("conversion.log").path))
+            try manager.removeItem(at: output)
+            XCTAssertTrue(manager.fileExists(atPath: input.path))
+        }
     }
 
     func testPressureMetricsCountEventsWithoutSummingRetryCounters() {

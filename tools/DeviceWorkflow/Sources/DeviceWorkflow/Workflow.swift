@@ -193,7 +193,7 @@ public final class Workflow {
             guard let plist = try PropertyListSerialization.propertyList(from: Data(contentsOf: original), format: nil) as? [String: Any] else {
                 throw WorkflowError("Invalid xctestrun plist.")
             }
-            let spec: [String: Any] = ["schemaVersion": 1, "runID": runID, "wholeBook": options.wholeBook, "cases": cases.map(\.specification)]
+            let spec: [String: Any] = ["schemaVersion": 2, "inputBase": BenchmarkCase.inputBase, "runID": runID, "wholeBook": options.wholeBook, "cases": cases.map(\.specification)]
             let configured = try Evidence.configure(plist, products: products, spec: spec)
             guard let configurations = configured["TestConfigurations"] as? [[String: Any]],
                   let targets = configurations.first?["TestTargets"] as? [[String: Any]],
@@ -260,7 +260,7 @@ public final class Workflow {
             throw WorkflowError("Input changed after scope validation; no staged copies were transferred.")
         }
         // Persist before transfer, which may partially write then fail.
-        staged = "Library/Application Support/EpubToMp3/DeviceTestInputs/\(runID)"
+        staged = BenchmarkCase.stagedPath(runID: runID)
         report["stagedInputs"] = staged
         try checkpoint()
         try command(["xcrun", "devicectl", "device", "copy", "to", "--device", options.device] + container + ["--source", temporary.path, "--destination", staged!], "transfer")
@@ -271,7 +271,7 @@ public final class Workflow {
         defer { timings["collectionSeconds"] = ProcessInfo.processInfo.systemUptime - start }
         let native = directory.appendingPathComponent("native-report.json")
         let result = try? command(["xcrun", "devicectl", "device", "copy", "from", "--device", options.device] + container +
-                                 ["--source", "Library/Application Support/EpubToMp3/DeviceBenchmarkReports/\(runID).json", "--destination", native.path], "nativeCollection", check: false)
+                                 ["--source", BenchmarkCase.reportPath(runID: runID), "--destination", native.path], "nativeCollection", check: false)
         var evidence = result?.code == 0 ? try? DurableJSON.read(native) : nil
         if evidence?["runID"] as? String != runID { evidence = nil }
         if evidence == nil {
@@ -294,9 +294,24 @@ public final class Workflow {
         var retained = true
         var emptied = result.code == 0
         if !emptied {
-            let parent = try deviceJSON(["info", "files"] + container + ["--subdirectory", "Library/Application Support/EpubToMp3/DeviceTestInputs"], "inputCleanupVerification")
-            guard let files = parent["files"] as? [[String: Any]] else { throw WorkflowError("Cannot verify cleanup namespace.") }
-            retained = files.contains { $0["name"] as? String == runID }
+            do {
+                let parent = try deviceJSON(["info", "files"] + container + ["--subdirectory", "tmp/EpubToMp3/DeviceTestInputs"], "inputCleanupVerification")
+                guard let files = parent["files"] as? [[String: Any]] else { throw WorkflowError("Cannot verify cleanup namespace.") }
+                retained = files.contains { $0["name"] as? String == runID }
+            } catch {
+                // The OS may already have removed the entire temporary namespace.
+                // A failed lookup is not proof: require a successful recursive root listing.
+                let root = try deviceJSON(["info", "files"] + container + ["--subdirectory", "."], "inputCleanupRootVerification")
+                guard let files = root["files"] as? [[String: Any]],
+                      files.allSatisfy({ $0["name"] is String }) else {
+                    throw WorkflowError("Cannot verify cleanup container root.")
+                }
+                retained = files.contains {
+                    guard let name = $0["name"] as? String else { return true }
+                    return name == staged || name.hasPrefix(staged + "/")
+                }
+                guard !retained else { throw WorkflowError("Staged run remains after failed namespace lookup.") }
+            }
             if !retained { emptied = true }
             else {
                 let contents = try deviceJSON(["info", "files"] + container + ["--subdirectory", staged], "inputCleanupContents")

@@ -39,11 +39,20 @@ The previous app process is terminated by its exact executable/PID.
 
 Each run stages copies of the requested inputs in a UUID-owned device directory
 and selects one test in a generated `.xctestrun`. Its environment carries the
-JSON specification. Checked-in schemes/plans are never edited. XCTest checks
+schema-v2 JSON specification with `inputBase: "temporary"`. Service-staged inputs
+live under `tmp/EpubToMp3/DeviceTestInputs/RUN_ID`; XCTest copies their bytes into
+an app-owned temporary directory and injects that directory as the coordinator's
+Application Support root. Production storage and imported books are untouched.
+Reports live under `tmp/DeviceBenchmarkReports/RUN_ID.json`, independently of
+the disposable conversion directories. Checked-in schemes/plans are never
+edited. XCTest checks
 terminal completion, exact source indices, AVFoundation playability and positive
 audio duration. XCTest removes its app-owned input copies and fresh output
 directories; the host empties its exact UUID staging directory using CoreDevice.
 The report identifies whether the service retained an empty staging directory.
+If the temporary namespace is already gone, a successful recursive container-root
+listing must independently prove the exact staged run is absent; failed queries
+alone never establish cleanup success.
 JSON evidence, imported books and existing audio stay intact.
 
 ## Evidence and resumption

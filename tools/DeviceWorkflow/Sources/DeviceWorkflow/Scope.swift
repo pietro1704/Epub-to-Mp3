@@ -63,6 +63,13 @@ public struct Options {
 }
 
 public struct BenchmarkCase {
+    public static let inputBase = "temporary"
+    public static func stagedPath(runID: String) -> String {
+        "tmp/EpubToMp3/DeviceTestInputs/\(runID)"
+    }
+    public static func reportPath(runID: String) -> String {
+        "tmp/DeviceBenchmarkReports/\(runID).json"
+    }
     public let source: URL
     public let digest: String
     public let start: Int
