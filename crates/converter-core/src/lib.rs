@@ -11,6 +11,8 @@ pub mod cache;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod config;
 #[cfg(not(target_arch = "wasm32"))]
+pub mod conversion_control;
+#[cfg(not(target_arch = "wasm32"))]
 pub mod embedded;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod engine;

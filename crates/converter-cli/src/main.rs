@@ -620,6 +620,7 @@ mod tests {
         fs::create_dir_all(&root).expect("temporary directory should be created");
         let manifest = converter_core::worker::OutputManifest {
             job_id: "test".into(),
+            source_chapters_total: None,
             title: "Book".into(),
             author: "Author".into(),
             chapters: vec![converter_core::audio::ChapterMetadata {
