@@ -16,6 +16,10 @@ this board and `handoff.md` before crossing ownership or changing shared contrac
   Preserve original books, models, downloads and existing playback artifacts.
   Reuse the verified four-chapter benchmark where unchanged; distinguish reader,
   playback and latency acceptance from conversion success. No whole-book TTS.
+  Conversion recheck passed: exactly one native benchmark, zero failures/skips,
+  four valid MP3 artifacts, Christie 5.286 s and LOTR 186.526 s; no audio reuse.
+  Evidence: `docs/plans/2026-10-09-simulator-real-books-recheck.md`.
+  Reader navigation, audible playback and 200 ms relaunch acceptance remain open.
 
 - [x] **APP-20261009-22 — Source-bound active chapter storage.** Verified storage-only slice.
   Persist complete active chapter data and lightweight book/TOC metadata in the
