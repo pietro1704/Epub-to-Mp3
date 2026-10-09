@@ -544,7 +544,7 @@ fn make_ssml_escaped(
     } else {
         text.to_owned()
     };
-    format!("<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xml:lang='en-US'><voice name='{}'><prosody pitch='{}' rate='{}' volume='{}'>{}</prosody></voice></speak>", xml_escape(voice), xml_escape(rate), xml_escape(volume), xml_escape(pitch), text)
+    format!("<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xml:lang='en-US'><voice name='{}'><prosody pitch='{}' rate='{}' volume='{}'>{}</prosody></voice></speak>", xml_escape(voice), xml_escape(pitch), xml_escape(rate), xml_escape(volume), text)
 }
 
 pub fn split_protocol_chunks(text: &str, limit: usize) -> Vec<String> {
@@ -744,9 +744,17 @@ mod protocol_tests {
         let ssml = make_ssml("A & <B> 'quoted'", "en-US-GuyNeural", "+0%", "+0%", "+0Hz");
         assert_eq!(
             ssml,
-            "<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xml:lang='en-US'><voice name='en-US-GuyNeural'><prosody pitch='+0%' rate='+0%' volume='+0Hz'>A &amp; &lt;B&gt; &apos;quoted&apos;</prosody></voice></speak>"
+            "<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xml:lang='en-US'><voice name='en-US-GuyNeural'><prosody pitch='+0Hz' rate='+0%' volume='+0%'>A &amp; &lt;B&gt; &apos;quoted&apos;</prosody></voice></speak>"
         );
         assert!(!ssml.contains("xmlns:mstts"));
+    }
+
+    #[test]
+    fn ssml_keeps_distinct_prosody_settings_in_their_named_attributes() {
+        let ssml = make_ssml("Hello", "en-US-GuyNeural", "+15%", "-20%", "+12Hz");
+        assert!(ssml.contains("pitch='+12Hz'"), "{ssml}");
+        assert!(ssml.contains("rate='+15%'"), "{ssml}");
+        assert!(ssml.contains("volume='-20%'"), "{ssml}");
     }
 
     #[test]
