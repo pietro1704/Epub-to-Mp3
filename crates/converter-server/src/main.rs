@@ -611,18 +611,42 @@ async fn log(AxumPath(id): AxumPath<String>, State(state): State<AppState>) -> R
     );
     (StatusCode::OK, headers, body).into_response()
 }
+async fn resolved_output_path(
+    root: &Path,
+    job_id: &str,
+    filename: &str,
+) -> Result<PathBuf, StatusCode> {
+    if !safe_leaf(job_id) || !safe_leaf(filename) {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+    let root = tokio::fs::canonicalize(root)
+        .await
+        .map_err(|_| StatusCode::NOT_FOUND)?;
+    let job = tokio::fs::canonicalize(root.join(job_id))
+        .await
+        .map_err(|_| StatusCode::NOT_FOUND)?;
+    if job == root || !job.starts_with(&root) {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+    let file = tokio::fs::canonicalize(job.join(filename))
+        .await
+        .map_err(|_| StatusCode::NOT_FOUND)?;
+    if !file.starts_with(&job) {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+    Ok(file)
+}
+
 async fn output(
     AxumPath((id, filename)): AxumPath<(String, String)>,
     State(state): State<AppState>,
     request: axum::extract::Request,
 ) -> Response {
-    if !safe_leaf(&id) || !safe_leaf(&filename) {
-        return StatusCode::BAD_REQUEST.into_response();
-    }
-    match ServeFile::new(state.config.paths.output_dir.join(&id).join(&filename))
-        .try_call(request)
-        .await
-    {
+    let path = match resolved_output_path(&state.config.paths.output_dir, &id, &filename).await {
+        Ok(path) => path,
+        Err(status) => return status.into_response(),
+    };
+    match ServeFile::new(path).try_call(request).await {
         Ok(response) => response.into_response(),
         Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
     }
@@ -634,12 +658,18 @@ async fn chapters(
     if !safe_leaf(&id) {
         return StatusCode::BAD_REQUEST.into_response();
     }
-    let path = state
-        .config
-        .paths
-        .output_dir
-        .join(&id)
-        .join("manifest.json");
+    let path =
+        match resolved_output_path(&state.config.paths.output_dir, &id, "manifest.json").await {
+            Ok(path) => path,
+            Err(StatusCode::NOT_FOUND) => {
+                return (
+                    StatusCode::OK,
+                    Json(serde_json::json!({"jobId":id,"chapterIndex":index,"chunks":[]})),
+                )
+                    .into_response()
+            }
+            Err(status) => return status.into_response(),
+        };
     let Ok(bytes) = tokio::fs::read(path).await else {
         return (
             StatusCode::OK,
@@ -909,6 +939,81 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn output_symlinks_cannot_serve_files_outside_the_output_root() {
+        let root = TestRoot::new();
+        let state = root.state();
+        let job_dir = state.config.paths.output_dir.join("symlink-job");
+        std::fs::create_dir_all(&job_dir).unwrap();
+        let outside = root.0.join("private-file.mp3");
+        std::fs::write(&outside, b"private fixture").unwrap();
+        std::os::unix::fs::symlink(&outside, job_dir.join("chapter.mp3")).unwrap();
+        let response = output(
+            AxumPath(("symlink-job".into(), "chapter.mp3".into())),
+            State(state.clone()),
+            request("GET"),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+
+        let outside_dir = root.0.join("private-dir");
+        std::fs::create_dir_all(&outside_dir).unwrap();
+        std::fs::write(
+            outside_dir.join("chapter.mp3"),
+            b"private directory fixture",
+        )
+        .unwrap();
+        std::os::unix::fs::symlink(
+            &outside_dir,
+            state.config.paths.output_dir.join("linked-job"),
+        )
+        .unwrap();
+        let response = output(
+            AxumPath(("linked-job".into(), "chapter.mp3".into())),
+            State(state),
+            request("GET"),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn chapter_manifest_symlink_cannot_escape_the_job_directory() {
+        let root = TestRoot::new();
+        let state = root.state();
+        let job_dir = state.config.paths.output_dir.join("symlink-job");
+        std::fs::create_dir_all(&job_dir).unwrap();
+        let outside = root.0.join("private-manifest.json");
+        std::fs::write(&outside, b"private fixture").unwrap();
+        std::os::unix::fs::symlink(&outside, job_dir.join("manifest.json")).unwrap();
+        let response = chapters(AxumPath(("symlink-job".into(), 1)), State(state)).await;
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn output_accepts_a_symlink_within_the_job_directory() {
+        let root = TestRoot::new();
+        let state = root.state();
+        let job_dir = state.config.paths.output_dir.join("symlink-job");
+        std::fs::create_dir_all(&job_dir).unwrap();
+        std::fs::write(job_dir.join("chapter.mp3"), b"audio fixture").unwrap();
+        std::os::unix::fs::symlink("chapter.mp3", job_dir.join("alias.mp3")).unwrap();
+        let response = output(
+            AxumPath(("symlink-job".into(), "alias.mp3".into())),
+            State(state),
+            request("GET"),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::OK);
+        let bytes = axum::body::to_bytes(response.into_body(), 1024)
+            .await
+            .unwrap();
+        assert_eq!(&bytes[..], b"audio fixture");
+    }
 
     #[tokio::test]
     async fn large_archive_download_is_streamed_in_bounded_chunks() {
