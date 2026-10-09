@@ -21,6 +21,15 @@ this board and `handoff.md` before crossing ownership or changing shared contrac
   macOS: 38 passed, 0 failed/skipped; iOS 16: four new cases passed, 0 failed/skipped.
   Evidence in the quality plan. No synthesis or real-book latency claim.
 
+- [x] **APP-20261009-36 — Measure Mac prepared renderer overhead.** Diagnostic verified.
+  Performance diagnostic follow-up: measure the actual renderer signature/cache
+  miss and disk restore costs for LOTR chapter 8 and Christie chapter 6, with
+  complete native attribute equality. Separate cost evidence from 200 ms success.
+  One native test passed, zero failures/skips. Median signature/cache miss:
+  LOTR 0.377 ms, Christie 0.266 ms; prepared restore 2.267 / 1.729 ms.
+  Same-process OS-warm samples only; no production optimization, relaunch,
+  registered EPUB-font, clipping or 200 ms acceptance claim. Quality plan has evidence.
+
 - [ ] **APP-20261009-35 — Repair verified model artifact publication on Arch.** Source finding; runtime verification pending.
   ModelStore.install_manifest deletes the verified non-archive .part before
   rename, preventing publication of ONNX/JSON model artifacts. Preserve existing

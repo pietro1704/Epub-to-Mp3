@@ -982,3 +982,39 @@ physical-device, Flutter, or CI/PR monitoring.
 This proves the Apple pending-navigation boundary, not button-tap UI automation,
 Flutter parity, real-book latency/memory or the 200 ms opening budget. The overall
 goal and parity checkboxes remain open.
+
+## Actual prepared-renderer overhead diagnostic — 2026-10-09
+
+APP-20261009-36 extends the existing opt-in attributed chapter benchmark with
+the actual public cached()/restore() paths, using fresh renderer memory for each
+of three samples, a UUID-owned archive store, flushed writes, and complete native
+attributed equality. Same hash-checked source books: LOTR native chapter ordinal
+8 and Christie 6. No synthesis or production behavior change.
+
+One native test passed, zero failed/skipped. Command:
+`xcrun swift .reports/mobile-audio/run-reader-relaunch.swift attributed`.
+Existing serialized lease held through incremental Mac build and execution;
+Simulator stopped first. Result:
+`.reports/mobile-audio/reader-relaunch-97E2EE78-26FC-4C48-A40E-C6D3C2C2C929/attributed.xcresult`.
+Attachment: `9141F16D-BDF6-42E8-B717-0C115BB8C0C1.json` in its attachments directory.
+
+| Book | Signature + empty memory lookup median | Prepared disk restore median | Raw keyed decode median |
+| --- | --- | --- | --- |
+| LOTR | 0.377 ms | 2.267 ms | 0.669 ms |
+| Christie | 0.266 ms | 1.729 ms | 0.355 ms |
+
+Prepared restore includes signature, envelope IO/validation, post-await signature
+and keyed decode; do not add its constituent intervals. Raw archive sizes are
+11702 / 17194 bytes, not envelope sizes. First HTML rendering was 2251.419 /
+23.262 ms, one sample each; framework startup and order prevent a causal
+comparison. These measurements do not account for complete catalog loading or
+TextKit/view readiness, additional cached/render calls, process relaunch,
+registered EPUB fonts or memory peak. Three same-process samples with OS caches
+warm are not statistical evidence of a global improvement.
+
+Specialist review found no fidelity/lifecycle blocker and identified those limits.
+Signature work is too small in this measured path to explain the outstanding
+363.818 ms LOTR relaunch observation. Production signature/cache format remains
+unchanged; next profiling should target catalog/presentation rather than weaken
+source/settings validation. Original books/models/downloads preserved; only the
+owned temporary archive namespace was removed. The 200 ms/full goal remains open.

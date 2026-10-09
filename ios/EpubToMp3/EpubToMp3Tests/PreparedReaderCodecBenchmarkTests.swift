@@ -108,12 +108,20 @@ final class PreparedReaderCodecBenchmarkTests: XCTestCase {
             let renderMilliseconds: Double
             let archiveBytes: Int
             let decodeMilliseconds: [Double]
+            let signatureMissMilliseconds: [Double]
+            let preparedRestoreMilliseconds: [Double]
+            let sourceSHA256: String
+            let operatingSystem: String
+            let limits: String
         }
         let input = try NativePlaybackBenchmarkInput.optIn()
         let defaultsID = "PreparedAttributedChapter.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: defaultsID))
         defer { defaults.removePersistentDomain(forName: defaultsID) }
         let settings = AppSettings(defaults: defaults)
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(defaultsID)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: false)
+        defer { try? FileManager.default.removeItem(at: root) }
         var samples: [Sample] = []
         for book in input.books {
             let payload = try await MacEpubParser.parse(at: URL(fileURLWithPath: book.sourcePath),
@@ -128,7 +136,16 @@ final class PreparedReaderCodecBenchmarkTests: XCTestCase {
             let attributed = NSAttributedString(rendered)
             let renderTime = (ProcessInfo.processInfo.systemUptime - startRender) * 1000
             let archive = try NSKeyedArchiver.archivedData(withRootObject: attributed, requiringSecureCoding: true)
+            let bookID = UUID().uuidString
+            let store = PreparedChapterArchiveStore(directory: root.appendingPathComponent(bookID))
+            let writer = PreparedChapterRenderer(store: store)
+            let prepared = try XCTUnwrap(writer.render(bookID: bookID, chapterIndex: book.chapterStart,
+                chapter: chapter, settings: settings))
+            XCTAssertTrue(prepared.isEqual(to: attributed))
+            await writer.flush()
             var decodeTimes: [Double] = []
+            var signatureTimes: [Double] = []
+            var restoreTimes: [Double] = []
             for _ in 0..<3 {
                 let startDecode = ProcessInfo.processInfo.systemUptime
                 let restored = try XCTUnwrap(NSKeyedUnarchiver.unarchivedObject(ofClass: NSAttributedString.self,
@@ -136,9 +153,24 @@ final class PreparedReaderCodecBenchmarkTests: XCTestCase {
                 decodeTimes.append((ProcessInfo.processInfo.systemUptime - startDecode) * 1000)
                 XCTAssertTrue(restored.isEqual(to: attributed),
                               "Prepared restoration must preserve complete text and native attributes")
+                let reopened = PreparedChapterRenderer(store: store)
+                let startSignature = ProcessInfo.processInfo.systemUptime
+                let miss = reopened.cached(bookID: bookID, chapterIndex: book.chapterStart,
+                    chapter: chapter, settings: settings)
+                signatureTimes.append((ProcessInfo.processInfo.systemUptime - startSignature) * 1000)
+                XCTAssertNil(miss)
+                let startRestore = ProcessInfo.processInfo.systemUptime
+                let restoredPrepared = await reopened.restore(bookID: bookID, chapterIndex: book.chapterStart,
+                    chapter: chapter, settings: settings)
+                restoreTimes.append((ProcessInfo.processInfo.systemUptime - startRestore) * 1000)
+                XCTAssertTrue(try XCTUnwrap(restoredPrepared).isEqual(to: attributed))
             }
             samples.append(Sample(book: book.name, chapter: book.chapterStart, renderMilliseconds: renderTime,
-                                  archiveBytes: archive.count, decodeMilliseconds: decodeTimes))
+                                  archiveBytes: archive.count, decodeMilliseconds: decodeTimes,
+                                  signatureMissMilliseconds: signatureTimes, preparedRestoreMilliseconds: restoreTimes,
+                                  sourceSHA256: book.sourceSHA256,
+                                  operatingSystem: ProcessInfo.processInfo.operatingSystemVersionString,
+                                  limits: "Three samples; isolated signature/cache miss and prepared restore, not UI readiness. No synthesis."))
         }
         let attachment = XCTAttachment(data: try JSONEncoder().encode(samples), uniformTypeIdentifier: "public.json")
         attachment.name = "native-prepared-attributed-chapter-comparison.json"
