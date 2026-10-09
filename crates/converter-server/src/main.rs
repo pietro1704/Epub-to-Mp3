@@ -26,7 +26,7 @@ use converter_core::{
 use futures_util::stream::{self, StreamExt};
 use serde::{Deserialize, Serialize};
 use tokio::sync::{broadcast, RwLock};
-use tower_http::services::ServeDir;
+use tower_http::services::{ServeDir, ServeFile};
 
 // Keep a concrete server-side ceiling above normal EPUB sizes while preventing unbounded request bodies.
 const MAX_UPLOAD_BYTES: usize = 100 * 1024 * 1024;
@@ -50,6 +50,7 @@ struct Job {
     snapshot: JobSnapshot,
     events: broadcast::Sender<SseMessage>,
     cancellation: converter_core::piper::CancellationToken,
+    worker_active: bool,
 }
 #[derive(Clone, Debug)]
 enum SseMessage {
@@ -243,6 +244,7 @@ fn load_snapshots(config: &AppConfig) -> HashMap<String, Job> {
                 snapshot,
                 events,
                 cancellation: converter_core::piper::CancellationToken::default(),
+                worker_active: false,
             },
         );
     }
@@ -430,6 +432,7 @@ async fn create_job(State(state): State<AppState>, Json(form): Json<CreateJob>) 
             snapshot,
             events: sender.clone(),
             cancellation: converter_core::piper::CancellationToken::default(),
+            worker_active: true,
         },
     );
     if let Some(job) = state.jobs.read().await.get(&id) {
@@ -455,8 +458,25 @@ async fn create_job(State(state): State<AppState>, Json(form): Json<CreateJob>) 
         chapter_indices: None,
         no_parallel: form.no_parallel.unwrap_or(false),
     };
-    let jobs = state.jobs.clone();
     let response_id = id.clone();
+    start_worker(state, worker, request, sender, cancellation, false);
+    (
+        StatusCode::OK,
+        Json(serde_json::json!({ "jobId": response_id })),
+    )
+        .into_response()
+}
+
+fn start_worker(
+    state: AppState,
+    worker: ConversionWorker,
+    request: ConversionRequest,
+    sender: broadcast::Sender<SseMessage>,
+    cancellation: converter_core::piper::CancellationToken,
+    resuming: bool,
+) {
+    let id = request.job_id.clone();
+    let jobs = state.jobs.clone();
     tokio::task::spawn_blocking(move || {
         let progress_jobs = jobs.clone();
         let progress_sender = sender.clone();
@@ -486,9 +506,15 @@ async fn create_job(State(state): State<AppState>, Json(form): Json<CreateJob>) 
                 }
             }
         }));
-        let result = worker.with_cancellation(cancellation).run(request);
+        let worker = worker.with_cancellation(cancellation);
+        let result = if resuming {
+            worker.resume(request)
+        } else {
+            worker.run(request)
+        };
         let mut guard = jobs.blocking_write();
         if let Some(job) = guard.get_mut(&id) {
+            job.worker_active = false;
             match result {
                 Ok(manifest) => {
                     apply_manifest(&mut job.snapshot, &manifest, &state.config.paths.output_dir)
@@ -508,11 +534,6 @@ async fn create_job(State(state): State<AppState>, Json(form): Json<CreateJob>) 
             let _ = sender.send(SseMessage::Snapshot(job.snapshot.clone()));
         }
     });
-    (
-        StatusCode::OK,
-        Json(serde_json::json!({ "jobId": response_id })),
-    )
-        .into_response()
 }
 
 async fn status(AxumPath(id): AxumPath<String>, State(state): State<AppState>) -> Response {
@@ -563,13 +584,22 @@ async fn cancel(AxumPath(id): AxumPath<String>, State(state): State<AppState>) -
         )
             .into_response(),
         Some(job) => {
-            job.cancellation.cancel();
-            job.snapshot.state = if job.snapshot.state == "queued" {
+            let mut snapshot = job.snapshot.clone();
+            snapshot.state = if snapshot.state == "queued" {
                 "cancelled"
             } else {
                 "cancelling"
             }
             .into();
+            if let Err(error) = persist_snapshot(&state.config, &snapshot) {
+                return (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    format!("Could not persist cancellation: {error}"),
+                )
+                    .into_response();
+            }
+            job.snapshot = snapshot;
+            job.cancellation.cancel();
             let _ = job.events.send(SseMessage::Snapshot(job.snapshot.clone()));
             (
                 StatusCode::OK,
@@ -581,19 +611,72 @@ async fn cancel(AxumPath(id): AxumPath<String>, State(state): State<AppState>) -
     }
 }
 async fn resume_job(AxumPath(id): AxumPath<String>, State(state): State<AppState>) -> Response {
-    match state.jobs.write().await.get_mut(&id) {
-        Some(job) if job.snapshot.state == "finished" || job.snapshot.state == "completed" => (
-            StatusCode::OK,
-            Json(serde_json::json!({"status":"finished"})),
-        )
-            .into_response(),
-        Some(job) => {
-            job.snapshot.state = "queued".into();
-            let _ = job.events.send(SseMessage::Snapshot(job.snapshot.clone()));
-            (StatusCode::OK, Json(serde_json::json!({"status":"queued"}))).into_response()
-        }
-        None => StatusCode::NOT_FOUND.into_response(),
+    if !safe_leaf(&id) {
+        return StatusCode::BAD_REQUEST.into_response();
     }
+    let mut jobs = state.jobs.write().await;
+    let Some(job) = jobs.get_mut(&id) else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+    if matches!(
+        job.snapshot.state.as_str(),
+        "queued" | "running" | "finished" | "completed"
+    ) {
+        return (
+            StatusCode::OK,
+            Json(serde_json::json!({"status": job.snapshot.state})),
+        )
+            .into_response();
+    }
+    if job.worker_active || job.snapshot.state == "cancelling" {
+        return StatusCode::CONFLICT.into_response();
+    }
+    let Ok(mut entries) = tokio::fs::read_dir(state.config.paths.job_inputs_dir.join(&id)).await
+    else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+    let mut input = None;
+    while let Ok(Some(entry)) = entries.next_entry().await {
+        if entry.file_type().await.is_ok_and(|kind| kind.is_file()) {
+            input = Some(entry.path());
+            break;
+        }
+    }
+    let Some(input) = input else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+    let worker = match ConversionWorker::new(state.config.clone()) {
+        Ok(worker) => worker,
+        Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    };
+    let mut snapshot = job.snapshot.clone();
+    snapshot.state = "queued".into();
+    snapshot.error = None;
+    if persist_snapshot(&state.config, &snapshot).is_err() {
+        return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+    }
+    let request = ConversionRequest {
+        input,
+        job_id: id,
+        engine: snapshot.engine.clone(),
+        voice: snapshot.voice.clone(),
+        language: snapshot.language.clone(),
+        chapter_indices: None,
+        no_parallel: snapshot.no_parallel,
+    };
+    job.snapshot = snapshot;
+    job.cancellation = Default::default();
+    job.worker_active = true;
+    let sender = job.events.clone();
+    let cancellation = job.cancellation.clone();
+    let _ = sender.send(SseMessage::Snapshot(job.snapshot.clone()));
+    drop(jobs);
+    start_worker(state, worker, request, sender, cancellation, true);
+    (
+        StatusCode::OK,
+        Json(serde_json::json!({"status": "queued"})),
+    )
+        .into_response()
 }
 async fn log(AxumPath(id): AxumPath<String>, State(state): State<AppState>) -> Response {
     let Some(job) = state.jobs.read().await.get(&id).cloned() else {
@@ -614,15 +697,16 @@ async fn log(AxumPath(id): AxumPath<String>, State(state): State<AppState>) -> R
 async fn output(
     AxumPath((id, filename)): AxumPath<(String, String)>,
     State(state): State<AppState>,
+    request: axum::extract::Request,
 ) -> Response {
-    if !safe_leaf(&filename) {
+    if !safe_leaf(&id) || !safe_leaf(&filename) {
         return StatusCode::BAD_REQUEST.into_response();
     }
-    match tokio::fs::read(state.config.paths.output_dir.join(&id).join(&filename)).await {
-        Ok(bytes) => (StatusCode::OK, bytes).into_response(),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-            StatusCode::NOT_FOUND.into_response()
-        }
+    match ServeFile::new(state.config.paths.output_dir.join(&id).join(&filename))
+        .try_call(request)
+        .await
+    {
+        Ok(response) => response.into_response(),
         Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
     }
 }
@@ -630,6 +714,9 @@ async fn chapters(
     AxumPath((id, index)): AxumPath<(String, u32)>,
     State(state): State<AppState>,
 ) -> Response {
+    if !safe_leaf(&id) {
+        return StatusCode::BAD_REQUEST.into_response();
+    }
     let path = state
         .config
         .paths
@@ -729,7 +816,7 @@ async fn resumable_jobs(State(state): State<AppState>) -> Response {
         .filter(|job| {
             matches!(
                 job.snapshot.state.as_str(),
-                "queued" | "running" | "cancelling"
+                "queued" | "running" | "cancelling" | "interrupted"
             )
         })
         .map(|job| job.snapshot.clone())
@@ -837,6 +924,18 @@ fn apply_manifest(snapshot: &mut JobSnapshot, manifest: &OutputManifest, output_
             .unwrap_or(0),
         })
         .collect();
+    if safe_leaf(&snapshot.job_id) && safe_leaf(&manifest.archive) {
+        let archive = output_dir.join(&snapshot.job_id).join(&manifest.archive);
+        if let Ok(metadata) = std::fs::metadata(archive) {
+            if metadata.is_file() && metadata.len() > 0 {
+                snapshot.outputs.push(OutputAsset {
+                    name: manifest.archive.clone(),
+                    url: format!("/api/outputs/{}/{}", snapshot.job_id, manifest.archive),
+                    size_bytes: metadata.len(),
+                });
+            }
+        }
+    }
     snapshot.events.push("Conversion finished".into());
 }
 fn safe_leaf(value: &str) -> bool {
@@ -888,4 +987,541 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     )
     .await?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn restarted_jobs_are_discoverable_through_the_resumable_api() {
+        let root = TestRoot::new();
+        let state = root.state();
+        let queued = initial_job("restart-job".into(), &CreateJob::default());
+        persist_snapshot(&state.config, &queued).unwrap();
+        let mut completed = initial_job("complete-job".into(), &CreateJob::default());
+        completed.state = "completed".into();
+        persist_snapshot(&state.config, &completed).unwrap();
+        let response = http_fixture_request(
+            state.config,
+            b"GET /api/jobs/resumable HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
+        )
+        .await;
+        assert!(response.starts_with("HTTP/1.1 200"), "{response}");
+        let body = response.split_once("\r\n\r\n").unwrap().1;
+        let value: serde_json::Value = serde_json::from_str(body).unwrap();
+        assert_eq!(value["count"], 1);
+        assert_eq!(value["resumableJobs"][0]["jobId"], "restart-job");
+        assert_eq!(value["resumableJobs"][0]["state"], "interrupted");
+    }
+
+    #[tokio::test]
+    async fn resume_executes_the_worker_with_a_fresh_cancellation_token() {
+        let root = TestRoot::new();
+        let state = root.state();
+        let input_dir = state.config.paths.job_inputs_dir.join("resume-job");
+        std::fs::create_dir_all(&input_dir).unwrap();
+        std::fs::write(input_dir.join("source.epub"), b"invalid epub fixture").unwrap();
+        let previous = ConversionWorker::new(state.config.clone()).unwrap();
+        let previous_result = previous.run(ConversionRequest {
+            input: input_dir.join("source.epub"),
+            job_id: "resume-job".into(),
+            engine: None,
+            voice: None,
+            language: None,
+            chapter_indices: None,
+            no_parallel: false,
+        });
+        assert!(matches!(
+            previous_result,
+            Err(converter_core::worker::WorkerError::Epub(_))
+        ));
+        let mut snapshot = initial_job("resume-job".into(), &CreateJob::default());
+        snapshot.state = "cancelled".into();
+        snapshot.error = Some("Previous attempt cancelled".into());
+        let cancellation = converter_core::piper::CancellationToken::default();
+        cancellation.cancel();
+        let (events, mut receiver) = broadcast::channel(8);
+        state.jobs.write().await.insert(
+            snapshot.job_id.clone(),
+            Job {
+                snapshot,
+                events,
+                cancellation,
+                worker_active: false,
+            },
+        );
+        let response = resume_job(AxumPath("resume-job".into()), State(state.clone())).await;
+        assert_eq!(response.status(), StatusCode::OK);
+        let initial = receiver.recv().await.unwrap();
+        assert!(
+            matches!(initial, SseMessage::Snapshot(ref s) if s.state == "queued" && s.error.is_none())
+        );
+        let terminal = tokio::time::timeout(Duration::from_secs(2), async {
+            loop {
+                if let SseMessage::Snapshot(snapshot) = receiver.recv().await.unwrap() {
+                    if is_terminal(&snapshot.state) {
+                        break snapshot;
+                    }
+                }
+            }
+        })
+        .await
+        .expect("resume must launch the actual conversion worker");
+        assert_eq!(terminal.state, "failed", "invalid EPUB must reach parsing rather than remain queued or reuse the cancelled token");
+        assert!(terminal
+            .error
+            .as_deref()
+            .unwrap()
+            .starts_with("EPUB error:"));
+        assert!(!state.jobs.read().await["resume-job"]
+            .cancellation
+            .is_cancelled());
+        assert_eq!(
+            load_snapshots(&state.config)["resume-job"].snapshot.state,
+            "failed"
+        );
+    }
+
+    #[tokio::test]
+    async fn resume_missing_input_keeps_the_terminal_snapshot() {
+        let root = TestRoot::new();
+        let state = root.state();
+        let mut snapshot = initial_job("missing-input".into(), &CreateJob::default());
+        snapshot.state = "interrupted".into();
+        let (events, mut receiver) = broadcast::channel(8);
+        state.jobs.write().await.insert(
+            snapshot.job_id.clone(),
+            Job {
+                snapshot,
+                events,
+                cancellation: Default::default(),
+                worker_active: false,
+            },
+        );
+        let response = resume_job(AxumPath("missing-input".into()), State(state.clone())).await;
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+        assert_eq!(
+            state.jobs.read().await["missing-input"].snapshot.state,
+            "interrupted"
+        );
+        assert!(matches!(
+            receiver.try_recv(),
+            Err(broadcast::error::TryRecvError::Empty)
+        ));
+    }
+
+    #[tokio::test]
+    async fn resume_waits_for_the_previous_worker_to_stop() {
+        let root = TestRoot::new();
+        let state = root.state();
+        let mut snapshot = initial_job("cancelled-job".into(), &CreateJob::default());
+        snapshot.state = "cancelled".into();
+        let (events, mut receiver) = broadcast::channel(8);
+        state.jobs.write().await.insert(
+            snapshot.job_id.clone(),
+            Job {
+                snapshot,
+                events,
+                cancellation: Default::default(),
+                worker_active: true,
+            },
+        );
+        let response = resume_job(AxumPath("cancelled-job".into()), State(state.clone())).await;
+        assert_eq!(response.status(), StatusCode::CONFLICT);
+        assert_eq!(
+            state.jobs.read().await["cancelled-job"].snapshot.state,
+            "cancelled"
+        );
+        assert!(matches!(
+            receiver.try_recv(),
+            Err(broadcast::error::TryRecvError::Empty)
+        ));
+    }
+
+    #[tokio::test]
+    async fn resume_running_job_does_not_reset_it() {
+        let root = TestRoot::new();
+        let state = root.state();
+        let mut snapshot = initial_job("running-job".into(), &CreateJob::default());
+        snapshot.state = "running".into();
+        let (events, mut receiver) = broadcast::channel(8);
+        state.jobs.write().await.insert(
+            snapshot.job_id.clone(),
+            Job {
+                snapshot,
+                events,
+                cancellation: Default::default(),
+                worker_active: false,
+            },
+        );
+        let response = resume_job(AxumPath("running-job".into()), State(state.clone())).await;
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            state.jobs.read().await["running-job"].snapshot.state,
+            "running"
+        );
+        assert!(matches!(
+            receiver.try_recv(),
+            Err(broadcast::error::TryRecvError::Empty)
+        ));
+    }
+
+    #[tokio::test]
+    async fn queued_cancellation_survives_snapshot_recovery() {
+        let root = TestRoot::new();
+        let state = root.state();
+        let snapshot = initial_job("cancel-job".into(), &CreateJob::default());
+        persist_snapshot(&state.config, &snapshot).unwrap();
+        let (events, _) = broadcast::channel(8);
+        state.jobs.write().await.insert(
+            snapshot.job_id.clone(),
+            Job {
+                snapshot,
+                events,
+                cancellation: Default::default(),
+                worker_active: false,
+            },
+        );
+        let response = cancel(AxumPath("cancel-job".into()), State(state.clone())).await;
+        assert_eq!(response.status(), StatusCode::OK);
+        let recovered = load_snapshots(&state.config);
+        assert_eq!(recovered["cancel-job"].snapshot.state, "cancelled");
+        assert!(recovered["cancel-job"].snapshot.error.is_none());
+    }
+
+    #[tokio::test]
+    async fn cancellation_persistence_failure_does_not_report_success() {
+        let root = TestRoot::new();
+        let state = root.state();
+        std::fs::create_dir_all(state.config.paths.jobs_dir.parent().unwrap()).unwrap();
+        std::fs::write(&state.config.paths.jobs_dir, b"not a directory").unwrap();
+        let snapshot = initial_job("cancel-job".into(), &CreateJob::default());
+        let (events, mut receiver) = broadcast::channel(8);
+        state.jobs.write().await.insert(
+            snapshot.job_id.clone(),
+            Job {
+                snapshot,
+                events,
+                cancellation: Default::default(),
+                worker_active: false,
+            },
+        );
+        let response = cancel(AxumPath("cancel-job".into()), State(state.clone())).await;
+        assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+        let jobs = state.jobs.read().await;
+        assert_eq!(jobs["cancel-job"].snapshot.state, "queued");
+        assert!(!jobs["cancel-job"].cancellation.is_cancelled());
+        assert!(matches!(
+            receiver.try_recv(),
+            Err(broadcast::error::TryRecvError::Empty)
+        ));
+    }
+
+    #[tokio::test]
+    async fn large_archive_download_is_streamed_in_bounded_chunks() {
+        let root = TestRoot::new();
+        let state = root.state();
+        let job = state.config.paths.output_dir.join("large-job");
+        std::fs::create_dir_all(&job).unwrap();
+        let size = 4 * 1024 * 1024;
+        std::fs::File::create(job.join("book.zip"))
+            .unwrap()
+            .set_len(size)
+            .unwrap();
+        let response = output(
+            AxumPath(("large-job".into(), "book.zip".into())),
+            State(state),
+            request("GET"),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(response.headers()[header::CONTENT_LENGTH], size.to_string());
+        assert_eq!(response.headers()[header::CONTENT_TYPE], "application/zip");
+        let mut stream = response.into_body().into_data_stream();
+        let mut total = 0;
+        while let Some(chunk) = stream.next().await {
+            let chunk = chunk.unwrap();
+            assert!(
+                chunk.len() <= 64 * 1024,
+                "download chunk must remain bounded"
+            );
+            total += chunk.len() as u64;
+        }
+        assert_eq!(total, size);
+    }
+
+    #[tokio::test]
+    async fn head_and_unsatisfiable_range_keep_http_semantics() {
+        let root = TestRoot::new();
+        let state = root.state();
+        let job = state.config.paths.output_dir.join("range-job");
+        std::fs::create_dir_all(&job).unwrap();
+        std::fs::write(job.join("chapter.mp3"), b"0123456789").unwrap();
+        let head = output(
+            AxumPath(("range-job".into(), "chapter.mp3".into())),
+            State(state.clone()),
+            request("HEAD"),
+        )
+        .await;
+        assert_eq!(head.status(), StatusCode::OK);
+        assert_eq!(head.headers()[header::CONTENT_LENGTH], "10");
+        assert_eq!(head.headers()[header::CONTENT_TYPE], "audio/mpeg");
+        assert!(axum::body::to_bytes(head.into_body(), 100)
+            .await
+            .unwrap()
+            .is_empty());
+        let mut range = request("GET");
+        range
+            .headers_mut()
+            .insert(header::RANGE, "bytes=20-30".parse().unwrap());
+        let response = output(
+            AxumPath(("range-job".into(), "chapter.mp3".into())),
+            State(state.clone()),
+            range,
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::RANGE_NOT_SATISFIABLE);
+        assert_eq!(response.headers()[header::CONTENT_RANGE], "bytes */10");
+        let missing = output(
+            AxumPath(("range-job".into(), "missing.mp3".into())),
+            State(state),
+            request("GET"),
+        )
+        .await;
+        assert_eq!(missing.status(), StatusCode::NOT_FOUND);
+    }
+
+    fn request(method: &str) -> axum::extract::Request {
+        axum::http::Request::builder()
+            .method(method)
+            .uri("/")
+            .body(axum::body::Body::empty())
+            .unwrap()
+    }
+
+    async fn http_fixture_request(config: AppConfig, request: &'static [u8]) -> String {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            axum::serve(listener, app(config)).await.unwrap();
+        });
+        let response = tokio::task::spawn_blocking(move || {
+            use std::io::{Read, Write};
+            let mut client = std::net::TcpStream::connect(address).unwrap();
+            client
+                .set_read_timeout(Some(std::time::Duration::from_secs(5)))
+                .unwrap();
+            client.write_all(request).unwrap();
+            let mut bytes = Vec::new();
+            client.read_to_end(&mut bytes).unwrap();
+            String::from_utf8(bytes).unwrap()
+        })
+        .await
+        .unwrap();
+        server.abort();
+        response
+    }
+
+    #[tokio::test]
+    async fn audio_download_serves_requested_byte_range() {
+        let root = TestRoot::new();
+        let state = root.state();
+        let job = state.config.paths.output_dir.join("range-job");
+        std::fs::create_dir_all(&job).unwrap();
+        std::fs::write(job.join("chapter.mp3"), b"0123456789").unwrap();
+        let response = http_fixture_request(state.config, b"GET /api/outputs/range-job/chapter.mp3 HTTP/1.1\r\nHost: localhost\r\nRange: bytes=2-5\r\nConnection: close\r\n\r\n").await;
+        assert!(response.starts_with("HTTP/1.1 206"), "{response}");
+        assert!(response
+            .to_ascii_lowercase()
+            .contains("content-range: bytes 2-5/10"));
+        assert!(response.ends_with("2345"));
+    }
+
+    #[test]
+    fn finished_snapshot_exposes_the_complete_archive() {
+        let root = TestRoot::new();
+        let state = root.state();
+        let job_dir = state.config.paths.output_dir.join("archive-job");
+        std::fs::create_dir_all(&job_dir).unwrap();
+        std::fs::write(job_dir.join("book.zip"), b"archive fixture").unwrap();
+        let manifest = OutputManifest {
+            job_id: "archive-job".into(),
+            title: "Book".into(),
+            author: "Author".into(),
+            chapters: Vec::new(),
+            archive: "book.zip".into(),
+            cover: None,
+        };
+        let mut snapshot = initial_job("archive-job".into(), &CreateJob::default());
+        apply_manifest(&mut snapshot, &manifest, &state.config.paths.output_dir);
+        let archive = snapshot
+            .outputs
+            .iter()
+            .find(|asset| asset.name == "book.zip")
+            .expect("completed archives must be advertised for download");
+        assert_eq!(archive.url, "/api/outputs/archive-job/book.zip");
+        assert_eq!(archive.size_bytes, 15);
+        let value = serde_json::to_value(&snapshot).unwrap();
+        assert_eq!(value["outputs"][0]["sizeBytes"], 15);
+        std::fs::remove_file(job_dir.join("book.zip")).unwrap();
+        apply_manifest(&mut snapshot, &manifest, &state.config.paths.output_dir);
+        assert!(snapshot.outputs.is_empty());
+        std::fs::write(job_dir.join("book.zip"), []).unwrap();
+        apply_manifest(&mut snapshot, &manifest, &state.config.paths.output_dir);
+        assert!(snapshot.outputs.is_empty());
+        std::fs::remove_file(job_dir.join("book.zip")).unwrap();
+        std::fs::create_dir(job_dir.join("book.zip")).unwrap();
+        apply_manifest(&mut snapshot, &manifest, &state.config.paths.output_dir);
+        assert!(snapshot.outputs.is_empty());
+    }
+
+    #[test]
+    fn manifest_archive_cannot_escape_the_job_directory() {
+        let root = TestRoot::new();
+        let state = root.state();
+        std::fs::create_dir_all(&state.config.paths.output_dir).unwrap();
+        std::fs::write(
+            state.config.paths.output_dir.join("outside.zip"),
+            b"outside archive",
+        )
+        .unwrap();
+        let manifest = OutputManifest {
+            job_id: "archive-job".into(),
+            title: "Book".into(),
+            author: "Author".into(),
+            chapters: Vec::new(),
+            archive: "../outside.zip".into(),
+            cover: None,
+        };
+        let mut snapshot = initial_job("archive-job".into(), &CreateJob::default());
+        apply_manifest(&mut snapshot, &manifest, &state.config.paths.output_dir);
+        assert!(snapshot.outputs.is_empty());
+    }
+
+    #[tokio::test]
+    async fn advertised_archive_can_be_downloaded() {
+        let root = TestRoot::new();
+        let state = root.state();
+        let job_dir = state.config.paths.output_dir.join("archive-job");
+        std::fs::create_dir_all(&job_dir).unwrap();
+        std::fs::write(job_dir.join("book.zip"), b"download archive").unwrap();
+        let manifest = OutputManifest {
+            job_id: "archive-job".into(),
+            title: "Book".into(),
+            author: "Author".into(),
+            chapters: Vec::new(),
+            archive: "book.zip".into(),
+            cover: None,
+        };
+        let mut snapshot = initial_job("archive-job".into(), &CreateJob::default());
+        apply_manifest(&mut snapshot, &manifest, &state.config.paths.output_dir);
+        let archive = &snapshot.outputs[0];
+        let response = output(
+            AxumPath((snapshot.job_id.clone(), archive.name.clone())),
+            State(state),
+            request("GET"),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::OK);
+        let bytes = axum::body::to_bytes(response.into_body(), 100)
+            .await
+            .unwrap();
+        assert_eq!(bytes.as_ref(), b"download archive");
+    }
+
+    #[tokio::test]
+    async fn chapter_manifest_rejects_job_path_traversal() {
+        let root = TestRoot::new();
+        let response = chapters(AxumPath(("../private".into(), 1)), State(root.state())).await;
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn encoded_http_job_path_cannot_escape_outputs() {
+        let root = TestRoot::new();
+        let state = root.state();
+        std::fs::create_dir_all(&state.config.paths.output_dir).unwrap();
+        let outside = root.0.join("private");
+        std::fs::create_dir_all(&outside).unwrap();
+        std::fs::write(outside.join("example.txt"), b"outside fixture").unwrap();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            axum::serve(listener, app(state.config)).await.unwrap();
+        });
+        let response = tokio::task::spawn_blocking(move || {
+            use std::io::{Read, Write};
+            let mut client = std::net::TcpStream::connect(address).unwrap();
+            client.set_read_timeout(Some(std::time::Duration::from_secs(5))).unwrap();
+            client.write_all(b"GET /api/outputs/..%2Fprivate/example.txt HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n").unwrap();
+            let mut bytes = Vec::new();
+            client.read_to_end(&mut bytes).unwrap();
+            String::from_utf8(bytes).unwrap()
+        }).await.unwrap();
+        server.abort();
+        assert!(response.starts_with("HTTP/1.1 400"), "{response}");
+        assert!(!response.contains("outside fixture"));
+    }
+
+    #[tokio::test]
+    async fn normal_output_download_keeps_its_contents() {
+        let root = TestRoot::new();
+        let state = root.state();
+        let job = state.config.paths.output_dir.join("valid-job");
+        std::fs::create_dir_all(&job).unwrap();
+        std::fs::write(job.join("chapter.mp3"), b"valid fixture").unwrap();
+        let response = output(
+            AxumPath(("valid-job".into(), "chapter.mp3".into())),
+            State(state),
+            request("GET"),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::OK);
+        let bytes = axum::body::to_bytes(response.into_body(), 100)
+            .await
+            .unwrap();
+        assert_eq!(bytes.as_ref(), b"valid fixture");
+    }
+
+    struct TestRoot(PathBuf);
+    impl TestRoot {
+        fn new() -> Self {
+            let path = std::env::temp_dir().join(format!("converter-server-contract-{}", uuid()));
+            std::fs::create_dir_all(&path).unwrap();
+            Self(path)
+        }
+        fn state(&self) -> AppState {
+            let config = AppConfig::from_paths(converter_core::paths::resolve_paths_from(
+                HashMap::<String, String>::new(),
+                self.0.clone(),
+            ));
+            AppState {
+                config,
+                jobs: Arc::new(RwLock::new(HashMap::new())),
+            }
+        }
+    }
+    impl Drop for TestRoot {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    #[tokio::test]
+    async fn output_rejects_job_ids_that_escape_the_output_root() {
+        let root = TestRoot::new();
+        let state = root.state();
+        std::fs::create_dir_all(&state.config.paths.output_dir).unwrap();
+        let outside = root.0.join("private");
+        std::fs::create_dir_all(&outside).unwrap();
+        std::fs::write(outside.join("example.txt"), b"outside fixture").unwrap();
+        let response = output(
+            AxumPath(("../private".into(), "example.txt".into())),
+            State(state),
+            request("GET"),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    }
 }

@@ -33,17 +33,11 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v7
 
-      - name: Install mise
-        uses: jdx/mise-action@v5
-        with:
-          version: 2026.9.14
-          install: false
-
       - name: Check production packaging boundary
-        run: mise run guard:no-python-production
+        run: bash scripts/guard_no_python_production.sh
 
-  python:
-    name: Python
+  python-tests:
+    name: Python tests
     needs: production-packaging-guard
     runs-on: ubuntu-24.04
     permissions:
@@ -162,6 +156,15 @@ jobs:
             native/piper-runtime/target
           key: rust-${{ runner.os }}-${{ hashFiles('Cargo.lock', 'native/piper-runtime/Cargo.lock', '**/Cargo.toml') }}
           restore-keys: rust-${{ runner.os }}-
+      - name: Install audio tools and eSpeak-NG phoneme data
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ffmpeg espeak-ng-data
+          phoneme_table="$(dpkg -L espeak-ng-data | sed -n '/\/espeak-ng-data\/phontab$/p' | head -n 1)"
+          test -n "$phoneme_table"
+          test -f "$phoneme_table"
+          data_directory="${phoneme_table%/phontab}"
+          echo "PIPER_ESPEAKNG_DATA_DIRECTORY=${data_directory%/espeak-ng-data}" >> "$GITHUB_ENV"
       - name: Check Rust workspace
         run: mise exec -- cargo check --workspace
       - name: Run migration build gate
@@ -179,15 +182,6 @@ jobs:
             '858555e3a064209c57088fe6bd70c4c3dc54d03eaa00c45d5ecaf43a33f95aa7' \
             'models/piper/pt_BR-faber-medium.onnx' | sha256sum --check --status
           curl --fail --location --retry 3 "$model_base/pt_BR-faber-medium.onnx.json" -o models/piper/pt_BR-faber-medium.onnx.json
-      - name: Install eSpeak-NG phoneme data
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends espeak-ng-data
-          phoneme_table="$(dpkg -L espeak-ng-data | sed -n '/\/espeak-ng-data\/phontab$/p' | head -n 1)"
-          test -n "$phoneme_table"
-          test -f "$phoneme_table"
-          data_directory="${phoneme_table%/phontab}"
-          echo "PIPER_ESPEAKNG_DATA_DIRECTORY=${data_directory%/espeak-ng-data}" >> "$GITHUB_ENV"
       - name: Piper Embedded runtime smoke test
         run: mise exec -- cargo test --manifest-path native/piper-runtime/Cargo.toml --features onnxruntime,piper-inference,heavy-runtime-tests piper_inference_generates_valid_wav_from_vendored_model -- --nocapture
   web:
@@ -211,15 +205,15 @@ jobs:
         run: rustup target add wasm32-unknown-unknown
       - name: Build direct Rust WASM adapter
         run: mise run web:wasm-build
-      - name: Install web dependencies
-        working-directory: web
-        run: mise exec -- npm ci --prefer-offline --no-audit --no-fund
       - name: Cache npm downloads
         uses: actions/cache@v6
         with:
           path: ~/.npm
           key: npm-${{ runner.os }}-${{ hashFiles('web/package-lock.json', 'web/package.json') }}
           restore-keys: npm-${{ runner.os }}-
+      - name: Install web dependencies
+        working-directory: web
+        run: mise exec -- npm ci --prefer-offline --no-audit --no-fund
       - name: Run web tests
         working-directory: web
         run: mise exec -- npm test
@@ -263,3 +257,25 @@ jobs:
       - name: Run Flutter analyzer
         working-directory: flutter_app
         run: mise exec -- flutter analyze
+
+
+  python:
+    name: Python
+    needs: [production-packaging-guard, python-tests, rust, flutter, web]
+    if: always()
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - name: Require all CI jobs
+        env:
+          PACKAGING_RESULT: ${{ needs.production-packaging-guard.result }}
+          PYTHON_TESTS_RESULT: ${{ needs.python-tests.result }}
+          RUST_RESULT: ${{ needs.rust.result }}
+          FLUTTER_RESULT: ${{ needs.flutter.result }}
+          WEB_RESULT: ${{ needs.web.result }}
+        run: |
+          if [[ "$PACKAGING_RESULT" != "success" || "$PYTHON_TESTS_RESULT" != "success" || "$RUST_RESULT" != "success" || "$FLUTTER_RESULT" != "success" || "$WEB_RESULT" != "success" ]]; then
+            echo "Required CI job failed: packaging=$PACKAGING_RESULT python=$PYTHON_TESTS_RESULT rust=$RUST_RESULT flutter=$FLUTTER_RESULT web=$WEB_RESULT" >&2
+            exit 1
+          fi
