@@ -36,6 +36,8 @@ jobs:
     name: Python tests
     needs: production-packaging-guard
     runs-on: ubuntu-24.04
+    env:
+      MISE_ENABLE_TOOLS: python
     permissions:
       contents: read
 
@@ -48,6 +50,16 @@ jobs:
         with:
           version: 2026.9.14
           install: false
+
+      - name: Check Python toolchain scope
+        run: |
+          mise ls --current --json | python3 -c '
+          import json, sys
+          tools = set(json.load(sys.stdin))
+          if tools != {"python"}:
+              sys.exit(f"Unexpected Python CI tools: {sorted(tools)}")
+          print("Python CI tools: python")
+          '
 
       - name: Install toolchain
         env:
