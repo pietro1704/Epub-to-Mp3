@@ -449,6 +449,11 @@ this board and `handoff.md` before crossing ownership or changing shared contrac
   throughput before changing adaptation. Apple revalidates the resulting artifact.
 
 - [x] **APP-20261008-05 — Preserve manual Mac conversion inbox inputs.** Verified.
+  Additional shared Apple safety slice verified: synchronous
+  SharedContainerImporter.drain retains failed payloads, matching the async caller.
+  Failure reproduced, then three sync tests and one async test passed on macOS;
+  failed expanded EPUB bytes unchanged, successful inbox payload still drained.
+  Evidence in the quality plan; no iOS UI or Flutter verification in this slice.
   Audit found `ConvertViewModel.importForConversion` removes the entire inbox
   before copying. Acceptance: earlier files survive successful/failed subsequent
   imports and reimport from within the inbox; cleanup targets only owned staging.

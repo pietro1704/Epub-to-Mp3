@@ -145,10 +145,9 @@ final class SharedContainerImporterTests: XCTestCase {
                        "source file should be removed after drain")
     }
 
-    func testDrainSkipsAndDeletesUnreadableFiles() throws {
+    func testDrainReportsUnreadableFiles() throws {
         let phantom = tempDir.appendingPathComponent("ghost.epub")
-        // Don't create it — drain should record an error but still
-        // not crash. The cleanup `try?` swallows the removeItem error.
+        // Missing sources produce an error outcome without cleanup attempts.
         let suite = "library.share-test.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!
         defaults.removePersistentDomain(forName: suite)
@@ -183,6 +182,8 @@ final class SharedContainerImporterTests: XCTestCase {
 
     func testDrainRejectsInvalidExpandedEpubDirectory() throws {
         let source = try makeExpandedEpubDirectory(named: "Broken.epub", includeOPF: false)
+        let container = source.appendingPathComponent("META-INF/container.xml")
+        let original = try Data(contentsOf: container)
         let library = makeLibrary()
 
         let outcomes = SharedContainerImporter.drain(urls: [source], into: library)
@@ -191,7 +192,9 @@ final class SharedContainerImporterTests: XCTestCase {
         XCTAssertNil(outcomes[0].importedBookID)
         XCTAssertNotNil(outcomes[0].error)
         XCTAssertTrue(library.books.isEmpty)
-        XCTAssertFalse(FileManager.default.fileExists(atPath: source.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: source.path),
+                      "Failed import must preserve the only inbox source for recovery.")
+        XCTAssertEqual(try Data(contentsOf: container), original)
     }
 
     func testDocumentsImporterRepackagesAndPreservesExpandedEpubDirectory() throws {

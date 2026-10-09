@@ -138,10 +138,8 @@ enum SharedContainerImporter {
     }
 
     /// Drain every pending file in the Inbox into the given library.
-    /// After the import attempt the file is deleted regardless of
-    /// outcome — we don't want a permanently failing payload to keep
-    /// re-importing on every launch. Errors are surfaced via the
-    /// returned `ImportOutcome` so callers can show a toast.
+    /// Delete an inbox source only after publishing its durable library copy.
+    /// Failed payloads remain recoverable; errors are surfaced in ImportOutcome.
     @discardableResult
     static func drain(
         into library: LibraryStore,
@@ -166,6 +164,7 @@ enum SharedContainerImporter {
             do {
                 let book = try library.importBook(from: url)
                 outcomes.append(.init(url: url, importedBookID: book.id, error: nil))
+                try? fileManager.removeItem(at: url)
             } catch {
                 outcomes.append(.init(
                     url: url,
@@ -173,7 +172,6 @@ enum SharedContainerImporter {
                     error: error.localizedDescription
                 ))
             }
-            try? fileManager.removeItem(at: url)
         }
         return outcomes
     }

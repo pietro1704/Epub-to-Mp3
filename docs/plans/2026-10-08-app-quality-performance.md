@@ -848,3 +848,26 @@ Simulator was stopped before serialized Mac checks; no synthesis or source-data
 mutation. Reviewed the owned diff and whitespace. This proves shared Swift
 mapping behavior, not iOS UI or Flutter parity. Resolved provider metadata through
 the Rust ABI and the installed-model frontend selector remain pending.
+
+## Failed inbox source preservation — 2026-10-09
+
+Safety review found that the synchronous SharedContainerImporter.drain removed
+source payloads even after LibraryStore import failure. The async production UI
+caller already preserved failed sources; align the compatibility entry point.
+Only successful durable imports now permit deleting their inbox source. Failed
+expanded EPUB content remains available for repair/retry. No runtime routing,
+model/download cleanup, IO scheduling or Flutter change.
+
+Native red: `SharedContainerImporterTests/testDrainRejectsInvalidExpandedEpubDirectory`
+failed the source-preservation assertion in
+`Test-EpubToMp3Mac-2026.10.09_07-04-03--0300.xcresult`. Green sync checks:
+failed-source byte preservation, missing source error, successful expanded EPUB
+durable import/cleanup; three passed, zero failed/skipped in `07-05-01` bundle.
+The initial selection also contained a nonexistent async test name; that test did
+not execute. Corrected exact selection
+`testAsyncInboxCallerPublishesDurableBookAndPreservesFailedSource` then passed
+separately, one passed, zero failed/skipped in `07-05-56` bundle. All bundles
+are under `ios/EpubToMp3/.build/Logs/Test/`; actual summary counts verified.
+Executed `mise run apple:chapter-callback:test` with APPLE_NATIVE_TESTS filters.
+Tests use owned temporary fixtures; original books, models/downloads preserved.
+Owned diff reviewed; no claim of iOS UI, Flutter, or complete import-IO acceptance.
