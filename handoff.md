@@ -92,10 +92,14 @@ Arch: add one widget test using a held `Completer`, attempt a second submission
 while the first is suspended, and assert one starter call plus preserved request
 options/result. Keep the production code unchanged unless that runtime test fails.
 
-APP-20261009-43 — Apple library removal now evicts `ReaderProgressStore` for the
-removed book using the same `UserDefaults` suite as `LibraryStore`. Native red
-reproduced the stale progress; focused macOS removal test passes and verifies
-other-book progress plus the original EPUB remain. Flutter source review found
+APP-20261009-43 — Apple library removal now evicts reader progress from its
+actual persistence suite and is verified on macOS.
+`ReaderProgressStore` persists to `.standard`, whereas `LibraryStore` may use its
+App Group suite; do not route cleanup through the library-index defaults. The
+first test passed with an injected shared suite, but that did not model device
+storage. A corrected `.standard` regression failed before the fix and then passed
+after it: 1 test, 0 failures/skips, while preserving other-book progress and the
+source EPUB. Flutter source review found
 `LibraryStore.remove(id:)` only removes the row, while
 `ResumeStore.saveBookPosition` persists `resume:book:<bookId>:chapter/position`.
 Arch: add a store/widget regression that deleting one library book clears only

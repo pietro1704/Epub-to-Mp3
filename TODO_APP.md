@@ -11,17 +11,23 @@ this board and `handoff.md` before crossing ownership or changing shared contrac
 
 - [ ] **APP-20261009-43 — Evict reader progress when removing a library entry.** Apple verified; Flutter parity pending.
   `LibraryStore.remove(id:)` deletes the book row but leaves its book-ID-keyed
-  `ReaderProgressStore` entry. Evict through the same UserDefaults suite; retain
-  other books' progress and the user's source EPUB. Add a native LibraryStore
+  `ReaderProgressStore` entry. Evict through the store's actual persistence
+  defaults (ReaderProgressStore uses `.standard`, which differs from the library
+  App Group suite on device); retain other books' progress and the user's source EPUB. Add a native LibraryStore
   regression, then run the focused macOS XCTest. Do not change audio/model/download
   retention behavior in this slice. Apple fix: `LibraryStore.remove` now evicts
-  only the removed book's reader progress. Red confirmed the stale entry; final
+  a reader-progress entry from `.standard`, matching actual `ReaderProgressStore`
+  writes rather than the LibraryStore App Group index. The initial same-suite
+  test passed, but review caught that it did not model device defaults; corrected
+  test failed red, then passed after the fix. Final
   `LibraryStoreTests/testImportThenRemoveRoundtrip`: 1 passed, 0 failed/skipped,
-  including unrelated-progress and source-EPUB preservation. Flutter parity is
-  pending Arch; source handoff is in `handoff.md`.
-  Review against `CODING_STANDARDS.md`: same-boundary native regression, correct
-  defaults suite, no unrelated data cleanup. APP-43 acceptance is complete for
-  Apple only; do not close the cross-client item until Arch verifies Flutter.
+  including unrelated progress and source-EPUB preservation. Result:
+  `Test-EpubToMp3Mac-2026.10.09_09-49-42--0300.xcresult`.
+  Flutter parity is pending Arch; source handoff is in `handoff.md`.
+  Review against `CODING_STANDARDS.md` caught and fixed the defaults-suite mismatch.
+  Final diff changes only the library row/progress metadata and leaves audio,
+  models, downloads, and source EPUB untouched. Apple acceptance is verified;
+  keep APP-43 open until Arch verifies Flutter.
 
 - [ ] **APP-20261009-41 — Reject partial or ambiguous Rust chapter selectors.** Arch-owned; source finding only.
   `converter-core/src/worker.rs` currently includes any chapter matching any
