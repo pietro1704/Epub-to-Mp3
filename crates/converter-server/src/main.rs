@@ -816,7 +816,7 @@ async fn resumable_jobs(State(state): State<AppState>) -> Response {
         .filter(|job| {
             matches!(
                 job.snapshot.state.as_str(),
-                "queued" | "running" | "cancelling"
+                "queued" | "running" | "cancelling" | "interrupted"
             )
         })
         .map(|job| job.snapshot.clone())
@@ -992,6 +992,28 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn restarted_jobs_are_discoverable_through_the_resumable_api() {
+        let root = TestRoot::new();
+        let state = root.state();
+        let queued = initial_job("restart-job".into(), &CreateJob::default());
+        persist_snapshot(&state.config, &queued).unwrap();
+        let mut completed = initial_job("complete-job".into(), &CreateJob::default());
+        completed.state = "completed".into();
+        persist_snapshot(&state.config, &completed).unwrap();
+        let response = http_fixture_request(
+            state.config,
+            b"GET /api/jobs/resumable HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n",
+        )
+        .await;
+        assert!(response.starts_with("HTTP/1.1 200"), "{response}");
+        let body = response.split_once("\r\n\r\n").unwrap().1;
+        let value: serde_json::Value = serde_json::from_str(body).unwrap();
+        assert_eq!(value["count"], 1);
+        assert_eq!(value["resumableJobs"][0]["jobId"], "restart-job");
+        assert_eq!(value["resumableJobs"][0]["state"], "interrupted");
+    }
 
     #[tokio::test]
     async fn resume_executes_the_worker_with_a_fresh_cancellation_token() {
