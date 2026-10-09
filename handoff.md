@@ -92,6 +92,19 @@ Arch: add one widget test using a held `Completer`, attempt a second submission
 while the first is suspended, and assert one starter call plus preserved request
 options/result. Keep the production code unchanged unless that runtime test fails.
 
+APP-20261009-43 — Apple library removal now evicts `ReaderProgressStore` for the
+removed book using the same `UserDefaults` suite as `LibraryStore`. Native red
+reproduced the stale progress; focused macOS removal test passes and verifies
+other-book progress plus the original EPUB remain. Flutter source review found
+`LibraryStore.remove(id:)` only removes the row, while
+`ResumeStore.saveBookPosition` persists `resume:book:<bookId>:chapter/position`.
+Arch: add a store/widget regression that deleting one library book clears only
+its book-level resume position, preserves another book's state and leaves the
+source EPUB intact. Inspect any job/chapter resume state associated via
+`lastJobId`, but do not delete downloaded audio as part of this correction.
+Report the focused Flutter test result and update APP-20261009-43 before calling
+cross-client removal-state cleanup complete.
+
 `TODO_APP.md` is the shared user-request/status board; root `AGENTS.md`/`CLAUDE.md`
 is authoritative. Codex coordinates Apple changes; Arch coordinates Rust/Flutter.
 Keep iOS, macOS and Flutter behavior synchronized. Claim Done only with relevant

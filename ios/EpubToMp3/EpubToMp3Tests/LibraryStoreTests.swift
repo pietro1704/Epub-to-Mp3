@@ -566,9 +566,17 @@ final class LibraryStoreTests: XCTestCase {
         let book = try store.importBook(from: tmp)
         XCTAssertEqual(store.books.count, 1)
         XCTAssertEqual(store.books.first?.id, book.id)
+        ReaderProgressStore.save(bookId: book.id, chapterIndex: 2, offsetFraction: 0.6, defaults: defaults)
+        ReaderProgressStore.save(bookId: "unrelated-book", chapterIndex: 4, offsetFraction: 0.3, defaults: defaults)
 
         store.remove(id: book.id)
         XCTAssertTrue(store.books.isEmpty)
+        XCTAssertNil(ReaderProgressStore.read(bookId: book.id, defaults: defaults),
+                     "Removing a book must not leave resumable state keyed by its content ID")
+        XCTAssertNotNil(ReaderProgressStore.read(bookId: "unrelated-book", defaults: defaults),
+                        "Removal must preserve other books' reader progress")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: tmp.path),
+                      "Removing the library entry must preserve the user's original EPUB")
     }
 
     @MainActor

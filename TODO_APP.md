@@ -9,6 +9,20 @@ this board and `handoff.md` before crossing ownership or changing shared contrac
 
 ## Active requests — 2026-10-08
 
+- [ ] **APP-20261009-43 — Evict reader progress when removing a library entry.** Apple verified; Flutter parity pending.
+  `LibraryStore.remove(id:)` deletes the book row but leaves its book-ID-keyed
+  `ReaderProgressStore` entry. Evict through the same UserDefaults suite; retain
+  other books' progress and the user's source EPUB. Add a native LibraryStore
+  regression, then run the focused macOS XCTest. Do not change audio/model/download
+  retention behavior in this slice. Apple fix: `LibraryStore.remove` now evicts
+  only the removed book's reader progress. Red confirmed the stale entry; final
+  `LibraryStoreTests/testImportThenRemoveRoundtrip`: 1 passed, 0 failed/skipped,
+  including unrelated-progress and source-EPUB preservation. Flutter parity is
+  pending Arch; source handoff is in `handoff.md`.
+  Review against `CODING_STANDARDS.md`: same-boundary native regression, correct
+  defaults suite, no unrelated data cleanup. APP-43 acceptance is complete for
+  Apple only; do not close the cross-client item until Arch verifies Flutter.
+
 - [ ] **APP-20261009-41 — Reject partial or ambiguous Rust chapter selectors.** Arch-owned; source finding only.
   `converter-core/src/worker.rs` currently includes any chapter matching any
   requested selector, so valid + unknown selectors can silently convert only a

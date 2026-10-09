@@ -463,6 +463,7 @@ final class LibraryStore: ObservableObject {
     /// file (the user may want it back).
     func remove(id: String) {
         removalGenerations[id, default: 0] += 1
+        ReaderProgressStore.evict(bookId: id, defaults: defaults)
         books.removeAll { $0.id == id }
         persist()
     }
