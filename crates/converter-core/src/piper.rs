@@ -289,6 +289,7 @@ fn validate_wav(path: &Path) -> Result<(), PiperError> {
     }
     Ok(())
 }
+/// Synthesize WAV audio, encoding MP3 when the destination has an MP3 extension.
 pub fn synthesize(
     config: &PiperConfig,
     text: &str,
@@ -315,14 +316,125 @@ pub fn synthesize(
         ));
     }
     piper_runtime_init(&model, &config.config)?;
-    let path = piper_synthesize(text, output)?;
-    validate_wav(&path)?;
-    Ok(path)
+    let parent = output
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+    let staging = tempfile::Builder::new()
+        .prefix(".piper-audio-")
+        .tempdir_in(parent)
+        .map_err(|error| PiperError::Io(error.to_string()))?;
+    let wav = staging.path().join("speech.wav");
+    let path = piper_synthesize(text, &wav)?;
+    if cancel.is_cancelled() {
+        return Err(PiperError::Cancelled);
+    }
+    publish_piper_audio(&path, output)
+}
+
+fn publish_piper_audio(wav: &Path, output: &Path) -> Result<PathBuf, PiperError> {
+    validate_wav(wav)?;
+    if output
+        .extension()
+        .is_some_and(|extension| extension.eq_ignore_ascii_case("mp3"))
+    {
+        crate::audio::wav_to_mp3(wav, output, "96k")
+            .map_err(|error| PiperError::Io(error.to_string()))?;
+    } else if wav != output {
+        fs::rename(wav, output).map_err(|error| PiperError::Io(error.to_string()))?;
+    }
+    Ok(output.to_path_buf())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn write_test_wav(path: &Path) {
+        let sample_rate = 16_000_u32;
+        let data_length = sample_rate / 4 * 2;
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(b"RIFF");
+        bytes.extend_from_slice(&(36 + data_length).to_le_bytes());
+        bytes.extend_from_slice(b"WAVEfmt ");
+        bytes.extend_from_slice(&16_u32.to_le_bytes());
+        bytes.extend_from_slice(&1_u16.to_le_bytes());
+        bytes.extend_from_slice(&1_u16.to_le_bytes());
+        bytes.extend_from_slice(&sample_rate.to_le_bytes());
+        bytes.extend_from_slice(&(sample_rate * 2).to_le_bytes());
+        bytes.extend_from_slice(&2_u16.to_le_bytes());
+        bytes.extend_from_slice(&16_u16.to_le_bytes());
+        bytes.extend_from_slice(b"data");
+        bytes.extend_from_slice(&data_length.to_le_bytes());
+        bytes.resize(bytes.len() + data_length as usize, 0);
+        fs::write(path, bytes).unwrap();
+    }
+
+    #[test]
+    fn mp3_destination_contains_mp3_codec_instead_of_wave_payload() {
+        let root = tempfile::Builder::new()
+            .prefix("piper codec's fixture ")
+            .tempdir()
+            .unwrap();
+        let wav = root.path().join("native.wav");
+        let output = root.path().join("chapter.mp3");
+        write_test_wav(&wav);
+        publish_piper_audio(&wav, &output).unwrap();
+        let probe = std::process::Command::new("ffprobe")
+            .args([
+                "-v",
+                "error",
+                "-select_streams",
+                "a:0",
+                "-show_entries",
+                "stream=codec_name",
+                "-of",
+                "default=nw=1:nk=1",
+            ])
+            .arg(&output)
+            .output()
+            .expect("ffprobe is required to verify the Piper output codec");
+        assert!(probe.status.success());
+        assert_eq!(String::from_utf8_lossy(&probe.stdout).trim(), "mp3");
+    }
+
+    #[test]
+    fn wav_destination_preserves_the_native_payload() {
+        let root = tempfile::tempdir().unwrap();
+        let wav = root.path().join("native.wav");
+        let output = root.path().join("chapter.wav");
+        write_test_wav(&wav);
+        let expected = fs::read(&wav).unwrap();
+        assert_eq!(publish_piper_audio(&wav, &output).unwrap(), output);
+        assert_eq!(fs::read(&output).unwrap(), expected);
+        validate_wav(&output).unwrap();
+    }
+
+    #[test]
+    fn invalid_wave_does_not_replace_previous_audio() {
+        let root = tempfile::tempdir().unwrap();
+        let wav = root.path().join("invalid.wav");
+        let output = root.path().join("chapter.mp3");
+        fs::write(&wav, b"invalid wave input").unwrap();
+        fs::write(&output, b"previous audio").unwrap();
+        assert!(matches!(
+            publish_piper_audio(&wav, &output),
+            Err(PiperError::InvalidWav(_))
+        ));
+        assert_eq!(fs::read(output).unwrap(), b"previous audio");
+    }
+
+    #[test]
+    fn encoder_failure_preserves_previous_audio_and_cleans_staging() {
+        let root = tempfile::tempdir().unwrap();
+        let wav = root.path().join("native.wav");
+        let output = root.path().join("chapter.mp3");
+        write_test_wav(&wav);
+        fs::write(&output, b"previous audio").unwrap();
+        assert!(crate::audio::wav_to_mp3(&wav, &output, "invalid-bitrate").is_err());
+        assert_eq!(fs::read(output).unwrap(), b"previous audio");
+        assert_eq!(fs::read_dir(root.path()).unwrap().count(), 2);
+    }
 
     #[test]
     fn cancellation_token_can_be_shared_with_active_worker() {
