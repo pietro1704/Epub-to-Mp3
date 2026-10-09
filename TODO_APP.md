@@ -9,6 +9,15 @@ this board and `handoff.md` before crossing ownership or changing shared contrac
 
 ## Active requests — 2026-10-08
 
+- [x] **APP-20261009-39 — Roll back imports rejected by the library index.** Verified on macOS.
+  A failed async index commit must not leave an unindexed book published in
+  memory. Roll back only import snapshots still unchanged at failure time, so a
+  concurrent edit/removal is preserved; retain the durable source copy. Native
+  red assertion reproduced the phantom in-memory book. Final focused macOS
+  LibraryStore tests: 4 passed, 0 failed/skipped, including concurrent edit,
+  reimport preservation and reload. Result:
+  `.build/Logs/Test/Test-EpubToMp3Mac-2026.10.09_09-23-50--0300.xcresult`.
+
 - [ ] **APP-20261009-33 — Segment skip buttons use the chapter clock.** Apple verified; parity pending.
   Relative forward/backward controls must cross retained segments using chapter
   time, preserve pause/playing intent, and retain pending targets for missing audio.
@@ -225,6 +234,18 @@ this board and `handoff.md` before crossing ownership or changing shared contrac
   Christie 21.643 s, LOTR 252.736 s, one LOTR retry, no audio reuse. Logs show
   max_in_flight=1. Total synthesis worsened; performance acceptance stays open.
   Reader navigation, audible playback and 200 ms relaunch acceptance remain open.
+  Reopened the app on the iOS 16 SE Simulator; the focused UI test target built
+  with Xcode 16.4. The first run mistakenly used the combined scheme and stalled
+  in Xcode worker materialization. Retried with the dedicated `EpubToMp3-UITests`
+  scheme after importing hash-verified source copies through the app's file-URL
+  import path. Both actual-book tests ran, each with 0 passes/1 failure/0 skips:
+  LOTR and Christie opened with `clippedLineCount=0`, but a 187 px production
+  horizontal drag did not advance the canonical page. Result bundles:
+  `.reports/reader-books-lotr-ui.xcresult` and
+  `.reports/reader-books-christie-ui.xcresult`. Reader swipe remains a reproduced
+  failure; no UIKit source change was made. Keep the explicit current goal's
+  Simulator restriction for subsequent runs. Earlier bounded conversion evidence
+  remains valid and unchanged.
   Verified shared Swift configuration slice: chapter completion snapshots no
   longer invent an Edge provider when the Rust event supplies no engine. Native
   callback-to-snapshot regression failed on "edge", then passed 1/0/0 on macOS.

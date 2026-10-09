@@ -91,6 +91,7 @@ private final class LibraryEncoderProbe: @unchecked Sendable {
     private let lock = NSLock()
     private let resume = DispatchSemaphore(value: 0)
     private var waiting: XCTestExpectation?
+    private var failNext = false
     private var observations: [(Bool, String?)] = []
 
     func pauseNextEncoding(until expectation: XCTestExpectation) {
@@ -98,6 +99,10 @@ private final class LibraryEncoderProbe: @unchecked Sendable {
         waiting = expectation
     }
     func releaseEncoding() { resume.signal() }
+    func failNextEncoding() {
+        lock.lock(); defer { lock.unlock() }
+        failNext = true
+    }
     var encodedSnapshots: [(Bool, String?)] {
         lock.lock(); defer { lock.unlock() }
         return observations
@@ -107,12 +112,18 @@ private final class LibraryEncoderProbe: @unchecked Sendable {
         observations.append((Thread.isMainThread, books.first?.title))
         let entered = waiting
         waiting = nil
+        let shouldFail = failNext
+        failNext = false
         lock.unlock()
         if let entered {
             entered.fulfill()
             guard resume.wait(timeout: .now() + 5) == .success else {
                 throw NSError(domain: "LibraryPersistenceTests", code: 1)
             }
+        }
+        if shouldFail {
+            throw NSError(domain: "LibraryPersistenceTests", code: 3,
+                          userInfo: [NSLocalizedDescriptionKey: "Index encoding failed"])
         }
         return try JSONEncoder().encode(books)
     }
@@ -209,8 +220,41 @@ final class LibraryStoreTests: XCTestCase {
         let outcomes = await store.importBooks(from: [source])
         XCTAssertNil(outcomes.first?.book, "Inbox cleanup must not see a successful import before index commit")
         XCTAssertTrue(outcomes.first?.error?.contains("Index encoding failed") == true)
+        XCTAssertTrue(store.books.isEmpty, "A failed index commit must not leave an unindexed book visible in memory")
         XCTAssertNil(defaults.data(forKey: "library.books.v1"))
         XCTAssertEqual(try Data(contentsOf: source), bytes)
+    }
+
+    @MainActor
+    func testFailedImportCommitPreservesConcurrentBookEdits() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("library-index-race-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let suite = "library.index-race.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let probe = LibraryEncoderProbe()
+        probe.failNextEncoding()
+        let store = LibraryStore(defaults: defaults, importDirectory: root,
+                                 indexEncoder: { try probe.encode($0) })
+        defer { try? store.flushPersistenceSync() }
+        let source = try EpubFixture.create()
+        defer { try? FileManager.default.removeItem(at: source) }
+        let encoding = expectation(description: "import index encoding is blocked before failing")
+        probe.pauseNextEncoding(until: encoding)
+
+        let importing = Task { await store.importBooks(from: [source]) }
+        await fulfillment(of: [encoding], timeout: 3)
+        var edited = try XCTUnwrap(store.books.first)
+        edited.title = "Edited while import commit is pending"
+        store.update(edited)
+        probe.releaseEncoding()
+
+        let outcomes = await importing.value
+        XCTAssertNil(outcomes.first?.book)
+        XCTAssertTrue(outcomes.first?.error?.contains("Index encoding failed") == true)
+        XCTAssertEqual(store.books, [edited])
+        try await store.flushPersistence()
+        XCTAssertEqual(LibraryStore(defaults: defaults).books, [edited])
     }
 
     @MainActor

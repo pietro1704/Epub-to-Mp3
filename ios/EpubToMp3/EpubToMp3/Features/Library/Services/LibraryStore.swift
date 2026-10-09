@@ -224,6 +224,7 @@ final class LibraryStore: ObservableObject {
             }
         }
         if changed {
+            let previousBooks = books
             books = mergedBooks
             persist()
             do {
@@ -231,6 +232,27 @@ final class LibraryStore: ObservableObject {
                 // completes with a published and committed durable index entry.
                 try await flushPersistence()
             } catch {
+                let publishedBooks = mergedBooks
+                var rolledBackBooks = books
+                var didRollback = false
+                let importedIDs = Set(outcomes.compactMap { $0.book?.id })
+                for bookID in importedIDs {
+                    guard let published = publishedBooks.first(where: { $0.id == bookID }),
+                          let currentIndex = rolledBackBooks.firstIndex(where: { $0.id == bookID }),
+                          rolledBackBooks[currentIndex] == published else {
+                        continue
+                    }
+                    if let previous = previousBooks.first(where: { $0.id == bookID }) {
+                        rolledBackBooks[currentIndex] = previous
+                    } else {
+                        rolledBackBooks.remove(at: currentIndex)
+                    }
+                    didRollback = true
+                }
+                if didRollback {
+                    books = rolledBackBooks
+                    persist()
+                }
                 return outcomes.map { outcome in
                     guard outcome.book != nil else { return outcome }
                     return ImportOutcome(url: outcome.url, book: nil,
