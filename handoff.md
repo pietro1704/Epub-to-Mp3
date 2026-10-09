@@ -1420,3 +1420,27 @@ Release Desktop run 26432885034:
   tests only, preserve existing artifacts, then report exact command/result and
   commit hash so Codex can reconcile the shared board. No local Rust tests or
   synthesis were run during this handoff.
+
+### 2026-10-09 Hermes — APP-20261009-48 agent tooling verified
+
+- **status:** implementation and local runtime checks complete in the isolated
+  `fix/agent-tooling-warnings` worktree; original checkout left untouched.
+- **files:** `.ai-jail` now disables project access to agent credentials and
+  mise, `mise.toml` pins `npm:@openai/codex` 0.162.0, and `TODO_APP.md` records
+  the request and evidence.
+- **verification:** mise 2026.10.6; `mise reshim` resolves missing shims;
+  Python 3.12.10 shim's Starship module ran three times at 0.02 s each. `mise
+  doctor` still flags PATH shadowing by earlier executables; no global PATH
+  rewrite was made. Both global and project Codex return 0.162.0; each ran under
+  ai-jail. The jail smoke test confirmed CWD persistence and denied host-home
+  and `~/.hermes` writes. macOS reports the legacy `sandbox-exec` backend.
+- **ai-memory:** 2.6.2 LaunchAgent running/listening at 127.0.0.1:49374;
+  status: 11 pages, 16 sessions, 26,714 observations, zero spool pending/retries,
+  FTS complete, embeddings and LLM disabled, OKF v0.2 migration complete.
+  SQLite integrity check `ok`; MCP initialize HTTP 200; all seven Codex hooks
+  passed `--check-capture`. Pre-upgrade and migration backups are retained at
+  `/Users/pips/.hermes/cache/scratch/ai-memory-pre-upgrade-20261009-162159.tar.gz`
+  and `/Users/pips/ai-memory-backup-okf-v0.2-20261009-195550.tar.gz`.
+- **limits:** project-wide tests, CI and PR monitoring were not run. Remaining
+  environment warnings are mise PATH precedence and deprecated macOS sandbox
+  backend; neither was suppressed by weakening isolation.

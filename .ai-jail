@@ -2,11 +2,8 @@
 # https://github.com/akitaonrails/ai-jail
 # Edit freely. Regenerate with: ai-jail --clean --init
 
-command = [
-    "sh",
-    "-lc",
-    'touch "$HOME/Library/Developer/Xcode/DerivedData/.hermes-ai-jail-probe"; s1=$?; mkdir "$HOME/Library/Developer/CoreSimulator/.hermes-ai-jail-probe"; s2=$?; printf "derived_data_touch_status=%s core_simulator_mkdir_status=%s\\n" "$s1" "$s2"; exit 0',
-]
-rw_maps = ["~/Library/Application Support/ai-memory"]
-network = true
-agent_state = true
+# Keep network and agent credentials out of the project sandbox.
+agent_state = false
+
+# Avoid host mise trust writes from inside the private-home Seatbelt jail.
+no_mise = true

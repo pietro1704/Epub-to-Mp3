@@ -7,6 +7,34 @@ tests, cross-platform parity, and commit/push evidence; source presence is not d
 Codex owns Apple implementation; Arch owns Rust/Flutter coordination. Both update
 this board and `handoff.md` before crossing ownership or changing shared contracts.
 
+## Active requests — 2026-10-09
+
+- [x] **APP-20261009-48 — Stabilize agent tooling across macOS and the project.** Done; local tooling verification completed 2026-10-09.
+  Update mise and keep its project Python shim fast; pin the current Codex CLI
+  through the project mise manifest while preserving the global install; remove
+  stale `.ai-jail` probe settings and warnings without weakening sandbox policy;
+  upgrade ai-memory to the current native release with a verified pre-migration
+  backup, preserve its local-only/no-LLM behavior, and validate the LaunchAgent,
+  data migration, queue, and hook wiring. Record unsupported Intel/macOS sandbox
+  limitations rather than claiming all warnings are fixable. Do not touch the
+  user's unrelated local changes or monitor CI/PRs. Verification: mise 2026.10.6;
+  `mise reshim` removed the missing-shim warning; Python 3.12.10 shim resolved,
+  with three Starship Python module runs at 0.02 s each (initial timeout not
+  reproduced). `mise doctor` still reports PATH shadowing by earlier Homebrew,
+  Hermes and system executables; no global PATH rewrite was made. Codex global
+  and mise-managed both report 0.162.0; both ran under ai-jail and returned the
+  same version. Jail smoke test confirmed project-CWD persistence and denied
+  writes to host home and `~/.hermes`; macOS still warns that `sandbox-exec` is a
+  deprecated backend. ai-memory 2.6.2 is running in its LaunchAgent on
+  127.0.0.1:49374; status reports 11 pages, 16 sessions, 26,714 observations,
+  zero spool pending/retries, FTS complete, embeddings/LLM disabled, and OKF v0.2
+  migration complete. SQLite integrity_check returned `ok`; MCP initialize
+  returned HTTP 200; all seven Codex lifecycle hooks passed `--check-capture`.
+  Upgrade and OKF migration backups remain available under
+  `/Users/pips/ai-memory-backup-okf-v0.2-20261009-195550.tar.gz` and
+  `~/.hermes/cache/scratch/ai-memory-pre-upgrade-20261009-162159.tar.gz`.
+  No project-wide test suite, CI or PR monitoring was run.
+
 ## Active requests — 2026-10-08
 
 - [ ] **APP-20261009-43 — Evict reader progress when removing a library entry.** Apple verified; Flutter parity pending.

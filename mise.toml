@@ -3,6 +3,8 @@ python = "3.12.10"
 # Node LTS for frontend (Vite 8.x requires >=20.19.0)
 node = "lts"
 npm = "latest"
+# Project-managed Codex CLI; keep aligned with the global standalone install.
+"npm:@openai/codex" = "0.162.0"
 # Runtimes required by the cargo:git-cliff and cocoapods backends below.
 rust = "stable"
 ruby = "4.0.7"
