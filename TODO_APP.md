@@ -155,6 +155,9 @@ this board and `handoff.md` before crossing ownership or changing shared contrac
   Conversion recheck passed: exactly one native benchmark, zero failures/skips,
   four valid MP3 artifacts, Christie 5.286 s and LOTR 186.526 s; no audio reuse.
   Evidence: `docs/plans/2026-10-09-simulator-real-books-recheck.md`.
+  Latest requested repeat `8A081C2E` also passed 1/0/0 with four valid artifacts:
+  Christie 21.643 s, LOTR 252.736 s, one LOTR retry, no audio reuse. Logs show
+  max_in_flight=1. Total synthesis worsened; performance acceptance stays open.
   Reader navigation, audible playback and 200 ms relaunch acceptance remain open.
 
 - [x] **APP-20261009-22 — Source-bound active chapter storage.** Verified storage-only slice.

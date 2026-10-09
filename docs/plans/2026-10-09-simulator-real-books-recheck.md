@@ -55,3 +55,31 @@ This run does not validate chapter seek/navigation in the UI, the unresolved
 production swipe automation, Flutter parity, or the 200 ms across-relaunch reader
 opening budget. Keep the overall goal and APP-20261009-23 open for those seams.
 Original imported books, installed models and existing downloads were not changed.
+
+## Latest requested repeat: 8A081C2E
+
+After the user again confirmed launch and requested both books, reused the native
+build and the same hash-checked inputs/ranges on the same iOS 16 SE Simulator.
+Run `8A081C2E-7F4D-4433-A284-685C9A7579BB` passed exactly one benchmark,
+zero failures and zero skips. Result:
+`.reports/simulator-smoke-135A4598-E633-4CFD-A524-824E81A84F52/tests.xcresult`.
+Exported native attachment:
+`.reports/simulator-conversion-8A081C2E-7F4D-4433-A284-685C9A7579BB/attachments/EC6C0756-4954-4E6F-9468-C20B2525C6D8.json`.
+
+| Book | Completed | Synthesis seconds | First published chapter seconds | Audio seconds | Retries |
+| --- | --- | --- | --- | --- | --- |
+| Christie | 2/2 (6–7) | 21.643 | 2.348 | 349.248 | 0 |
+| LOTR | 2/2 (8–9) | 252.736 | 62.612 | 7002.600 | 1 |
+
+Both cases produced valid playable MP3 artifacts with fresh job IDs and no audio
+reuse, no rejected chapter deliveries, no throttles and no reported errors.
+Parsed-text reuse remains unmeasured. Test-controller interval was 285.388 s;
+this is not synthesis time. LOTR logs show `chunk_limit=2048`,
+`max_in_flight=1`, and a total of 29 chunks for its second selected chapter.
+Total synthesis worsened versus the preceding repeat; first LOTR chapter delivery
+improved. Neither observation establishes a causal regression or optimization:
+provider fields remain null, remote service latency varies, and no controlled
+code change was measured. Point memory samples are not peak memory. Originals,
+models and downloads were preserved; isolated staging/evidence was retained.
+The overall goal remains active, including configuration, concurrency, reader
+navigation, audible playback and the failing relaunch latency acceptance.
