@@ -147,6 +147,21 @@ private struct BenchmarkConversionMeasurements: Encodable {
     var afterSynthesis: BenchmarkFootprintSample?
     var firstPlayableChapterDeliverySeconds: Double?
     var firstPlayableChapterIndex: Int?
+    var rejectedChapterDeliveries: [String] = []
+}
+
+private func chapterDeliveryRejection(
+    _ event: RustConversionCoordinator.ChapterCompletionEvent,
+    jobID: String, start: Int, end: Int, output: URL, manager: FileManager
+) -> String? {
+    guard event.jobId == jobID else { return "job ID mismatch" }
+    guard event.chapterIndex >= 0,
+          start == -1 || (start...end).contains(event.chapterIndex) else { return "chapter outside requested range" }
+    let audio = event.audioPath.resolvingSymlinksInPath().standardizedFileURL
+    guard audio.deletingLastPathComponent().path == output.standardizedFileURL.path else { return "audio parent outside owned output" }
+    guard audio.pathExtension.lowercased() == "mp3" else { return "audio extension is not MP3" }
+    guard manager.isReadableFile(atPath: audio.path) else { return "audio file is not readable" }
+    return nil
 }
 
 @MainActor
@@ -378,14 +393,13 @@ final class DeviceConversionBenchmarkTests: XCTestCase {
                         },
                         onChapterCompleted: { event in
                             let deliveredAt = DispatchTime.now().uptimeNanoseconds
-                            let audio = event.audioPath.resolvingSymlinksInPath().standardizedFileURL
-                            guard event.jobId == selection.jobID,
-                                  event.chapterIndex >= 0,
-                                  selection.chapterStart == -1
-                                    || (selection.chapterStart...selection.chapterEnd).contains(event.chapterIndex),
-                                  audio.deletingLastPathComponent().path == output.standardizedFileURL.path,
-                                  audio.pathExtension.lowercased() == "mp3",
-                                  manager.isReadableFile(atPath: audio.path) else { return }
+                            if let reason = chapterDeliveryRejection(event, jobID: selection.jobID,
+                                start: selection.chapterStart, end: selection.chapterEnd,
+                                output: output, manager: manager) {
+                                delivery.measurements.rejectedChapterDeliveries.append(reason)
+                                print("[Device benchmark] rejected chapter=\(event.chapterIndex): \(reason)")
+                                return
+                            }
                             if delivery.record(chapterIndex: event.chapterIndex, deliveredAt: deliveredAt) {
                                 firstDelivery.fulfill()
                             }
@@ -407,7 +421,7 @@ final class DeviceConversionBenchmarkTests: XCTestCase {
                 await fulfillment(of: [firstDelivery], timeout: 2)
                 report.cases[index].conversionMeasurements = delivery.measurements
                 try require(delivery.measurements.firstPlayableChapterIndex != nil,
-                            "Missing published chapter delivery callback.")
+                            "Missing published chapter delivery callback; rejected=\(delivery.measurements.rejectedChapterDeliveries).")
                 _ = try report.save(to: reportURL)
                 let verificationStart = ProcessInfo.processInfo.systemUptime
                 phase = "audio verification"
@@ -671,6 +685,35 @@ final class DeviceConversionBenchmarkTests: XCTestCase {
         let link = owned.directory.appendingPathComponent("linked", isDirectory: true)
         try FileManager.default.createSymbolicLink(at: link, withDestinationURL: target)
         XCTAssertThrowsError(try validateBenchmarkOutputParent(link.appendingPathComponent("job", isDirectory: true)))
+    }
+
+    @MainActor
+    func testChapterDeliveryRejectionExplainsEveryGuardWithoutNetwork() throws {
+        let owned = try BenchmarkInputCopies()
+        defer { try? FileManager.default.removeItem(at: owned.directory) }
+        let output = owned.directory.appendingPathComponent("output", isDirectory: true)
+        try FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
+        let audio = output.appendingPathComponent("chapter #8?.mp3")
+        try Data("readable delivery fixture".utf8).write(to: audio)
+        func event(job: String = "job", chapter: Int = 8, path: URL? = nil) -> RustConversionCoordinator.ChapterCompletionEvent {
+            .init(jobId: job, bookTitle: "Book", bookAuthor: "Author", chapterIndex: chapter,
+                  chaptersTotal: 2, chaptersCompleted: 1, chapterTitle: "Chapter",
+                  filename: "chapter.mp3", audioPath: path ?? audio, textChars: 100)
+        }
+        func rejection(_ value: RustConversionCoordinator.ChapterCompletionEvent) -> String? {
+            chapterDeliveryRejection(value, jobID: "job", start: 8, end: 9, output: output, manager: .default)
+        }
+        XCTAssertNil(rejection(event()))
+        XCTAssertEqual(rejection(event(job: "other")), "job ID mismatch")
+        XCTAssertEqual(rejection(event(chapter: 7)), "chapter outside requested range")
+        XCTAssertEqual(rejection(event(path: owned.directory.appendingPathComponent("outside.mp3"))), "audio parent outside owned output")
+        XCTAssertEqual(rejection(event(path: output.appendingPathComponent("chapter.wav"))), "audio extension is not MP3")
+        XCTAssertEqual(rejection(event(path: output.appendingPathComponent("missing.mp3"))), "audio file is not readable")
+        let linked = output.appendingPathComponent("linked.mp3")
+        let outside = owned.directory.appendingPathComponent("outside.mp3")
+        try Data("outside owned output".utf8).write(to: outside)
+        try FileManager.default.createSymbolicLink(at: linked, withDestinationURL: outside)
+        XCTAssertEqual(rejection(event(path: linked)), "audio parent outside owned output")
     }
 
     func testTemporaryStorageSpecAndReportRoundTrip() throws {

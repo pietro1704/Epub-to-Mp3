@@ -145,7 +145,7 @@ try child.run(); child.waitUntilExit(); exit(child.terminationStatus)
 '''
 
 [tasks."apple:chapter-callback:test"]
-description = "Run the two focused native macOS chapter-event path regressions, one job under the shared lease"
+description = "Run focused native macOS chapter-event path/delivery regressions, one job under the shared lease"
 run = '''
 xcrun swift -e '
 import Foundation
@@ -159,7 +159,8 @@ child.arguments = ["xcodebuild", "-quiet", "-project", "ios/EpubToMp3/EpubToMp3.
 "-scheme", "EpubToMp3Mac", "-destination", "platform=macOS", "-derivedDataPath", "ios/EpubToMp3/.build",
 "-jobs", "1", "-parallel-testing-enabled", "NO",
 "-only-testing:EpubToMp3Tests/RustConversionCoordinatorTests/testChapterEventPreservesLiteralLocalAudioPath",
-"-only-testing:EpubToMp3Tests/RustConversionCoordinatorTests/testValidatedChapterEventMapsToPlayableLocalSnapshot", "test"]
+"-only-testing:EpubToMp3Tests/RustConversionCoordinatorTests/testValidatedChapterEventMapsToPlayableLocalSnapshot",
+"-only-testing:EpubToMp3Tests/DeviceConversionBenchmarkTests/testChapterDeliveryRejectionExplainsEveryGuardWithoutNetwork", "test"]
 try child.run(); child.waitUntilExit(); exit(child.terminationStatus)
 '
 '''

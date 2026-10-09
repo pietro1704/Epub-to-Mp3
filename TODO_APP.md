@@ -9,6 +9,15 @@ this board and `handoff.md` before crossing ownership or changing shared contrac
 
 ## Active requests — 2026-10-08
 
+- [x] **APP-20261009-18 — Explain rejected benchmark chapter callbacks.** Verified diagnostic slice.
+  Preserve job/range/owned-parent/MP3/readability guards; record each rejection
+  reason in benchmark measurements and failed-delivery message instead of silently
+  dropping the event. Offline native regression covers every guard, literal paths
+  and existing symlink escape. Mac focused set: three passed; iOS16 focused guard
+  regression: one passed, zero failures/skips (`1BC00B18...`). No new synthesis.
+  This enables the next scoped run to distinguish no event from a rejected event;
+  it does not resolve or waive the existing LOTR callback/performance gate.
+
 - [x] **APP-20261009-17 — Preserve literal local chapter paths across Swift/FFI.** Verified.
   Generic URL decoding truncated #/? and decoded percent escapes in raw filesystem
   paths. Custom event decoding now constructs a file URL from the literal absolute
