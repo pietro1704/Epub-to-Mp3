@@ -49,6 +49,56 @@ void main() {
   });
 
   group('OfflineCacheEviction', () {
+    test(
+      'deleteJob cannot delete a sibling directory through traversal',
+      () async {
+        final marker = File('${tempDir.path}/private/protected.txt');
+        await marker.parent.create(recursive: true);
+        await marker.writeAsString('protected fixture');
+        final deleted = await OfflineCacheEviction.deleteJob(
+          '../private',
+          downloadsRoot: tempDir,
+        );
+        expect(await marker.exists(), isTrue);
+        expect(await marker.readAsString(), 'protected fixture');
+        expect(deleted, isFalse);
+      },
+    );
+
+    test(
+      'touchLastAccess cannot overwrite sibling metadata through traversal',
+      () async {
+        final marker = File('${tempDir.path}/private/.last_access');
+        await marker.parent.create(recursive: true);
+        await marker.writeAsString('protected metadata');
+        await OfflineCacheEviction.touchLastAccess(
+          '../private',
+          downloadsRoot: tempDir,
+        );
+        expect(await marker.readAsString(), 'protected metadata');
+      },
+    );
+
+    test('invalid job IDs do not create cache directories', () async {
+      final unused = Directory('${tempDir.path}/unused');
+      for (final id in [
+        '',
+        '.',
+        '..',
+        '../private',
+        r'..\private',
+        '/private',
+        '\u0000bad',
+      ]) {
+        expect(
+          await OfflineCacheEviction.deleteJob(id, downloadsRoot: unused),
+          isFalse,
+        );
+        await OfflineCacheEviction.touchLastAccess(id, downloadsRoot: unused);
+      }
+      expect(await unused.exists(), isFalse);
+    });
+
     test('under budget and within TTL — no eviction', () async {
       final now = DateTime.now().toUtc();
       await plantAudiobook(

@@ -47,6 +47,14 @@ class AudiobookCacheEntry {
 class OfflineCacheEviction {
   OfflineCacheEviction._();
 
+  static bool _isSafeJobId(String jobId) =>
+      jobId.isNotEmpty &&
+      jobId != '.' &&
+      jobId != '..' &&
+      !jobId.contains('/') &&
+      !jobId.contains('\\') &&
+      !jobId.contains('\u0000');
+
   // MARK: Root folder
 
   static Future<Directory> _resolveRoot(Directory? override) async {
@@ -72,6 +80,7 @@ class OfflineCacheEviction {
     String jobId, {
     Directory? downloadsRoot,
   }) async {
+    if (!_isSafeJobId(jobId)) return;
     try {
       final root = await _resolveRoot(downloadsRoot);
       final file = _lastAccessFile(root, jobId);
@@ -168,6 +177,7 @@ class OfflineCacheEviction {
     String jobId, {
     Directory? downloadsRoot,
   }) async {
+    if (!_isSafeJobId(jobId)) return false;
     final root = await _resolveRoot(downloadsRoot);
     return _deleteJob(root, jobId);
   }
