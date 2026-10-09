@@ -7,7 +7,14 @@ is authoritative. Codex coordinates Apple changes; Arch coordinates Rust/Flutter
 Keep iOS, macOS and Flutter behavior synchronized. Claim Done only with relevant
 runtime tests and delivery evidence; record blocked/platform-limited verification.
 Use minimal atomic Gitflow changes, focused tests, and commit/push verified slices.
-No Python/Ruff local execution, osascript, Simulator or CI/PR monitoring.
+No Python/Ruff local execution, osascript or CI/PR monitoring.
+Simulator is authorized only for APP-20261008-12: oldest compatible runtime,
+one small-screen iPhone, no Xcode GUI, no automatic iOS 18/26 fallback given
+reported host crashes. Legacy iOS 15.0 Apple installer is downloaded and signed;
+administrator installation and actual host compatibility remain pending.
+Arch: supply/verify the `x86_64-apple-ios` converter-ffi Simulator artifact for
+this Intel Mac before full embedded reader/conversion acceptance. Existing
+physical iOS arm64 and macOS x86_64 artifacts cannot be used as substitutes.
 Preserve books, models and listening downloads; serialize heavy jobs.
 This Mac is Apple-only. Flutter/Rust execution belongs to Arch; no Flutter
 test/build/analyze command may run locally here. Return exact verification output

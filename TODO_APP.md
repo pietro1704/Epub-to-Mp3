@@ -9,6 +9,41 @@ this board and `handoff.md` before crossing ownership or changing shared contrac
 
 ## Active requests — 2026-10-08
 
+- [ ] **APP-20261008-12 — Lightweight legacy iOS Simulator intermediate goal.** In progress.
+  Explicit user authorization supersedes the earlier no-Simulator restriction
+  for this task only. Install the oldest compatible runtime and use one small-screen
+  iPhone; launch and run focused native app tests without opening Xcode GUI.
+  This Intel Mac has 8 GiB RAM and reported crashes with iOS 18/26: no automatic
+  fallback to those runtimes, no concurrent heavy jobs, no Python or data deletion.
+  App deployment floor: iOS 15.0. Installed runtimes: 18.6 and 26.3, both stopped.
+  Determine actual host/toolchain runtime compatibility before booting anything.
+  Goal service rejected a second active goal; track this as an intermediate slice
+  of the existing quality/performance goal, without marking that goal complete.
+  Standard `xcodebuild -downloadPlatform ...15.0` returned unavailable. Official
+  legacy catalog supplied iOS 15.0 build 19A339 (5,304,795,932-byte DMG), downloaded
+  under `.reports/simulator-ios15/`; hdiutil checksum and Apple package signature
+  verified. Installer estimates 11,252,916 KiB installed. No runtime booted.
+  Next gate: administrator installation (noninteractive sudo requires a password),
+  then CoreSimulator compatibility verification; target iPhone SE first generation.
+  Full embedded runtime validation also requires the missing Intel iOS Simulator
+  Rust artifact (`x86_64-apple-ios`); Arch owns that build. Physical arm64 iOS and
+  x86_64 macOS binaries are not substitutes. App launch/tests remain unverified.
+
+- [ ] **APP-20261008-11 — Faster compatible fulltext cache decode.** In progress.
+  Binary plist primary, fallback to existing durable/legacy JSON; preserve older
+  bytes during migration, atomic writes and format-aware scoped cleanup/budget.
+  Verify native roundtrip fidelity, migration/corruption/removal and same-book
+  two-host readiness. No source/model/download changes or Rust/Flutter execution here.
+  Mac: 13 cache/native-window tests passed, zero skips (`21-37-41` xcresult).
+  Two-host run `reader-relaunch-86F998D4-805C-4493-A999-99819BB90ED9` prepared
+  successfully; LOTR improved 439→355 ms but still fails unchanged 200 ms budget.
+  Physical iOS attempt stopped at locked readiness, no build/test. Slice uncommitted
+  until iOS compatibility verification; further latency work remains necessary.
+  Removed duplicate pre-lookup signature computations without changing the
+  post-await validation; five native renderer tests passed (`21-47-20` xcresult).
+  Retested same two hosts in `reader-relaunch-20E82812-A483-459F-87D0-0A751F1C2D32`;
+  200 ms acceptance still fails. No speedup/completion claim from this change.
+
 - [x] **APP-20261008-10 — Integrate prepared chapter restoration in Apple readers.** Verified behavior.
   Shared renderer binds complete chapter/settings/font/platform inputs; memory hits
   stay synchronous, disk IO is bounded off-main, archive restoration stays MainActor.
