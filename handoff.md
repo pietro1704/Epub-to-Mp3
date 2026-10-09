@@ -1352,3 +1352,27 @@ Release Desktop run 26432885034:
   - `xcrun swiftc -parse ios/EpubToMp3/EpubToMp3/Services/FulltextStore.swift ios/EpubToMp3/EpubToMp3/Views/LibraryView.swift ios/EpubToMp3/EpubToMp3/Views/LibrarySidebar.swift` → clean.
   - No local iOS Simulator/CoreSimulator/device build per slice 41 safety rule.
 - **next recommended targets:** continue the same iOS removal cascade sweep with `AudiobookCacheEviction`, then `WidgetDataSync.recentBooks`, then `ResumeStore` via `BookEntity.lastJobId` reverse lookup.
+
+### 2026-10-09 Codex — APP-20261009-41 Arch handoff (pending)
+
+- **status:** source finding confirmed independently; Rust fix/tests not run on Mac.
+- **owner:** Arch; files `crates/converter-core/src/worker.rs` and focused worker tests.
+- **finding:** selector filtering uses `wanted.iter().any(...)`. A request with one
+  valid selector plus an unknown selector silently converts only the matched
+  chapter. Repeated selectors collapse, and `toc:<id>` can match multiple
+  chapters when identifiers are duplicated. The worker creates cache/output
+  directories before resolving the selection. Apple FFI's current range path
+  generates positional selectors and validates bounds separately; this finding
+  concerns the generic Rust worker contract used by other callers too.
+- **acceptance:** resolve every requested selector against parsed source chapters
+  before creating output/cache paths or invoking synthesis. Each selector must
+  resolve exactly once and selectors must be unique. Keep `None` as full-book
+  conversion; reject empty, unknown, duplicate and ambiguous selections. A valid
+  two-position range still emits exactly those chapters in source order. Tests
+  use a small owned EPUB fixture and deterministic synthesis seam; invalid input
+  asserts error, zero synthesis/callbacks, no job output directory/artifacts, and
+  no audio mutation. Do not add a selector-only helper test as sole proof.
+- **next ask:** implement RED → GREEN on Arch, run the focused converter-core
+  tests only, preserve existing artifacts, then report exact command/result and
+  commit hash so Codex can reconcile the shared board. No local Rust tests or
+  synthesis were run during this handoff.

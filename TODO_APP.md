@@ -9,6 +9,18 @@ this board and `handoff.md` before crossing ownership or changing shared contrac
 
 ## Active requests — 2026-10-08
 
+- [ ] **APP-20261009-41 — Reject partial or ambiguous Rust chapter selectors.** Arch-owned; source finding only.
+  `converter-core/src/worker.rs` currently includes any chapter matching any
+  requested selector, so valid + unknown selectors can silently convert only a
+  subset; repeated/ambiguous selectors can collapse or match multiple chapters.
+  Validate the complete selector set against parsed chapters before creating
+  cache/output directories or invoking synthesis. Preserve `None` as full-book
+  conversion; reject empty, unresolved, repeated and multiply-resolved selectors.
+  Arch must add focused Rust tests at the production worker preflight seam:
+  invalid requests yield no synthesis callbacks/artifacts/output directory, and
+  valid positional ranges still produce exactly the requested chapters in source
+  order. Rust verification belongs on Arch; no local Rust test was run here.
+
 - [x] **APP-20261009-40 — Verify staged import bytes against their content ID.** Verified on macOS.
   A source can change between identity hashing and copy. Check the staged copy
   before replacing the durable destination, and revalidate same-path imports.
