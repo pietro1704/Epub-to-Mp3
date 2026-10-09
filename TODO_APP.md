@@ -9,6 +9,25 @@ this board and `handoff.md` before crossing ownership or changing shared contrac
 
 ## Active requests — 2026-10-08
 
+- [ ] **APP-20261009-23 — Resume goal with both actual books on Simulator.** In progress.
+  User confirmed the app opened. Validate The Lord of the Rings and E não sobrou
+  nenhum using native automation on the authorized iOS 16 iPhone SE Simulator.
+  Keep conversion limited to LOTR 8–9 and Christie 6–7, zero-based inclusive.
+  Preserve original books, models, downloads and existing playback artifacts.
+  Reuse the verified four-chapter benchmark where unchanged; distinguish reader,
+  playback and latency acceptance from conversion success. No whole-book TTS.
+
+- [x] **APP-20261009-22 — Source-bound active chapter storage.** Verified storage-only slice.
+  Persist complete active chapter data and lightweight book/TOC metadata in the
+  existing bounded/checksummed archive primitive, separate namespace. Bind to the
+  current fulltext file SHA256; changed/missing/unsafe fulltext is a cache miss.
+  Native fidelity/invalidation tests first; no controller integration, 200 ms or
+  later-navigation completion claim until those seams are exercised separately.
+  Evidence: five focused macOS XCTest cases passed, and five iOS 16 Simulator
+  cases passed with zero failures/skips in `simulator-smoke-DA9212BD-9AA6-41A7-B61E-41F24093C103`.
+  Review confirmed descriptor-based source reads, symlink rejection and source
+  revalidation after archive await. Flutter has no consumer of this Apple cache.
+
 - [ ] **APP-20261009-21 — Active-chapter relaunch critical path.** Profiled; implementation pending.
   Two-host actual-window profiling confirms prepared attributed archive hits;
   LOTR full-book read/decode ~130 ms, restore ~5 ms, presentation ~5 ms, initial
