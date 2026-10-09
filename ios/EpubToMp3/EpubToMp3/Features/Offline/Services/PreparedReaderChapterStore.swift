@@ -29,6 +29,7 @@ actor PreparedReaderChapterStore {
     func write(bookID: String, chapterOrdinal: Int, fulltextURL: URL) async throws {
         let binding = try source(fulltextURL, collectBytes: true)
         let bytes = binding.bytes
+        try Task.checkCancellation()
         let payload = try PropertyListDecoder().decode(EbookFulltext.self, from: bytes)
         guard payload.chapters.indices.contains(chapterOrdinal) else { throw PreparedChapterArchiveStore.StoreError.invalidKey }
         let snapshot = Snapshot(bookID: bookID, title: payload.bookTitle, author: payload.bookAuthor,
@@ -37,7 +38,10 @@ actor PreparedReaderChapterStore {
         guard valid(snapshot) else { throw PreparedChapterArchiveStore.StoreError.invalidKey }
         let encoder = PropertyListEncoder()
         encoder.outputFormat = .binary
-        try await archives.write(encoder.encode(snapshot), bookID: snapshot.bookID,
+        try Task.checkCancellation()
+        let encoded = try encoder.encode(snapshot)
+        try Task.checkCancellation()
+        try await archives.write(encoded, bookID: snapshot.bookID,
             chapterIndex: snapshot.chapterOrdinal, signature: binding.signature)
     }
 
@@ -58,6 +62,7 @@ actor PreparedReaderChapterStore {
     }
 
     private func source(_ url: URL, collectBytes: Bool) throws -> (signature: String, bytes: Data) {
+        try Task.checkCancellation()
         guard url.isFileURL, maximumSourceBytes >= 0, maximumSourceBytes <= 256 * 1024 * 1024 else {
             throw PreparedChapterArchiveStore.StoreError.unsafeFile
         }
@@ -74,7 +79,9 @@ actor PreparedReaderChapterStore {
         var hash = SHA256()
         var count = 0
         var collected = Data()
-        while let bytes = try handle.read(upToCount: 64 * 1024), !bytes.isEmpty {
+        while true {
+            try Task.checkCancellation()
+            guard let bytes = try handle.read(upToCount: 64 * 1024), !bytes.isEmpty else { break }
             guard bytes.count <= maximumSourceBytes - count else {
                 throw PreparedChapterArchiveStore.StoreError.oversized
             }
@@ -82,6 +89,7 @@ actor PreparedReaderChapterStore {
             hash.update(data: bytes)
             if collectBytes { collected.append(bytes) }
         }
+        try Task.checkCancellation()
         guard Int64(count) == attributes.st_size else { throw PreparedChapterArchiveStore.StoreError.unsafeFile }
         return (hash.finalize().map { String(format: "%02x", $0) }.joined(), collected)
     }

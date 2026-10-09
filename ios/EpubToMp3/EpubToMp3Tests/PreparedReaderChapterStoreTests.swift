@@ -40,6 +40,45 @@ final class PreparedReaderChapterStoreTests: XCTestCase {
         try bytes.write(to: source, options: .atomic)
         return bytes
     }
+
+    func testCancelledReadCannotReturnAValidProjection() async throws {
+        let original = try save(payload())
+        let file = try XCTUnwrap(source)
+        let directory = root.appendingPathComponent("cancelled-read")
+        let store = PreparedReaderChapterStore(directory: directory)
+        try await store.write(bookID: "book", chapterOrdinal: 0, fulltextURL: file)
+        let archive = try XCTUnwrap(FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil).first)
+        let archiveBytes = try Data(contentsOf: archive)
+        let gate = AsyncStream<Void> { _ in }
+        let operation = Task {
+            for await _ in gate { }
+            return await store.read(bookID: "book", chapterOrdinal: 0, fulltextURL: file)
+        }
+        operation.cancel()
+        let result = await operation.value
+        XCTAssertNil(result, "A cancelled losing projection must not hash/return cached content")
+        XCTAssertEqual(try Data(contentsOf: file), original)
+        XCTAssertEqual(try Data(contentsOf: archive), archiveBytes)
+    }
+
+    func testCancelledWriteDoesNotCreateAnArchiveOrModifySource() async throws {
+        let original = try save(payload())
+        let file = try XCTUnwrap(source)
+        let directory = root.appendingPathComponent("cancelled-write")
+        let store = PreparedReaderChapterStore(directory: directory)
+        let gate = AsyncStream<Void> { _ in }
+        let operation = Task {
+            for await _ in gate { }
+            try await store.write(bookID: "book", chapterOrdinal: 0, fulltextURL: file)
+        }
+        operation.cancel()
+        do { try await operation.value; XCTFail("Cancelled preparation was accepted") }
+        catch is CancellationError { }
+        catch { XCTFail("Expected CancellationError, got \(error)") }
+        let entries = (try? FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)) ?? []
+        XCTAssertTrue(entries.isEmpty)
+        XCTAssertEqual(try Data(contentsOf: file), original)
+    }
     func testChapterRoundTripRetainsCompletePayloadAndSourceBytes() async throws {
         let value = payload(); let bytes = try save(value)
         let directory = root.appendingPathComponent("chapters")

@@ -9,6 +9,20 @@ this board and `handoff.md` before crossing ownership or changing shared contrac
 
 ## Active requests — 2026-10-08
 
+- [x] **APP-20261009-29 — Cancel losing reader projection IO cooperatively.** Verified Apple cache slice.
+  The Mac opening race cancels the losing task, but the projection store still
+  reads/hashes source bytes without cancellation checks. Reject cancelled reads
+  and writes before IO and between bounded blocks, preserving SHA validation,
+  symlink/file bounds and source-mutation checks. Native read/write cancellation
+  regressions plus existing store security cases; no Rust cancellation or 200 ms
+  completion claim from this Apple-cache-only change.
+  Red: two native pre-cancelled operations failed (`05-00-10` macOS xcresult).
+  Final Mac store class: seven passed, zero failures/skips (`05-01-22`). iOS 16:
+  two cancellation cases passed, zero failures/skips (`simulator-smoke-3AA1639C...`).
+  Cancelled read returns nil; pre-cancelled write throws CancellationError without
+  archive creation or source mutation. Cancellation after archive handoff may still
+  commit a valid cache write; no rollback/latency improvement is claimed.
+
 - [ ] **APP-20261009-28 — Active chapter presentation before catalog hydration.** In progress.
   Integrate the source-bound projection into actual native reader presentation.
   Start with the Mac adapter and deterministic window tests: complete current

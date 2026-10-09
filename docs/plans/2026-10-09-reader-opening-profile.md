@@ -90,3 +90,21 @@ Remaining: full-source hashing/decode and first-window scheduling costs, iOS
 presentation parity, controlled real-book before/after evidence and the complete
 200 ms gate. Cancellation can discard losing callbacks but does not interrupt the
 store's synchronous hashing. Do not claim APP21/APP28 or the overall goal complete.
+
+## Cooperative projection cancellation
+
+APP-20261009-29 adds cancellation checkpoints before source descriptor access,
+between bounded 64 KiB reads and after hashing; write also checks before decode,
+encode and archive handoff. Descriptor guards, SHA validation on both sides of
+the archive await and source-mutation rejection remain intact.
+The previous two pre-cancelled operations still returned/wrote content (native
+red `05-00-10`). Final Mac store tests: seven passed, zero failed/skipped
+(`05-01-22`). iOS 16: the two new cancellation cases passed, zero failed/skipped
+(`simulator-smoke-3AA1639C-870F-4985-A123-E2A11F186D6D`).
+
+These tests prove cancelled entry rejection and preservation of existing source/
+archive bytes, not a measured speedup or bounded cancellation wall time. A write
+already handed to the archive actor may still commit; cancellation is not a
+transactional rollback. The unchanged opening baseline remains LOTR 363.818 ms /
+Christie 151.933 ms. Rust worker cancellation, iOS presentation parity, measured
+hash/decode costs and the full 200 ms acceptance remain open.
