@@ -75,6 +75,28 @@ set_target_properties(${BINARY_NAME}
 include(flutter/generated_plugins.cmake)
 
 
+# Build the shared conversion runtime for every desktop bundle.
+get_filename_component(CONVERTER_RUST_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../.." ABSOLUTE)
+find_program(CONVERTER_CARGO_EXECUTABLE cargo)
+if(NOT CONVERTER_CARGO_EXECUTABLE)
+  message(FATAL_ERROR "Cargo is required to build the embedded Rust conversion runtime")
+endif()
+if(DEFINED ENV{CARGO_TARGET_DIR} AND NOT "$ENV{CARGO_TARGET_DIR}" STREQUAL "")
+  get_filename_component(CONVERTER_CARGO_TARGET_DIR "$ENV{CARGO_TARGET_DIR}" ABSOLUTE
+    BASE_DIR "${CONVERTER_RUST_ROOT}")
+else()
+  set(CONVERTER_CARGO_TARGET_DIR "${CONVERTER_RUST_ROOT}/target")
+endif()
+set(CONVERTER_FFI_LIBRARY "${CONVERTER_CARGO_TARGET_DIR}/release/libconverter_ffi.so")
+add_custom_target(converter_ffi_runtime ALL
+  COMMAND "${CONVERTER_CARGO_EXECUTABLE}" build --release -p converter-ffi
+    --manifest-path "${CONVERTER_RUST_ROOT}/Cargo.toml"
+    --target-dir "${CONVERTER_CARGO_TARGET_DIR}"
+  BYPRODUCTS "${CONVERTER_FFI_LIBRARY}"
+  WORKING_DIRECTORY "${CONVERTER_RUST_ROOT}"
+  VERBATIM)
+add_dependencies(${BINARY_NAME} converter_ffi_runtime)
+
 # === Installation ===
 # By default, "installing" just makes a relocatable bundle in the build
 # directory.
@@ -98,6 +120,8 @@ install(FILES "${FLUTTER_ICU_DATA_FILE}" DESTINATION "${INSTALL_BUNDLE_DATA_DIR}
   COMPONENT Runtime)
 
 install(FILES "${FLUTTER_LIBRARY}" DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
+  COMPONENT Runtime)
+install(FILES "${CONVERTER_FFI_LIBRARY}" DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
   COMPONENT Runtime)
 
 foreach(bundled_library ${PLUGIN_BUNDLED_LIBRARIES})

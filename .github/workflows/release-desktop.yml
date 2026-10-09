@@ -273,6 +273,10 @@ jobs:
           flutter pub get
           flutter build ${{ matrix.target }} --release
 
+      - name: Verify Linux Rust runtime bundle
+        if: runner.os == 'Linux'
+        run: test -s flutter_app/build/linux/x64/release/bundle/lib/libconverter_ffi.so
+
       - name: Package Linux build
         if: runner.os == 'Linux'
         working-directory: flutter_app
