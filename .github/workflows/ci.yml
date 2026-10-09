@@ -152,6 +152,15 @@ jobs:
             native/piper-runtime/target
           key: rust-${{ runner.os }}-${{ hashFiles('Cargo.lock', 'native/piper-runtime/Cargo.lock', '**/Cargo.toml') }}
           restore-keys: rust-${{ runner.os }}-
+      - name: Install audio tools and eSpeak-NG phoneme data
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ffmpeg espeak-ng-data
+          phoneme_table="$(dpkg -L espeak-ng-data | sed -n '/\/espeak-ng-data\/phontab$/p' | head -n 1)"
+          test -n "$phoneme_table"
+          test -f "$phoneme_table"
+          data_directory="${phoneme_table%/phontab}"
+          echo "PIPER_ESPEAKNG_DATA_DIRECTORY=${data_directory%/espeak-ng-data}" >> "$GITHUB_ENV"
       - name: Check Rust workspace
         run: mise exec -- cargo check --workspace
       - name: Run migration build gate
@@ -169,15 +178,6 @@ jobs:
             '858555e3a064209c57088fe6bd70c4c3dc54d03eaa00c45d5ecaf43a33f95aa7' \
             'models/piper/pt_BR-faber-medium.onnx' | sha256sum --check --status
           curl --fail --location --retry 3 "$model_base/pt_BR-faber-medium.onnx.json" -o models/piper/pt_BR-faber-medium.onnx.json
-      - name: Install eSpeak-NG phoneme data
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends espeak-ng-data
-          phoneme_table="$(dpkg -L espeak-ng-data | sed -n '/\/espeak-ng-data\/phontab$/p' | head -n 1)"
-          test -n "$phoneme_table"
-          test -f "$phoneme_table"
-          data_directory="${phoneme_table%/phontab}"
-          echo "PIPER_ESPEAKNG_DATA_DIRECTORY=${data_directory%/espeak-ng-data}" >> "$GITHUB_ENV"
       - name: Piper Embedded runtime smoke test
         run: mise exec -- cargo test --manifest-path native/piper-runtime/Cargo.toml --features onnxruntime,piper-inference,heavy-runtime-tests piper_inference_generates_valid_wav_from_vendored_model -- --nocapture
   web:
