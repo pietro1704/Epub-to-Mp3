@@ -81,5 +81,26 @@ improved. Neither observation establishes a causal regression or optimization:
 provider fields remain null, remote service latency varies, and no controlled
 code change was measured. Point memory samples are not peak memory. Originals,
 models and downloads were preserved; isolated staging/evidence was retained.
+Full diagnostic export clarifies that concurrency is adaptive, not fixed serial.
+LOTR starts at 4096/2; four fast observations raise the profile to 5120/2.
+Chunks 7 and 9 then complete at 412.0 and 380.9 chars/s, reducing to 3840/1.
+Subsequent already-dispatched requests complete slowly and the profile falls to
+2880/1, then 2160/1. The second selected chapter starts at 2160/1 and reaches
+2048/1. Its estimate changes from 28 to 29 to 30 chunks as unsent text is resized;
+29 is not a fixed final chunk count. The transport retry occurs late, at chunk
+25, after the profile was already reduced. Thus the retry alone does not explain
+the initial reduction. Christie takes 18.587 s for its second request without
+retry, demonstrating remote latency variation within this run.
+
+Arch diagnostic acceptance: replay captured completion order and durations through
+the actual adaptive controller and scheduler with a deterministic fake provider.
+Distinguish three hypotheses before changing policy: repeated reductions driven
+by older in-flight requests; sustained service degradation despite reduced load;
+or failure to regain capacity because four consecutive >=500 chars/s successes
+never occur. Compare aggregate throughput, ordered bytes, cancellation and caps,
+not only individual request speed. This is a pending experiment, not a proven
+controller defect; preserve the pressure/cooldown safety gates. Source execution
+belongs on Arch. No additional synthesis or local Rust tests were run here.
+
 The overall goal remains active, including configuration, concurrency, reader
 navigation, audible playback and the failing relaunch latency acceptance.

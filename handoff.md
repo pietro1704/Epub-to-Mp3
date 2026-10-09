@@ -2,9 +2,21 @@
 
 ## Current Codex ↔ Arch contract — 2026-10-08
 
+Latest 2026-10-09 repeat `8A081C2E` passed 1/0/0 on iOS 16: LOTR 8–9
+252.736 s, Christie 6–7 21.643 s; four valid MP3s, no audio reuse, one LOTR
+transport retry. Full trace starts at 4096/2, grows to 5120/2, then drops
+3840/1 → 2880/1 → 2160/1 → 2048/1 after slow completions. The late retry
+does not explain the initial reduction. Arch: replay the completion trace through
+the real adaptive controller/scheduler with a deterministic fake provider before
+changing policy; test old in-flight completion feedback, sustained degradation,
+and capacity recovery separately. Preserve ordering, cancellation, caps and
+cooldowns. Evidence and acceptance: latest-repeat section of
+`docs/plans/2026-10-09-simulator-real-books-recheck.md`. No local Rust source
+tests or additional synthesis were run for this diagnosis; performance stays open.
+
 2026-10-09 current Apple evidence supersedes the earlier failed Debug benchmark.
 The optimized embedded Rust Simulator run and repeat both passed exactly one
-native benchmark, zero failures/skips, LOTR 8–9 and Christie 6–7 only. Latest
+native benchmark, zero failures/skips, LOTR 8–9 and Christie 6–7 only. Earlier
 conversion: 186.526 s / 5.286 s; four valid MP3s, no audio reuse or rejected chapter
 deliveries. See `docs/plans/2026-10-09-simulator-real-books-recheck.md` for identity,
 artifacts, timings and measurement limits. No causal speedup or phone comparison.
