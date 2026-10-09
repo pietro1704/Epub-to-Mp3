@@ -5,6 +5,83 @@ import XCTest
 
 @MainActor
 final class MacReaderOpeningReadinessTests: XCTestCase {
+    @MainActor private final class ColdWriteSession {
+        weak var controller: MacReaderViewController?
+    }
+
+    func testColdOpenPersistsOffMainWhileUIRemainsResponsive() async throws {
+        try await verifyColdWrite(clearSelectionDuringWrite: false)
+    }
+
+    func testClearingSelectionDuringColdWriteRejectsStalePresentation() async throws {
+        try await verifyColdWrite(clearSelectionDuringWrite: true)
+    }
+
+    private func verifyColdWrite(clearSelectionDuringWrite: Bool) async throws {
+        let suite = "cold-reader-write-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(suite)
+        let body = String(repeating: "A readable cold chapter. ", count: 200) + suite
+        let source = try EpubFixture.createWithChapter(body: body)
+        let library = LibraryStore(defaults: defaults, importDirectory: root)
+        let book = try library.importBook(from: source)
+        let sourceBytes = try Data(contentsOf: source)
+        let keys = [ReaderSessionState.currentlyReadingBookIDKey,
+                    AudioPlayer.readerCurrentChapterIndexDefaultsKey,
+                    AudioPlayer.readerCurrentPageRatioDefaultsKey,
+                    AudioPlayer.readerCurrentSentenceIdDefaultsKey]
+        let previous = keys.map { UserDefaults.standard.object(forKey: $0) }
+        let player = AudioPlayer(resumeStore: ResumeStore(storage: UserDefaultsResumeStorage(defaults: defaults)))
+        defer {
+            player.stop()
+            for (key, value) in zip(keys, previous) { UserDefaults.standard.set(value, forKey: key) }
+            ReaderProgressStore.evict(bookId: book.id)
+            LocalFulltextCache.evict(bookId: book.id)
+            defaults.removePersistentDomain(forName: suite)
+            try? FileManager.default.removeItem(at: source)
+            try? FileManager.default.removeItem(at: root)
+        }
+        UserDefaults.standard.set(book.id, forKey: ReaderSessionState.currentlyReadingBookIDKey)
+        let heartbeat = expectation(description: "UI responds during persistence")
+        let persisted = expectation(description: "Complete fulltext persisted")
+        let session = ColdWriteSession()
+        let controller = MacReaderViewController(library: library,
+            settings: AppSettings(defaults: defaults), player: player,
+            bookmarkStore: BookmarkStore(defaults: defaults, storageKey: "bookmarks"), onClose: {},
+            preparedFulltextReader: { _ in nil }, preparedFulltextWriter: { payload, id in
+                XCTAssertFalse(Thread.isMainThread, "Cold-open persistence must not block the UI thread")
+                let release = DispatchSemaphore(value: 0)
+                Task { @MainActor in
+                    if clearSelectionDuringWrite { session.controller?.setBook(nil) }
+                    heartbeat.fulfill()
+                    release.signal()
+                }
+                XCTAssertEqual(release.wait(timeout: .now() + 2), .success,
+                               "MainActor must execute while the real persistence caller is blocked")
+                LocalFulltextCache.save(payload, bookId: id)
+                persisted.fulfill()
+            })
+        session.controller = controller
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 800, height: 600),
+                              styleMask: [.titled], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentViewController = controller
+        defer { window.orderOut(nil); window.contentViewController = nil; window.close() }
+        controller.view.layoutSubtreeIfNeeded()
+        await fulfillment(of: [heartbeat, persisted], timeout: 5)
+        let cache = try XCTUnwrap(LocalFulltextCache.storageURL(bookId: book.id))
+        let durable = try PropertyListDecoder().decode(EbookFulltext.self, from: Data(contentsOf: cache))
+        XCTAssertTrue(durable.chapters.contains { $0.text.contains(body) })
+        XCTAssertEqual(try Data(contentsOf: source), sourceBytes)
+        XCTAssertFalse(player.isPlaying)
+        if clearSelectionDuringWrite {
+            try await Task.sleep(nanoseconds: 50_000_000)
+            let text = try XCTUnwrap(descendants(controller.view).compactMap { $0 as? MacReaderTextView }.first)
+            XCTAssertTrue(text.string.isEmpty, "A completed old write must not restore a deselected book")
+            XCTAssertNil(UserDefaults.standard.string(forKey: ReaderSessionState.currentlyReadingBookIDKey))
+        }
+    }
+
     func testReadinessRequiresSavedPositionToBeApplied() async throws {
         try await verifyReadiness(closeBeforeRestore: false)
     }

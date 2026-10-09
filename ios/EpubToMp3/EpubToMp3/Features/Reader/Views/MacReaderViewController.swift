@@ -12,6 +12,7 @@ final class MacReaderViewController: NSViewController, NSTableViewDataSource, NS
     private let preparedRenderer: PreparedChapterRenderer
     private let preparedChapterStore: PreparedReaderChapterStore
     private let preparedFulltextReader: @Sendable (String) async -> EbookFulltext?
+    private let preparedFulltextWriter: @Sendable (EbookFulltext, String) -> Void
     private let initialPositionScheduler: (@escaping @MainActor () -> Void) -> Void
     private let onClose: () -> Void
     private let chaptersTable = NSTableView()
@@ -67,6 +68,9 @@ final class MacReaderViewController: NSViewController, NSTableViewDataSource, NS
         preparedFulltextReader: @escaping @Sendable (String) async -> EbookFulltext? = { id in
             await Task.detached(priority: .userInitiated) { LocalFulltextCache.read(bookId: id) }.value
         },
+        preparedFulltextWriter: @escaping @Sendable (EbookFulltext, String) -> Void = { payload, id in
+            LocalFulltextCache.save(payload, bookId: id)
+        },
         initialPositionScheduler: @escaping (@escaping @MainActor () -> Void) -> Void = { operation in
             DispatchQueue.main.async { operation() }
         }
@@ -79,6 +83,7 @@ final class MacReaderViewController: NSViewController, NSTableViewDataSource, NS
         self.preparedRenderer = preparedRenderer ?? .shared
         self.preparedChapterStore = preparedChapterStore
         self.preparedFulltextReader = preparedFulltextReader
+        self.preparedFulltextWriter = preparedFulltextWriter
         self.initialPositionScheduler = initialPositionScheduler
         super.init(nibName: nil, bundle: nil)
     }
@@ -673,7 +678,11 @@ final class MacReaderViewController: NSViewController, NSTableViewDataSource, NS
                 }
                 guard self.isActiveLoad(generation, bookID: book.id) else { return }
                 // A validated disk payload is already durable; do not reencode it on MainActor.
-                if cachedPayload == nil { LocalFulltextCache.save(payload, bookId: book.id) }
+                if cachedPayload == nil {
+                    let writer = preparedFulltextWriter
+                    await Task.detached(priority: .utility) { writer(payload, book.id) }.value
+                    guard self.isActiveLoad(generation, bookID: book.id) else { return }
+                }
                 LocalFulltextCache.recordWarmOpen(bookId: book.id)
                 let prepared = activePreparedChapter
                 let alreadyPresented = prepared.map {

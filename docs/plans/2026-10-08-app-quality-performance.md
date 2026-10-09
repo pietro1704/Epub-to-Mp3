@@ -871,3 +871,35 @@ are under `ios/EpubToMp3/.build/Logs/Test/`; actual summary counts verified.
 Executed `mise run apple:chapter-callback:test` with APPLE_NATIVE_TESTS filters.
 Tests use owned temporary fixtures; original books, models/downloads preserved.
 Owned diff reviewed; no claim of iOS UI, Flutter, or complete import-IO acceptance.
+
+## Mac cold-reader persistence off MainActor — 2026-10-09
+
+Scope: the actual Mac reader cold EPUB branch still called LocalFulltextCache.save
+on MainActor, encoding/writing the full book and collecting rebuildable cache files.
+Inject the existing save boundary for native observation, execute it in an awaited
+utility detached task, then recheck cancellation/book/load generation before any
+UI presentation. Preserve ordering: durable save completes before presentation and
+chapter-projection preparation. Warm cached loads still skip this save entirely.
+Best-effort cache writes already in flight may finish after a selection changes;
+their completion cannot restore old UI. No renderer, typography, pagination,
+chrome transition, TTS, download or shared Rust changes.
+
+Native controller regression imports a unique chapter-bearing EPUB through
+LibraryStore, forces the cold branch, schedules a MainActor heartbeat while the
+writer blocks, invokes the real LocalFulltextCache.save and decodes the durable
+binary payload independently. It verifies source bytes and no autoplay. Red:
+`Test-EpubToMp3Mac-2026.10.09_07-09-30--0300.xcresult`, one failed test,
+"Cold-open persistence must not block the UI thread". Green:
+`Test-EpubToMp3Mac-2026.10.09_07-10-38--0300.xcresult`, five passed,
+zero failed/skipped (cold writer plus four restoration/readiness regressions).
+Added an adversarial selection-clear during the blocked write, verifying no stale
+text/selection after completion: `07-12-07` bundle, one passed, zero failed/skipped.
+Bundles are under `ios/EpubToMp3/.build/Logs/Test/`; summaries inspected.
+Commands: `mise run apple:chapter-callback:test` with the class/single-method
+APPLE_NATIVE_TESTS selections. Simulator remains stopped; heavy checks serialized.
+
+Limits: native fixture controller evidence proves the caller's executor and stale
+state behavior, not measured real-book speed or the 200 ms across-relaunch budget.
+No seeded LOTR clipping/chrome gate or iOS UI run in this non-geometry IO slice;
+those broader reader requirements remain open. Original books/models/downloads
+unchanged. No broad cache purge; tests clean only their unique prepared-book entries.

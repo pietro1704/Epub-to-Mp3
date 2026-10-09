@@ -433,6 +433,11 @@ this board and `handoff.md` before crossing ownership or changing shared contrac
   durable integration, settings invalidation and actual relaunch remain pending.
 
 - [x] **APP-20261008-08 — Avoid redundant Mac reader cache writes.** Verified.
+  Cold-write follow-up verified on macOS: first EPUB fulltext persistence and
+  cache collection execute off MainActor, with load-generation fencing after IO.
+  Red native controller probe caught main-thread persistence; green five readiness
+  tests plus one stale-selection test, no failures/skips. Durable bytes checked.
+  No new 200 ms, iOS UI, real-book timing or Flutter completion claim.
   Disk-prepared content no longer reencodes/writes/enumerates cache on MainActor.
   Native window regression asserts readable content/controls and unchanged durable
   bytes/mtime: one test passed, zero skips, `20-20-19` macOS xcresult.
