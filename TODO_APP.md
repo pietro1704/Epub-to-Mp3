@@ -250,9 +250,12 @@ this board and `handoff.md` before crossing ownership or changing shared contrac
   Four readiness/lifecycle/page-turn regressions plus two chapter-boundary cases.
   No 200 ms acceptance, real-book latency improvement or Flutter change claimed.
 
-- [ ] **APP-20261009-23 — Resume goal with both actual books on Simulator.** In progress.
-  User confirmed the app opened. Validate The Lord of the Rings and E não sobrou
-  nenhum using native automation on the authorized iOS 16 iPhone SE Simulator.
+- [ ] **APP-20261009-23 — Validate both actual books on the authorized iPhone.** In progress.
+  Validate The Lord of the Rings and E não sobrou nenhum using native automation
+  on the physical iPhone. The active quality goal prohibits Simulator, superseding
+  the earlier iOS 16 iPhone SE Simulator request. Latest `devicectl` query on
+  2026-10-09 reports the paired iPhone 16e as unavailable; do not start a
+  Simulator. Resume this device validation when the physical iPhone is available.
   Keep conversion limited to LOTR 8–9 and Christie 6–7, zero-based inclusive.
   Preserve original books, models, downloads and existing playback artifacts.
   Reuse the verified four-chapter benchmark where unchanged; distinguish reader,
