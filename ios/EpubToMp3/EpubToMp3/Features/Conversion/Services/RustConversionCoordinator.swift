@@ -210,6 +210,21 @@ final class RustConversionCoordinator {
     private let adapter: ConverterFFIAdapter
     private let fileManager: FileManager
 
+    typealias Executor = @MainActor (
+        URL, String, Int32, Int32,
+        (@MainActor @Sendable (ConversionProgressEvent) -> Void)?,
+        (@MainActor @Sendable (ChapterCompletionEvent) -> Void)?
+    ) async throws -> Result
+
+    @MainActor
+    static func execute(bookURL: URL, jobID: String, chapterStart: Int32, chapterEnd: Int32,
+                        onProgress: (@MainActor @Sendable (ConversionProgressEvent) -> Void)?,
+                        onChapterCompleted: (@MainActor @Sendable (ChapterCompletionEvent) -> Void)?) async throws -> Result {
+        try await RustConversionCoordinator().convert(bookURL: bookURL, jobID: jobID,
+            chapterStart: chapterStart, chapterEnd: chapterEnd,
+            onProgress: onProgress, onChapterCompleted: onChapterCompleted)
+    }
+
     init(
         adapter: ConverterFFIAdapter = ConverterFFIAdapter(),
         fileManager: FileManager = .default

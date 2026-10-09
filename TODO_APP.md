@@ -9,6 +9,27 @@ this board and `handoff.md` before crossing ownership or changing shared contrac
 
 ## Active requests — 2026-10-08
 
+- [x] **APP-20261009-25 — Manual Book Detail conversion preserves playback.** Verified Apple adapters.
+  Original goal item 3: both native detail adapters still replace the player on
+  manual completion (macOS also stops it). Remove those session mutations while
+  retaining conversion result/history. Exercise actual native entry points with
+  an injected conversion executor, before and after completion; cover an existing
+  session and an idle player. No provider call, whole-book synthesis or cleanup of
+  user data. Keep progressive Listen and chapter-first relaunch work open.
+  Evidence: macOS two passed, zero failures/skips (`02-46-53` xcresult);
+  iOS 16 two passed, zero failures/skips (`simulator-smoke-38898F9F-EADD-488B-800A-E065CDBFC343`).
+  Native AVPlayer progression and unchanged AVPlayerItem were checked before/after
+  manual completion and progress/chapter callbacks. History reloaded after flush.
+  FFI/Rust/Flutter unchanged; Flutter runtime parity remains for Arch to verify.
+
+- [ ] **APP-20261009-26 — Native iOS Listen must consume progressive delivery.** Identified.
+  Original goal playback/performance: MainReaderScreenController.startListening
+  awaits the whole default conversion before installing playback and does not
+  supply the reader priority chapter or chapter-completion callback. Restore
+  chapter-first progressive delivery without whole-book benchmark synthesis,
+  duplicate jobs, stale-book autoplay or silently changing configured providers.
+  Native controller/AVPlayer evidence required, not a source-contract assertion.
+
 - [x] **APP-20261009-24 — Honest reader readiness after saved-position restore.** Verified macOS slice.
   Part of APP-20261009-21: macOS readiness must follow committed layout and saved
   passage restoration, not precede a queued restore. Reject stale restore callbacks

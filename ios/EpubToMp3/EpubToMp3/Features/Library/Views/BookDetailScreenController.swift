@@ -14,6 +14,7 @@ final class BookDetailScreenController: UIViewController {
     private let settings: AppSettings
     private let player: AudioPlayer
     private let playerPresentation: PlayerPresentation
+    private let conversionExecutor: RustConversionCoordinator.Executor
 
     private let coverView = UIImageView()
     private let titleLabel = UILabel()
@@ -29,13 +30,15 @@ final class BookDetailScreenController: UIViewController {
         library: LibraryStore,
         settings: AppSettings,
         player: AudioPlayer,
-        playerPresentation: PlayerPresentation
+        playerPresentation: PlayerPresentation,
+        conversionExecutor: @escaping RustConversionCoordinator.Executor = RustConversionCoordinator.execute
     ) {
         self.book = book
         self.library = library
         self.settings = settings
         self.player = player
         self.playerPresentation = playerPresentation
+        self.conversionExecutor = conversionExecutor
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -193,12 +196,10 @@ final class BookDetailScreenController: UIViewController {
             Task { [weak self] in
                 guard let self else { return }
                 do {
-                    let result = try await RustConversionCoordinator().convert(bookURL: url)
-                    self.book.lastJobId = result.jobID
+                    let result = try await conversionExecutor(url, UUID().uuidString, -1, -1, nil, nil)
+                    _ = try result.snapshot()
+                    if self.book.id == bookID { self.book.lastJobId = result.jobID }
                     self.library.recordConversion(jobId: result.jobID, for: bookID)
-                    let snapshot = try result.snapshot()
-                    self.player.setSnapshot(snapshot)
-                    self.player.play(snapshot: snapshot, restoreAutoplay: false)
                     self.render()
                 } catch {
                     let alert = UIAlertController(

@@ -2,18 +2,27 @@
 
 ## Current Codex ↔ Arch contract — 2026-10-08
 
-2026-10-09 actual Simulator benchmark evidence: Christie 6–7 passed artifact checks
-(5778 chars, 349.248 s audio, 31.6898 s synthesis); LOTR 8–9 published both chapters
-but host rejected/missed first-delivery callback after 591.382 s. Overall native
-benchmark failed; no matching phone comparison. Evidence is under
-`.reports/simulator-conversion-2C4CA9AC-F09E-4AF8-AA65-1FB4E649DB7A`.
-Sample stack locates finalization CPU in CoverArtwork.embed_into → validate_audio →
-inspect_mpeg → Symphonia full decode in unoptimized Debug. Arch: investigate redundant
-decodes/optimized-profile effects without weakening corruption validation. No local
-Rust source execution here beyond the earlier Apple artifact-build exception.
-Swift chapter callbacks now preserve literal absolute filesystem paths instead of
-generic URL decoding; Mac+iOS native regressions passed. This known decoder bug is
-not yet proven to explain the missing LOTR callback; keep that gate open.
+2026-10-09 current Apple evidence supersedes the earlier failed Debug benchmark.
+The optimized embedded Rust Simulator run and repeat both passed exactly one
+native benchmark, zero failures/skips, LOTR 8–9 and Christie 6–7 only. Latest
+conversion: 186.526 s / 5.286 s; four valid MP3s, no audio reuse or rejected chapter
+deliveries. See `docs/plans/2026-10-09-simulator-real-books-recheck.md` for identity,
+artifacts, timings and measurement limits. No causal speedup or phone comparison.
+Swift callbacks preserve literal absolute paths; focused native regressions passed.
+The old unoptimized Debug sample remains useful for Arch's redundant-decode audit;
+preserve corruption validation. Rust source execution stays on Arch except the
+explicit Apple artifact compilation exception.
+
+APP-20261009-25: native Book Detail manual conversion was found to replace the
+player (macOS also stopped it). The focused correction preserves conversion
+history and existing playback; default execution still uses embedded Rust.
+macOS and iOS 16 native tests passed (two each, zero failures/skips), with a
+progressing AVPlayer, the same media item and persisted conversion history.
+Shared FFI/Rust/Flutter code is unchanged.
+Arch: validate equivalent manual-conversion isolation in Flutter; local Flutter
+execution on this Mac remains excluded. Goal item 3 is not globally complete.
+Chapter-first relaunch integration, actual usable-playback readiness and the
+200 ms budget remain open; see the reader opening profile and TODO_APP.md.
 
 `TODO_APP.md` is the shared user-request/status board; root `AGENTS.md`/`CLAUDE.md`
 is authoritative. Codex coordinates Apple changes; Arch coordinates Rust/Flutter.
@@ -29,13 +38,14 @@ destinationless runtime payload; the protected system volume rejected it. CLI
 platform import failed too. Do not repeat that command. iOS 16.0 is the next
 candidate. Direct curl required login, but xcodes 2.1.0 subsequently downloaded
 and installed iOS 16.0 (20A360), simctl Ready. SE second-generation device
-`381DBE17-FFAB-4A2E-B35F-AB9FEC92C14E` booted into initial migration; host load
-rose to 62.95 with no parallel build, so that device was shut down immediately.
-App validation remains unverified; do not boot again automatically on this host.
+`381DBE17-FFAB-4A2E-B35F-AB9FEC92C14E` now runs authorized guarded tests on
+iOS 16.0. Initial migration's load spike is historical; keep build/boot serialized
+and retain the resource guard. Current app launch and scoped conversions passed.
 APP-20261008-14: user authorized an Apple-only Rust compilation exception here.
-Debug `x86_64-apple-ios` artifact and signed SDK-correct app packaging are now built
-and verified. Native app tests remain blocked by unsafe observed host load;
-no Simulator remains booted. Existing
+Debug and explicit release-profile `x86_64-apple-ios` artifacts and signed
+SDK-correct packaging are built and verified. Swift Debug can explicitly use the
+optimized Rust Simulator artifact; inspect live Simulator/process state before
+heavy work rather than inferring a running device from this document. Existing
 physical iOS arm64 and macOS x86_64 artifacts cannot be used as substitutes.
 Preserve books, models and listening downloads; serialize heavy jobs.
 This Mac is Apple-only. Flutter/Rust execution belongs to Arch; no Flutter

@@ -58,6 +58,33 @@ uncontrolled comparison or extrapolate whole-book duration.
 
 ## Progress
 
+### Native Book Detail manual isolation — actual adapters verified
+
+The audit found that both native Book Detail adapters still replaced playback on
+manual completion; macOS additionally called stop. The manual branches now only
+validate/register the conversion and refresh detail UI. Explicit Listen autoplay
+is unchanged. A shared injectable executor delegates to the original embedded
+Rust flow, preserving job, scope and callbacks; no FFI or provider defaults changed.
+
+Native regressions call the actual manual entry points, suspend conversion and
+complete it; macOS additionally receives progress/chapter callbacks, while iOS
+manual conversion does not subscribe to them. An existing AVPlayer advances
+through a generated silent WAV and retains snapshot, playing/converting state,
+presentation and the same AVPlayerItem; idle playback stays idle. Conversion
+history is flushed and verified through a fresh LibraryStore instance.
+Mac red: both cases failed due to snapshot replacement (`02-43-03` xcresult).
+Final Mac: two passed, zero failures/skips (`02-46-53`). iOS 16: two passed, zero
+failures/skips (`simulator-smoke-38898F9F-EADD-488B-800A-E065CDBFC343`).
+Executed `mise run apple:chapter-callback:test` with the focused class filter,
+then the guarded Simulator smoke build/test with the same focused class; execution
+used the Xcode 16.4 controller without rebuilding during boot. No network synthesis
+or modifications to original books, models or listening downloads.
+
+This closes APP-20261009-25 for the Apple detail adapters only, not global item 3.
+Flutter parity remains on Arch. The iOS main reader's Listen route still waits
+for a full conversion instead of receiving progressive callbacks (APP-20261009-26).
+Chapter-first relaunch/200 ms and other original goal acceptance remain open.
+
 ### Prepared renderer signature reuse — correctness verified, latency still open
 
 Memory lookup now reuses its caller's signature rather than reencoding the same
