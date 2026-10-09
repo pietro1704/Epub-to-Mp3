@@ -10,6 +10,7 @@ final class AudioPlayerPendingSeekTests: XCTestCase {
         streaming: Bool = false,
         streamTargetReady: Bool = true,
         streamSegmentCount: Int = 12,
+        streamCurrentComplete: Bool = false,
         includeReadyThirdChapter: Bool = false,
         embeddedJob: Bool = false,
         snapshotIndexBase: Int = 0,
@@ -68,10 +69,12 @@ final class AudioPlayerPendingSeekTests: XCTestCase {
             chaptersTotal: includeReadyThirdChapter ? 3 : 2,
             chaptersCompleted: (targetReady ? 2 : (streaming ? 0 : 1)) + (includeReadyThirdChapter ? 1 : 0),
             chapterProgress: [
-                .init(index: snapshotIndexBase, name: "Available", status: streaming && !targetReady ? "processing" : "completed",
+                .init(index: snapshotIndexBase, name: "Available", status: streaming && !targetReady && !streamCurrentComplete ? "processing" : "completed",
                       downloadUrl: streaming && !targetReady ? nil : audioURL.absoluteString, chars: 100,
                       charsProcessed: streaming && !targetReady ? 0 : 100,
-                      progressRatio: streaming && !targetReady ? 0 : 1, durationSeconds: 15, startedAt: nil, completedAt: nil),
+                      progressRatio: streaming && !targetReady ? 0 : 1,
+                      durationSeconds: streaming && !targetReady && streamCurrentComplete ? Double(streamSegmentCount) * 15 : 15,
+                      startedAt: nil, completedAt: nil),
                 .init(index: snapshotIndexBase + 1, name: "Pending", status: targetReady ? "completed" : "pending",
                       downloadUrl: targetReady ? targetURL.absoluteString : nil,
                       chars: 100, charsProcessed: targetReady ? 100 : 0,
@@ -208,6 +211,80 @@ final class AudioPlayerPendingSeekTests: XCTestCase {
             XCTAssertEqual(player.testHook_activeSegmentIdentity()?.segmentIndex, 0)
             XCTAssertFalse(player.isPlaying)
             XCTAssertLessThanOrEqual(player.testHook_deferredSegmentCount(), 12)
+        }
+    }
+
+    @MainActor
+    func testSkipBackwardCrossesSegmentsUsingChapterClockAndPreservesPause() async throws {
+        try await withPlayingFixture(streaming: true) { player, _ in
+            player.pause()
+            player.seek(to: 35)
+            try await self.waitForNavigation(player)
+            XCTAssertEqual(player.durationSeconds, 180, accuracy: 0.1)
+            player.skipBackward(seconds: 15)
+            try await self.waitForNavigation(player)
+            XCTAssertEqual(player.testHook_activeSegmentIdentity()?.segmentIndex, 1)
+            XCTAssertEqual(try XCTUnwrap(player.testHook_currentPlayerItem()).currentTime().seconds, 5, accuracy: 0.1)
+            XCTAssertEqual(player.positionSeconds, 20, accuracy: 0.1)
+            XCTAssertFalse(player.isPlaying)
+        }
+    }
+
+    @MainActor
+    func testSkipForwardCrossesSegmentsUsingChapterClockAndPreservesPause() async throws {
+        try await withPlayingFixture(streaming: true) { player, _ in
+            player.pause()
+            player.seek(to: 5)
+            try await self.waitForNavigation(player)
+            XCTAssertEqual(player.durationSeconds, 180, accuracy: 0.1)
+            player.skipForward(seconds: 30)
+            try await self.waitForNavigation(player)
+            XCTAssertEqual(player.testHook_activeSegmentIdentity()?.segmentIndex, 2)
+            XCTAssertEqual(try XCTUnwrap(player.testHook_currentPlayerItem()).currentTime().seconds, 5, accuracy: 0.1)
+            XCTAssertEqual(player.positionSeconds, 35, accuracy: 0.1)
+            XCTAssertFalse(player.isPlaying)
+        }
+    }
+
+    @MainActor
+    func testSkipForwardWaitsForMissingSegmentAndPreservesPause() async throws {
+        try await withPlayingFixture(streaming: true, streamTargetReady: false,
+                                     streamSegmentCount: 1) { player, snapshot in
+            player.setSegmentChapterEstimate(30, forChapterIndex: 0)
+            player.pause()
+            player.seek(to: 5)
+            try await self.waitForNavigation(player)
+            player.skipForward(seconds: 30)
+            try await Task.sleep(nanoseconds: 100_000_000)
+            XCTAssertTrue(player.isSeeking)
+            XCTAssertEqual(player.pendingNavigation?.chapterIndex, 0)
+            XCTAssertEqual(player.positionSeconds, 35, accuracy: 0.1)
+            let url = try XCTUnwrap(URL(string: try XCTUnwrap(snapshot(true).playableChapters.first?.downloadUrl)))
+            let data = try Data(contentsOf: url)
+            player.enqueueSegment(data: data, chapterIndex: 0, segmentIndex: 1)
+            player.enqueueSegment(data: data, chapterIndex: 0, segmentIndex: 2)
+            try await self.waitForNavigation(player)
+            XCTAssertEqual(player.testHook_activeSegmentIdentity()?.segmentIndex, 2)
+            XCTAssertEqual(try XCTUnwrap(player.testHook_currentPlayerItem()).currentTime().seconds, 5, accuracy: 0.1)
+            XCTAssertEqual(player.positionSeconds, 35, accuracy: 0.1)
+            XCTAssertFalse(player.isPlaying)
+        }
+    }
+
+    @MainActor
+    func testSkipForwardClampsConfirmedFinalChapterInsteadOfWaitingBeyondEnd() async throws {
+        try await withPlayingFixture(streaming: true) { player, snapshot in
+            player.pause()
+            player.nextChapter()
+            try await self.waitForNavigation(player)
+            player.setSnapshot(snapshot(true))
+            player.seek(to: 10)
+            try await self.waitForNavigation(player)
+            player.skipForward(seconds: 30)
+            try await self.waitForNavigation(player)
+            XCTAssertEqual(player.currentChapterIndex, 1)
+            XCTAssertEqual(player.positionSeconds, 15, accuracy: 0.1)
+            XCTAssertFalse(player.isPlaying)
         }
     }
 
@@ -416,10 +493,10 @@ final class AudioPlayerPendingSeekTests: XCTestCase {
                     chapterIndex: chapter, segmentIndex: 0, session: diagnostics)
             }
             XCTAssertNil(authorize(), "Background prefetch is not an active journey")
-            player.seek(to: player.durationSeconds)
+            player.nextChapter()
             let old = try XCTUnwrap(authorize())
             XCTAssertNil(authorize(0))
-            player.seek(to: player.durationSeconds)
+            player.nextChapter()
             let replacement = try XCTUnwrap(authorize())
             XCTAssertNotEqual(old.journeyID, replacement.journeyID)
             let publication = try self.publication()
@@ -538,7 +615,7 @@ final class AudioPlayerPendingSeekTests: XCTestCase {
             player.enqueueRemoteSegment(data: try Data(contentsOf: targetURL), jobID: snapshot(false).jobId,
                 generation: player.remotePlaybackGeneration, chapterIndex: 1, segmentIndex: 0, publication: retry)
             let existing = Set(try exportedJourneys().map(\.id))
-            player.seek(to: player.durationSeconds)
+            player.nextChapter()
             for _ in 0..<100 {
                 if player.currentChapterIndex == 1 && !player.isSeeking { break }
                 try await Task.sleep(nanoseconds: 50_000_000)
@@ -654,7 +731,8 @@ final class AudioPlayerPendingSeekTests: XCTestCase {
     @MainActor
     private func beginPendingSeek(_ player: AudioPlayer) async throws -> UUID {
         let originalIDs = Set(try exportedJourneys().map(\.id))
-        player.seek(to: player.durationSeconds)
+        if player.testHook_activeSegmentIdentity() != nil { player.nextChapter() }
+        else { player.seek(to: player.durationSeconds) }
         try await Task.sleep(nanoseconds: 300_000_000)
         let seeks = try exportedJourneys().filter { !originalIDs.contains($0.id) && $0.kind == .seek }
         XCTAssertEqual(seeks.count, 1)
@@ -799,7 +877,7 @@ final class AudioPlayerPendingSeekTests: XCTestCase {
 
     @MainActor
     func testSeekToNextStreamedChapterFindsItsFirstSegmentBeyondActiveQueue() async throws {
-        try await withPlayingFixture(streaming: true) { player, _ in
+        try await withPlayingFixture(streaming: true, streamCurrentComplete: true) { player, _ in
             XCTAssertEqual(player.currentChapterIndex, 0)
             let originalIDs = Set(try exportedJourneys().map(\.id))
             player.seek(to: player.durationSeconds)
@@ -823,7 +901,7 @@ final class AudioPlayerPendingSeekTests: XCTestCase {
 
     @MainActor
     func testRemoteLastStreamedChapterDoesNotWaitForPhantomChapter() async throws {
-        try await withPlayingFixture(streaming: true, snapshotIndexBase: 1) { player, _ in
+        try await withPlayingFixture(streaming: true, streamCurrentComplete: true, snapshotIndexBase: 1) { player, snapshot in
             player.seek(to: player.durationSeconds)
             for _ in 0..<100 {
                 if player.currentChapterIndex == 1 && player.positionSeconds > 0 && !player.isSeeking { break }
@@ -833,6 +911,7 @@ final class AudioPlayerPendingSeekTests: XCTestCase {
                            "Remote manifest chapters 1 and 2 must play as segment chapters 0 and 1.")
             XCTAssertTrue(player.isPlaying)
             XCTAssertFalse(player.isSeeking)
+            player.setSnapshot(snapshot(true))
             player.seek(to: player.durationSeconds)
             for _ in 0..<100 {
                 if !player.isSeeking { break }
@@ -941,7 +1020,7 @@ final class AudioPlayerPendingSeekTests: XCTestCase {
             XCTAssertTrue(producerStarted)
             XCTAssertNil(capacityResult, "The full deferred queue must initially suspend the producer.")
 
-            player.seek(to: player.durationSeconds)
+            player.nextChapter()
             for _ in 0..<100 {
                 if capacityResult != nil && player.currentChapterIndex == 1 { break }
                 try await Task.sleep(nanoseconds: 50_000_000)

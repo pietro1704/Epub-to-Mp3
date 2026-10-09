@@ -903,3 +903,46 @@ state behavior, not measured real-book speed or the 200 ms across-relaunch budge
 No seeded LOTR clipping/chrome gate or iOS UI run in this non-geometry IO slice;
 those broader reader requirements remain open. Original books/models/downloads
 unchanged. No broad cache purge; tests clean only their unique prepared-book entries.
+
+## Relative segment controls and confirmed endpoints — 2026-10-09
+
+Specialist audit exposed a caller gap: direct chapter-relative seek worked, but
+skipForward/skipBackward used the current AVPlayerItem clock. Public command
+regressions proved wrong identities: backward from 35 s by 15 stayed in segment 2;
+forward from 5 s by 30 stayed in segment 0. Red: `07-16-58` Mac xcresult,
+two failed. Relative segment commands now use the existing chapter seek resolver,
+preserving intent and pending targets. Nonsegment skip behavior is retained.
+
+First candidate failed three of four cases (`07-18-44`): status/duration KVO
+overwrote the chapter clock with a single item's duration. Both sinks now preserve
+segmentChapterDuration. Review caught another issue: a positive estimate is not
+a confirmed endpoint. Only completed/finished metadata with a valid duration, or
+a completed chapter's fully known contiguous retained durations, establishes its
+end. Incomplete chapter targets are neither clamped to estimates nor advanced to
+the next chapter. A confirmed final end clamps without phantom pending audio.
+
+Six focused Mac cases passed (`07-23-38`), then the affected class passed all
+38 executable Mac cases, zero failures/skips (`07-28-12`). Original endpoint
+fixtures now explicitly declare completion and exact segment duration; receipt,
+backlog-correlation and capacity tests use Next for their chapter-navigation intent.
+No weakened identity/intent/journey assertions. Native review found no blocker
+for this slice; late endpoint confirmation remains APP-20261009-34.
+Mac bundles: `ios/EpubToMp3/.build/Logs/Test/Test-EpubToMp3Mac-2026.10.09_*.xcresult`.
+
+Guarded incremental iOS build used the release embedded artifact; Simulator was
+stopped during compilation. Xcode 16.4 executed the four new public-command cases
+on iOS 16 SE: four passed, zero failed/skipped, result
+`.reports/simulator-smoke-4747F161-AEEE-4AEC-A936-D4C4DF4C679E/tests.xcresult`.
+Checks used apple:chapter-callback:test and ios:simulator:smoke:build/test with
+explicit class/method filters. Actual AVPlayer items, chapter position, item-local
+offset, duration, pause, missing-audio arrival and confirmed final boundary checked.
+No synthesis, Python/Ruff, physical iPhone, Flutter or CI/PR monitoring. Original
+books, models/downloads unchanged. UI button taps and real-book timing were not
+measured. Item 4 remains open for late endpoint reconciliation and parity; the
+full seven-item goal remains active.
+
+Configuration audit separately confirms the frontend selector is still absent:
+FFI fields exist, but the form and shared executor do not carry installed model
+selection. Apple packaging tasks do not enable the optional Piper runtime. Model
+metadata/catalog presence is not proof of a runnable installed model; do not
+claim offline configuration complete or download/migrate models implicitly.

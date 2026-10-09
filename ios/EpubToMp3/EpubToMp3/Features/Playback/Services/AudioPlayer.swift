@@ -1890,10 +1890,13 @@ final class AudioPlayer: ObservableObject {
     func togglePlayPause() { isPlaying ? pause() : resume() }
 
     func seek(to seconds: TimeInterval) {
-        let target = seconds.isFinite ? max(0, seconds) : 0
+        let requested = seconds.isFinite ? max(0, seconds) : 0
+        let confirmedEnd = isSegmentMode ? confirmedSegmentChapterEnd : nil
+        let target = confirmedEnd.map { min($0, requested) } ?? requested
         let autoplay = pendingChapterSeek?.autoplay ?? activeSeekAutoplay ?? isPlaying
         beginSeekJourney()
-        if Self.shouldAdvanceAtSeekEnd(position: target, duration: durationSeconds),
+        if (!isSegmentMode || confirmedEnd != nil),
+           Self.shouldAdvanceAtSeekEnd(position: target, duration: confirmedEnd ?? durationSeconds),
            let snapshot, let nextIndex = nextCanonicalChapterIndex {
             pendingChapterSeek = PendingChapterSeek(
                 id: UUID(), jobID: snapshot.jobId, chapterIndex: nextIndex,
@@ -1910,8 +1913,8 @@ final class AudioPlayer: ObservableObject {
             pendingChapterSeek = PendingChapterSeek(
                 id: UUID(), jobID: snapshot.jobId, chapterIndex: currentChapterIndex,
                 autoplay: autoplay, position: target,
-                allowsFinalEndpoint: durationSeconds.isFinite && durationSeconds > 0
-                    && target >= durationSeconds && nextCanonicalChapterIndex == nil
+                allowsFinalEndpoint: confirmedEnd.map { target >= $0 } == true
+                    && nextCanonicalChapterIndex == nil
             )
             isSeeking = true
             player?.pause()
@@ -1977,6 +1980,24 @@ final class AudioPlayer: ObservableObject {
         }
         let offset = isSegmentMode ? Self.segmentManifestIndexOffset(snapshot) : 0
         return (snapshot.chapterProgress ?? chapters).map { $0.index - offset }.filter { $0 > current }.min()
+    }
+
+    /// Estimates describe progress, not proof that no more audio will arrive.
+    private var confirmedSegmentChapterEnd: TimeInterval? {
+        guard let snapshot,
+              let chapter = Self.chapterProgressEntry(forSegmentIndex: currentChapterIndex,
+                  chapterProgress: snapshot.chapterProgress ?? snapshot.playableChapters),
+              chapter.status == "completed" || snapshot.state == "finished" else { return nil }
+        if let duration = chapter.durationSeconds, duration.isFinite, duration > 0 { return duration }
+        let retained = segmentFiles.keys.filter { $0.chapterIndex == currentChapterIndex }.sorted()
+        guard !retained.isEmpty else { return nil }
+        var duration: TimeInterval = 0
+        for (ordinal, identity) in retained.enumerated() {
+            guard identity.segmentIndex == ordinal,
+                  let value = segmentDurations[identity], value.isFinite, value > 0 else { return nil }
+            duration += value
+        }
+        return duration.isFinite && duration > 0 ? duration : nil
     }
 
     private func applyPendingChapterSeekIfAvailable() {
@@ -2303,18 +2324,14 @@ final class AudioPlayer: ObservableObject {
         Self.rateAdjustedDuration(seconds: positionSeconds, rate: rate)
     }
 
-    /// Skip relative to the current playhead. Negative values rewind,
-    /// positive fast-forward. Clamped to the current AVPlayerItem's
-    /// duration.
-    ///
-    /// Segment-mode note: `positionSeconds` is **cumulative across all
-    /// segments of the current chapter** (segmentCumulativeBase +
-    /// item-relative time), but `AVPlayer.seek` always lands within
-    /// the current item. Doing the math against the cumulative value
-    /// silently jumped to an out-of-range CMTime and AVPlayer ignored
-    /// the seek — visible as "+/-15 s buttons do nothing". Compute the
-    /// delta against the current item's own clock instead.
+    /// Relative chapter navigation must resolve its target segment through the
+    /// same seek path as the progress slider, including pending audio and intent.
     func skip(by deltaSeconds: TimeInterval) {
+        guard deltaSeconds.isFinite else { return }
+        if isSegmentMode {
+            seek(to: max(0, positionSeconds + deltaSeconds))
+            return
+        }
         cancelPendingSeekJourney()
         guard let player else { return }
         let rawTime = player.currentTime().seconds.isFinite
@@ -3144,7 +3161,7 @@ final class AudioPlayer: ObservableObject {
                     item.duration.seconds,
                     isReadyToPlay: status == .readyToPlay
                 ) {
-                    self.durationSeconds = duration
+                    self.durationSeconds = self.isSegmentMode ? self.segmentChapterDuration : duration
                     self.applyPendingProportionalSeek()
                     self.updateNowPlayingInfo()
                 }
@@ -3159,7 +3176,7 @@ final class AudioPlayer: ObservableObject {
                     duration.seconds,
                     isReadyToPlay: item.status == .readyToPlay
                 ) {
-                    self.durationSeconds = validated
+                    self.durationSeconds = self.isSegmentMode ? self.segmentChapterDuration : validated
                     self.applyPendingProportionalSeek()
                     self.updateNowPlayingInfo()
                 }

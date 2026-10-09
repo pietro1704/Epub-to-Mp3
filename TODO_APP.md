@@ -9,6 +9,24 @@ this board and `handoff.md` before crossing ownership or changing shared contrac
 
 ## Active requests — 2026-10-08
 
+- [ ] **APP-20261009-33 — Segment skip buttons use the chapter clock.** Apple verified; parity pending.
+  Relative forward/backward controls must cross retained segments using chapter
+  time, preserve pause/playing intent, and retain pending targets for missing audio.
+  Verify the public skip commands with actual AVPlayer items; keep nonsegment
+  behavior and superseded-navigation cancellation covered. Shared Apple slice;
+  iOS UI and Flutter parity require their own evidence.
+  Red public-command regressions reproduced wrong segment identities. Shared
+  relative skip now uses chapter seek; item duration observers preserve chapter
+  duration. Estimates cannot clamp or prematurely advance incomplete chapters.
+  macOS: 38 passed, 0 failed/skipped; iOS 16: four new cases passed, 0 failed/skipped.
+  Evidence in the quality plan. No synthesis or real-book latency claim.
+
+- [ ] **APP-20261009-34 — Resolve pending seeks after late endpoint confirmation.** Pending.
+  A requested offset beyond an incomplete chapter's estimate must stay pending;
+  when its actual terminal duration arrives later, reconcile the target instead
+  of waiting for nonexistent segments. Native final-file/segment-handoff evidence
+  required; APP-20261009-33 only verifies endpoints known at command time.
+
 - [x] **APP-20261009-32 — Reader picker import remains responsive and rejects stale selection.** Verified UIKit caller.
   Original import/IO goals: replace the remaining synchronous UIKit reader
   reimport caller with LibraryStore.importBookAsync. Preserve durable import
