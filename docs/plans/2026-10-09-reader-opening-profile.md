@@ -86,6 +86,25 @@ LOTR 363.818 ms, Christie 151.933 ms
 app-code identity, original input hashes, journeys and point-sampled memory.
 These unpaired observations do not establish a general causal speedup.
 
+An additional two-host repeat is retained at
+`.reports/mobile-audio/reader-relaunch-86F998D4-805C-4493-A999-99819BB90ED9/`.
+Prepare passed 1/1; verify failed the unchanged 200 ms assertion (1 failed, zero
+skips). It used the same source hashes and ranges, LOTR 8–9 and Christie 6–7,
+with no synthesis. The candidate Debug executable SHA-256 was
+`cf421252651a8dea894ff32a0c0fa41d73c578e943d450ba1b6ce718f3fdf193`; the
+comparison field explicitly says the baseline executable was unavailable.
+
+| Book | End-to-end test interval | readable_content | controls_usable | Resident / physical footprint |
+| --- | ---: | ---: | ---: | ---: |
+| LOTR | 355.265 ms | 261.333 ms | 261.588 ms | 115.4 / 49.0 MB |
+| Christie | 145.430 ms | 125.247 ms | 125.368 ms | 98.3 / 54.0 MB |
+
+The test interval starts before constructing and attaching the reader window;
+the telemetry transition starts inside the reader lifecycle, so those clocks are
+not interchangeable. Point-sampled resident/physical footprint is not peak
+memory. This is a repeated diagnostic, not paired baseline/candidate evidence
+or a performance fix; LOTR remains over budget on both reported clocks.
+
 Remaining: full-source hashing/decode and first-window scheduling costs, iOS
 presentation parity, controlled real-book before/after evidence and the complete
 200 ms gate. Cancellation can discard losing callbacks but does not interrupt the

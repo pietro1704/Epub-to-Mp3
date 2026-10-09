@@ -337,7 +337,11 @@ this board and `handoff.md` before crossing ownership or changing shared contrac
   Preserve 200 ms gate and source/style integrity; avoid decoding the whole book
   before restoring the active chapter. Detailed evidence in
   `docs/plans/2026-10-09-reader-opening-profile.md`. No source fix claimed; temporary
-  tagged probes removed, original cache/book bytes preserved.
+  tagged probes removed, original cache/book bytes preserved. Additional same-range
+  two-host repeat `reader-relaunch-86F998D4-805C-4493-A999-99819BB90ED9`: prepare
+  passed, verify failed; LOTR 355.265 ms end-to-end / 261.333 ms readable, Christie
+  145.430 / 125.247 ms. No synthesis, baseline executable unavailable, so no causal
+  speedup claim. Resident/physical memory values are point samples, not peaks.
 
 - [x] **APP-20261009-20 — Avoid duplicate prepared-renderer signature work.** Verified narrow slice.
   Reuse the already computed signature for memory lookup; retain full source/style
