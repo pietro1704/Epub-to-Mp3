@@ -51,6 +51,22 @@ this board and `handoff.md` before crossing ownership or changing shared contrac
   Preserve original imports/models/audio; no physical-device run. Verify reader
   behavior first; conversion limited to LOTR 8–9 / Christie 6–7 (zero-based inclusive).
   Report Simulator measurements separately from physical-device historical evidence.
+  Both exact source hashes verified and copies imported through the app's seed/import
+  path; real covers/titles and two-column grid visible. Initial UI run: Christie
+  passed, LOTR failed AX test-only button hit. Real swipe/coordinate-drag variants
+  subsequently failed page change on both books even after loading cover disappears.
+  Evidence: `simulator-smoke-66FB4514-375D-4578-A645-8FC7B84E6B28` (1 pass/1 fail),
+  `simulator-smoke-A24EEE2E-2AF1-49D0-B458-9383A04BB856` (2 failed, zero skips).
+  No conversion or autoplay. Temporary tagged gesture/readiness logging added for
+  one focused Christie reproduction; remove before verified delivery.
+  Further diagnostics: navigationReady=1 but pan callbacks absent; actual screen
+  geometry confirmed viewport (0,76,375,447) within window (0,0,375,667).
+  Matching Xcode 16.4 isolated UI runner also reproduced failure (`72035EA7...`).
+  Moving pan ownership (`ECCAEB51...`) and paginated simultaneity (`2B39CA70...`)
+  did not fix the exact same page-change assertion; both candidates reverted.
+  Text-selection-disable experiment timed out, inconclusive (`F9784EED...`).
+  All temporary production instrumentation/selection changes removed. Reader
+  test remains red/uncommitted; no source fix or conversion performance claimed.
 
 - [x] **APP-20261008-13 — Faster Apple download/extraction defaults.** Recorded.
   Prefer xcodes/aria2 downloads and experimental unxip for Xcode `.xip` archives.
