@@ -10,6 +10,8 @@ import 'package:flutter_app/services/protected_audio_storage_guard.dart';
 
 class _PendingDownloadDio implements Dio {
   final started = Completer<void>();
+  final twoStarted = Completer<void>();
+  final tokens = <CancelToken>[];
   late CancelToken token;
   late void Function(int, int) progress;
   int calls = 0;
@@ -22,7 +24,9 @@ class _PendingDownloadDio implements Dio {
       progress =
           invocation.namedArguments[#onReceiveProgress]
               as void Function(int, int);
-      started.complete();
+      tokens.add(token);
+      if (!started.isCompleted) started.complete();
+      if (calls == 2) twoStarted.complete();
       return token.whenCancel.then<Response<dynamic>>((error) => throw error);
     }
     return super.noSuchMethod(invocation);
@@ -91,6 +95,56 @@ void main() {
       }
     },
   );
+
+  for (final stop in ['cancel', 'dispose']) {
+    test('$stop stops every concurrent transfer for the same path', () async {
+      final outcomes = List.generate(
+        2,
+        (_) => manager
+            .download(
+              jobId: 'book',
+              url: 'https://example.test/audio',
+              filename: 'chapter.mp3',
+            )
+            .then<Object>(
+              (file) => file,
+              onError: (Object error, StackTrace _) => error,
+            ),
+      );
+      await dio.twoStarted.future;
+      try {
+        if (stop == 'dispose') {
+          manager.dispose();
+        } else {
+          manager.cancel('${documents.path}/downloads/book/chapter.mp3');
+        }
+        expect(dio.tokens.every((token) => token.isCancelled), isTrue);
+        final results = await Future.wait(
+          outcomes,
+        ).timeout(const Duration(seconds: 2));
+        expect(
+          results,
+          everyElement(
+            isA<DioException>().having(
+              (error) => error.type,
+              'type',
+              DioExceptionType.cancel,
+            ),
+          ),
+        );
+        final folder = Directory('${documents.path}/downloads/book');
+        expect(
+          await folder.list().where((entry) => entry is Directory).toList(),
+          isEmpty,
+        );
+      } finally {
+        for (final token in dio.tokens) {
+          token.cancel();
+        }
+        await Future.wait(outcomes);
+      }
+    });
+  }
 
   test('late progress does not emit into a closed event stream', () async {
     final outcome = manager
