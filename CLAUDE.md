@@ -222,25 +222,20 @@ message.
 
 ## CI Monitoring Policy
 
-**After every `git push`, monitor GitHub CI and fix failures before stopping.**
+After each push, continue with the next independent task. Do not poll CI,
+run `gh run watch`, or invoke `post_implementation_audit.sh --wait` by default.
+The push hook must not wait for CI or inject success notifications.
 
-**Implementation completion is an inferred gate.** At the end of every feature
-or bug fix, independently run the delivery-hygiene loop in
-`docs/implementation-completion-spec.md`: clean worktree, Actions green, no
-untriaged PRs/issues, and no Code Scanning or Dependabot alerts. Never wait for
-the user to ask for these checks; a security finding is P0 and is fixed and
-rescanned before the task is called complete.
+The existing `CI failure diagnose` workflow runs only after a failed CI or
+Release Desktop run. It posts the diagnosis on the associated PR, or opens
+an issue for a master failure. React to these failure notifications with a
+focused fix; inspect the notified run with `gh run view <run_id> --log-failed`.
 
-1. After pushing, the `ci_watch.sh` hook (async PostToolUse) auto-watches the run and injects the result.
-2. If CI fails, immediately diagnose via `gh run view <run_id> --log-failed` and push a fix.
-3. Do not consider a task done until CI passes green.
-
-```bash
-gh run list --limit 3                          # List recent runs
-gh run view <run_id>                           # Summary + step status
-gh run view <run_id> --log-failed              # Failed step output
-gh run watch <run_id>                          # Block until run completes
-```
+Required CI and security checks remain merge gates. Enable automatic merge
+when authorized and keep working while checks run. Report a pushed PR as
+pending until its merge and required checks are proven; do not infer success
+from local tests. Apply `docs/implementation-completion-spec.md` when reporting
+final delivery, without turning it into an automatic CI waiting loop.
 
 ---
 

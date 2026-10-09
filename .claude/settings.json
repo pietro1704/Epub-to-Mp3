@@ -45,14 +45,6 @@
             "timeout": 10,
             "async": true,
             "if": "Bash(mise run*)"
-          },
-          {
-            "type": "command",
-            "command": "ROOT=\"$(git rev-parse --show-toplevel)\" && \"$ROOT/.claude/hooks/ci_watch.sh\"",
-            "timeout": 1800,
-            "async": true,
-            "if": "Bash(git push*)",
-            "statusMessage": "Watching CI run..."
           }
         ]
       },
@@ -101,7 +93,6 @@
             "command": "ROOT=\"$(git rev-parse --show-toplevel)\" && \"$ROOT/.claude/hooks/test_coverage_gate.sh\"",
             "timeout": 15
           },
-
           {
             "type": "command",
             "command": "ROOT=\"$(git rev-parse --show-toplevel)\" && \"$ROOT/.claude/hooks/xcode_build_smoke.sh\"",

@@ -26,17 +26,22 @@ for the pushed commit:
 
 1. Implement and locally validate the change.
 2. Commit a focused diff and push it.
-3. Run `scripts/post_implementation_audit.sh --wait` for the pushed SHA.
-4. Repair every failing check or security finding, then repeat from step 1.
-5. Report the checked commit, validation evidence, and any external state that
-   is still genuinely pending. Do not call the work complete while an Action
-   or scan is pending.
+3. Enable automatic merge when authorized and continue independent work.
+   Do not poll CI or run `scripts/post_implementation_audit.sh --wait` by default.
+4. When a failure notification arrives, inspect that run or security finding,
+   repair it, and repeat from step 1.
+5. Report the checked commit, local validation evidence, and pending external
+   state. Verify the completion contract when final delivery is reported;
+   do not call the work complete while an Action or scan is pending.
 
 ## Automation
 
-`PostToolUse` invokes `.claude/hooks/ci_watch.sh` after `git push`. The hook
-runs the same audit and returns a compact result to the agent. The hook is a
-safety net, not a substitute for an agent verifying its own final state.
+The `CI failure diagnose` workflow handles failed CI and Release Desktop runs.
+It posts a diagnostic comment on the associated PR, or opens an issue for a
+master failure. Successful runs do not notify the agent. The push hook does
+not monitor CI; required checks and automatic merge handle delivery while the
+agent continues independent work. A failure notification triggers diagnosis
+and a focused fix.
 
 ## Scope boundaries
 
