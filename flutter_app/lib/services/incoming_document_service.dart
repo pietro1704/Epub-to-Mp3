@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/services.dart';
+import 'package:flutter/foundation.dart';
 
 /// A document copied by the Android host into app-private storage.
 class IncomingDocument {
@@ -46,6 +47,9 @@ class IncomingDocumentService {
   }) : _pendingLoader = pendingLoader ?? _loadPendingFromPlatform,
        _eventStream = eventStream ?? _platformEvents,
        _acknowledge = acknowledgeCallback ?? _acknowledgeOnPlatform;
+
+  static bool get _platformBridgeAvailable =>
+      !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
 
   static const _channel = MethodChannel('epub_to_mp3/incoming_documents');
   static const _events = EventChannel('epub_to_mp3/incoming_documents/events');
@@ -101,6 +105,7 @@ class IncomingDocumentService {
   }
 
   static Future<List<IncomingDocument>> _loadPendingFromPlatform() async {
+    if (!_platformBridgeAvailable) return const <IncomingDocument>[];
     final raw = await _channel.invokeMethod<List<dynamic>>(
       'getPendingDocuments',
     );
@@ -111,12 +116,19 @@ class IncomingDocumentService {
         .toList(growable: false);
   }
 
-  static Stream<IncomingDocument> get _platformEvents => _events
-      .receiveBroadcastStream()
-      .where((value) => value is Map<dynamic, dynamic>)
-      .map((value) => IncomingDocument.fromMap(value as Map<dynamic, dynamic>));
+  static Stream<IncomingDocument> get _platformEvents =>
+      _platformBridgeAvailable
+      ? _events
+            .receiveBroadcastStream()
+            .where((value) => value is Map<dynamic, dynamic>)
+            .map(
+              (value) =>
+                  IncomingDocument.fromMap(value as Map<dynamic, dynamic>),
+            )
+      : const Stream<IncomingDocument>.empty();
 
   static Future<void> _acknowledgeOnPlatform(IncomingDocument document) {
+    if (!_platformBridgeAvailable) return Future<void>.value();
     return _channel.invokeMethod<void>('acknowledgeDocument', {
       'path': document.path,
       'displayName': document.displayName,
