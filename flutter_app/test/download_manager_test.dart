@@ -167,6 +167,43 @@ void main() {
     },
   );
 
+  test(
+    'empty response preserves previous audio and emits no completion',
+    () async {
+      final audio = await existingAudio();
+      final manager = managerWith(
+        _DownloadDio((path, _) async {
+          await File(path).writeAsBytes([]);
+          return Response<dynamic>(
+            requestOptions: RequestOptions(path: '/audio'),
+            statusCode: 200,
+          );
+        }),
+      );
+      addTearDown(manager.dispose);
+      final events = <DownloadEvent>[];
+      final listener = manager.events.listen(events.add);
+      Object? error;
+      try {
+        await manager.download(
+          jobId: 'book',
+          url: 'https://example.test/audio',
+          filename: 'chapter.mp3',
+        );
+      } catch (caught) {
+        error = caught;
+      }
+      await listener.cancel();
+      expect(await audio.readAsString(), 'complete previous audio');
+      expect(error, isA<DioException>());
+      expect(events.where((event) => event.completed), isEmpty);
+      expect(events.where((event) => event.error != null), hasLength(1));
+      expect(await audio.parent.list().map((entry) => entry.path).toList(), [
+        audio.path,
+      ]);
+    },
+  );
+
   group('DownloadEvent', () {
     test('completed event has no error', () {
       const ev = DownloadEvent(path: '/a.mp3', progress: 1.0, completed: true);

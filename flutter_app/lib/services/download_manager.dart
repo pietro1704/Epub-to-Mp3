@@ -45,7 +45,7 @@ class DownloadManager {
     _tokens[path] = token;
     try {
       if (_events.isClosed) throw StateError('Download manager is disposed');
-      await _dio.download(
+      final response = await _dio.download(
         url,
         stagedFile.path,
         cancelToken: token,
@@ -55,6 +55,14 @@ class DownloadManager {
           }
         },
       );
+      if (await stagedFile.length() == 0) {
+        throw DioException(
+          requestOptions: response.requestOptions,
+          response: response,
+          type: DioExceptionType.badResponse,
+          message: 'Downloaded file is empty',
+        );
+      }
       await stagedFile.rename(path);
       _emit(DownloadEvent(path: path, progress: 1.0, completed: true));
       // Completed downloads are protected listening content. Rebuildable
