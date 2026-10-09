@@ -3,8 +3,10 @@ import Darwin
 
 // Explicit low-resource opt-in; never boot while compiling on this host.
 let environment = ProcessInfo.processInfo.environment
+guard let operationSeconds = Double(environment["IOS_SIMULATOR_OPERATION_TIMEOUT"] ?? "300"),
+      operationSeconds >= 30, operationSeconds <= 1200 else { exit(2) }
 guard let bootGrace = Double(environment["IOS_SIMULATOR_BOOT_GRACE_SECONDS"] ?? "0"),
-      bootGrace >= 0, bootGrace <= 180 else { exit(2) }
+      bootGrace >= 0, bootGrace <= operationSeconds else { exit(2) }
 let graceDeadline = Date().addingTimeInterval(bootGrace)
 guard environment["IOS_ALLOW_LOW_RESOURCE_SIMULATOR"] == "1",
       let identifier = environment["IOS_SIMULATOR_UDID"], UUID(uuidString: identifier) != nil,
@@ -24,7 +26,7 @@ func run(_ arguments: [String], capture: Bool = false) throws -> Data {
     let pipe = Pipe()
     if capture { process.standardOutput = pipe }
     try process.run()
-    let operationDeadline = Date().addingTimeInterval(300)
+    let operationDeadline = Date().addingTimeInterval(operationSeconds)
     let data = capture ? pipe.fileHandleForReading.readDataToEndOfFile() : Data()
     if mode == "test" && !capture {
         while process.isRunning {
@@ -61,10 +63,15 @@ let root = environment["MISE_PROJECT_ROOT"] ?? FileManager.default.currentDirect
 let report = URL(fileURLWithPath: root).appendingPathComponent(".reports/simulator-smoke-\(UUID().uuidString)")
 try FileManager.default.createDirectory(at: report, withIntermediateDirectories: true)
 print("Evidence: \(report.path)")
-let filters = ["-only-testing:EpubToMp3Tests/BundledConverterFFISmokeTests",
-               "-only-testing:EpubToMp3UITests/LibrarySearchUITests/testSearchBarFiltersAndClears"]
-var arguments = ["xcodebuild", "-quiet", "-project", root + "/ios/EpubToMp3/EpubToMp3.xcodeproj",
-                 "-scheme", "EpubToMp3", "-configuration", "Debug", "-jobs", "1",
+let selections = environment["IOS_TESTS"]?.split(separator: ",").map(String.init)
+    ?? ["EpubToMp3Tests/BundledConverterFFISmokeTests",
+        "EpubToMp3UITests/LibrarySearchUITests/testSearchBarFiltersAndClears"]
+guard !selections.isEmpty, selections.allSatisfy({ !$0.isEmpty && !$0.hasPrefix("-") }) else { exit(2) }
+let filters = selections.map { "-only-testing:\($0)" }
+let project = environment["IOS_SIMULATOR_PROJECT_PATH"] ?? root + "/ios/EpubToMp3/EpubToMp3.xcodeproj"
+let scheme = environment["IOS_SIMULATOR_SCHEME"] ?? "EpubToMp3"
+var arguments = ["xcodebuild", "-quiet", "-project", project,
+                 "-scheme", scheme, "-configuration", "Debug", "-jobs", "1",
                  "-parallel-testing-enabled", "NO", "-derivedDataPath", root + "/ios/EpubToMp3/.build",
                  "-resultBundlePath", report.appendingPathComponent("tests.xcresult").path] + filters
 if mode == "build" {
@@ -73,6 +80,14 @@ if mode == "build" {
     // No build during boot/launch, and no implicit second simulator clone.
     if booted.isEmpty { _ = try run(["simctl", "boot", identifier]) }
     _ = try run(["simctl", "bootstatus", identifier, "-b"])
+    if let app = environment["IOS_SIMULATOR_APP_PATH"] {
+        _ = try run(["simctl", "install", identifier, app])
+    }
+    if let run = environment["IOS_SIMULATOR_XCTESTRUN_PATH"] {
+        arguments = ["xcodebuild", "-quiet", "-xctestrun", run, "-jobs", "1",
+                     "-parallel-testing-enabled", "NO", "-resultBundlePath",
+                     report.appendingPathComponent("tests.xcresult").path] + filters
+    }
     arguments += ["-destination", "platform=iOS Simulator,id=\(identifier)",
                   "-maximum-concurrent-test-simulator-destinations", "1", "test-without-building"]
 }

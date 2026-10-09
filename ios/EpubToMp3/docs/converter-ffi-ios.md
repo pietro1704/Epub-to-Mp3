@@ -76,5 +76,8 @@ then reuse that build with the installed Xcode 16.4 test controller via a per-co
 `DEVELOPER_DIR=/Applications/Xcode-16.4.0.app/Contents/Developer`. Do not change global
 Xcode selection or open Xcode GUI. Two native smoke tests passed using this route.
 The native smoke task requires explicit low-resource opt-in and a Simulator UUID;
-startup grace defaults to zero, caps at 180 s, and does not disable thermal/memory
-or operation-deadline stops. The global quality/performance goal is not complete.
+startup grace defaults to zero and cannot exceed the explicitly selected operation
+budget (`IOS_SIMULATOR_OPERATION_TIMEOUT`, 300 s default, 1200 s maximum). It does
+not disable thermal/memory or deadline stops. `IOS_TESTS` selects focused cases;
+an isolated `IOS_SIMULATOR_XCTESTRUN_PATH` can carry the scoped native benchmark
+specification. The global quality/performance goal is not complete.

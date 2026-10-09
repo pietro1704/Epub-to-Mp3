@@ -41,7 +41,7 @@ this board and `handoff.md` before crossing ownership or changing shared contrac
   This proves decoder correctness, not the cause/resolution of LOTR benchmark's
   missing chapter callback. Rust/Flutter wire contract unchanged, Apple clients share fix.
 
-- [ ] **APP-20261009-16 — Scoped Simulator conversion evidence.** Incomplete; checkpoint saved.
+- [x] **APP-20261009-16 — Scoped Simulator conversion evidence.** Verified bounded conversion run.
   Continue the full goal independently of the unresolved reader gesture test.
   Same SHA-verified originals, LOTR 8–9 and Christie 6–7 inclusive zero-based,
   new UUID jobs, temporary input/output namespaces, no audio reuse or autoplay.
@@ -59,6 +59,15 @@ this board and `handoff.md` before crossing ownership or changing shared contrac
   Native draft report defaults failed until completion, counters are not live;
   zero report counters did not mean synthesis had never begun. Preserve partial
   logs/spec/report; do not rerun unchanged or use this as a speed comparison.
+  Optimized Rust run `DC6480EE...`, xcresult `28B96974...`: one benchmark passed,
+  zero failures/skips, exact four playable chapters, fresh jobs and no audio reuse.
+  Christie 6–7: 5778 chars, 349.248 s audio, 6.0183 s conversion; first chapter
+  delivery 2.8305 s. LOTR 8–9: 112357 chars, 7007.16 s audio, 199.4277 s conversion;
+  first chapter delivery 121.5554 s. All delivery rejection arrays empty; one LOTR
+  retry, no throttles. Native test interval 213.031 s, no rebuild/synthesis skip.
+  This verifies functional scope and yields a Simulator sample, not a controlled
+  causal speedup or matched phone comparison. Provider/voice snapshot fields remain
+  unmeasured; first delivery is not first audible sound, memory samples are not peaks.
   Revised bounded observation window (explicit opt-in up to operation budget;
   memory/thermal/deadline safeguards retained), Christie first. Run `2C4CA9AC...`
   / xcresult `6BFC9F2C...` executed one benchmark, failed on LOTR's first-delivery
