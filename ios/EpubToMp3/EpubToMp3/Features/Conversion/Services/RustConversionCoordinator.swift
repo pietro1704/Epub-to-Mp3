@@ -110,7 +110,8 @@ final class RustConversionCoordinator {
                 bookAuthor: bookAuthor,
                 coverUrl: nil,
                 coverMimeType: nil,
-                engine: "edge",
+                // Chapter events do not carry resolved provider configuration.
+                engine: nil,
                 voice: nil,
                 language: nil,
                 progressPercent: progressPercent,

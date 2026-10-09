@@ -829,3 +829,22 @@ across-relaunch result, iPhone evidence, clipping/pagination verification, or a
 before/after reader comparison. Cold parsing remains seconds for LOTR and needs
 separate profiling if optimized. Physical playback failures and bounded device
 conversion/performance verification are still open.
+
+## Provider-neutral chapter snapshots — 2026-10-09
+
+Scope: remove the hard-coded Edge engine from the shared Apple chapter-completion
+snapshot. The Rust chapter event carries no resolved engine, voice or language;
+represent those as unknown rather than claiming a provider. No ABI, provider
+selection, playback queue, artifact, reader geometry or Flutter changes.
+
+`RustConversionCoordinatorTests/testValidatedChapterEventMapsToPlayableLocalSnapshot`
+decodes the actual event contract and invokes the production snapshot mapper.
+Executed through `mise run apple:chapter-callback:test` with that single test.
+Red evidence: `Test-EpubToMp3Mac-2026.10.09_06-59-48--0300.xcresult`, exactly
+one failure (`XCTAssertNil failed: "edge"`). Green evidence:
+`Test-EpubToMp3Mac-2026.10.09_07-00-49--0300.xcresult`, one passed, zero
+failed/skipped. Both bundles are under `ios/EpubToMp3/.build/Logs/Test/`.
+Simulator was stopped before serialized Mac checks; no synthesis or source-data
+mutation. Reviewed the owned diff and whitespace. This proves shared Swift
+mapping behavior, not iOS UI or Flutter parity. Resolved provider metadata through
+the Rust ABI and the installed-model frontend selector remain pending.

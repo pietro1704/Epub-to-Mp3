@@ -159,6 +159,10 @@ this board and `handoff.md` before crossing ownership or changing shared contrac
   Christie 21.643 s, LOTR 252.736 s, one LOTR retry, no audio reuse. Logs show
   max_in_flight=1. Total synthesis worsened; performance acceptance stays open.
   Reader navigation, audible playback and 200 ms relaunch acceptance remain open.
+  Verified shared Swift configuration slice: chapter completion snapshots no
+  longer invent an Edge provider when the Rust event supplies no engine. Native
+  callback-to-snapshot regression failed on "edge", then passed 1/0/0 on macOS.
+  No iOS UI, Flutter, model-selector or performance completion claim.
 
 - [x] **APP-20261009-22 — Source-bound active chapter storage.** Verified storage-only slice.
   Persist complete active chapter data and lightweight book/TOC metadata in the
