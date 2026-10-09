@@ -2,8 +2,54 @@ import 'dart:async';
 
 import 'package:flutter_app/services/incoming_document_service.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+  for (final platform in [
+    TargetPlatform.linux,
+    TargetPlatform.windows,
+    TargetPlatform.android,
+  ]) {
+    test(
+      'default bridge matches channel availability on $platform',
+      () async {
+        debugDefaultTargetPlatformOverride = platform;
+        final calls = <String>[];
+        const method = MethodChannel('epub_to_mp3/incoming_documents');
+        const events = MethodChannel('epub_to_mp3/incoming_documents/events');
+        final messenger =
+            TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+        messenger.setMockMethodCallHandler(method, (call) async {
+          calls.add(call.method);
+          return <dynamic>[];
+        });
+        messenger.setMockMethodCallHandler(events, (call) async {
+          calls.add(call.method);
+          return null;
+        });
+        final service = IncomingDocumentService(importCallback: (_) async {});
+        try {
+          await service.start();
+          await service.idle;
+          await service.dispose();
+          expect(
+            calls,
+            platform == TargetPlatform.android
+                ? ['listen', 'getPendingDocuments', 'cancel']
+                : isEmpty,
+          );
+        } finally {
+          await service.dispose();
+          messenger.setMockMethodCallHandler(method, null);
+          messenger.setMockMethodCallHandler(events, null);
+          debugDefaultTargetPlatformOverride = null;
+        }
+      },
+    );
+  }
+
   test(
     'imports pending and warm-start documents with their display names',
     () async {
