@@ -9,6 +9,19 @@ this board and `handoff.md` before crossing ownership or changing shared contrac
 
 ## Active requests — 2026-10-08
 
+- [x] **APP-20261009-32 — Reader picker import remains responsive and rejects stale selection.** Verified UIKit caller.
+  Original import/IO goals: replace the remaining synchronous UIKit reader
+  reimport caller with LibraryStore.importBookAsync. Preserve durable import
+  behavior and source bytes. Capture request/book/session identity before await;
+  stale success may remain in the library but cannot reopen the old reader or
+  replace a newer selection. Native picker-delegate heartbeat and stale-result
+  regressions, isolated storage/defaults; no layout or conversion changes.
+  Native red: both cases failed on blocked MainActor copy heartbeat (`76C409E3...`).
+  Final iOS 16: two passed, zero failures/skips (`EF153645...`). Actual worker copy,
+  source bytes, fresh library index and newer selection were verified. Guards also
+  discard obsolete errors; that branch has review but no dedicated runtime case.
+  Shared import implementation/Mac/Flutter unchanged; no broad parity or 200 ms claim.
+
 - [x] **APP-20261009-31 — Measure concurrent projection pressure on catalog delivery.** Verified probe.
   Extend the same literal-book native probe with high versus utility projection
   tasks racing high-priority catalog read/decode. Three bounded samples per book,

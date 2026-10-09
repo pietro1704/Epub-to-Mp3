@@ -58,6 +58,29 @@ uncontrolled comparison or extrapolate whole-book duration.
 
 ## Progress
 
+### UIKit reader reimport caller — asynchronous durable import
+
+APP-20261009-32 fixes the remaining reader picker callback that waited on the
+library's synchronous IO queue from MainActor. It now awaits importBookAsync,
+including durable index flush, before updating the reader. Request UUID, original
+book and session selection fence success/error; update(book:) invalidates pending
+requests, including A→B→A. A stale import may stay in the library but cannot reopen
+its reader, replace a newer selection or display an obsolete alert.
+
+Native picker-delegate tests use real file copying in isolated storage. The copy
+requests a MainActor heartbeat while blocked; the old synchronous caller fails its
+deadline. Both cases failed before correction
+(`simulator-smoke-76C409E3-B354-4FA7-B4F3-940268E08215`). Final iOS 16: two passed,
+zero failures/skips (`simulator-smoke-EF153645-193B-46CE-8ACE-1D0D90C001A1`). Source
+bytes and a fresh LibraryStore after flush are checked; one case changes the book
+during preparation and confirms the newer selection remains.
+
+Focused guarded Simulator build/test only; no TTS, original books/models/downloads
+or shared import implementation changed. Injected session defaults affect only the
+picker selection, not all reader settings/progress. Layout, Mac/Flutter paths and
+the 200 ms gate remain outside this slice. Stale-error guards were reviewed but
+do not have a dedicated runtime regression in this two-case verification.
+
 ### Reader preparation off the UI executor
 
 APP-20261009-27 removes synchronous EPUB archive extraction from the UIKit loading

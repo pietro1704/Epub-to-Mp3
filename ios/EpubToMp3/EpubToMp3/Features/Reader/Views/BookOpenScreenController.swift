@@ -51,6 +51,8 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
     private var fulltext: EbookFulltext?
     private var registeredFontURLs: [URL] = []
     private var loadTask: Task<Void, Never>?
+    private let sessionDefaults: UserDefaults
+    private var reimportRequestID = UUID()
     private var selectedChapter = 0
     private var chromeHidden = false
     private var paginatedTextHeightConstraint: NSLayoutConstraint!
@@ -198,13 +200,15 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
     private static let reimportTypes: [UTType] = SupportedImportTypes.all
 
     init(book: BookEntity, library: LibraryStore, settings: AppSettings, bookmarkStore: BookmarkStore,
-         player: AudioPlayer, preparedRenderer: PreparedChapterRenderer? = nil) {
+         player: AudioPlayer, preparedRenderer: PreparedChapterRenderer? = nil,
+         sessionDefaults: UserDefaults = .standard) {
         self.book = book
         self.library = library
         self.settings = settings
         self.bookmarkStore = bookmarkStore
         self.player = player
         self.preparedRenderer = preparedRenderer ?? .shared
+        self.sessionDefaults = sessionDefaults
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -219,6 +223,7 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
     }
 
     func update(book: BookEntity) {
+        reimportRequestID = UUID()
         self.book = book
         hasRestoredInitialPosition = false
         loadBook()
@@ -2217,15 +2222,28 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
 
     func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
         guard let url = urls.first else { return }
-        do {
-            book = try library.importBook(from: url)
-            ReaderSessionState.setCurrentlyReading(bookID: book.id)
-            hasRestoredInitialPosition = false
-            loadBook()
-        } catch {
-            let alert = UIAlertController(title: L10n.string("bookOpen.error"), message: error.localizedDescription, preferredStyle: .alert)
-            alert.addAction(UIAlertAction(title: L10n.string("common.ok"), style: .default))
-            present(alert, animated: true)
+        let request = UUID()
+        reimportRequestID = request
+        let originalBookID = book.id
+        let originalSelection = sessionDefaults.string(forKey: ReaderSessionState.currentlyReadingBookIDKey)
+        Task { [weak self] in
+            guard let self else { return }
+            defer { if reimportRequestID == request { reimportRequestID = UUID() } }
+            do {
+                let imported = try await library.importBookAsync(from: url)
+                guard !Task.isCancelled, reimportRequestID == request, book.id == originalBookID,
+                      sessionDefaults.string(forKey: ReaderSessionState.currentlyReadingBookIDKey) == originalSelection else { return }
+                book = imported
+                ReaderSessionState.setCurrentlyReading(bookID: imported.id, defaults: sessionDefaults)
+                hasRestoredInitialPosition = false
+                loadBook()
+            } catch {
+                guard !Task.isCancelled, reimportRequestID == request, book.id == originalBookID,
+                      sessionDefaults.string(forKey: ReaderSessionState.currentlyReadingBookIDKey) == originalSelection else { return }
+                let alert = UIAlertController(title: L10n.string("bookOpen.error"), message: error.localizedDescription, preferredStyle: .alert)
+                alert.addAction(UIAlertAction(title: L10n.string("common.ok"), style: .default))
+                present(alert, animated: true)
+            }
         }
     }
 }
