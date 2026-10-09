@@ -106,6 +106,20 @@ impl ConversionWorker {
             &request.job_id,
             metadata.as_object().cloned().unwrap_or_default(),
         ))?;
+        self.run_prepared(request)
+    }
+
+    /// Retry a job whose previous worker has stopped, preserving its output ID
+    /// and chapter paths across attempts.
+    pub fn resume(&self, request: ConversionRequest) -> Result<OutputManifest, WorkerError> {
+        match self.jobs.restart(&request.job_id) {
+            Ok(_) => self.run_prepared(request),
+            Err(JobError::NotFound(_)) => self.run(request),
+            Err(error) => Err(error.into()),
+        }
+    }
+
+    fn run_prepared(&self, request: ConversionRequest) -> Result<OutputManifest, WorkerError> {
         self.jobs.transition(&request.job_id, JobState::Running)?;
         let result = self.run_inner(&request);
         match &result {
