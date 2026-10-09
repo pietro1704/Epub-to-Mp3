@@ -9,6 +9,25 @@ this board and `handoff.md` before crossing ownership or changing shared contrac
 
 ## Active requests — 2026-10-08
 
+- [ ] **APP-20261009-16 — Scoped Simulator conversion evidence.** Incomplete; checkpoint saved.
+  Continue the full goal independently of the unresolved reader gesture test.
+  Same SHA-verified originals, LOTR 8–9 and Christie 6–7 inclusive zero-based,
+  new UUID jobs, temporary input/output namespaces, no audio reuse or autoplay.
+  Prepared native benchmark specification/xctestrun in
+  `simulator-conversion-5D99D6F4-F11B-464E-B09C-6C617216E633`.
+  Reuses existing build and Xcode 16.4 CLI controller; operation limit 900 s,
+  thermal/memory safeguards stay active. Simulator is not a matched phone baseline.
+  Completion requires executed native test, exact playable outputs and report;
+  preparation/start alone is not success.
+  Execution `simulator-smoke-97F282D7-844C-4669-9E3E-8A93B5913A0E` reached LOTR
+  TTS chunk 19/~21, success responses; chunks changed 4096→3072→2304→2048 and
+  concurrency 2→1, showing adaptation of pending work. No final MP3/chapter verified.
+  Load-only safeguard stopped at 45.07 after startup grace; memoryPressure=1,
+  thermal=fair. No native XCTest pass or full synthesis duration established.
+  Native draft report defaults failed until completion, counters are not live;
+  zero report counters did not mean synthesis had never begun. Preserve partial
+  logs/spec/report; do not rerun unchanged or use this as a speed comparison.
+
 - [x] **APP-20261008-14 — Bundle the correct Rust library for Apple Simulator.** Verified packaging/smoke scope.
   User authorized building the Apple Simulator Rust artifact on this Mac for this
   slice only. Keep Rust embedded in the app process, not a sidecar/service.
