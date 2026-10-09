@@ -615,7 +615,7 @@ async fn output(
     AxumPath((id, filename)): AxumPath<(String, String)>,
     State(state): State<AppState>,
 ) -> Response {
-    if !safe_leaf(&filename) {
+    if !safe_leaf(&id) || !safe_leaf(&filename) {
         return StatusCode::BAD_REQUEST.into_response();
     }
     match tokio::fs::read(state.config.paths.output_dir.join(&id).join(&filename)).await {
@@ -630,6 +630,9 @@ async fn chapters(
     AxumPath((id, index)): AxumPath<(String, u32)>,
     State(state): State<AppState>,
 ) -> Response {
+    if !safe_leaf(&id) {
+        return StatusCode::BAD_REQUEST.into_response();
+    }
     let path = state
         .config
         .paths
@@ -888,4 +891,102 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     )
     .await?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn chapter_manifest_rejects_job_path_traversal() {
+        let root = TestRoot::new();
+        let response = chapters(AxumPath(("../private".into(), 1)), State(root.state())).await;
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn encoded_http_job_path_cannot_escape_outputs() {
+        let root = TestRoot::new();
+        let state = root.state();
+        std::fs::create_dir_all(&state.config.paths.output_dir).unwrap();
+        let outside = root.0.join("private");
+        std::fs::create_dir_all(&outside).unwrap();
+        std::fs::write(outside.join("example.txt"), b"outside fixture").unwrap();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            axum::serve(listener, app(state.config)).await.unwrap();
+        });
+        let response = tokio::task::spawn_blocking(move || {
+            use std::io::{Read, Write};
+            let mut client = std::net::TcpStream::connect(address).unwrap();
+            client.set_read_timeout(Some(std::time::Duration::from_secs(5))).unwrap();
+            client.write_all(b"GET /api/outputs/..%2Fprivate/example.txt HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n").unwrap();
+            let mut bytes = Vec::new();
+            client.read_to_end(&mut bytes).unwrap();
+            String::from_utf8(bytes).unwrap()
+        }).await.unwrap();
+        server.abort();
+        assert!(response.starts_with("HTTP/1.1 400"), "{response}");
+        assert!(!response.contains("outside fixture"));
+    }
+
+    #[tokio::test]
+    async fn normal_output_download_keeps_its_contents() {
+        let root = TestRoot::new();
+        let state = root.state();
+        let job = state.config.paths.output_dir.join("valid-job");
+        std::fs::create_dir_all(&job).unwrap();
+        std::fs::write(job.join("chapter.mp3"), b"valid fixture").unwrap();
+        let response = output(
+            AxumPath(("valid-job".into(), "chapter.mp3".into())),
+            State(state),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::OK);
+        let bytes = axum::body::to_bytes(response.into_body(), 100)
+            .await
+            .unwrap();
+        assert_eq!(bytes.as_ref(), b"valid fixture");
+    }
+
+    struct TestRoot(PathBuf);
+    impl TestRoot {
+        fn new() -> Self {
+            let path = std::env::temp_dir().join(format!("converter-server-contract-{}", uuid()));
+            std::fs::create_dir_all(&path).unwrap();
+            Self(path)
+        }
+        fn state(&self) -> AppState {
+            let config = AppConfig::from_paths(converter_core::paths::resolve_paths_from(
+                HashMap::<String, String>::new(),
+                self.0.clone(),
+            ));
+            AppState {
+                config,
+                jobs: Arc::new(RwLock::new(HashMap::new())),
+            }
+        }
+    }
+    impl Drop for TestRoot {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    #[tokio::test]
+    async fn output_rejects_job_ids_that_escape_the_output_root() {
+        let root = TestRoot::new();
+        let state = root.state();
+        std::fs::create_dir_all(&state.config.paths.output_dir).unwrap();
+        let outside = root.0.join("private");
+        std::fs::create_dir_all(&outside).unwrap();
+        std::fs::write(outside.join("example.txt"), b"outside fixture").unwrap();
+        let response = output(
+            AxumPath(("../private".into(), "example.txt".into())),
+            State(state),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    }
 }
