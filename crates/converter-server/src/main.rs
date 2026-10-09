@@ -50,6 +50,7 @@ struct Job {
     snapshot: JobSnapshot,
     events: broadcast::Sender<SseMessage>,
     cancellation: converter_core::piper::CancellationToken,
+    worker_active: bool,
 }
 #[derive(Clone, Debug)]
 enum SseMessage {
@@ -243,6 +244,7 @@ fn load_snapshots(config: &AppConfig) -> HashMap<String, Job> {
                 snapshot,
                 events,
                 cancellation: converter_core::piper::CancellationToken::default(),
+                worker_active: false,
             },
         );
     }
@@ -430,6 +432,7 @@ async fn create_job(State(state): State<AppState>, Json(form): Json<CreateJob>) 
             snapshot,
             events: sender.clone(),
             cancellation: converter_core::piper::CancellationToken::default(),
+            worker_active: true,
         },
     );
     if let Some(job) = state.jobs.read().await.get(&id) {
@@ -455,8 +458,25 @@ async fn create_job(State(state): State<AppState>, Json(form): Json<CreateJob>) 
         chapter_indices: None,
         no_parallel: form.no_parallel.unwrap_or(false),
     };
-    let jobs = state.jobs.clone();
     let response_id = id.clone();
+    start_worker(state, worker, request, sender, cancellation, false);
+    (
+        StatusCode::OK,
+        Json(serde_json::json!({ "jobId": response_id })),
+    )
+        .into_response()
+}
+
+fn start_worker(
+    state: AppState,
+    worker: ConversionWorker,
+    request: ConversionRequest,
+    sender: broadcast::Sender<SseMessage>,
+    cancellation: converter_core::piper::CancellationToken,
+    resuming: bool,
+) {
+    let id = request.job_id.clone();
+    let jobs = state.jobs.clone();
     tokio::task::spawn_blocking(move || {
         let progress_jobs = jobs.clone();
         let progress_sender = sender.clone();
@@ -486,9 +506,15 @@ async fn create_job(State(state): State<AppState>, Json(form): Json<CreateJob>) 
                 }
             }
         }));
-        let result = worker.with_cancellation(cancellation).run(request);
+        let worker = worker.with_cancellation(cancellation);
+        let result = if resuming {
+            worker.resume(request)
+        } else {
+            worker.run(request)
+        };
         let mut guard = jobs.blocking_write();
         if let Some(job) = guard.get_mut(&id) {
+            job.worker_active = false;
             match result {
                 Ok(manifest) => {
                     apply_manifest(&mut job.snapshot, &manifest, &state.config.paths.output_dir)
@@ -508,11 +534,6 @@ async fn create_job(State(state): State<AppState>, Json(form): Json<CreateJob>) 
             let _ = sender.send(SseMessage::Snapshot(job.snapshot.clone()));
         }
     });
-    (
-        StatusCode::OK,
-        Json(serde_json::json!({ "jobId": response_id })),
-    )
-        .into_response()
 }
 
 async fn status(AxumPath(id): AxumPath<String>, State(state): State<AppState>) -> Response {
@@ -581,19 +602,72 @@ async fn cancel(AxumPath(id): AxumPath<String>, State(state): State<AppState>) -
     }
 }
 async fn resume_job(AxumPath(id): AxumPath<String>, State(state): State<AppState>) -> Response {
-    match state.jobs.write().await.get_mut(&id) {
-        Some(job) if job.snapshot.state == "finished" || job.snapshot.state == "completed" => (
-            StatusCode::OK,
-            Json(serde_json::json!({"status":"finished"})),
-        )
-            .into_response(),
-        Some(job) => {
-            job.snapshot.state = "queued".into();
-            let _ = job.events.send(SseMessage::Snapshot(job.snapshot.clone()));
-            (StatusCode::OK, Json(serde_json::json!({"status":"queued"}))).into_response()
-        }
-        None => StatusCode::NOT_FOUND.into_response(),
+    if !safe_leaf(&id) {
+        return StatusCode::BAD_REQUEST.into_response();
     }
+    let mut jobs = state.jobs.write().await;
+    let Some(job) = jobs.get_mut(&id) else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+    if matches!(
+        job.snapshot.state.as_str(),
+        "queued" | "running" | "finished" | "completed"
+    ) {
+        return (
+            StatusCode::OK,
+            Json(serde_json::json!({"status": job.snapshot.state})),
+        )
+            .into_response();
+    }
+    if job.worker_active || job.snapshot.state == "cancelling" {
+        return StatusCode::CONFLICT.into_response();
+    }
+    let Ok(mut entries) = tokio::fs::read_dir(state.config.paths.job_inputs_dir.join(&id)).await
+    else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+    let mut input = None;
+    while let Ok(Some(entry)) = entries.next_entry().await {
+        if entry.file_type().await.is_ok_and(|kind| kind.is_file()) {
+            input = Some(entry.path());
+            break;
+        }
+    }
+    let Some(input) = input else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+    let worker = match ConversionWorker::new(state.config.clone()) {
+        Ok(worker) => worker,
+        Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    };
+    let mut snapshot = job.snapshot.clone();
+    snapshot.state = "queued".into();
+    snapshot.error = None;
+    if persist_snapshot(&state.config, &snapshot).is_err() {
+        return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+    }
+    let request = ConversionRequest {
+        input,
+        job_id: id,
+        engine: snapshot.engine.clone(),
+        voice: snapshot.voice.clone(),
+        language: snapshot.language.clone(),
+        chapter_indices: None,
+        no_parallel: snapshot.no_parallel,
+    };
+    job.snapshot = snapshot;
+    job.cancellation = Default::default();
+    job.worker_active = true;
+    let sender = job.events.clone();
+    let cancellation = job.cancellation.clone();
+    let _ = sender.send(SseMessage::Snapshot(job.snapshot.clone()));
+    drop(jobs);
+    start_worker(state, worker, request, sender, cancellation, true);
+    (
+        StatusCode::OK,
+        Json(serde_json::json!({"status": "queued"})),
+    )
+        .into_response()
 }
 async fn log(AxumPath(id): AxumPath<String>, State(state): State<AppState>) -> Response {
     let Some(job) = state.jobs.read().await.get(&id).cloned() else {
@@ -909,6 +983,158 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn resume_executes_the_worker_with_a_fresh_cancellation_token() {
+        let root = TestRoot::new();
+        let state = root.state();
+        let input_dir = state.config.paths.job_inputs_dir.join("resume-job");
+        std::fs::create_dir_all(&input_dir).unwrap();
+        std::fs::write(input_dir.join("source.epub"), b"invalid epub fixture").unwrap();
+        let previous = ConversionWorker::new(state.config.clone()).unwrap();
+        let previous_result = previous.run(ConversionRequest {
+            input: input_dir.join("source.epub"),
+            job_id: "resume-job".into(),
+            engine: None,
+            voice: None,
+            language: None,
+            chapter_indices: None,
+            no_parallel: false,
+        });
+        assert!(matches!(
+            previous_result,
+            Err(converter_core::worker::WorkerError::Epub(_))
+        ));
+        let mut snapshot = initial_job("resume-job".into(), &CreateJob::default());
+        snapshot.state = "cancelled".into();
+        snapshot.error = Some("Previous attempt cancelled".into());
+        let cancellation = converter_core::piper::CancellationToken::default();
+        cancellation.cancel();
+        let (events, mut receiver) = broadcast::channel(8);
+        state.jobs.write().await.insert(
+            snapshot.job_id.clone(),
+            Job {
+                snapshot,
+                events,
+                cancellation,
+                worker_active: false,
+            },
+        );
+        let response = resume_job(AxumPath("resume-job".into()), State(state.clone())).await;
+        assert_eq!(response.status(), StatusCode::OK);
+        let initial = receiver.recv().await.unwrap();
+        assert!(
+            matches!(initial, SseMessage::Snapshot(ref s) if s.state == "queued" && s.error.is_none())
+        );
+        let terminal = tokio::time::timeout(Duration::from_secs(2), async {
+            loop {
+                if let SseMessage::Snapshot(snapshot) = receiver.recv().await.unwrap() {
+                    if is_terminal(&snapshot.state) {
+                        break snapshot;
+                    }
+                }
+            }
+        })
+        .await
+        .expect("resume must launch the actual conversion worker");
+        assert_eq!(terminal.state, "failed", "invalid EPUB must reach parsing rather than remain queued or reuse the cancelled token");
+        assert!(terminal
+            .error
+            .as_deref()
+            .unwrap()
+            .starts_with("EPUB error:"));
+        assert!(!state.jobs.read().await["resume-job"]
+            .cancellation
+            .is_cancelled());
+        assert_eq!(
+            load_snapshots(&state.config)["resume-job"].snapshot.state,
+            "failed"
+        );
+    }
+
+    #[tokio::test]
+    async fn resume_missing_input_keeps_the_terminal_snapshot() {
+        let root = TestRoot::new();
+        let state = root.state();
+        let mut snapshot = initial_job("missing-input".into(), &CreateJob::default());
+        snapshot.state = "interrupted".into();
+        let (events, mut receiver) = broadcast::channel(8);
+        state.jobs.write().await.insert(
+            snapshot.job_id.clone(),
+            Job {
+                snapshot,
+                events,
+                cancellation: Default::default(),
+                worker_active: false,
+            },
+        );
+        let response = resume_job(AxumPath("missing-input".into()), State(state.clone())).await;
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+        assert_eq!(
+            state.jobs.read().await["missing-input"].snapshot.state,
+            "interrupted"
+        );
+        assert!(matches!(
+            receiver.try_recv(),
+            Err(broadcast::error::TryRecvError::Empty)
+        ));
+    }
+
+    #[tokio::test]
+    async fn resume_waits_for_the_previous_worker_to_stop() {
+        let root = TestRoot::new();
+        let state = root.state();
+        let mut snapshot = initial_job("cancelled-job".into(), &CreateJob::default());
+        snapshot.state = "cancelled".into();
+        let (events, mut receiver) = broadcast::channel(8);
+        state.jobs.write().await.insert(
+            snapshot.job_id.clone(),
+            Job {
+                snapshot,
+                events,
+                cancellation: Default::default(),
+                worker_active: true,
+            },
+        );
+        let response = resume_job(AxumPath("cancelled-job".into()), State(state.clone())).await;
+        assert_eq!(response.status(), StatusCode::CONFLICT);
+        assert_eq!(
+            state.jobs.read().await["cancelled-job"].snapshot.state,
+            "cancelled"
+        );
+        assert!(matches!(
+            receiver.try_recv(),
+            Err(broadcast::error::TryRecvError::Empty)
+        ));
+    }
+
+    #[tokio::test]
+    async fn resume_running_job_does_not_reset_it() {
+        let root = TestRoot::new();
+        let state = root.state();
+        let mut snapshot = initial_job("running-job".into(), &CreateJob::default());
+        snapshot.state = "running".into();
+        let (events, mut receiver) = broadcast::channel(8);
+        state.jobs.write().await.insert(
+            snapshot.job_id.clone(),
+            Job {
+                snapshot,
+                events,
+                cancellation: Default::default(),
+                worker_active: false,
+            },
+        );
+        let response = resume_job(AxumPath("running-job".into()), State(state.clone())).await;
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            state.jobs.read().await["running-job"].snapshot.state,
+            "running"
+        );
+        assert!(matches!(
+            receiver.try_recv(),
+            Err(broadcast::error::TryRecvError::Empty)
+        ));
+    }
 
     #[tokio::test]
     async fn large_archive_download_is_streamed_in_bounded_chunks() {
