@@ -174,27 +174,40 @@ pub fn atomic_write_json<T: Serialize + ?Sized>(
     value: &T,
 ) -> Result<(), CacheError> {
     let path = path.as_ref();
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent)?;
-    }
-    let temp = path.with_extension(format!("tmp-{}", std::process::id()));
+    let parent = path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+    fs::create_dir_all(parent)?;
     let bytes = serde_json::to_vec(value)?;
+    let mut staging = cache_write_tempfile(parent)?;
+    staging.write_all(&bytes)?;
+    if std::env::var("RUST_CACHE_FSYNC")
+        .map(|value| matches!(value.as_str(), "1" | "true" | "TRUE" | "yes"))
+        .unwrap_or(false)
     {
-        let mut file = File::create(&temp)?;
-        file.write_all(&bytes)?;
-        if std::env::var("RUST_CACHE_FSYNC")
-            .map(|value| matches!(value.as_str(), "1" | "true" | "TRUE" | "yes"))
-            .unwrap_or(false)
-        {
-            file.sync_all()?;
-        }
+        staging.as_file().sync_all()?;
     }
-    fs::rename(temp, path)?;
+    staging.persist(path).map_err(|error| error.error)?;
     Ok(())
 }
 
+fn cache_write_tempfile(parent: &Path) -> io::Result<tempfile::NamedTempFile> {
+    tempfile::Builder::new()
+        .prefix(".cache-json-")
+        .tempfile_in(parent)
+}
+
 pub fn read_json<T: for<'de> Deserialize<'de>>(path: impl AsRef<Path>) -> Result<T, CacheError> {
-    Ok(serde_json::from_reader(File::open(path)?)?)
+    read_json_from(File::open(path)?)
+}
+
+fn read_json_from<T: for<'de> Deserialize<'de>>(mut reader: impl Read) -> Result<T, CacheError> {
+    let mut bytes = Vec::new();
+    reader
+        .read_to_end(&mut bytes)
+        .map_err(serde_json::Error::io)?;
+    Ok(serde_json::from_slice(&bytes)?)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -245,6 +258,170 @@ impl DuplicateTracker {
 mod tests {
     use super::*;
     use std::io::Write;
+
+    #[test]
+    fn simultaneous_staging_files_have_distinct_names() {
+        let root = tempfile::tempdir().unwrap();
+        let files: Vec<_> = (0..8)
+            .map(|_| cache_write_tempfile(root.path()).unwrap())
+            .collect();
+        let paths: std::collections::HashSet<_> = files.iter().map(|file| file.path()).collect();
+        assert_eq!(paths.len(), files.len());
+        drop(files);
+        assert_eq!(fs::read_dir(root.path()).unwrap().count(), 0);
+    }
+
+    #[test]
+    fn failed_json_publication_removes_staging_files() {
+        let root = tempfile::tempdir().unwrap();
+        let target = root.path().join("blocked.json");
+        fs::create_dir(&target).unwrap();
+        let previous = target.join("previous.json");
+        fs::write(&previous, b"previous contents").unwrap();
+
+        assert!(matches!(
+            atomic_write_json(&target, &serde_json::json!({"new": true})),
+            Err(CacheError::Io(_))
+        ));
+        assert_eq!(fs::read(previous).unwrap(), b"previous contents");
+        assert_eq!(fs::read_dir(root.path()).unwrap().count(), 1);
+    }
+
+    #[test]
+    fn serialization_failure_preserves_existing_json() {
+        struct InvalidValue;
+        impl Serialize for InvalidValue {
+            fn serialize<S: serde::Serializer>(&self, _: S) -> Result<S::Ok, S::Error> {
+                Err(serde::ser::Error::custom("simulated serialization failure"))
+            }
+        }
+        let root = tempfile::tempdir().unwrap();
+        let target = root.path().join("previous.json");
+        let previous = serde_json::json!({"previous": true});
+        atomic_write_json(&target, &previous).unwrap();
+        assert!(matches!(
+            atomic_write_json(&target, &InvalidValue),
+            Err(CacheError::Json(_))
+        ));
+        assert_eq!(read_json::<serde_json::Value>(&target).unwrap(), previous);
+        assert_eq!(fs::read_dir(root.path()).unwrap().count(), 1);
+    }
+
+    #[test]
+    fn concurrent_json_writes_publish_one_complete_value() {
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join("shared.json");
+        let values: Vec<_> = (0..8)
+            .map(|index| {
+                serde_json::json!({
+                    "writer": index,
+                    "text": char::from(b'a' + index as u8).to_string().repeat(256 * 1024),
+                })
+            })
+            .collect();
+        let barrier = std::sync::Barrier::new(values.len());
+        std::thread::scope(|scope| {
+            let handles: Vec<_> = values
+                .iter()
+                .map(|value| {
+                    let path = &path;
+                    let barrier = &barrier;
+                    scope.spawn(move || {
+                        barrier.wait();
+                        atomic_write_json(path, value)
+                    })
+                })
+                .collect();
+            for handle in handles {
+                handle.join().unwrap().unwrap();
+            }
+        });
+        let actual: serde_json::Value = read_json(&path).unwrap();
+        assert!(values.contains(&actual));
+        assert_eq!(fs::read_dir(root.path()).unwrap().count(), 1);
+    }
+
+    fn large_chapter_text() -> String {
+        "Audio chapter text. Unicode: é 🎵.\n".repeat(12_000)
+    }
+
+    #[test]
+    fn large_json_reads_batch_the_underlying_io() {
+        struct CountingReader<'a> {
+            input: io::Cursor<Vec<u8>>,
+            calls: &'a std::cell::Cell<usize>,
+        }
+        impl Read for CountingReader<'_> {
+            fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
+                self.calls.set(self.calls.get() + 1);
+                self.input.read(buffer)
+            }
+        }
+        let expected = large_chapter_text();
+        let calls = std::cell::Cell::new(0);
+        let reader = CountingReader {
+            input: io::Cursor::new(serde_json::to_vec(&expected).unwrap()),
+            calls: &calls,
+        };
+        let actual: String = read_json_from(reader).unwrap();
+        assert_eq!(actual, expected);
+        assert!(
+            calls.get() < 512,
+            "cache input must be read in batches; observed {} read calls",
+            calls.get()
+        );
+    }
+
+    #[test]
+    fn batched_json_read_preserves_parse_errors() {
+        for bytes in [b"".as_slice(), b"{broken}", b"true false", b"\"\xff\""] {
+            assert!(matches!(
+                read_json_from::<serde_json::Value>(io::Cursor::new(bytes)),
+                Err(CacheError::Json(_))
+            ));
+        }
+    }
+
+    #[test]
+    fn batched_json_read_preserves_storage_error_categories() {
+        struct FailedReader;
+        impl Read for FailedReader {
+            fn read(&mut self, _: &mut [u8]) -> io::Result<usize> {
+                Err(io::Error::other("simulated storage failure"))
+            }
+        }
+        assert!(matches!(
+            read_json_from::<serde_json::Value>(FailedReader),
+            Err(CacheError::Json(error)) if error.is_io()
+        ));
+        let root = tempfile::tempdir().unwrap();
+        assert!(matches!(
+            read_json::<serde_json::Value>(root.path().join("missing.json")),
+            Err(CacheError::Io(error)) if error.kind() == io::ErrorKind::NotFound
+        ));
+    }
+
+    #[test]
+    #[ignore = "manual timing benchmark for chapter JSON cache"]
+    fn benchmark_chapter_json_cache_read() {
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join("chapter.json");
+        let expected = large_chapter_text();
+        atomic_write_json(&path, &expected).unwrap();
+        let mut samples = Vec::new();
+        for _ in 0..9 {
+            let started = std::time::Instant::now();
+            let actual: String = std::hint::black_box(read_json(&path).unwrap());
+            samples.push(started.elapsed().as_micros());
+            assert_eq!(actual, expected);
+        }
+        samples.sort_unstable();
+        println!(
+            "chapter_json_cache bytes={} median_us={}",
+            fs::metadata(path).unwrap().len(),
+            samples[samples.len() / 2]
+        );
+    }
 
     #[test]
     fn hashes_are_deterministic() {
