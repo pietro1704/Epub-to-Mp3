@@ -2,6 +2,27 @@
 
 ## Current Codex ↔ Arch contract — 2026-10-08
 
+APP-20261009-35 — Arch-owned model publication blocker (source inspection only).
+In crates/converter-core/src/model_store.rs, install_manifest's non-archive
+branch removes the verified temporary file immediately before renaming it to the
+artifact destination. ONNX/JSON manifest installation therefore cannot publish
+that file. This failure is before moving the old installation; no user models
+were touched during inspection. Existing model_store tests cover empty manifest,
+path traversal/insecure URL rejection and catalog construction, not successful
+non-archive publication. Independent read-only specialist confirmed the finding.
+
+Next on Arch: a deterministic failing test at the real file-promotion seam using
+owned temporary bytes and a valid checksum, then remove the premature deletion
+and close the writer before rename. Assert installed bytes/metadata, no .part
+left, and checksum failure preserves the previous installation. If extracting a
+promotion seam, keep production install_manifest wired to it; source parsing or
+a duplicate test-only implementation is not runtime evidence. Use a controlled
+HTTPS fixture for full-path coverage when available; no production model download
+is needed for the regression. Return exact test output before checking Done.
+Apple runtime packaging still lacks the optional Piper feature; metadata present
+does not prove a runnable model. Installed-model selector/configuration and this
+installer defect are separate gates. No Rust source tests ran locally on this Mac.
+
 Latest 2026-10-09 repeat `8A081C2E` passed 1/0/0 on iOS 16: LOTR 8–9
 252.736 s, Christie 6–7 21.643 s; four valid MP3s, no audio reuse, one LOTR
 transport retry. Full trace starts at 4096/2, grows to 5120/2, then drops

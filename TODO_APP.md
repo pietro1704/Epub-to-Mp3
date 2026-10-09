@@ -21,6 +21,15 @@ this board and `handoff.md` before crossing ownership or changing shared contrac
   macOS: 38 passed, 0 failed/skipped; iOS 16: four new cases passed, 0 failed/skipped.
   Evidence in the quality plan. No synthesis or real-book latency claim.
 
+- [ ] **APP-20261009-35 — Repair verified model artifact publication on Arch.** Source finding; runtime verification pending.
+  ModelStore.install_manifest deletes the verified non-archive .part before
+  rename, preventing publication of ONNX/JSON model artifacts. Preserve existing
+  installations/downloads. Arch: reproduce at the real artifact publication seam,
+  retain verified temporary bytes until rename, close the writer before promotion,
+  and verify success/checksum failure preservation with isolated fixtures.
+  No local Rust execution or model download; this does not prove offline readiness.
+  Apple selector/runtime packaging remain distinct pending requirements.
+
 - [ ] **APP-20261009-34 — Resolve pending seeks after late endpoint confirmation.** Apple verified; parity pending.
   A requested offset beyond an incomplete chapter's estimate must stay pending;
   when its actual terminal duration arrives later, reconcile the target instead
