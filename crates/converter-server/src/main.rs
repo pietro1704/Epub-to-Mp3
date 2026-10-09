@@ -584,13 +584,22 @@ async fn cancel(AxumPath(id): AxumPath<String>, State(state): State<AppState>) -
         )
             .into_response(),
         Some(job) => {
-            job.cancellation.cancel();
-            job.snapshot.state = if job.snapshot.state == "queued" {
+            let mut snapshot = job.snapshot.clone();
+            snapshot.state = if snapshot.state == "queued" {
                 "cancelled"
             } else {
                 "cancelling"
             }
             .into();
+            if let Err(error) = persist_snapshot(&state.config, &snapshot) {
+                return (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    format!("Could not persist cancellation: {error}"),
+                )
+                    .into_response();
+            }
+            job.snapshot = snapshot;
+            job.cancellation.cancel();
             let _ = job.events.send(SseMessage::Snapshot(job.snapshot.clone()));
             (
                 StatusCode::OK,
@@ -1130,6 +1139,57 @@ mod tests {
             state.jobs.read().await["running-job"].snapshot.state,
             "running"
         );
+        assert!(matches!(
+            receiver.try_recv(),
+            Err(broadcast::error::TryRecvError::Empty)
+        ));
+    }
+
+    #[tokio::test]
+    async fn queued_cancellation_survives_snapshot_recovery() {
+        let root = TestRoot::new();
+        let state = root.state();
+        let snapshot = initial_job("cancel-job".into(), &CreateJob::default());
+        persist_snapshot(&state.config, &snapshot).unwrap();
+        let (events, _) = broadcast::channel(8);
+        state.jobs.write().await.insert(
+            snapshot.job_id.clone(),
+            Job {
+                snapshot,
+                events,
+                cancellation: Default::default(),
+                worker_active: false,
+            },
+        );
+        let response = cancel(AxumPath("cancel-job".into()), State(state.clone())).await;
+        assert_eq!(response.status(), StatusCode::OK);
+        let recovered = load_snapshots(&state.config);
+        assert_eq!(recovered["cancel-job"].snapshot.state, "cancelled");
+        assert!(recovered["cancel-job"].snapshot.error.is_none());
+    }
+
+    #[tokio::test]
+    async fn cancellation_persistence_failure_does_not_report_success() {
+        let root = TestRoot::new();
+        let state = root.state();
+        std::fs::create_dir_all(state.config.paths.jobs_dir.parent().unwrap()).unwrap();
+        std::fs::write(&state.config.paths.jobs_dir, b"not a directory").unwrap();
+        let snapshot = initial_job("cancel-job".into(), &CreateJob::default());
+        let (events, mut receiver) = broadcast::channel(8);
+        state.jobs.write().await.insert(
+            snapshot.job_id.clone(),
+            Job {
+                snapshot,
+                events,
+                cancellation: Default::default(),
+                worker_active: false,
+            },
+        );
+        let response = cancel(AxumPath("cancel-job".into()), State(state.clone())).await;
+        assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+        let jobs = state.jobs.read().await;
+        assert_eq!(jobs["cancel-job"].snapshot.state, "queued");
+        assert!(!jobs["cancel-job"].cancellation.is_cancelled());
         assert!(matches!(
             receiver.try_recv(),
             Err(broadcast::error::TryRecvError::Empty)
