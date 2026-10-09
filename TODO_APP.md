@@ -9,6 +9,16 @@ this board and `handoff.md` before crossing ownership or changing shared contrac
 
 ## Active requests — 2026-10-08
 
+- [x] **APP-20261009-31 — Measure concurrent projection pressure on catalog delivery.** Verified probe.
+  Extend the same literal-book native probe with high versus utility projection
+  tasks racing high-priority catalog read/decode. Three bounded samples per book,
+  unchanged SHA/fidelity and cancellation of losing work. Measure delivered catalog
+  time; do not infer first-window/200 ms success from isolated scheduler samples.
+  One native test passed, zero failures/skips (`reader-relaunch-8F611ACD...`).
+  Alternating priority order is recorded. Catalog medians with high/utility
+  projection: LOTR 135.608/142.431 ms; Christie 12.906/13.568 ms. No demonstrated
+  gain from utility priority; production scheduling remains unchanged.
+
 - [x] **APP-20261009-30 — Measure projection validation versus catalog decode.** Verified measurement.
   Use literal/hash-checked LOTR/Christie inputs and chapter 8/6, without synthesis.
   Compare production projection reads (both SHA passes included) with complete

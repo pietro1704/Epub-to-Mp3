@@ -137,3 +137,28 @@ Three samples are diagnostic, not statistical before/after proof. No production
 behavior changed; do not weaken integrity or mark the 200 ms gate complete.
 Next work must address the validation/storage design or measured presentation cost,
 not blindly replicate the expensive projection race in the iOS adapter.
+
+## Concurrent projection priority probe
+
+APP-20261009-31 compares requested high/utility priority for a concurrent projection
+read, with catalog file-read/decode always high priority. Three samples per book;
+pair order alternates high→utility, utility→high, high→utility. Timing ends at
+catalog delivery. Losing validation is cancelled and drained before the next sample.
+Payload equality, input SHA and source bytes remain checked; setup/render/UI excluded.
+
+Native macOS Debug result: one passed, zero failures/skips in
+`.reports/mobile-audio/reader-relaunch-8F611ACD-515F-4F8F-ABD7-7356EAD59FE1/projection.xcresult`.
+The permanent exported attachment records priority order, requested priorities,
+OS/platform, literal hashes, individual timings and limits. Initial fixed-order
+probe is retained in `reader-relaunch-ACF7FD04...`, not used as final evidence.
+
+| Book | Isolated read/decode median | With high projection | With utility projection |
+| --- | --- | --- | --- |
+| LOTR | 134.581 ms | 135.608 ms | 142.431 ms |
+| Christie | 13.193 ms | 12.906 ms | 13.568 ms |
+
+This sample does not demonstrate a benefit from utility priority or a large median
+contention penalty. Three samples/requested priorities do not establish scheduling
+guarantees or statistical significance. Production remains unchanged. The full
+opening budget is still red; source-validation design and first-window/readiness
+costs need stronger evidence before another optimization is shipped.

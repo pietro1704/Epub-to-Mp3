@@ -13,11 +13,14 @@ final class PreparedReaderCodecBenchmarkTests: XCTestCase {
             let projectionReadMilliseconds: [Double]
             let catalogDecodeMilliseconds: [Double]
             let catalogReadDecodeMilliseconds: [Double]
+            let catalogWithHighProjectionMilliseconds: [Double]
+            let catalogWithUtilityProjectionMilliseconds: [Double]
         }
         struct Report: Encodable {
             let platform: String
             let operatingSystem: String
             let limits: String
+            let concurrentPriorityOrder: [[String]]
             let samples: [Sample]
         }
         let input = try NativePlaybackBenchmarkInput.optIn()
@@ -38,7 +41,8 @@ final class PreparedReaderCodecBenchmarkTests: XCTestCase {
             let store = PreparedReaderChapterStore(directory: root.appendingPathComponent("chapters-\(index)"))
             try await store.write(bookID: id, chapterOrdinal: selection.chapterStart, fulltextURL: source)
             var projectionTimes: [Double] = [], catalogTimes: [Double] = [], readDecodeTimes: [Double] = []
-            for _ in 0..<3 {
+            var highPressureTimes: [Double] = [], utilityPressureTimes: [Double] = []
+            for sampleIndex in 0..<3 {
                 let started = DispatchTime.now().uptimeNanoseconds
                 let projection = await store.read(bookID: id, chapterOrdinal: selection.chapterStart, fulltextURL: source)
                 projectionTimes.append(Double(DispatchTime.now().uptimeNanoseconds - started) / 1_000_000)
@@ -61,14 +65,36 @@ final class PreparedReaderCodecBenchmarkTests: XCTestCase {
                 }.value
                 readDecodeTimes.append(readResult.1)
                 XCTAssertEqual(readResult.0, payload)
+                let priorities: [TaskPriority] = sampleIndex % 2 == 0 ? [.userInitiated, .utility] : [.utility, .userInitiated]
+                for priority in priorities {
+                    let started = DispatchTime.now().uptimeNanoseconds
+                    let validation = Task.detached(priority: priority) {
+                        await store.read(bookID: id, chapterOrdinal: selection.chapterStart, fulltextURL: source)
+                    }
+                    let catalog = try await Task.detached(priority: .userInitiated) {
+                        try PropertyListDecoder().decode(EbookFulltext.self, from: Data(contentsOf: source))
+                    }.value
+                    let elapsed = Double(DispatchTime.now().uptimeNanoseconds - started) / 1_000_000
+                    validation.cancel()
+                    let completedProjection = await validation.value
+                    if let completedProjection {
+                        XCTAssertEqual(completedProjection.chapter, payload.chapters[selection.chapterStart])
+                    }
+                    XCTAssertEqual(catalog, payload)
+                    if priority == .utility { utilityPressureTimes.append(elapsed) }
+                    else { highPressureTimes.append(elapsed) }
+                }
             }
             XCTAssertEqual(try Data(contentsOf: source), bytes)
             samples.append(.init(book: selection.name, chapter: selection.chapterStart, sourceBytes: bytes.count,
                 sourceSHA256: selection.sourceSHA256, projectionReadMilliseconds: projectionTimes,
-                catalogDecodeMilliseconds: catalogTimes, catalogReadDecodeMilliseconds: readDecodeTimes))
+                catalogDecodeMilliseconds: catalogTimes, catalogReadDecodeMilliseconds: readDecodeTimes,
+                catalogWithHighProjectionMilliseconds: highPressureTimes,
+                catalogWithUtilityProjectionMilliseconds: utilityPressureTimes))
         }
         let report = Report(platform: "native macOS Debug", operatingSystem: ProcessInfo.processInfo.operatingSystemVersionString,
-            limits: "Three samples, sequential alternating routes; OS caches not flushed; excludes parsing/setup, rendering, position and controls. Projection includes both SHA passes; decode-only uses loaded Data; read/decode includes file IO.", samples: samples)
+            limits: "Three samples; sequential isolated routes and paired concurrent high/utility projection tasks. Requested priorities, not guaranteed scheduling. OS caches not flushed. Excludes parsing/setup, rendering, position and controls. Projection includes both SHA passes; decode-only uses loaded Data; read/decode includes file IO. Concurrent times end at catalog delivery; losing validation is cancelled and drained before the next sample.",
+            concurrentPriorityOrder: [["high", "utility"], ["utility", "high"], ["high", "utility"]], samples: samples)
         let attachment = XCTAttachment(data: try JSONEncoder().encode(report), uniformTypeIdentifier: "public.json")
         attachment.name = "native-projection-validation-versus-catalog-decode.json"
         attachment.lifetime = .keepAlways
