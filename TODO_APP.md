@@ -9,6 +9,19 @@ this board and `handoff.md` before crossing ownership or changing shared contrac
 
 ## Active requests — 2026-10-08
 
+- [x] **APP-20261009-24 — Honest reader readiness after saved-position restore.** Verified macOS slice.
+  Part of APP-20261009-21: macOS readiness must follow committed layout and saved
+  passage restoration, not precede a queued restore. Reject stale restore callbacks
+  after a book/load/chapter change. No 200 ms claim from telemetry alone.
+  Scope: Mac reader presentation/restore and native window regressions; iOS already
+  uses stable-layout completion and remains unchanged. Verify chapter-boundary
+  navigation alongside the new focused readiness test, then commit/push.
+  Native red case proved ready at offset 0 instead of the saved 33600.6; another
+  red case proved early close persisted 0 instead of 0.6. Final focused run:
+  six passed, zero failures/skips, macOS xcresult `02-36-12` on 2026-10-09.
+  Four readiness/lifecycle/page-turn regressions plus two chapter-boundary cases.
+  No 200 ms acceptance, real-book latency improvement or Flutter change claimed.
+
 - [ ] **APP-20261009-23 — Resume goal with both actual books on Simulator.** In progress.
   User confirmed the app opened. Validate The Lord of the Rings and E não sobrou
   nenhum using native automation on the authorized iOS 16 iPhone SE Simulator.

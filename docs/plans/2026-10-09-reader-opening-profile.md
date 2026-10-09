@@ -26,3 +26,28 @@ book decoding on the critical path while remaining bound to source and style.
 Need actual controller readiness, invalidation/corruption and later navigation
 regressions; a cache sidecar alone is not sufficient. No such implementation or
 budget completion claimed here. All temporary `[DEBUG-reader-stage] probes removed.
+
+## Readiness correctness prerequisite
+
+APP-20261009-24 repairs the macOS readiness clock: `readableContent` and
+`controlsUsable` now follow final layout and saved-position application instead
+of preceding a queued restore. Native red evidence showed offset 0 when readiness
+was already published, versus the expected saved 33600.6. A second red case
+showed closing during preparation overwrote the saved fraction 0.6 with 0.
+
+Pending opening no longer writes that temporary viewport or accepts page-turn
+commands. Queued restoration rejects old load generations, publishes the actual
+clamped chapter, and handles a reload before restoration without losing progress.
+Completion precedes persistence of any newer chapter selection.
+
+Final verification: `APPLE_NATIVE_TESTS=EpubToMp3Tests/MacReaderOpeningReadinessTests,EpubToMp3Tests/MacReaderChapterNavigationTests`
+with `mise run apple:chapter-callback:test`; six passed, zero failed/skipped.
+Bundle: `ios/EpubToMp3/.build/Logs/Test/Test-EpubToMp3Mac-2026.10.09_02-36-12--0300.xcresult`.
+iOS stable-layout completion is unchanged; Flutter has no macOS AppKit adapter.
+This is correctness evidence, not a new latency measurement or a 200 ms pass.
+
+Next integration remains a separate real active chapter while fulltext hydrates,
+with no empty placeholder chapters. Navigation, cross-document links and playback
+must await a validated complete catalog; hydration cannot repaint or rewind the
+already visible passage. Both Apple adapters need native lifecycle/navigation
+tests before the two-host actual-book budget can be accepted.

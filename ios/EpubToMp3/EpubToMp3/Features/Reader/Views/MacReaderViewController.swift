@@ -42,6 +42,7 @@ final class MacReaderViewController: NSViewController, NSTableViewDataSource, NS
     /// Guards against re-seeking scroll position on every manual chapter
     /// selection — restoration only makes sense once per book load.
     private var hasRestoredInitialPosition = false
+    private var isRestoringInitialPosition = false
 
     init(
         library: LibraryStore,
@@ -516,6 +517,7 @@ final class MacReaderViewController: NSViewController, NSTableViewDataSource, NS
         cancelActiveBookOpenJourney()
         let generation = UUID()
         loadGeneration = generation
+        isRestoringInitialPosition = false
         contentScrollView.documentView = textView
         let id = UserDefaults.standard.string(forKey: ReaderSessionState.currentlyReadingBookIDKey)
         guard let book = library.books.first(where: { $0.id == id }) else {
@@ -648,10 +650,13 @@ final class MacReaderViewController: NSViewController, NSTableViewDataSource, NS
 
     private func presentLoadedChapter(bookID: String) {
         showChapter(selectedChapter)
-        restoreReadingProgressIfNeeded(bookId: bookID)
-        recordReadableContent()
-        hideLoading()
-        recordControlsUsable()
+        let generation = loadGeneration
+        restoreReadingProgressIfNeeded(bookId: bookID) { [weak self] in
+            guard let self, self.isActiveLoad(generation, bookID: bookID) else { return }
+            self.recordReadableContent()
+            self.hideLoading()
+            self.recordControlsUsable()
+        }
     }
 
     private func showChapter(_ index: Int, scrollToEnd: Bool = false) {
@@ -824,6 +829,7 @@ final class MacReaderViewController: NSViewController, NSTableViewDataSource, NS
     }
 
     private func scrollPage(forward: Bool) {
+        guard activeBookOpenJourneyID == nil, !isRestoringInitialPosition else { return }
         guard let documentView = contentScrollView.documentView else { return }
         contentScrollView.layoutSubtreeIfNeeded()
         let clipView = contentScrollView.contentView
@@ -884,7 +890,8 @@ final class MacReaderViewController: NSViewController, NSTableViewDataSource, NS
     }
 
     private func persistReadingProgress() {
-        guard let bookId = currentBookId, let documentView = contentScrollView.documentView else { return }
+        guard activeBookOpenJourneyID == nil, !isRestoringInitialPosition,
+              let bookId = currentBookId, let documentView = contentScrollView.documentView else { return }
         let clipView = contentScrollView.contentView
         let scrollable = max(documentView.frame.height - clipView.bounds.height, 1)
         let fraction = clipView.bounds.origin.y / scrollable
@@ -899,22 +906,40 @@ final class MacReaderViewController: NSViewController, NSTableViewDataSource, NS
     /// Called once, right after a fresh `loadCurrentBook()`, to jump back to
     /// the exact chapter + scroll fraction the user left off at. Runs on the
     /// next runloop tick so the scroll view has already been laid out.
-    private func restoreReadingProgressIfNeeded(bookId: String) {
-        guard !hasRestoredInitialPosition else { return }
-        hasRestoredInitialPosition = true
-        guard let entry = ReaderProgressStore.read(bookId: bookId) else { return }
+    private func restoreReadingProgressIfNeeded(bookId: String, completion: @escaping () -> Void) {
+        let entry = hasRestoredInitialPosition ? nil : ReaderProgressStore.read(bookId: bookId)
+        let generation = loadGeneration
+        let chapterIndex = selectedChapter
+        isRestoringInitialPosition = true
         DispatchQueue.main.async { [weak self] in
-            guard let self, let documentView = self.contentScrollView.documentView else { return }
+            guard let self, self.isActiveLoad(generation, bookID: bookId) else { return }
+            self.view.layoutSubtreeIfNeeded()
+            if self.contentScrollView.documentView === self.textView {
+                MacReaderTextLayout.fit(self.textView, in: self.contentScrollView)
+            }
+            guard let documentView = self.contentScrollView.documentView else {
+                self.isRestoringInitialPosition = false
+                return
+            }
             let clipView = self.contentScrollView.contentView
             let scrollable = max(documentView.frame.height - clipView.bounds.height, 0)
-            guard scrollable > 0 else { return }
-            clipView.scroll(to: NSPoint(x: 0, y: entry.offsetFraction * scrollable))
-            self.contentScrollView.reflectScrolledClipView(clipView)
-            ReaderPlaybackAnchor.publish(
-                readerPosition: entry.chapterIndex,
-                chapters: self.fulltext?.chapters ?? [],
-                offsetFraction: entry.offsetFraction
-            )
+            // A navigation performed while layout was pending wins over
+            // initial restoration; never move a newer chapter's viewport.
+            if let entry, self.selectedChapter == chapterIndex {
+                clipView.scroll(to: NSPoint(x: 0, y: entry.offsetFraction * scrollable))
+                self.contentScrollView.reflectScrolledClipView(clipView)
+                ReaderPlaybackAnchor.publish(
+                    readerPosition: chapterIndex,
+                    chapters: self.fulltext?.chapters ?? [],
+                    offsetFraction: entry.offsetFraction
+                )
+            }
+            self.isRestoringInitialPosition = false
+            self.hasRestoredInitialPosition = true
+            completion()
+            if self.isActiveLoad(generation, bookID: bookId), self.selectedChapter != chapterIndex {
+                self.persistReadingProgress()
+            }
         }
     }
 
