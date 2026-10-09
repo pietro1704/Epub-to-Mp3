@@ -32,3 +32,11 @@ device was shut down again and no devices remain booted. Explicit boot/wait is n
 watched before XCTest. Updated guard refused a retry at load 15.58 without booting.
 CleanMyMac HealthMonitor was observed at 165% CPU, but causality is unproven.
 App startup/UI remains pending; no conversion, device run or CI monitoring performed.
+
+Authorized CleanMyMac monitor intervention did not remove the boot load spike.
+TERM respawned; the replacement monitor was paused (T state), then a retry after
+idle load 3.64 reached 14.88 during initial migration. Guard stopped before app/tests;
+monitor restored with SIGCONT, no devices left booted. No thermal/performance
+warning was reported. The instantaneous load cutoff prevents migration completing;
+this is not an app assertion failure or proof of another host crash. Further boot
+requires an agreed bounded startup/resource policy, not repeated unchanged attempts.

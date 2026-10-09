@@ -28,6 +28,14 @@ this board and `handoff.md` before crossing ownership or changing shared contrac
   Helper now explicitly boots/waits before XCTest and watches boot as well as tests.
   Retry preflight refused at load 15.58, no boot. CleanMyMac HealthMonitor observed
   at 165% CPU, not a proven sole cause. App startup/UI acceptance remains unchecked.
+  Authorized monitor-stop retry: TERM auto-respawned; SIGSTOP confirmed new PID
+  47251 paused. After idle load fell to 3.64, initial Simulator migration still
+  crossed instantaneous limit (14.88), before app/tests. Earlier TERM-only boot
+  reached 22.91. Evidence `simulator-smoke-29F6531C-F0D0-4302-9B50-E7160960D3DF`
+  and `simulator-smoke-1C812944-BFEC-4781-9539-C1355D13F8EA`. Monitor resumed with
+  SIGCONT; no booted devices. pmset showed no thermal/performance warning and CPU
+  limits 100%; load threshold abort is not evidence of app failure or a new crash.
+  Boot-grace/resource-policy adjustment needs explicit risk agreement, not blind retries.
 
 - [x] **APP-20261008-13 — Faster Apple download/extraction defaults.** Recorded.
   Prefer xcodes/aria2 downloads and experimental unxip for Xcode `.xip` archives.
