@@ -26,7 +26,7 @@ use converter_core::{
 use futures_util::stream::{self, StreamExt};
 use serde::{Deserialize, Serialize};
 use tokio::sync::{broadcast, RwLock};
-use tower_http::services::ServeDir;
+use tower_http::services::{ServeDir, ServeFile};
 
 // Keep a concrete server-side ceiling above normal EPUB sizes while preventing unbounded request bodies.
 const MAX_UPLOAD_BYTES: usize = 100 * 1024 * 1024;
@@ -614,15 +614,16 @@ async fn log(AxumPath(id): AxumPath<String>, State(state): State<AppState>) -> R
 async fn output(
     AxumPath((id, filename)): AxumPath<(String, String)>,
     State(state): State<AppState>,
+    request: axum::extract::Request,
 ) -> Response {
     if !safe_leaf(&id) || !safe_leaf(&filename) {
         return StatusCode::BAD_REQUEST.into_response();
     }
-    match tokio::fs::read(state.config.paths.output_dir.join(&id).join(&filename)).await {
-        Ok(bytes) => (StatusCode::OK, bytes).into_response(),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-            StatusCode::NOT_FOUND.into_response()
-        }
+    match ServeFile::new(state.config.paths.output_dir.join(&id).join(&filename))
+        .try_call(request)
+        .await
+    {
+        Ok(response) => response.into_response(),
         Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
     }
 }
@@ -909,6 +910,126 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 mod tests {
     use super::*;
 
+    #[tokio::test]
+    async fn large_archive_download_is_streamed_in_bounded_chunks() {
+        let root = TestRoot::new();
+        let state = root.state();
+        let job = state.config.paths.output_dir.join("large-job");
+        std::fs::create_dir_all(&job).unwrap();
+        let size = 4 * 1024 * 1024;
+        std::fs::File::create(job.join("book.zip"))
+            .unwrap()
+            .set_len(size)
+            .unwrap();
+        let response = output(
+            AxumPath(("large-job".into(), "book.zip".into())),
+            State(state),
+            request("GET"),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(response.headers()[header::CONTENT_LENGTH], size.to_string());
+        assert_eq!(response.headers()[header::CONTENT_TYPE], "application/zip");
+        let mut stream = response.into_body().into_data_stream();
+        let mut total = 0;
+        while let Some(chunk) = stream.next().await {
+            let chunk = chunk.unwrap();
+            assert!(
+                chunk.len() <= 64 * 1024,
+                "download chunk must remain bounded"
+            );
+            total += chunk.len() as u64;
+        }
+        assert_eq!(total, size);
+    }
+
+    #[tokio::test]
+    async fn head_and_unsatisfiable_range_keep_http_semantics() {
+        let root = TestRoot::new();
+        let state = root.state();
+        let job = state.config.paths.output_dir.join("range-job");
+        std::fs::create_dir_all(&job).unwrap();
+        std::fs::write(job.join("chapter.mp3"), b"0123456789").unwrap();
+        let head = output(
+            AxumPath(("range-job".into(), "chapter.mp3".into())),
+            State(state.clone()),
+            request("HEAD"),
+        )
+        .await;
+        assert_eq!(head.status(), StatusCode::OK);
+        assert_eq!(head.headers()[header::CONTENT_LENGTH], "10");
+        assert_eq!(head.headers()[header::CONTENT_TYPE], "audio/mpeg");
+        assert!(axum::body::to_bytes(head.into_body(), 100)
+            .await
+            .unwrap()
+            .is_empty());
+        let mut range = request("GET");
+        range
+            .headers_mut()
+            .insert(header::RANGE, "bytes=20-30".parse().unwrap());
+        let response = output(
+            AxumPath(("range-job".into(), "chapter.mp3".into())),
+            State(state.clone()),
+            range,
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::RANGE_NOT_SATISFIABLE);
+        assert_eq!(response.headers()[header::CONTENT_RANGE], "bytes */10");
+        let missing = output(
+            AxumPath(("range-job".into(), "missing.mp3".into())),
+            State(state),
+            request("GET"),
+        )
+        .await;
+        assert_eq!(missing.status(), StatusCode::NOT_FOUND);
+    }
+
+    fn request(method: &str) -> axum::extract::Request {
+        axum::http::Request::builder()
+            .method(method)
+            .uri("/")
+            .body(axum::body::Body::empty())
+            .unwrap()
+    }
+
+    async fn http_fixture_request(config: AppConfig, request: &'static [u8]) -> String {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            axum::serve(listener, app(config)).await.unwrap();
+        });
+        let response = tokio::task::spawn_blocking(move || {
+            use std::io::{Read, Write};
+            let mut client = std::net::TcpStream::connect(address).unwrap();
+            client
+                .set_read_timeout(Some(std::time::Duration::from_secs(5)))
+                .unwrap();
+            client.write_all(request).unwrap();
+            let mut bytes = Vec::new();
+            client.read_to_end(&mut bytes).unwrap();
+            String::from_utf8(bytes).unwrap()
+        })
+        .await
+        .unwrap();
+        server.abort();
+        response
+    }
+
+    #[tokio::test]
+    async fn audio_download_serves_requested_byte_range() {
+        let root = TestRoot::new();
+        let state = root.state();
+        let job = state.config.paths.output_dir.join("range-job");
+        std::fs::create_dir_all(&job).unwrap();
+        std::fs::write(job.join("chapter.mp3"), b"0123456789").unwrap();
+        let response = http_fixture_request(state.config, b"GET /api/outputs/range-job/chapter.mp3 HTTP/1.1\r\nHost: localhost\r\nRange: bytes=2-5\r\nConnection: close\r\n\r\n").await;
+        assert!(response.starts_with("HTTP/1.1 206"), "{response}");
+        assert!(response
+            .to_ascii_lowercase()
+            .contains("content-range: bytes 2-5/10"));
+        assert!(response.ends_with("2345"));
+    }
+
     #[test]
     fn finished_snapshot_exposes_the_complete_archive() {
         let root = TestRoot::new();
@@ -991,6 +1112,7 @@ mod tests {
         let response = output(
             AxumPath((snapshot.job_id.clone(), archive.name.clone())),
             State(state),
+            request("GET"),
         )
         .await;
         assert_eq!(response.status(), StatusCode::OK);
@@ -1044,6 +1166,7 @@ mod tests {
         let response = output(
             AxumPath(("valid-job".into(), "chapter.mp3".into())),
             State(state),
+            request("GET"),
         )
         .await;
         assert_eq!(response.status(), StatusCode::OK);
@@ -1088,6 +1211,7 @@ mod tests {
         let response = output(
             AxumPath(("../private".into(), "example.txt".into())),
             State(state),
+            request("GET"),
         )
         .await;
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
