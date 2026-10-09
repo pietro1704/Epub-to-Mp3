@@ -26,6 +26,16 @@ import Foundation
 /// error.
 enum EpubFallbackParser {
 
+    /// Keep archive IO and extraction independent of the caller's executor.
+    static func parseAsync(url: URL, bookId: String,
+                           parser: @escaping @Sendable (URL, String) -> EbookFulltext = {
+                               parse(url: $0, bookId: $1)
+                           }) async -> EbookFulltext {
+        await Task.detached(priority: .userInitiated) {
+            parser(url, bookId)
+        }.value
+    }
+
     /// Best-effort parse. Always returns; check `.chapters.isEmpty`
     /// at the call site to know if it actually got something.
     static func parse(url: URL, bookId: String) -> EbookFulltext {

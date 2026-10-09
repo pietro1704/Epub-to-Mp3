@@ -10,8 +10,7 @@ enum MacEpubParser {
         at fileURL: URL,
         bookId: String
     ) async throws -> EbookFulltext {
-        _ = bookId
-        return EpubFallbackParser.parse(url: fileURL, bookId: bookId)
+        return await EpubFallbackParser.parseAsync(url: fileURL, bookId: bookId)
     }
 }
 

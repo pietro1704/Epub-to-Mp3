@@ -1050,7 +1050,8 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
                         hideLoadingOverlay()
                         return
                     }
-                    payload = EpubFallbackParser.parse(url: url, bookId: loadingBookID)
+                    payload = await EpubFallbackParser.parseAsync(url: url, bookId: loadingBookID)
+                    guard !Task.isCancelled, self.isCurrentLoad(loadingID, bookID: loadingBookID) else { return }
                     if registeredFontURLs.isEmpty {
                         registeredFontURLs = await Task.detached(priority: .userInitiated) {
                             EpubFontManager.registerFonts(from: url, bookID: loadingBookID)

@@ -9,6 +9,22 @@ this board and `handoff.md` before crossing ownership or changing shared contrac
 
 ## Active requests — 2026-10-08
 
+- [x] **APP-20261009-27 — Reader document preparation off the UI executor.** Verified Apple worker slice.
+  Original goal item 6: UIKit calls synchronous EPUB extraction from its main-actor
+  loading task. Add one explicit background preparation entry point and reuse it
+  in the Apple adapters, retaining the existing parser/result semantics. Verify
+  actual parser thread, responsiveness under a blocked worker and source fidelity.
+  Fence UIKit book/load generation immediately after the new await. No layout,
+  provider, synthesis or 200 ms completion claim. Mac's existing nonisolated async
+  wrapper is not claimed to have blocked the main actor.
+  Evidence: three Mac cases passed (`04-06-39`); revised heartbeat passed separately
+  (`04-12-43`). iOS fidelity/thread case passed in `261611C0...`; the revised
+  heartbeat passed alone in `09E7C00E...`, zero skips/failures on both reruns.
+  The first iOS heartbeat depended on XCTest observation latency; the worker now
+  requests its MainActor release directly, retaining the same two-second deadline.
+  Parser semantics/source bytes unchanged. Cancellation does not interrupt an
+  already running detached parse; controller generation rejects obsolete results.
+
 - [x] **APP-20261009-25 — Manual Book Detail conversion preserves playback.** Verified Apple adapters.
   Original goal item 3: both native detail adapters still replace the player on
   manual completion (macOS also stops it). Remove those session mutations while

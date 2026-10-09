@@ -58,6 +58,34 @@ uncontrolled comparison or extrapolate whole-book duration.
 
 ## Progress
 
+### Reader preparation off the UI executor
+
+APP-20261009-27 removes synchronous EPUB archive extraction from the UIKit loading
+task. One shared parseAsync entry point runs the existing parser on an explicit
+detached worker; the macOS adapter also uses it without a claim that its previous
+nonisolated async function ran on main. UIKit rejects cancellation/book/generation
+changes immediately after the new await, before font registration.
+
+Native probes compare the complete parser payload and original source bytes,
+assert the actual extraction thread is not main, and block the worker until a
+MainActor heartbeat releases it. Red main-actor preparation: two failed, one
+compatibility case passed (`04-04-55` macOS xcresult). Correct worker: three passed
+(`04-06-39`). The initial iOS heartbeat failed its semaphore deadline while fidelity
+and threading passed (`simulator-smoke-261611C0-11BD-422A-8E3F-272C35B681BA`).
+The test was tightened to request the MainActor release directly from the worker,
+without an intermediate XCTest observation; the two-second deadline remains.
+That revised case passed separately on Mac (`04-12-43`) and iOS 16
+(`simulator-smoke-09E7C00E-23A1-41E8-85FB-CC3C6911F9EE`), zero failures/skips.
+Production remained unchanged during these test-only revisions.
+
+Executed focused ReaderDocumentPreparationTests through apple:chapter-callback:test
+and guarded ios:simulator:smoke:build/test. No synthesis, original-book changes,
+model/download cleanup, Python/Ruff or CI/PR monitoring. This proves executor
+placement and payload preservation, not real-book latency/memory improvement,
+glyph/layout behavior, first-segment playback or 200 ms readiness. Detached parsing
+does not inherit cancellation; old results are fenced, not claimed interrupted.
+Mac cold-cache persistence and the remaining original acceptance gates stay open.
+
 ### Native iOS reader progressive Listen — complete-chapter bridge
 
 APP-20261009-26 now requests the literal reader priority through the existing
