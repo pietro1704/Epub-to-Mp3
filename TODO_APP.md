@@ -188,7 +188,14 @@ this board and `handoff.md` before crossing ownership or changing shared contrac
   cases passed after first-arrival catalog/projection scheduling (`04-44-36`).
   Actual two-host budget remains red: LOTR 363.818 ms, Christie 151.933 ms in
   `reader-relaunch-5E61AC9C-5B83-4152-83DD-5173B9B71F89`. No synthesis or threshold change.
-  iOS presentation integration and full APP21 acceptance remain open.
+  iOS source review confirms `BookOpenScreenController.loadBook()` still awaits
+  complete `LocalFulltextCache.read`/decode or `EpubFallbackParser.parseAsync`
+  before `restorePreparedChapter`; the prepared renderer avoids HTML work but
+  does not yet bypass full payload hydration. True iOS projection-first display,
+  full-catalog gating and UIKit lifecycle/navigation tests remain open. Current
+  iPhone is unavailable and Simulator use is prohibited, so no iOS source change
+  was attempted without its required native regression evidence. Full APP21
+  acceptance remains open.
 
 - [x] **APP-20261009-27 — Reader document preparation off the UI executor.** Verified Apple worker slice.
   Original goal item 6: UIKit calls synchronous EPUB extraction from its main-actor

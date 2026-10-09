@@ -91,6 +91,20 @@ presentation parity, controlled real-book before/after evidence and the complete
 200 ms gate. Cancellation can discard losing callbacks but does not interrupt the
 store's synchronous hashing. Do not claim APP21/APP28 or the overall goal complete.
 
+## iOS integration gap confirmed by source review
+
+`BookOpenScreenController.loadBook()` currently awaits a full
+`LocalFulltextCache.read(bookId:)` payload decode (or complete
+`EpubFallbackParser.parseAsync`) before calling `restorePreparedChapter(in:)`.
+Consequently, `PreparedChapterRenderer` can avoid HTML rendering but cannot avoid
+the full-payload critical-path decode after relaunch. This is distinct from the
+completed Mac active-projection race above. iOS needs projection-first presentation
+with source/style validation, generation fences, saved-position fidelity, and
+catalog-gated navigation/controls, followed by native UIKit and actual-book
+verification. Source was inspected on 2026-10-09; no iOS edit or runtime claim was
+made because the paired iPhone was unavailable and the active goal prohibits
+Simulator. The 200 ms two-host gate remains open.
+
 ## Cooperative projection cancellation
 
 APP-20261009-29 adds cancellation checkpoints before source descriptor access,
