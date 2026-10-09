@@ -34,9 +34,15 @@ including verified embedded-audio prerequisites (`0d3a8229`). No remote merges.
 ## Verification and constraints
 
 Use actual mise tasks and focused native XCTest/Rust tests. Serialize heavy
-work with the existing lease, prefer the physical iPhone, terminate the previous
+work with the existing lease, terminate the previous
 app before runs, and reuse the single incremental build cache. No local Python,
-Ruff, osascript, Simulator, CI/PR monitoring, model downloads or user-data cleanup.
+Ruff, osascript, CI/PR monitoring, model downloads or user-data cleanup.
+Latest user correction supersedes physical-device preference: subsequent iOS
+validation is Simulator-only, oldest compatible runtime and one small-screen
+iPhone, no Xcode GUI or automatic iOS 18/26 fallback. Historical physical benchmark
+measurements below remain evidence, but a simulator run is not a matched device
+performance comparison. Runtime installation and Intel Rust artifact gates are
+tracked in APP-20261008-12.
 Fixture directories are exclusively owned and disposable; books, models and
 offline listening downloads are preserved. Commit/push only verified slices.
 

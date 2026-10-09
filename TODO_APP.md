@@ -10,8 +10,8 @@ this board and `handoff.md` before crossing ownership or changing shared contrac
 ## Active requests — 2026-10-08
 
 - [ ] **APP-20261008-12 — Lightweight legacy iOS Simulator intermediate goal.** In progress.
-  Explicit user authorization supersedes the earlier no-Simulator restriction
-  for this task only. Install the oldest compatible runtime and use one small-screen
+  Latest user correction: all subsequent iOS validation uses Simulator only, not
+  the physical iPhone. Install the oldest compatible runtime and use one small-screen
   iPhone; launch and run focused native app tests without opening Xcode GUI.
   This Intel Mac has 8 GiB RAM and reported crashes with iOS 18/26: no automatic
   fallback to those runtimes, no concurrent heavy jobs, no Python or data deletion.

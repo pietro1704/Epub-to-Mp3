@@ -51,8 +51,10 @@ Choose the smallest verification that proves acceptance; inspect the final diff.
 Local Python execution and Ruff checks are deferred to CI. Use native Apple
 tests for native verification. Persist explicit user corrections in the relevant
 repository instructions and apply them on subsequent runs.
-Builds and device/service actions require task authorization. Prefer physical iOS
-devices on this low-memory Intel Mac; serialize heavy work with the existing guard.
+Builds and device/service actions require task authorization. Current iOS validation
+uses only Simulator, not the physical iPhone. Select the oldest compatible runtime
+and one small-screen iPhone, without opening Xcode GUI; never substitute iOS 18/26
+automatically given reported host crashes. Serialize work with the existing guard.
 Keep tests beside their runtime and report executed checks, skipped checks, and limits.
 A source-contract check cannot prove native behavior or performance.
 For device benchmarks, follow [the benchmark guide](docs/device-benchmark.md);

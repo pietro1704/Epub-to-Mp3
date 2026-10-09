@@ -8,7 +8,7 @@ Keep iOS, macOS and Flutter behavior synchronized. Claim Done only with relevant
 runtime tests and delivery evidence; record blocked/platform-limited verification.
 Use minimal atomic Gitflow changes, focused tests, and commit/push verified slices.
 No Python/Ruff local execution, osascript or CI/PR monitoring.
-Simulator is authorized only for APP-20261008-12: oldest compatible runtime,
+Current iOS validation is Simulator-only (physical iPhone use revoked): oldest compatible runtime,
 one small-screen iPhone, no Xcode GUI, no automatic iOS 18/26 fallback given
 reported host crashes. Legacy iOS 15.0 Apple installer is downloaded and signed;
 administrator installation and actual host compatibility remain pending.
