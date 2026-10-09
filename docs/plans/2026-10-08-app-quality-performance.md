@@ -1018,3 +1018,50 @@ Signature work is too small in this measured path to explain the outstanding
 unchanged; next profiling should target catalog/presentation rather than weaken
 source/settings validation. Original books/models/downloads preserved; only the
 owned temporary archive namespace was removed. The 200 ms/full goal remains open.
+
+## Startup prewarm yields to actual reader load — 2026-10-09
+
+APP-20261009-37: both Apple startup roots now use one MainActor-owned utility
+Task. Both actual reader load entry points cancel it without waiting for drain.
+Prewarm checks cancellation between its at-most-two books; cache reads check
+before IO/decode and before retaining/migrating prepared content. Foreground
+reading remains independent. No new deletion, cache format, geometry or provider
+change. A synchronous read/decode already begun cannot be claimed interrupted,
+and check-to-publication races are not a transactional cancellation guarantee.
+
+Red native cases: canceled prewarm still read its second book (`08-21-06`),
+and the actual Mac reader failed to cancel a blocked prewarm (`08-24-10`). Green:
+13 LocalFulltextCacheTests passed (`08-25-11`), then the tightened pre-cancelled
+read passed separately (`08-29-07`), all zero failures/skips. New tests check
+reader readiness while the prewarm worker is blocked, future-read exclusion,
+unaltered durable bytes and no memory publication from a pre-cancelled read.
+Owned renderer/temp cache and saved user defaults are restored. A semaphore in
+the asynchronous test body was replaced with AsyncStream to avoid a new Swift 6
+warning; blocking simulation stays only in the synchronous injected IO callback.
+Mac bundles under `ios/EpubToMp3/.build/Logs/Test/Test-EpubToMp3Mac-2026.10.09_*.xcresult`.
+
+iOS 16 guarded build/test: two helper cases passed, the caller fixture failed
+to observe stable-layout readiness (`simulator-smoke-4765C2F7-5C49-4D2A-8749-98A0EAA46CFC`).
+After attaching the test window to its UIWindowScene and processing pending layout
+passes, the same caller assertions passed separately, one passed/zero failed/skipped:
+`.reports/simulator-smoke-55AFC995-6B0E-40A5-9E1A-B97A1751E6FB/tests.xcresult`.
+No timeout expansion or production layout change. Evidence is two + one, not
+a single three-case green bundle. Commands used focused apple:chapter-callback:test
+and ios:simulator:smoke:build/test; Simulator stopped during heavy compilation.
+Read-only specialist review found no correctness/data blocker.
+
+Same-book/range two-host measurements used the unchanged strict 200 ms assertion
+and `run-reader-relaunch.swift`: baseline `3EF920C4-54D7-4233-935D-4D68A436D07F`,
+candidate `C5F1F42D-7FD3-4FD5-A690-4F6AF541CFBB`, under `.reports/mobile-audio/reader-relaunch-*`.
+Both prepare phases passed; both verify phases executed one test and failed
+LOTR's budget (zero skips), not a crash. Complete EPUB/audio input metadata and
+hashes match; app-code hashes differ. LOTR 835.299 → 394.444 ms; Christie
+158.751 → 161.847 ms. Point footprints: LOTR 52,842,496 → 50,352,128 bytes;
+Christie 54,771,712 → 53,194,752 bytes, not memory peaks.
+Attachments `571284A6-3403-4C73-9161-7BF8A95D6DD8.json` / `595A0172-49E4-42D2-BD71-F6C90E723515.json`.
+One pair with uncontrolled startup/OS variance does not prove causal speedup.
+The benchmark includes a new window, whereas the production root reuses a window;
+their difference also contains setup/polling, not only window cost. No clock or
+gate was moved to manufacture success. LOTR and broader performance acceptance
+remain open. No synthesis or original books/models/download mutation; Flutter
+parity and the broader seeded reader geometry gate were not run in this IO slice.

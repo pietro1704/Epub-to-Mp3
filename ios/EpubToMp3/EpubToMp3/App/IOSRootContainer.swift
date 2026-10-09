@@ -136,9 +136,7 @@ final class IOSRootContainerController: UIViewController {
         view.backgroundColor = .systemBackground
         hydrateCachedChapterTitles()
         restoreLocalPlaybackControls()
-        Task.detached(priority: .utility) {
-            LocalFulltextCache.prewarmRecentBooks()
-        }
+        LocalFulltextCache.startPrewarmingRecentBooks()
         embed(shellController)
         embed(readerController)
         embed(miniPlayerController)

@@ -987,6 +987,7 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
 
     private func loadBook() {
         guard isViewLoaded else { return }
+        LocalFulltextCache.cancelPrewarming()
         loadTask?.cancel()
         loadTask = nil
         cancelActiveBookOpenJourney()

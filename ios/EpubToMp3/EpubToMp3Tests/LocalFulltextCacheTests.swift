@@ -1,4 +1,9 @@
 import XCTest
+#if os(macOS)
+import AppKit
+#else
+import UIKit
+#endif
 @testable import EpubToMp3
 
 /// Tests for the durable `EbookFulltext` binary cache and legacy JSON migration. The cache is a
@@ -8,6 +13,141 @@ import XCTest
 /// checkpoints (different lifecycle, different keying, lives under
 /// `PERSISTENT_ROOT/.cache/`).
 final class LocalFulltextCacheTests: XCTestCase {
+    private final class PrewarmReads: @unchecked Sendable {
+        private let lock = NSLock()
+        private var values: [String] = []
+        func append(_ value: String) { lock.lock(); defer { lock.unlock() }; values.append(value) }
+        var snapshot: [String] { lock.lock(); defer { lock.unlock() }; return values }
+    }
+
+    @MainActor
+    func testCancelledPrewarmDoesNotStartSecondBook() async {
+        let entered = expectation(description: "First prewarm read started")
+        let release = DispatchSemaphore(value: 0)
+        let reads = PrewarmReads()
+        let task = LocalFulltextCache.startPrewarmingRecentBooks(bookIDs: ["first", "second"]) { id in
+            XCTAssertFalse(Thread.isMainThread)
+            reads.append(id)
+            if id == "first" {
+                entered.fulfill()
+                _ = release.wait(timeout: .now() + 5)
+            }
+        }
+        defer { LocalFulltextCache.cancelPrewarming(); release.signal() }
+        await fulfillment(of: [entered], timeout: 2)
+        LocalFulltextCache.cancelPrewarming()
+        XCTAssertTrue(task.isCancelled)
+        release.signal()
+        await task.value
+        XCTAssertEqual(reads.snapshot, ["first"])
+    }
+
+    @MainActor
+    func testReaderOpeningCancelsPrewarmWithoutWaitingForItsBlockedRead() async throws {
+        let id = uniqueId()
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: id))
+        let keys = [ReaderSessionState.currentlyReadingBookIDKey, "readerWarmBookIDs.v1",
+                    AudioPlayer.readerCurrentChapterIndexDefaultsKey, AudioPlayer.readerCurrentPageRatioDefaultsKey,
+                    AudioPlayer.readerCurrentSentenceIdDefaultsKey]
+        let prior = keys.map { UserDefaults.standard.object(forKey: $0) }
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(id)
+        let book = BookEntity(id: id, title: "Foreground", bookmark: Data([1]),
+                              displayFilename: "foreground.epub", addedAt: Date())
+        defaults.set(try JSONEncoder().encode([book]), forKey: "library")
+        let encoder = PropertyListEncoder(); encoder.outputFormat = .binary
+        let cache = try XCTUnwrap(LocalFulltextCache.storageURL(bookId: id))
+        try encoder.encode(completePayload(id)).write(to: cache, options: .atomic)
+        let sourceBytes = try Data(contentsOf: cache)
+        let renderer = PreparedChapterRenderer(store: PreparedChapterArchiveStore(directory: root))
+        let entered = expectation(description: "Prewarm worker blocked")
+        let release = DispatchSemaphore(value: 0)
+        let reads = PrewarmReads()
+        let worker = LocalFulltextCache.startPrewarmingRecentBooks(bookIDs: ["first", "second"]) { bookID in
+            reads.append(bookID)
+            if bookID == "first" {
+                entered.fulfill()
+                _ = release.wait(timeout: .now() + 8)
+            }
+        }
+        let player = AudioPlayer(resumeStore: ResumeStore(storage: UserDefaultsResumeStorage(defaults: defaults)))
+        defer {
+            release.signal(); LocalFulltextCache.cancelPrewarming(); player.stop()
+            for (key, value) in zip(keys, prior) { UserDefaults.standard.set(value, forKey: key) }
+            LocalFulltextCache.evict(bookId: id); ReaderProgressStore.evict(bookId: id)
+            defaults.removePersistentDomain(forName: id)
+            try? FileManager.default.removeItem(at: root)
+        }
+        await fulfillment(of: [entered], timeout: 2)
+        XCTAssertFalse(worker.isCancelled)
+        let known = Set(LatencyObservationStore.shared.snapshot().map(\.id))
+        let library = LibraryStore(defaults: defaults, defaultsKey: "library")
+#if os(macOS)
+        UserDefaults.standard.set(id, forKey: ReaderSessionState.currentlyReadingBookIDKey)
+        let controller = MacReaderViewController(library: library, settings: AppSettings(defaults: defaults),
+            player: player, bookmarkStore: BookmarkStore(defaults: defaults, storageKey: "bookmarks"),
+            onClose: {}, preparedRenderer: renderer)
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 800, height: 600),
+                              styleMask: [.titled], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentViewController = controller
+        defer { window.orderOut(nil); window.contentViewController = nil; window.close() }
+        controller.view.layoutSubtreeIfNeeded()
+#else
+        let controller = BookOpenScreenController(book: book, library: library,
+            settings: AppSettings(defaults: defaults),
+            bookmarkStore: BookmarkStore(defaults: defaults, storageKey: "bookmarks"),
+            player: player, preparedRenderer: renderer)
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 844))
+        window.windowScene = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first
+        window.rootViewController = controller
+        window.makeKeyAndVisible()
+        defer { window.isHidden = true; window.rootViewController = nil }
+        controller.view.layoutIfNeeded()
+#endif
+        XCTAssertTrue(worker.isCancelled, "Actual reader opening must cancel startup prewarm")
+        func ready() -> Bool {
+            LatencyObservationStore.shared.snapshot().contains {
+                !known.contains($0.id) && $0.records.contains { $0.transition == .controlsUsable }
+            }
+        }
+        for _ in 0..<400 {
+#if os(iOS)
+            window.layoutIfNeeded()
+            controller.view.layoutIfNeeded()
+#endif
+            if ready() { break }
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+        XCTAssertTrue(ready(), "Foreground reader must become usable while prewarm is still blocked; "
+            + "newJourneys=\(LatencyObservationStore.shared.snapshot().filter { !known.contains($0.id) })")
+        XCTAssertEqual(reads.snapshot, ["first"])
+        XCTAssertEqual(try Data(contentsOf: cache), sourceBytes)
+        release.signal()
+        await worker.value
+        XCTAssertEqual(reads.snapshot, ["first"])
+        await renderer.flush()
+    }
+
+    func testCancelledReadDoesNotRetainOrRewritePreparedBytes() async throws {
+        let id = uniqueId()
+        defer { LocalFulltextCache.evict(bookId: id) }
+        let cache = try XCTUnwrap(LocalFulltextCache.storageURL(bookId: id))
+        let encoder = PropertyListEncoder(); encoder.outputFormat = .binary
+        let bytes = try encoder.encode(completePayload(id))
+        try bytes.write(to: cache, options: .atomic)
+        var continuation: AsyncStream<Void>.Continuation!
+        let gate = AsyncStream<Void> { continuation = $0 }
+        let task = Task.detached {
+            for await _ in gate { }
+            return LocalFulltextCache.read(bookId: id)
+        }
+        task.cancel()
+        continuation.finish()
+        let result = await task.value
+        XCTAssertNil(result)
+        XCTAssertNil(LocalFulltextCache.inMemoryPayload(bookId: id))
+        XCTAssertEqual(try Data(contentsOf: cache), bytes)
+    }
 
     private func uniqueId() -> String {
         UUID().uuidString.replacingOccurrences(of: "-", with: "")

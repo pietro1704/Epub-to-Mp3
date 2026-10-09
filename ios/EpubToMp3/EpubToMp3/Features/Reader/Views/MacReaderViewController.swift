@@ -544,6 +544,7 @@ final class MacReaderViewController: NSViewController, NSTableViewDataSource, NS
 
     private func loadCurrentBook() {
         guard isViewLoaded else { return }
+        LocalFulltextCache.cancelPrewarming()
         loadTask?.cancel()
         cancelActiveBookOpenJourney()
         let generation = UUID()

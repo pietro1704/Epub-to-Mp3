@@ -21,6 +21,21 @@ this board and `handoff.md` before crossing ownership or changing shared contrac
   macOS: 38 passed, 0 failed/skipped; iOS 16: four new cases passed, 0 failed/skipped.
   Evidence in the quality plan. No synthesis or real-book latency claim.
 
+- [ ] **APP-20261009-37 — Yield startup reader prewarm to foreground opens.** Apple behavior verified; budget/parity open.
+  Startup prewarm currently has no retained cancellation handle and can decode
+  two books while the user opens a reader. Cancel best-effort startup work before
+  foreground reading without waiting on MainActor; check cancellation between
+  books and before IO/decode/publication. Already-running synchronous decoding
+  cannot be claimed interrupted. Native caller responsiveness/preservation tests
+  and same-book before/after opening evidence required; 200 ms gate stays intact.
+  Both Apple startup roots retain one managed utility task; reader load cancels
+  it without awaiting. Mac: 13 cache tests plus one pre-cancel read passed.
+  iOS 16: two helpers passed, caller initially failed stable-layout readiness;
+  scene/layout-correct fixture then passed separately. Sources/bytes preserved.
+  Matched relaunch measurements: LOTR 835.299 → 394.444 ms, Christie
+  158.751 → 161.847 ms. Both runs fail LOTR's 200 ms gate; no causal speedup
+  claim from one pair. Details and limits in the quality plan; Flutter unverified.
+
 - [x] **APP-20261009-36 — Measure Mac prepared renderer overhead.** Diagnostic verified.
   Performance diagnostic follow-up: measure the actual renderer signature/cache
   miss and disk restore costs for LOTR chapter 8 and Christie chapter 6, with

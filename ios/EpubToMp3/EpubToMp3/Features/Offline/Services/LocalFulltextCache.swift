@@ -22,6 +22,7 @@ enum LocalFulltextCache {
         return cache
     }()
     private static let recentBookIDsKey = "readerWarmBookIDs.v1"
+    @MainActor private static var backgroundPrewarm: Task<Void, Never>?
     private static let rebuildableCacheBudgetBytes: Int64 = 256 * 1_024 * 1_024
 
     private static var directory: URL? {
@@ -84,20 +85,24 @@ enum LocalFulltextCache {
     /// Returns prepared fulltext when it is available locally. A corrupt
     /// payload falls through to the regular parser; it is never fatal.
     static func read(bookId: String) -> EbookFulltext? {
+        guard !Task.isCancelled else { return nil }
         if let payload = inMemoryPayload(bookId: bookId) {
             return payload
         }
 
         let primary = readPayload(at: storageURL(bookId: bookId))
+        guard !Task.isCancelled else { return nil }
         guard let payload = primary
                 ?? readPayload(at: fileURL(bookId: bookId, in: directory))
                 ?? readPayload(at: fileURL(bookId: bookId, in: legacyDirectory)) else {
             return nil
         }
+        guard !Task.isCancelled else { return nil }
         retainInMemory(payload, bookId: bookId)
 
         // Repair a missing/corrupt primary only from a successfully decoded legacy payload.
         if primary == nil, let durableURL = storageURL(bookId: bookId) {
+            guard !Task.isCancelled else { return nil }
             write(payload, to: durableURL)
         }
         return payload
@@ -124,12 +129,33 @@ enum LocalFulltextCache {
         UserDefaults.standard.set(Array(recents), forKey: recentBookIDsKey)
     }
 
-    /// Best-effort launch prewarm. Call this off the main actor; cache misses
-    /// remain cheap and a corrupt entry simply falls through on the next open.
-    static func prewarmRecentBooks() {
-        let recents = UserDefaults.standard.stringArray(forKey: recentBookIDsKey) ?? []
+    /// Start bounded utility work that foreground readers can revoke without waiting.
+    @MainActor @discardableResult
+    static func startPrewarmingRecentBooks(
+        bookIDs: [String]? = nil,
+        readBook: @escaping @Sendable (String) -> Void = { _ = LocalFulltextCache.read(bookId: $0) }
+    ) -> Task<Void, Never> {
+        cancelPrewarming()
+        let task = Task.detached(priority: .utility) {
+            prewarmRecentBooks(bookIDs: bookIDs, readBook: readBook)
+        }
+        backgroundPrewarm = task
+        return task
+    }
+
+    @MainActor static func cancelPrewarming() {
+        backgroundPrewarm?.cancel()
+        backgroundPrewarm = nil
+    }
+
+    static func prewarmRecentBooks(
+        bookIDs: [String]? = nil,
+        readBook: @Sendable (String) -> Void = { _ = LocalFulltextCache.read(bookId: $0) }
+    ) {
+        let recents = bookIDs ?? UserDefaults.standard.stringArray(forKey: recentBookIDsKey) ?? []
         for bookID in recents.prefix(2) {
-            _ = read(bookId: bookID)
+            guard !Task.isCancelled else { return }
+            readBook(bookID)
         }
     }
 
@@ -218,12 +244,14 @@ enum LocalFulltextCache {
     }
 
     private static func readPayload(at url: URL?) -> EbookFulltext? {
-        guard let url,
+        guard !Task.isCancelled, let url,
               let data = try? Data(contentsOf: url) else {
             return nil
         }
-        return (try? PropertyListDecoder().decode(EbookFulltext.self, from: data))
-            ?? (try? JSONDecoder().decode(EbookFulltext.self, from: data))
+        guard !Task.isCancelled else { return nil }
+        if let payload = try? PropertyListDecoder().decode(EbookFulltext.self, from: data) { return payload }
+        guard !Task.isCancelled else { return nil }
+        return try? JSONDecoder().decode(EbookFulltext.self, from: data)
     }
 
     private static func write(_ payload: EbookFulltext, to url: URL) {
