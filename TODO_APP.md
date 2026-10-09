@@ -22,13 +22,31 @@ this board and `handoff.md` before crossing ownership or changing shared contrac
   manual completion and progress/chapter callbacks. History reloaded after flush.
   FFI/Rust/Flutter unchanged; Flutter runtime parity remains for Arch to verify.
 
-- [ ] **APP-20261009-26 — Native iOS Listen must consume progressive delivery.** Identified.
+- [x] **APP-20261009-26 — Native iOS Listen must consume progressive delivery.** Verified complete-chapter bridge.
   Original goal playback/performance: MainReaderScreenController.startListening
   awaits the whole default conversion before installing playback and does not
   supply the reader priority chapter or chapter-completion callback. Restore
   chapter-first progressive delivery without whole-book benchmark synthesis,
   duplicate jobs, stale-book autoplay or silently changing configured providers.
   Native controller/AVPlayer evidence required, not a source-contract assertion.
+  Slice: inject the existing Rust executor, capture priority/job ownership before
+  async file resolution, consume complete-chapter callbacks in source order,
+  preserve the current item on finalization and honor pause while waiting.
+  Verify out-of-order delivery, duplicate Play, stale book/player session and
+  paused completion with native UIKit/AVPlayer and isolated fixtures. No layout
+  changes or new synthesis. Segment delivery/200 ms/Flutter acceptance stay open.
+  Evidence: iOS seven cases passed in `E656DF68...`; the replacement-session case
+  passed separately in `86DB3D4C...` after correcting its expectation to preserve
+  the recipient's converting state. No production change between those runs.
+  macOS shared pause regression: one passed, zero failures/skips (`03-42-31`).
+  The requested audio file advanced before fake conversion completion; finalization
+  retained its AVPlayerItem and respected pause. Private session defaults prevent
+  app-host cleanup from invalidating isolated library fixtures; production stays
+  on standard defaults. See the goal plan for full evidence and limits.
+  Final data-safety audit: meaningful previous position is paused/persisted before
+  transport teardown. An additional iOS case passed (`437B1056...`, zero skips/fails),
+  reading a fresh ResumeStore marker at 4 seconds with wasPlaying=false.
+  Total iOS coverage is nine cases across seven + one + one focused executions.
 
 - [x] **APP-20261009-24 — Honest reader readiness after saved-position restore.** Verified macOS slice.
   Part of APP-20261009-21: macOS readiness must follow committed layout and saved

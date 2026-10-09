@@ -58,6 +58,59 @@ uncontrolled comparison or extrapolate whole-book duration.
 
 ## Progress
 
+### Native iOS reader progressive Listen — complete-chapter bridge
+
+APP-20261009-26 now requests the literal reader priority through the existing
+Rust executor, resolves input asynchronously, and queues complete-chapter events
+before the conversion returns. A job token fences duplicate Play, stale callbacks
+and replacement sessions. Later events are deduplicated/ordered; the requested
+chapter must be present before playback starts. Terminal manifests must retain
+that priority/order before history registration. Finalization uses finishStreaming,
+not play/resume, preserving the active media item and a user's pause. Error cleanup
+is independent of the visible book and preserves audio already delivered.
+
+Shared AudioPlayer.pause now revokes pending autoplay even before audio exists.
+Session defaults are injectable for isolated native components; production still
+uses standard defaults. The failed first fixture run was traced to app-host cleanup
+removing its global book selection while input resolution awaited, not to a missing
+file or audio transport failure. Tagged diagnostic probes were removed.
+
+Executed evidence, iOS 16 SE Simulator with the Xcode 16.4 test controller:
+
+- Controlled old wait-for-completion route: one test failed with requested start
+  -1 instead of 1 (`simulator-smoke-05D04967-B054-4E62-8CFF-04698801D668`).
+- Diagnostic: calls=0, selectedBookMatches=false, sourceExists=true, no player
+  snapshot (`simulator-smoke-8A0B8724-D131-4BAF-8E05-7E83872B6587`).
+- Production fix: seven cases passed, one failed only on the test's incorrect
+  expectation that a replacement running session should have isConverting=false
+  (`simulator-smoke-E656DF68-66B2-4F46-8533-A7F9B0B061BE`).
+- The corrected replacement assertion passed in a one-case rerun, zero skips/fails
+  (`simulator-smoke-86DB3D4C-119A-46C6-8A4D-403BCBDF7315`). Production code was unchanged.
+- macOS shared pending-pause regression: one passed, zero skips/fails
+  (`Test-EpubToMp3Mac-2026.10.09_03-42-31--0300.xcresult`).
+- Final data-safety case: one passed, zero skips/fails
+  (`simulator-smoke-437B1056-4B2F-4CC1-BACF-ACD6F0D535C4`), verifying a fresh
+  ResumeStore preserves the previous meaningful 4-second position, wasPlaying=false.
+  This covers the additional pre-teardown pause/persistence branch. The explicit
+  persistence after pause also avoids its speech-fallback early return; the speech
+  transport itself is not tested here. Total iOS cases: nine across seven + one + one.
+
+The native controller tests use an isolated three-chapter EPUB, priority 1 and
+two file-backed audio chapters (1–2); no provider or network synthesis. Actual
+AVPlayerItem time advances on the requested file before the fake executor finishes.
+They cover out-of-order/foreign delivery, duplicate Play, overflow, pause, book
+change, replacement ownership, terminal priority and failure during browsing.
+Commands: guarded ios:simulator:smoke:build/test with focused IOS_TESTS filters;
+apple:chapter-callback:test with AudioPlayerPendingPlayIntentTests only. A host-load
+guard refused one build; work resumed after cooldown without bypassing it.
+
+Limits: these are command-seam/AVFoundation tests, not real-book speed measurements,
+acoustic latency, UI gesture validation or glyph/layout evidence. Progress remains
+by complete chapter, not first segment. FFI cancellation is not exposed by the
+current native adapter; superseded work is fenced from playback but may still run.
+Provider configuration, segment-first delivery, 200 ms relaunch and Flutter runtime
+parity remain separate original-goal requirements. Rust/FFI/Flutter unchanged.
+
 ### Native Book Detail manual isolation — actual adapters verified
 
 The audit found that both native Book Detail adapters still replaced playback on

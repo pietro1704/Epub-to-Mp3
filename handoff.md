@@ -24,6 +24,15 @@ execution on this Mac remains excluded. Goal item 3 is not globally complete.
 Chapter-first relaunch integration, actual usable-playback readiness and the
 200 ms budget remain open; see the reader opening profile and TODO_APP.md.
 
+APP-20261009-26: iOS main-reader Listen now consumes complete-chapter callbacks
+before conversion completion, preserving priority, pause and player ownership.
+Nine iOS cases have passing evidence across seven + one + one focused executions; shared
+pending-pause regression passed on macOS. Details/failed-run provenance are in
+`docs/plans/2026-10-08-app-quality-performance.md`. No new real-book speed claim.
+Arch: first-segment delivery and native FFI cancellation remain unimplemented by
+this bridge; superseded Rust work can still run despite rejecting stale playback.
+Flutter parity still needs actual execution on Arch; no local Flutter run here.
+
 `TODO_APP.md` is the shared user-request/status board; root `AGENTS.md`/`CLAUDE.md`
 is authoritative. Codex coordinates Apple changes; Arch coordinates Rust/Flutter.
 Keep iOS, macOS and Flutter behavior synchronized. Claim Done only with relevant

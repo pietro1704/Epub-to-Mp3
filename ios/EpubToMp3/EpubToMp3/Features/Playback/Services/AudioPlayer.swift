@@ -1361,6 +1361,7 @@ final class AudioPlayer: ObservableObject {
     }
 
     func pause() {
+        pendingAutoPlay = false
         if activeSeekAutoplay != nil { activeSeekAutoplay = false }
         pendingChapterSeek?.autoplay = false
         // Slice-2 speech-fallback route: when the synthesizer owns the
