@@ -161,7 +161,7 @@ fn run(raw: Vec<String>) -> Result<i32, String> {
         }
     }
 
-    let config = converter_core::config::AppConfig::from_env();
+    let config = conversion_config(&options);
     let selected_chapters = if options.chapters.is_empty() && options.sections.is_empty() {
         None
     } else {
@@ -199,6 +199,14 @@ fn run(raw: Vec<String>) -> Result<i32, String> {
         );
     }
     Ok(0)
+}
+
+fn conversion_config(options: &CliOptions) -> converter_core::config::AppConfig {
+    let mut config = converter_core::config::AppConfig::from_env();
+    if let Some(output) = &options.output_dir {
+        config.paths.output_dir = Path::new(output).expand();
+    }
+    config
 }
 
 fn parse_args(args: &[String]) -> Result<CliOptions, String> {
@@ -599,6 +607,42 @@ fn home_dir() -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn output_directory_option_overrides_only_the_output_path() {
+        let options = parse_args(&[
+            "convert".into(),
+            "book.epub".into(),
+            "--output-dir".into(),
+            "chosen output".into(),
+        ])
+        .unwrap();
+        let original = converter_core::config::AppConfig::from_env();
+        let configured = conversion_config(&options);
+        assert_eq!(configured.paths.output_dir, PathBuf::from("chosen output"));
+        assert_eq!(configured.paths.cache_dir, original.paths.cache_dir);
+        assert_eq!(configured.paths.jobs_dir, original.paths.jobs_dir);
+    }
+
+    #[test]
+    fn output_directory_expands_the_home_prefix() {
+        let options = CliOptions {
+            output_dir: Some("~/audiobooks".into()),
+            ..Default::default()
+        };
+        assert_eq!(
+            conversion_config(&options).paths.output_dir,
+            home_dir().join("audiobooks")
+        );
+    }
+
+    #[test]
+    fn omitted_output_option_preserves_the_runtime_default() {
+        assert_eq!(
+            conversion_config(&CliOptions::default()),
+            converter_core::config::AppConfig::from_env()
+        );
+    }
 
     #[test]
     fn cli_sources_only_the_embedded_core_api() {

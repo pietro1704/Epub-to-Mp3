@@ -221,6 +221,23 @@ impl JobManager {
         Ok(record)
     }
 
+    /// Reset a recoverable job for another attempt. The caller must ensure no
+    /// worker is still running for this job, including after process recovery.
+    pub fn restart(&self, job_id: &str) -> Result<JobRecord, JobError> {
+        let mut record = self.load(job_id)?;
+        if record.state == JobState::Completed {
+            return Err(JobError::InvalidTransition(InvalidTransition {
+                from: record.state,
+                to: JobState::Queued,
+            }));
+        }
+        record.state = JobState::Queued;
+        record.progress = serde_json::Value::Null;
+        record.updated_at = unix_now();
+        self.persist(&record)?;
+        Ok(record)
+    }
+
     pub fn update_progress(
         &self,
         job_id: &str,
@@ -372,6 +389,44 @@ mod tests {
         let directory = tempfile::tempdir().unwrap();
         let manager = JobManager::with_ttl(directory.path(), Duration::from_secs(60)).unwrap();
         (directory, manager)
+    }
+
+    #[test]
+    fn restart_resets_recoverable_jobs_and_preserves_completed_jobs() {
+        let (_directory, manager) = manager();
+        for (index, state) in [
+            JobState::Queued,
+            JobState::Running,
+            JobState::Cancelling,
+            JobState::Cancelled,
+            JobState::Failed,
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let id = format!("retry-{index}");
+            let mut record = JobRecord::new(&id, serde_json::Map::new());
+            record.state = state;
+            record.progress = serde_json::json!({"completed": 2});
+            manager.persist(&record).unwrap();
+            let restarted = manager.restart(&id).unwrap();
+            assert_eq!(restarted.state, JobState::Queued);
+            assert!(restarted.progress.is_null());
+            assert_eq!(restarted.created_at, record.created_at);
+            assert_eq!(manager.load(&id).unwrap(), restarted);
+        }
+        let mut completed = JobRecord::new("done", serde_json::Map::new());
+        completed.state = JobState::Completed;
+        manager.persist(&completed).unwrap();
+        assert!(matches!(
+            manager.restart("done"),
+            Err(JobError::InvalidTransition(_))
+        ));
+        assert_eq!(manager.load("done").unwrap(), completed);
+        assert!(matches!(
+            manager.restart("unknown"),
+            Err(JobError::NotFound(_))
+        ));
     }
 
     #[test]
