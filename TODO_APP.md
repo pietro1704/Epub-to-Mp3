@@ -9,6 +9,15 @@ this board and `handoff.md` before crossing ownership or changing shared contrac
 
 ## Active requests — 2026-10-08
 
+- [ ] **APP-20261009-21 — Active-chapter relaunch critical path.** Profiled; implementation pending.
+  Two-host actual-window profiling confirms prepared attributed archive hits;
+  LOTR full-book read/decode ~130 ms, restore ~5 ms, presentation ~5 ms, initial
+  window/attach/layout cumulative ~93 ms. State/table setup ~23 ms includes restore.
+  Preserve 200 ms gate and source/style integrity; avoid decoding the whole book
+  before restoring the active chapter. Detailed evidence in
+  `docs/plans/2026-10-09-reader-opening-profile.md`. No source fix claimed; temporary
+  tagged probes removed, original cache/book bytes preserved.
+
 - [x] **APP-20261009-20 — Avoid duplicate prepared-renderer signature work.** Verified narrow slice.
   Reuse the already computed signature for memory lookup; retain full source/style
   identity and post-await validation. Memory restoration regression checks complete
