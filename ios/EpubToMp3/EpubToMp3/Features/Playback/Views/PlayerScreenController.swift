@@ -159,9 +159,8 @@ final class PlayerScreenController: UIViewController {
             .sink { [weak self] _ in self?.render() }
             .store(in: &cancellables)
 
-        playbackClock.objectWillChange
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] _ in self?.render() }
+        playbackClock.$snapshot
+            .sink { [weak self] snapshot in self?.renderPlaybackProgress(snapshot) }
             .store(in: &cancellables)
     }
 
@@ -175,21 +174,26 @@ final class PlayerScreenController: UIViewController {
 
         titleLabel.text = activeSnapshot.bookTitle ?? L10n.string("player.audiobookFallback")
         chapterLabel.text = player.snapshot == nil ? "—" : player.effectiveChapterTitle
-        slider.maximumValue = Float(max(playbackClock.durationSeconds, 1))
-        slider.value = Float(playbackClock.positionSeconds)
-        elapsedLabel.text = format(seconds: AudioPlayer.rateAdjustedDuration(
-            seconds: playbackClock.positionSeconds,
-            rate: player.rate
-        ))
-        durationLabel.text = format(seconds: AudioPlayer.rateAdjustedDuration(
-            seconds: playbackClock.durationSeconds,
-            rate: player.rate
-        ))
+        renderPlaybackProgress()
         playPauseButton.setImage(
             UIImage(systemName: player.isPlaying ? "pause.circle.fill" : "play.circle.fill"),
             for: .normal
         )
         updateRateMenu()
+    }
+
+    private func renderPlaybackProgress(_ clockSnapshot: PlaybackClock.Snapshot? = nil) {
+        let snapshot = clockSnapshot ?? playbackClock.snapshot
+        slider.maximumValue = Float(max(snapshot.durationSeconds, 1))
+        slider.value = Float(snapshot.positionSeconds)
+        elapsedLabel.text = format(seconds: AudioPlayer.rateAdjustedDuration(
+            seconds: snapshot.positionSeconds,
+            rate: player.rate
+        ))
+        durationLabel.text = format(seconds: AudioPlayer.rateAdjustedDuration(
+            seconds: snapshot.durationSeconds,
+            rate: player.rate
+        ))
     }
 
     private func updateRateMenu() {

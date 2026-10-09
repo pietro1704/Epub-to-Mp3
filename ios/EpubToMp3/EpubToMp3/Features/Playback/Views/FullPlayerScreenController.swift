@@ -19,7 +19,6 @@ final class FullPlayerScreenController: UIViewController {
     private let settings: AppSettings
 
     private var cancellables: Set<AnyCancellable> = []
-    private var positionTask: Task<Void, Never>?
     private var isScrubbing = false
     private var currentBookID: String? {
         UserDefaults.standard.string(forKey: AudioPlayer.currentBookIDDefaultsKey)
@@ -99,16 +98,6 @@ final class FullPlayerScreenController: UIViewController {
         dismissPanGesture.delegate = self
         dismissPanGesture.cancelsTouchesInView = false
         view.addGestureRecognizer(dismissPanGesture)
-    }
-
-    override func viewDidDisappear(_ animated: Bool) {
-        super.viewDidDisappear(animated)
-        positionTask?.cancel()
-        positionTask = nil
-    }
-
-    deinit {
-        positionTask?.cancel()
     }
 
     func refresh(library: LibraryStore) {
@@ -372,7 +361,7 @@ final class FullPlayerScreenController: UIViewController {
     }
 
     private func bind() {
-        [player.objectWillChange, playbackClock.objectWillChange, library.objectWillChange, playerPresentation.objectWillChange]
+        [player.objectWillChange, library.objectWillChange, playerPresentation.objectWillChange]
             .forEach { publisher in
                 publisher
                     .receive(on: DispatchQueue.main)
@@ -380,22 +369,15 @@ final class FullPlayerScreenController: UIViewController {
                     .store(in: &cancellables)
             }
 
+        playbackClock.$snapshot
+            .sink { [weak self] snapshot in self?.renderPlaybackPosition(snapshot) }
+            .store(in: &cancellables)
+
         NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in self?.render() }
             .store(in: &cancellables)
 
-        positionTask = Task { [weak self] in
-            guard let self else { return }
-            for await _ in self.player.position {
-                guard !Task.isCancelled else { break }
-                if !self.isScrubbing {
-                    await MainActor.run {
-                        self.renderPlaybackPosition()
-                    }
-                }
-            }
-        }
     }
 
     private func configureTransportButton(
@@ -490,14 +472,15 @@ final class FullPlayerScreenController: UIViewController {
         return AppSettings.playbackSkipIntervals.contains(value) ? Int(value) : 15
     }
 
-    private func renderPlaybackPosition() {
-        slider.maximumValue = Float(max(playbackClock.durationSeconds, 1))
-        let position = player.isSeeking ? player.positionSeconds : playbackClock.positionSeconds
+    private func renderPlaybackPosition(_ clockSnapshot: PlaybackClock.Snapshot? = nil) {
+        let snapshot = clockSnapshot ?? playbackClock.snapshot
+        slider.maximumValue = Float(max(snapshot.durationSeconds, 1))
+        let position = player.isSeeking ? player.positionSeconds : snapshot.positionSeconds
         if !isScrubbing && !player.isSeeking {
             slider.value = Float(position)
         }
         elapsedLabel.text = formatTime(position)
-        let remaining = max(0, playbackClock.durationSeconds - position)
+        let remaining = max(0, snapshot.durationSeconds - position)
         let rateAdjusted = remaining / Double(player.rate.rawValue)
         remainingLabel.text = "-" + formatTime(rateAdjusted)
     }

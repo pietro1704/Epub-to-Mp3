@@ -263,7 +263,7 @@ final class MiniPlayerBarUIKitView: UIView, UIGestureRecognizerDelegate {
             .sink { [weak self] _ in self?.render() }
             .store(in: &cancellables)
         playbackClock.$snapshot
-            .sink { [weak self] _ in self?.render() }
+            .sink { [weak self] snapshot in self?.renderPlaybackPosition(snapshot) }
             .store(in: &cancellables)
         library.objectWillChange
             .receive(on: DispatchQueue.main)
@@ -338,10 +338,11 @@ final class MiniPlayerBarUIKitView: UIView, UIGestureRecognizerDelegate {
         )
     }
 
-    private func renderPlaybackPosition() {
+    private func renderPlaybackPosition(_ clockSnapshot: PlaybackClock.Snapshot? = nil) {
         guard let player, let playbackClock else { return }
-        let position = player.isSeeking ? player.positionSeconds : playbackClock.snapshot.positionSeconds
-        let duration = playbackClock.snapshot.durationSeconds
+        let snapshot = clockSnapshot ?? playbackClock.snapshot
+        let position = player.isSeeking ? player.positionSeconds : snapshot.positionSeconds
+        let duration = snapshot.durationSeconds
         progressSlider.maximumValue = Float(max(duration, 1))
         if !isScrubbing && !player.isSeeking {
             progressSlider.value = Float(position)
