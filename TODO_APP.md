@@ -9,6 +9,12 @@ this board and `handoff.md` before crossing ownership or changing shared contrac
 
 ## Active requests — 2026-10-08
 
+- [x] **APP-20261008-13 — Faster Apple download/extraction defaults.** Recorded.
+  Prefer xcodes/aria2 downloads and experimental unxip for Xcode `.xip` archives.
+  CLI help confirms the flag; `/usr/local/bin/aria2c` exists. Runtime `.dmg`
+  installation does not use unxip. Retain active useful partial downloads and
+  serialize heavy work on this Mac; this policy is not a speed benchmark claim.
+
 - [ ] **APP-20261008-12 — Lightweight legacy iOS Simulator intermediate goal.** In progress.
   Latest user correction: all subsequent iOS validation uses Simulator only, not
   the physical iPhone. Install the oldest compatible runtime and use one small-screen
@@ -32,8 +38,15 @@ this board and `handoff.md` before crossing ownership or changing shared contrac
   be checked separately from the app's iOS 15 deployment floor.
   Next candidate: iOS 16.0 and a small compatible device. CLI download returned
   unavailable; official legacy URL redirects to Apple Developer unauthorized page.
-  Authenticated Apple download is required; no login credentials requested/stored.
-  App opening remains pending. No iOS 18/26 boot or physical-device run.
+  Direct curl required authentication, but xcodes 2.1.0 successfully downloaded
+  and installed iOS 16.0 (20A360); simctl reports Ready. Earlier download blocker
+  was not exhaustive: prefer xcodes rather than transferring legwork to the user.
+  Created SE second generation `381DBE17-FFAB-4A2E-B35F-AB9FEC92C14E` (first-generation
+  SE does not support iOS 16). Boot began migration, but host load rose from 1.93
+  to 62.95 without parallel builds. Shut down the exact device immediately;
+  do not interpret bootstatus's shutdown terminal message as successful readiness.
+  App opening/tests remain unverified: unsafe observed host load and no compatible
+  app/Rust Simulator artifact. No iOS 18/26 boot or physical-device run.
   Full embedded runtime validation also requires the missing Intel iOS Simulator
   Rust artifact (`x86_64-apple-ios`); Arch owns that build. Physical arm64 iOS and
   x86_64 macOS binaries are not substitutes. App launch/tests remain unverified.

@@ -55,6 +55,9 @@ Builds and device/service actions require task authorization. Current iOS valida
 uses only Simulator, not the physical iPhone. Select the oldest compatible runtime
 and one small-screen iPhone, without opening Xcode GUI; never substitute iOS 18/26
 automatically given reported host crashes. Serialize work with the existing guard.
+Prefer `xcodes` with installed `aria2` for Apple downloads; use
+`--experimental-unxip` for Xcode `.xip` extraction, not runtime `.dmg` imports.
+Preserve useful partial downloads; keep extraction/build/Simulator work serialized.
 Keep tests beside their runtime and report executed checks, skipped checks, and limits.
 A source-contract check cannot prove native behavior or performance.
 For device benchmarks, follow [the benchmark guide](docs/device-benchmark.md);

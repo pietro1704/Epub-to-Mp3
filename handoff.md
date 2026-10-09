@@ -14,7 +14,11 @@ reported host crashes. Legacy iOS 15.0 Apple package is downloaded and signed, b
 installation failed: the suggested root installer command was incorrect for this
 destinationless runtime payload; the protected system volume rejected it. CLI
 platform import failed too. Do not repeat that command. iOS 16.0 is the next
-candidate; its official legacy download requires an authenticated Apple session.
+candidate. Direct curl required login, but xcodes 2.1.0 subsequently downloaded
+and installed iOS 16.0 (20A360), simctl Ready. SE second-generation device
+`381DBE17-FFAB-4A2E-B35F-AB9FEC92C14E` booted into initial migration; host load
+rose to 62.95 with no parallel build, so that device was shut down immediately.
+App validation remains unverified; do not boot again automatically on this host.
 Arch: supply/verify the `x86_64-apple-ios` converter-ffi Simulator artifact for
 this Intel Mac before full embedded reader/conversion acceptance. Existing
 physical iOS arm64 and macOS x86_64 artifacts cannot be used as substitutes.
