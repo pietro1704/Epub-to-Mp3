@@ -21,6 +21,16 @@ this board and `handoff.md` before crossing ownership or changing shared contrac
   valid positional ranges still produce exactly the requested chapters in source
   order. Rust verification belongs on Arch; no local Rust test was run here.
 
+- [x] **APP-20261009-42 — Move embedded iOS conversion-history reads off MainActor.** Host verified; device launch pending.
+  The conversions screen enumerated Rust job folders and decoded every local
+  `manifest.json` inside a MainActor task. Move enumeration/read/decode to the
+  shared utility worker, retain newest-first ordering and cancellation, and cap
+  each manifest read at 1 MiB. Foundation XCTest: 2 new cases passed for actual
+  worker-thread IO, ordering, and pre-cancelled no-IO; full task 22 passed, 0
+  failures, 4 FFI-only skips. Generic `iphoneos` compile reached the Rust bundle
+  phase without Swift errors, then stopped because the host has no iOS dylib
+  signing identity. No Simulator, install, device UI, or library data changed.
+
 - [x] **APP-20261009-40 — Verify staged import bytes against their content ID.** Verified on macOS.
   A source can change between identity hashing and copy. Check the staged copy
   before replacing the durable destination, and revalidate same-path imports.

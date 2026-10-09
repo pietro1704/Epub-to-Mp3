@@ -88,4 +88,47 @@ final class ConversionHistoryReaderTests: XCTestCase {
         XCTAssertLessThanOrEqual(snapshot.bytesRead, 128 * 1024)
         print("[History IO] archiveBytes=\(fixture.count) bytesRead=\(snapshot.bytesRead) records=\(snapshot.sessions.count) readMs=\(readMilliseconds)")
     }
+
+    @MainActor
+    func testEmbeddedManifestHistoryLoadsOffMainAndPreservesNewestFirstOrder() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("embedded-history-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: false)
+        defer { try? FileManager.default.removeItem(at: root) }
+        for (id, title, date) in [
+            ("old", "Older book", Date(timeIntervalSince1970: 1)),
+            ("new", "Newest book", Date(timeIntervalSince1970: 2)),
+        ] {
+            let directory = root.appendingPathComponent(id, isDirectory: true)
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false)
+            let manifest = """
+            {"manifest":{"jobId":"\(id)","title":"\(title)","chapters":[{}]}}
+            """
+            try Data(manifest.utf8).write(to: directory.appendingPathComponent("manifest.json"))
+            try FileManager.default.setAttributes([.modificationDate: date], ofItemAtPath: directory.path)
+        }
+
+        let snapshot = try await ConversionHistoryReader.loadEmbeddedManifests(from: root)
+
+        XCTAssertFalse(snapshot.ioOnMainThread)
+        let sessions = snapshot.sessions
+        XCTAssertEqual(sessions.map(\.jobId), ["new", "old"])
+        XCTAssertEqual(sessions.map(\.bookTitle), ["Newest book", "Older book"])
+        XCTAssertTrue(sessions.allSatisfy { $0.engine == "Rust" && $0.mode == "embedded" })
+    }
+
+    @MainActor
+    func testCancelledEmbeddedManifestHistoryDoesNotStartIO() async {
+        let task = Task { @MainActor in
+            try await ConversionHistoryReader.loadEmbeddedManifests(from: URL(fileURLWithPath: "/unused-history-root"))
+        }
+        task.cancel()
+        do {
+            _ = try await task.value
+            XCTFail("Cancelled load unexpectedly succeeded")
+        } catch is CancellationError {
+            // A missing-root error would prove cancelled work still performed IO.
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+    }
 }

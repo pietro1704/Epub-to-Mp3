@@ -1,6 +1,23 @@
 import Foundation
 
 enum ConversionHistoryReader {
+    struct EmbeddedSnapshot: Sendable {
+        let sessions: [SessionRecord]
+        let ioOnMainThread: Bool
+    }
+
+    private struct EmbeddedManifestEnvelope: Decodable {
+        let manifest: Manifest
+
+        struct Manifest: Decodable {
+            let jobId: String
+            let title: String
+            let chapters: [Chapter]
+        }
+
+        struct Chapter: Decodable {}
+    }
+
     struct Snapshot: Sendable {
         let sessions: [SessionRecord]
         let bytesRead: Int
@@ -68,5 +85,62 @@ enum ConversionHistoryReader {
         return try await withTaskCancellationHandler(operation: {
             try await task.value
         }, onCancel: { task.cancel() })
+    }
+
+    static func loadEmbeddedManifests(from root: URL) async throws -> EmbeddedSnapshot {
+        try Task.checkCancellation()
+        let task = Task.detached(priority: .utility) { try readEmbeddedManifests(from: root) }
+        return try await withTaskCancellationHandler(operation: {
+            try await task.value
+        }, onCancel: { task.cancel() })
+    }
+
+    private static func readEmbeddedManifests(from root: URL) throws -> EmbeddedSnapshot {
+        try Task.checkCancellation()
+        guard FileManager.default.fileExists(atPath: root.path) else {
+            return EmbeddedSnapshot(sessions: [], ioOnMainThread: Thread.isMainThread)
+        }
+        let directories = try FileManager.default.contentsOfDirectory(
+            at: root,
+            includingPropertiesForKeys: [.contentModificationDateKey, .isDirectoryKey],
+            options: [.skipsHiddenFiles]
+        )
+        var localSessions: [(date: Date, session: SessionRecord)] = []
+        let decoder = JSONDecoder()
+        for directory in directories {
+            try Task.checkCancellation()
+            guard (try? directory.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true else { continue }
+            let manifestURL = directory.appendingPathComponent("manifest.json")
+            guard let handle = try? FileHandle(forReadingFrom: manifestURL) else { continue }
+            let data: Data
+            do {
+                data = try handle.read(upToCount: 1_048_577) ?? Data()
+                try handle.close()
+            } catch {
+                try? handle.close()
+                continue
+            }
+            guard data.count <= 1_048_576,
+                  let envelope = try? decoder.decode(EmbeddedManifestEnvelope.self, from: data),
+                  !envelope.manifest.chapters.isEmpty else { continue }
+            let modifiedAt = (try? directory.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate)
+                ?? .distantPast
+            let session = SessionRecord(
+                timestamp: ISO8601DateFormatter().string(from: modifiedAt),
+                bookTitle: envelope.manifest.title,
+                jobId: envelope.manifest.jobId,
+                engine: "Rust",
+                chaptersConverted: envelope.manifest.chapters.count,
+                durationSeconds: nil,
+                outcome: "finished",
+                mode: "embedded"
+            )
+            localSessions.append((modifiedAt, session))
+        }
+        try Task.checkCancellation()
+        return EmbeddedSnapshot(
+            sessions: localSessions.sorted { $0.date > $1.date }.map(\.session),
+            ioOnMainThread: Thread.isMainThread
+        )
     }
 }

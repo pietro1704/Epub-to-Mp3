@@ -731,6 +731,34 @@ Initial library load is still synchronous. Lifecycle flush hooks are a separate
 pending Apple validation change; index-write completion is not fsync/power-loss
 durability. Performance and physical-iPhone gates remain open.
 
+### Slice 6d — embedded iOS conversion history off MainActor
+
+The iOS conversions screen previously enumerated Rust-conversion directories
+and decoded each `manifest.json` inside a task inherited from MainActor. It now
+resolves the storage root on the UI actor and awaits the shared utility-worker
+reader. Directory enumeration, bounded (1 MiB per file) manifest reads, JSON
+decoding, modification-date ordering, and cancellation checks run on that
+worker. Missing roots still yield an empty history; malformed, oversized, or
+unreadable individual manifests remain skipped as before. The screen's existing
+request cancellation and post-await stale-result fence are unchanged.
+
+Two Foundation XCTest regressions verified actual worker-thread IO, newest-first
+ordering and embedded metadata, plus cancellation before filesystem access. The
+focused `mise run apple:foundation:test` completed 22 tests with zero failures;
+four FFI-only cases were skipped by the host task. A generic `iphoneos` Xcode
+build compiled the app Swift sources without errors, then failed in the existing
+Rust bundle-signing phase because this host has no iOS dylib signing identity.
+No Simulator, installation, device UI, or user library/audio/model data was
+touched. Native launch/responsiveness remains pending.
+
+Review against `CODING_STANDARDS.md` and ordered acceptance item 6 found no
+scope, data-preservation, ordering, or cancellation-fence blocker. The existing
+UI generation/task fence remains in place, and the per-manifest byte bound
+prevents a single corrupt file from causing an unbounded read. Aggregate
+directory enumeration still scales with the number of retained local jobs, but
+now runs entirely on the utility worker. Required follow-up evidence is native
+screen/device responsiveness when the physical iPhone is available.
+
 ### Native fixture and portable FFI regression
 
 Physical run `364BEC13-3B6B-49E7-B9FA-C1D598DF9055` executed 109 tests:
