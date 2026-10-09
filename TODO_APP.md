@@ -9,6 +9,15 @@ this board and `handoff.md` before crossing ownership or changing shared contrac
 
 ## Active requests — 2026-10-08
 
+- [x] **APP-20261009-17 — Preserve literal local chapter paths across Swift/FFI.** Verified.
+  Generic URL decoding truncated #/? and decoded percent escapes in raw filesystem
+  paths. Custom event decoding now constructs a file URL from the literal absolute
+  POSIX path; relative, tilde, URI and NUL paths rejected. Existing memberwise init
+  preserved. Native TDD Mac: red before fix, two green after; final strict variant
+  two passed. iOS16: two passed, zero failures/skips (`4A12FD57...` xcresult).
+  This proves decoder correctness, not the cause/resolution of LOTR benchmark's
+  missing chapter callback. Rust/Flutter wire contract unchanged, Apple clients share fix.
+
 - [ ] **APP-20261009-16 — Scoped Simulator conversion evidence.** Incomplete; checkpoint saved.
   Continue the full goal independently of the unresolved reader gesture test.
   Same SHA-verified originals, LOTR 8–9 and Christie 6–7 inclusive zero-based,
@@ -27,6 +36,16 @@ this board and `handoff.md` before crossing ownership or changing shared contrac
   Native draft report defaults failed until completion, counters are not live;
   zero report counters did not mean synthesis had never begun. Preserve partial
   logs/spec/report; do not rerun unchanged or use this as a speed comparison.
+  Revised bounded observation window (explicit opt-in up to operation budget;
+  memory/thermal/deadline safeguards retained), Christie first. Run `2C4CA9AC...`
+  / xcresult `6BFC9F2C...` executed one benchmark, failed on LOTR's first-delivery
+  callback expectation (2 s), not the host load safeguard. Christie 6–7 verified:
+  5778 chars, two playable outputs, 349.248 s audio, 31.6898 s synthesis.
+  LOTR published both requested chapters but failed delivery validation; 591.382 s
+  conversion interval, no final accepted audio/duration claim. Total test 676.87 s.
+  One-second stack sample identified CoverArtwork.embed_into → validate_audio →
+  inspect_mpeg/Symphonia full decode in unoptimized Simulator Rust Debug. Preserve
+  validation, route shared-code investigation to Arch; no production speedup claim.
 
 - [x] **APP-20261008-14 — Bundle the correct Rust library for Apple Simulator.** Verified packaging/smoke scope.
   User authorized building the Apple Simulator Rust artifact on this Mac for this

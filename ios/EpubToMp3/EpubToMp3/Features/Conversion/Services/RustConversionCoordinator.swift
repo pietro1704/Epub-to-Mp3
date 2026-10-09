@@ -6,6 +6,33 @@ private struct RustConversionInvocation: @unchecked Sendable {
     let adapter: ConverterFFIAdapter
 }
 
+extension RustConversionCoordinator.ChapterCompletionEvent {
+    private enum CodingKeys: String, CodingKey {
+        case jobId, bookTitle, bookAuthor, chapterIndex, chaptersTotal, chaptersCompleted
+        case chapterTitle, filename, audioPath, textChars
+    }
+
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        jobId = try values.decode(String.self, forKey: .jobId)
+        bookTitle = try values.decode(String.self, forKey: .bookTitle)
+        bookAuthor = try values.decode(String.self, forKey: .bookAuthor)
+        chapterIndex = try values.decode(Int.self, forKey: .chapterIndex)
+        chaptersTotal = try values.decode(Int.self, forKey: .chaptersTotal)
+        chaptersCompleted = try values.decode(Int.self, forKey: .chaptersCompleted)
+        chapterTitle = try values.decode(String.self, forKey: .chapterTitle)
+        filename = try values.decode(String.self, forKey: .filename)
+        textChars = try values.decode(Int.self, forKey: .textChars)
+        let path = try values.decode(String.self, forKey: .audioPath)
+        guard path.hasPrefix("/"), !path.contains("\0") else {
+            throw DecodingError.dataCorruptedError(forKey: .audioPath, in: values,
+                                                  debugDescription: "Chapter audio requires an absolute local file path.")
+        }
+        // Rust serializes a filesystem path, not a URI. Preserve literal #, ? and %.
+        audioPath = URL(fileURLWithPath: path)
+    }
+}
+
 /// Local conversion entry point shared by the Apple clients.
 ///
 /// This type deliberately has no transport or backend dependency. The Rust

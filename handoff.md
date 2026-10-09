@@ -2,6 +2,19 @@
 
 ## Current Codex ↔ Arch contract — 2026-10-08
 
+2026-10-09 actual Simulator benchmark evidence: Christie 6–7 passed artifact checks
+(5778 chars, 349.248 s audio, 31.6898 s synthesis); LOTR 8–9 published both chapters
+but host rejected/missed first-delivery callback after 591.382 s. Overall native
+benchmark failed; no matching phone comparison. Evidence is under
+`.reports/simulator-conversion-2C4CA9AC-F09E-4AF8-AA65-1FB4E649DB7A`.
+Sample stack locates finalization CPU in CoverArtwork.embed_into → validate_audio →
+inspect_mpeg → Symphonia full decode in unoptimized Debug. Arch: investigate redundant
+decodes/optimized-profile effects without weakening corruption validation. No local
+Rust source execution here beyond the earlier Apple artifact-build exception.
+Swift chapter callbacks now preserve literal absolute filesystem paths instead of
+generic URL decoding; Mac+iOS native regressions passed. This known decoder bug is
+not yet proven to explain the missing LOTR callback; keep that gate open.
+
 `TODO_APP.md` is the shared user-request/status board; root `AGENTS.md`/`CLAUDE.md`
 is authoritative. Codex coordinates Apple changes; Arch coordinates Rust/Flutter.
 Keep iOS, macOS and Flutter behavior synchronized. Claim Done only with relevant

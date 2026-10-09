@@ -214,6 +214,33 @@ final class RustConversionCoordinatorTests: XCTestCase {
         XCTAssertEqual(snapshot.chaptersTotal, 24)
     }
 
+    func testChapterEventPreservesLiteralLocalAudioPath() throws {
+        for filename in ["chapter #1?.mp3", "chapter %20 literal.mp3"] {
+            let path = FileManager.default.temporaryDirectory.appendingPathComponent(filename).path
+            let payload: [String: Any] = [
+                "jobId": "job", "bookTitle": "Book", "bookAuthor": "Author",
+                "chapterIndex": 8, "chaptersTotal": 2, "chaptersCompleted": 1,
+                "chapterTitle": "Chapter", "filename": filename,
+                "audioPath": path, "textChars": 100,
+            ]
+            let event = try JSONDecoder().decode(RustConversionCoordinator.ChapterCompletionEvent.self,
+                from: JSONSerialization.data(withJSONObject: payload))
+            XCTAssertTrue(event.audioPath.isFileURL)
+            XCTAssertEqual(event.audioPath.path, path)
+            XCTAssertEqual(event.playableChapter.downloadUrl, path)
+        }
+        for path in ["chapter.mp3", "~/chapter.mp3", "https://example.invalid/chapter.mp3", "file:///tmp/chapter.mp3", "/tmp/chapter\0.mp3"] {
+            let payload: [String: Any] = [
+                "jobId": "job", "bookTitle": "Book", "bookAuthor": "Author",
+                "chapterIndex": 8, "chaptersTotal": 2, "chaptersCompleted": 1,
+                "chapterTitle": "Chapter", "filename": "chapter.mp3",
+                "audioPath": path, "textChars": 100,
+            ]
+            let data = try JSONSerialization.data(withJSONObject: payload)
+            XCTAssertThrowsError(try JSONDecoder().decode(RustConversionCoordinator.ChapterCompletionEvent.self, from: data))
+        }
+    }
+
     func testOptInRealEdgeBenchmarkComparesSerialAndTwoChapterWorkers() async throws {
         guard ProcessInfo.processInfo.environment["EPUB2MP3_RUN_REAL_EDGE_BENCHMARK"] == "1" else {
             throw XCTSkip("Set EPUB2MP3_RUN_REAL_EDGE_BENCHMARK=1 to run the network benchmark.")

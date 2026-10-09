@@ -144,6 +144,26 @@ try child.run(); child.waitUntilExit(); exit(child.terminationStatus)
 '
 '''
 
+[tasks."apple:chapter-callback:test"]
+description = "Run the two focused native macOS chapter-event path regressions, one job under the shared lease"
+run = '''
+xcrun swift -e '
+import Foundation
+import Darwin
+let lease = open("/tmp/epub2mp3.heavy-job.lock", O_CREAT | O_RDWR, 0o600)
+guard lease >= 0 && flock(lease, LOCK_EX | LOCK_NB) == 0 else { exit(75) }
+defer { close(lease) }
+let child = Process()
+child.executableURL = URL(fileURLWithPath: "/usr/bin/xcrun")
+child.arguments = ["xcodebuild", "-quiet", "-project", "ios/EpubToMp3/EpubToMp3.xcodeproj",
+"-scheme", "EpubToMp3Mac", "-destination", "platform=macOS", "-derivedDataPath", "ios/EpubToMp3/.build",
+"-jobs", "1", "-parallel-testing-enabled", "NO",
+"-only-testing:EpubToMp3Tests/RustConversionCoordinatorTests/testChapterEventPreservesLiteralLocalAudioPath",
+"-only-testing:EpubToMp3Tests/RustConversionCoordinatorTests/testValidatedChapterEventMapsToPlayableLocalSnapshot", "test"]
+try child.run(); child.waitUntilExit(); exit(child.terminationStatus)
+'
+'''
+
 [tasks."converter-ffi:ios-packaging:test"]
 description = "Verify real device/Simulator artifacts, reject wrong platforms and exercise signed bundling"
 run = "bash scripts/test_converter_ffi_ios_packaging.sh"
