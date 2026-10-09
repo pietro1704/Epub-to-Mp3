@@ -16,7 +16,7 @@ class DownloadManager {
       _storageGuard = storageGuard ?? ProtectedAudioStorageGuard();
   final Dio _dio;
   final ProtectedAudioStorageGuard _storageGuard;
-  final Map<String, CancelToken> _tokens = {};
+  final Map<String, Set<CancelToken>> _tokens = {};
   final StreamController<DownloadEvent> _events =
       StreamController<DownloadEvent>.broadcast();
 
@@ -42,7 +42,7 @@ class DownloadManager {
     final staging = await folder.createTemp('.download-');
     final stagedFile = File('${staging.path}/$filename');
     final token = CancelToken();
-    _tokens[path] = token;
+    (_tokens[path] ??= <CancelToken>{}).add(token);
     try {
       if (_events.isClosed) throw StateError('Download manager is disposed');
       final response = await _dio.download(
@@ -76,18 +76,23 @@ class DownloadManager {
       _emit(DownloadEvent(path: path, progress: 0, error: msg));
       rethrow;
     } finally {
-      if (identical(_tokens[path], token)) _tokens.remove(path);
+      _tokens[path]?.remove(token);
+      if (_tokens[path]?.isEmpty ?? false) _tokens.remove(path);
       if (await staging.exists()) await staging.delete(recursive: true);
     }
   }
 
   void cancel(String path) {
-    _tokens.remove(path)?.cancel();
+    for (final token in _tokens.remove(path) ?? <CancelToken>{}) {
+      token.cancel();
+    }
   }
 
   void dispose() {
-    for (final token in _tokens.values) {
-      token.cancel();
+    for (final tokens in _tokens.values) {
+      for (final token in tokens) {
+        token.cancel();
+      }
     }
     _tokens.clear();
     unawaited(_events.close());
