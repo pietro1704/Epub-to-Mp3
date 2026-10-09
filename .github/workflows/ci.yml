@@ -184,6 +184,8 @@ jobs:
     name: Web
     needs: production-packaging-guard
     runs-on: ubuntu-24.04
+    env:
+      MISE_ENABLE_TOOLS: python,node,npm,rust,cargo:wasm-bindgen-cli
     permissions:
       contents: read
 
@@ -195,6 +197,16 @@ jobs:
         with:
           version: 2026.9.14
           install: false
+      - name: Check Web toolchain scope
+        run: |
+          mise ls --current --json | python3 -c '
+          import json, sys
+          tools = set(json.load(sys.stdin))
+          expected = {"python", "node", "npm", "rust", "cargo:wasm-bindgen-cli"}
+          if tools != expected:
+              sys.exit(f"Unexpected Web CI tools: {sorted(tools)}")
+          print("Web CI tools: python, node, npm, rust, wasm-bindgen-cli")
+          '
       - name: Install toolchain
         run: mise install
       - name: Install Rust WASM target
