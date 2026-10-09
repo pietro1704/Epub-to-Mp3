@@ -137,6 +137,18 @@ enum ReaderPlaybackAnchor {
         guard let epubIndex = epubIndex(forReaderPosition: readerPosition, in: chapters) else {
             return nil
         }
+        return publish(epubIndex: epubIndex, offsetFraction: offsetFraction, defaults: defaults)
+    }
+
+    @MainActor
+    @discardableResult
+    static func publish(chapter: EbookFulltext.Chapter, offsetFraction: Double,
+                        defaults: UserDefaults = .standard) -> Int {
+        publish(epubIndex: chapter.zeroBasedEpubIndex, offsetFraction: offsetFraction, defaults: defaults)
+    }
+
+    @MainActor
+    private static func publish(epubIndex: Int, offsetFraction: Double, defaults: UserDefaults) -> Int {
         defaults.set(epubIndex, forKey: AudioPlayer.readerCurrentChapterIndexDefaultsKey)
         defaults.set(
             min(max(offsetFraction.isFinite ? offsetFraction : 0, 0), 1),

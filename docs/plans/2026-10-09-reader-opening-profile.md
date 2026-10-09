@@ -51,3 +51,42 @@ with no empty placeholder chapters. Navigation, cross-document links and playbac
 must await a validated complete catalog; hydration cannot repaint or rewind the
 already visible passage. Both Apple adapters need native lifecycle/navigation
 tests before the two-host actual-book budget can be accepted.
+
+## Mac active-chapter integration: behavior verified, budget still red
+
+The actual Mac controller now races validated chapter projection and complete
+catalog delivery. If the catalog wins it is used without awaiting projection.
+If the chapter wins, the complete real chapter and saved viewport are presented
+first; controlsUsable still waits for catalog validation. No placeholder chapters
+are synthesized. Hydration checks chapter/count/TOC/title/author and installs a
+matching catalog without repainting. Mismatch invalidates pending presentation
+callbacks independently of load generation. Appearance during restore is applied
+before saved position; protected TOC selection cannot reopen the chapter.
+Closing after snapshot restoration may persist its visible position.
+
+Canonical EPUB anchors can be published from the actual chapter, independent of
+reader ordinal. Existing array-based publication retains its normalization and
+sentence reset. Projection preparation is best-effort utility work and deduplicated
+per load/ordinal; cache write failure does not hold readiness.
+
+Native behavioral evidence: the initial blocked-hydration test failed before
+integration (`04-23-02`). Nine cases passed in the wider 10-case run (`04-35-32`),
+with one mismatch-fixture expectation corrected afterward. Mismatch and early-close
+cases passed in a focused two-case run (`04-37-31`); all five active-chapter cases
+passed after first-arrival scheduling (`04-44-36`). No failures/skips in those
+focused passing bundles. Existing readiness and chapter-boundary cases were included
+in the wider run. Only relevant native macOS XCTest filters were executed.
+
+Actual LOTR/Christie two-host relaunch, same source/audio hashes and chapter 8/6,
+no synthesis: prepare passed, verify failed the unchanged 200 ms assertion.
+Initial serialized projection-first observation: LOTR 462.757 ms, Christie 154.023 ms
+(`reader-relaunch-0C986C52-ADE6-4502-A990-BC87EDDD5571`). First-arrival observation:
+LOTR 363.818 ms, Christie 151.933 ms
+(`reader-relaunch-5E61AC9C-5B83-4152-83DD-5173B9B71F89`). Permanent attachments record
+app-code identity, original input hashes, journeys and point-sampled memory.
+These unpaired observations do not establish a general causal speedup.
+
+Remaining: full-source hashing/decode and first-window scheduling costs, iOS
+presentation parity, controlled real-book before/after evidence and the complete
+200 ms gate. Cancellation can discard losing callbacks but does not interrupt the
+store's synchronous hashing. Do not claim APP21/APP28 or the overall goal complete.

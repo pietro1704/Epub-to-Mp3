@@ -10,6 +10,9 @@ final class MacReaderViewController: NSViewController, NSTableViewDataSource, NS
     private let player: AudioPlayer
     private let bookmarkStore: BookmarkStore
     private let preparedRenderer: PreparedChapterRenderer
+    private let preparedChapterStore: PreparedReaderChapterStore
+    private let preparedFulltextReader: @Sendable (String) async -> EbookFulltext?
+    private let initialPositionScheduler: (@escaping @MainActor () -> Void) -> Void
     private let onClose: () -> Void
     private let chaptersTable = NSTableView()
     private let textView = MacReaderTextView()
@@ -30,12 +33,15 @@ final class MacReaderViewController: NSViewController, NSTableViewDataSource, NS
     private var settingsCancellables: Set<AnyCancellable> = []
     private var loadTask: Task<Void, Never>?
     private var loadGeneration = UUID()
+    private var presentationGeneration = UUID()
     private var activeBookOpenJourneyID: UUID?
     private var pendingPDFPageJourneyID: UUID?
     private var firstPDFPageReadyJourneyID: UUID?
     private var controlsReadyJourneyID: UUID?
     private var pdfView: PDFView?
     private var fulltext: EbookFulltext?
+    private var activePreparedChapter: PreparedReaderChapterStore.Snapshot?
+    private var lastPreparedChapterOrdinal: Int?
     private var selectedChapter = 0
     private var isSynchronizingTOCSelection = false
     private var currentBookId: String?
@@ -43,6 +49,12 @@ final class MacReaderViewController: NSViewController, NSTableViewDataSource, NS
     /// selection — restoration only makes sense once per book load.
     private var hasRestoredInitialPosition = false
     private var isRestoringInitialPosition = false
+    private var pendingAppearanceRefresh = false
+
+    private enum PreparedLoadEvent: Sendable {
+        case catalog(EbookFulltext?)
+        case chapter(PreparedReaderChapterStore.Snapshot?)
+    }
 
     init(
         library: LibraryStore,
@@ -50,7 +62,14 @@ final class MacReaderViewController: NSViewController, NSTableViewDataSource, NS
         player: AudioPlayer,
         bookmarkStore: BookmarkStore,
         onClose: @escaping () -> Void,
-        preparedRenderer: PreparedChapterRenderer? = nil
+        preparedRenderer: PreparedChapterRenderer? = nil,
+        preparedChapterStore: PreparedReaderChapterStore = .shared,
+        preparedFulltextReader: @escaping @Sendable (String) async -> EbookFulltext? = { id in
+            await Task.detached(priority: .userInitiated) { LocalFulltextCache.read(bookId: id) }.value
+        },
+        initialPositionScheduler: @escaping (@escaping @MainActor () -> Void) -> Void = { operation in
+            DispatchQueue.main.async { operation() }
+        }
     ) {
         self.library = library
         self.settings = settings
@@ -58,6 +77,9 @@ final class MacReaderViewController: NSViewController, NSTableViewDataSource, NS
         self.bookmarkStore = bookmarkStore
         self.onClose = onClose
         self.preparedRenderer = preparedRenderer ?? .shared
+        self.preparedChapterStore = preparedChapterStore
+        self.preparedFulltextReader = preparedFulltextReader
+        self.initialPositionScheduler = initialPositionScheduler
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -121,7 +143,11 @@ final class MacReaderViewController: NSViewController, NSTableViewDataSource, NS
         configureReader()
         settings.objectWillChange
             .sink { [weak self] _ in
-                guard let self, self.fulltext != nil else { return }
+                guard let self, self.chapter(at: self.selectedChapter) != nil else { return }
+                if self.isRestoringInitialPosition {
+                    self.pendingAppearanceRefresh = true
+                    return
+                }
                 MacReaderTheme.apply(
                     settings: self.settings,
                     surface: self.view,
@@ -517,7 +543,11 @@ final class MacReaderViewController: NSViewController, NSTableViewDataSource, NS
         cancelActiveBookOpenJourney()
         let generation = UUID()
         loadGeneration = generation
+        presentationGeneration = UUID()
         isRestoringInitialPosition = false
+        pendingAppearanceRefresh = false
+        activePreparedChapter = nil
+        lastPreparedChapterOrdinal = nil
         contentScrollView.documentView = textView
         let id = UserDefaults.standard.string(forKey: ReaderSessionState.currentlyReadingBookIDKey)
         guard let book = library.books.first(where: { $0.id == id }) else {
@@ -585,9 +615,43 @@ final class MacReaderViewController: NSViewController, NSTableViewDataSource, NS
         loadTask = Task { [weak self] in
             guard let self else { return }
             do {
-                let cachedPayload = await Task.detached(priority: .userInitiated) {
-                    LocalFulltextCache.read(bookId: book.id)
-                }.value
+                let reader = preparedFulltextReader
+                let store = preparedChapterStore
+                let progress = ReaderProgressStore.read(bookId: book.id)
+                let source = LocalFulltextCache.storageURL(bookId: book.id)
+                var continuation: AsyncStream<PreparedLoadEvent>.Continuation!
+                let arrivals = AsyncStream<PreparedLoadEvent> { continuation = $0 }
+                let publisher = continuation!
+                let catalogTask = Task.detached(priority: .userInitiated) {
+                    let payload = await reader(book.id)
+                    publisher.yield(.catalog(payload))
+                    return payload
+                }
+                let chapterTask = Task {
+                    let prepared: PreparedReaderChapterStore.Snapshot?
+                    if let progress, let source {
+                        prepared = await store.read(bookID: book.id,
+                            chapterOrdinal: progress.chapterIndex, fulltextURL: source)
+                    } else { prepared = nil }
+                    publisher.yield(.chapter(prepared))
+                }
+                defer { publisher.finish(); chapterTask.cancel(); catalogTask.cancel() }
+                var next = arrivals.makeAsyncIterator()
+                let first = await next.next()
+                guard isActiveLoad(generation, bookID: book.id) else { return }
+                if case .chapter(let prepared?) = first {
+                    guard isActiveLoad(generation, bookID: book.id) else { return }
+                    activePreparedChapter = prepared
+                    selectedChapter = prepared.chapterOrdinal
+                    statusLabel.stringValue = L10n.string("reader.chapterCount", prepared.chapterCount)
+                    LatencyObservationStore.shared.classifyCache(.preparedDisk, for: journeyID)
+                    await restoreSelectedChapter(bookID: book.id)
+                    guard isActiveLoad(generation, bookID: book.id) else { return }
+                    presentLoadedChapter(bookID: book.id)
+                }
+                let cachedPayload: EbookFulltext?
+                if case .catalog(let payload) = first { cachedPayload = payload }
+                else { cachedPayload = await catalogTask.value }
                 let payload: EbookFulltext
                 if let cachedPayload {
                     LatencyObservationStore.shared.classifyCache(.preparedDisk, for: journeyID)
@@ -611,9 +675,30 @@ final class MacReaderViewController: NSViewController, NSTableViewDataSource, NS
                 // A validated disk payload is already durable; do not reencode it on MainActor.
                 if cachedPayload == nil { LocalFulltextCache.save(payload, bookId: book.id) }
                 LocalFulltextCache.recordWarmOpen(bookId: book.id)
+                let prepared = activePreparedChapter
+                let alreadyPresented = prepared.map {
+                    $0.chapterCount == payload.chapters.count && $0.title == payload.bookTitle
+                        && $0.author == payload.bookAuthor && $0.toc == payload.toc
+                        && payload.chapters[safe: $0.chapterOrdinal] == $0.chapter
+                } == true
+                if prepared != nil, !alreadyPresented {
+                    presentationGeneration = UUID()
+                    isRestoringInitialPosition = false
+                    hasRestoredInitialPosition = false
+                }
                 fulltext = payload
+                activePreparedChapter = nil
                 statusLabel.stringValue = L10n.string("reader.chapterCount", payload.chapters.count)
                 chaptersTable.reloadData()
+                if alreadyPresented {
+                    selectCurrentTOCRow()
+                    prepareChapterProjection(bookID: book.id, ordinal: selectedChapter)
+                    if hasRestoredInitialPosition, !isRestoringInitialPosition {
+                        recordControlsUsable()
+                    }
+                    return
+                }
+                if prepared != nil { hasRestoredInitialPosition = false }
                 if !hasRestoredInitialPosition, let entry = ReaderProgressStore.read(bookId: book.id) {
                     selectedChapter = entry.chapterIndex
                 } else {
@@ -643,7 +728,7 @@ final class MacReaderViewController: NSViewController, NSTableViewDataSource, NS
     }
 
     private func restoreSelectedChapter(bookID: String) async {
-        guard let chapter = fulltext?.chapters[safe: selectedChapter], !chapter.isImageOnly else { return }
+        guard let chapter = chapter(at: selectedChapter), !chapter.isImageOnly else { return }
         _ = await preparedRenderer.restore(bookID: bookID, chapterIndex: selectedChapter,
                                            chapter: chapter, settings: settings, fontDirectoryURL: nil)
     }
@@ -655,12 +740,13 @@ final class MacReaderViewController: NSViewController, NSTableViewDataSource, NS
             guard let self, self.isActiveLoad(generation, bookID: bookID) else { return }
             self.recordReadableContent()
             self.hideLoading()
-            self.recordControlsUsable()
+            if self.fulltext != nil { self.recordControlsUsable() }
         }
     }
 
     private func showChapter(_ index: Int, scrollToEnd: Bool = false) {
-        guard let chapter = fulltext?.chapters[safe: index] else { return }
+        guard let chapter = chapter(at: index) else { return }
+        presentationGeneration = UUID()
         chapterTitleLabel.stringValue = chapter.name ?? ""
 
         if chapter.isImageOnly {
@@ -692,11 +778,22 @@ final class MacReaderViewController: NSViewController, NSTableViewDataSource, NS
             clipView.scroll(to: NSPoint(x: 0, y: scrollToEnd ? end : 0))
             contentScrollView.reflectScrolledClipView(clipView)
         }
-        ReaderPlaybackAnchor.publish(
-            readerPosition: index,
-            chapters: fulltext?.chapters ?? [],
-            offsetFraction: 0
-        )
+        ReaderPlaybackAnchor.publish(chapter: chapter, offsetFraction: 0)
+        if let bookID = currentBookId { prepareChapterProjection(bookID: bookID, ordinal: index) }
+    }
+
+    private func chapter(at ordinal: Int) -> EbookFulltext.Chapter? {
+        if let fulltext { return fulltext.chapters[safe: ordinal] }
+        return activePreparedChapter?.chapterOrdinal == ordinal ? activePreparedChapter?.chapter : nil
+    }
+
+    private func prepareChapterProjection(bookID: String, ordinal: Int) {
+        guard fulltext?.chapters.indices.contains(ordinal) == true,
+              lastPreparedChapterOrdinal != ordinal,
+              let source = LocalFulltextCache.storageURL(bookId: bookID) else { return }
+        lastPreparedChapterOrdinal = ordinal
+        let store = preparedChapterStore
+        Task(priority: .utility) { try? await store.write(bookID: bookID, chapterOrdinal: ordinal, fulltextURL: source) }
     }
 
     private func handleReaderLink(_ url: URL, linkText: String) -> Bool {
@@ -800,7 +897,7 @@ final class MacReaderViewController: NSViewController, NSTableViewDataSource, NS
         bookmarkStore.addBookmark(
             bookId: bookId,
             chapterIndex: selectedChapter,
-            chapterTitle: fulltext?.chapters[safe: selectedChapter]?.name ?? "",
+            chapterTitle: chapter(at: selectedChapter)?.name ?? "",
             startChar: range.location,
             endChar: range.location + range.length,
             selectedText: selectedText,
@@ -890,17 +987,16 @@ final class MacReaderViewController: NSViewController, NSTableViewDataSource, NS
     }
 
     private func persistReadingProgress() {
-        guard activeBookOpenJourneyID == nil, !isRestoringInitialPosition,
+        guard activeBookOpenJourneyID == nil || (activePreparedChapter != nil && hasRestoredInitialPosition),
+              !isRestoringInitialPosition,
               let bookId = currentBookId, let documentView = contentScrollView.documentView else { return }
         let clipView = contentScrollView.contentView
         let scrollable = max(documentView.frame.height - clipView.bounds.height, 1)
         let fraction = clipView.bounds.origin.y / scrollable
         ReaderProgressStore.save(bookId: bookId, chapterIndex: selectedChapter, offsetFraction: fraction)
-        ReaderPlaybackAnchor.publish(
-            readerPosition: selectedChapter,
-            chapters: fulltext?.chapters ?? [],
-            offsetFraction: fraction
-        )
+        if let chapter = chapter(at: selectedChapter) {
+            ReaderPlaybackAnchor.publish(chapter: chapter, offsetFraction: fraction)
+        }
     }
 
     /// Called once, right after a fresh `loadCurrentBook()`, to jump back to
@@ -909,10 +1005,17 @@ final class MacReaderViewController: NSViewController, NSTableViewDataSource, NS
     private func restoreReadingProgressIfNeeded(bookId: String, completion: @escaping () -> Void) {
         let entry = hasRestoredInitialPosition ? nil : ReaderProgressStore.read(bookId: bookId)
         let generation = loadGeneration
+        let presentation = presentationGeneration
         let chapterIndex = selectedChapter
         isRestoringInitialPosition = true
-        DispatchQueue.main.async { [weak self] in
-            guard let self, self.isActiveLoad(generation, bookID: bookId) else { return }
+        initialPositionScheduler { [weak self] in
+            guard let self, self.isActiveLoad(generation, bookID: bookId),
+                  self.presentationGeneration == presentation else { return }
+            if self.pendingAppearanceRefresh {
+                self.pendingAppearanceRefresh = false
+                self.applyCurrentReaderTheme()
+                self.showChapter(self.selectedChapter)
+            }
             self.view.layoutSubtreeIfNeeded()
             if self.contentScrollView.documentView === self.textView {
                 MacReaderTextLayout.fit(self.textView, in: self.contentScrollView)
@@ -928,11 +1031,9 @@ final class MacReaderViewController: NSViewController, NSTableViewDataSource, NS
             if let entry, self.selectedChapter == chapterIndex {
                 clipView.scroll(to: NSPoint(x: 0, y: entry.offsetFraction * scrollable))
                 self.contentScrollView.reflectScrolledClipView(clipView)
-                ReaderPlaybackAnchor.publish(
-                    readerPosition: chapterIndex,
-                    chapters: self.fulltext?.chapters ?? [],
-                    offsetFraction: entry.offsetFraction
-                )
+                if let chapter = self.chapter(at: chapterIndex) {
+                    ReaderPlaybackAnchor.publish(chapter: chapter, offsetFraction: entry.offsetFraction)
+                }
             }
             self.isRestoringInitialPosition = false
             self.hasRestoredInitialPosition = true
@@ -944,6 +1045,7 @@ final class MacReaderViewController: NSViewController, NSTableViewDataSource, NS
     }
 
     @objc private func showTOC(_ sender: NSButton) {
+        guard fulltext != nil else { return }
         if tocPopover.contentViewController == nil { configureTOCPopover() }
         tocPopover.show(relativeTo: sender.bounds, of: sender, preferredEdge: .maxY)
     }
@@ -957,7 +1059,7 @@ final class MacReaderViewController: NSViewController, NSTableViewDataSource, NS
     @objc private func showFootnotes() {
         let alert = NSAlert()
         alert.messageText = L10n.string("reader.footnotes.title")
-        let footnotes = fulltext?.chapters[safe: selectedChapter]?.footnotes ?? []
+        let footnotes = chapter(at: selectedChapter)?.footnotes ?? []
         if footnotes.isEmpty {
             alert.informativeText = L10n.string("reader.footnotes.empty")
         } else {
@@ -991,6 +1093,7 @@ final class MacReaderViewController: NSViewController, NSTableViewDataSource, NS
     // MARK: - In-chapter search
 
     @objc private func promptSearch() {
+        guard fulltext != nil else { return }
         let alert = NSAlert()
         alert.messageText = L10n.string("reader.search.placeholder")
         alert.addButton(withTitle: L10n.string("common.ok"))

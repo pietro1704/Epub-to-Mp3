@@ -9,6 +9,24 @@ this board and `handoff.md` before crossing ownership or changing shared contrac
 
 ## Active requests — 2026-10-08
 
+- [ ] **APP-20261009-28 — Active chapter presentation before catalog hydration.** In progress.
+  Integrate the source-bound projection into actual native reader presentation.
+  Start with the Mac adapter and deterministic window tests: complete current
+  chapter/progress/anchor before blocked fulltext decode; catalog hydration must
+  not repaint or rewind. Keep controlsUsable gated on the full validated catalog.
+  Invalid/stale projection falls back to the existing complete-book route. Preserve
+  navigation and generation fences. iOS parity and actual two-host 200 ms gate
+  remain required before parent APP-20261009-21 can close.
+  Mac behavior verified: current chapter/progress/canonical EPUB anchor before
+  blocked hydration, no rewind on matching hydration, changed source fallback,
+  obsolete presentation rejection, font change during restore and early-close
+  persistence. Nine cases passed in the wider run (`04-35-32`); two focused cases
+  passed after correcting the mismatch fixture (`04-37-31`); five active-chapter
+  cases passed after first-arrival catalog/projection scheduling (`04-44-36`).
+  Actual two-host budget remains red: LOTR 363.818 ms, Christie 151.933 ms in
+  `reader-relaunch-5E61AC9C-5B83-4152-83DD-5173B9B71F89`. No synthesis or threshold change.
+  iOS presentation integration and full APP21 acceptance remain open.
+
 - [x] **APP-20261009-27 — Reader document preparation off the UI executor.** Verified Apple worker slice.
   Original goal item 6: UIKit calls synchronous EPUB extraction from its main-actor
   loading task. Add one explicit background preparation entry point and reuse it

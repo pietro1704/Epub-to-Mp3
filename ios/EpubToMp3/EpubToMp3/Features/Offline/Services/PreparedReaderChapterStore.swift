@@ -4,6 +4,7 @@ import Darwin
 
 /// Source-only chapter projection; style validation stays in PreparedChapterRenderer.
 actor PreparedReaderChapterStore {
+    static let shared = PreparedReaderChapterStore()
     struct Snapshot: Codable, Equatable, Sendable {
         let bookID: String
         let title: String?
