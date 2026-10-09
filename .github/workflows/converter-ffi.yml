@@ -11,6 +11,7 @@ on:
       - "Cargo.lock"
       - "crates/converter-core/**"
       - "crates/converter-ffi/**"
+      - "flutter_app/android/app/src/main/jniLibs/**"
       - "scripts/build_converter_ffi.py"
       - "scripts/validate_converter_ffi_targets.py"
       - "mise.toml"
@@ -23,6 +24,7 @@ on:
       - "Cargo.lock"
       - "crates/converter-core/**"
       - "crates/converter-ffi/**"
+      - "flutter_app/android/app/src/main/jniLibs/**"
       - "scripts/build_converter_ffi.py"
       - "scripts/validate_converter_ffi_targets.py"
       - "mise.toml"
@@ -52,6 +54,12 @@ jobs:
 
       - name: Validate target mappings
         run: mise run converter-ffi:validate
+
+      - name: Verify packaged Android job-log JNI export
+        run: |
+          nm -D --defined-only flutter_app/android/app/src/main/jniLibs/arm64-v8a/libconverter_ffi.so |
+            awk '{print $3}' |
+            grep -Fx 'Java_com_pietrocode_epubtomp3_flutter_1app_MainActivity_nativeJobLog'
 
       - name: Run converter-ffi tests
         run: mise exec -- cargo test -p converter-ffi
