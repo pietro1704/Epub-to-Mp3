@@ -1065,3 +1065,26 @@ their difference also contains setup/polling, not only window cost. No clock or
 gate was moved to manufacture success. LOTR and broader performance acceptance
 remain open. No synthesis or original books/models/download mutation; Flutter
 parity and the broader seeded reader geometry gate were not run in this IO slice.
+
+## Manual conversion reentry guard — 2026-10-09
+
+APP-20261009-38: the UIKit submit action checks isSubmitting before scheduling a
+Task; two queued Tasks can both pass that UI check. ConvertViewModel.submit now
+rejects reentry on MainActor before any suspension or state mutation. This guards
+the actual shared submission boundary without changing options, ranges, playback,
+error/result handling, Rust execution or artifacts.
+
+Native regression holds the executor suspended, delivers a second submit intent,
+checks exactly one executor invocation and preserved in-flight state, then releases
+both Tasks and checks the first result. Initial yield-based red (`08-51-47`) saw
+two calls; tightened explicit expectation-barrier red also reproduced (`08-53-33`).
+Final Mac class: ten passed, zero failed/skipped (`08-54-39`), including options,
+range and manual playback-isolation cases. Bundles under
+`ios/EpubToMp3/.build/Logs/Test/Test-EpubToMp3Mac-2026.10.09_*.xcresult`.
+Read-only specialist review found no blocker; assertions do not depend on sampling
+sleep duration. iOS 16 guarded incremental build/new-case run: one passed,
+zero failed/skipped, `.reports/simulator-smoke-2E68FFAA-D6F2-41FB-A1B7-E18A9419B7DE/tests.xcresult`.
+Executed focused apple:chapter-callback:test and ios:simulator:smoke:build/test.
+No synthesis, source-book/model/download mutation, Python/Ruff, physical iPhone,
+Flutter or CI/PR monitoring. UI tap automation, cross-controller/global deduplication,
+installed-model configuration and overall performance acceptance are not claimed.

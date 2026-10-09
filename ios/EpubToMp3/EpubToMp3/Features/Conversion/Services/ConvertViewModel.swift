@@ -36,6 +36,7 @@ final class ConvertViewModel {
         useEmbeddedRuntime: Bool = false,
         player: AudioPlayer? = nil
     ) async {
+        guard !isSubmitting else { return }
         guard let file = selectedFile else {
             error = L10n.string("convert.error.pickFileFirst")
             return

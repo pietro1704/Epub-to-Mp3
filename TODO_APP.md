@@ -21,6 +21,15 @@ this board and `handoff.md` before crossing ownership or changing shared contrac
   macOS: 38 passed, 0 failed/skipped; iOS 16: four new cases passed, 0 failed/skipped.
   Evidence in the quality plan. No synthesis or real-book latency claim.
 
+- [ ] **APP-20261009-38 — Reject repeated manual conversion submissions.** Apple verified; parity pending.
+  UI guards run before scheduling asynchronous submit tasks. Enforce one active
+  invocation at the actual ConvertViewModel boundary, preserving its options,
+  result and playback isolation. Native suspended-executor regression required;
+  no extra synthesis or artifact deletion.
+  Native red executor count was two instead of one; final Mac class ten passed,
+  iOS 16 new case one passed, all zero failures/skips. View-model entry guard
+  preserves the active request and its result. No UI-tap or Flutter verification.
+
 - [ ] **APP-20261009-37 — Yield startup reader prewarm to foreground opens.** Apple behavior verified; budget/parity open.
   Startup prewarm currently has no retained cancellation handle and can decode
   two books while the user opens a reader. Cancel best-effort startup work before

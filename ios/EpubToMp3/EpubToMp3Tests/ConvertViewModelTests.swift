@@ -60,6 +60,36 @@ final class ConvertViewModelTests: XCTestCase {
     }
 
     @MainActor
+    func testRepeatedManualSubmitDoesNotStartAnotherConversionWhileFirstIsPending() async {
+        var release: AsyncStream<Void>.Continuation!
+        let gate = AsyncStream<Void> { release = $0 }
+        let started = expectation(description: "First conversion suspended")
+        let retried = expectation(description: "Second submit intent delivered")
+        var calls = 0
+        let result = manualResult()
+        let model = ConvertViewModel(converter: { _, _, _, _ in
+            calls += 1
+            if calls == 1 { started.fulfill() }
+            for await _ in gate { }
+            return result
+        })
+        model.selectedFile = URL(fileURLWithPath: "/unused-manual-input.epub")
+        let first = Task { await model.submit() }
+        await fulfillment(of: [started], timeout: 2)
+        XCTAssertTrue(model.isSubmitting)
+        let second = Task { retried.fulfill(); await model.submit() }
+        await fulfillment(of: [retried], timeout: 2)
+        XCTAssertEqual(calls, 1, "Repeated manual intent must not enqueue another Rust conversion")
+        XCTAssertTrue(model.isSubmitting)
+        release.finish()
+        await first.value
+        await second.value
+        XCTAssertEqual(model.submittedJobId, "manual-only")
+        XCTAssertFalse(model.isSubmitting)
+        XCTAssertNil(model.error)
+    }
+
+    @MainActor
     func testManualFormForwardsConfigurationAndDoesNotMutatePlayback() async throws {
         var captured: ConversionOptions?
         var capturedBounds: (Int32, Int32)?
