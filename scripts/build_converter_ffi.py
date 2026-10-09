@@ -83,6 +83,8 @@ def main() -> int:
     for name in names:
         target = TARGETS[name]
         command = ["cargo", "build", "--release", "--target", target, "-p", "converter-ffi"]
+        if name in ANDROID_JNI_ABIS:
+            command.extend(["--features", "android-jni"])
         print("+", " ".join(command))
         if not args.dry_run:
             completed = subprocess.run(command, cwd=repo_root, check=False)

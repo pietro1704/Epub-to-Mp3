@@ -4,6 +4,10 @@
 from __future__ import annotations
 
 import importlib.util
+import io
+import shlex
+from contextlib import redirect_stdout
+from unittest.mock import patch
 from pathlib import Path
 
 SCRIPT = Path(__file__).with_name("build_converter_ffi.py")
@@ -30,3 +34,22 @@ for name, (target, library) in EXPECTED.items():
         assert module.android_jni_path(root, name).name == "libconverter_ffi.so"
         assert module.android_jni_path(root, name).parent.name in {"arm64-v8a", "armeabi-v7a", "x86_64", "x86"}
 print(f"validated {len(EXPECTED)} converter-ffi target mappings")
+
+# Exercise the actual command generation without invoking cross-platform builds.
+commands = io.StringIO()
+with patch("sys.argv", [str(SCRIPT), *EXPECTED, "--dry-run"]), \
+        patch.object(module.shutil, "which", return_value="cargo"), \
+        patch.object(module, "installed_targets", return_value=set(module.TARGETS.values())), \
+        redirect_stdout(commands):
+    assert module.main() == 0
+for line in commands.getvalue().splitlines():
+    if not line.startswith("+ "):
+        continue
+    command = shlex.split(line[2:])
+    target = command[command.index("--target") + 1]
+    if "android" in target:
+        assert "--features" in command, f"Missing JNI feature for {target}"
+        assert command[command.index("--features") + 1] == "android-jni"
+    else:
+        assert "--features" not in command, f"Android JNI enabled for {target}"
+print("validated Android JNI features and unchanged Apple build commands")
