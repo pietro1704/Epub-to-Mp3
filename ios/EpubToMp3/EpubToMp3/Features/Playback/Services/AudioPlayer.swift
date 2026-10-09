@@ -1891,7 +1891,7 @@ final class AudioPlayer: ObservableObject {
 
     func seek(to seconds: TimeInterval) {
         let requested = seconds.isFinite ? max(0, seconds) : 0
-        let confirmedEnd = isSegmentMode ? confirmedSegmentChapterEnd : nil
+        let confirmedEnd = isSegmentMode ? confirmedSegmentChapterEnd(for: currentChapterIndex) : nil
         let target = confirmedEnd.map { min($0, requested) } ?? requested
         let autoplay = pendingChapterSeek?.autoplay ?? activeSeekAutoplay ?? isPlaying
         beginSeekJourney()
@@ -1983,13 +1983,13 @@ final class AudioPlayer: ObservableObject {
     }
 
     /// Estimates describe progress, not proof that no more audio will arrive.
-    private var confirmedSegmentChapterEnd: TimeInterval? {
+    private func confirmedSegmentChapterEnd(for chapterIndex: Int) -> TimeInterval? {
         guard let snapshot,
-              let chapter = Self.chapterProgressEntry(forSegmentIndex: currentChapterIndex,
+              let chapter = Self.chapterProgressEntry(forSegmentIndex: chapterIndex,
                   chapterProgress: snapshot.chapterProgress ?? snapshot.playableChapters),
               chapter.status == "completed" || snapshot.state == "finished" else { return nil }
         if let duration = chapter.durationSeconds, duration.isFinite, duration > 0 { return duration }
-        let retained = segmentFiles.keys.filter { $0.chapterIndex == currentChapterIndex }.sorted()
+        let retained = segmentFiles.keys.filter { $0.chapterIndex == chapterIndex }.sorted()
         guard !retained.isEmpty else { return nil }
         var duration: TimeInterval = 0
         for (ordinal, identity) in retained.enumerated() {
@@ -2045,11 +2045,20 @@ final class AudioPlayer: ObservableObject {
                         total += duration
                         if total > pending.position { break }
                     }
-                    guard !Task.isCancelled, self.pendingChapterSeek?.id == pending.id else { return }
+                    guard !Task.isCancelled, var resolved = self.pendingChapterSeek,
+                          resolved.id == pending.id else { return }
+                    // Confirmation may arrive while duration loading is suspended.
+                    // Reconcile the existing request, preserving its identity and intent.
+                    if let end = self.confirmedSegmentChapterEnd(for: resolved.chapterIndex),
+                       resolved.position >= end {
+                        resolved.position = end
+                        resolved.allowsFinalEndpoint = true
+                        self.pendingChapterSeek = resolved
+                    }
                     // Do not silently clamp a target whose segment has not
                     // arrived yet. Enqueue retries this pending request.
-                    if total < pending.position
-                        || (total == pending.position && !pending.allowsFinalEndpoint) {
+                    if total < resolved.position
+                        || (total == resolved.position && !resolved.allowsFinalEndpoint) {
                         self.pendingChapterSeek?.isApplying = false
                         self.segmentSeekTask = nil
                         if self.segmentFiles.keys.filter({ $0.chapterIndex == pending.chapterIndex }).count
@@ -2058,7 +2067,7 @@ final class AudioPlayer: ObservableObject {
                         }
                         return
                     }
-                    guard let target = Self.segmentSeekTarget(position: pending.position, durations: durations) else { return }
+                    guard let target = Self.segmentSeekTarget(position: resolved.position, durations: durations) else { return }
                     let chapterEntries = retained.filter { $0.key.chapterIndex == pending.chapterIndex }
                     let identity = chapterEntries[target.segmentIndex].key
                     let entries = self.segmentFiles.filter { $0.key >= identity }

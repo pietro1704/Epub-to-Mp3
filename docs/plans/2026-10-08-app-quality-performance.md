@@ -946,3 +946,39 @@ FFI fields exist, but the form and shared executor do not carry installed model
 selection. Apple packaging tasks do not enable the optional Piper runtime. Model
 metadata/catalog presence is not proof of a runnable installed model; do not
 claim offline configuration complete or download/migrate models implicitly.
+
+## Late confirmed segment endpoint — 2026-10-09
+
+APP-20261009-34: a seek to 35 s on an incomplete final chapter remained pending
+after its 15 s endpoint was confirmed by updateSnapshot. Native regression failed
+"Navigation must finish against real media" (`07-38-25` Mac xcresult). The
+equivalent final-file handoff already passed before this change (`07-36-09`);
+its production path remains unchanged, rather than adding an unnecessary clamp.
+
+The segment duration resolver now reconsults the live request and the requested
+chapter's confirmed endpoint after loading durations. It updates the existing
+position/endpoint permission before deciding to wait, preserving request ID,
+journey and current pause/resume intent. Estimates still cannot clamp targets;
+replacement/cancellation guards remain. No IO scheduling, provider, artifact or
+reader geometry changes. Specialist read-only review found no blocker.
+
+Mac initial four cases passed (`07-40-19`). Final tightened selection: five
+passed, zero failed/skipped (`07-42-41`): late segment confirmation, unchanged
+file handoff, confirmation before duration-task execution with pause overriding
+autoplay, unknown boundary and replacement seek. The first three assert real
+AV time and published position, pause, no journey cancellation, pending removal
+and exactly one seekTargetReached on the original journey. Mac bundles under
+`ios/EpubToMp3/.build/Logs/Test/Test-EpubToMp3Mac-2026.10.09_*.xcresult`.
+
+Guarded iOS incremental build/test on iOS 16 SE, Xcode 16.4 test controller:
+three new cases passed, zero failed/skipped. Result:
+`.reports/simulator-smoke-BFACF03A-8FCE-4923-8EE9-5F90C077C81E/tests.xcresult`.
+Executed apple:chapter-callback:test and ios:simulator:smoke:build/test with
+explicit method filters. Reused the embedded release Rust artifact; Simulator
+stopped during compile, heavy work serialized. Original books/models/downloads
+preserved; fixture-owned temporary audio only. No synthesis, Python/Ruff,
+physical-device, Flutter, or CI/PR monitoring.
+
+This proves the Apple pending-navigation boundary, not button-tap UI automation,
+Flutter parity, real-book latency/memory or the 200 ms opening budget. The overall
+goal and parity checkboxes remain open.

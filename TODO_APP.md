@@ -21,11 +21,17 @@ this board and `handoff.md` before crossing ownership or changing shared contrac
   macOS: 38 passed, 0 failed/skipped; iOS 16: four new cases passed, 0 failed/skipped.
   Evidence in the quality plan. No synthesis or real-book latency claim.
 
-- [ ] **APP-20261009-34 — Resolve pending seeks after late endpoint confirmation.** Pending.
+- [ ] **APP-20261009-34 — Resolve pending seeks after late endpoint confirmation.** Apple verified; parity pending.
   A requested offset beyond an incomplete chapter's estimate must stay pending;
   when its actual terminal duration arrives later, reconcile the target instead
   of waiting for nonexistent segments. Native final-file/segment-handoff evidence
   required; APP-20261009-33 only verifies endpoints known at command time.
+  Native segment-only case reproduced an indefinitely pending navigation after
+  confirmation. Resolver now rechecks the requested chapter's confirmed end after
+  duration loading, retaining request/journey and latest pause intent. Mac five
+  focused cases passed, zero failures/skips; iOS 16 three new cases passed,
+  zero failures/skips. Source/byte ownership untouched; Flutter parity and
+  real-book navigation latency remain unverified. Evidence in the quality plan.
 
 - [x] **APP-20261009-32 — Reader picker import remains responsive and rejects stale selection.** Verified UIKit caller.
   Original import/IO goals: replace the remaining synchronous UIKit reader

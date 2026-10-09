@@ -305,6 +305,49 @@ final class AudioPlayerPendingSeekTests: XCTestCase {
     }
 
     @MainActor
+    func testFinalFileConfirmationClampsExistingPendingSeekAndPreservesPause() async throws {
+        try await verifyLateEndConfirmation(finalFile: true)
+    }
+
+    @MainActor
+    func testSegmentEndConfirmationResolvesExistingPendingSeekAndPreservesPause() async throws {
+        try await verifyLateEndConfirmation(finalFile: false)
+    }
+
+    @MainActor
+    func testPauseWinsWhenEndConfirmationArrivesBeforeDurationTaskRuns() async throws {
+        try await verifyLateEndConfirmation(finalFile: false, confirmImmediately: true)
+    }
+
+    @MainActor
+    private func verifyLateEndConfirmation(finalFile: Bool, confirmImmediately: Bool = false) async throws {
+        try await withPlayingFixture(streaming: true) { player, snapshot in
+            player.pause()
+            player.nextChapter()
+            try await self.waitForNavigation(player)
+            if confirmImmediately { player.resume() }
+            let previous = Set(try self.exportedJourneys().map(\.id))
+            player.seek(to: 35)
+            if !confirmImmediately { try await Task.sleep(nanoseconds: 100_000_000) }
+            let pending = try XCTUnwrap(player.pendingNavigation)
+            XCTAssertEqual(pending.chapterIndex, 1)
+            XCTAssertEqual(player.positionSeconds, 35, accuracy: 0.1)
+            let requested = try XCTUnwrap(self.exportedJourneys().first { !previous.contains($0.id) && $0.kind == .seek })
+            if finalFile { player.finishStreaming(snapshot: snapshot(true)) }
+            else { player.updateSnapshot(snapshot(true)) }
+            if confirmImmediately { player.pause() }
+            try await self.waitForNavigation(player)
+            XCTAssertEqual(player.currentChapterIndex, 1)
+            XCTAssertEqual(player.positionSeconds, 15, accuracy: 0.1)
+            XCTAssertEqual(try XCTUnwrap(player.testHook_currentPlayerItem()).currentTime().seconds, 15, accuracy: 0.1)
+            XCTAssertFalse(player.isPlaying)
+            let completed = try XCTUnwrap(self.exportedJourneys().first { $0.id == requested.id })
+            XCTAssertFalse(completed.records.contains { $0.transition == .cancelled })
+            XCTAssertEqual(completed.records.filter { $0.transition == .seekTargetReached }.count, 1)
+        }
+    }
+
+    @MainActor
     func testPreviousStreamedChapterRestartsWholeChapterAfterLaterSegment() async throws {
         try await withPlayingFixture(streaming: true) { player, _ in
             player.pause()
