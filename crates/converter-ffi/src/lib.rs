@@ -24,7 +24,10 @@ use std::{
     ffi::{c_char, CStr, CString},
     path::Path,
     ptr,
-    sync::Arc,
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        Arc,
+    },
 };
 
 /// Opaque session handle owned by the caller.
@@ -72,6 +75,17 @@ pub unsafe extern "C" fn converter_session_metadata_json(
         Ok(value) => value.into_raw(),
         Err(error) => fail(format!("metadata contains an interior NUL byte: {error}")),
     }
+}
+
+static EMBEDDED_JOB_SEQUENCE: AtomicU64 = AtomicU64::new(0);
+
+fn embedded_job_id() -> String {
+    let sequence = EMBEDDED_JOB_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+    let created = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos();
+    format!("embedded-{}-{created}-{sequence}", std::process::id())
 }
 
 fn bounded_chapter_indices(
@@ -129,7 +143,7 @@ pub unsafe extern "C" fn converter_session_convert_json(
     if let Err(error) = std::fs::create_dir_all(output) {
         return fail(format!("failed to create output directory: {error}"));
     }
-    let job = format!("embedded-{}", std::process::id());
+    let job = embedded_job_id();
     let generated_output_dir = output.join(&job);
     #[cfg(feature = "piper-runtime")]
     piper_runtime_register_embedded();
@@ -1426,6 +1440,43 @@ mod tests {
     use super::*;
     use std::{ffi::CString, io::Write, ptr};
     use zip::{write::FileOptions, ZipWriter};
+
+    #[test]
+    fn parallel_embedded_conversions_generate_distinct_ids() {
+        let ids = std::thread::scope(|scope| {
+            let handles: Vec<_> = (0..8)
+                .map(|_| scope.spawn(|| (0..32).map(|_| embedded_job_id()).collect::<Vec<_>>()))
+                .collect();
+            handles
+                .into_iter()
+                .flat_map(|handle| handle.join().unwrap())
+                .collect::<std::collections::HashSet<_>>()
+        });
+        assert_eq!(ids.len(), 256);
+        assert!(ids.iter().all(|id| id.starts_with("embedded-")
+            && id
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')));
+    }
+
+    #[test]
+    fn consecutive_embedded_conversions_reserve_distinct_jobs() {
+        let root = tempfile::tempdir().unwrap();
+        let jobs = converter_core::jobs::JobManager::new(root.path()).unwrap();
+        let first = embedded_job_id();
+        let second = embedded_job_id();
+        jobs.create(converter_core::jobs::JobRecord::new(
+            &first,
+            Default::default(),
+        ))
+        .unwrap();
+        jobs.create(converter_core::jobs::JobRecord::new(
+            &second,
+            Default::default(),
+        ))
+        .expect("a second embedded conversion must create its own job");
+        assert_ne!(first, second);
+    }
 
     #[test]
     fn requested_chapter_must_exist_before_range_expansion() {
