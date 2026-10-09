@@ -18,6 +18,14 @@ Read this file, [`../../CONTEXT.md`](../../CONTEXT.md), and relevant files in
 
 ## Reader changes
 
+For every feature or bug fix, verify the real iOS app on the iPhone SE
+(1st generation) Simulator running iOS 15.5 and verify the native macOS app.
+Check that this exact Simulator destination and the macOS target are available
+before implementation; do not substitute another runtime or device. Install,
+launch, and exercise the affected behavior in each app. XCTest/UI tests supplement
+this evidence. If either app cannot be run, record the blocker and keep the change
+unverified.
+
 Use `$native-reader-regression` for reader, pagination, chrome, safe-area,
 page-turn, EPUB/PDF-open, or expanded-player layout changes. Its evidence
 gate uses the seeded Lord of the Rings EPUB and leaves the app open after an

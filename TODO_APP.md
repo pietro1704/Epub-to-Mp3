@@ -4,8 +4,42 @@ Current user requirements override the historical backlog below. Workflow:
 Pending → In progress → Verification → Done, or Blocked with evidence/next action.
 Every concrete user request/correction belongs here. Completion requires relevant
 tests, cross-platform parity, and commit/push evidence; source presence is not done.
-Codex owns Apple implementation; Arch owns Rust/Flutter coordination. Both update
-this board and `handoff.md` before crossing ownership or changing shared contracts.
+Current ownership: all development and verification happen on this Mac; no work is
+routed to Arch. Before every feature or bug fix, confirm the iPhone SE (1st
+generation) / iOS 15.5 Simulator and native macOS app are available. Verify each
+change in the real iOS and macOS apps; automated tests are supplemental. If either
+app cannot run, record the blocker and leave verification incomplete. Historical
+Arch assignments below are superseded by this instruction.
+
+## Active requests — 2026-10-09
+
+- [ ] **APP-20261009-47 — Keep playback clock ticks on progress controls.** Apple fix implemented; macOS playback interaction pending.
+  At each 250 ms playback-clock tick, MiniPlayerBarHost, PlayerScreenController,
+  and FullPlayerScreenController currently call their full render path; the full
+  player also consumes a second position stream. Update only progress controls
+  for clock ticks and keep structural state updates intact. Pietro prefers the
+  oldest compatible technology for performance; support speed claims with a
+  representative profile. Acceptance: regression coverage for progress updates,
+  no repeated structural render work on clock ticks, and the real iOS 15.5
+  iPhone SE (1st generation) Simulator plus native macOS app are exercised.
+  Red/green: `PlayerPlaybackClockTests` initially found rebuilt rate menus;
+  after the fix, 3 tests passed on iPhone SE (1st generation) Simulator / iOS
+  15.5. Installed, launched, and inspected the LOTR reader with mini player and
+  progress controls on that Simulator. Native AppKit target built with Xcode
+  16.4 and the app launched, but no playback session was active to exercise a
+  clock tick. Standard `mise run mac:run` is blocked in its unrelated Rust
+  pre-build by `worker.rs` (`ChapterMetadata.source_index` and two missing TTS
+  arguments); direct `xcodebuild` proved the native app target builds. No
+  comparable Instruments profile was captured, so numeric speedup is unmeasured.
+  Scoped source change keeps Combine/UIKit, limits clock subscribers to progress,
+  and removes the full player's duplicate position stream. Commit/push on master.
+
+- [x] **APP-20261009-46 — Standardize local app development and verification.**
+  Completed in `AGENTS.md`, `CLAUDE.md`, `ios/EpubToMp3/AGENTS.md`, this board,
+  and `handoff.md`: use this Mac, verify on iPhone SE (1st generation) Simulator
+  with iOS 15.5 and the native macOS app for every feature/bug fix, and check the
+  exact targets before starting. No app build or runtime check was needed for this
+  instruction-only change.
 
 ## Active requests — 2026-10-08
 
@@ -694,20 +728,15 @@ this board and `handoff.md` before crossing ownership or changing shared contrac
   Verification: inspected final diff and crash report exception/thread stacks;
   executable checks not run.
 
-- [ ] **APP-20261009-45 — Oldest iOS/Xcode workflow on Intel Mac.** In progress.
-  Current app deployment target is iOS 15.0; Simulator selection now prefers
-  the oldest allowed runtime and smallest iPhone profile. Apple lists Xcode 15.3
-  Simulators as iOS 15–17.4, while iOS 13.7 requires Xcode 14.3.1; that Xcode
-  is not listed as Sequoia-compatible. Keep the iOS 15 target until source/API
-  compatibility below 15 is audited. iOS 15.0 runtime archive downloaded, but
-  installation failed with `hdiutil: attach failed - Resource busy`; Xcodes GUI
-  is separately downloading Xcode 15.3. Retain the archive and retry runtime
-  installation after that operation completes. No build or tests run.
+- [x] **APP-20261009-45 — Oldest iOS/Xcode workflow on Intel Mac.** Superseded.
+  The current user requirement specifies iOS 15.5 on the iPhone SE (1st
+  generation) Simulator and native macOS app verification. Do not continue the
+  prior generic oldest-runtime workflow or substitute its Xcode/device target.
 
 ## Historical backlog (requires revalidation; not current platform scope)
 
-The original iOS-only scope and old verification recipes below are historical.
-Current work must keep iOS/macOS/Flutter parity and follow root instructions.
+The old verification recipes below are historical. Current work follows the
+local iOS 15.5 Simulator and native macOS app contract above and in `AGENTS.md`.
 
 > Gerado em 2026-07-10. Fonte: BUG_SPRINT.md/TDD_PLAN.md do iOS estão 100%
 > resolvidos (bugs 1-8, ver commits 2d0cf59..8a179ae) — não há bug conhecido

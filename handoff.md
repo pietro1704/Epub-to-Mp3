@@ -1,6 +1,19 @@
 # Hermes ↔ Claude Code Handoff
 
-## Current Codex ↔ Arch contract — 2026-10-08
+## Current local development and verification contract — 2026-10-09
+
+All feature and bug-fix work is developed and verified on this Mac; do not route
+work to Arch. Before starting each change, verify the iPhone SE (1st generation)
+Simulator on iOS 15.5 and the native macOS app are available. Exercise the real
+iOS and macOS apps for each feature or bug fix; automated tests are supplemental.
+If an app cannot be run, record the evidence and leave verification incomplete.
+This contract supersedes historical Arch ownership and Simulator restrictions
+recorded below. Preserve the exact device/runtime; do not substitute another one.
+
+## Historical Arch handoff notes — superseded by the local contract above
+
+The entries below preserve prior findings and evidence. Their Arch ownership,
+runtime, and verification instructions are no longer active.
 
 APP-20261009-35 — Arch-owned model publication blocker (source inspection only).
 In crates/converter-core/src/model_store.rs, install_manifest's non-archive

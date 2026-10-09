@@ -88,6 +88,13 @@ do not combine feature work, refactors, dependency upgrades, and CI changes.
 
 ## During implementation
 
+For every feature or bug fix, check the required local runtime before coding:
+iPhone SE (1st generation) Simulator on iOS 15.5 and the native macOS app. Verify
+the affected behavior in both real apps after implementation. Automated tests are
+additional evidence, not a substitute. If either app is unavailable, document the
+blocker and leave runtime verification incomplete. All development stays on this
+Mac; do not route implementation or validation to Arch.
+
 Start each bug fix with a failing regression test. Keep the implementation and
 its test in the same commit when practical. Preserve unrelated local changes by
 using a detached worktree instead of stashing or resetting them.
