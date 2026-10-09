@@ -5,7 +5,7 @@ import Foundation
 /// The on-disk payload belongs in Application Support, not Caches: a cache
 /// purge must never turn a warm book open back into a cold parse. The two
 /// most recently opened payloads also stay in an automatically evictable
-/// in-memory cache so returning to a book does not decode JSON again.
+/// in-memory cache so returning to a book does not decode disk content again.
 enum LocalFulltextCache {
     private final class PayloadBox: NSObject {
         let payload: EbookFulltext
@@ -62,22 +62,23 @@ enum LocalFulltextCache {
         return safe.isEmpty ? nil : safe
     }
 
-    private static func fileURL(bookId: String, in directory: URL?) -> URL? {
+    private static func fileURL(bookId: String, in directory: URL?, fileExtension: String = "json") -> URL? {
         guard let safe = sanitizedBookID(bookId), let directory else { return nil }
-        return directory.appendingPathComponent("\(safe).json")
+        return directory.appendingPathComponent("\(safe).\(fileExtension)")
     }
 
     /// The durable location of one prepared reader payload. Exposed for the
     /// cache contract and diagnostics; callers still use `read` and `save`.
     static func storageURL(bookId: String) -> URL? {
-        fileURL(bookId: bookId, in: directory)
+        fileURL(bookId: bookId, in: directory, fileExtension: "plist")
     }
 
     /// Returns a process-warm payload without touching disk. This is the
     /// reader's fast path: it can paint the saved chapter before any security
     /// bookmark or source document is opened.
     static func inMemoryPayload(bookId: String) -> EbookFulltext? {
-        memoryCache.object(forKey: bookId as NSString)?.payload
+        guard let safe = sanitizedBookID(bookId) else { return nil }
+        return memoryCache.object(forKey: safe as NSString)?.payload
     }
 
     /// Returns prepared fulltext when it is available locally. A corrupt
@@ -87,15 +88,16 @@ enum LocalFulltextCache {
             return payload
         }
 
-        guard let payload = readPayload(at: storageURL(bookId: bookId))
+        let primary = readPayload(at: storageURL(bookId: bookId))
+        guard let payload = primary
+                ?? readPayload(at: fileURL(bookId: bookId, in: directory))
                 ?? readPayload(at: fileURL(bookId: bookId, in: legacyDirectory)) else {
             return nil
         }
         retainInMemory(payload, bookId: bookId)
 
-        // Migrate a legacy Caches payload only after it has decoded cleanly.
-        if let durableURL = storageURL(bookId: bookId),
-           !FileManager.default.fileExists(atPath: durableURL.path) {
+        // Repair a missing/corrupt primary only from a successfully decoded legacy payload.
+        if primary == nil, let durableURL = storageURL(bookId: bookId) {
             write(payload, to: durableURL)
         }
         return payload
@@ -134,11 +136,13 @@ enum LocalFulltextCache {
     /// Drop all prepared-reader state for a book when the listener removes it
     /// or explicitly clears its cache.
     static func evict(bookId: String) {
-        memoryCache.removeObject(forKey: bookId as NSString)
+        guard let safe = sanitizedBookID(bookId) else { return }
+        memoryCache.removeObject(forKey: safe as NSString)
         removePayload(at: storageURL(bookId: bookId))
+        removePayload(at: fileURL(bookId: bookId, in: directory))
         removePayload(at: fileURL(bookId: bookId, in: legacyDirectory))
         let existing = UserDefaults.standard.stringArray(forKey: recentBookIDsKey) ?? []
-        UserDefaults.standard.set(existing.filter { $0 != bookId }, forKey: recentBookIDsKey)
+        UserDefaults.standard.set(existing.filter { sanitizedBookID($0) != safe }, forKey: recentBookIDsKey)
     }
 
     /// Drop any durable payload whose `bookId` is no longer in the library.
@@ -150,17 +154,18 @@ enum LocalFulltextCache {
             includingPropertiesForKeys: nil,
             options: [.skipsHiddenFiles]
         )) ?? []
+        let validIDs = Set(validBookIds.compactMap(sanitizedBookID))
         var removed = 0
-        for url in entries where url.pathExtension == "json" {
+        for url in entries where ["json", "plist"].contains(url.pathExtension) {
             let bookId = url.deletingPathExtension().lastPathComponent
-            guard !validBookIds.contains(bookId) else { continue }
+            guard !validIDs.contains(bookId) else { continue }
             if (try? FileManager.default.removeItem(at: url)) != nil {
                 removed += 1
             }
             memoryCache.removeObject(forKey: bookId as NSString)
         }
         let existing = UserDefaults.standard.stringArray(forKey: recentBookIDsKey) ?? []
-        UserDefaults.standard.set(existing.filter { validBookIds.contains($0) }, forKey: recentBookIDsKey)
+        UserDefaults.standard.set(existing.filter { sanitizedBookID($0).map(validIDs.contains) ?? false }, forKey: recentBookIDsKey)
         return removed
     }
 
@@ -180,7 +185,7 @@ enum LocalFulltextCache {
             options: [.skipsHiddenFiles]
         )) ?? []
         let candidates = entries.compactMap { url -> (bookID: String, url: URL, bytes: Int64, modified: Date)? in
-            guard url.pathExtension == "json",
+            guard ["json", "plist"].contains(url.pathExtension),
                   let values = try? url.resourceValues(forKeys: [.contentModificationDateKey, .fileSizeKey])
             else { return nil }
             return (
@@ -193,10 +198,11 @@ enum LocalFulltextCache {
         var totalBytes = candidates.reduce(Int64(0)) { $0 + $1.bytes }
         guard totalBytes > maximumBytes else { return [] }
 
+        let preservedIDs = Set(preservingBookIDs.compactMap(sanitizedBookID))
         var removed: [String] = []
         for candidate in candidates.sorted(by: { $0.modified < $1.modified }) {
             guard totalBytes > maximumBytes,
-                  !preservingBookIDs.contains(candidate.bookID),
+                  !preservedIDs.contains(candidate.bookID),
                   (try? FileManager.default.removeItem(at: candidate.url)) != nil
             else { continue }
             totalBytes -= candidate.bytes
@@ -207,7 +213,8 @@ enum LocalFulltextCache {
     }
 
     private static func retainInMemory(_ payload: EbookFulltext, bookId: String) {
-        memoryCache.setObject(PayloadBox(payload), forKey: bookId as NSString)
+        guard let safe = sanitizedBookID(bookId) else { return }
+        memoryCache.setObject(PayloadBox(payload), forKey: safe as NSString)
     }
 
     private static func readPayload(at url: URL?) -> EbookFulltext? {
@@ -215,11 +222,14 @@ enum LocalFulltextCache {
               let data = try? Data(contentsOf: url) else {
             return nil
         }
-        return try? JSONDecoder().decode(EbookFulltext.self, from: data)
+        return (try? PropertyListDecoder().decode(EbookFulltext.self, from: data))
+            ?? (try? JSONDecoder().decode(EbookFulltext.self, from: data))
     }
 
     private static func write(_ payload: EbookFulltext, to url: URL) {
-        guard let data = try? JSONEncoder().encode(payload) else { return }
+        let encoder = PropertyListEncoder()
+        encoder.outputFormat = .binary
+        guard let data = try? encoder.encode(payload) else { return }
         try? data.write(to: url, options: [.atomic])
     }
 

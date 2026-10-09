@@ -29,7 +29,7 @@ this board and `handoff.md` before crossing ownership or changing shared contrac
   Rust artifact (`x86_64-apple-ios`); Arch owns that build. Physical arm64 iOS and
   x86_64 macOS binaries are not substitutes. App launch/tests remain unverified.
 
-- [ ] **APP-20261008-11 — Faster compatible fulltext cache decode.** In progress.
+- [x] **APP-20261008-11 — Faster compatible fulltext cache decode.** Verified cache behavior.
   Binary plist primary, fallback to existing durable/legacy JSON; preserve older
   bytes during migration, atomic writes and format-aware scoped cleanup/budget.
   Verify native roundtrip fidelity, migration/corruption/removal and same-book
@@ -37,12 +37,15 @@ this board and `handoff.md` before crossing ownership or changing shared contrac
   Mac: 13 cache/native-window tests passed, zero skips (`21-37-41` xcresult).
   Two-host run `reader-relaunch-86F998D4-805C-4493-A999-99819BB90ED9` prepared
   successfully; LOTR improved 439→355 ms but still fails unchanged 200 ms budget.
-  Physical iOS attempt stopped at locked readiness, no build/test. Slice uncommitted
-  until iOS compatibility verification; further latency work remains necessary.
+  Physical iOS `E28AEFD2-00D3-4336-B79F-DD9AC2ACC6F4`: 17 passed, zero failures/skips,
+  including cache, renderer and actual UIKit window. Total 42.80 s (build 28.04 s,
+  tests 11.17 s); no conversion. Binary cache slice verified for both Apple clients.
+  Further latency work remains necessary under APP-20261008-07; no 200 ms claim.
   Removed duplicate pre-lookup signature computations without changing the
   post-await validation; five native renderer tests passed (`21-47-20` xcresult).
   Retested same two hosts in `reader-relaunch-20E82812-A483-459F-87D0-0A751F1C2D32`;
   200 ms acceptance still fails. No speedup/completion claim from this change.
+  Signature micro-optimization remains a separate uncommitted renderer slice.
 
 - [x] **APP-20261008-10 — Integrate prepared chapter restoration in Apple readers.** Verified behavior.
   Shared renderer binds complete chapter/settings/font/platform inputs; memory hits

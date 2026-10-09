@@ -52,6 +52,19 @@ uncontrolled comparison or extrapolate whole-book duration.
 
 ## Progress
 
+### Compatible binary fulltext cache — native verification
+
+The durable primary is binary plist; existing durable/legacy JSON remains readable
+and is retained byte-for-byte during successful migration. Corrupt primary entries
+fall back to valid legacy content. Scoped eviction and quota pruning recognize both
+formats, preserve unrelated audio and normalize book IDs consistently. No Rust or
+Flutter contract changes. Native macOS cache/window set: 13 passed, zero skips.
+Physical iPhone focused cache/renderer/UIKit set `E28AEFD2-00D3-4336-B79F-DD9AC2ACC6F4`:
+17 passed, zero failures/skips; 42.80 s total, 28.04 s build, 11.17 s tests.
+This proves cache compatibility, not the reader readiness budget. Same-input two-host
+sample remains 355 ms for LOTR; the separate pending renderer optimization sample
+is 343 ms. The 200 ms acceptance stays red and unchanged.
+
 ### Prepared chapter restoration — integrated native behavior
 
 Both Apple readers now use a shared prepared renderer: full chapter/input/settings,
