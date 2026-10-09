@@ -22,6 +22,17 @@ class DownloadManager {
 
   Stream<DownloadEvent> get events => _events.stream;
 
+  static void _validatePathComponent(String value, String name) {
+    if (value.isEmpty ||
+        value == '.' ||
+        value == '..' ||
+        value.contains('/') ||
+        value.contains('\\') ||
+        value.contains('\u0000')) {
+      throw ArgumentError.value(value, name, 'Must be a single path component');
+    }
+  }
+
   void _emit(DownloadEvent event) {
     if (!_events.isClosed) _events.add(event);
   }
@@ -31,6 +42,8 @@ class DownloadManager {
     required String url,
     required String filename,
   }) async {
+    _validatePathComponent(jobId, 'jobId');
+    _validatePathComponent(filename, 'filename');
     if (_events.isClosed) throw StateError('Download manager is disposed');
     await _storageGuard.ensureCanRetain(
       estimatedBytes: ProtectedAudioStorageGuard.estimateChapterAudioBytes(''),
