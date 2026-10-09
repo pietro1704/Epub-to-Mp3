@@ -9,6 +9,15 @@ this board and `handoff.md` before crossing ownership or changing shared contrac
 
 ## Active requests — 2026-10-08
 
+- [x] **APP-20261009-20 — Avoid duplicate prepared-renderer signature work.** Verified narrow slice.
+  Reuse the already computed signature for memory lookup; retain full source/style
+  identity and post-await validation. Memory restoration regression checks complete
+  attributed-text equality and independent object identity. Five native Mac tests
+  and five iOS16 tests passed, zero failures/skips (`65B9724B...`). No source/cache
+  invalidation relaxation. Same-input two-host run `reader-relaunch-8670ECE5...`:
+  prepare passed, verify remains red, LOTR 721.65 ms and Christie 126.87 ms versus
+  unchanged 200 ms acceptance. No causal speedup or full latency completion claim.
+
 - [x] **APP-20261009-19 — Optimized Apple Simulator conversion artifact.** Verified artifact/smoke scope.
   One-job Apple-only artifact build under the existing explicit exception; no Rust
   algorithm/validation weakening or Flutter execution. Use current sources with

@@ -161,6 +161,11 @@ child.arguments = ["xcodebuild", "-quiet", "-project", "ios/EpubToMp3/EpubToMp3.
 "-only-testing:EpubToMp3Tests/RustConversionCoordinatorTests/testChapterEventPreservesLiteralLocalAudioPath",
 "-only-testing:EpubToMp3Tests/RustConversionCoordinatorTests/testValidatedChapterEventMapsToPlayableLocalSnapshot",
 "-only-testing:EpubToMp3Tests/DeviceConversionBenchmarkTests/testChapterDeliveryRejectionExplainsEveryGuardWithoutNetwork", "test"]
+if let filters = ProcessInfo.processInfo.environment["APPLE_NATIVE_TESTS"] {
+    let selections = filters.split(separator: ",").map(String.init)
+    guard !selections.isEmpty && selections.allSatisfy({ $0.hasPrefix("EpubToMp3Tests/") }) else { exit(2) }
+    child.arguments = Array(child.arguments!.dropLast(4)) + selections.map { "-only-testing:\($0)" } + ["test"]
+}
 try child.run(); child.waitUntilExit(); exit(child.terminationStatus)
 '
 '''

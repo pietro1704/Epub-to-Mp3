@@ -48,6 +48,10 @@ final class PreparedChapterRendererTests: XCTestCase {
         XCTAssertFalse(first === memory)
         XCTAssertEqual(first, memory)
         XCTAssertFalse(first is NSMutableAttributedString)
+        let restoredMemory = await renderer.restore(bookID: "book", chapterIndex: 0,
+            chapter: chapter, settings: settings)
+        XCTAssertEqual(first, try XCTUnwrap(restoredMemory))
+        XCTAssertFalse(first === restoredMemory)
         XCTAssertEqual(first, try XCTUnwrap(renderer.render(
             bookID: "book", chapterIndex: 0, chapter: chapter, settings: settings)))
         XCTAssertNotNil(first.attribute(.font, at: 0, effectiveRange: nil))

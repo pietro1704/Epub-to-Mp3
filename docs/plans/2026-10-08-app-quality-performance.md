@@ -58,6 +58,18 @@ uncontrolled comparison or extrapolate whole-book duration.
 
 ## Progress
 
+### Prepared renderer signature reuse — correctness verified, latency still open
+
+Memory lookup now reuses its caller's signature rather than reencoding the same
+full chapter/settings; post-await source/style checks remain unchanged. Native
+memory restoration preserves full attributed-string equality and object independence.
+Five Mac and five iOS16 renderer tests passed (zero failures/skips; iOS `65B9724B...`).
+Latest same-input two-host test `reader-relaunch-8670ECE5-1408-4B4D-B91F-7E99BBA52222`:
+prepare passed, verify failed unchanged 200 ms gate. LOTR outer readiness 721.65 ms,
+internal readable/controls ~472 ms; Christie outer 126.87 ms. Do not infer regression
+or speedup from this one uncontrolled observation. Cache/renderer mechanisms alone
+do not establish the full opening budget; keep APP-20261008-07 incomplete.
+
 ### Compatible binary fulltext cache — native verification
 
 The durable primary is binary plist; existing durable/legacy JSON remains readable

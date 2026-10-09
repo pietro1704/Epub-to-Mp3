@@ -22,16 +22,14 @@ final class PreparedChapterRenderer {
     func cached(bookID: String, chapterIndex: Int, chapter: EbookFulltext.Chapter,
                 settings: AppSettings, fontDirectoryURL: URL? = nil) -> NSAttributedString? {
         guard let signature = signature(chapter, settings, fontDirectoryURL) else { return nil }
-        guard let data = memory.object(forKey: memoryKey(bookID, chapterIndex, signature)) else { return nil }
-        return try? NSKeyedUnarchiver.unarchivedObject(ofClass: NSAttributedString.self, from: data as Data)
+        return cached(key: memoryKey(bookID, chapterIndex, signature))
     }
 
     func restore(bookID: String, chapterIndex: Int, chapter: EbookFulltext.Chapter,
                  settings: AppSettings, fontDirectoryURL: URL? = nil) async -> NSAttributedString? {
-        if let cached = cached(bookID: bookID, chapterIndex: chapterIndex, chapter: chapter,
-                               settings: settings, fontDirectoryURL: fontDirectoryURL) { return cached }
         guard let signature = signature(chapter, settings, fontDirectoryURL) else { return nil }
         let key = memoryKey(bookID, chapterIndex, signature)
+        if let cached = cached(key: key) { return cached }
         guard let data = await store.read(bookID: bookID, chapterIndex: chapterIndex, signature: signature),
               self.signature(chapter, settings, fontDirectoryURL) == signature,
               let decoded = try? NSKeyedUnarchiver.unarchivedObject(ofClass: NSAttributedString.self, from: data),
@@ -44,8 +42,7 @@ final class PreparedChapterRenderer {
     func render(bookID: String, chapterIndex: Int, chapter: EbookFulltext.Chapter,
                 settings: AppSettings, fontDirectoryURL: URL? = nil) -> NSAttributedString? {
         let signature = signature(chapter, settings, fontDirectoryURL)
-        if let cached = cached(bookID: bookID, chapterIndex: chapterIndex, chapter: chapter,
-                               settings: settings, fontDirectoryURL: fontDirectoryURL) { return cached }
+        if let signature, let cached = cached(key: memoryKey(bookID, chapterIndex, signature)) { return cached }
         guard let rendered = EpubHtmlRenderer.render(html: chapter.html ?? "", css: chapter.css,
                                                      settings: settings, fontDirectoryURL: fontDirectoryURL,
                                                      resources: chapter.resources) else { return nil }
@@ -109,6 +106,11 @@ final class PreparedChapterRenderer {
 
     private func memoryKey(_ bookID: String, _ chapterIndex: Int, _ signature: String) -> NSString {
         "\(bookID.utf8.count):\(bookID):\(chapterIndex):\(signature)" as NSString
+    }
+
+    private func cached(key: NSString) -> NSAttributedString? {
+        guard let data = memory.object(forKey: key) else { return nil }
+        return try? NSKeyedUnarchiver.unarchivedObject(ofClass: NSAttributedString.self, from: data as Data)
     }
 
     private struct Signature: Encodable {
