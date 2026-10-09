@@ -10,8 +10,11 @@ Use minimal atomic Gitflow changes, focused tests, and commit/push verified slic
 No Python/Ruff local execution, osascript or CI/PR monitoring.
 Current iOS validation is Simulator-only (physical iPhone use revoked): oldest compatible runtime,
 one small-screen iPhone, no Xcode GUI, no automatic iOS 18/26 fallback given
-reported host crashes. Legacy iOS 15.0 Apple installer is downloaded and signed;
-administrator installation and actual host compatibility remain pending.
+reported host crashes. Legacy iOS 15.0 Apple package is downloaded and signed, but
+installation failed: the suggested root installer command was incorrect for this
+destinationless runtime payload; the protected system volume rejected it. CLI
+platform import failed too. Do not repeat that command. iOS 16.0 is the next
+candidate; its official legacy download requires an authenticated Apple session.
 Arch: supply/verify the `x86_64-apple-ios` converter-ffi Simulator artifact for
 this Intel Mac before full embedded reader/conversion acceptance. Existing
 physical iOS arm64 and macOS x86_64 artifacts cannot be used as substitutes.

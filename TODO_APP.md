@@ -23,8 +23,17 @@ this board and `handoff.md` before crossing ownership or changing shared contrac
   legacy catalog supplied iOS 15.0 build 19A339 (5,304,795,932-byte DMG), downloaded
   under `.reports/simulator-ios15/`; hdiutil checksum and Apple package signature
   verified. Installer estimates 11,252,916 KiB installed. No runtime booted.
-  Next gate: administrator installation (noninteractive sudo requires a password),
-  then CoreSimulator compatibility verification; target iPhone SE first generation.
+  Correction: recommending `installer -target /` was wrong. PackageInfo has no
+  install destination and payload starts at `Contents`; user-authorized installer
+  PID 43721 logged protected system-volume rejection on 2026-10-08 22:04:58.
+  Runtime is not installed. CLI `-importPlatform` also rejected this legacy package
+  DMG (SimDiskImageError 10). Do not retry root installation or alter system protection.
+  Apple documents iOS 15 Simulator unsupported on Sonoma; host compatibility must
+  be checked separately from the app's iOS 15 deployment floor.
+  Next candidate: iOS 16.0 and a small compatible device. CLI download returned
+  unavailable; official legacy URL redirects to Apple Developer unauthorized page.
+  Authenticated Apple download is required; no login credentials requested/stored.
+  App opening remains pending. No iOS 18/26 boot or physical-device run.
   Full embedded runtime validation also requires the missing Intel iOS Simulator
   Rust artifact (`x86_64-apple-ios`); Arch owns that build. Physical arm64 iOS and
   x86_64 macOS binaries are not substitutes. App launch/tests remain unverified.
