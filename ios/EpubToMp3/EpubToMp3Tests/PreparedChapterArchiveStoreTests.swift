@@ -82,8 +82,9 @@ final class PreparedChapterArchiveStoreTests: XCTestCase {
         try FileManager.default.copyItem(at: target(), to: target("other"))
         let wrongBook = await store.read(bookID: "other", chapterIndex: 0, signature: signature)
         XCTAssertNil(wrongBook)
-        let envelope: [String: Any] = ["schema": 2, "bookID": "book", "chapterIndex": 0,
-                                       "signature": signature, "archive": bytes]
+        let envelope: [String: Any] = ["schema": 999, "bookID": "book", "chapterIndex": 0,
+                                       "signature": signature, "archive": bytes,
+                                       "checksum": SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined()]
         try PropertyListSerialization.data(fromPropertyList: envelope, format: .binary, options: 0)
             .write(to: target())
         let wrongSchema = await store.read(bookID: "book", chapterIndex: 0, signature: signature)
@@ -105,6 +106,17 @@ final class PreparedChapterArchiveStoreTests: XCTestCase {
         try Data(count: PreparedChapterArchiveStore.maximumFileBytes + 1).write(to: target())
         let oversized = await store.read(bookID: "book", chapterIndex: 0, signature: signature)
         XCTAssertNil(oversized)
+    }
+
+    func testWellFormedEnvelopeWithChangedArchiveIsACacheMiss() async throws {
+        let store = PreparedChapterArchiveStore(directory: root)
+        try await store.write(bytes, bookID: "book", chapterIndex: 0, signature: signature)
+        var envelope = try XCTUnwrap(PropertyListSerialization.propertyList(
+            from: Data(contentsOf: target()), format: nil) as? [String: Any])
+        envelope["archive"] = Data("Changed but structurally valid archive".utf8)
+        try PropertyListSerialization.data(fromPropertyList: envelope, format: .binary, options: 0).write(to: target())
+        let value = await store.read(bookID: "book", chapterIndex: 0, signature: signature)
+        XCTAssertNil(value)
     }
 
     func testBudgetFailurePreservesAllCommittedCaches() async throws {

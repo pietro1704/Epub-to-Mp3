@@ -9,15 +9,30 @@ this board and `handoff.md` before crossing ownership or changing shared contrac
 
 ## Active requests — 2026-10-08
 
-- [ ] **APP-20261008-09 — Safe prepared chapter archive persistence.** Verification.
+- [x] **APP-20261008-10 — Integrate prepared chapter restoration in Apple readers.** Verified behavior.
+  Shared renderer binds complete chapter/settings/font/platform inputs; memory hits
+  stay synchronous, disk IO is bounded off-main, archive restoration stays MainActor.
+  Both controllers fence stale load generations and retain image/plain/HTML fallback
+  and existing viewport geometry. Envelope v2 checks archive SHA256 before decoding.
+  Mac storage/renderer/window verification: 17 passed, zero skips (`21-27-36` xcresult).
+  Physical iOS focused set: 17 passed, zero skips (`CAB5B9A6-A73C-4299-9E4D-3C3EF9A7451D`),
+  plus actual UIKit window integration passed (`2898D60B-28A6-49E6-8465-9442DD25EEA9`).
+  UIKit archive comparison initially failed on fixed color representation; normalized
+  fixed colors to public sRGB UIColor while retaining dynamic colors, kept full
+  equality checks and passed. Native UI fixture explicitly drives its layout passes.
+  Two-host native measurement `reader-relaunch-353E8583-ECE5-49E7-9B93-0F7B7A9BF19B`:
+  prepare passed; verify remains red, LOTR 439 ms >200 ms. No threshold relaxation,
+  budget remains in APP-20261008-07; this completes restoration behavior, not 200 ms.
+
+- [x] **APP-20261008-09 — Safe prepared chapter archive persistence.** Verified.
   Shared Apple actor; immutable archive bytes, book/chapter/signature binding,
   bounded reads, atomic writes, corrupt/mismatch cache misses and owned-only removal.
   Verify isolated native durability, preservation, symlink/size guards and off-main IO.
   No reader fast-path integration or 200 ms claim in this storage slice.
   Nine native macOS tests passed, zero skips (`20-34-11` xcresult). Default 64 MiB
   budget rejects new writes without eviction; file reads/writes cap at 8 MiB.
-  Physical iOS attempt stopped at locked-device preflight; no build/test executed.
-  Storage helper is delivered separately; iOS verification/integration still pending.
+  Physical iOS storage tests passed in the focused set above. Envelope v2 adds
+  archive checksum validation; earlier locked attempt did not build or test.
 
 - [ ] **APP-20261008-07 — Verify native reader readiness after process relaunch.** In progress.
   Two separate native macOS XCTest host executions, same hash-checked LOTR/Christie

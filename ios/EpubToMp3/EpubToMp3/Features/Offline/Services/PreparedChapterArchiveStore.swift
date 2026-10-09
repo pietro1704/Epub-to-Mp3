@@ -11,6 +11,7 @@ actor PreparedChapterArchiveStore {
         let chapterIndex: Int
         let signature: String
         let archive: Data
+        let checksum: String
     }
     private let directory: URL
     private let totalBudgetBytes: Int?
@@ -34,9 +35,10 @@ actor PreparedChapterArchiveStore {
             let bytes = try handle.read(upToCount: Self.maximumFileBytes + 1) ?? Data()
             guard bytes.count <= Self.maximumFileBytes else { return nil }
             let envelope = try PropertyListDecoder().decode(Envelope.self, from: bytes)
-            guard envelope.schema == 1, envelope.bookID == bookID,
+            guard envelope.schema == 2, envelope.bookID == bookID,
                   envelope.chapterIndex == chapterIndex, envelope.signature == signature,
-                  envelope.archive.count <= Self.maximumFileBytes else { return nil }
+                  envelope.archive.count <= Self.maximumFileBytes,
+                  envelope.checksum == digest(envelope.archive) else { return nil }
             return envelope.archive
         } catch { return nil }
     }
@@ -46,8 +48,8 @@ actor PreparedChapterArchiveStore {
         let target = try targetURL(bookID: bookID, chapterIndex: chapterIndex, signature: signature)
         let encoder = PropertyListEncoder()
         encoder.outputFormat = .binary
-        let bytes = try encoder.encode(Envelope(schema: 1, bookID: bookID, chapterIndex: chapterIndex,
-                                               signature: signature, archive: archive))
+        let bytes = try encoder.encode(Envelope(schema: 2, bookID: bookID, chapterIndex: chapterIndex,
+                                               signature: signature, archive: archive, checksum: digest(archive)))
         guard bytes.count <= Self.maximumFileBytes else { throw StoreError.oversized }
         try validateRoot(create: true)
         let oldSize = try existingRegularFileSize(target) ?? 0
@@ -79,6 +81,10 @@ actor PreparedChapterArchiveStore {
         }
         let digest = SHA256.hash(data: Data(bookID.utf8)).map { String(format: "%02x", $0) }.joined()
         return directory.appendingPathComponent("\(digest)-\(chapterIndex).archive")
+    }
+
+    private func digest(_ data: Data) -> String {
+        SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
     }
 
     private func validateRoot(create: Bool) throws {

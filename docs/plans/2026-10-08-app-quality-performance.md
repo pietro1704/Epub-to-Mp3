@@ -52,6 +52,37 @@ uncontrolled comparison or extrapolate whole-book duration.
 
 ## Progress
 
+### Prepared chapter restoration — integrated native behavior
+
+Both Apple readers now use a shared prepared renderer: full chapter/input/settings,
+font directory, platform/OS and locale/language signature; secure attributed-text
+restoration on MainActor; bounded atomic IO on the storage actor. Memory caches
+immutable archive bytes rather than sharing mutable nested attachment/paragraph
+objects between views. Corrupt/unsupported/signature-mismatched entries retain the
+normal HTML fallback. Valid memory hits remain synchronous; pending disk restore
+shows the existing loading cover and fences stale book/load generations. Geometry,
+image handling, progress restoration and plain-text fallback are unchanged.
+
+Envelope v2 validates archive SHA256 as well as input signature. Final macOS set:
+17 passed, zero skips (`21-27-36` xcresult). Physical iOS set: 17 passed, zero skips
+in `CAB5B9A6-A73C-4299-9E4D-3C3EF9A7451D` (9.31 s total, no rebuild).
+Actual UIKit window also passed in `2898D60B-28A6-49E6-8465-9442DD25EEA9`:
+prepared marker attributes and text survive on the real surface, content/controls
+become ready, loading ends. The unit window explicitly performs its layout passes.
+AppKit window tests prove prepared consumption and settings invalidation.
+
+iOS's original equality failure exposed CG-backed fixed UIColor representation
+changing on archive decode. Canonical fixed sRGB UIColor values now preserve full
+equality; adaptive colors remain adaptive. No private paragraph API or weakened
+fidelity assertion was used. One helper compilation initially lacked explicit self
+and one SDK color type-ID spelling needed correction before the passing runs.
+
+Two-host measurement with prepared rendering remains over budget: LOTR 439.05 ms
+(journey controls 355.90 ms), Christie 132.10 ms. Evidence:
+`reader-relaunch-353E8583-ECE5-49E7-9B93-0F7B7A9BF19B`; prepare passed, verify
+failed the unchanged 200 ms assertion. This is a verified restoration slice, not
+completion of the relaunch/performance goal. Raw full-book decoding remains costly.
+
 ### Prepared archive persistence — native storage boundary
 
 Added the shared Apple actor `PreparedChapterArchiveStore`: immutable opaque

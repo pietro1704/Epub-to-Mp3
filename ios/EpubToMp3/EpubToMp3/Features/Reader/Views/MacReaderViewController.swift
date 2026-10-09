@@ -9,6 +9,7 @@ final class MacReaderViewController: NSViewController, NSTableViewDataSource, NS
     private let settings: AppSettings
     private let player: AudioPlayer
     private let bookmarkStore: BookmarkStore
+    private let preparedRenderer: PreparedChapterRenderer
     private let onClose: () -> Void
     private let chaptersTable = NSTableView()
     private let textView = MacReaderTextView()
@@ -47,13 +48,15 @@ final class MacReaderViewController: NSViewController, NSTableViewDataSource, NS
         settings: AppSettings,
         player: AudioPlayer,
         bookmarkStore: BookmarkStore,
-        onClose: @escaping () -> Void
+        onClose: @escaping () -> Void,
+        preparedRenderer: PreparedChapterRenderer? = nil
     ) {
         self.library = library
         self.settings = settings
         self.player = player
         self.bookmarkStore = bookmarkStore
         self.onClose = onClose
+        self.preparedRenderer = preparedRenderer ?? .shared
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -553,11 +556,20 @@ final class MacReaderViewController: NSViewController, NSTableViewDataSource, NS
             if let row = tocRows.firstIndex(where: { $0.chapterIndex == selectedChapter }) {
                 chaptersTable.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
             }
-            showChapter(selectedChapter)
-            restoreReadingProgressIfNeeded(bookId: book.id)
-            recordReadableContent()
-            hideLoading()
-            recordControlsUsable()
+            if let chapter = warmPayload.chapters[safe: selectedChapter],
+               chapter.isImageOnly || preparedRenderer.cached(
+                   bookID: book.id, chapterIndex: selectedChapter, chapter: chapter,
+                   settings: settings, fontDirectoryURL: nil) != nil {
+                presentLoadedChapter(bookID: book.id)
+            } else {
+                showLoading(for: book)
+                loadTask = Task { [weak self] in
+                    guard let self else { return }
+                    await restoreSelectedChapter(bookID: book.id)
+                    guard isActiveLoad(generation, bookID: book.id) else { return }
+                    presentLoadedChapter(bookID: book.id)
+                }
+            }
             return
         }
         fulltext = nil
@@ -612,11 +624,9 @@ final class MacReaderViewController: NSViewController, NSTableViewDataSource, NS
                 if let row = self.tocRows.firstIndex(where: { $0.chapterIndex == self.selectedChapter }) {
                     chaptersTable.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
                 }
-                showChapter(selectedChapter)
-                restoreReadingProgressIfNeeded(bookId: book.id)
-                recordReadableContent()
-                hideLoading()
-                recordControlsUsable()
+                await restoreSelectedChapter(bookID: book.id)
+                guard self.isActiveLoad(generation, bookID: book.id) else { return }
+                presentLoadedChapter(bookID: book.id)
             } catch {
                 guard self.isActiveLoad(generation, bookID: book.id) else { return }
                 statusLabel.stringValue = error.localizedDescription
@@ -628,6 +638,20 @@ final class MacReaderViewController: NSViewController, NSTableViewDataSource, NS
 
     @objc private func retryLoadingBook() {
         loadCurrentBook()
+    }
+
+    private func restoreSelectedChapter(bookID: String) async {
+        guard let chapter = fulltext?.chapters[safe: selectedChapter], !chapter.isImageOnly else { return }
+        _ = await preparedRenderer.restore(bookID: bookID, chapterIndex: selectedChapter,
+                                           chapter: chapter, settings: settings, fontDirectoryURL: nil)
+    }
+
+    private func presentLoadedChapter(bookID: String) {
+        showChapter(selectedChapter)
+        restoreReadingProgressIfNeeded(bookId: bookID)
+        recordReadableContent()
+        hideLoading()
+        recordControlsUsable()
     }
 
     private func showChapter(_ index: Int, scrollToEnd: Bool = false) {
@@ -644,11 +668,12 @@ final class MacReaderViewController: NSViewController, NSTableViewDataSource, NS
             contentScrollView.documentView = comicPageImageView
         } else {
             contentScrollView.documentView = textView
-            if let html = chapter.html,
-               let rendered = EpubHtmlRenderer.render(
-                   html: html, css: chapter.css, settings: settings, resources: chapter.resources
+            if let bookID = currentBookId,
+               let rendered = preparedRenderer.render(
+                   bookID: bookID, chapterIndex: index, chapter: chapter,
+                   settings: settings, fontDirectoryURL: nil
                ) {
-                textView.textStorage?.setAttributedString(NSAttributedString(rendered))
+                textView.textStorage?.setAttributedString(NSAttributedString(attributedString: rendered))
             } else {
                 textView.string = chapter.text
                 textView.font = .systemFont(ofSize: settings.readerPointSize)
