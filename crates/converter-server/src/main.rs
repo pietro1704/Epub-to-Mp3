@@ -26,7 +26,7 @@ use converter_core::{
 use futures_util::stream::{self, StreamExt};
 use serde::{Deserialize, Serialize};
 use tokio::sync::{broadcast, RwLock};
-use tower_http::services::ServeDir;
+use tower_http::services::{ServeDir, ServeFile};
 
 // Keep a concrete server-side ceiling above normal EPUB sizes while preventing unbounded request bodies.
 const MAX_UPLOAD_BYTES: usize = 100 * 1024 * 1024;
@@ -614,15 +614,16 @@ async fn log(AxumPath(id): AxumPath<String>, State(state): State<AppState>) -> R
 async fn output(
     AxumPath((id, filename)): AxumPath<(String, String)>,
     State(state): State<AppState>,
+    request: axum::extract::Request,
 ) -> Response {
-    if !safe_leaf(&filename) {
+    if !safe_leaf(&id) || !safe_leaf(&filename) {
         return StatusCode::BAD_REQUEST.into_response();
     }
-    match tokio::fs::read(state.config.paths.output_dir.join(&id).join(&filename)).await {
-        Ok(bytes) => (StatusCode::OK, bytes).into_response(),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-            StatusCode::NOT_FOUND.into_response()
-        }
+    match ServeFile::new(state.config.paths.output_dir.join(&id).join(&filename))
+        .try_call(request)
+        .await
+    {
+        Ok(response) => response.into_response(),
         Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
     }
 }
@@ -630,6 +631,9 @@ async fn chapters(
     AxumPath((id, index)): AxumPath<(String, u32)>,
     State(state): State<AppState>,
 ) -> Response {
+    if !safe_leaf(&id) {
+        return StatusCode::BAD_REQUEST.into_response();
+    }
     let path = state
         .config
         .paths
@@ -837,6 +841,18 @@ fn apply_manifest(snapshot: &mut JobSnapshot, manifest: &OutputManifest, output_
             .unwrap_or(0),
         })
         .collect();
+    if safe_leaf(&snapshot.job_id) && safe_leaf(&manifest.archive) {
+        let archive = output_dir.join(&snapshot.job_id).join(&manifest.archive);
+        if let Ok(metadata) = std::fs::metadata(archive) {
+            if metadata.is_file() && metadata.len() > 0 {
+                snapshot.outputs.push(OutputAsset {
+                    name: manifest.archive.clone(),
+                    url: format!("/api/outputs/{}/{}", snapshot.job_id, manifest.archive),
+                    size_bytes: metadata.len(),
+                });
+            }
+        }
+    }
     snapshot.events.push("Conversion finished".into());
 }
 fn safe_leaf(value: &str) -> bool {
@@ -888,4 +904,316 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     )
     .await?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn large_archive_download_is_streamed_in_bounded_chunks() {
+        let root = TestRoot::new();
+        let state = root.state();
+        let job = state.config.paths.output_dir.join("large-job");
+        std::fs::create_dir_all(&job).unwrap();
+        let size = 4 * 1024 * 1024;
+        std::fs::File::create(job.join("book.zip"))
+            .unwrap()
+            .set_len(size)
+            .unwrap();
+        let response = output(
+            AxumPath(("large-job".into(), "book.zip".into())),
+            State(state),
+            request("GET"),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(response.headers()[header::CONTENT_LENGTH], size.to_string());
+        assert_eq!(response.headers()[header::CONTENT_TYPE], "application/zip");
+        let mut stream = response.into_body().into_data_stream();
+        let mut total = 0;
+        while let Some(chunk) = stream.next().await {
+            let chunk = chunk.unwrap();
+            assert!(
+                chunk.len() <= 64 * 1024,
+                "download chunk must remain bounded"
+            );
+            total += chunk.len() as u64;
+        }
+        assert_eq!(total, size);
+    }
+
+    #[tokio::test]
+    async fn head_and_unsatisfiable_range_keep_http_semantics() {
+        let root = TestRoot::new();
+        let state = root.state();
+        let job = state.config.paths.output_dir.join("range-job");
+        std::fs::create_dir_all(&job).unwrap();
+        std::fs::write(job.join("chapter.mp3"), b"0123456789").unwrap();
+        let head = output(
+            AxumPath(("range-job".into(), "chapter.mp3".into())),
+            State(state.clone()),
+            request("HEAD"),
+        )
+        .await;
+        assert_eq!(head.status(), StatusCode::OK);
+        assert_eq!(head.headers()[header::CONTENT_LENGTH], "10");
+        assert_eq!(head.headers()[header::CONTENT_TYPE], "audio/mpeg");
+        assert!(axum::body::to_bytes(head.into_body(), 100)
+            .await
+            .unwrap()
+            .is_empty());
+        let mut range = request("GET");
+        range
+            .headers_mut()
+            .insert(header::RANGE, "bytes=20-30".parse().unwrap());
+        let response = output(
+            AxumPath(("range-job".into(), "chapter.mp3".into())),
+            State(state.clone()),
+            range,
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::RANGE_NOT_SATISFIABLE);
+        assert_eq!(response.headers()[header::CONTENT_RANGE], "bytes */10");
+        let missing = output(
+            AxumPath(("range-job".into(), "missing.mp3".into())),
+            State(state),
+            request("GET"),
+        )
+        .await;
+        assert_eq!(missing.status(), StatusCode::NOT_FOUND);
+    }
+
+    fn request(method: &str) -> axum::extract::Request {
+        axum::http::Request::builder()
+            .method(method)
+            .uri("/")
+            .body(axum::body::Body::empty())
+            .unwrap()
+    }
+
+    async fn http_fixture_request(config: AppConfig, request: &'static [u8]) -> String {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            axum::serve(listener, app(config)).await.unwrap();
+        });
+        let response = tokio::task::spawn_blocking(move || {
+            use std::io::{Read, Write};
+            let mut client = std::net::TcpStream::connect(address).unwrap();
+            client
+                .set_read_timeout(Some(std::time::Duration::from_secs(5)))
+                .unwrap();
+            client.write_all(request).unwrap();
+            let mut bytes = Vec::new();
+            client.read_to_end(&mut bytes).unwrap();
+            String::from_utf8(bytes).unwrap()
+        })
+        .await
+        .unwrap();
+        server.abort();
+        response
+    }
+
+    #[tokio::test]
+    async fn audio_download_serves_requested_byte_range() {
+        let root = TestRoot::new();
+        let state = root.state();
+        let job = state.config.paths.output_dir.join("range-job");
+        std::fs::create_dir_all(&job).unwrap();
+        std::fs::write(job.join("chapter.mp3"), b"0123456789").unwrap();
+        let response = http_fixture_request(state.config, b"GET /api/outputs/range-job/chapter.mp3 HTTP/1.1\r\nHost: localhost\r\nRange: bytes=2-5\r\nConnection: close\r\n\r\n").await;
+        assert!(response.starts_with("HTTP/1.1 206"), "{response}");
+        assert!(response
+            .to_ascii_lowercase()
+            .contains("content-range: bytes 2-5/10"));
+        assert!(response.ends_with("2345"));
+    }
+
+    #[test]
+    fn finished_snapshot_exposes_the_complete_archive() {
+        let root = TestRoot::new();
+        let state = root.state();
+        let job_dir = state.config.paths.output_dir.join("archive-job");
+        std::fs::create_dir_all(&job_dir).unwrap();
+        std::fs::write(job_dir.join("book.zip"), b"archive fixture").unwrap();
+        let manifest = OutputManifest {
+            job_id: "archive-job".into(),
+            title: "Book".into(),
+            author: "Author".into(),
+            chapters: Vec::new(),
+            archive: "book.zip".into(),
+            cover: None,
+        };
+        let mut snapshot = initial_job("archive-job".into(), &CreateJob::default());
+        apply_manifest(&mut snapshot, &manifest, &state.config.paths.output_dir);
+        let archive = snapshot
+            .outputs
+            .iter()
+            .find(|asset| asset.name == "book.zip")
+            .expect("completed archives must be advertised for download");
+        assert_eq!(archive.url, "/api/outputs/archive-job/book.zip");
+        assert_eq!(archive.size_bytes, 15);
+        let value = serde_json::to_value(&snapshot).unwrap();
+        assert_eq!(value["outputs"][0]["sizeBytes"], 15);
+        std::fs::remove_file(job_dir.join("book.zip")).unwrap();
+        apply_manifest(&mut snapshot, &manifest, &state.config.paths.output_dir);
+        assert!(snapshot.outputs.is_empty());
+        std::fs::write(job_dir.join("book.zip"), []).unwrap();
+        apply_manifest(&mut snapshot, &manifest, &state.config.paths.output_dir);
+        assert!(snapshot.outputs.is_empty());
+        std::fs::remove_file(job_dir.join("book.zip")).unwrap();
+        std::fs::create_dir(job_dir.join("book.zip")).unwrap();
+        apply_manifest(&mut snapshot, &manifest, &state.config.paths.output_dir);
+        assert!(snapshot.outputs.is_empty());
+    }
+
+    #[test]
+    fn manifest_archive_cannot_escape_the_job_directory() {
+        let root = TestRoot::new();
+        let state = root.state();
+        std::fs::create_dir_all(&state.config.paths.output_dir).unwrap();
+        std::fs::write(
+            state.config.paths.output_dir.join("outside.zip"),
+            b"outside archive",
+        )
+        .unwrap();
+        let manifest = OutputManifest {
+            job_id: "archive-job".into(),
+            title: "Book".into(),
+            author: "Author".into(),
+            chapters: Vec::new(),
+            archive: "../outside.zip".into(),
+            cover: None,
+        };
+        let mut snapshot = initial_job("archive-job".into(), &CreateJob::default());
+        apply_manifest(&mut snapshot, &manifest, &state.config.paths.output_dir);
+        assert!(snapshot.outputs.is_empty());
+    }
+
+    #[tokio::test]
+    async fn advertised_archive_can_be_downloaded() {
+        let root = TestRoot::new();
+        let state = root.state();
+        let job_dir = state.config.paths.output_dir.join("archive-job");
+        std::fs::create_dir_all(&job_dir).unwrap();
+        std::fs::write(job_dir.join("book.zip"), b"download archive").unwrap();
+        let manifest = OutputManifest {
+            job_id: "archive-job".into(),
+            title: "Book".into(),
+            author: "Author".into(),
+            chapters: Vec::new(),
+            archive: "book.zip".into(),
+            cover: None,
+        };
+        let mut snapshot = initial_job("archive-job".into(), &CreateJob::default());
+        apply_manifest(&mut snapshot, &manifest, &state.config.paths.output_dir);
+        let archive = &snapshot.outputs[0];
+        let response = output(
+            AxumPath((snapshot.job_id.clone(), archive.name.clone())),
+            State(state),
+            request("GET"),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::OK);
+        let bytes = axum::body::to_bytes(response.into_body(), 100)
+            .await
+            .unwrap();
+        assert_eq!(bytes.as_ref(), b"download archive");
+    }
+
+    #[tokio::test]
+    async fn chapter_manifest_rejects_job_path_traversal() {
+        let root = TestRoot::new();
+        let response = chapters(AxumPath(("../private".into(), 1)), State(root.state())).await;
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn encoded_http_job_path_cannot_escape_outputs() {
+        let root = TestRoot::new();
+        let state = root.state();
+        std::fs::create_dir_all(&state.config.paths.output_dir).unwrap();
+        let outside = root.0.join("private");
+        std::fs::create_dir_all(&outside).unwrap();
+        std::fs::write(outside.join("example.txt"), b"outside fixture").unwrap();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            axum::serve(listener, app(state.config)).await.unwrap();
+        });
+        let response = tokio::task::spawn_blocking(move || {
+            use std::io::{Read, Write};
+            let mut client = std::net::TcpStream::connect(address).unwrap();
+            client.set_read_timeout(Some(std::time::Duration::from_secs(5))).unwrap();
+            client.write_all(b"GET /api/outputs/..%2Fprivate/example.txt HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n").unwrap();
+            let mut bytes = Vec::new();
+            client.read_to_end(&mut bytes).unwrap();
+            String::from_utf8(bytes).unwrap()
+        }).await.unwrap();
+        server.abort();
+        assert!(response.starts_with("HTTP/1.1 400"), "{response}");
+        assert!(!response.contains("outside fixture"));
+    }
+
+    #[tokio::test]
+    async fn normal_output_download_keeps_its_contents() {
+        let root = TestRoot::new();
+        let state = root.state();
+        let job = state.config.paths.output_dir.join("valid-job");
+        std::fs::create_dir_all(&job).unwrap();
+        std::fs::write(job.join("chapter.mp3"), b"valid fixture").unwrap();
+        let response = output(
+            AxumPath(("valid-job".into(), "chapter.mp3".into())),
+            State(state),
+            request("GET"),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::OK);
+        let bytes = axum::body::to_bytes(response.into_body(), 100)
+            .await
+            .unwrap();
+        assert_eq!(bytes.as_ref(), b"valid fixture");
+    }
+
+    struct TestRoot(PathBuf);
+    impl TestRoot {
+        fn new() -> Self {
+            let path = std::env::temp_dir().join(format!("converter-server-contract-{}", uuid()));
+            std::fs::create_dir_all(&path).unwrap();
+            Self(path)
+        }
+        fn state(&self) -> AppState {
+            let config = AppConfig::from_paths(converter_core::paths::resolve_paths_from(
+                HashMap::<String, String>::new(),
+                self.0.clone(),
+            ));
+            AppState {
+                config,
+                jobs: Arc::new(RwLock::new(HashMap::new())),
+            }
+        }
+    }
+    impl Drop for TestRoot {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    #[tokio::test]
+    async fn output_rejects_job_ids_that_escape_the_output_root() {
+        let root = TestRoot::new();
+        let state = root.state();
+        std::fs::create_dir_all(&state.config.paths.output_dir).unwrap();
+        let outside = root.0.join("private");
+        std::fs::create_dir_all(&outside).unwrap();
+        std::fs::write(outside.join("example.txt"), b"outside fixture").unwrap();
+        let response = output(
+            AxumPath(("../private".into(), "example.txt".into())),
+            State(state),
+            request("GET"),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    }
 }
