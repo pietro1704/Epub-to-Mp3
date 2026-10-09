@@ -10,12 +10,15 @@ import 'package:flutter_app/services/protected_audio_storage_guard.dart';
 
 class _DownloadDio implements Dio {
   _DownloadDio(this.downloadFile);
-  final Future<Response<dynamic>> Function(String) downloadFile;
+  final Future<Response<dynamic>> Function(String, CancelToken) downloadFile;
 
   @override
   dynamic noSuchMethod(Invocation invocation) {
     if (invocation.memberName == #download) {
-      return downloadFile(invocation.positionalArguments[1] as String);
+      return downloadFile(
+        invocation.positionalArguments[1] as String,
+        invocation.namedArguments[#cancelToken] as CancelToken,
+      );
     }
     return super.noSuchMethod(invocation);
   }
@@ -56,7 +59,7 @@ void main() {
     test('failed download preserves previous audio: ${failure.name}', () async {
       final audio = await existingAudio();
       final manager = managerWith(
-        _DownloadDio((path) async {
+        _DownloadDio((path, _) async {
           await File(path).writeAsString('partial replacement');
           throw DioException(
             requestOptions: RequestOptions(path: '/audio'),
@@ -92,7 +95,7 @@ void main() {
       final received = Completer<void>();
       final finish = Completer<void>();
       final manager = managerWith(
-        _DownloadDio((path) async {
+        _DownloadDio((path, _) async {
           await File(path).writeAsString('complete replacement audio');
           received.complete();
           await finish.future;
@@ -120,6 +123,47 @@ void main() {
         await audio.parent.list().where((entry) => entry is Directory).toList(),
         isEmpty,
       );
+    },
+  );
+
+  test(
+    'disposing a partial replacement preserves completed offline audio',
+    () async {
+      final audio = await existingAudio();
+      final started = Completer<void>();
+      final manager = managerWith(
+        _DownloadDio((path, token) async {
+          await File(path).writeAsString('partial replacement');
+          started.complete();
+          throw await token.whenCancel;
+        }),
+      );
+      addTearDown(manager.dispose);
+      final outcome = manager
+          .download(
+            jobId: 'book',
+            url: 'https://example.test/audio',
+            filename: 'chapter.mp3',
+          )
+          .then<Object>(
+            (file) => file,
+            onError: (Object error, StackTrace _) => error,
+          );
+      await started.future;
+      manager.dispose();
+      expect(
+        await outcome.timeout(const Duration(seconds: 2)),
+        isA<DioException>().having(
+          (error) => error.type,
+          'type',
+          DioExceptionType.cancel,
+        ),
+      );
+      expect(await audio.exists(), isTrue);
+      expect(await audio.readAsString(), 'complete previous audio');
+      expect(await audio.parent.list().map((entry) => entry.path).toList(), [
+        audio.path,
+      ]);
     },
   );
 
