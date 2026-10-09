@@ -22,11 +22,16 @@ class DownloadManager {
 
   Stream<DownloadEvent> get events => _events.stream;
 
+  void _emit(DownloadEvent event) {
+    if (!_events.isClosed) _events.add(event);
+  }
+
   Future<File> download({
     required String jobId,
     required String url,
     required String filename,
   }) async {
+    if (_events.isClosed) throw StateError('Download manager is disposed');
     await _storageGuard.ensureCanRetain(
       estimatedBytes: ProtectedAudioStorageGuard.estimateChapterAudioBytes(''),
     );
@@ -37,17 +42,18 @@ class DownloadManager {
     final token = CancelToken();
     _tokens[path] = token;
     try {
+      if (_events.isClosed) throw StateError('Download manager is disposed');
       await _dio.download(
         url,
         path,
         cancelToken: token,
         onReceiveProgress: (count, total) {
           if (total > 0) {
-            _events.add(DownloadEvent(path: path, progress: count / total));
+            _emit(DownloadEvent(path: path, progress: count / total));
           }
         },
       );
-      _events.add(DownloadEvent(path: path, progress: 1.0, completed: true));
+      _emit(DownloadEvent(path: path, progress: 1.0, completed: true));
       // Completed downloads are protected listening content. Rebuildable
       // cache maintenance must never run against this directory.
       await OfflineCacheEviction.touchLastAccess(jobId);
@@ -58,7 +64,7 @@ class DownloadManager {
       final msg = e.type == DioExceptionType.cancel
           ? 'cancelled'
           : e.message ?? e.type.name;
-      _events.add(DownloadEvent(path: path, progress: 0, error: msg));
+      _emit(DownloadEvent(path: path, progress: 0, error: msg));
       rethrow;
     } finally {
       _tokens.remove(path);
@@ -69,7 +75,13 @@ class DownloadManager {
     _tokens.remove(path)?.cancel();
   }
 
-  void dispose() => _events.close();
+  void dispose() {
+    for (final token in _tokens.values) {
+      token.cancel();
+    }
+    _tokens.clear();
+    unawaited(_events.close());
+  }
 }
 
 class DownloadEvent {
