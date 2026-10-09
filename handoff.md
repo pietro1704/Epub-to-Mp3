@@ -66,15 +66,42 @@ Arch: first-segment delivery and native FFI cancellation remain unimplemented by
 this bridge; superseded Rust work can still run despite rejecting stale playback.
 Flutter parity still needs actual execution on Arch; no local Flutter run here.
 
+APP-20261009-33 / APP-20261009-34 — Flutter segmented-playback parity, source review
+only (no Flutter command run on this Mac). In `flutter_app/lib/services/
+audio_player_service.dart`, production `skipForward` / `skipBackward` seek from
+`_player.position` and `_player.duration`; segment mode uses a concatenating
+source and tracks sentence IDs, but does not expose an explicit chapter-clock
+mapping at those commands. Existing `audio_player_service_test.dart` exercises
+only `FakeAudioPlayerService` for skips, so it does not prove behavior with
+actual just_audio items or late segment/chapter endpoints.
+
+Arch: first add focused tests against the production player adapter with short
+local audio fixtures. Verify relative skip across segment boundaries in chapter
+time, chapter start/end clamping, unchanged play/pause intent, and that normal
+single-item chapter behavior is preserved. For APP-34, hold a target beyond the
+currently-known segment duration, deliver final duration/segments later, then
+assert the retained seek resolves or clamps at the confirmed chapter end rather
+than remaining pending forever. Do not synthesize user books; use generated local
+audio only. Report exact focused Flutter command/results and update TODO_APP.md.
+
+APP-20261009-38 — Flutter manual-submit reentrancy, source review only. The
+`ConvertScreen._submit()` path currently checks `_submitting` synchronously
+before invoking the injected starter, and the button is disabled during submit;
+however, `convert_screen_test.dart` has no in-flight duplicate-tap regression.
+Arch: add one widget test using a held `Completer`, attempt a second submission
+while the first is suspended, and assert one starter call plus preserved request
+options/result. Keep the production code unchanged unless that runtime test fails.
+
 `TODO_APP.md` is the shared user-request/status board; root `AGENTS.md`/`CLAUDE.md`
 is authoritative. Codex coordinates Apple changes; Arch coordinates Rust/Flutter.
 Keep iOS, macOS and Flutter behavior synchronized. Claim Done only with relevant
 runtime tests and delivery evidence; record blocked/platform-limited verification.
 Use minimal atomic Gitflow changes, focused tests, and commit/push verified slices.
 No Python/Ruff local execution, osascript or CI/PR monitoring.
-Current iOS validation is Simulator-only (physical iPhone use revoked): oldest compatible runtime,
-one small-screen iPhone, no Xcode GUI, no automatic iOS 18/26 fallback given
-reported host crashes. Legacy iOS 15.0 Apple package is downloaded and signed, but
+The active quality goal prohibits Simulator; validate natively on the physical
+iPhone only when it is available. Latest `devicectl` query (2026-10-09) reports
+the paired iPhone 16e unavailable. Do not boot or use Simulator. No Xcode GUI or
+CI/PR monitoring. Legacy iOS 15.0 Apple package is downloaded and signed, but
 installation failed: the suggested root installer command was incorrect for this
 destinationless runtime payload; the protected system volume rejected it. CLI
 platform import failed too. Do not repeat that command. iOS 16.0 is the next
