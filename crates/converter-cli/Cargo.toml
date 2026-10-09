@@ -1,5 +1,6 @@
 [package]
 name = "converter-cli"
+default-run = "converter-cli"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

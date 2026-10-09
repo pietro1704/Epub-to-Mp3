@@ -165,6 +165,8 @@ jobs:
         run: mise exec -- cargo check --workspace
       - name: Run migration build gate
         run: mise run migration:build-and-gate
+      - name: Run canonical Rust CLI entry point
+        run: mise exec -- cargo run --release -p converter-cli --
       - name: Test Rust workspace
         run: mise exec -- cargo test --workspace
       - name: Rust formatting
