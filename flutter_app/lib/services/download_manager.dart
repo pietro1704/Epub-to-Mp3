@@ -34,12 +34,14 @@ class DownloadManager {
     final folder = Directory('${dir.path}/downloads/$jobId');
     if (!await folder.exists()) await folder.create(recursive: true);
     final path = '${folder.path}/$filename';
+    final staging = await folder.createTemp('.download-');
+    final stagedFile = File('${staging.path}/$filename');
     final token = CancelToken();
     _tokens[path] = token;
     try {
       await _dio.download(
         url,
-        path,
+        stagedFile.path,
         cancelToken: token,
         onReceiveProgress: (count, total) {
           if (total > 0) {
@@ -47,21 +49,21 @@ class DownloadManager {
           }
         },
       );
+      await stagedFile.rename(path);
       _events.add(DownloadEvent(path: path, progress: 1.0, completed: true));
       // Completed downloads are protected listening content. Rebuildable
       // cache maintenance must never run against this directory.
       await OfflineCacheEviction.touchLastAccess(jobId);
       return File(path);
     } on DioException catch (e) {
-      final partial = File(path);
-      if (await partial.exists()) await partial.delete();
       final msg = e.type == DioExceptionType.cancel
           ? 'cancelled'
           : e.message ?? e.type.name;
       _events.add(DownloadEvent(path: path, progress: 0, error: msg));
       rethrow;
     } finally {
-      _tokens.remove(path);
+      if (identical(_tokens[path], token)) _tokens.remove(path);
+      if (await staging.exists()) await staging.delete(recursive: true);
     }
   }
 
