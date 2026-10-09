@@ -9,8 +9,8 @@ is *concurrent* heavy work — multiple xcodebuild / pytest / flutter / simulato
 jobs stacked at once.
 
 This guard enforces a single-heavy-job-at-a-time policy via an advisory file
-lock plus a load-average sanity check. It is intentionally local-developer
-focused; CI opts out with ``HEAVY_JOB_GUARD_DISABLE=1`` because hosted runners
+lock. It is intentionally local-developer focused; CI opts out with
+``HEAVY_JOB_GUARD_DISABLE=1`` because hosted runners
 are sized for parallel builds and do not use this Intel Mac's PCIe stack.
 
 Usage:
@@ -30,9 +30,6 @@ import time
 
 _LOCK_PATH = "/tmp/epub2mp3.heavy-job.lock"
 _MIN_SAFE_MEMORY_GIB = 12
-# 1-minute load average above this on a constrained Intel box means we should
-# not pile on another heavy job; wait for it to drain.
-_LOAD_CEILING = float(os.environ.get("HEAVY_JOB_LOAD_CEILING", "6.0"))
 _WAIT_POLL_SECONDS = 3
 _WAIT_TIMEOUT_SECONDS = int(os.environ.get("HEAVY_JOB_WAIT_TIMEOUT", "1800"))
 
@@ -55,14 +52,6 @@ def _is_constrained_intel_mac() -> bool:
     arch = platform.machine().lower()
     is_intel = arch in {"x86_64", "i386"}
     return is_intel and _memory_gib() < _MIN_SAFE_MEMORY_GIB
-
-
-def _load_too_high() -> bool:
-    try:
-        one_min = os.getloadavg()[0]
-    except (OSError, AttributeError):
-        return False
-    return one_min > _LOAD_CEILING
 
 
 def _acquire_lock(label: str) -> "object":
@@ -134,23 +123,8 @@ def main(argv: list[str]) -> int:
     if os.environ.get("HEAVY_JOB_GUARD_DISABLE") == "1" or not _is_constrained_intel_mac():
         return subprocess.call(command)
 
-    # Back off if the machine is already hot before we even queue.
-    if _load_too_high() and os.environ.get("HEAVY_JOB_GUARD_NOWAIT") == "1":
-        print(
-            f"heavy_job_guard: load average too high for '{label}' "
-            f"(>{_LOAD_CEILING}); refusing to add load (PCIe panic risk).",
-            file=sys.stderr,
-        )
-        return 75
-
     handle = _acquire_lock(label)
     try:
-        # Once we hold the lock, wait out any transient load spike before
-        # launching, so we never start a heavy job onto an already-hot CPU.
-        waited = 0
-        while _load_too_high() and waited < 60:
-            time.sleep(_WAIT_POLL_SECONDS)
-            waited += _WAIT_POLL_SECONDS
         return subprocess.call(command)
     finally:
         import fcntl

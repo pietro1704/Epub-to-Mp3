@@ -639,6 +639,19 @@ this board and `handoff.md` before crossing ownership or changing shared contrac
 - [ ] **APP-20261008-02 — Quality/performance goal.** In progress.
   Acceptance/evidence: `docs/plans/2026-10-08-app-quality-performance.md`.
   Remaining: relaunch readiness and the observed conversion performance regression.
+  iOS Book Detail Listen/Download bookmark resolution was moved to the async
+  LibraryStore API with a focused MainActor responsiveness test, but Simulator
+  verification is blocked: installed Xcode 26.3 only provides iOS Simulator SDK
+  26.2, while the requested low-resource runtime is iOS 16. The test build was
+  generated for 26.2; no Simulator was booted and no native pass is claimed.
+  Physical-device retry per current goal reached preflight, which found the
+  paired iPhone 16e locked and stopped before build/install/test. Unlock and
+  awake state requested; no device data or app state was changed by that attempt.
+  Independent durable-import safety regression: 3 focused macOS XCTest passed,
+  zero failures/skips (`Test-EpubToMp3Mac-2026.10.09_10-33-21--0300.xcresult`):
+  failed replacement preserves prior bytes, self-reimport is harmless, and
+  successful replacement retains bookmark destination. This does not verify
+  the pending UIKit async-opener test.
   Full physical seven-class sequence passed: `D379076E-DD02-49A1-9DA3-BAA4C728648F`,
   112 passed, zero failures, one opt-in existing-audio measurement skipped;
   no rebuild, 54.64 s total. Earlier playback failures did not reproduce.
@@ -670,6 +683,26 @@ this board and `handoff.md` before crossing ownership or changing shared contrac
   This Mac performs macOS/iOS work only. Arch performs Rust/Flutter execution and
   validation. Flutter checks remain pending until Arch returns actual test evidence.
   Every future concrete user request/correction updates this board automatically.
+
+- [x] **APP-20261009-44 — Remove generic Simulator load gates.**
+  Removed load-average, RAM, memory-pressure and thermal-state refusals from
+  local Simulator workflows while retaining single-heavy-job serialization and
+  operation timeout. Crash-log basis: two `SimLaunchHost.x86` reports on
+  2026-10-09 show `EXC_BAD_ACCESS`/`SIGBUS` in dyld `dlopen` and `dlclose` paths;
+  neither report supports a load threshold. Historical CoreSimulator panic
+  evidence still supports the existing iOS runtime compatibility ceiling.
+  Verification: inspected final diff and crash report exception/thread stacks;
+  executable checks not run.
+
+- [ ] **APP-20261009-45 — Oldest iOS/Xcode workflow on Intel Mac.** In progress.
+  Current app deployment target is iOS 15.0; Simulator selection now prefers
+  the oldest allowed runtime and smallest iPhone profile. Apple lists Xcode 15.3
+  Simulators as iOS 15–17.4, while iOS 13.7 requires Xcode 14.3.1; that Xcode
+  is not listed as Sequoia-compatible. Keep the iOS 15 target until source/API
+  compatibility below 15 is audited. iOS 15.0 runtime archive downloaded, but
+  installation failed with `hdiutil: attach failed - Resource busy`; Xcodes GUI
+  is separately downloading Xcode 15.3. Retain the archive and retry runtime
+  installation after that operation completes. No build or tests run.
 
 ## Historical backlog (requires revalidation; not current platform scope)
 

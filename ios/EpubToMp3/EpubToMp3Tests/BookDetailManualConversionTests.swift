@@ -13,6 +13,97 @@ final class BookDetailManualConversionTests: XCTestCase {
         try await verifyManualConversion(existingSession: false)
     }
 
+    #if os(iOS)
+    func testBookDetailActionsKeepMainActorResponsiveWhileOpeningBook() async throws {
+        try await verifyBookDetailOpenIsAsynchronous(actionIdentifier: "bookDetail.listen")
+        try await verifyBookDetailOpenIsAsynchronous(actionIdentifier: "bookDetail.download")
+    }
+
+    private func verifyBookDetailOpenIsAsynchronous(actionIdentifier: String) async throws {
+        let id = "detail-open-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: id))
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(id)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let source = try EpubFixture.create()
+        let library = LibraryStore(defaults: defaults, defaultsKey: "library",
+                                   importDirectory: root.appendingPathComponent("imports"))
+        let book = try library.importBook(from: source)
+        let player = AudioPlayer(resumeStore: ResumeStore(storage: UserDefaultsResumeStorage(defaults: defaults)))
+        let presentation = PlayerPresentation(defaults: defaults)
+        let openStarted = expectation(description: "Book Detail awaits asynchronous bookmark resolution")
+        let mainActorHeartbeat = expectation(description: "MainActor remains responsive during bookmark resolution")
+        let conversionStarted = expectation(description: "Conversion starts after the book URL resolves")
+        var openContinuation: CheckedContinuation<URL, Error>?
+        var didStartOpen = false
+        let playbackKeys = [AudioPlayer.currentBookIDDefaultsKey, AudioPlayer.currentChapterIndexDefaultsKey]
+        let savedPlayback = playbackKeys.map { UserDefaults.standard.object(forKey: $0) }
+        let widgetDefaults = UserDefaults(suiteName: WidgetDataSync.appGroupID)
+        let widgetPlaybackKeys = [
+            "currentlyPlayingBookId", "widget.nowPlayingChapterName", "widget.nowPlayingAuthor",
+            "widget.nowPlayingProgress", "widget.nowPlayingIsPlaying", "widget.nowPlayingPositionSeconds",
+            "widget.nowPlayingDurationSeconds", "widget.nowPlayingChapterRemainingSeconds",
+            "widget.nowPlayingBookRemainingSeconds", "widget.nowPlayingTotalChapters"
+        ]
+        let savedWidgetPlayback = widgetPlaybackKeys.map { widgetDefaults?.object(forKey: $0) }
+        defer {
+            openContinuation?.resume(throwing: CancellationError())
+            player.stop()
+            for (key, value) in zip(playbackKeys, savedPlayback) {
+                restore(value, forKey: key, in: .standard)
+            }
+            if let widgetDefaults {
+                for (key, value) in zip(widgetPlaybackKeys, savedWidgetPlayback) {
+                    restore(value, forKey: key, in: widgetDefaults)
+                }
+            }
+            defaults.removePersistentDomain(forName: id)
+            try? FileManager.default.removeItem(at: root)
+            try? FileManager.default.removeItem(at: source)
+        }
+        let executor: RustConversionCoordinator.Executor = { url, job, _, _, _, _ in
+            XCTAssertEqual(url.lastPathComponent, source.lastPathComponent)
+            conversionStarted.fulfill()
+            let manifest = try JSONSerialization.data(withJSONObject: ["manifest": [
+                "jobId": job, "title": "Opened book", "chapters": []
+            ]])
+            return .init(jobID: job, manifestJSON: manifest, outputDirectory: root)
+        }
+        let controller = BookDetailScreenController(
+            book: book, library: library, settings: AppSettings(defaults: defaults),
+            player: player, playerPresentation: presentation, conversionExecutor: executor,
+            bookFileOpener: { requestedID in
+                XCTAssertEqual(requestedID, book.id)
+                didStartOpen = true
+                openStarted.fulfill()
+                return try await withCheckedThrowingContinuation { openContinuation = $0 }
+            })
+        controller.loadViewIfNeeded()
+        let button = try XCTUnwrap(descendants(controller.view).compactMap { $0 as? UIButton }
+            .first { $0.accessibilityIdentifier == actionIdentifier })
+        button.sendActions(for: .touchUpInside)
+        await fulfillment(of: [openStarted], timeout: 3)
+        guard didStartOpen else { return }
+        Task { @MainActor in mainActorHeartbeat.fulfill() }
+        await fulfillment(of: [mainActorHeartbeat], timeout: 1)
+        openContinuation?.resume(returning: source)
+        openContinuation = nil
+        await fulfillment(of: [conversionStarted], timeout: 5)
+        withExtendedLifetime(controller) { }
+    }
+
+    private func descendants(_ view: UIView) -> [UIView] {
+        [view] + view.subviews.flatMap(descendants)
+    }
+
+    private func restore(_ value: Any?, forKey key: String, in defaults: UserDefaults) {
+        if let value {
+            defaults.set(value, forKey: key)
+        } else {
+            defaults.removeObject(forKey: key)
+        }
+    }
+    #endif
+
     private func verifyManualConversion(existingSession: Bool) async throws {
         let id = "manual-detail-\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: id))

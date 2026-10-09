@@ -1,24 +1,15 @@
 import Foundation
 import Darwin
 
-// Explicit low-resource opt-in; never boot while compiling on this host.
 let environment = ProcessInfo.processInfo.environment
 guard let operationSeconds = Double(environment["IOS_SIMULATOR_OPERATION_TIMEOUT"] ?? "300"),
       operationSeconds >= 30, operationSeconds <= 1200 else { exit(2) }
-guard let bootGrace = Double(environment["IOS_SIMULATOR_BOOT_GRACE_SECONDS"] ?? "0"),
-      bootGrace >= 0, bootGrace <= operationSeconds else { exit(2) }
-let graceDeadline = Date().addingTimeInterval(bootGrace)
-guard environment["IOS_ALLOW_LOW_RESOURCE_SIMULATOR"] == "1",
-      let identifier = environment["IOS_SIMULATOR_UDID"], UUID(uuidString: identifier) != nil,
+guard let identifier = environment["IOS_SIMULATOR_UDID"], UUID(uuidString: identifier) != nil,
       let mode = CommandLine.arguments.dropFirst().first, ["build", "test"].contains(mode)
-else { fputs("Specify Simulator UUID and explicit low-resource opt-in.\n", stderr); exit(2) }
+else { fputs("Specify Simulator UUID and operation.\n", stderr); exit(2) }
 let lease = open("/tmp/epub2mp3.heavy-job.lock", O_CREAT | O_RDWR, 0o600)
 guard lease >= 0 && flock(lease, LOCK_EX | LOCK_NB) == 0 else { exit(75) }
 defer { close(lease) }
-var load = [Double](repeating: 0, count: 3)
-guard getloadavg(&load, 3) == 3, load[0] < 6 else {
-    fputs("Host load is too high; no Simulator work started.\n", stderr); exit(75)
-}
 func run(_ arguments: [String], capture: Bool = false) throws -> Data {
     let process = Process()
     process.executableURL = URL(fileURLWithPath: "/usr/bin/xcrun")
@@ -31,14 +22,8 @@ func run(_ arguments: [String], capture: Bool = false) throws -> Data {
     if mode == "test" && !capture {
         while process.isRunning {
             Thread.sleep(forTimeInterval: 1)
-            var currentLoad = [Double](repeating: 0, count: 3)
-            var pressure: Int32 = 0
-            var pressureSize = MemoryLayout<Int32>.size
-            let pressureRead = sysctlbyname("kern.memorystatus_vm_pressure_level", &pressure, &pressureSize, nil, 0)
-            let thermal = ProcessInfo.processInfo.thermalState
-            let highLoad = getloadavg(&currentLoad, 3) == 3 && currentLoad[0] > 12 && Date() > graceDeadline
-            if highLoad || pressureRead != 0 || pressure >= 4 || thermal == .serious || thermal == .critical || Date() > operationDeadline {
-                fputs("Stopping Simulator: load=\(currentLoad[0]), memoryPressure=\(pressure), thermal=\(thermal.rawValue); grace/time budget checked.\n", stderr)
+            if Date() > operationDeadline {
+                fputs("Stopping Simulator operation: time budget exceeded.\n", stderr)
                 process.terminate()
                 process.waitUntilExit()
                 let shutdown = Process()

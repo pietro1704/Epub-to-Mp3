@@ -669,9 +669,8 @@ if ! command -v xcodegen >/dev/null 2>&1; then
 fi
 xcodegen generate
 
-# Local low-resource Intel Macs have kernel-panicked under recent iOS
-# Simulator/CoreSimulator load. Refuse local simulator builds by default on
-# those machines; CI and explicitly opted-in developers can override.
+# Compatibility hook retained for existing workflows; it no longer blocks
+# Simulator work based on RAM or host load.
 python3 ../../scripts/guard_ios_simulator_resources.py
 
 # Slice 18 preflight: confirm the widget extension is wired into the
@@ -1220,7 +1219,7 @@ if [[ -n "$DEVICE" ]]; then
 fi
 
 echo "ios:test → no available physical device; falling back to Simulator" >&2
-IOS_ALLOW_LOW_RESOURCE_SIMULATOR=1 mise run ios:simulator:test
+mise run ios:simulator:test
 """
 
 # ── Docker ───────────────────────────────────────────────────────────────────────
