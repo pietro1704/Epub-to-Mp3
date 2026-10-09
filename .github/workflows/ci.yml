@@ -40,6 +40,8 @@ jobs:
     name: Python tests
     needs: production-packaging-guard
     runs-on: ubuntu-24.04
+    env:
+      MISE_ENABLE_TOOLS: python
     permissions:
       contents: read
 
@@ -52,6 +54,16 @@ jobs:
         with:
           version: 2026.9.14
           install: false
+
+      - name: Check Python toolchain scope
+        run: |
+          mise ls --current --json | python3 -c '
+          import json, sys
+          tools = set(json.load(sys.stdin))
+          if tools != {"python"}:
+              sys.exit(f"Unexpected Python CI tools: {sorted(tools)}")
+          print("Python CI tools: python")
+          '
 
       - name: Install toolchain
         env:
@@ -120,6 +132,8 @@ jobs:
     name: Rust
     needs: production-packaging-guard
     runs-on: ubuntu-24.04
+    env:
+      MISE_ENABLE_TOOLS: python,rust
     timeout-minutes: 30
     permissions:
       contents: read
@@ -132,6 +146,15 @@ jobs:
         with:
           version: 2026.9.14
           install: false
+      - name: Check Rust toolchain scope
+        run: |
+          mise ls --current --json | python3 -c '
+          import json, sys
+          tools = set(json.load(sys.stdin))
+          if tools != {"python", "rust"}:
+              sys.exit(f"Unexpected Rust CI tools: {sorted(tools)}")
+          print("Rust CI tools: python, rust")
+          '
       - name: Install Rust toolchain
         run: mise install
       - name: Install ONNX Runtime smoke-test library
@@ -188,6 +211,8 @@ jobs:
     name: Web
     needs: production-packaging-guard
     runs-on: ubuntu-24.04
+    env:
+      MISE_ENABLE_TOOLS: python,node,npm,rust,cargo:wasm-bindgen-cli
     permissions:
       contents: read
 
@@ -199,6 +224,16 @@ jobs:
         with:
           version: 2026.9.14
           install: false
+      - name: Check Web toolchain scope
+        run: |
+          mise ls --current --json | python3 -c '
+          import json, sys
+          tools = set(json.load(sys.stdin))
+          expected = {"python", "node", "npm", "rust", "cargo:wasm-bindgen-cli"}
+          if tools != expected:
+              sys.exit(f"Unexpected Web CI tools: {sorted(tools)}")
+          print("Web CI tools: python, node, npm, rust, wasm-bindgen-cli")
+          '
       - name: Install toolchain
         run: mise install
       - name: Install Rust WASM target
@@ -228,6 +263,8 @@ jobs:
     name: Flutter
     needs: production-packaging-guard
     runs-on: ubuntu-24.04
+    env:
+      MISE_ENABLE_TOOLS: python,flutter
     permissions:
       contents: read
 
@@ -244,6 +281,16 @@ jobs:
         with:
           version: 2026.9.14
           install: false
+
+      - name: Check Flutter toolchain scope
+        run: |
+          mise ls --current --json | python3 -c '
+          import json, sys
+          tools = set(json.load(sys.stdin))
+          if tools != {"python", "flutter"}:
+              sys.exit(f"Unexpected Flutter CI tools: {sorted(tools)}")
+          print("Flutter CI tools: python, flutter")
+          '
 
       - name: Install toolchain
         env:
