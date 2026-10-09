@@ -547,27 +547,32 @@ async fn stream_job(AxumPath(id): AxumPath<String>, State(state): State<AppState
         Some(job) => (job.snapshot.clone(), job.events.subscribe()),
         None => return StatusCode::NOT_FOUND.into_response(),
     };
+    let initially_terminal = is_terminal(&initial.state);
     let first =
         stream::once(async move { Ok::<Event, Infallible>(snapshot_event(&initial, false)) });
-    let updates = stream::unfold((receiver, false), |(mut receiver, done)| async move {
-        if done {
-            return None;
-        }
-        match receiver.recv().await {
-            Ok(SseMessage::Snapshot(snapshot)) => {
-                let terminal = is_terminal(&snapshot.state);
-                Some((Ok(snapshot_event(&snapshot, false)), (receiver, terminal)))
+    let updates = stream::unfold(
+        (receiver, initially_terminal),
+        |(mut receiver, done)| async move {
+            if done {
+                return None;
             }
-            Ok(SseMessage::Chapter(snapshot)) => {
-                Some((Ok(snapshot_event(&snapshot, true)), (receiver, false)))
+            match receiver.recv().await {
+                Ok(SseMessage::Snapshot(snapshot)) => {
+                    let terminal = is_terminal(&snapshot.state);
+                    Some((Ok(snapshot_event(&snapshot, false)), (receiver, terminal)))
+                }
+                Ok(SseMessage::Chapter(snapshot)) => {
+                    let terminal = is_terminal(&snapshot.state);
+                    Some((Ok(snapshot_event(&snapshot, true)), (receiver, terminal)))
+                }
+                Err(broadcast::error::RecvError::Lagged(_)) => Some((
+                    Ok(Event::default().comment("missed updates")),
+                    (receiver, false),
+                )),
+                Err(broadcast::error::RecvError::Closed) => None,
             }
-            Err(broadcast::error::RecvError::Lagged(_)) => Some((
-                Ok(Event::default().comment("missed updates")),
-                (receiver, false),
-            )),
-            Err(broadcast::error::RecvError::Closed) => None,
-        }
-    });
+        },
+    );
     Sse::new(first.chain(updates))
         .keep_alive(
             KeepAlive::new()
@@ -1096,6 +1101,72 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(&bytes[..], b"audio fixture");
+    }
+
+    #[tokio::test]
+    async fn active_sse_stays_open_until_a_terminal_chapter_event() {
+        let root = TestRoot::new();
+        let state = root.state();
+        let snapshot = initial_job("active-job".into(), &CreateJob::default());
+        let (events, _) = broadcast::channel(8);
+        state.jobs.write().await.insert(
+            "active-job".into(),
+            Job {
+                snapshot: snapshot.clone(),
+                events: events.clone(),
+                cancellation: Default::default(),
+                worker_active: false,
+            },
+        );
+        let response = stream_job(AxumPath("active-job".into()), State(state.clone())).await;
+        let mut stream = response.into_body().into_data_stream();
+        assert!(stream.next().await.unwrap().is_ok());
+        assert!(
+            tokio::time::timeout(Duration::from_millis(20), stream.next())
+                .await
+                .is_err()
+        );
+        let mut terminal = snapshot;
+        terminal.state = "cancelled".into();
+        events.send(SseMessage::Chapter(terminal)).unwrap();
+        let event = tokio::time::timeout(Duration::from_millis(100), stream.next())
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap();
+        assert!(String::from_utf8_lossy(&event).contains("cancelled"));
+        assert!(matches!(
+            tokio::time::timeout(Duration::from_millis(100), stream.next()).await,
+            Ok(None)
+        ));
+    }
+
+    #[tokio::test]
+    async fn initially_finished_job_emits_one_snapshot_then_closes_sse() {
+        let root = TestRoot::new();
+        let state = root.state();
+        let mut snapshot = initial_job("finished-job".into(), &CreateJob::default());
+        snapshot.state = "finished".into();
+        let (events, _) = broadcast::channel(8);
+        state.jobs.write().await.insert(
+            "finished-job".into(),
+            Job {
+                snapshot,
+                events,
+                cancellation: Default::default(),
+                worker_active: false,
+            },
+        );
+        let response = stream_job(AxumPath("finished-job".into()), State(state.clone())).await;
+        assert_eq!(response.status(), StatusCode::OK);
+        let mut stream = response.into_body().into_data_stream();
+        let initial = stream.next().await.unwrap().unwrap();
+        assert!(String::from_utf8_lossy(&initial).contains("finished"));
+        let closed = tokio::time::timeout(Duration::from_millis(100), stream.next()).await;
+        assert!(
+            matches!(closed, Ok(None)),
+            "a terminal initial snapshot must close SSE"
+        );
     }
 
     #[tokio::test]
