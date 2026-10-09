@@ -48,3 +48,17 @@ This is a foreign-context lifetime guarantee, not full worker cancellation.
 Host tests do not establish physical packaging, full conversion, model readiness,
 frontend routing or playback behavior. Remaining gates are recorded in
 `docs/plans/2026-10-08-app-quality-performance.md`.
+
+## Apple build destinations
+
+Rust remains bundled in `EpubToMp3.app/Frameworks/libconverter_ffi.dylib` and runs
+in the Swift app process. A separate compiler artifact is not a separate product.
+Physical iOS uses `aarch64-apple-ios/release`; Simulator uses the host architecture
+(`x86_64-apple-ios` or `aarch64-apple-ios-sim`), Debug or Release matching Xcode.
+The packaging phase validates Mach-O architecture, Apple platform and ABI before
+copying/signing. macOS keeps its existing separate native artifact route.
+
+`mise run converter-ffi:ios-simulator` builds Debug with one job under the shared
+lease, refusing a booted Simulator. `mise run converter-ffi:ios-packaging:test`
+exercises real artifact rejection and isolated signed bundling, without launching
+Simulator. These do not prove app startup or native UI behavior.

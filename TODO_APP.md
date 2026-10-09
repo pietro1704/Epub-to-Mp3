@@ -9,6 +9,26 @@ this board and `handoff.md` before crossing ownership or changing shared contrac
 
 ## Active requests — 2026-10-08
 
+- [ ] **APP-20261008-14 — Bundle the correct Rust library for Apple Simulator.** In progress.
+  User authorized building the Apple Simulator Rust artifact on this Mac for this
+  slice only. Keep Rust embedded in the app process, not a sidecar/service.
+  Select physical iOS vs Simulator architecture/platform explicitly, reject wrong
+  Mach-O/ABI inputs before copying and sign the bundled dylib. Preserve macOS route.
+  Build with Simulator shut down, one job and shared lease; no Python/Flutter/CI.
+  Acceptance: wrong-platform rejection, real Simulator artifact verification,
+  bundled verification and a focused native app test. No full-book conversion.
+  Rust Debug x86_64 Simulator build passed (4m43s); explicit rustup compiler avoids
+  Homebrew rustc's missing target sysroot. Packaging regression passed: device/macOS
+  and incomplete ABI rejected; real device/Simulator accepted; signed copy verified.
+  Actual app build-for-testing passed (`simulator-smoke-AFCEF095-4935-4134-815F-1700B702B283`).
+  Embedded app dylib verified x86_64/IOSSIMULATOR with strict codesign verification.
+  Native test attempt `simulator-smoke-F317C627-7D57-4741-A478-17210E8F5920` was
+  interrupted by load watchdog (>12), no valid completed xcresult or test result.
+  Late queued boot required a second exact-device shutdown; confirmed none booted.
+  Helper now explicitly boots/waits before XCTest and watches boot as well as tests.
+  Retry preflight refused at load 15.58, no boot. CleanMyMac HealthMonitor observed
+  at 165% CPU, not a proven sole cause. App startup/UI acceptance remains unchecked.
+
 - [x] **APP-20261008-13 — Faster Apple download/extraction defaults.** Recorded.
   Prefer xcodes/aria2 downloads and experimental unxip for Xcode `.xip` archives.
   CLI help confirms the flag; `/usr/local/bin/aria2c` exists. Runtime `.dmg`

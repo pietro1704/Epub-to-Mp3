@@ -19,8 +19,10 @@ and installed iOS 16.0 (20A360), simctl Ready. SE second-generation device
 `381DBE17-FFAB-4A2E-B35F-AB9FEC92C14E` booted into initial migration; host load
 rose to 62.95 with no parallel build, so that device was shut down immediately.
 App validation remains unverified; do not boot again automatically on this host.
-Arch: supply/verify the `x86_64-apple-ios` converter-ffi Simulator artifact for
-this Intel Mac before full embedded reader/conversion acceptance. Existing
+APP-20261008-14: user authorized an Apple-only Rust compilation exception here.
+Debug `x86_64-apple-ios` artifact and signed SDK-correct app packaging are now built
+and verified. Native app tests remain blocked by unsafe observed host load;
+no Simulator remains booted. Existing
 physical iOS arm64 and macOS x86_64 artifacts cannot be used as substitutes.
 Preserve books, models and listening downloads; serialize heavy jobs.
 This Mac is Apple-only. Flutter/Rust execution belongs to Arch; no Flutter

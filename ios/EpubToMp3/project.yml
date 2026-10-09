@@ -29,6 +29,8 @@ settings:
     # (skip x86_64h and any cross-compile to arm64). Release stays
     # universal so a CI-built artefact runs on Apple Silicon too.
     ONLY_ACTIVE_ARCH: NO
+    "ARCHS[sdk=iphonesimulator*]": "$(NATIVE_ARCH_ACTUAL)"
+    "ONLY_ACTIVE_ARCH[sdk=iphonesimulator*]": YES
     # Faster Swift incremental compiles. The whole-module mode is
     # locked in for Release for runtime speed.
     SWIFT_COMPILATION_MODE: incremental
@@ -219,8 +221,7 @@ targets:
           - "Resources/**/*.lproj"
 
 
-      # Optional CI-supplied converter-ffi dylib. No binary is checked in;
-      # builds without the artifact retain the typed unavailable seam.
+      # Rust dylibs are generated artifacts, embedded and verified per SDK below.
       - path: EpubToMp3/Features/Conversion/Services/ConverterFFIAdapter.swift
       - path: EpubToMp3/Resources/LaunchScreen.storyboard
         buildPhase: resources
@@ -232,12 +233,6 @@ targets:
         buildPhase: resources
       - path: EpubToMp3/Resources/es.lproj
         buildPhase: resources
-      - path: ../../target/aarch64-apple-ios/release/libconverter_ffi.dylib
-        destinationFilters: [iOS]
-        buildPhase:
-          copyFiles:
-            destination: frameworks
-        attributes: [CodeSignOnCopy]
       - path: ../../target/release/libconverter_ffi.dylib
         # Device-only work must not build the unrelated macOS artifact.
         # macOS packaging below still rejects a generated project without it.
@@ -249,6 +244,10 @@ targets:
         attributes: [CodeSignOnCopy]
 
     postBuildScripts:
+      - name: Bundle platform-correct iOS Rust library
+        basedOnDependencyAnalysis: false
+        script: |
+          bash "$SRCROOT/../../scripts/bundle_converter_ffi_ios.sh"
       - name: Verify macOS Rust packaging
         basedOnDependencyAnalysis: false
         script: |
