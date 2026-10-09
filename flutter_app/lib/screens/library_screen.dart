@@ -363,13 +363,31 @@ class _BookGrid extends StatelessWidget {
     return LayoutBuilder(
       builder: (context, constraints) {
         if (constraints.maxWidth <= 0) return const SizedBox.shrink();
+        final tileWidth = (constraints.maxWidth - 48) / 2;
+        final textTheme = Theme.of(context).textTheme;
+        double labelHeight(String text, TextStyle? style) {
+          final painter = TextPainter(
+            text: TextSpan(text: text, style: style),
+            textDirection: Directionality.of(context),
+            textScaler: MediaQuery.textScalerOf(context),
+          )..layout();
+          final height = painter.height;
+          painter.dispose();
+          return height;
+        }
+
+        // Reserve two title lines and one author line below a 2:3 cover.
+        final tileHeight = (tileWidth - 8) * 1.5 +
+            labelHeight('Ag\nAg', textTheme.labelLarge) +
+            labelHeight('Ag', textTheme.bodySmall) +
+            24;
         return GridView.builder(
           padding: const EdgeInsets.all(16),
-          gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-            maxCrossAxisExtent: 180,
+          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: 2,
             mainAxisSpacing: 16,
             crossAxisSpacing: 16,
-            childAspectRatio: 0.6,
+            mainAxisExtent: tileHeight,
           ),
           itemCount: books.length,
           itemBuilder: (context, i) {

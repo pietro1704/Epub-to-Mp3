@@ -330,6 +330,7 @@
 "convert.chapters" = "Chapters";
 "convert.chapterRangeOptional" = "Chapter range (e.g. 3-7) — optional";
 "convert.chapterRangeHelp" = "Leave empty to convert the whole book.";
+"convert.error.invalidChapterRange" = "Enter a nonnegative chapter index or an inclusive range (e.g. 3-7). Leave empty for the whole book.";
 "convert.flags" = "Flags";
 "convert.clearCache" = "Clear cache before run";
 "convert.forceReprocess" = "Force reprocess";
@@ -425,6 +426,7 @@
 "jobs.cannotReachBackend" = "Cannot reach backend";
 "jobs.noConversions" = "No conversions yet";
 "jobs.noConversionsDescription" = "Run a conversion via the CLI or web app to populate the history.";
+"jobs.historyReadLimit" = "Recent history exceeds the read limit.";
 "jobs.refresh" = "Refresh jobs";
 "jobs.chaptersAbbrev" = "%d ch";
 

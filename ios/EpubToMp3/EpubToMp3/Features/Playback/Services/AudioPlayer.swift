@@ -11,6 +11,34 @@ import AppKit
 
 private let audioLog = Logger(subsystem: "epub2mp3", category: "AudioPlayer")
 
+/// File IO is isolated from playback/UI state and serialized per player.
+actor SegmentFileWriter {
+    private let write: @Sendable (Data, URL) throws -> Void
+
+    init(write: @escaping @Sendable (Data, URL) throws -> Void = { data, url in
+        try data.write(to: url)
+    }) {
+        self.write = write
+    }
+
+    func persist(_ data: Data, to url: URL) throws {
+        try Task.checkCancellation()
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(),
+                                                withIntermediateDirectories: true)
+        do {
+            try write(data, url)
+            try Task.checkCancellation()
+        } catch {
+            try? FileManager.default.removeItem(at: url)
+            throw error
+        }
+    }
+
+    func remove(_ url: URL) {
+        try? FileManager.default.removeItem(at: url)
+    }
+}
+
 /// Playback rates surfaced by the horizontal rate picker.
 enum PlaybackRate: Float, CaseIterable, Identifiable {
     case x080 = 0.8
@@ -259,6 +287,8 @@ final class AudioPlayer: ObservableObject {
         let jobID: String
         let chapterIndex: Int
         var autoplay: Bool
+        var position: TimeInterval = 0
+        var allowsFinalEndpoint = false
         var isApplying = false
     }
     private var pendingChapterSeek: PendingChapterSeek? {
@@ -269,6 +299,8 @@ final class AudioPlayer: ObservableObject {
             if pendingNavigation != navigation { pendingNavigation = navigation }
         }
     }
+    private var segmentSeekTask: Task<Void, Never>?
+    private var segmentDurations: [SegmentBacklog.Identity: TimeInterval] = [:]
     var isLoading: Bool { isSeeking || (isConverting && !firstChapterReady) }
 
     /// Optional cover art bytes (PNG/JPEG). Surfaced to the system
@@ -348,6 +380,7 @@ final class AudioPlayer: ObservableObject {
     /// Temp directory for segment MP3 files written by `enqueueSegment`.
     /// Created lazily; cleaned up in `teardownPlayer()`.
     private var segmentTempDir: URL?
+    private var segmentDirectoryUsesAsyncIO = false
 
     private let resumeStore: ResumeStore
     /// Resolved backend base URL used to turn relative `downloadUrl`
@@ -448,7 +481,10 @@ final class AudioPlayer: ObservableObject {
     /// bounded capacity. The continuations resume as AVQueuePlayer accepts
     /// deferred items, so conversion pauses without deleting audio or
     /// accumulating an unbounded number of temporary files.
-    private var segmentCapacityWaiters: [CheckedContinuation<Bool, Never>] = []
+    private var segmentCapacityWaiters: [(UUID, CheckedContinuation<Bool, Never>)] = []
+    private let segmentFileWriter: SegmentFileWriter
+    private var segmentPersistenceTail: Task<Bool, Never>?
+    private var segmentPersistenceTasks: [UUID: Task<Bool, Never>] = [:]
     /// Requested playable-list index from the last `play(snapshot:)`
     /// call that arrived before any MP3 URL existed. When the first
     /// playable snapshot lands via SSE, `updateSnapshot` uses this to
@@ -539,10 +575,12 @@ final class AudioPlayer: ObservableObject {
         backendBaseURL: URL? = nil,
         speechFallback: SpeechFallbackPlayer? = nil,
         playbackClock: PlaybackClock? = nil,
-        artifactStore: LocalAudioArtifactStore? = nil
+        artifactStore: LocalAudioArtifactStore? = nil,
+        segmentFileWriter: SegmentFileWriter? = nil
     ) {
         self.playbackClock = playbackClock ?? PlaybackClock()
         self.artifactStore = artifactStore
+        self.segmentFileWriter = segmentFileWriter ?? SegmentFileWriter()
         self.resumeStore = resumeStore
         self.backendBaseURL = backendBaseURL
         // Default-construct on MainActor (this init's isolation). A
@@ -865,11 +903,11 @@ final class AudioPlayer: ObservableObject {
         position: TimeInterval,
         durations: [TimeInterval]
     ) -> SegmentSeekTarget? {
-        guard !durations.isEmpty else { return nil }
+        guard !durations.isEmpty, durations.allSatisfy({ $0.isFinite && $0 > 0 }) else { return nil }
         let target = min(segmentDuration(durations: durations), max(0, position.isFinite ? position : 0))
         var base: TimeInterval = 0
         for (index, duration) in durations.enumerated() where duration.isFinite && duration > 0 {
-            if target <= base + duration || index == durations.count - 1 {
+            if target < base + duration || index == durations.count - 1 {
                 return SegmentSeekTarget(segmentIndex: index, offset: min(duration, max(0, target - base)))
             }
             base += duration
@@ -1216,7 +1254,8 @@ final class AudioPlayer: ObservableObject {
             play(snapshot: snapshot, startingAt: target, restoreAutoplay: false)
             activeSeekJourneyID = journeyID
             pending = PendingChapterSeek(id: pending.id, jobID: pending.jobID,
-                                         chapterIndex: targetIndex, autoplay: pending.autoplay)
+                                         chapterIndex: targetIndex, autoplay: pending.autoplay,
+                                         position: pending.position)
             pendingChapterSeek = pending
             isSeeking = true
             isConverting = !snapshot.isTerminal
@@ -1322,6 +1361,7 @@ final class AudioPlayer: ObservableObject {
     }
 
     func pause() {
+        pendingAutoPlay = false
         if activeSeekAutoplay != nil { activeSeekAutoplay = false }
         pendingChapterSeek?.autoplay = false
         // Slice-2 speech-fallback route: when the synthesizer owns the
@@ -1499,6 +1539,8 @@ final class AudioPlayer: ObservableObject {
     }
 
     private func cancelPendingSeekJourney() {
+        segmentSeekTask?.cancel()
+        segmentSeekTask = nil
         pendingChapterSeek = nil
         activeSeekID = nil
         activeSeekAutoplay = nil
@@ -1848,10 +1890,13 @@ final class AudioPlayer: ObservableObject {
     func togglePlayPause() { isPlaying ? pause() : resume() }
 
     func seek(to seconds: TimeInterval) {
-        let target = max(0, seconds)
+        let requested = seconds.isFinite ? max(0, seconds) : 0
+        let confirmedEnd = isSegmentMode ? confirmedSegmentChapterEnd(for: currentChapterIndex) : nil
+        let target = confirmedEnd.map { min($0, requested) } ?? requested
         let autoplay = pendingChapterSeek?.autoplay ?? activeSeekAutoplay ?? isPlaying
         beginSeekJourney()
-        if Self.shouldAdvanceAtSeekEnd(position: target, duration: durationSeconds),
+        if (!isSegmentMode || confirmedEnd != nil),
+           Self.shouldAdvanceAtSeekEnd(position: target, duration: confirmedEnd ?? durationSeconds),
            let snapshot, let nextIndex = nextCanonicalChapterIndex {
             pendingChapterSeek = PendingChapterSeek(
                 id: UUID(), jobID: snapshot.jobId, chapterIndex: nextIndex,
@@ -1860,6 +1905,22 @@ final class AudioPlayer: ObservableObject {
             isSeeking = true
             player?.pause()
             isPlaying = false
+            applyPendingChapterSeekIfAvailable()
+            updateNowPlayingInfo()
+            return
+        }
+        if isSegmentMode, let snapshot {
+            pendingChapterSeek = PendingChapterSeek(
+                id: UUID(), jobID: snapshot.jobId, chapterIndex: currentChapterIndex,
+                autoplay: autoplay, position: target,
+                allowsFinalEndpoint: confirmedEnd.map { target >= $0 } == true
+                    && nextCanonicalChapterIndex == nil
+            )
+            isSeeking = true
+            player?.pause()
+            isPlaying = false
+            positionSeconds = target
+            broadcastPosition()
             applyPendingChapterSeekIfAvailable()
             updateNowPlayingInfo()
             return
@@ -1921,14 +1982,101 @@ final class AudioPlayer: ObservableObject {
         return (snapshot.chapterProgress ?? chapters).map { $0.index - offset }.filter { $0 > current }.min()
     }
 
+    /// Estimates describe progress, not proof that no more audio will arrive.
+    private func confirmedSegmentChapterEnd(for chapterIndex: Int) -> TimeInterval? {
+        guard let snapshot,
+              let chapter = Self.chapterProgressEntry(forSegmentIndex: chapterIndex,
+                  chapterProgress: snapshot.chapterProgress ?? snapshot.playableChapters),
+              chapter.status == "completed" || snapshot.state == "finished" else { return nil }
+        if let duration = chapter.durationSeconds, duration.isFinite, duration > 0 { return duration }
+        let retained = segmentFiles.keys.filter { $0.chapterIndex == chapterIndex }.sorted()
+        guard !retained.isEmpty else { return nil }
+        var duration: TimeInterval = 0
+        for (ordinal, identity) in retained.enumerated() {
+            guard identity.segmentIndex == ordinal,
+                  let value = segmentDurations[identity], value.isFinite, value > 0 else { return nil }
+            duration += value
+        }
+        return duration.isFinite && duration > 0 ? duration : nil
+    }
+
     private func applyPendingChapterSeekIfAvailable() {
         guard var pending = pendingChapterSeek, !pending.isApplying,
-              let snapshot, snapshot.jobId == pending.jobID, let queue = player else { return }
+              let snapshot, snapshot.jobId == pending.jobID, player != nil else { return }
         let entries: [(URL, SegmentBacklog.Identity?)]
         if isSegmentMode {
             let retained = segmentFiles.filter { $0.key.chapterIndex >= pending.chapterIndex }
                 .sorted { $0.key < $1.key }
             guard retained.first?.key.chapterIndex == pending.chapterIndex else { return }
+            if pending.position > 0 {
+                pending.isApplying = true
+                pendingChapterSeek = pending
+                // Load real durations without blocking the main actor. Request
+                // identity fences every await against replacement or teardown.
+                segmentSeekTask = Task { @MainActor [weak self] in
+                    guard let self else { return }
+                    var durations: [TimeInterval] = []
+                    var total: TimeInterval = 0
+                    for (identity, url) in retained where identity.chapterIndex == pending.chapterIndex {
+                        guard !Task.isCancelled, self.pendingChapterSeek?.id == pending.id else { return }
+                        // Missing ordinal durations cannot be treated as zero.
+                        // A sparse prefix waits for its gap or full-file handoff.
+                        guard identity.segmentIndex == durations.count else { break }
+                        let duration: TimeInterval
+                        if let cached = self.segmentDurations[identity] {
+                            duration = cached
+                        } else {
+                            do {
+                                let time = try await AVURLAsset(url: url).load(.duration)
+                                guard !Task.isCancelled, self.pendingChapterSeek?.id == pending.id else { return }
+                                guard let value = Self.validatedDurationSeconds(time.seconds, isReadyToPlay: true) else {
+                                    self.cancelPendingSeekJourney()
+                                    return
+                                }
+                                duration = value
+                                self.segmentDurations[identity] = value
+                            } catch {
+                                guard self.pendingChapterSeek?.id == pending.id else { return }
+                                self.cancelPendingSeekJourney()
+                                return
+                            }
+                        }
+                        durations.append(duration)
+                        total += duration
+                        if total > pending.position { break }
+                    }
+                    guard !Task.isCancelled, var resolved = self.pendingChapterSeek,
+                          resolved.id == pending.id else { return }
+                    // Confirmation may arrive while duration loading is suspended.
+                    // Reconcile the existing request, preserving its identity and intent.
+                    if let end = self.confirmedSegmentChapterEnd(for: resolved.chapterIndex),
+                       resolved.position >= end {
+                        resolved.position = end
+                        resolved.allowsFinalEndpoint = true
+                        self.pendingChapterSeek = resolved
+                    }
+                    // Do not silently clamp a target whose segment has not
+                    // arrived yet. Enqueue retries this pending request.
+                    if total < resolved.position
+                        || (total == resolved.position && !resolved.allowsFinalEndpoint) {
+                        self.pendingChapterSeek?.isApplying = false
+                        self.segmentSeekTask = nil
+                        if self.segmentFiles.keys.filter({ $0.chapterIndex == pending.chapterIndex }).count
+                            > retained.filter({ $0.key.chapterIndex == pending.chapterIndex }).count {
+                            self.applyPendingChapterSeekIfAvailable()
+                        }
+                        return
+                    }
+                    guard let target = Self.segmentSeekTarget(position: resolved.position, durations: durations) else { return }
+                    let chapterEntries = retained.filter { $0.key.chapterIndex == pending.chapterIndex }
+                    let identity = chapterEntries[target.segmentIndex].key
+                    let entries = self.segmentFiles.filter { $0.key >= identity }
+                        .sorted { $0.key < $1.key }.map { ($0.value, Optional($0.key)) }
+                    self.rebuildForPendingSeek(pending, entries: entries, offset: target.offset,
+                                               base: durations.prefix(target.segmentIndex).reduce(0, +))
+                }
+                return
+            }
             entries = retained.map { ($0.value, $0.key) }
         } else {
             let chapters = snapshot.playableChapters.sorted { $0.index < $1.index }
@@ -1944,6 +2092,19 @@ final class AudioPlayer: ObservableObject {
             playbackChapters = chapters
             entries = available
         }
+        rebuildForPendingSeek(pending, entries: entries, offset: pending.position, base: 0)
+    }
+
+    private func rebuildForPendingSeek(
+        _ request: PendingChapterSeek,
+        entries: [(URL, SegmentBacklog.Identity?)],
+        offset: TimeInterval,
+        base: TimeInterval
+    ) {
+        // Pause/resume can change intent while duration loading is suspended.
+        // Always adopt the current request rather than its pre-await copy.
+        guard var pending = pendingChapterSeek, pending.id == request.id,
+              let queue = player else { return }
         guard !entries.isEmpty else { return }
         pending.isApplying = true
         pendingChapterSeek = pending
@@ -1972,8 +2133,10 @@ final class AudioPlayer: ObservableObject {
         }
         resumeSegmentCapacityWaitersIfPossible()
         _ = reconcileChapterIndexFromCurrentItem()
-        positionSeconds = 0
-        queue.seek(to: .zero, toleranceBefore: .zero, toleranceAfter: .zero) { [weak self] finished in
+        if isSegmentMode { segmentCumulativeBase = base }
+        positionSeconds = pending.position
+        queue.seek(to: CMTime(seconds: offset, preferredTimescale: 600),
+                   toleranceBefore: .zero, toleranceAfter: .zero) { [weak self] finished in
             Task { @MainActor [weak self] in
                 guard let self, let current = self.pendingChapterSeek,
                       current.id == pending.id, self.activeSeekID == seekID else { return }
@@ -1984,7 +2147,7 @@ final class AudioPlayer: ObservableObject {
                 self.pendingChapterSeek = nil
                 self.activeSeekID = nil
                 self.isSeeking = false
-                self.positionSeconds = 0
+                self.positionSeconds = current.position
                 self.completeSeekJourney()
                 self.publishCurrentChapter(auto: false)
                 if current.autoplay { self.resume() }
@@ -1995,6 +2158,11 @@ final class AudioPlayer: ObservableObject {
     }
 
     func nextChapter() {
+        if isSegmentMode, let next = nextCanonicalChapterIndex {
+            navigateToSegmentChapter(next)
+            return
+        }
+        if isSegmentMode { return }
         cancelPendingSeekJourney()
         guard let player else {
             guard let snapshot,
@@ -2004,34 +2172,6 @@ final class AudioPlayer: ObservableObject {
                       chapterCount: snapshot.playableChapters.count
                   ) else { return }
             play(snapshot: snapshot, startingAt: nextIndex, restoreAutoplay: isPlaying)
-            return
-        }
-        if isSegmentMode {
-            // Segment-mode: the queue holds many AVPlayerItems per
-            // chapter. `advanceToNextItem()` moves one *segment*
-            // forward; walk it until the underlying URL's chapter
-            // tag changes. Items are written as "ch<N>-seg<M>.mp3"
-            // by `enqueueSegment` so the chapter index is in the
-            // filename. Capped at the items remaining so we never
-            // spin forever.
-            let startChapter = currentChapterIndex
-            var safety = player.items().count
-            while safety > 0 {
-                player.advanceToNextItem()
-                safety -= 1
-                if let asset = player.currentItem?.asset as? AVURLAsset,
-                   let identity = Self.segmentIdentityForSegmentItem(asset.url),
-                   identity.chapterIndex != startChapter {
-                    _ = activateSegmentIdentity(identity)
-                    positionSeconds = 0
-                    publishCurrentChapter(auto: false)
-                    updateNowPlayingInfo()
-                    return
-                }
-            }
-            // No further chapter in the queue — leave the player
-            // wherever advancing landed it.
-            updateNowPlayingInfo()
             return
         }
         if let snapshot {
@@ -2052,26 +2192,20 @@ final class AudioPlayer: ObservableObject {
     }
 
     func previousChapter() {
+        if isSegmentMode {
+            if positionSeconds > 3 {
+                seek(to: 0)
+            } else if let snapshot {
+                let offset = Self.segmentManifestIndexOffset(snapshot)
+                let previous = (snapshot.chapterProgress ?? []).map { $0.index - offset }
+                    .filter { $0 < currentChapterIndex }.max()
+                navigateToSegmentChapter(previous ?? currentChapterIndex)
+            }
+            return
+        }
         cancelPendingSeekJourney()
         if ProcessInfo.processInfo.arguments.contains("-readerNavigationDebug") {
             print("NAV previousChapter current=\(currentChapterIndex) position=\(positionSeconds) segmentMode=\(isSegmentMode)")
-        }
-        // Segment-mode: AVQueuePlayer can't rewind across items, so
-        // "previous chapter" must rebuild the queue. When the host has
-        // wired `restartSegmentQueueHandler` (the reader's embedded
-        // path), delegate to it. Otherwise fall back to seek-to-0 of
-        // the current item so the tap is at least visible.
-        if isSegmentMode {
-            if positionSeconds - segmentCumulativeBase > 3 {
-                seek(to: 0)
-                return
-            }
-            if let handler = restartSegmentQueueHandler, currentChapterIndex > 0 {
-                handler(currentChapterIndex - 1)
-                return
-            }
-            seek(to: 0)
-            return
         }
         guard player != nil else {
             guard let snapshot,
@@ -2101,6 +2235,19 @@ final class AudioPlayer: ObservableObject {
     enum ChapterNavigationDirection {
         case backward
         case forward
+    }
+
+    private func navigateToSegmentChapter(_ chapterIndex: Int) {
+        guard let snapshot else { return }
+        let autoplay = pendingChapterSeek?.autoplay ?? activeSeekAutoplay ?? isPlaying
+        beginSeekJourney()
+        pendingChapterSeek = PendingChapterSeek(id: UUID(), jobID: snapshot.jobId,
+                                               chapterIndex: chapterIndex, autoplay: autoplay)
+        isSeeking = true
+        player?.pause()
+        isPlaying = false
+        applyPendingChapterSeekIfAvailable()
+        updateNowPlayingInfo()
     }
 
     nonisolated static func chapterNavigationIndex(
@@ -2186,18 +2333,14 @@ final class AudioPlayer: ObservableObject {
         Self.rateAdjustedDuration(seconds: positionSeconds, rate: rate)
     }
 
-    /// Skip relative to the current playhead. Negative values rewind,
-    /// positive fast-forward. Clamped to the current AVPlayerItem's
-    /// duration.
-    ///
-    /// Segment-mode note: `positionSeconds` is **cumulative across all
-    /// segments of the current chapter** (segmentCumulativeBase +
-    /// item-relative time), but `AVPlayer.seek` always lands within
-    /// the current item. Doing the math against the cumulative value
-    /// silently jumped to an out-of-range CMTime and AVPlayer ignored
-    /// the seek — visible as "+/-15 s buttons do nothing". Compute the
-    /// delta against the current item's own clock instead.
+    /// Relative chapter navigation must resolve its target segment through the
+    /// same seek path as the progress slider, including pending audio and intent.
     func skip(by deltaSeconds: TimeInterval) {
+        guard deltaSeconds.isFinite else { return }
+        if isSegmentMode {
+            seek(to: max(0, positionSeconds + deltaSeconds))
+            return
+        }
         cancelPendingSeekJourney()
         guard let player else { return }
         let rawTime = player.currentTime().seconds.isFinite
@@ -2271,11 +2414,94 @@ final class AudioPlayer: ObservableObject {
                        publication: publication, receipt: receipt)
     }
 
+    /// Production callers await this acknowledgement before downloading more
+    /// bytes. A stale completion must never attach audio to another session.
+    func enqueueRemoteSegmentAsync(
+        data: Data, jobID: String, generation: UUID, chapterIndex: Int, segmentIndex: Int,
+        publication: LatencyObservation.StreamPublication?,
+        receipt: LatencyObservation.StreamRequestReceipt? = nil
+    ) async -> Bool {
+        guard generation == remoteSegmentGeneration, snapshot?.jobId == jobID else { return false }
+        return await enqueueSegmentAsync(data: data, chapterIndex: chapterIndex, segmentIndex: segmentIndex,
+                                         publication: publication, receipt: receipt)
+    }
+
+    func enqueueSegmentAsync(
+        data: Data, chapterIndex: Int, segmentIndex: Int, sentenceId: String? = nil,
+        publication: LatencyObservation.StreamPublication? = nil,
+        receipt: LatencyObservation.StreamRequestReceipt? = nil
+    ) async -> Bool {
+        guard !Task.isCancelled else { return false }
+        let generation = remotePlaybackGeneration
+        let requestID = UUID()
+        let previous = segmentPersistenceTail
+        let operation = Task { @MainActor [weak self] in
+            if let previous { _ = await previous.value }
+            guard let self, !Task.isCancelled, self.remotePlaybackGeneration == generation else { return false }
+            let identity = SegmentBacklog.Identity(chapterIndex: chapterIndex, segmentIndex: segmentIndex)
+            if self.segmentFiles[identity] != nil { return true }
+            guard self.prepareSegment(data: data, identity: identity),
+                  await self.waitForSegmentCapacity(), !Task.isCancelled,
+                  self.remotePlaybackGeneration == generation else { return false }
+            let file = self.segmentFileURL(identity: identity)
+            self.segmentDirectoryUsesAsyncIO = true
+            do {
+                try await self.segmentFileWriter.persist(data, to: file)
+            } catch {
+                if !Task.isCancelled, self.remotePlaybackGeneration == generation {
+                    self.lastError = .segmentWriteFailed
+                }
+                return false
+            }
+            guard !Task.isCancelled, self.remotePlaybackGeneration == generation else {
+                await self.segmentFileWriter.remove(file)
+                return false
+            }
+            // The synchronous compatibility API may have accepted a duplicate
+            // while this operation was suspended. Keep the original URL.
+            guard self.segmentFiles[identity] == nil else {
+                await self.segmentFileWriter.remove(file)
+                return true
+            }
+            self.acceptPersistedSegment(file, identity: identity, byteCount: data.count,
+                                        sentenceId: sentenceId, publication: publication, receipt: receipt)
+            return true
+        }
+        segmentPersistenceTail = operation
+        segmentPersistenceTasks[requestID] = operation
+        let accepted = await withTaskCancellationHandler {
+            await operation.value
+        } onCancel: {
+            operation.cancel()
+        }
+        segmentPersistenceTasks.removeValue(forKey: requestID)
+        if segmentPersistenceTasks.isEmpty { segmentPersistenceTail = nil }
+        return accepted
+    }
+
     func enqueueSegment(
         data: Data, chapterIndex: Int, segmentIndex: Int, sentenceId: String? = nil,
         publication: LatencyObservation.StreamPublication? = nil,
         receipt: LatencyObservation.StreamRequestReceipt? = nil
     ) {
+        let identity = SegmentBacklog.Identity(chapterIndex: chapterIndex, segmentIndex: segmentIndex)
+        guard prepareSegment(data: data, identity: identity) else { return }
+        let file = segmentFileURL(identity: identity)
+        do {
+            try FileManager.default.createDirectory(at: file.deletingLastPathComponent(),
+                                                    withIntermediateDirectories: true)
+            try data.write(to: file)
+        } catch {
+            lastError = .segmentWriteFailed
+            return
+        }
+        acceptPersistedSegment(file, identity: identity, byteCount: data.count,
+                               sentenceId: sentenceId, publication: publication, receipt: receipt)
+    }
+
+    private func prepareSegment(data: Data, identity: SegmentBacklog.Identity) -> Bool {
+        let chapterIndex = identity.chapterIndex
+        let segmentIndex = identity.segmentIndex
         ensureRemoteCommands()
         // Only activate the audio session if the user is already playing.
         // While conversion streams in the background, we may receive
@@ -2298,60 +2524,35 @@ final class AudioPlayer: ObservableObject {
             if backlog.recordEmpty() {
                 lastError = .emptySegmentData
             }
-            return
+            return false
         }
         backlog.resetEmptyStreak()
 
-        let identity = SegmentBacklog.Identity(
-            chapterIndex: chapterIndex,
-            segmentIndex: segmentIndex
-        )
         // Retried callbacks must not overwrite a URL that AVFoundation may
         // already be reading, nor enqueue a spoken passage twice.
         guard segmentFiles[identity] == nil else {
             audioLog.notice("[enqueueSegment] duplicate ignored ch=\(chapterIndex) seg=\(segmentIndex)")
-            return
+            return false
         }
+        return true
+    }
 
-        // Ensure a temp directory exists for this session. Bail
-        // explicitly when createDirectory fails — without this, every
-        // subsequent `data.write` would fail and we'd publish
-        // `lastError = .segmentWriteFailed` on every chunk.
-        if segmentTempDir == nil {
-            let candidate = URL(fileURLWithPath: NSTemporaryDirectory())
-                .appendingPathComponent("epub2mp3-segments-\(UUID().uuidString)")
-            do {
-                try FileManager.default.createDirectory(
-                    at: candidate, withIntermediateDirectories: true
-                )
-                segmentTempDir = candidate
-            } catch {
-                audioLog.error("[enqueueSegment] failed to create temp dir: \(error.localizedDescription)")
-                lastError = .segmentWriteFailed
-                return
-            }
-        }
-        guard let tmpDir = segmentTempDir else { return }
-
-        // Segment indexes reset for every chapter and a conversion can be
-        // restarted before an old AVURLAsset has released its file handle.
-        // The session directory plus a per-write UUID prevents an incoming
-        // retry or another stream from replacing an item already queued.
-        let segFile = tmpDir.appendingPathComponent(
-            "stream-\(UUID().uuidString)-ch\(chapterIndex)-seg\(segmentIndex)-\(UUID().uuidString).mp3"
+    private func segmentFileURL(identity: SegmentBacklog.Identity) -> URL {
+        let directory = segmentTempDir ?? URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("epub2mp3-segments-\(UUID().uuidString)")
+        segmentTempDir = directory
+        return directory.appendingPathComponent(
+            "stream-\(UUID().uuidString)-ch\(identity.chapterIndex)-seg\(identity.segmentIndex)-\(UUID().uuidString).mp3"
         )
-        do {
-            try data.write(to: segFile)
-        } catch {
-            // Non-fatal: segment is lost but subsequent ones still
-            // arrive. Surface so the host can warn the user if disk
-            // is full — repeated emptySegmentData / segmentWriteFailed
-            // toasts mean conversion will degrade further.
-            audioLog.error("[enqueueSegment] write failed: \(error.localizedDescription)")
-            lastError = .segmentWriteFailed
-            return
-        }
+    }
 
+    private func acceptPersistedSegment(
+        _ segFile: URL, identity: SegmentBacklog.Identity, byteCount: Int,
+        sentenceId: String?, publication: LatencyObservation.StreamPublication?,
+        receipt: LatencyObservation.StreamRequestReceipt?
+    ) {
+        let chapterIndex = identity.chapterIndex
+        let segmentIndex = identity.segmentIndex
         isSegmentMode = true
         segmentFiles[identity] = segFile
         if let publication { segmentPublications[identity] = publication }
@@ -2408,7 +2609,7 @@ final class AudioPlayer: ObservableObject {
                 segmentPublications.removeValue(forKey: identity)
                 segmentRequestReceipts.removeValue(forKey: identity)
                 segmentSentenceIDs.removeValue(forKey: identity)
-                try? FileManager.default.removeItem(at: segFile)
+                Task { await segmentFileWriter.remove(segFile) }
                 audioLog.notice("[enqueueSegment] duplicate backlog entry ignored ch=\(chapterIndex) seg=\(segmentIndex)")
                 return
             }
@@ -2430,7 +2631,7 @@ final class AudioPlayer: ObservableObject {
         }
         recordQueuedAudioIfNeeded()
         conversionStatus.record(.chunkComplete,
-            "ch\(chapterIndex) segment \(segmentIndex) ready (\(data.count) bytes)")
+            "ch\(chapterIndex) segment \(segmentIndex) ready (\(byteCount) bytes)")
         applyPendingChapterSeekIfAvailable()
     }
 
@@ -2459,25 +2660,36 @@ final class AudioPlayer: ObservableObject {
     /// deferred file queue to grow without bound. The embedded conversion
     /// bridge calls this before it writes a new temporary MP3.
     func waitForSegmentCapacity() async -> Bool {
+        guard !Task.isCancelled else { return false }
         guard backlog.count >= SegmentBacklog.maximumDeferredSegmentCount else {
             return true
         }
-        return await withCheckedContinuation { continuation in
-            segmentCapacityWaiters.append(continuation)
+        let waiterID = UUID()
+        return await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                if Task.isCancelled { continuation.resume(returning: false) }
+                else { segmentCapacityWaiters.append((waiterID, continuation)) }
+            }
+        } onCancel: {
+            Task { @MainActor [weak self] in
+                guard let self,
+                      let index = self.segmentCapacityWaiters.firstIndex(where: { $0.0 == waiterID }) else { return }
+                self.segmentCapacityWaiters.remove(at: index).1.resume(returning: false)
+            }
         }
     }
 
     private func resumeSegmentCapacityWaitersIfPossible() {
         while backlog.count < SegmentBacklog.maximumDeferredSegmentCount,
               !segmentCapacityWaiters.isEmpty {
-            segmentCapacityWaiters.removeFirst().resume(returning: true)
+            segmentCapacityWaiters.removeFirst().1.resume(returning: true)
         }
     }
 
     private func cancelSegmentCapacityWaiters() {
         let waiters = segmentCapacityWaiters
         segmentCapacityWaiters.removeAll()
-        for waiter in waiters {
+        for (_, waiter) in waiters {
             waiter.resume(returning: false)
         }
     }
@@ -2810,6 +3022,8 @@ final class AudioPlayer: ObservableObject {
     private func teardownPlayer() {
         lastPlaybackRetentionRequest = nil
         remotePlaybackGeneration = UUID()
+        for operation in segmentPersistenceTasks.values { operation.cancel() }
+        segmentPersistenceTail = nil
         cancelPendingPlaybackJourney()
         cancelPendingSeekJourney()
         activeSeekID = nil
@@ -2831,6 +3045,7 @@ final class AudioPlayer: ObservableObject {
         // no AVURLAsset from this player can still consume these files.
         _ = backlog.clear()
         segmentFiles.removeAll()
+        segmentDurations.removeAll()
         segmentPublications.removeAll()
         segmentRequestReceipts.removeAll()
         segmentSentenceIDs.removeAll()
@@ -2843,9 +3058,14 @@ final class AudioPlayer: ObservableObject {
         // Remove segment temp files from the previous session. Best-effort:
         // if the OS already cleaned /tmp, the removeItem call is a no-op.
         if let tmpDir = segmentTempDir {
-            try? FileManager.default.removeItem(at: tmpDir)
+            if segmentDirectoryUsesAsyncIO {
+                Task { await segmentFileWriter.remove(tmpDir) }
+            } else {
+                try? FileManager.default.removeItem(at: tmpDir)
+            }
             segmentTempDir = nil
         }
+        segmentDirectoryUsesAsyncIO = false
     }
 
     // MARK: Now Playing / Remote commands
@@ -2950,7 +3170,7 @@ final class AudioPlayer: ObservableObject {
                     item.duration.seconds,
                     isReadyToPlay: status == .readyToPlay
                 ) {
-                    self.durationSeconds = duration
+                    self.durationSeconds = self.isSegmentMode ? self.segmentChapterDuration : duration
                     self.applyPendingProportionalSeek()
                     self.updateNowPlayingInfo()
                 }
@@ -2965,7 +3185,7 @@ final class AudioPlayer: ObservableObject {
                     duration.seconds,
                     isReadyToPlay: item.status == .readyToPlay
                 ) {
-                    self.durationSeconds = validated
+                    self.durationSeconds = self.isSegmentMode ? self.segmentChapterDuration : validated
                     self.applyPendingProportionalSeek()
                     self.updateNowPlayingInfo()
                 }
@@ -3559,6 +3779,7 @@ final class AudioPlayer: ObservableObject {
     }
     func testHook_backlogCount() -> Int { backlog.count }
     func testHook_segmentCapacityWaiterCount() -> Int { segmentCapacityWaiters.count }
+    func testHook_segmentTempDirectory() -> URL? { segmentTempDir }
     nonisolated static func testHook_maxQueueAhead() -> Int { maxQueueAhead }
     func testHook_teardownPlayer() { teardownPlayer() }
     func testHook_finishCurrentSegment() -> Bool {

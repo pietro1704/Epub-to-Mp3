@@ -1,10 +1,22 @@
 //! Typed audio post-processing and archive orchestration.
+use id3::{
+    frame::{Picture, PictureType},
+    Tag, TagLike, Version,
+};
 use serde::{Deserialize, Serialize};
 use std::ffi::OsStr;
 use std::fs::{self, File};
-use std::io::{self, Read, Write};
+use std::io::{self, BufReader, Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
+use symphonia::core::{
+    codecs::{Decoder, DecoderOptions},
+    errors::Error as MediaError,
+    formats::{FormatOptions, Packet},
+    io::MediaSourceStream,
+    meta::MetadataOptions,
+    probe::Hint,
+};
 use thiserror::Error;
 use zip::write::SimpleFileOptions;
 use zip::{CompressionMethod, ZipWriter};
@@ -57,6 +69,15 @@ impl ProcessSpec {
 }
 
 fn run(spec: &ProcessSpec) -> Result<Output, AudioError> {
+    if cfg!(any(target_os = "ios", target_os = "android"))
+        || std::env::var_os("CONVERTER_AUDIO_DISABLE_EXTERNAL_TOOLS").as_deref()
+            == Some(OsStr::new("1"))
+    {
+        return Err(AudioError::InvalidConfig(format!(
+            "external audio tool '{}' is unavailable in the embedded runtime",
+            spec.program
+        )));
+    }
     let program = resolve_program(&spec.program);
     let output = Command::new(&program)
         .args(&spec.args)
@@ -139,45 +160,277 @@ impl Default for Padding {
     }
 }
 
+struct AudioInfo {
+    duration: f64,
+    sample_rate: u32,
+}
+
+#[derive(Default)]
+struct MpegSegment {
+    expected: Option<u64>,
+    frames: u64,
+}
+
+impl MpegSegment {
+    fn finish(&self) -> Result<(), AudioError> {
+        if self
+            .expected
+            .is_some_and(|expected| self.frames != expected)
+        {
+            return Err(AudioError::Validation(
+                "MPEG segment does not match its explicit frame count".into(),
+            ));
+        }
+        Ok(())
+    }
+}
+
+// None means an audio frame; Some(None) is a metadata frame without a count.
+fn mpeg_info_count(frame: &[u8], version: u32) -> Result<Option<Option<u64>>, AudioError> {
+    let mono = frame[3] >> 6 == 3;
+    let side_info = match (version == 3, mono) {
+        (true, true) => 17,
+        (true, false) => 32,
+        (false, true) => 9,
+        (false, false) => 17,
+    };
+    // LAME keeps Info/Xing at the unprotected offset even when CRC is present.
+    // The CRC bytes themselves are not zeroed side information.
+    let side_info_start = if frame[1] & 1 == 0 { 6 } else { 4 };
+    let offset = 4 + side_info;
+    if frame.len() < offset + 8
+        || !matches!(&frame[offset..offset + 4], b"Info" | b"Xing")
+        || frame[side_info_start..offset].iter().any(|byte| *byte != 0)
+    {
+        return Ok(None);
+    }
+    let flags = u32::from_be_bytes(frame[offset + 4..offset + 8].try_into().unwrap());
+    let count = if flags & 1 != 0 {
+        let bytes = frame
+            .get(offset + 8..offset + 12)
+            .ok_or_else(|| AudioError::Validation("truncated MPEG Info/Xing frame count".into()))?;
+        Some(u64::from(u32::from_be_bytes(bytes.try_into().unwrap())))
+    } else {
+        None
+    };
+    Ok(Some(count))
+}
+
+// Demuxers use UnexpectedEof for both a clean boundary and an incomplete frame.
+// Read and decode exactly one delimited MPEG frame at a time. ID3 bodies must
+// never enter the decoder's sync search, including between encoded TTS chunks.
+fn inspect_mpeg(path: &Path, decoder: &mut dyn Decoder) -> Result<AudioInfo, AudioError> {
+    let file = File::open(path)?;
+    let length = file.metadata()?.len();
+    let mut source = BufReader::new(file);
+    let mut offset = 0u64;
+    let mut frame_count = 0u64;
+    let mut segment = MpegSegment::default();
+    let mut decoded_frames = 0u64;
+    let mut sample_rate = 0u32;
+    let invalid = || AudioError::Validation("truncated or invalid MPEG frame envelope".into());
+    while offset < length {
+        let remaining = length - offset;
+        if remaining < 4 {
+            return Err(invalid());
+        }
+        let mut header = [0u8; 4];
+        source.read_exact(&mut header)?;
+        let size = if &header[..3] == b"ID3" {
+            segment.finish()?;
+            segment = MpegSegment::default();
+            decoder.reset();
+            if remaining < 10 || !matches!(header[3], 2..=4) {
+                return Err(invalid());
+            }
+            let mut tail = [0u8; 6];
+            source.read_exact(&mut tail)?;
+            if tail[2..].iter().any(|byte| byte & 0x80 != 0) {
+                return Err(invalid());
+            }
+            let tag = tail[2..]
+                .iter()
+                .fold(0u64, |size, byte| (size << 7) | u64::from(*byte));
+            10 + tag
+                + if header[3] == 4 && tail[1] & 0x10 != 0 {
+                    10
+                } else {
+                    0
+                }
+        } else if &header[..3] == b"TAG" && remaining == 128 {
+            128
+        } else if header == [0; 4] && frame_count > 0 {
+            let mut buffer = [0u8; 4096];
+            loop {
+                let count = source.read(&mut buffer)?;
+                if count == 0 {
+                    break;
+                }
+                if buffer[..count].iter().any(|byte| *byte != 0) {
+                    return Err(invalid());
+                }
+            }
+            offset = length;
+            continue;
+        } else {
+            let bits = u32::from_be_bytes(header);
+            let version = (bits >> 19) & 3;
+            let layer = (bits >> 17) & 3;
+            let rate_index = ((bits >> 10) & 3) as usize;
+            let bitrate_index = ((bits >> 12) & 15) as usize;
+            if bits & 0xffe0_0000 != 0xffe0_0000
+                || version == 1
+                || layer != 1
+                || rate_index == 3
+                || bitrate_index == 0
+                || bitrate_index == 15
+            {
+                return Err(invalid());
+            }
+            let rate = [44_100u64, 48_000, 32_000][rate_index]
+                / match version {
+                    3 => 1,
+                    2 => 2,
+                    _ => 4,
+                };
+            let bitrate = if version == 3 {
+                [
+                    0u64, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320, 0,
+                ][bitrate_index]
+            } else {
+                [
+                    0u64, 8, 16, 24, 32, 40, 48, 56, 64, 80, 96, 112, 128, 144, 160, 0,
+                ][bitrate_index]
+            };
+            frame_count += 1;
+            let size = (if version == 3 { 144_000 } else { 72_000 }) * bitrate / rate
+                + u64::from((bits >> 9) & 1);
+            if size > remaining {
+                return Err(invalid());
+            }
+            // Only one MPEG frame is buffered, independent of chapter length.
+            let mut frame = vec![0; size as usize];
+            frame[..4].copy_from_slice(&header);
+            source.read_exact(&mut frame[4..])?;
+            if let Some(expected) = mpeg_info_count(&frame, version)? {
+                segment.finish()?;
+                segment = MpegSegment {
+                    expected,
+                    frames: 0,
+                };
+                decoder.reset();
+            } else {
+                segment.frames += 1;
+                let samples = if version == 3 { 1152 } else { 576 };
+                let packet = Packet::new_from_boxed_slice(
+                    0,
+                    decoded_frames,
+                    samples,
+                    frame.into_boxed_slice(),
+                );
+                let decoded = decoder.decode(&packet).map_err(|error| {
+                    AudioError::Validation(format!("invalid MPEG audio: {error}"))
+                })?;
+                let decoded_rate = decoded.spec().rate;
+                if decoded_rate == 0 || (sample_rate != 0 && decoded_rate != sample_rate) {
+                    return Err(AudioError::Validation("inconsistent sample rate".into()));
+                }
+                sample_rate = decoded_rate;
+                decoded_frames = decoded_frames
+                    .checked_add(decoded.frames() as u64)
+                    .ok_or_else(|| AudioError::Validation("audio frame count overflow".into()))?;
+            }
+            size
+        };
+        if size < 4 || size > remaining {
+            return Err(invalid());
+        }
+        offset += size;
+        source.seek(SeekFrom::Start(offset))?;
+    }
+    if frame_count == 0 {
+        return Err(invalid());
+    }
+    segment.finish()?;
+    if decoded_frames == 0 || sample_rate == 0 {
+        return Err(AudioError::Validation("empty MPEG audio stream".into()));
+    }
+    Ok(AudioInfo {
+        duration: decoded_frames as f64 / sample_rate as f64,
+        sample_rate,
+    })
+}
+
+fn inspect_audio(path: &Path) -> Result<AudioInfo, AudioError> {
+    let invalid = |error: &dyn std::fmt::Display| {
+        AudioError::Validation(format!("invalid audio {}: {error}", path.display()))
+    };
+    let stream = MediaSourceStream::new(Box::new(File::open(path)?), Default::default());
+    let mut hint = Hint::new();
+    if let Some(extension) = path.extension().and_then(OsStr::to_str) {
+        hint.with_extension(extension);
+    }
+    let options = FormatOptions {
+        // A chapter can contain independently encoded TTS chunks. Xing/Info
+        // counts belong to the first chunk, not the whole concatenated stream.
+        enable_gapless: false,
+        ..Default::default()
+    };
+    let mut format = symphonia::default::get_probe()
+        .format(&hint, stream, &options, &MetadataOptions::default())
+        .map_err(|error| invalid(&error))?
+        .format;
+    let track = format
+        .default_track()
+        .ok_or_else(|| invalid(&"missing audio track"))?;
+    let track_id = track.id;
+    let is_mpeg = track.codec_params.codec == symphonia::core::codecs::CODEC_TYPE_MP3;
+    let declared_frames = track.codec_params.n_frames;
+    let mut decoder = symphonia::default::get_codecs()
+        .make(&track.codec_params, &DecoderOptions::default())
+        .map_err(|error| invalid(&error))?;
+    if is_mpeg {
+        return inspect_mpeg(path, decoder.as_mut());
+    }
+    let mut frames = 0u64;
+    let mut sample_rate = 0u32;
+    loop {
+        let packet = match format.next_packet() {
+            Ok(packet) => packet,
+            Err(MediaError::IoError(error)) if error.kind() == io::ErrorKind::UnexpectedEof => {
+                break
+            }
+            Err(error) => return Err(invalid(&error)),
+        };
+        if packet.track_id() != track_id {
+            continue;
+        }
+        let decoded = decoder.decode(&packet).map_err(|error| invalid(&error))?;
+        let rate = decoded.spec().rate;
+        if rate == 0 || (sample_rate != 0 && rate != sample_rate) {
+            return Err(invalid(&"inconsistent sample rate"));
+        }
+        sample_rate = rate;
+        frames = frames
+            .checked_add(decoded.frames() as u64)
+            .ok_or_else(|| invalid(&"audio frame count overflow"))?;
+    }
+    if frames == 0 || sample_rate == 0 || declared_frames.is_some_and(|expected| frames < expected)
+    {
+        return Err(invalid(&"empty or truncated audio stream"));
+    }
+    Ok(AudioInfo {
+        duration: frames as f64 / sample_rate as f64,
+        sample_rate,
+    })
+}
+
 pub fn probe_duration(path: impl AsRef<Path>) -> Result<f64, AudioError> {
-    let output = run(&ProcessSpec::new("ffprobe").args([
-        "-v",
-        "error",
-        "-show_entries",
-        "format=duration",
-        "-of",
-        "default=nw=1:nk=1",
-        &path.as_ref().to_string_lossy(),
-    ]))?;
-    String::from_utf8_lossy(&output.stdout)
-        .trim()
-        .parse::<f64>()
-        .map_err(|_| {
-            AudioError::Validation(format!("invalid duration for {}", path.as_ref().display()))
-        })
+    Ok(inspect_audio(path.as_ref())?.duration)
 }
 
 pub fn probe_sample_rate(path: impl AsRef<Path>) -> Result<u32, AudioError> {
-    let output = run(&ProcessSpec::new("ffprobe").args([
-        "-v",
-        "error",
-        "-select_streams",
-        "a:0",
-        "-show_entries",
-        "stream=sample_rate",
-        "-of",
-        "default=nw=1:nk=1",
-        &path.as_ref().to_string_lossy(),
-    ]))?;
-    String::from_utf8_lossy(&output.stdout)
-        .trim()
-        .parse::<u32>()
-        .map_err(|_| {
-            AudioError::Validation(format!(
-                "invalid sample rate for {}",
-                path.as_ref().display()
-            ))
-        })
+    Ok(inspect_audio(path.as_ref())?.sample_rate)
 }
 
 fn atomic_replace(source: &Path, target: &Path) -> Result<(), AudioError> {
@@ -345,39 +598,84 @@ pub fn create_archive(
     Ok(())
 }
 
+/// Validated cover artwork can be reused across all chapters in a conversion.
+pub struct CoverArtwork {
+    mime_type: &'static str,
+    data: Vec<u8>,
+}
+
+impl CoverArtwork {
+    pub fn read(path: &Path) -> Result<Self, AudioError> {
+        if fs::metadata(path)?.len() > 16 * 1024 * 1024 {
+            return Err(AudioError::Validation(
+                "cover image exceeds the memory budget".into(),
+            ));
+        }
+        let picture = fs::read(path)?;
+        let mut reader =
+            image::ImageReader::new(io::Cursor::new(&picture)).with_guessed_format()?;
+        let mime_type = match reader.format() {
+            Some(image::ImageFormat::Png) => "image/png",
+            Some(image::ImageFormat::Jpeg) => "image/jpeg",
+            Some(image::ImageFormat::WebP) => "image/webp",
+            _ => return Err(AudioError::Validation("unsupported cover image".into())),
+        };
+        let mut limits = image::Limits::default();
+        limits.max_image_width = Some(8192);
+        limits.max_image_height = Some(8192);
+        limits.max_alloc = Some(64 * 1024 * 1024);
+        reader.limits(limits);
+        reader
+            .decode()
+            .map_err(|error| AudioError::Validation(format!("invalid cover: {error}")))?;
+        Ok(Self {
+            mime_type,
+            data: picture,
+        })
+    }
+
+    pub fn embed_into(&self, input: &Path) -> Result<(), AudioError> {
+        let duration = validate_audio(input, 100)?;
+        let mut tag = match Tag::read_from_path(input) {
+            Ok(tag) => tag,
+            Err(error) if matches!(&error.kind, id3::ErrorKind::NoTag) => Tag::new(),
+            Err(error) => {
+                return Err(AudioError::Validation(format!(
+                    "invalid audio tags: {error}"
+                )))
+            }
+        };
+        tag.remove_picture_by_type(PictureType::CoverFront);
+        tag.add_frame(Picture {
+            mime_type: self.mime_type.into(),
+            picture_type: PictureType::CoverFront,
+            description: "Cover".into(),
+            data: self.data.clone(),
+        });
+        let parent = input.parent().unwrap_or_else(|| Path::new("."));
+        let temporary = tempfile::NamedTempFile::new_in(parent)?;
+        fs::copy(input, temporary.path())?;
+        tag.write_to_path(temporary.path(), Version::Id3v24)
+            .map_err(|error| {
+                AudioError::Validation(format!("cover metadata write failed: {error}"))
+            })?;
+        let tagged_duration = validate_audio(temporary.path(), 100)?;
+        if (tagged_duration - duration).abs() > 1e-6 {
+            return Err(AudioError::Validation(
+                "cover metadata changed audio duration".into(),
+            ));
+        }
+        File::open(temporary.path())?.sync_all()?;
+        temporary
+            .persist(input)
+            .map_err(|error| AudioError::Io(error.error))?;
+        File::open(parent)?.sync_all()?;
+        Ok(())
+    }
+}
+
 pub fn embed_cover(input: &Path, cover: &Path) -> Result<(), AudioError> {
-    let temp = input.with_extension(format!("cover-{}.mp3", std::process::id()));
-    let input_s = input.to_string_lossy().into_owned();
-    let cover_s = cover.to_string_lossy().into_owned();
-    let temp_s = temp.to_string_lossy().into_owned();
-    run(&ProcessSpec::new("ffmpeg").args([
-        "-y",
-        "-i",
-        &input_s,
-        "-i",
-        &cover_s,
-        "-map",
-        "0:a:0",
-        "-map",
-        "1:v:0",
-        "-c:a",
-        "libmp3lame",
-        "-b:a",
-        "48k",
-        "-ac",
-        "1",
-        "-ar",
-        "24000",
-        "-c:v",
-        "copy",
-        "-id3v2_version",
-        "3",
-        "-metadata:s:v:0",
-        "title=Cover",
-        &temp_s,
-    ]))?;
-    fs::rename(temp, input)?;
-    Ok(())
+    CoverArtwork::read(cover)?.embed_into(input)
 }
 
 #[cfg(test)]

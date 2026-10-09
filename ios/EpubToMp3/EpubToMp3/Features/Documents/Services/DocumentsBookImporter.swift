@@ -6,6 +6,48 @@ import Foundation
 enum DocumentsBookImporter {
     private static let processedKey = "documents-book-importer.processed.v1"
 
+    private struct PendingFile: Sendable {
+        let url: URL
+        let stamp: Double
+    }
+
+    @MainActor
+    static func importPendingAsync(
+        into library: LibraryStore, fileManager: FileManager = .default,
+        defaults: UserDefaults = .standard
+    ) async -> [SharedContainerImporter.ImportOutcome] {
+        let resources = LibraryStore.ImportResources(fileManager: fileManager, defaults: defaults)
+        guard let documents = try? await LibraryStore.performImportIO({
+            try resources.fileManager.url(for: .documentDirectory, in: .userDomainMask,
+                                appropriateFor: nil, create: true)
+        }) else { return [] }
+        return await importPendingAsync(in: documents, into: library,
+                                        fileManager: fileManager, defaults: defaults)
+    }
+
+    @MainActor
+    static func importPendingAsync(
+        in directory: URL, into library: LibraryStore, fileManager: FileManager = .default,
+        defaults: UserDefaults = .standard
+    ) async -> [SharedContainerImporter.ImportOutcome] {
+        let resources = LibraryStore.ImportResources(fileManager: fileManager, defaults: defaults)
+        let pending: [PendingFile] = (try? await LibraryStore.performImportIO {
+            let processed = resources.defaults?.dictionary(forKey: processedKey) as? [String: Double] ?? [:]
+            return SharedContainerImporter.pendingFiles(in: directory, fileManager: resources.fileManager)
+                .map { PendingFile(url: $0, stamp: modificationStamp(for: $0)) }
+                .filter { processed[$0.url.path] != $0.stamp }
+        }) ?? []
+        let results = await library.importBooks(from: pending.map(\.url))
+        let stamps = Dictionary(uniqueKeysWithValues: pending.map { ($0.url.path, $0.stamp) })
+        let successful = results.filter { $0.book != nil }.map(\.url)
+        _ = try? await LibraryStore.performImportIO {
+            var processed = resources.defaults?.dictionary(forKey: processedKey) as? [String: Double] ?? [:]
+            for url in successful { processed[url.path] = stamps[url.path] }
+            resources.defaults?.set(processed, forKey: processedKey)
+        }
+        return results.map { .init(url: $0.url, importedBookID: $0.book?.id, error: $0.error) }
+    }
+
     @discardableResult
     static func importPending(
         into library: LibraryStore,

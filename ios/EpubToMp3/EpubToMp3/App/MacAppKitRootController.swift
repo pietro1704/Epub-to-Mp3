@@ -98,9 +98,7 @@ final class MacAppKitRootController: NSSplitViewController, NSToolbarDelegate {
             .sink { [weak self] _ in self?.refreshFullPlayer() }
             .store(in: &cancellables)
         restoreLocalPlaybackControls()
-        Task.detached(priority: .utility) {
-            LocalFulltextCache.prewarmRecentBooks()
-        }
+        LocalFulltextCache.startPrewarmingRecentBooks()
         show(.library)
         refreshPlayerBar()
     }

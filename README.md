@@ -33,20 +33,24 @@ Pre-built apps (updated on every release tag):
 
 ## Apps
 
-The repository ships **two** client surfaces, each optimised for its
-platform family:
+The repository has two native client codebases plus a separate browser/HF
+surface. `CONTEXT.md` defines the required local shared-Rust architecture;
+source presence is not proof that migration is complete. Check
+`mise run migration:product-boundary-audit` for Web/Flutter and
+`mise run check:rust-migration` for packaging readiness before claiming a
+surface has cut over.
 
 | Surface | Platforms | Where | Status |
 |---|---|---|---|
-| **SwiftUI native** | macOS · iPadOS · iOS | `ios/EpubToMp3/` | **Official Apple client** — Library-first reader, embedded Rust server on macOS, streaming TTS chapter-by-chapter |
-| **Flutter native** | Linux · Windows · Android | `flutter_app/` | **Official non-Apple client** — single codebase, calls the same FastAPI backend. macOS/iOS are handled by SwiftUI, not Flutter. |
+| **Native Apple** | macOS · iPadOS · iOS | `ios/EpubToMp3/` | **Official Apple client** — Library-first reader; follows the local shared Rust conversion contract. |
+| **Flutter native** | Linux · Windows · Android | `flutter_app/` | **Official non-Apple client** — single codebase. Its current transport still has legacy HTTP/Python references; verify cutover with the migration audit. macOS/iOS are handled by SwiftUI, not Flutter. |
 
-### UIKit/AppKit app (Apple)
+### Native Apple apps
 
 Headless build (no Xcode UI needed):
 
 ```bash
-mise run mac:build      # builds the app with its embedded Python runtime
+mise run mac:build      # builds the AppKit app with the Rust converter-server sidecar
 ```
 
 Or open the project in Xcode:
@@ -62,12 +66,11 @@ that the macOS build copies inside the `.app`'s Resources.
 
 #### Build artifact hygiene
 
-Build directories are temporary. After a build or test, remove unused or stale
-generated trees such as `build/`, `.build/`, `DerivedData/`, and equivalent
-temporary output. Prefer keeping at most one active build cache for faster
-iteration, and delete it when it becomes old or unused. Do not remove the
-project's intentional persistent data (`.cache/`, `output/`, models, or user
-inputs), and verify that a directory is not active or tracked before deleting it.
+Build artifacts are not automatically safe to delete. Before cleanup, inspect
+the exact task targets and confirm a directory is inactive, untracked, and not
+needed by a running build or release. Preserve `.cache/`, `output/`, models,
+jobs, books, and user inputs. Run cleanup tasks only when the user authorizes
+that cleanup.
 
 #### iOS companion features
 
@@ -92,16 +95,24 @@ mise run flutter:build-windows      # Windows desktop release
 mise run flutter:build-apk          # Android (release)
 ```
 
+The Flutter conversion boundary is migrating. Before changing transport or
+claiming parity, read `CONTEXT.md` and run
+`mise run migration:product-boundary-audit`.
+
 ---
 
 ## Features
+
+The list below spans native and compatibility surfaces; it is not a claim that
+every client currently has feature parity. Check the migration audit and the
+relevant implementation before relying on a surface-specific behavior.
 
 - **Two TTS engines**: Edge-TTS (cloud, multilingual) and Piper (offline ONNX, one model per language). `auto` is an alias for the Edge-first selection.
 - **Edge-first by default**: per-chunk single-sentence fallback recovers transient failures and returns to Edge. Opt-in to the legacy Edge → Piper cascade via `--engine-chain-fallback` or `ENGINE_CHAIN_FALLBACK=1`.
 - **Smart cache**: parsed text cached per-book — re-runs skip re-parsing
 - **Chapter structure**: preserves TOC hierarchy (NCX / EPUB3 nav), numbered `1.0 / 1.1 / 1.2`
 - **Batch conversion**: queue multiple EPUB/PDF files or entire folders
-- **Web UI**: React frontend with real-time per-chapter progress, streaming playback, and ZIP download
+- **Web UI**: Browser/HF React surface with legacy HTTP integration; Rust/WASM conversion cutover is tracked by the migration audit
 - **Audio validation**: WPM-based truncation detection, auto-retry with engine fallback
 - **Progress ETA**: per-chapter telemetry + chunk tracking for accurate estimates
 
@@ -130,27 +141,27 @@ brew install ffmpeg espeak-ng   # macOS; use apt on Linux
 
 ```bash
 # Native Rust CLI (canonical production entrypoint)
-cargo run --release -p converter-cli -- convert book.epub
+mise run convert -- convert book.epub
 
 # Force a specific engine
-cargo run --release -p converter-cli -- convert book.epub --engine edge
-cargo run --release -p converter-cli -- convert book.epub --engine piper
+mise run convert -- convert book.epub --engine edge
+mise run convert -- convert book.epub --engine piper
 
 # Single chapter or range
-cargo run --release -p converter-cli -- convert book.epub --chapter 3
-cargo run --release -p converter-cli -- convert book.epub --chapter 5.1,5.2,5.3
+mise run convert -- convert book.epub --chapter 3
+mise run convert -- convert book.epub --chapter 5.1,5.2,5.3
 
 # Preview chapter structure (saves parsed text to cache)
-cargo run --release -p converter-cli -- convert book.epub --show-structure
+mise run convert -- convert book.epub --show-structure
 
 # Force re-parse (ignore cache)
-cargo run --release -p converter-cli -- convert book.epub --clear-cache
+mise run convert -- convert book.epub --clear-cache
 
 # Batch: multiple files or folder
-cargo run --release -p converter-cli -- convert book1.epub book2.pdf --batch ~/folder/
+mise run convert -- convert book1.epub book2.pdf --batch ~/folder/
 
 # Interactive menu (pick engine/voice/settings)
-cargo run --release -p converter-cli -- convert book.epub --menu
+mise run convert -- convert book.epub --menu
 ```
 
 The Python CLI remains in `python_app/` as the migration oracle until
@@ -171,11 +182,13 @@ Tab-completes `.epub`/`.pdf` file paths and `--engine` values.
 
 ```bash
 mise run rust:server                   # Native Rust server (canonical)
-cargo run --release -p converter-server # Direct Rust server
+mise exec -- cargo run --release -p converter-server # Direct Rust server
 ```
 
-The legacy Python server and HF entrypoint remain available as migration
-oracles only; they are not production packaging entrypoints.
+The Python server and HF entrypoint are compatibility/migration surfaces and
+may still back browser/demo flows. They are not the required architecture for
+native client conversion. Check the migration audit and current code before
+claiming a particular client has stopped using them.
 
 Frontend dev server (hot reload):
 
@@ -185,7 +198,11 @@ cd web && npm run dev
 
 ---
 
-## API Endpoints
+## Legacy Python/HF API endpoints
+
+These routes document the compatibility server, not the required client
+architecture contract. Do not assume native clients depend on them; inspect
+the Rust server and migration audit for the current product path.
 
 | Method | Path | Description |
 |--------|------|-------------|
@@ -210,7 +227,7 @@ export VITE_MAX_UPLOAD_MB=200     # frontend build
 
 ## Key Environment Variables
 
-### Edge-TTS Tuning
+### Legacy Python/HF Edge-TTS tuning
 
 ```bash
 EDGE_CHUNK_CHARS=12000           # Characters per request
@@ -219,21 +236,21 @@ EDGE_MAX_SEGMENT_SECONDS=85      # Max audio segment duration
 CHAPTER_PARALLEL_COUNT=0         # 0 = auto-detect from CPU cores
 ```
 
-### Engine Fallback Thresholds
+### Legacy Python/HF engine fallback thresholds
 
 ```bash
 EDGE_MIN_CHARS_PER_SECOND=45     # Example local slow-mode trigger (HF differs)
 EDGE_SLOW_RATIO_THRESHOLD=2.5    # Example local elapsed/estimated ratio (HF differs)
 ```
 
-### Oversized Chapter Handling
+### Legacy Python/HF oversized-chapter handling
 
 ```bash
 MAX_CHAPTER_CHARS=0              # Skip chapters larger than N chars (0 = disabled)
                                   # Auto-warns when a chapter is >5× median size
 ```
 
-### Local Engine
+### Legacy Python/HF local engine
 
 ```bash
 PIPER_MAX_PROCS=0                # 0 = auto-detect from CPU
@@ -244,14 +261,17 @@ PIPER_MAX_PROCS=0                # 0 = auto-detect from CPU
 ## Development
 
 ```bash
-mise run test           # Full suite: Python + web lint + build
+mise run test           # Python unit/integration + Web lint/tests/build; not a full Rust/Flutter/Apple gate
 mise run test:unit      # Python unit tests only
 mise run test:web       # Web lint + tests + build
-mise run clean          # Remove pycache, output, job metadata
+mise run clean          # Potentially destructive; inspect targets, back up first, and run only when explicitly requested
 mise run trim-log       # Trim conversions.jsonl to last 500 entries
 mise run hooks-test     # Validate Claude Code hook scripts
 mise run audit          # Scan Python dependencies for CVEs
 ```
+
+`mise run test` does not certify Rust, Flutter, or Apple behavior. Inspect
+`mise.toml` and use the surface-specific validation required by the change.
 
 ---
 
@@ -284,35 +304,16 @@ mise run audit          # Scan Python dependencies for CVEs
 
 ```
 Epub-to-Mp3/
-├── hf_app.py               # HF Spaces entry point (serves React + FastAPI)
-├── requirements.txt
-├── Dockerfile
-├── mise.toml               # Task runner (install, test, web, clean, audit…)
-├── python_app/
-│   ├── main.py             # CLI entry point
-│   ├── server.py           # FastAPI server
-│   ├── src/
-│   │   ├── config.py           # ConversionConfig dataclass
-│   │   ├── converter.py        # CLI conversion (8 mixin classes)
-│   │   ├── ebook_reader.py     # EPUB/PDF parsing, TOC hierarchy
-│   │   ├── cache_manager.py    # Per-chapter text cache (.cache/)
-│   │   ├── job_manager.py      # Async job queue (.jobs/)
-│   │   ├── routes_health.py    # /api/health* and /system/* routes
-│   │   ├── routes_sessions.py  # /api/sessions routes
-│   │   ├── routes_uploads.py   # /api/uploads routes
-│   │   └── tts/
-│   │       ├── edge_engine.py
-│   │       └── piper_engine.py
-│   └── tests/              # 1076+ tests
-├── web/                    # React/TypeScript frontend (Vite)
-│   └── src/
-│       ├── hooks/useConversionFlow.ts
-│       ├── services/ConversionService.ts
-│       └── i18n/translations.ts
-├── scripts/                # Benchmark and utility scripts
-└── .claude/
-    ├── settings.json       # Claude Code hooks config
-    └── hooks/              # SessionStart, UserPromptSubmit, PostToolUse, Stop
+├── CONTEXT.md               # Product contract and domain vocabulary
+├── Cargo.toml / crates/     # Shared Rust runtime, CLI, server, FFI and WASM
+├── mise.toml                # Tool versions and authoritative task definitions
+├── ios/EpubToMp3/           # Native Apple client
+├── flutter_app/             # Non-Apple client; transport migration in progress
+├── web/                     # Browser surface; WASM plus legacy integration
+├── python_app/              # Python compatibility/migration path
+├── hf_app.py / Dockerfile   # HF compatibility/demo deployment
+├── docs/adr/                # Accepted architecture decisions
+└── scripts/                 # Audits, validation and build helpers
 ```
 
 ---

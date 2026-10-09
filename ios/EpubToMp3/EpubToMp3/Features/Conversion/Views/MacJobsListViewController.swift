@@ -7,6 +7,10 @@ final class MacJobsListViewController: NSViewController, NSTableViewDataSource, 
     private let tableView = NSTableView()
     private let spinner = NSProgressIndicator()
     private let messageLabel = NSTextField(wrappingLabelWithString: "")
+    private var reloadTask: Task<Void, Never>?
+    private var reloadID = UUID()
+
+    deinit { reloadTask?.cancel() }
 
     init() {
         super.init(nibName: nil, bundle: nil)
@@ -83,27 +87,34 @@ final class MacJobsListViewController: NSViewController, NSTableViewDataSource, 
     @objc private func refreshTapped() { reload() }
 
     private func reload() {
+        reloadTask?.cancel()
+        let requestID = UUID()
+        reloadID = requestID
+        spinner.startAnimation(nil)
         let logURL = FileManager.default.urls(for: .applicationSupportDirectory,
                                                 in: .userDomainMask)[0]
             .appendingPathComponent("EpubToMp3/.logs/conversions.jsonl")
-        do {
-            let lines = try String(contentsOf: logURL, encoding: .utf8)
-                .split(whereSeparator: \.isNewline)
-            let decoder = JSONDecoder()
-            sessions = Array(lines.suffix(100).compactMap { line in
-                try? decoder.decode(SessionRecord.self, from: Data(line.utf8))
-            }.reversed())
-            tableView.reloadData()
-            if sessions.isEmpty {
-                showMessage(L10n.string("jobs.noConversionsDescription"))
-            } else {
-                tableView.isHidden = false
-                messageLabel.isHidden = true
+        reloadTask = Task { [weak self] in
+            do {
+                let snapshot = try await ConversionHistoryReader.loadLatest(from: logURL)
+                guard let self, !Task.isCancelled, self.reloadID == requestID else { return }
+                self.spinner.stopAnimation(nil)
+                self.sessions = snapshot.sessions
+                self.tableView.reloadData()
+                if self.sessions.isEmpty {
+                    self.showMessage(snapshot.budgetExhausted
+                        ? L10n.string("jobs.historyReadLimit")
+                        : L10n.string("jobs.noConversionsDescription"))
+                } else {
+                    self.tableView.isHidden = false
+                    self.messageLabel.isHidden = true
+                }
+            } catch {
+                guard let self, !Task.isCancelled, self.reloadID == requestID else { return }
+                let missing = (error as NSError).domain == NSCocoaErrorDomain
+                    && (error as NSError).code == NSFileReadNoSuchFileError
+                self.showMessage(missing ? L10n.string("jobs.noConversionsDescription") : error.localizedDescription)
             }
-        } catch {
-            showMessage(sessions.isEmpty
-                        ? L10n.string("jobs.noConversionsDescription")
-                        : error.localizedDescription)
         }
     }
 

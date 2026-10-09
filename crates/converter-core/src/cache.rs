@@ -8,6 +8,76 @@ use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 use thiserror::Error;
 
+/// Exclusively owned, same-volume staging. Cleanup never targets an existing directory.
+pub(crate) struct OwnedStagingDirectory(pub(crate) PathBuf);
+
+impl OwnedStagingDirectory {
+    pub(crate) fn create(parent: &Path) -> io::Result<Self> {
+        static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        loop {
+            let sequence = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            let path = parent.join(format!(
+                ".conversion-stage-{}-{sequence}",
+                std::process::id()
+            ));
+            match fs::create_dir(&path) {
+                Ok(()) => return Ok(Self(path)),
+                Err(error) if error.kind() == io::ErrorKind::AlreadyExists => continue,
+                Err(error) => return Err(error),
+            }
+        }
+    }
+}
+
+impl Drop for OwnedStagingDirectory {
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.0);
+    }
+}
+
+/// Rebuild one derived chapter payload; never recursively clear a cache or touch audio/models.
+pub(crate) fn refresh_chapter_text(
+    cache_root: &Path,
+    book_key: &str,
+    chapter_file: &str,
+    text: &str,
+) -> Result<String, CacheError> {
+    if book_key.len() != 64
+        || !book_key.bytes().all(|byte| byte.is_ascii_hexdigit())
+        || Path::new(chapter_file).components().count() != 1
+        || !chapter_file.ends_with(".json")
+    {
+        return Err(CacheError::Traversal);
+    }
+    fs::create_dir_all(cache_root)?;
+    let book = cache_root.join(book_key);
+    match fs::symlink_metadata(&book) {
+        Ok(metadata) if metadata.file_type().is_symlink() || !metadata.is_dir() => {
+            return Err(CacheError::Traversal)
+        }
+        Ok(_) => {}
+        Err(error) if error.kind() == io::ErrorKind::NotFound => fs::create_dir(&book)?,
+        Err(error) => return Err(error.into()),
+    }
+    if book.canonicalize()?.parent() != Some(cache_root.canonicalize()?.as_path()) {
+        return Err(CacheError::Traversal);
+    }
+    let destination = safe_cache_path(&book, chapter_file)?;
+    match fs::symlink_metadata(&destination) {
+        Ok(metadata) if metadata.file_type().is_symlink() || !metadata.is_file() => {
+            return Err(CacheError::Traversal)
+        }
+        Ok(_) => {}
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+        Err(error) => return Err(error.into()),
+    }
+    let staging = OwnedStagingDirectory::create(&book)?;
+    let payload = staging.0.join("text.json");
+    fs::write(&payload, serde_json::to_vec(text)?)?;
+    fs::rename(payload, destination)?;
+    Ok(text.to_owned())
+}
+
 const MIN_DUPLICATE_CHARS: usize = 100;
 
 #[derive(Debug, Error)]
@@ -187,6 +257,62 @@ mod tests {
             normalized_text_hash("hello world")
         );
         assert_eq!(sha256_bytes(b"hello"), sha256_file_for_test(b"hello"));
+    }
+
+    #[test]
+    fn refreshing_selected_text_preserves_other_chapters_books_models_and_audio() {
+        let fixture = tempfile::tempdir().unwrap();
+        let root = fixture.path().join("cache");
+        let book_key = "a".repeat(64);
+        let other_key = "b".repeat(64);
+        fs::create_dir_all(root.join(&book_key)).unwrap();
+        fs::create_dir_all(root.join(&other_key)).unwrap();
+        fs::write(root.join(&book_key).join("0.json"), b"broken derived text").unwrap();
+        let preserved = [
+            root.join(&book_key).join("1.json"),
+            root.join(&other_key).join("0.json"),
+            fixture.path().join("source.epub"),
+            fixture.path().join("model.onnx"),
+            fixture.path().join("download.mp3"),
+        ];
+        for path in &preserved {
+            fs::write(path, b"preserve").unwrap();
+        }
+        assert_eq!(
+            refresh_chapter_text(&root, &book_key, "0.json", "fresh source text").unwrap(),
+            "fresh source text"
+        );
+        assert_eq!(
+            read_json::<String>(root.join(&book_key).join("0.json")).unwrap(),
+            "fresh source text"
+        );
+        for path in &preserved {
+            assert_eq!(fs::read(path).unwrap(), b"preserve");
+        }
+        assert_eq!(fs::read_dir(root.join(book_key)).unwrap().count(), 2);
+        assert!(refresh_chapter_text(&root, "../escape", "0.json", "text").is_err());
+        assert!(refresh_chapter_text(&root, &other_key, "../source.epub", "text").is_err());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn refreshing_text_rejects_symlinked_book_or_chapter() {
+        use std::os::unix::fs::symlink;
+        let fixture = tempfile::tempdir().unwrap();
+        let root = fixture.path().join("cache");
+        let outside = fixture.path().join("outside");
+        fs::create_dir_all(&root).unwrap();
+        fs::create_dir_all(&outside).unwrap();
+        let key = "a".repeat(64);
+        symlink(&outside, root.join(&key)).unwrap();
+        assert!(refresh_chapter_text(&root, &key, "0.json", "text").is_err());
+        fs::remove_file(root.join(&key)).unwrap();
+        fs::create_dir(root.join(&key)).unwrap();
+        let source = outside.join("book.epub");
+        fs::write(&source, b"source").unwrap();
+        symlink(&source, root.join(&key).join("0.json")).unwrap();
+        assert!(refresh_chapter_text(&root, &key, "0.json", "text").is_err());
+        assert_eq!(fs::read(source).unwrap(), b"source");
     }
 
     fn sha256_file_for_test(value: &[u8]) -> String {

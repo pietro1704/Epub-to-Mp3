@@ -5,13 +5,21 @@
 //! identical on every conversion surface. `EdgeTransport` is injectable so
 //! protocol tests can use a local deterministic server without network calls.
 
-use std::{fmt, sync::Arc, time::Duration, time::Instant};
+use std::{
+    fmt,
+    sync::{Arc, Mutex},
+    time::Duration,
+    time::Instant,
+};
 
 use futures_util::{stream::FuturesUnordered, SinkExt, StreamExt};
 use http::{header::HeaderValue, Request};
 use rand::Rng;
 use sha2::{Digest, Sha256};
-use tokio::{sync::Semaphore, time::timeout};
+use tokio::{
+    sync::{OwnedSemaphorePermit, Semaphore},
+    time::timeout,
+};
 use tokio_tungstenite::{
     client_async_tls_with_config,
     tungstenite::{client::IntoClientRequest, Message},
@@ -19,7 +27,7 @@ use tokio_tungstenite::{
 };
 use url::Url;
 
-use crate::adaptive::{AdaptiveThroughputController, ProviderFailure};
+use crate::adaptive::{AdaptiveRequestPermit, AdaptiveThroughputController, ProviderFailure};
 
 pub const DEFAULT_ENDPOINT: &str =
     "wss://speech.platform.bing.com/consumer/speech/synthesize/readaloud/edge/v1";
@@ -380,6 +388,11 @@ pub struct EdgeTtsClient<T = WebSocketTransport> {
     adaptive: Option<Arc<AdaptiveThroughputController>>,
 }
 
+struct RequestPermits {
+    local: OwnedSemaphorePermit,
+    adaptive: Option<AdaptiveRequestPermit>,
+}
+
 impl EdgeTtsClient<WebSocketTransport> {
     pub fn new(config: EdgeConfig) -> Self {
         let permits = config.concurrency.max(1);
@@ -391,15 +404,25 @@ impl EdgeTtsClient<WebSocketTransport> {
         adaptive: Arc<AdaptiveThroughputController>,
         telemetry: Option<Telemetry>,
     ) -> Self {
-        let permits = config.concurrency.max(1);
-        let mut client =
-            Self::with_transport(config, Arc::new(WebSocketTransport), permits, telemetry);
-        client.adaptive = Some(adaptive);
-        client
+        Self::with_adaptive_transport(config, Arc::new(WebSocketTransport), adaptive, telemetry)
     }
 }
 
 impl<T: EdgeTransport + 'static> EdgeTtsClient<T> {
+    /// Use the same adaptive request policy with a supplied protocol transport.
+    pub fn with_adaptive_transport(
+        config: EdgeConfig,
+        transport: Arc<T>,
+        adaptive: Arc<AdaptiveThroughputController>,
+        telemetry: Option<Telemetry>,
+    ) -> Self {
+        // The shared controller owns the live concurrency ceiling. A semaphore
+        // fixed at its initial snapshot would prevent subsequent capacity growth.
+        let mut client = Self::with_transport(config, transport, Semaphore::MAX_PERMITS, telemetry);
+        client.adaptive = Some(adaptive);
+        client
+    }
+
     pub fn with_transport(
         config: EdgeConfig,
         transport: Arc<T>,
@@ -423,32 +446,78 @@ impl<T: EdgeTransport + 'static> EdgeTtsClient<T> {
         if text.trim().is_empty() {
             return Err(EdgeError::InvalidInput("text is empty".into()));
         }
-        let chunk_limit = self
-            .adaptive
-            .as_ref()
-            .map(|controller| controller.snapshot().chunk_chars)
-            .unwrap_or(self.config.chunk_chars);
-        let chunks = split_protocol_chunks(text, chunk_limit);
-        let total_chunks = chunks.len();
+        let cursor = Mutex::new((text, 0usize));
         let mut pending = FuturesUnordered::new();
-        for (chunk_index, chunk) in chunks.into_iter().enumerate() {
-            eprintln!(
-                "[Rust][Edge] synthesizing chunk {}/{} ({} chars)",
-                chunk_index + 1,
-                total_chunks,
-                chunk.len()
-            );
-            let client = self;
-            pending.push(async move {
-                let audio = client
-                    .synthesize_text_chunk(&chunk, chunk_index + 1, total_chunks)
-                    .await?;
-                Ok::<_, EdgeError>((chunk_index, audio))
-            });
-        }
-        let mut ordered_audio = (0..total_chunks).map(|_| None).collect::<Vec<_>>();
-        while let Some(result) = pending.next().await {
-            let (chunk_index, audio) = result?;
+        let mut ordered_audio = Vec::new();
+        loop {
+            let capacity = self
+                .adaptive
+                .as_ref()
+                .map(|controller| controller.snapshot().max_in_flight)
+                .unwrap_or(self.config.concurrency)
+                .max(1);
+            while pending.len() < capacity && !cursor.lock().unwrap().0.is_empty() {
+                let cursor = &cursor;
+                pending.push(async move {
+                    // Do not freeze a chunk while it waits for another chapter's
+                    // requests or provider cooldown. Reserve text only at dispatch.
+                    let permits = self.acquire_request_permits().await?;
+                    let chunk_limit = self
+                        .adaptive
+                        .as_ref()
+                        .map(|controller| controller.snapshot().chunk_chars)
+                        .unwrap_or(self.config.chunk_chars)
+                        .max(1);
+                    let (chunk, chunk_index, estimated_total) = {
+                        let mut cursor = cursor.lock().unwrap();
+                        let (chunk, remaining) = loop {
+                            if cursor.0.is_empty() {
+                                return Ok::<_, EdgeError>(None);
+                            }
+                            let (chunk, remaining) = next_protocol_chunk(cursor.0, chunk_limit);
+                            cursor.0 = remaining;
+                            // A speech provider may finish a blank SSML request
+                            // without audio. Consume it without reserving an index.
+                            if !chunk.trim().is_empty() {
+                                break (chunk, remaining);
+                            }
+                        };
+                        let index = cursor.1;
+                        *cursor = (remaining, index + 1);
+                        (
+                            chunk,
+                            index,
+                            index + 1 + remaining.len().div_ceil(chunk_limit),
+                        )
+                    };
+                    // The remaining total is an estimate: later dispatches may
+                    // use a different size. Audio indexing never uses this total.
+                    eprintln!(
+                        "[Rust][Edge] dispatching chunk {} (~{} total, {} bytes)",
+                        chunk_index + 1,
+                        estimated_total,
+                        chunk.len()
+                    );
+                    let audio = self
+                        .synthesize_text_chunk(
+                            chunk,
+                            chunk_index + 1,
+                            estimated_total,
+                            Some(permits),
+                        )
+                        .await?;
+                    Ok(Some((chunk_index, audio)))
+                });
+            }
+            let Some(result) = pending.next().await else {
+                break;
+            };
+            let Some((chunk_index, audio)) = result? else {
+                continue;
+            };
+            if ordered_audio.len() <= chunk_index {
+                ordered_audio.resize_with(chunk_index + 1, || None);
+            }
             ordered_audio[chunk_index] = Some(audio);
         }
         let output = ordered_audio
@@ -467,7 +536,7 @@ impl<T: EdgeTransport + 'static> EdgeTtsClient<T> {
         if ssml.trim().is_empty() {
             return Err(EdgeError::InvalidInput("SSML is empty".into()));
         }
-        self.synthesize_request(ssml, ssml.len(), 1, 1).await
+        self.synthesize_request(ssml, ssml.len(), 1, 1, None).await
     }
 
     async fn synthesize_text_chunk(
@@ -475,6 +544,7 @@ impl<T: EdgeTransport + 'static> EdgeTtsClient<T> {
         text: &str,
         chunk_index: usize,
         total_chunks: usize,
+        initial_permits: Option<RequestPermits>,
     ) -> Result<Vec<u8>, EdgeError> {
         let ssml = make_ssml_escaped(
             text,
@@ -485,7 +555,13 @@ impl<T: EdgeTransport + 'static> EdgeTtsClient<T> {
             true,
         );
         match self
-            .synthesize_request(&ssml, text.len(), chunk_index, total_chunks)
+            .synthesize_request(
+                &ssml,
+                text.len(),
+                chunk_index,
+                total_chunks,
+                initial_permits,
+            )
             .await
         {
             Ok(audio) => Ok(audio),
@@ -496,21 +572,39 @@ impl<T: EdgeTransport + 'static> EdgeTtsClient<T> {
                 ) && text.len() > crate::adaptive::MIN_CHUNK_CHARS =>
             {
                 let reduced_limit = (text.len() / 2).max(crate::adaptive::MIN_CHUNK_CHARS);
-                let smaller_chunks = split_protocol_chunks(text, reduced_limit);
-                if smaller_chunks.len() < 2 {
-                    return Err(error);
-                }
+                let mut remaining = text;
                 eprintln!(
                     "[Rust][TTS] provider=edge pressure=retry-smaller-chunks previous_chars={} next_limit={reduced_limit}",
                     text.len()
                 );
                 let mut output = Vec::new();
-                for (sub_index, chunk) in smaller_chunks.iter().enumerate() {
+                let mut sub_index = 0;
+                while !remaining.is_empty() {
+                    let permits = self.acquire_request_permits().await?;
+                    let limit = self
+                        .adaptive
+                        .as_ref()
+                        .map(|controller| controller.snapshot().chunk_chars.min(reduced_limit))
+                        .unwrap_or(reduced_limit)
+                        .max(1);
+                    let (chunk, tail) = next_protocol_chunk(remaining, limit);
+                    remaining = tail;
+                    if chunk.trim().is_empty() {
+                        continue;
+                    }
+                    // Every recursive recovery must make strict progress, even
+                    // if the provider limit grows again while this parent waits.
+                    if chunk.len() >= text.len() {
+                        return Err(error);
+                    }
+                    sub_index += 1;
+                    let estimated_total = sub_index + remaining.len().div_ceil(limit);
                     output.extend(
                         Box::pin(self.synthesize_text_chunk(
                             chunk,
-                            sub_index + 1,
-                            smaller_chunks.len(),
+                            sub_index,
+                            estimated_total,
+                            Some(permits),
                         ))
                         .await?,
                     );
@@ -527,15 +621,18 @@ impl<T: EdgeTransport + 'static> EdgeTtsClient<T> {
         chars: usize,
         chunk_index: usize,
         total_chunks: usize,
+        mut initial_permits: Option<RequestPermits>,
     ) -> Result<Vec<u8>, EdgeError> {
         let request_id = random_id();
         let mut retries = 0;
         loop {
-            let local_permit = self
-                .limiter
-                .acquire()
-                .await
-                .map_err(|_| EdgeError::Cancelled)?;
+            let RequestPermits {
+                local: local_permit,
+                adaptive: permit,
+            } = match initial_permits.take() {
+                Some(permits) => permits,
+                None => self.acquire_request_permits().await?,
+            };
             let connection_id = random_id();
             let url = request_url(
                 &self.config.endpoint,
@@ -547,10 +644,6 @@ impl<T: EdgeTransport + 'static> EdgeTtsClient<T> {
                 request_id: request_id.clone(),
                 chars,
             });
-            let permit = match &self.adaptive {
-                Some(controller) => Some(controller.acquire_request().await),
-                None => None,
-            };
             // Measure provider service time only. Queueing behind local
             // concurrency or adaptive cooldown is not provider slowness.
             let request_started = Instant::now();
@@ -561,8 +654,6 @@ impl<T: EdgeTransport + 'static> EdgeTtsClient<T> {
             .await
             {
                 Ok(Ok(audio)) => {
-                    drop(local_permit);
-                    drop(permit);
                     let elapsed = request_started.elapsed();
                     if let Some(controller) = &self.adaptive {
                         controller.observe_success(chars, elapsed, retries);
@@ -581,6 +672,8 @@ impl<T: EdgeTransport + 'static> EdgeTtsClient<T> {
                             result: "success".into(),
                         });
                     }
+                    drop(local_permit);
+                    drop(permit);
                     self.emit(TelemetryEvent::RequestFinished {
                         request_id: request_id.clone(),
                         bytes: audio.len(),
@@ -591,8 +684,6 @@ impl<T: EdgeTransport + 'static> EdgeTtsClient<T> {
                 Ok(Err(error))
                     if error.retry_category().retryable() && retries < self.config.max_retries =>
                 {
-                    drop(local_permit);
-                    drop(permit);
                     let category = error.retry_category();
                     retries += 1;
                     self.observe_failure(
@@ -603,6 +694,8 @@ impl<T: EdgeTransport + 'static> EdgeTtsClient<T> {
                         retries,
                         request_started.elapsed(),
                     );
+                    drop(local_permit);
+                    drop(permit);
                     self.emit(TelemetryEvent::RequestFailed {
                         request_id: request_id.clone(),
                         category,
@@ -616,8 +709,6 @@ impl<T: EdgeTransport + 'static> EdgeTtsClient<T> {
                     }
                 }
                 Ok(Err(error)) => {
-                    drop(local_permit);
-                    drop(permit);
                     self.observe_failure(
                         &error,
                         chars,
@@ -626,6 +717,8 @@ impl<T: EdgeTransport + 'static> EdgeTtsClient<T> {
                         retries,
                         request_started.elapsed(),
                     );
+                    drop(local_permit);
+                    drop(permit);
                     self.emit(TelemetryEvent::RequestFailed {
                         request_id: request_id.clone(),
                         category: error.retry_category(),
@@ -634,8 +727,6 @@ impl<T: EdgeTransport + 'static> EdgeTtsClient<T> {
                     return Err(error);
                 }
                 Err(_) if retries < self.config.max_retries => {
-                    drop(local_permit);
-                    drop(permit);
                     retries += 1;
                     self.observe_failure(
                         &EdgeError::Timeout,
@@ -645,6 +736,8 @@ impl<T: EdgeTransport + 'static> EdgeTtsClient<T> {
                         retries,
                         request_started.elapsed(),
                     );
+                    drop(local_permit);
+                    drop(permit);
                     self.emit(TelemetryEvent::RequestFailed {
                         request_id: request_id.clone(),
                         category: RetryCategory::Timeout,
@@ -658,8 +751,6 @@ impl<T: EdgeTransport + 'static> EdgeTtsClient<T> {
                     }
                 }
                 Err(_) => {
-                    drop(local_permit);
-                    drop(permit);
                     self.observe_failure(
                         &EdgeError::Timeout,
                         chars,
@@ -668,6 +759,8 @@ impl<T: EdgeTransport + 'static> EdgeTtsClient<T> {
                         retries,
                         request_started.elapsed(),
                     );
+                    drop(local_permit);
+                    drop(permit);
                     self.emit(TelemetryEvent::RequestFailed {
                         request_id: request_id.clone(),
                         category: RetryCategory::Timeout,
@@ -680,6 +773,18 @@ impl<T: EdgeTransport + 'static> EdgeTtsClient<T> {
                 }
             }
         }
+    }
+
+    async fn acquire_request_permits(&self) -> Result<RequestPermits, EdgeError> {
+        let local = Arc::clone(&self.limiter)
+            .acquire_owned()
+            .await
+            .map_err(|_| EdgeError::Cancelled)?;
+        let adaptive = match &self.adaptive {
+            Some(controller) => Some(controller.acquire_request().await),
+            None => None,
+        };
+        Ok(RequestPermits { local, adaptive })
     }
 
     fn observe_failure(
@@ -864,6 +969,27 @@ fn normalize_voice_for_ssml(voice: &str) -> String {
         return voice.to_owned();
     };
     format!("{SERVER_VOICE_PREFIX}{language}-{region}, {name})")
+}
+
+// Consume a nonempty prefix without trimming text or splitting a UTF-8 scalar.
+// A scalar wider than the configured byte limit is sent whole to make progress.
+fn next_protocol_chunk(text: &str, limit: usize) -> (&str, &str) {
+    let mut end = text.len().min(limit.max(1));
+    while !text.is_char_boundary(end) {
+        end -= 1;
+    }
+    if end == 0 {
+        end = text.chars().next().unwrap().len_utf8();
+    }
+    if end < text.len() {
+        if let Some(boundary) = text.as_bytes()[..end]
+            .iter()
+            .rposition(|byte| *byte == b'\n' || *byte == b' ')
+        {
+            end = boundary + 1;
+        }
+    }
+    text.split_at(end)
 }
 
 pub fn split_protocol_chunks(text: &str, limit: usize) -> Vec<String> {
@@ -1100,7 +1226,13 @@ mod protocol_tests {
     #[test]
     fn reference_deadline_includes_three_request_retries() {
         assert_eq!(
-            reference_synthesis_timeout(2_000, 2_048, Duration::from_secs(25), 3, Duration::from_secs(3_600)),
+            reference_synthesis_timeout(
+                2_000,
+                2_048,
+                Duration::from_secs(25),
+                3,
+                Duration::from_secs(3_600)
+            ),
             Duration::from_secs(154)
         );
     }

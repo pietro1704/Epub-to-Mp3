@@ -14,14 +14,13 @@ installed. The mise `ios:build` task pipes the output into
 
 Preference order:
 
-1. Any booted iOS simulator on an allowed runtime.
-2. iPhone SE (any generation) on the newest allowed iOS runtime.
-3. Any iPhone on the newest allowed iOS runtime.
-4. Any iOS device (iPad, etc.) on the newest allowed iOS runtime.
+1. iPhone SE (any generation) on the oldest allowed installed iOS runtime.
+2. Any iPhone on the oldest allowed installed iOS runtime.
+3. Any iOS device (iPad, etc.) on the oldest allowed installed iOS runtime.
 
-By default, local selection refuses very recent simulator runtimes (> iOS 17)
-because they have triggered kernel panics on resource-constrained Intel Macs.
-Set IOS_ALLOW_RECENT_SIMULATOR=1 or IOS_MAX_SIMULATOR_MAJOR=<major> to opt in.
+By default, local selection keeps runtimes at or below iOS 17, matching the
+documented CoreSimulator panic history on this Intel Mac. Set
+IOS_ALLOW_RECENT_SIMULATOR=1 or IOS_MAX_SIMULATOR_MAJOR=<major> to opt in.
 
 `isAvailable=False` devices are ignored — that matches Xcode's own
 filter and avoids picking a simulator whose runtime profile is
@@ -33,7 +32,6 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import platform
 import re
 import subprocess
 import sys
@@ -61,33 +59,6 @@ def _max_runtime_major() -> int | None:
     return _DEFAULT_MAX_RUNTIME_MAJOR
 
 
-def _sysctl(name: str) -> str:
-    return subprocess.check_output(["sysctl", "-n", name], text=True).strip()
-
-
-def _is_low_resource_intel_mac() -> bool:
-    try:
-        memory_gib = int(_sysctl("hw.memsize")) / (1024**3)
-    except Exception:
-        memory_gib = 999.0
-    return platform.machine().lower() in {"x86_64", "i386"} and memory_gib < 12
-
-
-def _refuse_live_simctl_on_low_resource_host() -> bool:
-    if os.environ.get("IOS_ALLOW_LOW_RESOURCE_SIMULATOR") == "1":
-        return False
-    if not _is_low_resource_intel_mac():
-        return False
-    print(
-        "select_ios_simulator: refusing to query CoreSimulator on this "
-        "low-resource Intel Mac. Use CI for iOS Simulator builds, or set "
-        "IOS_ALLOW_LOW_RESOURCE_SIMULATOR=1 only if you explicitly accept "
-        "the kernel-panic risk.",
-        file=sys.stderr,
-    )
-    return True
-
-
 def _runtime_sort_key(runtime: str) -> tuple[int, int]:
     """Return `(major, minor)` for an iOS runtime identifier, oldest=0."""
     match = _RUNTIME_VERSION_RE.search(runtime)
@@ -97,7 +68,7 @@ def _runtime_sort_key(runtime: str) -> tuple[int, int]:
 
 
 def _ios_runtimes(devices: dict[str, list[dict[str, Any]]]) -> list[str]:
-    """Return allowed iOS runtime keys, newest first."""
+    """Return allowed iOS runtime keys, oldest first."""
     max_major = _max_runtime_major()
     runtimes = []
     for runtime in devices.keys():
@@ -107,7 +78,7 @@ def _ios_runtimes(devices: dict[str, list[dict[str, Any]]]) -> list[str]:
         if max_major is not None and major > max_major:
             continue
         runtimes.append(runtime)
-    runtimes.sort(key=_runtime_sort_key, reverse=True)
+    runtimes.sort(key=_runtime_sort_key)
     return runtimes
 
 
@@ -128,19 +99,14 @@ def select(payload: dict[str, Any]) -> dict[str, Any] | None:
     devices: dict[str, list[dict[str, Any]]] = payload.get("devices", {}) or {}
     runtimes = _ios_runtimes(devices)
 
-    # Rule 1: any booted iOS simulator wins, but only on an allowed runtime.
-    for runtime in runtimes:
-        for dev in devices.get(runtime, []):
-            if _available(dev) and dev.get("state") == "Booted":
-                return dev
-
-    # Rule 2: iPhone SE on the newest runtime that has one available.
+    # Pick the smallest iPhone profile on the oldest allowed runtime.
     for runtime in runtimes:
         for dev in devices.get(runtime, []):
             if _available(dev) and _is_iphone_se(dev.get("name", "")):
                 return dev
 
-    # Rule 3: any iPhone on the newest runtime that has one available.
+    # Fall back to any iPhone, then any device, while still preferring the
+    # oldest allowed runtime.
     for runtime in runtimes:
         for dev in devices.get(runtime, []):
             if _available(dev) and _is_iphone(dev.get("name", "")):
@@ -188,16 +154,12 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    if not args.stdin and _refuse_live_simctl_on_low_resource_host():
-        return 2
-
     payload = _read_payload(args.stdin)
     pick = select(payload)
     if pick is None:
         print(
             "select_ios_simulator: no available allowed iOS simulator. "
-            "Use an iOS <=17 runtime on local Intel/8GB Macs, or set "
-            "IOS_ALLOW_RECENT_SIMULATOR=1 only on a machine with enough RAM.",
+            "Install an iOS runtime at or below the configured maximum.",
             file=sys.stderr,
         )
         return 1

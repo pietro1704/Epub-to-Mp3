@@ -84,7 +84,7 @@ final class ReaderSettingsScreenController: UITableViewController {
         // Cells are reused across sections. Remove any slider installed by
         // the previous row before configuring the current row.
         cell.contentView.subviews
-            .filter { $0 is UISlider }
+            .filter { $0 is CompactSlider }
             .forEach { $0.removeFromSuperview() }
         cell.accessibilityIdentifier = nil
         var content = cell.defaultContentConfiguration()
@@ -134,6 +134,12 @@ final class ReaderSettingsScreenController: UITableViewController {
             }
         }
 
+        if let slider = cell.contentView.subviews.first(where: { $0 is CompactSlider }) {
+            // The content view sizes its text above the reserved slider row,
+            // including multiline labels at accessibility text sizes.
+            content.directionalLayoutMargins.bottom = CompactSlider.minimumTouchHeight + 16
+            slider.accessibilityLabel = content.text
+        }
         cell.contentConfiguration = content
         cell.accessibilityLabel = content.text
         cell.accessibilityValue = content.secondaryText ?? (section == .theme ? themeAccessibilityValue(indexPath.row) : nil)
@@ -247,13 +253,14 @@ final class ReaderSettingsScreenController: UITableViewController {
 
     private func configureSlider(in cell: UITableViewCell, value: Float, min: Float, max: Float, step: Float, identifier: String) {
         cell.contentView.subviews
-            .filter { $0 is UISlider }
+            .filter { $0 is CompactSlider }
             .forEach { $0.removeFromSuperview() }
-        let slider = UISlider()
+        let slider = CompactSlider()
         slider.minimumValue = min
         slider.maximumValue = max
         slider.value = value
         slider.isContinuous = true
+        slider.accessibilityStep = step
         let tint = settings.readerTheme.previewColors.foreground
         slider.minimumTrackTintColor = tint
         slider.maximumTrackTintColor = tint.withAlphaComponent(0.3)
@@ -263,21 +270,21 @@ final class ReaderSettingsScreenController: UITableViewController {
         slider.addTarget(
             self,
             action: #selector(sliderEditingDidEnd(_:)),
-            for: [.touchUpInside, .touchUpOutside, .touchCancel]
+            for: [.touchUpInside, .touchUpOutside, .touchCancel, .editingDidEnd]
         )
         slider.translatesAutoresizingMaskIntoConstraints = false
         cell.contentView.addSubview(slider)
         NSLayoutConstraint.activate([
             slider.leadingAnchor.constraint(equalTo: cell.contentView.layoutMarginsGuide.leadingAnchor),
             slider.trailingAnchor.constraint(equalTo: cell.contentView.layoutMarginsGuide.trailingAnchor),
-            slider.topAnchor.constraint(equalTo: cell.contentView.topAnchor, constant: 42),
+            slider.heightAnchor.constraint(equalToConstant: CompactSlider.minimumTouchHeight),
             slider.bottomAnchor.constraint(equalTo: cell.contentView.bottomAnchor, constant: -8)
         ])
         slider.accessibilityValue = "\(Int(value))"
         slider.tag = Int(step * 1000)
     }
 
-    @objc private func sliderChanged(_ slider: UISlider) {
+    @objc private func sliderChanged(_ slider: CompactSlider) {
         let step = Float(max(1, slider.tag)) / 1000
         let snapped = round(slider.value / Float(step)) * Float(step)
         slider.setValue(snapped, animated: false)
@@ -303,7 +310,7 @@ final class ReaderSettingsScreenController: UITableViewController {
         onChange?()
     }
 
-    @objc private func sliderEditingDidEnd(_ slider: UISlider) {
+    @objc private func sliderEditingDidEnd(_ slider: CompactSlider) {
         refresh()
     }
 

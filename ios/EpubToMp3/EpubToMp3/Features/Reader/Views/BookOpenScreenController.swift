@@ -4,33 +4,12 @@ import UniformTypeIdentifiers
 
 @MainActor
 final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate, UIScrollViewDelegate, UITextViewDelegate, UIGestureRecognizerDelegate {
-    /// The current rendered chapter for each of the two warm books. NSCache
-    /// releases these automatically under memory pressure, while avoiding a
-    /// repeat HTML/CSS render when the listener returns to a book in-process.
-    private final class WarmRenderedChapter: NSObject {
-        let chapterIndex: Int
-        let settings: ReaderTextSettings
-        let attributedText: NSAttributedString
-
-        init(chapterIndex: Int, settings: ReaderTextSettings, attributedText: NSAttributedString) {
-            self.chapterIndex = chapterIndex
-            self.settings = settings
-            self.attributedText = attributedText
-        }
-    }
-
-    private static let warmRenderedChapters: NSCache<NSString, WarmRenderedChapter> = {
-        let cache = NSCache<NSString, WarmRenderedChapter>()
-        cache.countLimit = 2
-        cache.name = "com.pietrocode.epubtomp3.warm-reader-chapters"
-        return cache
-    }()
-
     private var book: BookEntity
     private let library: LibraryStore
     private let settings: AppSettings
     private let bookmarkStore: BookmarkStore
     private let player: AudioPlayer
+    private let preparedRenderer: PreparedChapterRenderer
     private let textView = ReaderTextViewFactory.make()
     private let comicPageImageView = UIImageView()
     private lazy var contentSurface = ReaderContentSurface(
@@ -72,6 +51,8 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
     private var fulltext: EbookFulltext?
     private var registeredFontURLs: [URL] = []
     private var loadTask: Task<Void, Never>?
+    private let sessionDefaults: UserDefaults
+    private var reimportRequestID = UUID()
     private var selectedChapter = 0
     private var chromeHidden = false
     private var paginatedTextHeightConstraint: NSLayoutConstraint!
@@ -218,12 +199,16 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
 
     private static let reimportTypes: [UTType] = SupportedImportTypes.all
 
-    init(book: BookEntity, library: LibraryStore, settings: AppSettings, bookmarkStore: BookmarkStore, player: AudioPlayer) {
+    init(book: BookEntity, library: LibraryStore, settings: AppSettings, bookmarkStore: BookmarkStore,
+         player: AudioPlayer, preparedRenderer: PreparedChapterRenderer? = nil,
+         sessionDefaults: UserDefaults = .standard) {
         self.book = book
         self.library = library
         self.settings = settings
         self.bookmarkStore = bookmarkStore
         self.player = player
+        self.preparedRenderer = preparedRenderer ?? .shared
+        self.sessionDefaults = sessionDefaults
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -238,6 +223,7 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
     }
 
     func update(book: BookEntity) {
+        reimportRequestID = UUID()
         self.book = book
         hasRestoredInitialPosition = false
         loadBook()
@@ -1001,6 +987,7 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
 
     private func loadBook() {
         guard isViewLoaded else { return }
+        LocalFulltextCache.cancelPrewarming()
         loadTask?.cancel()
         loadTask = nil
         cancelActiveBookOpenJourney()
@@ -1013,14 +1000,28 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
         )
         activeBookOpenJourneyID = journeyID
 
-        // A process-warm book already has the reader payload and fonts from
-        // its last visit. Paint its saved chapter synchronously, before the
-        // first loading frame, instead of reopening the security-scoped EPUB.
+        // Memory-ready text stays synchronous. A disk-prepared rendering is
+        // restored without reopening the source or running the HTML importer.
         if let warmPayload = LocalFulltextCache.inMemoryPayload(bookId: loadingBookID),
            !warmPayload.chapters.isEmpty {
             LatencyObservationStore.shared.classifyCache(.inMemoryWarm, for: journeyID)
             registeredFontURLs = EpubFontManager.registerCachedFonts(bookID: loadingBookID)
-            displayPreparedPayload(warmPayload, loadingID: loadingID)
+            if let index = preparedChapterIndex(in: warmPayload) {
+                let chapter = warmPayload.chapters[index]
+                if chapter.isImageOnly || chapter.html?.isEmpty != false
+                    || preparedRenderer.cached(bookID: loadingBookID, chapterIndex: index, chapter: chapter,
+                        settings: settings, fontDirectoryURL: registeredFontURLs.first?.deletingLastPathComponent()) != nil {
+                    displayPreparedPayload(warmPayload, loadingID: loadingID)
+                    return
+                }
+            }
+            showLoadingOverlay()
+            loadTask = Task { [weak self] in
+                guard let self else { return }
+                await restorePreparedChapter(in: warmPayload)
+                guard !Task.isCancelled, isCurrentLoad(loadingID, bookID: loadingBookID) else { return }
+                displayPreparedPayload(warmPayload, loadingID: loadingID)
+            }
             return
         }
 
@@ -1055,7 +1056,8 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
                         hideLoadingOverlay()
                         return
                     }
-                    payload = EpubFallbackParser.parse(url: url, bookId: loadingBookID)
+                    payload = await EpubFallbackParser.parseAsync(url: url, bookId: loadingBookID)
+                    guard !Task.isCancelled, self.isCurrentLoad(loadingID, bookID: loadingBookID) else { return }
                     if registeredFontURLs.isEmpty {
                         registeredFontURLs = await Task.detached(priority: .userInitiated) {
                             EpubFontManager.registerFonts(from: url, bookID: loadingBookID)
@@ -1072,6 +1074,8 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
                 if cachedNeedsTitleRepair {
                     UserDefaults.standard.set(true, forKey: titleRepairKey)
                 }
+                await restorePreparedChapter(in: payload)
+                guard !Task.isCancelled, self.isCurrentLoad(loadingID, bookID: loadingBookID) else { return }
                 displayPreparedPayload(payload, loadingID: loadingID)
             } catch {
                 guard !Task.isCancelled, self.isCurrentLoad(loadingID, bookID: loadingBookID) else { return }
@@ -1079,6 +1083,22 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
                 showLoadingError(error.localizedDescription)
             }
         }
+    }
+
+    private func preparedChapterIndex(in payload: EbookFulltext) -> Int? {
+        var index = selectedChapter
+        if !hasRestoredInitialPosition, let entry = ReaderProgressStore.read(bookId: book.id) {
+            index = entry.chapterIndex
+        } else if !hasRestoredInitialPosition, index == 0 {
+            index = ReaderInitialChapter.firstSubstantiveIndex(in: payload.chapters)
+        }
+        return ReaderInitialChapter.index(selectedChapter: index, chapterCount: payload.chapters.count)
+    }
+
+    private func restorePreparedChapter(in payload: EbookFulltext) async {
+        guard let index = preparedChapterIndex(in: payload), !payload.chapters[index].isImageOnly else { return }
+        _ = await preparedRenderer.restore(bookID: book.id, chapterIndex: index, chapter: payload.chapters[index],
+            settings: settings, fontDirectoryURL: registeredFontURLs.first?.deletingLastPathComponent())
     }
 
     /// Applies prepared reader content after either a warm-cache hit or a
@@ -1335,7 +1355,6 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
         // The fallback belongs to a single measured chapter and viewport.
         // A new chapter must always be allowed to attempt canonical paging.
         forcesScrollingForOversizedFragment = false
-        let textSettings = ReaderTextSettings(settings: settings)
         lastInlineImageViewportWidth = nil
         let epubIndex = ReaderPlaybackAnchor.epubIndex(
             forReaderPosition: index,
@@ -1365,19 +1384,9 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
         } else {
             contentSurface.mount(.text)
             applyReaderLayoutMode()
-            if let warmChapter = Self.warmRenderedChapters.object(forKey: book.id as NSString),
-               warmChapter.chapterIndex == index,
-               warmChapter.settings == textSettings {
-                textView.attributedText = NSAttributedString(attributedString: warmChapter.attributedText)
-            } else if let html = chapter.html,
-               let rendered = EpubHtmlRenderer.render(
-                   html: html,
-                   css: chapter.css,
-                   settings: settings,
-                   fontDirectoryURL: registeredFontURLs.first?.deletingLastPathComponent(),
-                   resources: chapter.resources
-               ), !rendered.characters.isEmpty {
-                let visible = NSMutableAttributedString(rendered)
+            if let rendered = preparedRenderer.render(bookID: book.id, chapterIndex: index, chapter: chapter,
+                settings: settings, fontDirectoryURL: registeredFontURLs.first?.deletingLastPathComponent()), rendered.length > 0 {
+                let visible = NSMutableAttributedString(attributedString: rendered)
                 if visible.length > 0 {
                     visible.addAttribute(
                         .foregroundColor,
@@ -1386,14 +1395,6 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
                     )
                 }
                 textView.attributedText = visible
-                Self.warmRenderedChapters.setObject(
-                    WarmRenderedChapter(
-                        chapterIndex: index,
-                        settings: textSettings,
-                        attributedText: visible
-                    ),
-                    forKey: book.id as NSString
-                )
             } else {
                 let fallbackText = chapter.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                     ? EpubHtmlRenderer.plainText(from: chapter.html ?? "")
@@ -1408,16 +1409,6 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
                             ?? UIFont(name: "Georgia", size: settings.readerPointSize)
                             ?? UIFont.systemFont(ofSize: settings.readerPointSize))
                 textView.font = UIFontMetrics(forTextStyle: .body).scaledFont(for: font)
-                if let attributedText = textView.attributedText {
-                    Self.warmRenderedChapters.setObject(
-                        WarmRenderedChapter(
-                            chapterIndex: index,
-                            settings: textSettings,
-                            attributedText: attributedText
-                        ),
-                        forKey: book.id as NSString
-                    )
-                }
             }
             requestTextLayoutRefresh()
             repaintSavedHighlights(chapterIndex: index)
@@ -2232,15 +2223,28 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
 
     func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
         guard let url = urls.first else { return }
-        do {
-            book = try library.importBook(from: url)
-            ReaderSessionState.setCurrentlyReading(bookID: book.id)
-            hasRestoredInitialPosition = false
-            loadBook()
-        } catch {
-            let alert = UIAlertController(title: L10n.string("bookOpen.error"), message: error.localizedDescription, preferredStyle: .alert)
-            alert.addAction(UIAlertAction(title: L10n.string("common.ok"), style: .default))
-            present(alert, animated: true)
+        let request = UUID()
+        reimportRequestID = request
+        let originalBookID = book.id
+        let originalSelection = sessionDefaults.string(forKey: ReaderSessionState.currentlyReadingBookIDKey)
+        Task { [weak self] in
+            guard let self else { return }
+            defer { if reimportRequestID == request { reimportRequestID = UUID() } }
+            do {
+                let imported = try await library.importBookAsync(from: url)
+                guard !Task.isCancelled, reimportRequestID == request, book.id == originalBookID,
+                      sessionDefaults.string(forKey: ReaderSessionState.currentlyReadingBookIDKey) == originalSelection else { return }
+                book = imported
+                ReaderSessionState.setCurrentlyReading(bookID: imported.id, defaults: sessionDefaults)
+                hasRestoredInitialPosition = false
+                loadBook()
+            } catch {
+                guard !Task.isCancelled, reimportRequestID == request, book.id == originalBookID,
+                      sessionDefaults.string(forKey: ReaderSessionState.currentlyReadingBookIDKey) == originalSelection else { return }
+                let alert = UIAlertController(title: L10n.string("bookOpen.error"), message: error.localizedDescription, preferredStyle: .alert)
+                alert.addAction(UIAlertAction(title: L10n.string("common.ok"), style: .default))
+                present(alert, animated: true)
+            }
         }
     }
 }

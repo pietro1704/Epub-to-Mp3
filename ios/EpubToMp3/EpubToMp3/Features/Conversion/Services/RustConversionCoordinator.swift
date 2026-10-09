@@ -6,6 +6,33 @@ private struct RustConversionInvocation: @unchecked Sendable {
     let adapter: ConverterFFIAdapter
 }
 
+extension RustConversionCoordinator.ChapterCompletionEvent {
+    private enum CodingKeys: String, CodingKey {
+        case jobId, bookTitle, bookAuthor, chapterIndex, chaptersTotal, chaptersCompleted
+        case chapterTitle, filename, audioPath, textChars
+    }
+
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        jobId = try values.decode(String.self, forKey: .jobId)
+        bookTitle = try values.decode(String.self, forKey: .bookTitle)
+        bookAuthor = try values.decode(String.self, forKey: .bookAuthor)
+        chapterIndex = try values.decode(Int.self, forKey: .chapterIndex)
+        chaptersTotal = try values.decode(Int.self, forKey: .chaptersTotal)
+        chaptersCompleted = try values.decode(Int.self, forKey: .chaptersCompleted)
+        chapterTitle = try values.decode(String.self, forKey: .chapterTitle)
+        filename = try values.decode(String.self, forKey: .filename)
+        textChars = try values.decode(Int.self, forKey: .textChars)
+        let path = try values.decode(String.self, forKey: .audioPath)
+        guard path.hasPrefix("/"), !path.contains("\0") else {
+            throw DecodingError.dataCorruptedError(forKey: .audioPath, in: values,
+                                                  debugDescription: "Chapter audio requires an absolute local file path.")
+        }
+        // Rust serializes a filesystem path, not a URI. Preserve literal #, ? and %.
+        audioPath = URL(fileURLWithPath: path)
+    }
+}
+
 /// Local conversion entry point shared by the Apple clients.
 ///
 /// This type deliberately has no transport or backend dependency. The Rust
@@ -83,7 +110,8 @@ final class RustConversionCoordinator {
                 bookAuthor: bookAuthor,
                 coverUrl: nil,
                 coverMimeType: nil,
-                engine: "edge",
+                // Chapter events do not carry resolved provider configuration.
+                engine: nil,
                 voice: nil,
                 language: nil,
                 progressPercent: progressPercent,
@@ -102,6 +130,23 @@ final class RustConversionCoordinator {
         let jobID: String
         let manifestJSON: Data
         let outputDirectory: URL
+
+        func validateSelectedChapters(_ positions: ClosedRange<Int>) throws {
+            let envelope = try JSONDecoder().decode(Envelope.self, from: manifestJSON)
+            guard envelope.manifest.jobId == jobID else {
+                throw EmbeddedConverterError.conversionFailed("Rust returned a different conversion job ID.")
+            }
+            // Count alone cannot distinguish the requested chapters from an
+            // equally sized, duplicated or reordered selection. Scoped jobs
+            // require the explicit source identity emitted by the Rust worker.
+            let actual = envelope.manifest.chapters.map(\.sourceIndex)
+            let expected = positions.map { Optional($0) }
+            guard actual == expected else {
+                throw EmbeddedConverterError.conversionFailed(
+                    "Rust chapter identities do not match the selected range \(positions.lowerBound)...\(positions.upperBound)."
+                )
+            }
+        }
 
         func snapshot() throws -> JobSnapshot {
             let envelope = try JSONDecoder().decode(Envelope.self, from: manifestJSON)
@@ -166,6 +211,21 @@ final class RustConversionCoordinator {
     private let adapter: ConverterFFIAdapter
     private let fileManager: FileManager
 
+    typealias Executor = @MainActor (
+        URL, String, Int32, Int32,
+        (@MainActor @Sendable (ConversionProgressEvent) -> Void)?,
+        (@MainActor @Sendable (ChapterCompletionEvent) -> Void)?
+    ) async throws -> Result
+
+    @MainActor
+    static func execute(bookURL: URL, jobID: String, chapterStart: Int32, chapterEnd: Int32,
+                        onProgress: (@MainActor @Sendable (ConversionProgressEvent) -> Void)?,
+                        onChapterCompleted: (@MainActor @Sendable (ChapterCompletionEvent) -> Void)?) async throws -> Result {
+        try await RustConversionCoordinator().convert(bookURL: bookURL, jobID: jobID,
+            chapterStart: chapterStart, chapterEnd: chapterEnd,
+            onProgress: onProgress, onChapterCompleted: onChapterCompleted)
+    }
+
     init(
         adapter: ConverterFFIAdapter = ConverterFFIAdapter(),
         fileManager: FileManager = .default
@@ -179,19 +239,18 @@ final class RustConversionCoordinator {
         jobID: String = UUID().uuidString,
         chapterStart: Int32 = -1,
         chapterEnd: Int32 = -1,
+        options: ConversionOptions? = nil,
         onProgress: (@MainActor @Sendable (ConversionProgressEvent) -> Void)? = nil,
         onChapterCompleted: (@MainActor @Sendable (ChapterCompletionEvent) -> Void)? = nil
     ) async throws -> Result {
-        let requestedChapterPositions = requestedChapterRange(
+        if options != nil {
+            try adapter.validateConversionSupport(options: options)
+        }
+        let requestedChapterPositions = try requestedChapterRange(
+            in: bookURL,
             chapterStart: chapterStart,
             chapterEnd: chapterEnd
         )
-        if let requestedChapterPositions {
-            try validateChapterSelection(
-                in: bookURL,
-                requestedPositions: requestedChapterPositions
-            )
-        }
         let root = try fileManager.url(
             for: .applicationSupportDirectory,
             in: .userDomainMask,
@@ -217,6 +276,7 @@ final class RustConversionCoordinator {
                     jobID: jobID,
                     chapterStart: chapterStart,
                     chapterEnd: chapterEnd,
+                    options: options,
                     onProgress: { data in
                         guard let onProgress,
                               let event = try? JSONDecoder().decode(ConversionProgressEvent.self, from: data) else {
@@ -238,17 +298,12 @@ final class RustConversionCoordinator {
                     }
                 }
             }
+            let result = Result(jobID: jobID, manifestJSON: manifest, outputDirectory: outputDirectory)
             if let requestedChapterPositions {
-                let envelope = try JSONDecoder().decode(Envelope.self, from: manifest)
-                guard envelope.manifest.chapters.count == requestedChapterPositions.count else {
-                    throw EmbeddedConverterError.conversionFailed(
-                        "Rust converted \(envelope.manifest.chapters.count) chapters; " +
-                            "the request selected \(requestedChapterPositions.count)."
-                    )
-                }
+                try result.validateSelectedChapters(requestedChapterPositions)
             }
             try? appendLogLine("[Rust] conversion finished", to: logURL)
-            return Result(jobID: jobID, manifestJSON: manifest, outputDirectory: outputDirectory)
+            return result
         } catch {
             try? appendLogLine("[Rust] conversion failed: \(error.localizedDescription)", to: logURL)
             throw error
@@ -269,8 +324,12 @@ final class RustConversionCoordinator {
         of bookURL: URL,
         minimumCharacters: Int = 2_500,
         jobID: String = UUID().uuidString,
+        options: ConversionOptions? = nil,
         onChapterCompleted: (@MainActor @Sendable (ChapterCompletionEvent) -> Void)? = nil
     ) async throws -> Result {
+        if options != nil {
+            try adapter.validateConversionSupport(options: options)
+        }
         let book = try adapter.openBook(at: bookURL)
         guard
             let metadata = try JSONSerialization.jsonObject(with: book.metadataJSON) as? [String: Any],
@@ -292,6 +351,7 @@ final class RustConversionCoordinator {
                 jobID: jobID,
                 chapterStart: selector,
                 chapterEnd: selector,
+                options: options,
                 onChapterCompleted: onChapterCompleted
             )
         }
@@ -313,10 +373,17 @@ final class RustConversionCoordinator {
         ].contains(where: normalized.contains)
     }
 
-    private func validateChapterSelection(
+    private func requestedChapterRange(
         in bookURL: URL,
-        requestedPositions: ClosedRange<Int>
-    ) throws {
+        chapterStart: Int32,
+        chapterEnd: Int32
+    ) throws -> ClosedRange<Int>? {
+        do {
+            try ConversionChapterSelection.validateBounds(start: chapterStart, end: chapterEnd)
+        } catch {
+            throw EmbeddedConverterError.conversionFailed("Invalid Rust chapter selection.")
+        }
+        if chapterStart == -1 && chapterEnd == -1 { return nil }
         let book = try adapter.openBook(at: bookURL)
         guard
             let metadata = try JSONSerialization.jsonObject(with: book.metadataJSON) as? [String: Any],
@@ -326,18 +393,13 @@ final class RustConversionCoordinator {
                 "Rust chapter metadata is missing or invalid."
             )
         }
-        guard requestedPositions.upperBound < chapters.count else {
+        do {
+            return try ConversionChapterSelection.resolve(start: chapterStart, end: chapterEnd,
+                                                          chapterCount: chapters.count)
+        } catch {
             throw EmbeddedConverterError.conversionFailed(
                 "The selected Rust chapter range exceeds the EPUB chapter count."
             )
         }
-    }
-
-    private func requestedChapterRange(chapterStart: Int32, chapterEnd: Int32) -> ClosedRange<Int>? {
-        guard chapterStart >= 0 else { return nil }
-        let start = Int(chapterStart)
-        let end = Int(chapterEnd)
-        guard end >= start else { return start...start }
-        return start...end
     }
 }

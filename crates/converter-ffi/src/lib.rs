@@ -11,6 +11,7 @@
 extern crate piper_runtime;
 
 use converter_core::piper;
+mod callbacks;
 use converter_core::{
     config::AppConfig,
     embedded::{EmbeddedBookMetadata, EmbeddedConversionSession},
@@ -40,28 +41,163 @@ pub type ConverterChapterCompletedCallback =
 pub type ConverterProgressCallback =
     Option<unsafe extern "C" fn(event_json: *const c_char, context: *mut c_void)>;
 
+#[derive(Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ConversionOptionsV1 {
+    schema_version: u32,
+    engine: Option<String>,
+    voice: Option<String>,
+    language: Option<String>,
+    models_root: Option<String>,
+    model_id: Option<String>,
+    model_path: Option<String>,
+    model_config_path: Option<String>,
+    #[serde(skip)]
+    prepared_model: Option<Arc<piper::PreparedPiperModel>>,
+    #[serde(default)]
+    clear_cache: bool,
+    #[serde(default)]
+    force_reprocess: bool,
+    #[serde(default)]
+    max_performance: bool,
+}
+
+impl ConversionOptionsV1 {
+    fn parse(json: &str) -> Result<Self, String> {
+        let mut options: Self = serde_json::from_str(json)
+            .map_err(|error| format!("invalid conversion options JSON: {error}"))?;
+        if options.schema_version != 1 {
+            return Err("unsupported conversion options schema_version; expected 1".into());
+        }
+        if let Some(engine) = &mut options.engine {
+            *engine = engine.trim().to_ascii_lowercase();
+            match engine.as_str() {
+                "edge" | "piper" | "auto" => {}
+                _ => {
+                    return Err(converter_core::worker::WorkerError::UnsupportedEngine(
+                        engine.clone(),
+                    )
+                    .to_string())
+                }
+            }
+        }
+        for (name, value) in [("voice", &options.voice), ("language", &options.language)] {
+            if let Some(value) = value {
+                if value.trim().is_empty() || value.chars().any(char::is_control) {
+                    return Err(format!("invalid conversion option '{name}': expected nonempty text without control characters"));
+                }
+            }
+        }
+        let has_model_fields = options.models_root.is_some()
+            || options.model_id.is_some()
+            || options.model_path.is_some()
+            || options.model_config_path.is_some();
+        if has_model_fields && options.engine.as_deref() != Some("piper") {
+            return Err(
+                "Piper model fields require explicit engine 'piper'; edge/auto cannot use them"
+                    .into(),
+            );
+        }
+        Ok(options)
+    }
+
+    fn prepare(mut self) -> Result<Self, String> {
+        if self.engine.as_deref() != Some("piper") {
+            return Ok(self);
+        }
+        let required = |value: &Option<String>, name: &str| -> Result<String, String> {
+            value.as_ref().filter(|value| !value.trim().is_empty() && !value.chars().any(char::is_control))
+                .cloned().ok_or_else(|| format!("explicit Piper requires nonempty {name}; select an installed model and linked runtime"))
+        };
+        let root = required(&self.models_root, "models_root")?;
+        let id = required(&self.model_id, "model_id")?;
+        let model = required(&self.model_path, "model_path")?;
+        let config = required(&self.model_config_path, "model_config_path")?;
+        let runtime = explicit_piper_runtime()?;
+        self.prepared_model = Some(Arc::new(
+            piper::PreparedPiperModel::prepare(
+                Path::new(&root),
+                &id,
+                Path::new(&model),
+                Path::new(&config),
+                runtime,
+            )
+            .map_err(|error| format!("Piper preflight failed: {error}"))?,
+        ));
+        Ok(self)
+    }
+
+    fn execution_options(&self) -> converter_core::worker::ExecutionOptions {
+        converter_core::worker::ExecutionOptions {
+            clear_cache: self.clear_cache,
+            force_reprocess: self.force_reprocess,
+            max_performance: self.max_performance,
+        }
+    }
+
+    fn into_request(
+        self,
+        session: &ConverterSession,
+        job_id: String,
+        chapter_indices: Option<Vec<String>>,
+        no_parallel: bool,
+    ) -> converter_core::worker::ConversionRequest {
+        converter_core::worker::ConversionRequest {
+            input: session.session.input_path().to_path_buf(),
+            job_id,
+            engine: Some(self.engine.unwrap_or_else(|| "edge".to_owned())),
+            voice: self.voice,
+            language: self.language,
+            chapter_indices,
+            no_parallel,
+        }
+    }
+}
+
+/// Validates options without opening a book or reserving output artifacts.
+#[no_mangle]
+pub unsafe extern "C" fn converter_conversion_options_validate_json_v1(
+    options_json: *const c_char,
+) -> bool {
+    clear_last_error();
+    match c_string(options_json, "conversion options")
+        .and_then(|json| ConversionOptionsV1::parse(&json))
+        .and_then(ConversionOptionsV1::prepare)
+    {
+        Ok(_) => true,
+        Err(error) => fail(error),
+    }
+}
+
 fn positional_chapter_selection(
     session: &ConverterSession,
     chapter_start: i32,
     chapter_end: i32,
-) -> Option<Vec<String>> {
-    if chapter_start < 0 {
-        return None;
+) -> Result<Option<Vec<String>>, String> {
+    if chapter_start == -1 && chapter_end == -1 {
+        return Ok(None);
+    }
+    if chapter_start < 0 || chapter_end < -1 {
+        return Err("invalid chapter selection sentinels".into());
     }
     let start = chapter_start as usize;
     let chapter_count = session.session.metadata().chapters.len();
-    let end = if chapter_end < 0 {
-        chapter_count.saturating_sub(1)
-    } else if chapter_end >= chapter_start {
-        chapter_end as usize
+    if start >= chapter_count {
+        return Err("chapter start exceeds the book's chapter count".into());
+    }
+    let end = if chapter_end == -1 {
+        chapter_count - 1
     } else {
-        start
+        chapter_end as usize
     };
-    Some(
+    if end < start || end >= chapter_count {
+        return Err("invalid or out-of-bounds chapter range".into());
+    }
+    Ok(Some(
         (start..=end)
             .map(|index| format!("position:{index}"))
             .collect(),
-    )
+    ))
 }
 
 /// Embedded Apple clients use two concurrent chapter workers by default.
@@ -168,6 +304,10 @@ pub unsafe extern "C" fn converter_session_convert_json(
         Ok(value) => value,
         Err(error) => return fail(error),
     };
+    let chapter_indices = match positional_chapter_selection(session, chapter_start, chapter_end) {
+        Ok(selection) => selection,
+        Err(error) => return fail(error),
+    };
     let mut config = AppConfig::from_paths(resolve_paths_from(
         [("OUTPUT_DIR".to_owned(), output_dir.clone())],
         std::path::PathBuf::from(output_dir.clone()),
@@ -187,7 +327,7 @@ pub unsafe extern "C" fn converter_session_convert_json(
         engine: Some("edge".to_owned()),
         voice: None,
         language: None,
-        chapter_indices: positional_chapter_selection(session, chapter_start, chapter_end),
+        chapter_indices,
         no_parallel: chapter_start >= 0,
     };
     let progress_log = generated_output_dir.join("conversion.log");
@@ -253,7 +393,7 @@ pub unsafe extern "C" fn converter_session_convert_json(
 }
 
 /// Converts a book through the shared Rust worker and publishes each complete,
-/// ffprobe-validated chapter in conversion order. `output_dir` must be the
+/// validated chapter in conversion order. `output_dir` must be the
 /// directory named by `job_id`; event strings are valid only during callback.
 #[no_mangle]
 pub unsafe extern "C" fn converter_session_convert_job_json(
@@ -266,6 +406,77 @@ pub unsafe extern "C" fn converter_session_convert_job_json(
     callback: ConverterChapterCompletedCallback,
     context: *mut c_void,
 ) -> *mut c_char {
+    convert_job_with_options(
+        handle,
+        output_dir,
+        job_id,
+        chapter_start,
+        chapter_end,
+        progress_callback,
+        callback,
+        context,
+        ConversionOptionsV1::default(),
+    )
+}
+
+/// Converts with strict version 1 JSON options. `schema_version: 1` is required.
+/// Optional `engine` accepts edge/piper/auto (trimmed, case-insensitive); omission
+/// or null preserves Edge, and auto retains the core's auto-to-Edge policy.
+/// Optional `voice` and `language` preserve literal nonblank, control-free text;
+/// omission or null lets the Rust worker choose its defaults. Unknown fields are
+/// rejected. `clear_cache` rebuilds selected derived text, `force_reprocess`
+/// regenerates selected audio using validated staging, and `max_performance`
+/// permits parallel selected chapters within configured resource caps. All
+/// flags default to false. Explicit Piper requires all four model fields:
+/// absolute models_root, single-component model_id, and relative model_path and
+/// model_config_path within that installed namespace. Preflight checks actual
+/// runtime initialization and readiness; no model is downloaded or inferred.
+/// Options and chapter bounds are checked before output creation. Returned
+/// strings and callbacks retain the existing ownership contract.
+#[no_mangle]
+pub unsafe extern "C" fn converter_session_convert_job_options_json_v1(
+    handle: *const ConverterSession,
+    output_dir: *const c_char,
+    job_id: *const c_char,
+    options_json: *const c_char,
+    chapter_start: i32,
+    chapter_end: i32,
+    progress_callback: ConverterProgressCallback,
+    callback: ConverterChapterCompletedCallback,
+    context: *mut c_void,
+) -> *mut c_char {
+    clear_last_error();
+    let options = match c_string(options_json, "conversion options")
+        .and_then(|json| ConversionOptionsV1::parse(&json))
+        .and_then(ConversionOptionsV1::prepare)
+    {
+        Ok(options) => options,
+        Err(error) => return fail(error),
+    };
+    convert_job_with_options(
+        handle,
+        output_dir,
+        job_id,
+        chapter_start,
+        chapter_end,
+        progress_callback,
+        callback,
+        context,
+        options,
+    )
+}
+
+unsafe fn convert_job_with_options(
+    handle: *const ConverterSession,
+    output_dir: *const c_char,
+    job_id: *const c_char,
+    chapter_start: i32,
+    chapter_end: i32,
+    progress_callback: ConverterProgressCallback,
+    callback: ConverterChapterCompletedCallback,
+    context: *mut c_void,
+    options: ConversionOptionsV1,
+) -> *mut c_char {
     clear_last_error();
     let _ = rustls::crypto::ring::default_provider().install_default();
     let session = match handle.as_ref() {
@@ -274,6 +485,10 @@ pub unsafe extern "C" fn converter_session_convert_job_json(
     };
     let output_dir = match c_string(output_dir, "output directory") {
         Ok(value) => Path::new(&value).to_path_buf(),
+        Err(error) => return fail(error),
+    };
+    let chapter_indices = match positional_chapter_selection(session, chapter_start, chapter_end) {
+        Ok(selection) => selection,
         Err(error) => return fail(error),
     };
     let job_id = match c_string(job_id, "job ID") {
@@ -298,24 +513,24 @@ pub unsafe extern "C" fn converter_session_convert_job_json(
     config.max_parallel = config.max_parallel.min(embedded_chapter_parallelism_cap());
     #[cfg(feature = "piper-runtime")]
     piper_runtime_register_embedded();
-    let request = converter_core::worker::ConversionRequest {
-        input: session.session.input_path().to_path_buf(),
-        job_id: job_id.clone(),
-        engine: Some("edge".to_owned()),
-        voice: None,
-        language: None,
-        chapter_indices: positional_chapter_selection(session, chapter_start, chapter_end),
-        no_parallel: chapter_start >= 0,
-    };
+    let execution_options = options.execution_options();
+    let prepared_model = options.prepared_model.clone();
+    let request =
+        options.into_request(session, job_id.clone(), chapter_indices, chapter_start >= 0);
     let progress_log = output_dir.join("conversion.log");
     let context_address = context as usize;
     let progress_callback = progress_callback;
+    let callback_scope = callbacks::CallbackScope::new();
+    let progress_dispatcher = callback_scope.dispatcher();
+    let chapter_dispatcher = callback_scope.dispatcher();
     let conversion_started = std::time::Instant::now();
     let previous_event = std::sync::Mutex::new(conversion_started);
     let worker = match converter_core::worker::ConversionWorker::new(config) {
         Ok(worker) => worker,
         Err(error) => return fail(error.to_string()),
     }
+    .with_execution_options(execution_options)
+    .with_piper_model(prepared_model)
     .with_progress(Arc::new(move |event| {
         use std::io::Write;
         let line = progress_log_line(&event, conversion_started, &previous_event);
@@ -329,7 +544,9 @@ pub unsafe extern "C" fn converter_session_convert_job_json(
         if let Some(callback) = progress_callback {
             if let Ok(json) = serde_json::to_string(&event) {
                 if let Ok(json) = CString::new(json) {
-                    unsafe { callback(json.as_ptr(), context_address as *mut c_void) };
+                    progress_dispatcher.dispatch(|| unsafe {
+                        callback(json.as_ptr(), context_address as *mut c_void)
+                    });
                 }
             }
         }
@@ -340,7 +557,8 @@ pub unsafe extern "C" fn converter_session_convert_job_json(
             return;
         };
         let Ok(json) = CString::new(json) else { return };
-        unsafe { callback(json.as_ptr(), context_address as *mut c_void) };
+        chapter_dispatcher
+            .dispatch(|| unsafe { callback(json.as_ptr(), context_address as *mut c_void) });
     }));
     let conversion_thread = match std::thread::Builder::new()
         .name("converter-ffi-conversion".into())
@@ -383,6 +601,78 @@ pub unsafe extern "C" fn converter_session_convert_job_json(
                 None => fail("failed to serialize conversion manifest".to_owned()),
             }
         }
+    }
+}
+
+fn explicit_piper_runtime() -> Result<Arc<dyn piper::PiperRuntime>, String> {
+    #[cfg(feature = "piper-runtime")]
+    {
+        return Ok(Arc::new(ExplicitEmbeddedPiperRuntime));
+    }
+    #[cfg(not(feature = "piper-runtime"))]
+    {
+        piper::registered_runtime().filter(|runtime| runtime.supports_explicit_model_paths())
+            .ok_or_else(|| "Piper runtime unavailable: link the embedded Piper runtime before selecting an installed model".into())
+    }
+}
+
+#[cfg(feature = "piper-runtime")]
+struct ExplicitEmbeddedPiperRuntime;
+
+#[cfg(feature = "piper-runtime")]
+impl piper::PiperRuntime for ExplicitEmbeddedPiperRuntime {
+    fn supports_explicit_model_paths(&self) -> bool {
+        true
+    }
+
+    fn status(&self) -> piper::PiperRuntimeStatus {
+        let status = piper_runtime::piper_runtime_status();
+        piper::PiperRuntimeStatus {
+            runtime_loaded: status.runtime_loaded != 0,
+            model_available: status.model_available != 0,
+            abi_compatible: status.abi_compatible != 0,
+            engine_ready: status.engine_ready != 0,
+        }
+    }
+
+    fn init(&self, model: &Path, config: &Path) -> Result<(), piper::PiperError> {
+        let model = CString::new(model.to_string_lossy().as_bytes())
+            .map_err(|error| piper::PiperError::Synthesis(error.to_string()))?;
+        let config = CString::new(config.to_string_lossy().as_bytes())
+            .map_err(|error| piper::PiperError::Synthesis(error.to_string()))?;
+        let mut error = vec![0_u8; 2048];
+        if piper_runtime::piper_runtime_init(
+            model.as_ptr(),
+            config.as_ptr(),
+            error.as_mut_ptr(),
+            error.len() as u32,
+        ) == 0
+        {
+            return Err(piper::PiperError::Synthesis(c_error(&error)));
+        }
+        Ok(())
+    }
+
+    fn synthesize(&self, text: &str, output: &Path) -> Result<(), piper::PiperError> {
+        let text =
+            CString::new(text).map_err(|error| piper::PiperError::Synthesis(error.to_string()))?;
+        let output = CString::new(output.to_string_lossy().as_bytes())
+            .map_err(|error| piper::PiperError::Synthesis(error.to_string()))?;
+        let mut error = vec![0_u8; 2048];
+        if piper_runtime::piper_synthesize(
+            text.as_ptr(),
+            output.as_ptr(),
+            error.as_mut_ptr(),
+            error.len() as u32,
+        ) == 0
+        {
+            return Err(piper::PiperError::Synthesis(c_error(&error)));
+        }
+        Ok(())
+    }
+
+    fn shutdown(&self) {
+        piper_runtime::piper_runtime_shutdown();
     }
 }
 
@@ -1617,16 +1907,27 @@ mod tests {
     use zip::{write::FileOptions, ZipWriter};
 
     fn fixture() -> tempfile::NamedTempFile {
+        fixture_with_chapters(1)
+    }
+
+    fn fixture_with_chapters(count: usize) -> tempfile::NamedTempFile {
         let file = tempfile::NamedTempFile::new().expect("temporary EPUB");
         let mut zip = ZipWriter::new(file.reopen().expect("reopen fixture"));
         let options = FileOptions::<()>::default();
         zip.start_file("META-INF/container.xml", options).unwrap();
         zip.write_all(br#"<?xml version="1.0"?><container><rootfiles><rootfile full-path="OEBPS/content.opf"/></rootfiles></container>"#).unwrap();
         zip.start_file("OEBPS/content.opf", options).unwrap();
-        zip.write_all(br#"<package xmlns:dc="x"><metadata><title>Test Book</title><creator>Author</creator><language>en</language></metadata><manifest><item id="chapter" href="chapter.xhtml" media-type="application/xhtml+xml"/></manifest><spine><itemref idref="chapter"/></spine></package>"#).unwrap();
-        zip.start_file("OEBPS/chapter.xhtml", options).unwrap();
-        zip.write_all(b"<html><body><p>Hello world.</p></body></html>")
-            .unwrap();
+        let manifest = (0..count).map(|index| format!(r#"<item id="chapter{index}" href="chapter{index}.xhtml" media-type="application/xhtml+xml"/>"#)).collect::<String>();
+        let spine = (0..count)
+            .map(|index| format!(r#"<itemref idref="chapter{index}"/>"#))
+            .collect::<String>();
+        zip.write_all(format!(r#"<package xmlns:dc="x"><metadata><title>Test Book</title><creator>Author</creator><language>en</language></metadata><manifest>{manifest}</manifest><spine>{spine}</spine></package>"#).as_bytes()).unwrap();
+        for index in 0..count {
+            zip.start_file(format!("OEBPS/chapter{index}.xhtml"), options)
+                .unwrap();
+            zip.write_all(b"<html><body><p>Hello world.</p></body></html>")
+                .unwrap();
+        }
         zip.finish().unwrap();
         file
     }
@@ -1641,6 +1942,94 @@ mod tests {
                 1
             }
         );
+    }
+
+    #[test]
+    fn chapter_selection_rejects_invalid_bounds() {
+        let book = fixture();
+        let path = CString::new(book.path().to_string_lossy().as_bytes()).unwrap();
+        unsafe {
+            let handle = converter_session_open(path.as_ptr());
+            let session = handle.as_ref().expect("fixture session");
+            assert_eq!(session.session.metadata().chapters.len(), 1);
+            for (start, end) in [(-2, -1), (-1, 0), (0, -2), (1, 0), (1, 1), (0, 1)] {
+                assert!(
+                    positional_chapter_selection(session, start, end).is_err(),
+                    "accepted invalid chapter bounds {start}..{end}"
+                );
+            }
+            converter_session_free(handle);
+        }
+    }
+
+    #[test]
+    fn chapter_selection_preserves_explicit_whole_single_and_to_end() {
+        let book = fixture_with_chapters(3);
+        let path = CString::new(book.path().to_string_lossy().as_bytes()).unwrap();
+        unsafe {
+            let handle = converter_session_open(path.as_ptr());
+            let session = handle.as_ref().expect("fixture session");
+            assert_eq!(session.session.metadata().chapters.len(), 3);
+            assert_eq!(positional_chapter_selection(session, -1, -1).unwrap(), None);
+            for bounds in [(0, 0)] {
+                assert_eq!(
+                    positional_chapter_selection(session, bounds.0, bounds.1).unwrap(),
+                    Some(vec!["position:0".to_owned()])
+                );
+            }
+            for bounds in [(1, 2), (1, -1)] {
+                assert_eq!(
+                    positional_chapter_selection(session, bounds.0, bounds.1).unwrap(),
+                    Some(vec!["position:1".to_owned(), "position:2".to_owned()])
+                );
+            }
+            assert!(positional_chapter_selection(session, 1, 0).is_err());
+            assert!(positional_chapter_selection(session, 0, i32::MAX).is_err());
+            converter_session_free(handle);
+        }
+    }
+
+    #[test]
+    fn conversion_abis_reject_invalid_selection_before_filesystem_work() {
+        let book = fixture();
+        let path = CString::new(book.path().to_string_lossy().as_bytes()).unwrap();
+        let directory = tempfile::tempdir().unwrap();
+        // A regular file prevents any synthesis if validation regresses.
+        let blocked = directory.path().join("blocked-output");
+        std::fs::write(&blocked, b"untouched output fixture").unwrap();
+        let output = CString::new(blocked.to_string_lossy().as_bytes()).unwrap();
+        let job = CString::new("blocked-output").unwrap();
+        unsafe {
+            let handle = converter_session_open(path.as_ptr());
+            assert!(!handle.is_null());
+            for use_job_abi in [false, true] {
+                let result = if use_job_abi {
+                    converter_session_convert_job_json(
+                        handle,
+                        output.as_ptr(),
+                        job.as_ptr(),
+                        -2,
+                        -1,
+                        None,
+                        None,
+                        ptr::null_mut(),
+                    )
+                } else {
+                    converter_session_convert_json(handle, output.as_ptr(), -2, -1)
+                };
+                assert!(result.is_null());
+                let error = converter_last_error();
+                assert!(!error.is_null());
+                assert!(CStr::from_ptr(error)
+                    .to_str()
+                    .unwrap()
+                    .contains("chapter selection"));
+                converter_string_free(error);
+            }
+            converter_session_free(handle);
+        }
+        assert_eq!(std::fs::read(blocked).unwrap(), b"untouched output fixture");
+        assert_eq!(std::fs::read_dir(directory.path()).unwrap().count(), 1);
     }
 
     #[test]
@@ -1662,6 +2051,262 @@ mod tests {
         assert!(line.contains("elapsed_ms="));
         assert!(line.contains("since_event_ms="));
         assert!(line.contains("converting chapter 4"));
+    }
+
+    #[test]
+    fn options_abi_rejects_invalid_configuration_before_output_work() {
+        let book = fixture();
+        let path = CString::new(book.path().to_string_lossy().as_bytes()).unwrap();
+        let directory = tempfile::tempdir().unwrap();
+        let blocked = directory.path().join("blocked-options");
+        std::fs::write(&blocked, b"prior output").unwrap();
+        let output = CString::new(blocked.to_string_lossy().as_bytes()).unwrap();
+        let job = CString::new("blocked-options").unwrap();
+        unsafe {
+            let handle = converter_session_open(path.as_ptr());
+            assert!(!handle.is_null());
+            for (json, expected) in [
+                (
+                    r#"{"schema_version":1,"engine":"coqui"}"#,
+                    "unsupported conversion engine",
+                ),
+                (r#"{"schema_version":2}"#, "schema_version"),
+                (r#"{}"#, "schema_version"),
+                (r#"{"schema_version":1,"unknown":false}"#, "unknown field"),
+                (r#"{"schema_version":1,"voice":""}"#, "voice"),
+                (r#"{"schema_version":1,"engine":"piper"}"#, "models_root"),
+                (
+                    r#"{"schema_version":1,"engine":"edge","model_id":"installed"}"#,
+                    "require explicit engine",
+                ),
+                (
+                    r#"{"schema_version":1,"engine":"auto","models_root":"/models"}"#,
+                    "require explicit engine",
+                ),
+                (r#"{"schema_version":1,"language":"\u0000"}"#, "language"),
+                ("{", "JSON"),
+            ] {
+                let options = CString::new(json).unwrap();
+                assert!(converter_session_convert_job_options_json_v1(
+                    handle,
+                    output.as_ptr(),
+                    job.as_ptr(),
+                    options.as_ptr(),
+                    0,
+                    0,
+                    None,
+                    None,
+                    ptr::null_mut()
+                )
+                .is_null());
+                let error = converter_last_error();
+                assert!(!error.is_null());
+                let message = CStr::from_ptr(error).to_str().unwrap().to_owned();
+                converter_string_free(error);
+                assert!(message.contains(expected), "{json}: {message}");
+            }
+            converter_session_free(handle);
+        }
+        assert_eq!(std::fs::read(blocked).unwrap(), b"prior output");
+        assert_eq!(std::fs::read_dir(directory.path()).unwrap().count(), 1);
+    }
+
+    #[test]
+    fn explicit_piper_preflight_fails_before_session_or_output_and_never_defaults_to_edge() {
+        let fixture = tempfile::tempdir().unwrap();
+        let output_path = fixture.path().join("must-not-create");
+        let output = CString::new(output_path.to_string_lossy().as_bytes()).unwrap();
+        let job = CString::new("must-not-create").unwrap();
+        for (json, expected) in [
+            (r#"{"schema_version":1,"engine":"piper"}"#, "models_root"),
+            (
+                r#"{"schema_version":1,"engine":"piper","models_root":"/models"}"#,
+                "model_id",
+            ),
+            (
+                r#"{"schema_version":1,"engine":"piper","models_root":"/models","model_id":"literal"}"#,
+                "model_path",
+            ),
+            (
+                r#"{"schema_version":1,"engine":"piper","models_root":"/models","model_id":"literal","model_path":"voice.onnx"}"#,
+                "model_config_path",
+            ),
+            (
+                r#"{"schema_version":1,"models_root":"/models"}"#,
+                "require explicit engine",
+            ),
+        ] {
+            let options = CString::new(json).unwrap();
+            unsafe {
+                assert!(!converter_conversion_options_validate_json_v1(
+                    options.as_ptr()
+                ));
+                let error = converter_last_error();
+                assert!(!error.is_null());
+                assert!(CStr::from_ptr(error).to_str().unwrap().contains(expected));
+                converter_string_free(error);
+                // No book session exists: readiness must fail before session access.
+                assert!(converter_session_convert_job_options_json_v1(
+                    ptr::null(),
+                    output.as_ptr(),
+                    job.as_ptr(),
+                    options.as_ptr(),
+                    -1,
+                    -1,
+                    None,
+                    None,
+                    ptr::null_mut()
+                )
+                .is_null());
+                let error = converter_last_error();
+                assert!(!error.is_null());
+                assert!(CStr::from_ptr(error).to_str().unwrap().contains(expected));
+                converter_string_free(error);
+            }
+        }
+        assert!(!output_path.exists());
+        assert_eq!(std::fs::read_dir(fixture.path()).unwrap().count(), 0);
+    }
+
+    #[cfg(not(feature = "piper-runtime"))]
+    #[test]
+    fn explicit_installed_piper_is_not_ready_without_linked_runtime() {
+        let fixture = tempfile::tempdir().unwrap();
+        let installed = fixture.path().join("selected");
+        std::fs::create_dir(&installed).unwrap();
+        std::fs::write(installed.join("voice.onnx"), b"installed model").unwrap();
+        std::fs::write(installed.join("voice.json"), b"{}").unwrap();
+        let options = CString::new(serde_json::json!({"schema_version":1,"engine":"piper",
+            "models_root":fixture.path(),"model_id":"selected","model_path":"voice.onnx","model_config_path":"voice.json"}).to_string()).unwrap();
+        unsafe {
+            assert!(!converter_conversion_options_validate_json_v1(
+                options.as_ptr()
+            ));
+            let error = converter_last_error();
+            assert!(!error.is_null());
+            assert!(CStr::from_ptr(error)
+                .to_str()
+                .unwrap()
+                .contains("runtime unavailable"));
+            converter_string_free(error);
+        }
+        assert_eq!(
+            std::fs::read(installed.join("voice.onnx")).unwrap(),
+            b"installed model"
+        );
+    }
+
+    #[test]
+    fn options_request_forwards_provider_voice_language_and_selection() {
+        let book = fixture();
+        let path = CString::new(book.path().to_string_lossy().as_bytes()).unwrap();
+        unsafe {
+            let handle = converter_session_open(path.as_ptr());
+            let session = handle.as_ref().expect("fixture session");
+            for (engine, expected) in [("edge", "edge"), (" PiPeR ", "piper"), ("auto", "auto")] {
+                let json = serde_json::json!({"schema_version":1, "engine":engine,
+                    "voice":"pt-BR-FranciscaNeural", "language":"pt-BR",
+                    "clear_cache":false, "force_reprocess":false, "max_performance":false});
+                let options = ConversionOptionsV1::parse(&json.to_string()).unwrap();
+                let request = options.into_request(
+                    session,
+                    "options-job".into(),
+                    positional_chapter_selection(session, 0, 0).unwrap(),
+                    true,
+                );
+                assert_eq!(request.engine.as_deref(), Some(expected));
+                assert_eq!(request.voice.as_deref(), Some("pt-BR-FranciscaNeural"));
+                assert_eq!(request.language.as_deref(), Some("pt-BR"));
+                assert_eq!(request.job_id, "options-job");
+                assert_eq!(request.input, session.session.input_path());
+                assert_eq!(request.chapter_indices, Some(vec!["position:0".into()]));
+                assert!(request.no_parallel);
+            }
+            let defaults = ConversionOptionsV1::parse(r#"{"schema_version":1}"#)
+                .unwrap()
+                .into_request(session, "default-job".into(), None, false);
+            let legacy = ConversionOptionsV1::default().into_request(
+                session,
+                "default-job".into(),
+                None,
+                false,
+            );
+            assert_eq!(defaults.engine, legacy.engine);
+            assert_eq!(defaults.engine.as_deref(), Some("edge"));
+            assert!(defaults.voice.is_none() && defaults.language.is_none());
+            assert!(defaults.chapter_indices.is_none() && !defaults.no_parallel);
+            converter_session_free(handle);
+        }
+    }
+
+    #[test]
+    fn true_flags_reach_worker_execution_policy_without_changing_selection() {
+        let options = ConversionOptionsV1::parse(r#"{"schema_version":1,"clear_cache":true,"force_reprocess":true,"max_performance":true}"#).unwrap();
+        assert_eq!(
+            options.execution_options(),
+            converter_core::worker::ExecutionOptions {
+                clear_cache: true,
+                force_reprocess: true,
+                max_performance: true,
+            }
+        );
+        let book = fixture_with_chapters(3);
+        let path = CString::new(book.path().to_string_lossy().as_bytes()).unwrap();
+        unsafe {
+            let handle = converter_session_open(path.as_ptr());
+            let session = handle.as_ref().expect("fixture session");
+            let selection = positional_chapter_selection(session, 1, 1).unwrap();
+            let request =
+                options.into_request(session, "flags-job".into(), selection.clone(), true);
+            assert_eq!(request.chapter_indices, selection);
+            assert_eq!(request.chapter_indices, Some(vec!["position:1".into()]));
+            converter_session_free(handle);
+        }
+    }
+
+    #[test]
+    fn valid_options_abi_reaches_blocked_output_without_synthesis() {
+        let book = fixture();
+        let path = CString::new(book.path().to_string_lossy().as_bytes()).unwrap();
+        let directory = tempfile::tempdir().unwrap();
+        let blocked = directory.path().join("blocked-options");
+        std::fs::write(&blocked, b"prior output").unwrap();
+        let output = CString::new(blocked.to_string_lossy().as_bytes()).unwrap();
+        let job = CString::new("blocked-options").unwrap();
+        unsafe {
+            let handle = converter_session_open(path.as_ptr());
+            assert!(!handle.is_null());
+            for json in [
+                r#"{"schema_version":1}"#,
+                r#"{"schema_version":1,"engine":"auto"}"#,
+                r#"{"schema_version":1,"clear_cache":true,"force_reprocess":true,"max_performance":true}"#,
+            ] {
+                let options = CString::new(json).unwrap();
+                assert!(converter_session_convert_job_options_json_v1(
+                    handle,
+                    output.as_ptr(),
+                    job.as_ptr(),
+                    options.as_ptr(),
+                    0,
+                    -1,
+                    None,
+                    None,
+                    ptr::null_mut()
+                )
+                .is_null());
+                let error = converter_last_error();
+                assert!(!error.is_null());
+                let message = CStr::from_ptr(error).to_str().unwrap().to_owned();
+                converter_string_free(error);
+                assert!(
+                    message.contains("failed to create output directory"),
+                    "{message}"
+                );
+            }
+            converter_session_free(handle);
+        }
+        assert_eq!(std::fs::read(blocked).unwrap(), b"prior output");
+        assert_eq!(std::fs::read_dir(directory.path()).unwrap().count(), 1);
     }
 
     #[test]

@@ -97,22 +97,21 @@ final class LibraryGridModelTests: XCTestCase {
 
     // MARK: - Layout metrics (shared by SwiftUI + UIKit renderers)
 
-    func testColumnCountPacksAdaptiveTiles() {
-        let m = LibraryGridLayoutMetrics()  // min 160, spacing 20, inset 20
+    func testColumnCountKeepsTwoAcrossWidths() {
+        let m = LibraryGridLayoutMetrics()
         XCTAssertEqual(m.columnCount(forWidth: 400), 2)
-        XCTAssertEqual(m.columnCount(forWidth: 800), 4)
+        XCTAssertEqual(m.columnCount(forWidth: 800), 2)
     }
 
-    func testColumnCountIsAtLeastOne() {
+    func testColumnPolicyDoesNotCollapseOnNarrowWidths() {
         let m = LibraryGridLayoutMetrics()
-        XCTAssertEqual(m.columnCount(forWidth: 100), 1)
-        XCTAssertEqual(m.columnCount(forWidth: 0), 1)
+        XCTAssertEqual(m.columnCount(forWidth: 100), 2)
+        XCTAssertEqual(m.columnCount(forWidth: 0), 2)
     }
 
-    func testTileWidthClampsToMax() {
+    func testTileWidthsFillTheRequestedColumns() {
         let m = LibraryGridLayoutMetrics()
-        // 2 columns in 1200pt would give wide tiles → clamp to 220.
-        XCTAssertEqual(m.tileWidth(forWidth: 1200, columns: 2), 220, accuracy: 0.5)
+        XCTAssertEqual(m.tileWidth(forWidth: 1200, columns: 2), 570, accuracy: 0.5)
         // 4 columns in 800pt → ~175pt, unclamped.
         XCTAssertEqual(m.tileWidth(forWidth: 800, columns: 4), 175, accuracy: 0.5)
     }

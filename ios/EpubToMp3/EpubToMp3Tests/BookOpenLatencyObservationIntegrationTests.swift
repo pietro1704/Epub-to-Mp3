@@ -1,11 +1,251 @@
+#if os(iOS) || os(macOS)
 #if os(iOS)
 import UIKit
+#else
+import AppKit
+#endif
 import XCTest
 
 @testable import EpubToMp3
 
 @MainActor
 final class BookOpenLatencyObservationIntegrationTests: XCTestCase {
+    #if os(macOS)
+    private struct RelaunchFixture: Codable {
+        let preparePID: Int32
+        let books: [BookEntity]
+        let cacheHashes: [String]
+    }
+
+    /// Run prepare and verify in separate XCTest hosts with the same run UUID.
+    func testOptInReaderAfterProcessRelaunch() async throws {
+        let environment = ProcessInfo.processInfo.environment
+        guard let phase = environment["EPUB2MP3_READER_RELAUNCH_PHASE"],
+              let rawID = environment["EPUB2MP3_READER_RELAUNCH_ID"],
+              let runID = UUID(uuidString: rawID), ["prepare", "verify"].contains(phase) else {
+            throw XCTSkip("Provide a relaunch phase and run UUID for two separate native hosts.")
+        }
+        let input = try NativePlaybackBenchmarkInput.optIn()
+        let namespace = "ReaderRelaunch-\(runID.uuidString)"
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(namespace, isDirectory: true)
+        let manifestURL = root.appendingPathComponent("manifest.json")
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: namespace))
+        let keys = ["readerWarmBookIDs.v1", ReaderSessionState.currentlyReadingBookIDKey,
+                    AudioPlayer.readerCurrentChapterIndexDefaultsKey, AudioPlayer.readerCurrentPageRatioDefaultsKey,
+                    AudioPlayer.readerCurrentSentenceIdDefaultsKey]
+        let saved = keys.map { UserDefaults.standard.object(forKey: $0) }
+        defer { for (key, value) in zip(keys, saved) { UserDefaults.standard.set(value, forKey: key) } }
+        var owned: [BookEntity] = []
+        var retainForVerification = false
+        defer {
+            if !retainForVerification {
+                for book in owned {
+                    LocalFulltextCache.evict(bookId: book.id)
+                    ReaderProgressStore.evict(bookId: book.id)
+                }
+                defaults.removePersistentDomain(forName: namespace)
+                if !owned.isEmpty { try? FileManager.default.removeItem(at: root) }
+            }
+        }
+        if phase == "prepare" {
+            guard !FileManager.default.fileExists(atPath: root.path) else {
+                throw NativePlaybackBenchmarkInput.invalid("Relaunch namespace already exists; preserve it for verification")
+            }
+            var payloads: [Data] = []
+            let encoder = PropertyListEncoder()
+            encoder.outputFormat = .binary
+            for (index, selection) in input.books.enumerated() {
+                let id = "\(namespace)-\(index)"
+                let source = URL(fileURLWithPath: selection.sourcePath)
+                let payload = try await MacEpubParser.parse(at: source, bookId: id)
+                guard !payload.chapters.isEmpty else { throw NativePlaybackBenchmarkInput.invalid("Empty prepared reader") }
+                payloads.append(try encoder.encode(payload))
+                owned.append(BookEntity(id: id, title: selection.name,
+                    bookmark: try source.bookmarkData(options: [], includingResourceValuesForKeys: nil, relativeTo: nil),
+                    displayFilename: source.lastPathComponent, addedAt: Date()))
+            }
+            let cacheDirectory = try XCTUnwrap(LocalFulltextCache.storageURL(bookId: owned[0].id)).deletingLastPathComponent()
+            let files = try FileManager.default.contentsOfDirectory(at: cacheDirectory,
+                includingPropertiesForKeys: [.fileSizeKey, .isRegularFileKey])
+            let existingBytes = try files.reduce(Int64(0)) { total, file in
+                let values = try file.resourceValues(forKeys: [.fileSizeKey, .isRegularFileKey])
+                return total + (values.isRegularFile == true ? Int64(values.fileSize ?? 0) : 0)
+            }
+            guard existingBytes + payloads.reduce(Int64(0), { $0 + Int64($1.count) }) < 256 * 1024 * 1024 else {
+                throw NativePlaybackBenchmarkInput.invalid("Preparing fixtures would risk eviction of existing reader caches")
+            }
+            try FileManager.default.createDirectory(at: root, withIntermediateDirectories: false)
+            let renderer = PreparedChapterRenderer(store: PreparedChapterArchiveStore(
+                directory: root.appendingPathComponent("archives", isDirectory: true)))
+            let chapterStore = PreparedReaderChapterStore(directory: root.appendingPathComponent("chapters"))
+            var hashes: [String] = []
+            for (index, pair) in zip(owned, payloads).enumerated() {
+                let (book, data) = pair
+                let cache = try XCTUnwrap(LocalFulltextCache.storageURL(bookId: book.id))
+                guard !FileManager.default.fileExists(atPath: cache.path) else {
+                    throw NativePlaybackBenchmarkInput.invalid("Test cache identity already exists")
+                }
+                try data.write(to: cache, options: .atomic)
+                hashes.append(try NativePlaybackBenchmarkInput.hash(cache.path))
+                let payload = try PropertyListDecoder().decode(EbookFulltext.self, from: data)
+                let chapterIndex = input.books[index].chapterStart
+                guard payload.chapters.indices.contains(chapterIndex) else {
+                    throw NativePlaybackBenchmarkInput.invalid("Missing prepared chapter")
+                }
+                try await chapterStore.write(bookID: book.id, chapterOrdinal: chapterIndex, fulltextURL: cache)
+                XCTAssertNotNil(renderer.render(bookID: book.id, chapterIndex: chapterIndex,
+                    chapter: payload.chapters[chapterIndex], settings: AppSettings(defaults: defaults)))
+            }
+            await renderer.flush()
+            let fixture = RelaunchFixture(preparePID: ProcessInfo.processInfo.processIdentifier,
+                                         books: owned, cacheHashes: hashes)
+            try JSONEncoder().encode(fixture).write(to: manifestURL, options: .atomic)
+            retainForVerification = true
+            print("[Reader relaunch] prepared pid=\(fixture.preparePID) run=\(runID)")
+            return
+        }
+        let fixture = try JSONDecoder().decode(RelaunchFixture.self, from: Data(contentsOf: manifestURL))
+        guard fixture.books.count == input.books.count, fixture.cacheHashes.count == fixture.books.count,
+              fixture.books.enumerated().allSatisfy({ $0.element.id == "\(namespace)-\($0.offset)" }),
+              fixture.preparePID != ProcessInfo.processInfo.processIdentifier else {
+            throw NativePlaybackBenchmarkInput.invalid("Verification requires intact fixtures and a different host process")
+        }
+        owned = fixture.books
+        let renderer = PreparedChapterRenderer(store: PreparedChapterArchiveStore(
+            directory: root.appendingPathComponent("archives", isDirectory: true)))
+        let chapterStore = PreparedReaderChapterStore(directory: root.appendingPathComponent("chapters"))
+        var report = try NativePlaybackBenchmarkReport(input: input)
+        defer { if let attachment = try? report.attachment("native-reader-process-relaunch.json") { add(attachment) } }
+        for (index, book) in owned.enumerated() {
+            XCTAssertNil(LocalFulltextCache.inMemoryPayload(bookId: book.id))
+            let cache = try XCTUnwrap(LocalFulltextCache.storageURL(bookId: book.id))
+            XCTAssertEqual(try NativePlaybackBenchmarkInput.hash(cache.path), fixture.cacheHashes[index])
+            defaults.set(try JSONEncoder().encode([book]), forKey: "library.\(book.id)")
+            ReaderProgressStore.save(bookId: book.id, chapterIndex: input.books[index].chapterStart, offsetFraction: 0)
+            let library = LibraryStore(defaults: defaults, defaultsKey: "library.\(book.id)")
+            let point = try await measuredOpen(book: book, library: library, defaults: defaults,
+                                               event: "process_relaunch_disk_open", cacheClass: .preparedDisk,
+                                               preparedRenderer: renderer, preparedChapterStore: chapterStore)
+            report.points.append(point)
+            XCTAssertLessThanOrEqual(point.elapsedNanoseconds, 200_000_000,
+                                     "Disk-prepared reader must restore content and controls within 200 ms")
+        }
+        report.status = "completed"
+        await renderer.flush()
+        print("[Reader relaunch] verified pid=\(ProcessInfo.processInfo.processIdentifier) preparePID=\(fixture.preparePID)")
+    }
+    #endif
+
+    func testOptInExistingEPUBColdWarmOpenLatencyAndMemory() async throws {
+        let input = try NativePlaybackBenchmarkInput.optIn()
+        var report = try NativePlaybackBenchmarkReport(input: input)
+        let identifier = "NativeBookOpenBenchmark-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: identifier))
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(identifier, isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let standard = UserDefaults.standard
+        let keys = ["readerWarmBookIDs.v1", ReaderSessionState.currentlyReadingBookIDKey,
+                    AudioPlayer.readerCurrentChapterIndexDefaultsKey, AudioPlayer.readerCurrentPageRatioDefaultsKey,
+                    AudioPlayer.readerCurrentSentenceIdDefaultsKey]
+        let saved = keys.map { standard.object(forKey: $0) }
+        var ownedIDs: [String] = []
+        defer {
+            for id in ownedIDs {
+                LocalFulltextCache.evict(bookId: id)
+                ReaderProgressStore.evict(bookId: id)
+            }
+            for (key, value) in zip(keys, saved) { standard.set(value, forKey: key) }
+            defaults.removePersistentDomain(forName: identifier)
+            try? FileManager.default.removeItem(at: root)
+            do { add(try report.attachment("native-existing-epub-open-benchmark.json")) }
+            catch { XCTFail("Could not attach reader measurements: \(error)") }
+        }
+        for selection in input.books {
+            // A fresh test-only identity gives a prepared-cache cold open
+            // without deleting or warming the real imported book's cache.
+            let id = UUID().uuidString
+            ownedIDs.append(id)
+            let url = URL(fileURLWithPath: selection.sourcePath)
+            let bookmark = try url.bookmarkData(options: [], includingResourceValuesForKeys: nil, relativeTo: nil)
+            let book = BookEntity(id: id, title: selection.name, bookmark: bookmark,
+                                  displayFilename: url.lastPathComponent, addedAt: Date())
+            let libraryKey = "library.\(id)"
+            defaults.set(try JSONEncoder().encode([book]), forKey: libraryKey)
+            let library = LibraryStore(defaults: defaults, defaultsKey: libraryKey)
+            ReaderProgressStore.save(bookId: id, chapterIndex: selection.chapterStart, offsetFraction: 0)
+            XCTAssertNil(LocalFulltextCache.inMemoryPayload(bookId: id))
+            XCTAssertNil(LocalFulltextCache.read(bookId: id))
+            report.points.append(.capture(book: selection.name, event: "before_cold_open",
+                                          started: DispatchTime.now().uptimeNanoseconds))
+            report.points.append(try await measuredOpen(book: book, library: library, defaults: defaults,
+                                                        event: "prepared_cache_cold_open", cacheClass: .cold))
+            for _ in 0..<200 {
+                if LocalFulltextCache.inMemoryPayload(bookId: id) != nil,
+                   let cache = LocalFulltextCache.storageURL(bookId: id),
+                   FileManager.default.fileExists(atPath: cache.path) { break }
+                try await Task.sleep(nanoseconds: 10_000_000)
+            }
+            guard LocalFulltextCache.inMemoryPayload(bookId: id) != nil else {
+                throw NativePlaybackBenchmarkInput.invalid("Cold open did not prepare the process-warm reader cache")
+            }
+            let warm = try await measuredOpen(book: book, library: library, defaults: defaults,
+                                              event: "process_warm_open", cacheClass: .inMemoryWarm)
+            report.points.append(warm)
+            XCTAssertLessThanOrEqual(warm.elapsedNanoseconds, 200_000_000,
+                                     "Warm content and controls must become usable within 200 ms.")
+        }
+        report.status = "completed"
+    }
+
+    private func measuredOpen(
+        book: BookEntity, library: LibraryStore, defaults: UserDefaults,
+        event: String, cacheClass: LatencyObservation.CacheClass,
+        preparedRenderer: PreparedChapterRenderer? = nil,
+        preparedChapterStore: PreparedReaderChapterStore = .shared
+    ) async throws -> NativePlaybackBenchmarkReport.Point {
+        let known = Set(LatencyObservationStore.shared.snapshot().map(\.id))
+        let player = AudioPlayer(resumeStore: ResumeStore(storage: UserDefaultsResumeStorage(defaults: defaults)))
+        let started = DispatchTime.now().uptimeNanoseconds
+        #if os(iOS)
+        let controller = BookOpenScreenController(book: book, library: library,
+            settings: AppSettings(defaults: defaults), bookmarkStore: BookmarkStore(defaults: defaults, storageKey: "benchmark"),
+            player: player, preparedRenderer: preparedRenderer)
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 844))
+        window.rootViewController = controller
+        window.makeKeyAndVisible()
+        defer { window.isHidden = true; window.rootViewController = nil; player.stop() }
+        controller.view.setNeedsLayout()
+        controller.view.layoutIfNeeded()
+        #else
+        UserDefaults.standard.set(book.id, forKey: ReaderSessionState.currentlyReadingBookIDKey)
+        let controller = MacReaderViewController(library: library,
+            settings: AppSettings(defaults: defaults), player: player,
+            bookmarkStore: BookmarkStore(defaults: defaults, storageKey: "benchmark"), onClose: {},
+            preparedRenderer: preparedRenderer, preparedChapterStore: preparedChapterStore)
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1100, height: 760),
+                              styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentViewController = controller
+        window.makeKeyAndOrderFront(nil)
+        defer { window.orderOut(nil); window.contentViewController = nil; window.close(); player.stop() }
+        controller.view.layoutSubtreeIfNeeded()
+        #endif
+        for _ in 0..<3000 {
+            let journeys = LatencyObservationStore.shared.snapshot().filter { !known.contains($0.id) && $0.kind == .bookOpen }
+            if journeys.contains(where: { $0.records.contains { $0.transition == .controlsUsable } }) {
+                guard journeys.contains(where: { $0.context.cacheClass == cacheClass
+                    && $0.records.contains { $0.transition == .readableContent }
+                    && $0.records.contains { $0.transition == .controlsUsable } }) else {
+                    throw NativePlaybackBenchmarkInput.invalid("Observed cache class does not match the requested cold/warm case")
+                }
+                return .capture(book: book.title, event: event, started: started, journeys: journeys)
+            }
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+        throw NativePlaybackBenchmarkInput.invalid("Native reader readiness timed out; no latency success measured")
+    }
+
+    #if os(iOS)
     func testOpeningAnotherBookCancelsThePendingReaderJourney() throws {
         let identifier = UUID().uuidString
         let defaults = try XCTUnwrap(UserDefaults(suiteName: "BookOpenLatencyObservationTests.\(identifier)"))
@@ -112,5 +352,6 @@ final class BookOpenLatencyObservationIntegrationTests: XCTestCase {
 
         XCTFail("The warm reader flow did not emit a completed latency observation.")
     }
+    #endif
 }
 #endif

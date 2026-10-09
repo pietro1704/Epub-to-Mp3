@@ -30,6 +30,48 @@ Future<void> _pumpLibrary(
 }
 
 void main() {
+  testWidgets('library grid keeps two columns across phone and wide resize',
+      (tester) async {
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final books = List.generate(
+      4,
+      (i) => BookEntity(
+        id: 'grid-$i',
+        title: 'Book $i with a long title that wraps onto multiple lines',
+        author: 'An author with a long name that needs truncation',
+        filePath: '/tmp/grid-$i.epub',
+        displayFilename: 'grid-$i.epub',
+        addedAt: DateTime(2025, 1, 4 - i),
+      ),
+    );
+    await tester.binding.setSurfaceSize(const Size(320, 1200));
+    await _pumpLibrary(tester, prefsData: {
+      'library.books.v1': '[${books.map((book) => book.encode()).join(',')}]',
+    });
+
+    for (final width in [320.0, 390.0, 768.0, 1440.0, 320.0]) {
+      await tester.binding.setSurfaceSize(Size(width, 2400));
+      await tester.pumpAndSettle();
+
+      final cards = find.descendant(
+        of: find.byType(GridView),
+        matching: find.byType(Card),
+      );
+      expect(cards, findsNWidgets(4));
+      final rects = List.generate(4, (i) => tester.getRect(cards.at(i)));
+      expect(rects[0].top, closeTo(rects[1].top, 0.01));
+      expect(rects[2].top, closeTo(rects[3].top, 0.01));
+      expect(rects[2].top, greaterThan(rects[0].bottom));
+      expect(rects[0].left, closeTo(rects[2].left, 0.01));
+      expect(rects[1].left, closeTo(rects[3].left, 0.01));
+      expect(rects[1].left, greaterThan(rects[0].right));
+      expect(rects[0].width, closeTo(rects[1].width, 0.01));
+      expect(rects[0].left, greaterThanOrEqualTo(0));
+      expect(rects[1].right, lessThanOrEqualTo(width));
+      expect(tester.takeException(), isNull);
+    }
+  });
+
   testWidgets('empty library shows add-book prompt', (tester) async {
     await _pumpLibrary(tester);
 

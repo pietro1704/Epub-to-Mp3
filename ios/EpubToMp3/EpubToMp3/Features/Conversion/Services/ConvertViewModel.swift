@@ -2,6 +2,14 @@ import Foundation
 
 @MainActor
 final class ConvertViewModel {
+    typealias ConversionExecutor = @MainActor (URL, Int32, Int32, ConversionOptions?) async throws -> RustConversionCoordinator.Result
+    private let converter: ConversionExecutor
+
+    init(converter: @escaping ConversionExecutor = { file, start, end, options in
+        try await RustConversionCoordinator().convert(bookURL: file, chapterStart: start, chapterEnd: end, options: options)
+    }) {
+        self.converter = converter
+    }
     var selectedFile: URL?
     var engine = "edge"
     var voice = ""
@@ -15,11 +23,20 @@ final class ConvertViewModel {
     var submittedJobId: String?
     var error: String?
 
+    static func parseChapterSelection(_ input: String) throws -> (start: Int32, end: Int32) {
+        do {
+            return try ConversionChapterSelection.parse(input)
+        } catch {
+            throw EmbeddedConverterError.conversionFailed(L10n.string("convert.error.invalidChapterRange"))
+        }
+    }
+
     func submit(
         client: APIClient? = nil,
         useEmbeddedRuntime: Bool = false,
         player: AudioPlayer? = nil
     ) async {
+        guard !isSubmitting else { return }
         guard let file = selectedFile else {
             error = L10n.string("convert.error.pickFileFirst")
             return
@@ -28,6 +45,7 @@ final class ConvertViewModel {
         // migration, but never resolve or use an HTTP client on Apple.
         _ = client
         _ = useEmbeddedRuntime
+        _ = player // Manual conversion never owns or changes the playback session.
 
         isSubmitting = true
         error = nil
@@ -35,30 +53,22 @@ final class ConvertViewModel {
         defer { isSubmitting = false }
 
         do {
-            let chapterRange: (Int32, Int32) = {
-                let values = chapters
-                    .split(separator: "-")
-                    .compactMap { Int32($0.trimmingCharacters(in: .whitespaces)) }
-                guard values.count == 2 else { return (-1, -1) }
-                return (values[0], values[1])
-            }()
+            let chapterRange = try Self.parseChapterSelection(chapters)
 #if os(iOS)
             let accessing = file.startAccessingSecurityScopedResource()
             defer { if accessing { file.stopAccessingSecurityScopedResource() } }
             _ = accessing
 #endif
-            let result = try await RustConversionCoordinator().convert(
-                bookURL: file,
-                chapterStart: chapterRange.0,
-                chapterEnd: chapterRange.1
+            let options = ConversionOptions(
+                engine: engine,
+                voice: voice.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : voice,
+                language: language.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : language,
+                clearCache: clearCache,
+                forceReprocess: forceReprocess,
+                maxPerformance: maxPerformance
             )
+            let result = try await converter(file, chapterRange.start, chapterRange.end, options)
             submittedJobId = result.jobID
-            if let player {
-                let snapshot = try result.snapshot()
-                player.setSnapshot(snapshot)
-                player.play(snapshot: snapshot, restoreAutoplay: true)
-                player.resume()
-            }
         } catch {
             self.error = (error as? LocalizedError)?.errorDescription
                 ?? error.localizedDescription
@@ -80,14 +90,17 @@ final class ConvertViewModel {
             fileManager: fileManager,
             baseDirectory: baseDirectory
         )
-        if fileManager.fileExists(atPath: inbox.path) {
-            try fileManager.removeItem(at: inbox)
-        }
-        try fileManager.createDirectory(at: inbox, withIntermediateDirectories: true)
-
+        let staging = inbox.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try fileManager.createDirectory(at: staging, withIntermediateDirectories: true)
         let name = url.lastPathComponent.isEmpty ? "Book" : url.lastPathComponent
-        let destination = inbox.appendingPathComponent(name, isDirectory: false)
-        try fileManager.copyItem(at: url, to: destination)
+        let destination = staging.appendingPathComponent(name, isDirectory: false)
+        do {
+            try fileManager.copyItem(at: url, to: destination)
+        } catch {
+            // Only this import owns staging; prior inbox inputs remain usable.
+            try? fileManager.removeItem(at: staging)
+            throw error
+        }
         return destination
     }
 

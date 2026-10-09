@@ -65,6 +65,11 @@ final class MacLibraryViewController: NSViewController, NSSearchFieldDelegate,
         view.setAccessibilityChildren([searchField, sortButton, collectionView, emptyLabel, addButton])
     }
 
+    override func viewDidLayout() {
+        super.viewDidLayout()
+        (collectionView.collectionViewLayout as? MacLibraryCollectionLayout)?.updateItemSize()
+    }
+
     private func configureToolbar() {
         searchField.placeholderString = L10n.string("library.searchPlaceholder")
         searchField.delegate = self
@@ -103,7 +108,7 @@ final class MacLibraryViewController: NSViewController, NSSearchFieldDelegate,
     }
 
     private func configureCollectionView() {
-        let scrollView = NSScrollView()
+        let scrollView = MacLibraryScrollView()
         scrollView.hasVerticalScroller = true
         scrollView.drawsBackground = false
         scrollView.translatesAutoresizingMaskIntoConstraints = false
@@ -115,12 +120,7 @@ final class MacLibraryViewController: NSViewController, NSSearchFieldDelegate,
         collectionView.backgroundColors = [.clear]
         collectionView.delegate = self
         collectionView.dataSource = self
-        let layout = NSCollectionViewFlowLayout()
-        layout.itemSize = NSSize(width: 180, height: 270)
-        layout.minimumInteritemSpacing = 18
-        layout.minimumLineSpacing = 24
-        layout.sectionInset = NSEdgeInsets(top: 20, left: 20, bottom: 20, right: 20)
-        collectionView.collectionViewLayout = layout
+        collectionView.collectionViewLayout = MacLibraryCollectionLayout()
         scrollView.documentView = collectionView
         view.addSubview(scrollView)
         NSLayoutConstraint.activate([
@@ -203,14 +203,22 @@ final class MacLibraryViewController: NSViewController, NSSearchFieldDelegate,
         panel.canChooseDirectories = false
         panel.allowedContentTypes = Self.acceptedTypes
         guard panel.runModal() == .OK else { return }
-        var firstError: Error?
-        for url in panel.urls {
-            do { _ = try library.importBook(from: url) }
-            catch { firstError = firstError ?? error }
+        let urls = panel.urls
+        Task { [weak self] in
+            guard let self else { return }
+            let outcomes = await self.importSelectedBooks(from: urls)
+            if let error = outcomes.compactMap(\.error).first {
+                self.presentImportError(NSError(domain: "LibraryStore", code: 6,
+                    userInfo: [NSLocalizedDescriptionKey: error]))
+            }
         }
-        if let firstError {
-            presentImportError(firstError)
-        }
+    }
+
+    /// The picker and native tests share the actual asynchronous import boundary.
+    func importSelectedBooks(from urls: [URL]) async -> [LibraryStore.ImportOutcome] {
+        let outcomes = await library.importBooks(from: urls)
+        if isViewLoaded { reload() }
+        return outcomes
     }
 
     func importBooks() {
@@ -317,6 +325,54 @@ final class MacLibraryViewController: NSViewController, NSSearchFieldDelegate,
     }
 }
 
+/// Commit the document width and invalidate flow metrics before AppKit lays out items.
+final class MacLibraryScrollView: NSScrollView {
+    override func tile() {
+        super.tile()
+        guard let collectionView = documentView as? NSCollectionView,
+              let layout = collectionView.collectionViewLayout as? MacLibraryCollectionLayout else { return }
+        layout.updateItemSize()
+    }
+}
+
+/// Two columns sized from the visible viewport, including a non-overlay scroller.
+final class MacLibraryCollectionLayout: NSCollectionViewFlowLayout {
+    override init() {
+        super.init()
+        minimumInteritemSpacing = 18
+        minimumLineSpacing = 24
+        sectionInset = NSEdgeInsets(top: 20, left: 20, bottom: 20, right: 20)
+    }
+
+    required init?(coder: NSCoder) {
+        super.init(coder: coder)
+    }
+
+    func updateItemSize() {
+        guard let collectionView else { return }
+        let viewportWidth = collectionView.enclosingScrollView?.contentView.bounds.width
+            ?? collectionView.bounds.width
+        guard viewportWidth > sectionInset.left + sectionInset.right + minimumInteritemSpacing else { return }
+        // Round down so fractional viewport widths cannot push the second item out.
+        let width = floor((viewportWidth - sectionInset.left - sectionInset.right
+            - minimumInteritemSpacing) / 2)
+        let size = NSSize(width: width, height: width * 1.5 + 110)
+        let documentWidthChanged = collectionView.frame.width != viewportWidth
+        guard itemSize != size || documentWidthChanged else { return }
+        if documentWidthChanged {
+            collectionView.setFrameSize(NSSize(width: viewportWidth, height: collectionView.frame.height))
+        }
+        itemSize = size
+        invalidateLayout()
+        collectionView.needsLayout = true
+    }
+
+    override func shouldInvalidateLayout(forBoundsChange newBounds: NSRect) -> Bool {
+        newBounds.width != collectionView?.bounds.width
+            || super.shouldInvalidateLayout(forBoundsChange: newBounds)
+    }
+}
+
 private final class MacBookCollectionItem: NSCollectionViewItem {
     private let coverView = NSImageView()
     private let titleField = NSTextField(labelWithString: "")
@@ -342,6 +398,7 @@ private final class MacBookCollectionItem: NSCollectionViewItem {
         convertButton.action = #selector(convertBook)
         let stack = NSStackView(views: [coverView, titleField, authorField, convertButton])
         stack.orientation = .vertical
+        stack.alignment = .leading
         stack.spacing = 5
         stack.translatesAutoresizingMaskIntoConstraints = false
         root.addSubview(stack)
@@ -353,11 +410,15 @@ private final class MacBookCollectionItem: NSCollectionViewItem {
         openButton.translatesAutoresizingMaskIntoConstraints = false
         root.addSubview(openButton)
         NSLayoutConstraint.activate([
-            coverView.heightAnchor.constraint(equalToConstant: 210),
+            coverView.widthAnchor.constraint(equalTo: root.widthAnchor),
+            coverView.heightAnchor.constraint(equalTo: coverView.widthAnchor, multiplier: 1.5),
+            titleField.widthAnchor.constraint(equalTo: root.widthAnchor),
+            authorField.widthAnchor.constraint(equalTo: root.widthAnchor),
+            convertButton.widthAnchor.constraint(lessThanOrEqualTo: root.widthAnchor),
             stack.leadingAnchor.constraint(equalTo: root.leadingAnchor),
             stack.trailingAnchor.constraint(equalTo: root.trailingAnchor),
             stack.topAnchor.constraint(equalTo: root.topAnchor),
-            stack.bottomAnchor.constraint(equalTo: root.bottomAnchor),
+            stack.bottomAnchor.constraint(lessThanOrEqualTo: root.bottomAnchor),
             openButton.leadingAnchor.constraint(equalTo: root.leadingAnchor),
             openButton.trailingAnchor.constraint(equalTo: root.trailingAnchor),
             openButton.topAnchor.constraint(equalTo: root.topAnchor),

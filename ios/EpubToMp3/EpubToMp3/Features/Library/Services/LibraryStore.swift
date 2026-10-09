@@ -1,6 +1,7 @@
 import Foundation
 import CryptoKit
 import Combine
+import Darwin
 
 #if canImport(UIKit)
 import UIKit
@@ -23,7 +24,11 @@ import AppKit
 /// read the same `"library.books.v1"` key without IPC. Falls back to
 /// `.standard` on simulators without a provisioned group and in unit tests.
 final class LibraryStore: ObservableObject {
-    private let persistenceQueue = DispatchQueue(label: "com.epubtomp3.library-persistence", qos: .utility)
+    private static let importQueue = DispatchQueue(label: "com.epubtomp3.library-import", qos: .userInitiated,
+                                                  autoreleaseFrequency: .workItem)
+    private let indexPersistence: LibraryIndexPersistence
+    private let importDirectory: URL?
+    private var removalGenerations: [String: Int] = [:]
     private static let applicationSupportFolderName = "EpubToMp3"
     private static let developmentSeedBookFilename = "EpubToMp3DevelopmentSeed.epub"
 
@@ -41,7 +46,9 @@ final class LibraryStore: ObservableObject {
     init(
         defaults: UserDefaults? = nil,
         defaultsKey: String = "library.books.v1",
-        fileManager: FileManager = .default
+        fileManager: FileManager = .default,
+        importDirectory: URL? = nil,
+        indexEncoder: @escaping @Sendable ([BookEntity]) throws -> Data = { try JSONEncoder().encode($0) }
     ) {
         // Prefer the App Group suite so the WidgetKit extension can
         // share the same UserDefaults store. Falls back to `.standard`
@@ -58,6 +65,9 @@ final class LibraryStore: ObservableObject {
         self.defaults = resolvedDefaults
         self.defaultsKey = defaultsKey
         self.fileManager = fileManager
+        self.importDirectory = importDirectory
+        self.indexPersistence = LibraryIndexPersistence(defaults: resolvedDefaults, key: defaultsKey,
+                                                       encoder: indexEncoder)
         // UI tests install a deterministic fixture immediately after app
         // launch. Skip decoding the user's persisted library in that mode:
         // it can contain large cover payloads and makes launch timing and
@@ -145,6 +155,138 @@ final class LibraryStore: ObservableObject {
     ///    refresh its bookmark + filename and skip the rest.
     @discardableResult
     func importBook(from url: URL) throws -> BookEntity {
+        // Compatibility for synchronous, non-batch callers. Batch UI imports use
+        // importBooks(from:) so waiting for this serial worker never blocks UI.
+        let prepared = try Self.importQueue.sync {
+            try Self.prepareImport(from: url, fileManager: fileManager, importDirectory: importDirectory)
+        }
+        let baseline = books.first(where: { $0.id == prepared.book.id })
+        let book = Self.mergeImport(prepared, baseline: baseline, into: &books)
+        persist()
+        // This legacy blocking API retains its immediate-reload contract.
+        try flushPersistenceSync()
+        return book
+    }
+
+    struct ImportOutcome: Sendable {
+        let url: URL
+        let book: BookEntity?
+        let error: String?
+    }
+
+    /// Immutable references to Foundation's thread-safe IO services. Only these
+    /// resources cross the serial import worker; the mutable store never does.
+    /// Injected subclasses must synchronize any additional mutable test state.
+    struct ImportResources: @unchecked Sendable {
+        let fileManager: FileManager
+        let defaults: UserDefaults?
+    }
+
+    private struct PreparedImport: Sendable {
+        let book: BookEntity
+        let metadataTitle: String?
+        let metadataAuthor: String?
+    }
+
+    /// A batch performs one preparation at a time, then merges and persists once.
+    /// Only value snapshots cross the worker boundary, never this mutable store.
+    @MainActor
+    func importBooks(from urls: [URL]) async -> [ImportOutcome] {
+        let baseline = books.reduce(into: [String: BookEntity]()) { $0[$1.id] = $1 }
+        let removals = removalGenerations
+        let resources = ImportResources(fileManager: fileManager, defaults: nil)
+        let directory = importDirectory
+        var prepared: [(URL, Result<PreparedImport, Error>)] = []
+        for url in urls {
+            do {
+                try Task.checkCancellation()
+                let value = try await Self.performImportIO {
+                    try Self.prepareImport(from: url, fileManager: resources.fileManager, importDirectory: directory)
+                }
+                prepared.append((url, .success(value)))
+            } catch {
+                prepared.append((url, .failure(error)))
+            }
+        }
+        var changed = false
+        var mergedBooks = books
+        let outcomes = prepared.map { url, result -> ImportOutcome in
+            switch result {
+            case .success(let value):
+                guard !Task.isCancelled, removalGenerations[value.book.id] == removals[value.book.id] else {
+                    return ImportOutcome(url: url, book: nil, error: "Import was cancelled or the book was removed during preparation.")
+                }
+                let book = Self.mergeImport(value, baseline: baseline[value.book.id], into: &mergedBooks)
+                changed = true
+                return ImportOutcome(url: url, book: book, error: nil)
+            case .failure(let error):
+                return ImportOutcome(url: url, book: nil, error: error.localizedDescription)
+            }
+        }
+        if changed {
+            let previousBooks = books
+            books = mergedBooks
+            persist()
+            do {
+                // Inbox callers may delete their source only after this task
+                // completes with a published and committed durable index entry.
+                try await flushPersistence()
+            } catch {
+                let publishedBooks = mergedBooks
+                var rolledBackBooks = books
+                var didRollback = false
+                let importedIDs = Set(outcomes.compactMap { $0.book?.id })
+                for bookID in importedIDs {
+                    guard let published = publishedBooks.first(where: { $0.id == bookID }),
+                          let currentIndex = rolledBackBooks.firstIndex(where: { $0.id == bookID }),
+                          rolledBackBooks[currentIndex] == published else {
+                        continue
+                    }
+                    if let previous = previousBooks.first(where: { $0.id == bookID }) {
+                        rolledBackBooks[currentIndex] = previous
+                    } else {
+                        rolledBackBooks.remove(at: currentIndex)
+                    }
+                    didRollback = true
+                }
+                if didRollback {
+                    books = rolledBackBooks
+                    persist()
+                }
+                return outcomes.map { outcome in
+                    guard outcome.book != nil else { return outcome }
+                    return ImportOutcome(url: outcome.url, book: nil,
+                                         error: "Library persistence failed: \(error.localizedDescription)")
+                }
+            }
+        }
+        return outcomes
+    }
+
+    @MainActor
+    func importBookAsync(from url: URL) async throws -> BookEntity {
+        let outcomes = await importBooks(from: [url])
+        guard let outcome = outcomes.first, let book = outcome.book else {
+            throw NSError(domain: "LibraryStore", code: 6,
+                          userInfo: [NSLocalizedDescriptionKey: outcomes.first?.error ?? "Book import failed."])
+        }
+        return book
+    }
+
+    /// Also used by inbox/Document callers for enumeration and source cleanup.
+    static func performImportIO<Value: Sendable>(
+        _ operation: @escaping @Sendable () throws -> Value
+    ) async throws -> Value {
+        try await withCheckedThrowingContinuation { continuation in
+            importQueue.async {
+                continuation.resume(with: Result { try operation() })
+            }
+        }
+    }
+
+    private static func prepareImport(
+        from url: URL, fileManager: FileManager, importDirectory: URL?
+    ) throws -> PreparedImport {
         guard url.isFileURL, !url.path.isEmpty else {
             throw NSError(
                 domain: "LibraryStore",
@@ -163,7 +305,7 @@ final class LibraryStore: ObservableObject {
         // Apple Books can expose a book as an expanded `.epub` directory.
         // Materialise it while the security scope is active, then let the
         // regular import path own a normal archive just like any other EPUB.
-        let materialized = try EpubDirectoryArchiver.materializeIfNeeded(at: url)
+        let materialized = try EpubDirectoryArchiver.materializeIfNeeded(at: url, fileManager: fileManager)
         defer {
             if materialized.isTemporary {
                 try? fileManager.removeItem(at: materialized.url)
@@ -217,7 +359,10 @@ final class LibraryStore: ObservableObject {
         let libraryURL = try Self.persistImportedFileForLibrary(
             originalURL: importURL,
             id: id,
-            fileType: fileType
+            fileType: fileType,
+            fileManager: fileManager,
+            baseDirectory: importDirectory,
+            expectedContentHash: id
         )
 
         // The bookmark points at the durable app-owned copy rather than the
@@ -277,22 +422,6 @@ final class LibraryStore: ObservableObject {
             resolvedCover = Self.downsampleCover(payload.cover)
         }
 
-        if let existingIndex = books.firstIndex(where: { $0.id == id }) {
-            var existing = books[existingIndex]
-            existing.bookmark = bookmark
-            existing.lastOpenedAt = Date()
-            existing.fileType = fileType
-            if let t = resolvedTitle, !t.isEmpty { existing.title = t }
-            if let a = resolvedAuthor, !a.isEmpty { existing.author = a }
-            else if Self.isParserErrorText(existing.author ?? "") { existing.author = nil }
-            if existing.coverPNG == nil, let cover = resolvedCover {
-                existing.coverPNG = cover
-            }
-            books[existingIndex] = existing
-            persist()
-            return existing
-        }
-
         let book = BookEntity(
             id: id,
             title: resolvedTitle ?? Self.titleFromFilename(filename),
@@ -300,22 +429,41 @@ final class LibraryStore: ObservableObject {
             bookmark: bookmark,
             displayFilename: filename,
             addedAt: Date(),
-            lastOpenedAt: nil,
-            lastChapterIndex: nil,
-            lastPositionSeconds: nil,
             coverPNG: resolvedCover,
-            lastJobId: nil,
-            cachedOffline: false,
             fileType: fileType
         )
-        books.append(book)
-        persist()
-        return book
+        return PreparedImport(book: book, metadataTitle: resolvedTitle, metadataAuthor: resolvedAuthor)
+    }
+
+    private static func mergeImport(_ prepared: PreparedImport, baseline: BookEntity?, into books: inout [BookEntity]) -> BookEntity {
+        let incoming = prepared.book
+        if let existingIndex = books.firstIndex(where: { $0.id == incoming.id }) {
+            var existing = books[existingIndex]
+            existing.bookmark = incoming.bookmark
+            existing.fileType = incoming.fileType
+            if existing.lastOpenedAt == baseline?.lastOpenedAt { existing.lastOpenedAt = Date() }
+            if existing.title == baseline?.title, let title = prepared.metadataTitle, !title.isEmpty {
+                existing.title = title
+            }
+            if existing.author == baseline?.author {
+                if let author = prepared.metadataAuthor, !author.isEmpty { existing.author = author }
+                else if Self.isParserErrorText(existing.author ?? "") { existing.author = nil }
+            }
+            if existing.coverPNG == baseline?.coverPNG, existing.coverPNG == nil, let cover = incoming.coverPNG {
+                existing.coverPNG = cover
+            }
+            books[existingIndex] = existing
+            return existing
+        }
+        books.append(incoming)
+        return incoming
     }
 
     /// Remove a book from the library. Does NOT delete the underlying
     /// file (the user may want it back).
     func remove(id: String) {
+        removalGenerations[id, default: 0] += 1
+        ReaderProgressStore.evict(bookId: id)
         books.removeAll { $0.id == id }
         persist()
     }
@@ -435,7 +583,7 @@ final class LibraryStore: ObservableObject {
         stale = resolved.stale
         #endif
         #if os(macOS)
-        if !Self.isAppOwnedLibraryURL(url) {
+        if !Self.isAppOwnedLibraryURL(url, baseDirectory: importDirectory) {
             // Migrate books imported by older builds. Keep the security scope
             // alive only for the copy operation, then use the internal copy
             // for every subsequent open.
@@ -444,7 +592,9 @@ final class LibraryStore: ObservableObject {
             let durableURL = try Self.persistImportedFileForLibrary(
                 originalURL: url,
                 id: books[i].id,
-                fileType: books[i].fileType
+                fileType: books[i].fileType,
+                fileManager: fileManager,
+                baseDirectory: importDirectory
             )
             books[i].bookmark = try Self.makeBookmark(for: durableURL)
             url = durableURL
@@ -509,13 +659,15 @@ final class LibraryStore: ObservableObject {
                           userInfo: [NSLocalizedDescriptionKey: "Book was removed from library while opening"])
         }
         #if os(macOS)
-        if !Self.isAppOwnedLibraryURL(url) {
+        if !Self.isAppOwnedLibraryURL(url, baseDirectory: importDirectory) {
             let started = url.startAccessingSecurityScopedResource()
             defer { if started { url.stopAccessingSecurityScopedResource() } }
             let durableURL = try Self.persistImportedFileForLibrary(
                 originalURL: url,
                 id: books[currentIndex].id,
-                fileType: books[currentIndex].fileType
+                fileType: books[currentIndex].fileType,
+                fileManager: fileManager,
+                baseDirectory: importDirectory
             )
             books[currentIndex].bookmark = try Self.makeBookmark(for: durableURL)
             url = durableURL
@@ -632,20 +784,19 @@ final class LibraryStore: ObservableObject {
     // MARK: - Persistence
 
     private func persist() {
-        let snapshot = books
-        do {
-            let data = try JSONEncoder().encode(snapshot)
-            defaults.set(data, forKey: defaultsKey)
-        } catch {
-            NSLog("Library persistence failed: %@", error.localizedDescription)
-        }
-        persistenceQueue.async(execute: DispatchWorkItem {
-            // Widget refresh is deliberately off the mutation path; the
-            // small UserDefaults index above is committed synchronously so a
-            // new LibraryStore observes an import immediately.
-            _ = snapshot
-            WidgetDataSync.reloadLibraryWidgets()
-        })
+        indexPersistence.enqueue(books)
+    }
+
+    /// Flushes submissions preceding this call without blocking the main actor.
+    /// UserDefaults acceptance is not an fsync or power-loss durability guarantee.
+    func flushPersistence() async throws {
+        try await indexPersistence.flush()
+    }
+
+    /// For synchronous compatibility callers/tests or a termination hook only.
+    /// Interactive mutation paths must never wait on this barrier.
+    func flushPersistenceSync() throws {
+        try indexPersistence.flushSync()
     }
 
     // MARK: - Durable import storage
@@ -655,7 +806,8 @@ final class LibraryStore: ObservableObject {
         id: String,
         fileType: BookFileType,
         fileManager: FileManager = .default,
-        baseDirectory: URL? = nil
+        baseDirectory: URL? = nil,
+        expectedContentHash: String? = nil
     ) throws -> URL {
         let root = try importedBooksDirectory(fileManager: fileManager, baseDirectory: baseDirectory)
         let bookDirectory = root.appendingPathComponent(id, isDirectory: true)
@@ -664,11 +816,37 @@ final class LibraryStore: ObservableObject {
         let fallbackName = "Book.\(fileType.rawValue)"
         let fileName = originalURL.lastPathComponent.isEmpty ? fallbackName : originalURL.lastPathComponent
         let destination = bookDirectory.appendingPathComponent(fileName, isDirectory: false)
-        if fileManager.fileExists(atPath: destination.path) {
-            try fileManager.removeItem(at: destination)
+        if originalURL.resolvingSymlinksInPath().standardizedFileURL.path
+            == destination.resolvingSymlinksInPath().standardizedFileURL.path {
+            if let expectedContentHash, try Self.contentHash(of: destination) != expectedContentHash {
+                throw Self.importContentChangedError()
+            }
+            return destination
         }
-        try fileManager.copyItem(at: originalURL, to: destination)
+        // Reserve an owned sibling directory on the same volume. A failed or
+        // partial copy cannot damage the previously imported book.
+        let staging = bookDirectory.appendingPathComponent(".import-\(UUID().uuidString)", isDirectory: true)
+        let reserved = staging.path.withCString { mkdir($0, mode_t(0o700)) }
+        guard reserved == 0 else {
+            throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno))
+        }
+        defer { try? fileManager.removeItem(at: staging) }
+        let stagedFile = staging.appendingPathComponent(fileName)
+        try fileManager.copyItem(at: originalURL, to: stagedFile)
+        if let expectedContentHash, try Self.contentHash(of: stagedFile) != expectedContentHash {
+            throw Self.importContentChangedError()
+        }
+        if fileManager.fileExists(atPath: destination.path) {
+            _ = try fileManager.replaceItemAt(destination, withItemAt: stagedFile)
+        } else {
+            try fileManager.moveItem(at: stagedFile, to: destination)
+        }
         return destination
+    }
+
+    private static func importContentChangedError() -> NSError {
+        NSError(domain: "LibraryStore", code: 7,
+                userInfo: [NSLocalizedDescriptionKey: "The selected book content changed during import."])
     }
 
     private static func importedBooksDirectory(
@@ -690,10 +868,10 @@ final class LibraryStore: ObservableObject {
     }
 
     #if os(macOS)
-    private static func isAppOwnedLibraryURL(_ url: URL) -> Bool {
+    private static func isAppOwnedLibraryURL(_ url: URL, baseDirectory: URL? = nil) -> Bool {
         guard let root = try? importedBooksDirectory(
             fileManager: .default,
-            baseDirectory: nil
+            baseDirectory: baseDirectory
         ) else {
             return false
         }
@@ -865,6 +1043,54 @@ final class LibraryStore: ObservableObject {
             properties: [.compressionFactor: coverJPEGQuality]
         ) ?? data
         #endif
+    }
+}
+
+/// Queue-confined writer. Foundation UserDefaults is thread-safe; mutable error
+/// state is accessed only on the serial queue. No LibraryStore reference crosses
+/// this boundary, and queued snapshots are immutable Sendable values.
+private final class LibraryIndexPersistence: @unchecked Sendable {
+    private let queue = DispatchQueue(label: "com.epubtomp3.library-index", qos: .utility,
+                                      autoreleaseFrequency: .workItem)
+    private let defaults: UserDefaults
+    private let key: String
+    private let encoder: @Sendable ([BookEntity]) throws -> Data
+    private var lastFailure: Error?
+
+    init(defaults: UserDefaults, key: String,
+         encoder: @escaping @Sendable ([BookEntity]) throws -> Data) {
+        self.defaults = defaults
+        self.key = key
+        self.encoder = encoder
+    }
+
+    func enqueue(_ snapshot: [BookEntity]) {
+        queue.async { [self] in
+            do {
+                let data = try encoder(snapshot)
+                defaults.set(data, forKey: key)
+                lastFailure = nil
+                WidgetDataSync.reloadLibraryWidgets()
+            } catch {
+                lastFailure = error
+                NSLog("Library persistence failed: %@", error.localizedDescription)
+            }
+        }
+    }
+
+    func flush() async throws {
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            queue.async { [self] in
+                if let lastFailure { continuation.resume(throwing: lastFailure) }
+                else { continuation.resume(returning: ()) }
+            }
+        }
+    }
+
+    func flushSync() throws {
+        try queue.sync {
+            if let lastFailure { throw lastFailure }
+        }
     }
 }
 

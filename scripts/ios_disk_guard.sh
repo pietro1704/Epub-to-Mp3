@@ -14,6 +14,7 @@ MAX_TOTAL_MB="${IOS_DISK_GUARD_MAX_TOTAL_MB:-4096}"
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DERIVED_DATA_ROOT="${IOS_DISK_GUARD_DERIVED_DATA_ROOT:-$HOME/Library/Developer/Xcode/DerivedData}"
 IOS_BUILD_DIR="${IOS_DISK_GUARD_IOS_BUILD_DIR:-$REPO_ROOT/ios/EpubToMp3}"
+ACTIVE_BUILD_DIR="${IOS_DISK_GUARD_ACTIVE_BUILD_DIR:-}"
 
 # Removes direct subdirectories of $1 matching glob $2 that are older than
 # MAX_AGE_DAYS.
@@ -22,6 +23,7 @@ prune_by_age() {
   [[ -d "$parent" ]] || return 0
   find "$parent" -mindepth 1 -maxdepth 1 -type d -name "$glob" -mtime "+${MAX_AGE_DAYS}" -print0 \
     | while IFS= read -r -d '' old; do
+        [[ -z "$ACTIVE_BUILD_DIR" || "$old" != "$ACTIVE_BUILD_DIR" ]] || continue
         echo "ios_disk_guard: removing (age > ${MAX_AGE_DAYS}d): $old"
         rm -rf "$old"
       done
@@ -63,6 +65,7 @@ prune_by_total_size() {
   while IFS= read -r d; do
     (( total_mb <= MAX_TOTAL_MB )) && break
     [[ -d "$d" ]] || continue
+    [[ -z "$ACTIVE_BUILD_DIR" || "$d" != "$ACTIVE_BUILD_DIR" ]] || continue
     local sz_mb=$(( $(du -sk "$d" 2>/dev/null | cut -f1) / 1024 ))
     echo "ios_disk_guard: removing (size cap): $d"
     rm -rf "$d"

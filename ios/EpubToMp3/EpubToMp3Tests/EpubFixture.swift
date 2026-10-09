@@ -68,6 +68,25 @@ enum EpubFixture {
         return url
     }
 
+    static func createWithChapters(_ bodies: [String]) throws -> URL {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("fixture-\(UUID().uuidString).epub")
+        let items = bodies.indices.map { "<item id=\"ch\($0)\" href=\"ch\($0).xhtml\" media-type=\"application/xhtml+xml\"/>" }.joined()
+        let spine = bodies.indices.map { "<itemref idref=\"ch\($0)\"/>" }.joined()
+        let opf = """
+        <package xmlns="http://www.idpf.org/2007/opf" version="3.0">
+        <metadata xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:title>Progressive fixture</dc:title></metadata>
+        <manifest>\(items)</manifest><spine>\(spine)</spine></package>
+        """
+        var members: [Member] = [.stored("mimetype", Data("application/epub+zip".utf8)),
+            .deflated("META-INF/container.xml", containerXML),
+            .deflated("OEBPS/content.opf", Data(opf.utf8))]
+        for (index, body) in bodies.enumerated() {
+            members.append(.deflated("OEBPS/ch\(index).xhtml", Data("<html xmlns=\"http://www.w3.org/1999/xhtml\"><body><p>\(body)</p></body></html>".utf8)))
+        }
+        try buildArchive(members: members).write(to: url)
+        return url
+    }
+
     /// Build an EPUB that includes one short chapter HTML in the spine
     /// so end-to-end conversion tests (`PythonBridge.convertEpub`) have
     /// real text to synthesise. The plain `create()` path keeps the
@@ -122,7 +141,7 @@ enum EpubFixture {
             <meta name="cover" content="cover-img"/>
           </metadata>
           <manifest>
-            <item id="cover-img" href="cover.png" media-type="image/png" \
+            <item id="cover-img" href="images/cover.png" media-type="image/png" \
         properties="cover-image"/>
             <item id="ch1" href="text/chapter1.xhtml" \
         media-type="application/xhtml+xml"/>

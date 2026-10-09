@@ -414,14 +414,14 @@ final class MiniPlayerBarLayoutTests: XCTestCase {
 
     @MainActor
     func testOverlayMaximumHeightPreservesCompactControlsAndLargeSafeArea() {
-        XCTAssertEqual(MiniPlayerLayoutMetrics.contentHeight, 92, accuracy: 0.5)
+        XCTAssertEqual(MiniPlayerLayoutMetrics.contentHeight, 112, accuracy: 0.5)
         XCTAssertEqual(MiniPlayerLayoutMetrics.maximumBottomSafeAreaInset, 44, accuracy: 0.5)
         XCTAssertEqual(
             MiniPlayerLayoutMetrics.maximumOverlayHeight,
             MiniPlayerLayoutMetrics.contentHeight + MiniPlayerLayoutMetrics.maximumBottomSafeAreaInset,
             accuracy: 0.5
         )
-        XCTAssertEqual(MiniPlayerLayoutMetrics.maximumOverlayHeight, 136, accuracy: 0.5)
+        XCTAssertEqual(MiniPlayerLayoutMetrics.maximumOverlayHeight, 156, accuracy: 0.5)
     }
 
     private func button(in view: UIView, identifier: String) -> UIButton? {

@@ -14,6 +14,8 @@ final class BookDetailScreenController: UIViewController {
     private let settings: AppSettings
     private let player: AudioPlayer
     private let playerPresentation: PlayerPresentation
+    private let conversionExecutor: RustConversionCoordinator.Executor
+    private let bookFileOpener: @MainActor (String) async throws -> URL
 
     private let coverView = UIImageView()
     private let titleLabel = UILabel()
@@ -29,13 +31,19 @@ final class BookDetailScreenController: UIViewController {
         library: LibraryStore,
         settings: AppSettings,
         player: AudioPlayer,
-        playerPresentation: PlayerPresentation
+        playerPresentation: PlayerPresentation,
+        conversionExecutor: @escaping RustConversionCoordinator.Executor = RustConversionCoordinator.execute,
+        bookFileOpener: (@MainActor (String) async throws -> URL)? = nil
     ) {
         self.book = book
         self.library = library
         self.settings = settings
         self.player = player
         self.playerPresentation = playerPresentation
+        self.conversionExecutor = conversionExecutor
+        self.bookFileOpener = bookFileOpener ?? { id in
+            try await library.openBookFileAsync(id: id)
+        }
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -77,9 +85,11 @@ final class BookDetailScreenController: UIViewController {
         readButton.addTarget(self, action: #selector(tapRead), for: .touchUpInside)
 
         listenButton.configuration = .bordered()
+        listenButton.accessibilityIdentifier = "bookDetail.listen"
         listenButton.addTarget(self, action: #selector(tapListen), for: .touchUpInside)
 
         downloadButton.configuration = .bordered()
+        downloadButton.accessibilityIdentifier = "bookDetail.download"
         downloadButton.setTitle(L10n.string("bookDetail.download"), for: .normal)
         downloadButton.addTarget(self, action: #selector(tapDownload), for: .touchUpInside)
 
@@ -153,14 +163,17 @@ final class BookDetailScreenController: UIViewController {
             bookID: book.id,
             chapterIndex: priorityChapterIndex
         )
-        guard let url = try? library.openBookFile(id: book.id) else { return }
+        let bookID = book.id
         Task { [weak self] in
             guard let self else { return }
             do {
-                let result = try await RustConversionCoordinator().convert(bookURL: url)
+                let url = try await self.bookFileOpener(bookID)
+                let result = try await self.conversionExecutor(
+                    url, UUID().uuidString, -1, -1, nil, nil
+                )
                 let snapshot = try result.snapshot()
                 self.book.lastJobId = result.jobID
-                self.library.recordConversion(jobId: result.jobID, for: self.book.id)
+                self.library.recordConversion(jobId: result.jobID, for: bookID)
                 await MainActor.run {
                     self.player.setSnapshot(snapshot)
                     self.player.play(snapshot: snapshot, restoreAutoplay: true)
@@ -188,18 +201,17 @@ final class BookDetailScreenController: UIViewController {
     }
 
     @objc private func tapDownload() {
-        if let url = try? library.openBookFile(id: book.id) {
-            let bookID = book.id
-            Task { [weak self] in
-                guard let self else { return }
+        let bookID = book.id
+        Task { [weak self] in
+            guard let self else { return }
+            if let url = try? await self.bookFileOpener(bookID) {
                 do {
-                    let result = try await RustConversionCoordinator().convert(bookURL: url)
-                    self.book.lastJobId = result.jobID
+                    let result = try await self.conversionExecutor(url, UUID().uuidString, -1, -1, nil, nil)
+                    _ = try result.snapshot()
+                    if self.book.id == bookID { self.book.lastJobId = result.jobID }
                     self.library.recordConversion(jobId: result.jobID, for: bookID)
-                    let snapshot = try result.snapshot()
-                    self.player.setSnapshot(snapshot)
-                    self.player.play(snapshot: snapshot, restoreAutoplay: false)
                     self.render()
+                    return
                 } catch {
                     let alert = UIAlertController(
                         title: L10n.string("bookDetail.download"),
@@ -209,9 +221,13 @@ final class BookDetailScreenController: UIViewController {
                     alert.addAction(UIAlertAction(title: L10n.string("common.ok"), style: .default))
                     self.present(alert, animated: true)
                 }
+                return
             }
-            return
+            self.downloadExistingJob()
         }
+    }
+
+    private func downloadExistingJob() {
         guard let jobId = book.lastJobId else {
             let alert = UIAlertController(
                 title: L10n.string("bookDetail.download"),

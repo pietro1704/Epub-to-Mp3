@@ -14,6 +14,7 @@ final class MacBookDetailViewController: NSViewController {
     private let settings: AppSettings
     private let player: AudioPlayer
     private let playerPresentation: PlayerPresentation
+    private let conversionExecutor: RustConversionCoordinator.Executor
     private let onRead: (String) -> Void
     private let onShowJobs: () -> Void
     private let jobViewModel = JobDetailViewModel()
@@ -41,7 +42,8 @@ final class MacBookDetailViewController: NSViewController {
         player: AudioPlayer,
         playerPresentation: PlayerPresentation,
         onRead: @escaping (String) -> Void,
-        onShowJobs: @escaping () -> Void
+        onShowJobs: @escaping () -> Void,
+        conversionExecutor: @escaping RustConversionCoordinator.Executor = RustConversionCoordinator.execute
     ) {
         self.book = book
         self.library = library
@@ -50,6 +52,7 @@ final class MacBookDetailViewController: NSViewController {
         self.playerPresentation = playerPresentation
         self.onRead = onRead
         self.onShowJobs = onShowJobs
+        self.conversionExecutor = conversionExecutor
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -93,8 +96,8 @@ final class MacBookDetailViewController: NSViewController {
             )
         }
         jobViewModel.onStreamChunk = { [weak self] data, chapterIndex, segmentIndex, publication, receipt in
-            guard let self, let generation = self.streamDeliveryGeneration else { return }
-            self.player.enqueueRemoteSegment(
+            guard let self, let generation = self.streamDeliveryGeneration else { return false }
+            return await self.player.enqueueRemoteSegmentAsync(
                 data: data, jobID: self.jobViewModel.snapshot?.jobId ?? "",
                 generation: generation, chapterIndex: chapterIndex,
                 segmentIndex: segmentIndex, publication: publication, receipt: receipt
@@ -276,12 +279,9 @@ final class MacBookDetailViewController: NSViewController {
                 let chapterStart = autoPlay
                     ? Int32(exactly: ReaderPlaybackPriorityChapter.index(bookID: bookID)) ?? 0
                     : -1
-                let result = try await RustConversionCoordinator().convert(
-                    bookURL: url,
-                    jobID: jobID,
-                    chapterStart: chapterStart,
-                    chapterEnd: -1,
-                    onProgress: { [weak self] event in
+                let result = try await conversionExecutor(
+                    url, jobID, chapterStart, -1,
+                    { [weak self] event in
                         guard let self, self.localConversionGeneration == jobID else { return }
                         if event.message.hasPrefix("converting chapter"),
                            let chapterIndex = event.chapterIndex,
@@ -297,7 +297,7 @@ final class MacBookDetailViewController: NSViewController {
                             self.progressLabel.stringValue = L10n.string("bookDetail.progressPercent", percent)
                         }
                     },
-                    onChapterCompleted: { [weak self] event in
+                    { [weak self] event in
                         guard let self, self.localConversionGeneration == jobID else { return }
                         let firstPlayableChapter = self.localStreamChapters.isEmpty
                         let chapter = event.playableChapter
@@ -324,9 +324,6 @@ final class MacBookDetailViewController: NSViewController {
                 let snapshot = try finalizeLocalConversion(result)
                 if autoPlay {
                     player.finishStreaming(snapshot: snapshot)
-                } else {
-                    player.stop()
-                    player.play(snapshot: snapshot, restoreAutoplay: false)
                 }
             } catch {
                 guard !Task.isCancelled else { return }

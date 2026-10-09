@@ -13,7 +13,7 @@ final class PlayerScreenController: UIViewController {
     private let artworkView = UIImageView()
     private let titleLabel = UILabel()
     private let chapterLabel = UILabel()
-    private let slider = UISlider()
+    private let slider = CompactSlider()
     private let elapsedLabel = UILabel()
     private let durationLabel = UILabel()
     private let previousButton = UIButton(type: .system)
@@ -91,6 +91,8 @@ final class PlayerScreenController: UIViewController {
         slider.translatesAutoresizingMaskIntoConstraints = false
         slider.addTarget(self, action: #selector(sliderChanged), for: .valueChanged)
         slider.addTarget(self, action: #selector(sliderCommit), for: [.touchUpInside, .touchUpOutside])
+        slider.addTarget(self, action: #selector(sliderCommit), for: [.touchCancel, .editingDidEnd])
+        slider.accessibilityLabel = L10n.string("player.playbackPosition")
 
         [elapsedLabel, durationLabel].forEach {
             $0.font = .monospacedDigitSystemFont(ofSize: 12, weight: .regular)

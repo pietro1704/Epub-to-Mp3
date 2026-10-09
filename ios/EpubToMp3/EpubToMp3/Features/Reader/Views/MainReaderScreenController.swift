@@ -9,6 +9,12 @@ final class MainReaderScreenController: UIViewController {
     private let player: AudioPlayer
     private let playerPresentation: PlayerPresentation
     private let bookmarkStore: BookmarkStore
+    private let sessionDefaults: UserDefaults
+    private let conversionExecutor: RustConversionCoordinator.Executor
+    private var listeningJobID: String?
+    private var listeningBookID: String?
+    private var listeningChapters: [JobSnapshot.Chapter] = []
+    private var hasDeliveredListeningChapter = false
     private var onBrowseLibrary: (() -> Void)?
     var onReaderChromeVisibilityChanged: ((Bool) -> Void)?
     var onReaderLoadingChanged: ((Bool) -> Void)?
@@ -32,7 +38,7 @@ final class MainReaderScreenController: UIViewController {
     private let readerNavigationItem = UINavigationItem()
 
     private var currentBook: BookEntity? {
-        guard let id = UserDefaults.standard.string(forKey: ReaderSessionState.currentlyReadingBookIDKey),
+        guard let id = sessionDefaults.string(forKey: ReaderSessionState.currentlyReadingBookIDKey),
               !id.isEmpty else { return nil }
         return library.books.first(where: { $0.id == id })
     }
@@ -43,7 +49,9 @@ final class MainReaderScreenController: UIViewController {
         player: AudioPlayer,
         playerPresentation: PlayerPresentation,
         bookmarkStore: BookmarkStore,
-        onBrowseLibrary: (() -> Void)?
+        onBrowseLibrary: (() -> Void)?,
+        conversionExecutor: @escaping RustConversionCoordinator.Executor = RustConversionCoordinator.execute,
+        sessionDefaults: UserDefaults = .standard
     ) {
         self.library = library
         self.settings = settings
@@ -51,6 +59,8 @@ final class MainReaderScreenController: UIViewController {
         self.playerPresentation = playerPresentation
         self.bookmarkStore = bookmarkStore
         self.onBrowseLibrary = onBrowseLibrary
+        self.conversionExecutor = conversionExecutor
+        self.sessionDefaults = sessionDefaults
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -422,14 +432,14 @@ final class MainReaderScreenController: UIViewController {
     }
 
     private func autoClearMissingBookIfNeeded() {
-        guard let id = UserDefaults.standard.string(forKey: ReaderSessionState.currentlyReadingBookIDKey),
+        guard let id = sessionDefaults.string(forKey: ReaderSessionState.currentlyReadingBookIDKey),
               !library.books.contains(where: { $0.id == id }) else { return }
-        ReaderSessionState.setCurrentlyReading(bookID: nil)
+        ReaderSessionState.setCurrentlyReading(bookID: nil, defaults: sessionDefaults)
     }
 
     @objc
     private func closeReaderTapped() {
-        ReaderSessionState.setCurrentlyReading(bookID: nil)
+        ReaderSessionState.setCurrentlyReading(bookID: nil, defaults: sessionDefaults)
         onBrowseLibrary?()
     }
 
@@ -459,23 +469,93 @@ final class MainReaderScreenController: UIViewController {
     }
 
     private func startListening(presentsFullPlayer: Bool) {
-        guard let book = currentBook else { return }
-        guard let url = try? library.openBookFile(id: book.id) else { return }
+        guard let book = currentBook, book.fileType.supportsAudioConversion else { return }
+        guard !isLoadingBookContent else { return }
+        guard readerController == nil || readerBookID == book.id else { return }
+        guard listeningJobID == nil || listeningBookID != book.id else { return }
+        let priority = readerController?.currentReaderChapterIndex
+            ?? ReaderPlaybackPriorityChapter.index(bookID: book.id, defaults: sessionDefaults)
+        guard let chapterStart = Int32(exactly: priority), chapterStart >= 0 else { return }
+        let jobID = UUID().uuidString
+        let previousPlayerJob = player.snapshot?.jobId
+        listeningJobID = jobID
+        listeningBookID = book.id
+        listeningChapters = []
+        hasDeliveredListeningChapter = false
         Task { [weak self] in
             guard let self else { return }
-            do {
-                let result = try await RustConversionCoordinator().convert(bookURL: url)
-                let snapshot = try result.snapshot()
-                self.library.recordConversion(jobId: result.jobID, for: book.id)
-                await MainActor.run {
-                    self.player.setSnapshot(snapshot)
-                    self.player.play(snapshot: snapshot, restoreAutoplay: true)
-                    self.player.resume()
-                    if presentsFullPlayer { self.playerPresentation.showFullPlayer() }
+            var installedPending = false
+            defer {
+                if self.listeningJobID == jobID {
+                    self.listeningJobID = nil
+                    self.listeningBookID = nil
                 }
+            }
+            do {
+                let url = try await library.openBookFileAsync(id: book.id)
+                guard listeningJobID == jobID, currentBook?.id == book.id,
+                      player.snapshot?.jobId == previousPlayerJob else { return }
+                let pending = JobSnapshot(jobId: jobID, state: "running", bookTitle: book.resolvedTitle,
+                    bookAuthor: book.author, coverUrl: nil, coverMimeType: nil, engine: nil,
+                    voice: nil, language: nil, progressPercent: 0, chaptersTotal: nil,
+                    chaptersCompleted: 0, chapterProgress: [], outputs: nil, logUrl: nil,
+                    error: nil, lastActivityAt: Date().timeIntervalSince1970)
+                if player.positionSeconds > 1 {
+                    player.pause()
+                    player.persistResumePoint(force: true)
+                }
+                player.stop()
+                player.play(snapshot: pending, startingAt: 0, restoreAutoplay: false)
+                installedPending = true
+                player.isConverting = true
+                player.resume()
+                let result = try await conversionExecutor(url, jobID, chapterStart, -1, nil,
+                    { [weak self] event in
+                        guard let self, self.listeningJobID == jobID,
+                              self.player.snapshot?.jobId == jobID, event.jobId == jobID,
+                              event.chapterIndex >= priority, event.audioPath.isFileURL,
+                              FileManager.default.isReadableFile(atPath: event.audioPath.path) else { return }
+                        guard self.hasDeliveredListeningChapter || self.currentBook?.id == book.id else {
+                            self.player.pause()
+                            return
+                        }
+                        let chapter = event.playableChapter
+                        if let index = self.listeningChapters.firstIndex(where: { $0.index == chapter.index }) {
+                            self.listeningChapters[index] = chapter
+                        } else { self.listeningChapters.append(chapter) }
+                        self.listeningChapters.sort { $0.index < $1.index }
+                        guard self.listeningChapters.contains(where: { $0.index == priority }) else { return }
+                        self.player.updateSnapshot(event.snapshot(chapters: self.listeningChapters))
+                        if !self.hasDeliveredListeningChapter {
+                            self.hasDeliveredListeningChapter = true
+                            if presentsFullPlayer { self.playerPresentation.showFullPlayer() }
+                        }
+                    })
+                let snapshot = try result.snapshot()
+                guard result.jobID == jobID, snapshot.jobId == jobID else {
+                    throw EmbeddedConverterError.conversionFailed("Conversion returned a different listening job.")
+                }
+                let indices = snapshot.playableChapters.map(\.index)
+                guard indices.first == priority, indices == indices.sorted(), Set(indices).count == indices.count else {
+                    throw EmbeddedConverterError.conversionFailed("Conversion did not preserve the requested chapter order.")
+                }
+                self.library.recordConversion(jobId: result.jobID, for: book.id)
+                guard listeningJobID == jobID, player.snapshot?.jobId == jobID else { return }
+                if !hasDeliveredListeningChapter, currentBook?.id != book.id {
+                    player.pause()
+                }
+                player.finishStreaming(snapshot: snapshot)
             } catch let error as StoragePressureError {
+                guard listeningJobID == jobID else { return }
+                guard player.snapshot?.jobId == (installedPending ? jobID : previousPlayerJob) else { return }
+                concludeFailedListening(error, jobID: jobID)
+                guard currentBook?.id == book.id else { return }
                 self.presentStorageManagementAlert(error)
             } catch {
+                guard listeningJobID == jobID else { return }
+                guard player.snapshot?.jobId == (installedPending ? jobID : previousPlayerJob) else { return }
+                concludeFailedListening(error, jobID: jobID)
+                guard currentBook?.id == book.id else { return }
                 let alert = UIAlertController(
                     title: L10n.string("bookDetail.listenStart"),
                     message: error.localizedDescription,
@@ -485,6 +565,19 @@ final class MainReaderScreenController: UIViewController {
                 self.present(alert, animated: true)
             }
         }
+    }
+
+    private func concludeFailedListening(_ error: Error, jobID: String) {
+        guard let current = player.snapshot, current.jobId == jobID else { return }
+        if !hasDeliveredListeningChapter { player.pause() }
+        let failed = JobSnapshot(jobId: current.jobId, state: "failed", bookTitle: current.bookTitle,
+            bookAuthor: current.bookAuthor, coverUrl: current.coverUrl, coverMimeType: current.coverMimeType,
+            engine: current.engine, voice: current.voice, language: current.language,
+            progressPercent: current.progressPercent, chaptersTotal: current.chaptersTotal,
+            chaptersCompleted: current.chaptersCompleted, chapterProgress: current.chapterProgress,
+            outputs: current.outputs, logUrl: current.logUrl, error: error.localizedDescription,
+            lastActivityAt: Date().timeIntervalSince1970)
+        player.finishStreaming(snapshot: failed)
     }
 
     private func presentStorageManagementAlert(_ error: StoragePressureError) {

@@ -9,7 +9,7 @@ import Foundation
 ///
 /// We only decode the fields the iOS UI currently needs. Unknown fields are
 /// ignored thanks to `Codable` default behaviour.
-struct SessionRecord: Codable, Identifiable, Hashable {
+struct SessionRecord: Codable, Identifiable, Hashable, Sendable {
     let timestamp: String
     let bookTitle: String
     let jobId: String?

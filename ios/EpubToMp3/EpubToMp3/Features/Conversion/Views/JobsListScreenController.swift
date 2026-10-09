@@ -122,7 +122,9 @@ final class JobsListScreenController: UIViewController {
         fetchTask = Task { [weak self] in
             guard let self else { return }
             do {
-                let localSessions = try Self.fetchLocalSessions()
+                let root = try Self.localSessionsRoot()
+                let history = try await ConversionHistoryReader.loadEmbeddedManifests(from: root)
+                let localSessions = history.sessions
                 guard !Task.isCancelled else { return }
                 self.sessions = localSessions
                 if localSessions.isEmpty {
@@ -139,54 +141,13 @@ final class JobsListScreenController: UIViewController {
         }
     }
 
-    private static func fetchLocalSessions() throws -> [SessionRecord] {
-        let root = try FileManager.default.url(
+    private static func localSessionsRoot() throws -> URL {
+        try FileManager.default.url(
             for: .applicationSupportDirectory,
             in: .userDomainMask,
             appropriateFor: nil,
             create: true
         ).appendingPathComponent("EpubToMp3/RustConversions", isDirectory: true)
-        guard FileManager.default.fileExists(atPath: root.path) else { return [] }
-
-        let directories = try FileManager.default.contentsOfDirectory(
-            at: root,
-            includingPropertiesForKeys: [.contentModificationDateKey],
-            options: [.skipsHiddenFiles]
-        )
-        var localSessions: [(date: Date, session: SessionRecord)] = []
-        for directory in directories {
-            let manifestURL = directory.appendingPathComponent("manifest.json")
-            guard let data = try? Data(contentsOf: manifestURL),
-                  let envelope = try? JSONDecoder().decode(LocalManifestEnvelope.self, from: data) else { continue }
-            let chapterCount = envelope.manifest.chapters.count
-            guard chapterCount > 0 else { continue }
-            let modifiedAt = (try? directory.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate)
-                ?? .distantPast
-            let session = SessionRecord(
-                timestamp: ISO8601DateFormatter().string(from: modifiedAt),
-                bookTitle: envelope.manifest.title,
-                jobId: envelope.manifest.jobId,
-                engine: "Rust",
-                chaptersConverted: chapterCount,
-                durationSeconds: nil,
-                outcome: "finished",
-                mode: "embedded"
-            )
-            localSessions.append((modifiedAt, session))
-        }
-        return localSessions.sorted { $0.date > $1.date }.map(\.session)
-    }
-
-    private struct LocalManifestEnvelope: Decodable {
-        let manifest: Manifest
-
-        struct Manifest: Decodable {
-            let jobId: String
-            let title: String
-            let chapters: [Chapter]
-        }
-
-        struct Chapter: Decodable {}
     }
 
     private func open(session: SessionRecord) {

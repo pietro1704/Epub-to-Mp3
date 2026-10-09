@@ -1,5 +1,157 @@
 # Hermes ↔ Claude Code Handoff
 
+## Current Codex ↔ Arch contract — 2026-10-08
+
+APP-20261009-35 — Arch-owned model publication blocker (source inspection only).
+In crates/converter-core/src/model_store.rs, install_manifest's non-archive
+branch removes the verified temporary file immediately before renaming it to the
+artifact destination. ONNX/JSON manifest installation therefore cannot publish
+that file. This failure is before moving the old installation; no user models
+were touched during inspection. Existing model_store tests cover empty manifest,
+path traversal/insecure URL rejection and catalog construction, not successful
+non-archive publication. Independent read-only specialist confirmed the finding.
+
+Next on Arch: a deterministic failing test at the real file-promotion seam using
+owned temporary bytes and a valid checksum, then remove the premature deletion
+and close the writer before rename. Assert installed bytes/metadata, no .part
+left, and checksum failure preserves the previous installation. If extracting a
+promotion seam, keep production install_manifest wired to it; source parsing or
+a duplicate test-only implementation is not runtime evidence. Use a controlled
+HTTPS fixture for full-path coverage when available; no production model download
+is needed for the regression. Return exact test output before checking Done.
+Apple runtime packaging still lacks the optional Piper feature; metadata present
+does not prove a runnable model. Installed-model selector/configuration and this
+installer defect are separate gates. No Rust source tests ran locally on this Mac.
+
+Latest 2026-10-09 repeat `8A081C2E` passed 1/0/0 on iOS 16: LOTR 8–9
+252.736 s, Christie 6–7 21.643 s; four valid MP3s, no audio reuse, one LOTR
+transport retry. Full trace starts at 4096/2, grows to 5120/2, then drops
+3840/1 → 2880/1 → 2160/1 → 2048/1 after slow completions. The late retry
+does not explain the initial reduction. Arch: replay the completion trace through
+the real adaptive controller/scheduler with a deterministic fake provider before
+changing policy; test old in-flight completion feedback, sustained degradation,
+and capacity recovery separately. Preserve ordering, cancellation, caps and
+cooldowns. Evidence and acceptance: latest-repeat section of
+`docs/plans/2026-10-09-simulator-real-books-recheck.md`. No local Rust source
+tests or additional synthesis were run for this diagnosis; performance stays open.
+
+2026-10-09 current Apple evidence supersedes the earlier failed Debug benchmark.
+The optimized embedded Rust Simulator run and repeat both passed exactly one
+native benchmark, zero failures/skips, LOTR 8–9 and Christie 6–7 only. Earlier
+conversion: 186.526 s / 5.286 s; four valid MP3s, no audio reuse or rejected chapter
+deliveries. See `docs/plans/2026-10-09-simulator-real-books-recheck.md` for identity,
+artifacts, timings and measurement limits. No causal speedup or phone comparison.
+Swift callbacks preserve literal absolute paths; focused native regressions passed.
+The old unoptimized Debug sample remains useful for Arch's redundant-decode audit;
+preserve corruption validation. Rust source execution stays on Arch except the
+explicit Apple artifact compilation exception.
+
+APP-20261009-25: native Book Detail manual conversion was found to replace the
+player (macOS also stopped it). The focused correction preserves conversion
+history and existing playback; default execution still uses embedded Rust.
+macOS and iOS 16 native tests passed (two each, zero failures/skips), with a
+progressing AVPlayer, the same media item and persisted conversion history.
+Shared FFI/Rust/Flutter code is unchanged.
+Arch: validate equivalent manual-conversion isolation in Flutter; local Flutter
+execution on this Mac remains excluded. Goal item 3 is not globally complete.
+Chapter-first relaunch integration, actual usable-playback readiness and the
+200 ms budget remain open; see the reader opening profile and TODO_APP.md.
+
+APP-20261009-26: iOS main-reader Listen now consumes complete-chapter callbacks
+before conversion completion, preserving priority, pause and player ownership.
+Nine iOS cases have passing evidence across seven + one + one focused executions; shared
+pending-pause regression passed on macOS. Details/failed-run provenance are in
+`docs/plans/2026-10-08-app-quality-performance.md`. No new real-book speed claim.
+Arch: first-segment delivery and native FFI cancellation remain unimplemented by
+this bridge; superseded Rust work can still run despite rejecting stale playback.
+Flutter parity still needs actual execution on Arch; no local Flutter run here.
+
+APP-20261009-33 / APP-20261009-34 — Flutter segmented-playback parity, source review
+only (no Flutter command run on this Mac). In `flutter_app/lib/services/
+audio_player_service.dart`, production `skipForward` / `skipBackward` seek from
+`_player.position` and `_player.duration`; segment mode uses a concatenating
+source and tracks sentence IDs, but does not expose an explicit chapter-clock
+mapping at those commands. Existing `audio_player_service_test.dart` exercises
+only `FakeAudioPlayerService` for skips, so it does not prove behavior with
+actual just_audio items or late segment/chapter endpoints.
+
+Arch: first add focused tests against the production player adapter with short
+local audio fixtures. Verify relative skip across segment boundaries in chapter
+time, chapter start/end clamping, unchanged play/pause intent, and that normal
+single-item chapter behavior is preserved. For APP-34, hold a target beyond the
+currently-known segment duration, deliver final duration/segments later, then
+assert the retained seek resolves or clamps at the confirmed chapter end rather
+than remaining pending forever. Do not synthesize user books; use generated local
+audio only. Report exact focused Flutter command/results and update TODO_APP.md.
+
+APP-20261009-38 — Flutter manual-submit reentrancy, source review only. The
+`ConvertScreen._submit()` path currently checks `_submitting` synchronously
+before invoking the injected starter, and the button is disabled during submit;
+however, `convert_screen_test.dart` has no in-flight duplicate-tap regression.
+Arch: add one widget test using a held `Completer`, attempt a second submission
+while the first is suspended, and assert one starter call plus preserved request
+options/result. Keep the production code unchanged unless that runtime test fails.
+
+APP-20261009-43 — Apple library removal now evicts reader progress from its
+actual persistence suite and is verified on macOS.
+`ReaderProgressStore` persists to `.standard`, whereas `LibraryStore` may use its
+App Group suite; do not route cleanup through the library-index defaults. The
+first test passed with an injected shared suite, but that did not model device
+storage. A corrected `.standard` regression failed before the fix and then passed
+after it: 1 test, 0 failures/skips, while preserving other-book progress and the
+source EPUB. Flutter source review found
+`LibraryStore.remove(id:)` only removes the row, while
+`ResumeStore.saveBookPosition` persists `resume:book:<bookId>:chapter/position`.
+Arch: add a store/widget regression that deleting one library book clears only
+its book-level resume position, preserves another book's state and leaves the
+source EPUB intact. Inspect any job/chapter resume state associated via
+`lastJobId`, but do not delete downloaded audio as part of this correction.
+Report the focused Flutter test result and update APP-20261009-43 before calling
+cross-client removal-state cleanup complete.
+
+`TODO_APP.md` is the shared user-request/status board; root `AGENTS.md`/`CLAUDE.md`
+is authoritative. Codex coordinates Apple changes; Arch coordinates Rust/Flutter.
+Keep iOS, macOS and Flutter behavior synchronized. Claim Done only with relevant
+runtime tests and delivery evidence; record blocked/platform-limited verification.
+Use minimal atomic Gitflow changes, focused tests, and commit/push verified slices.
+No Python/Ruff local execution, osascript or CI/PR monitoring.
+The active quality goal prohibits Simulator; validate natively on the physical
+iPhone only when it is available. Latest `devicectl` query (2026-10-09) reports
+the paired iPhone 16e unavailable. Do not boot or use Simulator. No Xcode GUI or
+CI/PR monitoring. Legacy iOS 15.0 Apple package is downloaded and signed, but
+installation failed: the suggested root installer command was incorrect for this
+destinationless runtime payload; the protected system volume rejected it. CLI
+platform import failed too. Do not repeat that command. iOS 16.0 is the next
+candidate. Direct curl required login, but xcodes 2.1.0 subsequently downloaded
+and installed iOS 16.0 (20A360), simctl Ready. SE second-generation device
+`381DBE17-FFAB-4A2E-B35F-AB9FEC92C14E` now runs authorized guarded tests on
+iOS 16.0. Initial migration's load spike is historical; keep build/boot serialized
+and retain the resource guard. Current app launch and scoped conversions passed.
+APP-20261008-14: user authorized an Apple-only Rust compilation exception here.
+Debug and explicit release-profile `x86_64-apple-ios` artifacts and signed
+SDK-correct packaging are built and verified. Swift Debug can explicitly use the
+optimized Rust Simulator artifact; inspect live Simulator/process state before
+heavy work rather than inferring a running device from this document. Existing
+physical iOS arm64 and macOS x86_64 artifacts cannot be used as substitutes.
+Preserve books, models and listening downloads; serialize heavy jobs.
+This Mac is Apple-only. Flutter/Rust execution belongs to Arch; no Flutter
+test/build/analyze command may run locally here. Return exact verification output
+before the shared task's Flutter checkbox can be marked complete.
+
+Active APP-20261008-01: library grid must show exactly two books per row on all
+three clients. Ownership is split between Apple layout and Flutter layout/tests.
+Flutter patch is ready in `flutter_app/lib/screens/library_screen.dart` and
+`flutter_app/test/library_screen_test.dart`. Arch: run only the widget regression
+`flutter test test/library_screen_test.dart --plain-name 'library grid keeps two columns across phone and wide resize'`.
+No Flutter command was executed on this Mac; Flutter acceptance remains pending.
+Apple grid acceptance passed: 18 physical iPhone tests and one macOS collection
+resize test (zero failures/skips). The overall task remains open for Arch evidence.
+APP-20261008-02: shared Rust quality fixes are delivered; iPhone playback rerun
+passed 35 tests without rebuild, but full-sequence/benchmark/lifecycle gates remain.
+See `docs/plans/2026-10-08-app-quality-performance.md` for exact evidence/limits.
+
+The older prompts/log below are history, not current architecture or permissions.
+
 ## Quick Claude Prompt
 
 Use this when Claude needs a direct kickoff inside this repo:
@@ -1244,3 +1396,27 @@ Release Desktop run 26432885034:
   - `xcrun swiftc -parse ios/EpubToMp3/EpubToMp3/Services/FulltextStore.swift ios/EpubToMp3/EpubToMp3/Views/LibraryView.swift ios/EpubToMp3/EpubToMp3/Views/LibrarySidebar.swift` → clean.
   - No local iOS Simulator/CoreSimulator/device build per slice 41 safety rule.
 - **next recommended targets:** continue the same iOS removal cascade sweep with `AudiobookCacheEviction`, then `WidgetDataSync.recentBooks`, then `ResumeStore` via `BookEntity.lastJobId` reverse lookup.
+
+### 2026-10-09 Codex — APP-20261009-41 Arch handoff (pending)
+
+- **status:** source finding confirmed independently; Rust fix/tests not run on Mac.
+- **owner:** Arch; files `crates/converter-core/src/worker.rs` and focused worker tests.
+- **finding:** selector filtering uses `wanted.iter().any(...)`. A request with one
+  valid selector plus an unknown selector silently converts only the matched
+  chapter. Repeated selectors collapse, and `toc:<id>` can match multiple
+  chapters when identifiers are duplicated. The worker creates cache/output
+  directories before resolving the selection. Apple FFI's current range path
+  generates positional selectors and validates bounds separately; this finding
+  concerns the generic Rust worker contract used by other callers too.
+- **acceptance:** resolve every requested selector against parsed source chapters
+  before creating output/cache paths or invoking synthesis. Each selector must
+  resolve exactly once and selectors must be unique. Keep `None` as full-book
+  conversion; reject empty, unknown, duplicate and ambiguous selections. A valid
+  two-position range still emits exactly those chapters in source order. Tests
+  use a small owned EPUB fixture and deterministic synthesis seam; invalid input
+  asserts error, zero synthesis/callbacks, no job output directory/artifacts, and
+  no audio mutation. Do not add a selector-only helper test as sole proof.
+- **next ask:** implement RED → GREEN on Arch, run the focused converter-core
+  tests only, preserve existing artifacts, then report exact command/result and
+  commit hash so Codex can reconcile the shared board. No local Rust tests or
+  synthesis were run during this handoff.
