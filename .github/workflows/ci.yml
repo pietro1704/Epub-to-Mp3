@@ -116,6 +116,8 @@ jobs:
     name: Rust
     needs: production-packaging-guard
     runs-on: ubuntu-24.04
+    env:
+      MISE_ENABLE_TOOLS: python,rust
     timeout-minutes: 30
     permissions:
       contents: read
@@ -128,6 +130,15 @@ jobs:
         with:
           version: 2026.9.14
           install: false
+      - name: Check Rust toolchain scope
+        run: |
+          mise ls --current --json | python3 -c '
+          import json, sys
+          tools = set(json.load(sys.stdin))
+          if tools != {"python", "rust"}:
+              sys.exit(f"Unexpected Rust CI tools: {sorted(tools)}")
+          print("Rust CI tools: python, rust")
+          '
       - name: Install Rust toolchain
         run: mise install
       - name: Install ONNX Runtime smoke-test library
