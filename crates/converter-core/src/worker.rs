@@ -156,6 +156,11 @@ impl ConversionWorker {
                     .as_ref()
                     .map(|wanted| {
                         wanted.iter().any(|value| {
+                            if let Some(position_selector) = value.strip_prefix("@position:") {
+                                return position_selector
+                                    .parse::<usize>()
+                                    .is_ok_and(|selected| selected == *position);
+                            }
                             value == &chapter.index
                                 || value
                                     .parse::<usize>()

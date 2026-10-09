@@ -103,7 +103,9 @@ fn bounded_chapter_indices(
         ));
     }
     Ok(Some(
-        (start..=last).map(|index| index.to_string()).collect(),
+        (start..=last)
+            .map(|index| format!("@position:{index}"))
+            .collect(),
     ))
 }
 
@@ -1442,6 +1444,14 @@ mod tests {
     use zip::{write::FileOptions, ZipWriter};
 
     #[test]
+    fn ffi_ranges_use_explicit_zero_based_positions() {
+        assert_eq!(
+            bounded_chapter_indices(1, 1, 2).unwrap(),
+            Some(vec!["@position:1".to_owned()])
+        );
+    }
+
+    #[test]
     fn parallel_embedded_conversions_generate_distinct_ids() {
         let ids = std::thread::scope(|scope| {
             let handles: Vec<_> = (0..8)
@@ -1496,15 +1506,19 @@ mod tests {
         assert_eq!(bounded_chapter_indices(-1, 3, 4).unwrap(), None);
         assert_eq!(
             bounded_chapter_indices(2, -1, 4).unwrap(),
-            Some(vec!["2".to_owned()])
+            Some(vec!["@position:2".to_owned()])
         );
         assert_eq!(
             bounded_chapter_indices(3, 1, 4).unwrap(),
-            Some(vec!["3".to_owned()])
+            Some(vec!["@position:3".to_owned()])
         );
         assert_eq!(
             bounded_chapter_indices(1, 3, 4).unwrap(),
-            Some(vec!["1".to_owned(), "2".to_owned(), "3".to_owned()])
+            Some(vec![
+                "@position:1".to_owned(),
+                "@position:2".to_owned(),
+                "@position:3".to_owned()
+            ])
         );
     }
 
