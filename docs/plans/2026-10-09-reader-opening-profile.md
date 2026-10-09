@@ -108,3 +108,32 @@ already handed to the archive actor may still commit; cancellation is not a
 transactional rollback. The unchanged opening baseline remains LOTR 363.818 ms /
 Christie 151.933 ms. Rust worker cancellation, iOS presentation parity, measured
 hash/decode costs and the full 200 ms acceptance remain open.
+
+## Isolated route cost measurement
+
+APP-20261009-30 added an opt-in native test comparing the actual projection store
+read (both SHA passes + archive read/decode) against binary catalog decode and a
+separate file-read-plus-decode path on a detached worker. The original hash-checked
+LOTR/Christie EPUBs were parsed only for setup; chapter ordinals 8/6 and isolated
+temporary source/archives were used. No synthesis or modifications to originals.
+Complete payload/chapter/title/author/TOC equality and source-byte preservation
+were asserted. Three bounded, alternating samples per route; OS caches not flushed.
+
+Executed native macOS Debug test: one passed, zero failed/skipped, in
+`.reports/mobile-audio/reader-relaunch-7E788A03-052D-4427-83E0-DBEA08AF3DE8/projection.xcresult`.
+Permanent attachment: `native-projection-validation-versus-catalog-decode.json`,
+exported in that report's attachments directory. The JSON records individual
+samples, source SHA256, ordinal, binary byte count, platform/OS and explicit limits.
+
+| Book | Binary bytes | Projection read median | Decode-only median | File read+decode median |
+| --- | --- | --- | --- | --- |
+| LOTR | 26535207 | 188.377 ms | 118.920 ms | 130.781 ms |
+| Christie | 2051490 | 15.822 ms | 11.613 ms | 12.877 ms |
+
+This disproves treating the current source-bound projection as a cheaper isolated
+read path on this host. It does not separate SHA CPU cost from archive decode, prove
+concurrent-route contention or include first-window/layout/progress/playback controls.
+Three samples are diagnostic, not statistical before/after proof. No production
+behavior changed; do not weaken integrity or mark the 200 ms gate complete.
+Next work must address the validation/storage design or measured presentation cost,
+not blindly replicate the expensive projection race in the iOS adapter.

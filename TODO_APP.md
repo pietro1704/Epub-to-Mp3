@@ -9,6 +9,19 @@ this board and `handoff.md` before crossing ownership or changing shared contrac
 
 ## Active requests — 2026-10-08
 
+- [x] **APP-20261009-30 — Measure projection validation versus catalog decode.** Verified measurement.
+  Use literal/hash-checked LOTR/Christie inputs and chapter 8/6, without synthesis.
+  Compare production projection reads (both SHA passes included) with complete
+  binary payload decoding, three bounded samples each in isolated temporary
+  storage. Preserve source payload/fidelity; permanent native evidence required.
+  Isolated timings are not first-window latency or proof of the 200 ms budget.
+  One native test passed, zero skips/failures (`reader-relaunch-7E788A03...`).
+  Medians: LOTR projection 188.377 ms, decode 118.920 ms, read+decode 130.781 ms;
+  Christie 15.822/11.613/12.877 ms. Attachment includes literal source SHA256,
+  chapter, byte count, platform/OS, individual samples and measurement limits.
+  Projection is not the cheaper isolated route. No production optimization or
+  relaxed SHA validation delivered; APP21/200 ms/iOS parity remain open.
+
 - [x] **APP-20261009-29 — Cancel losing reader projection IO cooperatively.** Verified Apple cache slice.
   The Mac opening race cancels the losing task, but the projection store still
   reads/hashes source bytes without cancellation checks. Reject cancelled reads
