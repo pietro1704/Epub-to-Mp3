@@ -285,12 +285,13 @@ this board and `handoff.md` before crossing ownership or changing shared contrac
   Four readiness/lifecycle/page-turn regressions plus two chapter-boundary cases.
   No 200 ms acceptance, real-book latency improvement or Flutter change claimed.
 
-- [ ] **APP-20261009-23 — Validate both actual books in the authorized iOS 16 SE Simulator.** In progress.
+- [ ] **APP-20261009-23 — Validate both actual books on the physical iPhone.** In progress; device unavailable.
   Validate The Lord of the Rings and E não sobrou nenhum using native automation
-  in the user-requested iOS 16 iPhone SE Simulator. The later explicit request
-  to resume on Simulator supersedes the older device-only prohibition for this
-  validation. Keep conversion limited to LOTR 8–9 and Christie 6–7, zero-based
-  inclusive.
+  on the physical iPhone. The active quality goal prohibits Simulator, so do not
+  repeat the historical iOS 16 SE runs. Latest `xcrun devicectl list devices`
+  reports paired iPhone 16e `44B2CFBD-2193-5086-8E8D-BF7A2876C321` unavailable.
+  Resume device verification only when it becomes available. Keep conversion
+  limited to LOTR 8–9 and Christie 6–7, zero-based inclusive.
   Preserve original books, models, downloads and existing playback artifacts.
   Reuse the verified four-chapter benchmark where unchanged; distinguish reader,
   playback and latency acceptance from conversion success. No whole-book TTS.
@@ -301,7 +302,8 @@ this board and `handoff.md` before crossing ownership or changing shared contrac
   Christie 21.643 s, LOTR 252.736 s, one LOTR retry, no audio reuse. Logs show
   max_in_flight=1. Total synthesis worsened; performance acceptance stays open.
   Reader navigation, audible playback and 200 ms relaunch acceptance remain open.
-  On 2026-10-09, the installed app opened in the booted iOS 16 SE Simulator.
+  Historical authorized Simulator run on 2026-10-09 opened the installed app in
+  the iOS 16 SE Simulator.
   Focused real-book UI tests opened both EPUBs (3 pages each) and reported zero
   clipped lines, but both failed to advance from page 1 after the horizontal
   drag. LOTR probe diagnostic `swipeActions=0` confirms neither directional
@@ -310,7 +312,8 @@ this board and `handoff.md` before crossing ownership or changing shared contrac
   the combined run passed two unit tests but failed both real-book UI tests.
   Latest diagnostic: `.build/Logs/Test/Test-EpubToMp3-2026.10.09_10-07-07--0300.xcresult`
   (one LOTR UI test failed, `swipeActions=0`). No attempted gesture change was
-  retained and no TTS was rerun. The app was relaunched after validation.
+  retained and no TTS was rerun. This evidence does not replace the required
+  physical-device validation under the active goal constraints.
   Verified shared Swift configuration slice: chapter completion snapshots no
   longer invent an Edge provider when the Rust event supplies no engine. Native
   callback-to-snapshot regression failed on "edge", then passed 1/0/0 on macOS.
