@@ -20,6 +20,25 @@ private final class FailingImportCopyFileManager: FileManager, @unchecked Sendab
     }
 }
 
+private final class MutatingImportCopyFileManager: FileManager, @unchecked Sendable {
+    private let lock = NSLock()
+    private var nextCopyContents: Data?
+
+    func mutateNextCopy(to contents: Data) {
+        lock.lock(); defer { lock.unlock() }
+        nextCopyContents = contents
+    }
+
+    override func copyItem(at srcURL: URL, to dstURL: URL) throws {
+        try super.copyItem(at: srcURL, to: dstURL)
+        lock.lock()
+        let replacement = nextCopyContents
+        nextCopyContents = nil
+        lock.unlock()
+        if let replacement { try replacement.write(to: dstURL, options: .atomic) }
+    }
+}
+
 /// Only the test manager crosses threads; mutable observations are lock-protected.
 private final class ObservedImportFileManager: FileManager, @unchecked Sendable {
     private let lock = NSLock()
@@ -374,6 +393,39 @@ final class LibraryStoreTests: XCTestCase {
         XCTAssertNotNil(selfImport.first?.book)
         XCTAssertEqual(store.books.count, 1)
         XCTAssertEqual(try Data(contentsOf: durable), bytes)
+    }
+
+    @MainActor
+    func testAsyncReimportRejectsStagedBytesThatDoNotMatchTheirContentID() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("library-hash-race-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let suite = "library.hash-race.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let manager = MutatingImportCopyFileManager()
+        let store = LibraryStore(defaults: defaults, fileManager: manager, importDirectory: root)
+        defer { try? store.flushPersistenceSync() }
+        let source = try EpubFixture.create()
+        defer { try? FileManager.default.removeItem(at: source) }
+        let original = try store.importBook(from: source)
+        let previousBooks = store.books
+        let sourceBytes = try Data(contentsOf: source)
+        let durable = root.appendingPathComponent(original.id).appendingPathComponent(source.lastPathComponent)
+        let previousBytes = try Data(contentsOf: durable)
+        let previousIndex = try XCTUnwrap(defaults.data(forKey: "library.books.v1"))
+        manager.mutateNextCopy(to: Data("different staged contents".utf8))
+
+        let outcome = await store.importBooks(from: [source]).first
+
+        XCTAssertNil(outcome?.book)
+        XCTAssertTrue(outcome?.error?.contains("content changed") == true)
+        XCTAssertEqual(store.books, previousBooks)
+        XCTAssertEqual(try Data(contentsOf: durable), previousBytes)
+        XCTAssertEqual(try Data(contentsOf: source), sourceBytes)
+        XCTAssertEqual(defaults.data(forKey: "library.books.v1"), previousIndex)
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: durable.deletingLastPathComponent().path),
+                       [source.lastPathComponent])
+        XCTAssertEqual(LibraryStore(defaults: defaults).books, previousBooks)
     }
 
     #if os(macOS)

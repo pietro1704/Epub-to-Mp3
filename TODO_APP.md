@@ -9,6 +9,14 @@ this board and `handoff.md` before crossing ownership or changing shared contrac
 
 ## Active requests — 2026-10-08
 
+- [x] **APP-20261009-40 — Verify staged import bytes against their content ID.** Verified on macOS.
+  A source can change between identity hashing and copy. Check the staged copy
+  before replacing the durable destination, and revalidate same-path imports.
+  The injected-copy red test demonstrated that mismatched bytes were previously
+  accepted. Final focused LibraryStore tests: 5 passed, 0 failed/skipped,
+  including prior-byte/index preservation, self-import and successful replacement.
+  Result: `.build/Logs/Test/Test-EpubToMp3Mac-2026.10.09_09-26-15--0300.xcresult`.
+
 - [x] **APP-20261009-39 — Roll back imports rejected by the library index.** Verified on macOS.
   A failed async index commit must not leave an unindexed book published in
   memory. Roll back only import snapshots still unchanged at failure time, so a

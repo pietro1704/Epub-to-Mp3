@@ -361,7 +361,8 @@ final class LibraryStore: ObservableObject {
             id: id,
             fileType: fileType,
             fileManager: fileManager,
-            baseDirectory: importDirectory
+            baseDirectory: importDirectory,
+            expectedContentHash: id
         )
 
         // The bookmark points at the durable app-owned copy rather than the
@@ -804,7 +805,8 @@ final class LibraryStore: ObservableObject {
         id: String,
         fileType: BookFileType,
         fileManager: FileManager = .default,
-        baseDirectory: URL? = nil
+        baseDirectory: URL? = nil,
+        expectedContentHash: String? = nil
     ) throws -> URL {
         let root = try importedBooksDirectory(fileManager: fileManager, baseDirectory: baseDirectory)
         let bookDirectory = root.appendingPathComponent(id, isDirectory: true)
@@ -815,6 +817,9 @@ final class LibraryStore: ObservableObject {
         let destination = bookDirectory.appendingPathComponent(fileName, isDirectory: false)
         if originalURL.resolvingSymlinksInPath().standardizedFileURL.path
             == destination.resolvingSymlinksInPath().standardizedFileURL.path {
+            if let expectedContentHash, try Self.contentHash(of: destination) != expectedContentHash {
+                throw Self.importContentChangedError()
+            }
             return destination
         }
         // Reserve an owned sibling directory on the same volume. A failed or
@@ -827,12 +832,20 @@ final class LibraryStore: ObservableObject {
         defer { try? fileManager.removeItem(at: staging) }
         let stagedFile = staging.appendingPathComponent(fileName)
         try fileManager.copyItem(at: originalURL, to: stagedFile)
+        if let expectedContentHash, try Self.contentHash(of: stagedFile) != expectedContentHash {
+            throw Self.importContentChangedError()
+        }
         if fileManager.fileExists(atPath: destination.path) {
             _ = try fileManager.replaceItemAt(destination, withItemAt: stagedFile)
         } else {
             try fileManager.moveItem(at: stagedFile, to: destination)
         }
         return destination
+    }
+
+    private static func importContentChangedError() -> NSError {
+        NSError(domain: "LibraryStore", code: 7,
+                userInfo: [NSLocalizedDescriptionKey: "The selected book content changed during import."])
     }
 
     private static func importedBooksDirectory(
