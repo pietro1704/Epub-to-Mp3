@@ -62,3 +62,11 @@ copying/signing. macOS keeps its existing separate native artifact route.
 lease, refusing a booted Simulator. `mise run converter-ffi:ios-packaging:test`
 exercises real artifact rejection and isolated signed bundling, without launching
 Simulator. These do not prove app startup or native UI behavior.
+
+For this Intel Mac/iOS 16 runtime, build with the selected Xcode 26 toolchain,
+then reuse that build with the installed Xcode 16.4 test controller via a per-command
+`DEVELOPER_DIR=/Applications/Xcode-16.4.0.app/Contents/Developer`. Do not change global
+Xcode selection or open Xcode GUI. Two native smoke tests passed using this route.
+The native smoke task requires explicit low-resource opt-in and a Simulator UUID;
+startup grace defaults to zero, caps at 180 s, and does not disable thermal/memory
+or operation-deadline stops. The global quality/performance goal is not complete.

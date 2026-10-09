@@ -40,3 +40,15 @@ monitor restored with SIGCONT, no devices left booted. No thermal/performance
 warning was reported. The instantaneous load cutoff prevents migration completing;
 this is not an app assertion failure or proof of another host crash. Further boot
 requires an agreed bounded startup/resource policy, not repeated unchanged attempts.
+
+## Verified native completion of this packaging slice
+
+User authorized bounded startup grace. iOS 16 initial boot completed in 44 s;
+Xcode 26 test controller lost runner communication and rebooted the Simulator.
+Reusing the identical build with installed CLI Xcode 16.4 succeeded: two passed,
+zero failures/skips, 28.8 s, `simulator-smoke-DE4C11CC-6D0F-45A7-BF48-390021F1E01C`.
+Both bundled Rust catalog access and native library-search interaction executed.
+App was then launched in Simulator GUI and Library visually verified. No Xcode GUI,
+new build, conversion, physical-device run or CI monitoring during this validation.
+Startup grace is explicit (0 default, 180 s cap); thermal/memory and operation stops
+remain active. Real-book and performance acceptance belong to the continuing goal.

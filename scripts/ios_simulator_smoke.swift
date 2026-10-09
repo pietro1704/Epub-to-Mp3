@@ -3,6 +3,9 @@ import Darwin
 
 // Explicit low-resource opt-in; never boot while compiling on this host.
 let environment = ProcessInfo.processInfo.environment
+guard let bootGrace = Double(environment["IOS_SIMULATOR_BOOT_GRACE_SECONDS"] ?? "0"),
+      bootGrace >= 0, bootGrace <= 180 else { exit(2) }
+let graceDeadline = Date().addingTimeInterval(bootGrace)
 guard environment["IOS_ALLOW_LOW_RESOURCE_SIMULATOR"] == "1",
       let identifier = environment["IOS_SIMULATOR_UDID"], UUID(uuidString: identifier) != nil,
       let mode = CommandLine.arguments.dropFirst().first, ["build", "test"].contains(mode)
@@ -21,13 +24,19 @@ func run(_ arguments: [String], capture: Bool = false) throws -> Data {
     let pipe = Pipe()
     if capture { process.standardOutput = pipe }
     try process.run()
+    let operationDeadline = Date().addingTimeInterval(300)
     let data = capture ? pipe.fileHandleForReading.readDataToEndOfFile() : Data()
     if mode == "test" && !capture {
         while process.isRunning {
             Thread.sleep(forTimeInterval: 1)
             var currentLoad = [Double](repeating: 0, count: 3)
-            if getloadavg(&currentLoad, 3) == 3 && currentLoad[0] > 12 {
-                fputs("Unsafe host load \(currentLoad[0]) during Simulator test; stopping exact device.\n", stderr)
+            var pressure: Int32 = 0
+            var pressureSize = MemoryLayout<Int32>.size
+            let pressureRead = sysctlbyname("kern.memorystatus_vm_pressure_level", &pressure, &pressureSize, nil, 0)
+            let thermal = ProcessInfo.processInfo.thermalState
+            let highLoad = getloadavg(&currentLoad, 3) == 3 && currentLoad[0] > 12 && Date() > graceDeadline
+            if highLoad || pressureRead != 0 || pressure >= 4 || thermal == .serious || thermal == .critical || Date() > operationDeadline {
+                fputs("Stopping Simulator: load=\(currentLoad[0]), memoryPressure=\(pressure), thermal=\(thermal.rawValue); grace/time budget checked.\n", stderr)
                 process.terminate()
                 process.waitUntilExit()
                 let shutdown = Process()

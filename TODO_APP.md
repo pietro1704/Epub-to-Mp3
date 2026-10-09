@@ -9,7 +9,7 @@ this board and `handoff.md` before crossing ownership or changing shared contrac
 
 ## Active requests — 2026-10-08
 
-- [ ] **APP-20261008-14 — Bundle the correct Rust library for Apple Simulator.** In progress.
+- [x] **APP-20261008-14 — Bundle the correct Rust library for Apple Simulator.** Verified packaging/smoke scope.
   User authorized building the Apple Simulator Rust artifact on this Mac for this
   slice only. Keep Rust embedded in the app process, not a sidecar/service.
   Select physical iOS vs Simulator architecture/platform explicitly, reject wrong
@@ -36,6 +36,21 @@ this board and `handoff.md` before crossing ownership or changing shared contrac
   SIGCONT; no booted devices. pmset showed no thermal/performance warning and CPU
   limits 100%; load threshold abort is not evidence of app failure or a new crash.
   Boot-grace/resource-policy adjustment needs explicit risk agreement, not blind retries.
+  User explicitly authorized startup grace. Opt-in `IOS_SIMULATOR_BOOT_GRACE_SECONDS`
+  caps at 180 s, default zero; this run allows 120 s while thermal serious/critical,
+  critical memory pressure or a 300 s operation deadline still stop the exact device.
+  Xcode 26 controller failed runner handshake/rebooted Simulator; old runtime also
+  produced recurring SafariBookmarksSyncAgent SIGSEGV (not attributed to app).
+  Reused identical build with CLI Xcode 16.4 controller: two passed, zero failures/skips
+  in 28.8 s, `simulator-smoke-DE4C11CC-6D0F-45A7-BF48-390021F1E01C`.
+  Native bundled Rust catalog call and library search both executed. App left open
+  on Library in Simulator GUI; no Xcode GUI. Scope is smoke, not conversion/perf completion.
+
+- [ ] **APP-20261008-15 — Test actual LOTR and Christie books on iOS Simulator.** In progress.
+  User requested resuming the quality/performance goal using both real EPUBs.
+  Preserve original imports/models/audio; no physical-device run. Verify reader
+  behavior first; conversion limited to LOTR 8–9 / Christie 6–7 (zero-based inclusive).
+  Report Simulator measurements separately from physical-device historical evidence.
 
 - [x] **APP-20261008-13 — Faster Apple download/extraction defaults.** Recorded.
   Prefer xcodes/aria2 downloads and experimental unxip for Xcode `.xip` archives.
