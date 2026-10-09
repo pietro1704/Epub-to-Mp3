@@ -840,6 +840,18 @@ fn apply_manifest(snapshot: &mut JobSnapshot, manifest: &OutputManifest, output_
             .unwrap_or(0),
         })
         .collect();
+    if safe_leaf(&snapshot.job_id) && safe_leaf(&manifest.archive) {
+        let archive = output_dir.join(&snapshot.job_id).join(&manifest.archive);
+        if let Ok(metadata) = std::fs::metadata(archive) {
+            if metadata.is_file() && metadata.len() > 0 {
+                snapshot.outputs.push(OutputAsset {
+                    name: manifest.archive.clone(),
+                    url: format!("/api/outputs/{}/{}", snapshot.job_id, manifest.archive),
+                    size_bytes: metadata.len(),
+                });
+            }
+        }
+    }
     snapshot.events.push("Conversion finished".into());
 }
 fn safe_leaf(value: &str) -> bool {
@@ -896,6 +908,97 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn finished_snapshot_exposes_the_complete_archive() {
+        let root = TestRoot::new();
+        let state = root.state();
+        let job_dir = state.config.paths.output_dir.join("archive-job");
+        std::fs::create_dir_all(&job_dir).unwrap();
+        std::fs::write(job_dir.join("book.zip"), b"archive fixture").unwrap();
+        let manifest = OutputManifest {
+            job_id: "archive-job".into(),
+            title: "Book".into(),
+            author: "Author".into(),
+            chapters: Vec::new(),
+            archive: "book.zip".into(),
+            cover: None,
+        };
+        let mut snapshot = initial_job("archive-job".into(), &CreateJob::default());
+        apply_manifest(&mut snapshot, &manifest, &state.config.paths.output_dir);
+        let archive = snapshot
+            .outputs
+            .iter()
+            .find(|asset| asset.name == "book.zip")
+            .expect("completed archives must be advertised for download");
+        assert_eq!(archive.url, "/api/outputs/archive-job/book.zip");
+        assert_eq!(archive.size_bytes, 15);
+        let value = serde_json::to_value(&snapshot).unwrap();
+        assert_eq!(value["outputs"][0]["sizeBytes"], 15);
+        std::fs::remove_file(job_dir.join("book.zip")).unwrap();
+        apply_manifest(&mut snapshot, &manifest, &state.config.paths.output_dir);
+        assert!(snapshot.outputs.is_empty());
+        std::fs::write(job_dir.join("book.zip"), []).unwrap();
+        apply_manifest(&mut snapshot, &manifest, &state.config.paths.output_dir);
+        assert!(snapshot.outputs.is_empty());
+        std::fs::remove_file(job_dir.join("book.zip")).unwrap();
+        std::fs::create_dir(job_dir.join("book.zip")).unwrap();
+        apply_manifest(&mut snapshot, &manifest, &state.config.paths.output_dir);
+        assert!(snapshot.outputs.is_empty());
+    }
+
+    #[test]
+    fn manifest_archive_cannot_escape_the_job_directory() {
+        let root = TestRoot::new();
+        let state = root.state();
+        std::fs::create_dir_all(&state.config.paths.output_dir).unwrap();
+        std::fs::write(
+            state.config.paths.output_dir.join("outside.zip"),
+            b"outside archive",
+        )
+        .unwrap();
+        let manifest = OutputManifest {
+            job_id: "archive-job".into(),
+            title: "Book".into(),
+            author: "Author".into(),
+            chapters: Vec::new(),
+            archive: "../outside.zip".into(),
+            cover: None,
+        };
+        let mut snapshot = initial_job("archive-job".into(), &CreateJob::default());
+        apply_manifest(&mut snapshot, &manifest, &state.config.paths.output_dir);
+        assert!(snapshot.outputs.is_empty());
+    }
+
+    #[tokio::test]
+    async fn advertised_archive_can_be_downloaded() {
+        let root = TestRoot::new();
+        let state = root.state();
+        let job_dir = state.config.paths.output_dir.join("archive-job");
+        std::fs::create_dir_all(&job_dir).unwrap();
+        std::fs::write(job_dir.join("book.zip"), b"download archive").unwrap();
+        let manifest = OutputManifest {
+            job_id: "archive-job".into(),
+            title: "Book".into(),
+            author: "Author".into(),
+            chapters: Vec::new(),
+            archive: "book.zip".into(),
+            cover: None,
+        };
+        let mut snapshot = initial_job("archive-job".into(), &CreateJob::default());
+        apply_manifest(&mut snapshot, &manifest, &state.config.paths.output_dir);
+        let archive = &snapshot.outputs[0];
+        let response = output(
+            AxumPath((snapshot.job_id.clone(), archive.name.clone())),
+            State(state),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::OK);
+        let bytes = axum::body::to_bytes(response.into_body(), 100)
+            .await
+            .unwrap();
+        assert_eq!(bytes.as_ref(), b"download archive");
+    }
 
     #[tokio::test]
     async fn chapter_manifest_rejects_job_path_traversal() {
