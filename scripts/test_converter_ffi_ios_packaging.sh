@@ -7,7 +7,9 @@ case "$(uname -m)" in
   *) exit 2 ;;
 esac
 verify="$root/scripts/verify_converter_ffi_ios.sh"
-simulator="$root/target/$target/debug/libconverter_ffi.dylib"
+profile="${CONVERTER_FFI_SIMULATOR_PROFILE:-debug}"
+case "$profile" in debug|release) ;; *) exit 2 ;; esac
+simulator="$root/target/$target/$profile/libconverter_ffi.dylib"
 device="$root/target/aarch64-apple-ios/release/libconverter_ffi.dylib"
 mac="$root/target/release/libconverter_ffi.dylib"
 expect_rejection() {

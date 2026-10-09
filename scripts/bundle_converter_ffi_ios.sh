@@ -18,7 +18,13 @@ case "${PLATFORM_NAME:-}" in
     expected_arch="$ARCHS"
     expected_platform=7
     rust_profile=release
-    [[ "${CONFIGURATION:-}" != Debug ]] || rust_profile=debug
+    if [[ "${CONFIGURATION:-}" == Debug ]]; then
+      rust_profile="${CONVERTER_FFI_SIMULATOR_PROFILE:-debug}"
+      case "$rust_profile" in
+        debug|release) ;;
+        *) echo "error: Simulator Rust profile must be debug or release" >&2; exit 2 ;;
+      esac
+    fi
     ;;
   *) exit 0 ;;
 esac

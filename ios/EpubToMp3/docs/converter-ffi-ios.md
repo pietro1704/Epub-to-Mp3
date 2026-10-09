@@ -51,6 +51,14 @@ frontend routing or playback behavior. Remaining gates are recorded in
 
 ## Apple build destinations
 
+For conversion performance measurements, build the Simulator Rust artifact with
+`CONVERTER_FFI_BUILD_PROFILE=release mise run converter-ffi:ios-simulator`, then
+set `CONVERTER_FFI_SIMULATOR_PROFILE=release` during the Debug app build. This
+explicit option keeps Swift debugging available without unoptimized audio decoding.
+Debug remains the default; invalid profiles fail before copying. Both variants
+retain the same audio-integrity validation. Record the profile with every benchmark;
+artifact correctness tests do not establish a performance gain.
+
 Rust remains bundled in `EpubToMp3.app/Frameworks/libconverter_ffi.dylib` and runs
 in the Swift app process. A separate compiler artifact is not a separate product.
 Physical iOS uses `aarch64-apple-ios/release`; Simulator uses the host architecture

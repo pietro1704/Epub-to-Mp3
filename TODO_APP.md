@@ -9,6 +9,20 @@ this board and `handoff.md` before crossing ownership or changing shared contrac
 
 ## Active requests — 2026-10-08
 
+- [x] **APP-20261009-19 — Optimized Apple Simulator conversion artifact.** Verified artifact/smoke scope.
+  One-job Apple-only artifact build under the existing explicit exception; no Rust
+  algorithm/validation weakening or Flutter execution. Use current sources with
+  Release optimization to avoid interpreting unoptimized MP3 decoding as product
+  latency. Verify Mach-O/ABI, explicit bundling profile and native callback/correctness
+  before any scoped same-book measurement. Keep original books/models/audio intact.
+  Release Rust build passed in 6m37s. Real artifact/ABI/architecture/platform,
+  invalid-library rejection and signed bundling regression passed. Explicit
+  CONVERTER_FFI_SIMULATOR_PROFILE=release allows optimized Rust in the Debug app;
+  default Debug behavior and device/macOS routing unchanged, invalid profile rejected.
+  Actual app build passed; native iOS16 bundled-load/catalog and literal callback
+  path checks: two passed, zero failures/skips (`AD657EC3...`). No synthesis or
+  speedup claim in this preparation slice. Matched measurement remains in APP-16.
+
 - [x] **APP-20261009-18 — Explain rejected benchmark chapter callbacks.** Verified diagnostic slice.
   Preserve job/range/owned-parent/MP3/readability guards; record each rejection
   reason in benchmark measurements and failed-delivery message instead of silently
