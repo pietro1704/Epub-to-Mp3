@@ -36,8 +36,10 @@ remains unverified; the chapter-window scheduler and Android channel request are
 covered by tests. Review also fixed sparse chapter-index migration for books
 with empty EPUB chapters and added a restart regression. Final diff/whitespace
 audit passed and the APK was rebuilt after final source adjustments. Delivery
-remains pending commit, push and authorized PR; keep this request open until the
-PR merge is verified.
+completed: commit `621a1439be` was pushed on `feature/playback-near-streaming`,
+PR #774 was merged into `master` on 2026-10-10, and `origin/master` was verified
+to contain the commit. No CI/PR monitoring was performed. Android runtime
+remains unverified because no device/emulator was connected.
 
 ## Current local development and verification contract — 2026-10-09
 
