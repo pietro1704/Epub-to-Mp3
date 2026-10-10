@@ -5,11 +5,9 @@ Pending → In progress → Verification → Done, or Blocked with evidence/next
 Every concrete user request/correction belongs here. Completion requires relevant
 tests, cross-platform parity, and commit/push evidence; source presence is not done.
 Current ownership: all development and verification happen on this Mac; no work is
-routed to Arch. Before every feature or bug fix, confirm the iPhone SE (1st
-generation) / iOS 15.5 Simulator and native macOS app are available. Verify each
-change in the real iOS and macOS apps; automated tests are supplemental. If either
-app cannot run, record the blocker and leave verification incomplete. Historical
-Arch assignments below are superseded by this instruction.
+routed to Arch. The native Apple runtime requirement is authoritative in
+`docs/agent-workflow.md`; entries here record task-specific criteria and evidence.
+Historical Arch assignments below are superseded.
 
 ## Active requests — 2026-10-10
 
@@ -56,6 +54,15 @@ Arch assignments below are superseded by this instruction.
   2026-10-10. Verified `origin/master` contains the commit. No CI/PR monitoring
   was performed. Android runtime remains the only verification limitation.
 
+- [ ] **APP-20261010-01-ANDROID — Validate Flutter streaming on Android runtime.**
+  Parent: APP-20261010-01. Status: pending; no Android runtime evidence recorded.
+  Acceptance: an Android device or emulator is available; install and open the
+  current debug APK at `flutter_app/build/app/outputs/flutter-apk/app-debug.apk`;
+  exercise playback and chapter advance; confirm conversion stays limited to the
+  current chapter plus one ahead and obsolete work is discarded. Record device
+  model, Android version, exact steps, observed result, and limitations. Leave
+  pending until all criteria have real runtime evidence.
+
 ## Active requests — 2026-10-09
 
 - [ ] **APP-20261009-47 — Keep playback clock ticks on progress controls.** Apple fix implemented; macOS playback interaction pending.
@@ -81,9 +88,9 @@ Arch assignments below are superseded by this instruction.
 
 - [x] **APP-20261009-46 — Standardize local app development and verification.**
   Completed in `AGENTS.md`, `CLAUDE.md`, `ios/EpubToMp3/AGENTS.md`, this board,
-  and `handoff.md`: use this Mac, verify on iPhone SE (1st generation) Simulator
-  with iOS 15.5 and the native macOS app for every feature/bug fix, and check the
-  exact targets before starting. No app build or runtime check was needed for this
+  and `handoff.md`: use this Mac and check required app targets before feature/bug
+  work. Exact runtime requirements are in `docs/agent-workflow.md`. No app build
+  or runtime check was needed for this
   instruction-only change.
 
 ## Active requests — 2026-10-08
@@ -774,14 +781,13 @@ Arch assignments below are superseded by this instruction.
   executable checks not run.
 
 - [x] **APP-20261009-45 — Oldest iOS/Xcode workflow on Intel Mac.** Superseded.
-  The current user requirement specifies iOS 15.5 on the iPhone SE (1st
-  generation) Simulator and native macOS app verification. Do not continue the
-  prior generic oldest-runtime workflow or substitute its Xcode/device target.
+  Follow the authoritative native runtime requirement in `docs/agent-workflow.md`;
+  this historical ticket does not define a separate device/runtime rule.
 
 ## Historical backlog (requires revalidation; not current platform scope)
 
 The old verification recipes below are historical. Current work follows the
-local iOS 15.5 Simulator and native macOS app contract above and in `AGENTS.md`.
+runtime contract in `docs/agent-workflow.md`.
 
 > Gerado em 2026-07-10. Fonte: BUG_SPRINT.md/TDD_PLAN.md do iOS estão 100%
 > resolvidos (bugs 1-8, ver commits 2d0cf59..8a179ae) — não há bug conhecido
