@@ -13,7 +13,7 @@ Arch assignments below are superseded by this instruction.
 
 ## Active requests — 2026-10-10
 
-- [ ] **APP-20261010-01 — Playback-near streaming and player UI parity.** Verification in progress.
+- [x] **APP-20261010-01 — Playback-near streaming and player UI parity.** Implemented, verified and merged.
   User-confirmed scope: on-demand `Listen` in the native iOS/macOS apps, then
   Flutter, generates only a small moving window of TTS chunks near the audible
   playback position, never more than one EPUB chapter ahead. A seek or chapter
@@ -51,8 +51,10 @@ Arch assignments below are superseded by this instruction.
   Review found and fixed sparse chapter-index migration so empty EPUB chapters
   do not shift resumed playback; a regression test covers the old-job upgrade.
   Final diff audit and whitespace check passed; APK was rebuilt after final
-  source adjustments. Delivery remains pending commit, push and authorized PR.
-  Keep this task open until the PR merge is verified; do not monitor CI.
+  source adjustments. Commit `621a1439be` was pushed on
+  `feature/playback-near-streaming`; PR #774 was merged into `master` on
+  2026-10-10. Verified `origin/master` contains the commit. No CI/PR monitoring
+  was performed. Android runtime remains the only verification limitation.
 
 ## Active requests — 2026-10-09
 
