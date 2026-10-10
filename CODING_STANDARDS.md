@@ -78,6 +78,7 @@ Report changed paths, exact checks/results, skips, and unresolved limits.
 
 Commit/push requires authorization; prior authorization within the task persists.
 The user has standing commit/push authorization by default. Use Gitflow feature
-branches from develop and keep release promotion separate from implementation.
-The current user preference is no CI or PR monitoring. Do not turn a local review
-into remote audits, issue triage, publication, or merge operations.
+branches from `master`; follow the PR, green-check, explicit auto-merge
+authorization, and post-merge reconciliation rules in `AGENTS.md` and
+`docs/agent-workflow.md`. CI/PR monitoring remains opt-in. Do not turn local
+review into remote audits, issue triage, publication, or merge operations.

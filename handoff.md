@@ -12,9 +12,8 @@ expanded book hero and Back/close control visible after center-tap interactions;
 reduce excess vertical spacing; show a Play spinner only until initial requested
 audio is ready, not while more audio is generated during active playback.
 
-Preflight on 2026-10-10 confirmed the exact iPhone SE (1st generation) / iOS
-15.5 Simulator (UDID `C66CCB36-C43E-4174-861E-2FA713389C84`) and native macOS
-target. Implementation now streams TTS chunks to playback, limits conversion
+Task-specific preflight on 2026-10-10 confirmed the required Simulator and native
+macOS target. Implementation now streams TTS chunks to playback, limits conversion
 to the current chapter plus one ahead, reprioritizes on playback navigation,
 discards stale in-flight output, and avoids a second full-chapter buffer.
 Swift/iOS and AppKit/macOS pass the moving window and chunk callback. Flutter
@@ -39,17 +38,16 @@ audit passed and the APK was rebuilt after final source adjustments. Delivery
 completed: commit `621a1439be` was pushed on `feature/playback-near-streaming`,
 PR #774 was merged into `master` on 2026-10-10, and `origin/master` was verified
 to contain the commit. No CI/PR monitoring was performed. Android runtime
-remains unverified because no device/emulator was connected.
+remains unverified because no device/emulator was connected. Track the outstanding
+Flutter runtime check in `TODO_APP.md` as APP-20261010-01-ANDROID; its criteria
+remain pending until real Android evidence is recorded.
 
-## Current local development and verification contract — 2026-10-09
+## Current local development ownership — 2026-10-09
 
 All feature and bug-fix work is developed and verified on this Mac; do not route
-work to Arch. Before starting each change, verify the iPhone SE (1st generation)
-Simulator on iOS 15.5 and the native macOS app are available. Exercise the real
-iOS and macOS apps for each feature or bug fix; automated tests are supplemental.
-If an app cannot be run, record the evidence and leave verification incomplete.
-This contract supersedes historical Arch ownership and Simulator restrictions
-recorded below. Preserve the exact device/runtime; do not substitute another one.
+work to Arch. See `docs/agent-workflow.md` for authoritative Apple runtime
+requirements. Historical ownership and verification entries below are context,
+not current instructions.
 
 ## Historical Arch handoff notes — superseded by the local contract above
 

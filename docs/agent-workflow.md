@@ -81,12 +81,15 @@ setup when dependencies are absent; inspect task definitions before execution.
 
 ## Before implementation
 
-For substantial feature delivery requested by Pietro, use Gitflow from the
-current integration branch and a `feature/*` branch. Keep modules cohesive and
+For substantial feature delivery requested by Pietro, use Gitflow from current
+`master` and a `feature/*` branch. Keep modules cohesive and
 small, apply SOLID where responsibilities have distinct owners, and optimize
-measured hot paths instead of imposing arbitrary file-length limits. When the
-request explicitly asks for PR and merge, push the feature, open a PR to
-`master`, and enable auto-merge; CI monitoring remains opt-in.
+measured hot paths instead of imposing arbitrary file-length limits. When a task
+explicitly authorizes a PR and merge, open a PR to `master`. Merge only after
+required checks are green. Enable auto-merge only with explicit user
+authorization and after that green-check gate is satisfied. CI/PR monitoring
+remains opt-in; report pending checks without polling unless requested. PR
+authorization alone does not authorize merge.
 
 For a feature larger than one focused change, write a short spec and split it
 into vertical tickets. Each ticket names its dependencies, acceptance evidence,
@@ -95,12 +98,12 @@ do not combine feature work, refactors, dependency upgrades, and CI changes.
 
 ## During implementation
 
-For every feature or bug fix, check the required local runtime before coding:
-iPhone SE (1st generation) Simulator on iOS 15.5 and the native macOS app. Verify
-the affected behavior in both real apps after implementation. Automated tests are
-additional evidence, not a substitute. If either app is unavailable, document the
-blocker and leave runtime verification incomplete. All development stays on this
-Mac; do not route implementation or validation to Arch.
+For every feature or bug fix, use this exact native iOS runtime: iPhone SE (1st
+generation) Simulator on iOS 15.5. Check it and the native macOS target before
+coding, then install, launch, and exercise both real apps. Automated tests are
+additional evidence. If either app is unavailable, document the blocker and leave
+runtime verification incomplete. All development stays on this Mac; do not route
+implementation or validation to Arch.
 
 Start each bug fix with a failing regression test. Keep the implementation and
 its test in the same commit when practical. Preserve unrelated local changes by
@@ -110,14 +113,18 @@ Before pushing, update the branch from `master`, run `git diff --check`, and run
 `mise run preflight`. A source-level test is not evidence for a native runtime
 behavior; use the platform's executable test path for native changes.
 
-## Review and merge
+## Review, merge, and post-merge reconciliation
 
 Every PR has one scope and a concrete acceptance checklist. Review the complete
-diff against the ticket and project standards. Do not enable auto-merge for
-feature PRs. Merge only after all required checks are green, the PR is not
-behind `master`, security checks are green, and the merge is visible in
-`master`.
+diff against the ticket and project standards. Merge only after all required
+checks are green, the PR is not behind `master`, security checks are green, and
+the merge is visible in `master`. Follow the explicit authorization and
+auto-merge rule above; do not monitor CI/PR unless requested.
 
-After merging, verify the branch and worktree state, then remove stale branches
-only after confirming they are merged. If CI fails, inspect the failing job and
-push a focused fix; never close the task on a pending or blocked check.
+After merging, verify current branch and worktree status, preserve local changes,
+and fetch `origin`. Fast-forward local `master` to `origin/master` and confirm
+the merge commit is present. Integrate documentation-only changes by fast-forward
+when histories align or cherry-pick when they do not. Inspect the staged diff to
+ensure no product files are included. Never push stale local `master` or rewrite
+history. Remove stale branches only after confirming they are merged. Report
+check failures and act only within authorized scope; do not poll unless requested.
