@@ -39,6 +39,7 @@ final class MacAppKitRootController: NSSplitViewController, NSToolbarDelegate {
     private var isStartingLocalPlayback = false
     private var localPlaybackGeneration: String?
     private var localPlaybackChapters: [JobSnapshot.Chapter] = []
+    private var localPlaybackControl: ConverterPlaybackControl?
 
     static func shouldShowPlayerBar(
         hasSnapshot: Bool,
@@ -96,6 +97,16 @@ final class MacAppKitRootController: NSSplitViewController, NSToolbarDelegate {
             .store(in: &cancellables)
         playerPresentation.objectWillChange
             .sink { [weak self] _ in self?.refreshFullPlayer() }
+            .store(in: &cancellables)
+        player.$activeStreamingChapterIndex
+            .compactMap { $0 }
+            .removeDuplicates()
+            .sink { [weak self] chapterIndex in
+                guard let self, self.localPlaybackGeneration != nil,
+                      let control = self.localPlaybackControl else { return }
+                control.updatePlaybackWindow(currentChapter: chapterIndex, chaptersAhead: 1)
+                _ = control.prioritize(chapterIndex: chapterIndex)
+            }
             .store(in: &cancellables)
         restoreLocalPlaybackControls()
         LocalFulltextCache.startPrewarmingRecentBooks()
@@ -380,6 +391,13 @@ final class MacAppKitRootController: NSSplitViewController, NSToolbarDelegate {
                 let url = try await library.openBookFileAsync(id: book.id)
                 localPlaybackGeneration = jobID
                 localPlaybackChapters.removeAll()
+                let chapterStart = Int32(exactly: ReaderPlaybackPriorityChapter.index(bookID: book.id)) ?? 0
+                let playbackControl = try RustConversionCoordinator.makePlaybackControl()
+                playbackControl.updatePlaybackWindow(
+                    currentChapter: Int(chapterStart),
+                    chaptersAhead: 1
+                )
+                localPlaybackControl = playbackControl
                 let pending = JobSnapshot(
                     jobId: jobID,
                     state: "running",
@@ -402,12 +420,13 @@ final class MacAppKitRootController: NSSplitViewController, NSToolbarDelegate {
                 player.play(snapshot: pending, startingAt: 0, restoreAutoplay: false)
                 player.isConverting = true
                 player.resume()
-                let chapterStart = Int32(exactly: ReaderPlaybackPriorityChapter.index(bookID: book.id)) ?? 0
-                let result = try await RustConversionCoordinator().convert(
+                let chunkDelivery = StreamingPlaybackChunkDelivery(player: player)
+                let result = try await RustConversionCoordinator.executeStreaming(
                     bookURL: url,
                     jobID: jobID,
                     chapterStart: chapterStart,
                     chapterEnd: -1,
+                    control: playbackControl,
                     onProgress: { [weak self] event in
                         guard let self,
                               self.localPlaybackGeneration == jobID,
@@ -418,6 +437,10 @@ final class MacAppKitRootController: NSSplitViewController, NSToolbarDelegate {
                     },
                     onChapterCompleted: { [weak self] event in
                         guard let self, self.localPlaybackGeneration == event.jobId else { return }
+                        let activeChapter = self.player.activeStreamingChapterIndex
+                            ?? Int(chapterStart)
+                        guard event.chapterIndex >= activeChapter,
+                              event.chapterIndex <= activeChapter + 1 else { return }
                         let firstPlayableChapter = self.localPlaybackChapters.isEmpty
                         let chapter = event.playableChapter
                         if let existing = self.localPlaybackChapters.firstIndex(where: { $0.index == chapter.index }) {
@@ -432,17 +455,37 @@ final class MacAppKitRootController: NSSplitViewController, NSToolbarDelegate {
                         if firstPlayableChapter {
                             self.playerPresentation.showFullPlayer()
                         }
+                    },
+                    onAudioChunk: { chapterIndex, chunkIndex, data in
+                        return chunkDelivery.enqueue(
+                            data,
+                            chapterIndex: chapterIndex,
+                            chunkIndex: chunkIndex,
+                            isCurrent: { [weak self] in
+                                guard let self else { return false }
+                                let currentChapter = self.player.activeStreamingChapterIndex
+                                    ?? Int(chapterStart)
+                                return self.localPlaybackGeneration == jobID
+                                    && self.player.snapshot?.jobId == jobID
+                                    && chapterIndex >= currentChapter
+                                    && chapterIndex <= currentChapter + 1
+                            },
+                            onAccepted: {}
+                        )
                     }
                 )
                 let snapshot = try result.snapshot()
                 library.recordConversion(jobId: result.jobID, for: book.id)
                 localPlaybackGeneration = nil
+                localPlaybackControl = nil
                 await MainActor.run {
                     self.player.finishStreaming(snapshot: snapshot)
                     self.playerPresentation.showFullPlayer()
                 }
             } catch {
                 localPlaybackGeneration = nil
+                localPlaybackControl?.cancel()
+                localPlaybackControl = nil
                 if let current = player.snapshot, current.jobId == jobID {
                     player.finishStreaming(snapshot: JobSnapshot(
                         jobId: current.jobId,
@@ -554,6 +597,7 @@ private final class MacPlayerBarViewController: NSViewController {
     private let etaLabel = NSTextField(labelWithString: "")
     private let coverView = NSImageView()
     private let playButton = NSButton()
+    private let playSpinner = NSProgressIndicator()
     private let previousButton = NSButton()
     private let nextButton = NSButton()
     private let rateButton = NSButton()
@@ -590,6 +634,9 @@ private final class MacPlayerBarViewController: NSViewController {
         playButton.bezelStyle = .texturedRounded
         playButton.target = self
         playButton.action = #selector(togglePlayback)
+        playSpinner.style = .spinning
+        playSpinner.isDisplayedWhenStopped = false
+        playSpinner.controlSize = .small
         playButton.setAccessibilityLabel(L10n.string("player.play"))
         playButton.toolTip = L10n.string("player.play")
         previousButton.image = NSImage(systemSymbolName: "backward.end.fill", accessibilityDescription: L10n.string("player.previousChapter"))
@@ -630,7 +677,10 @@ private final class MacPlayerBarViewController: NSViewController {
             info.topAnchor.constraint(equalTo: openButton.topAnchor),
             info.bottomAnchor.constraint(equalTo: openButton.bottomAnchor),
         ])
-        let stack = NSStackView(views: [openButton, previousButton, playButton, nextButton, rateButton])
+        let playControls = NSStackView(views: [playButton, playSpinner])
+        playControls.orientation = .horizontal
+        playControls.alignment = .centerY
+        let stack = NSStackView(views: [openButton, previousButton, playControls, nextButton, rateButton])
         stack.orientation = .horizontal
         stack.alignment = .centerY
         stack.distribution = .fill
@@ -714,6 +764,8 @@ private final class MacPlayerBarViewController: NSViewController {
             : ""
         coverView.image = book?.coverPNG.flatMap(NSImage.init(data:)) ?? NSImage(systemSymbolName: "book.closed", accessibilityDescription: nil)
         playButton.image = NSImage(systemSymbolName: player.isPlaying ? "pause.fill" : "play.fill", accessibilityDescription: nil)
+        playButton.isHidden = player.isLoading
+        if player.isLoading { playSpinner.startAnimation(nil) } else { playSpinner.stopAnimation(nil) }
         rateButton.title = player.rate.shortLabel
         playButton.isEnabled = player.snapshot != nil || currentBookID != nil
         previousButton.isEnabled = player.snapshot != nil
@@ -739,6 +791,10 @@ private final class MacFullPlayerViewController: NSViewController {
     private let statusLabel = NSTextField(labelWithString: "")
     private let coverView = NSImageView()
     private let playButton = NSButton()
+    private let playSpinner = NSProgressIndicator()
+    private let progressSlider = NSSlider(value: 0, minValue: 0, maxValue: 1, target: nil, action: nil)
+    private let elapsedLabel = NSTextField(labelWithString: "0:00")
+    private let remainingLabel = NSTextField(labelWithString: "-0:00")
     private var cancellable: AnyCancellable?
 
     init(player: AudioPlayer, library: LibraryStore, presentation: PlayerPresentation, onStartPlayback: @escaping () -> Void) {
@@ -764,20 +820,38 @@ private final class MacFullPlayerViewController: NSViewController {
         titleLabel.alignment = .center
         statusLabel.textColor = .secondaryLabelColor
         statusLabel.alignment = .center
+        elapsedLabel.textColor = .secondaryLabelColor
+        remainingLabel.textColor = .secondaryLabelColor
+        progressSlider.target = self
+        progressSlider.action = #selector(progressChanged(_:))
+        progressSlider.isContinuous = false
+        progressSlider.setAccessibilityIdentifier("fullPlayer.progress")
+        elapsedLabel.setAccessibilityIdentifier("fullPlayer.elapsed")
+        remainingLabel.setAccessibilityIdentifier("fullPlayer.remaining")
         playButton.imagePosition = .imageOnly
         playButton.bezelStyle = .texturedRounded
         playButton.target = self
         playButton.action = #selector(togglePlayback)
+        playSpinner.style = .spinning
+        playSpinner.isDisplayedWhenStopped = false
+        playSpinner.controlSize = .regular
+        let timeControls = NSStackView(views: [elapsedLabel, progressSlider, remainingLabel])
+        timeControls.orientation = .horizontal
+        timeControls.alignment = .centerY
+        timeControls.spacing = 10
         let previous = NSButton(image: NSImage(systemSymbolName: "backward.end.fill", accessibilityDescription: nil) ?? NSImage(), target: self, action: #selector(previousChapter))
         let next = NSButton(image: NSImage(systemSymbolName: "forward.end.fill", accessibilityDescription: nil) ?? NSImage(), target: self, action: #selector(nextChapter))
         let close = NSButton(title: L10n.string("common.close"), target: self, action: #selector(closePlayer))
-        let controls = NSStackView(views: [previous, playButton, next])
+        let playControls = NSStackView(views: [playButton, playSpinner])
+        playControls.orientation = .horizontal
+        playControls.alignment = .centerY
+        let controls = NSStackView(views: [previous, playControls, next])
         controls.spacing = 12
         controls.alignment = .centerY
-        let content = NSStackView(views: [coverView, titleLabel, statusLabel, controls, close])
+        let content = NSStackView(views: [coverView, titleLabel, statusLabel, timeControls, controls, close])
         content.orientation = .vertical
         content.alignment = .centerX
-        content.spacing = 22
+        content.spacing = 12
         content.translatesAutoresizingMaskIntoConstraints = false
         background.addSubview(content)
         NSLayoutConstraint.activate([
@@ -785,6 +859,8 @@ private final class MacFullPlayerViewController: NSViewController {
             content.centerYAnchor.constraint(equalTo: background.centerYAnchor),
             coverView.widthAnchor.constraint(equalToConstant: 280),
             coverView.heightAnchor.constraint(equalToConstant: 280),
+            timeControls.widthAnchor.constraint(equalToConstant: 380),
+            progressSlider.widthAnchor.constraint(equalToConstant: 300),
         ])
         view = background
         cancellable = player.objectWillChange.sink { [weak self] _ in self?.refresh() }
@@ -802,7 +878,27 @@ private final class MacFullPlayerViewController: NSViewController {
             ? L10n.string("player.preparingAudio")
             : (player.snapshot == nil ? L10n.string("player.nothingPlaying") : player.effectiveChapterTitle)
         playButton.image = NSImage(systemSymbolName: player.isPlaying ? "pause.fill" : "play.fill", accessibilityDescription: nil)
+        playButton.isHidden = player.isLoading
+        if player.isLoading { playSpinner.startAnimation(nil) } else { playSpinner.stopAnimation(nil) }
         playButton.isEnabled = player.snapshot != nil || bookID != nil
+        let duration = max(player.durationSeconds, 1)
+        progressSlider.maxValue = duration
+        progressSlider.doubleValue = min(player.playbackPositionSeconds, duration)
+        progressSlider.isEnabled = player.durationSeconds > 0
+        elapsedLabel.stringValue = Self.formatTime(player.playbackPositionSeconds)
+        remainingLabel.stringValue = "−" + Self.formatTime(max(0, player.durationSeconds - player.playbackPositionSeconds))
+    }
+
+    private static func formatTime(_ seconds: TimeInterval) -> String {
+        let total = max(0, Int(seconds.rounded()))
+        return total >= 3600
+            ? String(format: "%d:%02d:%02d", total / 3600, (total / 60) % 60, total % 60)
+            : String(format: "%d:%02d", total / 60, total % 60)
+    }
+
+    @objc private func progressChanged(_ sender: NSSlider) {
+        player.seek(to: sender.doubleValue)
+        refresh()
     }
 
     @objc private func togglePlayback() {

@@ -31,6 +31,7 @@ class MiniPlayerBar extends ConsumerWidget {
       builder: (context, snapshot) => _buildWithSnapshot(
         context,
         ref,
+        coordinator,
         snapshot.data ?? coordinator.snapshot,
       ),
     );
@@ -39,6 +40,7 @@ class MiniPlayerBar extends ConsumerWidget {
   Widget _buildWithSnapshot(
     BuildContext context,
     WidgetRef ref,
+    PlaybackCoordinator coordinator,
     PlaybackSnapshot playback,
   ) {
     final playingBookId = ref.watch(currentlyPlayingBookIdProvider);
@@ -191,9 +193,16 @@ class MiniPlayerBar extends ConsumerWidget {
                     ),
                     onPressed: () async {
                       if (player.chapters.isEmpty) {
-                        final request = ref.read(playbackRequestProvider);
-                        if (request != null) await request();
-                        if (player.chapters.isNotEmpty) await player.play();
+                        coordinator.beginInitialAudioRequest();
+                        try {
+                          final request = ref.read(playbackRequestProvider);
+                          if (request != null) await request();
+                          if (player.chapters.isNotEmpty && !player.isPlaying) {
+                            await player.play();
+                          }
+                        } finally {
+                          coordinator.finishInitialAudioRequest();
+                        }
                         return;
                       }
                       player.togglePlayPause();

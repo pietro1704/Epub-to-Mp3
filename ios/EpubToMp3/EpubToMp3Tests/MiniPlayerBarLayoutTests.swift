@@ -280,7 +280,7 @@ final class MiniPlayerBarLayoutTests: XCTestCase {
     }
 
     @MainActor
-    func testMiniPlayerExposesSeekTimesBothSkipDirectionsAndChapterNavigation() throws {
+    func testMiniPlayerOmitsProgressAndExposesTransportControls() throws {
         let player = AudioPlayer()
         let miniPlayer = MiniPlayerBarUIKitView()
         miniPlayer.configure(
@@ -290,37 +290,18 @@ final class MiniPlayerBarLayoutTests: XCTestCase {
             onTap: {}
         )
 
-        XCTAssertNotNil(view(in: miniPlayer, identifier: "miniPlayer.progress"))
-        XCTAssertNotNil(view(in: miniPlayer, identifier: "miniPlayer.elapsed"))
-        XCTAssertNotNil(view(in: miniPlayer, identifier: "miniPlayer.remaining"))
+        XCTAssertNil(view(in: miniPlayer, identifier: "miniPlayer.progress"))
+        XCTAssertNil(view(in: miniPlayer, identifier: "miniPlayer.elapsed"))
+        XCTAssertNil(view(in: miniPlayer, identifier: "miniPlayer.remaining"))
         for identifier in [
             "miniPlayer.previous",
-            "miniPlayer.skipBack",
             "miniPlayer.playPause",
-            "miniPlayer.skipForward",
             "miniPlayer.next",
         ] {
             let control = try XCTUnwrap(button(in: miniPlayer, identifier: identifier))
             XCTAssertFalse(control.allTargets.isEmpty, "Expected \(identifier) to dispatch its playback command")
         }
-        let defaults = UserDefaults.standard
-        let previousBackward = defaults.object(forKey: AppSettings.playbackBackwardSecondsKey)
-        let previousForward = defaults.object(forKey: AppSettings.playbackForwardSecondsKey)
-        defer {
-            restore(defaults, key: AppSettings.playbackBackwardSecondsKey, value: previousBackward)
-            restore(defaults, key: AppSettings.playbackForwardSecondsKey, value: previousForward)
-        }
-        defaults.set(30.0, forKey: AppSettings.playbackBackwardSecondsKey)
-        defaults.set(45.0, forKey: AppSettings.playbackForwardSecondsKey)
-        miniPlayer.refresh()
-        XCTAssertEqual(
-            button(in: miniPlayer, identifier: "miniPlayer.skipBack")?.accessibilityLabel,
-            L10n.string("player.skipBack.seconds", 30)
-        )
-        XCTAssertEqual(
-            button(in: miniPlayer, identifier: "miniPlayer.skipForward")?.accessibilityLabel,
-            L10n.string("player.skipForward.seconds", 45)
-        )
+        XCTAssertNotNil(button(in: miniPlayer, identifier: "miniPlayer.rate")?.menu)
     }
 
     @MainActor

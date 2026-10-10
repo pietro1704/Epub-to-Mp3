@@ -161,6 +161,7 @@ final class AudioPlayer: ObservableObject {
     }
 
     @Published private(set) var currentChapterIndex: Int = 0
+    @Published private(set) var activeStreamingChapterIndex: Int?
     private var readerChapterTitles: [Int: String] = [:]
     @Published private(set) var isPlaying: Bool = false
     /// A deliberate pause owns the current queue cursor. Reader controls use
@@ -268,11 +269,9 @@ final class AudioPlayer: ObservableObject {
     /// One-way latch: once `true` it stays `true` for the session.
     @Published private(set) var firstSegmentReady: Bool = false
 
-    /// `true` while the player is buffering / waiting for the current
-    /// chapter's audio to become ready. Used by native player controllers
-    /// to show a spinner in place of play/pause.
-    /// Includes an in-flight seek so scrubbing never leaves a stale
-    /// play/pause affordance while AVFoundation moves the timeline.
+    /// `true` only while an initial, user-requested playback is waiting for
+    /// its first playable chapter. Later conversion and pending seeks must not
+    /// replace the transport controls while the listener is already playing.
     @Published private(set) var isSeeking = false
     private var activeSeekID: UUID?
     private var activeSeekAutoplay: Bool?
@@ -301,7 +300,7 @@ final class AudioPlayer: ObservableObject {
     }
     private var segmentSeekTask: Task<Void, Never>?
     private var segmentDurations: [SegmentBacklog.Identity: TimeInterval] = [:]
-    var isLoading: Bool { isSeeking || (isConverting && !firstChapterReady) }
+    var isLoading: Bool { !isPlaying && isConverting && !firstChapterReady }
 
     /// Optional cover art bytes (PNG/JPEG). Surfaced to the system
     /// Now Playing widget so lock screen / Control Center / AirPods
@@ -481,7 +480,7 @@ final class AudioPlayer: ObservableObject {
     /// bounded capacity. The continuations resume as AVQueuePlayer accepts
     /// deferred items, so conversion pauses without deleting audio or
     /// accumulating an unbounded number of temporary files.
-    private var segmentCapacityWaiters: [(UUID, CheckedContinuation<Bool, Never>)] = []
+    private var segmentCapacityWaiters: [(UUID, Int, CheckedContinuation<Bool, Never>)] = []
     private let segmentFileWriter: SegmentFileWriter
     private var segmentPersistenceTail: Task<Bool, Never>?
     private var segmentPersistenceTasks: [UUID: Task<Bool, Never>] = [:]
@@ -2429,7 +2428,8 @@ final class AudioPlayer: ObservableObject {
     func enqueueSegmentAsync(
         data: Data, chapterIndex: Int, segmentIndex: Int, sentenceId: String? = nil,
         publication: LatencyObservation.StreamPublication? = nil,
-        receipt: LatencyObservation.StreamRequestReceipt? = nil
+        receipt: LatencyObservation.StreamRequestReceipt? = nil,
+        maximumDeferredSegments: Int = SegmentBacklog.maximumDeferredSegmentCount
     ) async -> Bool {
         guard !Task.isCancelled else { return false }
         let generation = remotePlaybackGeneration
@@ -2441,7 +2441,7 @@ final class AudioPlayer: ObservableObject {
             let identity = SegmentBacklog.Identity(chapterIndex: chapterIndex, segmentIndex: segmentIndex)
             if self.segmentFiles[identity] != nil { return true }
             guard self.prepareSegment(data: data, identity: identity),
-                  await self.waitForSegmentCapacity(), !Task.isCancelled,
+                  await self.waitForSegmentCapacity(maximumCount: maximumDeferredSegments), !Task.isCancelled,
                   self.remotePlaybackGeneration == generation else { return false }
             let file = self.segmentFileURL(identity: identity)
             self.segmentDirectoryUsesAsyncIO = true
@@ -2659,37 +2659,40 @@ final class AudioPlayer: ObservableObject {
     /// Wait until another segment can be accepted without allowing the
     /// deferred file queue to grow without bound. The embedded conversion
     /// bridge calls this before it writes a new temporary MP3.
-    func waitForSegmentCapacity() async -> Bool {
+    func waitForSegmentCapacity(
+        maximumCount: Int = SegmentBacklog.maximumDeferredSegmentCount
+    ) async -> Bool {
         guard !Task.isCancelled else { return false }
-        guard backlog.count >= SegmentBacklog.maximumDeferredSegmentCount else {
+        let limit = max(1, min(maximumCount, SegmentBacklog.maximumDeferredSegmentCount))
+        guard backlog.count >= limit else {
             return true
         }
         let waiterID = UUID()
         return await withTaskCancellationHandler {
             await withCheckedContinuation { continuation in
                 if Task.isCancelled { continuation.resume(returning: false) }
-                else { segmentCapacityWaiters.append((waiterID, continuation)) }
+                else { segmentCapacityWaiters.append((waiterID, limit, continuation)) }
             }
         } onCancel: {
             Task { @MainActor [weak self] in
                 guard let self,
                       let index = self.segmentCapacityWaiters.firstIndex(where: { $0.0 == waiterID }) else { return }
-                self.segmentCapacityWaiters.remove(at: index).1.resume(returning: false)
+                self.segmentCapacityWaiters.remove(at: index).2.resume(returning: false)
             }
         }
     }
 
     private func resumeSegmentCapacityWaitersIfPossible() {
-        while backlog.count < SegmentBacklog.maximumDeferredSegmentCount,
-              !segmentCapacityWaiters.isEmpty {
-            segmentCapacityWaiters.removeFirst().1.resume(returning: true)
+        while let first = segmentCapacityWaiters.first,
+              backlog.count < first.1 {
+            segmentCapacityWaiters.removeFirst().2.resume(returning: true)
         }
     }
 
     private func cancelSegmentCapacityWaiters() {
         let waiters = segmentCapacityWaiters
         segmentCapacityWaiters.removeAll()
-        for (_, waiter) in waiters {
+        for (_, _, waiter) in waiters {
             waiter.resume(returning: false)
         }
     }
@@ -3597,6 +3600,7 @@ final class AudioPlayer: ObservableObject {
     /// announcing here would cause a double-speak.
     private func publishCurrentChapter(auto: Bool = false) {
         let value = currentChapterValue
+        activeStreamingChapterIndex = isSegmentMode ? currentChapterIndex : value?.index
         for cont in chapterContinuations.values { cont.yield(value) }
         #if os(iOS)
         if auto, let title = value?.displayTitle, !title.isEmpty {

@@ -128,6 +128,13 @@ final class ReaderLoadingRegressionUITests: XCTestCase {
         let close = app.buttons["fullPlayer.close"].firstMatch
         XCTAssertTrue(close.waitForExistence(timeout: 5), "Tapping the mini-player must open the full player.")
         XCTAssertTrue(close.isHittable, "Full-player dismissal must remain reachable on a compact screen.")
+        let bookTitle = app.staticTexts["fullPlayer.bookTitle"].firstMatch
+        XCTAssertTrue(bookTitle.waitForExistence(timeout: 5), "Expanded player must retain book information.")
+        for _ in 0..<2 {
+            app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+            XCTAssertTrue(close.waitForExistence(timeout: 3), "Center taps must not hide the close control.")
+            XCTAssertTrue(bookTitle.exists, "Center taps must not remove the book hero.")
+        }
         let rate = app.buttons["fullPlayer.playbackRateButton"].firstMatch
         XCTAssertTrue(rate.waitForExistence(timeout: 5), "Full-player secondary controls must exist on a compact screen.")
         XCTAssertTrue(rate.isHittable, "Full-player secondary controls must remain reachable on a compact screen.")

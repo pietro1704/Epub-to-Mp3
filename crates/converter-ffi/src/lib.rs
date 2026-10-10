@@ -77,6 +77,32 @@ pub unsafe extern "C" fn converter_job_control_set_paused(
 }
 
 #[no_mangle]
+pub unsafe extern "C" fn converter_job_control_set_playback_window(
+    control: *const ConverterJobControl,
+    current_chapter: usize,
+    chapters_ahead: usize,
+) {
+    if let Some(control) = control.as_ref() {
+        control
+            .control
+            .set_playback_window(current_chapter, chapters_ahead);
+    }
+}
+
+/// Returns whether a source chapter still belongs to the active playback
+/// window. Streaming adapters use this at chunk delivery so seeks can stop an
+/// in-flight, now-distant chapter before its audio is persisted.
+#[no_mangle]
+pub unsafe extern "C" fn converter_job_control_chapter_is_in_playback_window(
+    control: *const ConverterJobControl,
+    chapter_index: usize,
+) -> bool {
+    control
+        .as_ref()
+        .is_some_and(|control| control.control.chapter_is_in_playback_window(chapter_index))
+}
+
+#[no_mangle]
 pub unsafe extern "C" fn converter_job_control_prioritize(
     control: *const ConverterJobControl,
     chapter_index: usize,
@@ -129,6 +155,17 @@ pub type ConverterChapterCompletedCallback =
     Option<unsafe extern "C" fn(event_json: *const c_char, context: *mut c_void)>;
 pub type ConverterProgressCallback =
     Option<unsafe extern "C" fn(event_json: *const c_char, context: *mut c_void)>;
+/// Borrowed audio bytes are valid only for the callback duration. Returning
+/// false cancels remaining synthesis before the chapter artifact is published.
+pub type ConverterAudioChunkCallback = Option<
+    unsafe extern "C" fn(
+        source_chapter_index: usize,
+        chunk_index: usize,
+        audio: *const u8,
+        audio_len: usize,
+        context: *mut c_void,
+    ) -> bool,
+>;
 
 fn positional_chapter_selection(
     session: &ConverterSession,
@@ -366,6 +403,7 @@ pub unsafe extern "C" fn converter_session_convert_job_json(
         callback,
         context,
         None,
+        None,
     )
 }
 
@@ -398,6 +436,39 @@ pub unsafe extern "C" fn converter_session_convert_controlled_job_json(
         callback,
         context,
         Some(owned_control),
+        None,
+    )
+}
+
+/// Controlled playback conversion with ordered per-chunk audio delivery.
+#[no_mangle]
+pub unsafe extern "C" fn converter_session_convert_streaming_job_json(
+    handle: *const ConverterSession,
+    output_dir: *const c_char,
+    job_id: *const c_char,
+    chapter_start: i32,
+    chapter_end: i32,
+    progress_callback: ConverterProgressCallback,
+    chapter_callback: ConverterChapterCompletedCallback,
+    chunk_callback: ConverterAudioChunkCallback,
+    context: *mut c_void,
+    control: *const ConverterJobControl,
+) -> *mut c_char {
+    clear_last_error();
+    let Some(control) = control.as_ref() else {
+        return fail("invalid null job control".to_owned());
+    };
+    convert_job_json(
+        handle,
+        output_dir,
+        job_id,
+        chapter_start,
+        chapter_end,
+        progress_callback,
+        chapter_callback,
+        context,
+        Some(control.control.clone()),
+        chunk_callback,
     )
 }
 
@@ -411,6 +482,7 @@ unsafe fn convert_job_json(
     callback: ConverterChapterCompletedCallback,
     context: *mut c_void,
     control: Option<ConversionControl>,
+    chunk_callback: ConverterAudioChunkCallback,
 ) -> *mut c_char {
     clear_last_error();
     let _ = rustls::crypto::ring::default_provider().install_default();
@@ -488,6 +560,20 @@ unsafe fn convert_job_json(
         let Ok(json) = CString::new(json) else { return };
         unsafe { callback(json.as_ptr(), context_address as *mut c_void) };
     }));
+    let chunk_context_address = context as usize;
+    let worker = if let Some(chunk_callback) = chunk_callback {
+        worker.with_streaming_chunks(Arc::new(move |chapter_index, chunk_index, audio| unsafe {
+            chunk_callback(
+                chapter_index,
+                chunk_index,
+                audio.as_ptr(),
+                audio.len(),
+                chunk_context_address as *mut c_void,
+            )
+        }))
+    } else {
+        worker
+    };
     let worker = if let Some(control) = control {
         worker.with_control(control)
     } else {
@@ -1858,6 +1944,10 @@ mod tests {
             converter_job_control_cancel(ptr::null());
             converter_job_control_set_paused(ptr::null(), true);
             converter_job_control_set_paused(ptr::null(), false);
+            assert!(!converter_job_control_chapter_is_in_playback_window(
+                ptr::null(),
+                0
+            ));
             assert!(!converter_job_control_prioritize(ptr::null(), 0));
             assert!(!converter_job_control_set_recovery_job(
                 ptr::null(),
@@ -1881,6 +1971,33 @@ mod tests {
                 "invalid null job control"
             );
             converter_string_free(error);
+        }
+    }
+
+    #[test]
+    fn playback_window_query_tracks_runtime_navigation() {
+        unsafe {
+            let control = converter_job_control_create();
+            assert!(!control.is_null());
+            converter_job_control_set_playback_window(control, 3, 1);
+            assert!(converter_job_control_chapter_is_in_playback_window(
+                control, 3
+            ));
+            assert!(converter_job_control_chapter_is_in_playback_window(
+                control, 4
+            ));
+            assert!(!converter_job_control_chapter_is_in_playback_window(
+                control, 2
+            ));
+
+            converter_job_control_set_playback_window(control, 7, 1);
+            assert!(!converter_job_control_chapter_is_in_playback_window(
+                control, 3
+            ));
+            assert!(converter_job_control_chapter_is_in_playback_window(
+                control, 7
+            ));
+            converter_job_control_free(control);
         }
     }
 

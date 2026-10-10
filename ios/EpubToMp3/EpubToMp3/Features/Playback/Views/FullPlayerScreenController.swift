@@ -6,7 +6,7 @@ import MediaPlayer
 import UIKit
 
 enum FullPlayerLayoutMetrics {
-    static let elementSpacing: CGFloat = 8
+    static let elementSpacing: CGFloat = 4
     static let bottomInset: CGFloat = 0
 }
 
@@ -153,10 +153,12 @@ final class FullPlayerScreenController: UIViewController {
         titleLabel.font = .preferredFont(forTextStyle: .title2).bold()
         titleLabel.numberOfLines = 2
         titleLabel.textAlignment = .center
+        titleLabel.accessibilityIdentifier = "fullPlayer.bookTitle"
 
         authorLabel.font = .preferredFont(forTextStyle: .subheadline)
         authorLabel.textColor = .secondaryLabel
         authorLabel.textAlignment = .center
+        authorLabel.accessibilityIdentifier = "fullPlayer.bookAuthor"
 
         chapterLabel.font = .preferredFont(forTextStyle: .footnote)
         chapterLabel.textColor = .tertiaryLabel

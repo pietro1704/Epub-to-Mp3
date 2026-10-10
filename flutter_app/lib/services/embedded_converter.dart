@@ -50,6 +50,11 @@ abstract interface class EmbeddedConverter {
     int? chapterStart,
     int? chapterEnd,
   });
+  Future<ConvertedChapterAudio> convertChapter({
+    required String inputPath,
+    required String outputPath,
+    required int chapterIndex,
+  }) => throw EmbeddedConverterUnavailable('Rust chapter conversion is unavailable');
   Future<String> ttsModels() =>
       throw EmbeddedConverterUnavailable('TTS model catalog is unavailable');
   Future<String> ttsDefaultEngine({
@@ -89,6 +94,52 @@ abstract interface class EmbeddedConverter {
   }) => throw EmbeddedConverterUnavailable(
     'Catalog TTS model installation is unavailable',
   );
+}
+
+class ConvertedChapterAudio {
+  const ConvertedChapterAudio({
+    required this.chapterIndex,
+    required this.path,
+    required this.title,
+  });
+
+  final int chapterIndex;
+  final String path;
+  final String title;
+
+  static ConvertedChapterAudio fromNativeResult(
+    String raw, {
+    required int expectedChapterIndex,
+  }) {
+    final decoded = jsonDecode(raw);
+    if (decoded is! Map<String, dynamic> || decoded['audioPath'] is! String) {
+      throw EmbeddedConversionFailure(
+        'INVALID_CHAPTER_RESULT',
+        'Rust converter returned no chapter audio path',
+      );
+    }
+    final manifest = decoded['manifest'];
+    final entries = manifest is Map ? manifest['chapters'] : null;
+    if (entries is! List || entries.length != 1 || entries.single is! Map) {
+      throw EmbeddedConversionFailure(
+        'INVALID_CHAPTER_RESULT',
+        'Rust converter did not return exactly one requested chapter',
+      );
+    }
+    final entry = Map<String, dynamic>.from(entries.single as Map);
+    final sourceIndex = entry['sourceIndex'];
+    if (sourceIndex is! num || sourceIndex.toInt() != expectedChapterIndex) {
+      throw EmbeddedConversionFailure(
+        'CHAPTER_INDEX_MISMATCH',
+        'Rust returned an unexpected source chapter for request $expectedChapterIndex',
+      );
+    }
+    return ConvertedChapterAudio(
+      chapterIndex: expectedChapterIndex,
+      path: decoded['audioPath'] as String,
+      title: entry['title'] as String? ?? '',
+    );
+  }
 }
 
 /// The Android implementation invokes the registered native converter through
@@ -273,6 +324,40 @@ class AndroidEmbeddedConverter implements EmbeddedConverter {
   }
 
   @override
+  Future<ConvertedChapterAudio> convertChapter({
+    required String inputPath,
+    required String outputPath,
+    required int chapterIndex,
+  }) async {
+    try {
+      await ensureRuntimeLoaded();
+      final raw = await _channel.invokeMethod<String>('convert', {
+        'inputPath': inputPath,
+        'outputPath': outputPath,
+        'chapterStart': chapterIndex,
+        'chapterEnd': chapterIndex,
+      });
+      if (raw == null || raw.isEmpty) {
+        throw EmbeddedConversionFailure(
+          'EMPTY_CHAPTER_RESULT',
+          'Rust converter returned no chapter result',
+        );
+      }
+      return ConvertedChapterAudio.fromNativeResult(
+        raw,
+        expectedChapterIndex: chapterIndex,
+      );
+    } on MissingPluginException {
+      throw EmbeddedConverterUnavailable();
+    } on PlatformException catch (error) {
+      throw EmbeddedConversionFailure(
+        error.code,
+        error.message ?? 'embedded chapter conversion failed',
+      );
+    }
+  }
+
+  @override
   Future<String> ttsModels() async {
     final value = await _channel.invokeMethod<String>('ttsModels');
     if (value == null || value.isEmpty) {
@@ -428,6 +513,13 @@ class UnavailableEmbeddedConverter implements EmbeddedConverter {
   }) {
     throw EmbeddedConverterUnavailable();
   }
+
+  @override
+  Future<ConvertedChapterAudio> convertChapter({
+    required String inputPath,
+    required String outputPath,
+    required int chapterIndex,
+  }) => throw EmbeddedConverterUnavailable();
 
   @override
   Future<String> ttsModels() => throw EmbeddedConverterUnavailable();

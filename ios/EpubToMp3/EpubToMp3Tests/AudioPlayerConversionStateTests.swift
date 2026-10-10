@@ -31,7 +31,7 @@ final class AudioPlayerConversionStateTests: XCTestCase {
 
     // MARK: - isLoading derived property
 
-    /// isLoading = isConverting && !firstChapterReady
+    /// isLoading is reserved for the initial playable chapter before playback.
     @MainActor
     func testIsLoadingTrueWhenConvertingAndNoFirstChapter() {
         let player = AudioPlayer()
@@ -67,6 +67,16 @@ final class AudioPlayerConversionStateTests: XCTestCase {
 
         XCTAssertTrue(player.isConverting)
         XCTAssertTrue(player.isLoading)
+    }
+
+    @MainActor
+    func testLaterConversionDoesNotShowLoadingOverActivePlayback() {
+        let player = AudioPlayer()
+        player.isConverting = true
+        player.testHook_setIsPlaying(true)
+
+        XCTAssertFalse(player.isLoading,
+            "Ongoing conversion must not replace transport controls while audio is playing")
     }
 
     // MARK: - markFirstChapterReady
@@ -158,8 +168,7 @@ final class AudioPlayerConversionStateTests: XCTestCase {
     func testMiniBarShowsSpinnerWhenConvertingNoFirstChapter() {
         let player = AudioPlayer()
         player.isConverting = true
-        let showSpinner = player.isConverting && !player.firstChapterReady
-        XCTAssertTrue(showSpinner,
+        XCTAssertTrue(player.isLoading,
             "MiniPlayerBar must show spinner while isConverting && !firstChapterReady")
     }
 
@@ -170,8 +179,7 @@ final class AudioPlayerConversionStateTests: XCTestCase {
         let player = AudioPlayer()
         player.isConverting = true
         player.markFirstChapterReady()
-        let showSpinner = player.isConverting && !player.firstChapterReady
-        XCTAssertFalse(showSpinner,
+        XCTAssertFalse(player.isLoading,
             "MiniPlayerBar must switch to play/pause once firstChapterReady is true")
     }
 
@@ -183,8 +191,7 @@ final class AudioPlayerConversionStateTests: XCTestCase {
         player.isConverting = true
         player.markFirstChapterReady()
         player.isConverting = false
-        let showSpinner = player.isConverting && !player.firstChapterReady
-        XCTAssertFalse(showSpinner,
+        XCTAssertFalse(player.isLoading,
             "Bar must show play/pause when conversion is done")
     }
 

@@ -10,9 +10,10 @@ final class MainReaderScreenController: UIViewController {
     private let playerPresentation: PlayerPresentation
     private let bookmarkStore: BookmarkStore
     private let sessionDefaults: UserDefaults
-    private let conversionExecutor: RustConversionCoordinator.Executor
+    private let conversionExecutor: RustConversionCoordinator.StreamingExecutor
     private var listeningJobID: String?
     private var listeningBookID: String?
+    private var listeningPlaybackControl: ConverterPlaybackControl?
     private var listeningChapters: [JobSnapshot.Chapter] = []
     private var hasDeliveredListeningChapter = false
     private var onBrowseLibrary: (() -> Void)?
@@ -50,7 +51,7 @@ final class MainReaderScreenController: UIViewController {
         playerPresentation: PlayerPresentation,
         bookmarkStore: BookmarkStore,
         onBrowseLibrary: (() -> Void)?,
-        conversionExecutor: @escaping RustConversionCoordinator.Executor = RustConversionCoordinator.execute,
+        conversionExecutor: @escaping RustConversionCoordinator.StreamingExecutor = RustConversionCoordinator.executeStreaming,
         sessionDefaults: UserDefaults = .standard
     ) {
         self.library = library
@@ -104,6 +105,18 @@ final class MainReaderScreenController: UIViewController {
     }
 
     private func bind() {
+        player.$activeStreamingChapterIndex
+            .compactMap { $0 }
+            .removeDuplicates()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] chapterIndex in
+                guard let self, self.listeningJobID != nil,
+                      let control = self.listeningPlaybackControl else { return }
+                control.updatePlaybackWindow(currentChapter: chapterIndex, chaptersAhead: 1)
+                _ = control.prioritize(chapterIndex: chapterIndex)
+            }
+            .store(in: &cancellables)
+
         library.objectWillChange
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in self?.render() }
@@ -389,9 +402,13 @@ final class MainReaderScreenController: UIViewController {
             self.view.layoutIfNeeded()
         }
         guard animated else {
-            if commitsLayout {
-                changes()
-            }
+            // Visibility is presentation state, not committed reader geometry.
+            // Restore alpha even when the root defers layout until its viewport
+            // transaction finishes; otherwise a previously hidden toolbar stays
+            // transparent after a centre tap restores reader chrome.
+            readerNavigationBar.alpha = shouldShow ? 1 : 0
+            readerNavigationBackground.alpha = shouldShow ? 1 : 0
+            if commitsLayout { view.layoutIfNeeded() }
             return
         }
         UIView.animate(
@@ -473,9 +490,13 @@ final class MainReaderScreenController: UIViewController {
         guard !isLoadingBookContent else { return }
         guard readerController == nil || readerBookID == book.id else { return }
         guard listeningJobID == nil || listeningBookID != book.id else { return }
+        listeningPlaybackControl?.cancel()
+        listeningPlaybackControl = nil
         let priority = readerController?.currentReaderChapterIndex
             ?? ReaderPlaybackPriorityChapter.index(bookID: book.id, defaults: sessionDefaults)
         guard let chapterStart = Int32(exactly: priority), chapterStart >= 0 else { return }
+        // The playback control schedules only the active chapter and one ahead.
+        let chapterEnd: Int32 = -1
         let jobID = UUID().uuidString
         let previousPlayerJob = player.snapshot?.jobId
         listeningJobID = jobID
@@ -489,12 +510,16 @@ final class MainReaderScreenController: UIViewController {
                 if self.listeningJobID == jobID {
                     self.listeningJobID = nil
                     self.listeningBookID = nil
+                    self.listeningPlaybackControl = nil
                 }
             }
             do {
                 let url = try await library.openBookFileAsync(id: book.id)
                 guard listeningJobID == jobID, currentBook?.id == book.id,
                       player.snapshot?.jobId == previousPlayerJob else { return }
+                let playbackControl = try RustConversionCoordinator.makePlaybackControl()
+                playbackControl.updatePlaybackWindow(currentChapter: priority, chaptersAhead: 1)
+                listeningPlaybackControl = playbackControl
                 let pending = JobSnapshot(jobId: jobID, state: "running", bookTitle: book.resolvedTitle,
                     bookAuthor: book.author, coverUrl: nil, coverMimeType: nil, engine: nil,
                     voice: nil, language: nil, progressPercent: 0, chaptersTotal: nil,
@@ -509,7 +534,9 @@ final class MainReaderScreenController: UIViewController {
                 installedPending = true
                 player.isConverting = true
                 player.resume()
-                let result = try await conversionExecutor(url, jobID, chapterStart, -1, nil,
+                let chunkDelivery = StreamingPlaybackChunkDelivery(player: player)
+                let result = try await conversionExecutor(
+                    url, jobID, chapterStart, chapterEnd, playbackControl, nil,
                     { [weak self] event in
                         guard let self, self.listeningJobID == jobID,
                               self.player.snapshot?.jobId == jobID, event.jobId == jobID,
@@ -530,7 +557,26 @@ final class MainReaderScreenController: UIViewController {
                             self.hasDeliveredListeningChapter = true
                             if presentsFullPlayer { self.playerPresentation.showFullPlayer() }
                         }
-                    })
+                    },
+                    { [weak self] chapterIndex, chunkIndex, data in
+                        guard let self else { return false }
+                        return chunkDelivery.enqueue(
+                            data,
+                            chapterIndex: chapterIndex,
+                            chunkIndex: chunkIndex,
+                            isCurrent: { [weak self] in
+                                guard let self else { return false }
+                                return self.listeningJobID == jobID
+                                    && self.player.snapshot?.jobId == jobID
+                                    && self.listeningPlaybackControl?.contains(chapterIndex: chapterIndex) == true
+                            },
+                            onAccepted: { [weak self] in
+                                guard let self, self.listeningJobID == jobID else { return }
+                                self.hasDeliveredListeningChapter = true
+                            }
+                        )
+                    }
+                )
                 let snapshot = try result.snapshot()
                 guard result.jobID == jobID, snapshot.jobId == jobID else {
                     throw EmbeddedConverterError.conversionFailed("Conversion returned a different listening job.")

@@ -1,5 +1,44 @@
 # Hermes ↔ Claude Code Handoff
 
+## Active playback request — APP-20261010-01
+
+User-confirmed: implement a small moving TTS-chunk window around audible
+playback for `Listen` in the native iOS/macOS apps first, then Flutter. The
+window follows chapter/seek navigation and never generates beyond one EPUB
+chapter ahead; stale distant work must not persist audio. Whole-book `Download`
+and CLI conversion keep their existing complete, non-streaming behavior.
+Apple player UI corrections: remove progress from the mini player; keep the
+expanded book hero and Back/close control visible after center-tap interactions;
+reduce excess vertical spacing; show a Play spinner only until initial requested
+audio is ready, not while more audio is generated during active playback.
+
+Preflight on 2026-10-10 confirmed the exact iPhone SE (1st generation) / iOS
+15.5 Simulator (UDID `C66CCB36-C43E-4174-861E-2FA713389C84`) and native macOS
+target. Implementation now streams TTS chunks to playback, limits conversion
+to the current chapter plus one ahead, reprioritizes on playback navigation,
+discards stale in-flight output, and avoids a second full-chapter buffer.
+Swift/iOS and AppKit/macOS pass the moving window and chunk callback. Flutter
+uses Rust chapter-range conversion with the same window and stale-result check.
+Whole-book Download and CLI conversion are unchanged. Native player UI removes
+progress from the mini player, preserves expanded hero/close controls, reduces
+spacing, and only shows loading while initial requested audio is pending.
+
+Primary verification: on the exact Simulator, 3 native XCTest and 2 UI tests
+passed in `ios/EpubToMp3/.build/Logs/Test/Test-EpubToMp3-playback-final.xcresult`.
+The built app was installed/launched (PID 19737); screenshot:
+`/tmp/epubtomp3-ios15-primary.png`. macOS `mise run mac:run` rebuilt FFI/app and
+launched PID 19842; screenshot `/tmp/epubtomp3-macos-primary.png` shows the mini
+player without progress. Flutter's 22 focused streaming/player tests pass and
+`mise run flutter:analyze` reports no issues. `mise run flutter:build-apk-debug`
+succeeded and produced `flutter_app/build/app/outputs/flutter-apk/app-debug.apk`
+(189 MB). No Android device/emulator is attached, so Flutter runtime interaction
+remains unverified; the chapter-window scheduler and Android channel request are
+covered by tests. Review also fixed sparse chapter-index migration for books
+with empty EPUB chapters and added a restart regression. Final diff/whitespace
+audit passed and the APK was rebuilt after final source adjustments. Delivery
+remains pending commit, push and authorized PR; keep this request open until the
+PR merge is verified.
+
 ## Current local development and verification contract — 2026-10-09
 
 All feature and bug-fix work is developed and verified on this Mac; do not route

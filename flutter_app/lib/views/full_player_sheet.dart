@@ -133,21 +133,37 @@ class _FullPlayerSheetState extends ConsumerState<FullPlayerSheet> {
           padding: const EdgeInsets.symmetric(horizontal: 32),
           child: Column(
             children: [
-              Container(
-                width: 36,
-                height: 4,
-                margin: const EdgeInsets.only(top: 8, bottom: 16),
-                decoration: BoxDecoration(
-                  color: Colors.grey[400],
-                  borderRadius: BorderRadius.circular(2),
-                ),
+              Row(
+                children: [
+                  const SizedBox(width: 48),
+                  Expanded(
+                    child: Center(
+                      child: Container(
+                        width: 36,
+                        height: 4,
+                        margin: const EdgeInsets.only(top: 8, bottom: 8),
+                        decoration: BoxDecoration(
+                          color: Colors.grey[400],
+                          borderRadius: BorderRadius.circular(2),
+                        ),
+                      ),
+                    ),
+                  ),
+                  IconButton(
+                    key: const ValueKey('fullPlayer.close'),
+                    tooltip:
+                        AppLocalizations.of(context)?.closePlayer ?? 'Close player',
+                    onPressed: () => Navigator.of(context).maybePop(),
+                    icon: const Icon(Icons.close),
+                  ),
+                ],
               ),
               Expanded(
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     Flexible(child: _coverHero(context)),
-                    const SizedBox(height: 20),
+                    const SizedBox(height: 12),
                     if (widget.bookTitle != null)
                       Text(
                         widget.bookTitle!,
@@ -193,11 +209,11 @@ class _FullPlayerSheetState extends ConsumerState<FullPlayerSheet> {
                 ),
               ),
               _scrubber(context),
-              const SizedBox(height: 20),
+              const SizedBox(height: 8),
               _transportRow(context),
-              const SizedBox(height: 20),
+              const SizedBox(height: 8),
               _secondaryRow(context),
-              const SizedBox(height: 16),
+              const SizedBox(height: 8),
             ],
           ),
         ),

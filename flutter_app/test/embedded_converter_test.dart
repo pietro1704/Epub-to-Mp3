@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -9,7 +10,8 @@ class FakeConverter implements EmbeddedConverter {
   int calls = 0;
 
   @override
-  Future<Uint8List> edgeProbe(String text, {String? locale}) async => Uint8List.fromList(const [1]);
+  Future<Uint8List> edgeProbe(String text, {String? locale}) async =>
+      Uint8List.fromList(const [1]);
 
   @override
   Future<void> speakFallback(String text, {required String locale}) async {}
@@ -37,6 +39,17 @@ class FakeConverter implements EmbeddedConverter {
     calls++;
     return outputPath;
   }
+
+  @override
+  Future<ConvertedChapterAudio> convertChapter({
+    required String inputPath,
+    required String outputPath,
+    required int chapterIndex,
+  }) async => ConvertedChapterAudio(
+    chapterIndex: chapterIndex,
+    path: outputPath,
+    title: 'Chapter $chapterIndex',
+  );
 
   @override
   Future<String> ttsModels() async => '[]';
@@ -109,6 +122,47 @@ void main() {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(channel, null);
   });
+
+  test(
+    'Android chapter conversion asks Rust for exactly one chapter',
+    () async {
+      const channel = MethodChannel(AndroidEmbeddedConverter.channelName);
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (call) async {
+            if (call.method == 'status') {
+              return {'engineReady': true};
+            }
+            expect(call.method, 'convert');
+            expect(call.arguments, {
+              'inputPath': 'book.epub',
+              'outputPath': '/tmp/chapter-4',
+              'chapterStart': 4,
+              'chapterEnd': 4,
+            });
+            return jsonEncode({
+              'audioPath': '/tmp/chapter-4/audio.mp3',
+              'manifest': {
+                'chapters': [
+                  {'sourceIndex': 4, 'title': 'Chapter 4'},
+                ],
+              },
+            });
+          });
+
+      final result = await AndroidEmbeddedConverter(channel: channel)
+          .convertChapter(
+            inputPath: 'book.epub',
+            outputPath: '/tmp/chapter-4',
+            chapterIndex: 4,
+          );
+
+      expect(result.chapterIndex, 4);
+      expect(result.path, '/tmp/chapter-4/audio.mp3');
+      expect(result.title, 'Chapter 4');
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, null);
+    },
+  );
 
   test(
     'Android channel contract reports unavailable without native library',

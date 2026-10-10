@@ -16,14 +16,14 @@ class PlaybackSnapshot {
   });
 
   const PlaybackSnapshot.initial()
-      : revision = 0,
-        isPlaying = false,
-        isLoading = false,
-        position = Duration.zero,
-        duration = Duration.zero,
-        playerIndex = null,
-        chapterIndex = null,
-        speed = 1.0;
+    : revision = 0,
+      isPlaying = false,
+      isLoading = false,
+      position = Duration.zero,
+      duration = Duration.zero,
+      playerIndex = null,
+      chapterIndex = null,
+      speed = 1.0;
 
   final int revision;
   final bool isPlaying;
@@ -70,9 +70,30 @@ class PlaybackCoordinator {
   final _controller = StreamController<PlaybackSnapshot>.broadcast();
   PlaybackSnapshot _snapshot = const PlaybackSnapshot.initial();
   bool _disposed = false;
+  bool _initialAudioPending = false;
 
   PlaybackSnapshot get snapshot => _snapshot;
   Stream<PlaybackSnapshot> get stream => _controller.stream;
+
+  void beginInitialAudioRequest() {
+    if (player.isPlaying || player.hasQueuedAudio || _initialAudioPending) {
+      return;
+    }
+    _initialAudioPending = true;
+    _publish();
+  }
+
+  void firstAudioReady() {
+    if (!_initialAudioPending) return;
+    _initialAudioPending = false;
+    _publish();
+  }
+
+  void finishInitialAudioRequest() {
+    if (!_initialAudioPending) return;
+    _initialAudioPending = false;
+    _publish();
+  }
 
   void _publish() {
     if (_disposed) return;
@@ -80,7 +101,7 @@ class PlaybackCoordinator {
     final next = PlaybackSnapshot(
       revision: _snapshot.revision + 1,
       isPlaying: player.isPlaying,
-      isLoading: player.isLoading,
+      isLoading: _initialAudioPending,
       position: Duration(milliseconds: (player.positionSeconds * 1000).round()),
       duration: Duration(milliseconds: (player.durationSeconds * 1000).round()),
       playerIndex: playerIndex,

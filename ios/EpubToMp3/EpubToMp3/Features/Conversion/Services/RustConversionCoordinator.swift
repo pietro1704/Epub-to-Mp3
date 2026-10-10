@@ -217,6 +217,13 @@ final class RustConversionCoordinator {
         (@MainActor @Sendable (ChapterCompletionEvent) -> Void)?
     ) async throws -> Result
 
+    typealias StreamingExecutor = @MainActor (
+        URL, String, Int32, Int32, ConverterPlaybackControl,
+        (@MainActor @Sendable (ConversionProgressEvent) -> Void)?,
+        (@MainActor @Sendable (ChapterCompletionEvent) -> Void)?,
+        (@Sendable (Int, Int, Data) -> Bool)?
+    ) async throws -> Result
+
     @MainActor
     static func execute(bookURL: URL, jobID: String, chapterStart: Int32, chapterEnd: Int32,
                         onProgress: (@MainActor @Sendable (ConversionProgressEvent) -> Void)?,
@@ -224,6 +231,34 @@ final class RustConversionCoordinator {
         try await RustConversionCoordinator().convert(bookURL: bookURL, jobID: jobID,
             chapterStart: chapterStart, chapterEnd: chapterEnd,
             onProgress: onProgress, onChapterCompleted: onChapterCompleted)
+    }
+
+    @MainActor
+    static func makePlaybackControl() throws -> ConverterPlaybackControl {
+        try ConverterFFIAdapter().makePlaybackControl()
+    }
+
+    @MainActor
+    static func executeStreaming(
+        bookURL: URL,
+        jobID: String,
+        chapterStart: Int32,
+        chapterEnd: Int32,
+        control: ConverterPlaybackControl,
+        onProgress: (@MainActor @Sendable (ConversionProgressEvent) -> Void)?,
+        onChapterCompleted: (@MainActor @Sendable (ChapterCompletionEvent) -> Void)?,
+        onAudioChunk: (@Sendable (Int, Int, Data) -> Bool)?
+    ) async throws -> Result {
+        try await RustConversionCoordinator().convert(
+            bookURL: bookURL,
+            jobID: jobID,
+            chapterStart: chapterStart,
+            chapterEnd: chapterEnd,
+            playbackControl: control,
+            onProgress: onProgress,
+            onChapterCompleted: onChapterCompleted,
+            onAudioChunk: onAudioChunk
+        )
     }
 
     init(
@@ -240,8 +275,10 @@ final class RustConversionCoordinator {
         chapterStart: Int32 = -1,
         chapterEnd: Int32 = -1,
         options: ConversionOptions? = nil,
+        playbackControl: ConverterPlaybackControl? = nil,
         onProgress: (@MainActor @Sendable (ConversionProgressEvent) -> Void)? = nil,
-        onChapterCompleted: (@MainActor @Sendable (ChapterCompletionEvent) -> Void)? = nil
+        onChapterCompleted: (@MainActor @Sendable (ChapterCompletionEvent) -> Void)? = nil,
+        onAudioChunk: (@Sendable (Int, Int, Data) -> Bool)? = nil
     ) async throws -> Result {
         if options != nil {
             try adapter.validateConversionSupport(options: options)
@@ -271,26 +308,34 @@ final class RustConversionCoordinator {
                 rustConversionQueue.async {
                     do {
                         let data = try invocation.adapter.convertBook(
-                    at: bookURL,
-                    outputDirectory: outputDirectory,
-                    jobID: jobID,
-                    chapterStart: chapterStart,
-                    chapterEnd: chapterEnd,
-                    options: options,
-                    onProgress: { data in
-                        guard let onProgress,
-                              let event = try? JSONDecoder().decode(ConversionProgressEvent.self, from: data) else {
-                            return
-                        }
-                        Task { @MainActor in onProgress(event) }
-                    },
-                    onChapterCompleted: { data in
-                        guard let onChapterCompleted,
-                              let event = try? JSONDecoder().decode(ChapterCompletionEvent.self, from: data) else {
-                            return
-                        }
-                        Task { @MainActor in onChapterCompleted(event) }
-                    }
+                            at: bookURL,
+                            outputDirectory: outputDirectory,
+                            jobID: jobID,
+                            chapterStart: chapterStart,
+                            chapterEnd: chapterEnd,
+                            options: options,
+                            playbackControl: playbackControl,
+                            onProgress: { data in
+                                guard let onProgress,
+                                      let event = try? JSONDecoder().decode(
+                                        ConversionProgressEvent.self,
+                                        from: data
+                                      ) else {
+                                    return
+                                }
+                                Task { @MainActor in onProgress(event) }
+                            },
+                            onChapterCompleted: { data in
+                                guard let onChapterCompleted,
+                                      let event = try? JSONDecoder().decode(
+                                        ChapterCompletionEvent.self,
+                                        from: data
+                                      ) else {
+                                    return
+                                }
+                                Task { @MainActor in onChapterCompleted(event) }
+                            },
+                            onAudioChunk: onAudioChunk
                         )
                         continuation.resume(returning: data)
                     } catch {

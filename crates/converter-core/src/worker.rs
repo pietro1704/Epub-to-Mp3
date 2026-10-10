@@ -1,19 +1,24 @@
 //! End-to-end conversion orchestration shared by the CLI and HTTP server.
 use crate::{
+    adaptive::AdaptiveThroughputController,
     audio::{self, ChapterMetadata},
     cache,
     config::AppConfig,
+    conversion_control::ConversionControl,
     epub,
     jobs::{JobError, JobManager, JobRecord, JobState},
     piper::{self, CancellationToken, PiperConfig},
-    tts::EdgeError,
+    tts::{EdgeError, Telemetry},
 };
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::{
     fs, io,
     path::{Path, PathBuf},
-    sync::{Arc, Mutex},
+    sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc, Mutex,
+    },
 };
 use thiserror::Error;
 
@@ -39,6 +44,20 @@ pub struct ProgressEvent {
     pub percent: f64,
     pub engine: Option<String>,
     pub message: String,
+}
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ChapterCompletionEvent {
+    pub job_id: String,
+    pub book_title: String,
+    pub book_author: String,
+    pub chapter_index: usize,
+    pub chapters_total: usize,
+    pub chapters_completed: usize,
+    pub chapter_title: String,
+    pub filename: String,
+    pub audio_path: PathBuf,
+    pub text_chars: usize,
 }
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -68,16 +87,25 @@ pub enum WorkerError {
     Piper(String),
     #[error("cancelled")]
     Cancelled,
+    #[error("playback moved outside the current chapter window")]
+    PlaybackWindowChanged,
     #[error("unsupported input: {0}")]
     Unsupported(String),
 }
 pub type ProgressSink = Arc<dyn Fn(ProgressEvent) + Send + Sync>;
+pub type ChapterCompletionSink = Arc<dyn Fn(ChapterCompletionEvent) + Send + Sync>;
+pub type StreamingChunkSink = Arc<dyn Fn(usize, usize, &[u8]) -> bool + Send + Sync>;
 
 pub struct ConversionWorker {
     pub config: AppConfig,
     pub jobs: JobManager,
     pub cancel: CancellationToken,
     pub progress: Option<ProgressSink>,
+    pub chapter_completed: Option<ChapterCompletionSink>,
+    streaming_chunk: Option<StreamingChunkSink>,
+    adaptive: Arc<AdaptiveThroughputController>,
+    telemetry: Option<Telemetry>,
+    control: Option<ConversionControl>,
 }
 impl ConversionWorker {
     pub fn new(config: AppConfig) -> Result<Self, WorkerError> {
@@ -87,10 +115,39 @@ impl ConversionWorker {
             jobs,
             cancel: CancellationToken::default(),
             progress: None,
+            chapter_completed: None,
+            streaming_chunk: None,
+            adaptive: Arc::new(AdaptiveThroughputController::default()),
+            telemetry: None,
+            control: None,
         })
     }
     pub fn with_progress(mut self, sink: ProgressSink) -> Self {
         self.progress = Some(sink);
+        self
+    }
+    pub fn with_chapter_completed(mut self, sink: ChapterCompletionSink) -> Self {
+        self.chapter_completed = Some(sink);
+        self
+    }
+    pub fn with_streaming_chunks(mut self, sink: StreamingChunkSink) -> Self {
+        self.streaming_chunk = Some(sink);
+        self
+    }
+    pub fn with_adaptive_throughput(
+        mut self,
+        controller: Arc<AdaptiveThroughputController>,
+    ) -> Self {
+        self.adaptive = controller;
+        self
+    }
+    pub fn with_tts_telemetry(mut self, telemetry: Telemetry) -> Self {
+        self.telemetry = Some(telemetry);
+        self
+    }
+    pub fn with_control(mut self, control: ConversionControl) -> Self {
+        self.cancel = control.cancellation_token();
+        self.control = Some(control);
         self
     }
     pub fn with_cancellation(mut self, cancel: CancellationToken) -> Self {
@@ -179,17 +236,22 @@ impl ConversionWorker {
                     })
                     .unwrap_or(true)
             })
-            .map(|(_, chapter)| chapter)
+            .map(|(source_index, chapter)| (source_index, chapter))
             .collect();
         let total = chapters.len();
         let source_text_chars: usize = chapters
             .iter()
-            .map(|chapter| chapter.text.chars().count())
+            .map(|(_, chapter)| chapter.text.chars().count())
             .sum();
         if total == 0 || source_text_chars == 0 {
             return Err(WorkerError::Piper(
                 "selected chapters have no readable text".into(),
             ));
+        }
+        if let Some(control) = &self.control {
+            control
+                .attach(&chapters.iter().map(|(index, _)| *index).collect::<Vec<_>>())
+                .map_err(|error| WorkerError::Piper(error.to_string()))?;
         }
         let detected_language = request
             .language
@@ -224,62 +286,125 @@ impl ConversionWorker {
             .build()
             .map_err(|error| WorkerError::Piper(error.to_string()))?;
         let results = Mutex::new(Vec::with_capacity(total));
-        pool.install(|| {
-            chapters.par_iter().enumerate().try_for_each(
-                |(position, chapter)| -> Result<(), WorkerError> {
-                    if self.cancel.is_cancelled()
-                        || self.jobs.is_cancellation_requested(&request.job_id)?
-                    {
-                        return Err(WorkerError::Cancelled);
-                    }
-                    let text_path =
-                        cache_dir.join(format!("{}.json", chapter.index.replace('.', "_")));
-                    let text = cached_chapter_text(&text_path, &chapter.text)?;
-                    let stem = format!("{:04}-{}", position + 1, sanitize(&chapter.name));
-                    let mp3 = output_dir.join(format!("{stem}.mp3"));
-                    let language = detected_language;
-                    let engine = select_engine(request.engine.as_deref(), &self.config);
-                    let language = request.language.as_deref().or(language);
-                    let request_key = chapter_audio_request_key(
-                        &book_key,
-                        &chapter.index,
-                        &text,
-                        &engine,
-                        request.voice.as_deref(),
-                        language,
-                    )?;
-                    ensure_chapter_audio(&mp3, &request_key, |pending| {
-                        eprintln!("synthesizing chapter {}/{}", position + 1, total);
-                        self.synthesize_with_timeout(
-                            &engine,
-                            &text,
-                            pending,
-                            request.voice.as_deref(),
-                            language,
-                        )?;
-                        if self.cancel.is_cancelled()
-                            || self.jobs.is_cancellation_requested(&request.job_id)?
-                        {
-                            return Err(WorkerError::Cancelled);
-                        }
-                        Ok(())
-                    })?;
-                    let name = mp3.file_name().unwrap().to_string_lossy().to_string();
-                    results.lock().unwrap().push((
-                        position,
-                        mp3,
-                        name.clone(),
-                        ChapterMetadata {
-                            index: position + 1,
-                            title: chapter.name.clone(),
-                            filename: name,
-                            text_chars: text.chars().count(),
-                        },
-                    ));
-                    Ok(())
+        let completed = AtomicUsize::new(0);
+        let process_chapter = |position: usize,
+                               source_index: usize,
+                               chapter: &epub::Chapter|
+         -> Result<(), WorkerError> {
+            if self.cancel.is_cancelled() || self.jobs.is_cancellation_requested(&request.job_id)? {
+                return Err(WorkerError::Cancelled);
+            }
+            let text_path = cache_dir.join(format!("{}.json", chapter.index.replace('.', "_")));
+            let text = cached_chapter_text(&text_path, &chapter.text)?;
+            let stem = format!("{:04}-{}", position + 1, sanitize(&chapter.name));
+            let mp3 = output_dir.join(format!("{stem}.mp3"));
+            let language = detected_language;
+            let engine = select_engine(request.engine.as_deref(), &self.config);
+            let language = request.language.as_deref().or(language);
+            let request_key = chapter_audio_request_key(
+                &book_key,
+                &chapter.index,
+                &text,
+                &engine,
+                request.voice.as_deref(),
+                language,
+            )?;
+            let stale_window_cancelled = std::sync::atomic::AtomicBool::new(false);
+            let audio_result = ensure_chapter_audio(&mp3, &request_key, |pending| {
+                eprintln!("synthesizing chapter {}/{}", position + 1, total);
+                let synthesis = self.synthesize_with_timeout(
+                    &engine,
+                    &text,
+                    pending,
+                    source_index,
+                    request.voice.as_deref(),
+                    language,
+                    &stale_window_cancelled,
+                );
+                if stale_window_cancelled.load(Ordering::Acquire) {
+                    return Err(WorkerError::PlaybackWindowChanged);
+                }
+                synthesis?;
+                if self.cancel.is_cancelled()
+                    || self.jobs.is_cancellation_requested(&request.job_id)?
+                {
+                    return Err(WorkerError::Cancelled);
+                }
+                Ok(())
+            });
+            match audio_result {
+                Err(WorkerError::PlaybackWindowChanged) => {
+                    self.control
+                        .as_ref()
+                        .expect("playback-window cancellation requires conversion control")
+                        .requeue(source_index)
+                        .map_err(|error| WorkerError::Piper(error.to_string()))?;
+                    return Ok(());
+                }
+                Err(error) => return Err(error),
+                Ok(()) => {}
+            }
+            if let Some(control) = &self.control {
+                if !control.chapter_is_in_playback_window(source_index) {
+                    control
+                        .requeue(source_index)
+                        .map_err(|error| WorkerError::Piper(error.to_string()))?;
+                    return Ok(());
+                }
+            }
+            let name = mp3.file_name().unwrap().to_string_lossy().to_string();
+            let chapters_completed = completed.fetch_add(1, Ordering::AcqRel) + 1;
+            if let Some(sink) = &self.chapter_completed {
+                sink(ChapterCompletionEvent {
+                    job_id: request.job_id.clone(),
+                    book_title: book.title.clone(),
+                    book_author: book.author.clone(),
+                    chapter_index: source_index,
+                    chapters_total: total,
+                    chapters_completed,
+                    chapter_title: chapter.name.clone(),
+                    filename: name.clone(),
+                    audio_path: mp3.clone(),
+                    text_chars: text.chars().count(),
+                });
+            }
+            results.lock().unwrap().push((
+                position,
+                mp3,
+                name.clone(),
+                ChapterMetadata {
+                    index: position + 1,
+                    source_index,
+                    title: chapter.name.clone(),
+                    filename: name,
+                    text_chars: text.chars().count(),
                 },
-            )
-        })?;
+            ));
+            Ok(())
+        };
+        if let Some(control) = &self.control {
+            while let Some(source_index) = control
+                .take()
+                .map_err(|error| WorkerError::Piper(error.to_string()))?
+            {
+                let Some((position, (_, chapter))) = chapters
+                    .iter()
+                    .enumerate()
+                    .find(|(_, (candidate, _))| *candidate == source_index)
+                else {
+                    continue;
+                };
+                process_chapter(position, source_index, chapter)?;
+            }
+        } else {
+            pool.install(|| {
+                chapters.par_iter().enumerate().try_for_each(
+                    |(position, (source_index, chapter))| {
+                        process_chapter(position, *source_index, chapter)
+                    },
+                )
+            })?;
+        }
         let mut results = results.into_inner().unwrap();
         results.sort_by_key(|item| item.0);
         let files: Vec<_> = results
@@ -349,14 +474,68 @@ impl ConversionWorker {
         engine: &str,
         text: &str,
         out: &Path,
+        source_index: usize,
         voice: Option<&str>,
         language: Option<&str>,
         timeout: std::time::Duration,
+        stale_window_cancelled: &std::sync::atomic::AtomicBool,
     ) -> Result<(), WorkerError> {
         if engine == "edge" {
             let voice = voice.unwrap_or_else(|| default_edge_voice(language));
+            if let Some(sink) = self.streaming_chunk.as_ref() {
+                use std::io::Write as _;
+                let mut output = fs::File::create(out)?;
+                let mut write_error = None;
+                let result = run_edge_synthesis(
+                    crate::tts::synthesize_with_reference_client_stream(
+                        text,
+                        voice,
+                        Arc::clone(&self.adaptive),
+                        self.telemetry.clone(),
+                        |segment_index, bytes| {
+                            if !dispatch_playback_chunk(
+                                self.control.as_ref(),
+                                Some(sink),
+                                source_index,
+                                segment_index,
+                                bytes,
+                                stale_window_cancelled,
+                            ) {
+                                return false;
+                            }
+                            if let Err(error) = output.write_all(bytes) {
+                                write_error = Some(error);
+                                return false;
+                            }
+                            true
+                        },
+                    ),
+                    &self.cancel,
+                    timeout,
+                );
+                if let Some(error) = write_error {
+                    return Err(WorkerError::Io(error));
+                }
+                result?;
+                return Ok(());
+            }
             match run_edge_synthesis(
-                crate::tts::synthesize_with_reference_client(text, voice),
+                crate::tts::synthesize_with_reference_client_chunks(
+                    text,
+                    voice,
+                    Arc::clone(&self.adaptive),
+                    self.telemetry.clone(),
+                    |segment_index, bytes| {
+                        dispatch_playback_chunk(
+                            self.control.as_ref(),
+                            self.streaming_chunk.as_ref(),
+                            source_index,
+                            segment_index,
+                            bytes,
+                            &stale_window_cancelled,
+                        )
+                    },
+                ),
                 &self.cancel,
                 timeout,
             ) {
@@ -414,8 +593,10 @@ impl ConversionWorker {
         engine: &str,
         text: &str,
         out: &Path,
+        source_index: usize,
         voice: Option<&str>,
         language: Option<&str>,
+        stale_window_cancelled: &std::sync::atomic::AtomicBool,
     ) -> Result<(), WorkerError> {
         let timeout_secs = std::env::var("RUST_CHAPTER_TIMEOUT_SECONDS")
             .ok()
@@ -427,11 +608,30 @@ impl ConversionWorker {
             });
         let timeout = std::time::Duration::from_secs(timeout_secs);
         if engine == "edge" {
-            return self.synthesize(engine, text, out, voice, language, timeout);
+            return self.synthesize(
+                engine,
+                text,
+                out,
+                source_index,
+                voice,
+                language,
+                timeout,
+                stale_window_cancelled,
+            );
         }
         let result = std::thread::scope(|scope| {
-            let handle =
-                scope.spawn(|| self.synthesize(engine, text, out, voice, language, timeout));
+            let handle = scope.spawn(|| {
+                self.synthesize(
+                    engine,
+                    text,
+                    out,
+                    source_index,
+                    voice,
+                    language,
+                    timeout,
+                    stale_window_cancelled,
+                )
+            });
             let started = std::time::Instant::now();
             while !handle.is_finished() {
                 if self.cancel.is_cancelled()
@@ -463,6 +663,21 @@ impl ConversionWorker {
             sink(event)
         }
     }
+}
+
+fn dispatch_playback_chunk(
+    control: Option<&ConversionControl>,
+    sink: Option<&StreamingChunkSink>,
+    chapter_index: usize,
+    chunk_index: usize,
+    bytes: &[u8],
+    stale_window_cancelled: &std::sync::atomic::AtomicBool,
+) -> bool {
+    if control.is_some_and(|control| !control.chapter_is_in_playback_window(chapter_index)) {
+        stale_window_cancelled.store(true, Ordering::Release);
+        return false;
+    }
+    sink.is_none_or(|sink| sink(chapter_index, chunk_index, bytes))
 }
 
 fn cached_chapter_text(path: &Path, expected: &str) -> Result<String, WorkerError> {
@@ -562,13 +777,13 @@ fn ensure_chapter_audio(
     Ok(())
 }
 
-fn run_edge_synthesis<F>(
+fn run_edge_synthesis<T, F>(
     synthesis: F,
     cancel: &CancellationToken,
     timeout: std::time::Duration,
-) -> Result<Vec<u8>, WorkerError>
+) -> Result<T, WorkerError>
 where
-    F: std::future::Future<Output = Result<Vec<u8>, EdgeError>>,
+    F: std::future::Future<Output = Result<T, EdgeError>>,
 {
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
@@ -666,6 +881,50 @@ fn sanitize(value: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn stale_playback_chunk_is_rejected_without_publishing_chapter_audio() {
+        let control = ConversionControl::new();
+        control.set_playback_window(0, 1);
+        let accepted_chunks = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let accepted = Arc::clone(&accepted_chunks);
+        let sink: StreamingChunkSink = Arc::new(move |_, _, _| {
+            accepted.fetch_add(1, Ordering::AcqRel);
+            true
+        });
+        let stale = std::sync::atomic::AtomicBool::new(false);
+
+        assert!(dispatch_playback_chunk(
+            Some(&control),
+            Some(&sink),
+            0,
+            0,
+            b"current",
+            &stale,
+        ));
+        control.set_playback_window(5, 1);
+        assert!(!dispatch_playback_chunk(
+            Some(&control),
+            Some(&sink),
+            0,
+            1,
+            b"stale",
+            &stale,
+        ));
+        assert!(stale.load(Ordering::Acquire));
+        assert_eq!(accepted_chunks.load(Ordering::Acquire), 1);
+
+        let root = tempfile::tempdir().unwrap();
+        let output = root.path().join("chapter.mp3");
+        let result = ensure_chapter_audio(&output, "request-key", |_| {
+            Err(WorkerError::PlaybackWindowChanged)
+        });
+        assert!(matches!(result, Err(WorkerError::PlaybackWindowChanged)));
+        assert!(
+            !output.exists(),
+            "stale synthesis must not publish durable audio"
+        );
+    }
 
     #[test]
     fn malformed_chapter_cache_is_rebuilt_from_source() {
@@ -959,7 +1218,7 @@ mod tests {
 
     #[test]
     fn edge_synthesis_panic_remains_a_typed_worker_error() {
-        let result = run_edge_synthesis(
+        let result = run_edge_synthesis::<Vec<u8>, _>(
             async { panic!("simulated synthesis panic") },
             &CancellationToken::default(),
             std::time::Duration::from_secs(1),
@@ -974,7 +1233,7 @@ mod tests {
     #[test]
     fn edge_timeout_returns_before_the_pending_synthesis_finishes() {
         let started = std::time::Instant::now();
-        let result = run_edge_synthesis(
+        let result = run_edge_synthesis::<Vec<u8>, _>(
             async {
                 tokio::time::sleep(std::time::Duration::from_millis(500)).await;
                 Ok(vec![1, 2, 3])
@@ -1054,7 +1313,7 @@ mod tests {
     fn edge_cancelled_request_does_not_poll_synthesis() {
         let cancel = CancellationToken::default();
         cancel.cancel();
-        let result = run_edge_synthesis(
+        let result = run_edge_synthesis::<Vec<u8>, _>(
             async { panic!("cancelled requests must not start synthesis") },
             &cancel,
             std::time::Duration::from_secs(1),
@@ -1071,7 +1330,7 @@ mod tests {
             vec![1, 2]
         );
         assert!(matches!(
-            run_edge_synthesis(async { Err(EdgeError::NoAudio) }, &cancel, timeout),
+            run_edge_synthesis::<Vec<u8>, _>(async { Err(EdgeError::NoAudio) }, &cancel, timeout),
             Err(WorkerError::Edge(EdgeError::NoAudio))
         ));
     }

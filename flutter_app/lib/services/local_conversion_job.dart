@@ -194,6 +194,46 @@ class ConversionJobCoordinator {
     return job;
   }
 
+  Future<LocalConversionJob> reconcileChapters(
+    LocalConversionJob job,
+    List<LocalConversionChapterSpec> chapters,
+  ) async {
+    final existingByIndex = {
+      for (final chapter in job.chapters) chapter.index: chapter,
+    };
+    final reconciled = chapters.map((spec) {
+      final existing = existingByIndex[spec.index];
+      if (existing == null || existing.name != spec.name) {
+        return LocalConversionChapter(index: spec.index, name: spec.name);
+      }
+      return existing;
+    }).toList();
+    final unchanged = job.chapters.length == reconciled.length &&
+        List.generate(reconciled.length, (index) => index).every(
+          (index) => job.chapters[index].index == reconciled[index].index &&
+              job.chapters[index].name == reconciled[index].name,
+        );
+    if (unchanged) return job;
+
+    final status = reconciled.every((chapter) => chapter.status == 'completed')
+        ? LocalConversionJobStatus.completed
+        : reconciled.any((chapter) => chapter.status == 'failed')
+        ? LocalConversionJobStatus.failed
+        : reconciled.any((chapter) => chapter.status == 'running')
+        ? LocalConversionJobStatus.running
+        : LocalConversionJobStatus.pending;
+    return _persist(job.copyWith(
+      chapters: reconciled,
+      status: status,
+      updatedAt: _now(),
+      completedOutputs: reconciled
+          .where((chapter) => chapter.status == 'completed')
+          .map((chapter) => chapter.outputPath)
+          .whereType<String>()
+          .toList(),
+    ));
+  }
+
   List<int> pendingChapterIndices(LocalConversionJob job) => job.chapters
       .where((c) => c.status == 'pending')
       .map((c) => c.index)
@@ -220,6 +260,14 @@ class ConversionJobCoordinator {
 
   Future<LocalConversionJob> cancel(LocalConversionJob job) => _persist(
         job.copyWith(status: LocalConversionJobStatus.cancelled, updatedAt: _now()),
+      );
+
+  Future<LocalConversionJob> suspend(LocalConversionJob job) => _persist(
+        job.copyWith(
+          status: LocalConversionJobStatus.pending,
+          updatedAt: _now(),
+          lastActivityAt: _now(),
+        ),
       );
 
   Future<LocalConversionJob> watchdog(LocalConversionJob job) async {

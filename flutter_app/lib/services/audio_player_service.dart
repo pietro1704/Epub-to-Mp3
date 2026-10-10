@@ -23,6 +23,7 @@ abstract class AudioPlayerInterface {
   double get durationSeconds;
   Uint8List? coverArtData;
   List<ChapterProgress> get chapters;
+  bool get hasQueuedAudio;
   int chapterIndexForPlayerIndex(int playerIndex);
 
   Future<void> setQueue(List<ChapterProgress> chapters);
@@ -128,8 +129,7 @@ class AudioPlayerService implements AudioPlayerInterface {
       final c = chapters[i];
       if (c.downloadUrl != null) {
         final url = _resolve(base, c.downloadUrl!);
-        if (url.scheme.isEmpty ||
-            (url.scheme == 'http' && base.isEmpty)) {
+        if (url.scheme.isEmpty || (url.scheme == 'http' && base.isEmpty)) {
           continue;
         }
         children.add(AudioSource.uri(url));
@@ -172,6 +172,7 @@ class AudioPlayerService implements AudioPlayerInterface {
   }
 
   @visibleForTesting
+  @override
   bool get hasQueuedAudio => _chapterQueueURLs.isNotEmpty || _isSegmentMode;
 
   @override
@@ -182,7 +183,7 @@ class AudioPlayerService implements AudioPlayerInterface {
       _segmentSource = ConcatenatingAudioSource(children: []);
       _chapterSource = null;
       _chapterQueueURLs = const [];
-        unawaited(_player.setAudioSource(_segmentSource!, preload: false));
+      unawaited(_player.setAudioSource(_segmentSource!, preload: false));
     }
     if (sentenceId != null) {
       _segmentSentenceIds.add(sentenceId);
@@ -228,7 +229,9 @@ class AudioPlayerService implements AudioPlayerInterface {
   @override
   Future<void> play() {
     // ignore: avoid_print
-    print('AudioPlayer play requested sourceCount=${_chapterQueueURLs.length} segment=$_isSegmentMode');
+    print(
+      'AudioPlayer play requested sourceCount=${_chapterQueueURLs.length} segment=$_isSegmentMode',
+    );
     if (!hasQueuedAudio) {
       // ignore: avoid_print
       print('AudioPlayer play ignored: no queued audio');
@@ -461,6 +464,8 @@ class FakeAudioPlayerService implements AudioPlayerInterface {
   double get durationSeconds => _duration.inMilliseconds / 1000.0;
   @override
   List<ChapterProgress> get chapters => _chapters;
+  @override
+  bool get hasQueuedAudio => _chapters.isNotEmpty;
 
   @override
   Future<void> setQueue(List<ChapterProgress> chapters) async {
@@ -524,6 +529,7 @@ class FakeAudioPlayerService implements AudioPlayerInterface {
     _currentIndex = current + 1;
     _indexController.add(_currentIndex);
   }
+
   @override
   void previousChapter() {
     final current = _currentIndex;

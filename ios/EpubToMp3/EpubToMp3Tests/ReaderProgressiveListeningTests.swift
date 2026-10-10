@@ -77,8 +77,9 @@ private final class ProgressiveListeningFixture {
     lazy var controller = MainReaderScreenController(library: library, settings: AppSettings(defaults: defaults),
         player: player, playerPresentation: presentation,
         bookmarkStore: BookmarkStore(defaults: defaults, storageKey: "bookmarks"), onBrowseLibrary: nil,
-        conversionExecutor: { [weak self] _, job, start, end, _, callback in
+        conversionExecutor: { [weak self] _, job, start, end, control, _, callback, _ in
             guard let self else { throw CancellationError() }
+            control.updatePlaybackWindow(currentChapter: Int(start), chaptersAhead: 1)
             self.calls += 1; self.job = job; self.requestedStart = start; self.requestedEnd = end
             self.deliver = callback
             for await _ in self.stream { }
@@ -173,7 +174,8 @@ final class ReaderProgressiveListeningTests: XCTestCase {
         let f = try ProgressiveListeningFixture(); defer { f.cleanup() }
         f.controller.startListeningFromMiniPlayer()
         try await f.wait { f.calls == 1 }
-        XCTAssertEqual(f.requestedStart, 1); XCTAssertEqual(f.requestedEnd, -1)
+        XCTAssertEqual(f.requestedStart, 1)
+        XCTAssertEqual(f.requestedEnd, -1, "The control window schedules only the active chapter and one ahead")
         f.controller.startListeningFromMiniPlayer()
         try await Task.sleep(nanoseconds: 20_000_000)
         XCTAssertEqual(f.calls, 1, "Repeated Play must not queue another conversion")
