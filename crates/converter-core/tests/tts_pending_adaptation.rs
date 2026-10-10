@@ -218,6 +218,98 @@ async fn nonempty_text_never_dispatches_whitespace_only_speech_requests() {
 }
 
 #[tokio::test]
+async fn playback_chunk_callback_delivers_in_order_and_can_stop_dispatch() {
+    let server = EchoServer::start(Behavior::Echo).await;
+    let mut config = server.config();
+    config.concurrency = 1;
+    let client = EdgeTtsClient::with_adaptive_transport(
+        config,
+        Arc::new(LocalTransport),
+        controller(4),
+        None,
+    );
+    let received = Arc::new(Mutex::new(Vec::new()));
+    let callback_chunks = Arc::clone(&received);
+    let audio = client
+        .synthesize_with_chunks("abcdefghijkl", move |index, bytes| {
+            callback_chunks
+                .lock()
+                .unwrap()
+                .push((index, bytes.to_vec()));
+            true
+        })
+        .await
+        .unwrap();
+    let chunks = received.lock().unwrap();
+    assert_eq!(
+        chunks.iter().map(|(index, _)| *index).collect::<Vec<_>>(),
+        [0, 1, 2]
+    );
+    assert_eq!(
+        chunks
+            .iter()
+            .flat_map(|(_, bytes)| bytes.clone())
+            .collect::<Vec<_>>(),
+        audio
+    );
+    drop(chunks);
+
+    let server = EchoServer::start(Behavior::Echo).await;
+    let mut config = server.config();
+    config.concurrency = 1;
+    let client = EdgeTtsClient::with_adaptive_transport(
+        config,
+        Arc::new(LocalTransport),
+        controller(4),
+        None,
+    );
+    let streamed_chunks = Arc::new(Mutex::new(Vec::new()));
+    let callback_chunks = Arc::clone(&streamed_chunks);
+    client
+        .stream_with_chunks("abcdefghijkl", move |index, bytes| {
+            callback_chunks
+                .lock()
+                .unwrap()
+                .push((index, bytes.to_vec()));
+            true
+        })
+        .await
+        .unwrap();
+    let streamed_chunks = streamed_chunks.lock().unwrap();
+    assert_eq!(
+        streamed_chunks
+            .iter()
+            .map(|(index, _)| *index)
+            .collect::<Vec<_>>(),
+        [0, 1, 2]
+    );
+    assert_eq!(
+        streamed_chunks
+            .iter()
+            .flat_map(|(_, bytes)| bytes.clone())
+            .collect::<Vec<_>>(),
+        b"abcdefghijkl"
+    );
+    drop(streamed_chunks);
+
+    let server = EchoServer::start(Behavior::Echo).await;
+    let mut config = server.config();
+    config.concurrency = 1;
+    let client = EdgeTtsClient::with_adaptive_transport(
+        config,
+        Arc::new(LocalTransport),
+        controller(4),
+        None,
+    );
+    let error = client
+        .synthesize_with_chunks("abcdefghijkl", |_, _| false)
+        .await
+        .unwrap_err();
+    assert_eq!(error, EdgeError::Cancelled);
+    assert_eq!(server.received.lock().unwrap().len(), 1);
+}
+
+#[tokio::test]
 async fn unsent_text_uses_latest_size_and_preserves_utf8_and_audio_order() {
     let adaptive = controller(12);
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();

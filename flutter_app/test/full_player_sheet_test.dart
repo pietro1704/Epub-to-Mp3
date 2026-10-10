@@ -12,11 +12,14 @@ Future<SharedPreferences> _mockPrefs() async {
   return SharedPreferences.getInstance();
 }
 
-Widget _wrap(SharedPreferences prefs, AudioPlayerService player,
-    {String? bookTitle,
-    String? author,
-    String? chapterLabel,
-    String? bookId}) {
+Widget _wrap(
+  SharedPreferences prefs,
+  AudioPlayerService player, {
+  String? bookTitle,
+  String? author,
+  String? chapterLabel,
+  String? bookId,
+}) {
   return ProviderScope(
     overrides: [sharedPrefsProvider.overrideWithValue(prefs)],
     child: MaterialApp(
@@ -38,10 +41,15 @@ void main() {
     testWidgets('renders with placeholder when no cover art', (t) async {
       final prefs = await _mockPrefs();
       final player = AudioPlayerService(backendBase: 'http://localhost:8000');
-      await t.pumpWidget(_wrap(prefs, player,
+      await t.pumpWidget(
+        _wrap(
+          prefs,
+          player,
           bookTitle: 'Test Book',
           author: 'Test Author',
-          chapterLabel: 'Chapter 1'));
+          chapterLabel: 'Chapter 1',
+        ),
+      );
       expect(find.text('Test Book'), findsOneWidget);
       expect(find.text('Test Author'), findsOneWidget);
       expect(find.text('Chapter 1'), findsOneWidget);
@@ -49,6 +57,23 @@ void main() {
       expect(find.byIcon(Icons.forward_10), findsOneWidget);
       expect(find.text('1.0x'), findsOneWidget);
       expect(find.text('Sleep'), findsOneWidget);
+      player.dispose();
+    });
+
+    testWidgets('keeps book identity and close control visible', (t) async {
+      final prefs = await _mockPrefs();
+      final player = AudioPlayerService(backendBase: 'http://localhost:8000');
+      await t.pumpWidget(
+        _wrap(prefs, player, bookTitle: 'Test Book', author: 'Test Author'),
+      );
+
+      expect(find.text('Test Book'), findsOneWidget);
+      expect(find.text('Test Author'), findsOneWidget);
+      expect(find.byKey(const ValueKey('fullPlayer.close')), findsOneWidget);
+      await t.tap(find.byIcon(Icons.headphones));
+      await t.pump();
+      expect(find.text('Test Book'), findsOneWidget);
+      expect(find.byKey(const ValueKey('fullPlayer.close')), findsOneWidget);
       player.dispose();
     });
 

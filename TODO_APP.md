@@ -11,6 +11,49 @@ change in the real iOS and macOS apps; automated tests are supplemental. If eith
 app cannot run, record the blocker and leave verification incomplete. Historical
 Arch assignments below are superseded by this instruction.
 
+## Active requests — 2026-10-10
+
+- [ ] **APP-20261010-01 — Playback-near streaming and player UI parity.** Verification in progress.
+  User-confirmed scope: on-demand `Listen` in the native iOS/macOS apps, then
+  Flutter, generates only a small moving window of TTS chunks near the audible
+  playback position, never more than one EPUB chapter ahead. A seek or chapter
+  skip moves conversion priority; stale/farther work must stop before creating
+  durable audio. Explicit `Download` and CLI conversion remain whole-book and
+  non-streaming. Apple UI: the mini player has no progress bar; expanded-player
+  book hero and Back/close control remain visible after center-tap interactions;
+  reduce excess vertical gaps below controls and between stack elements. Show
+  Play spinner only while the user-requested initial audio is pending; preserve
+  Play/Pause while audio is already audible and later text/audio is loading.
+  Verify the iPhone SE (1st generation) Simulator on iOS 15.5 and native macOS
+  app, then Flutter parity. **Primary verification is the native iOS app on that
+  exact Simulator; Mac and Flutter evidence is complementary.** Runtime preflight
+  passed: iPhone SE (1st generation), iOS 15.5, UDID
+  `C66CCB36-C43E-4174-861E-2FA713389C84`, and native `My Mac` target are available.
+  Implementation now streams TTS chunks to playback, keeps the active chapter
+  plus one ahead eligible, reprioritizes on navigation, discards stale in-flight
+  chapter output, and avoids retaining a second complete chapter buffer.
+  Swift/iOS and AppKit/macOS wire the moving playback window and chunk delivery.
+  Flutter's embedded playback path now requests one Rust chapter at a time in
+  the same current-plus-one window and drops results that became stale. Explicit
+  Download and CLI still use whole-book conversion. Native UI changes remove
+  mini-player progress, preserve expanded hero/close controls, tighten player
+  spacing, and scope loading spinner to initial user-requested audio.
+  Verification on the exact iOS Simulator: 3 focused XCTest and 2 UI tests
+  passed in `ios/EpubToMp3/.build/Logs/Test/Test-EpubToMp3-playback-final.xcresult`;
+  installed/launched PID 19737 and inspected `/tmp/epubtomp3-ios15-primary.png`.
+  Native macOS `mise run mac:run` rebuilt FFI/app and launched PID 19842; inspected
+  `/tmp/epubtomp3-macos-primary.png` (mini-player has no progress bar). Flutter:
+  22 focused streaming/player tests pass and `mise run flutter:analyze` reports
+  no issues. `mise run flutter:build-apk-debug` succeeded; APK:
+  `flutter_app/build/app/outputs/flutter-apk/app-debug.apk` (189 MB). No Android
+  device/emulator is attached, so Flutter runtime interaction remains unverified;
+  its chapter-window scheduler and Android channel request are covered by tests.
+  Review found and fixed sparse chapter-index migration so empty EPUB chapters
+  do not shift resumed playback; a regression test covers the old-job upgrade.
+  Final diff audit and whitespace check passed; APK was rebuilt after final
+  source adjustments. Delivery remains pending commit, push and authorized PR.
+  Keep this task open until the PR merge is verified; do not monitor CI.
+
 ## Active requests — 2026-10-09
 
 - [ ] **APP-20261009-47 — Keep playback clock ticks on progress controls.** Apple fix implemented; macOS playback interaction pending.

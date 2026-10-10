@@ -135,4 +135,26 @@ final class DesktopEmbeddedConverter extends UnavailableEmbeddedConverter {
       }
     });
   }
+
+  @override
+  Future<ConvertedChapterAudio> convertChapter({
+    required String inputPath,
+    required String outputPath,
+    required int chapterIndex,
+  }) async {
+    return _withSession(inputPath, (session) {
+      final outputPtr = outputPath.toNativeUtf8();
+      try {
+        final raw = _readString(
+          _convert(session, outputPtr, chapterIndex, chapterIndex),
+        );
+        return ConvertedChapterAudio.fromNativeResult(
+          raw,
+          expectedChapterIndex: chapterIndex,
+        );
+      } finally {
+        calloc.free(outputPtr);
+      }
+    });
+  }
 }

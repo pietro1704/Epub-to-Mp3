@@ -81,6 +81,13 @@ setup when dependencies are absent; inspect task definitions before execution.
 
 ## Before implementation
 
+For substantial feature delivery requested by Pietro, use Gitflow from the
+current integration branch and a `feature/*` branch. Keep modules cohesive and
+small, apply SOLID where responsibilities have distinct owners, and optimize
+measured hot paths instead of imposing arbitrary file-length limits. When the
+request explicitly asks for PR and merge, push the feature, open a PR to
+`master`, and enable auto-merge; CI monitoring remains opt-in.
+
 For a feature larger than one focused change, write a short spec and split it
 into vertical tickets. Each ticket names its dependencies, acceptance evidence,
 regression test, and verification command. Keep one behavior change per branch;

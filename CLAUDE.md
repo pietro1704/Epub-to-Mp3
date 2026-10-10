@@ -40,6 +40,17 @@ smallest complete, atomic behavior change with its relevant regression test.
 Reuse valid build artifacts and run only the checks needed to prove that change;
 commit/push verified slices before expanding scope. Keep planning, delegation,
 and documentation proportional to the task.
+For substantial features when Pietro requests feature delivery, use Gitflow:
+create a `feature/*` branch from the current integration branch, keep modules
+cohesive and small, and apply SOLID at real ownership boundaries. Optimize the
+measured hot path rather than splitting files to meet an arbitrary line count.
+When the request explicitly includes a PR and merge, commit and push the feature,
+open a PR targeting `master`, and enable auto-merge; do not monitor CI unless
+requested.
+For native Apple player/reader regressions, prioritize exercising the iOS app
+on the iPhone SE (1st generation) Simulator with iOS 15.5; macOS and other
+platforms provide complementary evidence. After the user explicitly asks for a
+workflow preference to persist, record it here and follow it on later tasks.
 Track every concrete user request/correction in `TODO_APP.md` before implementation;
 keep stable task IDs, status, acceptance, platform checks and verification evidence.
 Tick completion only after the affected app behavior is verified and delivered.

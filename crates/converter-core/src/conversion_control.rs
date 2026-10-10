@@ -24,6 +24,7 @@ struct QueueState {
     remaining: VecDeque<usize>,
     paused: bool,
     recovery_job: Option<String>,
+    playback_window: Option<(usize, usize)>,
 }
 
 /// Shared only by one conversion invocation and its native control handle.
@@ -57,6 +58,33 @@ impl ConversionControl {
         if !paused {
             self.ready.notify_all();
         }
+    }
+
+    /// Restrict playback conversion to the current source chapter and a small
+    /// number of chapters ahead. Unselected work remains pending for navigation.
+    pub fn set_playback_window(&self, current_chapter: usize, chapters_ahead: usize) {
+        let mut queue = self.queue.lock().unwrap_or_else(|error| error.into_inner());
+        queue.playback_window = Some((current_chapter, chapters_ahead));
+        self.ready.notify_all();
+    }
+
+    pub fn chapter_is_in_playback_window(&self, chapter_index: usize) -> bool {
+        let queue = self.queue.lock().unwrap_or_else(|error| error.into_inner());
+        queue.playback_window.is_none_or(|(start, ahead)| {
+            chapter_index >= start && chapter_index <= start.saturating_add(ahead)
+        })
+    }
+
+    pub(crate) fn requeue(&self, chapter_index: usize) -> Result<(), ConversionControlError> {
+        let mut queue = self
+            .queue
+            .lock()
+            .map_err(|_| ConversionControlError::LockPoisoned)?;
+        if !queue.remaining.contains(&chapter_index) {
+            queue.remaining.push_back(chapter_index);
+        }
+        self.ready.notify_all();
+        Ok(())
     }
 
     pub fn set_recovery_job(&self, source_job_id: &str) -> Result<(), ConversionControlError> {
@@ -129,16 +157,23 @@ impl ConversionControl {
             .queue
             .lock()
             .map_err(|_| ConversionControlError::LockPoisoned)?;
-        while queue.paused && !queue.remaining.is_empty() && !self.cancel.is_cancelled() {
+        loop {
+            let eligible = queue.remaining.iter().position(|source_index| {
+                queue.playback_window.is_none_or(|(start, ahead)| {
+                    *source_index >= start && *source_index <= start.saturating_add(ahead)
+                })
+            });
+            if self.cancel.is_cancelled() || (!queue.paused && eligible.is_some()) {
+                return Ok(eligible.map(|position| queue.remaining.remove(position).unwrap()));
+            }
+            if queue.remaining.is_empty() {
+                return Ok(None);
+            }
             queue = self
                 .ready
                 .wait(queue)
                 .map_err(|_| ConversionControlError::LockPoisoned)?;
         }
-        if self.cancel.is_cancelled() {
-            return Ok(None);
-        }
-        Ok(queue.remaining.pop_front())
     }
 }
 
@@ -181,6 +216,43 @@ mod tests {
             Err(ConversionControlError::UnavailableChapter(8))
         );
         assert_eq!(control.take().unwrap(), Some(1));
+        assert_eq!(control.take().unwrap(), Some(2));
+    }
+
+    #[test]
+    fn playback_window_holds_distant_chapters_and_moves_with_navigation() {
+        let control = ConversionControl::new();
+        control.set_playback_window(3, 1);
+        control.attach(&[0, 1, 2, 3, 4, 5, 6]).unwrap();
+        assert_eq!(control.take().unwrap(), Some(3));
+        assert_eq!(control.take().unwrap(), Some(4));
+
+        let waiting = control.clone();
+        let (tx, rx) = std::sync::mpsc::channel();
+        let worker = std::thread::spawn(move || tx.send(waiting.take().unwrap()).unwrap());
+        assert!(rx
+            .recv_timeout(std::time::Duration::from_millis(20))
+            .is_err());
+        control.set_playback_window(5, 1);
+        assert_eq!(
+            rx.recv_timeout(std::time::Duration::from_secs(1)).unwrap(),
+            Some(5)
+        );
+        worker.join().unwrap();
+        assert_eq!(control.take().unwrap(), Some(6));
+    }
+
+    #[test]
+    fn playback_window_can_reject_an_in_flight_chapter_and_requeue_it() {
+        let control = ConversionControl::new();
+        control.set_playback_window(0, 1);
+        control.attach(&[0, 1, 2]).unwrap();
+        assert_eq!(control.take().unwrap(), Some(0));
+        assert!(control.chapter_is_in_playback_window(0));
+
+        control.set_playback_window(2, 1);
+        assert!(!control.chapter_is_in_playback_window(0));
+        control.requeue(0).unwrap();
         assert_eq!(control.take().unwrap(), Some(2));
     }
 

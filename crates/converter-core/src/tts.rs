@@ -48,6 +48,19 @@ pub async fn synthesize_with_reference_client(
     adaptive: Arc<AdaptiveThroughputController>,
     telemetry: Option<Telemetry>,
 ) -> Result<Vec<u8>, EdgeError> {
+    synthesize_with_reference_client_chunks(text, voice, adaptive, telemetry, |_, _| true).await
+}
+
+pub async fn synthesize_with_reference_client_chunks<F>(
+    text: &str,
+    voice: &str,
+    adaptive: Arc<AdaptiveThroughputController>,
+    telemetry: Option<Telemetry>,
+    on_chunk: F,
+) -> Result<Vec<u8>, EdgeError>
+where
+    F: FnMut(usize, &[u8]) -> bool,
+{
     let _ = rustls::crypto::ring::default_provider().install_default();
     let mut config = EdgeConfig::new(voice)?;
     config.chunk_chars = adaptive.snapshot().chunk_chars;
@@ -55,16 +68,40 @@ pub async fn synthesize_with_reference_client(
     config.timeout = Duration::from_secs(if cfg!(target_os = "android") { 60 } else { 25 });
     let total_timeout = reference_synthesis_timeout_for_text(text.len());
     let client = EdgeTtsClient::with_adaptive_controller(config, adaptive, telemetry);
-    let result = timeout(total_timeout, client.synthesize(text))
+    let result = timeout(total_timeout, client.synthesize_with_chunks(text, on_chunk))
         .await
         .map_err(|_| EdgeError::Timeout)?
         .map_err(map_reference_synthesis_error)?;
     Ok(result)
 }
 
+pub async fn synthesize_with_reference_client_stream<F>(
+    text: &str,
+    voice: &str,
+    adaptive: Arc<AdaptiveThroughputController>,
+    telemetry: Option<Telemetry>,
+    on_chunk: F,
+) -> Result<(), EdgeError>
+where
+    F: FnMut(usize, &[u8]) -> bool,
+{
+    let _ = rustls::crypto::ring::default_provider().install_default();
+    let mut config = EdgeConfig::new(voice)?;
+    config.chunk_chars = adaptive.snapshot().chunk_chars;
+    config.concurrency = adaptive.snapshot().max_in_flight;
+    config.timeout = Duration::from_secs(if cfg!(target_os = "android") { 60 } else { 25 });
+    let total_timeout = reference_synthesis_timeout_for_text(text.len());
+    let client = EdgeTtsClient::with_adaptive_controller(config, adaptive, telemetry);
+    timeout(total_timeout, client.stream_with_chunks(text, on_chunk))
+        .await
+        .map_err(|_| EdgeError::Timeout)?
+        .map_err(map_reference_synthesis_error)
+}
+
 fn map_reference_synthesis_error(error: EdgeError) -> EdgeError {
     match error {
         EdgeError::Timeout | EdgeError::RateLimited { .. } => error,
+        EdgeError::Cancelled => EdgeError::Cancelled,
         other => EdgeError::Transport(other.to_string()),
     }
 }
@@ -443,12 +480,50 @@ impl<T: EdgeTransport + 'static> EdgeTtsClient<T> {
     }
 
     pub async fn synthesize(&self, text: &str) -> Result<Vec<u8>, EdgeError> {
+        self.synthesize_with_chunks(text, |_, _| true).await
+    }
+
+    /// Synthesize ordered protocol chunks and let a playback consumer take
+    /// ownership before the complete chapter buffer is assembled.
+    pub async fn synthesize_with_chunks<F>(
+        &self,
+        text: &str,
+        on_chunk: F,
+    ) -> Result<Vec<u8>, EdgeError>
+    where
+        F: FnMut(usize, &[u8]) -> bool,
+    {
+        self.synthesize_with_chunks_mode(text, true, on_chunk)
+            .await?
+            .ok_or(EdgeError::NoAudio)
+    }
+
+    pub async fn stream_with_chunks<F>(&self, text: &str, on_chunk: F) -> Result<(), EdgeError>
+    where
+        F: FnMut(usize, &[u8]) -> bool,
+    {
+        self.synthesize_with_chunks_mode(text, false, on_chunk)
+            .await
+            .map(|_| ())
+    }
+
+    async fn synthesize_with_chunks_mode<F>(
+        &self,
+        text: &str,
+        collect_audio: bool,
+        mut on_chunk: F,
+    ) -> Result<Option<Vec<u8>>, EdgeError>
+    where
+        F: FnMut(usize, &[u8]) -> bool,
+    {
         if text.trim().is_empty() {
             return Err(EdgeError::InvalidInput("text is empty".into()));
         }
         let cursor = Mutex::new((text, 0usize));
         let mut pending = FuturesUnordered::new();
-        let mut ordered_audio = Vec::new();
+        let mut ordered_audio = Vec::<Option<Vec<u8>>>::new();
+        let mut next_delivery = 0;
+        let mut delivered_any = false;
         loop {
             let capacity = self
                 .adaptive
@@ -519,6 +594,25 @@ impl<T: EdgeTransport + 'static> EdgeTtsClient<T> {
                 ordered_audio.resize_with(chunk_index + 1, || None);
             }
             ordered_audio[chunk_index] = Some(audio);
+            while next_delivery < ordered_audio.len() {
+                let Some(audio) = ordered_audio[next_delivery].take() else {
+                    break;
+                };
+                if !on_chunk(next_delivery, &audio) {
+                    return Err(EdgeError::Cancelled);
+                }
+                delivered_any = true;
+                if collect_audio {
+                    ordered_audio[next_delivery] = Some(audio);
+                }
+                next_delivery += 1;
+            }
+        }
+        if !delivered_any {
+            return Err(EdgeError::NoAudio);
+        }
+        if !collect_audio {
+            return Ok(None);
         }
         let output = ordered_audio
             .into_iter()
@@ -528,7 +622,7 @@ impl<T: EdgeTransport + 'static> EdgeTtsClient<T> {
         if output.is_empty() {
             Err(EdgeError::NoAudio)
         } else {
-            Ok(output)
+            Ok(Some(output))
         }
     }
 

@@ -5,6 +5,15 @@ private typealias ConverterSessionOpen = @convention(c) (UnsafePointer<CChar>?) 
 private typealias ConverterSessionMetadata = @convention(c) (UnsafeRawPointer?) -> UnsafeMutablePointer<CChar>?
 private typealias ConverterSessionFree = @convention(c) (UnsafeMutableRawPointer?) -> Void
 private typealias ConverterChapterCallback = @convention(c) (UnsafePointer<CChar>?, UnsafeMutableRawPointer?) -> Void
+private typealias ConverterAudioChunkCallback = @convention(c) (
+    Int, Int, UnsafePointer<UInt8>?, Int, UnsafeMutableRawPointer?
+) -> Bool
+private typealias ConverterJobControlCreate = @convention(c) () -> UnsafeMutableRawPointer?
+private typealias ConverterJobControlFree = @convention(c) (UnsafeMutableRawPointer?) -> Void
+private typealias ConverterJobControlCancel = @convention(c) (UnsafeRawPointer?) -> Void
+private typealias ConverterJobControlPrioritize = @convention(c) (UnsafeRawPointer?, Int) -> Bool
+private typealias ConverterJobControlWindow = @convention(c) (UnsafeRawPointer?, Int, Int) -> Void
+private typealias ConverterJobControlWindowContains = @convention(c) (UnsafeRawPointer?, Int) -> Bool
 private typealias ConverterSessionConvertJob = @convention(c) (
     UnsafeRawPointer?, UnsafePointer<CChar>?, UnsafePointer<CChar>?, Int32, Int32,
     ConverterChapterCallback?, ConverterChapterCallback?, UnsafeMutableRawPointer?
@@ -12,6 +21,11 @@ private typealias ConverterSessionConvertJob = @convention(c) (
 private typealias ConverterSessionConvertJobOptionsV1 = @convention(c) (
     UnsafeRawPointer?, UnsafePointer<CChar>?, UnsafePointer<CChar>?, UnsafePointer<CChar>?, Int32, Int32,
     ConverterChapterCallback?, ConverterChapterCallback?, UnsafeMutableRawPointer?
+) -> UnsafeMutablePointer<CChar>?
+private typealias ConverterSessionConvertStreamingJob = @convention(c) (
+    UnsafeRawPointer?, UnsafePointer<CChar>?, UnsafePointer<CChar>?, Int32, Int32,
+    ConverterChapterCallback?, ConverterChapterCallback?, ConverterAudioChunkCallback?,
+    UnsafeMutableRawPointer?, UnsafeRawPointer?
 ) -> UnsafeMutablePointer<CChar>?
 private typealias ConverterSessionConvert = @convention(c) (
     UnsafeRawPointer?, UnsafePointer<CChar>?, Int32, Int32
@@ -49,13 +63,53 @@ enum EmbeddedConverterError: Error, LocalizedError, Equatable {
 private final class ChapterCallbackBox: @unchecked Sendable {
     let progressHandler: (@Sendable (Data) -> Void)?
     let chapterHandler: (@Sendable (Data) -> Void)?
+    let audioChunkHandler: (@Sendable (Int, Int, Data) -> Bool)?
 
     init(
         progressHandler: (@Sendable (Data) -> Void)?,
-        chapterHandler: (@Sendable (Data) -> Void)?
+        chapterHandler: (@Sendable (Data) -> Void)?,
+        audioChunkHandler: (@Sendable (Int, Int, Data) -> Bool)? = nil
     ) {
         self.progressHandler = progressHandler
         self.chapterHandler = chapterHandler
+        self.audioChunkHandler = audioChunkHandler
+    }
+}
+
+final class ConverterPlaybackControl: @unchecked Sendable {
+    fileprivate let rawHandle: UnsafeMutableRawPointer
+    private let free: ConverterJobControlFree
+    private let cancelJob: ConverterJobControlCancel
+    private let prioritizeChapter: ConverterJobControlPrioritize
+    private let setPlaybackWindow: ConverterJobControlWindow
+    private let chapterIsInPlaybackWindow: ConverterJobControlWindowContains
+
+    fileprivate init(
+        rawHandle: UnsafeMutableRawPointer,
+        free: @escaping ConverterJobControlFree,
+        cancel: @escaping ConverterJobControlCancel,
+        prioritize: @escaping ConverterJobControlPrioritize,
+        setWindow: @escaping ConverterJobControlWindow,
+        windowContains: @escaping ConverterJobControlWindowContains
+    ) {
+        self.rawHandle = rawHandle
+        self.free = free
+        cancelJob = cancel
+        prioritizeChapter = prioritize
+        setPlaybackWindow = setWindow
+        chapterIsInPlaybackWindow = windowContains
+    }
+
+    deinit { free(rawHandle) }
+    func cancel() { cancelJob(rawHandle) }
+    @discardableResult func prioritize(chapterIndex: Int) -> Bool {
+        prioritizeChapter(rawHandle, chapterIndex)
+    }
+    func updatePlaybackWindow(currentChapter: Int, chaptersAhead: Int = 1) {
+        setPlaybackWindow(rawHandle, currentChapter, chaptersAhead)
+    }
+    func contains(chapterIndex: Int) -> Bool {
+        chapterIsInPlaybackWindow(rawHandle, chapterIndex)
     }
 }
 
@@ -81,6 +135,13 @@ final class ConverterFFIAdapter: EmbeddedConverter {
     private var convertJobJSON: ConverterSessionConvertJob?
     private var convertJSON: ConverterSessionConvert?
     private var convertJobOptionsJSON: ConverterSessionConvertJobOptionsV1? = nil
+    private var convertStreamingJobJSON: ConverterSessionConvertStreamingJob?
+    private var jobControlCreate: ConverterJobControlCreate?
+    private var jobControlFree: ConverterJobControlFree?
+    private var jobControlCancel: ConverterJobControlCancel?
+    private var jobControlPrioritize: ConverterJobControlPrioritize?
+    private var jobControlWindow: ConverterJobControlWindow?
+    private var jobControlWindowContains: ConverterJobControlWindowContains?
     private var validateOptionsJSON: ConverterOptionsValidateV1? = nil
     private var loadError: String?
 
@@ -98,6 +159,13 @@ final class ConverterFFIAdapter: EmbeddedConverter {
             .fromOpaque(context)
             .takeUnretainedValue()
         box.chapterHandler?(Data(String(cString: eventJSON).utf8))
+    }
+
+    private static let audioChunkCallback: ConverterAudioChunkCallback = {
+        chapterIndex, chunkIndex, bytes, byteCount, context in
+        guard let bytes, byteCount > 0, let context else { return false }
+        let box = Unmanaged<ChapterCallbackBox>.fromOpaque(context).takeUnretainedValue()
+        return box.audioChunkHandler?(chapterIndex, chunkIndex, Data(bytes: bytes, count: byteCount)) ?? false
     }
 
     init(bundle: Bundle = .main, libraryURL overrideURL: URL? = nil) {
@@ -159,11 +227,32 @@ final class ConverterFFIAdapter: EmbeddedConverter {
         convertJobJSON = symbol("converter_session_convert_job_json", as: ConverterSessionConvertJob.self)
         convertJSON = symbol("converter_session_convert_json", as: ConverterSessionConvert.self)
         convertJobOptionsJSON = symbol("converter_session_convert_job_options_json_v1", as: ConverterSessionConvertJobOptionsV1.self)
+        convertStreamingJobJSON = symbol("converter_session_convert_streaming_job_json", as: ConverterSessionConvertStreamingJob.self)
+        jobControlCreate = symbol("converter_job_control_create", as: ConverterJobControlCreate.self)
+        jobControlFree = symbol("converter_job_control_free", as: ConverterJobControlFree.self)
+        jobControlCancel = symbol("converter_job_control_cancel", as: ConverterJobControlCancel.self)
+        jobControlPrioritize = symbol("converter_job_control_prioritize", as: ConverterJobControlPrioritize.self)
+        jobControlWindow = symbol("converter_job_control_set_playback_window", as: ConverterJobControlWindow.self)
+        jobControlWindowContains = symbol("converter_job_control_chapter_is_in_playback_window", as: ConverterJobControlWindowContains.self)
         validateOptionsJSON = symbol("converter_conversion_options_validate_json_v1", as: ConverterOptionsValidateV1.self)
     }
 
     convenience init(libraryURL: URL) {
         self.init(bundle: .main, libraryURL: libraryURL)
+    }
+
+    func makePlaybackControl() throws -> ConverterPlaybackControl {
+        guard let jobControlCreate, let jobControlFree, let jobControlCancel,
+              let jobControlPrioritize, let jobControlWindow, let jobControlWindowContains,
+              let rawHandle = jobControlCreate() else {
+            throw EmbeddedConverterError.artifactInvalid("Loaded converter library lacks streaming control symbols.")
+        }
+        return ConverterPlaybackControl(
+            rawHandle: rawHandle, free: jobControlFree,
+            cancel: jobControlCancel, prioritize: jobControlPrioritize,
+            setWindow: jobControlWindow,
+            windowContains: jobControlWindowContains
+        )
     }
 
     func openBook(at url: URL) throws -> EmbeddedBook {
@@ -186,8 +275,10 @@ final class ConverterFFIAdapter: EmbeddedConverter {
         chapterStart: Int32 = -1,
         chapterEnd: Int32 = -1,
         options: ConversionOptions? = nil,
+        playbackControl: ConverterPlaybackControl? = nil,
         onProgress: (@Sendable (Data) -> Void)? = nil,
-        onChapterCompleted: (@Sendable (Data) -> Void)? = nil
+        onChapterCompleted: (@Sendable (Data) -> Void)? = nil,
+        onAudioChunk: (@Sendable (Int, Int, Data) -> Bool)? = nil
     ) throws -> Data {
         try validateConversionSupport(options: options)
         let optionsJSON = try options?.encodedJSON()
@@ -196,7 +287,28 @@ final class ConverterFFIAdapter: EmbeddedConverter {
         }
         defer { close(session) }
         let result: UnsafeMutablePointer<CChar>?
-        if optionsJSON != nil || convertJobJSON != nil {
+        if playbackControl != nil {
+            guard optionsJSON == nil, let playbackControl, let convertStreamingJobJSON else {
+                throw EmbeddedConverterError.artifactInvalid("Loaded converter library lacks playback streaming ABI.")
+            }
+            let callbackBox = ChapterCallbackBox(
+                progressHandler: onProgress, chapterHandler: onChapterCompleted,
+                audioChunkHandler: onAudioChunk
+            )
+            let context = Unmanaged.passRetained(callbackBox).toOpaque()
+            defer { Unmanaged<ChapterCallbackBox>.fromOpaque(context).release() }
+            result = outputDirectory.path.withCString { outputPointer in
+                jobID.withCString { jobPointer in
+                    convertStreamingJobJSON(
+                        session, outputPointer, jobPointer, chapterStart, chapterEnd,
+                        onProgress == nil ? nil : Self.progressCallback,
+                        onChapterCompleted == nil ? nil : Self.chapterCallback,
+                        onAudioChunk == nil ? nil : Self.audioChunkCallback,
+                        context, playbackControl.rawHandle
+                    )
+                }
+            }
+        } else if optionsJSON != nil || convertJobJSON != nil {
             let callbackBox: ChapterCallbackBox? = (onProgress != nil || onChapterCompleted != nil)
                 ? ChapterCallbackBox(progressHandler: onProgress, chapterHandler: onChapterCompleted)
                 : nil
