@@ -105,10 +105,32 @@ not interchangeable. Point-sampled resident/physical footprint is not peak
 memory. This is a repeated diagnostic, not paired baseline/candidate evidence
 or a performance fix; LOTR remains over budget on both reported clocks.
 
-Remaining: full-source hashing/decode and first-window scheduling costs, iOS
-presentation parity, controlled real-book before/after evidence and the complete
-200 ms gate. Cancellation can discard losing callbacks but does not interrupt the
-store's synchronous hashing. Do not claim APP21/APP28 or the overall goal complete.
+## Persisted source identity fast path (2026-10-11)
+
+`PreparedReaderChapterStore.Snapshot` now persists the source file identity and
+the SHA-256 signature already bound to the checked archive envelope. On a relaunch,
+the store reads the source descriptor identity before and after the archive await;
+an unchanged identity plus matching envelope signature skips the full-source hash.
+Legacy snapshots or changed identities retain full SHA validation. A successful
+same-content replacement refreshes the archived identity. Mutation, symlink,
+oversize, and replacement-during-await cases remain fail-closed.
+
+The new serialization assertion failed before the change and passed afterward.
+Focused native macOS evidence: eight `PreparedReaderChapterStoreTests` and five
+`MacReaderActiveChapterTests` passed, zero failures/skips. A separate-host actual
+LOTR/Christie run used the same explicit book/range and input hashes, with no
+synthesis. Prepare passed; verify failed the unchanged 200 ms assertion for LOTR
+at 214.308 ms. The projection read took 3.104 ms, while the interval from
+`reader_load_task_scheduled` to `reader_load_task_started` was 96.365 ms. Christie
+completed in 96.083 ms. Evidence and attachments:
+`.reports/mobile-audio/reader-identity-8F946CA8-5542-4C90-A94B-E9A6AD093D08/`.
+The repeated verify attempt is invalid because the prior verification cleaned up
+its fixture; it is excluded. This confirms the unchanged-source hash is no longer
+on the projection-read path, but the end-to-end target remains unmet.
+
+Remaining: variable reader-task scheduling, initial window construction, iOS
+presentation parity, and repeated real-book evidence with the complete 200 ms
+gate. Do not claim APP21/APP28 or the overall goal complete.
 
 ## iOS integration gap confirmed by source review
 
@@ -244,3 +266,35 @@ coverage. Spec review found no acceptance shortcut: both end-to-end LOTR samples
 remain above 200 ms and full reader geometry is unverified. Required follow-up is a
 validated catalog/decode improvement plus the unchanged two-host and two-app gates;
 do not mark APP-20261008-07 or APP-20261008-02 complete.
+
+## Prepared catalog metadata and deferred full decode
+
+The prepared active-chapter snapshot now stores lightweight metadata for every
+chapter (index, name and content kind) inside the existing source-hash-bound
+archive. At open, the Mac reader presents the prepared chapter and restores the
+saved position first. Once the committed layout callback fires, it rechecks the
+source file's descriptor identity against the validated snapshot, records controls
+usable, and only then releases the utility-priority full catalog read/decode. Chapter
+navigation stays disabled until that catalog arrives; complete catalog mismatch
+replaces the projected presentation. Older snapshots without the index take the
+full-catalog-first path. The active source identity is runtime-only and is omitted
+from the archive so identical-byte atomic replacement remains recoverable.
+
+Focused macOS XCTest: 21 passed, zero failures/skips in
+`ios/EpubToMp3/.build/Logs/Test/Test-EpubToMp3Mac-2026.10.11_12-18-03--0300.xcresult`.
+Three successive same-input two-host LOTR/Christie relaunch executions passed the
+unchanged 200 ms verification assertion: LOTR 191.552, 195.079 and 194.885 ms outer
+latency; latest controls readiness was ~184.947 ms and full catalog start ~185.044 ms.
+They are unpaired samples and the last run has only ~5 ms margin, so this is a passing
+candidate with fragile margin, not a stable improvement or completion of the latency
+gate. Latest evidence is `.reports/mobile-audio/reader-relaunch-FD71E526-B227-4399-8C61-533E2AD44F0C`.
+
+The current macOS Debug app built and launched. The exact iPhone SE (1st generation)
+Simulator on iOS 15.5 remains available; the existing Simulator app artifact was
+reinstalled and the same SHA-verified LOTR book opened to Contents page 1/5, with the
+app left open (`.reports/reader-ios15-5-current.png`). `mise run ios:build` was
+blocked by the scheme destination guard: this Xcode has no eligible iOS Simulator
+destination because iOS 26.2 platform is unavailable. The installed artifact predates
+this source change, and the full clipping/chrome/page-turn sequence was not exercised.
+The complete two-app reader geometry gate and iOS projection-first integration remain
+open; no overall reader acceptance is claimed.

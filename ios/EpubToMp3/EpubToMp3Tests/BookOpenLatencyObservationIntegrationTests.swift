@@ -153,6 +153,10 @@ final class BookOpenLatencyObservationIntegrationTests: XCTestCase {
                                                event: "process_relaunch_disk_open", cacheClass: .preparedDisk,
                                                preparedRenderer: renderer, preparedChapterStore: chapterStore)
             report.points.append(point)
+            let stages = point.stageTimings.map(\.name)
+            let scheduled = try XCTUnwrap(stages.firstIndex(of: "reader_load_task_scheduled"))
+            let started = try XCTUnwrap(stages.firstIndex(of: "reader_load_task_started"))
+            XCTAssertLessThan(scheduled, started, "The reader load task must start after its scheduling point.")
             XCTAssertLessThanOrEqual(point.elapsedNanoseconds, 200_000_000,
                                      "Disk-prepared reader must restore content and controls within 200 ms")
         }

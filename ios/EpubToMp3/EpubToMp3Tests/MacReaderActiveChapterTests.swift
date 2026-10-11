@@ -110,10 +110,12 @@ final class MacReaderActiveChapterTests: XCTestCase {
         }
         if !invalidateProjection && !mismatchWithQueuedRestore {
             for _ in 0..<200 {
-                if observed(.readableContent) { break }
+                if observed(.readableContent) && observed(.controlsUsable) { break }
                 try await Task.sleep(nanoseconds: 10_000_000)
             }
             XCTAssertTrue(observed(.readableContent), "The real chapter must paint without complete-book decoding")
+            XCTAssertTrue(observed(.controlsUsable),
+                           "A source-bound complete chapter index and active chapter make audio controls usable during body hydration")
             XCTAssertEqual(text.string, active)
             XCTAssertEqual(UserDefaults.standard.integer(forKey: AudioPlayer.readerCurrentChapterIndexDefaultsKey), 6)
             let distance = text.frame.height - scroll.contentView.bounds.height
@@ -122,7 +124,9 @@ final class MacReaderActiveChapterTests: XCTestCase {
             try await Task.sleep(nanoseconds: 100_000_000)
             XCTAssertTrue(text.string.isEmpty, "Changed source must invalidate the old chapter projection")
         }
-        XCTAssertFalse(observed(.controlsUsable), "Catalog-dependent controls are not ready during blocked hydration")
+        if invalidateProjection || mismatchWithQueuedRestore {
+            XCTAssertFalse(observed(.controlsUsable), "An invalidated projection cannot make controls usable")
+        }
         if closeDuringHydration {
             let distance = text.frame.height - scroll.contentView.bounds.height
             scroll.contentView.scroll(to: NSPoint(x: 0, y: distance * 0.4))
@@ -132,12 +136,15 @@ final class MacReaderActiveChapterTests: XCTestCase {
         let before = scroll.contentView.bounds.origin.y
         release.finish()
         if mismatchWithQueuedRestore {
+            try sourceBytes.write(to: source, options: .atomic)
+            scheduledRestores.first?()
+            try await Task.sleep(nanoseconds: 50_000_000)
+            XCTAssertFalse(observed(.controlsUsable), "A changed source must invalidate the old snapshot before readiness")
             for _ in 0..<200 {
                 if scheduledRestores.count == 2 { break }
                 try await Task.sleep(nanoseconds: 10_000_000)
             }
             XCTAssertEqual(scheduledRestores.count, 2)
-            scheduledRestores.first?()
             XCTAssertFalse(observed(.controlsUsable), "An old snapshot callback must not finalize a mismatched catalog")
             scheduledRestores.last?()
         }
@@ -148,6 +155,12 @@ final class MacReaderActiveChapterTests: XCTestCase {
         XCTAssertTrue(observed(.controlsUsable))
         XCTAssertEqual(text.string, expected.chapters[1].text)
         if !invalidateProjection && !mismatchWithQueuedRestore {
+            for _ in 0..<200 {
+                if controller.numberOfRows(in: NSTableView()) == expected.chapters.count { break }
+                try await Task.sleep(nanoseconds: 10_000_000)
+            }
+            XCTAssertEqual(controller.numberOfRows(in: NSTableView()), expected.chapters.count,
+                           "Chapter navigation waits until the complete catalog hydrates")
             XCTAssertEqual(scroll.contentView.bounds.origin.y, before, accuracy: 2)
             XCTAssertEqual(text.onPageTap?(false), true)
             // Move explicitly to the previous chapter only after the complete catalog exists.

@@ -94,10 +94,23 @@ final class PreparedReaderChapterStoreTests: XCTestCase {
         let reopened = PreparedReaderChapterStore(directory: directory)
         let restored = await reopened.read(bookID: "book", chapterOrdinal: 0, fulltextURL: source)
         let chapter = try XCTUnwrap(restored)
+        let archiveStore = PreparedChapterArchiveStore(directory: directory)
+        let optionalRecord = await archiveStore.read(bookID: "book", chapterIndex: 0)
+        let record = try XCTUnwrap(optionalRecord)
+        let persisted = try PropertyListDecoder().decode(PreparedReaderChapterStore.Snapshot.self,
+                                                          from: record.archive)
+        XCTAssertNotNil(persisted.sourceIdentity,
+                        "The archive must retain the source identity used to bind its SHA signature")
+        XCTAssertEqual(persisted.sourceSignature, record.signature,
+                       "The persisted identity must be paired with the archive's source SHA")
         XCTAssertEqual(chapter.chapter, value.chapters[0])
         XCTAssertEqual(chapter.title, value.bookTitle)
         XCTAssertEqual(chapter.author, value.bookAuthor)
         XCTAssertEqual(chapter.chapterCount, 1)
+        XCTAssertEqual(chapter.catalogChapters, [
+            .init(index: value.chapters[0].index, name: value.chapters[0].name,
+                  contentKind: value.chapters[0].contentKind)
+        ])
         XCTAssertEqual(try Data(contentsOf: source), bytes)
         let wrong = await reopened.read(bookID: "other", chapterOrdinal: 0, fulltextURL: source)
         XCTAssertNil(wrong)

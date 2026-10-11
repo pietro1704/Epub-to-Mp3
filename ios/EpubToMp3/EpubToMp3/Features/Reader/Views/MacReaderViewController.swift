@@ -630,7 +630,18 @@ final class MacReaderViewController: NSViewController, NSTableViewDataSource, NS
         var continuation: AsyncStream<PreparedLoadEvent>.Continuation!
         let arrivals = AsyncStream<PreparedLoadEvent> { continuation = $0 }
         let publisher = continuation!
-        let catalogTask = Task.detached(priority: .userInitiated) {
+        var catalogStartContinuation: AsyncStream<Void>.Continuation!
+        let catalogStart = AsyncStream<Void> { catalogStartContinuation = $0 }
+        let catalogStartSignal = catalogStartContinuation!
+        var hasStartedCatalog = false
+        let startCatalog = {
+            guard !hasStartedCatalog else { return }
+            hasStartedCatalog = true
+            catalogStartSignal.yield(())
+        }
+        let catalogTask = Task.detached(priority: .utility) { () -> EbookFulltext? in
+            var start = catalogStart.makeAsyncIterator()
+            guard await start.next() != nil else { return nil }
             observe?("catalog_read_started", DispatchTime.now().uptimeNanoseconds)
             let payload = await reader(book.id)
             observe?("catalog_read_completed", DispatchTime.now().uptimeNanoseconds)
@@ -664,9 +675,11 @@ final class MacReaderViewController: NSViewController, NSTableViewDataSource, NS
         observeOpenStage("loading_overlay_show_started")
         showLoading(for: book)
         observeOpenStage("loading_overlay_show_completed")
+        observeOpenStage("reader_load_task_scheduled")
         loadTask = Task { [weak self] in
             defer {
                 publisher.finish()
+                catalogStartSignal.finish()
                 chapterTask.cancel()
                 catalogTask.cancel()
                 if let self, self.loadGeneration == generation {
@@ -680,7 +693,9 @@ final class MacReaderViewController: NSViewController, NSTableViewDataSource, NS
                 var next = arrivals.makeAsyncIterator()
                 let first = await next.next()
                 observeOpenStage(first.map {
-                    if case .chapter = $0 { return "first_arrival_projection" }
+                    if case .chapter(let prepared) = $0 {
+                        return prepared == nil ? "first_arrival_projection_miss" : "first_arrival_projection"
+                    }
                     return "first_arrival_catalog"
                 } ?? "first_arrival_end")
                 guard isActiveLoad(generation, bookID: book.id) else { return }
@@ -692,7 +707,9 @@ final class MacReaderViewController: NSViewController, NSTableViewDataSource, NS
                     LatencyObservationStore.shared.classifyCache(.preparedDisk, for: journeyID)
                     await restoreSelectedChapter(bookID: book.id)
                     guard isActiveLoad(generation, bookID: book.id) else { return }
-                    presentLoadedChapter(bookID: book.id)
+                    presentLoadedChapter(bookID: book.id, onControlsResolved: startCatalog)
+                } else {
+                    startCatalog()
                 }
                 let cachedPayload: EbookFulltext?
                 if case .catalog(let payload) = first { cachedPayload = payload }
@@ -725,11 +742,17 @@ final class MacReaderViewController: NSViewController, NSTableViewDataSource, NS
                 }
                 LocalFulltextCache.recordWarmOpen(bookId: book.id)
                 let prepared = activePreparedChapter
+                let catalogMatches = prepared?.catalogChapters.map { catalog in
+                    catalog.count == payload.chapters.count && zip(catalog, payload.chapters).allSatisfy { pair in
+                        pair.0.index == pair.1.index && pair.0.name == pair.1.name
+                            && pair.0.contentKind == pair.1.contentKind
+                    }
+                } ?? true
                 let alreadyPresented = prepared.map {
                     $0.chapterCount == payload.chapters.count && $0.title == payload.bookTitle
                         && $0.author == payload.bookAuthor && $0.toc == payload.toc
                         && payload.chapters[safe: $0.chapterOrdinal] == $0.chapter
-                } == true
+                } == true && catalogMatches
                 if prepared != nil, !alreadyPresented {
                     presentationGeneration = UUID()
                     isRestoringInitialPosition = false
@@ -784,7 +807,7 @@ final class MacReaderViewController: NSViewController, NSTableViewDataSource, NS
         observeOpenStage("selected_chapter_restore_completed")
     }
 
-    private func presentLoadedChapter(bookID: String) {
+    private func presentLoadedChapter(bookID: String, onControlsResolved: (() -> Void)? = nil) {
         observeOpenStage("chapter_presentation_started")
         showChapter(selectedChapter)
         observeOpenStage("chapter_render_layout_completed")
@@ -794,8 +817,30 @@ final class MacReaderViewController: NSViewController, NSTableViewDataSource, NS
             self.observeOpenStage("saved_position_layout_committed")
             self.recordReadableContent()
             self.hideLoading()
-            if self.fulltext != nil { self.recordControlsUsable() }
+            if self.fulltext != nil {
+                self.recordControlsUsable()
+                onControlsResolved?()
+            } else {
+                self.recordPreparedControlsUsable(bookID: bookID, generation: generation,
+                                                  onResolved: onControlsResolved)
+            }
         }
+    }
+
+    private func recordPreparedControlsUsable(bookID: String, generation: UUID,
+                                              onResolved: (() -> Void)?) {
+        guard let snapshot = activePreparedChapter,
+              snapshot.catalogChapters?.count == snapshot.chapterCount,
+              let source = LocalFulltextCache.storageURL(bookId: bookID) else {
+            onResolved?()
+            return
+        }
+        observeOpenStage("prepared_controls_source_check_started")
+        let matches = PreparedReaderChapterStore.sourceMatches(snapshot, fulltextURL: source)
+        guard isActiveLoad(generation, bookID: bookID) else { onResolved?(); return }
+        observeOpenStage("prepared_controls_source_check_completed")
+        if matches { recordControlsUsable() }
+        onResolved?()
     }
 
     private func showChapter(_ index: Int, scrollToEnd: Bool = false) {

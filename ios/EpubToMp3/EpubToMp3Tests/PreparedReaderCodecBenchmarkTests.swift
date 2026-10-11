@@ -4,6 +4,27 @@ import XCTest
 
 @MainActor
 final class PreparedReaderCodecBenchmarkTests: XCTestCase {
+    private struct CatalogIndex: Codable, Equatable, Sendable {
+        struct Chapter: Codable, Equatable, Sendable {
+            let index: Int
+            let name: String?
+        }
+
+        let jobId: String
+        let bookTitle: String?
+        let bookAuthor: String?
+        let chapters: [Chapter]
+        let toc: [EbookFulltext.TocEntry]?
+
+        init(_ payload: EbookFulltext) {
+            jobId = payload.jobId
+            bookTitle = payload.bookTitle
+            bookAuthor = payload.bookAuthor
+            chapters = payload.chapters.map { Chapter(index: $0.index, name: $0.name) }
+            toc = payload.toc
+        }
+    }
+
     func testOptInProjectionValidationVersusCatalogDecode() async throws {
         struct Sample: Encodable {
             let book: String
@@ -12,6 +33,10 @@ final class PreparedReaderCodecBenchmarkTests: XCTestCase {
             let sourceSHA256: String
             let projectionReadMilliseconds: [Double]
             let catalogDecodeMilliseconds: [Double]
+            let catalogIndexDecodeMilliseconds: [Double]
+            let catalogIndexReadDecodeMilliseconds: [Double]
+            let catalogIndexSourceFileReadDecodeMilliseconds: [Double]
+            let catalogIndexBytes: Int
             let catalogReadDecodeMilliseconds: [Double]
             let mappedCatalogReadDecodeMilliseconds: [Double]
             let catalogWithHighProjectionMilliseconds: [Double]
@@ -39,9 +64,16 @@ final class PreparedReaderCodecBenchmarkTests: XCTestCase {
             let bytes = try encoder.encode(payload)
             let source = root.appendingPathComponent("source-\(index).plist")
             try bytes.write(to: source, options: .atomic)
+            let catalogIndex = CatalogIndex(payload)
+            let indexBytes = try PropertyListEncoder().encode(catalogIndex)
+            let indexURL = root.appendingPathComponent("catalog-\(index).plist")
+            try indexBytes.write(to: indexURL, options: .atomic)
             let store = PreparedReaderChapterStore(directory: root.appendingPathComponent("chapters-\(index)"))
             try await store.write(bookID: id, chapterOrdinal: selection.chapterStart, fulltextURL: source)
             var projectionTimes: [Double] = [], catalogTimes: [Double] = [], readDecodeTimes: [Double] = []
+            var catalogIndexTimes: [Double] = []
+            var catalogIndexReadDecodeTimes: [Double] = []
+            var catalogIndexSourceReadDecodeTimes: [Double] = []
             var mappedReadDecodeTimes: [Double] = []
             var highPressureTimes: [Double] = [], utilityPressureTimes: [Double] = []
             for sampleIndex in 0..<3 {
@@ -59,6 +91,34 @@ final class PreparedReaderCodecBenchmarkTests: XCTestCase {
                 }.value
                 catalogTimes.append(result.1)
                 XCTAssertEqual(result.0, payload)
+                let indexResult = try await Task.detached(priority: .userInitiated) {
+                    let started = DispatchTime.now().uptimeNanoseconds
+                    let decoded = try PropertyListDecoder().decode(CatalogIndex.self, from: bytes)
+                    return (decoded, Double(DispatchTime.now().uptimeNanoseconds - started) / 1_000_000)
+                }.value
+                catalogIndexTimes.append(indexResult.1)
+                XCTAssertEqual(indexResult.0.jobId, payload.jobId)
+                XCTAssertEqual(indexResult.0.bookTitle, payload.bookTitle)
+                XCTAssertEqual(indexResult.0.bookAuthor, payload.bookAuthor)
+                XCTAssertEqual(indexResult.0.chapters.map(\.index), payload.chapters.map(\.index))
+                XCTAssertEqual(indexResult.0.chapters.map(\.name), payload.chapters.map(\.name))
+                XCTAssertEqual(indexResult.0.toc, payload.toc)
+                let indexReadResult = try await Task.detached(priority: .userInitiated) {
+                    let started = DispatchTime.now().uptimeNanoseconds
+                    let loaded = try Data(contentsOf: indexURL)
+                    let decoded = try PropertyListDecoder().decode(CatalogIndex.self, from: loaded)
+                    return (decoded, Double(DispatchTime.now().uptimeNanoseconds - started) / 1_000_000)
+                }.value
+                catalogIndexReadDecodeTimes.append(indexReadResult.1)
+                XCTAssertEqual(indexReadResult.0, catalogIndex)
+                let sourceIndexResult = try await Task.detached(priority: .userInitiated) {
+                    let started = DispatchTime.now().uptimeNanoseconds
+                    let loaded = try Data(contentsOf: source)
+                    let decoded = try PropertyListDecoder().decode(CatalogIndex.self, from: loaded)
+                    return (decoded, Double(DispatchTime.now().uptimeNanoseconds - started) / 1_000_000)
+                }.value
+                catalogIndexSourceReadDecodeTimes.append(sourceIndexResult.1)
+                XCTAssertEqual(sourceIndexResult.0, catalogIndex)
                 let readResult = try await Task.detached(priority: .userInitiated) {
                     let started = DispatchTime.now().uptimeNanoseconds
                     let loaded = try Data(contentsOf: source)
@@ -98,13 +158,18 @@ final class PreparedReaderCodecBenchmarkTests: XCTestCase {
             XCTAssertEqual(try Data(contentsOf: source), bytes)
             samples.append(.init(book: selection.name, chapter: selection.chapterStart, sourceBytes: bytes.count,
                 sourceSHA256: selection.sourceSHA256, projectionReadMilliseconds: projectionTimes,
-                catalogDecodeMilliseconds: catalogTimes, catalogReadDecodeMilliseconds: readDecodeTimes,
+                catalogDecodeMilliseconds: catalogTimes,
+                catalogIndexDecodeMilliseconds: catalogIndexTimes,
+                catalogIndexReadDecodeMilliseconds: catalogIndexReadDecodeTimes,
+                catalogIndexSourceFileReadDecodeMilliseconds: catalogIndexSourceReadDecodeTimes,
+                catalogIndexBytes: indexBytes.count,
+                catalogReadDecodeMilliseconds: readDecodeTimes,
                 mappedCatalogReadDecodeMilliseconds: mappedReadDecodeTimes,
                 catalogWithHighProjectionMilliseconds: highPressureTimes,
                 catalogWithUtilityProjectionMilliseconds: utilityPressureTimes))
         }
         let report = Report(platform: "native macOS Debug", operatingSystem: ProcessInfo.processInfo.operatingSystemVersionString,
-            limits: "Three samples; sequential isolated routes and paired concurrent high/utility projection tasks. Requested priorities, not guaranteed scheduling. OS caches not flushed. Excludes parsing/setup, rendering, position and controls. Projection includes one full-source SHA pass, archive validation and file-identity checks; decode-only uses loaded Data; read/decode includes file IO. Concurrent times end at catalog delivery; losing validation is cancelled and drained before the next sample.",
+            limits: "Three samples; sequential isolated routes and paired concurrent high/utility projection tasks. Requested priorities, not guaranteed scheduling. OS caches not flushed. Excludes parsing/setup, rendering, position and controls. Catalog index decodes only job/book metadata, chapter indexes/names and TOC; equality of those fields is asserted. Its independent binary plist size, file-read/decode latency, and partial decode directly from the full payload file are measured. Projection includes one full-source SHA pass, archive validation and file-identity checks; decode-only uses loaded Data; read/decode includes file IO. Concurrent times end at catalog delivery; losing validation is cancelled and drained before the next sample.",
             concurrentPriorityOrder: [["high", "utility"], ["utility", "high"], ["high", "utility"]], samples: samples)
         let attachment = XCTAttachment(data: try JSONEncoder().encode(report), uniformTypeIdentifier: "public.json")
         attachment.name = "native-projection-validation-versus-catalog-decode.json"

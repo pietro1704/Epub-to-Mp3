@@ -416,7 +416,7 @@ Historical Arch assignments below are superseded.
   Review confirmed descriptor-based source reads, symlink rejection and source
   revalidation after archive await. Flutter has no consumer of this Apple cache.
 
-- [ ] **APP-20261009-21 — Active-chapter relaunch critical path.** Profiled; implementation pending.
+- [ ] **APP-20261009-21 — Active-chapter relaunch critical path.** Partial optimization measured; 200 ms target pending.
   Two-host actual-window profiling confirms prepared attributed archive hits;
   LOTR full-book read/decode ~130 ms, restore ~5 ms, presentation ~5 ms, initial
   window/attach/layout cumulative ~93 ms. State/table setup ~23 ms includes restore.
@@ -428,6 +428,23 @@ Historical Arch assignments below are superseded.
   passed, verify failed; LOTR 355.265 ms end-to-end / 261.333 ms readable, Christie
   145.430 / 125.247 ms. No synthesis, baseline executable unavailable, so no causal
   speedup claim. Resident/physical memory values are point samples, not peaks.
+  Next measured experiment: persist the source identity and SHA binding in the
+  prepared chapter snapshot, then use descriptor metadata on unchanged relaunches;
+  any identity mismatch must retain full SHA validation. Acceptance requires
+  source replacement/mutation regressions and a paired actual-book timing run.
+  Implemented as a measured partial slice: identity+SHA now survive serialization;
+  unchanged source reads take the descriptor metadata path, while legacy/mismatched
+  identity falls back to the full SHA and refreshes the snapshot. Eight store tests
+  and five macOS active-chapter tests passed. Actual LOTR/Christie two-host run
+  (`reader-identity-8F946CA8-5542-4C90-A94B-E9A6AD093D08`) prepared successfully;
+  verify failed the 200 ms gate for LOTR at 214.308 ms. Its source projection read
+  took 3.104 ms; `reader_load_task_scheduled` to `reader_load_task_started` took
+  96.365 ms. Christie was 96.083 ms. The optimization reduced source validation
+  work but does not complete the end-to-end target; repeat verify was invalid after
+  fixture cleanup and is not counted as a measurement.
+  Current-source iOS reader UI check also passed on iPhone SE (1st generation),
+  iOS 15.5: one LOTR pagination/chrome test, zero failures/skips
+  (`reader-identity-ios15-5-lotr.xcresult`); app left open at Contents 1/5.
 
 - [x] **APP-20261009-20 — Avoid duplicate prepared-renderer signature work.** Verified narrow slice.
   Reuse the already computed signature for memory lookup; retain full source/style
@@ -718,6 +735,64 @@ Historical Arch assignments below are superseded.
   `reader-relaunch-F79FFDB1-20F5-4B33-8914-3359368CFB9A`,
   `reader-relaunch-BD825F5D-CDD9-45D3-846E-10CE0555608A`, and
   `reader-relaunch-92A8BF36-B8D8-465E-AA5E-0DDFFB11FAE0`.
+  Catalog-shape experiment decodes only job/title/author, chapter index/name, and
+  TOC while preserving complete source-file bytes. One native test passed, zero
+  failures/skips in `.reports/mobile-audio/reader-relaunch-ED45D223-9C6C-4FEE-9810-F1DE88D57284/projection.xcresult`:
+  LOTR full-file read+decode median 110.106 ms, full-file read+index decode
+  13.469 ms, and a separate 5,249-byte encoded index read+decode 0.747 ms; Christie
+  12.173/1.892/0.824 ms. This diagnostic shows a cheap metadata decode but does not
+  establish full reader correctness or a 200 ms pass. Implemented follow-up: the
+  source-hash-bound prepared snapshot now carries all chapter metadata; Mac renders
+  the restored active chapter, commits saved position, rechecks source file identity,
+  then enables controls before starting the full catalog decode. TOC chapter
+  navigation remains gated until hydration; mismatched catalog data replaces the
+  projection. Focused macOS tests passed 21/21, zero skips, in
+  `Test-EpubToMp3Mac-2026.10.11_12-18-03--0300.xcresult`. Actual same-hash LOTR/
+  Christie two-host relaunch test passed three successive candidate executions,
+  unchanged 200 ms assertion: LOTR outer 191.552, 195.079 and 194.885 ms. Latest
+  ready controls at ~184.947 ms; full catalog starts ~185.044 ms. These are unpaired
+  samples with only ~5 ms outer margin; do not claim stable latency improvement or
+  close APP-20261008-07. Diagnostic/evidence in
+  `.reports/mobile-audio/reader-relaunch-FD71E526-B227-4399-8C61-533E2AD44F0C`.
+  macOS Debug build succeeded. Current Debug Simulator artifact was reinstalled on
+  the exact booted iPhone SE (1st generation)/iOS 15.5; the SHA-verified seeded LOTR
+  opened to Contents, page 1/5, and app remains open in
+  `.reports/reader-ios15-5-current.png`. This is a prior artifact (11:19): the
+  current Xcode scheme has no eligible Simulator destination (`mise run ios:build`
+  stopped at its destination guard because iOS 26.2 platform is unavailable).
+  Follow-up supersedes the prior iOS status: Xcode 16.4 built the current source,
+  and the exact iPhone SE 1st generation/iOS 15.5 real-LOTR UI test passed 1/1,
+  zero failures/skips. It verified visible swipe forward/back, two chrome
+  hide/show offset-and-anchor round trips, and zero clipping. The app was relaunched
+  with the seeded LOTR and left open at Contents 1/5 in
+  `.reports/reader-ios15-5-current.png`. Mac app remains built/launched; the full
+  Mac geometry sequence remains unverified. APP-20261008-07 and APP-20261009-21
+  remain open.
+  Same-executable two-host repeat under host memory pressure produced an outlier:
+  LOTR 455.571 ms (window visible 216.499, reader task started 405.632, controls
+  usable 446.633); Christie 110.491 ms. With no source/binary change, a second
+  pair passed the unchanged threshold: LOTR 197.302 ms (window 93.353, reader task
+  161.066, controls 187.325); Christie 72.167 ms. The host had ~1.88M pages
+  compressed and ~4.57M swapouts. These unpaired samples show high variance; they
+  do not close the 200 ms budget. Evidence:
+  `.reports/mobile-audio/reader-relaunch-5E6A9E57-F6A8-43BA-A0E0-B7DE6BA68F0A` and
+  `.reports/mobile-audio/reader-relaunch-FF59D9D9-3945-42B9-99A5-B0F907BA7CB2`.
+
+- [x] **APP-20261011-01 — Verify paginated horizontal swipes on the active
+  reader.** Root cause was the UI test opening a second copy of the seeded book
+  and reading the first matching accessibility identifier, which belonged to a
+  hidden reader. The harness now reuses the seeded active reader, chooses the
+  visible page indicator and matching pagination probe, retains that page identity
+  when chrome hides the indicator, and chooses visible controls for chrome state.
+  It taps the existing test-only chrome control (same production action) so EPUB
+  links cannot intercept the geometry transition; page turns remain real horizontal
+  drags on the visible viewport. Exact iPhone SE (1st generation)/iOS 15.5 run
+  passed: LOTR Contents 1/5 -> 2/5 (offset 363), reverse swipe returned to the
+  prior page, two chrome hide/show cycles retained `first=0` and `offset=363`, and
+  clipping stayed at zero. Confirmed again after reverting all speculative
+  production gesture changes. Build and focused UI test passed; 1 test, 0 failures,
+  0 skips, `.reports/reader-ios15-5-lotr-unmodified-gestures.xcresult`.
+  Attachments: `.reports/reader-ios15-5-lotr-unmodified-gestures-attachments/`.
 
 - [x] **APP-20261008-08 — Avoid redundant Mac reader cache writes.** Verified.
   Cold-write follow-up verified on macOS: first EPUB fulltext persistence and
