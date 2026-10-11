@@ -5,6 +5,10 @@ import Foundation
 actor PreparedChapterArchiveStore {
     static let maximumFileBytes = 8 * 1024 * 1024
     enum StoreError: Error { case invalidKey, unsafeFile, oversized, budgetExceeded }
+    struct Record: Sendable {
+        let signature: String
+        let archive: Data
+    }
     private struct Envelope: Codable {
         let schema: Int
         let bookID: String
@@ -25,8 +29,14 @@ actor PreparedChapterArchiveStore {
     }
 
     func read(bookID: String, chapterIndex: Int, signature: String) -> Data? {
+        guard let record = read(bookID: bookID, chapterIndex: chapterIndex),
+              record.signature == signature else { return nil }
+        return record.archive
+    }
+
+    func read(bookID: String, chapterIndex: Int) -> Record? {
         do {
-            let target = try targetURL(bookID: bookID, chapterIndex: chapterIndex, signature: signature)
+            let target = try targetURL(bookID: bookID, chapterIndex: chapterIndex)
             try validateRoot(create: false)
             let size = try regularFileSize(target)
             guard size <= Self.maximumFileBytes else { return nil }
@@ -36,10 +46,10 @@ actor PreparedChapterArchiveStore {
             guard bytes.count <= Self.maximumFileBytes else { return nil }
             let envelope = try PropertyListDecoder().decode(Envelope.self, from: bytes)
             guard envelope.schema == 2, envelope.bookID == bookID,
-                  envelope.chapterIndex == chapterIndex, envelope.signature == signature,
+                  envelope.chapterIndex == chapterIndex,
                   envelope.archive.count <= Self.maximumFileBytes,
                   envelope.checksum == digest(envelope.archive) else { return nil }
-            return envelope.archive
+            return Record(signature: envelope.signature, archive: envelope.archive)
         } catch { return nil }
     }
 
@@ -68,15 +78,15 @@ actor PreparedChapterArchiveStore {
 
     /// Removes only this book/chapter's archive, never a directory or another book.
     func remove(bookID: String, chapterIndex: Int) throws {
-        let target = try targetURL(bookID: bookID, chapterIndex: chapterIndex,
-                                   signature: String(repeating: "0", count: 64))
+        let target = try targetURL(bookID: bookID, chapterIndex: chapterIndex)
         try validateRoot(create: false)
         if try existingRegularFileSize(target) != nil { try manager.removeItem(at: target) }
     }
 
-    private func targetURL(bookID: String, chapterIndex: Int, signature: String) throws -> URL {
-        guard !bookID.isEmpty, bookID.utf8.count <= 1024, chapterIndex >= 0, signature.utf8.count == 64,
-              signature.utf8.allSatisfy({ (48...57).contains($0) || (97...102).contains($0) }) else {
+    private func targetURL(bookID: String, chapterIndex: Int, signature: String? = nil) throws -> URL {
+        guard !bookID.isEmpty, bookID.utf8.count <= 1024, chapterIndex >= 0,
+              signature.map({ $0.utf8.count == 64
+                  && $0.utf8.allSatisfy({ (48...57).contains($0) || (97...102).contains($0) }) }) ?? true else {
             throw StoreError.invalidKey
         }
         let digest = SHA256.hash(data: Data(bookID.utf8)).map { String(format: "%02x", $0) }.joined()

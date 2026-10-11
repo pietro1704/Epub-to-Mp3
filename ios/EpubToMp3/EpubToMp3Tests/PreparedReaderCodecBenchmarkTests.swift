@@ -93,7 +93,7 @@ final class PreparedReaderCodecBenchmarkTests: XCTestCase {
                 catalogWithUtilityProjectionMilliseconds: utilityPressureTimes))
         }
         let report = Report(platform: "native macOS Debug", operatingSystem: ProcessInfo.processInfo.operatingSystemVersionString,
-            limits: "Three samples; sequential isolated routes and paired concurrent high/utility projection tasks. Requested priorities, not guaranteed scheduling. OS caches not flushed. Excludes parsing/setup, rendering, position and controls. Projection includes both SHA passes; decode-only uses loaded Data; read/decode includes file IO. Concurrent times end at catalog delivery; losing validation is cancelled and drained before the next sample.",
+            limits: "Three samples; sequential isolated routes and paired concurrent high/utility projection tasks. Requested priorities, not guaranteed scheduling. OS caches not flushed. Excludes parsing/setup, rendering, position and controls. Projection includes one full-source SHA pass, archive validation and file-identity checks; decode-only uses loaded Data; read/decode includes file IO. Concurrent times end at catalog delivery; losing validation is cancelled and drained before the next sample.",
             concurrentPriorityOrder: [["high", "utility"], ["utility", "high"], ["high", "utility"]], samples: samples)
         let attachment = XCTAttachment(data: try JSONEncoder().encode(report), uniformTypeIdentifier: "public.json")
         attachment.name = "native-projection-validation-versus-catalog-decode.json"

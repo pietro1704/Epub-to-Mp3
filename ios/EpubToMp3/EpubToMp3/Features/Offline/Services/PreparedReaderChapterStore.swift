@@ -15,6 +15,26 @@ actor PreparedReaderChapterStore {
         let toc: [EbookFulltext.TocEntry]?
     }
 
+    private struct SourceIdentity: Equatable {
+        let device: UInt64
+        let inode: UInt64
+        let size: Int64
+        let modifiedSeconds: Int64
+        let modifiedNanoseconds: Int64
+        let changedSeconds: Int64
+        let changedNanoseconds: Int64
+
+        init(_ value: stat) {
+            device = UInt64(value.st_dev)
+            inode = UInt64(value.st_ino)
+            size = value.st_size
+            modifiedSeconds = Int64(value.st_mtimespec.tv_sec)
+            modifiedNanoseconds = Int64(value.st_mtimespec.tv_nsec)
+            changedSeconds = Int64(value.st_ctimespec.tv_sec)
+            changedNanoseconds = Int64(value.st_ctimespec.tv_nsec)
+        }
+    }
+
     private let archives: PreparedChapterArchiveStore
     private let maximumSourceBytes: Int
 
@@ -47,11 +67,15 @@ actor PreparedReaderChapterStore {
 
     func read(bookID: String, chapterOrdinal: Int, fulltextURL: URL) async -> Snapshot? {
         do {
-            let signature = try source(fulltextURL, collectBytes: false).signature
-            guard let bytes = await archives.read(bookID: bookID, chapterIndex: chapterOrdinal, signature: signature),
-                  let value = try? PropertyListDecoder().decode(Snapshot.self, from: bytes),
+            let scannedSource = try source(fulltextURL, collectBytes: false)
+            guard let record = await archives.read(bookID: bookID, chapterIndex: chapterOrdinal) else { return nil }
+            try Task.checkCancellation()
+            guard record.signature == scannedSource.signature,
+                  try sourceIdentity(fulltextURL) == scannedSource.identity,
+                  let value = try? PropertyListDecoder().decode(Snapshot.self, from: record.archive),
                   valid(value), value.bookID == bookID, value.chapterOrdinal == chapterOrdinal,
-                  try source(fulltextURL, collectBytes: false).signature == signature else { return nil }
+                  try sourceIdentity(fulltextURL) == scannedSource.identity else { return nil }
+            try Task.checkCancellation()
             return value
         } catch { return nil }
     }
@@ -61,7 +85,21 @@ actor PreparedReaderChapterStore {
             && value.chapterOrdinal < value.chapterCount && value.chapter.hasReadableContent
     }
 
-    private func source(_ url: URL, collectBytes: Bool) throws -> (signature: String, bytes: Data) {
+    private func sourceIdentity(_ url: URL) throws -> SourceIdentity {
+        guard url.isFileURL else { throw PreparedChapterArchiveStore.StoreError.unsafeFile }
+        let descriptor = url.path.withCString { open($0, O_RDONLY | O_NOFOLLOW | O_NONBLOCK | O_CLOEXEC) }
+        guard descriptor >= 0 else { throw PreparedChapterArchiveStore.StoreError.unsafeFile }
+        defer { _ = close(descriptor) }
+        var attributes = stat()
+        guard fstat(descriptor, &attributes) == 0,
+              attributes.st_mode & mode_t(S_IFMT) == mode_t(S_IFREG),
+              attributes.st_size >= 0, attributes.st_size <= Int64(maximumSourceBytes) else {
+            throw PreparedChapterArchiveStore.StoreError.unsafeFile
+        }
+        return SourceIdentity(attributes)
+    }
+
+    private func source(_ url: URL, collectBytes: Bool) throws -> (signature: String, bytes: Data, identity: SourceIdentity) {
         try Task.checkCancellation()
         guard url.isFileURL, maximumSourceBytes >= 0, maximumSourceBytes <= 256 * 1024 * 1024 else {
             throw PreparedChapterArchiveStore.StoreError.unsafeFile
@@ -76,6 +114,7 @@ actor PreparedReaderChapterStore {
               attributes.st_size >= 0, attributes.st_size <= Int64(maximumSourceBytes) else {
             throw PreparedChapterArchiveStore.StoreError.unsafeFile
         }
+        let initialIdentity = SourceIdentity(attributes)
         var hash = SHA256()
         var count = 0
         var collected = Data()
@@ -90,7 +129,11 @@ actor PreparedReaderChapterStore {
             if collectBytes { collected.append(bytes) }
         }
         try Task.checkCancellation()
-        guard Int64(count) == attributes.st_size else { throw PreparedChapterArchiveStore.StoreError.unsafeFile }
-        return (hash.finalize().map { String(format: "%02x", $0) }.joined(), collected)
+        var finalAttributes = stat()
+        guard Int64(count) == attributes.st_size, fstat(descriptor, &finalAttributes) == 0,
+              SourceIdentity(finalAttributes) == initialIdentity else {
+            throw PreparedChapterArchiveStore.StoreError.unsafeFile
+        }
+        return (hash.finalize().map { String(format: "%02x", $0) }.joined(), collected, initialIdentity)
     }
 }

@@ -661,6 +661,8 @@ Historical Arch assignments below are superseded.
   disk-prepared open 2446 ms >200 ms. Evidence:
   `.reports/mobile-audio/reader-relaunch-628B5899-4B2F-442D-9526-C40779A7AA43`.
   Relaunch test implemented; overall 200 ms acceptance remains unverified/failed.
+  Latest pre-optimization two-host run: LOTR 504.574 ms end-to-end and 342.986 ms
+  readable-content milestone; Christie 156.508 ms. The full 200 ms gate is still red.
   Removing redundant MainActor cache rewrite reduced one LOTR sample to 985 ms,
   still failing. Focused profile `reader-relaunch-17AFA62C-9C7B-44CF-951F-9AD1BC083342`:
   LOTR read/decode 241 ms, HTML render 537 ms, TextKit fit 1.6 ms; Christie
@@ -676,6 +678,30 @@ Historical Arch assignments below are superseded.
   Christie chapter 6 16.16 ms vs 0.38–0.55 ms (17,194 bytes).
   Full text/attribute equality checked on each decode. In-memory experiment only;
   durable integration, settings invalidation and actual relaunch remain pending.
+  Projection validation now performs one full-source SHA-256 pass instead of two.
+  It compares scanned source identity (device, inode, size, nanosecond mtime/ctime)
+  after archive delivery and after decoding; envelope signature and archive checksum
+  remain checked. Final native macOS store/window tests passed 10/10, zero skips
+  (`Test-EpubToMp3Mac-2026.10.11_11-21-40--0300.xcresult`), including changed and
+  identical-byte atomic replacement during archive read. Exact iPhone SE 1st
+  generation/iOS 15.5 store tests passed 8/8, zero skips
+  (`.reports/simulator-smoke-store-final-252FE39A-736B-40A3-AF46-6B1C9560E104/tests.xcresult`).
+  Same-hash isolated macOS Debug projection medians: LOTR 188.377→88.680 ms,
+  Christie 15.822→7.403 ms across separate three-sample runs; diagnostic only, not
+  paired statistical evidence or reader-open latency
+  (`.reports/mobile-audio/reader-relaunch-5FB959AD-4D2D-4EFA-B65E-356596E324DA/projection.xcresult`).
+  Full 200 ms opening gate
+  and complete two-app visual-reader probe remain open.
+  Final actual LOTR/Christie process-relaunch run: prepare passed; verify failed
+  the unchanged threshold in `.reports/mobile-audio/reader-relaunch-AAE0936D-61FF-4986-A0F0-33495BE19D38/verify.xcresult`.
+  LOTR 361.070 ms end-to-end, readable 223.629 ms, controls 264.570 ms; Christie
+  151.107 ms. Before/after runs are unpaired, so causality is unproven.
+  The seeded-LOTR UI test could not find its book in the test runner's fresh app
+  container. A hash-verified LOTR was manually staged/imported in the exact SE/iOS
+  15.5 app; paginated contents opened and was left visible in
+  `.reports/reader-ios15-5-lotr-final.png`. The full clipping/chrome/page-turn probe
+  remains unverified. Next, instrument first arrival, catalog decode, restore and
+  first-window layout to isolate the remaining open latency before another change.
 
 - [x] **APP-20261008-08 — Avoid redundant Mac reader cache writes.** Verified.
   Cold-write follow-up verified on macOS: first EPUB fulltext persistence and
@@ -725,19 +751,27 @@ Historical Arch assignments below are superseded.
 - [ ] **APP-20261008-02 — Quality/performance goal.** In progress.
   Acceptance/evidence: `docs/plans/2026-10-08-app-quality-performance.md`.
   Remaining: relaunch readiness and the observed conversion performance regression.
-  iOS Book Detail Listen/Download bookmark resolution was moved to the async
-  LibraryStore API with a focused MainActor responsiveness test, but Simulator
-  verification is blocked: installed Xcode 26.3 only provides iOS Simulator SDK
-  26.2, while the requested low-resource runtime is iOS 16. The test build was
-  generated for 26.2; no Simulator was booted and no native pass is claimed.
-  Physical-device retry per current goal reached preflight, which found the
-  paired iPhone 16e locked and stopped before build/install/test. Unlock and
-  awake state requested; no device data or app state was changed by that attempt.
-  Independent durable-import safety regression: 3 focused macOS XCTest passed,
-  zero failures/skips (`Test-EpubToMp3Mac-2026.10.09_10-33-21--0300.xcresult`):
-  failed replacement preserves prior bytes, self-reimport is harmless, and
-  successful replacement retains bookmark destination. This does not verify
-  the pending UIKit async-opener test.
+  Exact Simulator verification passed: iPhone SE (1st generation), iOS 15.5,
+  UDID `C66CCB36-C43E-4174-861E-2FA713389C84`; one focused XCTest passed with zero
+  failures/skips in `.reports/simulator-smoke-07AE4798-69E3-4A99-92EC-FA22233B2E23/tests.xcresult`.
+  `testBookDetailActionsKeepMainActorResponsiveWhileOpeningBook` exercises both
+  Listen and Download bookmark resolution while the MainActor heartbeat runs;
+  it completed in 0.664 s. The app was separately installed and launched with
+  `-uiTestFixture`; the seeded library screen was inspected in
+  `.reports/book-detail-ios15-5-installed.png` and left open in the Simulator.
+  Build used Xcode 16.4 / iOS Simulator SDK 18.5 with deployment target 15.0,
+  then ran successfully on the exact iOS 15.5 runtime. This is Simulator runtime
+  evidence, not an SDK 15.5 build. No physical iPhone was used. The smoke wrapper
+  invokes `/usr/bin/xcrun` and ignores `DEVELOPER_DIR`; the successful run
+  supplied the exact Xcode 16.4 `.xctestrun` explicitly through
+  `IOS_SIMULATOR_XCTESTRUN_PATH`.
+  Native macOS durable-import
+  regressions passed 3/3, zero skips in
+  `Test-EpubToMp3Mac-2026.10.11_08-03-51--0300.xcresult`. Source-bound projection
+  benchmark passed 1/1 and retained hash/timing data in
+  `.reports/mobile-audio/reader-relaunch-EF7E0E9F-2D5A-4EF9-8183-CB2B1548E7F2/projection.xcresult`;
+  it does not close the 200 ms relaunch gate. Details and exact timing bounds are
+  in `docs/plans/2026-10-08-app-quality-performance.md`.
   Full physical seven-class sequence passed: `D379076E-DD02-49A1-9DA3-BAA4C728648F`,
   112 passed, zero failures, one opt-in existing-audio measurement skipped;
   no rebuild, 54.64 s total. Earlier playback failures did not reproduce.

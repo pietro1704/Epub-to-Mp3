@@ -120,16 +120,21 @@ the full-payload critical-path decode after relaunch. This is distinct from the
 completed Mac active-projection race above. iOS needs projection-first presentation
 with source/style validation, generation fences, saved-position fidelity, and
 catalog-gated navigation/controls, followed by native UIKit and actual-book
-verification. Source was inspected on 2026-10-09; no iOS edit or runtime claim was
-made because the paired iPhone was unavailable and the active goal prohibits
-Simulator. The 200 ms two-host gate remains open.
+verification. Source was inspected on 2026-10-09; at that time the paired iPhone
+was unavailable and Simulator verification was not authorized. The later explicit
+authorization allowed exact iPhone SE first-generation/iOS 15.5 Simulator checks:
+the shared projection-store suite passed 8/8, and the real app opened the hash-
+verified LOTR EPUB to its paginated contents page. This does not add the missing
+iOS projection-first presentation path or complete clipping/chrome/page-turn
+verification. The 200 ms two-host gate remains open.
 
 ## Cooperative projection cancellation
 
 APP-20261009-29 adds cancellation checkpoints before source descriptor access,
 between bounded 64 KiB reads and after hashing; write also checks before decode,
-encode and archive handoff. Descriptor guards, SHA validation on both sides of
-the archive await and source-mutation rejection remain intact.
+encode and archive handoff. Its original implementation hashed the source on
+both sides of the archive await; the later single-scan optimization preserves
+source mutation rejection through descriptor identity checks after that await.
 The previous two pre-cancelled operations still returned/wrote content (native
 red `05-00-10`). Final Mac store tests: seven passed, zero failed/skipped
 (`05-01-22`). iOS 16: the two new cancellation cases passed, zero failed/skipped

@@ -58,6 +58,92 @@ uncontrolled comparison or extrapolate whole-book duration.
 
 ## Progress
 
+### Book Detail async bookmark responsiveness — Simulator follow-up
+
+Exact requested runtime verification now passes: iPhone SE (1st generation) /
+iOS 15.5, UDID `C66CCB36-C43E-4174-861E-2FA713389C84`. The focused
+`testBookDetailActionsKeepMainActorResponsiveWhileOpeningBook` passed once with
+zero failures/skips in `.reports/simulator-smoke-07AE4798-69E3-4A99-92EC-FA22233B2E23/tests.xcresult`
+(0.664 s XCTest interval). The single test drives both Listen and Download
+through isolated temporary EPUB storage and proves a MainActor heartbeat while
+bookmark resolution is suspended. App installation/launch used `-uiTestFixture`;
+the seeded library screen was inspected at `.reports/book-detail-ios15-5-installed.png`
+and left open. Build used Xcode 16.4 / SDK 18.5 / deployment target 15.0; the
+result proves execution on the exact iOS 15.5 Simulator runtime, not compilation
+with an iOS 15.5 SDK. No physical iPhone was used.
+
+The current `BookDetailManualConversionTests/testBookDetailActionsKeepMainActorResponsiveWhileOpeningBook`
+also passed once with zero failures/skips in `.reports/simulator-smoke-843F3EFE-5BBE-41A6-AB24-15ABFF30F348/tests.xcresult`
+on iPhone 16 Pro Simulator / iOS 18.0 (87.723 s total, 0.483 s test interval).
+The one XCTest exercises Listen and Download with a temporary EPUB and checks
+a MainActor heartbeat. It preceded and did not substitute for the exact iOS
+15.5 run recorded above. The smoke harness invokes `/usr/bin/xcrun`, which
+ignores `DEVELOPER_DIR`; the successful exact-runtime run supplied the Xcode
+16.4 `.xctestrun` explicitly through `IOS_SIMULATOR_XCTESTRUN_PATH`. Earlier
+build-for-testing bundles with zero tests remain discarded, not passes.
+
+The existing durability boundary was re-exercised on native macOS:
+`LibraryStoreTests/testFailedDurableReplacementPreservesPreviousFile`,
+`testDurableSelfReimportPreservesTheImportedFile`, and
+`testSuccessfulDurableReplacementPreservesBookmarkDestination` passed 3/3 with
+zero failures/skips in
+`ios/EpubToMp3/.build/Logs/Test/Test-EpubToMp3Mac-2026.10.11_08-03-51--0300.xcresult`.
+This confirms item 1's preservation, self-reimport, and bookmark replacement
+cases on the current checkout; it does not close the remaining acceptance items.
+
+Re-ran the source-bound projection benchmark on native macOS Debug. One test
+passed (zero failures/skips) in
+`.reports/mobile-audio/reader-relaunch-EF7E0E9F-2D5A-4EF9-8183-CB2B1548E7F2/projection.xcresult`.
+The attachment verifies literal LOTR/Christie source hashes and reports three
+samples. LOTR chapter 8 projection validation was 183.39–189.38 ms; catalog
+decode was 110.88–114.24 ms; source read+decode was 118.08–123.55 ms. With
+concurrent validation, catalog delivery completed in 119.88–128.98 ms for the
+high-priority request and 115.81–128.17 ms for utility. Christie results were
+17.88–14.98 ms projection, 11.36–12.42 ms decode, and 12.35–13.27 ms read+decode.
+This isolated Debug sample excludes parsing, rendering, controls and relaunch;
+it does not establish a 200 ms whole-open result or justify weakening source
+hash validation.
+
+### Projection validation: single source scan with identity fencing
+
+APP-20261009-21 now reads the fulltext once for its SHA-256, then validates the
+projection envelope and checksum. Before and after decoding, it compares the
+source's device, inode, size, nanosecond modification time and change time with
+the scanned descriptor identity. Atomic replacement during the archive read is
+still rejected; cancellation checks remain after the actor hop and before return.
+The archive's stored source signature is compared with the newly computed hash.
+
+Final native macOS store and actual reader-window tests passed 10/10, zero
+failures/skips, in
+`ios/EpubToMp3/.build/Logs/Test/Test-EpubToMp3Mac-2026.10.11_11-21-40--0300.xcresult`.
+This includes changed-source and identical-byte atomic replacement during archive
+read, symlink/size rejection, cancellation and cache-hit reader presentation.
+Exact iPhone SE first-generation/iOS 15.5 store tests passed 8/8 in
+`.reports/simulator-smoke-store-final-252FE39A-736B-40A3-AF46-6B1C9560E104/tests.xcresult`.
+The LOTR/Christie projection benchmark passed 1/1 in
+`.reports/mobile-audio/reader-relaunch-5FB959AD-4D2D-4EFA-B65E-356596E324DA/projection.xcresult`.
+On this macOS Debug host, three isolated LOTR samples fell from the previous
+188.377 ms median to 88.680 ms; Christie fell from 15.822 ms to 7.403 ms.
+Those runs use the same literal source hashes but are not a paired statistical
+comparison. The candidate route retains SHA-256 and archive checksum validation;
+the timing covers projection validation only, not reader opening or UI readiness.
+
+The final two-host relaunch check used actual LOTR/Christie and a new process in
+each phase. Prepare passed, but verify failed the unchanged 200 ms assertion in
+`.reports/mobile-audio/reader-relaunch-AAE0936D-61FF-4986-A0F0-33495BE19D38/verify.xcresult`.
+LOTR measured 361.070 ms end-to-end, with readable content at 223.629 ms and
+controls usable at 264.570 ms. Christie measured 151.107 ms end-to-end. The
+pre-optimization and candidate runs are unpaired diagnostics, not causal proof;
+LOTR remains over budget.
+
+The UI test's seeded-LOTR launch could not find its seed in the test-runner's
+fresh app container. A hash-verified LOTR was then imported via its file URL in
+the real Simulator app; it reached the paginated contents page and is left open
+at `.reports/reader-ios15-5-lotr-final.png`. This confirms opening, not the full
+clipping/chrome/page-turn probe. Next diagnosis should split the remaining
+readable-content path into first-arrival, catalog decode, restore and first-window
+layout stages before another performance change.
+
 ### UIKit reader reimport caller — asynchronous durable import
 
 APP-20261009-32 fixes the remaining reader picker callback that waited on the

@@ -5,13 +5,20 @@ import XCTest
 private final class ChapterSourceChangeProbe: FileManager, @unchecked Sendable {
     private let lock = NSLock()
     private var target: URL?
-    func arm(_ url: URL) { lock.lock(); target = url; lock.unlock() }
+    private var replacement = Data("source changed during archive read".utf8)
+    func arm(_ url: URL, replacement: Data? = nil) {
+        lock.lock()
+        target = url
+        if let replacement { self.replacement = replacement }
+        lock.unlock()
+    }
     override func attributesOfItem(atPath path: String) throws -> [FileAttributeKey: Any] {
         lock.lock()
         let change = path.hasSuffix(".archive") ? target : nil
+        let bytes = replacement
         if change != nil { target = nil }
         lock.unlock()
-        if let change { try Data("source changed during archive read".utf8).write(to: change, options: .atomic) }
+        if let change { try bytes.write(to: change, options: .atomic) }
         return try super.attributesOfItem(atPath: path)
     }
 }
@@ -140,9 +147,25 @@ final class PreparedReaderChapterStoreTests: XCTestCase {
         try await store.write(bookID: "book", chapterOrdinal: 0, fulltextURL: source)
         probe.arm(source)
         let stale = await store.read(bookID: "book", chapterOrdinal: 0, fulltextURL: source)
-        XCTAssertNil(stale)
+        XCTAssertNil(stale,
+                     "Replacing the source after its SHA scan must invalidate the projection even when the archive read succeeds")
         XCTAssertNotEqual(try Data(contentsOf: source), bytes)
         try bytes.write(to: source, options: .atomic)
+        let recovered = await store.read(bookID: "book", chapterOrdinal: 0, fulltextURL: source)
+        XCTAssertNotNil(recovered)
+    }
+
+    func testIdenticalAtomicReplacementDuringArchiveAwaitFailsClosed() async throws {
+        let bytes = try save(payload())
+        let probe = ChapterSourceChangeProbe()
+        let store = PreparedReaderChapterStore(directory: root.appendingPathComponent("chapters"), fileManager: probe)
+        try await store.write(bookID: "book", chapterOrdinal: 0, fulltextURL: source)
+        probe.arm(source, replacement: bytes)
+
+        let replaced = await store.read(bookID: "book", chapterOrdinal: 0, fulltextURL: source)
+
+        XCTAssertNil(replaced, "A source replaced after scanning must fail identity validation even if its bytes match")
+        XCTAssertEqual(try Data(contentsOf: source), bytes)
         let recovered = await store.read(bookID: "book", chapterOrdinal: 0, fulltextURL: source)
         XCTAssertNotNil(recovered)
     }
