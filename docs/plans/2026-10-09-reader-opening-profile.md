@@ -298,3 +298,36 @@ destination because iOS 26.2 platform is unavailable. The installed artifact pre
 this source change, and the full clipping/chrome/page-turn sequence was not exercised.
 The complete two-app reader geometry gate and iOS projection-first integration remain
 open; no overall reader acceptance is claimed.
+
+## Readiness measurement correction (2026-10-11)
+
+The run-loop wait was not a valid latency endpoint: XCTest resumed 1.104 s after the
+reader had already reported `controls_usable` at 185.718 ms. The measurement now uses
+the recorded `controls_usable` timestamp, and the macOS test waits on that callback
+directly. An integration assertion ties the report point to that timestamp and keeps
+the 200 ms limit unchanged. Optional AppKit lifecycle stage markers locate load,
+configure, layout, and appearance boundaries for future diagnosis.
+
+Two separate Release two-host executions, each prepared and verified in different
+XCTest processes with the same real LOTR/Christie inputs and ranges, passed 1/1 with
+zero failures or skips. LOTR readiness measured 186.676 ms and 178.608 ms; Christie
+measured 61.720 ms and 62.534 ms. Reports:
+`.reports/mobile-audio/reader-direct-readiness-release-36BE15E5-22B0-49FA-990E-23DA90DCC388/`
+and `.reports/mobile-audio/reader-direct-readiness-repeat-1DB107C0-99B2-4851-9D1C-B119873AD321/`.
+These runs establish two macOS passes with modest LOTR headroom; they do not establish
+an iOS process-relaunch measurement or a stable worst-case bound.
+
+In both LOTR profiles, `reader_load_task_scheduled` preceded
+`reader_load_task_started` by about 92 ms (92.071 and 92.454 ms). The task began
+about 72 ms after initial layout, then readable content and controls followed in
+about 21 ms. This repeatable interval is the next diagnostic target, but the
+headless AppKit/XCTest harness does not establish that the production event loop
+has the same delay. Profile the real app's main run loop before changing scheduling.
+
+Current-source native verification also passed: the actual LOTR pagination/chrome UI
+test passed 1/1 on iPhone SE (1st generation), iOS 15.5 under Xcode 16.4, including
+forward/back swipes and two chrome offset round trips; app remains open on LOTR.
+`mise run mac:run` built and launched the Debug app, and the real LOTR opened to
+Chapter 12 in the macOS reader. The Mac screen was inspected; the full clipping and
+chrome geometry sequence was not run there. Overall APP21 remains open pending
+iOS process-relaunch latency parity and the complete two-app geometry gate.

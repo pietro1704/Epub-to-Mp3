@@ -123,14 +123,19 @@ final class MacReaderViewController: NSViewController, NSTableViewDataSource, NS
     }
 
     override func viewDidAppear() {
+        observeOpenStage("reader_view_did_appear_started")
         super.viewDidAppear()
         view.window?.makeFirstResponder(view)
+        observeOpenStage("reader_view_did_appear_completed")
     }
 
     override func viewDidLayout() {
+        observeOpenStage("reader_view_did_layout_started")
         super.viewDidLayout()
-        guard contentScrollView.documentView === textView else { return }
-        MacReaderTextLayout.fit(textView, in: contentScrollView)
+        if contentScrollView.documentView === textView {
+            MacReaderTextLayout.fit(textView, in: contentScrollView)
+        }
+        observeOpenStage("reader_view_did_layout_completed")
     }
 
     private func applyCurrentReaderTheme() {
@@ -151,8 +156,11 @@ final class MacReaderViewController: NSViewController, NSTableViewDataSource, NS
     }
 
     override func viewDidLoad() {
+        observeOpenStage("reader_view_did_load_started")
         super.viewDidLoad()
+        observeOpenStage("reader_configure_started")
         configureReader()
+        observeOpenStage("reader_configure_completed")
         settings.objectWillChange
             .sink { [weak self] _ in
                 guard let self, self.chapter(at: self.selectedChapter) != nil else { return }
@@ -178,6 +186,7 @@ final class MacReaderViewController: NSViewController, NSTableViewDataSource, NS
             name: NSScrollView.didEndLiveScrollNotification,
             object: contentScrollView
         )
+        observeOpenStage("reader_view_did_load_completed")
     }
 
     func setBook(_ bookID: String?) {

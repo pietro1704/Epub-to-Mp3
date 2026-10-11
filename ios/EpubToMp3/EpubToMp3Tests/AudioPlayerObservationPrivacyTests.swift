@@ -117,7 +117,8 @@ struct NativePlaybackBenchmarkReport: Encodable {
         static func capture(book: String, event: String, started: UInt64,
                             journeys: [LatencyObservation.Journey] = [],
                             stageTimings: [StageTiming] = []) -> Self {
-            let elapsed = DispatchTime.now().uptimeNanoseconds - started
+            let elapsed = stageTimings.first(where: { $0.name == "controls_usable" })?.elapsedNanoseconds
+                ?? (DispatchTime.now().uptimeNanoseconds - started)
             var info = task_vm_info_data_t()
             var count = mach_msg_type_number_t(MemoryLayout<task_vm_info_data_t>.size / MemoryLayout<integer_t>.size)
             let status = withUnsafeMutablePointer(to: &info) { pointer in

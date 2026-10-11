@@ -157,6 +157,20 @@ final class BookOpenLatencyObservationIntegrationTests: XCTestCase {
             let scheduled = try XCTUnwrap(stages.firstIndex(of: "reader_load_task_scheduled"))
             let started = try XCTUnwrap(stages.firstIndex(of: "reader_load_task_started"))
             XCTAssertLessThan(scheduled, started, "The reader load task must start after its scheduling point.")
+            let viewDidLoadCompleted = try XCTUnwrap(stages.firstIndex(of: "reader_view_did_load_completed"))
+            let viewDidAppearStarted = try XCTUnwrap(stages.firstIndex(of: "reader_view_did_appear_started"))
+            let viewDidAppearCompleted = try XCTUnwrap(stages.firstIndex(of: "reader_view_did_appear_completed"))
+            let viewDidLayoutStarted = try XCTUnwrap(stages.firstIndex(of: "reader_view_did_layout_started"))
+            let viewDidLayoutCompleted = try XCTUnwrap(stages.firstIndex(of: "reader_view_did_layout_completed"))
+            XCTAssertLessThan(scheduled, viewDidLoadCompleted)
+            XCTAssertLessThan(viewDidLoadCompleted, viewDidAppearStarted)
+            XCTAssertLessThan(viewDidAppearStarted, viewDidAppearCompleted)
+            XCTAssertLessThan(viewDidLayoutStarted, viewDidLayoutCompleted)
+            XCTAssertLessThan(viewDidAppearCompleted, started)
+            XCTAssertLessThan(viewDidLayoutCompleted, started)
+            let controlsUsable = try XCTUnwrap(point.stageTimings.first { $0.name == "controls_usable" })
+            XCTAssertEqual(point.elapsedNanoseconds, controlsUsable.elapsedNanoseconds,
+                           "The relaunch latency must stop at the controls-ready stage, not after XCTest resumes")
             XCTAssertLessThanOrEqual(point.elapsedNanoseconds, 200_000_000,
                                      "Disk-prepared reader must restore content and controls within 200 ms")
         }
@@ -246,15 +260,32 @@ final class BookOpenLatencyObservationIntegrationTests: XCTestCase {
         defer { window.isHidden = true; window.rootViewController = nil; player.stop() }
         controller.view.setNeedsLayout()
         controller.view.layoutIfNeeded()
+        for _ in 0..<3000 {
+            let journeys = LatencyObservationStore.shared.snapshot().filter { !known.contains($0.id) && $0.kind == .bookOpen }
+            if journeys.contains(where: { $0.records.contains { $0.transition == .controlsUsable } }) {
+                guard journeys.contains(where: { $0.context.cacheClass == cacheClass
+                    && $0.records.contains { $0.transition == .readableContent }
+                    && $0.records.contains { $0.transition == .controlsUsable } }) else {
+                    throw NativePlaybackBenchmarkInput.invalid("Observed cache class does not match the requested cold/warm case")
+                }
+                return .capture(book: book.title, event: event, started: started, journeys: journeys)
+            }
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+        throw NativePlaybackBenchmarkInput.invalid("Native reader readiness timed out; no latency success measured")
         #else
         let stages = ReaderOpenStageRecorder(started: started)
+        let controlsReady = expectation(description: "Native reader controls are usable")
         stages.record("benchmark_started", at: started)
         UserDefaults.standard.set(book.id, forKey: ReaderSessionState.currentlyReadingBookIDKey)
         let controller = MacReaderViewController(library: library,
             settings: AppSettings(defaults: defaults), player: player,
             bookmarkStore: BookmarkStore(defaults: defaults, storageKey: "benchmark"), onClose: {},
             preparedRenderer: preparedRenderer, preparedChapterStore: preparedChapterStore,
-            openStageObserver: { name, timestamp in stages.record(name, at: timestamp) })
+            openStageObserver: { name, timestamp in
+                stages.record(name, at: timestamp)
+                if name == "controls_usable" { controlsReady.fulfill() }
+            })
         stages.record("controller_constructed")
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1100, height: 760),
                               styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
@@ -267,25 +298,18 @@ final class BookOpenLatencyObservationIntegrationTests: XCTestCase {
         defer { window.orderOut(nil); window.contentViewController = nil; window.close(); player.stop() }
         controller.view.layoutSubtreeIfNeeded()
         stages.record("initial_layout_completed")
-        #endif
-        for _ in 0..<3000 {
-            let journeys = LatencyObservationStore.shared.snapshot().filter { !known.contains($0.id) && $0.kind == .bookOpen }
-            if journeys.contains(where: { $0.records.contains { $0.transition == .controlsUsable } }) {
-                guard journeys.contains(where: { $0.context.cacheClass == cacheClass
-                    && $0.records.contains { $0.transition == .readableContent }
-                    && $0.records.contains { $0.transition == .controlsUsable } }) else {
-                    throw NativePlaybackBenchmarkInput.invalid("Observed cache class does not match the requested cold/warm case")
-                }
-                #if os(macOS)
-                return .capture(book: book.title, event: event, started: started, journeys: journeys,
-                                stageTimings: stages.snapshot())
-                #else
-                return .capture(book: book.title, event: event, started: started, journeys: journeys)
-                #endif
-            }
-            try await Task.sleep(nanoseconds: 10_000_000)
+        await fulfillment(of: [controlsReady], timeout: 3)
+        let journeys = LatencyObservationStore.shared.snapshot().filter {
+            !known.contains($0.id) && $0.kind == .bookOpen
         }
-        throw NativePlaybackBenchmarkInput.invalid("Native reader readiness timed out; no latency success measured")
+        guard journeys.contains(where: { $0.context.cacheClass == cacheClass
+            && $0.records.contains { $0.transition == .readableContent }
+            && $0.records.contains { $0.transition == .controlsUsable } }) else {
+            throw NativePlaybackBenchmarkInput.invalid("Native reader readiness timed out; no latency success measured")
+        }
+        return .capture(book: book.title, event: event, started: started, journeys: journeys,
+                        stageTimings: stages.snapshot())
+        #endif
     }
 
     #if os(iOS)

@@ -445,6 +445,34 @@ Historical Arch assignments below are superseded.
   Current-source iOS reader UI check also passed on iPhone SE (1st generation),
   iOS 15.5: one LOTR pagination/chrome test, zero failures/skips
   (`reader-identity-ios15-5-lotr.xcresult`); app left open at Contents 1/5.
+  Next diagnostic records `viewDidLoad/configureReader` and AppKit appearance/layout
+  callback boundaries to locate the measured gap after task scheduling. The host
+  sample taken later was load average 2.09/2.63/2.86 and is not a contemporaneous
+  control for the prior 214.308 ms result.
+  A Release optimized app/test profile (with local signing disabled and test hooks
+  enabled) still failed LOTR at 214.554 ms; Christie was 89.880 ms. For LOTR the
+  task started 76.396 ms after the initial layout, after a 95.518 ms schedule/start
+  gap. Release mode alone does not remove the delay. Next isolate XCTest's
+  main-actor readiness polling from AppKit actor scheduling.
+  Lifecycle profile confirmed both a main-queue ping and a MainActor ping waited
+  until the XCTest `Task.sleep(10 ms)` resumed (about 70 ms later); neither the
+  task nor pings ran during the wait. Replace the sleep poll with XCTest's
+  run-loop-aware expectation wait before drawing conclusions about app scheduling.
+  The expectation wait itself resumed 1.104 s after startup while the attached
+  `controls_usable` stage was 185.718 ms. The reported point was therefore timing
+  XCTest resumption, not readiness. Make the benchmark point derive from the
+  readiness stage whenever the stage recorder is present. **Superseded by the
+  corrected measurement below:** the report now takes the actual `controls_usable`
+  timestamp and macOS XCTest waits on that callback. A regression assertion binds
+  the reported point to readiness and preserves the 200 ms gate. Two separate
+  Release prepare/verify host pairs passed with LOTR 186.676 and 178.608 ms and
+  Christie 61.720 and 62.534 ms, zero test failures/skips. Evidence:
+  `.reports/mobile-audio/reader-direct-readiness-release-36BE15E5-22B0-49FA-990E-23DA90DCC388/`
+  and `.reports/mobile-audio/reader-direct-readiness-repeat-1DB107C0-99B2-4851-9D1C-B119873AD321/`.
+  Current-source UI regression passed on exact iPhone SE 1st generation/iOS 15.5
+  using Xcode 16.4 (1/1); `mise run mac:run` built/launched the native Mac app and
+  LOTR opened at Chapter 12. Mac geometry gate and iOS process-relaunch latency
+  parity remain unverified; APP21 remains open.
 
 - [x] **APP-20261009-20 — Avoid duplicate prepared-renderer signature work.** Verified narrow slice.
   Reuse the already computed signature for memory lookup; retain full source/style
