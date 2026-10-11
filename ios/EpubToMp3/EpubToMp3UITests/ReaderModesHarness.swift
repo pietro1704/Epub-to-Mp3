@@ -63,6 +63,8 @@ final class ReaderModesHarness {
     }
 
     let app: XCUIApplication
+    private var activeReaderPage: Int?
+    private var activeReaderPageCount: Int?
 
     init(app: XCUIApplication = XCUIApplication()) {
         self.app = app
@@ -128,7 +130,14 @@ final class ReaderModesHarness {
     }
 
     func toggleChrome() {
-        let viewport = app.scrollViews["reader.viewport"].firstMatch
+        let testToggle = app.buttons.matching(identifier: "reader.chrome.toggle")
+            .allElementsBoundByIndex.first(where: \.isHittable)
+        if let testToggle {
+            testToggle.tap()
+            return
+        }
+        let viewport = app.scrollViews.matching(identifier: "reader.viewport")
+            .allElementsBoundByIndex.first(where: \.isHittable) ?? app.scrollViews["reader.viewport"].firstMatch
         XCTAssertTrue(viewport.waitForExistence(timeout: 5), "The reader viewport must be available.")
         // Stay in the central reader column but below the typical EPUB
         // navigation/footnote link cluster. A link intentionally wins over
@@ -141,7 +150,7 @@ final class ReaderModesHarness {
         toggleChrome()
         XCTAssertTrue(
             waitUntil(timeout: timeout) { self.chromeIsVisible == visible },
-            "The reader chrome must settle to the requested state."
+            "The reader chrome must settle to visible=\(visible); metrics=\(paginationMetrics?.values ?? [:]); cachedPage=\(String(describing: activeReaderPage))/\(String(describing: activeReaderPageCount))."
         )
     }
 
@@ -159,24 +168,52 @@ final class ReaderModesHarness {
     }
 
     var chromeIsVisible: Bool {
-        if let hidden = paginationMetrics?.values["chromeHidden"] {
-            return hidden == 0
+        app.buttons.matching(identifier: "reader.search").allElementsBoundByIndex.contains(where: \.isHittable)
+            || app.buttons.matching(identifier: "reader.close").allElementsBoundByIndex.contains(where: \.isHittable)
+    }
+
+    func paginationProbe(for pageCount: Int? = nil) -> XCUIElement? {
+        let probes = app.staticTexts.matching(identifier: "reader.paginationProbe")
+        let visibleIndicator = app.descendants(matching: .any)
+            .matching(identifier: "reader.pageIndicator")
+            .allElementsBoundByIndex.first(where: \.isHittable)
+        if let visibleIndicator {
+            let indicatorText = (visibleIndicator.value as? String) ?? visibleIndicator.label
+            let indicatorNumbers = indicatorText
+                .components(separatedBy: CharacterSet.decimalDigits.inverted)
+                .compactMap(Int.init)
+            activeReaderPage = indicatorNumbers.first
+            activeReaderPageCount = indicatorNumbers.last
         }
-        let search = app.buttons["reader.search"].firstMatch
-        let close = app.buttons["reader.close"].firstMatch
-        return (search.exists && search.isHittable) || (close.exists && close.isHittable)
+        let activePage = activeReaderPage
+        let activePageCount = activeReaderPageCount
+        let candidates = probes.allElementsBoundByIndex.filter { probe in
+            let values = Self.integerMetrics(from: probe.label)
+            return values["total"] != nil
+                && (pageCount == nil || values["total"] == pageCount)
+                && (activePageCount == nil || values["total"] == activePageCount)
+        }
+        return candidates.min { left, right in
+            guard let activePage else { return false }
+            let leftPage = Self.integerMetrics(from: left.label)["page"] ?? Int.max
+            let rightPage = Self.integerMetrics(from: right.label)["page"] ?? Int.max
+            return abs(leftPage - activePage) < abs(rightPage - activePage)
+        }
     }
 
     var paginationMetrics: PaginationMetrics? {
-        let probe = app.staticTexts["reader.paginationProbe"].firstMatch
-        guard probe.waitForExistence(timeout: 5) else { return nil }
-        let pairs: [(String, Int)] = probe.label.split(separator: ";").compactMap { item in
+        guard let probe = paginationProbe() else { return nil }
+        let values = Self.integerMetrics(from: probe.label)
+        return PaginationMetrics(values: values)
+    }
+
+    private static func integerMetrics(from label: String) -> [String: Int] {
+        let pairs: [(String, Int)] = label.split(separator: ";").compactMap { item in
             let pair = item.split(separator: "=", maxSplits: 1)
             guard pair.count == 2, let value = Int(pair[1]) else { return nil }
             return (String(pair[0]), value)
         }
-        let values = Dictionary(uniqueKeysWithValues: pairs)
-        return PaginationMetrics(values: values)
+        return Dictionary(uniqueKeysWithValues: pairs)
     }
 
     func assertNoClippedLines(
@@ -190,7 +227,9 @@ final class ReaderModesHarness {
               let clippedLineCount = metrics.clippedLineCount,
               let viewportTop = metrics.values["viewportTop"],
               let viewportBottom = metrics.values["viewportBottom"] else {
-            return XCTFail("\(scenario): pagination probe is incomplete", file: file, line: line)
+            let probes = app.staticTexts.matching(identifier: "reader.paginationProbe").allElementsBoundByIndex
+                .map(\.label).joined(separator: " | ")
+            return XCTFail("\(scenario): pagination probe is incomplete: \(paginationMetrics?.values ?? [:]); cachedPage=\(String(describing: activeReaderPage))/\(String(describing: activeReaderPageCount)); probes=\(probes)", file: file, line: line)
         }
         XCTAssertGreaterThanOrEqual(
             firstY,

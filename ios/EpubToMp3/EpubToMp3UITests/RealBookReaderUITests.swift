@@ -19,10 +19,16 @@ final class RealBookReaderUITests: XCTestCase {
             "-uiTestReaderLayout", "paginated", "-uiTestChromeToggle",
             "-uiTestPaginationProbe", "-uiTestNoPageTurnOverlay"]
         app.launch()
+        let harness = ReaderModesHarness(app: app)
         let tile = app.descendants(matching: .any)["library.bookTile.\(bookID)"]
         XCTAssertTrue(tile.waitForExistence(timeout: 30), "The hash-verified real book must be imported.")
-        tile.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
-        let harness = ReaderModesHarness(app: app)
+        // The development seed also establishes the active book in the main
+        // reader before showing Library. Reopening its library tile creates a
+        // second reader controller and duplicate accessibility identifiers.
+        let existingReader = app.buttons["reader.search"].firstMatch
+        if !existingReader.exists {
+            tile.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        }
         XCTAssertTrue(app.buttons["reader.search"].waitForExistence(timeout: 60))
         XCTAssertTrue(app.images["reader.loadingCover"].waitForNonExistence(timeout: 60),
                       "Reader navigation is intentionally blocked until loading finishes.")
@@ -57,29 +63,48 @@ final class RealBookReaderUITests: XCTestCase {
 
     private func turnPage(in app: XCUIApplication, harness: ReaderModesHarness, forward: Bool) throws {
         let previous = try XCTUnwrap(harness.paginationMetrics?.values["page"])
-        let viewport = app.scrollViews["reader.viewport"].firstMatch
+        let pageCount = try XCTUnwrap(harness.paginationMetrics?.values["total"])
+        let indicators = app.descendants(matching: .any)
+            .matching(identifier: "reader.pageIndicator")
+        let pageIndicator = indicators.allElementsBoundByIndex.first { element in
+            let value = (element.value as? String) ?? element.label
+            return element.isHittable && value.contains("\(pageCount)")
+        }
+        XCTAssertNotNil(pageIndicator, "The active reader page indicator must be visible and exposed.")
+        let activeIndicator = try XCTUnwrap(pageIndicator)
+        let previousIndicator = activeIndicator.value as? String
+        let viewports = app.scrollViews.matching(identifier: "reader.viewport")
+        let viewport = try XCTUnwrap(viewports.allElementsBoundByIndex.first(where: \.isHittable))
         XCTAssertTrue(viewport.exists)
         // Exercise production swipe handling, not test-only invisible overlay buttons.
         let visible = viewport.frame.intersection(app.windows.firstMatch.frame)
         XCTAssertGreaterThan(visible.height, 100)
-        let origin = app.coordinate(withNormalizedOffset: .zero)
-        let start = origin.withOffset(CGVector(dx: visible.minX + visible.width * (forward ? 0.75 : 0.25),
-                                              dy: visible.minY + min(visible.height, 400) * 0.5))
-        let end = origin.withOffset(CGVector(dx: visible.minX + visible.width * (forward ? 0.25 : 0.75),
-                                            dy: visible.minY + min(visible.height, 400) * 0.5))
         let geometry = XCTAttachment(string: "viewport=\(viewport.frame); window=\(app.windows.firstMatch.frame); visible=\(visible)")
         geometry.name = "actual-swipe-screen-geometry"
         geometry.lifetime = .keepAlways
         add(geometry)
-        start.press(forDuration: 0, thenDragTo: end)
+        let origin = app.coordinate(withNormalizedOffset: .zero)
+        let y = visible.maxY - 24
+        let start = origin.withOffset(CGVector(dx: visible.minX + visible.width * (forward ? 0.8 : 0.2), dy: y))
+        let end = origin.withOffset(CGVector(dx: visible.minX + visible.width * (forward ? 0.2 : 0.8), dy: y))
+        start.press(forDuration: 0.1, thenDragTo: end)
         let deadline = Date().addingTimeInterval(5)
         while Date() < deadline {
-            if let current = harness.paginationMetrics?.values["page"], current != previous {
-                XCTAssertEqual(current, previous + (forward ? 1 : -1))
+            let current = harness.paginationMetrics?.values["page"]
+            let currentIndicator = activeIndicator.value as? String
+            let expectedPage = previous + (forward ? 1 : -1)
+            if current == expectedPage, currentIndicator != previousIndicator {
                 return
             }
             usleep(100_000)
         }
-        XCTFail("An actual horizontal swipe must change the canonical page; metrics=\(harness.paginationMetrics?.values ?? [:])")
+        let probe = harness.paginationProbe(for: pageCount)
+        let accessibility = indicators.allElementsBoundByIndex.map {
+            "frame=\($0.frame), hittable=\($0.isHittable), label=\($0.label), value=\(String(describing: $0.value))"
+        }.joined(separator: " | ")
+        let probes = app.staticTexts.matching(identifier: "reader.paginationProbe").allElementsBoundByIndex.map {
+            "frame=\($0.frame), hittable=\($0.isHittable), label=\($0.label)"
+        }.joined(separator: " | ")
+        XCTFail("An actual horizontal swipe must change the page; indicator=\(String(describing: activeIndicator.value)); probe=\(probe?.label ?? "missing"); metrics=\(harness.paginationMetrics?.values ?? [:]); indicators=\(accessibility); probes=\(probes)")
     }
 }
