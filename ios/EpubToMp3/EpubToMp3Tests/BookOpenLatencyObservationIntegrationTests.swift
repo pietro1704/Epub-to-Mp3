@@ -8,6 +8,32 @@ import XCTest
 
 @testable import EpubToMp3
 
+#if os(macOS)
+private final class ReaderOpenStageRecorder: @unchecked Sendable {
+    typealias Timing = NativePlaybackBenchmarkReport.Point.StageTiming
+
+    private let lock = NSLock()
+    private let started: UInt64
+    private var timings: [Timing] = []
+
+    init(started: UInt64) { self.started = started }
+
+    func record(_ name: String, at timestamp: UInt64 = DispatchTime.now().uptimeNanoseconds) {
+        let elapsed = timestamp >= started ? timestamp - started : 0
+        lock.lock()
+        timings.append(Timing(name: name, elapsedNanoseconds: elapsed))
+        lock.unlock()
+    }
+
+    func snapshot() -> [Timing] {
+        lock.lock()
+        let result = timings.sorted { $0.elapsedNanoseconds < $1.elapsedNanoseconds }
+        lock.unlock()
+        return result
+    }
+}
+#endif
+
 @MainActor
 final class BookOpenLatencyObservationIntegrationTests: XCTestCase {
     #if os(macOS)
@@ -217,18 +243,26 @@ final class BookOpenLatencyObservationIntegrationTests: XCTestCase {
         controller.view.setNeedsLayout()
         controller.view.layoutIfNeeded()
         #else
+        let stages = ReaderOpenStageRecorder(started: started)
+        stages.record("benchmark_started", at: started)
         UserDefaults.standard.set(book.id, forKey: ReaderSessionState.currentlyReadingBookIDKey)
         let controller = MacReaderViewController(library: library,
             settings: AppSettings(defaults: defaults), player: player,
             bookmarkStore: BookmarkStore(defaults: defaults, storageKey: "benchmark"), onClose: {},
-            preparedRenderer: preparedRenderer, preparedChapterStore: preparedChapterStore)
+            preparedRenderer: preparedRenderer, preparedChapterStore: preparedChapterStore,
+            openStageObserver: { name, timestamp in stages.record(name, at: timestamp) })
+        stages.record("controller_constructed")
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1100, height: 760),
                               styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
+        stages.record("window_constructed")
         window.isReleasedWhenClosed = false
         window.contentViewController = controller
+        stages.record("window_attached")
         window.makeKeyAndOrderFront(nil)
+        stages.record("window_visible")
         defer { window.orderOut(nil); window.contentViewController = nil; window.close(); player.stop() }
         controller.view.layoutSubtreeIfNeeded()
+        stages.record("initial_layout_completed")
         #endif
         for _ in 0..<3000 {
             let journeys = LatencyObservationStore.shared.snapshot().filter { !known.contains($0.id) && $0.kind == .bookOpen }
@@ -238,7 +272,12 @@ final class BookOpenLatencyObservationIntegrationTests: XCTestCase {
                     && $0.records.contains { $0.transition == .controlsUsable } }) else {
                     throw NativePlaybackBenchmarkInput.invalid("Observed cache class does not match the requested cold/warm case")
                 }
+                #if os(macOS)
+                return .capture(book: book.title, event: event, started: started, journeys: journeys,
+                                stageTimings: stages.snapshot())
+                #else
                 return .capture(book: book.title, event: event, started: started, journeys: journeys)
+                #endif
             }
             try await Task.sleep(nanoseconds: 10_000_000)
         }

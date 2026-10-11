@@ -13,6 +13,7 @@ final class PreparedReaderCodecBenchmarkTests: XCTestCase {
             let projectionReadMilliseconds: [Double]
             let catalogDecodeMilliseconds: [Double]
             let catalogReadDecodeMilliseconds: [Double]
+            let mappedCatalogReadDecodeMilliseconds: [Double]
             let catalogWithHighProjectionMilliseconds: [Double]
             let catalogWithUtilityProjectionMilliseconds: [Double]
         }
@@ -41,6 +42,7 @@ final class PreparedReaderCodecBenchmarkTests: XCTestCase {
             let store = PreparedReaderChapterStore(directory: root.appendingPathComponent("chapters-\(index)"))
             try await store.write(bookID: id, chapterOrdinal: selection.chapterStart, fulltextURL: source)
             var projectionTimes: [Double] = [], catalogTimes: [Double] = [], readDecodeTimes: [Double] = []
+            var mappedReadDecodeTimes: [Double] = []
             var highPressureTimes: [Double] = [], utilityPressureTimes: [Double] = []
             for sampleIndex in 0..<3 {
                 let started = DispatchTime.now().uptimeNanoseconds
@@ -65,6 +67,14 @@ final class PreparedReaderCodecBenchmarkTests: XCTestCase {
                 }.value
                 readDecodeTimes.append(readResult.1)
                 XCTAssertEqual(readResult.0, payload)
+                let mappedReadResult = try await Task.detached(priority: .userInitiated) {
+                    let started = DispatchTime.now().uptimeNanoseconds
+                    let loaded = try Data(contentsOf: source, options: .mappedIfSafe)
+                    let decoded = try PropertyListDecoder().decode(EbookFulltext.self, from: loaded)
+                    return (decoded, Double(DispatchTime.now().uptimeNanoseconds - started) / 1_000_000)
+                }.value
+                mappedReadDecodeTimes.append(mappedReadResult.1)
+                XCTAssertEqual(mappedReadResult.0, payload)
                 let priorities: [TaskPriority] = sampleIndex % 2 == 0 ? [.userInitiated, .utility] : [.utility, .userInitiated]
                 for priority in priorities {
                     let started = DispatchTime.now().uptimeNanoseconds
@@ -89,6 +99,7 @@ final class PreparedReaderCodecBenchmarkTests: XCTestCase {
             samples.append(.init(book: selection.name, chapter: selection.chapterStart, sourceBytes: bytes.count,
                 sourceSHA256: selection.sourceSHA256, projectionReadMilliseconds: projectionTimes,
                 catalogDecodeMilliseconds: catalogTimes, catalogReadDecodeMilliseconds: readDecodeTimes,
+                mappedCatalogReadDecodeMilliseconds: mappedReadDecodeTimes,
                 catalogWithHighProjectionMilliseconds: highPressureTimes,
                 catalogWithUtilityProjectionMilliseconds: utilityPressureTimes))
         }

@@ -200,3 +200,47 @@ contention penalty. Three samples/requested priorities do not establish scheduli
 guarantees or statistical significance. Production remains unchanged. The full
 opening budget is still red; source-validation design and first-window/readiness
 costs need stronger evidence before another optimization is shipped.
+
+## Read scheduling and file mapping follow-up
+
+APP-20261008-07 added optional per-stage timestamps to the native Mac relaunch
+integration. The measured candidate starts full-catalog and source-bound projection
+reads before clearing the reader and attaching its window; its consumer still
+presents the first validated chapter and waits for the complete catalog before
+marking controls usable. Two actual two-host repeats prepared and reopened the same
+hash-checked LOTR/Christie inputs without synthesis:
+
+| Run | Book | Outer interval | Readable from request | Controls from request | Catalog read start → finish |
+| --- | --- | ---: | ---: | ---: | ---: |
+| `66CFCBBD-044E-4710-9132-AAD0B60E7CC9` | LOTR | 230.065 ms | 117.588 ms | 159.186 ms | 70.956 → 210.775 ms |
+| `F79FFDB1-20F5-4B33-8914-3359368CFB9A` | LOTR | 239.957 ms | 133.512 ms | 171.221 ms | 68.891 → 221.927 ms |
+
+Both verification runs fail the unchanged outer 200 ms assertion; no clock was
+redefined. Before this scheduling change, a nearby instrumented run reported 315 ms
+outer and 246.6 ms controls, but samples are unpaired and do not prove causation.
+The actual Mac app was launched and opened LOTR chapter 12; the exact iPhone SE
+(1st generation)/iOS 15.5 Simulator app was installed/launched with the seeded LOTR
+contents visible. The Mac reader suite passed 13/13, zero skips in
+`Test-EpubToMp3Mac-2026.10.11_11-40-00--0300.xcresult`; complete reader geometry
+verification remains open.
+
+A two-host no-projection experiment measured LOTR 236.569 ms outer, 167.711 ms
+readable and 167.872 ms controls; it does not show a meaningful gain over concurrent
+projection, which remains necessary for earlier readable content. A native
+three-sample file-read/decode comparison checked decoded-payload equality:
+`Data(contentsOf:options: .mappedIfSafe)` medians were 114.1 ms vs 119.5 ms ordinary
+for LOTR and 12.6 ms vs 12.4 ms for Christie. Mapping is not a demonstrated fix.
+Evidence: `reader-relaunch-BD825F5D-CDD9-45D3-846E-10CE0555608A` and
+`reader-relaunch-92A8BF36-B8D8-465E-AA5E-0DDFFB11FAE0`.
+
+The next useful seam is the size and decode shape of the validated full catalog;
+neither dropping projection nor memory mapping satisfies the strict relaunch budget.
+Keep the 200 ms gate and source integrity unchanged. The two-app clipping/chrome/
+page-turn gate also remains incomplete.
+
+Review — 2026-10-11: Standards review found the change remains in the native Mac
+reader, keeps source validation/catalog gating intact, and has focused XCTest
+coverage. Spec review found no acceptance shortcut: both end-to-end LOTR samples
+remain above 200 ms and full reader geometry is unverified. Required follow-up is a
+validated catalog/decode improvement plus the unchanged two-host and two-app gates;
+do not mark APP-20261008-07 or APP-20261008-02 complete.

@@ -100,6 +100,11 @@ struct NativePlaybackBenchmarkInput: Codable, Sendable {
 
 struct NativePlaybackBenchmarkReport: Encodable {
     struct Point: Encodable {
+        struct StageTiming: Encodable {
+            let name: String
+            let elapsedNanoseconds: UInt64
+        }
+
         let book: String
         let event: String
         let elapsedNanoseconds: UInt64
@@ -107,9 +112,11 @@ struct NativePlaybackBenchmarkReport: Encodable {
         let physicalFootprintBytes: UInt64?
         let memoryStatus: Int32
         let journeys: [LatencyObservation.Journey]
+        let stageTimings: [StageTiming]
 
         static func capture(book: String, event: String, started: UInt64,
-                            journeys: [LatencyObservation.Journey] = []) -> Self {
+                            journeys: [LatencyObservation.Journey] = [],
+                            stageTimings: [StageTiming] = []) -> Self {
             let elapsed = DispatchTime.now().uptimeNanoseconds - started
             var info = task_vm_info_data_t()
             var count = mach_msg_type_number_t(MemoryLayout<task_vm_info_data_t>.size / MemoryLayout<integer_t>.size)
@@ -121,7 +128,7 @@ struct NativePlaybackBenchmarkReport: Encodable {
             return Self(book: book, event: event, elapsedNanoseconds: elapsed,
                         residentBytes: status == KERN_SUCCESS ? info.resident_size : nil,
                         physicalFootprintBytes: status == KERN_SUCCESS ? info.phys_footprint : nil,
-                        memoryStatus: status, journeys: journeys)
+                        memoryStatus: status, journeys: journeys, stageTimings: stageTimings)
         }
     }
     let input: NativePlaybackBenchmarkInput

@@ -13,6 +13,7 @@ final class MacReaderViewController: NSViewController, NSTableViewDataSource, NS
     private let preparedChapterStore: PreparedReaderChapterStore
     private let preparedFulltextReader: @Sendable (String) async -> EbookFulltext?
     private let preparedFulltextWriter: @Sendable (EbookFulltext, String) -> Void
+    private let openStageObserver: (@Sendable (String, UInt64) -> Void)?
     private let initialPositionScheduler: (@escaping @MainActor () -> Void) -> Void
     private let onClose: () -> Void
     private let chaptersTable = NSTableView()
@@ -33,6 +34,8 @@ final class MacReaderViewController: NSViewController, NSTableViewDataSource, NS
     private let settingsPopover = NSPopover()
     private var settingsCancellables: Set<AnyCancellable> = []
     private var loadTask: Task<Void, Never>?
+    private var catalogReadTask: Task<EbookFulltext?, Never>?
+    private var chapterReadTask: Task<Void, Never>?
     private var loadGeneration = UUID()
     private var presentationGeneration = UUID()
     private var activeBookOpenJourneyID: UUID?
@@ -71,6 +74,7 @@ final class MacReaderViewController: NSViewController, NSTableViewDataSource, NS
         preparedFulltextWriter: @escaping @Sendable (EbookFulltext, String) -> Void = { payload, id in
             LocalFulltextCache.save(payload, bookId: id)
         },
+        openStageObserver: (@Sendable (String, UInt64) -> Void)? = nil,
         initialPositionScheduler: @escaping (@escaping @MainActor () -> Void) -> Void = { operation in
             DispatchQueue.main.async { operation() }
         }
@@ -84,6 +88,7 @@ final class MacReaderViewController: NSViewController, NSTableViewDataSource, NS
         self.preparedChapterStore = preparedChapterStore
         self.preparedFulltextReader = preparedFulltextReader
         self.preparedFulltextWriter = preparedFulltextWriter
+        self.openStageObserver = openStageObserver
         self.initialPositionScheduler = initialPositionScheduler
         super.init(nibName: nil, bundle: nil)
     }
@@ -93,6 +98,8 @@ final class MacReaderViewController: NSViewController, NSTableViewDataSource, NS
 
     deinit {
         loadTask?.cancel()
+        catalogReadTask?.cancel()
+        chapterReadTask?.cancel()
         if let journeyID = activeBookOpenJourneyID {
             _ = LatencyObservationStore.shared.cancel(journeyID)
         }
@@ -546,6 +553,7 @@ final class MacReaderViewController: NSViewController, NSTableViewDataSource, NS
         guard isViewLoaded else { return }
         LocalFulltextCache.cancelPrewarming()
         loadTask?.cancel()
+        cancelPreparedReadTasks()
         cancelActiveBookOpenJourney()
         let generation = UUID()
         loadGeneration = generation
@@ -574,6 +582,7 @@ final class MacReaderViewController: NSViewController, NSTableViewDataSource, NS
         let journeyID = LatencyObservationStore.shared.beginBookOpen(
             documentKind: Self.documentKind(for: book)
         )
+        observeOpenStage("journey_started")
         activeBookOpenJourneyID = journeyID
         // Process-warm reader opens must not clear the visible chapter or
         // show the loading cover. The last two prepared books are retained
@@ -610,6 +619,41 @@ final class MacReaderViewController: NSViewController, NSTableViewDataSource, NS
             }
             return
         }
+        let reader = preparedFulltextReader
+        let store = preparedChapterStore
+        observeOpenStage("reader_progress_read_started")
+        let progress = ReaderProgressStore.read(bookId: book.id)
+        observeOpenStage("reader_progress_read_completed")
+        let source = LocalFulltextCache.storageURL(bookId: book.id)
+        observeOpenStage("fulltext_url_resolved")
+        let observe = openStageObserver
+        var continuation: AsyncStream<PreparedLoadEvent>.Continuation!
+        let arrivals = AsyncStream<PreparedLoadEvent> { continuation = $0 }
+        let publisher = continuation!
+        let catalogTask = Task.detached(priority: .userInitiated) {
+            observe?("catalog_read_started", DispatchTime.now().uptimeNanoseconds)
+            let payload = await reader(book.id)
+            observe?("catalog_read_completed", DispatchTime.now().uptimeNanoseconds)
+            publisher.yield(.catalog(payload))
+            return payload
+        }
+        let chapterOrdinal = progress?.chapterIndex
+        let chapterTask = Task.detached(priority: .userInitiated) {
+            let prepared: PreparedReaderChapterStore.Snapshot?
+            if let chapterOrdinal, let source {
+                observe?("projection_read_started", DispatchTime.now().uptimeNanoseconds)
+                prepared = await store.read(bookID: book.id,
+                    chapterOrdinal: chapterOrdinal, fulltextURL: source)
+                observe?("projection_read_completed", DispatchTime.now().uptimeNanoseconds)
+            } else {
+                prepared = nil
+                observe?("projection_read_skipped", DispatchTime.now().uptimeNanoseconds)
+            }
+            publisher.yield(.chapter(prepared))
+        }
+        catalogReadTask = catalogTask
+        chapterReadTask = chapterTask
+        observeOpenStage("prepared_read_tasks_started")
         fulltext = nil
         textView.string = ""
         comicPageImageView.image = nil
@@ -617,33 +661,28 @@ final class MacReaderViewController: NSViewController, NSTableViewDataSource, NS
         bookTitleLabel.stringValue = book.resolvedTitle
         chapterTitleLabel.stringValue = ""
         statusLabel.stringValue = L10n.string("reader.loading")
+        observeOpenStage("loading_overlay_show_started")
         showLoading(for: book)
+        observeOpenStage("loading_overlay_show_completed")
         loadTask = Task { [weak self] in
-            guard let self else { return }
+            defer {
+                publisher.finish()
+                chapterTask.cancel()
+                catalogTask.cancel()
+                if let self, self.loadGeneration == generation {
+                    self.catalogReadTask = nil
+                    self.chapterReadTask = nil
+                }
+            }
+            guard !Task.isCancelled, let self else { return }
+            observeOpenStage("reader_load_task_started")
             do {
-                let reader = preparedFulltextReader
-                let store = preparedChapterStore
-                let progress = ReaderProgressStore.read(bookId: book.id)
-                let source = LocalFulltextCache.storageURL(bookId: book.id)
-                var continuation: AsyncStream<PreparedLoadEvent>.Continuation!
-                let arrivals = AsyncStream<PreparedLoadEvent> { continuation = $0 }
-                let publisher = continuation!
-                let catalogTask = Task.detached(priority: .userInitiated) {
-                    let payload = await reader(book.id)
-                    publisher.yield(.catalog(payload))
-                    return payload
-                }
-                let chapterTask = Task {
-                    let prepared: PreparedReaderChapterStore.Snapshot?
-                    if let progress, let source {
-                        prepared = await store.read(bookID: book.id,
-                            chapterOrdinal: progress.chapterIndex, fulltextURL: source)
-                    } else { prepared = nil }
-                    publisher.yield(.chapter(prepared))
-                }
-                defer { publisher.finish(); chapterTask.cancel(); catalogTask.cancel() }
                 var next = arrivals.makeAsyncIterator()
                 let first = await next.next()
+                observeOpenStage(first.map {
+                    if case .chapter = $0 { return "first_arrival_projection" }
+                    return "first_arrival_catalog"
+                } ?? "first_arrival_end")
                 guard isActiveLoad(generation, bookID: book.id) else { return }
                 if case .chapter(let prepared?) = first {
                     guard isActiveLoad(generation, bookID: book.id) else { return }
@@ -739,15 +778,20 @@ final class MacReaderViewController: NSViewController, NSTableViewDataSource, NS
 
     private func restoreSelectedChapter(bookID: String) async {
         guard let chapter = chapter(at: selectedChapter), !chapter.isImageOnly else { return }
+        observeOpenStage("selected_chapter_restore_started")
         _ = await preparedRenderer.restore(bookID: bookID, chapterIndex: selectedChapter,
                                            chapter: chapter, settings: settings, fontDirectoryURL: nil)
+        observeOpenStage("selected_chapter_restore_completed")
     }
 
     private func presentLoadedChapter(bookID: String) {
+        observeOpenStage("chapter_presentation_started")
         showChapter(selectedChapter)
+        observeOpenStage("chapter_render_layout_completed")
         let generation = loadGeneration
         restoreReadingProgressIfNeeded(bookId: bookID) { [weak self] in
             guard let self, self.isActiveLoad(generation, bookID: bookID) else { return }
+            self.observeOpenStage("saved_position_layout_committed")
             self.recordReadableContent()
             self.hideLoading()
             if self.fulltext != nil { self.recordControlsUsable() }
@@ -1143,6 +1187,7 @@ final class MacReaderViewController: NSViewController, NSTableViewDataSource, NS
 
     private func recordReadableContent() {
         guard let journeyID = activeBookOpenJourneyID else { return }
+        observeOpenStage("readable_content")
         _ = LatencyObservationStore.shared.record(.readableContent, for: journeyID)
     }
 
@@ -1163,6 +1208,7 @@ final class MacReaderViewController: NSViewController, NSTableViewDataSource, NS
 
     private func recordControlsUsable() {
         guard let journeyID = activeBookOpenJourneyID else { return }
+        observeOpenStage("controls_usable")
         _ = LatencyObservationStore.shared.record(.controlsUsable, for: journeyID)
         if pendingPDFPageJourneyID == journeyID {
             controlsReadyJourneyID = journeyID
@@ -1171,6 +1217,17 @@ final class MacReaderViewController: NSViewController, NSTableViewDataSource, NS
             LatencyObservationStore.shared.finish(journeyID)
             activeBookOpenJourneyID = nil
         }
+    }
+
+    private func observeOpenStage(_ name: String) {
+        openStageObserver?(name, DispatchTime.now().uptimeNanoseconds)
+    }
+
+    private func cancelPreparedReadTasks() {
+        catalogReadTask?.cancel()
+        chapterReadTask?.cancel()
+        catalogReadTask = nil
+        chapterReadTask = nil
     }
 
     private func finishPDFJourneyIfReady(_ journeyID: UUID) {

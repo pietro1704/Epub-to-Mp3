@@ -700,8 +700,24 @@ Historical Arch assignments below are superseded.
   container. A hash-verified LOTR was manually staged/imported in the exact SE/iOS
   15.5 app; paginated contents opened and was left visible in
   `.reports/reader-ios15-5-lotr-final.png`. The full clipping/chrome/page-turn probe
-  remains unverified. Next, instrument first arrival, catalog decode, restore and
-  first-window layout to isolate the remaining open latency before another change.
+  remains unverified. Latest run-stage instrumentation records first arrival, full
+  catalog and projection read, restore, presentation and window setup. A scheduling
+  candidate starts both prepared reads before window attachment; two unpaired LOTR
+  runs measured 230.064 and 239.957 ms end-to-end, 117.588/133.512 ms readable and
+  159.186/171.221 ms controls from the reader request. Both still fail the unchanged
+  200 ms end-to-end gate. A no-projection experiment measured 236.569 ms, so it did
+  not show a meaningful benefit. Source-mapped catalog read/decode median was 114.1
+  vs 119.5 ms ordinary on LOTR and 12.6 vs 12.4 ms on Christie; no production
+  change. Relevant Mac reader tests passed 13/13, zero skips in
+  `Test-EpubToMp3Mac-2026.10.11_11-40-00--0300.xcresult`. Exact iPhone SE 1st
+  generation/iOS 15.5 app was installed/launched and displayed LOTR contents at
+  `.reports/reader-ios15-5-current.png`; native Mac app launched and displayed LOTR
+  chapter 12 at `.reports/reader-macos-loaded.png`. Complete clipping/chrome/page-turn
+  gate and 200 ms acceptance remain open. Latest reports:
+  `.reports/mobile-audio/reader-relaunch-66CFCBBD-044E-4710-9132-AAD0B60E7CC9`,
+  `reader-relaunch-F79FFDB1-20F5-4B33-8914-3359368CFB9A`,
+  `reader-relaunch-BD825F5D-CDD9-45D3-846E-10CE0555608A`, and
+  `reader-relaunch-92A8BF36-B8D8-465E-AA5E-0DDFFB11FAE0`.
 
 - [x] **APP-20261008-08 — Avoid redundant Mac reader cache writes.** Verified.
   Cold-write follow-up verified on macOS: first EPUB fulltext persistence and
