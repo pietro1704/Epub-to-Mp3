@@ -1,0 +1,4 @@
+interface:
+  display_name: "Auto Prompt Execute"
+  short_description: "Route through Matt skills and execute with optional goals"
+  default_prompt: "Use $auto-prompt-execute to resume my task, consult ask-matt, create and execute the prompt, and use a goal if necessary."
