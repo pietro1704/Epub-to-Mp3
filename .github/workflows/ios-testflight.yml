@@ -104,7 +104,7 @@ jobs:
       # Identifiers & Profiles. Each target needs a profile for its own explicit
       # App ID and App Group entitlement.
       - name: Download host-app provisioning profile
-        uses: apple-actions/download-provisioning-profiles@v6
+        uses: apple-actions/download-provisioning-profiles@v7
         with:
           bundle-id: com.pietrocode.epubtomp3
           profile-type: IOS_APP_STORE
@@ -113,7 +113,7 @@ jobs:
           api-private-key: ${{ secrets.APPSTORE_PRIVATE_KEY }}
 
       - name: Download share-extension provisioning profile
-        uses: apple-actions/download-provisioning-profiles@v6
+        uses: apple-actions/download-provisioning-profiles@v7
         with:
           bundle-id: com.pietrocode.epubtomp3.share
           profile-type: IOS_APP_STORE
@@ -122,7 +122,7 @@ jobs:
           api-private-key: ${{ secrets.APPSTORE_PRIVATE_KEY }}
 
       - name: Download widget provisioning profile
-        uses: apple-actions/download-provisioning-profiles@v6
+        uses: apple-actions/download-provisioning-profiles@v7
         with:
           bundle-id: com.pietrocode.epubtomp3.widget
           profile-type: IOS_APP_STORE
