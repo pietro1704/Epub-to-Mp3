@@ -1,5 +1,18 @@
 # Hermes ↔ Claude Code Handoff
 
+## Delivered single reader playback control — APP-20261014-02
+
+Supersedes the prior separate current-page button. Removed from iOS/macOS;
+normal Pause then Play offers Continue where I left off / Listen from this
+page / Cancel. Unchanged-page Play resumes immediately. Native action sheet
+uses full Portuguese labels and large touch targets confirmed on 320-point SE.
+Mac 21/21; SE 23/23 native + 2/2 GUI; actual LOTR reader 1/1 passed.
+Original preferences/LOTR restored, normal SE app PID 95539 left open.
+Owned fixture archived reversibly under /tmp/single-playback-fixture-archive.
+No audio state/provider/download/viewport changes. Correction c3249a17 pushed
+on fix/single-reader-playback-control. Plan/evidence:
+docs/plans/2026-10-14-single-playback-control.md.
+
 ## Delivered reader playback choice — APP-20261014-01
 
 Correction b0186420eb committed and pushed on fix/reader-page-playback-choice.

@@ -34,4 +34,31 @@ Preserve original preferences/book and leave only normal SE app open.
 Commit/push focused correction after diff review and preflight.
 
 ## Results
-Pending implementation and native verification.
+- Red regression: actual Mac player-bar test rejected the separate action
+  (exit 65, 1 passed/1 failed): /tmp/single-playback-mac-red.log.
+- macOS: 21/21 focused native tests passed, including real window/button/sheet
+  actions, Continue, Cancel preserving cursor, and unchanged-page resume.
+  Command: Xcode16.4 + APPLE_NATIVE_TESTS selecting MacReaderPagePlaybackChoiceTests
+  and AudioPlayerDivergenceTests via mise run apple:chapter-callback:test.
+  Evidence: /tmp/single-playback-mac-summary.json.
+- Exact SE/iOS15.5/Xcode16.4: 23/23 native tests and 2/2 actual GUI tests passed
+  through mise run ios:simulator:test, explicit SE UDID, APP_IOS_LIVE_EDGE=1,
+  dedicated long fixture ID and selected choice/divergence/GUI test classes.
+  Actual Edge audio, page turns, Continue/current-page seek, Pause, Cancel and
+  ordinary resume exercised. /tmp/single-playback-se.log and summary.json.
+- Portuguese full labels fit on the 320-point screen; both choices and Cancel
+  have at least 44-point touch height. Screenshot inspected:
+  /tmp/single-playback-se-attachments/CFF97393-3284-4043-84A7-041CB1EE8391.png.
+- Actual seeded LOTR pagination/chrome passed 1/1 (23.048 s), reusing the same
+  build with IOS_SKIP_BUILD=1. /tmp/single-playback-lotr.log and attachments.
+- Independent adversarial diff audit found no concrete blocker. Mac reordered
+  response mapping, cancellation and removals reviewed. Whitespace/preflight
+  passed. No AudioPlayer, providers, downloads or viewport geometry changes.
+- Original reader preferences and LOTR seed restored. Only the owned fixture
+  archived reversibly at /tmp/single-playback-fixture-archive. Normal SE app
+  left open (PID 95539); no Mac app/other Simulator running.
+  Final screenshot: /tmp/single-playback-final-normal-app.png.
+- Physical phones, CI and new performance benchmarks not run. Proportional
+  text/chapter timing remains when sentence timing is unavailable.
+- Delivered: c3249a17 committed and pushed on fix/single-reader-playback-control.
+  No PR, merge or CI monitoring requested.
