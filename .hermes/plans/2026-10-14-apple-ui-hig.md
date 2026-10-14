@@ -1,6 +1,6 @@
 # Native Apple UI corrections
 
-Status: verified; PR delivery pending
+Status: verified and delivered in PR #794
 
 ## Problem and outcome
 
@@ -54,7 +54,7 @@ Compatibility remains iOS15/macOS12; no newer visual API is required.
    on Mac, Pro Max and SE; keep SE open last. State: verified.
 5. Final Standards/Spec review and delivery. Depends on 4. Scoped diff review,
    mise run preflight, commit/push, PR and automatic merge if available. State:
-   verified locally; delivery pending.
+   delivered; automatic merge requested after required checks.
 
 ## Risks and rollback
 
@@ -146,3 +146,11 @@ Rollback consists of reverting the UI slice and its paired tests.
   the otherwise identical UI. No Mac source changed after its verified run.
   mise run preflight and mise run hooks:reader-check both passed. Owned staged
   diff passes git diff --cached --check. Review found no remaining scoped blocker.
+
+- 2026-10-14: Delivered scoped UI/tests in commit 77044c4058 on
+  feature/apple-ui-hig and pushed to origin. PR #794 targets master:
+  https://github.com/pietro1704/Epub-to-Mp3/pull/794. Unrelated .ai-jail and
+  .ai-memory.toml remain outside commits. No CI monitoring requested.
+  Restored original app/widget preferences into the current SE containers
+  (XCTest changed the app container UUID), and selected real LOTR for final
+  normal-app presentation. Only SE is booted; native Mac app has exited.
