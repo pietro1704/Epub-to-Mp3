@@ -28,6 +28,9 @@ jobs:
     name: Enable auto-merge after required checks
     runs-on: ubuntu-24.04
     steps:
+      - uses: actions/checkout@v4
+      - name: Verify automatic merge gate
+        run: bash scripts/test_pr_merge_checks.sh
       - name: Enable auto-merge and refresh one outdated branch
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -39,7 +42,17 @@ jobs:
             jq -c --arg owner "${REPO%%/*}" --arg repo "$REPO" \
               '[.[] | select(.isDraft | not) | select(.author.login == $owner or .author.login == "app/dependabot" or .author.login == "dependabot[bot]") | select(.headRepository.nameWithOwner == $repo)] | sort_by(.number)')
           for pr in $(jq -r '.[].number' <<< "$prs"); do
-            gh pr merge "$pr" --repo "$REPO" --auto --squash --delete-branch || true
+            if jq -e --argjson number "$pr" '.[] | select(.number == $number and .mergeStateStatus == "BEHIND")' <<< "$prs" >/dev/null; then
+              continue
+            fi
+            head_sha=$(jq -r --argjson number "$pr" '.[] | select(.number == $number) | .headRefOid' <<< "$prs")
+            ci=$(gh api "repos/$REPO/actions/workflows/ci.yml/runs?head_sha=$head_sha&per_page=1" --jq '.workflow_runs[0] | {status,conclusion}')
+            checks=$(gh pr view "$pr" --repo "$REPO" --json statusCheckRollup --jq '.statusCheckRollup')
+            if jq -n --argjson ci "$ci" --argjson checks "$checks" '{ci:$ci,checks:$checks}' | jq -e -f scripts/pr_merge_checks_pass.jq >/dev/null; then
+              gh pr merge "$pr" --repo "$REPO" --match-head-commit "$head_sha" --auto --squash --delete-branch || true
+            else
+              echo "PR #$pr is waiting for successful CI and completed checks."
+            fi
           done
           next=$(jq -r '[.[] | select(.mergeStateStatus == "BEHIND")][0] | if . == null then empty else [.number, .headRefOid, .headRefName] | @tsv end' <<< "$prs")
           if [[ -n "$next" ]]; then

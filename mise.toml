@@ -1465,3 +1465,7 @@ run = "cd flutter_app && flutter run -d $(uname | tr '[:upper:]' 'a-z')"
 [tasks."piper:build-runtime"]
 description = "Build the native Piper Embedded runtime without external executable fallback"
 run = "mise exec -- cargo build -p piper-runtime --features onnxruntime,piper-inference --release"
+
+[tasks."pr:auto-merge:test"]
+description = "Verify the automatic PR merge gate rejects pending and failed checks"
+run = "bash scripts/test_pr_merge_checks.sh"

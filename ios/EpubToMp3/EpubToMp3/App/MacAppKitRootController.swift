@@ -779,14 +779,15 @@ private final class MacPlayerBarViewController: NSViewController {
     @objc private func nextChapter() { player.nextChapter(); refresh() }
     @objc private func showRateMenu() {
         let menu = NSMenu()
-        PlaybackRate.allCases.forEach { rate in
+        PlaybackRate.primaryRates.forEach { rate in
             let item = NSMenuItem(title: rate.shortLabel, action: #selector(selectRate(_:)), keyEquivalent: "")
+            item.target = self
             item.representedObject = rate.rawValue
             item.state = rate == player.rate ? .on : .off
             menu.addItem(item)
         }
         rateButton.menu = menu
-        rateButton.performClick(nil)
+        menu.popUp(positioning: nil, at: NSPoint(x: 0, y: rateButton.bounds.maxY), in: rateButton)
     }
     @objc private func selectRate(_ sender: NSMenuItem) {
         if let raw = sender.representedObject as? Float, let rate = PlaybackRate(rawValue: raw) { player.setRate(rate) }

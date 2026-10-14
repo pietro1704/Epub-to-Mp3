@@ -39,8 +39,11 @@ actor SegmentFileWriter {
     }
 }
 
-/// Playback rates surfaced by the horizontal rate picker.
+/// Playback rates accepted internally, including legacy values.
 enum PlaybackRate: Float, CaseIterable, Identifiable {
+    case x075 = 0.75
+    case x125 = 1.25
+    case x175 = 1.75
     case x080 = 0.8
     case x100 = 1.0
     case x130 = 1.3
@@ -61,6 +64,9 @@ enum PlaybackRate: Float, CaseIterable, Identifiable {
     /// Short label shown inline on the rate button (e.g. "1x", "1.25x").
     var shortLabel: String {
         switch self {
+        case .x075: return "0.75x"
+        case .x125: return "1.25x"
+        case .x175: return "1.75x"
         case .x080: return "0.8x"
         case .x100: return "1x"
         case .x130: return "1.3x"
@@ -81,10 +87,9 @@ enum PlaybackRate: Float, CaseIterable, Identifiable {
     /// Longer label used in segmented pickers / accessibility.
     var label: String { shortLabel }
 
-    /// The first visible row of the picker and the list used by the
-    /// compact rate-cycle button.
+    /// The ordered options shared by native menus and rate cycling.
     static let primaryRates: [PlaybackRate] = [
-        .x080, .x100, .x130, .x150, .x180, .x300
+        .x075, .x125, .x150, .x175, .x250, .x300
     ]
 }
 
@@ -2894,12 +2899,12 @@ final class AudioPlayer: ObservableObject {
         setSleepTimer(seconds: 0)
     }
 
-    /// Advance to the next rate in `PlaybackRate.allCases`, wrapping
+    /// Advance to the next rate in `PlaybackRate.primaryRates`, wrapping
     /// from the last entry back to the first.
     func cycleRate() {
         let cases = PlaybackRate.primaryRates
         guard let idx = cases.firstIndex(of: rate) else {
-            setRate(.x100)
+            setRate(.x075)
             return
         }
         let next = cases[(idx + 1) % cases.count]
@@ -3233,7 +3238,7 @@ final class AudioPlayer: ObservableObject {
         }
         remoteCommandRemovers.append { center.skipBackwardCommand.removeTarget(skipBackwardTarget) }
 
-        center.changePlaybackRateCommand.supportedPlaybackRates = PlaybackRate.allCases.map { NSNumber(value: $0.rawValue) }
+        center.changePlaybackRateCommand.supportedPlaybackRates = PlaybackRate.primaryRates.map { NSNumber(value: $0.rawValue) }
         let rateTarget = center.changePlaybackRateCommand.addTarget { [weak self] event in
             guard let e = event as? MPChangePlaybackRateCommandEvent,
                   let rate = PlaybackRate(rawValue: e.playbackRate) else {

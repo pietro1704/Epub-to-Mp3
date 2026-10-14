@@ -44,6 +44,7 @@ final class FullPlayerScreenController: UIViewController {
     private let skipForwardButton = UIButton(type: .system)
     private let nextChapterButton = UIButton(type: .system)
     private let rateButton = UIButton(type: .system)
+    private var renderedRate: PlaybackRate?
     private let tocButton = UIButton(type: .system)
     private let sleepButton = UIButton(type: .system)
     private let airPlayContainer = UIView()
@@ -518,10 +519,12 @@ final class FullPlayerScreenController: UIViewController {
     }
 
     private func renderRateMenu() {
+        guard renderedRate != player.rate || rateButton.menu == nil else { return }
+        renderedRate = player.rate
         var config = rateButton.configuration ?? UIButton.Configuration.plain()
         config.title = player.rate.shortLabel
         rateButton.configuration = config
-        rateButton.menu = UIMenu(children: PlaybackRate.allCases.map { rate in
+        rateButton.menu = UIMenu(children: PlaybackRate.primaryRates.map { rate in
             UIAction(title: rate.shortLabel, state: rate == player.rate ? .on : .off) { [weak self] _ in
                 self?.player.setRate(rate)
                 self?.render()

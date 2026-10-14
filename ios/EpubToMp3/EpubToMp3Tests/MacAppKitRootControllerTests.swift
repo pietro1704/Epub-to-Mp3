@@ -8,6 +8,47 @@ import CryptoKit
 
 final class MacAppKitRootControllerTests: XCTestCase {
     @MainActor
+    func testSpeedMenuUsesRequestedRatesAndAppliesSelection() async throws {
+        let suiteName = "mac-speed-menu-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let player = AudioPlayer()
+        player.setSnapshot(try JSONDecoder().decode(JobSnapshot.self, from:
+            Data(#"{"jobId":"mac-speed-menu","state":"completed","bookTitle":"Speed menu"}"#.utf8)))
+        let root = MacAppKitRootController(
+            settings: AppSettings(defaults: defaults),
+            library: LibraryStore(defaults: defaults, defaultsKey: "library"),
+            player: player, bookmarkStore: BookmarkStore(defaults: defaults, storageKey: "bookmarks"),
+            playerPresentation: PlayerPresentation(defaults: defaults)
+        )
+        let window = NSWindow(contentViewController: root)
+        window.setContentSize(NSSize(width: 900, height: 650))
+        window.makeKeyAndOrderFront(nil)
+        defer { window.orderOut(nil) }
+        try await Task.sleep(nanoseconds: 100_000_000)
+        func rateButton(in view: NSView) -> NSButton? {
+            if let button = view as? NSButton, button.action == NSSelectorFromString("showRateMenu") {
+                return button
+            }
+            return view.subviews.lazy.compactMap { rateButton(in: $0) }.first
+        }
+        let button = try XCTUnwrap(rateButton(in: root.view))
+        XCTAssertTrue(button.isEnabled)
+        // Close the real popup after AppKit enters its menu tracking loop.
+        let timer = Timer(timeInterval: 0.3, repeats: false) { _ in
+            MainActor.assumeIsolated { button.menu?.cancelTracking() }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        button.performClick(nil)
+        let menu = try XCTUnwrap(button.menu)
+        XCTAssertEqual(menu.items.map(\.title), ["0.75x", "1.25x", "1.5x", "1.75x", "2.5x", "3x"])
+        for (index, expected) in PlaybackRate.primaryRates.enumerated() {
+            menu.performActionForItem(at: index)
+            XCTAssertEqual(player.rate, expected)
+        }
+    }
+
+    @MainActor
     func testPlayButtonResumesPausedAudioAtItsExactTime() async throws {
         let suiteName = "MacPauseResume.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))

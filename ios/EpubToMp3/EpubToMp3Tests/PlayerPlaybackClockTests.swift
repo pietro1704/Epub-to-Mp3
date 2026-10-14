@@ -125,6 +125,44 @@ final class PlayerPlaybackClockTests: XCTestCase {
         }
     }
 
+    func testPlayerStateUpdatesPreserveSpeedMenusUntilRateChanges() async throws {
+        let player = AudioPlayer()
+        let snapshot = try makeSnapshot()
+        player.setSnapshot(snapshot)
+        let suite = try XCTUnwrap(UserDefaults(suiteName: "speed-menu-test"))
+        defer { suite.removePersistentDomain(forName: "speed-menu-test") }
+        let library = LibraryStore()
+        let full = FullPlayerScreenController(
+            player: player, playbackClock: player.playbackClock, library: library,
+            playerPresentation: PlayerPresentation(defaults: suite), settings: AppSettings(defaults: suite)
+        )
+        let compact = PlayerScreenController(
+            snapshot: snapshot, backendBaseURL: nil, player: player, playbackClock: player.playbackClock
+        )
+        full.loadViewIfNeeded()
+        compact.loadViewIfNeeded()
+        let mini = MiniPlayerBarUIKitView()
+        mini.configure(player: player, playbackClock: player.playbackClock, library: library, onTap: {})
+        let buttons = [
+            try XCTUnwrap(buttonsWithMenus(in: full.view).first),
+            try XCTUnwrap(buttonsWithMenus(in: compact.view).first),
+            try XCTUnwrap(buttonsWithMenus(in: mini).first),
+        ]
+        let menus = try buttons.map { try XCTUnwrap($0.menu) }
+        player.objectWillChange.send()
+        await waitForMainQueue()
+        mini.configure(player: player, playbackClock: player.playbackClock, library: library, onTap: {})
+        for (button, menu) in zip(buttons, menus) {
+            XCTAssertTrue(button.menu === menu, "Unrelated updates must preserve the presented speed menu.")
+        }
+        player.setRate(.x150)
+        await waitForMainQueue()
+        for button in buttons {
+            let actions = try XCTUnwrap(button.menu).children.compactMap { $0 as? UIAction }
+            XCTAssertEqual(actions.filter { $0.state == .on }.map(\.title), ["1.5x"])
+        }
+    }
+
     private func makeSnapshot() throws -> JobSnapshot {
         let data = Data(#"{"jobId":"playback-clock-test","state":"completed","bookTitle":"Clock Test"}"#.utf8)
         return try JSONDecoder().decode(JobSnapshot.self, from: data)
