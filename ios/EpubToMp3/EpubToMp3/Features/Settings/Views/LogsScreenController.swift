@@ -54,7 +54,8 @@ final class LogsScreenController: UIViewController {
 
         textView.backgroundColor = UIColor.black.withAlphaComponent(0.9)
         textView.textColor = .systemGreen
-        textView.font = .monospacedSystemFont(ofSize: 12, weight: .regular)
+        textView.font = UIFontMetrics(forTextStyle: .caption1).scaledFont(for: .monospacedSystemFont(ofSize: 12, weight: .regular))
+        textView.adjustsFontForContentSizeCategory = true
         textView.isEditable = false
         textView.translatesAutoresizingMaskIntoConstraints = false
 

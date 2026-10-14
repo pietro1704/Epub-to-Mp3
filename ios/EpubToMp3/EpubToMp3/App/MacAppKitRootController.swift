@@ -223,6 +223,8 @@ final class MacAppKitRootController: NSSplitViewController, NSToolbarDelegate {
         (controllers[.library] as? MacLibraryViewController)?.importBooks()
     }
 
+    @objc func showSettings(_ sender: Any?) { show(.settings) }
+
     @objc func focusLibrarySearch(_ sender: Any?) {
         show(.library)
         (controllers[.library] as? MacLibraryViewController)?.focusSearch()
@@ -806,6 +808,8 @@ private final class MacPlayerBarViewController: NSViewController {
             : ""
         coverView.image = book?.coverPNG.flatMap(NSImage.init(data:)) ?? NSImage(systemSymbolName: "book.closed", accessibilityDescription: nil)
         playButton.image = NSImage(systemSymbolName: player.isPlaying ? "pause.fill" : "play.fill", accessibilityDescription: nil)
+        playButton.setAccessibilityLabel(L10n.string(player.isPlaying ? "player.pause" : "player.play"))
+        playButton.toolTip = L10n.string(player.isPlaying ? "player.pause" : "player.play")
         playButton.isHidden = player.isLoading
         if player.isLoading { playSpinner.startAnimation(nil) } else { playSpinner.stopAnimation(nil) }
         rateButton.title = player.rate.shortLabel
@@ -824,7 +828,7 @@ private final class MacPlayerBarViewController: NSViewController {
 }
 
 @MainActor
-private final class MacFullPlayerViewController: NSViewController {
+final class MacFullPlayerViewController: NSViewController {
     private let player: AudioPlayer
     private let library: LibraryStore
     private let presentation: PlayerPresentation
@@ -858,6 +862,12 @@ private final class MacFullPlayerViewController: NSViewController {
         coverView.layer?.cornerRadius = 10
         coverView.layer?.masksToBounds = true
         coverView.translatesAutoresizingMaskIntoConstraints = false
+        [titleLabel, statusLabel].forEach {
+            $0.maximumNumberOfLines = 0
+            $0.lineBreakMode = .byWordWrapping
+            $0.cell?.wraps = true
+            $0.cell?.isScrollable = false
+        }
         titleLabel.font = .boldSystemFont(ofSize: 24)
         titleLabel.alignment = .center
         statusLabel.textColor = .secondaryLabelColor
@@ -867,6 +877,7 @@ private final class MacFullPlayerViewController: NSViewController {
         progressSlider.target = self
         progressSlider.action = #selector(progressChanged(_:))
         progressSlider.isContinuous = false
+        progressSlider.setAccessibilityLabel(L10n.string("player.playbackPosition"))
         progressSlider.setAccessibilityIdentifier("fullPlayer.progress")
         elapsedLabel.setAccessibilityIdentifier("fullPlayer.elapsed")
         remainingLabel.setAccessibilityIdentifier("fullPlayer.remaining")
@@ -883,6 +894,13 @@ private final class MacFullPlayerViewController: NSViewController {
         timeControls.spacing = 10
         let previous = NSButton(image: NSImage(systemSymbolName: "backward.end.fill", accessibilityDescription: nil) ?? NSImage(), target: self, action: #selector(previousChapter))
         let next = NSButton(image: NSImage(systemSymbolName: "forward.end.fill", accessibilityDescription: nil) ?? NSImage(), target: self, action: #selector(nextChapter))
+        previous.setAccessibilityIdentifier("fullPlayer.previousChapter")
+        previous.setAccessibilityLabel(L10n.string("player.previousChapter"))
+        previous.toolTip = L10n.string("player.previousChapter")
+        next.setAccessibilityIdentifier("fullPlayer.nextChapter")
+        next.setAccessibilityLabel(L10n.string("player.nextChapter"))
+        next.toolTip = L10n.string("player.nextChapter")
+        playButton.setAccessibilityIdentifier("fullPlayer.playPause")
         let close = NSButton(title: L10n.string("common.close"), target: self, action: #selector(closePlayer))
         let playControls = NSStackView(views: [playButton, playSpinner])
         playControls.orientation = .horizontal
@@ -895,14 +913,16 @@ private final class MacFullPlayerViewController: NSViewController {
         content.alignment = .centerX
         content.spacing = 12
         content.translatesAutoresizingMaskIntoConstraints = false
-        background.addSubview(content)
+        MacScrollableStack.install(content, in: background, maximumWidth: 480)
+        let preferredCover = coverView.widthAnchor.constraint(equalToConstant: 280)
+        preferredCover.priority = .defaultHigh
         NSLayoutConstraint.activate([
-            content.centerXAnchor.constraint(equalTo: background.centerXAnchor),
-            content.centerYAnchor.constraint(equalTo: background.centerYAnchor),
-            coverView.widthAnchor.constraint(equalToConstant: 280),
-            coverView.heightAnchor.constraint(equalToConstant: 280),
-            timeControls.widthAnchor.constraint(equalToConstant: 380),
-            progressSlider.widthAnchor.constraint(equalToConstant: 300),
+            preferredCover,
+            coverView.widthAnchor.constraint(lessThanOrEqualTo: content.widthAnchor),
+            coverView.heightAnchor.constraint(equalTo: coverView.widthAnchor),
+            titleLabel.widthAnchor.constraint(equalTo: content.widthAnchor),
+            statusLabel.widthAnchor.constraint(equalTo: content.widthAnchor),
+            timeControls.widthAnchor.constraint(equalTo: content.widthAnchor),
         ])
         view = background
         cancellable = player.objectWillChange.sink { [weak self] _ in self?.refresh() }
@@ -920,6 +940,8 @@ private final class MacFullPlayerViewController: NSViewController {
             ? L10n.string("player.preparingAudio")
             : (player.snapshot == nil ? L10n.string("player.nothingPlaying") : player.effectiveChapterTitle)
         playButton.image = NSImage(systemSymbolName: player.isPlaying ? "pause.fill" : "play.fill", accessibilityDescription: nil)
+        playButton.setAccessibilityLabel(L10n.string(player.isPlaying ? "player.pause" : "player.play"))
+        playButton.toolTip = L10n.string(player.isPlaying ? "player.pause" : "player.play")
         playButton.isHidden = player.isLoading
         if player.isLoading { playSpinner.startAnimation(nil) } else { playSpinner.stopAnimation(nil) }
         playButton.isEnabled = player.snapshot != nil || bookID != nil

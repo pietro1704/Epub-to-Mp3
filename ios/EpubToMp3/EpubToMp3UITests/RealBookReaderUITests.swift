@@ -6,11 +6,15 @@ final class RealBookReaderUITests: XCTestCase {
         try verifyReader(bookID: "3e1c676b270dfa3fe555eba4d0cb9934")
     }
 
+    func testActualLOTRSmallTextPaginationAndChrome() throws {
+        try verifyReader(bookID: "3e1c676b270dfa3fe555eba4d0cb9934", smallText: true)
+    }
+
     func testActualChristieReaderPaginationAndChrome() throws {
         try verifyReader(bookID: "55417053355de78768a0823d3cd203fd")
     }
 
-    private func verifyReader(bookID: String) throws {
+    private func verifyReader(bookID: String, smallText: Bool = false) throws {
         continueAfterFailure = false
         XCUIDevice.shared.orientation = .portrait
         let app = XCUIApplication(bundleIdentifier: "com.pietrocode.epubtomp3")
@@ -18,6 +22,9 @@ final class RealBookReaderUITests: XCTestCase {
         app.launchArguments = ["-developmentSeedBook", "-uiTestResetReaderPosition",
             "-uiTestReaderLayout", "paginated", "-uiTestChromeToggle",
             "-uiTestPaginationProbe", "-uiTestNoPageTurnOverlay", "-uiTestResetActiveReader"]
+        if smallText {
+            app.launchArguments += ["-uiTestReaderFontSize", "0", "-uiTestReaderOverrideFontSize"]
+        }
         app.launch()
         let expandedClose = app.buttons["fullPlayer.close"].firstMatch
         if expandedClose.waitForExistence(timeout: 2), expandedClose.isHittable {
@@ -60,6 +67,22 @@ final class RealBookReaderUITests: XCTestCase {
         attachment.name = "actual-book-pagination-evidence"
         attachment.lifetime = .keepAlways
         add(attachment)
+        let beforePlayer = try XCTUnwrap(harness.paginationMetrics)
+        let openPlayer = app.buttons["miniPlayer.open"].firstMatch
+        XCTAssertTrue(openPlayer.waitForExistence(timeout: 5))
+        openPlayer.tap()
+        XCTAssertTrue(app.staticTexts["fullPlayer.bookTitle"].waitForExistence(timeout: 5))
+        let playerScreenshot = XCTAttachment(screenshot: app.screenshot())
+        playerScreenshot.name = "actual-book-expanded-player"
+        playerScreenshot.lifetime = .keepAlways
+        add(playerScreenshot)
+        let closePlayer = app.buttons["fullPlayer.close"].firstMatch
+        XCTAssertTrue(closePlayer.isHittable)
+        closePlayer.tap()
+        XCTAssertTrue(app.buttons["reader.search"].waitForExistence(timeout: 5))
+        let afterPlayer = try XCTUnwrap(harness.paginationMetrics)
+        XCTAssertEqual(afterPlayer.values["offset"], beforePlayer.values["offset"])
+        harness.assertNoClippedLines(scenario: "expanded player dismissal")
     }
 
     private func turnPage(in app: XCUIApplication, harness: ReaderModesHarness, forward: Bool) throws {

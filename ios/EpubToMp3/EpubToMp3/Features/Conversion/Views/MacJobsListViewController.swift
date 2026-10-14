@@ -32,6 +32,9 @@ final class MacJobsListViewController: NSViewController, NSTableViewDataSource, 
         let refresh = NSButton(image: NSImage(systemSymbolName: "arrow.clockwise", accessibilityDescription: nil)!,
                                target: self,
                                action: #selector(refreshTapped))
+        refresh.setAccessibilityLabel(L10n.string("jobs.refresh"))
+        refresh.toolTip = L10n.string("jobs.refresh")
+        refresh.setAccessibilityIdentifier("jobs.refresh")
         refresh.bezelStyle = .texturedRounded
         refresh.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(refresh)

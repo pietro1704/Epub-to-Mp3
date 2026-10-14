@@ -138,6 +138,11 @@ final class EpubToMp3App: NSObject, PlatformApplicationDelegate {
         about.target = NSApplication.shared
         appMenu.addItem(about)
         appMenu.addItem(.separator())
+        let settings = NSMenuItem(title: L10n.string("nav.settings") + "…",
+                                  action: #selector(EpubToMp3App.showSettings(_:)), keyEquivalent: ",")
+        settings.target = target
+        appMenu.addItem(settings)
+        appMenu.addItem(.separator())
         let quit = NSMenuItem(
             title: L10n.string("menu.quitApp", L10n.string("app.name")),
             action: #selector(NSApplication.terminate(_:)),
@@ -313,6 +318,8 @@ final class EpubToMp3App: NSObject, PlatformApplicationDelegate {
     @objc private func toggleNavigationSidebar(_ sender: Any?) {
         rootController?.toggleNavigationSidebar(sender)
     }
+
+    @objc private func showSettings(_ sender: Any?) { rootController?.showSettings(sender) }
 
     @objc private func focusLibrarySearch(_ sender: Any?) {
         rootController?.focusLibrarySearch(sender)

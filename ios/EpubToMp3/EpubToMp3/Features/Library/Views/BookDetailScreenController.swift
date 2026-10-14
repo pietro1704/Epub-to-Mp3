@@ -91,7 +91,7 @@ final class BookDetailScreenController: UIViewController {
         coverView.backgroundColor = .secondarySystemBackground
 
         titleLabel.font = .preferredFont(forTextStyle: .title1)
-        titleLabel.numberOfLines = 2
+        titleLabel.numberOfLines = 0
         titleLabel.textAlignment = .center
 
         authorLabel.font = .preferredFont(forTextStyle: .subheadline)
@@ -119,25 +119,37 @@ final class BookDetailScreenController: UIViewController {
         logButton.setTitle(L10n.string("conversion.log"), for: .normal)
         logButton.addTarget(self, action: #selector(tapLog), for: .touchUpInside)
 
+        [titleLabel, authorLabel, progressLabel].forEach {
+            $0.adjustsFontForContentSizeCategory = true
+            $0.numberOfLines = 0
+            $0.setContentCompressionResistancePriority(.required, for: .vertical)
+        }
+        [readButton, listenButton, downloadButton, logButton].forEach {
+            $0.titleLabel?.numberOfLines = 0
+            $0.titleLabel?.adjustsFontForContentSizeCategory = true
+            $0.heightAnchor.constraint(greaterThanOrEqualToConstant: 44).isActive = true
+        }
+
         let actions = UIStackView(arrangedSubviews: [readButton, listenButton, downloadButton, logButton])
-        actions.axis = .horizontal
+        actions.axis = .vertical
         actions.spacing = 12
-        actions.distribution = .fillEqually
+        actions.distribution = .fill
 
         let stack = UIStackView(arrangedSubviews: [coverView, titleLabel, authorLabel, progressLabel, actions])
         stack.axis = .vertical
         stack.spacing = 12
         stack.alignment = .center
         stack.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(stack)
+        IOSScrollableStack.install(stack, in: view)
         NSLayoutConstraint.activate([
-            stack.centerYAnchor.constraint(equalTo: view.safeAreaLayoutGuide.centerYAnchor),
-            stack.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor, constant: 24),
-            stack.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor, constant: -24),
             coverView.widthAnchor.constraint(equalToConstant: 160),
             coverView.heightAnchor.constraint(equalToConstant: 220),
+            titleLabel.widthAnchor.constraint(equalTo: stack.widthAnchor),
+            authorLabel.widthAnchor.constraint(equalTo: stack.widthAnchor),
+            progressLabel.widthAnchor.constraint(equalTo: stack.widthAnchor),
             actions.widthAnchor.constraint(equalTo: stack.widthAnchor),
         ])
+
     }
 
     private func render() {

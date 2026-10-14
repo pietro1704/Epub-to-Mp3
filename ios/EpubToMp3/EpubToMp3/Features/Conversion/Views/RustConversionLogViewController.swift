@@ -29,7 +29,7 @@ final class RustConversionLogViewController: UIViewController {
     @available(*, unavailable) required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
     override func viewDidLoad() {
         super.viewDidLoad(); title = L10n.string("conversion.log"); view.backgroundColor = .systemBackground
-        textView.isEditable = false; textView.font = .monospacedSystemFont(ofSize: 12, weight: .regular); textView.translatesAutoresizingMaskIntoConstraints = false
+        textView.isEditable = false; textView.font = UIFontMetrics(forTextStyle: .caption1).scaledFont(for: .monospacedSystemFont(ofSize: 12, weight: .regular)); textView.adjustsFontForContentSizeCategory = true; textView.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(textView); NSLayoutConstraint.activate([textView.leadingAnchor.constraint(equalTo: view.leadingAnchor), textView.trailingAnchor.constraint(equalTo: view.trailingAnchor), textView.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor), textView.bottomAnchor.constraint(equalTo: view.bottomAnchor)])
         refresh(); timer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in self?.refresh() }
     }

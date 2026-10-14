@@ -14,6 +14,7 @@ final class LibraryScreenController: UIViewController, UIDocumentPickerDelegate,
     private var selectedTag: String?
     private var searchQuery = ""
     private let gridController = LibraryGridController(metrics: .init())
+    private var emptyStateScrollView: UIScrollView?
     private let emptyStateLabel = UILabel()
     private let addButton = UIButton(type: .system)
 
@@ -144,6 +145,8 @@ final class LibraryScreenController: UIViewController, UIDocumentPickerDelegate,
     }
 
     private func configureEmptyState() {
+        emptyStateLabel.font = .preferredFont(forTextStyle: .body)
+        emptyStateLabel.adjustsFontForContentSizeCategory = true
         emptyStateLabel.numberOfLines = 0
         emptyStateLabel.textAlignment = .center
         emptyStateLabel.textColor = .secondaryLabel
@@ -164,21 +167,20 @@ final class LibraryScreenController: UIViewController, UIDocumentPickerDelegate,
         addButton.accessibilityHint = L10n.string("library.addBookHint")
         addButton.translatesAutoresizingMaskIntoConstraints = false
 
-        view.addSubview(emptyStateLabel)
-        view.addSubview(addButton)
-        NSLayoutConstraint.activate([
-            emptyStateLabel.leadingAnchor.constraint(equalTo: view.layoutMarginsGuide.leadingAnchor),
-            emptyStateLabel.trailingAnchor.constraint(equalTo: view.layoutMarginsGuide.trailingAnchor),
-            emptyStateLabel.centerYAnchor.constraint(equalTo: view.centerYAnchor, constant: -24),
-            addButton.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-            addButton.topAnchor.constraint(equalTo: emptyStateLabel.bottomAnchor, constant: 20),
-        ])
+        addButton.titleLabel?.numberOfLines = 0
+        addButton.heightAnchor.constraint(greaterThanOrEqualToConstant: 44).isActive = true
+        let stack = UIStackView(arrangedSubviews: [emptyStateLabel, addButton])
+        stack.axis = .vertical
+        stack.spacing = 20
+        emptyStateScrollView = IOSScrollableStack.install(stack, in: view)
+
     }
 
     private func reloadGrid(animated: Bool) {
         let model = libraryGridModel()
         gridController.apply(model: model, animated: animated)
         let isEmpty = model.arrangedBooks().isEmpty
+        emptyStateScrollView?.isHidden = !isEmpty
         emptyStateLabel.isHidden = !isEmpty
         addButton.isHidden = !isEmpty
         gridController.view.isHidden = isEmpty

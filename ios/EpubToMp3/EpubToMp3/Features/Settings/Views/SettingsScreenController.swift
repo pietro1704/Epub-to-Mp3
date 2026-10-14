@@ -58,7 +58,7 @@ final class SettingsScreenController: UITableViewController {
         tableView.rowHeight = UITableView.automaticDimension
         tableView.estimatedRowHeight = 64
         tableView.accessibilityLabel = L10n.string("settings.title")
-        tableView.register(UITableViewCell.self, forCellReuseIdentifier: "Cell")
+        tableView.register(IOSContentCell.self, forCellReuseIdentifier: "Cell")
         tableView.register(IOSInlineTextFieldCell.self, forCellReuseIdentifier: "TextField")
         tableView.register(IOSSwitchCell.self, forCellReuseIdentifier: "Switch")
     }

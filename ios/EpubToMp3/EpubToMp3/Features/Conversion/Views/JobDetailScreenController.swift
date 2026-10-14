@@ -356,7 +356,7 @@ final class JobDetailScreenController: UITableViewController {
         content.text = viewModel.latestPayload.isEmpty
             ? String(localized: "jobDetail.waitingFirstEvent")
             : viewModel.latestPayload
-        content.textProperties.font = .monospacedSystemFont(ofSize: 12, weight: .regular)
+        content.textProperties.font = UIFontMetrics(forTextStyle: .caption1).scaledFont(for: .monospacedSystemFont(ofSize: 12, weight: .regular))
         content.textProperties.numberOfLines = 0
         cell.contentConfiguration = content
         cell.selectionStyle = .none

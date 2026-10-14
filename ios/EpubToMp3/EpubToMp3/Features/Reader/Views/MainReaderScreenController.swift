@@ -34,6 +34,7 @@ final class MainReaderScreenController: UIViewController {
     /// Loading is a reader-content fact, not duplicated presentation state.
     var isLoadingBookContent: Bool { readerController?.isLoadingBookContent ?? false }
 
+    private var emptyStateScrollView: UIScrollView?
     private let emptyStateStack = UIStackView()
     private let emptyTitleLabel = UILabel()
     private let emptyDescriptionLabel = UILabel()
@@ -161,11 +162,13 @@ final class MainReaderScreenController: UIViewController {
         emptyStateStack.translatesAutoresizingMaskIntoConstraints = false
 
         emptyTitleLabel.font = .preferredFont(forTextStyle: .title2)
+        emptyTitleLabel.adjustsFontForContentSizeCategory = true
         emptyTitleLabel.numberOfLines = 0
         emptyTitleLabel.textAlignment = .center
         emptyTitleLabel.text = L10n.string("mainReader.pickBook")
 
         emptyDescriptionLabel.font = .preferredFont(forTextStyle: .body)
+        emptyDescriptionLabel.adjustsFontForContentSizeCategory = true
         emptyDescriptionLabel.textColor = .secondaryLabel
         emptyDescriptionLabel.numberOfLines = 0
         emptyDescriptionLabel.textAlignment = .center
@@ -180,12 +183,10 @@ final class MainReaderScreenController: UIViewController {
         browseButton.accessibilityIdentifier = "mainReader.browseLibrary"
 
         [emptyTitleLabel, emptyDescriptionLabel, browseButton].forEach { emptyStateStack.addArrangedSubview($0) }
-        view.addSubview(emptyStateStack)
-        NSLayoutConstraint.activate([
-            emptyStateStack.leadingAnchor.constraint(equalTo: view.layoutMarginsGuide.leadingAnchor),
-            emptyStateStack.trailingAnchor.constraint(equalTo: view.layoutMarginsGuide.trailingAnchor),
-            emptyStateStack.centerYAnchor.constraint(equalTo: view.centerYAnchor),
-        ])
+        emptyStateStack.alignment = .fill
+        browseButton.titleLabel?.numberOfLines = 0
+        browseButton.heightAnchor.constraint(greaterThanOrEqualToConstant: 44).isActive = true
+        emptyStateScrollView = IOSScrollableStack.install(emptyStateStack, in: view)
 
     }
 
@@ -276,6 +277,7 @@ final class MainReaderScreenController: UIViewController {
 
     private func showEmptyState() {
         removeReaderControllerIfNeeded()
+        emptyStateScrollView?.isHidden = false
         emptyStateStack.isHidden = false
         listenButton.isHidden = true
         readerNavigationBar.isHidden = true
@@ -283,6 +285,7 @@ final class MainReaderScreenController: UIViewController {
     }
 
     private func showBook(_ book: BookEntity) {
+        emptyStateScrollView?.isHidden = true
         emptyStateStack.isHidden = true
         readerNavigationItem.title = book.resolvedTitle
         if readerController != nil, readerBookID == book.id {

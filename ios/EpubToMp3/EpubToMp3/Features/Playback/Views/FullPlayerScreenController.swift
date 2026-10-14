@@ -150,20 +150,23 @@ final class FullPlayerScreenController: UIViewController {
             coverImageView.bottomAnchor.constraint(equalTo: coverContainer.bottomAnchor),
         ])
 
-        titleLabel.font = .preferredFont(forTextStyle: .title2).bold()
-        titleLabel.numberOfLines = 2
+        titleLabel.font = .preferredFont(forTextStyle: .title2, compatibleWith: traitCollection).bold()
+        titleLabel.numberOfLines = 0
         titleLabel.textAlignment = .center
         titleLabel.accessibilityIdentifier = "fullPlayer.bookTitle"
 
-        authorLabel.font = .preferredFont(forTextStyle: .subheadline)
+        authorLabel.font = .preferredFont(forTextStyle: .subheadline, compatibleWith: traitCollection)
+        authorLabel.numberOfLines = 0
         authorLabel.textColor = .secondaryLabel
         authorLabel.textAlignment = .center
         authorLabel.accessibilityIdentifier = "fullPlayer.bookAuthor"
 
-        chapterLabel.font = .preferredFont(forTextStyle: .footnote)
+        chapterLabel.font = .preferredFont(forTextStyle: .footnote, compatibleWith: traitCollection)
         chapterLabel.textColor = .tertiaryLabel
-        chapterLabel.numberOfLines = 2
+        chapterLabel.numberOfLines = 0
         chapterLabel.textAlignment = .center
+
+        [titleLabel, authorLabel, chapterLabel].forEach { $0.adjustsFontForContentSizeCategory = true }
 
         // Keep the book and chapter metadata visible on compact iPhone
         // heights. Without explicit vertical priorities, the stack can
@@ -171,6 +174,7 @@ final class FullPlayerScreenController: UIViewController {
         // transport controls.
         titleLabel.setContentHuggingPriority(.required, for: .vertical)
         titleLabel.setContentCompressionResistancePriority(.required, for: .vertical)
+        authorLabel.setContentCompressionResistancePriority(.required, for: .vertical)
         chapterLabel.setContentHuggingPriority(.required, for: .vertical)
         chapterLabel.setContentCompressionResistancePriority(.required, for: .vertical)
         titleLabel.heightAnchor.constraint(greaterThanOrEqualToConstant: 26).isActive = true
@@ -183,7 +187,8 @@ final class FullPlayerScreenController: UIViewController {
         slider.addTarget(self, action: #selector(scrubEnded), for: .editingDidEnd)
 
         [elapsedLabel, remainingLabel].forEach {
-            $0.font = .monospacedDigitSystemFont(ofSize: 12, weight: .regular)
+            $0.font = UIFontMetrics(forTextStyle: .caption1).scaledFont(for: .monospacedDigitSystemFont(ofSize: 12, weight: .regular))
+            $0.adjustsFontForContentSizeCategory = true
             $0.textColor = .secondaryLabel
         }
         slider.accessibilityIdentifier = "fullPlayer.progress"
@@ -292,9 +297,7 @@ final class FullPlayerScreenController: UIViewController {
         metadata.spacing = FullPlayerLayoutMetrics.elementSpacing
         metadata.translatesAutoresizingMaskIntoConstraints = false
 
-        // Keep all non-cover elements in one bottom-anchored group. This
-        // leaves the flexible area only between the cover and the metadata,
-        // while every visible player control remains eight points apart.
+        // Keep controls together and allow the whole player to scroll when text grows.
         let bottomContent = UIStackView(arrangedSubviews: [metadata, playbackControls, secondary])
         bottomContent.axis = .vertical
         bottomContent.alignment = .fill
@@ -306,7 +309,10 @@ final class FullPlayerScreenController: UIViewController {
         contentScrollView.showsVerticalScrollIndicator = false
         contentScrollView.contentInsetAdjustmentBehavior = .never
         view.addSubview(contentScrollView)
-        view.addSubview(bottomContent)
+        let flexibleSpace = UIView()
+        flexibleSpace.setContentHuggingPriority(.defaultLow, for: .vertical)
+        stackView.addArrangedSubview(flexibleSpace)
+        stackView.addArrangedSubview(bottomContent)
         contentScrollView.addSubview(stackView)
         view.bringSubviewToFront(dragHandle)
         view.bringSubviewToFront(closeButton)
@@ -315,7 +321,9 @@ final class FullPlayerScreenController: UIViewController {
             equalTo: coverRow.widthAnchor,
             multiplier: 0.7
         )
-        preferredCoverWidth.priority = .defaultHigh
+        preferredCoverWidth.priority = .defaultLow
+        let preferredContentHeight = stackView.heightAnchor.constraint(equalTo: contentScrollView.frameLayoutGuide.heightAnchor)
+        preferredContentHeight.priority = .defaultHigh
         NSLayoutConstraint.activate([
             dragHandle.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 8),
             dragHandle.centerXAnchor.constraint(equalTo: view.centerXAnchor),
@@ -327,20 +335,13 @@ final class FullPlayerScreenController: UIViewController {
             closeButton.widthAnchor.constraint(equalToConstant: 44),
             closeButton.heightAnchor.constraint(equalToConstant: 44),
 
-            contentScrollView.leadingAnchor.constraint(equalTo: view.layoutMarginsGuide.leadingAnchor, constant: 12),
-            contentScrollView.trailingAnchor.constraint(equalTo: view.layoutMarginsGuide.trailingAnchor, constant: -12),
+            contentScrollView.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor, constant: 16),
+            contentScrollView.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor, constant: -16),
             contentScrollView.topAnchor.constraint(equalTo: closeButton.bottomAnchor, constant: 8),
-            contentScrollView.bottomAnchor.constraint(
-                equalTo: bottomContent.topAnchor,
-                constant: -FullPlayerLayoutMetrics.elementSpacing
-            ),
-
-            bottomContent.leadingAnchor.constraint(equalTo: view.layoutMarginsGuide.leadingAnchor, constant: 12),
-            bottomContent.trailingAnchor.constraint(equalTo: view.layoutMarginsGuide.trailingAnchor, constant: -12),
-            bottomContent.bottomAnchor.constraint(
-                equalTo: view.safeAreaLayoutGuide.bottomAnchor,
-                constant: -FullPlayerLayoutMetrics.bottomInset
-            ),
+            contentScrollView.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor,
+                                                     constant: -FullPlayerLayoutMetrics.bottomInset),
+            preferredContentHeight,
+            stackView.heightAnchor.constraint(greaterThanOrEqualTo: contentScrollView.frameLayoutGuide.heightAnchor),
             secondary.heightAnchor.constraint(greaterThanOrEqualToConstant: 44),
 
             stackView.leadingAnchor.constraint(equalTo: contentScrollView.contentLayoutGuide.leadingAnchor),
@@ -350,6 +351,7 @@ final class FullPlayerScreenController: UIViewController {
             stackView.widthAnchor.constraint(equalTo: contentScrollView.frameLayoutGuide.widthAnchor),
 
             preferredCoverWidth,
+            coverContainer.heightAnchor.constraint(greaterThanOrEqualToConstant: 72),
             coverContainer.heightAnchor.constraint(equalTo: coverContainer.widthAnchor, multiplier: 1.5),
             coverContainer.heightAnchor.constraint(
                 lessThanOrEqualTo: contentScrollView.frameLayoutGuide.heightAnchor,

@@ -117,7 +117,7 @@ final class TelemetryScreenController: UITableViewController {
         case .raw:
             cell.accessoryView = nil
             content.text = viewModel.rawJSON
-            content.textProperties.font = .monospacedSystemFont(ofSize: 12, weight: .regular)
+            content.textProperties.font = UIFontMetrics(forTextStyle: .caption1).scaledFont(for: .monospacedSystemFont(ofSize: 12, weight: .regular))
         }
 
         cell.contentConfiguration = content

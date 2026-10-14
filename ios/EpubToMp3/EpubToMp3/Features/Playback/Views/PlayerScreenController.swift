@@ -78,15 +78,23 @@ final class PlayerScreenController: UIViewController {
         artworkView.clipsToBounds = true
 
         titleLabel.font = .preferredFont(forTextStyle: .headline)
-        titleLabel.numberOfLines = 1
+        titleLabel.numberOfLines = 0
         titleLabel.textAlignment = .center
         titleLabel.translatesAutoresizingMaskIntoConstraints = false
 
         chapterLabel.font = .preferredFont(forTextStyle: .subheadline)
         chapterLabel.textColor = .secondaryLabel
-        chapterLabel.numberOfLines = 2
+        chapterLabel.numberOfLines = 0
         chapterLabel.textAlignment = .center
         chapterLabel.translatesAutoresizingMaskIntoConstraints = false
+
+        [titleLabel, chapterLabel].forEach {
+            $0.adjustsFontForContentSizeCategory = true
+            $0.setContentCompressionResistancePriority(.required, for: .vertical)
+        }
+        previousButton.accessibilityLabel = L10n.string("player.previousChapter")
+        nextButton.accessibilityLabel = L10n.string("player.nextChapter")
+        rateButton.accessibilityLabel = L10n.string("player.playbackSpeed", player.rate.shortLabel)
 
         slider.translatesAutoresizingMaskIntoConstraints = false
         slider.addTarget(self, action: #selector(sliderChanged), for: .valueChanged)
@@ -95,7 +103,8 @@ final class PlayerScreenController: UIViewController {
         slider.accessibilityLabel = L10n.string("player.playbackPosition")
 
         [elapsedLabel, durationLabel].forEach {
-            $0.font = .monospacedDigitSystemFont(ofSize: 12, weight: .regular)
+            $0.font = UIFontMetrics(forTextStyle: .caption1).scaledFont(for: .monospacedDigitSystemFont(ofSize: 12, weight: .regular))
+            $0.adjustsFontForContentSizeCategory = true
             $0.textColor = .secondaryLabel
             $0.translatesAutoresizingMaskIntoConstraints = false
         }
@@ -128,8 +137,11 @@ final class PlayerScreenController: UIViewController {
         times.axis = .horizontal
         times.translatesAutoresizingMaskIntoConstraints = false
 
+        let artworkContainer = UIView()
+        artworkContainer.addSubview(artworkView)
+
         let stack = UIStackView(arrangedSubviews: [
-            artworkView,
+            artworkContainer,
             titleLabel,
             chapterLabel,
             slider,
@@ -141,16 +153,18 @@ final class PlayerScreenController: UIViewController {
         stack.axis = .vertical
         stack.spacing = 20
         stack.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(stack)
-
+        IOSScrollableStack.install(stack, in: view)
         NSLayoutConstraint.activate([
-            stack.leadingAnchor.constraint(equalTo: view.layoutMarginsGuide.leadingAnchor, constant: 12),
-            stack.trailingAnchor.constraint(equalTo: view.layoutMarginsGuide.trailingAnchor, constant: -12),
-            stack.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 12),
-            stack.bottomAnchor.constraint(lessThanOrEqualTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -12),
+            artworkView.centerXAnchor.constraint(equalTo: artworkContainer.centerXAnchor),
+            artworkView.topAnchor.constraint(equalTo: artworkContainer.topAnchor),
+            artworkView.bottomAnchor.constraint(equalTo: artworkContainer.bottomAnchor),
             artworkView.widthAnchor.constraint(equalToConstant: 220),
-            artworkView.heightAnchor.constraint(equalToConstant: 220),
+            artworkView.heightAnchor.constraint(equalTo: artworkView.widthAnchor),
+            artworkView.widthAnchor.constraint(lessThanOrEqualTo: artworkContainer.widthAnchor),
+            volumeView.heightAnchor.constraint(greaterThanOrEqualToConstant: 44),
+            slider.heightAnchor.constraint(greaterThanOrEqualToConstant: 44),
         ])
+
     }
 
     private func bindState() {
@@ -179,6 +193,7 @@ final class PlayerScreenController: UIViewController {
             UIImage(systemName: player.isPlaying ? "pause.circle.fill" : "play.circle.fill"),
             for: .normal
         )
+        playPauseButton.accessibilityLabel = L10n.string(player.isPlaying ? "player.pause" : "player.play")
         updateRateMenu()
     }
 
@@ -198,6 +213,7 @@ final class PlayerScreenController: UIViewController {
 
     private func updateRateMenu() {
         rateButton.setTitle(player.rate.shortLabel, for: .normal)
+        rateButton.accessibilityLabel = L10n.string("player.playbackSpeed", player.rate.shortLabel)
         rateButton.showsMenuAsPrimaryAction = true
         rateButton.menu = UIMenu(children: PlaybackRate.allCases.map { rate in
             UIAction(title: rate.shortLabel, state: rate == player.rate ? .on : .off) { [weak self] _ in

@@ -142,7 +142,7 @@ final class MacBookDetailViewController: NSViewController {
 
         titleLabel.font = .systemFont(ofSize: 22, weight: .bold)
         titleLabel.alignment = .center
-        titleLabel.lineBreakMode = .byTruncatingTail
+        titleLabel.lineBreakMode = .byWordWrapping
 
         authorLabel.font = .systemFont(ofSize: 13)
         authorLabel.textColor = .secondaryLabelColor
@@ -178,26 +178,33 @@ final class MacBookDetailViewController: NSViewController {
         logButton.target = self
         logButton.action = #selector(tapLog)
 
+        [titleLabel, authorLabel, progressLabel].forEach {
+            $0.maximumNumberOfLines = 0
+            $0.lineBreakMode = .byWordWrapping
+            $0.cell?.wraps = true
+            $0.cell?.isScrollable = false
+        }
+
         let actions = NSStackView(views: [readButton, listenButton, convertButton, downloadButton, logButton])
-        actions.orientation = .horizontal
+        actions.orientation = .vertical
         actions.spacing = 12
-        actions.distribution = .fillEqually
+        actions.distribution = .fill
 
         let stack = NSStackView(views: [coverView, titleLabel, authorLabel, progressLabel, actions])
         stack.orientation = .vertical
         stack.spacing = 12
         stack.alignment = .centerX
         stack.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(stack)
+        MacScrollableStack.install(stack, in: view, maximumWidth: 480)
         NSLayoutConstraint.activate([
-            stack.centerYAnchor.constraint(equalTo: view.centerYAnchor),
-            stack.leadingAnchor.constraint(greaterThanOrEqualTo: view.leadingAnchor, constant: 24),
-            stack.trailingAnchor.constraint(lessThanOrEqualTo: view.trailingAnchor, constant: -24),
-            stack.centerXAnchor.constraint(equalTo: view.centerXAnchor),
             coverView.widthAnchor.constraint(equalToConstant: 180),
             coverView.heightAnchor.constraint(equalToConstant: 240),
-            actions.widthAnchor.constraint(equalToConstant: 360),
+            titleLabel.widthAnchor.constraint(equalTo: stack.widthAnchor),
+            authorLabel.widthAnchor.constraint(equalTo: stack.widthAnchor),
+            progressLabel.widthAnchor.constraint(equalTo: stack.widthAnchor),
+            actions.widthAnchor.constraint(equalTo: stack.widthAnchor),
         ])
+
     }
 
     private func render() {

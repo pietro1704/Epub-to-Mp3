@@ -115,55 +115,41 @@ final class MacSettingsViewController: NSViewController {
         clearButton.setAccessibilityLabel(L10n.string("settings.clearAllDownloads"))
         refreshButton.setAccessibilityLabel(L10n.string("settings.refreshStorage"))
         exportDiagnosticsButton.setAccessibilityLabel(L10n.string("settings.exportPerformanceDiagnostics"))
-        func row(_ label: String, _ control: NSView) -> NSStackView {
-            let title = NSTextField(labelWithString: label)
-            title.setContentHuggingPriority(.required, for: .horizontal)
-            let row = NSStackView(views: [title, control])
-            row.orientation = .horizontal
-            row.alignment = .centerY
-            row.spacing = 12
-            return row
+        func row(_ label: String, _ control: NSView) -> [NSView] {
+            let title = NSTextField(wrappingLabelWithString: label)
+            title.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+            return [title, control]
         }
-        let audioEngineRows: [NSView] = AudioEnginePreference.supportedPreferences.contains(.piper)
+        let audioEngineRows: [[NSView]] = AudioEnginePreference.supportedPreferences.contains(.piper)
             ? [row(L10n.string("settings.audioEngineChoice"), audioEnginePopup), row("Piper", piperInstallButton)]
             : [row(L10n.string("settings.audioEngineChoice"), audioEnginePopup)]
-        let form = NSStackView(views: [
-            row(L10n.string("settings.embeddedServer"), statusLabel),
-            ] + audioEngineRows + [
-            row(L10n.string("settings.fontSize"), fontSizeStepper),
-            row("", fontSizeLabel),
+        let sizeControl = NSStackView(views: [fontSizeStepper, fontSizeLabel])
+        sizeControl.spacing = 8
+        sizeControl.alignment = .centerY
+        let rows = [row(L10n.string("settings.embeddedServer"), statusLabel)] + audioEngineRows + [
+            row(L10n.string("settings.fontSize"), sizeControl),
             row(L10n.string("settings.font"), fontPopup),
             row(L10n.string("settings.theme"), themePopup),
             row(L10n.string("settings.layout"), layoutPopup),
             row(L10n.string("settings.storageUsage"), storageLabel),
-            row("", refreshButton),
-            row("", exportDiagnosticsButton),
-            row("", diagnosticsButton),
-            row("", diagnosticsLabel),
-            row("", clearButton),
-        ])
+        ]
+        let grid = NSGridView(views: rows)
+        grid.rowSpacing = 10
+        grid.columnSpacing = 12
+        grid.yPlacement = .center
+        grid.column(at: 0).width = 180
+        grid.column(at: 0).xPlacement = .trailing
+        grid.column(at: 1).xPlacement = .leading
+        let form = NSStackView(views: [grid, refreshButton, exportDiagnosticsButton,
+                                      diagnosticsButton, diagnosticsLabel, clearButton])
         form.orientation = .vertical
         form.alignment = .leading
-        form.spacing = 10
+        form.spacing = 16
         form.translatesAutoresizingMaskIntoConstraints = false
-        let scrollView = NSScrollView()
-        scrollView.hasVerticalScroller = true
-        scrollView.autohidesScrollers = true
-        scrollView.drawsBackground = false
-        scrollView.documentView = form
-        scrollView.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(scrollView)
-        NSLayoutConstraint.activate([
-            scrollView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            scrollView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            scrollView.topAnchor.constraint(equalTo: view.topAnchor),
-            scrollView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
-            form.leadingAnchor.constraint(equalTo: scrollView.contentView.leadingAnchor, constant: 32),
-            form.trailingAnchor.constraint(equalTo: scrollView.contentView.trailingAnchor, constant: -32),
-            form.topAnchor.constraint(equalTo: scrollView.contentView.topAnchor, constant: 24),
-            form.bottomAnchor.constraint(equalTo: scrollView.contentView.bottomAnchor, constant: -24),
-            form.widthAnchor.constraint(equalToConstant: 620),
-        ])
+        grid.widthAnchor.constraint(equalTo: form.widthAnchor).isActive = true
+        diagnosticsLabel.widthAnchor.constraint(equalTo: form.widthAnchor).isActive = true
+        MacScrollableStack.install(form, in: view)
+
     }
 
     private func refresh() {
