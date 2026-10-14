@@ -1,5 +1,6 @@
 #if os(iOS)
 import UIKit
+import Combine
 
 /// Primary product surface for an opened book: cover, progress, and the
 /// three actions the spec calls out — Read, Listen, Download — instead of
@@ -15,6 +16,7 @@ final class BookDetailScreenController: UIViewController {
     private let player: AudioPlayer
     private let playerPresentation: PlayerPresentation
     private let conversionExecutor: RustConversionCoordinator.Executor
+    private let streamingExecutor: RustConversionCoordinator.StreamingExecutor
     private let bookFileOpener: @MainActor (String) async throws -> URL
 
     private let coverView = UIImageView()
@@ -25,6 +27,11 @@ final class BookDetailScreenController: UIViewController {
     private let listenButton = UIButton(type: .system)
     private let downloadButton = UIButton(type: .system)
     private let logButton = UIButton(type: .system)
+    private var playbackGeneration: String?
+    private var playbackControl: ConverterPlaybackControl?
+    private var playbackCancellables: Set<AnyCancellable> = []
+    private var playbackChapters: [JobSnapshot.Chapter] = []
+    private var hasDeliveredPlaybackSegment = false
 
     init(
         book: BookEntity,
@@ -33,6 +40,7 @@ final class BookDetailScreenController: UIViewController {
         player: AudioPlayer,
         playerPresentation: PlayerPresentation,
         conversionExecutor: @escaping RustConversionCoordinator.Executor = RustConversionCoordinator.execute,
+        streamingExecutor: @escaping RustConversionCoordinator.StreamingExecutor = RustConversionCoordinator.executeStreaming,
         bookFileOpener: (@MainActor (String) async throws -> URL)? = nil
     ) {
         self.book = book
@@ -41,6 +49,7 @@ final class BookDetailScreenController: UIViewController {
         self.player = player
         self.playerPresentation = playerPresentation
         self.conversionExecutor = conversionExecutor
+        self.streamingExecutor = streamingExecutor
         self.bookFileOpener = bookFileOpener ?? { id in
             try await library.openBookFileAsync(id: id)
         }
@@ -59,7 +68,20 @@ final class BookDetailScreenController: UIViewController {
         super.viewDidLoad()
         view.backgroundColor = .systemBackground
         configureLayout()
+        observePlaybackChapterChanges()
         render()
+    }
+
+    private func observePlaybackChapterChanges() {
+        player.$activeStreamingChapterIndex
+            .compactMap { $0 }
+            .removeDuplicates()
+            .sink { [weak self] chapterIndex in
+                guard let self, let control = self.playbackControl else { return }
+                control.updatePlaybackWindow(currentChapter: chapterIndex, chaptersAhead: 1)
+                _ = control.prioritize(chapterIndex: chapterIndex)
+            }
+            .store(in: &playbackCancellables)
     }
 
     private func configureLayout() {
@@ -155,6 +177,7 @@ final class BookDetailScreenController: UIViewController {
     }
 
     @objc private func tapListen() {
+        guard playbackGeneration == nil else { return }
         // Reader progress is an array position, whereas local audio artifacts
         // use the EPUB's canonical chapter index. Resolve it once so the
         // playback binding and conversion request agree on the visible chapter.
@@ -164,33 +187,142 @@ final class BookDetailScreenController: UIViewController {
             chapterIndex: priorityChapterIndex
         )
         let bookID = book.id
+        let jobID = UUID().uuidString
+        playbackGeneration = jobID
         Task { [weak self] in
             guard let self else { return }
             do {
                 let url = try await self.bookFileOpener(bookID)
-                let result = try await self.conversionExecutor(
-                    url, UUID().uuidString, -1, -1, nil, nil
-                )
-                let snapshot = try result.snapshot()
-                self.book.lastJobId = result.jobID
-                self.library.recordConversion(jobId: result.jobID, for: bookID)
-                await MainActor.run {
-                    self.player.setSnapshot(snapshot)
-                    self.player.play(snapshot: snapshot, restoreAutoplay: true)
-                    self.player.resume()
-                }
+                try await self.startStreaming(url: url, bookID: bookID, chapterStart: priorityChapterIndex, jobID: jobID)
             } catch {
-                await MainActor.run {
-                    let alert = UIAlertController(
-                        title: L10n.string("bookDetail.listenStart"),
-                        message: error.localizedDescription,
-                        preferredStyle: .alert
-                    )
-                    alert.addAction(UIAlertAction(title: L10n.string("common.ok"), style: .default))
-                    self.present(alert, animated: true)
-                }
+                guard self.playbackGeneration == jobID else { return }
+                self.playbackGeneration = nil
+                self.presentListenError(error)
             }
         }
+    }
+
+    private func startStreaming(url: URL, bookID: String, chapterStart: Int, jobID: String) async throws {
+        playbackControl?.cancel()
+        let control = try RustConversionCoordinator.makePlaybackControl()
+        control.updatePlaybackWindow(currentChapter: chapterStart, chaptersAhead: 1)
+        playbackControl = control
+        playbackGeneration = jobID
+        playbackChapters.removeAll()
+        hasDeliveredPlaybackSegment = false
+
+        let pending = JobSnapshot(
+            jobId: jobID, state: "running", bookTitle: book.resolvedTitle,
+            bookAuthor: book.author, coverUrl: nil, coverMimeType: nil,
+            engine: settings.audioEngine.rawValue, voice: nil, language: nil,
+            progressPercent: 0, chaptersTotal: nil, chaptersCompleted: 0,
+            chapterProgress: [], outputs: nil, logUrl: nil, error: nil,
+            lastActivityAt: Date().timeIntervalSince1970
+        )
+        if player.positionSeconds > 1 {
+            player.pause()
+            player.persistResumePoint(force: true)
+        }
+        player.stop()
+        player.play(snapshot: pending, startingAt: 0, restoreAutoplay: false)
+        player.isConverting = true
+        player.resume()
+
+        let chunkDelivery = StreamingPlaybackChunkDelivery(player: player)
+        do {
+            let result = try await streamingExecutor(
+                url, jobID, Int32(chapterStart), -1, control,
+                .selectedEngine(settings.audioEngine, modelsRoot: AppSettings.ttsModelsRoot()),
+                { [weak self] event in
+                    guard let self, self.playbackGeneration == jobID,
+                          let snapshot = self.player.snapshot, snapshot.jobId == jobID else { return }
+                    self.player.updateSnapshot(event.updating(snapshot))
+                    if event.chaptersTotal > 0 {
+                        self.progressLabel.text = L10n.string("bookDetail.progressPercent", Int(event.percent.rounded()))
+                    }
+                },
+                { [weak self] event in
+                    guard let self, self.playbackGeneration == jobID,
+                          self.player.snapshot?.jobId == jobID else { return }
+                    let activeChapter = self.player.activeStreamingChapterIndex ?? chapterStart
+                    guard event.chapterIndex >= activeChapter, event.chapterIndex <= activeChapter + 1 else { return }
+                    let chapter = event.playableChapter
+                    if let index = self.playbackChapters.firstIndex(where: { $0.index == chapter.index }) {
+                        self.playbackChapters[index] = chapter
+                    } else {
+                        self.playbackChapters.append(chapter)
+                    }
+                    self.playbackChapters.sort { $0.index < $1.index }
+                    self.progressLabel.text = L10n.string("bookDetail.progressPercent", Int(event.progressPercent.rounded()))
+                    self.player.updateSnapshot(event.snapshot(chapters: self.playbackChapters))
+                },
+                { [weak self] chapterIndex, chunkIndex, data in
+                    guard let self else { return false }
+                    return chunkDelivery.enqueue(
+                        data, chapterIndex: chapterIndex, chunkIndex: chunkIndex,
+                        isCurrent: { [weak self] in
+                            guard let self, let control = self.playbackControl else { return false }
+                            let activeChapter = self.player.activeStreamingChapterIndex ?? chapterStart
+                            return self.playbackGeneration == jobID
+                                && self.player.snapshot?.jobId == jobID
+                                && control.contains(chapterIndex: chapterIndex)
+                                && chapterIndex >= activeChapter && chapterIndex <= activeChapter + 1
+                        },
+                        onAccepted: { [weak self] in
+                            guard let self, self.playbackGeneration == jobID,
+                                  !self.hasDeliveredPlaybackSegment else { return }
+                            self.hasDeliveredPlaybackSegment = true
+                            self.playerPresentation.showFullPlayer()
+                        }
+                    )
+                }
+            )
+            let snapshot = try result.snapshot()
+            let indices = snapshot.playableChapters.map(\.index)
+            guard result.jobID == jobID, snapshot.jobId == jobID,
+                  indices.first == chapterStart, indices == indices.sorted(), Set(indices).count == indices.count else {
+                throw EmbeddedConverterError.conversionFailed("Conversion did not preserve the requested chapter order.")
+            }
+            library.recordConversion(jobId: result.jobID, for: bookID)
+            guard playbackGeneration == jobID, player.snapshot?.jobId == jobID else { return }
+            book.lastJobId = result.jobID
+            playbackGeneration = nil
+            playbackControl = nil
+            player.finishStreaming(snapshot: snapshot)
+        } catch {
+            guard playbackGeneration == jobID else { throw error }
+            playbackGeneration = nil
+            playbackControl?.cancel()
+            playbackControl = nil
+            if let current = player.snapshot, current.jobId == jobID {
+                player.finishStreaming(snapshot: terminalSnapshot(from: current, state: "failed", error: error.localizedDescription))
+            }
+            throw error
+        }
+    }
+
+    private func presentListenError(_ error: Error) {
+        guard isViewLoaded, view.window != nil else { return }
+        let alert = UIAlertController(
+            title: L10n.string("bookDetail.listenStart"),
+            message: error.localizedDescription,
+            preferredStyle: .alert
+        )
+        alert.addAction(UIAlertAction(title: L10n.string("common.ok"), style: .default))
+        present(alert, animated: true)
+    }
+
+    private func terminalSnapshot(from snapshot: JobSnapshot, state: String, error: String) -> JobSnapshot {
+        JobSnapshot(
+            jobId: snapshot.jobId, state: state, bookTitle: snapshot.bookTitle,
+            bookAuthor: snapshot.bookAuthor, coverUrl: snapshot.coverUrl,
+            coverMimeType: snapshot.coverMimeType, engine: snapshot.engine,
+            voice: snapshot.voice, language: snapshot.language,
+            progressPercent: snapshot.progressPercent, chaptersTotal: snapshot.chaptersTotal,
+            chaptersCompleted: snapshot.chaptersCompleted, chapterProgress: snapshot.chapterProgress,
+            outputs: snapshot.outputs, logUrl: snapshot.logUrl, error: error,
+            lastActivityAt: Date().timeIntervalSince1970
+        )
     }
 
     @objc private func tapLog() {
@@ -206,7 +338,11 @@ final class BookDetailScreenController: UIViewController {
             guard let self else { return }
             if let url = try? await self.bookFileOpener(bookID) {
                 do {
-                    let result = try await self.conversionExecutor(url, UUID().uuidString, -1, -1, nil, nil)
+                    let result = try await self.conversionExecutor(
+                        url, UUID().uuidString, -1, -1,
+                        .selectedEngine(self.settings.audioEngine, modelsRoot: AppSettings.ttsModelsRoot()),
+                        nil, nil
+                    )
                     _ = try result.snapshot()
                     if self.book.id == bookID { self.book.lastJobId = result.jobID }
                     self.library.recordConversion(jobId: result.jobID, for: bookID)

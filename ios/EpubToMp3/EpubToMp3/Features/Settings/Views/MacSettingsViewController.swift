@@ -13,6 +13,8 @@ final class MacSettingsViewController: NSViewController {
     private let fontPopup = NSPopUpButton()
     private let themePopup = NSPopUpButton()
     private let layoutPopup = NSPopUpButton()
+    private let audioEnginePopup = NSPopUpButton()
+    private let piperInstallButton = NSButton()
     private let statusLabel = NSTextField(labelWithString: "")
     private let storageLabel = NSTextField(labelWithString: "")
     private let diagnosticsButton = NSButton()
@@ -81,6 +83,11 @@ final class MacSettingsViewController: NSViewController {
         layoutPopup.addItems(withTitles: ReaderLayout.allCases.map(\.displayName))
         layoutPopup.target = self
         layoutPopup.action = #selector(layoutChanged(_:))
+        audioEnginePopup.addItems(withTitles: AudioEnginePreference.supportedPreferences.map(\.displayName))
+        audioEnginePopup.target = self
+        audioEnginePopup.action = #selector(audioEngineChanged(_:))
+        piperInstallButton.target = self
+        piperInstallButton.action = #selector(installPiperModel)
         statusLabel.textColor = .secondaryLabelColor
         storageLabel.textColor = .secondaryLabelColor
 
@@ -103,6 +110,8 @@ final class MacSettingsViewController: NSViewController {
         fontPopup.setAccessibilityLabel(L10n.string("settings.font"))
         themePopup.setAccessibilityLabel(L10n.string("settings.theme"))
         layoutPopup.setAccessibilityLabel(L10n.string("settings.layout"))
+        audioEnginePopup.setAccessibilityLabel(L10n.string("settings.audioEngineChoice"))
+        piperInstallButton.setAccessibilityLabel(L10n.string("settings.piperInstall"))
         clearButton.setAccessibilityLabel(L10n.string("settings.clearAllDownloads"))
         refreshButton.setAccessibilityLabel(L10n.string("settings.refreshStorage"))
         exportDiagnosticsButton.setAccessibilityLabel(L10n.string("settings.exportPerformanceDiagnostics"))
@@ -115,8 +124,12 @@ final class MacSettingsViewController: NSViewController {
             row.spacing = 12
             return row
         }
+        let audioEngineRows: [NSView] = AudioEnginePreference.supportedPreferences.contains(.piper)
+            ? [row(L10n.string("settings.audioEngineChoice"), audioEnginePopup), row("Piper", piperInstallButton)]
+            : [row(L10n.string("settings.audioEngineChoice"), audioEnginePopup)]
         let form = NSStackView(views: [
             row(L10n.string("settings.embeddedServer"), statusLabel),
+            ] + audioEngineRows + [
             row(L10n.string("settings.fontSize"), fontSizeStepper),
             row("", fontSizeLabel),
             row(L10n.string("settings.font"), fontPopup),
@@ -159,6 +172,10 @@ final class MacSettingsViewController: NSViewController {
         fontPopup.selectItem(at: ReaderFontFamily.allCases.firstIndex(of: settings.readerFontFamily) ?? 0)
         themePopup.selectItem(at: ReaderTheme.allCases.firstIndex(of: settings.readerTheme) ?? 0)
         layoutPopup.selectItem(at: ReaderLayout.allCases.firstIndex(of: settings.readerLayout) ?? 0)
+        audioEnginePopup.selectItem(at: AudioEnginePreference.supportedPreferences.firstIndex(of: settings.audioEngine) ?? 0)
+        let model = AppSettings.ttsModelsRoot()?.appendingPathComponent("pt_BR-edresson-low/model.onnx")
+        piperInstallButton.title = model.map { FileManager.default.fileExists(atPath: $0.path) }
+            == true ? L10n.string("settings.piperInstalled") : L10n.string("settings.piperInstall")
         statusLabel.stringValue = embeddedRuntimeStatusLabel
         storageLabel.stringValue = formatStorage(StorageUsageScanner.current(budgetBytes: settings.offlineCacheBudgetBytes))
     }
@@ -187,6 +204,29 @@ final class MacSettingsViewController: NSViewController {
 
     @objc private func layoutChanged(_ sender: NSPopUpButton) {
         settings.readerLayout = ReaderLayout.allCases[sender.indexOfSelectedItem]
+    }
+
+    @objc private func audioEngineChanged(_ sender: NSPopUpButton) {
+        guard AudioEnginePreference.supportedPreferences.indices.contains(sender.indexOfSelectedItem) else { return }
+        settings.audioEngine = AudioEnginePreference.supportedPreferences[sender.indexOfSelectedItem]
+    }
+
+    @objc private func installPiperModel() {
+        guard let root = AppSettings.ttsModelsRoot() else { return }
+        Task { [weak self] in
+            let result = Result { try ConverterFFIAdapter().installTtsModelFromCatalog(
+                modelID: "pt_BR-edresson-low", root: root.path
+            ) }
+            guard let self else { return }
+            if case .failure(let error) = result {
+                let alert = NSAlert()
+                alert.messageText = L10n.string("settings.piperInstall")
+                alert.informativeText = error.localizedDescription
+                alert.addButton(withTitle: L10n.string("common.ok"))
+                alert.runModal()
+            }
+            self.refresh()
+        }
     }
 
     @objc private func refreshStorage() { refresh() }

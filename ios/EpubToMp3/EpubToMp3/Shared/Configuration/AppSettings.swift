@@ -165,6 +165,15 @@ enum ReaderTextAlignment: String, CaseIterable, Identifiable {
 /// Plain `@Published` stored properties + `didSet { UserDefaults... }`
 /// gives both Combine publishing and persistence on the same channel.
 final class AppSettings: ObservableObject {
+    static let audioEngineKey = "audioEngine"
+    static func ttsModelsRoot(fileManager: FileManager = .default) -> URL? {
+        try? fileManager.url(
+            for: .applicationSupportDirectory,
+            in: .userDomainMask,
+            appropriateFor: nil,
+            create: true
+        ).appendingPathComponent("EpubToMp3/TTSModels", isDirectory: true)
+    }
     static let playbackForwardSecondsKey = "playbackForwardSeconds"
     static let playbackBackwardSecondsKey = "playbackBackwardSeconds"
     static let playbackSkipIntervals: Set<Double> = [15, 30, 45, 60]
@@ -181,6 +190,12 @@ final class AppSettings: ObservableObject {
         // it on Wi-Fi by default; the user may opt into cellular explicitly.
         self.allowCellularAudioConversion =
             defaults.object(forKey: "allowCellularAudioConversion") as? Bool ?? false
+        let storedAudioEngine = AudioEnginePreference(
+            rawValue: defaults.string(forKey: Self.audioEngineKey) ?? ""
+        ) ?? .edge
+        self.audioEngine = AudioEnginePreference.supportedPreferences.contains(storedAudioEngine)
+            ? storedAudioEngine
+            : .edge
         self.playbackForwardSeconds = Self.validPlaybackSkipInterval(
             defaults.object(forKey: Self.playbackForwardSecondsKey) as? Double
         )
@@ -283,6 +298,10 @@ final class AppSettings: ObservableObject {
     /// Defaults to false so local audiobook generation waits for Wi-Fi.
     @Published var allowCellularAudioConversion: Bool = false {
         didSet { defaults.set(allowCellularAudioConversion, forKey: "allowCellularAudioConversion") }
+    }
+
+    @Published var audioEngine: AudioEnginePreference = .edge {
+        didSet { defaults.set(audioEngine.rawValue, forKey: Self.audioEngineKey) }
     }
 
     @Published var playbackForwardSeconds: Double = 15 {

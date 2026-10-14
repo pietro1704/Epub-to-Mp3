@@ -1,5 +1,7 @@
 import Foundation
 import XCTest
+import AVFoundation
+import ImageIO
 #if APP_FOUNDATION_HOST_TESTS
 @testable import AppFoundation
 #else
@@ -18,6 +20,51 @@ final class ConversionOptionsInteropTests: XCTestCase {
         #endif
     }
 
+    func testOptInSystemProviderPublishesPlayableMP3ThroughRust() async throws {
+        guard ProcessInfo.processInfo.environment["EPUB2MP3_NATIVE_TTS_TEST"] == "1" else {
+            throw XCTSkip("Enable EPUB2MP3_NATIVE_TTS_TEST=1 to exercise Apple PCM through Rust MP3 encoding.")
+        }
+        let source = try EpubFixture.createWithChapter(body: "Olá. Este pequeno capítulo testa a voz local.")
+        defer { try? FileManager.default.removeItem(at: source) }
+        let result = try await RustConversionCoordinator(adapter: runtimeAdapter()).convert(
+            bookURL: source, options: ConversionOptions(engine: "system", language: "pt-BR")
+        )
+        defer { try? FileManager.default.removeItem(at: result.outputDirectory) }
+        let snapshot = try result.snapshot()
+        let chapter = try XCTUnwrap(snapshot.chapterProgress?.first)
+        let path = try XCTUnwrap(chapter.downloadUrl)
+        let file = try AVAudioFile(forReading: URL(fileURLWithPath: path))
+        XCTAssertGreaterThan(file.length, 0)
+        XCTAssertTrue(path.hasSuffix(".mp3"))
+    }
+
+    func testOptInUnavailableEdgeVoiceFallsBackToSystemMP3() async throws {
+        guard ProcessInfo.processInfo.environment["EPUB2MP3_NATIVE_TTS_TEST"] == "1" else {
+            throw XCTSkip("Enable EPUB2MP3_NATIVE_TTS_TEST=1 for actual Edge failure and system fallback.")
+        }
+        let source = try EpubFixture.createWithChapter(body: "Olá. A voz local mantém este capítulo disponível.")
+        defer { try? FileManager.default.removeItem(at: source) }
+        let result = try await RustConversionCoordinator(adapter: runtimeAdapter()).convert(
+            bookURL: source, options: ConversionOptions(
+                engine: "edge", voice: "pt-BR-UnavailableFixtureVoice", language: "pt-BR"
+            )
+        )
+        defer { try? FileManager.default.removeItem(at: result.outputDirectory) }
+        let envelope = try XCTUnwrap(JSONSerialization.jsonObject(with: result.manifestJSON) as? [String: Any])
+        XCTAssertEqual(envelope["systemVoiceUsed"] as? Bool, true)
+        let chapter = try XCTUnwrap(result.snapshot().chapterProgress?.first)
+        let audio = try AVAudioFile(forReading: URL(fileURLWithPath: try XCTUnwrap(chapter.downloadUrl)))
+        XCTAssertGreaterThan(audio.length, 0)
+    }
+
+    func testFixtureCoverFullyDecodesAsPNG() throws {
+        let source = try XCTUnwrap(CGImageSourceCreateWithData(EpubFixture.coverPNG as CFData, nil))
+        let image = try XCTUnwrap(CGImageSourceCreateImageAtIndex(source, 0, nil))
+        XCTAssertEqual(image.width, 1)
+        XCTAssertEqual(image.height, 1)
+        XCTAssertEqual(CGImageSourceGetStatus(source), .statusComplete)
+    }
+
     func testChapterFixtureHasReadableSpineAndCoverInActualRustParser() throws {
         let source = try EpubFixture.createWithChapter()
         defer { try? FileManager.default.removeItem(at: source) }
@@ -33,13 +80,15 @@ final class ConversionOptionsInteropTests: XCTestCase {
     func testExplicitModelConfigurationPreservesLiteralScopedPaths() throws {
         let options = ConversionOptions(engine: "piper", modelsRoot: "/app/tts-models",
                                         modelID: "pt_BR-edresson-low", modelPath: "model.onnx",
-                                        modelConfigPath: "model.onnx.json")
+                                        modelConfigPath: "model.onnx.json",
+                                        espeakDataDirectory: "/app/Resources")
         let data = Data(try options.encodedJSON().utf8)
         let fields = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
         XCTAssertEqual(fields["models_root"] as? String, "/app/tts-models")
         XCTAssertEqual(fields["model_id"] as? String, "pt_BR-edresson-low")
         XCTAssertEqual(fields["model_path"] as? String, "model.onnx")
         XCTAssertEqual(fields["model_config_path"] as? String, "model.onnx.json")
+        XCTAssertEqual(fields["espeak_data_directory"] as? String, "/app/Resources")
         XCTAssertEqual(try JSONDecoder().decode(ConversionOptions.self, from: data), options)
     }
 
@@ -117,6 +166,78 @@ final class ConversionOptionsInteropTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: directory.path))
     }
 
+    #if os(iOS) && targetEnvironment(simulator)
+    func testActualSimulatorFFIRejectsExplicitPiperWithoutInstalledModelBeforeBookOrOutputAccess() throws {
+        let adapter = try runtimeAdapter()
+        let input = URL(fileURLWithPath: "/must-not-open-piper-book.epub")
+        let output = FileManager.default.temporaryDirectory
+            .appendingPathComponent("must-not-create-piper-output-\(UUID().uuidString)")
+        let options = ConversionOptions(
+            engine: "piper", modelsRoot: "/must-not-read-piper-models",
+            modelID: "pt_BR-edresson-low", modelPath: "model.onnx",
+            modelConfigPath: "model.onnx.json"
+        )
+
+        XCTAssertThrowsError(try adapter.convertBook(
+            at: input, outputDirectory: output, jobID: output.lastPathComponent,
+            chapterStart: 0, chapterEnd: 0, options: options
+        )) { error in
+            XCTAssertTrue(
+                error.localizedDescription.lowercased().contains("piper model"),
+                "Unexpected missing-model result: \(error)"
+            )
+        }
+        XCTAssertFalse(FileManager.default.fileExists(atPath: output.path))
+    }
+
+    func testOptInPiperModelSynthesizesAndDecodesAudioOnSimulator() throws {
+        guard ProcessInfo.processInfo.environment["APP_IOS_PIPER_INFERENCE"] == "1" else {
+            throw XCTSkip("Set APP_IOS_PIPER_INFERENCE=1 to download the local Piper voice and run ONNX inference.")
+        }
+        let adapter = try runtimeAdapter()
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("piper-models-\(UUID().uuidString)", isDirectory: true)
+        let espeakData = try XCTUnwrap(Bundle.main.resourceURL)
+            .appendingPathComponent("espeak-ng-data", isDirectory: true)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: espeakData.appendingPathComponent("phontab").path),
+                      "The app bundle must include espeak-ng-data/phontab for local Piper synthesis.")
+        let book = try EpubFixture.createWithChapter(body: "Olá. Esta é uma verificação de reprodução do Piper.")
+        let output = FileManager.default.temporaryDirectory
+            .appendingPathComponent("piper-output-\(UUID().uuidString)", isDirectory: true)
+        defer {
+            try? FileManager.default.removeItem(at: root)
+            try? FileManager.default.removeItem(at: book)
+            try? FileManager.default.removeItem(at: output)
+        }
+
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        _ = try adapter.installTtsModelFromCatalog(modelID: "pt_BR-edresson-low", root: root.path)
+        let result = try adapter.convertBook(
+            at: book,
+            outputDirectory: output,
+            jobID: output.lastPathComponent,
+            chapterStart: 0,
+            chapterEnd: 0,
+            options: ConversionOptions(
+                engine: AudioEnginePreference.piper.rawValue,
+                language: "pt-BR",
+                modelsRoot: root.path,
+                modelID: "pt_BR-edresson-low",
+                espeakDataDirectory: Bundle.main.resourceURL?.path
+            )
+        )
+        let payload = try XCTUnwrap(JSONSerialization.jsonObject(with: result) as? [String: Any])
+        let manifest = try XCTUnwrap(payload["manifest"] as? [String: Any])
+        let chapters = try XCTUnwrap(manifest["chapters"] as? [[String: Any]])
+        let filename = try XCTUnwrap(chapters.first?["filename"] as? String)
+        let audioURL = output.appendingPathComponent(output.lastPathComponent).appendingPathComponent(filename)
+        XCTAssertGreaterThan(try audioURL.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0, 0)
+
+        let player = try AVAudioPlayer(contentsOf: audioURL)
+        XCTAssertGreaterThan(player.duration, 0)
+    }
+    #endif
+
     func testOptionsEncodeExactRustKeysAndLiteralVoiceLanguage() throws {
         let options = ConversionOptions(engine: "piper", voice: "speaker-0", language: "pt-BR",
                                         clearCache: true, forceReprocess: true, maxPerformance: true)
@@ -176,4 +297,111 @@ final class ConversionOptionsInteropTests: XCTestCase {
         XCTAssertEqual(try Data(contentsOf: blocked), original)
         XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: directory.path), ["blocked-output"])
     }
+
+    #if APP_FOUNDATION_HOST_TESTS
+    func testOptInLiveEdgeStreamingProducesChapterAudioThroughSwiftFFI() async throws {
+        guard ProcessInfo.processInfo.environment["APP_FOUNDATION_LIVE_EDGE"] == "1" else {
+            throw XCTSkip("Set APP_FOUNDATION_LIVE_EDGE=1 to exercise the live Edge endpoint.")
+        }
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("live-edge-ffi-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let source = try EpubFixture.createWithChapter(
+            body: "Teste breve de síntese Edge pelo FFI nativo do aplicativo.",
+            includeCover: false
+        )
+        defer { try? FileManager.default.removeItem(at: source) }
+
+        let adapter = try runtimeAdapter()
+        let manager = ObservedSupportManager(root: root)
+        let coordinator = RustConversionCoordinator(adapter: adapter, fileManager: manager)
+        let jobID = "live-edge-\(UUID().uuidString)"
+        let chunks = FFIChunkCollector()
+        let result = try await coordinator.convert(
+            bookURL: source,
+            jobID: jobID,
+            chapterStart: 0,
+            chapterEnd: 0,
+            options: ConversionOptions(engine: "edge", voice: "pt-BR-FranciscaNeural", language: "pt-BR"),
+            playbackControl: try adapter.makePlaybackControl(),
+            onAudioChunk: { chapterIndex, chunkIndex, bytes in
+                chunks.append(chapter: chapterIndex, index: chunkIndex, bytes: bytes)
+                return true
+            }
+        )
+
+        let manifest = try result.snapshot()
+        let chapter = try XCTUnwrap(manifest.chapterProgress?.first)
+        let audioURL = URL(fileURLWithPath: try XCTUnwrap(chapter.downloadUrl))
+        XCTAssertEqual(chapter.index, 0)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: audioURL.path))
+        XCTAssertGreaterThan(try Data(contentsOf: audioURL).count, 0)
+        XCTAssertGreaterThan(chunks.snapshot().count, 0, "Rust FFI must deliver at least one Edge audio chunk.")
+        print("LIVE_EDGE_FFI job=\(jobID) chunks=\(chunks.snapshot().count) audioBytes=\((try Data(contentsOf: audioURL)).count) path=\(audioURL.path)")
+    }
+
+    func testOptInLiveEdgeWholeBookConvertCreatesMP3AndArchive() async throws {
+        guard ProcessInfo.processInfo.environment["APP_FOUNDATION_LIVE_EDGE"] == "1" else {
+            throw XCTSkip("Set APP_FOUNDATION_LIVE_EDGE=1 to exercise the live Edge endpoint.")
+        }
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("live-edge-convert-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let source = try EpubFixture.createWithChapter(
+            body: "Conversão integral Edge para validar o botão manual Converter.",
+            includeCover: false
+        )
+        defer { try? FileManager.default.removeItem(at: source) }
+
+        let coordinator = RustConversionCoordinator(
+            adapter: try runtimeAdapter(),
+            fileManager: ObservedSupportManager(root: root)
+        )
+        let jobID = "live-edge-convert-\(UUID().uuidString)"
+        let result = try await coordinator.convert(
+            bookURL: source,
+            jobID: jobID,
+            options: ConversionOptions(
+                engine: "edge", voice: "pt-BR-FranciscaNeural", language: "pt-BR",
+                forceReprocess: true
+            )
+        )
+
+        let snapshot = try result.snapshot()
+        let chapter = try XCTUnwrap(snapshot.chapterProgress?.first)
+        let audioURL = URL(fileURLWithPath: try XCTUnwrap(chapter.downloadUrl))
+        let envelope = try XCTUnwrap(JSONSerialization.jsonObject(with: result.manifestJSON) as? [String: Any])
+        let manifest = try XCTUnwrap(envelope["manifest"] as? [String: Any])
+        let archiveName = try XCTUnwrap(manifest["archive"] as? String)
+        let archiveURL = result.outputDirectory.appendingPathComponent(archiveName)
+
+        XCTAssertEqual(snapshot.chaptersTotal, 1)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: audioURL.path))
+        XCTAssertGreaterThan(try Data(contentsOf: audioURL).count, 0)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: archiveURL.path))
+        XCTAssertGreaterThan(try Data(contentsOf: archiveURL).count, 0)
+        print("LIVE_EDGE_CONVERT job=\(jobID) audioBytes=\((try Data(contentsOf: audioURL)).count) archiveBytes=\((try Data(contentsOf: archiveURL)).count)")
+    }
+    #endif
 }
+
+#if APP_FOUNDATION_HOST_TESTS
+private final class FFIChunkCollector: @unchecked Sendable {
+    private let lock = NSLock()
+    private var values: [(chapter: Int, index: Int, bytes: Data)] = []
+
+    func append(chapter: Int, index: Int, bytes: Data) {
+        lock.lock()
+        values.append((chapter, index, bytes))
+        lock.unlock()
+    }
+
+    func snapshot() -> [(chapter: Int, index: Int, bytes: Data)] {
+        lock.lock()
+        defer { lock.unlock() }
+        return values
+    }
+}
+#endif

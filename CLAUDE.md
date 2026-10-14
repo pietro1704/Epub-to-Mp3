@@ -14,6 +14,13 @@ Product CLI, web, and Flutter integrations use Rust binaries, WASM, or bindings.
 Python/FastAPI remains legacy compatibility material, not an Apple sidecar or
 a product runtime dependency. Shared conversion features belong in Rust first.
 
+Current TTS policy: Edge is primary; installed platform speech is a temporary
+free fallback for isolated failed segments. Retry Edge on the next segment and
+stop persistent outages instead of switching the whole book to the local voice.
+Prioritize first playable audio on weak phones. Keep Piper
+suspended until the user explicitly reactivates it; use existing voices without
+implicit downloads or paid provider requirements.
+
 ## Navigation
 
 Read [CODING_STANDARDS.md](CODING_STANDARDS.md) during review.
@@ -37,6 +44,11 @@ profile; age alone is not performance evidence.
 Inspect branch, status, applicable instructions, and relevant diff before editing.
 Preserve unrelated changes and delegated file ownership. Always deliver the
 smallest complete, atomic behavior change with its relevant regression test.
+Preserve verified working app behavior. Limit edits to what the current request
+requires; keep unrelated working flows unchanged and avoid opportunistic
+refactoring, redesign, or cleanup. Revisit previously resolved areas only when
+concrete evidence shows the current task requires it, with a minimal change and
+verification of the affected regression.
 Reuse valid build artifacts and run only the checks needed to prove that change;
 commit/push verified slices before expanding scope. Keep planning, delegation,
 and documentation proportional to the task.
@@ -66,7 +78,15 @@ tests for native verification. Persist explicit user corrections in the relevant
 repository instructions and apply them on subsequent runs.
 Native app builds and iOS Simulator actions for this verification are authorized by
 the user's standing instruction. Other device/service actions still require task
-authorization. Serialize native work with the existing guard.
+authorization. Serialize native work with the existing guard. For authorized
+verification, run the available tests, snapshots, UI automation, and Simulator
+interactions yourself; do not hand test execution steps to the user.
+For audible checks, show the tested app/Simulator GUI and identify deliberate
+non-Edge fixture audio before playback; distinguish it from normal app narration.
+Before switching native targets, stop the active app and shut down its Simulator;
+verify the previous target has exited before starting another. Never leave the
+macOS app and an iOS Simulator app running together. For this reader workflow,
+leave only the required iPhone SE Simulator/app open after final verification.
 Prefer `xcodes` with installed `aria2` for Apple downloads; use
 `--experimental-unxip` for Xcode `.xip` extraction, not runtime `.dmg` imports.
 Preserve useful partial downloads; keep extraction/build/Simulator work serialized.

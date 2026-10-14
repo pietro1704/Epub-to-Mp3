@@ -231,6 +231,33 @@ actor DownloadManager {
         )
     }
 
+    /// Retained downloads override matching Rust files without hiding other converted chapters.
+    nonisolated static func restoredPlaybackSnapshot(jobId: String, conversionSnapshot: JobSnapshot?) -> JobSnapshot? {
+        let local = localPlaybackSnapshot(jobId: jobId)
+        guard let conversion = conversionSnapshot, conversion.jobId == jobId else { return local }
+        var chapters = conversion.playableChapters
+        for retained in local?.playableChapters ?? [] {
+            if let offset = chapters.firstIndex(where: { $0.index == retained.index }) {
+                let source = chapters[offset]
+                chapters[offset] = .init(index: source.index, name: source.name, status: source.status,
+                    downloadUrl: retained.downloadUrl, chars: source.chars, charsProcessed: source.charsProcessed,
+                    progressRatio: source.progressRatio, durationSeconds: source.durationSeconds,
+                    startedAt: source.startedAt, completedAt: source.completedAt)
+            } else {
+                chapters.append(retained)
+            }
+        }
+        guard !chapters.isEmpty else { return local }
+        chapters.sort { $0.index < $1.index }
+        return JobSnapshot(jobId: conversion.jobId, state: conversion.state,
+            bookTitle: conversion.bookTitle, bookAuthor: conversion.bookAuthor,
+            coverUrl: conversion.coverUrl, coverMimeType: conversion.coverMimeType,
+            engine: conversion.engine, voice: conversion.voice, language: conversion.language,
+            progressPercent: conversion.progressPercent, chaptersTotal: conversion.chaptersTotal,
+            chaptersCompleted: chapters.count, chapterProgress: chapters, outputs: conversion.outputs,
+            logUrl: conversion.logUrl, error: conversion.error, lastActivityAt: conversion.lastActivityAt)
+    }
+
     nonisolated static func reusableDownloadedEntry(
         chapterIndex: Int,
         manifestEntry: AudiobookManifest.ChapterEntry?,
@@ -693,6 +720,9 @@ actor DownloadManager {
     nonisolated static func resolve(path: String, base: URL?) -> URL? {
         if path.lowercased().hasPrefix("file://") { return URL(string: path) }
         if path.lowercased().hasPrefix("http") { return URL(string: path) }
+        if path.hasPrefix("/"), base == nil || base?.isFileURL == true {
+            return URL(fileURLWithPath: path)
+        }
         guard let base else { return nil }
         return URL(string: path, relativeTo: base)?.absoluteURL
     }

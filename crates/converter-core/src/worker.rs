@@ -8,6 +8,7 @@ use crate::{
     epub,
     jobs::{JobError, JobManager, JobRecord, JobState},
     piper::{self, CancellationToken, PiperConfig},
+    platform_tts::{self, PlatformTts},
     tts::{EdgeError, Telemetry},
 };
 use rayon::prelude::*;
@@ -30,6 +31,10 @@ pub struct ConversionRequest {
     pub engine: Option<String>,
     pub voice: Option<String>,
     pub language: Option<String>,
+    #[serde(default)]
+    pub piper_model: Option<PathBuf>,
+    #[serde(default)]
+    pub piper_config: Option<PathBuf>,
     pub chapter_indices: Option<Vec<String>>,
     pub no_parallel: bool,
 }
@@ -85,6 +90,8 @@ pub enum WorkerError {
     Edge(#[from] EdgeError),
     #[error("Piper error: {0}")]
     Piper(String),
+    #[error("system speech error: {0}")]
+    PlatformTts(String),
     #[error("cancelled")]
     Cancelled,
     #[error("playback moved outside the current chapter window")]
@@ -106,6 +113,11 @@ pub struct ConversionWorker {
     adaptive: Arc<AdaptiveThroughputController>,
     telemetry: Option<Telemetry>,
     control: Option<ConversionControl>,
+    platform_tts: Option<Arc<dyn PlatformTts>>,
+    platform_gate: Mutex<()>,
+    consecutive_edge_failures: AtomicUsize,
+    #[cfg(test)]
+    test_edge: Option<Arc<dyn Fn(&str) -> Result<Vec<u8>, WorkerError> + Send + Sync>>,
 }
 impl ConversionWorker {
     pub fn new(config: AppConfig) -> Result<Self, WorkerError> {
@@ -120,7 +132,16 @@ impl ConversionWorker {
             adaptive: Arc::new(AdaptiveThroughputController::default()),
             telemetry: None,
             control: None,
+            platform_tts: None,
+            platform_gate: Mutex::new(()),
+            consecutive_edge_failures: AtomicUsize::new(0),
+            #[cfg(test)]
+            test_edge: None,
         })
+    }
+    pub fn with_platform_tts(mut self, provider: Arc<dyn PlatformTts>) -> Self {
+        self.platform_tts = Some(provider);
+        self
     }
     pub fn with_progress(mut self, sink: ProgressSink) -> Self {
         self.progress = Some(sink);
@@ -193,6 +214,7 @@ impl ConversionWorker {
         result
     }
     fn run_inner(&self, request: &ConversionRequest) -> Result<OutputManifest, WorkerError> {
+        self.consecutive_edge_failures.store(0, Ordering::Release);
         if !request.input.is_file() {
             return Err(WorkerError::Io(io::Error::new(
                 io::ErrorKind::NotFound,
@@ -227,11 +249,7 @@ impl ConversionWorker {
                     .as_ref()
                     .map(|wanted| {
                         wanted.iter().any(|value| {
-                            value == &chapter.index
-                                || value
-                                    .parse::<usize>()
-                                    .map(|index| index == *position)
-                                    .unwrap_or(false)
+                            chapter_selection_matches(value, &chapter.index, *position)
                         })
                     })
                     .unwrap_or(true)
@@ -287,6 +305,7 @@ impl ConversionWorker {
             .map_err(|error| WorkerError::Piper(error.to_string()))?;
         let results = Mutex::new(Vec::with_capacity(total));
         let completed = AtomicUsize::new(0);
+        let system_notice_emitted = std::sync::atomic::AtomicBool::new(false);
         let process_chapter = |position: usize,
                                source_index: usize,
                                chapter: &epub::Chapter|
@@ -305,22 +324,71 @@ impl ConversionWorker {
                 &book_key,
                 &chapter.index,
                 &text,
-                &engine,
+                if self.platform_tts.is_some() && engine == "edge" {
+                    "edge+system-v2"
+                } else {
+                    &engine
+                },
                 request.voice.as_deref(),
                 language,
             )?;
+            let cached = chapter_audio_is_complete(&mp3, &request_key);
+            if cached {
+                if let Ok(receipt) =
+                    cache::read_json::<ChapterAudioReceipt>(chapter_audio_receipt_path(&mp3))
+                {
+                    if receipt
+                        .provider
+                        .as_deref()
+                        .is_some_and(|provider| provider.contains("system"))
+                    {
+                        self.emit(ProgressEvent {
+                            job_id: request.job_id.clone(),
+                            state: "running".into(),
+                            chapter_index: Some(source_index),
+                            chapters_total: total,
+                            chapters_completed: completed.load(Ordering::Acquire),
+                            percent: 0.0,
+                            engine: Some("system".into()),
+                            message:
+                                "Playing cached audio with occasional system-voice segments..."
+                                    .into(),
+                        });
+                    }
+                }
+            }
             let stale_window_cancelled = std::sync::atomic::AtomicBool::new(false);
             let audio_result = ensure_chapter_audio(&mp3, &request_key, |pending| {
                 eprintln!("synthesizing chapter {}/{}", position + 1, total);
-                let synthesis = self.synthesize_with_timeout(
-                    &engine,
-                    &text,
-                    pending,
-                    source_index,
-                    request.voice.as_deref(),
-                    language,
-                    &stale_window_cancelled,
-                );
+                let synthesis = if self.platform_tts.is_some()
+                    && matches!(engine.as_str(), "edge" | "system")
+                {
+                    self.synthesize_platform_policy(
+                        &engine,
+                        &text,
+                        pending,
+                        source_index,
+                        request.voice.as_deref(),
+                        language,
+                        &stale_window_cancelled,
+                        &system_notice_emitted,
+                        &request.job_id,
+                        total,
+                        completed.load(Ordering::Acquire),
+                    )
+                } else {
+                    self.synthesize_with_timeout(
+                        &engine,
+                        &text,
+                        pending,
+                        source_index,
+                        request.voice.as_deref(),
+                        language,
+                        request.piper_model.as_deref(),
+                        request.piper_config.as_deref(),
+                        &stale_window_cancelled,
+                    )
+                };
                 if stale_window_cancelled.load(Ordering::Acquire) {
                     return Err(WorkerError::PlaybackWindowChanged);
                 }
@@ -343,6 +411,24 @@ impl ConversionWorker {
                 }
                 Err(error) => return Err(error),
                 Ok(()) => {}
+            }
+            if !cached {
+                let receipt_path = chapter_audio_receipt_path(&mp3);
+                let mut receipt: ChapterAudioReceipt = cache::read_json(&receipt_path)?;
+                receipt.provider = receipt.provider.or_else(|| {
+                    Some(
+                        if engine == "system" {
+                            "system"
+                        } else if engine == "edge" && system_notice_emitted.load(Ordering::Acquire)
+                        {
+                            "edge+system"
+                        } else {
+                            &engine
+                        }
+                        .to_owned(),
+                    )
+                });
+                cache::atomic_write_json(receipt_path, &receipt)?;
             }
             if let Some(control) = &self.control {
                 if !control.chapter_is_in_playback_window(source_index) {
@@ -477,6 +563,8 @@ impl ConversionWorker {
         source_index: usize,
         voice: Option<&str>,
         language: Option<&str>,
+        piper_model: Option<&Path>,
+        piper_config: Option<&Path>,
         timeout: std::time::Duration,
         stale_window_cancelled: &std::sync::atomic::AtomicBool,
     ) -> Result<(), WorkerError> {
@@ -553,23 +641,227 @@ impl ConversionWorker {
                 }
             }
         }
-        self.synthesize_with_piper(text, out)
+        if engine == "system" {
+            return Err(WorkerError::PlatformTts(
+                "No system speech adapter is installed for this conversion".into(),
+            ));
+        }
+        self.synthesize_with_piper(text, out, piper_model, piper_config)
     }
 
-    fn synthesize_with_piper(&self, text: &str, out: &Path) -> Result<(), WorkerError> {
+    fn synthesize_platform_policy(
+        &self,
+        engine: &str,
+        text: &str,
+        out: &Path,
+        source_index: usize,
+        voice: Option<&str>,
+        language: Option<&str>,
+        stale: &std::sync::atomic::AtomicBool,
+        system_notice_emitted: &std::sync::atomic::AtomicBool,
+        job_id: &str,
+        total: usize,
+        completed: usize,
+    ) -> Result<(), WorkerError> {
+        use std::io::Write;
+        let provider = self
+            .platform_tts
+            .as_ref()
+            .expect("platform adapter installed");
+        let started = std::sync::Mutex::new(std::time::Instant::now());
+        let deadline = std::time::Duration::from_secs(30);
+        let cancelled = || {
+            self.cancel.is_cancelled()
+                || started.lock().expect("deadline lock").elapsed() >= deadline
+                || self
+                    .control
+                    .as_ref()
+                    .is_some_and(|control| !control.chapter_is_in_playback_window(source_index))
+        };
+        let check = || {
+            if self.cancel.is_cancelled() {
+                Err(WorkerError::Cancelled)
+            } else if self
+                .control
+                .as_ref()
+                .is_some_and(|control| !control.chapter_is_in_playback_window(source_index))
+            {
+                stale.store(true, Ordering::Release);
+                Err(WorkerError::PlaybackWindowChanged)
+            } else if started.lock().expect("deadline lock").elapsed() >= deadline {
+                Err(WorkerError::PlatformTts(
+                    "chapter synthesis timed out".into(),
+                ))
+            } else {
+                Ok(())
+            }
+        };
+        let staging = tempfile::tempdir_in(out.parent().unwrap_or(Path::new(".")))?;
+        let mut output = fs::File::create(out)?;
+        let mut used_edge = false;
+        let mut used_system = false;
+        let mut chunk_index = 0usize;
+        let dispatch = |bytes: &[u8], output: &mut fs::File, chunk_index: &mut usize| {
+            check()?;
+            if !dispatch_playback_chunk(
+                self.control.as_ref(),
+                self.streaming_chunk.as_ref(),
+                source_index,
+                *chunk_index,
+                bytes,
+                stale,
+            ) {
+                return Err(if stale.load(Ordering::Acquire) {
+                    WorkerError::PlaybackWindowChanged
+                } else {
+                    WorkerError::Cancelled
+                });
+            }
+            output.write_all(bytes)?;
+            *chunk_index += 1;
+            Ok(())
+        };
+        for segment in platform_tts::segments(text) {
+            *started.lock().expect("deadline lock") = std::time::Instant::now();
+            check()?;
+            let edge = if engine == "system" {
+                None
+            } else {
+                let remaining = std::time::Duration::from_secs(5);
+                let synthesize = || {
+                    run_edge_synthesis_checked(
+                        crate::tts::synthesize_with_reference_client(
+                            &segment,
+                            voice.unwrap_or_else(|| default_edge_voice(language)),
+                            Arc::clone(&self.adaptive),
+                            self.telemetry.clone(),
+                        ),
+                        &cancelled,
+                        remaining,
+                    )
+                };
+                #[cfg(test)]
+                let result = if let Some(edge) = &self.test_edge {
+                    edge(&segment)
+                } else {
+                    synthesize()
+                };
+                #[cfg(not(test))]
+                let result = synthesize();
+                Some(result)
+            };
+            check()?;
+            match edge {
+                Some(Ok(bytes)) if platform_tts::validate_mp3(&bytes).is_ok() => {
+                    self.consecutive_edge_failures.store(0, Ordering::Release);
+                    used_edge = true;
+                    dispatch(&bytes, &mut output, &mut chunk_index)?;
+                }
+                Some(Err(WorkerError::Cancelled))
+                | Some(Err(WorkerError::Edge(EdgeError::Cancelled))) => {
+                    return Err(WorkerError::Cancelled)
+                }
+                _ => {
+                    if engine == "edge"
+                        && self
+                            .consecutive_edge_failures
+                            .fetch_add(1, Ordering::AcqRel)
+                            >= 2
+                    {
+                        return Err(WorkerError::PlatformTts("Edge is unavailable for consecutive segments. System speech is only an occasional fallback. Check your internet connection and retry.".into()));
+                    }
+                    let native_segments = platform_tts::native_segments(&segment, !used_system);
+                    used_system = true;
+                    if !system_notice_emitted.swap(true, Ordering::AcqRel) {
+                        self.emit(ProgressEvent {
+                            job_id: job_id.into(),
+                            state: "running".into(),
+                            chapter_index: Some(source_index),
+                            chapters_total: total,
+                            chapters_completed: completed,
+                            percent: if total == 0 {
+                                0.0
+                            } else {
+                                completed as f64 * 100.0 / total as f64
+                            },
+                            engine: Some("system".into()),
+                            message: "Using the system voice for this segment...".into(),
+                        });
+                    }
+                    for native_text in native_segments {
+                        let _guard = loop {
+                            match self.platform_gate.try_lock() {
+                                Ok(guard) => break guard,
+                                Err(std::sync::TryLockError::Poisoned(_)) => {
+                                    return Err(WorkerError::PlatformTts(
+                                        "system speech lock poisoned".into(),
+                                    ))
+                                }
+                                Err(std::sync::TryLockError::WouldBlock) => {
+                                    if self.cancel.is_cancelled() {
+                                        return Err(WorkerError::Cancelled);
+                                    }
+                                    if self.control.as_ref().is_some_and(|control| {
+                                        !control.chapter_is_in_playback_window(source_index)
+                                    }) {
+                                        stale.store(true, Ordering::Release);
+                                        return Err(WorkerError::PlaybackWindowChanged);
+                                    }
+                                    std::thread::sleep(std::time::Duration::from_millis(25));
+                                }
+                            }
+                        };
+                        *started.lock().expect("deadline lock") = std::time::Instant::now();
+                        check()?;
+                        let wav = staging.path().join("segment.wav");
+                        let synthesis = provider.synthesize_wav(
+                            &native_text,
+                            language.unwrap_or("pt-BR"),
+                            &wav,
+                            &cancelled,
+                        );
+                        check()?;
+                        synthesis.map_err(WorkerError::PlatformTts)?;
+                        let bytes = platform_tts::encode_wav(&fs::read(&wav)?)
+                            .map_err(WorkerError::PlatformTts)?;
+                        dispatch(&bytes, &mut output, &mut chunk_index)?;
+                    }
+                }
+            }
+        }
+        output.sync_all()?;
+        check()?;
+        fs::write(
+            out.with_extension("provider"),
+            if used_edge && used_system {
+                "edge+system"
+            } else if used_system {
+                "system"
+            } else {
+                "edge"
+            },
+        )?;
+        Ok(())
+    }
+
+    fn synthesize_with_piper(
+        &self,
+        text: &str,
+        out: &Path,
+        piper_model: Option<&Path>,
+        piper_config: Option<&Path>,
+    ) -> Result<(), WorkerError> {
         if cfg!(target_os = "android") {
             return Err(WorkerError::Piper(
                 "Piper is disabled on Android; Edge TTS is required".into(),
             ));
         }
-        let model = std::env::var_os("PIPER_MODEL")
-            .map(PathBuf::from)
-            .unwrap_or_else(|| {
-                self.config
-                    .paths
-                    .piper_models_dir
-                    .join("pt_BR-faber-medium.onnx")
-            });
+        let model = piper_model.map(Path::to_path_buf).unwrap_or_else(|| {
+            self.config
+                .paths
+                .piper_models_dir
+                .join("pt_BR-faber-medium.onnx")
+        });
         let model = if model.is_file() {
             model
         } else {
@@ -578,7 +870,9 @@ impl ConversionWorker {
                 model.display()
             )));
         };
-        let config = model.with_extension("onnx.json");
+        let config = piper_config
+            .map(Path::to_path_buf)
+            .unwrap_or_else(|| model.with_extension("onnx.json"));
         let mut c = PiperConfig::new(model, config);
         c.chunk_chars = std::env::var("PIPER_CHUNK_CHARS")
             .ok()
@@ -596,6 +890,8 @@ impl ConversionWorker {
         source_index: usize,
         voice: Option<&str>,
         language: Option<&str>,
+        piper_model: Option<&Path>,
+        piper_config: Option<&Path>,
         stale_window_cancelled: &std::sync::atomic::AtomicBool,
     ) -> Result<(), WorkerError> {
         let timeout_secs = std::env::var("RUST_CHAPTER_TIMEOUT_SECONDS")
@@ -615,6 +911,8 @@ impl ConversionWorker {
                 source_index,
                 voice,
                 language,
+                piper_model,
+                piper_config,
                 timeout,
                 stale_window_cancelled,
             );
@@ -628,6 +926,8 @@ impl ConversionWorker {
                     source_index,
                     voice,
                     language,
+                    piper_model,
+                    piper_config,
                     timeout,
                     stale_window_cancelled,
                 )
@@ -663,6 +963,16 @@ impl ConversionWorker {
             sink(event)
         }
     }
+}
+
+fn chapter_selection_matches(value: &str, chapter_index: &str, position: usize) -> bool {
+    value == chapter_index
+        || value
+            .strip_prefix("position:")
+            .unwrap_or(value)
+            .parse::<usize>()
+            .map(|index| index == position)
+            .unwrap_or(false)
 }
 
 fn dispatch_playback_chunk(
@@ -708,6 +1018,8 @@ fn chapter_audio_request_key(
 #[derive(Debug, Serialize, Deserialize)]
 struct ChapterAudioReceipt {
     version: u8,
+    #[serde(default)]
+    provider: Option<String>,
     request_key: String,
     audio_sha256: String,
     size: u64,
@@ -764,6 +1076,7 @@ fn ensure_chapter_audio(
     }
     let receipt = ChapterAudioReceipt {
         version: 1,
+        provider: fs::read_to_string(pending.with_extension("provider")).ok(),
         request_key: request_key.to_owned(),
         audio_sha256: cache::sha256_file(&pending)?,
         size: metadata.len(),
@@ -775,6 +1088,28 @@ fn ensure_chapter_audio(
     fs::rename(&pending, output)?;
     fs::rename(pending_receipt, chapter_audio_receipt_path(output))?;
     Ok(())
+}
+
+fn run_edge_synthesis_checked<T, F>(
+    synthesis: F,
+    cancelled: &(dyn Fn() -> bool + Sync),
+    timeout: std::time::Duration,
+) -> Result<T, WorkerError>
+where
+    F: std::future::Future<Output = Result<T, EdgeError>>,
+{
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()?;
+    let result = runtime.block_on(async {
+        let stopped = async { loop { if cancelled() { return; } tokio::time::sleep(std::time::Duration::from_millis(50)).await; } };
+        tokio::select! { biased;
+            _ = stopped => Err(WorkerError::Cancelled),
+            result = tokio::time::timeout(timeout, synthesis) => result.map_err(|_| WorkerError::Edge(EdgeError::Timeout))?.map_err(WorkerError::Edge),
+        }
+    });
+    runtime.shutdown_background();
+    result
 }
 
 fn run_edge_synthesis<T, F>(
@@ -856,6 +1191,7 @@ fn select_engine(request: Option<&str>, config: &AppConfig) -> String {
         .as_str()
     {
         "piper" => "piper".into(),
+        "system" => "system".into(),
         _ => "edge".into(),
     }
 }
@@ -881,6 +1217,599 @@ fn sanitize(value: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    struct TestSystem {
+        texts: Arc<Mutex<Vec<String>>>,
+    }
+    impl PlatformTts for TestSystem {
+        fn synthesize_wav(
+            &self,
+            text: &str,
+            _: &str,
+            output: &Path,
+            cancelled: &(dyn Fn() -> bool + Sync),
+        ) -> Result<(), String> {
+            if cancelled() {
+                return Err("cancelled".into());
+            }
+            self.texts.lock().unwrap().push(text.into());
+            fs::write(output, test_system_wav()).map_err(|e| e.to_string())
+        }
+    }
+    fn test_system_wav() -> Vec<u8> {
+        test_system_wav_at_rate(22050)
+    }
+    fn test_system_wav_at_rate(rate: u32) -> Vec<u8> {
+        let samples: Vec<i16> = (0..rate / 8)
+            .map(|i| {
+                ((i as f64 * 440.0 * std::f64::consts::TAU / rate as f64).sin() * 4000.0) as i16
+            })
+            .collect();
+        let len = (samples.len() * 2) as u32;
+        let mut wav = Vec::new();
+        wav.extend_from_slice(b"RIFF");
+        wav.extend_from_slice(&(36 + len).to_le_bytes());
+        wav.extend_from_slice(b"WAVEfmt ");
+        wav.extend_from_slice(&16u32.to_le_bytes());
+        wav.extend_from_slice(&1u16.to_le_bytes());
+        wav.extend_from_slice(&1u16.to_le_bytes());
+        wav.extend_from_slice(&rate.to_le_bytes());
+        wav.extend_from_slice(&(rate * 2).to_le_bytes());
+        wav.extend_from_slice(&2u16.to_le_bytes());
+        wav.extend_from_slice(&16u16.to_le_bytes());
+        wav.extend_from_slice(b"data");
+        wav.extend_from_slice(&len.to_le_bytes());
+        for sample in samples {
+            wav.extend_from_slice(&sample.to_le_bytes());
+        }
+        wav
+    }
+    #[test]
+    fn fallback_resumes_failed_segment_without_replaying_and_retries_edge() {
+        let temp = tempfile::tempdir().unwrap();
+        let config = AppConfig::from_paths(crate::paths::resolve_paths_from(
+            std::iter::empty::<(String, String)>(),
+            temp.path().to_path_buf(),
+        ));
+        let spoken = Arc::new(Mutex::new(Vec::new()));
+        let mut worker = ConversionWorker::new(config)
+            .unwrap()
+            .with_platform_tts(Arc::new(TestSystem {
+                texts: Arc::clone(&spoken),
+            }));
+        let requests = Arc::new(AtomicUsize::new(0));
+        let count = Arc::clone(&requests);
+        let audio = platform_tts::encode_wav(&test_system_wav_at_rate(24000)).unwrap();
+        worker.test_edge = Some(Arc::new(move |_| {
+            if !matches!(count.fetch_add(1, Ordering::AcqRel), 1 | 3) {
+                Ok(audio.clone())
+            } else {
+                Err(WorkerError::Edge(EdgeError::Timeout))
+            }
+        }));
+        let delivered = Arc::new(Mutex::new(Vec::new()));
+        let received = Arc::clone(&delivered);
+        worker = worker.with_streaming_chunks(Arc::new(move |_, index, bytes| {
+            assert!(platform_tts::validate_mp3(bytes).is_ok());
+            received.lock().unwrap().push(index);
+            true
+        }));
+        let text = "A sentence to preserve every word. ".repeat(70);
+        let pieces = platform_tts::segments(&text);
+        let native = std::sync::atomic::AtomicBool::new(false);
+        worker
+            .synthesize_platform_policy(
+                "edge",
+                &text,
+                &temp.path().join("audio.mp3"),
+                0,
+                None,
+                Some("en-US"),
+                &std::sync::atomic::AtomicBool::new(false),
+                &native,
+                "job",
+                1,
+                0,
+            )
+            .unwrap();
+        assert_eq!(requests.load(Ordering::Acquire), pieces.len());
+        let native_texts = spoken.lock().unwrap();
+        assert_eq!(
+            native_texts.join(" "),
+            [pieces[1].as_str(), pieces[3].as_str()].join(" ")
+        );
+        assert!(native_texts[0].chars().count() <= 60);
+        assert!(native_texts
+            .iter()
+            .skip(1)
+            .all(|text| text.chars().count() <= 240));
+        let expected_chunk_count = pieces.len() - 2 + native_texts.len();
+        drop(native_texts);
+        assert_eq!(
+            *delivered.lock().unwrap(),
+            (0..expected_chunk_count).collect::<Vec<_>>()
+        );
+        assert!(native.load(Ordering::Acquire));
+        let artifact = temp.path().join("audio.mp3");
+        audio::validate_audio(&artifact, 100).unwrap();
+        assert_eq!(audio::probe_sample_rate(&artifact).unwrap(), 24000);
+        assert_eq!(
+            fs::read_to_string(temp.path().join("audio.provider")).unwrap(),
+            "edge+system"
+        );
+    }
+    #[test]
+    fn third_consecutive_edge_failure_stops_before_more_native_speech() {
+        let temp = tempfile::tempdir().unwrap();
+        let config = AppConfig::from_paths(crate::paths::resolve_paths_from(
+            std::iter::empty::<(String, String)>(),
+            temp.path().to_path_buf(),
+        ));
+        let spoken = Arc::new(Mutex::new(Vec::new()));
+        let mut worker = ConversionWorker::new(config)
+            .unwrap()
+            .with_platform_tts(Arc::new(TestSystem {
+                texts: Arc::clone(&spoken),
+            }));
+        let requests = Arc::new(AtomicUsize::new(0));
+        let count = Arc::clone(&requests);
+        worker.test_edge = Some(Arc::new(move |_| {
+            count.fetch_add(1, Ordering::AcqRel);
+            Err(WorkerError::Edge(EdgeError::Timeout))
+        }));
+        let text = "A sentence that must not become a fully offline book. ".repeat(40);
+        let pieces = platform_tts::segments(&text);
+        let error = worker
+            .synthesize_platform_policy(
+                "edge",
+                &text,
+                &temp.path().join("audio.mp3"),
+                0,
+                None,
+                None,
+                &std::sync::atomic::AtomicBool::new(false),
+                &std::sync::atomic::AtomicBool::new(false),
+                "job",
+                1,
+                0,
+            )
+            .unwrap_err();
+        assert!(
+            matches!(error, WorkerError::PlatformTts(ref message) if message.contains("Check your internet"))
+        );
+        assert_eq!(requests.load(Ordering::Acquire), 3);
+        assert_eq!(spoken.lock().unwrap().join(" "), pieces[..2].join(" "));
+        assert!(!temp.path().join("audio.provider").exists());
+    }
+
+    #[test]
+    fn persistent_edge_outage_fails_real_job_without_publishing_partial_audio() {
+        let temp = tempfile::tempdir().unwrap();
+        let input = temp.path().join("book.epub");
+        platform_test_book_with_text(
+            &input,
+            &"Uma frase de teste sem conversão integral offline. ".repeat(40),
+        );
+        let config = AppConfig::from_paths(crate::paths::resolve_paths_from(
+            std::iter::empty::<(String, String)>(),
+            temp.path().to_path_buf(),
+        ));
+        let output = config.paths.output_dir.join("outage-job");
+        let spoken = Arc::new(Mutex::new(Vec::new()));
+        let mut worker = ConversionWorker::new(config)
+            .unwrap()
+            .with_platform_tts(Arc::new(TestSystem {
+                texts: Arc::clone(&spoken),
+            }));
+        worker.test_edge = Some(Arc::new(|_| Err(WorkerError::Edge(EdgeError::Timeout))));
+        let request = ConversionRequest {
+            input,
+            job_id: "outage-job".into(),
+            engine: Some("edge".into()),
+            voice: None,
+            language: Some("pt-BR".into()),
+            piper_model: None,
+            piper_config: None,
+            chapter_indices: None,
+            no_parallel: true,
+        };
+        assert!(matches!(
+            worker.run(request),
+            Err(WorkerError::PlatformTts(_))
+        ));
+        assert_eq!(
+            worker.jobs.load("outage-job").unwrap().state,
+            JobState::Failed
+        );
+        assert_eq!(
+            fs::read_dir(output).unwrap().count(),
+            0,
+            "Interrupted chapter cannot publish a partial MP3 or receipt"
+        );
+        assert!(!spoken.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn forced_system_delivers_bounded_utterances_before_synthesizing_next_chunk() {
+        struct BoundedSystem {
+            spoken: Arc<Mutex<Vec<String>>>,
+            delivered: Arc<Mutex<Vec<usize>>>,
+        }
+        impl PlatformTts for BoundedSystem {
+            fn synthesize_wav(
+                &self,
+                text: &str,
+                _: &str,
+                output: &Path,
+                cancelled: &(dyn Fn() -> bool + Sync),
+            ) -> Result<(), String> {
+                assert!(!cancelled());
+                let mut spoken = self.spoken.lock().unwrap();
+                assert!(text.chars().count() <= if spoken.is_empty() { 60 } else { 240 });
+                assert_eq!(
+                    self.delivered.lock().unwrap().len(),
+                    spoken.len(),
+                    "Previous native audio must play before the next synthesis starts"
+                );
+                spoken.push(text.into());
+                fs::write(output, test_system_wav()).map_err(|error| error.to_string())
+            }
+        }
+        let temp = tempfile::tempdir().unwrap();
+        let config = AppConfig::from_paths(crate::paths::resolve_paths_from(
+            std::iter::empty::<(String, String)>(),
+            temp.path().to_path_buf(),
+        ));
+        let spoken = Arc::new(Mutex::new(Vec::new()));
+        let delivered = Arc::new(Mutex::new(Vec::new()));
+        let received = Arc::clone(&delivered);
+        let worker = ConversionWorker::new(config)
+            .unwrap()
+            .with_platform_tts(Arc::new(BoundedSystem {
+                spoken: Arc::clone(&spoken),
+                delivered: Arc::clone(&delivered),
+            }))
+            .with_streaming_chunks(Arc::new(move |_, index, bytes| {
+                platform_tts::validate_mp3(bytes).unwrap();
+                received.lock().unwrap().push(index);
+                true
+            }));
+        let text = "Uma frase para preservar todo o conteúdo sem repetição. ".repeat(24);
+        worker
+            .synthesize_platform_policy(
+                "system",
+                &text,
+                &temp.path().join("audio.mp3"),
+                0,
+                None,
+                Some("pt-BR"),
+                &std::sync::atomic::AtomicBool::new(false),
+                &std::sync::atomic::AtomicBool::new(false),
+                "job",
+                1,
+                0,
+            )
+            .unwrap();
+        let spoken = spoken.lock().unwrap();
+        assert_eq!(spoken.join(" "), text.trim());
+        assert!(spoken.len() >= 6);
+        assert_eq!(
+            *delivered.lock().unwrap(),
+            (0..spoken.len()).collect::<Vec<_>>()
+        );
+        audio::validate_audio(temp.path().join("audio.mp3"), 100).unwrap();
+    }
+
+    #[test]
+    fn system_pcm_normalization_rejects_unsupported_sample_rates() {
+        for rate in [1u32, 192000] {
+            let mut wav = test_system_wav();
+            wav[24..28].copy_from_slice(&rate.to_le_bytes());
+            assert!(platform_tts::encode_wav(&wav).is_err());
+        }
+        let encoded = platform_tts::encode_wav(&test_system_wav()).unwrap();
+        let temp = tempfile::tempdir().unwrap();
+        let artifact = temp.path().join("normalized.mp3");
+        fs::write(&artifact, encoded).unwrap();
+        assert_eq!(audio::probe_sample_rate(&artifact).unwrap(), 24000);
+    }
+
+    #[test]
+    fn system_wav_with_extra_riff_chunks_is_encoded_and_truncation_rejected() {
+        let mut wav = test_system_wav();
+        let mut extra = b"JUNK".to_vec();
+        extra.extend_from_slice(&4u32.to_le_bytes());
+        extra.extend_from_slice(b"test");
+        wav.splice(12..12, extra);
+        let size = (wav.len() - 8) as u32;
+        wav[4..8].copy_from_slice(&size.to_le_bytes());
+        assert!(platform_tts::encode_wav(&wav).is_ok());
+        wav.pop();
+        assert!(platform_tts::encode_wav(&wav).is_err());
+    }
+    fn platform_test_book(path: &Path) {
+        platform_test_book_with_text(path, "Uma frase para testar a voz offline.");
+    }
+    fn platform_test_book_with_text(path: &Path, text: &str) {
+        use std::io::Write;
+        let body = format!("<html><body><h1>Chapter</h1><p>{text}</p></body></html>");
+        let mut archive = zip::ZipWriter::new(fs::File::create(path).unwrap());
+        let options = zip::write::SimpleFileOptions::default();
+        for (name, content) in [
+            ("META-INF/container.xml", "<container><rootfiles><rootfile full-path=\"content.opf\"/></rootfiles></container>"),
+            ("content.opf", "<package xmlns:dc=\"x\"><metadata><dc:title>System speech</dc:title><dc:language>pt-BR</dc:language></metadata><manifest><item id=\"a\" href=\"a.xhtml\" media-type=\"application/xhtml+xml\"/></manifest><spine><itemref idref=\"a\"/></spine></package>"),
+            ("a.xhtml", body.as_str()),
+        ] {
+            archive.start_file(name, options).unwrap(); archive.write_all(content.as_bytes()).unwrap();
+        }
+        archive.finish().unwrap();
+    }
+    #[test]
+    fn platform_fallback_actual_worker_publishes_receipt_and_reports_cached_voice() {
+        let temp = tempfile::tempdir().unwrap();
+        let input = temp.path().join("book.epub");
+        platform_test_book(&input);
+        let config = AppConfig::from_paths(crate::paths::resolve_paths_from(
+            std::iter::empty::<(String, String)>(),
+            temp.path().to_path_buf(),
+        ));
+        let output_dir = config.paths.output_dir.join("system-job");
+        let spoken = Arc::new(Mutex::new(Vec::new()));
+        let events = Arc::new(Mutex::new(Vec::new()));
+        let sink = Arc::clone(&events);
+        let mut worker = ConversionWorker::new(config)
+            .unwrap()
+            .with_platform_tts(Arc::new(TestSystem {
+                texts: Arc::clone(&spoken),
+            }))
+            .with_progress(Arc::new(move |event| sink.lock().unwrap().push(event)));
+        worker.test_edge = Some(Arc::new(|_| Err(WorkerError::Edge(EdgeError::Timeout))));
+        let request = ConversionRequest {
+            input,
+            job_id: "system-job".into(),
+            engine: Some("edge".into()),
+            voice: None,
+            language: Some("pt-BR".into()),
+            piper_model: None,
+            piper_config: None,
+            chapter_indices: None,
+            no_parallel: true,
+        };
+        let manifest = worker.run(request.clone()).unwrap();
+        assert_eq!(manifest.chapters.len(), 1);
+        let audio = output_dir.join(&manifest.chapters[0].filename);
+        assert!(platform_tts::validate_mp3(&fs::read(&audio).unwrap()).is_ok());
+        let receipt: ChapterAudioReceipt =
+            cache::read_json(chapter_audio_receipt_path(&audio)).unwrap();
+        assert_eq!(receipt.provider.as_deref(), Some("system"));
+        let calls = spoken.lock().unwrap().len();
+        // A missing job record still permits recovery of durable chapter artifacts.
+        worker.jobs.delete(&request.job_id).unwrap();
+        worker.resume(request).unwrap();
+        assert_eq!(spoken.lock().unwrap().len(), calls);
+        assert!(events
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|event| event.engine.as_deref() == Some("system")
+                && event.message.contains("cached")));
+    }
+    #[test]
+    fn invalid_system_wav_never_reaches_playback() {
+        struct InvalidSystem;
+        impl PlatformTts for InvalidSystem {
+            fn synthesize_wav(
+                &self,
+                _: &str,
+                _: &str,
+                output: &Path,
+                _: &(dyn Fn() -> bool + Sync),
+            ) -> Result<(), String> {
+                fs::write(output, b"invalid").map_err(|e| e.to_string())
+            }
+        }
+        let temp = tempfile::tempdir().unwrap();
+        let config = AppConfig::from_paths(crate::paths::resolve_paths_from(
+            std::iter::empty::<(String, String)>(),
+            temp.path().to_path_buf(),
+        ));
+        let worker = ConversionWorker::new(config)
+            .unwrap()
+            .with_platform_tts(Arc::new(InvalidSystem))
+            .with_streaming_chunks(Arc::new(|_, _, _| {
+                panic!("Invalid speech reached playback")
+            }));
+        assert!(matches!(
+            worker.synthesize_platform_policy(
+                "system",
+                "Text",
+                &temp.path().join("audio.mp3"),
+                0,
+                None,
+                None,
+                &std::sync::atomic::AtomicBool::new(false),
+                &std::sync::atomic::AtomicBool::new(false),
+                "job",
+                1,
+                0
+            ),
+            Err(WorkerError::PlatformTts(_))
+        ));
+    }
+    #[test]
+    fn edge_success_after_previous_native_notice_is_delivered() {
+        let temp = tempfile::tempdir().unwrap();
+        let config = AppConfig::from_paths(crate::paths::resolve_paths_from(
+            std::iter::empty::<(String, String)>(),
+            temp.path().to_path_buf(),
+        ));
+        let spoken = Arc::new(Mutex::new(Vec::new()));
+        let sticky = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let selected = Arc::clone(&sticky);
+        let mut worker = ConversionWorker::new(config)
+            .unwrap()
+            .with_platform_tts(Arc::new(TestSystem {
+                texts: Arc::clone(&spoken),
+            }));
+        let edge_bytes = platform_tts::encode_wav(&test_system_wav()).unwrap();
+        worker.test_edge = Some(Arc::new(move |_| {
+            selected.store(true, Ordering::Release);
+            Ok(edge_bytes.clone())
+        }));
+        worker
+            .synthesize_platform_policy(
+                "edge",
+                "Pending Edge segment",
+                &temp.path().join("audio.mp3"),
+                0,
+                None,
+                None,
+                &std::sync::atomic::AtomicBool::new(false),
+                &sticky,
+                "job",
+                1,
+                0,
+            )
+            .unwrap();
+        assert!(spoken.lock().unwrap().is_empty());
+        assert_eq!(
+            fs::read_to_string(temp.path().join("audio.provider")).unwrap(),
+            "edge"
+        );
+    }
+    #[test]
+    fn cancelled_worker_does_not_wait_for_busy_native_speech_lock() {
+        let temp = tempfile::tempdir().unwrap();
+        let config = AppConfig::from_paths(crate::paths::resolve_paths_from(
+            std::iter::empty::<(String, String)>(),
+            temp.path().to_path_buf(),
+        ));
+        let spoken = Arc::new(Mutex::new(Vec::new()));
+        let worker = ConversionWorker::new(config)
+            .unwrap()
+            .with_platform_tts(Arc::new(TestSystem {
+                texts: Arc::clone(&spoken),
+            }));
+        let _busy = worker.platform_gate.lock().unwrap();
+        let output = temp.path().join("audio.mp3");
+        std::thread::scope(|scope| {
+            let waiting = scope.spawn(|| {
+                worker.synthesize_platform_policy(
+                    "system",
+                    "Text",
+                    &output,
+                    0,
+                    None,
+                    None,
+                    &std::sync::atomic::AtomicBool::new(false),
+                    &std::sync::atomic::AtomicBool::new(false),
+                    "job",
+                    1,
+                    0,
+                )
+            });
+            std::thread::sleep(std::time::Duration::from_millis(50));
+            worker.cancel();
+            let started = std::time::Instant::now();
+            assert!(matches!(
+                waiting.join().unwrap(),
+                Err(WorkerError::Cancelled)
+            ));
+            assert!(started.elapsed() < std::time::Duration::from_secs(1));
+        });
+        assert!(spoken.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn moved_playback_window_never_invokes_system() {
+        let temp = tempfile::tempdir().unwrap();
+        let config = AppConfig::from_paths(crate::paths::resolve_paths_from(
+            std::iter::empty::<(String, String)>(),
+            temp.path().to_path_buf(),
+        ));
+        let spoken = Arc::new(Mutex::new(Vec::new()));
+        let control = ConversionControl::new();
+        let changed = control.clone();
+        let mut worker = ConversionWorker::new(config)
+            .unwrap()
+            .with_platform_tts(Arc::new(TestSystem {
+                texts: Arc::clone(&spoken),
+            }))
+            .with_control(control);
+        worker.test_edge = Some(Arc::new(move |_| {
+            changed.set_playback_window(1, 0);
+            Err(WorkerError::Edge(EdgeError::Timeout))
+        }));
+        assert!(matches!(
+            worker.synthesize_platform_policy(
+                "edge",
+                "Text",
+                &temp.path().join("audio.mp3"),
+                0,
+                None,
+                None,
+                &std::sync::atomic::AtomicBool::new(false),
+                &std::sync::atomic::AtomicBool::new(false),
+                "job",
+                1,
+                0
+            ),
+            Err(WorkerError::PlaybackWindowChanged)
+        ));
+        assert!(spoken.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn platform_policy_has_a_distinct_cache_identity() {
+        let edge =
+            chapter_audio_request_key("book", "0", "Text", "edge", None, Some("pt-BR")).unwrap();
+        let fallback =
+            chapter_audio_request_key("book", "0", "Text", "edge+system-v2", None, Some("pt-BR"))
+                .unwrap();
+        assert_ne!(edge, fallback);
+    }
+
+    #[test]
+    fn cancellation_never_invokes_system_fallback() {
+        let temp = tempfile::tempdir().unwrap();
+        let config = AppConfig::from_paths(crate::paths::resolve_paths_from(
+            std::iter::empty::<(String, String)>(),
+            temp.path().to_path_buf(),
+        ));
+        let spoken = Arc::new(Mutex::new(Vec::new()));
+        let worker = ConversionWorker::new(config)
+            .unwrap()
+            .with_platform_tts(Arc::new(TestSystem {
+                texts: Arc::clone(&spoken),
+            }));
+        worker.cancel();
+        let error = worker
+            .synthesize_platform_policy(
+                "edge",
+                "Hello",
+                &temp.path().join("audio.mp3"),
+                0,
+                None,
+                None,
+                &std::sync::atomic::AtomicBool::new(false),
+                &std::sync::atomic::AtomicBool::new(false),
+                "job",
+                1,
+                0,
+            )
+            .unwrap_err();
+        assert!(matches!(error, WorkerError::Cancelled));
+        assert!(spoken.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn positional_chapter_selector_from_ffi_matches_parsed_epub_position() {
+        assert!(chapter_selection_matches("position:0", "1", 0));
+        assert!(chapter_selection_matches("position:1", "2", 1));
+        assert!(chapter_selection_matches("1", "1", 8));
+        assert!(!chapter_selection_matches("position:0", "1", 1));
+        assert!(!chapter_selection_matches("position:invalid", "1", 0));
+    }
 
     #[test]
     fn stale_playback_chunk_is_rejected_without_publishing_chapter_audio() {
@@ -1045,6 +1974,8 @@ mod tests {
             engine: Some("piper".into()),
             voice: None,
             language: Some("en".into()),
+            piper_model: None,
+            piper_config: None,
             chapter_indices: Some(vec!["0".into()]),
             no_parallel: true,
         };
@@ -1204,6 +2135,8 @@ mod tests {
             engine: Some("piper".into()),
             voice: None,
             language: Some("en".into()),
+            piper_model: None,
+            piper_config: None,
             chapter_indices: Some(vec!["0".into()]),
             no_parallel: true,
         });

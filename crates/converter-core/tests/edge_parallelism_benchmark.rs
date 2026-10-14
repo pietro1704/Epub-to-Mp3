@@ -51,6 +51,8 @@ fn run_case(input: &std::path::Path, no_parallel: bool, label: &str) -> f64 {
         engine: Some("edge".into()),
         voice: Some("en-US-GuyNeural".into()),
         language: Some("en-US".into()),
+        piper_model: None,
+        piper_config: None,
         chapter_indices: Some(vec!["position:8".into(), "position:9".into()]),
         no_parallel,
     };

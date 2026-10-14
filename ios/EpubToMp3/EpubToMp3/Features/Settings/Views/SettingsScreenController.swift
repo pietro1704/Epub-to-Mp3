@@ -92,7 +92,7 @@ final class SettingsScreenController: UITableViewController {
         guard let section = Section(rawValue: section) else { return 0 }
         switch section {
         case .runtime:
-            return 2
+            return AudioEnginePreference.supportedPreferences.contains(.piper) ? 3 : 2
         case .backend:
             return 2
         case .playback:
@@ -152,6 +152,16 @@ final class SettingsScreenController: UITableViewController {
         guard let section = Section(rawValue: indexPath.section) else { return UITableViewCell() }
         switch section {
         case .runtime:
+            if indexPath.row == 0 {
+                let cell = tableView.dequeueReusableCell(withIdentifier: "Cell", for: indexPath)
+                var content = cell.defaultContentConfiguration()
+                content.text = L10n.string("settings.audioEngineChoice")
+                content.secondaryText = settings.audioEngine.displayName
+                content.image = UIImage(systemName: "waveform")
+                cell.contentConfiguration = content
+                cell.accessoryType = .disclosureIndicator
+                return cell
+            }
             if indexPath.row == 1 {
                 let cell = tableView.dequeueReusableCell(withIdentifier: "Switch", for: indexPath) as! IOSSwitchCell
                 cell.configure(
@@ -166,14 +176,15 @@ final class SettingsScreenController: UITableViewController {
                 cell.accessibilityIdentifier = "settings.allowCellularAudio"
                 return cell
             }
-            let cell = tableView.dequeueReusableCell(withIdentifier: "Switch", for: indexPath) as! IOSSwitchCell
-            cell.configure(
-                title: L10n.string("settings.useBuiltInEngine"),
-                subtitle: "Uses the canonical Rust backend.",
-                isOn: false
-            )
-            cell.onValueChanged = { _ in }
-            cell.isUserInteractionEnabled = false
+            let cell = tableView.dequeueReusableCell(withIdentifier: "Cell", for: indexPath)
+            var content = cell.defaultContentConfiguration()
+            content.text = L10n.string("settings.piperInstall")
+            let model = AppSettings.ttsModelsRoot()?.appendingPathComponent("pt_BR-edresson-low/model.onnx")
+            content.secondaryText = model.map { FileManager.default.fileExists(atPath: $0.path) }
+                == true ? L10n.string("settings.piperInstalled") : L10n.string("settings.piperNotInstalled")
+            content.image = UIImage(systemName: "arrow.down.circle")
+            cell.contentConfiguration = content
+            cell.accessoryType = .disclosureIndicator
             return cell
         case .backend:
             if indexPath.row == 0 {
@@ -216,6 +227,24 @@ final class SettingsScreenController: UITableViewController {
         defer { tableView.deselectRow(at: indexPath, animated: true) }
         guard let section = Section(rawValue: indexPath.section) else { return }
         switch section {
+        case .runtime where indexPath.row == 0:
+            let alert = UIAlertController(
+                title: L10n.string("settings.audioEngineChoice"),
+                message: L10n.string("settings.audioEngineChoiceDescription"),
+                preferredStyle: .actionSheet
+            )
+            for engine in AudioEnginePreference.supportedPreferences {
+                alert.addAction(UIAlertAction(title: engine.displayName, style: .default) { [weak self] _ in
+                    self?.settings.audioEngine = engine
+                    tableView.reloadRows(at: [indexPath], with: .automatic)
+                })
+            }
+            alert.addAction(UIAlertAction(title: L10n.string("common.cancel"), style: .cancel))
+            alert.popoverPresentationController?.sourceView = tableView
+            alert.popoverPresentationController?.sourceRect = tableView.rectForRow(at: indexPath)
+            present(alert, animated: true)
+        case .runtime where indexPath.row == 2 && AudioEnginePreference.supportedPreferences.contains(.piper):
+            installPiperModel()
         case .reader:
             handleReaderSelection(row: indexPath.row)
         case .playback:
@@ -228,6 +257,26 @@ final class SettingsScreenController: UITableViewController {
             handleAboutSelection(row: indexPath.row)
         case .runtime, .backend:
             break
+        }
+    }
+
+    private func installPiperModel() {
+        guard let root = AppSettings.ttsModelsRoot() else { return }
+        let alert = UIAlertController(title: L10n.string("settings.piperInstall"), message: nil, preferredStyle: .alert)
+        present(alert, animated: true)
+        Task.detached {
+            let result = Result { try ConverterFFIAdapter().installTtsModelFromCatalog(
+                modelID: "pt_BR-edresson-low", root: root.path
+            ) }
+            await MainActor.run {
+                alert.dismiss(animated: true)
+                if case .failure(let error) = result {
+                    let failure = UIAlertController(title: L10n.string("settings.piperInstall"), message: error.localizedDescription, preferredStyle: .alert)
+                    failure.addAction(UIAlertAction(title: L10n.string("common.ok"), style: .default))
+                    self.present(failure, animated: true)
+                }
+                self.tableView.reloadData()
+            }
         }
     }
 

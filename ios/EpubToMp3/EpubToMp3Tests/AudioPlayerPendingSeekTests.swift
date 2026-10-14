@@ -2,6 +2,9 @@
 import AVFoundation
 import Foundation
 import XCTest
+#if os(iOS)
+import UIKit
+#endif
 @testable import EpubToMp3
 
 final class AudioPlayerPendingSeekTests: XCTestCase {
@@ -303,6 +306,32 @@ final class AudioPlayerPendingSeekTests: XCTestCase {
             XCTAssertEqual(try XCTUnwrap(player.testHook_currentPlayerItem()).currentTime().seconds, 0, accuracy: 0.1)
         }
     }
+
+    #if os(iOS)
+    @MainActor
+    func testPendingNavigationShowsLoadingWithoutHidingMiniPlayerTransport() async throws {
+        try await withPlayingFixture(streaming: true, streamTargetReady: false) { player, _ in
+            player.nextChapter()
+            XCTAssertTrue(player.isSeeking)
+            XCTAssertTrue(player.isLoading)
+            let suite = "pending-mini-\(UUID().uuidString)"
+            let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+            defer { defaults.removePersistentDomain(forName: suite) }
+            let mini = MiniPlayerBarUIKitView()
+            mini.configure(player: player, playbackClock: player.playbackClock,
+                           library: LibraryStore(defaults: defaults), onTap: {})
+            func buttons(_ view: UIView) -> [UIButton] {
+                view.subviews.flatMap { ($0 as? UIButton).map { [$0] } ?? buttons($0) }
+            }
+            let transport = try XCTUnwrap(buttons(mini).first {
+                $0.accessibilityIdentifier == "miniPlayer.playPause"
+            })
+            XCTAssertFalse(transport.isHidden, "The listener must be able to change autoplay intent while waiting.")
+            transport.sendActions(for: .touchUpInside)
+            XCTAssertFalse(player.isPlaying)
+        }
+    }
+    #endif
 
     @MainActor
     func testFinalFileConfirmationClampsExistingPendingSeekAndPreservesPause() async throws {

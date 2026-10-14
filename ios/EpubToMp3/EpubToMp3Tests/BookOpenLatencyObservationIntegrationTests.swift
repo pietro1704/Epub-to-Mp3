@@ -8,7 +8,6 @@ import XCTest
 
 @testable import EpubToMp3
 
-#if os(macOS)
 private final class ReaderOpenStageRecorder: @unchecked Sendable {
     typealias Timing = NativePlaybackBenchmarkReport.Point.StageTiming
 
@@ -32,11 +31,9 @@ private final class ReaderOpenStageRecorder: @unchecked Sendable {
         return result
     }
 }
-#endif
 
 @MainActor
 final class BookOpenLatencyObservationIntegrationTests: XCTestCase {
-    #if os(macOS)
     private struct RelaunchFixture: Codable {
         let preparePID: Int32
         let books: [BookEntity]
@@ -48,9 +45,11 @@ final class BookOpenLatencyObservationIntegrationTests: XCTestCase {
         let environment = ProcessInfo.processInfo.environment
         guard let phase = environment["EPUB2MP3_READER_RELAUNCH_PHASE"],
               let rawID = environment["EPUB2MP3_READER_RELAUNCH_ID"],
-              let runID = UUID(uuidString: rawID), ["prepare", "verify"].contains(phase) else {
+              let runID = UUID(uuidString: rawID), ["prepare", "verify", "ios-prepare", "ios-verify"].contains(phase) else {
             throw XCTSkip("Provide a relaunch phase and run UUID for two separate native hosts.")
         }
+        let isIOS = phase.hasPrefix("ios-")
+        let preparationPhase = phase == "prepare" || phase == "ios-prepare"
         let input = try NativePlaybackBenchmarkInput.optIn()
         let namespace = "ReaderRelaunch-\(runID.uuidString)"
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(namespace, isDirectory: true)
@@ -73,7 +72,7 @@ final class BookOpenLatencyObservationIntegrationTests: XCTestCase {
                 if !owned.isEmpty { try? FileManager.default.removeItem(at: root) }
             }
         }
-        if phase == "prepare" {
+        if preparationPhase {
             guard !FileManager.default.fileExists(atPath: root.path) else {
                 throw NativePlaybackBenchmarkInput.invalid("Relaunch namespace already exists; preserve it for verification")
             }
@@ -83,7 +82,12 @@ final class BookOpenLatencyObservationIntegrationTests: XCTestCase {
             for (index, selection) in input.books.enumerated() {
                 let id = "\(namespace)-\(index)"
                 let source = URL(fileURLWithPath: selection.sourcePath)
-                let payload = try await MacEpubParser.parse(at: source, bookId: id)
+                let payload: EbookFulltext
+#if os(iOS)
+                payload = await EpubFallbackParser.parseAsync(url: source, bookId: id)
+#else
+                payload = try await MacEpubParser.parse(at: source, bookId: id)
+#endif
                 guard !payload.chapters.isEmpty else { throw NativePlaybackBenchmarkInput.invalid("Empty prepared reader") }
                 payloads.append(try encoder.encode(payload))
                 owned.append(BookEntity(id: id, title: selection.name,
@@ -136,6 +140,7 @@ final class BookOpenLatencyObservationIntegrationTests: XCTestCase {
               fixture.preparePID != ProcessInfo.processInfo.processIdentifier else {
             throw NativePlaybackBenchmarkInput.invalid("Verification requires intact fixtures and a different host process")
         }
+        retainForVerification = true
         owned = fixture.books
         let renderer = PreparedChapterRenderer(store: PreparedChapterArchiveStore(
             directory: root.appendingPathComponent("archives", isDirectory: true)))
@@ -149,25 +154,47 @@ final class BookOpenLatencyObservationIntegrationTests: XCTestCase {
             defaults.set(try JSONEncoder().encode([book]), forKey: "library.\(book.id)")
             ReaderProgressStore.save(bookId: book.id, chapterIndex: input.books[index].chapterStart, offsetFraction: 0)
             let library = LibraryStore(defaults: defaults, defaultsKey: "library.\(book.id)")
-            let point = try await measuredOpen(book: book, library: library, defaults: defaults,
-                                               event: "process_relaunch_disk_open", cacheClass: .preparedDisk,
-                                               preparedRenderer: renderer, preparedChapterStore: chapterStore)
+            let point: NativePlaybackBenchmarkReport.Point
+            do {
+                point = try await measuredOpen(book: book, library: library, defaults: defaults,
+                    event: "process_relaunch_disk_open", cacheClass: .preparedDisk,
+                    preparedRenderer: renderer, preparedChapterStore: chapterStore,
+                    useProjectionFirstCatalogGate: isIOS)
+            } catch {
+                print("[Reader relaunch] open failed book=\(book.title) error=\(error)")
+                throw error
+            }
             report.points.append(point)
             let stages = point.stageTimings.map(\.name)
             let scheduled = try XCTUnwrap(stages.firstIndex(of: "reader_load_task_scheduled"))
             let started = try XCTUnwrap(stages.firstIndex(of: "reader_load_task_started"))
             XCTAssertLessThan(scheduled, started, "The reader load task must start after its scheduling point.")
-            let viewDidLoadCompleted = try XCTUnwrap(stages.firstIndex(of: "reader_view_did_load_completed"))
-            let viewDidAppearStarted = try XCTUnwrap(stages.firstIndex(of: "reader_view_did_appear_started"))
-            let viewDidAppearCompleted = try XCTUnwrap(stages.firstIndex(of: "reader_view_did_appear_completed"))
-            let viewDidLayoutStarted = try XCTUnwrap(stages.firstIndex(of: "reader_view_did_layout_started"))
-            let viewDidLayoutCompleted = try XCTUnwrap(stages.firstIndex(of: "reader_view_did_layout_completed"))
-            XCTAssertLessThan(scheduled, viewDidLoadCompleted)
-            XCTAssertLessThan(viewDidLoadCompleted, viewDidAppearStarted)
-            XCTAssertLessThan(viewDidAppearStarted, viewDidAppearCompleted)
-            XCTAssertLessThan(viewDidLayoutStarted, viewDidLayoutCompleted)
-            XCTAssertLessThan(viewDidAppearCompleted, started)
-            XCTAssertLessThan(viewDidLayoutCompleted, started)
+            if isIOS {
+                let projectionValidated = try XCTUnwrap(stages.firstIndex(of: "projection_snapshot_validated"))
+                XCTAssertLessThan(projectionValidated, started,
+                                  "The source-validated projection must be ready before the MainActor load task starts.")
+                let fulltextReadStarted = try XCTUnwrap(stages.firstIndex(of: "prepared_fulltext_read_started"))
+                let fulltextReadCompleted = try XCTUnwrap(stages.firstIndex(of: "prepared_fulltext_read_completed"))
+                let payloadDisplayStarted = try XCTUnwrap(stages.firstIndex(of: "prepared_payload_display_started"))
+                let payloadDisplayCompleted = try XCTUnwrap(stages.firstIndex(of: "prepared_payload_display_completed"))
+                XCTAssertLessThan(started, fulltextReadStarted)
+                XCTAssertLessThan(fulltextReadStarted, fulltextReadCompleted)
+                XCTAssertLessThan(fulltextReadCompleted, payloadDisplayStarted)
+                XCTAssertLessThan(payloadDisplayStarted, payloadDisplayCompleted)
+            }
+            if !isIOS {
+                let viewDidLoadCompleted = try XCTUnwrap(stages.firstIndex(of: "reader_view_did_load_completed"))
+                let viewDidAppearStarted = try XCTUnwrap(stages.firstIndex(of: "reader_view_did_appear_started"))
+                let viewDidAppearCompleted = try XCTUnwrap(stages.firstIndex(of: "reader_view_did_appear_completed"))
+                let viewDidLayoutStarted = try XCTUnwrap(stages.firstIndex(of: "reader_view_did_layout_started"))
+                let viewDidLayoutCompleted = try XCTUnwrap(stages.firstIndex(of: "reader_view_did_layout_completed"))
+                XCTAssertLessThan(scheduled, viewDidLoadCompleted)
+                XCTAssertLessThan(viewDidLoadCompleted, viewDidAppearStarted)
+                XCTAssertLessThan(viewDidAppearStarted, viewDidAppearCompleted)
+                XCTAssertLessThan(viewDidLayoutStarted, viewDidLayoutCompleted)
+                XCTAssertLessThan(viewDidAppearCompleted, started)
+                XCTAssertLessThan(viewDidLayoutCompleted, started)
+            }
             let controlsUsable = try XCTUnwrap(point.stageTimings.first { $0.name == "controls_usable" })
             XCTAssertEqual(point.elapsedNanoseconds, controlsUsable.elapsedNanoseconds,
                            "The relaunch latency must stop at the controls-ready stage, not after XCTest resumes")
@@ -175,10 +202,12 @@ final class BookOpenLatencyObservationIntegrationTests: XCTestCase {
                                      "Disk-prepared reader must restore content and controls within 200 ms")
         }
         report.status = "completed"
+        let relaunchAttachment = try report.attachment("native-reader-process-relaunch.json")
+        add(relaunchAttachment)
         await renderer.flush()
         print("[Reader relaunch] verified pid=\(ProcessInfo.processInfo.processIdentifier) preparePID=\(fixture.preparePID)")
+        retainForVerification = false
     }
-    #endif
 
     func testOptInExistingEPUBColdWarmOpenLatencyAndMemory() async throws {
         let input = try NativePlaybackBenchmarkInput.optIn()
@@ -245,18 +274,51 @@ final class BookOpenLatencyObservationIntegrationTests: XCTestCase {
         book: BookEntity, library: LibraryStore, defaults: UserDefaults,
         event: String, cacheClass: LatencyObservation.CacheClass,
         preparedRenderer: PreparedChapterRenderer? = nil,
-        preparedChapterStore: PreparedReaderChapterStore = .shared
+        preparedChapterStore: PreparedReaderChapterStore = .shared,
+        useProjectionFirstCatalogGate: Bool = false
     ) async throws -> NativePlaybackBenchmarkReport.Point {
         let known = Set(LatencyObservationStore.shared.snapshot().map(\.id))
         let player = AudioPlayer(resumeStore: ResumeStore(storage: UserDefaultsResumeStorage(defaults: defaults)))
         let started = DispatchTime.now().uptimeNanoseconds
+        let stages = ReaderOpenStageRecorder(started: started)
+        stages.record("benchmark_started", at: started)
         #if os(iOS)
+        let initialApplicationState: String
+        switch UIApplication.shared.applicationState {
+        case .active: initialApplicationState = "active"
+        case .inactive: initialApplicationState = "inactive"
+        case .background: initialApplicationState = "background"
+        @unknown default: initialApplicationState = "unknown"
+        }
+        stages.record("application_state_\(initialApplicationState)", at: started)
+        let activationObserver = NotificationCenter.default.addObserver(
+            forName: UIApplication.didBecomeActiveNotification,
+            object: nil,
+            queue: nil
+        ) { _ in stages.record("application_did_become_active") }
+        defer { NotificationCenter.default.removeObserver(activationObserver) }
         let controller = BookOpenScreenController(book: book, library: library,
             settings: AppSettings(defaults: defaults), bookmarkStore: BookmarkStore(defaults: defaults, storageKey: "benchmark"),
-            player: player, preparedRenderer: preparedRenderer)
-        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 844))
+            player: player, preparedRenderer: preparedRenderer, preparedChapterStore: preparedChapterStore,
+            preparedFulltextReader: { id in
+                if useProjectionFirstCatalogGate {
+                    try? await Task.sleep(nanoseconds: 500_000_000)
+                }
+                return await Task.detached(priority: .userInitiated) { LocalFulltextCache.read(bookId: id) }.value
+            }, openStageObserver: { name, timestamp in stages.record(name, at: timestamp) })
+        let activeScene = UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .first { $0.activationState == .foregroundActive }
+        let sceneBounds = activeScene?.coordinateSpace.bounds ?? UIScreen.main.bounds
+        let window = activeScene.map(UIWindow.init(windowScene:))
+            ?? UIWindow(frame: sceneBounds)
         window.rootViewController = controller
         window.makeKeyAndVisible()
+        stages.record(window.isKeyWindow ? "reader_window_key" : "reader_window_not_key")
+        stages.record("reader_window_\(Int(window.bounds.width))x\(Int(window.bounds.height))")
+        XCTAssertTrue(window.isKeyWindow, "A measured reader must be in the active app window scene.")
+        XCTAssertEqual(window.bounds.size, sceneBounds.size,
+                       "The reader window must preserve the active device scene geometry.")
         defer { window.isHidden = true; window.rootViewController = nil; player.stop() }
         controller.view.setNeedsLayout()
         controller.view.layoutIfNeeded()
@@ -268,15 +330,14 @@ final class BookOpenLatencyObservationIntegrationTests: XCTestCase {
                     && $0.records.contains { $0.transition == .controlsUsable } }) else {
                     throw NativePlaybackBenchmarkInput.invalid("Observed cache class does not match the requested cold/warm case")
                 }
-                return .capture(book: book.title, event: event, started: started, journeys: journeys)
+                return .capture(book: book.title, event: event, started: started, journeys: journeys,
+                                stageTimings: stages.snapshot())
             }
             try await Task.sleep(nanoseconds: 10_000_000)
         }
         throw NativePlaybackBenchmarkInput.invalid("Native reader readiness timed out; no latency success measured")
         #else
-        let stages = ReaderOpenStageRecorder(started: started)
         let controlsReady = expectation(description: "Native reader controls are usable")
-        stages.record("benchmark_started", at: started)
         UserDefaults.standard.set(book.id, forKey: ReaderSessionState.currentlyReadingBookIDKey)
         let controller = MacReaderViewController(library: library,
             settings: AppSettings(defaults: defaults), player: player,

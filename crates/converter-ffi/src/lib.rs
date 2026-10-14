@@ -32,6 +32,110 @@ use std::{
 #[repr(C)]
 pub struct ConverterSession {
     session: EmbeddedConversionSession,
+    platform_tts: Option<Arc<dyn converter_core::platform_tts::PlatformTts>>,
+}
+
+/// The cancellation context is borrowed only for one synchronous speech call.
+pub type ConverterPlatformCancelled = unsafe extern "C" fn(*const c_void) -> bool;
+pub type ConverterPlatformTtsCallback = Option<
+    unsafe extern "C" fn(
+        *const c_char,
+        *const c_char,
+        *const c_char,
+        ConverterPlatformCancelled,
+        *const c_void,
+        *mut c_char,
+        u32,
+        *mut c_void,
+    ) -> bool,
+>;
+
+struct PlatformCancellation<'a> {
+    cancelled: &'a (dyn Fn() -> bool + Sync),
+}
+
+unsafe extern "C" fn platform_cancelled(context: *const c_void) -> bool {
+    if context.is_null() {
+        return true;
+    }
+    let cancellation = &*context.cast::<PlatformCancellation<'_>>();
+    (cancellation.cancelled)()
+}
+
+struct CPlatformTts {
+    callback: unsafe extern "C" fn(
+        *const c_char,
+        *const c_char,
+        *const c_char,
+        ConverterPlatformCancelled,
+        *const c_void,
+        *mut c_char,
+        u32,
+        *mut c_void,
+    ) -> bool,
+    context: usize,
+}
+
+impl converter_core::platform_tts::PlatformTts for CPlatformTts {
+    fn synthesize_wav(
+        &self,
+        text: &str,
+        language: &str,
+        output: &Path,
+        cancelled: &(dyn Fn() -> bool + Sync),
+    ) -> Result<(), String> {
+        let text = CString::new(text).map_err(|_| "Speech text contains NUL")?;
+        let language = CString::new(language).map_err(|_| "Speech language contains NUL")?;
+        let output = CString::new(output.to_string_lossy().as_bytes())
+            .map_err(|_| "Speech output path contains NUL")?;
+        let cancellation = PlatformCancellation { cancelled };
+        let mut error = [0 as c_char; 1024];
+        let success = unsafe {
+            (self.callback)(
+                text.as_ptr(),
+                language.as_ptr(),
+                output.as_ptr(),
+                platform_cancelled,
+                (&cancellation as *const PlatformCancellation<'_>).cast(),
+                error.as_mut_ptr(),
+                error.len() as u32,
+                self.context as *mut c_void,
+            )
+        };
+        if success {
+            return Ok(());
+        }
+        error[1023] = 0;
+        let message = unsafe { CStr::from_ptr(error.as_ptr()) }.to_string_lossy();
+        Err(if message.is_empty() {
+            "The installed offline system voice could not synthesize speech".to_owned()
+        } else {
+            message.into_owned()
+        })
+    }
+}
+
+/// Installs a session-scoped system speech adapter. Configure only while no
+/// conversion is active. `context` must stay alive through all conversions and
+/// the caller must not retain cancellation pointers after its callback returns.
+/// Passing no callback removes the adapter and restores the original policy.
+#[no_mangle]
+pub unsafe extern "C" fn converter_session_set_platform_tts_v1(
+    handle: *mut ConverterSession,
+    callback: ConverterPlatformTtsCallback,
+    context: *mut c_void,
+) -> bool {
+    clear_last_error();
+    let Some(session) = handle.as_mut() else {
+        return fail("invalid null session handle".to_owned());
+    };
+    session.platform_tts = callback.map(|callback| {
+        Arc::new(CPlatformTts {
+            callback,
+            context: context as usize,
+        }) as Arc<dyn converter_core::platform_tts::PlatformTts>
+    });
+    true
 }
 
 /// A thread-safe conversion control owned independently of the book session.
@@ -40,6 +144,63 @@ pub struct ConverterSession {
 #[repr(C)]
 pub struct ConverterJobControl {
     control: ConversionControl,
+}
+
+#[derive(Deserialize, Default)]
+#[serde(default)]
+struct EmbeddedConversionOptionsV1 {
+    engine: Option<String>,
+    voice: Option<String>,
+    language: Option<String>,
+    models_root: Option<String>,
+    model_id: Option<String>,
+    model_path: Option<String>,
+    model_config_path: Option<String>,
+    espeak_data_directory: Option<String>,
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn converter_conversion_options_validate_json_v1(
+    options_json: *const c_char,
+) -> bool {
+    clear_last_error();
+    let json = match c_string(options_json, "conversion options") {
+        Ok(json) => json,
+        Err(error) => return fail(error),
+    };
+    let options = match serde_json::from_str::<EmbeddedConversionOptionsV1>(&json) {
+        Ok(options) => options,
+        Err(error) => return fail(format!("invalid conversion options: {error}")),
+    };
+    let engine = options
+        .engine
+        .as_deref()
+        .unwrap_or("edge")
+        .to_ascii_lowercase();
+    if !matches!(engine.as_str(), "edge" | "piper" | "system") {
+        return fail(format!("unsupported conversion engine: {engine}"));
+    }
+    if options
+        .language
+        .as_deref()
+        .is_some_and(|value| value.chars().any(char::is_control))
+    {
+        return fail("language contains control characters".to_owned());
+    }
+    if engine == "piper" {
+        if options.models_root.is_none() || options.model_id.is_none() {
+            return fail("Piper requires an explicitly installed local model.".to_owned());
+        }
+        if let Err(error) = resolve_piper_model_paths(&options) {
+            return fail(error);
+        }
+    } else if options.model_id.is_some()
+        || options.model_path.is_some()
+        || options.model_config_path.is_some()
+    {
+        return fail("Piper model configuration cannot be used with Edge.".to_owned());
+    }
+    true
 }
 
 #[no_mangle]
@@ -250,7 +411,10 @@ pub unsafe extern "C" fn converter_session_open(path: *const c_char) -> *mut Con
         std::env::temp_dir().join("converter-ffi"),
     ));
     match EmbeddedConversionSession::open(Path::new(&path), Default::default(), config) {
-        Ok(session) => Box::into_raw(Box::new(ConverterSession { session })),
+        Ok(session) => Box::into_raw(Box::new(ConverterSession {
+            session,
+            platform_tts: None,
+        })),
         Err(error) => fail(error.to_string()),
     }
 }
@@ -306,18 +470,20 @@ pub unsafe extern "C" fn converter_session_convert_json(
     }
     let job = format!("embedded-{}", std::process::id());
     let generated_output_dir = output.join(&job);
-    #[cfg(feature = "piper-runtime")]
-    piper_runtime_register_embedded();
     let request = converter_core::worker::ConversionRequest {
         input: session.session.input_path().to_path_buf(),
         job_id: job,
         engine: Some("edge".to_owned()),
         voice: None,
         language: None,
+        piper_model: None,
+        piper_config: None,
         chapter_indices: positional_chapter_selection(session, chapter_start, chapter_end),
         no_parallel: chapter_start >= 0,
     };
     let progress_log = generated_output_dir.join("conversion.log");
+    let system_voice_used = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let used_system = Arc::clone(&system_voice_used);
     let conversion_started = std::time::Instant::now();
     let previous_event = std::sync::Mutex::new(conversion_started);
     let worker = match converter_core::worker::ConversionWorker::new(config) {
@@ -325,6 +491,9 @@ pub unsafe extern "C" fn converter_session_convert_json(
         Err(error) => return fail(error.to_string()),
     }
     .with_progress(Arc::new(move |event| {
+        if event.engine.as_deref() == Some("system") {
+            used_system.store(true, std::sync::atomic::Ordering::Release);
+        }
         let line = progress_log_line(&event, conversion_started, &previous_event);
         use std::io::Write;
         if let Ok(mut file) = std::fs::OpenOptions::new()
@@ -335,6 +504,11 @@ pub unsafe extern "C" fn converter_session_convert_json(
             let _ = file.write_all(line.as_bytes());
         }
     }));
+    let worker = if let Some(provider) = session.platform_tts.clone() {
+        worker.with_platform_tts(provider)
+    } else {
+        worker
+    };
     let conversion_thread = match std::thread::Builder::new()
         .name("converter-ffi-conversion".into())
         .stack_size(8 * 1024 * 1024)
@@ -367,6 +541,7 @@ pub unsafe extern "C" fn converter_session_convert_json(
             let response = serde_json::json!({
                 "audioPath": audio_path.map(|path| path.to_string_lossy().into_owned()),
                 "manifest": manifest,
+                "systemVoiceUsed": system_voice_used.load(std::sync::atomic::Ordering::Acquire),
             });
             match serde_json::to_string(&response)
                 .ok()
@@ -404,6 +579,7 @@ pub unsafe extern "C" fn converter_session_convert_job_json(
         context,
         None,
         None,
+        EmbeddedConversionOptionsV1::default(),
     )
 }
 
@@ -437,6 +613,7 @@ pub unsafe extern "C" fn converter_session_convert_controlled_job_json(
         context,
         Some(owned_control),
         None,
+        EmbeddedConversionOptionsV1::default(),
     )
 }
 
@@ -469,6 +646,86 @@ pub unsafe extern "C" fn converter_session_convert_streaming_job_json(
         context,
         Some(control.control.clone()),
         chunk_callback,
+        EmbeddedConversionOptionsV1::default(),
+    )
+}
+
+/// Streaming conversion with explicit per-job engine selection. The absent
+/// or invalid engine keeps the established Edge default.
+#[no_mangle]
+pub unsafe extern "C" fn converter_session_convert_streaming_job_options_json_v1(
+    handle: *const ConverterSession,
+    output_dir: *const c_char,
+    job_id: *const c_char,
+    options_json: *const c_char,
+    chapter_start: i32,
+    chapter_end: i32,
+    progress_callback: ConverterProgressCallback,
+    chapter_callback: ConverterChapterCompletedCallback,
+    chunk_callback: ConverterAudioChunkCallback,
+    context: *mut c_void,
+    control: *const ConverterJobControl,
+) -> *mut c_char {
+    clear_last_error();
+    let Some(control) = control.as_ref() else {
+        return fail("invalid null job control".to_owned());
+    };
+    let options_json = match c_string(options_json, "conversion options") {
+        Ok(value) => value,
+        Err(error) => return fail(error),
+    };
+    let options: EmbeddedConversionOptionsV1 = match serde_json::from_str(&options_json) {
+        Ok(value) => value,
+        Err(error) => return fail(format!("invalid conversion options JSON: {error}")),
+    };
+    convert_job_json(
+        handle,
+        output_dir,
+        job_id,
+        chapter_start,
+        chapter_end,
+        progress_callback,
+        chapter_callback,
+        context,
+        Some(control.control.clone()),
+        chunk_callback,
+        options,
+    )
+}
+
+/// Whole-book conversion with an explicit per-job engine choice.
+#[no_mangle]
+pub unsafe extern "C" fn converter_session_convert_job_options_json_v1(
+    handle: *const ConverterSession,
+    output_dir: *const c_char,
+    job_id: *const c_char,
+    options_json: *const c_char,
+    chapter_start: i32,
+    chapter_end: i32,
+    progress_callback: ConverterProgressCallback,
+    chapter_callback: ConverterChapterCompletedCallback,
+    context: *mut c_void,
+) -> *mut c_char {
+    let options_json = match c_string(options_json, "conversion options") {
+        Ok(value) => value,
+        Err(error) => return fail(error),
+    };
+    let options: EmbeddedConversionOptionsV1 = match serde_json::from_str(&options_json) {
+        Ok(value) => value,
+        Err(error) => return fail(format!("invalid conversion options JSON: {error}")),
+    };
+    convert_job_json(
+        handle,
+        output_dir,
+        job_id,
+        chapter_start,
+        chapter_end,
+        progress_callback,
+        chapter_callback,
+        context,
+        None,
+        None,
+        options,
     )
 }
 
@@ -483,6 +740,7 @@ unsafe fn convert_job_json(
     context: *mut c_void,
     control: Option<ConversionControl>,
     chunk_callback: ConverterAudioChunkCallback,
+    options: EmbeddedConversionOptionsV1,
 ) -> *mut c_char {
     clear_last_error();
     let _ = rustls::crypto::ring::default_provider().install_default();
@@ -514,18 +772,40 @@ unsafe fn convert_job_json(
         output_parent.to_path_buf(),
     ));
     config.max_parallel = config.max_parallel.min(embedded_chapter_parallelism_cap());
-    #[cfg(feature = "piper-runtime")]
-    piper_runtime_register_embedded();
+    let engine = embedded_engine_from_value(options.engine.as_deref());
+    let (piper_model, piper_config) = if engine == "piper" {
+        let (model, config) = match resolve_piper_model_paths(&options) {
+            Ok(paths) => paths,
+            Err(error) => return fail(error),
+        };
+        #[cfg(feature = "piper-runtime")]
+        if let Some(directory) = options.espeak_data_directory.as_deref() {
+            if let Err(error) = piper_runtime::set_espeak_data_directory(Path::new(directory)) {
+                return fail(error);
+            }
+        }
+        #[cfg(feature = "piper-runtime")]
+        piper_runtime_register_embedded();
+        #[cfg(not(feature = "piper-runtime"))]
+        piper_runtime_register_unavailable();
+        (Some(model), Some(config))
+    } else {
+        (None, None)
+    };
     let request = converter_core::worker::ConversionRequest {
         input: session.session.input_path().to_path_buf(),
         job_id: job_id.clone(),
-        engine: Some("edge".to_owned()),
-        voice: None,
-        language: None,
+        engine: Some(engine),
+        voice: options.voice,
+        language: options.language,
+        piper_model,
+        piper_config,
         chapter_indices: positional_chapter_selection(session, chapter_start, chapter_end),
         no_parallel: chapter_start >= 0 || control.is_some(),
     };
     let progress_log = output_dir.join("conversion.log");
+    let system_voice_used = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let used_system = Arc::clone(&system_voice_used);
     let context_address = context as usize;
     let progress_callback = progress_callback;
     let conversion_started = std::time::Instant::now();
@@ -535,6 +815,9 @@ unsafe fn convert_job_json(
         Err(error) => return fail(error.to_string()),
     }
     .with_progress(Arc::new(move |event| {
+        if event.engine.as_deref() == Some("system") {
+            used_system.store(true, std::sync::atomic::Ordering::Release);
+        }
         use std::io::Write;
         let line = progress_log_line(&event, conversion_started, &previous_event);
         if let Ok(mut file) = std::fs::OpenOptions::new()
@@ -561,6 +844,11 @@ unsafe fn convert_job_json(
         unsafe { callback(json.as_ptr(), context_address as *mut c_void) };
     }));
     let chunk_context_address = context as usize;
+    let worker = if let Some(provider) = session.platform_tts.clone() {
+        worker.with_platform_tts(provider)
+    } else {
+        worker
+    };
     let worker = if let Some(chunk_callback) = chunk_callback {
         worker.with_streaming_chunks(Arc::new(move |chapter_index, chunk_index, audio| unsafe {
             chunk_callback(
@@ -611,6 +899,7 @@ unsafe fn convert_job_json(
             let response = serde_json::json!({
                 "audioPath": audio_path.map(|path| path.to_string_lossy().into_owned()),
                 "manifest": manifest,
+                "systemVoiceUsed": system_voice_used.load(std::sync::atomic::Ordering::Acquire),
             });
             match serde_json::to_string(&response)
                 .ok()
@@ -621,6 +910,45 @@ unsafe fn convert_job_json(
             }
         }
     }
+}
+
+fn embedded_engine_from_value(value: Option<&str>) -> String {
+    match value
+        .unwrap_or_default()
+        .trim()
+        .to_ascii_lowercase()
+        .as_str()
+    {
+        "piper" => "piper".to_owned(),
+        "system" => "system".to_owned(),
+        _ => "edge".to_owned(),
+    }
+}
+
+fn resolve_piper_model_paths(
+    options: &EmbeddedConversionOptionsV1,
+) -> Result<(std::path::PathBuf, std::path::PathBuf), String> {
+    let (Some(root), Some(model_id)) =
+        (options.models_root.as_deref(), options.model_id.as_deref())
+    else {
+        return Err("Piper requires an explicitly installed local model.".to_owned());
+    };
+    let model = Path::new(root)
+        .join(model_id)
+        .join(options.model_path.as_deref().unwrap_or("model.onnx"));
+    let config = model.with_file_name(
+        options
+            .model_config_path
+            .as_deref()
+            .unwrap_or("model.onnx.json"),
+    );
+    if !model.is_file() || !config.is_file() {
+        return Err(format!(
+            "Piper model or voice config is not installed: {}",
+            model.display()
+        ));
+    }
+    Ok((model, config))
 }
 
 /// Returns the most recent error for the current thread, transferring ownership to the caller.
@@ -1173,68 +1501,74 @@ pub extern "C" fn piper_runtime_register_unavailable() {
 #[cfg(feature = "piper-runtime")]
 #[no_mangle]
 pub extern "C" fn piper_runtime_register_embedded() {
-    piper::register_runtime(std::sync::Arc::new(
-        converter_core::piper::RegisteredPiperRuntime::new(|text, output| {
-            let model = std::env::var_os("PIPER_MODEL")
-                .map(std::path::PathBuf::from)
-                .or_else(|| {
-                    let root = std::path::Path::new(
-                        "/data/user/0/com.pietrocode.epubtomp3.flutter_app/app_flutter/tts-models",
-                    );
-                    std::fs::read_dir(root).ok()?.flatten().find_map(|entry| {
-                        let directory = entry.path();
-                        ["model.onnx", "model.bin"]
-                            .iter()
-                            .map(|name| directory.join(name))
-                            .find(|candidate| candidate.is_file())
-                    })
-                })
-                .unwrap_or_else(|| std::path::PathBuf::from("/data/user/0/com.pietrocode.epubtomp3.flutter_app/app_flutter/tts-models/model.onnx"));
-            let config = if model.file_name().and_then(|name| name.to_str()) == Some("model.onnx") {
-                model.with_file_name("model.onnx.json")
-            } else {
-                model.with_file_name("model.json")
-            };
-            if !model.is_file() {
-                return Err(converter_core::piper::PiperError::MissingModel(model));
-            }
-            if !config.is_file() {
-                return Err(converter_core::piper::PiperError::MissingConfig(config));
-            }
-            let model = std::ffi::CString::new(model.to_string_lossy().as_bytes())
-                .map_err(|error| converter_core::piper::PiperError::Synthesis(error.to_string()))?;
-            let config = std::ffi::CString::new(config.to_string_lossy().as_bytes())
-                .map_err(|error| converter_core::piper::PiperError::Synthesis(error.to_string()))?;
-            let text = std::ffi::CString::new(text)
-                .map_err(|error| converter_core::piper::PiperError::Synthesis(error.to_string()))?;
-            let output = std::ffi::CString::new(output.to_string_lossy().as_bytes())
-                .map_err(|error| converter_core::piper::PiperError::Synthesis(error.to_string()))?;
-            let mut error = vec![0_u8; 2048];
-            if piper_runtime::piper_runtime_init(
+    piper::register_runtime(Arc::new(EmbeddedPiperRuntime));
+}
+
+#[cfg(feature = "piper-runtime")]
+struct EmbeddedPiperRuntime;
+
+#[cfg(feature = "piper-runtime")]
+impl converter_core::piper::PiperRuntime for EmbeddedPiperRuntime {
+    fn status(&self) -> converter_core::piper::PiperRuntimeStatus {
+        converter_core::piper::PiperRuntimeStatus {
+            runtime_loaded: true,
+            model_available: true,
+            abi_compatible: true,
+            engine_ready: true,
+        }
+    }
+
+    fn init(&self, model: &Path, config: &Path) -> Result<(), converter_core::piper::PiperError> {
+        let model = CString::new(model.to_string_lossy().as_bytes())
+            .map_err(|error| converter_core::piper::PiperError::Synthesis(error.to_string()))?;
+        let config = CString::new(config.to_string_lossy().as_bytes())
+            .map_err(|error| converter_core::piper::PiperError::Synthesis(error.to_string()))?;
+        let mut error = vec![0 as std::ffi::c_char; 2048];
+        if unsafe {
+            piper_runtime::piper_runtime_init(
                 model.as_ptr(),
                 config.as_ptr(),
                 error.as_mut_ptr(),
                 error.len() as u32,
-            ) == 0
-            {
-                return Err(converter_core::piper::PiperError::Synthesis(c_error(
-                    &error,
-                )));
-            }
-            if piper_runtime::piper_synthesize(
+            )
+        } == 0
+        {
+            return Err(converter_core::piper::PiperError::Synthesis(c_error(
+                unsafe { std::slice::from_raw_parts(error.as_ptr().cast::<u8>(), error.len()) },
+            )));
+        }
+        Ok(())
+    }
+
+    fn synthesize(
+        &self,
+        text: &str,
+        output: &Path,
+    ) -> Result<(), converter_core::piper::PiperError> {
+        let text = CString::new(text)
+            .map_err(|error| converter_core::piper::PiperError::Synthesis(error.to_string()))?;
+        let output = CString::new(output.to_string_lossy().as_bytes())
+            .map_err(|error| converter_core::piper::PiperError::Synthesis(error.to_string()))?;
+        let mut error = vec![0 as std::ffi::c_char; 2048];
+        if unsafe {
+            piper_runtime::piper_synthesize(
                 text.as_ptr(),
                 output.as_ptr(),
                 error.as_mut_ptr(),
                 error.len() as u32,
-            ) == 0
-            {
-                return Err(converter_core::piper::PiperError::Synthesis(c_error(
-                    &error,
-                )));
-            }
-            Ok(())
-        }),
-    ));
+            )
+        } == 0
+        {
+            return Err(converter_core::piper::PiperError::Synthesis(c_error(
+                unsafe { std::slice::from_raw_parts(error.as_ptr().cast::<u8>(), error.len()) },
+            )));
+        }
+        Ok(())
+    }
+
+    fn shutdown(&self) {
+        piper_runtime::piper_runtime_shutdown();
+    }
 }
 
 #[cfg(feature = "piper-runtime")]
@@ -1299,14 +1633,136 @@ fn metadata_json(
     .to_string()
 }
 
-#[cfg(all(target_os = "android", feature = "android-jni"))]
+#[cfg(any(
+    all(target_os = "android", feature = "android-jni"),
+    all(test, feature = "android-jni")
+))]
 mod android_jni {
     use super::*;
     use jni::{
-        objects::{JClass, JString},
-        sys::{jboolean, jint, jstring},
-        JNIEnv,
+        objects::{GlobalRef, JClass, JObject, JString, JValue},
+        sys::{jboolean, jint, jlong, jstring},
+        JNIEnv, JavaVM,
     };
+
+    struct AndroidPlatformSpeech {
+        vm: JavaVM,
+        activity: GlobalRef,
+        input_path: String,
+    }
+
+    fn android_controls() -> &'static std::sync::Mutex<HashMap<String, ConversionControl>> {
+        static CONTROLS: std::sync::OnceLock<std::sync::Mutex<HashMap<String, ConversionControl>>> =
+            std::sync::OnceLock::new();
+        CONTROLS.get_or_init(|| std::sync::Mutex::new(HashMap::new()))
+    }
+
+    #[no_mangle]
+    pub extern "system" fn Java_com_pietrocode_epubtomp3_flutter_1app_MainActivity_nativePrepareConversion(
+        mut env: JNIEnv<'_>,
+        _activity: JObject<'_>,
+        request: JString<'_>,
+    ) {
+        if let Ok(request) = read_string(&mut env, request) {
+            android_controls()
+                .lock()
+                .unwrap_or_else(|error| error.into_inner())
+                .entry(request)
+                .or_default();
+        }
+    }
+
+    #[no_mangle]
+    pub extern "system" fn Java_com_pietrocode_epubtomp3_flutter_1app_MainActivity_nativeCancelConversion(
+        mut env: JNIEnv<'_>,
+        _activity: JObject<'_>,
+        request: JString<'_>,
+    ) {
+        if let Ok(request) = read_string(&mut env, request) {
+            if let Some(control) = android_controls()
+                .lock()
+                .unwrap_or_else(|error| error.into_inner())
+                .get(&request)
+                .cloned()
+            {
+                control.cancel();
+            }
+        }
+    }
+
+    struct BorrowedCancellation<'a>(&'a (dyn Fn() -> bool + Sync));
+
+    impl converter_core::platform_tts::PlatformTts for AndroidPlatformSpeech {
+        fn synthesize_wav(
+            &self,
+            text: &str,
+            language: &str,
+            output: &Path,
+            cancelled: &(dyn Fn() -> bool + Sync),
+        ) -> Result<(), String> {
+            let mut env = self
+                .vm
+                .attach_current_thread()
+                .map_err(|error| error.to_string())?;
+            let text = JObject::from(env.new_string(text).map_err(|error| error.to_string())?);
+            let language = JObject::from(
+                env.new_string(language)
+                    .map_err(|error| error.to_string())?,
+            );
+            let output = JObject::from(
+                env.new_string(output.to_string_lossy())
+                    .map_err(|error| error.to_string())?,
+            );
+            let input = JObject::from(
+                env.new_string(&self.input_path)
+                    .map_err(|error| error.to_string())?,
+            );
+            let cancellation = BorrowedCancellation(cancelled);
+            let result = env.call_method(
+                self.activity.as_obj(),
+                "synthesizeNativeSpeech",
+                "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;J)Z",
+                &[
+                    JValue::Object(&text),
+                    JValue::Object(&language),
+                    JValue::Object(&output),
+                    JValue::Object(&input),
+                    JValue::Long(&cancellation as *const BorrowedCancellation<'_> as jlong),
+                ],
+            );
+            if env.exception_check().unwrap_or(false) {
+                let exception = env
+                    .exception_occurred()
+                    .map_err(|error| error.to_string())?;
+                env.exception_clear().map_err(|error| error.to_string())?;
+                let message = env
+                    .call_method(exception, "toString", "()Ljava/lang/String;", &[])
+                    .and_then(|value| value.l())
+                    .ok()
+                    .and_then(|value| read_string(&mut env, JString::from(value)).ok())
+                    .unwrap_or_else(|| "Android offline speech failed".to_owned());
+                return Err(message);
+            }
+            match result.map_err(|error| error.to_string())?.z() {
+                Ok(true) => Ok(()),
+                Ok(false) => Err("Android offline speech produced no audio".into()),
+                Err(error) => Err(error.to_string()),
+            }
+        }
+    }
+
+    #[no_mangle]
+    pub unsafe extern "system" fn Java_com_pietrocode_epubtomp3_flutter_1app_MainActivity_nativePlatformSpeechCancelled(
+        _env: JNIEnv<'_>,
+        _activity: JObject<'_>,
+        context: jlong,
+    ) -> jboolean {
+        if context == 0 {
+            return 1;
+        }
+        let cancellation = &*(context as *const BorrowedCancellation<'_>);
+        (cancellation.0)() as jboolean
+    }
 
     fn read_string(env: &mut JNIEnv<'_>, value: JString<'_>) -> Result<String, String> {
         env.get_string(&value)
@@ -1453,14 +1909,201 @@ mod android_jni {
         result
     }
 
+    fn persist_android_chunk(
+        root: &Path,
+        chapter: usize,
+        index: usize,
+        audio: &[u8],
+        cancelled: &dyn Fn() -> bool,
+    ) -> Result<std::path::PathBuf, String> {
+        use std::io::Write;
+        if cancelled() {
+            return Err("Android audio chunk cancelled".into());
+        }
+        let directory = root.join(chapter.to_string());
+        std::fs::create_dir_all(&directory).map_err(|error| error.to_string())?;
+        let path = directory.join(format!("{index:06}.mp3"));
+        if path.exists() {
+            return Err("Android audio chunk path already exists".into());
+        }
+        let pending = path.with_extension("mp3.pending");
+        let mut file = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&pending)
+            .map_err(|error| error.to_string())?;
+        struct RemovePending(std::path::PathBuf);
+        impl Drop for RemovePending {
+            fn drop(&mut self) {
+                let _ = std::fs::remove_file(&self.0);
+            }
+        }
+        let _cleanup = RemovePending(pending.clone());
+        file.write_all(audio).map_err(|error| error.to_string())?;
+        file.sync_all().map_err(|error| error.to_string())?;
+        drop(file);
+        converter_core::audio::validate_audio(&pending, 100).map_err(|error| error.to_string())?;
+        if cancelled() {
+            return Err("Android audio chunk cancelled".into());
+        }
+        std::fs::rename(&pending, &path).map_err(|error| error.to_string())?;
+        Ok(path)
+    }
+
+    #[cfg(test)]
+    mod chunk_tests {
+        use super::*;
+        const AUDIO: &[u8] = include_bytes!("../../../tests/fixtures/audio/mono-24000-48k.mp3");
+        #[test]
+        fn platform_chunk_publishes_valid_immutable_audio_without_pending_files() {
+            let temp = tempfile::tempdir().unwrap();
+            let path = persist_android_chunk(temp.path(), 8, 0, AUDIO, &|| false).unwrap();
+            assert_eq!(path, temp.path().join("8/000000.mp3"));
+            assert_eq!(std::fs::read(&path).unwrap(), AUDIO);
+            assert!(!path.with_extension("mp3.pending").exists());
+            assert!(persist_android_chunk(temp.path(), 8, 0, AUDIO, &|| false).is_err());
+            assert_eq!(std::fs::read(&path).unwrap(), AUDIO);
+        }
+        #[test]
+        fn platform_chunk_rejects_invalid_or_cancelled_audio_before_publication() {
+            let temp = tempfile::tempdir().unwrap();
+            assert!(persist_android_chunk(temp.path(), 0, 0, b"Invalid audio", &|| false).is_err());
+            assert!(!temp.path().join("0/000000.mp3").exists());
+            assert!(!temp.path().join("0/000000.mp3.pending").exists());
+            let calls = std::sync::atomic::AtomicUsize::new(0);
+            assert!(persist_android_chunk(temp.path(), 0, 0, AUDIO, &|| calls
+                .fetch_add(1, std::sync::atomic::Ordering::AcqRel)
+                > 0)
+            .is_err());
+            assert!(!temp.path().join("0/000000.mp3").exists());
+            assert!(!temp.path().join("0/000000.mp3.pending").exists());
+        }
+    }
+
+    struct AndroidAudioChunks {
+        vm: JavaVM,
+        activity: GlobalRef,
+        request_id: String,
+        root: std::path::PathBuf,
+        control: ConversionControl,
+        delivered: std::sync::atomic::AtomicUsize,
+    }
+
+    impl AndroidAudioChunks {
+        fn dispatch(&self, chapter: usize, index: usize, audio: &[u8]) -> bool {
+            if self.control.cancellation_token().is_cancelled() || audio.is_empty() {
+                return false;
+            }
+            let result = (|| -> Result<bool, String> {
+                let path = persist_android_chunk(&self.root, chapter, index, audio, &|| {
+                    self.control.cancellation_token().is_cancelled()
+                })?;
+                let mut env = self
+                    .vm
+                    .attach_current_thread()
+                    .map_err(|error| error.to_string())?;
+                let request = JObject::from(
+                    env.new_string(&self.request_id)
+                        .map_err(|error| error.to_string())?,
+                );
+                let output = JObject::from(
+                    env.new_string(path.to_string_lossy())
+                        .map_err(|error| error.to_string())?,
+                );
+                let accepted = env
+                    .call_method(
+                        self.activity.as_obj(),
+                        "onNativeAudioChunk",
+                        "(Ljava/lang/String;IILjava/lang/String;)Z",
+                        &[
+                            JValue::Object(&request),
+                            JValue::Int(chapter.try_into().map_err(|_| "Chapter index overflow")?),
+                            JValue::Int(index.try_into().map_err(|_| "Chunk index overflow")?),
+                            JValue::Object(&output),
+                        ],
+                    )
+                    .map_err(|error| error.to_string())?
+                    .z()
+                    .map_err(|error| error.to_string())?;
+                if accepted {
+                    self.delivered
+                        .fetch_add(1, std::sync::atomic::Ordering::AcqRel);
+                }
+                Ok(accepted)
+            })();
+            if let Err(error) = &result {
+                eprintln!("Android audio chunk delivery failed: {error}");
+            }
+            result.unwrap_or(false)
+        }
+    }
+
+    unsafe extern "C" fn android_audio_chunk(
+        chapter: usize,
+        index: usize,
+        audio: *const u8,
+        length: usize,
+        context: *mut c_void,
+    ) -> bool {
+        if context.is_null() || audio.is_null() || length == 0 {
+            return false;
+        }
+        // The C ABI joins every conversion worker before this borrowed context is dropped.
+        (&*context.cast::<AndroidAudioChunks>()).dispatch(
+            chapter,
+            index,
+            std::slice::from_raw_parts(audio, length),
+        )
+    }
+
     #[no_mangle]
     pub extern "system" fn Java_com_pietrocode_epubtomp3_flutter_1app_MainActivity_nativeConvert(
-        mut env: JNIEnv<'_>,
-        _class: JClass<'_>,
+        env: JNIEnv<'_>,
+        activity: JObject<'_>,
         path: JString<'_>,
         output: JString<'_>,
         chapter_start: jint,
         chapter_end: jint,
+    ) -> jstring {
+        convert_android(
+            env,
+            activity,
+            path,
+            output,
+            chapter_start,
+            chapter_end,
+            false,
+        )
+    }
+
+    #[no_mangle]
+    pub extern "system" fn Java_com_pietrocode_epubtomp3_flutter_1app_MainActivity_nativeConvertStreaming(
+        env: JNIEnv<'_>,
+        activity: JObject<'_>,
+        path: JString<'_>,
+        output: JString<'_>,
+        chapter_start: jint,
+        chapter_end: jint,
+    ) -> jstring {
+        convert_android(
+            env,
+            activity,
+            path,
+            output,
+            chapter_start,
+            chapter_end,
+            true,
+        )
+    }
+
+    fn convert_android(
+        mut env: JNIEnv<'_>,
+        activity: JObject<'_>,
+        path: JString<'_>,
+        output: JString<'_>,
+        chapter_start: jint,
+        chapter_end: jint,
+        streaming: bool,
     ) -> jstring {
         eprintln!("converter-ffi: nativeConvert entered");
         #[cfg(feature = "piper-runtime")]
@@ -1473,6 +2116,24 @@ mod android_jni {
             Ok(output) => output,
             Err(_) => return std::ptr::null_mut(),
         };
+        let request_id = output.clone();
+        let control = android_controls()
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .entry(request_id.clone())
+            .or_default()
+            .clone();
+        struct RemoveControl(String);
+        impl Drop for RemoveControl {
+            fn drop(&mut self) {
+                android_controls()
+                    .lock()
+                    .unwrap_or_else(|error| error.into_inner())
+                    .remove(&self.0);
+            }
+        }
+        let _remove_control = RemoveControl(request_id.clone());
+        let input_path = path.clone();
         let path = match CString::new(path) {
             Ok(path) => path,
             Err(_) => return std::ptr::null_mut(),
@@ -1483,12 +2144,84 @@ mod android_jni {
             eprintln!("converter-ffi: open failed");
             return std::ptr::null_mut();
         }
-        let output = match CString::new(output) {
-            Ok(output) => output,
-            Err(_) => return std::ptr::null_mut(),
+        let platform = match env.get_java_vm().and_then(|vm| {
+            env.new_global_ref(&activity)
+                .map(|activity| AndroidPlatformSpeech {
+                    vm,
+                    activity,
+                    input_path,
+                })
+        }) {
+            Ok(platform) => platform,
+            Err(error) => {
+                unsafe { converter_session_free(handle) };
+                fail::<()>(format!("Android speech adapter unavailable: {error}"));
+                return std::ptr::null_mut();
+            }
         };
+        unsafe {
+            (*handle).platform_tts = Some(Arc::new(platform));
+        }
+        let job = format!("embedded-{}", std::process::id());
+        let output = match CString::new(Path::new(&output).join(&job).to_string_lossy().as_bytes())
+        {
+            Ok(output) => output,
+            Err(_) => {
+                unsafe { converter_session_free(handle) };
+                return std::ptr::null_mut();
+            }
+        };
+        let job = CString::new(job).unwrap();
+        let chunk_context = if streaming {
+            match env.get_java_vm().and_then(|vm| {
+                env.new_global_ref(&activity)
+                    .map(|activity| AndroidAudioChunks {
+                        vm,
+                        activity,
+                        request_id: request_id.clone(),
+                        root: Path::new(&request_id).join("chunks"),
+                        control: control.clone(),
+                        delivered: std::sync::atomic::AtomicUsize::new(0),
+                    })
+            }) {
+                Ok(context) => Some(context),
+                Err(error) => {
+                    unsafe { converter_session_free(handle) };
+                    fail::<()>(format!("Android audio chunk bridge unavailable: {error}"));
+                    return std::ptr::null_mut();
+                }
+            }
+        } else {
+            None
+        };
+        let control = ConverterJobControl { control };
         let result = unsafe {
-            converter_session_convert_json(handle, output.as_ptr(), chapter_start, chapter_end)
+            if let Some(context) = &chunk_context {
+                converter_session_convert_streaming_job_json(
+                    handle,
+                    output.as_ptr(),
+                    job.as_ptr(),
+                    chapter_start,
+                    chapter_end,
+                    None,
+                    None,
+                    Some(android_audio_chunk),
+                    (context as *const AndroidAudioChunks).cast_mut().cast(),
+                    &control,
+                )
+            } else {
+                converter_session_convert_controlled_job_json(
+                    handle,
+                    output.as_ptr(),
+                    job.as_ptr(),
+                    chapter_start,
+                    chapter_end,
+                    None,
+                    None,
+                    std::ptr::null_mut(),
+                    &control,
+                )
+            }
         };
         eprintln!(
             "converter-ffi: conversion returned result={}",
@@ -1502,6 +2235,27 @@ mod android_jni {
             .to_string_lossy()
             .into_owned();
         unsafe { converter_string_free(result) };
+        if let Some(context) = &chunk_context {
+            if context.delivered.load(std::sync::atomic::Ordering::Acquire) == 0 {
+                let cached = serde_json::from_str::<serde_json::Value>(&manifest)
+                    .ok()
+                    .and_then(|value| {
+                        value
+                            .get("audioPath")
+                            .and_then(|path| path.as_str())
+                            .map(str::to_owned)
+                    });
+                if let Some(path) = cached {
+                    let delivered = std::fs::read(&path).ok().is_some_and(|audio| {
+                        context.dispatch(chapter_start.max(0) as usize, 0, &audio)
+                    });
+                    if !delivered {
+                        fail::<()>("Android cached audio delivery was cancelled".into());
+                        return std::ptr::null_mut();
+                    }
+                }
+            }
+        }
         env.new_string(manifest)
             .map_or(std::ptr::null_mut(), |value| value.into_raw())
     }
@@ -1852,6 +2606,152 @@ mod tests {
     use super::*;
     use std::{ffi::CString, io::Write, ptr};
     use zip::{write::FileOptions, ZipWriter};
+
+    unsafe extern "C" fn platform_test_speech(
+        text: *const c_char,
+        language: *const c_char,
+        output: *const c_char,
+        cancelled: ConverterPlatformCancelled,
+        cancel_context: *const c_void,
+        _error: *mut c_char,
+        _error_length: u32,
+        context: *mut c_void,
+    ) -> bool {
+        if cancelled(cancel_context) {
+            return false;
+        }
+        assert!(!CStr::from_ptr(text).to_bytes().is_empty());
+        assert_eq!(CStr::from_ptr(language).to_str().unwrap(), "pt-BR");
+        let calls = &*context.cast::<std::sync::atomic::AtomicUsize>();
+        calls.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let rate = 22_050u32;
+        let pcm: Vec<u8> = (0..rate)
+            .flat_map(|i| {
+                let phase = i as f32 * 440.0 * std::f32::consts::TAU / rate as f32;
+                ((phase.sin() * 8_000.0) as i16).to_le_bytes()
+            })
+            .collect();
+        let mut wav = Vec::new();
+        wav.extend_from_slice(b"RIFF");
+        wav.extend_from_slice(&(36 + pcm.len() as u32).to_le_bytes());
+        wav.extend_from_slice(b"WAVEfmt ");
+        wav.extend_from_slice(&16u32.to_le_bytes());
+        wav.extend_from_slice(&1u16.to_le_bytes());
+        wav.extend_from_slice(&1u16.to_le_bytes());
+        wav.extend_from_slice(&rate.to_le_bytes());
+        wav.extend_from_slice(&(rate * 2).to_le_bytes());
+        wav.extend_from_slice(&2u16.to_le_bytes());
+        wav.extend_from_slice(&16u16.to_le_bytes());
+        wav.extend_from_slice(b"data");
+        wav.extend_from_slice(&(pcm.len() as u32).to_le_bytes());
+        wav.extend_from_slice(&pcm);
+        std::fs::write(CStr::from_ptr(output).to_str().unwrap(), wav).is_ok()
+    }
+
+    #[test]
+    fn platform_callback_synthesizes_a_validated_job_without_network_or_piper() {
+        let book = fixture();
+        let root = tempfile::tempdir().unwrap();
+        let input = CString::new(book.path().to_str().unwrap()).unwrap();
+        let output = CString::new(root.path().join("system-job").to_str().unwrap()).unwrap();
+        let job = CString::new("system-job").unwrap();
+        let options = CString::new(r#"{"engine":"system","language":"pt-BR"}"#).unwrap();
+        let calls = std::sync::atomic::AtomicUsize::new(0);
+        unsafe {
+            let session = converter_session_open(input.as_ptr());
+            assert!(!session.is_null());
+            assert!(converter_session_set_platform_tts_v1(
+                session,
+                Some(platform_test_speech),
+                (&calls as *const std::sync::atomic::AtomicUsize)
+                    .cast_mut()
+                    .cast(),
+            ));
+            let response = converter_session_convert_job_options_json_v1(
+                session,
+                output.as_ptr(),
+                job.as_ptr(),
+                options.as_ptr(),
+                0,
+                0,
+                None,
+                None,
+                ptr::null_mut(),
+            );
+            if response.is_null() {
+                let error = converter_last_error();
+                let message = CStr::from_ptr(error).to_string_lossy().into_owned();
+                converter_string_free(error);
+                converter_session_free(session);
+                panic!("{message}");
+            }
+            let value: serde_json::Value =
+                serde_json::from_slice(CStr::from_ptr(response).to_bytes()).unwrap();
+            assert_eq!(value["systemVoiceUsed"], true);
+            assert_eq!(value["manifest"]["chapters"].as_array().unwrap().len(), 1);
+            let path = value["audioPath"].as_str().unwrap();
+            converter_core::audio::validate_audio(Path::new(path), 1).unwrap();
+            assert!(calls.load(std::sync::atomic::Ordering::Relaxed) > 0);
+            converter_string_free(response);
+            assert!(converter_session_set_platform_tts_v1(
+                session,
+                None,
+                ptr::null_mut()
+            ));
+            assert!((*session).platform_tts.is_none());
+            converter_session_free(session);
+        }
+    }
+
+    #[test]
+    fn platform_callback_rejects_null_session_and_borrows_cancellation() {
+        unsafe {
+            assert!(!converter_session_set_platform_tts_v1(
+                ptr::null_mut(),
+                None,
+                ptr::null_mut()
+            ));
+            let cancelled = || true;
+            let context = PlatformCancellation {
+                cancelled: &cancelled,
+            };
+            assert!(platform_cancelled(
+                (&context as *const PlatformCancellation<'_>).cast()
+            ));
+            assert!(platform_cancelled(ptr::null()));
+        }
+    }
+
+    #[test]
+    fn embedded_engine_defaults_to_edge_and_requires_explicit_piper_selection() {
+        assert_eq!(embedded_engine_from_value(None), "edge");
+        assert_eq!(embedded_engine_from_value(Some("")), "edge");
+        assert_eq!(embedded_engine_from_value(Some("invalid")), "edge");
+        assert_eq!(embedded_engine_from_value(Some("piper")), "piper");
+        assert_eq!(embedded_engine_from_value(Some(" Piper ")), "piper");
+    }
+
+    #[test]
+    fn piper_requires_an_installed_model_and_voice_config() {
+        let root = tempfile::tempdir().unwrap();
+        let model_dir = root.path().join("pt_BR-edresson-low");
+        std::fs::create_dir_all(&model_dir).unwrap();
+        let model = model_dir.join("model.onnx");
+        std::fs::write(&model, b"fixture").unwrap();
+        let options = EmbeddedConversionOptionsV1 {
+            engine: Some("piper".to_owned()),
+            models_root: Some(root.path().to_string_lossy().into_owned()),
+            model_id: Some("pt_BR-edresson-low".to_owned()),
+            ..EmbeddedConversionOptionsV1::default()
+        };
+        assert!(resolve_piper_model_paths(&options).is_err());
+        let config = model_dir.join("model.onnx.json");
+        std::fs::write(&config, b"{}").unwrap();
+        assert_eq!(
+            resolve_piper_model_paths(&options).unwrap(),
+            (model, config)
+        );
+    }
 
     fn fixture() -> tempfile::NamedTempFile {
         fixture_chapters(1)

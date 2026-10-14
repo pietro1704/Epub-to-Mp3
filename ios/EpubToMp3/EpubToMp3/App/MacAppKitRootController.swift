@@ -132,13 +132,22 @@ final class MacAppKitRootController: NSSplitViewController, NSToolbarDelegate {
             guard let self else { return }
             let embeddedSnapshot = try? await LocalAudioArtifactStore.shared.playableSnapshot(
                 bookID: bookID,
-                engine: "edge",
+                engine: settings.audioEngine.rawValue,
                 voice: "auto",
                 language: nil
             )
-            let remoteSnapshot = library.books.first(where: { $0.id == bookID })?.lastJobId
-                .flatMap(DownloadManager.localPlaybackSnapshot(jobId:))
-            guard let snapshot = embeddedSnapshot ?? remoteSnapshot else {
+            let conversionJobID = library.books.first(where: { $0.id == bookID })?.lastJobId
+            let restoredSnapshot: JobSnapshot?
+            if let conversionJobID {
+                restoredSnapshot = await Task.detached(priority: .utility) {
+                    let converted = RustConversionCoordinator.persistedSnapshot(jobID: conversionJobID)
+                    return DownloadManager.restoredPlaybackSnapshot(jobId: conversionJobID,
+                                                                   conversionSnapshot: converted)
+                }.value
+            } else {
+                restoredSnapshot = nil
+            }
+            guard let snapshot = embeddedSnapshot ?? restoredSnapshot else {
                 return
             }
             player.play(
@@ -405,7 +414,7 @@ final class MacAppKitRootController: NSSplitViewController, NSToolbarDelegate {
                     bookAuthor: book.author,
                     coverUrl: nil,
                     coverMimeType: nil,
-                    engine: "edge",
+                    engine: settings.audioEngine.rawValue,
                     voice: nil,
                     language: nil,
                     progressPercent: 0,
@@ -427,6 +436,7 @@ final class MacAppKitRootController: NSSplitViewController, NSToolbarDelegate {
                     chapterStart: chapterStart,
                     chapterEnd: -1,
                     control: playbackControl,
+                    options: .selectedEngine(settings.audioEngine, modelsRoot: AppSettings.ttsModelsRoot()),
                     onProgress: { [weak self] event in
                         guard let self,
                               self.localPlaybackGeneration == jobID,

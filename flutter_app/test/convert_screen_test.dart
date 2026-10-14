@@ -28,34 +28,38 @@ void main() {
     expect(find.text('Chapter range'), findsOneWidget);
     expect(find.text('Options'), findsOneWidget);
     expect(find.text('Start conversion'), findsOneWidget);
+    expect(find.text('Piper'), findsNothing);
   });
 
-  testWidgets('submits the selected file through the injected existing service',
-      (tester) async {
-    SharedPreferences.setMockInitialValues({});
-    final prefs = await SharedPreferences.getInstance();
-    String? submittedPath;
-    await tester.pumpWidget(
-      ProviderScope(
-        overrides: [sharedPrefsProvider.overrideWithValue(prefs)],
-        child: MaterialApp(
-          localizationsDelegates: AppLocalizations.localizationsDelegates,
-          supportedLocales: AppLocalizations.supportedLocales,
-          home: ConvertScreen(
-            initialFilePath: '/tmp/book.epub',
-            startConversion: (request) async {
-              submittedPath = request.filePath;
-              return 'job-1';
-            },
+  testWidgets(
+    'submits the selected file through the injected existing service',
+    (tester) async {
+      SharedPreferences.setMockInitialValues({});
+      final prefs = await SharedPreferences.getInstance();
+      String? submittedPath;
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [sharedPrefsProvider.overrideWithValue(prefs)],
+          child: MaterialApp(
+            localizationsDelegates: AppLocalizations.localizationsDelegates,
+            supportedLocales: AppLocalizations.supportedLocales,
+            home: ConvertScreen(
+              initialFilePath: '/tmp/book.epub',
+              startConversion: (request) async {
+                expect(request.engine, 'edge');
+                submittedPath = request.filePath;
+                return 'job-1';
+              },
+            ),
           ),
         ),
-      ),
-    );
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Start conversion'));
-    await tester.pumpAndSettle();
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Start conversion'));
+      await tester.pumpAndSettle();
 
-    expect(submittedPath, '/tmp/book.epub');
-    expect(find.text('job-1'), findsOneWidget);
-  });
+      expect(submittedPath, '/tmp/book.epub');
+      expect(find.text('job-1'), findsOneWidget);
+    },
+  );
 }

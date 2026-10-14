@@ -18,6 +18,11 @@ static MODEL_PATH: std::sync::OnceLock<std::sync::Mutex<Option<String>>> =
     std::sync::OnceLock::new();
 
 #[cfg(feature = "piper-inference")]
+pub fn set_espeak_data_directory(path: &Path) -> Result<(), String> {
+    espeak_rs::set_espeak_data_directory(path).map_err(|error| error.to_string())
+}
+
+#[cfg(feature = "piper-inference")]
 pub fn configured_model_path() -> Option<String> {
     MODEL_PATH
         .get()

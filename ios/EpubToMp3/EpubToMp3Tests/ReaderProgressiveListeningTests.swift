@@ -73,13 +73,16 @@ private final class ProgressiveListeningFixture {
     var finished = false
     var fail = false
     var omitPriority = false
+    var playbackControl: ConverterPlaybackControl?
     var deliver: (@MainActor @Sendable (RustConversionCoordinator.ChapterCompletionEvent) -> Void)?
     lazy var controller = MainReaderScreenController(library: library, settings: AppSettings(defaults: defaults),
         player: player, playerPresentation: presentation,
         bookmarkStore: BookmarkStore(defaults: defaults, storageKey: "bookmarks"), onBrowseLibrary: nil,
-        conversionExecutor: { [weak self] _, job, start, end, control, _, callback, _ in
+        conversionExecutor: { [weak self] _, job, start, end, control, options, _, callback, _ in
             guard let self else { throw CancellationError() }
+            XCTAssertEqual(options?.engine, "edge")
             control.updatePlaybackWindow(currentChapter: Int(start), chaptersAhead: 1)
+            self.playbackControl = control
             self.calls += 1; self.job = job; self.requestedStart = start; self.requestedEnd = end
             self.deliver = callback
             for await _ in self.stream { }
@@ -144,6 +147,51 @@ private final class ProgressiveListeningFixture {
 
 @MainActor
 final class ReaderProgressiveListeningTests: XCTestCase {
+    func testNextBeforeSecondChapterDeliveryPreservesPauseAndUpdatesPlaybackWindow() async throws {
+        let f = try ProgressiveListeningFixture(); defer { f.cleanup() }
+        let payload = try JSONDecoder().decode(EbookFulltext.self, from: JSONSerialization.data(withJSONObject: [
+            "jobId": f.book.id, "chapters": (1...3).map {
+                ["index": $0, "name": "Chapter \($0 - 1)", "text": "Fixture text"]
+            }
+        ]))
+        LocalFulltextCache.save(payload, bookId: f.book.id)
+        ReaderProgressStore.save(bookId: f.book.id, chapterIndex: 1, offsetFraction: 0)
+        defer {
+            ReaderProgressStore.evict(bookId: f.book.id)
+            LocalFulltextCache.evictInMemoryPayload(bookId: f.book.id)
+            if let url = LocalFulltextCache.storageURL(bookId: f.book.id) {
+                try? FileManager.default.removeItem(at: url)
+            }
+        }
+        f.controller.loadViewIfNeeded()
+        try await f.wait { !f.controller.isLoadingBookContent }
+        f.controller.startListeningFromMiniPlayer()
+        try await f.wait { f.calls == 1 }
+        XCTAssertEqual(f.player.snapshot?.chapterProgress?.map(\.index), [0, 1, 2])
+        XCTAssertEqual(f.player.snapshot?.playableChapters.count, 0)
+        let data = try Data(contentsOf: f.root.appendingPathComponent("ch1.wav"))
+        f.player.enqueueSegment(data: data, chapterIndex: 1, segmentIndex: 0)
+        f.player.pause()
+        try f.emit(1)
+        XCTAssertEqual(f.player.snapshot?.chapterProgress?.map(\.index), [0, 1, 2],
+            "Completed chapter publication must retain pending navigation metadata")
+        f.player.nextChapter()
+        try await f.wait { f.player.pendingNavigation?.chapterIndex == 2 && f.playbackControl?.contains(chapterIndex: 1) == false }
+        XCTAssertTrue(try XCTUnwrap(f.playbackControl).contains(chapterIndex: 2))
+        XCTAssertFalse(f.player.isPlaying)
+        f.player.enqueueSegment(data: data, chapterIndex: 2, segmentIndex: 0)
+        try f.emit(2)
+        try await f.wait { f.player.activeStreamingChapterIndex == 2 && !f.player.isSeeking }
+        XCTAssertEqual(f.player.activeStreamingChapterIndex, 2)
+        XCTAssertFalse(f.player.isPlaying, "Arrival must retain the user's paused navigation intent")
+        try await f.complete()
+        XCTAssertFalse(f.player.isPlaying)
+        XCTAssertEqual(f.player.currentChapterIndex, 1,
+                       "A partial zero-based manifest must preserve the selected chapter during full-file handoff.")
+        let asset = try XCTUnwrap(f.player.testHook_currentPlayerItem()?.asset as? AVURLAsset)
+        XCTAssertEqual(asset.url.lastPathComponent, "ch2.wav")
+    }
+
     func testNewListeningRequestPreservesPreviousMeaningfulResumePosition() async throws {
         let f = try ProgressiveListeningFixture(); defer { f.cleanup() }
         let previous = "\(f.id)-previous"

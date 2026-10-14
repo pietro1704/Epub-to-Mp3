@@ -1042,7 +1042,16 @@ final class MacReaderViewController: NSViewController, NSTableViewDataSource, NS
         let page = max(1, visibleBounds.height * 0.9)
         let maximumY = max(0, documentView.frame.height - visibleBounds.height)
         let atStart = visibleBounds.origin.y <= 1
-        let atEnd = visibleBounds.origin.y >= maximumY - 1
+        let atEnd: Bool
+        if let readerTextView = documentView as? NSTextView,
+           let container = readerTextView.textContainer,
+           let layoutManager = readerTextView.layoutManager {
+            layoutManager.ensureLayout(for: container)
+            let lastGlyphBottom = layoutManager.usedRect(for: container).maxY
+            atEnd = clipView.documentVisibleRect.maxY >= lastGlyphBottom
+        } else {
+            atEnd = visibleBounds.origin.y >= maximumY - 1
+        }
         if forward && atEnd, selectedChapter + 1 < (fulltext?.chapters.count ?? 0) {
             persistReadingProgress()
             selectedChapter += 1

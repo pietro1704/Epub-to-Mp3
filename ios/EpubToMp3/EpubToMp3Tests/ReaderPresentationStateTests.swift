@@ -10,9 +10,9 @@ final class ReaderPresentationStateTests: XCTestCase {
         XCTAssertTrue(state.showsMiniPlayer(bookHasPlayback: true))
     }
 
-    func testLoadingOrImmersiveReaderHidesBottomChrome() {
+    func testLoadingKeepsFinalBottomGeometryAndImmersiveReaderHidesBottomChrome() {
         var state = ReaderPresentationState(isReaderActive: true, isLoading: true)
-        XCTAssertTrue(state.hidesBottomChrome)
+        XCTAssertFalse(state.hidesBottomChrome)
         XCTAssertFalse(state.showsMiniPlayer(bookHasPlayback: true))
 
         state.isLoading = false
@@ -35,11 +35,11 @@ final class ReaderPresentationStateTests: XCTestCase {
         XCTAssertFalse(state.showsMiniPlayer(bookHasPlayback: true))
     }
 
-    func testLoadingSnapshotKeepsNavigationWhileReservingBottomChrome() {
+    func testLoadingSnapshotKeepsNavigationAndReservesMiniPlayerGeometry() {
         let state = ReaderPresentationState(isReaderActive: true, isLoading: true)
 
         XCTAssertTrue(state.showsReaderNavigation)
-        XCTAssertTrue(state.hidesBottomChrome)
+        XCTAssertFalse(state.hidesBottomChrome)
         XCTAssertFalse(state.showsMiniPlayer(bookHasPlayback: true))
     }
 }

@@ -38,6 +38,36 @@ extension RustConversionCoordinator.ChapterCompletionEvent {
 /// This type deliberately has no transport or backend dependency. The Rust
 /// FFI owns EPUB parsing, model selection, conversion, and artifact creation.
 final class RustConversionCoordinator {
+    /// Restore durable Rust output without reopening or synthesizing the book.
+    static func persistedSnapshot(jobID: String, fileManager: FileManager = .default) -> JobSnapshot? {
+        guard !jobID.isEmpty, jobID != ".", jobID != "..",
+              !jobID.contains("/"), !jobID.contains("\\"), !jobID.contains("\0"),
+              let root = try? fileManager.url(for: .applicationSupportDirectory, in: .userDomainMask,
+                                             appropriateFor: nil, create: false) else { return nil }
+        let directory = root.appendingPathComponent("EpubToMp3", isDirectory: true)
+            .appendingPathComponent("RustConversions", isDirectory: true)
+            .appendingPathComponent(jobID, isDirectory: true)
+        guard let data = try? Data(contentsOf: directory.appendingPathComponent("manifest.json")),
+              let manifest = try? JSONDecoder().decode(Manifest.self, from: data),
+              manifest.jobId == jobID, !manifest.chapters.isEmpty else { return nil }
+        let directoryPath = directory.resolvingSymlinksInPath().standardizedFileURL.path + "/"
+        var indices = Set<Int>()
+        for (offset, chapter) in manifest.chapters.enumerated() {
+            let index = chapter.sourceIndex ?? offset
+            guard index >= 0, indices.insert(index).inserted,
+                  !chapter.filename.isEmpty, !chapter.filename.hasPrefix("/"),
+                  !chapter.filename.contains("\0") else { return nil }
+            let url = directory.appendingPathComponent(chapter.filename).resolvingSymlinksInPath()
+            guard url.standardizedFileURL.path.hasPrefix(directoryPath),
+                  let attributes = try? fileManager.attributesOfItem(atPath: url.path),
+                  attributes[.type] as? FileAttributeType == .typeRegular,
+                  let size = attributes[.size] as? NSNumber, size.int64Value > 0 else { return nil }
+        }
+        guard let object = try? JSONSerialization.jsonObject(with: data),
+              let envelope = try? JSONSerialization.data(withJSONObject: ["manifest": object]) else { return nil }
+        return try? Result(jobID: jobID, manifestJSON: envelope, outputDirectory: directory).snapshot()
+    }
+
     struct ConversionProgressEvent: Decodable, Sendable {
         let jobId: String
         let state: String
@@ -212,13 +242,13 @@ final class RustConversionCoordinator {
     private let fileManager: FileManager
 
     typealias Executor = @MainActor (
-        URL, String, Int32, Int32,
+        URL, String, Int32, Int32, ConversionOptions?,
         (@MainActor @Sendable (ConversionProgressEvent) -> Void)?,
         (@MainActor @Sendable (ChapterCompletionEvent) -> Void)?
     ) async throws -> Result
 
     typealias StreamingExecutor = @MainActor (
-        URL, String, Int32, Int32, ConverterPlaybackControl,
+        URL, String, Int32, Int32, ConverterPlaybackControl, ConversionOptions?,
         (@MainActor @Sendable (ConversionProgressEvent) -> Void)?,
         (@MainActor @Sendable (ChapterCompletionEvent) -> Void)?,
         (@Sendable (Int, Int, Data) -> Bool)?
@@ -226,10 +256,12 @@ final class RustConversionCoordinator {
 
     @MainActor
     static func execute(bookURL: URL, jobID: String, chapterStart: Int32, chapterEnd: Int32,
+                        options: ConversionOptions? = nil,
                         onProgress: (@MainActor @Sendable (ConversionProgressEvent) -> Void)?,
                         onChapterCompleted: (@MainActor @Sendable (ChapterCompletionEvent) -> Void)?) async throws -> Result {
         try await RustConversionCoordinator().convert(bookURL: bookURL, jobID: jobID,
             chapterStart: chapterStart, chapterEnd: chapterEnd,
+            options: options,
             onProgress: onProgress, onChapterCompleted: onChapterCompleted)
     }
 
@@ -245,6 +277,7 @@ final class RustConversionCoordinator {
         chapterStart: Int32,
         chapterEnd: Int32,
         control: ConverterPlaybackControl,
+        options: ConversionOptions? = nil,
         onProgress: (@MainActor @Sendable (ConversionProgressEvent) -> Void)?,
         onChapterCompleted: (@MainActor @Sendable (ChapterCompletionEvent) -> Void)?,
         onAudioChunk: (@Sendable (Int, Int, Data) -> Bool)?
@@ -254,6 +287,7 @@ final class RustConversionCoordinator {
             jobID: jobID,
             chapterStart: chapterStart,
             chapterEnd: chapterEnd,
+            options: options,
             playbackControl: control,
             onProgress: onProgress,
             onChapterCompleted: onChapterCompleted,

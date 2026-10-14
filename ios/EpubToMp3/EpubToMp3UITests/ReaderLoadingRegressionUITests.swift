@@ -32,6 +32,30 @@ final class ReaderLoadingRegressionUITests: XCTestCase {
         )
     }
 
+    func testReaderBackReturnsToInteractiveLibraryAfterContentAppears() throws {
+        XCUIDevice.shared.orientation = .portrait
+        let app = launchFixture(delayMilliseconds: 0)
+        let firstBook = try firstBook(in: app)
+        firstBook.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.2)).tap()
+
+        let pageIndicator = app.staticTexts["reader.pageIndicator"].firstMatch
+        XCTAssertTrue(pageIndicator.waitForExistence(timeout: 10), "Reader content must load before Back is tested.")
+
+        let navigationBar = app.navigationBars["reader.navigationBar"].firstMatch
+        let backButton = app.buttons["reader.close"].firstMatch
+        XCTAssertTrue(backButton.waitForExistence(timeout: 5), "Loaded reader must expose its native back button.")
+        backButton.tap()
+
+        XCTAssertTrue(
+            navigationBar.waitForNonExistence(timeout: 5),
+            "Reader navigation must disappear after Back from loaded content."
+        )
+        XCTAssertTrue(
+            firstBook.isHittable,
+            "Back from loaded content must restore an interactive Library."
+        )
+    }
+
     func testLoadingThenReaderContentAndProductionTaps() throws {
         XCUIDevice.shared.orientation = .portrait
         let app = launchFixture(delayMilliseconds: 8_000)
@@ -117,6 +141,8 @@ final class ReaderLoadingRegressionUITests: XCTestCase {
 
         let miniPlayer = app.otherElements["miniPlayer.bar"].firstMatch
         XCTAssertTrue(miniPlayer.waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["fullPlayer.close"].exists,
+                       "The expanded-player controls should not be present before the user opens it.")
         attach("05-mini-player-before-expand", app: app)
         // The user-facing expansion target is the cover/title area, not a
         // transport control. Exercise that contract in the iOS 26 tab
@@ -142,6 +168,7 @@ final class ReaderLoadingRegressionUITests: XCTestCase {
         XCTAssertLessThanOrEqual(close.frame.maxY, window.frame.maxY, "Full-player dismissal must stay inside the viewport.")
         XCTAssertLessThanOrEqual(rate.frame.maxY, window.frame.maxY, "Full-player secondary controls must stay inside the viewport.")
         attach("05-full-player-compact", app: app)
+        close.tap()
     }
 
     private func launchFixture(delayMilliseconds: Int, includesPlaybackFixture: Bool = false) -> XCUIApplication {

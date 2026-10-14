@@ -6,6 +6,7 @@ import '../models/ebook_fulltext.dart';
 import 'embedded_converter.dart';
 import 'local_conversion_job.dart';
 import 'playback_chapter_window.dart';
+import 'growing_chapter_audio_source.dart';
 
 /// Converts only chapters in the moving Listen window through converter-ffi.
 /// Chapter indices remain source positions so jobs, resume data, and FFI ranges
@@ -20,6 +21,10 @@ class RustPlaybackConversionService {
   final EmbeddedConverter converter;
   final ConversionJobCoordinator coordinator;
   final PlaybackChapterWindow window;
+  Future<void> Function()? _cancelCurrent;
+  Future<void> cancel() async {
+    await _cancelCurrent?.call();
+  }
 
   Future<LocalConversionJob> convert({
     required String bookId,
@@ -37,6 +42,11 @@ class RustPlaybackConversionService {
       LocalConversionJob job,
     )?
     onChapterCompleted,
+    Future<void> Function(
+      FulltextChapter chapter,
+      GrowingChapterAudioSource source,
+    )?
+    onChapterStreaming,
   }) async {
     final selected = chapters
         .where((chapter) => chapter.text.trim().isNotEmpty)
@@ -50,15 +60,37 @@ class RustPlaybackConversionService {
 
     var currentChapter = initialChapterIndex;
     var streamClosed = false;
+    var cancelledByOwner = false;
+    String? activeStreamingRequest;
+    int? activeStreamingChapter;
+    Future<void> cancelActiveStream() async {
+      final request = activeStreamingRequest;
+      if (request != null && converter is StreamingChapterConverter) {
+        await (converter as StreamingChapterConverter).cancelStreamingChapter(
+          request,
+        );
+      }
+    }
+
     var windowChanged = Completer<void>();
+    _cancelCurrent = () async {
+      cancelledByOwner = true;
+      if (!windowChanged.isCompleted) windowChanged.complete();
+      await cancelActiveStream();
+    };
     final subscription = playbackChapterChanges.listen(
       (index) {
         currentChapter = index;
+        if (activeStreamingChapter != null &&
+            !window.contains(index, activeStreamingChapter)) {
+          unawaited(cancelActiveStream());
+        }
         if (!windowChanged.isCompleted) windowChanged.complete();
         windowChanged = Completer<void>();
       },
       onDone: () {
         streamClosed = true;
+        unawaited(cancelActiveStream());
         if (!windowChanged.isCompleted) windowChanged.complete();
       },
     );
@@ -97,7 +129,7 @@ class RustPlaybackConversionService {
         }
       }
 
-      while (isActive() && !streamClosed) {
+      while (isActive() && !streamClosed && !cancelledByOwner) {
         final nextWindowChange = windowChanged.future;
         final pending = coordinator.pendingChapterIndices(job);
         if (pending.isEmpty &&
@@ -116,7 +148,7 @@ class RustPlaybackConversionService {
           (item) => item.index == chapterIndex,
         );
         final chapterDirectory = Directory(
-          '${root.path}/streaming/chapter_$chapterIndex',
+          '${root.path}/streaming/chapter_${chapterIndex}_${DateTime.now().microsecondsSinceEpoch}',
         );
         if (await chapterDirectory.exists()) {
           await chapterDirectory.delete(recursive: true);
@@ -127,12 +159,39 @@ class RustPlaybackConversionService {
         await _writeManifest(root, job, selected);
         await onUpdate?.call(job);
 
+        var deliveredStreamSource = false;
         try {
-          final result = await converter.convertChapter(
-            inputPath: inputPath,
-            outputPath: chapterDirectory.path,
-            chapterIndex: chapterIndex,
-          );
+          final streaming =
+              converter is StreamingChapterConverter &&
+              onChapterStreaming != null;
+          activeStreamingRequest = streaming ? chapterDirectory.path : null;
+          activeStreamingChapter = streaming ? chapterIndex : null;
+          final result = streaming
+              ? await (converter as StreamingChapterConverter).streamChapter(
+                  inputPath: inputPath,
+                  outputPath: chapterDirectory.path,
+                  chapterIndex: chapterIndex,
+                  onFirstAudio: (source) async {
+                    if (!isActive() ||
+                        cancelledByOwner ||
+                        !window.contains(currentChapter, chapterIndex)) {
+                      source.fail(
+                        StateError('Chapter left the playback window'),
+                      );
+                      await cancelActiveStream();
+                      return;
+                    }
+                    await onChapterStreaming(chapter, source);
+                    deliveredStreamSource = true;
+                  },
+                )
+              : await converter.convertChapter(
+                  inputPath: inputPath,
+                  outputPath: chapterDirectory.path,
+                  chapterIndex: chapterIndex,
+                );
+          activeStreamingRequest = null;
+          activeStreamingChapter = null;
           final audio = File(result.path);
           if (!await audio.exists() || await audio.length() == 0) {
             throw EmbeddedConversionFailure(
@@ -140,9 +199,21 @@ class RustPlaybackConversionService {
               'Rust returned a missing or empty chapter file',
             );
           }
-          if (!isActive() || !window.contains(currentChapter, chapterIndex)) {
-            await chapterDirectory.delete(recursive: true);
-            job = await coordinator.retryChapter(job, chapterIndex);
+          if (!isActive() ||
+              cancelledByOwner ||
+              !window.contains(currentChapter, chapterIndex)) {
+            if (deliveredStreamSource) {
+              // A queued live source may still serve immutable files through
+              // its existing HTTP request after the playback window moves.
+              job = await coordinator.completeChapter(
+                job,
+                chapterIndex,
+                audio.path,
+              );
+            } else {
+              await chapterDirectory.delete(recursive: true);
+              job = await coordinator.retryChapter(job, chapterIndex);
+            }
             await _writeManifest(root, job, selected);
             continue;
           }
@@ -156,6 +227,20 @@ class RustPlaybackConversionService {
           await onChapterCompleted?.call(chapter, audio.path, job);
           await onUpdate?.call(job);
         } catch (error) {
+          activeStreamingRequest = null;
+          activeStreamingChapter = null;
+          if (streamingCancelledByWindow(
+            streamClosed || cancelledByOwner,
+            isActive(),
+            window.contains(currentChapter, chapterIndex),
+          )) {
+            job = await coordinator.retryChapter(job, chapterIndex);
+            if (await chapterDirectory.exists()) {
+              await chapterDirectory.delete(recursive: true);
+            }
+            await onUpdate?.call(job);
+            continue;
+          }
           job = await coordinator.failChapter(
             job,
             chapterIndex,
@@ -166,14 +251,16 @@ class RustPlaybackConversionService {
           rethrow;
         }
       }
-      if ((streamClosed || !isActive()) &&
+      if ((streamClosed || cancelledByOwner || !isActive()) &&
           job.status == LocalConversionJobStatus.running) {
         job = await coordinator.suspend(job);
         await _writeManifest(root, job, selected);
       }
       return job;
     } finally {
+      await cancelActiveStream();
       await subscription.cancel();
+      _cancelCurrent = null;
     }
   }
 
@@ -206,6 +293,12 @@ class RustPlaybackConversionService {
     await temp.rename(target.path);
   }
 }
+
+bool streamingCancelledByWindow(
+  bool streamClosed,
+  bool active,
+  bool insideWindow,
+) => streamClosed || !active || !insideWindow;
 
 extension<T> on Iterable<T> {
   T? get firstOrNull => isEmpty ? null : first;

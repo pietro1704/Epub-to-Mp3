@@ -31,6 +31,8 @@ pub mod model_store;
 pub mod paths;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod piper;
+#[cfg(not(target_arch = "wasm32"))]
+pub mod platform_tts;
 pub mod structure;
 pub mod text;
 pub mod toc;

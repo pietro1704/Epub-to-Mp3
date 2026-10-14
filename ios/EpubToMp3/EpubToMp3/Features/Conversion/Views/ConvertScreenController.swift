@@ -58,6 +58,8 @@ final class ConvertScreenController: UITableViewController, UIDocumentPickerDele
 
     override func viewDidLoad() {
         super.viewDidLoad()
+        viewModel.engine = settings.audioEngine.rawValue
+        viewModel.modelsRoot = AppSettings.ttsModelsRoot()?.path
         tableView.cellLayoutMarginsFollowReadableWidth = true
         tableView.rowHeight = UITableView.automaticDimension
         tableView.estimatedRowHeight = 64
@@ -68,6 +70,13 @@ final class ConvertScreenController: UITableViewController, UIDocumentPickerDele
         tableView.register(UITableViewCell.self, forCellReuseIdentifier: "Cell")
         tableView.register(IOSInlineTextFieldCell.self, forCellReuseIdentifier: "TextField")
         tableView.register(IOSSwitchCell.self, forCellReuseIdentifier: "Switch")
+    }
+
+    override func viewWillAppear(_ animated: Bool) {
+        super.viewWillAppear(animated)
+        viewModel.engine = settings.audioEngine.rawValue
+        viewModel.modelsRoot = AppSettings.ttsModelsRoot()?.path
+        tableView.reloadSections(IndexSet(integer: Section.engine.rawValue), with: .none)
     }
 
     func refreshFromStores() {
@@ -183,19 +192,10 @@ final class ConvertScreenController: UITableViewController, UIDocumentPickerDele
         if indexPath.row == 0 {
             let cell = tableView.dequeueReusableCell(withIdentifier: "Cell", for: indexPath)
             var content = cell.defaultContentConfiguration()
-            content.text = L10n.string("convert.engine")
+            content.text = L10n.string("settings.audioEngineChoice")
+            content.secondaryText = settings.audioEngine.displayName
             cell.contentConfiguration = content
-
-            let control = UISegmentedControl(items: [
-                "Edge",
-                "Piper",
-                "Coqui",
-            ])
-            control.selectedSegmentIndex = ["edge", "piper", "coqui"].firstIndex(of: viewModel.engine) ?? 0
-            control.addAction(UIAction(handler: { [weak self] _ in
-                self?.viewModel.engine = ["edge", "piper", "coqui"][control.selectedSegmentIndex]
-            }), for: .valueChanged)
-            cell.accessoryView = control
+            cell.accessoryType = .none
             cell.selectionStyle = .none
             return cell
         }

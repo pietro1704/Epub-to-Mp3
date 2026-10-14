@@ -20,6 +20,13 @@ Read this file, [`../../CONTEXT.md`](../../CONTEXT.md), and relevant files in
 
 For every feature or bug fix, verify the real iOS app on the iPhone SE
 (1st generation) Simulator running iOS 15.5 and verify the native macOS app.
+For this project, run iOS Simulator builds, tests, and launches with Xcode 16.4
+(`/Applications/Xcode-16.4.0.app`); newer Xcode installations may not list this
+legacy destination. The physical iPhone is not a substitute for this required
+Simulator target.
+Run only one native app/Simulator target at a time. Before switching targets, quit the
+active app and shut down its Simulator; verify it exited before opening the next.
+After iOS verification, leave only the required iPhone SE Simulator/app open.
 Check that this exact Simulator destination and the macOS target are available
 before implementation; do not substitute another runtime or device. Install,
 launch, and exercise the affected behavior in each app. XCTest/UI tests supplement

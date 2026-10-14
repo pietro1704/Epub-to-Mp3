@@ -10,7 +10,10 @@ final class MainReaderScreenController: UIViewController {
     private let playerPresentation: PlayerPresentation
     private let bookmarkStore: BookmarkStore
     private let sessionDefaults: UserDefaults
+    private var pendingLaunchRestoreBookID: String?
     private let conversionExecutor: RustConversionCoordinator.StreamingExecutor
+    private let readerControllerFactory: (@MainActor (BookEntity, Bool) -> BookOpenScreenController)?
+    private let openStageObserver: (@Sendable (String, UInt64) -> Void)?
     private var listeningJobID: String?
     private var listeningBookID: String?
     private var listeningPlaybackControl: ConverterPlaybackControl?
@@ -23,6 +26,8 @@ final class MainReaderScreenController: UIViewController {
     private var cancellables: Set<AnyCancellable> = []
     private var readerController: BookOpenScreenController?
     private var readerBookID: String?
+    private var openingReaderBookID: String?
+    private var needsRenderAfterReaderOpen = false
     private var readerNavigationHeight: NSLayoutConstraint!
     private var readerTopToNavigation: NSLayoutConstraint!
     private var readerTopToRoot: NSLayoutConstraint!
@@ -52,7 +57,9 @@ final class MainReaderScreenController: UIViewController {
         bookmarkStore: BookmarkStore,
         onBrowseLibrary: (() -> Void)?,
         conversionExecutor: @escaping RustConversionCoordinator.StreamingExecutor = RustConversionCoordinator.executeStreaming,
-        sessionDefaults: UserDefaults = .standard
+        sessionDefaults: UserDefaults = .standard,
+        readerControllerFactory: (@MainActor (BookEntity, Bool) -> BookOpenScreenController)? = nil,
+        openStageObserver: (@Sendable (String, UInt64) -> Void)? = nil
     ) {
         self.library = library
         self.settings = settings
@@ -62,6 +69,11 @@ final class MainReaderScreenController: UIViewController {
         self.onBrowseLibrary = onBrowseLibrary
         self.conversionExecutor = conversionExecutor
         self.sessionDefaults = sessionDefaults
+        self.pendingLaunchRestoreBookID = sessionDefaults.string(
+            forKey: ReaderSessionState.currentlyReadingBookIDKey
+        )
+        self.readerControllerFactory = readerControllerFactory
+        self.openStageObserver = openStageObserver
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -105,6 +117,17 @@ final class MainReaderScreenController: UIViewController {
     }
 
     private func bind() {
+        player.$pendingNavigation
+            .compactMap { $0 }
+            .removeDuplicates()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] navigation in
+                guard let self, navigation.jobID == self.listeningJobID,
+                      let control = self.listeningPlaybackControl else { return }
+                control.updatePlaybackWindow(currentChapter: navigation.chapterIndex, chaptersAhead: 1)
+                _ = control.prioritize(chapterIndex: navigation.chapterIndex)
+            }
+            .store(in: &cancellables)
         player.$activeStreamingChapterIndex
             .compactMap { $0 }
             .removeDuplicates()
@@ -268,6 +291,21 @@ final class MainReaderScreenController: UIViewController {
             // loading-state change, which re-enters `render()` indefinitely.
             return
         }
+        guard openingReaderBookID == nil else {
+            if openingReaderBookID != book.id { needsRenderAfterReaderOpen = true }
+            return
+        }
+        openingReaderBookID = book.id
+        let launchRestoreBookID = pendingLaunchRestoreBookID
+        pendingLaunchRestoreBookID = nil
+        let isLaunchRestore = launchRestoreBookID == book.id
+        defer {
+            openingReaderBookID = nil
+            if needsRenderAfterReaderOpen {
+                needsRenderAfterReaderOpen = false
+                DispatchQueue.main.async { [weak self] in self?.render() }
+            }
+        }
         replaceActivePlaybackIfNeeded(for: book)
         // Reset immersive chrome only when creating/opening a different
         // reader. Playback/title updates during pagination re-enter render()
@@ -280,12 +318,15 @@ final class MainReaderScreenController: UIViewController {
 
         removeReaderControllerIfNeeded()
 
-        let reader = BookOpenScreenController(
+        let shouldDeferInitialGesture = !isLaunchRestore
+        let reader = readerControllerFactory?(book, shouldDeferInitialGesture) ?? BookOpenScreenController(
             book: book,
             library: library,
             settings: settings,
             bookmarkStore: bookmarkStore,
-            player: player
+            player: player,
+            openStageObserver: openStageObserver,
+            deferInitialReaderGestures: shouldDeferInitialGesture
         )
         reader.onLoadStateChanged = { [weak self] isLoading in
             guard let self else { return }
@@ -501,7 +542,15 @@ final class MainReaderScreenController: UIViewController {
         let previousPlayerJob = player.snapshot?.jobId
         listeningJobID = jobID
         listeningBookID = book.id
-        listeningChapters = []
+        let catalog = readerController?.playbackChapterCatalog
+            ?? LocalFulltextCache.inMemoryPayload(bookId: book.id)?.chapters.map {
+                (index: $0.zeroBasedEpubIndex, title: $0.displayTitle)
+            } ?? []
+        listeningChapters = catalog.map {
+            JobSnapshot.Chapter(index: $0.index, name: $0.title, status: "pending",
+                downloadUrl: nil, chars: nil, charsProcessed: nil, progressRatio: nil,
+                durationSeconds: nil, startedAt: nil, completedAt: nil)
+        }
         hasDeliveredListeningChapter = false
         Task { [weak self] in
             guard let self else { return }
@@ -523,7 +572,7 @@ final class MainReaderScreenController: UIViewController {
                 let pending = JobSnapshot(jobId: jobID, state: "running", bookTitle: book.resolvedTitle,
                     bookAuthor: book.author, coverUrl: nil, coverMimeType: nil, engine: nil,
                     voice: nil, language: nil, progressPercent: 0, chaptersTotal: nil,
-                    chaptersCompleted: 0, chapterProgress: [], outputs: nil, logUrl: nil,
+                    chaptersCompleted: 0, chapterProgress: self.listeningChapters, outputs: nil, logUrl: nil,
                     error: nil, lastActivityAt: Date().timeIntervalSince1970)
                 if player.positionSeconds > 1 {
                     player.pause()
@@ -536,7 +585,8 @@ final class MainReaderScreenController: UIViewController {
                 player.resume()
                 let chunkDelivery = StreamingPlaybackChunkDelivery(player: player)
                 let result = try await conversionExecutor(
-                    url, jobID, chapterStart, chapterEnd, playbackControl, nil,
+                    url, jobID, chapterStart, chapterEnd, playbackControl,
+                    .selectedEngine(settings.audioEngine, modelsRoot: AppSettings.ttsModelsRoot()), nil,
                     { [weak self] event in
                         guard let self, self.listeningJobID == jobID,
                               self.player.snapshot?.jobId == jobID, event.jobId == jobID,
@@ -551,7 +601,7 @@ final class MainReaderScreenController: UIViewController {
                             self.listeningChapters[index] = chapter
                         } else { self.listeningChapters.append(chapter) }
                         self.listeningChapters.sort { $0.index < $1.index }
-                        guard self.listeningChapters.contains(where: { $0.index == priority }) else { return }
+                        guard self.listeningChapters.contains(where: { $0.index == priority && $0.downloadUrl != nil }) else { return }
                         self.player.updateSnapshot(event.snapshot(chapters: self.listeningChapters))
                         if !self.hasDeliveredListeningChapter {
                             self.hasDeliveredListeningChapter = true

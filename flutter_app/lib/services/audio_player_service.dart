@@ -6,6 +6,24 @@ import 'package:just_audio/just_audio.dart';
 
 import '../models/job_snapshot.dart';
 import 'latency_observation.dart';
+import 'growing_chapter_audio_source.dart';
+
+abstract interface class StreamingChapterPlayer {
+  void registerGrowingChapter(
+    int chapterIndex,
+    GrowingChapterAudioSource source,
+  );
+  void finishGrowingChapter(int chapterIndex, String finalPath);
+}
+
+class _GrowingChapterEntry {
+  _GrowingChapterEntry(this.source);
+  final GrowingChapterAudioSource source;
+  String? finalPath;
+  Uri get identity => Uri(scheme: 'growing', path: source.requestId);
+  bool matches(Uri uri) =>
+      uri == identity || finalPath != null && uri == Uri.file(finalPath!);
+}
 
 abstract class AudioPlayerInterface {
   Stream<Duration> get position;
@@ -42,7 +60,8 @@ abstract class AudioPlayerInterface {
   Future<void> dispose();
 }
 
-class AudioPlayerService implements AudioPlayerInterface {
+class AudioPlayerService
+    implements AudioPlayerInterface, StreamingChapterPlayer {
   AudioPlayerService({String? backendBase, AudioPlayer? player})
     : _baseUrl = backendBase,
       _player = player ?? AudioPlayer() {
@@ -116,6 +135,25 @@ class AudioPlayerService implements AudioPlayerInterface {
   ConcatenatingAudioSource? _segmentSource;
   ConcatenatingAudioSource? _chapterSource;
   List<Uri> _chapterQueueURLs = const [];
+  int _seekGeneration = 0;
+  final Map<int, _GrowingChapterEntry> _growingChapters = {};
+
+  @override
+  void registerGrowingChapter(
+    int chapterIndex,
+    GrowingChapterAudioSource source,
+  ) {
+    final old = _growingChapters[chapterIndex];
+    if (old != null && !old.source.isComplete) {
+      old.source.fail(StateError('Chapter stream replaced'));
+    }
+    _growingChapters[chapterIndex] = _GrowingChapterEntry(source);
+  }
+
+  @override
+  void finishGrowingChapter(int chapterIndex, String finalPath) {
+    _growingChapters[chapterIndex]?.finalPath = finalPath;
+  }
 
   @override
   Future<void> setQueue(List<ChapterProgress> chapters) async {
@@ -128,12 +166,25 @@ class AudioPlayerService implements AudioPlayerInterface {
     for (var i = 0; i < chapters.length; i++) {
       final c = chapters[i];
       if (c.downloadUrl != null) {
+        final growing = _growingChapters[c.index];
+        final identity = Uri.parse(c.downloadUrl!);
+        if (growing != null && growing.matches(identity)) {
+          children.add(growing.source);
+          urls.add(growing.identity);
+          map.add(i);
+          continue;
+        }
         final url = _resolve(base, c.downloadUrl!);
         if (url.scheme.isEmpty || (url.scheme == 'http' && base.isEmpty)) {
           continue;
         }
-        children.add(AudioSource.uri(url));
-        urls.add(url);
+        if (growing != null && growing.matches(url)) {
+          children.add(growing.source);
+          urls.add(growing.identity);
+        } else {
+          children.add(AudioSource.uri(url));
+          urls.add(url);
+        }
         map.add(i);
       }
     }
@@ -257,6 +308,20 @@ class AudioPlayerService implements AudioPlayerInterface {
 
   @override
   Future<void> seek(Duration position, {int? index}) async {
+    final generation = ++_seekGeneration;
+    final targetIndex = index ?? _player.currentIndex;
+    if (targetIndex != null &&
+        targetIndex >= 0 &&
+        targetIndex < _playableMap.length) {
+      final chapter = _chapters[_playableMap[targetIndex]];
+      final growing = _growingChapters[chapter.index];
+      if (position > Duration.zero &&
+          growing != null &&
+          growing.matches(_chapterQueueURLs[targetIndex])) {
+        await growing.source.waitForSeek();
+      }
+    }
+    if (generation != _seekGeneration) return;
     final previous = _seekJourneyId;
     if (previous != null) latencyObservations.cancel(previous);
     _seekJourneyId = latencyObservations.begin(
@@ -335,14 +400,14 @@ class AudioPlayerService implements AudioPlayerInterface {
     final pos = _player.position;
     final dur = _player.duration ?? Duration.zero;
     final target = pos + Duration(seconds: seconds);
-    _player.seek(target > dur ? dur : target);
+    unawaited(seek(dur > Duration.zero && target > dur ? dur : target));
   }
 
   @override
   void skipBackward({int seconds = 15}) {
     final pos = _player.position;
     final target = pos - Duration(seconds: seconds);
-    _player.seek(target < Duration.zero ? Duration.zero : target);
+    unawaited(seek(target < Duration.zero ? Duration.zero : target));
   }
 
   @override
@@ -396,6 +461,11 @@ class AudioPlayerService implements AudioPlayerInterface {
 
   @override
   Future<void> dispose() async {
+    _seekGeneration++;
+    for (final entry in _growingChapters.values) {
+      entry.source.fail(StateError('Audio player disposed'));
+    }
+    _growingChapters.clear();
     _sleepTimer?.cancel();
     _indexSub?.cancel();
     await _playabilitySub?.cancel();

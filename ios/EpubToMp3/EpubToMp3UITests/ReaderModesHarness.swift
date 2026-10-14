@@ -149,8 +149,12 @@ final class ReaderModesHarness {
         guard chromeIsVisible != visible else { return }
         toggleChrome()
         XCTAssertTrue(
-            waitUntil(timeout: timeout) { self.chromeIsVisible == visible },
-            "The reader chrome must settle to visible=\(visible); metrics=\(paginationMetrics?.values ?? [:]); cachedPage=\(String(describing: activeReaderPage))/\(String(describing: activeReaderPageCount))."
+            waitUntil(timeout: timeout) {
+                guard self.chromeIsVisible == visible,
+                      let metrics = self.paginationMetrics else { return false }
+                return metrics.values["chromeHidden"] == (visible ? 0 : 1)
+            },
+            "The reader chrome and matching final pagination probe must settle to visible=\(visible); metrics=\(paginationMetrics?.values ?? [:]); cachedPage=\(String(describing: activeReaderPage))/\(String(describing: activeReaderPageCount))."
         )
     }
 
@@ -177,27 +181,29 @@ final class ReaderModesHarness {
         let visibleIndicator = app.descendants(matching: .any)
             .matching(identifier: "reader.pageIndicator")
             .allElementsBoundByIndex.first(where: \.isHittable)
+        var visiblePage: Int?
+        var visiblePageCount: Int?
         if let visibleIndicator {
             let indicatorText = (visibleIndicator.value as? String) ?? visibleIndicator.label
             let indicatorNumbers = indicatorText
                 .components(separatedBy: CharacterSet.decimalDigits.inverted)
                 .compactMap(Int.init)
+            visiblePage = indicatorNumbers.first
+            visiblePageCount = indicatorNumbers.last
             activeReaderPage = indicatorNumbers.first
             activeReaderPageCount = indicatorNumbers.last
         }
-        let activePage = activeReaderPage
-        let activePageCount = activeReaderPageCount
         let candidates = probes.allElementsBoundByIndex.filter { probe in
             let values = Self.integerMetrics(from: probe.label)
             return values["total"] != nil
                 && (pageCount == nil || values["total"] == pageCount)
-                && (activePageCount == nil || values["total"] == activePageCount)
+                && (visiblePageCount == nil || values["total"] == visiblePageCount)
         }
         return candidates.min { left, right in
-            guard let activePage else { return false }
+            guard let visiblePage else { return false }
             let leftPage = Self.integerMetrics(from: left.label)["page"] ?? Int.max
             let rightPage = Self.integerMetrics(from: right.label)["page"] ?? Int.max
-            return abs(leftPage - activePage) < abs(rightPage - activePage)
+            return abs(leftPage - visiblePage) < abs(rightPage - visiblePage)
         }
     }
 

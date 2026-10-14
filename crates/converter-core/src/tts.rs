@@ -7,7 +7,10 @@
 
 use std::{
     fmt,
-    sync::{Arc, Mutex},
+    sync::{
+        atomic::{AtomicI64, Ordering},
+        Arc, Mutex,
+    },
     time::Duration,
     time::Instant,
 };
@@ -17,6 +20,8 @@ use http::{header::HeaderValue, Request};
 use rand::Rng;
 use sha2::{Digest, Sha256};
 use tokio::{
+    io::{AsyncReadExt, AsyncWriteExt},
+    net::TcpStream,
     sync::{OwnedSemaphorePermit, Semaphore},
     time::timeout,
 };
@@ -30,7 +35,7 @@ use url::Url;
 use crate::adaptive::{AdaptiveRequestPermit, AdaptiveThroughputController, ProviderFailure};
 
 pub const DEFAULT_ENDPOINT: &str =
-    "wss://speech.platform.bing.com/consumer/speech/synthesize/readaloud/edge/v1";
+    "wss://api.msedgeservices.com/tts/cognitiveservices/websocket/v1";
 pub const TRUSTED_CLIENT_TOKEN: &str = "6A5AA1D4EAFF4E9FB37E23D68491D6F4";
 pub const DEFAULT_OUTPUT_FORMAT: &str = "audio-24khz-48kbitrate-mono-mp3";
 pub const DEFAULT_CHUNK_CHARS: usize = 12_000;
@@ -38,6 +43,7 @@ pub const DEFAULT_CONCURRENCY: usize = 8;
 const EDGE_BROWSER_VERSION: &str = "1-143.0.3650.75";
 const REFERENCE_MAX_RETRIES: usize = 3;
 const REFERENCE_MAX_DEADLINE: Duration = Duration::from_secs(3_600);
+static EDGE_CLOCK_SKEW_SECONDS: AtomicI64 = AtomicI64::new(0);
 
 pub type Telemetry = Arc<dyn Fn(TelemetryEvent) + Send + Sync>;
 pub type EdgeSocket = WebSocketStream<MaybeTlsStream<tokio::net::TcpStream>>;
@@ -100,7 +106,7 @@ where
 
 fn map_reference_synthesis_error(error: EdgeError) -> EdgeError {
     match error {
-        EdgeError::Timeout | EdgeError::RateLimited { .. } => error,
+        EdgeError::Timeout | EdgeError::RateLimited { .. } | EdgeError::Forbidden { .. } => error,
         EdgeError::Cancelled => EdgeError::Cancelled,
         other => EdgeError::Transport(other.to_string()),
     }
@@ -208,6 +214,10 @@ pub enum EdgeError {
         status: u16,
         retry_after: Option<Duration>,
     },
+    Forbidden {
+        edge_reference: Option<String>,
+        server_date: Option<String>,
+    },
     Protocol(String),
     Timeout,
     NoAudio,
@@ -221,6 +231,13 @@ impl fmt::Display for EdgeError {
             Self::Url(v) => write!(f, "invalid Edge URL: {v}"),
             Self::Transport(v) => write!(f, "Edge transport: {v}"),
             Self::RateLimited { status, .. } => write!(f, "Edge request throttled (HTTP {status})"),
+            Self::Forbidden { edge_reference, .. } => {
+                f.write_str("Edge denied the speech request (HTTP 403)")?;
+                if let Some(edge_reference) = edge_reference {
+                    write!(f, "; reference: {edge_reference}")?;
+                }
+                Ok(())
+            }
             Self::Protocol(v) => write!(f, "Edge protocol: {v}"),
             Self::Timeout => f.write_str("Edge synthesis timed out"),
             Self::NoAudio => f.write_str("Edge returned no audio"),
@@ -237,6 +254,7 @@ impl EdgeError {
             Self::Timeout => RetryCategory::Timeout,
             Self::NoAudio => RetryCategory::NoAudio,
             Self::RateLimited { .. } => RetryCategory::RateLimit,
+            Self::Forbidden { .. } => RetryCategory::Permanent,
             Self::Transport(_) => RetryCategory::Transport,
             Self::Protocol(_) => RetryCategory::Protocol,
             Self::Cancelled => RetryCategory::Cancelled,
@@ -292,83 +310,7 @@ pub struct WebSocketTransport;
 impl EdgeTransport for WebSocketTransport {
     fn connect<'a>(&'a self, request: Request<()>) -> TransportFuture<'a> {
         Box::pin(async move {
-            let mut request = request
-                .uri()
-                .to_string()
-                .into_client_request()
-                .map_err(|error| EdgeError::Transport(error.to_string()))?;
-
-            request
-                .headers_mut()
-                .insert("Origin", HeaderValue::from_static(EDGE_ORIGIN));
-            request
-                .headers_mut()
-                .insert("Pragma", HeaderValue::from_static("no-cache"));
-            request
-                .headers_mut()
-                .insert("Cache-Control", HeaderValue::from_static("no-cache"));
-            request
-                .headers_mut()
-                .insert("Sec-WebSocket-Version", HeaderValue::from_static("13"));
-            request.headers_mut().insert(
-                "Accept-Encoding",
-                HeaderValue::from_static("gzip, deflate, br, zstd"),
-            );
-            request.headers_mut().insert(
-                "Accept-Language",
-                HeaderValue::from_static("en-US,en;q=0.9"),
-            );
-            let mut muid_bytes = [0u8; 16];
-            rand::rng().fill(&mut muid_bytes);
-            let muid = hex::encode_upper(muid_bytes);
-            let cookie = format!("muid={muid};");
-            request.headers_mut().insert(
-                "Cookie",
-                HeaderValue::from_str(&cookie)
-                    .map_err(|error| EdgeError::Transport(error.to_string()))?,
-            );
-
-            request.headers_mut().insert(
-                "User-Agent",
-                HeaderValue::from_static(
-                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36 Edg/143.0.0.0",
-                ),
-            );
-            request
-                .headers_mut()
-                .insert("Pragma", HeaderValue::from_static("no-cache"));
-            request
-                .headers_mut()
-                .insert("Cache-Control", HeaderValue::from_static("no-cache"));
-            request.headers_mut().insert(
-                "Accept-Encoding",
-                HeaderValue::from_static("gzip, deflate, br"),
-            );
-            request.headers_mut().insert(
-                "Accept-Language",
-                HeaderValue::from_static("en-US,en;q=0.9"),
-            );
-            request
-                .headers_mut()
-                .insert("Accept", HeaderValue::from_static("*/*"));
-            request.headers_mut().insert(
-                "Sec-CH-UA",
-                HeaderValue::from_static(
-                    "\" Not;A Brand\";v=\"99\", \"Microsoft Edge\";v=\"143\", \"Chromium\";v=\"143\"",
-                ),
-            );
-            request
-                .headers_mut()
-                .insert("Sec-CH-UA-Mobile", HeaderValue::from_static("?0"));
-            request
-                .headers_mut()
-                .insert("Sec-Fetch-Site", HeaderValue::from_static("none"));
-            request
-                .headers_mut()
-                .insert("Sec-Fetch-Mode", HeaderValue::from_static("cors"));
-            request
-                .headers_mut()
-                .insert("Sec-Fetch-Dest", HeaderValue::from_static("empty"));
+            let request = websocket_upgrade_request(request)?;
             let mut roots = rustls::RootCertStore::empty();
             let certificate_result = rustls_native_certs::load_native_certs();
             for certificate in certificate_result.certs {
@@ -382,26 +324,174 @@ impl EdgeTransport for WebSocketTransport {
                 .with_no_client_auth();
             tls_config.alpn_protocols = vec![b"http/1.1".to_vec()];
             let tls_connector = Connector::Rustls(std::sync::Arc::new(tls_config));
-            let (socket, _) = client_async_tls_with_config(
-                request,
-                tokio::net::TcpStream::connect("speech.platform.bing.com:443")
+            let host = request
+                .uri()
+                .host()
+                .ok_or_else(|| EdgeError::Url("Edge WebSocket URL has no host".into()))?;
+            let port = request.uri().port_u16().unwrap_or(443);
+            let stream =
+                connect_tcp_for_websocket(host, port, configured_edge_proxy(host)?).await?;
+            let (socket, _) =
+                client_async_tls_with_config(request, stream, None, Some(tls_connector))
                     .await
-                    .map_err(|error| EdgeError::Transport(error.to_string()))?,
-                None,
-                Some(tls_connector),
-            )
-            .await
-            .map_err(map_websocket_error)?;
+                    .map_err(map_websocket_error)?;
             Ok(socket)
         })
     }
+}
+
+fn configured_edge_proxy(host: &str) -> Result<Option<Url>, EdgeError> {
+    let no_proxy = std::env::var("NO_PROXY")
+        .or_else(|_| std::env::var("no_proxy"))
+        .unwrap_or_default();
+    if proxy_bypass_matches(host, &no_proxy) {
+        return Ok(None);
+    }
+
+    let configured = [
+        "EDGE_PROXY",
+        "HTTPS_PROXY",
+        "https_proxy",
+        "ALL_PROXY",
+        "all_proxy",
+    ]
+    .iter()
+    .find_map(|name| {
+        std::env::var(name)
+            .ok()
+            .filter(|value| !value.trim().is_empty())
+    });
+    let Some(configured) = configured else {
+        return Ok(None);
+    };
+    let proxy = Url::parse(&configured)
+        .map_err(|_| EdgeError::Transport("invalid Edge proxy URL".into()))?;
+    if proxy.scheme() != "http"
+        || proxy.host_str().is_none()
+        || proxy.username() != ""
+        || proxy.password().is_some()
+    {
+        return Err(EdgeError::Transport(
+            "Edge proxy must be an unauthenticated http:// URL".into(),
+        ));
+    }
+    Ok(Some(proxy))
+}
+
+fn proxy_bypass_matches(host: &str, entries: &str) -> bool {
+    entries.split(',').map(str::trim).any(|entry| {
+        if entry.is_empty() {
+            return false;
+        }
+        if entry == "*" {
+            return true;
+        }
+        let domain = entry.trim_start_matches('.');
+        host.eq_ignore_ascii_case(domain)
+            || host
+                .to_ascii_lowercase()
+                .ends_with(&format!(".{}", domain.to_ascii_lowercase()))
+    })
+}
+
+async fn connect_tcp_for_websocket(
+    host: &str,
+    port: u16,
+    proxy: Option<Url>,
+) -> Result<TcpStream, EdgeError> {
+    let Some(proxy) = proxy else {
+        return TcpStream::connect((host, port))
+            .await
+            .map_err(|error| EdgeError::Transport(error.to_string()));
+    };
+    if proxy.path() != "/" || proxy.query().is_some() || proxy.fragment().is_some() {
+        return Err(EdgeError::Transport(
+            "Edge proxy URL cannot contain a path, query, or fragment".into(),
+        ));
+    }
+    let proxy_host = proxy
+        .host_str()
+        .ok_or_else(|| EdgeError::Transport("Edge proxy URL has no host".into()))?;
+    let proxy_port = proxy.port().unwrap_or(80);
+    let mut stream = TcpStream::connect((proxy_host, proxy_port))
+        .await
+        .map_err(|error| EdgeError::Transport(format!("Edge proxy connection failed: {error}")))?;
+    let authority_host = if host.contains(':') {
+        format!("[{host}]")
+    } else {
+        host.to_owned()
+    };
+    let authority = format!("{authority_host}:{port}");
+    let connect_request = format!(
+        "CONNECT {authority} HTTP/1.1\r\nHost: {authority}\r\nProxy-Connection: Keep-Alive\r\n\r\n"
+    );
+    stream
+        .write_all(connect_request.as_bytes())
+        .await
+        .map_err(|error| EdgeError::Transport(format!("Edge proxy CONNECT failed: {error}")))?;
+    let mut response = Vec::with_capacity(256);
+    while response.len() < 16 * 1024 && !response.ends_with(b"\r\n\r\n") {
+        let mut byte = [0u8; 1];
+        stream
+            .read_exact(&mut byte)
+            .await
+            .map_err(|error| EdgeError::Transport(format!("Edge proxy CONNECT failed: {error}")))?;
+        response.push(byte[0]);
+    }
+    if !response.ends_with(b"\r\n\r\n") {
+        return Err(EdgeError::Transport(
+            "Edge proxy returned oversized CONNECT headers".into(),
+        ));
+    }
+    let status = std::str::from_utf8(&response)
+        .ok()
+        .and_then(|headers| headers.lines().next())
+        .and_then(|line| line.split_ascii_whitespace().nth(1))
+        .and_then(|status| status.parse::<u16>().ok());
+    if status != Some(200) {
+        return Err(EdgeError::Transport(format!(
+            "Edge proxy CONNECT returned HTTP {}",
+            status.map_or_else(|| "invalid response".into(), |status| status.to_string())
+        )));
+    }
+    Ok(stream)
+}
+
+fn websocket_upgrade_request(request: Request<()>) -> Result<Request<()>, EdgeError> {
+    let mut websocket_request = request
+        .uri()
+        .to_string()
+        .into_client_request()
+        .map_err(|error| EdgeError::Transport(error.to_string()))?;
+    for (name, value) in request.headers() {
+        websocket_request
+            .headers_mut()
+            .insert(name.clone(), value.clone());
+    }
+    Ok(websocket_request)
 }
 
 fn map_websocket_error(error: tokio_tungstenite::tungstenite::Error) -> EdgeError {
     use tokio_tungstenite::tungstenite::Error as WebSocketError;
 
     match error {
-        WebSocketError::Http(response) if matches!(response.status().as_u16(), 403 | 429 | 503) => {
+        WebSocketError::Http(response) if response.status().as_u16() == 403 => {
+            let edge_reference = response
+                .headers()
+                .get("x-msedge-ref")
+                .and_then(|value| value.to_str().ok())
+                .map(str::to_owned);
+            let server_date = response
+                .headers()
+                .get(http::header::DATE)
+                .and_then(|value| value.to_str().ok())
+                .map(str::to_owned);
+            EdgeError::Forbidden {
+                edge_reference,
+                server_date,
+            }
+        }
+        WebSocketError::Http(response) if matches!(response.status().as_u16(), 429 | 503) => {
             let retry_after = response
                 .headers()
                 .get("retry-after")
@@ -802,6 +892,39 @@ impl<T: EdgeTransport + 'static> EdgeTtsClient<T> {
                         .await;
                     }
                 }
+                Ok(Err(error @ EdgeError::Forbidden { .. }))
+                    if retries == 0 && retries < self.config.max_retries =>
+                {
+                    let corrected = match &error {
+                        EdgeError::Forbidden { server_date, .. } => server_date
+                            .as_deref()
+                            .and_then(|date| adjust_edge_clock_skew(date).ok())
+                            .is_some(),
+                        _ => false,
+                    };
+                    if corrected {
+                        retries = 1;
+                        drop(local_permit);
+                        drop(permit);
+                        continue;
+                    }
+                    self.observe_failure(
+                        &error,
+                        chars,
+                        chunk_index,
+                        total_chunks,
+                        retries,
+                        request_started.elapsed(),
+                    );
+                    drop(local_permit);
+                    drop(permit);
+                    self.emit(TelemetryEvent::RequestFailed {
+                        request_id: request_id.clone(),
+                        category: RetryCategory::Permanent,
+                        retries,
+                    });
+                    return Err(error);
+                }
                 Ok(Err(error)) => {
                     self.observe_failure(
                         &error,
@@ -893,6 +1016,9 @@ impl<T: EdgeTransport + 'static> EdgeTtsClient<T> {
         let Some(controller) = &self.adaptive else {
             return;
         };
+        if matches!(error, EdgeError::Forbidden { .. }) {
+            return;
+        }
         let failure = match error {
             EdgeError::RateLimited { retry_after, .. } => ProviderFailure::Throttled {
                 retry_after: *retry_after,
@@ -1133,32 +1259,45 @@ fn random_id() -> String {
 
 fn request_url(endpoint: &Url, connection_id: &str, token: &str) -> Result<Url, EdgeError> {
     let mut url = endpoint.clone();
-    url.query_pairs_mut()
-        .append_pair("ConnectionId", connection_id);
-    if !url
-        .query_pairs()
-        .any(|(key, value)| key == "TrustedClientToken" && value == token)
     {
-        url.query_pairs_mut()
-            .append_pair("TrustedClientToken", token);
+        let mut query = url.query_pairs_mut();
+        query
+            .append_pair("Ocp-Apim-Subscription-Key", token)
+            .append_pair("ConnectionId", connection_id)
+            .append_pair("Sec-MS-GEC", &sec_ms_gec_now())
+            .append_pair("Sec-MS-GEC-Version", EDGE_BROWSER_VERSION);
     }
-    url.query_pairs_mut()
-        .append_pair("Sec-MS-GEC", &sec_ms_gec_now())
-        .append_pair("Sec-MS-GEC-Version", EDGE_BROWSER_VERSION);
     Ok(url)
 }
 
 fn sec_ms_gec_now() -> String {
     const WINDOWS_EPOCH_SECONDS: u64 = 11_644_473_600;
-    let seconds = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs();
+    let seconds = adjusted_unix_seconds().max(0) as u64;
     let rounded_seconds = seconds + WINDOWS_EPOCH_SECONDS;
     let rounded_seconds = rounded_seconds - rounded_seconds % 300;
     let ticks = rounded_seconds * 10_000_000;
     let payload = format!("{ticks}{TRUSTED_CLIENT_TOKEN}");
     hex::encode(Sha256::digest(payload.as_bytes())).to_uppercase()
+}
+
+fn adjusted_unix_seconds() -> i64 {
+    time::OffsetDateTime::now_utc()
+        .unix_timestamp()
+        .saturating_add(EDGE_CLOCK_SKEW_SECONDS.load(Ordering::Relaxed))
+}
+
+fn adjust_edge_clock_skew(server_date: &str) -> Result<i64, String> {
+    let format = time::format_description::well_known::Rfc2822;
+    let server_time = time::OffsetDateTime::parse(server_date, &format)
+        .map_err(|error| format!("invalid Edge Date header: {error}"))?;
+    let skew = server_time
+        .unix_timestamp()
+        .saturating_sub(time::OffsetDateTime::now_utc().unix_timestamp());
+    if skew.unsigned_abs() > 24 * 60 * 60 {
+        return Err("Edge Date header differs from local time by more than 24 hours".into());
+    }
+    EDGE_CLOCK_SKEW_SECONDS.store(skew, Ordering::Relaxed);
+    Ok(skew)
 }
 
 fn protocol_request(url: Url) -> Result<Request<()>, EdgeError> {
@@ -1203,7 +1342,8 @@ fn protocol_request(url: Url) -> Result<Request<()>, EdgeError> {
 }
 
 fn protocol_timestamp() -> String {
-    time::OffsetDateTime::now_utc()
+    time::OffsetDateTime::from_unix_timestamp(adjusted_unix_seconds())
+        .unwrap_or_else(|_| time::OffsetDateTime::now_utc())
         .format(&time::macros::format_description!(
             "[weekday repr:short] [month repr:short] [day padding:zero] [year] [hour]:[minute]:[second] GMT+0000 (Coordinated Universal Time)"
         ))
@@ -1216,8 +1356,8 @@ fn speech_config(timestamp: &str, format: &str) -> String {
             "synthesis": {
                 "audio": {
                     "metadataoptions": {
-                        "sentenceBoundaryEnabled": false,
-                        "wordBoundaryEnabled": true,
+                        "sentenceBoundaryEnabled": "false",
+                        "wordBoundaryEnabled": "true",
                     },
                     "outputFormat": format,
                 },
@@ -1246,7 +1386,31 @@ fn parse_audio_frame(frame: &[u8]) -> Result<Vec<u8>, EdgeError> {
     if header_len + 2 > frame.len() {
         return Err(EdgeError::Protocol("binary header exceeds frame".into()));
     }
-    Ok(frame[header_len + 2..].to_vec())
+    let header = std::str::from_utf8(&frame[2..header_len + 2])
+        .map_err(|error| EdgeError::Protocol(format!("invalid binary frame header: {error}")))?;
+    let path = frame_path(header);
+    if path.as_deref() != Some("audio") {
+        return Err(EdgeError::Protocol(format!(
+            "Edge returned unexpected binary frame path {}",
+            path.as_deref().unwrap_or("<missing>")
+        )));
+    }
+    let content_type = header
+        .split("\r\n")
+        .find_map(|line| line.strip_prefix("Content-Type:"));
+    if !matches!(content_type, Some("audio/mpeg") | None) {
+        return Err(EdgeError::Protocol(format!(
+            "Edge returned unexpected binary content type {}",
+            content_type.unwrap_or("<missing>")
+        )));
+    }
+    let payload = frame[header_len + 2..].to_vec();
+    if payload.is_empty() && content_type.is_some() {
+        return Err(EdgeError::Protocol(
+            "Edge returned an empty audio frame".into(),
+        ));
+    }
+    Ok(payload)
 }
 
 /// Stable helper for protocol fixtures: returns the Sec-MS-GEC token shape.
@@ -1273,6 +1437,185 @@ mod protocol_tests {
                 unreachable!("a stalled connection must be cancelled by its request timeout")
             })
         }
+    }
+
+    struct ForbiddenConnectTransport {
+        attempts: Arc<std::sync::atomic::AtomicUsize>,
+    }
+
+    impl EdgeTransport for ForbiddenConnectTransport {
+        fn connect<'a>(&'a self, _request: Request<()>) -> TransportFuture<'a> {
+            self.attempts
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            Box::pin(async {
+                Err(EdgeError::Forbidden {
+                    edge_reference: Some("edge-ref-test".into()),
+                    server_date: None,
+                })
+            })
+        }
+    }
+
+    struct ClockSkewCorrectionTransport {
+        attempts: Arc<std::sync::atomic::AtomicUsize>,
+        server_date: String,
+    }
+
+    impl EdgeTransport for ClockSkewCorrectionTransport {
+        fn connect<'a>(&'a self, _request: Request<()>) -> TransportFuture<'a> {
+            let attempt = self
+                .attempts
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            let server_date = (attempt == 0).then(|| self.server_date.clone());
+            Box::pin(async move {
+                Err(EdgeError::Forbidden {
+                    edge_reference: Some("edge-ref-clock-test".into()),
+                    server_date,
+                })
+            })
+        }
+    }
+
+    #[test]
+    fn websocket_upgrade_preserves_only_the_edge_websocket_headers() {
+        let url = Url::parse(DEFAULT_ENDPOINT).unwrap();
+        let request = protocol_request(url).unwrap();
+        let request = websocket_upgrade_request(request).unwrap();
+        let headers = request.headers();
+
+        assert_eq!(headers["origin"], EDGE_ORIGIN);
+        assert_eq!(headers["pragma"], "no-cache");
+        assert_eq!(headers["cache-control"], "no-cache");
+        assert_eq!(headers["sec-websocket-version"], "13");
+        assert_eq!(headers["accept-encoding"], "gzip, deflate, br, zstd");
+        assert_eq!(headers["accept-language"], "en-US,en;q=0.9");
+        assert!(headers["cookie"].to_str().unwrap().starts_with("muid="));
+        assert!(headers["user-agent"]
+            .to_str()
+            .unwrap()
+            .contains("Edg/143.0.0.0"));
+        assert!(headers.contains_key("sec-websocket-key"));
+        assert!(!headers.contains_key("sec-ch-ua"));
+        assert!(!headers.contains_key("sec-fetch-site"));
+        assert!(!headers.contains_key("accept"));
+    }
+
+    #[test]
+    fn default_endpoint_uses_current_edge_read_aloud_host_and_subscription_query_key() {
+        let endpoint = Url::parse(DEFAULT_ENDPOINT).unwrap();
+        assert_eq!(endpoint.host_str(), Some("api.msedgeservices.com"));
+        assert_eq!(
+            endpoint.path(),
+            "/tts/cognitiveservices/websocket/v1"
+        );
+
+        let request = request_url(&endpoint, "connection-id", TRUSTED_CLIENT_TOKEN).unwrap();
+        let query = request.query_pairs().collect::<Vec<_>>();
+        assert!(query.iter().any(|(key, value)| {
+            key == "Ocp-Apim-Subscription-Key" && value == TRUSTED_CLIENT_TOKEN
+        }));
+        assert!(query.iter().any(|(key, value)| {
+            key == "ConnectionId" && value == "connection-id"
+        }));
+        assert!(query.iter().any(|(key, _)| key == "Sec-MS-GEC"));
+        assert!(query.iter().any(|(key, value)| {
+            key == "Sec-MS-GEC-Version" && value == EDGE_BROWSER_VERSION
+        }));
+        assert!(!query.iter().any(|(key, _)| key == "TrustedClientToken"));
+    }
+
+    #[test]
+    fn proxy_bypass_matches_exact_hosts_and_domain_suffixes() {
+        assert!(proxy_bypass_matches(
+            "speech.platform.bing.com",
+            "localhost, .bing.com"
+        ));
+        assert!(proxy_bypass_matches("localhost", "localhost, .bing.com"));
+        assert!(!proxy_bypass_matches("notbing.com", ".bing.com"));
+        assert!(proxy_bypass_matches("anything.example", "*"));
+    }
+
+    #[tokio::test]
+    async fn http_proxy_connect_tunnels_the_edge_websocket_target() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let mut request = Vec::new();
+            while !request.ends_with(b"\r\n\r\n") {
+                let mut byte = [0u8; 1];
+                stream.read_exact(&mut byte).await.unwrap();
+                request.push(byte[0]);
+            }
+            stream
+                .write_all(b"HTTP/1.1 200 Connection established\r\n\r\n")
+                .await
+                .unwrap();
+            String::from_utf8(request).unwrap()
+        });
+
+        let proxy = Url::parse(&format!("http://{address}")).unwrap();
+        let stream = connect_tcp_for_websocket("speech.platform.bing.com", 443, Some(proxy))
+            .await
+            .unwrap();
+        drop(stream);
+
+        let request = server.await.unwrap();
+        assert!(request.starts_with(
+            "CONNECT speech.platform.bing.com:443 HTTP/1.1\r\nHost: speech.platform.bing.com:443\r\n"
+        ));
+    }
+
+    #[tokio::test]
+    async fn http_proxy_connect_rejects_non_success_responses() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let mut request = Vec::new();
+            while !request.ends_with(b"\r\n\r\n") {
+                let mut byte = [0u8; 1];
+                stream.read_exact(&mut byte).await.unwrap();
+                request.push(byte[0]);
+            }
+            stream
+                .write_all(b"HTTP/1.1 407 Proxy Authentication Required\r\n\r\n")
+                .await
+                .unwrap();
+        });
+
+        let proxy = Url::parse(&format!("http://{address}")).unwrap();
+        let error = connect_tcp_for_websocket("speech.platform.bing.com", 443, Some(proxy))
+            .await
+            .unwrap_err();
+        server.await.unwrap();
+        assert_eq!(
+            error,
+            EdgeError::Transport("Edge proxy CONNECT returned HTTP 407".into())
+        );
+    }
+
+    #[test]
+    fn speech_config_uses_edge_string_valued_metadata_flags() {
+        let frame = speech_config(
+            "Mon Oct 12 2026 20:00:00 GMT+0000 (Coordinated Universal Time)",
+            "audio-24khz-48kbitrate-mono-mp3",
+        );
+        let payload = frame.split_once("\r\n\r\n").unwrap().1.trim();
+        let payload: serde_json::Value = serde_json::from_str(payload).unwrap();
+
+        assert_eq!(
+            payload["context"]["synthesis"]["audio"]["metadataoptions"]["sentenceBoundaryEnabled"],
+            "false"
+        );
+        assert_eq!(
+            payload["context"]["synthesis"]["audio"]["metadataoptions"]["wordBoundaryEnabled"],
+            "true"
+        );
+        assert_eq!(
+            payload["context"]["synthesis"]["audio"]["outputFormat"],
+            "audio-24khz-48kbitrate-mono-mp3"
+        );
     }
 
     #[tokio::test]
@@ -1307,6 +1650,85 @@ mod protocol_tests {
             }
         );
         assert_eq!(error.retry_category(), RetryCategory::RateLimit);
+    }
+
+    #[test]
+    fn edge_http_403_is_a_permanent_rejection_with_server_reference() {
+        let response = http::Response::builder()
+            .status(403)
+            .header("x-msedge-ref", "region-reference")
+            .header("date", "Tue, 13 Oct 2026 12:05:00 GMT")
+            .body(Some(Vec::new()))
+            .unwrap();
+        let error = map_websocket_error(tokio_tungstenite::tungstenite::Error::Http(response));
+
+        assert_eq!(
+            error,
+            EdgeError::Forbidden {
+                edge_reference: Some("region-reference".into()),
+                server_date: Some("Tue, 13 Oct 2026 12:05:00 GMT".into()),
+            }
+        );
+        assert_eq!(error.retry_category(), RetryCategory::Permanent);
+        assert!(error.to_string().contains("region-reference"));
+    }
+
+    #[tokio::test]
+    async fn edge_http_403_without_server_date_does_not_retry() {
+        let attempts = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let mut config = EdgeConfig::new("pt-BR-FranciscaNeural").unwrap();
+        config.max_retries = 3;
+        let client = EdgeTtsClient::with_transport(
+            config,
+            Arc::new(ForbiddenConnectTransport {
+                attempts: Arc::clone(&attempts),
+            }),
+            1,
+            None,
+        );
+
+        let error = client.synthesize("hello").await.unwrap_err();
+
+        assert_eq!(attempts.load(std::sync::atomic::Ordering::SeqCst), 1);
+        assert_eq!(
+            error,
+            EdgeError::Forbidden {
+                edge_reference: Some("edge-ref-test".into()),
+                server_date: None,
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn edge_http_403_with_server_date_adjusts_clock_and_retries_once() {
+        let attempts = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let old_skew = EDGE_CLOCK_SKEW_SECONDS.load(Ordering::Relaxed);
+        let server_date = (time::OffsetDateTime::now_utc() + time::Duration::seconds(300))
+            .format(&time::format_description::well_known::Rfc2822)
+            .unwrap();
+        let mut config = EdgeConfig::new("pt-BR-FranciscaNeural").unwrap();
+        config.max_retries = 3;
+        let client = EdgeTtsClient::with_transport(
+            config,
+            Arc::new(ClockSkewCorrectionTransport {
+                attempts: Arc::clone(&attempts),
+                server_date,
+            }),
+            1,
+            None,
+        );
+
+        let error = client.synthesize("hello").await.unwrap_err();
+
+        assert_eq!(attempts.load(std::sync::atomic::Ordering::SeqCst), 2);
+        assert_eq!(
+            error,
+            EdgeError::Forbidden {
+                edge_reference: Some("edge-ref-clock-test".into()),
+                server_date: None,
+            }
+        );
+        EDGE_CLOCK_SKEW_SECONDS.store(old_skew, Ordering::Relaxed);
     }
 
     #[test]
@@ -1422,9 +1844,25 @@ mod protocol_tests {
 
     #[test]
     fn binary_frame_discards_protocol_header() {
-        assert_eq!(
-            parse_audio_frame(&[0, 3, b'a', b'b', b'c', 1, 2]).unwrap(),
-            vec![1, 2]
-        );
+        let header = b"Path:audio\r\nContent-Type:audio/mpeg";
+        let mut frame = Vec::new();
+        frame.extend_from_slice(&(header.len() as u16).to_be_bytes());
+        frame.extend_from_slice(header);
+        frame.extend_from_slice(&[1, 2]);
+        assert_eq!(parse_audio_frame(&frame).unwrap(), vec![1, 2]);
+    }
+
+    #[test]
+    fn binary_frame_rejects_non_audio_control_frames() {
+        let header = b"Path:metadata\r\nContent-Type:application/json";
+        let mut frame = Vec::new();
+        frame.extend_from_slice(&(header.len() as u16).to_be_bytes());
+        frame.extend_from_slice(header);
+        frame.extend_from_slice(b"{}");
+
+        assert!(matches!(
+            parse_audio_frame(&frame),
+            Err(EdgeError::Protocol(message)) if message.contains("unexpected binary frame path metadata")
+        ));
     }
 }

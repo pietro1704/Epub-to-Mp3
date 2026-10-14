@@ -129,6 +129,8 @@ impl EmbeddedConversionSession {
                 engine: self.options.engine.clone(),
                 voice: self.options.voice.clone(),
                 language: self.options.language.clone(),
+                piper_model: None,
+                piper_config: None,
                 chapter_indices: self.options.chapter_indices.clone(),
                 no_parallel: self.options.no_parallel,
             })

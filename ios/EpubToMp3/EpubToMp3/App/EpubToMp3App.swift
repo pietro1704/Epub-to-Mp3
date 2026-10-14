@@ -329,6 +329,9 @@ final class EpubToMp3App: NSObject, PlatformApplicationDelegate {
         if ProcessInfo.processInfo.arguments.contains("-uiTestResetReaderPosition") {
             ReaderProgressStore.clearAll()
         }
+        if ProcessInfo.processInfo.arguments.contains("-uiTestResetActiveReader") {
+            ReaderSessionState.setCurrentlyReading(bookID: nil)
+        }
         if ProcessInfo.processInfo.arguments.contains("-uiTestFixture") {
             // Each UI test must start at the deterministic library surface;
             // otherwise a previous reader or full-player presentation wins at launch.

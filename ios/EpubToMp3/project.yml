@@ -258,6 +258,10 @@ targets:
               exit 1
             fi
           fi
+      - name: Bundle eSpeak NG data for Piper
+        basedOnDependencyAnalysis: false
+        script: |
+          bash "$SRCROOT/../../scripts/bundle_espeak_ng_data.sh"
 
     dependencies:
       - target: EpubToMp3Widget
@@ -514,6 +518,10 @@ schemes:
       environmentVariables:
         IDEPreferLogStreaming: YES
         EPUB2MP3_LOTR_IMPORTED_EPUB: "${EPUB2MP3_LOTR_IMPORTED_EPUB}"
+        EPUB2MP3_NATIVE_TTS_TEST: "$(EPUB2MP3_NATIVE_TTS_TEST)"
+        APP_IOS_LIVE_EDGE: "$(APP_IOS_LIVE_EDGE)"
+        EPUB2MP3_GUI_BOOK_ID: "$(EPUB2MP3_GUI_BOOK_ID)"
+        APP_IOS_PIPER_INFERENCE: "$(APP_IOS_PIPER_INFERENCE)"
       targets:
         - EpubToMp3Tests
         - EpubToMp3UITests
@@ -576,5 +584,8 @@ schemes:
       config: Debug
       environmentVariables:
         IDEPreferLogStreaming: YES
+        EPUB2MP3_NATIVE_TTS_TEST: "$(EPUB2MP3_NATIVE_TTS_TEST)"
+        APP_FOUNDATION_LIVE_EDGE: "$(APP_FOUNDATION_LIVE_EDGE)"
+        APP_FOUNDATION_FFI_LIBRARY: "$(APP_FOUNDATION_FFI_LIBRARY)"
       targets:
         - EpubToMp3Tests

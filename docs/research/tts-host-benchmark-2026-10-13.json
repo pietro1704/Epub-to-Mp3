@@ -1,0 +1,493 @@
+{
+  "created_utc": "2026-10-13T20:09:03Z",
+  "hardware": "Intel Core i5-8259U, 8 GiB RAM, x86_64 macOS desktop",
+  "edge_binary": "/Users/pips/Developer/epubtomp3/target/debug/embedded_edge_probe",
+  "edge_binary_sha256": "8cbb5e266df5a670e40695bb5d31f1019bdd7adfb49fec8d80b26adf6311369f",
+  "edge_build_profile": "reused Debug probe, no compilation",
+  "limitations": [
+    "Not physical mobile hardware",
+    "Three fresh processes per engine/input; shared OS voice services may stay warm",
+    "Different voices and speaking durations",
+    "TTFA, battery, thermals and total system memory are not measured",
+    "Apple child RSS excludes out-of-process speech services",
+    "No audio cache used by this harness; upstream caching is unknown",
+    "MP3 encoding included for Apple; Edge returns MP3 directly"
+  ],
+  "corpora": {
+    "short": {
+      "text": "A biblioteca estava silenciosa. \"Vamos começar?\", perguntou Ana. Às 8h30, ela abriu o livro e leu a primeira página.",
+      "characters": 116,
+      "sha256": "76e29553963f4d787a4170d7fc5d867fcce357d63f3fea06d699d5adf1948a09"
+    },
+    "paragraph": {
+      "text": "Na manhã de terça-feira, Ana encontrou um livro antigo na biblioteca. A capa estava gasta, mas as páginas permaneciam legíveis. \"Quanto custa?\", perguntou ela. O funcionário respondeu: \"Vinte e três reais e cinquenta centavos.\" Ana sorriu, conferiu o relógio às 8h30 e decidiu começar a leitura. No primeiro capítulo, um viajante atravessava a cidade em busca de notícias de sua família. Ele parou diante da estação, observou as pessoas e perguntou qual trem partiria às 14h15. A resposta chegou depressa: plataforma número 3. Mesmo com a chuva e o vento, o viajante continuou seu caminho. Não precisava correr; precisava apenas chegar antes do anoitecer.",
+      "characters": 655,
+      "sha256": "84067aa7d643dbccbc3ffb2559155027b6d9d66673bcc9ecbf68a20036fd182b"
+    }
+  },
+  "runs": [
+    {
+      "engine": "apple",
+      "corpus": "short",
+      "iteration": 1,
+      "process_state": "fresh_process",
+      "audio": "/Users/pips/Developer/epubtomp3/.reports/tts-host/20261013T200903Z/short-1-apple.mp3",
+      "command": [
+        "/usr/bin/say",
+        "-v",
+        "Luciana",
+        "-f",
+        "/Users/pips/Developer/epubtomp3/.reports/tts-host/20261013T200903Z/short.txt",
+        "-o",
+        "/Users/pips/Developer/epubtomp3/.reports/tts-host/20261013T200903Z/short-1-apple.aiff"
+      ],
+      "synthesis_wall_s": 1.1727939999836963,
+      "encoding_wall_s": 0.886486999981571,
+      "artifact_ready_wall_s": 2.0592809999652673,
+      "audio_duration_s": 9.196083,
+      "audio_metadata": {
+        "programs": [],
+        "stream_groups": [],
+        "streams": [
+          {
+            "codec_name": "mp3",
+            "sample_rate": "24000",
+            "channels": 1
+          }
+        ],
+        "format": {
+          "duration": "9.196083"
+        }
+      },
+      "rtf_artifact_ready": 0.22393023203088394,
+      "characters_per_second": 56.330340542138984,
+      "bytes": 55820,
+      "sha256": "d64700a2d0c298b5910990b2db9c10dbb30872a0fff0a07bbdfc502ff4c70240",
+      "child_peak_rss_bytes": 42106880,
+      "status": "passed_full_decode",
+      "non_silent_peak_db": -4.1
+    },
+    {
+      "engine": "edge",
+      "corpus": "short",
+      "iteration": 1,
+      "process_state": "fresh_process",
+      "audio": "/Users/pips/Developer/epubtomp3/.reports/tts-host/20261013T200903Z/short-1-edge.mp3",
+      "command": [
+        "/Users/pips/Developer/epubtomp3/target/debug/embedded_edge_probe",
+        "/Users/pips/Developer/epubtomp3/.reports/tts-host/20261013T200903Z/short-1-edge.mp3"
+      ],
+      "synthesis_wall_s": 1.905006000015419,
+      "encoding_wall_s": 0.0,
+      "artifact_ready_wall_s": 1.905006000015419,
+      "audio_duration_s": 9.312,
+      "audio_metadata": {
+        "programs": [],
+        "stream_groups": [],
+        "streams": [
+          {
+            "codec_name": "mp3",
+            "sample_rate": "24000",
+            "channels": 1
+          }
+        ],
+        "format": {
+          "duration": "9.312000"
+        }
+      },
+      "rtf_artifact_ready": 0.20457538659959398,
+      "characters_per_second": 60.892196664504525,
+      "bytes": 55872,
+      "sha256": "cdb8e9915f80dccece2c5bf8238bf5a2201448e6f96fc262d09a038ed51d6ca2",
+      "child_peak_rss_bytes": 11755520,
+      "status": "passed_full_decode",
+      "non_silent_peak_db": -3.7
+    },
+    {
+      "engine": "apple",
+      "corpus": "short",
+      "iteration": 2,
+      "process_state": "fresh_process",
+      "audio": "/Users/pips/Developer/epubtomp3/.reports/tts-host/20261013T200903Z/short-2-apple.mp3",
+      "command": [
+        "/usr/bin/say",
+        "-v",
+        "Luciana",
+        "-f",
+        "/Users/pips/Developer/epubtomp3/.reports/tts-host/20261013T200903Z/short.txt",
+        "-o",
+        "/Users/pips/Developer/epubtomp3/.reports/tts-host/20261013T200903Z/short-2-apple.aiff"
+      ],
+      "synthesis_wall_s": 0.6665680000151042,
+      "encoding_wall_s": 0.12418699997942895,
+      "artifact_ready_wall_s": 0.7907549999945331,
+      "audio_duration_s": 9.196083,
+      "audio_metadata": {
+        "programs": [],
+        "stream_groups": [],
+        "streams": [
+          {
+            "codec_name": "mp3",
+            "sample_rate": "24000",
+            "channels": 1
+          }
+        ],
+        "format": {
+          "duration": "9.196083"
+        }
+      },
+      "rtf_artifact_ready": 0.08598824086239035,
+      "characters_per_second": 146.69524694855164,
+      "bytes": 55820,
+      "sha256": "d64700a2d0c298b5910990b2db9c10dbb30872a0fff0a07bbdfc502ff4c70240",
+      "child_peak_rss_bytes": 41508864,
+      "status": "passed_full_decode",
+      "non_silent_peak_db": -4.1
+    },
+    {
+      "engine": "edge",
+      "corpus": "short",
+      "iteration": 2,
+      "process_state": "fresh_process",
+      "audio": "/Users/pips/Developer/epubtomp3/.reports/tts-host/20261013T200903Z/short-2-edge.mp3",
+      "command": [
+        "/Users/pips/Developer/epubtomp3/target/debug/embedded_edge_probe",
+        "/Users/pips/Developer/epubtomp3/.reports/tts-host/20261013T200903Z/short-2-edge.mp3"
+      ],
+      "synthesis_wall_s": 1.0833749999874271,
+      "encoding_wall_s": 0.0,
+      "artifact_ready_wall_s": 1.0833749999874271,
+      "audio_duration_s": 9.312,
+      "audio_metadata": {
+        "programs": [],
+        "stream_groups": [],
+        "streams": [
+          {
+            "codec_name": "mp3",
+            "sample_rate": "24000",
+            "channels": 1
+          }
+        ],
+        "format": {
+          "duration": "9.312000"
+        }
+      },
+      "rtf_artifact_ready": 0.11634181700895911,
+      "characters_per_second": 107.07280489336215,
+      "bytes": 55872,
+      "sha256": "d9678cb137cdbd5c69e2564655969f71d5cc9137e394eb496c738d47e1721c1d",
+      "child_peak_rss_bytes": 11563008,
+      "status": "passed_full_decode",
+      "non_silent_peak_db": -3.7
+    },
+    {
+      "engine": "apple",
+      "corpus": "short",
+      "iteration": 3,
+      "process_state": "fresh_process",
+      "audio": "/Users/pips/Developer/epubtomp3/.reports/tts-host/20261013T200903Z/short-3-apple.mp3",
+      "command": [
+        "/usr/bin/say",
+        "-v",
+        "Luciana",
+        "-f",
+        "/Users/pips/Developer/epubtomp3/.reports/tts-host/20261013T200903Z/short.txt",
+        "-o",
+        "/Users/pips/Developer/epubtomp3/.reports/tts-host/20261013T200903Z/short-3-apple.aiff"
+      ],
+      "synthesis_wall_s": 0.6623069999914151,
+      "encoding_wall_s": 0.126416999992216,
+      "artifact_ready_wall_s": 0.7887239999836311,
+      "audio_duration_s": 9.196083,
+      "audio_metadata": {
+        "programs": [],
+        "stream_groups": [],
+        "streams": [
+          {
+            "codec_name": "mp3",
+            "sample_rate": "24000",
+            "channels": 1
+          }
+        ],
+        "format": {
+          "duration": "9.196083"
+        }
+      },
+      "rtf_artifact_ready": 0.08576738596026494,
+      "characters_per_second": 147.07299385134397,
+      "bytes": 55820,
+      "sha256": "d64700a2d0c298b5910990b2db9c10dbb30872a0fff0a07bbdfc502ff4c70240",
+      "child_peak_rss_bytes": 41701376,
+      "status": "passed_full_decode",
+      "non_silent_peak_db": -4.1
+    },
+    {
+      "engine": "edge",
+      "corpus": "short",
+      "iteration": 3,
+      "process_state": "fresh_process",
+      "audio": "/Users/pips/Developer/epubtomp3/.reports/tts-host/20261013T200903Z/short-3-edge.mp3",
+      "command": [
+        "/Users/pips/Developer/epubtomp3/target/debug/embedded_edge_probe",
+        "/Users/pips/Developer/epubtomp3/.reports/tts-host/20261013T200903Z/short-3-edge.mp3"
+      ],
+      "synthesis_wall_s": 1.9801840000145603,
+      "encoding_wall_s": 0.0,
+      "artifact_ready_wall_s": 1.9801840000145603,
+      "audio_duration_s": 9.312,
+      "audio_metadata": {
+        "programs": [],
+        "stream_groups": [],
+        "streams": [
+          {
+            "codec_name": "mp3",
+            "sample_rate": "24000",
+            "channels": 1
+          }
+        ],
+        "format": {
+          "duration": "9.312000"
+        }
+      },
+      "rtf_artifact_ready": 0.21264862543111687,
+      "characters_per_second": 58.58041474890568,
+      "bytes": 55872,
+      "sha256": "b239d1134952fea8040e704d95cb01a91f01b8e2bbacd9fa6fe36f634949da36",
+      "child_peak_rss_bytes": 11542528,
+      "status": "passed_full_decode",
+      "non_silent_peak_db": -3.7
+    },
+    {
+      "engine": "apple",
+      "corpus": "paragraph",
+      "iteration": 1,
+      "process_state": "fresh_process",
+      "audio": "/Users/pips/Developer/epubtomp3/.reports/tts-host/20261013T200903Z/paragraph-1-apple.mp3",
+      "command": [
+        "/usr/bin/say",
+        "-v",
+        "Luciana",
+        "-f",
+        "/Users/pips/Developer/epubtomp3/.reports/tts-host/20261013T200903Z/paragraph.txt",
+        "-o",
+        "/Users/pips/Developer/epubtomp3/.reports/tts-host/20261013T200903Z/paragraph-1-apple.aiff"
+      ],
+      "synthesis_wall_s": 1.065643000009004,
+      "encoding_wall_s": 0.28951600001892075,
+      "artifact_ready_wall_s": 1.3551590000279248,
+      "audio_duration_s": 48.771208,
+      "audio_metadata": {
+        "programs": [],
+        "stream_groups": [],
+        "streams": [
+          {
+            "codec_name": "mp3",
+            "sample_rate": "24000",
+            "channels": 1
+          }
+        ],
+        "format": {
+          "duration": "48.771208"
+        }
+      },
+      "rtf_artifact_ready": 0.02778604540670645,
+      "characters_per_second": 483.3381175098294,
+      "bytes": 293276,
+      "sha256": "cbecafdcc32e94e746fc8a07dd1aba5ab7437f565c77aca7ae37997de534dd54",
+      "child_peak_rss_bytes": 43327488,
+      "status": "passed_full_decode",
+      "non_silent_peak_db": -3.7
+    },
+    {
+      "engine": "edge",
+      "corpus": "paragraph",
+      "iteration": 1,
+      "process_state": "fresh_process",
+      "audio": "/Users/pips/Developer/epubtomp3/.reports/tts-host/20261013T200903Z/paragraph-1-edge.mp3",
+      "command": [
+        "/Users/pips/Developer/epubtomp3/target/debug/embedded_edge_probe",
+        "/Users/pips/Developer/epubtomp3/.reports/tts-host/20261013T200903Z/paragraph-1-edge.mp3"
+      ],
+      "synthesis_wall_s": 2.267173999978695,
+      "encoding_wall_s": 0.0,
+      "artifact_ready_wall_s": 2.267173999978695,
+      "audio_duration_s": 43.536,
+      "audio_metadata": {
+        "programs": [],
+        "stream_groups": [],
+        "streams": [
+          {
+            "codec_name": "mp3",
+            "sample_rate": "24000",
+            "channels": 1
+          }
+        ],
+        "format": {
+          "duration": "43.536000"
+        }
+      },
+      "rtf_artifact_ready": 0.052075845276982155,
+      "characters_per_second": 288.90592429436606,
+      "bytes": 261216,
+      "sha256": "6bead67c2827e79d516274a24710c5bd1cbb0d725febb218a5991d5c7a28112d",
+      "child_peak_rss_bytes": 11735040,
+      "status": "passed_full_decode",
+      "non_silent_peak_db": -2.6
+    },
+    {
+      "engine": "apple",
+      "corpus": "paragraph",
+      "iteration": 2,
+      "process_state": "fresh_process",
+      "audio": "/Users/pips/Developer/epubtomp3/.reports/tts-host/20261013T200903Z/paragraph-2-apple.mp3",
+      "command": [
+        "/usr/bin/say",
+        "-v",
+        "Luciana",
+        "-f",
+        "/Users/pips/Developer/epubtomp3/.reports/tts-host/20261013T200903Z/paragraph.txt",
+        "-o",
+        "/Users/pips/Developer/epubtomp3/.reports/tts-host/20261013T200903Z/paragraph-2-apple.aiff"
+      ],
+      "synthesis_wall_s": 1.0621249999967404,
+      "encoding_wall_s": 0.2893949999997858,
+      "artifact_ready_wall_s": 1.3515199999965262,
+      "audio_duration_s": 48.771208,
+      "audio_metadata": {
+        "programs": [],
+        "stream_groups": [],
+        "streams": [
+          {
+            "codec_name": "mp3",
+            "sample_rate": "24000",
+            "channels": 1
+          }
+        ],
+        "format": {
+          "duration": "48.771208"
+        }
+      },
+      "rtf_artifact_ready": 0.027711431711851923,
+      "characters_per_second": 484.63951698952553,
+      "bytes": 293276,
+      "sha256": "cbecafdcc32e94e746fc8a07dd1aba5ab7437f565c77aca7ae37997de534dd54",
+      "child_peak_rss_bytes": 43483136,
+      "status": "passed_full_decode",
+      "non_silent_peak_db": -3.7
+    },
+    {
+      "engine": "edge",
+      "corpus": "paragraph",
+      "iteration": 2,
+      "process_state": "fresh_process",
+      "audio": "/Users/pips/Developer/epubtomp3/.reports/tts-host/20261013T200903Z/paragraph-2-edge.mp3",
+      "command": [
+        "/Users/pips/Developer/epubtomp3/target/debug/embedded_edge_probe",
+        "/Users/pips/Developer/epubtomp3/.reports/tts-host/20261013T200903Z/paragraph-2-edge.mp3"
+      ],
+      "synthesis_wall_s": 3.2362340000108816,
+      "encoding_wall_s": 0.0,
+      "artifact_ready_wall_s": 3.2362340000108816,
+      "audio_duration_s": 43.536,
+      "audio_metadata": {
+        "programs": [],
+        "stream_groups": [],
+        "streams": [
+          {
+            "codec_name": "mp3",
+            "sample_rate": "24000",
+            "channels": 1
+          }
+        ],
+        "format": {
+          "duration": "43.536000"
+        }
+      },
+      "rtf_artifact_ready": 0.07433466556438077,
+      "characters_per_second": 202.39574764921127,
+      "bytes": 261216,
+      "sha256": "7f7e26bca07698d0c3cd8bc8814b48656c74b8770c1f32d1615012b8becac519",
+      "child_peak_rss_bytes": 11915264,
+      "status": "passed_full_decode",
+      "non_silent_peak_db": -3.5
+    },
+    {
+      "engine": "apple",
+      "corpus": "paragraph",
+      "iteration": 3,
+      "process_state": "fresh_process",
+      "audio": "/Users/pips/Developer/epubtomp3/.reports/tts-host/20261013T200903Z/paragraph-3-apple.mp3",
+      "command": [
+        "/usr/bin/say",
+        "-v",
+        "Luciana",
+        "-f",
+        "/Users/pips/Developer/epubtomp3/.reports/tts-host/20261013T200903Z/paragraph.txt",
+        "-o",
+        "/Users/pips/Developer/epubtomp3/.reports/tts-host/20261013T200903Z/paragraph-3-apple.aiff"
+      ],
+      "synthesis_wall_s": 1.0648199999995995,
+      "encoding_wall_s": 0.29741899998043664,
+      "artifact_ready_wall_s": 1.3622389999800362,
+      "audio_duration_s": 48.771208,
+      "audio_metadata": {
+        "programs": [],
+        "stream_groups": [],
+        "streams": [
+          {
+            "codec_name": "mp3",
+            "sample_rate": "24000",
+            "channels": 1
+          }
+        ],
+        "format": {
+          "duration": "48.771208"
+        }
+      },
+      "rtf_artifact_ready": 0.027931213021831162,
+      "characters_per_second": 480.826051823211,
+      "bytes": 293276,
+      "sha256": "cbecafdcc32e94e746fc8a07dd1aba5ab7437f565c77aca7ae37997de534dd54",
+      "child_peak_rss_bytes": 43503616,
+      "status": "passed_full_decode",
+      "non_silent_peak_db": -3.7
+    },
+    {
+      "engine": "edge",
+      "corpus": "paragraph",
+      "iteration": 3,
+      "process_state": "fresh_process",
+      "audio": "/Users/pips/Developer/epubtomp3/.reports/tts-host/20261013T200903Z/paragraph-3-edge.mp3",
+      "command": [
+        "/Users/pips/Developer/epubtomp3/target/debug/embedded_edge_probe",
+        "/Users/pips/Developer/epubtomp3/.reports/tts-host/20261013T200903Z/paragraph-3-edge.mp3"
+      ],
+      "synthesis_wall_s": 1.2941440000140574,
+      "encoding_wall_s": 0.0,
+      "artifact_ready_wall_s": 1.2941440000140574,
+      "audio_duration_s": 43.536,
+      "audio_metadata": {
+        "programs": [],
+        "stream_groups": [],
+        "streams": [
+          {
+            "codec_name": "mp3",
+            "sample_rate": "24000",
+            "channels": 1
+          }
+        ],
+        "format": {
+          "duration": "43.536000"
+        }
+      },
+      "rtf_artifact_ready": 0.029725836089995804,
+      "characters_per_second": 506.12605706388564,
+      "bytes": 261216,
+      "sha256": "935c9913d602361df30c59d17a06ecfd180832bb83ce3191254cd0abb259580a",
+      "child_peak_rss_bytes": 12046336,
+      "status": "passed_full_decode",
+      "non_silent_peak_db": -2.8
+    }
+  ],
+  "post_validation": "Full ffmpeg decode and finite non-silent peak verified for all 12 existing outputs; no resynthesis"
+}

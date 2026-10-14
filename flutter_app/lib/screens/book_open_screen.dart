@@ -28,6 +28,8 @@ import '../services/cover_writeback.dart';
 
 import '../services/local_conversion_job.dart';
 import '../services/rust_playback_conversion.dart';
+import '../services/platform_voice_notice.dart';
+import '../services/reader_playback_startup.dart';
 import '../services/latency_observation.dart';
 
 import '../services/playback_first_resource_policy.dart';
@@ -77,6 +79,10 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen>
   final PlaybackFirstResourcePolicy _resourcePolicy =
       PlaybackFirstResourcePolicy();
   String? _readerJourneyId;
+  StreamSubscription<dynamic>? _platformVoiceSubscription;
+  final _platformVoiceSession = PlatformVoiceNoticeSession();
+  final _playbackStartup = ReaderPlaybackStartup();
+  RustPlaybackConversionService? _activeConversionService;
 
   void _showConversionError(Object error) {
     if (!mounted) return;
@@ -97,6 +103,18 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    if (Platform.isAndroid) {
+      _platformVoiceSubscription = _platformVoiceSession.listen(() {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              platformVoiceNotice(Localizations.localeOf(context).languageCode),
+            ),
+          ),
+        );
+      });
+    }
 
     _playbackRequest = () async {
       if (!mounted) return;
@@ -122,6 +140,7 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen>
   void didUpdateWidget(covariant BookOpenScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.bookId != widget.bookId) {
+      _platformVoiceSession.end();
       _cancelConversion();
       _load();
     }
@@ -129,6 +148,10 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen>
 
   @override
   void dispose() {
+    _playbackStartup.invalidate();
+    _localConversionGeneration++;
+    _stopNativeConversion();
+    _platformVoiceSubscription?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     _sseSubscription?.cancel();
     _chapterIndexSub?.cancel();
@@ -292,7 +315,8 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen>
           .loadBookPosition(widget.bookId)
           ?.chapter;
       await _startLocalConversion(
-        playbackChapterIndex: player.currentIndexValue == null
+        playbackChapterIndex:
+            _playableChapters.isEmpty || player.currentIndexValue == null
             ? savedChapter ?? 0
             : _sourceChapterIndexForPlayerIndex(
                 player,
@@ -432,6 +456,7 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen>
     final existing = _localPlaybackConversion;
     if (existing != null) return existing;
     final generation = ++_localConversionGeneration;
+    _playbackStartup.request(generation, playbackChapterIndex);
     final future =
         _runLocalPlaybackConversion(
           playbackChapterIndex: playbackChapterIndex,
@@ -475,14 +500,17 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen>
       debugPrint('BookOpenScreen: local book resolved path=${book.filePath}');
       final inputPath = await library.ensureSupportedBookPath(book);
       final docsDir = await getApplicationDocumentsDirectory();
+      if (!_isCurrentConversion(generation)) return;
       final outDir = Directory('${docsDir.path}/audiobooks/${widget.bookId}');
       if (!await outDir.exists()) await outDir.create(recursive: true);
+      if (!_isCurrentConversion(generation)) return;
       debugPrint('BookOpenScreen: local output ready path=${outDir.path}');
 
       final player = ref.read(globalAudioPlayerProvider);
       _setCoverOnPlayer(player);
 
       final existingJob = await coordinator.store.load(widget.bookId, jobId);
+      if (!_isCurrentConversion(generation)) return;
       late LocalConversionJob job;
       if (existingJob == null ||
           existingJob.status == LocalConversionJobStatus.cancelled) {
@@ -516,6 +544,7 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen>
       for (final chapter in job.chapters.where((c) => c.status == 'running')) {
         job = await coordinator.retryChapter(job, chapter.index);
       }
+      if (!_isCurrentConversion(generation)) return;
       _localJob = job;
       final bookLocale = SpeechTextPolicy.detectLocale(
         ft.chapters.map((chapter) => chapter.text),
@@ -530,6 +559,7 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen>
         if (path == null || path.isEmpty || !await File(path).exists()) {
           continue;
         }
+        if (!_isCurrentConversion(generation)) return;
         // Older jobs could contain repeated EPUB structural index 0 entries.
         // Never enqueue the same physical MP3 repeatedly after migration.
         if (!restoredAudioPaths.add(path)) continue;
@@ -553,11 +583,7 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen>
       );
       if (_playableChapters.isNotEmpty) {
         await player.setQueue(List.of(_playableChapters));
-        await _restoreResumePosition(player);
-        _startResumeListener(player);
-        // The play button may have triggered this conversion request while
-        // the queue was still empty. Start the first restored file now rather
-        // than waiting for the entire book to finish converting.
+        _scheduleRequestedPlayback(player, generation);
       }
       // Persist a checkpoint even when the process resumes an existing job.
       // This recreates a missing manifest before the next long chapter starts.
@@ -567,12 +593,15 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen>
         flush: true,
       );
       await restoredManifestTemp.rename('${outDir.path}/manifest.json');
+      if (!_isCurrentConversion(generation)) return;
 
       final converter = ref.read(embeddedConverterProvider);
+      _platformVoiceSession.begin(inputPath);
       final conversionService = RustPlaybackConversionService(
         converter: converter,
         coordinator: coordinator,
       );
+      _activeConversionService = conversionService;
       job = await conversionService.convert(
         bookId: widget.bookId,
         jobId: jobId,
@@ -583,12 +612,45 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen>
         playbackChapterChanges: _playbackWindowChanges.stream,
         isActive: () => mounted && generation == _localConversionGeneration,
         onUpdate: (updated) async {
-          if (!mounted) return;
+          if (!_isCurrentConversion(generation)) return;
           setState(() => _localJob = updated);
         },
+        onChapterStreaming: player is StreamingChapterPlayer
+            ? (chapter, source) async {
+                if (!mounted || generation != _localConversionGeneration) {
+                  source.fail(StateError('Reader conversion replaced'));
+                  return;
+                }
+                (player as StreamingChapterPlayer).registerGrowingChapter(
+                  chapter.index,
+                  source,
+                );
+                final cp = ChapterProgress(
+                  index: chapter.index,
+                  name: chapter.name,
+                  status: 'running',
+                  downloadUrl: Uri(
+                    scheme: 'growing',
+                    path: source.requestId,
+                  ).toString(),
+                  chars: chapter.text.length,
+                  progressRatio: 0.0,
+                );
+                final existing = _playableChapters.indexWhere(
+                  (item) => item.index == chapter.index,
+                );
+                if (existing < 0) {
+                  _playableChapters.add(cp);
+                } else {
+                  _playableChapters[existing] = cp;
+                }
+                _playableChapters.sort((a, b) => a.index.compareTo(b.index));
+                await player.setQueue(List.of(_playableChapters));
+                _scheduleRequestedPlayback(player, generation);
+              }
+            : null,
         onChapterCompleted: (chapter, path, updated) async {
-          if (!mounted) return;
-          final isFirstPlayableChapter = _playableChapters.isEmpty;
+          if (!_isCurrentConversion(generation)) return;
           final cp = ChapterProgress(
             index: chapter.index,
             name: chapter.name,
@@ -597,39 +659,93 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen>
             chars: chapter.text.length,
             progressRatio: 1.0,
           );
-          if (!_playableChapters.any((c) => c.index == cp.index)) {
+          if (player is StreamingChapterPlayer) {
+            (player as StreamingChapterPlayer).finishGrowingChapter(
+              chapter.index,
+              path,
+            );
+          }
+          final existing = _playableChapters.indexWhere(
+            (c) => c.index == cp.index,
+          );
+          if (existing < 0) {
             _playableChapters.add(cp);
             _playableChapters.sort((a, b) => a.index.compareTo(b.index));
+          } else {
+            _playableChapters[existing] = cp;
           }
           await player.setQueue(List.of(_playableChapters));
-          if (isFirstPlayableChapter) {
-            await _restoreResumePosition(player);
-            _startResumeListener(player);
-            await player.play();
-            ref.read(playbackCoordinatorProvider).firstAudioReady();
-            if (mounted) setState(() => _isConverting = false);
-          }
+          if (!_isCurrentConversion(generation)) return;
+          _scheduleRequestedPlayback(player, generation);
           _localJob = updated;
         },
       );
+      if (!_isCurrentConversion(generation)) return;
       _localJob = job;
-
-      if (!mounted) return;
       if (job.status == LocalConversionJobStatus.completed) _markBookOffline();
       setState(() => _isConverting = false);
     } catch (e) {
+      if (!_isCurrentConversion(generation)) return;
       if (_localJob != null &&
           _localJob!.status == LocalConversionJobStatus.running) {
-        _localJob = await coordinator.failChapter(
+        final failed = await coordinator.failChapter(
           _localJob!,
           _localJob!.currentChapterIndex ?? 0,
           e.toString(),
         );
+        if (!_isCurrentConversion(generation)) return;
+        _localJob = failed;
       }
-      if (!mounted) return;
+      if (!_isCurrentConversion(generation)) return;
       _showConversionError(e);
       setState(() => _isConverting = false);
+    } finally {
+      if (generation == _localConversionGeneration) {
+        _platformVoiceSession.end();
+        _activeConversionService = null;
+      }
     }
+  }
+
+  bool _isCurrentConversion(int generation) =>
+      mounted && generation == _localConversionGeneration;
+
+  void _scheduleRequestedPlayback(AudioPlayerInterface player, int generation) {
+    if (!_isCurrentConversion(generation)) return;
+    unawaited(
+      _playbackStartup
+          .startWhenReady(
+            generation,
+            _playableChapters.map((chapter) => chapter.index).toList(),
+            (queueIndex) async {
+              await _restoreResumePosition(player);
+              if (!_isCurrentConversion(generation) ||
+                  !_playbackStartup.accepts(generation)) {
+                return;
+              }
+              if (!_resumeGuard.hasRestored) {
+                await player.seek(Duration.zero, index: queueIndex);
+              }
+              if (!_isCurrentConversion(generation) ||
+                  !_playbackStartup.accepts(generation)) {
+                return;
+              }
+              _startResumeListener(player);
+              unawaited(
+                player.play().catchError((Object error) {
+                  if (_isCurrentConversion(generation)) {
+                    _showConversionError(error);
+                  }
+                }),
+              );
+              ref.read(playbackCoordinatorProvider).firstAudioReady();
+              if (mounted) setState(() => _isConverting = false);
+            },
+          )
+          .catchError((Object error) {
+            if (_isCurrentConversion(generation)) _showConversionError(error);
+          }),
+    );
   }
 
   void _setCoverOnPlayer(AudioPlayerInterface player) {
@@ -719,6 +835,9 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen>
   }
 
   void _cancelConversion() {
+    _playbackStartup.invalidate();
+    _platformVoiceSession.end();
+    _stopNativeConversion();
     _sseSubscription?.cancel();
     _sseSubscription = null;
     _chapterIndexSub?.cancel();
@@ -734,6 +853,11 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen>
 
     _playableChapters.clear();
     _resumeGuard = ResumeRestorationGuard();
+  }
+
+  void _stopNativeConversion() {
+    final service = _activeConversionService;
+    if (service != null) unawaited(service.cancel());
   }
 
   void _publishPlaybackWindow(int chapterIndex) {

@@ -99,6 +99,45 @@ class FakeConverter implements EmbeddedConverter {
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+  test(
+    'owned output cancellation leaves other conversions of the same input alone',
+    () async {
+      const channel = MethodChannel(AndroidEmbeddedConverter.channelName);
+      MethodCall? received;
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (call) async {
+            received = call;
+            return null;
+          });
+      await AndroidEmbeddedConverter(
+        channel: channel,
+      ).cancelConversion(outputPath: '/tmp/manual-request');
+      expect(received?.method, 'cancelConversion');
+      expect(received?.arguments, {'outputPath': '/tmp/manual-request'});
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, null);
+    },
+  );
+
+  test(
+    'Android cancellation forwards the active input identity to Rust',
+    () async {
+      const channel = MethodChannel(AndroidEmbeddedConverter.channelName);
+      MethodCall? received;
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (call) async {
+            received = call;
+            return null;
+          });
+      await AndroidEmbeddedConverter(
+        channel: channel,
+      ).cancelConversion(inputPath: '/tmp/book.epub');
+      expect(received?.method, 'cancelConversion');
+      expect(received?.arguments, {'inputPath': '/tmp/book.epub'});
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, null);
+    },
+  );
 
   test('Android fallback uses the TTS file synthesis channel', () async {
     const channel = MethodChannel('epub_to_mp3/android_tts');

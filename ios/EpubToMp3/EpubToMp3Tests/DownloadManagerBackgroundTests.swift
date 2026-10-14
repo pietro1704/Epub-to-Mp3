@@ -63,6 +63,37 @@ final class DownloadManagerBackgroundTests: XCTestCase {
         XCTAssertEqual(DownloadManager.resolve(path: source.absoluteString, base: nil), source)
     }
 
+    func testNativeAbsolutePathsPreserveLiteralFilenameCharacters() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("native-download-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let source = root.appendingPathComponent("chapter #1? 100%.mp3")
+        let bytes = Data([0xFF, 0xFB, 0x90, 0x00])
+        try bytes.write(to: source)
+
+        let resolved = try XCTUnwrap(DownloadManager.resolve(path: source.path, base: nil))
+
+        XCTAssertTrue(resolved.isFileURL)
+        XCTAssertEqual(resolved.path, source.path)
+        XCTAssertEqual(try Data(contentsOf: resolved), bytes)
+        let fileBase = root.appendingPathComponent("outputs", isDirectory: true)
+        let resolvedAgainstLocalBase = try XCTUnwrap(DownloadManager.resolve(path: source.path, base: fileBase))
+        XCTAssertEqual(resolvedAgainstLocalBase, source)
+        XCTAssertEqual(try Data(contentsOf: resolvedAgainstLocalBase), bytes)
+    }
+
+    func testRemotePathsContinueToResolveAgainstTheirServerBase() throws {
+        let base = try XCTUnwrap(URL(string: "https://example.com/jobs/"))
+        XCTAssertEqual(DownloadManager.resolve(path: "chapter.mp3", base: base)?.absoluteString,
+                       "https://example.com/jobs/chapter.mp3")
+        XCTAssertEqual(DownloadManager.resolve(path: "/audio/chapter.mp3", base: base)?.absoluteString,
+                       "https://example.com/audio/chapter.mp3")
+        XCTAssertEqual(DownloadManager.resolve(path: "https://other.example/chapter.mp3", base: nil)?.absoluteString,
+                       "https://other.example/chapter.mp3")
+        XCTAssertNil(DownloadManager.resolve(path: "chapter.mp3", base: nil))
+    }
+
     func testResumeRequestUsesInclusiveByteRange() {
         let url = URL(string: "https://example.com/chapter.mp3")!
         let request = DownloadManager.request(url: url, resumingAt: 128)

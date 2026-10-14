@@ -80,6 +80,16 @@ final class ToolbarSettingsParityTests: XCTestCase {
         XCTAssertEqual(s.pageTurnStyle, .flip)
     }
 
+    func testAudioEngineDefaultsToEdgeAndOldPiperSelectionRestoresAsEdge() {
+        let (settings, defaults) = make()
+        XCTAssertEqual(settings.audioEngine, .edge)
+        settings.audioEngine = .piper
+        let expected: AudioEnginePreference = AudioEnginePreference.supportedPreferences.contains(.piper)
+            ? .piper
+            : .edge
+        XCTAssertEqual(AppSettings(defaults: defaults).audioEngine, expected)
+    }
+
     func testAutoScrollTogglesBackAndForth() {
         let (s, _) = make()
         s.readerAutoScroll = true

@@ -338,12 +338,77 @@ fn publish_piper_audio(wav: &Path, output: &Path) -> Result<PathBuf, PiperError>
         .extension()
         .is_some_and(|extension| extension.eq_ignore_ascii_case("mp3"))
     {
-        crate::audio::wav_to_mp3(wav, output, "96k")
-            .map_err(|error| PiperError::Io(error.to_string()))?;
+        encode_piper_mp3(wav, output)?;
     } else if wav != output {
         fs::rename(wav, output).map_err(|error| PiperError::Io(error.to_string()))?;
     }
     Ok(output.to_path_buf())
+}
+
+fn encode_piper_mp3(wav: &Path, output: &Path) -> Result<(), PiperError> {
+    let data = fs::read(wav).map_err(|error| PiperError::Io(error.to_string()))?;
+    let sample_rate = u32::from_le_bytes(data[24..28].try_into().expect("validated WAV header"));
+    let channels = u16::from_le_bytes(data[22..24].try_into().expect("validated WAV header"));
+    let bits_per_sample =
+        u16::from_le_bytes(data[34..36].try_into().expect("validated WAV header"));
+    let format = u16::from_le_bytes(data[20..22].try_into().expect("validated WAV header"));
+    if format != 1 || bits_per_sample != 16 || channels != 1 || &data[36..40] != b"data" {
+        return Err(PiperError::InvalidWav(
+            "expected mono 16-bit PCM from the embedded runtime".into(),
+        ));
+    }
+    let payload_len =
+        u32::from_le_bytes(data[40..44].try_into().expect("validated WAV header")) as usize;
+    let payload = data
+        .get(44..44usize.saturating_add(payload_len))
+        .ok_or_else(|| PiperError::InvalidWav("PCM payload is truncated".into()))?;
+    if payload.is_empty() || payload.len() % 2 != 0 || sample_rate == 0 {
+        return Err(PiperError::InvalidWav(
+            "invalid PCM audio dimensions".into(),
+        ));
+    }
+
+    let mut encoder = rusty_mp3::Mp3Encoder::new(rusty_mp3::Mp3EncoderConfig {
+        bitrate_kbps: 96,
+        vbr_quality: None,
+    });
+    encoder
+        .push_pcm_s16le(payload, channels, sample_rate)
+        .map_err(|error| PiperError::Synthesis(format!("MP3 encoding failed: {error}")))?;
+    encoder.finish();
+    let mut encoded = Vec::new();
+    while let Ok(packet) = encoder.next_packet() {
+        encoded.extend_from_slice(&packet);
+    }
+    let mut decoder = rusty_mp3::Mp3Decoder::new();
+    decoder.push(&encoded);
+    decoder.flush();
+    let mut decoded_samples = 0usize;
+    while let Ok(frame) = decoder.next_frame() {
+        decoded_samples += frame.samples.len();
+    }
+    if decoded_samples == 0 {
+        return Err(PiperError::Synthesis(
+            "MP3 encoder produced no playable frames".into(),
+        ));
+    }
+
+    let parent = output
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+    fs::create_dir_all(parent).map_err(|error| PiperError::Io(error.to_string()))?;
+    let staging = tempfile::Builder::new()
+        .prefix(".piper-mp3-")
+        .tempdir_in(parent)
+        .map_err(|error| PiperError::Io(error.to_string()))?;
+    let staged = staging.path().join("speech.mp3");
+    fs::write(&staged, encoded).map_err(|error| PiperError::Io(error.to_string()))?;
+    let file = fs::File::open(&staged).map_err(|error| PiperError::Io(error.to_string()))?;
+    file.sync_all()
+        .map_err(|error| PiperError::Io(error.to_string()))?;
+    fs::rename(staged, output).map_err(|error| PiperError::Io(error.to_string()))?;
+    Ok(())
 }
 
 #[cfg(test)]
@@ -351,8 +416,9 @@ mod tests {
     use super::*;
 
     fn write_test_wav(path: &Path) {
-        let sample_rate = 16_000_u32;
-        let data_length = sample_rate / 4 * 2;
+        let sample_rate = 22_050_u32;
+        let sample_count = sample_rate / 4;
+        let data_length = sample_count * 2;
         let mut bytes = Vec::new();
         bytes.extend_from_slice(b"RIFF");
         bytes.extend_from_slice(&(36 + data_length).to_le_bytes());
@@ -366,12 +432,17 @@ mod tests {
         bytes.extend_from_slice(&16_u16.to_le_bytes());
         bytes.extend_from_slice(b"data");
         bytes.extend_from_slice(&data_length.to_le_bytes());
-        bytes.resize(bytes.len() + data_length as usize, 0);
+        for index in 0..sample_count {
+            let sample = ((index as f32 * 440.0 * std::f32::consts::TAU / sample_rate as f32).sin()
+                * i16::MAX as f32
+                * 0.4) as i16;
+            bytes.extend_from_slice(&sample.to_le_bytes());
+        }
         fs::write(path, bytes).unwrap();
     }
 
     #[test]
-    fn mp3_destination_contains_mp3_codec_instead_of_wave_payload() {
+    fn mp3_destination_contains_decodable_audio_without_external_tools() {
         let root = tempfile::Builder::new()
             .prefix("piper codec's fixture ")
             .tempdir()
@@ -380,22 +451,56 @@ mod tests {
         let output = root.path().join("chapter.mp3");
         write_test_wav(&wav);
         publish_piper_audio(&wav, &output).unwrap();
-        let probe = std::process::Command::new("ffprobe")
-            .args([
-                "-v",
-                "error",
-                "-select_streams",
-                "a:0",
-                "-show_entries",
-                "stream=codec_name",
-                "-of",
-                "default=nw=1:nk=1",
-            ])
-            .arg(&output)
+        let encoded = fs::read(&output).unwrap();
+        let mut decoder = rusty_mp3::Mp3Decoder::new();
+        decoder.push(&encoded);
+        decoder.flush();
+        let mut decoded_samples = Vec::new();
+        while let Ok(decoded) = decoder.next_frame() {
+            decoded_samples.extend(decoded.samples);
+        }
+        assert!(!decoded_samples.is_empty());
+        assert!(decoded_samples.iter().any(|sample| sample.abs() > 0.01));
+
+        if std::process::Command::new("ffprobe")
+            .arg("-version")
             .output()
-            .expect("ffprobe is required to verify the Piper output codec");
-        assert!(probe.status.success());
-        assert_eq!(String::from_utf8_lossy(&probe.stdout).trim(), "mp3");
+            .is_ok()
+        {
+            let probe = std::process::Command::new("ffprobe")
+                .args([
+                    "-v",
+                    "error",
+                    "-select_streams",
+                    "a:0",
+                    "-show_entries",
+                    "stream=codec_name,sample_rate,channels",
+                    "-of",
+                    "csv=p=0",
+                ])
+                .arg(&output)
+                .output()
+                .expect("ffprobe availability was checked");
+            assert!(probe.status.success());
+            assert_eq!(String::from_utf8_lossy(&probe.stdout).trim(), "mp3,22050,1");
+        }
+        if std::process::Command::new("ffmpeg")
+            .arg("-version")
+            .output()
+            .is_ok()
+        {
+            let decode = std::process::Command::new("ffmpeg")
+                .args(["-v", "error", "-i"])
+                .arg(&output)
+                .args(["-f", "null", "-"])
+                .output()
+                .expect("ffmpeg availability was checked");
+            assert!(
+                decode.status.success(),
+                "ffmpeg could not decode MP3: {}",
+                String::from_utf8_lossy(&decode.stderr)
+            );
+        }
     }
 
     #[test]
@@ -425,13 +530,16 @@ mod tests {
     }
 
     #[test]
-    fn encoder_failure_preserves_previous_audio_and_cleans_staging() {
+    fn invalid_mp3_sample_rate_preserves_previous_audio() {
         let root = tempfile::tempdir().unwrap();
         let wav = root.path().join("native.wav");
         let output = root.path().join("chapter.mp3");
         write_test_wav(&wav);
+        let mut bytes = fs::read(&wav).unwrap();
+        bytes[24..28].copy_from_slice(&12_345_u32.to_le_bytes());
+        fs::write(&wav, bytes).unwrap();
         fs::write(&output, b"previous audio").unwrap();
-        assert!(crate::audio::wav_to_mp3(&wav, &output, "invalid-bitrate").is_err());
+        assert!(publish_piper_audio(&wav, &output).is_err());
         assert_eq!(fs::read(output).unwrap(), b"previous audio");
         assert_eq!(fs::read_dir(root.path()).unwrap().count(), 2);
     }

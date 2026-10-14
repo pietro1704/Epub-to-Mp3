@@ -18,6 +18,7 @@ final class ConvertViewModel {
     var clearCache = false
     var forceReprocess = false
     var maxPerformance = false
+    var modelsRoot: String?
 
     var isSubmitting = false
     var submittedJobId: String?
@@ -65,7 +66,9 @@ final class ConvertViewModel {
                 language: language.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : language,
                 clearCache: clearCache,
                 forceReprocess: forceReprocess,
-                maxPerformance: maxPerformance
+                maxPerformance: maxPerformance,
+                modelsRoot: engine == "piper" ? (modelsRoot ?? AppSettings.ttsModelsRoot()?.path) : nil,
+                modelID: engine == "piper" ? "pt_BR-edresson-low" : nil
             )
             let result = try await converter(file, chapterRange.start, chapterRange.end, options)
             submittedJobId = result.jobID

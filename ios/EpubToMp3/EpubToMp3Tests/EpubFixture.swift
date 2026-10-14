@@ -1,4 +1,6 @@
 import Foundation
+import CoreGraphics
+import ImageIO
 import zlib
 
 /// Generates a tiny, valid EPUB-shaped ZIP archive in a temp file so
@@ -15,18 +17,21 @@ enum EpubFixture {
 
     static let title = "Test Book Title"
     static let author = "Test Author"
-    static let coverPNG: Data = Data([
-        // 1×1 transparent PNG, hand-crafted minimum.
-        0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A,
-        0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52,
-        0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
-        0x08, 0x06, 0x00, 0x00, 0x00, 0x1F, 0x15, 0xC4,
-        0x89, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x44, 0x41,
-        0x54, 0x78, 0x9C, 0x62, 0x00, 0x01, 0x00, 0x00,
-        0x05, 0x00, 0x01, 0x0D, 0x0A, 0x2D, 0xB4, 0x00,
-        0x00, 0x00, 0x00, 0x49, 0x45, 0x4E, 0x44, 0xAE,
-        0x42, 0x60, 0x82,
-    ])
+    static let coverPNG: Data = {
+        // Encode a complete PNG through the native codec, including valid CRCs.
+        let pixel = Data([0, 0, 0, 0])
+        let provider = CGDataProvider(data: pixel as CFData)!
+        let image = CGImage(width: 1, height: 1, bitsPerComponent: 8, bitsPerPixel: 32,
+                            bytesPerRow: 4, space: CGColorSpaceCreateDeviceRGB(),
+                            bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue),
+                            provider: provider, decode: nil, shouldInterpolate: false,
+                            intent: .defaultIntent)!
+        let encoded = NSMutableData()
+        let destination = CGImageDestinationCreateWithData(encoded, "public.png" as CFString, 1, nil)!
+        CGImageDestinationAddImage(destination, image, nil)
+        precondition(CGImageDestinationFinalize(destination), "Fixture PNG encoding failed")
+        return encoded as Data
+    }()
 
     static let containerXML = """
     <?xml version="1.0"?>
@@ -95,7 +100,8 @@ enum EpubFixture {
         chapterTitle: String = "Chapter 1",
         body: String = "This is a short chapter used for end to end testing.",
         stylesheet: String? = nil,
-        footnote: (reference: String, text: String)? = nil
+        footnote: (reference: String, text: String)? = nil,
+        includeCover: Bool = true
     ) throws -> URL {
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("fixture-\(UUID().uuidString).epub")
@@ -129,6 +135,8 @@ enum EpubFixture {
         let footnoteManifest = footnote == nil || footnoteIsInChapter ? "" : """
             <item id="notes" href="text/notes.xhtml" media-type="application/xhtml+xml"/>
         """
+        let coverMetadata = includeCover ? #"<meta name="cover" content="cover-img"/>"# : ""
+        let coverManifest = includeCover ? #"<item id="cover-img" href="images/cover.png" media-type="image/png" properties="cover-image"/>"# : ""
         let withSpineOPF = """
         <?xml version="1.0" encoding="UTF-8"?>
         <package xmlns="http://www.idpf.org/2007/opf" version="3.0" \
@@ -138,11 +146,10 @@ enum EpubFixture {
             <dc:title>\(title)</dc:title>
             <dc:creator>\(author)</dc:creator>
             <dc:language>en</dc:language>
-            <meta name="cover" content="cover-img"/>
+            \(coverMetadata)
           </metadata>
           <manifest>
-            <item id="cover-img" href="images/cover.png" media-type="image/png" \
-        properties="cover-image"/>
+            \(coverManifest)
             <item id="ch1" href="text/chapter1.xhtml" \
         media-type="application/xhtml+xml"/>
         \(stylesheetManifest)
@@ -159,8 +166,8 @@ enum EpubFixture {
             .deflated("META-INF/container.xml", containerXML),
             .deflated("OEBPS/content.opf", withSpineOPF),
             .deflated("OEBPS/text/chapter1.xhtml", chapterXHTML),
-            .stored("OEBPS/images/cover.png", coverPNG),
         ]
+        if includeCover { members.append(.stored("OEBPS/images/cover.png", coverPNG)) }
         if let stylesheet {
             members.append(.deflated("OEBPS/styles/book.css", Data(stylesheet.utf8)))
         }

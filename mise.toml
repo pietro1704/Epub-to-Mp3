@@ -25,6 +25,10 @@ ninja = "latest"
 # Keep the project virtualenv managed by mise without the deprecated tool option.
 _.python.venv = { path = ".venv", create = true }
 
+[tasks."vendor:python"]
+description = "Install and verify the mise-managed Python used by Simulator helper scripts"
+run = "mise install python && mise exec -- python --version"
+
 [tasks.dev]
 description = "Start the Rust converter server and frontend (Vite) together"
 run = "./scripts/dev.sh"
@@ -81,13 +85,30 @@ run = "mise exec -- python scripts/build_converter_ffi.py --list"
 description = "Build the shared converter-ffi Rust library for the host"
 run = "mise exec -- cargo build -p converter-ffi --release"
 
+[tasks."native-tts:rust:test"]
+description = "Verify platform speech policy, native PCM encoding and C callback under the shared lease"
+run = '''
+mise exec -- ruby -e '
+lease = File.open("/tmp/epub2mp3.heavy-job.lock", "a+")
+abort "Another heavy job is active" unless lease.flock(File::LOCK_EX | File::LOCK_NB)
+commands = [
+  ["cargo", "test", "-p", "converter-core", "--lib", "platform_tts", "--jobs", "1"],
+  ["cargo", "test", "-p", "converter-core", "--lib", "worker::tests", "--jobs", "1"],
+  ["cargo", "test", "-p", "converter-ffi", "--lib", "platform_callback", "--jobs", "1"],
+  ["cargo", "test", "-p", "converter-ffi", "--lib", "--features", "android-jni", "platform_chunk", "--jobs", "1"],
+  ["cargo", "build", "-p", "converter-ffi", "--jobs", "1"]
+]
+commands.each { |command| exit($?.exitstatus || 1) unless system("mise", "exec", "--", *command) }
+'
+'''
+
 [tasks."converter-ffi:android-arm64"]
 description = "Build converter-ffi for Android arm64 with mise-managed Rust and NDK"
 run = "case \"$(uname -s)\" in Linux) NDK_HOST_TAG=\"linux-x86_64\" ;; Darwin) NDK_HOST_TAG=\"darwin-x86_64\" ;; *) echo \"Unsupported Android NDK build host\" >&2; exit 1 ;; esac; NDK=\"${ANDROID_NDK_HOME:-$HOME/.local/share/mise/installs/android-sdk/11.0/ndk/28.2.13676358}\"; TOOLCHAIN=\"$NDK/toolchains/llvm/prebuilt/$NDK_HOST_TAG/bin\"; SYSROOT=\"$NDK/toolchains/llvm/prebuilt/$NDK_HOST_TAG/sysroot\"; NINJA=\"$(command -v ninja)\"; export ANDROID_NDK_HOME=\"$NDK\" ANDROID_NDK_ROOT=\"$NDK\" PATH=\"$TOOLCHAIN:$HOME/.cargo/bin:$PATH\"; export CC_aarch64_linux_android=\"$TOOLCHAIN/aarch64-linux-android24-clang\" CXX_aarch64_linux_android=\"$TOOLCHAIN/aarch64-linux-android24-clang++\" AR_aarch64_linux_android=\"$TOOLCHAIN/llvm-ar\" CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER=\"$TOOLCHAIN/aarch64-linux-android24-clang\" BINDGEN_EXTRA_CLANG_ARGS_aarch64_linux_android=\"--target=aarch64-linux-android24 --sysroot=$SYSROOT -I$SYSROOT/usr/include -include stdio.h\" BINDGEN_EXTRA_CLANG_ARGS=\"--target=aarch64-linux-android24 --sysroot=$SYSROOT -I$SYSROOT/usr/include -include stdio.h\" CFLAGS_aarch64_linux_android=\"--sysroot=$SYSROOT\" CMAKE_TOOLCHAIN_FILE=\"$NDK/build/cmake/android.toolchain.cmake\" CMAKE_GENERATOR=Ninja CMAKE_MAKE_PROGRAM=\"$NINJA\" TARGET_CC=\"$TOOLCHAIN/aarch64-linux-android24-clang\" CC=\"$TOOLCHAIN/aarch64-linux-android24-clang\" RUSTUP_TOOLCHAIN=stable; cargo build -p converter-ffi --features android-jni --release --target aarch64-linux-android --target-dir target/edge-android"
 
 [tasks."converter-ffi:ios-device"]
 description = "Build converter-ffi for iOS device with the Xcode SDK deployment target"
-run = '''IPHONEOS_DEPLOYMENT_TARGET=15.0 SDKROOT=$(xcrun --sdk iphoneos --show-sdk-path) mise exec -- cargo build -p converter-ffi --release --target aarch64-apple-ios'''
+run = '''MACOS_SDK=$(xcrun --sdk macosx --show-sdk-path) && HOST_CLANG=$(xcrun --sdk macosx --find clang) && SDK=$(xcrun --sdk iphoneos --show-sdk-path) && CLANG_DIR=$(dirname "$(xcrun --sdk iphoneos --find clang)") && CLANG_WRAPPER="$MISE_PROJECT_ROOT/scripts/apple_target_clang.sh" IPHONEOS_DEPLOYMENT_TARGET=15.0 EPUB2MP3_APPLE_SDK=iphoneos EPUB2MP3_APPLE_CLANG_TARGET=arm64-apple-ios15.0 CC_x86_64_apple_darwin="$HOST_CLANG" CFLAGS_x86_64_apple_darwin="-isysroot $MACOS_SDK" CC_aarch64_apple_ios="$CLANG_WRAPPER" CFLAGS_aarch64_apple_ios="-target arm64-apple-ios15.0 -isysroot $SDK" RUSTC=$(mise exec -- rustup which --toolchain stable rustc) BINDGEN_EXTRA_CLANG_ARGS="--target=arm64-apple-ios15.0 --sysroot=$SDK -include stdio.h" BINDGEN_EXTRA_CLANG_ARGS_aarch64_apple_ios="--target=arm64-apple-ios15.0 --sysroot=$SDK -include stdio.h" PATH="$CLANG_DIR:$PATH" mise exec -- cargo --config 'target.aarch64-apple-ios.linker="clang"' --config "target.aarch64-apple-ios.rustflags=[\"-C\",\"link-arg=-isysroot\",\"-C\",\"link-arg=$SDK\"]" build -p converter-ffi --release --target aarch64-apple-ios'''
 
 [tasks."converter-ffi:ios-device:verify"]
 description = "Verify the iOS converter-ffi Mach-O architecture, platform, and exported ABI"
@@ -96,7 +117,9 @@ run = "bash scripts/verify_converter_ffi_ios.sh"
 [tasks."converter-ffi:ios-simulator"]
 description = "Build host iOS Simulator Rust under shared lease; Debug by default, CONVERTER_FFI_BUILD_PROFILE=release for Release"
 run = '''
-xcrun swift -e '
+# Xcode exports its selected iOS Simulator SDK as SDKROOT to build phases.
+# This driver is a host-side Swift script; let Swift select the macOS SDK.
+env -u SDKROOT xcrun swift -e '
 import Foundation
 import Darwin
 let lease = open("/tmp/epub2mp3.heavy-job.lock", O_CREAT | O_RDWR, 0o600)
@@ -123,6 +146,9 @@ let target = "aarch64-apple-ios-sim"
 let child = Process()
 child.executableURL = URL(fileURLWithPath: "/usr/bin/env")
 child.arguments = ["mise", "exec", "--", "rustup", "run", "stable", "cargo", "build", "--locked", "-p", "converter-ffi", "--target", target, "--jobs", "1"]
+if ProcessInfo.processInfo.environment["CONVERTER_FFI_ENABLE_PIPER"] == "1" {
+    child.arguments?.insert(contentsOf: ["--features", "piper-runtime"], at: 8)
+}
 var environment = ProcessInfo.processInfo.environment
 switch environment["CONVERTER_FFI_BUILD_PROFILE"] ?? "debug" {
 case "debug": break
@@ -139,6 +165,54 @@ compiler.waitUntilExit()
 guard compiler.terminationStatus == 0 && compilerPath.hasPrefix("/") else { exit(2) }
 environment["RUSTC"] = compilerPath
 environment["IPHONEOS_DEPLOYMENT_TARGET"] = "15.0"
+let root = ProcessInfo.processInfo.environment["MISE_PROJECT_ROOT"] ?? FileManager.default.currentDirectoryPath
+if ProcessInfo.processInfo.environment["CONVERTER_FFI_ENABLE_PIPER"] == "1" {
+    let dataBuilder = Process()
+    dataBuilder.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+    dataBuilder.arguments = ["mise", "-C", root, "exec", "--", "cargo", "build", "-p", "espeak-rs-sys", "--features", "compile-espeak-intonations", "--target-dir", root + "/target/espeak-data"]
+    var dataEnvironment = ProcessInfo.processInfo.environment
+    dataEnvironment["RUSTC"] = compilerPath
+    dataBuilder.environment = dataEnvironment
+    try dataBuilder.run(); dataBuilder.waitUntilExit()
+    guard dataBuilder.terminationStatus == 0 else { exit(dataBuilder.terminationStatus) }
+}
+if target == "x86_64-apple-ios" && ProcessInfo.processInfo.environment["CONVERTER_FFI_ENABLE_PIPER"] == "1" {
+    let runtimeBuilder = Process()
+    runtimeBuilder.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+    runtimeBuilder.arguments = ["bash", root + "/scripts/build_onnxruntime_ios_simulator.sh"]
+    let runtimePipe = Pipe(); runtimeBuilder.standardOutput = runtimePipe
+    try runtimeBuilder.run()
+    let runtimePath = String(data: runtimePipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    runtimeBuilder.waitUntilExit()
+    guard runtimeBuilder.terminationStatus == 0 && runtimePath.hasPrefix("/") else { exit(2) }
+    environment["ORT_LIB_PATH"] = runtimePath
+    environment["ORT_LIB_PROFILE"] = "Release-iphonesimulator"
+}
+let sdk = Process()
+sdk.executableURL = URL(fileURLWithPath: "/usr/bin/xcrun")
+sdk.arguments = ["--sdk", "iphonesimulator", "--show-sdk-path"]
+let sdkPipe = Pipe(); sdk.standardOutput = sdkPipe
+try sdk.run()
+let sdkPath = String(data: sdkPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+sdk.waitUntilExit()
+guard sdk.terminationStatus == 0 && sdkPath.hasPrefix("/") else { exit(2) }
+let clangTarget = target == "aarch64-apple-ios-sim" ? "arm64-apple-ios15.0-simulator" : "x86_64-apple-ios15.0-simulator"
+environment["BINDGEN_EXTRA_CLANG_ARGS"] = "--target=\(clangTarget) --sysroot=\(sdkPath) -I\(sdkPath)/usr/include -include stdio.h"
+let clang = Process()
+clang.executableURL = URL(fileURLWithPath: "/usr/bin/xcrun")
+clang.arguments = ["--sdk", "iphonesimulator", "--find", "clang"]
+let clangPipe = Pipe(); clang.standardOutput = clangPipe
+try clang.run()
+let clangPath = String(data: clangPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+clang.waitUntilExit()
+guard clang.terminationStatus == 0 && clangPath.hasPrefix("/") else { exit(2) }
+environment["EPUB2MP3_APPLE_SDK"] = "iphonesimulator"
+environment["EPUB2MP3_APPLE_CLANG_TARGET"] = clangTarget
+environment["CC_\(target.replacingOccurrences(of: "-", with: "_"))"] = clangPath
+environment["CFLAGS_\(target.replacingOccurrences(of: "-", with: "_"))"] = "-target \(clangTarget) --sysroot=\(sdkPath)"
+let cargoConfig = "target.\(target).rustflags=[\"-C\",\"link-arg=-isysroot\",\"-C\",\"link-arg=\(sdkPath)\"]"
+child.arguments?.insert(contentsOf: ["--config", "target.\(target).linker=\"clang\"", "--config", cargoConfig], at: 7)
+environment["PATH"] = URL(fileURLWithPath: clangPath).deletingLastPathComponent().path + ":" + (environment["PATH"] ?? "")
 child.environment = environment
 try child.run(); child.waitUntilExit(); exit(child.terminationStatus)
 '
@@ -165,6 +239,15 @@ if let filters = ProcessInfo.processInfo.environment["APPLE_NATIVE_TESTS"] {
     let selections = filters.split(separator: ",").map(String.init)
     guard !selections.isEmpty && selections.allSatisfy({ $0.hasPrefix("EpubToMp3Tests/") }) else { exit(2) }
     child.arguments = Array(child.arguments!.dropLast(4)) + selections.map { "-only-testing:\($0)" } + ["test"]
+}
+if ProcessInfo.processInfo.environment["APP_FOUNDATION_LIVE_EDGE"] == "1",
+   let library = ProcessInfo.processInfo.environment["APP_FOUNDATION_FFI_LIBRARY"], !library.isEmpty {
+    child.arguments?.insert(contentsOf: [
+        "APP_FOUNDATION_LIVE_EDGE=1", "APP_FOUNDATION_FFI_LIBRARY=\(library)"
+    ], at: child.arguments!.count - 1)
+}
+if ProcessInfo.processInfo.environment["EPUB2MP3_NATIVE_TTS_TEST"] == "1" {
+    child.arguments?.insert("EPUB2MP3_NATIVE_TTS_TEST=1", at: child.arguments!.count - 1)
 }
 try child.run(); child.waitUntilExit(); exit(child.terminationStatus)
 '
@@ -558,7 +641,7 @@ set -euo pipefail
 """
 
 # ── Native macOS build ────────────────────────────────────────────────────────
-# Apple clients use the native Swift reader and the Rust backend/sidecar.
+# Apple clients embed converter-ffi; the standalone server is a separate target.
 
 [tasks."sidecar:build"]
 description = "Build the Rust macOS converter-server sidecar"
@@ -575,8 +658,8 @@ echo "Built Rust sidecar: dist/epub-to-mp3-server"
 """
 
 [tasks."mac:build"]
-description = "Build native AppKit macOS app with the Rust converter-server sidecar (MAC_BUILD_CONFIG=Release|Debug, default Release)"
-depends = ["sidecar:build", "converter-ffi:build"]
+description = "Build native AppKit macOS app with embedded Rust FFI (MAC_BUILD_CONFIG=Release|Debug, default Release)"
+depends = ["converter-ffi:build"]
 run = """
 #!/bin/bash
 set -euo pipefail
@@ -1053,14 +1136,19 @@ if [[ -z "$UDID" || "$UDID" == "$DEST" ]]; then
   echo "ios:simulator:test error: could not resolve a simulator UDID." >&2
   exit 2
 fi
-xcrun simctl boot "$UDID" >/dev/null 2>&1 || true
-xcrun simctl bootstatus "$UDID" -b
-# iOS 26 may report Booted before testmanagerd has established its socket.
-sleep 5
-
 DD="${IOS_DERIVED_DATA_PATH:-./.build}"
 run_simulator_tests() {
   local only=()
+  local test_settings=()
+  if [[ "${EPUB2MP3_NATIVE_TTS_TEST:-0}" == "1" ]]; then
+    test_settings+=("EPUB2MP3_NATIVE_TTS_TEST=1")
+  fi
+  if [[ "${APP_IOS_LIVE_EDGE:-0}" == "1" ]]; then
+    test_settings+=("APP_IOS_LIVE_EDGE=1")
+  fi
+  if [[ -n "${EPUB2MP3_GUI_BOOK_ID:-}" ]]; then
+    test_settings+=("EPUB2MP3_GUI_BOOK_ID=${EPUB2MP3_GUI_BOOK_ID}")
+  fi
   if [[ -n "${IOS_TESTS:-}" ]]; then
     local tests=()
     IFS=',' read -r -a tests <<< "$IOS_TESTS"
@@ -1070,12 +1158,17 @@ run_simulator_tests() {
   fi
   if [[ "${IOS_SKIP_BUILD:-0}" != "1" ]]; then
     xcodebuild -project EpubToMp3.xcodeproj -scheme EpubToMp3 -configuration Debug \
-      -destination "$DEST" -derivedDataPath "$DD" build-for-testing
+      -destination "$DEST" -derivedDataPath "$DD" "${test_settings[@]}" build-for-testing
   fi
+  # The bundled Rust Simulator build must run with every Simulator shut down.
+  # Build first; boot only for the XCTest execution phase.
+  xcrun simctl boot "$UDID" >/dev/null 2>&1 || true
+  xcrun simctl bootstatus "$UDID" -b
+  sleep 5
   if [[ -n "${IOS_TESTS:-}" ]]; then
     xcodebuild -project EpubToMp3.xcodeproj -scheme EpubToMp3 -configuration Debug \
       -destination "$DEST" -derivedDataPath "$DD" -parallel-testing-enabled NO \
-      test-without-building "${only[@]}"
+      "${test_settings[@]}" test-without-building "${only[@]}"
     return
   fi
   if [[ "${IOS_TEST_SHARDS:-4}" =~ ^[1-9][0-9]*$ ]]; then
@@ -1111,7 +1204,7 @@ run_simulator_tests() {
       echo "ios:simulator:test → isolated $class_name"
       xcodebuild -project EpubToMp3.xcodeproj -scheme EpubToMp3 -configuration Debug \
         -destination "$DEST" -derivedDataPath "$DD" -parallel-testing-enabled NO \
-        test-without-building "-only-testing:$class_name"
+        "${test_settings[@]}" test-without-building "-only-testing:$class_name"
     done
     local -a all_classes=("${grouped_classes[@]}")
     for ((shard_index=0; shard_index<shard_count; shard_index++)); do
@@ -1126,16 +1219,16 @@ run_simulator_tests() {
         echo "ios:simulator:test → shard $((shard_index + 1))/$shard_count"
         xcodebuild -project EpubToMp3.xcodeproj -scheme EpubToMp3 -configuration Debug \
           -destination "$DEST" -derivedDataPath "$DD" \
-          -parallel-testing-enabled NO test-without-building "${shard_only[@]}"
+          -parallel-testing-enabled NO "${test_settings[@]}" test-without-building "${shard_only[@]}"
       fi
     done
     return 0
   fi
   xcodebuild -project EpubToMp3.xcodeproj -scheme EpubToMp3 -configuration Debug \
-    -destination "$DEST" -derivedDataPath "$DD" test-without-building "${only[@]}"
+    -destination "$DEST" -derivedDataPath "$DD" "${test_settings[@]}" test-without-building "${only[@]}"
 }
 
-export DEST DD IOS_SKIP_BUILD
+export DEST DD IOS_SKIP_BUILD UDID
 export -f run_simulator_tests
 python3 ../../scripts/heavy_job_guard.py ios:simulator:test -- bash -e -c run_simulator_tests
 """
@@ -1184,12 +1277,14 @@ let child = Process()
 child.executableURL = URL(fileURLWithPath: "/usr/bin/xcrun")
 child.arguments = ["swift", "test", "--package-path", taskRoot + "/ios/EpubToMp3",
                    "--scratch-path", taskRoot + "/ios/EpubToMp3/.build/app-foundation", "--jobs", "1"]
+var environment = ProcessInfo.processInfo.environment
 if ffiEnabled {
-    var environment = ProcessInfo.processInfo.environment
     environment["APP_FOUNDATION_FFI_LIBRARY"] = taskRoot + "/target/debug/libconverter_ffi.dylib"
-    environment["APP_FOUNDATION_FFI_FIXTURE"] = taskRoot + "/web/public/sample.epub"
-    child.environment = environment
 }
+if environment["APP_FOUNDATION_FFI_FIXTURE"] == nil {
+    environment["APP_FOUNDATION_FFI_FIXTURE"] = taskRoot + "/web/public/sample.epub"
+}
+child.environment = environment
 try child.run()
 child.waitUntilExit()
 exit(child.terminationStatus)
@@ -1315,6 +1410,20 @@ mise exec -- flutter run -d "$DEVICE"
 [tasks."flutter:test"]
 description = "Run Flutter unit + widget tests"
 run = "cd flutter_app && flutter test"
+
+[tasks."native-tts:android:test"]
+description = "Verify native speech notices, cancellation and Android voice selection under the shared lease"
+run = '''
+mise exec -- ruby -e '
+lease = File.open("/tmp/epub2mp3.heavy-job.lock", "a+")
+abort "Another heavy job is active" unless lease.flock(File::LOCK_EX | File::LOCK_NB)
+Dir.chdir("flutter_app") do
+  command = ["mise", "exec", "--", "flutter", "test", "test/platform_voice_notice_test.dart", "test/embedded_converter_test.dart", "test/convert_screen_test.dart", "test/rust_playback_conversion_test.dart", "test/android_chapter_stream_test.dart", "test/growing_chapter_audio_source_test.dart", "test/growing_chapter_player_test.dart", "test/rust_streaming_window_test.dart", "test/reader_playback_startup_test.dart", "test/audio_player_service_test.dart", "test/book_open_screen_test.dart", "test/resume_restoration_guard_test.dart"]
+  exit($?.exitstatus || 1) unless system(*command)
+  Dir.chdir("android") { exit($?.exitstatus || 1) unless system("mise", "exec", "--", "./gradlew", ":app:testDebugUnitTest", "--max-workers=1") }
+end
+'
+'''
 
 [tasks."flutter:analyze"]
 description = "Static analysis of the Flutter app (lints + type errors)"

@@ -7,6 +7,23 @@ import AppKit
 #endif
 @testable import EpubToMp3
 
+private final class RestoreStageRecorder: @unchecked Sendable {
+    private let lock = NSLock()
+    private var values: [(String, Bool)] = []
+
+    func record(_ stage: String, onMainThread: Bool) {
+        lock.lock()
+        values.append((stage, onMainThread))
+        lock.unlock()
+    }
+
+    var snapshot: [(String, Bool)] {
+        lock.lock()
+        defer { lock.unlock() }
+        return values
+    }
+}
+
 final class PreparedChapterRendererTests: XCTestCase {
     private var root: URL!
 
@@ -67,6 +84,35 @@ final class PreparedChapterRendererTests: XCTestCase {
         let restored = await reopened.restore(bookID: "book", chapterIndex: 0, chapter: chapter, settings: settings)
         XCTAssertEqual(first, try XCTUnwrap(restored))
         XCTAssertNotNil(reopened.cached(bookID: "book", chapterIndex: 0, chapter: chapter, settings: settings))
+    }
+
+    @MainActor
+    func testPreparedArchiveRestorationRunsOffMainThread() async throws {
+        let store = PreparedChapterArchiveStore(directory: root)
+        let settings = try settings()
+        let chapter = chapter()
+        let initial = PreparedChapterRenderer(store: store)
+        let expected = try XCTUnwrap(initial.render(
+            bookID: "book", chapterIndex: 0, chapter: chapter, settings: settings
+        ))
+        await initial.flush()
+
+        let reopened = PreparedChapterRenderer(store: store)
+        let stages = RestoreStageRecorder()
+        let actual = await reopened.restore(
+            bookID: "book",
+            chapterIndex: 0,
+            chapter: chapter,
+            settings: settings,
+            stageObserver: { stage, _ in stages.record(stage, onMainThread: Thread.isMainThread) }
+        )
+
+        XCTAssertEqual(expected, try XCTUnwrap(actual))
+        XCTAssertEqual(stages.snapshot.map(\.0), [
+            "prepared_renderer_restore_started",
+            "prepared_renderer_restore_completed",
+        ])
+        XCTAssertTrue(stages.snapshot.allSatisfy { !$0.1 }, "Archive decoding must not occupy the main thread")
     }
 
     @MainActor

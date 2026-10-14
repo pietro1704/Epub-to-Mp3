@@ -47,6 +47,8 @@ final class TocScreenController: UITableViewController {
     private var localArtifactStates: [Int: LocalAudioArtifactStore.ArtifactState] = [:]
     private let notificationObservers = TocNotificationObserverBag()
     private var hasScrolledToInitialFocus = false
+    private var downloadProgressTask: Task<Void, Never>?
+    private var isVisible = false
 
     init(
         fulltext: EbookFulltext?,
@@ -100,10 +102,21 @@ final class TocScreenController: UITableViewController {
 
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
+        isVisible = true
+        observeDownloadProgress()
         view.layoutIfNeeded()
         scrollToInitialFocusIfNeeded()
         refreshDownloaded()
     }
+
+    override func viewWillDisappear(_ animated: Bool) {
+        super.viewWillDisappear(animated)
+        isVisible = false
+        downloadProgressTask?.cancel()
+        downloadProgressTask = nil
+    }
+
+    deinit { downloadProgressTask?.cancel() }
 
     func update(
         fulltext: EbookFulltext?,
@@ -119,6 +132,7 @@ final class TocScreenController: UITableViewController {
         onRetryFailed: (() -> Void)? = nil,
         onExport: (() -> Void)? = nil
     ) {
+        let previousJobID = self.snapshot.jobId
         self.fulltext = fulltext
         self.snapshot = snapshot
         self.currentChapterIndex = currentChapterIndex
@@ -133,6 +147,10 @@ final class TocScreenController: UITableViewController {
         self.onExport = onExport
         configureMoreMenu()
         tableView.reloadData()
+        if isVisible, previousJobID != snapshot.jobId {
+            observeDownloadProgress()
+            refreshDownloaded()
+        }
     }
 
     override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
@@ -301,7 +319,7 @@ final class TocScreenController: UITableViewController {
                 DownloadManager.locallyDownloadedIndices(for: jobID)
             }.value
             states = [:]
-            guard let self else { return }
+            guard let self, self.snapshot.jobId == jobID else { return }
             self.locallyDownloaded = downloaded
             self.localArtifactStates = states
             self.configureMoreMenu()
@@ -311,6 +329,23 @@ final class TocScreenController: UITableViewController {
 
     private func observeLocalAudioArtifacts() {
         return
+    }
+
+    private func observeDownloadProgress() {
+        downloadProgressTask?.cancel()
+        let jobID = snapshot.jobId
+        downloadProgressTask = Task { [weak self] in
+            let stream = await DownloadManager.shared.watchProgress(jobId: jobID)
+            for await progress in stream {
+                guard !Task.isCancelled, let self, self.snapshot.jobId == jobID else { return }
+                switch progress.state {
+                case .completed, .failed, .cancelled:
+                    self.refreshDownloaded()
+                case .queued, .downloading, .paused:
+                    break
+                }
+            }
+        }
     }
 
     private func observeConversionScheduler() {

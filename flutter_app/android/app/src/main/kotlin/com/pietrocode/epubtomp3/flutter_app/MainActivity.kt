@@ -46,6 +46,42 @@ class MainActivity : AudioServiceActivity() {
     private val converterExecutor = Executors.newSingleThreadExecutor()
     private var textToSpeech: TextToSpeech? = null
     private var textToSpeechReady = false
+    private var platformVoiceEvents: EventChannel.EventSink? = null
+    private var audioChunkSink: EventChannel.EventSink? = null
+    private val activeConversions = java.util.concurrent.ConcurrentHashMap<String, String>()
+    private val platformSpeech by lazy { PlatformSpeechProvider(this) }
+
+    // Called synchronously by Rust on a worker thread. The cancellation context
+    // is borrowed for this call only and must never escape into Android callbacks.
+    fun synthesizeNativeSpeech(text: String, language: String, path: String, inputPath: String, cancelContext: Long): Boolean {
+        platformSpeech.synthesize(text, language, path, { nativePlatformSpeechCancelled(cancelContext) }) {
+            platformVoiceEvents?.success(mapOf("engine" to "system", "inputPath" to inputPath))
+        }
+        return true
+    }
+
+    // Rust waits for main-thread delivery so chunk events precede the final result.
+    fun onNativeAudioChunk(requestId: String, chapterIndex: Int, chunkIndex: Int, path: String): Boolean {
+        if (!activeConversions.containsKey(requestId)) return false
+        val completed = java.util.concurrent.CountDownLatch(1)
+        val accepted = java.util.concurrent.atomic.AtomicBoolean(false)
+        mainHandler.post {
+            try {
+                val sink = audioChunkSink
+                if (sink != null && activeConversions.containsKey(requestId)) {
+                    sink.success(mapOf("requestId" to requestId, "chapterIndex" to chapterIndex, "chunkIndex" to chunkIndex, "path" to path))
+                    accepted.set(true)
+                }
+            } catch (error: Throwable) {
+                Log.e(embeddedLogTag, "Audio chunk delivery failed", error)
+            } finally { completed.countDown() }
+        }
+        return completed.await(5, TimeUnit.SECONDS) && accepted.get()
+    }
+
+    private external fun nativePlatformSpeechCancelled(context: Long): Boolean
+    private external fun nativePrepareConversion(request: String)
+    private external fun nativeCancelConversion(request: String)
 
 
     companion object {
@@ -220,6 +256,18 @@ class MainActivity : AudioServiceActivity() {
         // only this activity's channels on that engine; do not create or cache
         // another engine here.
         super.configureFlutterEngine(flutterEngine)
+
+        EventChannel(flutterEngine.dartExecutor.binaryMessenger, "epub_to_mp3/audio_chunks")
+            .setStreamHandler(object : EventChannel.StreamHandler {
+                override fun onListen(arguments: Any?, events: EventChannel.EventSink?) { audioChunkSink = events }
+                override fun onCancel(arguments: Any?) { audioChunkSink = null }
+            })
+
+        EventChannel(flutterEngine.dartExecutor.binaryMessenger, "epub_to_mp3/platform_voice")
+            .setStreamHandler(object : EventChannel.StreamHandler {
+                override fun onListen(arguments: Any?, events: EventChannel.EventSink?) { platformVoiceEvents = events }
+                override fun onCancel(arguments: Any?) { platformVoiceEvents = null }
+            })
 
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "epub_to_mp3/android_tts")
             .setMethodCallHandler { call, result ->
@@ -441,6 +489,13 @@ class MainActivity : AudioServiceActivity() {
         ).setMethodCallHandler { call, result ->
             Log.i(embeddedLogTag, "method ${call.method} received")
             when (call.method) {
+                "streamReady" -> result.success(audioChunkSink != null)
+                "cancelConversion" -> {
+                    val input = call.argument<String>("inputPath")
+                    val output = call.argument<String>("outputPath")
+                    activeConversions.filter { (path, source) -> if (output != null) path == output else input == null || source == input }.keys.forEach { path -> activeConversions.remove(path); nativeCancelConversion(path) }
+                    result.success(null)
+                }
                 "status" -> {
                     Log.i(embeddedLogTag, "status requested")
                     result.success(embeddedConverterStatus())
@@ -645,6 +700,8 @@ class MainActivity : AudioServiceActivity() {
                         if (inputPath.isNullOrBlank() || outputPath.isNullOrBlank()) {
                             result.error("BAD_ARGS", "inputPath and outputPath are required", null)
                         } else {
+                            activeConversions[outputPath] = inputPath
+                            nativePrepareConversion(outputPath)
                             converterExecutor.execute {
                                 try {
                                     Log.i(embeddedLogTag, "convert start input=$inputPath output=$outputPath")
@@ -658,7 +715,7 @@ class MainActivity : AudioServiceActivity() {
                                     // same worker thread immediately after nativeConvert;
                                     // reading it after Future.get would lose the real error.
                                     val nativeFuture = isolatedExecutor.submit<Pair<String?, String?>> {
-                                        val value = nativeConvert(inputPath, outputPath, chapterStart, chapterEnd)
+                                        val value = if (call.argument<Boolean>("streaming") == true) nativeConvertStreaming(inputPath, outputPath, chapterStart, chapterEnd) else nativeConvert(inputPath, outputPath, chapterStart, chapterEnd)
                                         value to if (value == null) nativeLastError() else null
                                     }
                                     // A complete EPUB can legitimately take several minutes on
@@ -668,6 +725,7 @@ class MainActivity : AudioServiceActivity() {
                                     val (native, nativeError) = try {
                                         nativeFuture.get(900, TimeUnit.SECONDS)
                                     } catch (_: TimeoutException) {
+                                        nativeCancelConversion(outputPath)
                                         nativeFuture.cancel(true)
                                         Log.e(embeddedLogTag, "embedded conversion timed out after 900 seconds")
                                         runOnUiThread {
@@ -680,6 +738,7 @@ class MainActivity : AudioServiceActivity() {
                                         return@execute
                                     } finally {
                                         isolatedExecutor.shutdownNow()
+                                        activeConversions.remove(outputPath)
                                     }
                                     if (native == null) {
                                         val error = nativeError ?: "converter-ffi failed without an error"
@@ -707,6 +766,7 @@ class MainActivity : AudioServiceActivity() {
     private external fun nativeParse(inputPath: String): String?
     private external fun nativeJobLog(jobId: String): String?
     private external fun nativeConvert(inputPath: String, outputPath: String, chapterStart: Int, chapterEnd: Int): String?
+    private external fun nativeConvertStreaming(inputPath: String, outputPath: String, chapterStart: Int, chapterEnd: Int): String?
     private external fun nativeTtsModels(): String?
     private external fun nativeTtsDefaultEngine(language: String, platform: String, androidApi: Int): String?
     private external fun nativeTtsInstalledReadyEngine(language: String, platform: String, androidApi: Int, installedModelIdsJson: String, readyModelIdsJson: String): String?
@@ -720,6 +780,8 @@ class MainActivity : AudioServiceActivity() {
     private external fun nativeLastError(): String
 
     override fun onDestroy() {
+        activeConversions.keys.forEach { nativeCancelConversion(it) }
+        platformSpeech.close()
         converterExecutor.shutdownNow()
         textToSpeech?.stop()
         textToSpeech?.shutdown()

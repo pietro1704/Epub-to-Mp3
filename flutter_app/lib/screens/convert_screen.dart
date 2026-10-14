@@ -4,6 +4,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
+import 'dart:async';
+import '../services/platform_voice_notice.dart';
+import '../services/embedded_converter.dart';
 
 import '../state/providers.dart';
 
@@ -53,10 +56,26 @@ class _ConvertScreenState extends ConsumerState<ConvertScreen> {
   bool _submitting = false;
   String? _jobId;
   String? _error;
+  final _voiceSession = PlatformVoiceNoticeSession();
+  StreamSubscription<dynamic>? _voiceSubscription;
+  AndroidEmbeddedConverter? _activeAndroidConverter;
+  String? _activeNativeOutputPath;
 
   @override
   void initState() {
     super.initState();
+    if (defaultTargetPlatform == TargetPlatform.android) {
+      _voiceSubscription = _voiceSession.listen(() {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              platformVoiceNotice(Localizations.localeOf(context).languageCode),
+            ),
+          ),
+        );
+      });
+    }
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final requested = ref.read(manualDownloadRequestProvider);
       if (!mounted || requested == null) return;
@@ -72,6 +91,13 @@ class _ConvertScreenState extends ConsumerState<ConvertScreen> {
 
   @override
   void dispose() {
+    final converter = _activeAndroidConverter;
+    final output = _activeNativeOutputPath;
+    if (_submitting && output != null && converter != null) {
+      unawaited(converter.cancelConversion(outputPath: output));
+    }
+    _voiceSession.end();
+    _voiceSubscription?.cancel();
     _startController.dispose();
     _endController.dispose();
     super.dispose();
@@ -133,7 +159,7 @@ class _ConvertScreenState extends ConsumerState<ConvertScreen> {
     try {
       final request = ConversionRequest(
         filePath: path,
-        engine: _engine,
+        engine: 'edge',
         voice: _voice,
         language: _language,
         chapterStart: int.tryParse(_startController.text),
@@ -148,14 +174,17 @@ class _ConvertScreenState extends ConsumerState<ConvertScreen> {
               final root = await getApplicationDocumentsDirectory();
               final output =
                   '${root.path}/audiobooks/${DateTime.now().millisecondsSinceEpoch}';
-              return ref
-                  .read(embeddedConverterProvider)
-                  .convert(
-                    inputPath: request.filePath,
-                    outputPath: output,
-                    chapterStart: request.chapterStart,
-                    chapterEnd: request.chapterEnd,
-                  );
+              _activeNativeOutputPath = output;
+              final converter = ref.read(embeddedConverterProvider);
+              if (converter is AndroidEmbeddedConverter) {
+                _activeAndroidConverter = converter;
+              }
+              return converter.convert(
+                inputPath: request.filePath,
+                outputPath: output,
+                chapterStart: request.chapterStart,
+                chapterEnd: request.chapterEnd,
+              );
             }
             return ref
                 .read(apiClientProvider)
@@ -170,6 +199,7 @@ class _ConvertScreenState extends ConsumerState<ConvertScreen> {
                   normalizeAudio: request.normalizeAudio,
                 );
           };
+      _voiceSession.begin(request.filePath);
       final jobId = await starter(request);
       if (!mounted) return;
       setState(() {
@@ -182,13 +212,15 @@ class _ConvertScreenState extends ConsumerState<ConvertScreen> {
         _error = e.toString();
         _submitting = false;
       });
+    } finally {
+      _voiceSession.end();
+      _activeNativeOutputPath = null;
     }
   }
 
   @override
   Widget build(BuildContext context) {
     final jobId = _jobId;
-    final supportsPiper = defaultTargetPlatform != TargetPlatform.android;
     return Scaffold(
       appBar: AppBar(title: const Text('Convert')),
       body: ListView(
@@ -205,8 +237,6 @@ class _ConvertScreenState extends ConsumerState<ConvertScreen> {
             decoration: const InputDecoration(labelText: 'Engine'),
             items: [
               const DropdownMenuItem(value: 'edge', child: Text('Edge TTS')),
-              if (supportsPiper)
-                const DropdownMenuItem(value: 'piper', child: Text('Piper')),
             ],
             onChanged: (v) => setState(() => _engine = v ?? _engine),
           ),

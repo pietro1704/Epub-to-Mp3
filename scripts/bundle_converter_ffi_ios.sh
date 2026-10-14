@@ -30,6 +30,13 @@ case "${PLATFORM_NAME:-}" in
 esac
 root="$(cd "${SRCROOT:?}/../.." && pwd)"
 artifact="$root/target/$rust_target/$rust_profile/libconverter_ffi.dylib"
+if [[ ! -f "$artifact" || "${CONVERTER_FFI_BUILD_ALWAYS:-0}" == 1 ]]; then
+  if [[ "$PLATFORM_NAME" == iphonesimulator ]]; then
+    CONVERTER_FFI_BUILD_PROFILE="$rust_profile" mise -C "$root" run converter-ffi:ios-simulator
+  else
+    mise -C "$root" run converter-ffi:ios-device
+  fi
+fi
 CONVERTER_FFI_IOS_ARTIFACT="$artifact" CONVERTER_FFI_IOS_ARCH="$expected_arch" \
   CONVERTER_FFI_IOS_PLATFORM="$expected_platform" bash "$root/scripts/verify_converter_ffi_ios.sh"
 destination="${TARGET_BUILD_DIR:?}/${FRAMEWORKS_FOLDER_PATH:?}"

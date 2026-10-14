@@ -32,6 +32,9 @@ final class MiniPlayerBarUIKitView: UIView, UIGestureRecognizerDelegate {
     private var onTap: (() -> Void)?
     private var onPlayRequested: (() -> Void)?
     private var cancellables: Set<AnyCancellable> = []
+    private var coverDecodeTask: Task<Void, Never>?
+    private var coverDecodeGeneration = UUID()
+    private var coverBookID: String?
     private let usesSystemManagedBottomInset: Bool
 
     override var intrinsicContentSize: CGSize {
@@ -261,18 +264,12 @@ final class MiniPlayerBarUIKitView: UIView, UIGestureRecognizerDelegate {
             .filter { !$0.isEmpty }
             .joined(separator: ", ")
 
-        if let data = book?.coverPNG, let image = UIImage(data: data) {
-            coverView.image = image
-        } else {
-            coverView.image = UIImage(systemName: "book.closed")
-            coverView.tintColor = .tintColor
-            coverView.contentMode = .scaleAspectFit
-        }
+        updateCover(for: book)
 
         let isLoading = player.isLoading
         if isLoading {
             spinner.startAnimating()
-            playPauseButton.isHidden = true
+            playPauseButton.isHidden = !player.isSeeking
         } else {
             spinner.stopAnimating()
             playPauseButton.isHidden = false
@@ -285,6 +282,52 @@ final class MiniPlayerBarUIKitView: UIView, UIGestureRecognizerDelegate {
             : L10n.string("player.play")
         rateButton.setTitle(player.rate.shortLabel, for: .normal)
         accessibilityIdentifier = "miniPlayer.bar"
+    }
+
+    private func updateCover(for book: BookEntity?) {
+        guard let book, let data = book.coverPNG else {
+            coverDecodeTask?.cancel()
+            coverDecodeTask = nil
+            coverDecodeGeneration = UUID()
+            coverBookID = nil
+            coverView.image = UIImage(systemName: "book.closed")
+            coverView.tintColor = .tintColor
+            coverView.contentMode = .scaleAspectFit
+            return
+        }
+
+        if let cached = LibraryCoverThumbnailCache.cached(for: book.id) {
+            coverDecodeTask?.cancel()
+            coverDecodeTask = nil
+            coverDecodeGeneration = UUID()
+            coverBookID = book.id
+            coverView.image = cached
+            coverView.contentMode = .scaleAspectFill
+            return
+        }
+        guard coverBookID != book.id else { return }
+
+        coverDecodeTask?.cancel()
+        let generation = UUID()
+        coverDecodeGeneration = generation
+        coverBookID = book.id
+        coverView.image = UIImage(systemName: "book.closed")
+        coverView.tintColor = .tintColor
+        coverView.contentMode = .scaleAspectFit
+        coverDecodeTask = Task.detached(priority: .utility) { [bookID = book.id] in
+            let image = LibraryCoverThumbnailCache.decode(data, bookID: bookID)
+            guard !Task.isCancelled else { return }
+            await MainActor.run { [weak self] in
+                guard let self,
+                      self.coverDecodeGeneration == generation,
+                      self.coverBookID == bookID else { return }
+                self.coverDecodeTask = nil
+                if let image {
+                    self.coverView.image = image
+                    self.coverView.contentMode = .scaleAspectFill
+                }
+            }
+        }
     }
 
     func refresh() {

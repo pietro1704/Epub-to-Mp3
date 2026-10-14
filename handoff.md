@@ -1,5 +1,58 @@
 # Hermes ↔ Claude Code Handoff
 
+## Completed local SE streaming goal — APP-20261013-07
+
+Actual iPhone SE (1st generation), iOS15.5, Xcode16.4 verification completed.
+Eight reproduced app errors corrected with focused native regressions; fresh
+Edge first audio 1.900 s and GUI observation 4.103 s. Two-chapter transport,
+pause-preserving next/previous, skips/scrubber, 1.5x rate, downloads and replay
+after relaunch passed. Final GUI 2/2, Mac parity 16/16, actual LOTR reader GUI
+1/1 (zero clipped lines, chrome offset preserved). Timer 45-minute translation
+fixed in all three locales and exercised in English/pt-BR; activation/cancel
+native tests 3/3. No speculative provider timeout or working handoff changes.
+
+Original SE reading preferences/LOTR seed restored; normal app remains open
+on LOTR, only exact SE booted. Dedicated fixtures/artifacts archived under
+`/tmp/se-goal-fixture-archive`; existing imports preserved. Source changes local
+in the pre-existing dirty worktree. Full evidence and limits:
+`docs/plans/2026-10-13-se-streaming-controls.md`.
+
+## Current TTS request — APP-20261013-04
+
+Edge is primary. User explicitly limited device/Siri speech to isolated failed
+segments because it misreads text. Each next segment retries Edge; the third
+consecutive failure stops conversion, and success resets that limit. Piper is
+suspended in app choices/default builds. Cache policy is `edge+system-v2`.
+Rust owns policy, MP3 encoding, chunk order, cancellation and publication;
+Apple/Android adapters only produce installed-voice WAV. Native utterances are
+bounded to 60 characters initially and 240 later; Edge keeps 180/800 requests.
+
+Android now emits immutable JNI chunk files through a request-scoped channel
+and feeds one growing source per chapter before the final result. Completion
+preserves queue identity. Exact request cancellation, cached Listen startup,
+stale generations and already queued file lifetime have permanent regressions.
+Seeking within incomplete chapters waits for completion.
+
+Final local evidence: 39 Rust/FFI tests, 13 native macOS tests, 18 exact
+iPhone SE/iOS15.5 tests, and separate strict live Edge cases passed on both
+Apple targets (1 each, no native substitution). Android has 55 passing Flutter
+tests, 7 passing Kotlin/JVM tests (reused on final run), clean analysis and a
+206 MiB debug APK containing the current arm64 JNI artifact. Current FFI builds
+passed for host, Android arm64, iOS arm64 and the exact Simulator. No physical
+Android playback, weak-phone profiling or physical iPhone playback is claimed.
+Full evidence: `docs/plans/2026-10-13-native-tts-fallback.md`.
+
+Deliberate native Portuguese test playback caused user confusion about Edge.
+Strict primary tests now reject system progress/direct speech; audible checks
+identify fixtures and keep the GUI visible. Normal Lord of the Rings EPUB is
+`en`. Only the exact SE/iOS15.5 normal app is left open (PID 59198), screenshot
+`/tmp/epubtomp3-native-fallback-ios15.png`; the macOS app has exited.
+
+Work remains local on `feature/native-tts-fallback`, preserving the initial
+dirty prerequisite/reader/Piper worktree. No commit/push or remote CI/PR
+monitoring occurred. Android physical runtime acceptance and parent delivery
+remain in Verification.
+
 ## Active playback request — APP-20261010-01
 
 User-confirmed: implement a small moving TTS-chunk window around audible

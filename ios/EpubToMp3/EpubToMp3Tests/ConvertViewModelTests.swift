@@ -100,6 +100,8 @@ final class ConvertViewModelTests: XCTestCase {
             return result
         })
         model.selectedFile = URL(fileURLWithPath: "/unused-manual-input.epub")
+        let modelsRoot = try XCTUnwrap(AppSettings.ttsModelsRoot()).path
+        model.modelsRoot = modelsRoot
         model.engine = "piper"
         model.voice = "speaker-0"
         model.language = "pt-BR"
@@ -114,7 +116,8 @@ final class ConvertViewModelTests: XCTestCase {
         let previous = player.snapshot
         await model.submit(player: player)
         XCTAssertEqual(captured, ConversionOptions(engine: "piper", voice: "speaker-0", language: "pt-BR",
-                                                  clearCache: true, forceReprocess: true, maxPerformance: true))
+                                                  clearCache: true, forceReprocess: true, maxPerformance: true,
+                                                  modelsRoot: modelsRoot, modelID: "pt_BR-edresson-low"))
         XCTAssertEqual(capturedBounds?.0, 8)
         XCTAssertEqual(capturedBounds?.1, 9)
         XCTAssertEqual(model.submittedJobId, "manual-only")

@@ -70,6 +70,11 @@
 "jobs.status" = "Estado";
 "settings.fontStep" = "%d de %d";
 "settings.audioEngine" = "Motor de audio";
+"settings.audioEngineChoice" = "Motor de voz";
+"settings.audioEngineChoiceDescription" = "Edge usa voz en línea. Piper usa el modelo local instalado.";
+"settings.piperInstall" = "Instalar modelo Piper en portugués";
+"settings.piperInstalled" = "Modelo Piper instalado";
+"settings.piperNotInstalled" = "Modelo Piper no instalado";
 "settings.useBuiltInEngine" = "Usar motor de audio integrado";
 "settings.useBuiltInEngineDescription" = "Sintetiza capítulos en este dispositivo. No necesita backend.";
 "settings.allowCellularAudio" = "Permitir conversión de audio con datos móviles";
@@ -226,6 +231,7 @@
 "player.sleepTimerOption.5" = "5 minutos";
 "player.sleepTimerOption.15" = "15 minutos";
 "player.sleepTimerOption.30" = "30 minutos";
+"player.sleepTimerOption.45" = "45 minutos";
 "player.sleepTimerOption.60" = "1 hora";
 
 /* SplitViewRoot library detail */
@@ -594,3 +600,5 @@
 "settings.skipForward" = "Avanzar";
 "settings.skipBackward" = "Retroceder";
 "settings.seconds" = "%d segundos";
+
+"conversion.systemVoiceFallback" = "Se usa temporalmente la voz del dispositivo en este segmento. Se volverá a intentar Edge en el siguiente.";

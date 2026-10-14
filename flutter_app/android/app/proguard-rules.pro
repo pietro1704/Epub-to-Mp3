@@ -6,3 +6,10 @@
 -keep class io.flutter.plugins.** { *; }
 
 -dontwarn io.flutter.embedding.**
+
+# Rust invokes this adapter by its stable JNI name and signature.
+-keepclassmembers class com.pietrocode.epubtomp3.flutter_app.MainActivity {
+    public boolean synthesizeNativeSpeech(java.lang.String, java.lang.String, java.lang.String, java.lang.String, long);
+    public boolean onNativeAudioChunk(java.lang.String, int, int, java.lang.String);
+    native <methods>;
+}

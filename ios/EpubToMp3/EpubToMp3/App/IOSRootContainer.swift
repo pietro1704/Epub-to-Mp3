@@ -34,6 +34,58 @@ enum ReaderChromeTransitionMetrics {
     ]
 }
 
+enum IOSReaderCoverArtSyncPolicy {
+    static func shouldPublishNowPlayingCover(
+        hasSnapshot: Bool,
+        isConverting: Bool,
+        hasLoadedAudioQueue: Bool
+    ) -> Bool {
+        hasSnapshot || isConverting || hasLoadedAudioQueue
+    }
+}
+
+/// Temporary, opt-in stage capture for real-app relaunch profiling. It keeps
+/// only stage names and monotonic timestamps, then emits one line at readiness.
+final class IOSReaderOpenStageProfiler: @unchecked Sendable {
+    private let lock = NSLock()
+    private var stages: [(String, UInt64)] = []
+    private var isRecording = false
+
+    func begin(_ name: String, at timestamp: UInt64) {
+        lock.lock()
+        defer { lock.unlock() }
+        if !isRecording {
+            stages.removeAll(keepingCapacity: true)
+            isRecording = true
+        }
+        stages.append((name, timestamp))
+    }
+
+    func record(_ name: String, at timestamp: UInt64) -> String? {
+        lock.lock()
+        defer { lock.unlock() }
+        if name == "reader_open_requested", !isRecording {
+            stages.removeAll(keepingCapacity: true)
+            isRecording = true
+        }
+        guard isRecording else { return nil }
+        stages.append((name, timestamp))
+        guard name == "controls_usable" else { return nil }
+        isRecording = false
+        let origin = stages.first?.1 ?? timestamp
+        return stages.map { name, time in
+            "\(name)=\(Double(time - origin) / 1_000_000)ms"
+        }.joined(separator: ",")
+    }
+
+    func observer() -> @Sendable (String, UInt64) -> Void {
+        { [weak self] name, timestamp in
+            guard let self, let summary = self.record(name, at: timestamp) else { return }
+            NSLog("[APP21-reader-stages] %@", summary)
+        }
+    }
+}
+
 @MainActor
 final class IOSRootContainerController: UIViewController {
     private let settings: AppSettings
@@ -41,11 +93,12 @@ final class IOSRootContainerController: UIViewController {
     private let player: AudioPlayer
     private let playerPresentation: PlayerPresentation
     private let bookmarkStore: BookmarkStore
+    private let readerOpenStageProfiler: IOSReaderOpenStageProfiler?
 
     private let shellController: IOSAppShellController
     private let readerController: MainReaderScreenController
     private let miniPlayerController: MiniPlayerContainerController
-    private let fullPlayerController: FullPlayerScreenController
+    private var fullPlayerController: FullPlayerScreenController?
 
     private var cancellables: Set<AnyCancellable> = []
     private var presentedErrorMessage: String?
@@ -54,6 +107,8 @@ final class IOSRootContainerController: UIViewController {
     private var miniPlayerMaximumHeight: NSLayoutConstraint!
     private let readerPresentationCoordinator = ReaderRootPresentationCoordinator()
     private var overlayStateInitialized = false
+    private var miniPlayerVisibilityGeneration: UInt64 = 0
+    private var isCommittingInitialReaderPresentation = false
 
     override var prefersStatusBarHidden: Bool {
         Self.shouldHideStatusBar(immersiveReaderMode: readerPresentationCoordinator.state.isChromeHidden)
@@ -84,6 +139,9 @@ final class IOSRootContainerController: UIViewController {
         self.player = player
         self.playerPresentation = playerPresentation
         self.bookmarkStore = bookmarkStore
+        let profiler = ProcessInfo.processInfo.arguments.contains("-app21TimingProfile")
+            ? IOSReaderOpenStageProfiler() : nil
+        self.readerOpenStageProfiler = profiler
         self.shellController = IOSAppShellController(
             settings: settings,
             library: library,
@@ -99,7 +157,8 @@ final class IOSRootContainerController: UIViewController {
             bookmarkStore: bookmarkStore,
             onBrowseLibrary: {
                 ReaderSessionState.setCurrentlyReading(bookID: nil)
-            }
+            },
+            openStageObserver: profiler?.observer()
         )
         self.miniPlayerController = MiniPlayerContainerController(
             player: player,
@@ -108,13 +167,6 @@ final class IOSRootContainerController: UIViewController {
             onTap: {
                 playerPresentation.showFullPlayer()
             }
-        )
-        self.fullPlayerController = FullPlayerScreenController(
-            player: player,
-            playbackClock: player.playbackClock,
-            library: library,
-            playerPresentation: playerPresentation,
-            settings: settings
         )
         super.init(nibName: nil, bundle: nil)
         readerController.update(
@@ -133,19 +185,30 @@ final class IOSRootContainerController: UIViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
+        recordStartupStage("root_view_did_load_started")
         view.backgroundColor = .systemBackground
         hydrateCachedChapterTitles()
+        recordStartupStage("root_chapter_titles_hydrated")
         restoreLocalPlaybackControls()
-        LocalFulltextCache.startPrewarmingRecentBooks()
+        recordStartupStage("root_playback_controls_restored")
+        let openingBookIDs = Set([
+            UserDefaults.standard.string(forKey: ReaderSessionState.currentlyReadingBookIDKey),
+            UserDefaults.standard.string(forKey: AudioPlayer.currentBookIDDefaultsKey),
+        ].compactMap { $0 })
+        LocalFulltextCache.startPrewarmingRecentBooks(excludingBookIDs: openingBookIDs)
+        recordStartupStage("root_prewarm_scheduled")
+        recordStartupStage("root_shell_embed_started")
         embed(shellController)
+        recordStartupStage("root_shell_embedded")
+        recordStartupStage("root_reader_embed_started")
         embed(readerController)
+        recordStartupStage("root_reader_embedded")
         embed(miniPlayerController)
-        embed(fullPlayerController)
+        recordStartupStage("root_mini_player_embedded")
 
         shellController.view.translatesAutoresizingMaskIntoConstraints = false
         readerController.view.translatesAutoresizingMaskIntoConstraints = false
         miniPlayerController.view.translatesAutoresizingMaskIntoConstraints = false
-        fullPlayerController.view.translatesAutoresizingMaskIntoConstraints = false
 
         NSLayoutConstraint.activate([
             shellController.view.leadingAnchor.constraint(equalTo: view.leadingAnchor),
@@ -160,11 +223,8 @@ final class IOSRootContainerController: UIViewController {
         miniPlayerController.view.leadingAnchor.constraint(equalTo: view.leadingAnchor),
         miniPlayerController.view.trailingAnchor.constraint(equalTo: view.trailingAnchor),
 
-            fullPlayerController.view.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            fullPlayerController.view.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            fullPlayerController.view.topAnchor.constraint(equalTo: view.topAnchor),
-            fullPlayerController.view.bottomAnchor.constraint(equalTo: view.bottomAnchor),
         ])
+        recordStartupStage("root_constraints_activated")
 
         miniBottomToRoot = miniPlayerController.view.bottomAnchor.constraint(equalTo: view.bottomAnchor)
         miniBottomToTabBar = miniPlayerController.view.bottomAnchor.constraint(equalTo: shellController.tabBar.topAnchor, constant: -8)
@@ -192,9 +252,9 @@ final class IOSRootContainerController: UIViewController {
         // the root's callbacks exist. Synchronize after every constraint is
         // installed so the initial loading cover owns the whole reader area.
         _ = readerPresentationCoordinator.setLoading(readerController.isLoadingBookContent)
+        recordStartupStage("root_reader_callbacks_installed")
 
         miniPlayerController.view.backgroundColor = .clear
-        fullPlayerController.view.backgroundColor = .clear
         shellController.configureMiniPlayerAccessory(
             player: player,
             playbackClock: player.playbackClock,
@@ -208,14 +268,30 @@ final class IOSRootContainerController: UIViewController {
         )
 
         bindState()
+        recordStartupStage("root_state_bound")
         updateTheme(settings.readerTheme)
+        recordStartupStage("root_theme_updated")
+        isCommittingInitialReaderPresentation = true
         refreshOverlayState()
+        isCommittingInitialReaderPresentation = false
+        recordStartupStage("root_view_did_load_completed")
+    }
+
+    private func recordStartupStage(_ name: String) {
+        guard let readerOpenStageProfiler else { return }
+        let timestamp = DispatchTime.now().uptimeNanoseconds
+        if name == "root_view_did_load_started" {
+            readerOpenStageProfiler.begin(name, at: timestamp)
+        } else if let summary = readerOpenStageProfiler.record(name, at: timestamp) {
+            NSLog("[APP21-reader-stages] %@", summary)
+        }
     }
 
     private func setImmersiveReaderMode(_ isHidden: Bool) {
-        let token = readerPresentationCoordinator.beginChromeTransition(to: isHidden) { [weak self] in
-            self?.readerController.captureReaderViewportTransition()
-        }
+        guard let token = readerPresentationCoordinator.beginChromeTransition(
+            to: isHidden,
+            captureViewport: { [weak self] in self?.readerController.captureReaderViewportTransition() }
+        ) else { return }
         setNeedsStatusBarAppearanceUpdate()
         refreshOverlayState(viewportTransition: token)
     }
@@ -227,7 +303,9 @@ final class IOSRootContainerController: UIViewController {
     }
 
     private func refreshMiniPlayerContent() {
+        recordStartupStage("root_mini_refresh_started")
         syncPlayerCoverArt()
+        recordStartupStage("root_now_playing_cover_synced")
         miniPlayerController.update(
             player: player,
             playbackClock: player.playbackClock,
@@ -239,6 +317,7 @@ final class IOSRootContainerController: UIViewController {
                 self?.readerController.startListeningFromMiniPlayer()
             }
         )
+        recordStartupStage("root_mini_player_updated")
         shellController.refreshMiniPlayerAccessory(
             player: player,
             playbackClock: player.playbackClock,
@@ -250,9 +329,19 @@ final class IOSRootContainerController: UIViewController {
                 self?.readerController.startListeningFromMiniPlayer()
             }
         )
+        recordStartupStage("root_shell_mini_player_updated")
     }
 
     private func syncPlayerCoverArt() {
+        guard IOSReaderCoverArtSyncPolicy.shouldPublishNowPlayingCover(
+            hasSnapshot: player.snapshot != nil,
+            isConverting: player.isConverting,
+            hasLoadedAudioQueue: player.hasLoadedAudioQueue
+        ) else { return }
+        syncPlayerCoverArtNow()
+    }
+
+    private func syncPlayerCoverArtNow() {
         let bookID = UserDefaults.standard.string(forKey: AudioPlayer.currentBookIDDefaultsKey)
             ?? UserDefaults.standard.string(forKey: ReaderSessionState.currentlyReadingBookIDKey)
         let cover = bookID.flatMap { id in library.books.first(where: { $0.id == id })?.coverPNG }
@@ -263,16 +352,41 @@ final class IOSRootContainerController: UIViewController {
         viewportTransition: ReaderViewportTransition.Token? = nil,
         needsFinalLayout: Bool = false
     ) {
+        recordStartupStage("root_chrome_layout_started")
         readerPresentationCoordinator.applyChromeLayout(
             transition: viewportTransition,
             needsFinalLayout: needsFinalLayout,
+            deferInitialLayout: isCommittingInitialReaderPresentation,
             restoreViewport: { [weak self] in self?.readerController.completeReaderChromeLayoutTransition() }
         )
+        recordStartupStage("root_chrome_layout_completed")
     }
 
     private func showFullPlayer() {
+        ensureFullPlayerController()
         playerPresentation.showFullPlayer()
         refreshOverlayState()
+    }
+
+    private func ensureFullPlayerController() {
+        guard fullPlayerController == nil, isViewLoaded else { return }
+        let controller = FullPlayerScreenController(
+            player: player,
+            playbackClock: player.playbackClock,
+            library: library,
+            playerPresentation: playerPresentation,
+            settings: settings
+        )
+        fullPlayerController = controller
+        embed(controller)
+        controller.view.translatesAutoresizingMaskIntoConstraints = false
+        controller.view.backgroundColor = .clear
+        NSLayoutConstraint.activate([
+            controller.view.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            controller.view.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            controller.view.topAnchor.constraint(equalTo: view.topAnchor),
+            controller.view.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+        ])
     }
 
     func updateTheme(_ theme: ReaderTheme) {
@@ -286,7 +400,7 @@ final class IOSRootContainerController: UIViewController {
             onBrowseLibrary: { [weak self] in self?.dismissReaderToLibrary() }
         )
         refreshMiniPlayerContent()
-        fullPlayerController.refresh(library: library)
+        fullPlayerController?.refresh(library: library)
         switch theme.preferredColorScheme {
         case .dark:
             overrideUserInterfaceStyle = .dark
@@ -301,9 +415,12 @@ final class IOSRootContainerController: UIViewController {
     /// Restore its TOC titles from the local parsed-book cache so every
     /// playback surface has canonical metadata immediately after launch.
     private func hydrateCachedChapterTitles() {
-        let bookID = UserDefaults.standard.string(forKey: ReaderSessionState.currentlyReadingBookIDKey)
+        let activeReaderBookID = UserDefaults.standard.string(forKey: ReaderSessionState.currentlyReadingBookIDKey)
+        let bookID = activeReaderBookID
             ?? UserDefaults.standard.string(forKey: AudioPlayer.currentBookIDDefaultsKey)
-        guard let bookID else { return }
+        // The active reader hydrates this same catalog after its prepared
+        // chapter is visible. Decoding it here would compete with that read.
+        guard let bookID, bookID != activeReaderBookID else { return }
         Task { [weak self] in
             let fulltext = await Task.detached(priority: .utility) {
                 LocalFulltextCache.read(bookId: bookID)
@@ -328,13 +445,22 @@ final class IOSRootContainerController: UIViewController {
             guard let self else { return }
             let embeddedSnapshot = try? await LocalAudioArtifactStore.shared.playableSnapshot(
                 bookID: bookID,
-                engine: "edge",
+                engine: settings.audioEngine.rawValue,
                 voice: "auto",
                 language: nil
             )
-            let remoteSnapshot = library.books.first(where: { $0.id == bookID })?.lastJobId
-                .flatMap(DownloadManager.localPlaybackSnapshot(jobId:))
-            guard let snapshot = embeddedSnapshot ?? remoteSnapshot else {
+            let conversionJobID = library.books.first(where: { $0.id == bookID })?.lastJobId
+            let restoredSnapshot: JobSnapshot?
+            if let conversionJobID {
+                restoredSnapshot = await Task.detached(priority: .utility) {
+                    let converted = RustConversionCoordinator.persistedSnapshot(jobID: conversionJobID)
+                    return DownloadManager.restoredPlaybackSnapshot(jobId: conversionJobID,
+                                                                   conversionSnapshot: converted)
+                }.value
+            } else {
+                restoredSnapshot = nil
+            }
+            guard let snapshot = embeddedSnapshot ?? restoredSnapshot else {
                 return
             }
             let queueOffset = AudioPlayer.restoredPlayableChapterOffset(
@@ -353,7 +479,9 @@ final class IOSRootContainerController: UIViewController {
     func refreshOverlayState(
         viewportTransition: ReaderViewportTransition.Token? = nil
     ) {
+        recordStartupStage("root_overlay_refresh_started")
         refreshMiniPlayerContent()
+        recordStartupStage("root_overlay_mini_content_updated")
         let currentBookID = UserDefaults.standard.string(forKey: AudioPlayer.currentBookIDDefaultsKey)
         let currentlyReadingBookID = UserDefaults.standard.string(forKey: ReaderSessionState.currentlyReadingBookIDKey)
         let availableBookIDs = Set(library.books.map(\.id))
@@ -372,7 +500,10 @@ final class IOSRootContainerController: UIViewController {
         if readerActive {
             shellController.setSystemMiniPlayerVisible(false, animated: false)
         }
-        shellController.setReaderTabBarHidden(readerActive, animated: true)
+        shellController.setReaderTabBarHidden(
+            readerActive,
+            animated: !isCommittingInitialReaderPresentation
+        )
         setMiniPlayerBottomAnchor(readerActive: readerActive)
         if !readerActive {
             if wasImmersive {
@@ -380,6 +511,7 @@ final class IOSRootContainerController: UIViewController {
             }
         }
         let needsFinalReaderLayout = readerController.applyReaderPresentation(readerPresentationCoordinator.state)
+        recordStartupStage("root_reader_presentation_applied")
         applyReaderChromeLayout(
             viewportTransition: viewportTransition,
             needsFinalLayout: needsFinalReaderLayout
@@ -392,14 +524,24 @@ final class IOSRootContainerController: UIViewController {
             hideOverlayMiniPlayerImmediately()
         } else {
             shellController.setSystemMiniPlayerVisible(false, animated: false)
-            animateMiniPlayerVisibility(visible: miniShouldBeVisible)
+            animateMiniPlayerVisibility(
+                visible: miniShouldBeVisible,
+                animated: !isCommittingInitialReaderPresentation
+            )
         }
-        fullPlayerController.view.isHidden = !playerPresentation.showingFullPlayer
-        fullPlayerController.view.alpha = playerPresentation.showingFullPlayer ? 1 : 0
+        if playerPresentation.showingFullPlayer {
+            ensureFullPlayerController()
+        }
+        fullPlayerController?.view.isHidden = !playerPresentation.showingFullPlayer
+        fullPlayerController?.view.alpha = playerPresentation.showingFullPlayer ? 1 : 0
+        recordStartupStage("root_overlay_visibility_updated")
         presentPlayerErrorIfNeeded()
+        recordStartupStage("root_overlay_refresh_completed")
     }
 
-    private func animateMiniPlayerVisibility(visible: Bool) {
+    private func animateMiniPlayerVisibility(visible: Bool, animated: Bool = true) {
+        miniPlayerVisibilityGeneration &+= 1
+        let generation = miniPlayerVisibilityGeneration
         let wasVisible = overlayStateInitialized && !miniPlayerController.view.isHidden
             && miniPlayerController.view.alpha > 0.01
         let changed = !overlayStateInitialized || wasVisible != visible
@@ -408,25 +550,31 @@ final class IOSRootContainerController: UIViewController {
 
         if visible {
             miniPlayerController.view.isHidden = false
-            miniPlayerController.view.alpha = 0
+            miniPlayerController.view.alpha = animated ? 0 : 1
         }
 
         let animations = {
             self.miniPlayerController.view.alpha = visible ? 1 : 0
         }
         let completion: (Bool) -> Void = { _ in
+            guard generation == self.miniPlayerVisibilityGeneration else { return }
             if !visible {
                 self.miniPlayerController.view.isHidden = true
             }
         }
 
-        UIView.animate(
-            withDuration: ReaderChromeTransitionMetrics.duration,
-            delay: 0,
-            options: ReaderChromeTransitionMetrics.animationOptions,
-            animations: animations,
-            completion: completion
-        )
+        if animated {
+            UIView.animate(
+                withDuration: ReaderChromeTransitionMetrics.duration,
+                delay: 0,
+                options: ReaderChromeTransitionMetrics.animationOptions,
+                animations: animations,
+                completion: completion
+            )
+        } else {
+            animations()
+            completion(true)
+        }
     }
 
     /// The overlay has exactly one vertical owner. Keeping both anchors active

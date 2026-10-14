@@ -198,6 +198,61 @@ behavior changed; do not weaken integrity or mark the 200 ms gate complete.
 Next work must address the validation/storage design or measured presentation cost,
 not blindly replicate the expensive projection race in the iOS adapter.
 
+## iOS projection source replacement race (2026-10-11)
+
+An actual iPhone SE (1st generation)/iOS 15.5 app relaunch reported a missing
+prepared projection despite an archive for the active book and ordinal. Inspection
+of the app container showed that the archive's saved source inode was older than
+the fulltext cache file, which had been atomically replaced afterward. The parsed
+fulltext save and projection write ran in separate detached tasks, so either could
+finish last. The cache now saves the payload and then writes its source-bound
+projection in one ordered utility task. A regression replaces the source and
+requires a fresh projection read to return the replacement chapter.
+
+Focused native verification on the exact Simulator passed 4 tests with zero
+failures/skips: the fulltext/projection ordering test, both active-chapter reader
+tests, and compact full-player UI coverage. The UI test now dismisses the full
+player at the end, so its persisted presentation state is clean. `mise run
+mac:run` built and launched the native macOS app; the LOTR reader was opened at
+Chapter 12. Temporary profile logging was removed after diagnosis.
+
+The actual app relaunch now validates the prepared projection and hits the
+prepared renderer cache when reader progress is present. The same-path
+uninstrumented LOTR repeat on the exact Simulator measured 231.120 ms to readable
+content and 287.074 ms to controls, both still over 200 ms. A prior uninstrumented
+repeat was 223.445/276.772 ms. An instrumented launch showed projection validation
+at ~23 ms, `reader_load_task_started` at ~228 ms, renderer restoration ~37 ms, and
+readable content ~320 ms; instrumentation is diagnostic and is not the acceptance
+measurement. The remaining measured delay is before the reader task begins, with
+another ~50 ms from renderer completion to readable content. APP21 remains open.
+
+## iOS startup prewarm and restoration scheduling experiments
+
+On the exact iPhone SE / iOS 15.5 Simulator, three uninstrumented actual-app
+relaunches with recent-book prewarming enabled measured readable/controls at
+251.727/320.248, 245.560/310.462, and 228.602/288.150 ms. With only the startup
+prewarm invocation disabled, three sequential relaunches measured 283.753/353.800,
+254.891/313.193, and 262.861/323.563 ms. The disabled variant's medians were
+17.3/13.1 ms slower. Run order and simulator variability prevent a causal claim;
+there is no evidence to disable prewarming, so retain the current active-book
+exclusion policy.
+
+The detached restoration experiment passed the two native active-chapter tests,
+but three subsequent actual-app relaunches measured 246.245/302.621, 237.420/299.249,
+and 261.983/328.969 ms. Its medians were 0.7 ms slower for readable content and
+7.8 ms faster for controls than the enabled-prewarm baseline. Sequential samples
+do not establish a speedup; the experiment was reverted. Source-bound projection
+I/O/validation remains detached, and attributed archive restoration remains on
+MainActor. A temporary actual-app stage trace placed projection validation at
+about +9 ms, root `viewDidLoad` between +25 and +108 ms, load-task scheduling at
++2 ms but its MainActor start at +190 ms, renderer restoration between +192 and
++251 ms, readable content at +293 ms, and controls at +371 ms. Many repeated
+render-marker writes perturbed the run, so these timestamps only locate ordering;
+they are not acceptance measurements. The next slice moves secure archive decode
+into a background restore worker while keeping TextKit application and final
+viewport layout on MainActor. Re-measure the actual app without logging; the 200 ms
+gate remains open.
+
 ## Concurrent projection priority probe
 
 APP-20261009-31 compares requested high/utility priority for a concurrent projection
@@ -331,3 +386,305 @@ forward/back swipes and two chrome offset round trips; app remains open on LOTR.
 Chapter 12 in the macOS reader. The Mac screen was inspected; the full clipping and
 chrome geometry sequence was not run there. Overall APP21 remains open pending
 iOS process-relaunch latency parity and the complete two-app geometry gate.
+
+## 2026-10-11 review update (fixed point: `HEAD` `fabdc8daf2`, current worktree)
+
+### Standards/spec review
+
+- The prepared chapter carries source/style identity; reader generations fence
+  late projection/catalog completions, and the source is checked before the
+  projection is presented. Navigation remains gated on full catalog hydration.
+- iOS controller tests cover active chapter restoration and same-book/reentrant
+  presentation; the UI harness now uses the visible active reader and visible
+  page indicator when chrome is hidden. The seeded LOTR UI regression passed on
+  the exact iPhone SE (1st generation)/iOS 15.5 (one test, zero failures/skips).
+- Focused native macOS reader tests passed 13/13. The Mac app displayed LOTR
+  chapter 12; full Mac clipping/chrome/page-turn geometry sequence is still open.
+- The actual iOS app, relaunched twice with the persisted LOTR and no test launch
+  arguments, recorded readable content at 289.380 and 280.652 ms, controls at
+  335.980 and 331.630 ms. Both exceed the unchanged 200 ms requirement. The
+  separate two-host controller tests (151.5–160.8 ms, with delayed fulltext
+  hydration) are not evidence that the production app meets the requirement.
+
+### Required follow-up
+
+Keep APP-20261008-07 / APP-20261009-21 open. The worktree does not satisfy the
+actual-app warm relaunch budget or complete the Mac geometry gate. Preserve the
+source/style validation and catalog-gated navigation constraints while profiling
+the real app's remaining startup-to-reader delay.
+
+## 2026-10-11 follow-up: stable iOS opening viewport
+
+The root previously changed the active reader's bottom constraint when loading
+finished: initial pagination used a 460 pt height and the final mini-player
+layout used 400 pt. The app could publish the first page and then repaginate
+after the mini-player appeared. Loading now reserves the final mini-player
+geometry while keeping its view hidden until content is ready. The active
+reader/player IDs are excluded from recent fulltext prewarming; the root also
+skips a duplicate fulltext-title read when the reader itself will hydrate that
+book. The mini-player cover uses the existing bounded thumbnail cache and
+background decoder rather than synchronously decoding the original image.
+
+Exact iPhone SE (1st generation)/iOS 15.5 verification passed 11 focused tests,
+zero failures/skips, including the real seeded LOTR page-turn/chrome/clipping UI
+test. Temporary debug logs confirmed pagination starts at the final 320x400
+viewport after the geometry change; logs were removed before final measurement.
+The production app was then terminated and relaunched twice, with no test launch
+arguments and the same saved LOTR chapter. It still misses the 200 ms gate:
+readable content 515.964 / 513.673 ms and controls 590.184 / 590.574 ms. The
+corresponding journey IDs are `5645F70A-A579-4C76-8385-F411162D3429` and
+`87DCEB37-3C01-4888-A225-22C7F9EA8B8B`. These measurements show correctness and
+stable geometry, not a latency improvement. Continue profiling the production
+launch path; do not weaken the 200 ms threshold or source/style validation.
+
+## iOS relaunch scheduling diagnosis (2026-10-11)
+
+Exported both passing verification attachments from
+`.reports/mobile-audio/reader-relaunch-ios15-20261011/first/verify.xcresult`
+and `repeat/verify.xcresult` on the exact iPhone SE (1st generation)/iOS 15.5.
+LOTR chapters 8–9 reached `controls_usable` in 157.765 and 151.505 ms; Christie
+chapters 6–7 reached it in 160.128 and 160.833 ms. For LOTR, the reader task was
+scheduled at 10.617/9.865 ms and started at 130.525/124.253 ms, a 119.908/114.388
+ms gap. Projection snapshot read plus validation completed in 0.439/0.416 ms.
+Prepared renderer lookup and reuse then took about 20.5/21.5 ms; initial reader
+view load completed by 10 ms and initial layout by 15–21 ms. The repeated stage
+profile points to a delayed MainActor task start after reader setup as the largest
+measured interval in this relaunch path.
+
+The separate uninstrumented real-app Foreword journeys at ~590 ms include a
+different opening path and are not a replacement measurement for the chapter
+8–9 process-relaunch gate. Next experiment: launch the validated projection read
+independently of the reader's MainActor load task, preserving source/style checks,
+load-generation cancellation, saved-position fidelity, and catalog-gated
+navigation. Add native regressions before integration. This diagnosis changes no
+implementation and claims no latency improvement.
+
+### Projection worker experiment and follow-up stages
+
+The iOS controller now captures the saved progress entry before scheduling a
+detached task that reads and validates the source-bound projection and complete
+catalog. The MainActor rechecks source identity and load generation, then restores
+the style-bound renderer and commits the captured position against final geometry.
+The focused iPhone SE/iOS 15.5 active-chapter tests pass 2/2, including the
+saved 0.6 offset and mismatched-catalog fallback. A new assertion confirms the
+worker validated the projection before catalog hydration starts. The renderer
+restore has optional start/end stage markers for timing evidence.
+
+The unchanged 200 ms two-host assertion remains red. Three iOS 15.5 verification
+runs measured LOTR/Christie at 175.907/798.957 ms, 523.937/228.822 ms and
+597.082/241.340 ms. In the last run, projection validation completed at 21.028
+and 12.063 ms, before MainActor reader-task start at 531.892 and 134.139 ms.
+Renderer restore itself took 55.525 and 24.431 ms; Christie then spent about
+81 ms reaching final readable layout. Raising the load task to `.userInitiated`
+did not produce repeatable improvement and was reverted. The worker removes
+projection I/O/validation from the MainActor critical section, but measured
+readiness remains variable and is not an accepted performance fix. Next diagnose
+MainActor availability and the Christie layout interval, preserving the 200 ms
+gate and exact source/style checks.
+
+## 2026-10-11 iOS key-window and real-app follow-up
+
+An activation probe found that the previous synthetic `UIWindow(frame:)` was not
+the key window. The relaunch harness now attaches its measured reader to the
+foreground `UIWindowScene` and asserts the reader window is key. Two independent
+two-host repeats passed unchanged 200 ms for both books:
+
+| Verification | LOTR | Christie |
+| --- | ---: | ---: |
+| `app21-ios15-key-window-gate` | 121.542 ms | 140.816 ms |
+| `app21-ios15-key-window-repeat` | 123.491 ms | 139.551 ms |
+
+The controller-level gate uses real prepared source/archive inputs and a visible
+reader in the key scene, but it does not include the production app root startup.
+A clean `simctl terminate` + `simctl launch` of the actual app with persisted LOTR
+recorded `readable_content` at 325.127 ms and `controls_usable` at 374.767 ms
+(`6DF7D668-1BDF-4216-BE08-D2AB3C08E3E0`). The app was visually confirmed on LOTR
+Foreword, page 1/11. Therefore the root production warm-relaunch requirement is
+still red. Next instrument the actual root-to-reader path and optimize its
+measured cost; do not treat the passing controller-only gate as completion.
+
+The key-window harness still overrode the scene frame to 390x844 points, while
+the exact iPhone SE scene is 320x568 points. The two controller-only passes above
+are therefore invalid for device-geometry acceptance and remain diagnostic only.
+Next use `windowScene.coordinateSpace.bounds` without overriding the scene's
+size, then re-run the same source-bound two-host gate. A clean-app internal stage
+profile recorded MainActor reader-task start at 195.467 ms, renderer restore at
+23.074 ms, first paginated layout at 42.582 ms, another layout at 40.487 ms
+before readable content, and controls at 431.642 ms. This is direct evidence
+that both MainActor scheduling and repeated TextKit layout need attention.
+
+## 2026-10-11 Background renderer restore and launch interaction
+
+Secure attributed archive decoding now runs on the renderer worker actor; UIKit
+attachment, source and style revalidation, saved-position restoration, and final
+viewport layout remain on MainActor. Startup restoration also enables reader
+controls in the content-ready turn because no library-cell tap can be stolen;
+library-initiated openings retain the deferred gesture path. Layout-mode
+application now restores scrolling interaction even when the viewport geometry
+matches its prior configuration.
+
+On the exact iPhone SE (1st generation), iOS 15.5 Simulator, 10 focused native
+tests passed (active chapter, launch restoration, root reader creation, and
+renderer restoration). The seeded LOTR pagination/chrome UI test passed 1/1.
+The native macOS app built and opened LOTR Chapter 12; 11 renderer and active
+chapter tests passed on macOS 15.8.1.
+
+Clean actual-app relaunches with the persisted LOTR book produced one three-run
+set of readable/controls timings at 214.7/247.4, 212.0/236.8, and 203.3/227.7
+ms. After the UI test, six more launches ranged from 287–617 ms to readable
+content and 359–656 ms to controls. Every sample misses the unchanged 200 ms
+acceptance, and the variance prevents a causal speedup claim. The last run was
+visually checked on LOTR Foreword, page 1/11, with the app left open. Next isolate
+the root startup to reader-task/first-layout interval on the real app, then
+repeat the same-process-relaunch measurement; controller-level readiness and a
+passing UI regression do not close APP21.
+
+## 2026-10-11 first-layout projection delivery follow-up
+
+The iOS reader can now consume a source/style-validated projection and prepared
+renderer from a worker slot during its first committed layout. It defers saved
+position restoration until a later, non-reentrant layout has a nonzero scrollable
+extent. Focused native tests passed: active chapter 3/3, main reader 3/3, and root
+presentation 6/6. The seeded LOTR pagination/chrome UI test passed 1/1 on the exact
+iPhone SE (1st generation)/iOS 15.5 Simulator, including offset round trips. Its
+XCTest execution succeeded, though saving the result bundle emitted an unrelated
+attachment `mkstemp` warning.
+
+An opt-in clean actual-app launch profile reported `readable_content` at 277.833 ms
+and `controls_usable` at 346.685 ms. The prepared renderer was a cache hit and text
+layout committed at 208.368 ms; the scheduled reader load task started at 249.452
+ms. The profile therefore gives useful ordering but is not an uninstrumented
+acceptance sample, and both readiness values miss 200 ms. A screenshot confirmed
+LOTR Foreword page 1/11 rendered without visible clipping and the app remained open.
+
+The native Mac app was rebuilt and opened to LOTR Chapter 12 with visible text and
+controls using Xcode 26.3. `mise run mac:run` initially failed in the linker when
+Xcode 16.4 was selected for the iOS Simulator workflow; the isolated Xcode 26.3
+build succeeded. The Mac clipping/chrome geometry sequence remains outstanding.
+Next isolate root overlay refresh work and MainActor task scheduling, repeat actual
+app timings without the opt-in profiler, and complete the Mac geometry checks.
+
+## 2026-10-11 final iOS timing and Mac runtime geometry follow-up
+
+After removing a same-state root chrome transition and committing the scrollable
+extent before restoring the saved anchor, three clean, uninstrumented relaunches
+of the actual iOS app on the exact iPhone SE (1st generation)/iOS 15.5 Simulator
+loaded persisted `prepared_disk` LOTR journeys. Readable/controls readiness was
+188.820/192.236 ms, 181.533/183.900 ms, and 184.454/186.765 ms. Each individual
+journey is below the unchanged 200 ms threshold; this is a three-run warm-path
+sample, not a worst-case guarantee. The actual app was relaunched again without
+re-seeding and left open on LOTR Contents 1/6 (`/tmp/app21-ios-resumed.png`).
+
+The running native Mac app displayed LOTR Chapter 12 while the layout was switched
+between Paginated and Scrolling. The reader was moved forward and backward, the
+smaller serif size was exercised, and the window was resized to 1250x850 and its
+1000x700 minimum. Captures showed readable text with no visible glyph clipping.
+Mac has no immersive chrome toggle matching iOS, so that transition is not
+applicable to this surface.
+
+Focused native macOS XCTest ran 10 cases: text layout 2/2 passed, opening readiness
+6/6 passed, and chapter navigation 1/2 passed. The deterministic failure is
+`MacReaderChapterNavigationTests.testBackwardChapterCrossingAfterOpeningTableOfContents()`:
+after crossing back, the observed clip offset is 5163 pt while the test derives
+5167 pt from `text.frame.height - clipView.bounds.height`; eight subsequent
+assertions cascade from the first offset mismatch. An isolated rerun reproduced
+the same result. It does not prove that glyphs clip in the real LOTR UI, but it
+means the Mac chapter-end geometry gate is not green and APP21 remains open.
+Next inspect the clip view's legal visible extent versus the frame-derived end,
+make the smallest correction at the actual navigation/layout seam if production
+geometry is wrong (otherwise fix the test's expected extent), then rerun this
+focused Mac suite and the real-app chapter-boundary check before closure.
+
+
+## 2026-10-12 Mac chapter boundary follow-up
+
+The existing worktree change makes chapter-end detection compare the clip view's
+visible document rect with `NSLayoutManager.usedRect(for:)`, after ensuring text
+layout. The focused regression now waits for reader controls, navigates through
+the actual AppKit path, and checks visible glyph containment, legal scroll extent,
+and persisted chapter identity/progress instead of requiring the frame-derived
+scroll maximum. This addresses the observed 4 pt difference without treating it
+as glyph clipping.
+
+`xcodebuild test -project EpubToMp3.xcodeproj -scheme EpubToMp3Mac
+-destination 'platform=macOS' -derivedDataPath ./.build
+-only-testing:EpubToMp3Tests/MacReaderChapterNavigationTests` passed 2/2 with zero
+failures/skips on 2026-10-12 (`Test-EpubToMp3Mac-2026.10.12_14-11-01--0300.xcresult`).
+The current Debug macOS app launched (PID 7859), but the real-LOTR chapter boundary
+was not manually exercised in this follow-up. iPhone SE/iOS 15.5 app exercise and
+the remaining APP21 warm-open acceptance are still outstanding; do not close APP21
+on this focused Mac XCTest alone.
+
+
+### 2026-10-12 execution follow-up
+
+Focused macOS reader verification was repeated with chapter navigation, opening
+readiness, and text layout: 10/10 passed, zero failures/skips, result
+`Test-EpubToMp3Mac-2026.10.12_14-34-44--0300.xcresult`. The actual Debug Mac app
+process remained running (PID 7859); no manual LOTR chapter-boundary interaction
+was recorded.
+
+The exact iPhone SE (1st generation)/iOS 15.5 Simulator booted, launched the
+existing compatible Debug app, and displayed the imported LOTR Contents 1/6; final
+capture: `/tmp/auto-prompt-execute-ios15-final.png`. The named LOTR UI XCTest did
+not start: `mise run ios:simulator:test` stopped because `vendor:python` is undefined
+in the local mise config, and direct `xcodebuild test-without-building` could not
+resolve the iOS 15.5 destination under active Xcode 26.3. This is a tooling/runtime
+selection limitation, not a test failure. Keep APP21 open pending automated Mac LOTR chapter navigation and any remaining
+warm-open acceptance evidence. The agent owns those checks; no user-run testing is
+required.
+
+## 2026-10-12 Xcode 16.4 iOS 15.5 verification
+
+Added the missing `vendor:python` mise task used by `ios:simulator:test`. It runs
+`mise install python` and verifies the project's pinned Python 3.12.10. The
+interpreter and project `.venv` were already installed; `mise run vendor:python`
+completed successfully and reported Python 3.12.10.
+
+With `DEVELOPER_DIR=/Applications/Xcode-16.4.0.app/Contents/Developer`,
+`xcodebuild -showdestinations` resolved the exact iPhone SE (1st generation),
+iOS 15.5 UDID `C66CCB36-C43E-4174-861E-2FA713389C84`. The official
+`mise run ios:simulator:test` task then passed
+`RealBookReaderUITests/testActualLOTRReaderPaginationAndChrome` 1/1 with zero
+failures/skips in
+`Test-EpubToMp3-2026.10.12_14-37-40--0300.xcresult`. It exercised the seeded LOTR
+reader's pagination, chrome round-trip, clipping probe, and horizontal page swipe.
+The app was relaunched and left open on LOTR, Note on the 50th Anniversary Edition,
+page 1/14 (`/tmp/app21-ios15-xcode16-final.png`).
+
+The focused Mac reader XCTest set had passed 10/10 under Xcode 26.3 earlier on
+2026-10-12. Re-running it under Xcode 16.4 against the same shared `.build` cache
+failed at link with `_swift_coroFrameAlloc` and newer-framework symbols unavailable
+to Xcode 16.4; no Mac tests ran in that attempt. The cache was preserved. This is
+a mixed-toolchain build-cache limitation and does not supersede the successful
+Xcode 26.3 Mac test result. Automated interaction with the Mac app's real LOTR chapter boundary and APP21
+warm-open latency acceptance remain outstanding. The agent owns running the next
+UI automation or native test; do not hand verification steps to the user. APP21
+stays open until that evidence passes.
+
+## 2026-10-12 AppKit geometry and exact iOS 15.5 retest
+
+Added `testActualLOTRBackwardChapterBoundaryKeepsLastGlyphVisible`, which reads
+the imported LOTR fulltext, opens the real reader controller with an isolated
+in-memory payload for the two chapters at the boundary, crosses backward and
+forward, asserts the long previous chapter's final glyph is visible with no
+large trailing gap, and checks persisted chapter offsets. Test setup evicts only
+the process-warm fulltext copy, injects a no-op writer, restores defaults/progress,
+and rewarms the original durable payload during teardown; it does not replace the
+persisted source. `MacReaderTextLayout.fit` now includes the measured used-rect
+bottom plus the trailing inset when committing the document height, accounting
+for fractional AppKit paragraph geometry while retaining glyph visibility.
+
+With Xcode 16.4 and isolated DerivedData `.build-app21-xcode16`, the focused Mac
+chapter-navigation, opening-readiness, and text-layout suites passed 11/11 with
+zero failures/skips. Result:
+`Test-EpubToMp3Mac-2026.10.12_15-06-58--0300.xcresult`. The separate exact
+iPhone SE (1st generation)/iOS 15.5 task reran the final sources:
+`RealBookReaderUITests/testActualLOTRReaderPaginationAndChrome`: 1/1 passed in
+21.848 s with zero failures/skips (`TEST EXECUTE SUCCEEDED`), result
+`Test-EpubToMp3-2026.10.12_15-08-31--0300.xcresult`. The Simulator was relaunched
+and left on LOTR Prologue, page 1/39 (`/tmp/app21-ios15-xcode16-final3.png`). The
+Mac Xcode 16 Debug app was launched (PID 12855; library view screenshot
+`/tmp/app21-mac-xcode16-final.png`). This closes the outstanding real-book Mac
+chapter geometry evidence. The separate unchanged 200 ms actual-app relaunch
+budget remains open; this geometry slice makes no new latency claim.

@@ -1,6 +1,16 @@
 import Foundation
 import Darwin
 
+private typealias PlatformTtsCancelled = @convention(c) (UnsafeRawPointer?) -> Bool
+private typealias PlatformTtsCallback = @convention(c) (
+    UnsafePointer<CChar>?, UnsafePointer<CChar>?, UnsafePointer<CChar>?,
+    PlatformTtsCancelled?, UnsafeRawPointer?, UnsafeMutablePointer<CChar>?, UInt32,
+    UnsafeMutableRawPointer?
+) -> Bool
+private typealias ConverterSetPlatformTts = @convention(c) (
+    UnsafeMutableRawPointer?, PlatformTtsCallback?, UnsafeMutableRawPointer?
+) -> Bool
+
 private typealias ConverterSessionOpen = @convention(c) (UnsafePointer<CChar>?) -> UnsafeMutableRawPointer?
 private typealias ConverterSessionMetadata = @convention(c) (UnsafeRawPointer?) -> UnsafeMutablePointer<CChar>?
 private typealias ConverterSessionFree = @convention(c) (UnsafeMutableRawPointer?) -> Void
@@ -24,6 +34,11 @@ private typealias ConverterSessionConvertJobOptionsV1 = @convention(c) (
 ) -> UnsafeMutablePointer<CChar>?
 private typealias ConverterSessionConvertStreamingJob = @convention(c) (
     UnsafeRawPointer?, UnsafePointer<CChar>?, UnsafePointer<CChar>?, Int32, Int32,
+    ConverterChapterCallback?, ConverterChapterCallback?, ConverterAudioChunkCallback?,
+    UnsafeMutableRawPointer?, UnsafeRawPointer?
+) -> UnsafeMutablePointer<CChar>?
+private typealias ConverterSessionConvertStreamingJobOptionsV1 = @convention(c) (
+    UnsafeRawPointer?, UnsafePointer<CChar>?, UnsafePointer<CChar>?, UnsafePointer<CChar>?, Int32, Int32,
     ConverterChapterCallback?, ConverterChapterCallback?, ConverterAudioChunkCallback?,
     UnsafeMutableRawPointer?, UnsafeRawPointer?
 ) -> UnsafeMutablePointer<CChar>?
@@ -61,9 +76,17 @@ enum EmbeddedConverterError: Error, LocalizedError, Equatable {
 }
 
 private final class ChapterCallbackBox: @unchecked Sendable {
+    private let fallbackNotice = PlatformFallbackNoticeTracker()
     let progressHandler: (@Sendable (Data) -> Void)?
     let chapterHandler: (@Sendable (Data) -> Void)?
     let audioChunkHandler: (@Sendable (Int, Int, Data) -> Bool)?
+
+    func progress(_ data: Data) {
+        if fallbackNotice.shouldNotify(progress: data) {
+            Task { @MainActor in PlatformFallbackNotice.show() }
+        }
+        progressHandler?(data)
+    }
 
     init(
         progressHandler: (@Sendable (Data) -> Void)?,
@@ -118,6 +141,8 @@ struct EmbeddedBook { let metadataJSON: Data }
 
 /// Loads and invokes the stable C ABI only when the bundled dylib is present.
 final class ConverterFFIAdapter: EmbeddedConverter {
+    private let platformSpeech = PlatformSpeechSynthesizer()
+    private var setPlatformTts: ConverterSetPlatformTts?
     private var handle: UnsafeMutableRawPointer?
     private let close: (UnsafeMutableRawPointer?) -> Void
     private let metadata: (UnsafeRawPointer?) -> UnsafeMutablePointer<CChar>?
@@ -136,6 +161,7 @@ final class ConverterFFIAdapter: EmbeddedConverter {
     private var convertJSON: ConverterSessionConvert?
     private var convertJobOptionsJSON: ConverterSessionConvertJobOptionsV1? = nil
     private var convertStreamingJobJSON: ConverterSessionConvertStreamingJob?
+    private var convertStreamingJobOptionsJSON: ConverterSessionConvertStreamingJobOptionsV1?
     private var jobControlCreate: ConverterJobControlCreate?
     private var jobControlFree: ConverterJobControlFree?
     private var jobControlCancel: ConverterJobControlCancel?
@@ -145,12 +171,31 @@ final class ConverterFFIAdapter: EmbeddedConverter {
     private var validateOptionsJSON: ConverterOptionsValidateV1? = nil
     private var loadError: String?
 
+    private static let platformTtsCallback: PlatformTtsCallback = {
+        text, language, output, cancelled, cancelContext, errorBuffer, errorLength, context in
+        guard let text, let language, let output, let context else { return false }
+        let provider = Unmanaged<PlatformSpeechSynthesizer>.fromOpaque(context).takeUnretainedValue()
+        do {
+            try provider.synthesizeWAV(text: String(cString: text), language: String(cString: language),
+                                      output: URL(fileURLWithPath: String(cString: output)),
+                                      cancelled: { cancelled?(cancelContext) ?? false })
+            return true
+        } catch {
+            if let errorBuffer, errorLength > 0 {
+                let bytes = Array(error.localizedDescription.utf8.prefix(Int(errorLength) - 1))
+                for (index, byte) in bytes.enumerated() { errorBuffer[index] = CChar(bitPattern: byte) }
+                errorBuffer[bytes.count] = 0
+            }
+            return false
+        }
+    }
+
     private static let progressCallback: ConverterChapterCallback = { eventJSON, context in
         guard let eventJSON, let context else { return }
         let box = Unmanaged<ChapterCallbackBox>
             .fromOpaque(context)
             .takeUnretainedValue()
-        box.progressHandler?(Data(String(cString: eventJSON).utf8))
+        box.progress(Data(String(cString: eventJSON).utf8))
     }
 
     private static let chapterCallback: ConverterChapterCallback = { eventJSON, context in
@@ -223,11 +268,13 @@ final class ConverterFFIAdapter: EmbeddedConverter {
         ttsModelMetadata = symbol("converter_tts_model_metadata", as: ConverterTtsModelMetadata.self)
         ttsModelInstallManifest = symbol("converter_tts_model_install_manifest", as: ConverterTtsModelInstallManifest.self)
         ttsModelInstallCatalogManifest = symbol("converter_tts_model_install_catalog_manifest", as: ConverterTtsModelInstallCatalogManifest.self)
+        setPlatformTts = symbol("converter_session_set_platform_tts_v1", as: ConverterSetPlatformTts.self)
         _open = open
         convertJobJSON = symbol("converter_session_convert_job_json", as: ConverterSessionConvertJob.self)
         convertJSON = symbol("converter_session_convert_json", as: ConverterSessionConvert.self)
         convertJobOptionsJSON = symbol("converter_session_convert_job_options_json_v1", as: ConverterSessionConvertJobOptionsV1.self)
         convertStreamingJobJSON = symbol("converter_session_convert_streaming_job_json", as: ConverterSessionConvertStreamingJob.self)
+        convertStreamingJobOptionsJSON = symbol("converter_session_convert_streaming_job_options_json_v1", as: ConverterSessionConvertStreamingJobOptionsV1.self)
         jobControlCreate = symbol("converter_job_control_create", as: ConverterJobControlCreate.self)
         jobControlFree = symbol("converter_job_control_free", as: ConverterJobControlFree.self)
         jobControlCancel = symbol("converter_job_control_cancel", as: ConverterJobControlCancel.self)
@@ -286,9 +333,16 @@ final class ConverterFFIAdapter: EmbeddedConverter {
             throw EmbeddedConverterError.conversionFailed(readError())
         }
         defer { close(session) }
+        guard let setPlatformTts,
+              setPlatformTts(session, Self.platformTtsCallback,
+                             Unmanaged.passUnretained(platformSpeech).toOpaque()) else {
+            throw EmbeddedConverterError.artifactInvalid("Loaded converter library lacks platform speech ABI.")
+        }
         let result: UnsafeMutablePointer<CChar>?
         if playbackControl != nil {
-            guard optionsJSON == nil, let playbackControl, let convertStreamingJobJSON else {
+            guard let playbackControl,
+                  optionsJSON == nil || convertStreamingJobOptionsJSON != nil,
+                  let convertStreamingJobJSON else {
                 throw EmbeddedConverterError.artifactInvalid("Loaded converter library lacks playback streaming ABI.")
             }
             let callbackBox = ChapterCallbackBox(
@@ -299,47 +353,49 @@ final class ConverterFFIAdapter: EmbeddedConverter {
             defer { Unmanaged<ChapterCallbackBox>.fromOpaque(context).release() }
             result = outputDirectory.path.withCString { outputPointer in
                 jobID.withCString { jobPointer in
-                    convertStreamingJobJSON(
+                    let progress = Self.progressCallback
+                    let chapter = onChapterCompleted == nil ? nil : Self.chapterCallback
+                    if let optionsJSON, let convertStreamingJobOptionsJSON {
+                        return optionsJSON.withCString { optionsPointer in
+                            convertStreamingJobOptionsJSON(
+                                session, outputPointer, jobPointer, optionsPointer,
+                                chapterStart, chapterEnd, progress, chapter,
+                                onAudioChunk == nil ? nil : Self.audioChunkCallback,
+                                context, playbackControl.rawHandle
+                            )
+                        }
+                    }
+                    return convertStreamingJobJSON(
                         session, outputPointer, jobPointer, chapterStart, chapterEnd,
-                        onProgress == nil ? nil : Self.progressCallback,
-                        onChapterCompleted == nil ? nil : Self.chapterCallback,
-                        onAudioChunk == nil ? nil : Self.audioChunkCallback,
+                        progress, chapter, onAudioChunk == nil ? nil : Self.audioChunkCallback,
                         context, playbackControl.rawHandle
                     )
                 }
             }
-        } else if optionsJSON != nil || convertJobJSON != nil {
-            let callbackBox: ChapterCallbackBox? = (onProgress != nil || onChapterCompleted != nil)
-                ? ChapterCallbackBox(progressHandler: onProgress, chapterHandler: onChapterCompleted)
-                : nil
-            let context = callbackBox.map { Unmanaged.passRetained($0).toOpaque() }
-            defer {
-                if let context {
-                    Unmanaged<ChapterCallbackBox>.fromOpaque(context).release()
-                }
-            }
+        } else if optionsJSON != nil || convertJobOptionsJSON != nil || convertJobJSON != nil {
+            let callbackBox = ChapterCallbackBox(progressHandler: onProgress, chapterHandler: onChapterCompleted)
+            let context = Unmanaged.passRetained(callbackBox).toOpaque()
+            defer { Unmanaged<ChapterCallbackBox>.fromOpaque(context).release() }
             result = try outputDirectory.path.withCString { outputPointer in
                 try jobID.withCString { jobPointer in
-                    if let optionsJSON {
-                        guard let convertJobOptionsJSON else {
-                            throw EmbeddedConverterError.optionsABIUnavailable
-                        }
+                    if let optionsJSON, let convertJobOptionsJSON {
                         return optionsJSON.withCString { optionsPointer in
                             convertJobOptionsJSON(
                                 session, outputPointer, jobPointer, optionsPointer,
                                 chapterStart, chapterEnd,
-                                onProgress == nil ? nil : Self.progressCallback,
+                                Self.progressCallback,
                                 onChapterCompleted == nil ? nil : Self.chapterCallback,
                                 context
                             )
                         }
                     }
+                    guard optionsJSON == nil else { throw EmbeddedConverterError.optionsABIUnavailable }
                     guard let convertJobJSON else {
                         throw EmbeddedConverterError.artifactInvalid("Loaded converter library lacks the callback conversion symbol.")
                     }
                     return convertJobJSON(
                         session, outputPointer, jobPointer, chapterStart, chapterEnd,
-                        onProgress == nil ? nil : Self.progressCallback,
+                        Self.progressCallback,
                         onChapterCompleted == nil ? nil : Self.chapterCallback,
                         context
                     )
@@ -368,8 +424,13 @@ final class ConverterFFIAdapter: EmbeddedConverter {
     /// Capability check before book access or output reservation; never discard explicit options.
     func validateConversionSupport(options: ConversionOptions? = nil) throws {
         if let options {
-            guard handle != nil, convertJobOptionsJSON != nil, let validateOptionsJSON else {
+            guard handle != nil,
+                  (convertJobOptionsJSON != nil || convertStreamingJobOptionsJSON != nil),
+                  let validateOptionsJSON else {
                 throw EmbeddedConverterError.optionsABIUnavailable
+            }
+            guard setPlatformTts != nil else {
+                throw EmbeddedConverterError.artifactInvalid("Loaded converter library lacks platform speech ABI.")
             }
             let json = try options.encodedJSON()
             guard json.withCString({ validateOptionsJSON($0) }) else {
@@ -381,6 +442,9 @@ final class ConverterFFIAdapter: EmbeddedConverter {
             throw EmbeddedConverterError.artifactInvalid(
                 "Loaded converter library lacks conversion symbols (job: \(convertJobJSON != nil), legacy: \(convertJSON != nil))."
             )
+        }
+        guard setPlatformTts != nil else {
+            throw EmbeddedConverterError.artifactInvalid("Loaded converter library lacks platform speech ABI.")
         }
     }
 

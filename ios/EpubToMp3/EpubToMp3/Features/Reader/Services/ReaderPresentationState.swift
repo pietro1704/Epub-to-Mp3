@@ -9,7 +9,7 @@ struct ReaderPresentationState: Equatable {
     var isChromeHidden: Bool = false
 
     var hidesBottomChrome: Bool {
-        isReaderActive && (isLoading || isChromeHidden)
+        isReaderActive && isChromeHidden
     }
 
     var showsReaderNavigation: Bool {

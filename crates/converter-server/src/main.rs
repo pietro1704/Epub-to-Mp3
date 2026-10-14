@@ -455,6 +455,8 @@ async fn create_job(State(state): State<AppState>, Json(form): Json<CreateJob>) 
         engine: form.engine.clone(),
         voice: form.voice.clone(),
         language: form.language.clone(),
+        piper_model: None,
+        piper_config: None,
         chapter_indices: None,
         no_parallel: form.no_parallel.unwrap_or(false),
     };
@@ -666,6 +668,8 @@ async fn resume_job(AxumPath(id): AxumPath<String>, State(state): State<AppState
         engine: snapshot.engine.clone(),
         voice: snapshot.voice.clone(),
         language: snapshot.language.clone(),
+        piper_model: None,
+        piper_config: None,
         chapter_indices: None,
         no_parallel: snapshot.no_parallel,
     };

@@ -40,7 +40,6 @@ description = "Rust bindings to espeak-ng"
 readme = false
 license = "MIT"
 repository = "https://github.com/thewh1teagle/piper-rs"
-resolver = "1"
 
 [features]
 compile-espeak-intonations = []

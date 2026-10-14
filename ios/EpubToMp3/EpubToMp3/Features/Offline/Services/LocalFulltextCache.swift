@@ -82,6 +82,12 @@ enum LocalFulltextCache {
         return memoryCache.object(forKey: safe as NSString)?.payload
     }
 
+    /// Drop only the process-warm copy. Durable reader content and recency stay untouched.
+    static func evictInMemoryPayload(bookId: String) {
+        guard let safe = sanitizedBookID(bookId) else { return }
+        memoryCache.removeObject(forKey: safe as NSString)
+    }
+
     /// Returns prepared fulltext when it is available locally. A corrupt
     /// payload falls through to the regular parser; it is never fatal.
     static func read(bookId: String) -> EbookFulltext? {
@@ -119,6 +125,21 @@ enum LocalFulltextCache {
         )
     }
 
+    /// Commits the fulltext source before creating a source-bound chapter
+    /// projection. The projection must capture the identity of the final file,
+    /// since `write` atomically replaces the previous cache file.
+    static func saveAndPrepareReaderChapter(
+        _ payload: EbookFulltext,
+        bookId: String,
+        chapterOrdinal: Int,
+        store: PreparedReaderChapterStore
+    ) async {
+        save(payload, bookId: bookId)
+        guard !Task.isCancelled,
+              let fulltextURL = storageURL(bookId: bookId) else { return }
+        try? await store.write(bookID: bookId, chapterOrdinal: chapterOrdinal, fulltextURL: fulltextURL)
+    }
+
     /// Records a successful reader open. The retained payload count is capped
     /// by `memoryCache`; these identifiers let the next process prewarm the
     /// same two books from durable storage.
@@ -133,11 +154,12 @@ enum LocalFulltextCache {
     @MainActor @discardableResult
     static func startPrewarmingRecentBooks(
         bookIDs: [String]? = nil,
+        excludingBookIDs: Set<String> = [],
         readBook: @escaping @Sendable (String) -> Void = { _ = LocalFulltextCache.read(bookId: $0) }
     ) -> Task<Void, Never> {
         cancelPrewarming()
         let task = Task.detached(priority: .utility) {
-            prewarmRecentBooks(bookIDs: bookIDs, readBook: readBook)
+            prewarmRecentBooks(bookIDs: bookIDs, excludingBookIDs: excludingBookIDs, readBook: readBook)
         }
         backgroundPrewarm = task
         return task
@@ -150,10 +172,11 @@ enum LocalFulltextCache {
 
     static func prewarmRecentBooks(
         bookIDs: [String]? = nil,
+        excludingBookIDs: Set<String> = [],
         readBook: @Sendable (String) -> Void = { _ = LocalFulltextCache.read(bookId: $0) }
     ) {
         let recents = bookIDs ?? UserDefaults.standard.stringArray(forKey: recentBookIDsKey) ?? []
-        for bookID in recents.prefix(2) {
+        for bookID in recents.lazy.filter({ !excludingBookIDs.contains($0) }).prefix(2) {
             guard !Task.isCancelled else { return }
             readBook(bookID)
         }

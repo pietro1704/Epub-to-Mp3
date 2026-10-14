@@ -5,6 +5,136 @@ import XCTest
 
 @MainActor
 final class MacReaderChapterNavigationTests: XCTestCase {
+    func testActualLOTRBackwardChapterBoundaryKeepsLastGlyphVisible() async throws {
+        let bookID = "3e1c676b270dfa3fe555eba4d0cb9934"
+        let standard = UserDefaults.standard
+        let group = try XCTUnwrap(UserDefaults(suiteName: LibraryStore.appGroupID))
+        let library = LibraryStore(defaults: group)
+        let book = try XCTUnwrap(library.books.first { $0.id == bookID })
+        let fulltext = try XCTUnwrap(LocalFulltextCache.read(bookId: bookID))
+        let currentIndex = try XCTUnwrap(fulltext.chapters.indices.dropFirst().max {
+            fulltext.chapters[$0 - 1].text.count < fulltext.chapters[$1 - 1].text.count
+        })
+        let previousIndex = currentIndex - 1
+        let previousChapter = fulltext.chapters[previousIndex]
+        let currentChapter = fulltext.chapters[currentIndex]
+        let previousTextLength = previousChapter.text.count
+        XCTAssertGreaterThan(previousTextLength, 10_000, "Use an actual long LOTR chapter at the boundary.")
+        let geometryFulltext = EbookFulltext(jobId: fulltext.jobId, bookTitle: fulltext.bookTitle,
+                                             bookAuthor: fulltext.bookAuthor,
+                                             chapters: fulltext.chapters.indices.map { index in
+            let chapter = fulltext.chapters[index]
+            guard index == previousIndex || index == currentIndex else { return chapter }
+            return EbookFulltext.Chapter(
+                index: chapter.index, name: chapter.name, sourcePath: chapter.sourcePath,
+                text: chapter.text, speechText: chapter.speechText, html: nil, css: nil,
+                charCount: chapter.charCount, segments: chapter.segments,
+                resources: chapter.resources, footnotes: chapter.footnotes,
+                contentKind: chapter.contentKind
+            )
+        })
+
+        let keys = [ReaderSessionState.currentlyReadingBookIDKey,
+                    AudioPlayer.readerCurrentChapterIndexDefaultsKey,
+                    AudioPlayer.readerCurrentPageRatioDefaultsKey,
+                    AudioPlayer.readerCurrentSentenceIdDefaultsKey,
+                    "readerWarmBookIDs.v1",
+                    "readerProgress.v1"]
+        let saved = keys.map { standard.object(forKey: $0) }
+        LocalFulltextCache.evictInMemoryPayload(bookId: bookID)
+        defer {
+            for (key, value) in zip(keys, saved) {
+                if let value { standard.set(value, forKey: key) }
+                else { standard.removeObject(forKey: key) }
+            }
+            _ = LocalFulltextCache.read(bookId: bookID)
+        }
+        ReaderProgressStore.save(bookId: bookID, chapterIndex: currentIndex,
+                                 offsetFraction: 0, defaults: standard)
+        standard.set(bookID, forKey: ReaderSessionState.currentlyReadingBookIDKey)
+
+        let settingsSuite = "lotr-boundary-\(UUID().uuidString)"
+        let settingsDefaults = try XCTUnwrap(UserDefaults(suiteName: settingsSuite))
+        let settings = AppSettings(defaults: settingsDefaults)
+        settings.readerLayout = .paginated
+        let player = AudioPlayer(resumeStore: ResumeStore(storage: UserDefaultsResumeStorage(defaults: settingsDefaults)))
+        let preparedRoot = FileManager.default.temporaryDirectory
+            .appendingPathComponent("lotr-boundary-\(UUID().uuidString)", isDirectory: true)
+        let preparedStore = PreparedReaderChapterStore(directory: preparedRoot)
+        let controlsReady = expectation(description: "The actual LOTR chapter and controls must finish loading.")
+        controlsReady.assertForOverFulfill = false
+        let preparedRenderer = PreparedChapterRenderer(store: PreparedChapterArchiveStore(directory: preparedRoot))
+        let controller = MacReaderViewController(
+            library: library,
+            settings: settings,
+            player: player,
+            bookmarkStore: BookmarkStore(defaults: settingsDefaults, storageKey: "bookmarks"),
+            onClose: {},
+            preparedRenderer: preparedRenderer,
+            preparedChapterStore: preparedStore,
+            preparedFulltextReader: { _ in geometryFulltext },
+            preparedFulltextWriter: { _, _ in },
+            openStageObserver: { name, _ in
+                if name == "controls_usable" { controlsReady.fulfill() }
+            }
+        )
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 900, height: 700),
+                              styleMask: [.titled, .closable], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentViewController = controller
+        window.makeKeyAndOrderFront(nil)
+        defer {
+            window.orderOut(nil)
+            window.contentViewController = nil
+            window.close()
+            player.stop()
+            try? FileManager.default.removeItem(at: preparedRoot)
+            settingsDefaults.removePersistentDomain(forName: settingsSuite)
+        }
+        window.layoutIfNeeded()
+        await fulfillment(of: [controlsReady], timeout: 30)
+
+        func descendants(_ view: NSView) -> [NSView] { [view] + view.subviews.flatMap(descendants) }
+        let text = try XCTUnwrap(descendants(controller.view).compactMap { $0 as? MacReaderTextView }.first)
+        let scroll = try XCTUnwrap(text.enclosingScrollView)
+        window.layoutIfNeeded()
+        XCTAssertEqual(text.string.isEmpty, false, "The reader must show the imported LOTR chapter.")
+        XCTAssertEqual(scroll.contentView.bounds.origin.y, 0, accuracy: 1)
+        let geometryText = text
+        let geometryScroll = scroll
+        XCTAssertEqual(geometryText.string.isEmpty, false)
+        XCTAssertEqual(geometryScroll.contentView.bounds.origin.y, 0, accuracy: 1)
+        XCTAssertEqual(geometryText.onPageTap?(false), true,
+                       "Move backward from the start into the previous real chapter.")
+        for _ in 0..<100 where ReaderProgressStore.read(bookId: bookID, defaults: standard)?.chapterIndex != previousIndex {
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+        XCTAssertEqual(geometryText.string, previousChapter.text)
+        window.layoutIfNeeded()
+        let container = try XCTUnwrap(geometryText.textContainer)
+        let layoutManager = try XCTUnwrap(geometryText.layoutManager)
+        layoutManager.ensureLayout(for: container)
+        let usedRect = layoutManager.usedRect(for: container)
+        let visibleRect = geometryScroll.contentView.documentVisibleRect
+        XCTAssertGreaterThan(usedRect.height, geometryScroll.contentView.bounds.height,
+                             "The previous real chapter must exercise a multi-viewport boundary.")
+        XCTAssertLessThanOrEqual(usedRect.maxY, visibleRect.maxY + 0.5,
+                                 "The final real-book glyph must fit in the visible document rect.")
+        XCTAssertLessThanOrEqual(visibleRect.maxY - usedRect.maxY,
+                                 geometryText.textContainerInset.height + 0.5,
+                                 "The real chapter must not end with an unexplained blank tail.")
+        let backwardProgress = try XCTUnwrap(ReaderProgressStore.read(bookId: bookID, defaults: standard))
+        XCTAssertEqual(backwardProgress.chapterIndex, previousIndex)
+        XCTAssertEqual(backwardProgress.offsetFraction, 1, accuracy: 0.001)
+
+        XCTAssertEqual(geometryText.onPageTap?(true), true, "Return forward across the real chapter boundary.")
+        XCTAssertEqual(geometryText.string, currentChapter.text)
+        let forwardProgress = try XCTUnwrap(ReaderProgressStore.read(bookId: bookID, defaults: standard))
+        XCTAssertEqual(forwardProgress.chapterIndex, currentIndex)
+        XCTAssertEqual(forwardProgress.offsetFraction, 0, accuracy: 0.001)
+        XCTAssertEqual(book.id, bookID)
+    }
+
     func testBackwardFromChapterStartLandsAtPreviousChapterEnd() async throws {
         try await verifyChapterBoundary(openTableOfContents: false)
     }
@@ -44,10 +174,14 @@ final class MacReaderChapterNavigationTests: XCTestCase {
         standard.set(identifier, forKey: ReaderSessionState.currentlyReadingBookIDKey)
         let settings = AppSettings(defaults: defaults)
         settings.readerLayout = .paginated
+        let controlsReady = expectation(description: "The initial reader restoration must finish before navigating.")
         let controller = MacReaderViewController(
             library: LibraryStore(defaults: defaults, defaultsKey: "library"), settings: settings,
             player: AudioPlayer(resumeStore: ResumeStore(storage: UserDefaultsResumeStorage(defaults: defaults))),
-            bookmarkStore: BookmarkStore(defaults: defaults, storageKey: "bookmarks"), onClose: {})
+            bookmarkStore: BookmarkStore(defaults: defaults, storageKey: "bookmarks"), onClose: {},
+            openStageObserver: { name, _ in
+                if name == "controls_usable" { controlsReady.fulfill() }
+            })
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 700, height: 600),
                               styleMask: [.titled, .closable], backing: .buffered, defer: false)
         window.contentViewController = controller
@@ -55,7 +189,7 @@ final class MacReaderChapterNavigationTests: XCTestCase {
         window.makeKeyAndOrderFront(nil)
         defer { window.orderOut(nil); window.contentViewController = nil }
         window.layoutIfNeeded()
-        try await Task.sleep(nanoseconds: 100_000_000)
+        await fulfillment(of: [controlsReady], timeout: 5)
         func findText(in view: NSView) -> MacReaderTextView? {
             if let text = view as? MacReaderTextView { return text }
             return view.subviews.lazy.compactMap { findText(in: $0) }.first
@@ -77,9 +211,22 @@ final class MacReaderChapterNavigationTests: XCTestCase {
         try await Task.sleep(nanoseconds: 100_000_000)
         window.layoutIfNeeded()
         XCTAssertEqual(text.string, longText)
-        let end = max(0, text.frame.height - scroll.contentView.bounds.height)
-        XCTAssertGreaterThan(end, scroll.contentView.bounds.height)
-        XCTAssertEqual(scroll.contentView.bounds.origin.y, end, accuracy: 1)
+        let proposedEnd = max(0, text.frame.height - scroll.contentView.bounds.height)
+        XCTAssertGreaterThan(scroll.contentView.bounds.origin.y, scroll.contentView.bounds.height)
+        XCTAssertLessThanOrEqual(scroll.contentView.bounds.origin.y, proposedEnd + 1)
+        let container = try XCTUnwrap(text.textContainer)
+        let usedRect = try XCTUnwrap(text.layoutManager).usedRect(for: container)
+        let visibleRect = scroll.contentView.documentVisibleRect
+        XCTAssertLessThanOrEqual(
+            usedRect.maxY,
+            visibleRect.maxY + 0.5,
+            "Every laid-out glyph must remain inside the final visible document rect."
+        )
+        XCTAssertLessThanOrEqual(
+            visibleRect.maxY - usedRect.maxY,
+            text.textContainerInset.height * 2 + 0.5,
+            "The previous chapter must end without a large trailing gap."
+        )
         let backwardProgress = try XCTUnwrap(ReaderProgressStore.read(bookId: identifier))
         XCTAssertEqual(backwardProgress.chapterIndex, 0)
         XCTAssertEqual(backwardProgress.offsetFraction, 1, accuracy: 0.001)

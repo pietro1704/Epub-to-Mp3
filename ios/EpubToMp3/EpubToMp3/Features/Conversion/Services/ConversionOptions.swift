@@ -13,6 +13,7 @@ struct ConversionOptions: Codable, Sendable, Equatable {
     var modelID: String?
     var modelPath: String?
     var modelConfigPath: String?
+    var espeakDataDirectory: String?
 
     init(
         schemaVersion: UInt32 = 1,
@@ -25,7 +26,8 @@ struct ConversionOptions: Codable, Sendable, Equatable {
         modelsRoot: String? = nil,
         modelID: String? = nil,
         modelPath: String? = nil,
-        modelConfigPath: String? = nil
+        modelConfigPath: String? = nil,
+        espeakDataDirectory: String? = nil
     ) {
         self.schemaVersion = schemaVersion
         self.engine = engine
@@ -38,6 +40,18 @@ struct ConversionOptions: Codable, Sendable, Equatable {
         self.modelID = modelID
         self.modelPath = modelPath
         self.modelConfigPath = modelConfigPath
+        self.espeakDataDirectory = espeakDataDirectory
+    }
+
+    static func selectedEngine(_ engine: AudioEnginePreference, modelsRoot: URL? = nil) -> ConversionOptions {
+        let resolvedEngine = AudioEnginePreference.supportedPreferences.contains(engine) ? engine : .edge
+        return ConversionOptions(
+            engine: resolvedEngine.rawValue,
+            language: resolvedEngine == .piper ? "pt-BR" : nil,
+            modelsRoot: resolvedEngine == .piper ? modelsRoot?.path : nil,
+            modelID: resolvedEngine == .piper ? "pt_BR-edresson-low" : nil,
+            espeakDataDirectory: resolvedEngine == .piper ? Bundle.main.resourceURL?.path : nil,
+        )
     }
 
     enum CodingKeys: String, CodingKey {
@@ -50,6 +64,7 @@ struct ConversionOptions: Codable, Sendable, Equatable {
         case modelID = "model_id"
         case modelPath = "model_path"
         case modelConfigPath = "model_config_path"
+        case espeakDataDirectory = "espeak_data_directory"
     }
 
     /// Foundation-only encoding for both the adapter and native contract tests.

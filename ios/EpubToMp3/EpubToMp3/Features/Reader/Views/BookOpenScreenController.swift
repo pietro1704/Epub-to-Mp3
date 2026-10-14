@@ -2,6 +2,36 @@
 import UIKit
 import UniformTypeIdentifiers
 
+private struct PreparedProjectionRead: Sendable {
+    let snapshot: PreparedReaderChapterStore.Snapshot
+    let progress: ReaderProgressStore.Entry
+}
+
+private struct PreparedProjectionRestoration: Sendable {
+    let projection: PreparedProjectionRead
+    let style: PreparedChapterRendererStyle
+    let renderer: PreparedChapterRendererRestoration?
+}
+
+private final class PreparedProjectionRestorationSlot: @unchecked Sendable {
+    private let lock = NSLock()
+    private var restoration: PreparedProjectionRestoration?
+
+    func store(_ restoration: PreparedProjectionRestoration?) {
+        lock.lock()
+        self.restoration = restoration
+        lock.unlock()
+    }
+
+    func take() -> PreparedProjectionRestoration? {
+        lock.lock()
+        defer { lock.unlock() }
+        let value = restoration
+        restoration = nil
+        return value
+    }
+}
+
 @MainActor
 final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate, UIScrollViewDelegate, UITextViewDelegate, UIGestureRecognizerDelegate {
     private var book: BookEntity
@@ -10,6 +40,9 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
     private let bookmarkStore: BookmarkStore
     private let player: AudioPlayer
     private let preparedRenderer: PreparedChapterRenderer
+    private let preparedChapterStore: PreparedReaderChapterStore
+    private let preparedFulltextReader: @Sendable (String) async -> EbookFulltext?
+    private let openStageObserver: (@Sendable (String, UInt64) -> Void)?
     private let textView = ReaderTextViewFactory.make()
     private let comicPageImageView = UIImageView()
     private lazy var contentSurface = ReaderContentSurface(
@@ -49,8 +82,16 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
     private let loadingStatusLabel = UILabel()
     private let loadingRetryButton = UIButton(type: .system)
     private var fulltext: EbookFulltext?
+    private var activePreparedChapter: PreparedReaderChapterStore.Snapshot?
+    private var lastPreparedProjectionOrdinal: Int?
     private var registeredFontURLs: [URL] = []
     private var loadTask: Task<Void, Never>?
+    private var preparedProjectionReadTask: Task<PreparedProjectionRead?, Never>?
+    private var preparedProjectionRestoreTask: Task<PreparedProjectionRestoration?, Never>?
+    private var preparedProjectionPresentationTask: Task<Void, Never>?
+    private let preparedProjectionRestorationSlot = PreparedProjectionRestorationSlot()
+    private var pendingProjectionAnchor: (loadingID: UUID, progress: ReaderProgressStore.Entry)?
+    private var presentedProjectionLoadingID: UUID?
     private let sessionDefaults: UserDefaults
     private var reimportRequestID = UUID()
     private var selectedChapter = 0
@@ -62,6 +103,8 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
     private var scrollBottomToPageIndicator: NSLayoutConstraint!
     private var scrollBottomToSafeArea: NSLayoutConstraint!
     private var scrollBottomToRoot: NSLayoutConstraint!
+    private var lastAppliedViewportConfiguration: ReaderViewportConfiguration?
+    private var lastAppliedComicLayout: Bool?
     private var paginatedPageOffsets: [CGFloat] = [0]
     /// The single glyph-aware pagination decision for the final viewport.
     /// Keep the legacy offset array while callers migrate, but never derive a
@@ -89,12 +132,14 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
     /// reader has its final bounds.
     private var needsTextLayoutRefresh = false
     private var activeLoadingID: UUID?
+    private var loadGenerationID: UUID?
     private var pendingLoadingCompletionID: UUID?
     private var activeBookOpenJourneyID: UUID?
     private var pendingPDFPageJourneyID: UUID?
     private var firstPDFPageReadyJourneyID: UUID?
     private var controlsReadyJourneyID: UUID?
     private var isDeferringReaderGestures = false
+    private let deferInitialReaderGestures: Bool
     private var isLoadingContent = false
     /// Prevents overlapping page renders/snapshots when the user taps the
     /// reader edges repeatedly while a page transition is still running.
@@ -169,7 +214,17 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
         ReaderPlaybackAnchor.epubIndex(
             forReaderPosition: selectedChapter,
             in: fulltext?.chapters ?? []
-        ) ?? selectedChapter
+        ) ?? activePreparedChapter?.chapter.zeroBasedEpubIndex ?? selectedChapter
+    }
+
+    /// Source metadata lets streamed playback navigate before audio is ready.
+    var playbackChapterCatalog: [(index: Int, title: String)] {
+        if let fulltext {
+            return fulltext.chapters.map { ($0.zeroBasedEpubIndex, $0.displayTitle) }
+        }
+        return (activePreparedChapter?.catalogChapters ?? []).map {
+            (max(0, $0.index - 1), $0.name ?? L10n.string("player.chapter", $0.index))
+        }
     }
 
     private lazy var tocNavigationItem = makeNavigationItem(
@@ -201,14 +256,24 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
 
     init(book: BookEntity, library: LibraryStore, settings: AppSettings, bookmarkStore: BookmarkStore,
          player: AudioPlayer, preparedRenderer: PreparedChapterRenderer? = nil,
-         sessionDefaults: UserDefaults = .standard) {
+         preparedChapterStore: PreparedReaderChapterStore = .shared,
+         preparedFulltextReader: @escaping @Sendable (String) async -> EbookFulltext? = { id in
+            await Task.detached(priority: .userInitiated) { LocalFulltextCache.read(bookId: id) }.value
+         },
+         openStageObserver: (@Sendable (String, UInt64) -> Void)? = nil,
+         sessionDefaults: UserDefaults = .standard,
+         deferInitialReaderGestures: Bool = true) {
         self.book = book
         self.library = library
         self.settings = settings
         self.bookmarkStore = bookmarkStore
         self.player = player
         self.preparedRenderer = preparedRenderer ?? .shared
+        self.preparedChapterStore = preparedChapterStore
+        self.preparedFulltextReader = preparedFulltextReader
+        self.openStageObserver = openStageObserver
         self.sessionDefaults = sessionDefaults
+        self.deferInitialReaderGestures = deferInitialReaderGestures
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -216,10 +281,18 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
     override func viewDidLoad() {
+        observeOpenStage("reader_view_did_load_started")
         super.viewDidLoad()
         view.backgroundColor = .systemBackground
         configureNativeReader()
         loadBook()
+        observeOpenStage("reader_view_did_load_completed")
+    }
+
+    override func viewDidAppear(_ animated: Bool) {
+        observeOpenStage("reader_view_did_appear_started")
+        super.viewDidAppear(animated)
+        observeOpenStage("reader_view_did_appear_completed")
     }
 
     func update(book: BookEntity) {
@@ -567,6 +640,10 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
         scrollView.alwaysBounceHorizontal = false
         textView.isScrollEnabled = false
         textView.panGestureRecognizer.isEnabled = false
+        guard configuration != lastAppliedViewportConfiguration
+                || isDisplayingImageChapter != lastAppliedComicLayout else { return }
+        lastAppliedViewportConfiguration = configuration
+        lastAppliedComicLayout = isDisplayingImageChapter
         textView.textContainer.widthTracksTextView = !configuration.usesPaginatedTextHeight
         textView.textContainer.heightTracksTextView = false
         paginatedTextHeightConstraint.isActive = !isDisplayingImageChapter && configuration.usesPaginatedTextHeight
@@ -651,8 +728,10 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
     }
 
     override func viewDidLayoutSubviews() {
+        observeOpenStage("reader_view_did_layout_started")
         super.viewDidLayoutSubviews()
         applyReaderMargins()
+        presentPreparedProjectionDuringCommittedLayoutIfReady()
         fitInlineImagesToTextViewport()
         if isPaginatedMode {
             let viewportSize = scrollView.bounds.size
@@ -661,6 +740,7 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
                 if updatePaginatedTextHeight() {
                     lastPaginatedViewportSize = viewportSize
                     needsTextLayoutRefresh = false
+                    observeOpenStage("reader_viewport_text_layout_committed")
                 }
             }
             updatePageIndicator()
@@ -675,11 +755,17 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
                 if updateScrollingTextHeight() {
                     lastScrollingViewportSize = viewportSize
                     needsTextLayoutRefresh = false
+                    observeOpenStage("reader_viewport_text_layout_committed")
                 }
             }
         }
+        if pendingProjectionAnchor != nil {
+            scrollView.layoutIfNeeded()
+        }
         restorePendingViewportAnchorIfNeeded()
+        finishPreparedProjectionLayoutIfNeeded()
         completeLoadingAfterStableTextLayoutIfNeeded()
+        observeOpenStage("reader_view_did_layout_completed")
     }
 
     /// Keeps inline EPUB images proportional while constraining them to the
@@ -748,6 +834,7 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
             offsetFraction: Double(anchor.offsetFraction),
             characterOffset: anchor.characterOffset
         )
+        if fulltext != nil { prepareChapterProjection(ordinal: selectedChapter) }
     }
 
     private func publishReaderPlaybackAnchor(_ anchor: ReadingAnchor? = nil) {
@@ -990,15 +1077,29 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
         LocalFulltextCache.cancelPrewarming()
         loadTask?.cancel()
         loadTask = nil
+        preparedProjectionReadTask?.cancel()
+        preparedProjectionReadTask = nil
+        preparedProjectionRestoreTask?.cancel()
+        preparedProjectionRestoreTask = nil
+        preparedProjectionPresentationTask?.cancel()
+        preparedProjectionPresentationTask = nil
         cancelActiveBookOpenJourney()
         let loadingBookID = book.id
         let loadingID = UUID()
         activeLoadingID = loadingID
+        loadGenerationID = loadingID
         pendingLoadingCompletionID = nil
+        hasRestoredInitialPosition = false
+        activePreparedChapter = nil
+        pendingProjectionAnchor = nil
+        presentedProjectionLoadingID = nil
+        preparedProjectionRestorationSlot.store(nil)
+        lastPreparedProjectionOrdinal = nil
         let journeyID = LatencyObservationStore.shared.beginBookOpen(
             documentKind: Self.documentKind(for: book)
         )
         activeBookOpenJourneyID = journeyID
+        observeOpenStage("reader_open_requested")
 
         // Memory-ready text stays synchronous. A disk-prepared rendering is
         // restored without reopening the source or running the HTML importer.
@@ -1006,21 +1107,37 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
            !warmPayload.chapters.isEmpty {
             LatencyObservationStore.shared.classifyCache(.inMemoryWarm, for: journeyID)
             registeredFontURLs = EpubFontManager.registerCachedFonts(bookID: loadingBookID)
+            if let index = preparedChapterIndex(in: warmPayload),
+               let source = LocalFulltextCache.storageURL(bookId: loadingBookID) {
+                lastPreparedProjectionOrdinal = index
+                let store = preparedChapterStore
+                Task.detached(priority: .utility) {
+                    try? await store.write(bookID: loadingBookID, chapterOrdinal: index, fulltextURL: source)
+                }
+            }
             if let index = preparedChapterIndex(in: warmPayload) {
                 let chapter = warmPayload.chapters[index]
+                let preparedRendering = preparedRenderer.cached(
+                    bookID: loadingBookID,
+                    chapterIndex: index,
+                    chapter: chapter,
+                    settings: settings,
+                    fontDirectoryURL: registeredFontURLs.first?.deletingLastPathComponent()
+                )
                 if chapter.isImageOnly || chapter.html?.isEmpty != false
-                    || preparedRenderer.cached(bookID: loadingBookID, chapterIndex: index, chapter: chapter,
-                        settings: settings, fontDirectoryURL: registeredFontURLs.first?.deletingLastPathComponent()) != nil {
-                    displayPreparedPayload(warmPayload, loadingID: loadingID)
+                    || preparedRendering != nil {
+                    displayPreparedPayload(warmPayload, loadingID: loadingID,
+                                           preparedRendering: preparedRendering)
                     return
                 }
             }
             showLoadingOverlay()
             loadTask = Task { [weak self] in
                 guard let self else { return }
-                await restorePreparedChapter(in: warmPayload)
+                let preparedRendering = await restorePreparedChapter(in: warmPayload)
                 guard !Task.isCancelled, isCurrentLoad(loadingID, bookID: loadingBookID) else { return }
-                displayPreparedPayload(warmPayload, loadingID: loadingID)
+                displayPreparedPayload(warmPayload, loadingID: loadingID,
+                                       preparedRendering: preparedRendering)
             }
             return
         }
@@ -1031,12 +1148,64 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
             loadUITestFixture(after: uiTestLoadingDelay)
             return
         }
+        registeredFontURLs = EpubFontManager.registerCachedFonts(bookID: loadingBookID)
+        let fontDirectoryURL = registeredFontURLs.first?.deletingLastPathComponent()
+        let rendererStyle = preparedRenderer.styleSnapshot(
+            settings: settings,
+            fontDirectoryURL: fontDirectoryURL
+        )
+        let rendererWorker = preparedRenderer.backgroundRestoreWorker()
+        preparedProjectionReadTask = prepareProjectionRead(bookID: loadingBookID)
+        if let projectionReadTask = preparedProjectionReadTask {
+            let stageObserver = openStageObserver
+            let restorationSlot = preparedProjectionRestorationSlot
+            preparedProjectionRestoreTask = Task.detached(priority: .userInitiated) {
+                guard !Task.isCancelled,
+                      let projection = await projectionReadTask.value,
+                      !Task.isCancelled else { return nil }
+                let renderer = await rendererWorker.restore(
+                    bookID: loadingBookID,
+                    chapterIndex: projection.snapshot.chapterOrdinal,
+                    chapter: projection.snapshot.chapter,
+                    style: rendererStyle,
+                    stageObserver: stageObserver
+                )
+                guard !Task.isCancelled else { return nil }
+                let restoration = PreparedProjectionRestoration(
+                    projection: projection,
+                    style: rendererStyle,
+                    renderer: renderer
+                )
+                restorationSlot.store(restoration)
+                return restoration
+            }
+            if let projectionRestoreTask = preparedProjectionRestoreTask {
+                preparedProjectionPresentationTask = Task.detached(priority: .userInitiated) { [weak self] in
+                    let restoration = await projectionRestoreTask.value
+                    guard !Task.isCancelled else { return }
+                    await self?.restorePreparedProjection(
+                        restoration,
+                        loadingID: loadingID,
+                        bookID: loadingBookID
+                    )
+                }
+            }
+        }
         loadTask = Task { [weak self] in
             guard let self else { return }
+            observeOpenStage("reader_load_task_started")
             do {
-                let cached = await Task.detached(priority: .userInitiated) {
-                    LocalFulltextCache.read(bookId: loadingBookID)
-                }.value
+                observeOpenStage("projection_read_started")
+                if let preparedProjectionPresentationTask {
+                    await preparedProjectionPresentationTask.value
+                } else {
+                    await restorePreparedProjection(nil, loadingID: loadingID, bookID: loadingBookID)
+                }
+                observeOpenStage("projection_read_completed")
+                guard !Task.isCancelled, self.isCurrentLoad(loadingID, bookID: loadingBookID) else { return }
+                observeOpenStage("prepared_fulltext_read_started")
+                let cached = await preparedFulltextReader(loadingBookID)
+                observeOpenStage("prepared_fulltext_read_completed")
                 let payload: EbookFulltext
                 let cachedNeedsTitleRepair = cached?.chapters.contains(where: { $0.hasGeneratedName }) == true
                 let cachedHasReadableContent = cached?.chapters.contains(where: { $0.hasReadableContent }) == true
@@ -1065,24 +1234,259 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
                     }
                 }
                 guard !Task.isCancelled, self.isCurrentLoad(loadingID, bookID: loadingBookID) else { return }
+                if attachHydratedCatalog(payload, loadingID: loadingID) { return }
                 if registeredFontURLs.isEmpty {
                     registeredFontURLs = EpubFontManager.registerCachedFonts(bookID: loadingBookID)
                 }
+                let preparedIndex = preparedChapterIndex(in: payload)
+                let preparedStore = preparedChapterStore
                 Task.detached(priority: .utility) {
-                    LocalFulltextCache.save(payload, bookId: loadingBookID)
+                    if let preparedIndex {
+                        await LocalFulltextCache.saveAndPrepareReaderChapter(
+                            payload,
+                            bookId: loadingBookID,
+                            chapterOrdinal: preparedIndex,
+                            store: preparedStore
+                        )
+                    } else {
+                        LocalFulltextCache.save(payload, bookId: loadingBookID)
+                    }
                 }
                 if cachedNeedsTitleRepair {
                     UserDefaults.standard.set(true, forKey: titleRepairKey)
                 }
-                await restorePreparedChapter(in: payload)
+                let preparedRendering = await restorePreparedChapter(in: payload)
                 guard !Task.isCancelled, self.isCurrentLoad(loadingID, bookID: loadingBookID) else { return }
-                displayPreparedPayload(payload, loadingID: loadingID)
+                lastPreparedProjectionOrdinal = preparedIndex
+                observeOpenStage("prepared_payload_display_started")
+                displayPreparedPayload(payload, loadingID: loadingID,
+                                       preparedRendering: preparedRendering)
+                observeOpenStage("prepared_payload_display_completed")
             } catch {
                 guard !Task.isCancelled, self.isCurrentLoad(loadingID, bookID: loadingBookID) else { return }
                 textView.text = ""
                 showLoadingError(error.localizedDescription)
             }
         }
+        observeOpenStage("reader_load_task_scheduled")
+    }
+
+    private func observeOpenStage(_ name: String) {
+        let timestamp = DispatchTime.now().uptimeNanoseconds
+        openStageObserver?(name, timestamp)
+    }
+
+    private func prepareProjectionRead(bookID: String) -> Task<PreparedProjectionRead?, Never>? {
+        guard book.fileType != .pdf,
+              let progress = ReaderProgressStore.read(bookId: bookID),
+              let fulltextURL = LocalFulltextCache.storageURL(bookId: bookID) else { return nil }
+        let store = preparedChapterStore
+        let stageObserver = openStageObserver
+        observeOpenStage("projection_read_scheduled")
+        return Task.detached(priority: .userInitiated) {
+            guard !Task.isCancelled,
+                  let snapshot = await store.read(
+                    bookID: bookID,
+                    chapterOrdinal: progress.chapterIndex,
+                    fulltextURL: fulltextURL
+                  ),
+                  snapshot.catalogChapters?.count == snapshot.chapterCount,
+                  snapshot.chapter.hasReadableContent,
+                  PreparedReaderChapterStore.sourceMatches(snapshot, fulltextURL: fulltextURL),
+                  !Task.isCancelled else { return nil }
+            let validatedAt = DispatchTime.now().uptimeNanoseconds
+            stageObserver?("projection_snapshot_validated", validatedAt)
+            return PreparedProjectionRead(snapshot: snapshot, progress: progress)
+        }
+    }
+
+    private func presentPreparedProjectionDuringCommittedLayoutIfReady() {
+        guard pendingProjectionAnchor == nil,
+              activePreparedChapter == nil,
+              scrollView.bounds.width > 1,
+              scrollView.bounds.height > 1,
+              let fulltextURL = LocalFulltextCache.storageURL(bookId: book.id),
+              let restoration = preparedProjectionRestorationSlot.take() else { return }
+        let snapshot = restoration.projection.snapshot
+        guard let loadingID = activeLoadingID,
+              isCurrentLoad(loadingID, bookID: book.id),
+              PreparedReaderChapterStore.sourceMatches(snapshot, fulltextURL: fulltextURL) else {
+            observeOpenStage("projection_snapshot_rejected")
+            return
+        }
+
+        let fontDirectoryURL = registeredFontURLs.first?.deletingLastPathComponent()
+        let currentStyle = preparedRenderer.styleSnapshot(settings: settings, fontDirectoryURL: fontDirectoryURL)
+        guard restoration.style == currentStyle else {
+            preparedProjectionRestorationSlot.store(restoration)
+            return
+        }
+
+        observeOpenStage("projection_snapshot_loaded")
+        if let journeyID = activeBookOpenJourneyID {
+            LatencyObservationStore.shared.classifyCache(.preparedDisk, for: journeyID)
+        }
+        if let rendererRestoration = restoration.renderer {
+            preparedRenderer.cacheRestoration(
+                rendererRestoration,
+                bookID: book.id,
+                chapterIndex: snapshot.chapterOrdinal
+            )
+        }
+        observeOpenStage(restoration.renderer == nil
+            ? "prepared_renderer_cache_miss" : "prepared_renderer_cache_hit")
+        observeOpenStage("projection_presentation_started")
+        activePreparedChapter = snapshot
+        selectedChapter = snapshot.chapterOrdinal
+        presentedProjectionLoadingID = loadingID
+        pendingProjectionAnchor = (loadingID, restoration.projection.progress)
+        pendingLoadingCompletionID = loadingID
+        observeOpenStage("prepared_payload_display_started")
+        showChapter(selectedChapter, preparedRendering: restoration.renderer?.attributedText)
+        observeOpenStage("projection_chapter_mounted")
+        observeOpenStage("projection_layout_started")
+        scrollView.setNeedsLayout()
+        scrollView.layoutIfNeeded()
+        DispatchQueue.main.async { [weak self] in
+            guard let self,
+                  self.isCurrentLoad(loadingID, bookID: self.book.id),
+                  self.pendingProjectionAnchor?.loadingID == loadingID else { return }
+            self.view.setNeedsLayout()
+            self.view.layoutIfNeeded()
+        }
+    }
+
+    private func finishPreparedProjectionLayoutIfNeeded() {
+        guard let pending = pendingProjectionAnchor,
+              textView.attributedText.length == 0 || textViewport.facts.contentHeight > 0,
+              scrollView.bounds.width > 1, scrollView.bounds.height > 1 else { return }
+        guard isCurrentLoad(pending.loadingID, bookID: book.id) else { return }
+        pendingProjectionAnchor = nil
+        restoreReadingAnchor(ReadingAnchor(
+            offsetFraction: CGFloat(pending.progress.offsetFraction),
+            characterOffset: pending.progress.characterOffset
+        ))
+        updatePageIndicator()
+        hasRestoredInitialPosition = true
+        observeOpenStage("projection_layout_completed")
+        observeOpenStage("prepared_payload_display_completed")
+        observeOpenStage("projection_readiness_requested")
+    }
+
+    private func restorePreparedProjection(
+        _ restoration: PreparedProjectionRestoration?,
+        loadingID: UUID,
+        bookID: String
+    ) async {
+        guard presentedProjectionLoadingID != loadingID else { return }
+        guard book.fileType != .pdf,
+              let fulltextURL = LocalFulltextCache.storageURL(bookId: bookID) else {
+            observeOpenStage("projection_snapshot_missing")
+            return
+        }
+        guard let restoration else {
+            observeOpenStage("projection_snapshot_missing")
+            return
+        }
+        let preparedProjection = restoration.projection
+        let snapshot = preparedProjection.snapshot
+        let progress = preparedProjection.progress
+        observeOpenStage("projection_snapshot_loaded")
+        guard PreparedReaderChapterStore.sourceMatches(snapshot, fulltextURL: fulltextURL),
+              isCurrentLoad(loadingID, bookID: bookID) else {
+            observeOpenStage("projection_snapshot_rejected")
+            return
+        }
+        if let journeyID = activeBookOpenJourneyID {
+            LatencyObservationStore.shared.classifyCache(.preparedDisk, for: journeyID)
+        }
+        let fontDirectoryURL = registeredFontURLs.first?.deletingLastPathComponent()
+        let currentStyle = preparedRenderer.styleSnapshot(settings: settings, fontDirectoryURL: fontDirectoryURL)
+        let preparedRendering: NSAttributedString?
+        if restoration.style == currentStyle, let rendererRestoration = restoration.renderer {
+            preparedRenderer.cacheRestoration(
+                rendererRestoration,
+                bookID: bookID,
+                chapterIndex: snapshot.chapterOrdinal
+            )
+            preparedRendering = rendererRestoration.attributedText
+        } else if restoration.style != currentStyle {
+            preparedRendering = await preparedRenderer.restore(
+                bookID: bookID,
+                chapterIndex: snapshot.chapterOrdinal,
+                chapter: snapshot.chapter,
+                settings: settings,
+                fontDirectoryURL: fontDirectoryURL
+            )
+        } else {
+            preparedRendering = nil
+        }
+        observeOpenStage(preparedRendering == nil ? "prepared_renderer_cache_miss" : "prepared_renderer_cache_hit")
+        guard !Task.isCancelled, isCurrentLoad(loadingID, bookID: bookID),
+              PreparedReaderChapterStore.sourceMatches(snapshot, fulltextURL: fulltextURL) else { return }
+        presentPreparedProjection(
+            snapshot,
+            progress: progress,
+            preparedRendering: preparedRendering,
+            loadingID: loadingID,
+            bookID: bookID,
+            fulltextURL: fulltextURL
+        )
+    }
+
+    private func presentPreparedProjection(
+        _ snapshot: PreparedReaderChapterStore.Snapshot,
+        progress: ReaderProgressStore.Entry,
+        preparedRendering: NSAttributedString?,
+        loadingID: UUID,
+        bookID: String,
+        fulltextURL: URL
+    ) {
+        guard isCurrentLoad(loadingID, bookID: bookID),
+              presentedProjectionLoadingID != loadingID,
+              PreparedReaderChapterStore.sourceMatches(snapshot, fulltextURL: fulltextURL) else { return }
+        observeOpenStage("projection_presentation_started")
+        activePreparedChapter = snapshot
+        selectedChapter = snapshot.chapterOrdinal
+        presentedProjectionLoadingID = loadingID
+        showChapter(selectedChapter, preparedRendering: preparedRendering)
+        observeOpenStage("projection_chapter_mounted")
+        view.setNeedsLayout()
+        observeOpenStage("projection_layout_started")
+        view.layoutIfNeeded()
+        observeOpenStage("projection_layout_completed")
+        guard scrollView.bounds.width > 1, scrollView.bounds.height > 1 else { return }
+        restoreReadingAnchor(ReadingAnchor(offsetFraction: CGFloat(progress.offsetFraction),
+            characterOffset: progress.characterOffset))
+        updatePageIndicator()
+        hasRestoredInitialPosition = true
+        pendingLoadingCompletionID = loadingID
+        observeOpenStage("projection_readiness_requested")
+        completeLoadingAfterStableTextLayoutIfNeeded()
+    }
+
+    private func attachHydratedCatalog(_ payload: EbookFulltext, loadingID: UUID) -> Bool {
+        guard let snapshot = activePreparedChapter,
+              snapshot.bookID == book.id,
+              snapshot.chapterOrdinal == selectedChapter,
+              snapshot.chapterCount == payload.chapters.count,
+              snapshot.title == payload.bookTitle,
+              snapshot.author == payload.bookAuthor,
+              snapshot.toc == payload.toc,
+              zip(snapshot.catalogChapters ?? [], payload.chapters).allSatisfy({
+                  $0.index == $1.index && $0.name == $1.name && $0.contentKind == $1.contentKind
+              }),
+              payload.chapters.indices.contains(selectedChapter),
+              snapshot.chapter == payload.chapters[selectedChapter] else { return false }
+        guard isCurrentLoad(loadingID, bookID: book.id) else { return true }
+        fulltext = payload
+        activePreparedChapter = nil
+        LocalFulltextCache.recordWarmOpen(bookId: book.id)
+        publishReaderChapterTitles(payload)
+        if let journeyID = activeBookOpenJourneyID {
+            LatencyObservationStore.shared.classifyCache(.preparedDisk, for: journeyID)
+        }
+        return true
     }
 
     private func preparedChapterIndex(in payload: EbookFulltext) -> Int? {
@@ -1095,16 +1499,17 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
         return ReaderInitialChapter.index(selectedChapter: index, chapterCount: payload.chapters.count)
     }
 
-    private func restorePreparedChapter(in payload: EbookFulltext) async {
-        guard let index = preparedChapterIndex(in: payload), !payload.chapters[index].isImageOnly else { return }
-        _ = await preparedRenderer.restore(bookID: book.id, chapterIndex: index, chapter: payload.chapters[index],
+    private func restorePreparedChapter(in payload: EbookFulltext) async -> NSAttributedString? {
+        guard let index = preparedChapterIndex(in: payload), !payload.chapters[index].isImageOnly else { return nil }
+        return await preparedRenderer.restore(bookID: book.id, chapterIndex: index, chapter: payload.chapters[index],
             settings: settings, fontDirectoryURL: registeredFontURLs.first?.deletingLastPathComponent())
     }
 
     /// Applies prepared reader content after either a warm-cache hit or a
     /// cold parse. Keeping this path shared makes saved-position restoration
     /// identical in both cases while allowing the warm path to skip file I/O.
-    private func displayPreparedPayload(_ payload: EbookFulltext, loadingID: UUID) {
+    private func displayPreparedPayload(_ payload: EbookFulltext, loadingID: UUID,
+                                        preparedRendering: NSAttributedString? = nil) {
         guard isCurrentLoad(loadingID, bookID: book.id) else { return }
         guard !payload.chapters.isEmpty else {
             showLoadingError(ReaderLoadError.noReadableContent.localizedDescription)
@@ -1128,12 +1533,27 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
             return
         }
         self.selectedChapter = selectedChapter
-        showChapter(selectedChapter)
+        showChapter(selectedChapter, preparedRendering: preparedRendering)
+        prepareChapterProjection(ordinal: selectedChapter)
         finishLoadingAfterStableTextLayout(loadingID)
+    }
+
+    private func prepareChapterProjection(ordinal: Int) {
+        guard ordinal != lastPreparedProjectionOrdinal,
+              let fulltextURL = LocalFulltextCache.storageURL(bookId: book.id) else { return }
+        lastPreparedProjectionOrdinal = ordinal
+        let bookID = book.id
+        let store = preparedChapterStore
+        Task.detached(priority: .utility) {
+            try? await store.write(bookID: bookID, chapterOrdinal: ordinal, fulltextURL: fulltextURL)
+        }
     }
 
     deinit {
         loadTask?.cancel()
+        preparedProjectionReadTask?.cancel()
+        preparedProjectionRestoreTask?.cancel()
+        preparedProjectionPresentationTask?.cancel()
         if let journeyID = activeBookOpenJourneyID {
             _ = LatencyObservationStore.shared.cancel(journeyID)
         }
@@ -1163,6 +1583,7 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
     }
 
     private func hideLoadingOverlay() {
+        observeOpenStage("reader_loading_hide_started")
         activeLoadingID = nil
         pendingLoadingCompletionID = nil
         loadingSpinner.stopAnimating()
@@ -1174,7 +1595,17 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
         isLoadingContent = false
         synchronizeChromeVisibility()
         onChromeVisibilityRequested?(false)
+        observeOpenStage("reader_loading_chrome_callback_completed")
         onLoadStateChanged?(false)
+        observeOpenStage("reader_loading_root_callback_completed")
+        guard deferInitialReaderGestures else {
+            isDeferringReaderGestures = false
+            pageTap.isEnabled = true
+            applyReaderLayoutMode()
+            observeOpenStage("reader_controls_enabled")
+            recordControlsUsable()
+            return
+        }
         DispatchQueue.main.async { [weak self] in
             guard let self,
                   self.activeLoadingID == nil,
@@ -1182,6 +1613,7 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
             self.isDeferringReaderGestures = false
             self.pageTap.isEnabled = true
             self.applyReaderLayoutMode()
+            self.observeOpenStage("reader_controls_enabled")
             self.recordControlsUsable()
         }
     }
@@ -1193,6 +1625,7 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
     private func showLoadingError(_ message: String) {
         cancelActiveBookOpenJourney()
         activeLoadingID = nil
+        loadGenerationID = nil
         pendingLoadingCompletionID = nil
         loadingSpinner.stopAnimating()
         loadingStatusLabel.text = message
@@ -1256,7 +1689,17 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
 
     private func recordControlsUsable() {
         guard let journeyID = activeBookOpenJourneyID else { return }
+        if let snapshot = activePreparedChapter {
+            guard let url = LocalFulltextCache.storageURL(bookId: book.id),
+                  snapshot.catalogChapters?.count == snapshot.chapterCount,
+                  PreparedReaderChapterStore.sourceMatches(snapshot, fulltextURL: url) else { return }
+            let catalog = snapshot.catalogChapters ?? []
+            guard catalog.indices.contains(snapshot.chapterOrdinal),
+                  catalog[snapshot.chapterOrdinal].index > 0,
+                  catalog[snapshot.chapterOrdinal].index - 1 == snapshot.chapter.zeroBasedEpubIndex else { return }
+        }
         _ = LatencyObservationStore.shared.record(.controlsUsable, for: journeyID)
+        observeOpenStage("controls_usable")
         if pendingPDFPageJourneyID == journeyID {
             controlsReadyJourneyID = journeyID
             finishPDFJourneyIfReady(journeyID)
@@ -1289,7 +1732,7 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
     }
 
     private func isCurrentLoad(_ loadingID: UUID, bookID: String) -> Bool {
-        activeLoadingID == loadingID && book.id == bookID
+        loadGenerationID == loadingID && book.id == bookID
     }
 
     private func finishLoadingAfterStableTextLayout(_ loadingID: UUID) {
@@ -1301,6 +1744,7 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
     private func completeLoadingAfterStableTextLayoutIfNeeded() {
         guard let loadingID = pendingLoadingCompletionID,
               isCurrentLoad(loadingID, bookID: book.id),
+              pendingProjectionAnchor == nil,
               scrollView.bounds.width > 1,
               scrollView.bounds.height > 1,
               textView.attributedText.length > 0 || !comicPageImageView.isHidden else {
@@ -1310,6 +1754,7 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
         restoreReadingProgressIfNeeded()
         if let journeyID = activeBookOpenJourneyID {
             _ = LatencyObservationStore.shared.record(.readableContent, for: journeyID)
+            observeOpenStage("readable_content")
         }
         hideLoadingOverlay()
     }
@@ -1347,8 +1792,9 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
         showChapter(0)
     }
 
-    private func showChapter(_ index: Int) {
-        guard let chapter = fulltext?.chapters[safe: index] else { return }
+    private func showChapter(_ index: Int, preparedRendering: NSAttributedString? = nil) {
+        guard let chapter = fulltext?.chapters[safe: index]
+            ?? (activePreparedChapter?.chapterOrdinal == index ? activePreparedChapter?.chapter : nil) else { return }
         rememberedViewportOffsets.removeAll()
         paginatedLayoutResult = nil
         textViewport.resetForChapter()
@@ -1384,8 +1830,16 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
         } else {
             contentSurface.mount(.text)
             applyReaderLayoutMode()
-            if let rendered = preparedRenderer.render(bookID: book.id, chapterIndex: index, chapter: chapter,
-                settings: settings, fontDirectoryURL: registeredFontURLs.first?.deletingLastPathComponent()), rendered.length > 0 {
+            let rendered: NSAttributedString?
+            if let preparedRendering {
+                observeOpenStage("prepared_render_reused")
+                rendered = preparedRendering
+            } else {
+                observeOpenStage("prepared_render_generated")
+                rendered = preparedRenderer.render(bookID: book.id, chapterIndex: index, chapter: chapter,
+                    settings: settings, fontDirectoryURL: registeredFontURLs.first?.deletingLastPathComponent())
+            }
+            if let rendered, rendered.length > 0 {
                 let visible = NSMutableAttributedString(attributedString: rendered)
                 if visible.length > 0 {
                     visible.addAttribute(
@@ -1468,7 +1922,9 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
         guard isPaginatedMode else { return false }
         guard let facts = textViewport.presentPaginated(
             preservingRawOffset: isViewportTransitioning ? pendingViewportAnchor?.viewportOffset : nil
-        ) else { return false }
+        ) else {
+            return false
+        }
         if facts.requiresScrollingFallback {
             forcesScrollingForOversizedFragment = true
             paginatedLayoutResult = nil
@@ -1858,7 +2314,7 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
     }
 
     private var canNavigateReader: Bool {
-        Self.allowsReaderNavigation(
+        fulltext != nil && Self.allowsReaderNavigation(
             isDeferringReaderGestures: isDeferringReaderGestures,
             isLoadingOverlayHidden: loadingContainer.isHidden,
             isViewportTransitioning: isViewportTransitioning

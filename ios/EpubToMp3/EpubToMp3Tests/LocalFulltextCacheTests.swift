@@ -20,6 +20,17 @@ final class LocalFulltextCacheTests: XCTestCase {
         var snapshot: [String] { lock.lock(); defer { lock.unlock() }; return values }
     }
 
+    func testPrewarmSkipsBooksBeingRestoredAndFillsRemainingSlots() {
+        let reads = PrewarmReads()
+
+        LocalFulltextCache.prewarmRecentBooks(
+            bookIDs: ["active-reader", "other-one", "active-player", "other-two"],
+            excludingBookIDs: ["active-reader", "active-player"]
+        ) { reads.append($0) }
+
+        XCTAssertEqual(reads.snapshot, ["other-one", "other-two"])
+    }
+
     @MainActor
     func testCancelledPrewarmDoesNotStartSecondBook() async {
         let entered = expectation(description: "First prewarm read started")
@@ -149,15 +160,51 @@ final class LocalFulltextCacheTests: XCTestCase {
         XCTAssertEqual(try Data(contentsOf: cache), bytes)
     }
 
+    func testPreparedProjectionBindsToFinalFulltextAfterAtomicReplacement() async throws {
+        let id = uniqueId()
+        let archiveDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("prepared-fulltext-\(id)", isDirectory: true)
+        let store = PreparedReaderChapterStore(directory: archiveDirectory)
+        defer {
+            LocalFulltextCache.evict(bookId: id)
+            try? FileManager.default.removeItem(at: archiveDirectory)
+        }
+
+        let original = completePayload(id)
+        LocalFulltextCache.save(original, bookId: id)
+        let source = try XCTUnwrap(LocalFulltextCache.storageURL(bookId: id))
+        try await store.write(bookID: id, chapterOrdinal: 0, fulltextURL: source)
+
+        let replacement = completePayload(id, title: "Replaced after parse",
+                                          chapterText: "Replacement reader text")
+        await LocalFulltextCache.saveAndPrepareReaderChapter(
+            replacement,
+            bookId: id,
+            chapterOrdinal: 0,
+            store: store
+        )
+
+        let reopened = await store.read(bookID: id, chapterOrdinal: 0, fulltextURL: source)
+        let projection = try XCTUnwrap(reopened)
+        XCTAssertEqual(projection.title, replacement.bookTitle)
+        XCTAssertEqual(projection.chapter, replacement.chapters[0])
+        XCTAssertTrue(PreparedReaderChapterStore.sourceMatches(projection, fulltextURL: source))
+    }
+
     private func uniqueId() -> String {
         UUID().uuidString.replacingOccurrences(of: "-", with: "")
     }
 
-    private func completePayload(_ id: String) -> EbookFulltext {
-        EbookFulltext(jobId: id, bookTitle: "Book", bookAuthor: "Author", chapters: [
-            .init(index: 1, name: "Chapter", sourcePath: "text/chapter.xhtml", text: "Reader text",
-                  speechText: "Speech text", html: "<p><b>Reader</b> text</p>", css: "p {color:red}",
-                  charCount: 11, segments: [.init(id: "sentence", text: "Reader text", startMs: 0, endMs: 100)],
+    private func completePayload(
+        _ id: String,
+        title: String = "Book",
+        chapterText: String = "Reader text"
+    ) -> EbookFulltext {
+        EbookFulltext(jobId: id, bookTitle: title, bookAuthor: "Author", chapters: [
+            .init(index: 1, name: "Chapter", sourcePath: "text/chapter.xhtml", text: chapterText,
+                  speechText: chapterText, html: "<p><b>\(chapterText)</b></p>", css: "p {color:red}",
+                  charCount: chapterText.count,
+                  segments: [.init(id: "sentence", text: chapterText, startMs: 0, endMs: 100)],
                   resources: [.init(href: "image.png", mediaType: "image/png", dataBase64: "AA==")],
                   footnotes: [.init(number: "1", text: "Note")], contentKind: "text")
         ])

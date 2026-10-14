@@ -17,18 +17,19 @@ final class RealBookReaderUITests: XCTestCase {
         // Actual imported EPUBs only: never replace content or audio with UI fixtures.
         app.launchArguments = ["-developmentSeedBook", "-uiTestResetReaderPosition",
             "-uiTestReaderLayout", "paginated", "-uiTestChromeToggle",
-            "-uiTestPaginationProbe", "-uiTestNoPageTurnOverlay"]
+            "-uiTestPaginationProbe", "-uiTestNoPageTurnOverlay", "-uiTestResetActiveReader"]
         app.launch()
+        let expandedClose = app.buttons["fullPlayer.close"].firstMatch
+        if expandedClose.waitForExistence(timeout: 2), expandedClose.isHittable {
+            expandedClose.tap()
+        }
         let harness = ReaderModesHarness(app: app)
         let tile = app.descendants(matching: .any)["library.bookTile.\(bookID)"]
         XCTAssertTrue(tile.waitForExistence(timeout: 30), "The hash-verified real book must be imported.")
-        // The development seed also establishes the active book in the main
-        // reader before showing Library. Reopening its library tile creates a
-        // second reader controller and duplicate accessibility identifiers.
-        let existingReader = app.buttons["reader.search"].firstMatch
-        if !existingReader.exists {
-            tile.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
-        }
+        // Start on the library surface, then open exactly one real reader.
+        // The development seed can otherwise leave the same book mounted in
+        // MainReaderScreenController while the library presents a second one.
+        tile.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
         XCTAssertTrue(app.buttons["reader.search"].waitForExistence(timeout: 60))
         XCTAssertTrue(app.images["reader.loadingCover"].waitForNonExistence(timeout: 60),
                       "Reader navigation is intentionally blocked until loading finishes.")

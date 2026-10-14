@@ -63,7 +63,7 @@ extern "C"
 
 #define PLATFORM_POSIX 1
 #define PATHSEP  '/'
-#define N_PATH_HOME_DEF  160
+#define N_PATH_HOME_DEF  1024
 #define USE_NANOSLEEP
 #define __cdecl
 

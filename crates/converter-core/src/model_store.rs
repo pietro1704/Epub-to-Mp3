@@ -200,7 +200,6 @@ impl ModelStore {
                         "archive extraction requires kokoro-sherpa-runtime".to_owned(),
                     ));
                 } else {
-                    tokio::fs::remove_file(&temporary).await?;
                     tokio::fs::rename(&temporary, &destination).await?;
                 }
                 installed.push(InstalledModel {
@@ -331,6 +330,24 @@ fn extract_model_archive(archive_path: &Path, staging: &Path) -> Result<(), Mode
 mod tests {
     use super::*;
     use crate::model_catalog::MODELS;
+
+    #[tokio::test]
+    async fn publishes_downloaded_artifact_without_deleting_it_first() {
+        let root = tempfile::tempdir().unwrap();
+        let temporary = root.path().join("model.onnx.part");
+        let destination = root.path().join("model.onnx");
+        tokio::fs::write(&temporary, b"verified model bytes")
+            .await
+            .unwrap();
+
+        tokio::fs::rename(&temporary, &destination).await.unwrap();
+
+        assert!(!temporary.exists());
+        assert_eq!(
+            tokio::fs::read(&destination).await.unwrap(),
+            b"verified model bytes"
+        );
+    }
 
     #[tokio::test]
     async fn rejects_unverified_install_before_network_access() {

@@ -7,7 +7,7 @@ import Foundation
 /// user had reached — so reopening a book resumes at the same spot instead
 /// of the top of the last chapter.
 enum ReaderProgressStore {
-    struct Entry: Codable, Equatable {
+    struct Entry: Codable, Equatable, Sendable {
         let chapterIndex: Int
         let offsetFraction: Double
         let characterOffset: Int?

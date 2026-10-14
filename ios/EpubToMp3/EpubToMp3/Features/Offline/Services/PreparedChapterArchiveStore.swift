@@ -1,7 +1,7 @@
 import CryptoKit
 import Foundation
 
-/// Stores opaque secure-archive bytes. Creation and decoding belong to the caller's MainActor.
+/// Stores opaque secure-archive bytes. The renderer owns secure decoding and style validation.
 actor PreparedChapterArchiveStore {
     static let maximumFileBytes = 8 * 1024 * 1024
     enum StoreError: Error { case invalidKey, unsafeFile, oversized, budgetExceeded }

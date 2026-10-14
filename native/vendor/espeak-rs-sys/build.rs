@@ -284,7 +284,7 @@ fn main() {
     }
 
     // macOS
-    if cfg!(target_os = "macos") && !target.ends_with("-linux-android") {
+    if target.ends_with("-apple-darwin") {
         println!("cargo:rustc-link-lib=framework=Foundation");
         println!("cargo:rustc-link-lib=c++");
     }
@@ -314,7 +314,7 @@ fn main() {
         println!("cargo:rustc-link-lib=dylib=stdc++");
     }
 
-    if target.contains("apple") {
+    if target.ends_with("-apple-darwin") {
         // On (older) OSX we need to link against the clang runtime,
         // which is hidden in some non-default path.
         //

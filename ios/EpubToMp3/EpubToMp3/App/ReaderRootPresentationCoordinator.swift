@@ -22,7 +22,11 @@ final class ReaderRootPresentationCoordinator {
         self.readerBottomToRoot = readerBottomToRoot
     }
 
-    func beginChromeTransition(to isHidden: Bool, captureViewport: () -> Void) -> ReaderViewportTransition.Token {
+    func beginChromeTransition(
+        to isHidden: Bool,
+        captureViewport: () -> Void
+    ) -> ReaderViewportTransition.Token? {
+        guard state.isChromeHidden != isHidden else { return nil }
         let token = viewportTransition.begin(to: isHidden, captureAnchor: captureViewport)
         state.isChromeHidden = isHidden
         return token
@@ -52,6 +56,7 @@ final class ReaderRootPresentationCoordinator {
     func applyChromeLayout(
         transition: ReaderViewportTransition.Token?,
         needsFinalLayout: Bool,
+        deferInitialLayout: Bool = false,
         restoreViewport: () -> Void
     ) {
         guard let rootView, let readerBottomToMiniPlayer, let readerBottomToRoot else { return }
@@ -61,6 +66,10 @@ final class ReaderRootPresentationCoordinator {
         let changed = !bottomChromeInitialized || bottomChromeHidden != hidesBottomChrome
         bottomChromeInitialized = true
         bottomChromeHidden = hidesBottomChrome
+        if transition == nil, deferInitialLayout {
+            rootView.setNeedsLayout()
+            return
+        }
         _ = commit(
             transition,
             applyFinalGeometry: {

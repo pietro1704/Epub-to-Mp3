@@ -300,7 +300,7 @@ final class AudioPlayer: ObservableObject {
     }
     private var segmentSeekTask: Task<Void, Never>?
     private var segmentDurations: [SegmentBacklog.Identity: TimeInterval] = [:]
-    var isLoading: Bool { !isPlaying && isConverting && !firstChapterReady }
+    var isLoading: Bool { isSeeking || (!isPlaying && isConverting && !firstChapterReady) }
 
     /// Optional cover art bytes (PNG/JPEG). Surfaced to the system
     /// Now Playing widget so lock screen / Control Center / AirPods
@@ -1283,7 +1283,7 @@ final class AudioPlayer: ObservableObject {
         // the canonical chapter queue. This restores normal previous/next,
         // seeking, resume markers, and offline playback semantics without
         // leaving the player permanently tied to per-segment items.
-        play(snapshot: snapshot, startingAt: target)
+        play(snapshot: snapshot, startingAt: target, restoreAutoplay: false)
         if activePosition > 0 { seek(to: activePosition) }
         if wasPlaying { resume() }
     }
@@ -2225,7 +2225,9 @@ final class AudioPlayer: ObservableObject {
             return
         }
         if let snapshot {
-            play(snapshot: snapshot, startingAt: currentChapterIndex - 1)
+            let wasPlaying = isPlaying
+            play(snapshot: snapshot, startingAt: currentChapterIndex - 1, restoreAutoplay: false)
+            if wasPlaying { resume() }
         } else {
             seek(to: 0)
         }

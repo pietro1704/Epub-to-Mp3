@@ -23,10 +23,11 @@ enum MacReaderTextLayout {
         layoutManager.ensureLayout(forCharacterRange: NSRange(location: 0, length: textView.textStorage?.length ?? 0))
         layoutManager.ensureLayout(for: container)
         let used = layoutManager.usedRect(for: container)
-        let height = max(
-            viewport.height,
-            ceil(used.height + textView.textContainerInset.height * 2)
-        )
+        // NSTextView's used rect can include fractional paragraph spacing
+        // beyond the last visible glyph. Base the scroll extent on its actual
+        // document-space bottom so chapter-end navigation and clipping checks
+        // agree on the same final geometry.
+        let height = max(viewport.height, ceil(used.maxY + textView.textContainerInset.height))
         textView.setFrameOrigin(.zero)
         textView.setFrameSize(NSSize(width: viewport.width, height: height))
     }
