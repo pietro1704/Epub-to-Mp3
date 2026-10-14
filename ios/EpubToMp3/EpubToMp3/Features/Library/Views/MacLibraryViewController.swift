@@ -25,6 +25,7 @@ final class MacLibraryViewController: NSViewController, NSSearchFieldDelegate,
     private let collectionView = NSCollectionView()
     private let emptyLabel = NSTextField(wrappingLabelWithString: "")
     private let addButton = NSButton()
+    private let toolbarAddButton = NSButton()
 
     private static let acceptedTypes: [UTType] = SupportedImportTypes.all
 
@@ -62,7 +63,7 @@ final class MacLibraryViewController: NSViewController, NSSearchFieldDelegate,
         bindStore()
         reload()
         view.setAccessibilityElement(false)
-        view.setAccessibilityChildren([searchField, sortButton, collectionView, emptyLabel, addButton])
+        view.setAccessibilityChildren([searchField, sortButton, toolbarAddButton, collectionView, emptyLabel, addButton])
     }
 
     override func viewDidLayout() {
@@ -73,6 +74,7 @@ final class MacLibraryViewController: NSViewController, NSSearchFieldDelegate,
     private func configureToolbar() {
         searchField.placeholderString = L10n.string("library.searchPlaceholder")
         searchField.delegate = self
+        searchField.setAccessibilityLabel(L10n.string("library.searchPlaceholder"))
         searchField.setAccessibilityIdentifier("library.search")
         searchField.translatesAutoresizingMaskIntoConstraints = false
 
@@ -80,13 +82,16 @@ final class MacLibraryViewController: NSViewController, NSSearchFieldDelegate,
         sortButton.addItems(withTitles: LibraryGridModel.SortMode.allCases.map(\.label))
         sortButton.target = self
         sortButton.action = #selector(sortChanged(_:))
+        sortButton.setAccessibilityLabel(L10n.string("library.sortLibrary"))
         sortButton.setAccessibilityIdentifier("library.sort")
         sortButton.translatesAutoresizingMaskIntoConstraints = false
 
-        let add = NSButton(image: NSImage(systemSymbolName: "plus", accessibilityDescription: nil)!,
-                           target: self,
-                           action: #selector(addTapped))
+        let add = toolbarAddButton
+        add.image = NSImage(systemSymbolName: "plus", accessibilityDescription: nil)
+        add.target = self
+        add.action = #selector(addTapped)
         add.bezelStyle = .texturedRounded
+        add.setAccessibilityLabel(L10n.string("library.addBook"))
         add.toolTip = L10n.string("library.addBook")
         add.setAccessibilityIdentifier("library.add")
         add.translatesAutoresizingMaskIntoConstraints = false
@@ -97,7 +102,7 @@ final class MacLibraryViewController: NSViewController, NSSearchFieldDelegate,
         NSLayoutConstraint.activate([
             searchField.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 16),
             searchField.topAnchor.constraint(equalTo: view.topAnchor, constant: 12),
-            searchField.widthAnchor.constraint(greaterThanOrEqualToConstant: 240),
+            searchField.widthAnchor.constraint(greaterThanOrEqualToConstant: 120),
             sortButton.leadingAnchor.constraint(equalTo: searchField.trailingAnchor, constant: 8),
             sortButton.centerYAnchor.constraint(equalTo: searchField.centerYAnchor),
             add.leadingAnchor.constraint(equalTo: sortButton.trailingAnchor, constant: 8),

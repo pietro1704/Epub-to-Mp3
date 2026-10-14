@@ -1,9 +1,22 @@
 #if os(iOS)
 import UIKit
 
+/// Explicit spoken overrides belong to one row, never the next reuse of its cell.
+final class IOSContentCell: UITableViewCell {
+    override func prepareForReuse() {
+        super.prepareForReuse()
+        accessibilityLabel = nil
+        accessibilityValue = nil
+        accessibilityHint = nil
+        accessibilityIdentifier = nil
+        accessibilityTraits = []
+    }
+}
+
 final class IOSInlineTextFieldCell: UITableViewCell, UITextFieldDelegate {
     let titleLabel = UILabel()
     let textField = UITextField()
+    private let fieldStack = UIStackView()
     var onTextChanged: ((String) -> Void)?
     var onReturn: (() -> Void)?
 
@@ -12,6 +25,7 @@ final class IOSInlineTextFieldCell: UITableViewCell, UITextFieldDelegate {
         selectionStyle = .none
         titleLabel.font = .preferredFont(forTextStyle: .body)
         titleLabel.adjustsFontForContentSizeCategory = true
+        titleLabel.numberOfLines = 0
         titleLabel.setContentHuggingPriority(.defaultHigh, for: .horizontal)
 
         textField.font = .preferredFont(forTextStyle: .body)
@@ -21,7 +35,9 @@ final class IOSInlineTextFieldCell: UITableViewCell, UITextFieldDelegate {
         textField.delegate = self
         textField.addTarget(self, action: #selector(textDidChange), for: .editingChanged)
 
-        let stack = UIStackView(arrangedSubviews: [titleLabel, textField])
+        let stack = fieldStack
+        stack.addArrangedSubview(titleLabel)
+        stack.addArrangedSubview(textField)
         stack.axis = .horizontal
         stack.spacing = 12
         stack.alignment = .center
@@ -33,8 +49,16 @@ final class IOSInlineTextFieldCell: UITableViewCell, UITextFieldDelegate {
             stack.trailingAnchor.constraint(equalTo: contentView.layoutMarginsGuide.trailingAnchor),
             stack.topAnchor.constraint(equalTo: contentView.layoutMarginsGuide.topAnchor),
             stack.bottomAnchor.constraint(equalTo: contentView.layoutMarginsGuide.bottomAnchor),
-            textField.widthAnchor.constraint(greaterThanOrEqualToConstant: 120),
+            textField.heightAnchor.constraint(greaterThanOrEqualToConstant: 44),
         ])
+    }
+
+    override func layoutSubviews() {
+        let vertical = traitCollection.preferredContentSizeCategory.isAccessibilityCategory || bounds.width < 360
+        fieldStack.axis = vertical ? .vertical : .horizontal
+        fieldStack.alignment = vertical ? .fill : .center
+        textField.textAlignment = vertical ? .natural : .right
+        super.layoutSubviews()
     }
 
     @available(*, unavailable)
@@ -57,6 +81,7 @@ final class IOSInlineTextFieldCell: UITableViewCell, UITextFieldDelegate {
         textField.autocapitalizationType = autocapitalization
         textField.isEnabled = isEnabled
         textField.textColor = isEnabled ? .label : .secondaryLabel
+        textField.accessibilityLabel = title
     }
 
     @objc
@@ -90,9 +115,11 @@ final class IOSSwitchCell: UITableViewCell {
         var content = defaultContentConfiguration()
         content.text = title
         content.secondaryText = subtitle
-        content.secondaryTextProperties.numberOfLines = 2
+        content.secondaryTextProperties.numberOfLines = 0
         contentConfiguration = content
         toggleSwitch.isOn = isOn
+        toggleSwitch.accessibilityLabel = title
+        toggleSwitch.accessibilityHint = subtitle
         if let tintColor {
             toggleSwitch.onTintColor = tintColor
         }

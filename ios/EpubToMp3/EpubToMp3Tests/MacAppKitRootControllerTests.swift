@@ -119,6 +119,11 @@ final class MacAppKitRootControllerTests: XCTestCase {
         )
 
         let fileMenu = try XCTUnwrap(mainMenu.items[1].submenu)
+        let appMenu = try XCTUnwrap(mainMenu.items.first?.submenu)
+        let settingsItem = try XCTUnwrap(appMenu.items.first { $0.keyEquivalent == "," })
+        XCTAssertEqual(settingsItem.title, L10n.string("nav.settings") + "…")
+        XCTAssertEqual(settingsItem.keyEquivalentModifierMask, .command)
+        XCTAssertNotNil(settingsItem.action)
         XCTAssertTrue(fileMenu.items.contains { $0.title == L10n.string("menu.importBook") && $0.keyEquivalent == "o" })
 
         let viewMenu = try XCTUnwrap(mainMenu.items[3].submenu)

@@ -54,7 +54,10 @@ final class LibraryGridController: UICollectionViewController {
             let tileWidth = metrics.tileWidth(forWidth: width, columns: columns)
             // The cover uses a 3:2 portrait ratio. Reserve label space so
             // titles never fall outside an estimated collection item.
-            let tileHeight = tileWidth * 1.5 + 70
+            let titleFont = UIFont.preferredFont(forTextStyle: .subheadline, compatibleWith: environment.traitCollection)
+            let authorFont = UIFont.preferredFont(forTextStyle: .caption1, compatibleWith: environment.traitCollection)
+            let metadataHeight = max(70, titleFont.lineHeight * 2 + authorFont.lineHeight + 8)
+            let tileHeight = tileWidth * 1.5 + metadataHeight
             let item = NSCollectionLayoutItem(
                 layoutSize: NSCollectionLayoutSize(
                     widthDimension: .absolute(tileWidth),
@@ -251,11 +254,13 @@ final class BookGridCell: UICollectionViewCell {
         title.font = .preferredFont(forTextStyle: .subheadline)
         title.adjustsFontForContentSizeCategory = true
         title.numberOfLines = 2
+        title.setContentCompressionResistancePriority(.required, for: .vertical)
 
         author.font = .preferredFont(forTextStyle: .caption1)
         author.adjustsFontForContentSizeCategory = true
         author.textColor = .secondaryLabel
         author.numberOfLines = 1
+        author.setContentCompressionResistancePriority(.required, for: .vertical)
 
         let stack = UIStackView(arrangedSubviews: [cover, title, author])
         stack.axis = .vertical
@@ -287,6 +292,7 @@ final class BookGridCell: UICollectionViewCell {
         let token = UUID()
         configurationToken = token
         cover.image = UIImage(systemName: "book.closed")
+        cover.contentMode = book.coverPNG == nil ? .scaleAspectFit : .scaleAspectFill
 
         guard let data = book.coverPNG else { return }
         if let hit = LibraryCoverThumbnailCache.cached(for: book.id) {

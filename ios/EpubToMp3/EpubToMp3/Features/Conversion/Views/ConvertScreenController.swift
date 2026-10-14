@@ -67,7 +67,7 @@ final class ConvertScreenController: UITableViewController, UIDocumentPickerDele
         if let preselectedFileURL {
             viewModel.selectedFile = preselectedFileURL
         }
-        tableView.register(UITableViewCell.self, forCellReuseIdentifier: "Cell")
+        tableView.register(IOSContentCell.self, forCellReuseIdentifier: "Cell")
         tableView.register(IOSInlineTextFieldCell.self, forCellReuseIdentifier: "TextField")
         tableView.register(IOSSwitchCell.self, forCellReuseIdentifier: "Switch")
     }
