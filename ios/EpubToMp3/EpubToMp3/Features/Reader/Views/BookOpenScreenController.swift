@@ -1,6 +1,5 @@
 #if os(iOS)
 import UIKit
-import Combine
 import UniformTypeIdentifiers
 
 private struct PreparedProjectionRead: Sendable {
@@ -40,7 +39,6 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
     private let settings: AppSettings
     private let bookmarkStore: BookmarkStore
     private let player: AudioPlayer
-    private var playbackStateSubscription: AnyCancellable?
     private let preparedRenderer: PreparedChapterRenderer
     private let preparedChapterStore: PreparedReaderChapterStore
     private let preparedFulltextReader: @Sendable (String) async -> EbookFulltext?
@@ -251,23 +249,7 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
     /// The host owns the iPhone navigation bar. Reader actions live there so
     /// the reading surface never creates a second toolbar below it.
     var navigationBarButtonItems: [UIBarButtonItem] {
-        [tocNavigationItem, readerSettingsNavigationItem, searchNavigationItem, currentPagePlaybackItem]
-    }
-
-    private lazy var currentPagePlaybackItem = makeNavigationItem(
-        symbol: "play.rectangle",
-        identifier: "reader.playCurrentPage",
-        label: L10n.string("player.divergence.fromCurrentPage"),
-        action: #selector(playCurrentPageTapped)
-    )
-
-    @objc private func playCurrentPageTapped() {
-        guard player.isPlaybackForReaderBook(book.id)
-            || (player.snapshot != nil && library.books.first(where: { $0.id == book.id })?.lastJobId == player.snapshot?.jobId) else { return }
-        persistReadingProgress()
-        player.startFromReaderPage(currentReaderChapterIndex,
-            sentenceId: UserDefaults.standard.string(forKey: AudioPlayer.readerCurrentSentenceIdDefaultsKey),
-            sentenceOffsetRatio: lastPublishedReaderPageRatio)
+        [tocNavigationItem, readerSettingsNavigationItem, searchNavigationItem]
     }
 
     private static let reimportTypes: [UTType] = SupportedImportTypes.all
@@ -303,12 +285,6 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
         super.viewDidLoad()
         view.backgroundColor = .systemBackground
         configureNativeReader()
-        playbackStateSubscription = player.$isPlaying.sink { [weak self] isPlaying in
-            guard let self else { return }
-            self.currentPagePlaybackItem.isEnabled = isPlaying
-                && (self.player.isPlaybackForReaderBook(self.book.id)
-                    || (self.player.snapshot != nil && self.library.books.first(where: { $0.id == self.book.id })?.lastJobId == self.player.snapshot?.jobId))
-        }
         loadBook()
         observeOpenStage("reader_view_did_load_completed")
     }

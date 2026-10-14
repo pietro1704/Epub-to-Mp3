@@ -54,6 +54,13 @@ enum ReaderPlaybackTapHandler {
             preferredStyle: .actionSheet
         )
         alert.addAction(UIAlertAction(
+            title: L10n.string("player.divergence.fromWhereStopped"),
+            style: .default
+        ) { _ in
+            player.rememberReaderPlaybackAnchor()
+            player.resume()
+        })
+        alert.addAction(UIAlertAction(
             title: L10n.string("player.divergence.fromCurrentPage"),
             style: .default
         ) { _ in
@@ -65,17 +72,6 @@ enum ReaderPlaybackTapHandler {
                 sentenceOffsetRatio: pageRatio
             )
         })
-        alert.addAction(UIAlertAction(
-            title: L10n.string("player.divergence.fromWhereStopped"),
-            style: .default
-        ) { _ in
-            player.rememberReaderPlaybackAnchor()
-            player.resume()
-        })
-        alert.addAction(UIAlertAction(
-            title: L10n.string("player.divergence.fromBeginning"),
-            style: .destructive
-        ) { _ in player.startFromBeginning() })
         alert.addAction(UIAlertAction(title: L10n.string("common.cancel"), style: .cancel))
         if let popover = alert.popoverPresentationController {
             popover.sourceView = viewController.view

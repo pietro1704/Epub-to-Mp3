@@ -101,8 +101,12 @@ final class ReaderPagePlaybackChoiceTests: XCTestCase {
 
         let alert = try XCTUnwrap(presenter.presentedViewController as? UIAlertController,
                                  "Play after a page turn must ask before resuming the old passage.")
-        XCTAssertTrue(alert.actions.contains { $0.title == L10n.string("player.divergence.fromCurrentPage") })
-        XCTAssertTrue(alert.actions.contains { $0.title == L10n.string("player.divergence.fromWhereStopped") })
+        XCTAssertEqual(alert.actions.map(\.title), [
+            L10n.string("player.divergence.fromWhereStopped"),
+            L10n.string("player.divergence.fromCurrentPage"),
+            L10n.string("common.cancel")
+        ])
+        XCTAssertEqual(alert.actions.last?.style, .cancel)
         XCTAssertFalse(player.isPlaying, "Presenting the choice must leave audio paused.")
     }
 }

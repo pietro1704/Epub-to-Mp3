@@ -154,19 +154,34 @@ final class MacReaderPagePlaybackChoiceTests: XCTestCase {
         continuation.performClick(nil)
         try await waitForPlayback(player, minimum: pausedAt - 1)
         XCTAssertLessThan(player.positionSeconds, pausedAt + 3)
-        let currentPage = try XCTUnwrap(buttons(in: controller.view).first {
+        XCTAssertFalse(buttons(in: controller.view).contains {
             $0.accessibilityIdentifier() == "reader.playCurrentPage"
         })
-        XCTAssertTrue(currentPage.isEnabled)
-        currentPage.performClick(nil)
-        for _ in 0..<50 where player.isSeeking || player.positionSeconds > 5 {
-            try await Task.sleep(nanoseconds: 100_000_000)
-        }
-        XCTAssertLessThan(player.positionSeconds, 5)
-        XCTAssertTrue(player.isPlaying)
-        standard.set("another-reader", forKey: ReaderSessionState.currentlyReadingBookIDKey)
-        for _ in 0..<20 where currentPage.isEnabled { try await Task.sleep(nanoseconds: 50_000_000) }
-        XCTAssertFalse(currentPage.isEnabled, "A reader-book change must disable another book's page action without pausing audio.")
+        standard.set(0.3, forKey: AudioPlayer.readerCurrentPageRatioDefaultsKey)
+        play.performClick(nil)
+        XCTAssertFalse(player.isPlaying, "A page turn while playing must preserve normal Pause.")
+        let cancelledAt = player.positionSeconds
+        play.performClick(nil)
+        let cancelSheet = try await waitForSheet(window)
+        let sheetButtons = buttons(in: try XCTUnwrap(cancelSheet.contentView))
+        XCTAssertEqual(Set(sheetButtons.map(\.title)), Set([
+            L10n.string("player.divergence.fromWhereStopped"),
+            L10n.string("player.divergence.fromCurrentPage"), L10n.string("common.cancel")
+        ]))
+        let cancel = try XCTUnwrap(sheetButtons.first { $0.title == L10n.string("common.cancel") })
+        cancel.performClick(nil)
+        try await Task.sleep(nanoseconds: 200_000_000)
+        XCTAssertFalse(player.isPlaying)
+        XCTAssertEqual(player.positionSeconds, cancelledAt, accuracy: 0.5)
+        play.performClick(nil)
+        let newPageSheet = try await waitForSheet(window)
+        try XCTUnwrap(buttons(in: try XCTUnwrap(newPageSheet.contentView)).first {
+            $0.title == L10n.string("player.divergence.fromCurrentPage")
+        }).performClick(nil)
+        try await waitForPlayback(player, minimum: 17)
+        player.pause()
+        play.performClick(nil)
+        XCTAssertNil(window.attachedSheet, "Unchanged reader page must resume without another choice.")
         XCTAssertTrue(player.isPlaying)
     }
 

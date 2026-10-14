@@ -157,8 +157,8 @@
 /* Play-tap divergence dialog (reader on a different chapter than the audio) */
 "player.divergence.title" = "Continue from where?";
 "player.divergence.message" = "The page you're reading isn't where the audio left off.";
-"player.divergence.fromCurrentPage" = "Play from here";
-"player.divergence.fromWhereStopped" = "Continue playback";
+"player.divergence.fromCurrentPage" = "Listen from this page";
+"player.divergence.fromWhereStopped" = "Continue where I left off";
 "player.divergence.fromBeginning" = "From the beginning";
 "common.cancel" = "Cancel";
 "common.back" = "Back";

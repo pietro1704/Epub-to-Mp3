@@ -154,8 +154,8 @@
 /* Diálogo de divergência ao tocar play (leitor em capítulo diferente do áudio) */
 "player.divergence.title" = "Continuar de onde?";
 "player.divergence.message" = "A página que você está lendo não é onde o áudio parou.";
-"player.divergence.fromCurrentPage" = "Tocar daqui";
-"player.divergence.fromWhereStopped" = "Continuar reprodução";
+"player.divergence.fromCurrentPage" = "Ouvir a partir desta página";
+"player.divergence.fromWhereStopped" = "Continuar de onde parei";
 "player.divergence.fromBeginning" = "Do início";
 "common.cancel" = "Cancelar";
 "common.back" = "Voltar";
