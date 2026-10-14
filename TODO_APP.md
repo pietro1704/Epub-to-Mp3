@@ -1614,3 +1614,15 @@ que aparecem. Para cada item:
 Pare e pergunte se um item depender de decisão de produto/escopo que não
 esteja clara neste arquivo (ex: qual plataforma priorizar no Flutter).
 ```
+## APP-20261014-16E — Launch on physical iPhone 16e
+
+- [x] Stop the iPhone SE Simulator and launch the existing signed app on the paired iPhone 16e.
+- Verification: `mise run ios:device:run` under the shared heavy-job guard installed and launched `com.pietrocode.epubtomp3` successfully on 2026-10-14. Simulator shutdown confirmed. Existing Debug device artifact reused; no source changes or new build.
+
+## APP-20261014-TTS — Lightweight TTS research and five-model benchmark
+
+- [x] Research and shortlist five lightweight TTS models suitable for the native Apple app, prioritizing Portuguese, first playable audio, resource use, licensing, and Rust/native integration.
+- [x] Run an isolated, reproducible benchmark for the five candidates; record exact model artifacts, hardware, corpus, latency, synthesis speed, peak memory, disk size, audio outputs, and compatibility blockers. Do not treat published metrics as local measurements.
+- Verification: physical iPhone 16e/iOS 27.0.1, two pt-BR fixtures, three attempts each. All five offline checkpoints completed 6/6 synthesis/full-decode checks. Production Rust Edge completed 5/6; its final attempt hit the benchmark's 45-second deadline. Thirty-five audio outputs validated. Edresson logged skipped nasal phonemes; Pocket used about 1.16 GiB peak RSS. No English, blind quality, battery, thermal or end-to-end product verification. Results: `docs/research/2026-10-14-tts-phone-benchmark.md`, detailed evidence `.reports/tts-six/20261014/`. Production provider selection remains unchanged.
+- User correction: include Edge as the sixth online baseline. Downloads and isolated benchmark execution are explicitly authorized; delete newly downloaded test dependencies and weights after finishing, preserving pre-existing models and benchmark evidence.
+- Cleanup verified: `tts:phone:cleanup` removed 2.25 GiB/4,339 files and confirmed the isolated tree absent. Test app uninstalled from the iPhone; pre-existing models retained. Production app relaunched with its live process confirmed; Simulator remained shut down. `tts:phone:summary`, Ruby syntax checks and repository `preflight` passed; no remote CI monitoring.

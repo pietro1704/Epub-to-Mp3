@@ -1243,6 +1243,30 @@ run = "bash scripts/device-workflow.sh test"
 description = "Check physical device readiness once; fail immediately when locked"
 run = "bash scripts/device-workflow.sh preflight"
 
+[tasks."tts:phone:benchmark"]
+description = "Run the isolated six-candidate TTS research harness on the authorized iPhone 16e"
+run = "mise exec -- ruby docs/research/tts-phone-benchmark/run.rb"
+
+[tasks."tts:phone:download"]
+description = "Download the explicitly authorized isolated TTS benchmark dependencies and model assets"
+run = "mise exec -- ruby docs/research/tts-phone-benchmark/download.rb"
+
+[tasks."tts:phone:build-pocket"]
+description = "Build the isolated Portuguese Pocket C++ adapter for iOS under the shared lease"
+run = "mise exec -- ruby docs/research/tts-phone-benchmark/build-pocket.rb"
+
+[tasks."tts:phone:build-edge"]
+description = "Build an isolated C entrypoint for the production Rust Edge client on iOS"
+run = "mise exec -- ruby docs/research/tts-phone-benchmark/build-edge.rb"
+
+[tasks."tts:phone:cleanup"]
+description = "Delete only newly downloaded isolated TTS test assets after native jobs finish"
+run = "mise exec -- ruby docs/research/tts-phone-benchmark/cleanup.rb"
+
+[tasks."tts:phone:summary"]
+description = "Validate the six phone benchmark reports and summarize comparable measured fixtures"
+run = "mise exec -- ruby docs/research/tts-phone-benchmark/summarize.rb"
+
 [tasks."ios:device:benchmark"]
 description = "Benchmark explicit EPUB/ranges on iPhone; --case BOOK START END, at most two chapters unless --whole-book"
 run = "bash scripts/device-workflow.sh benchmark"
