@@ -12,6 +12,11 @@ on:
   schedule:
     - cron: "17 * * * *"
   workflow_dispatch:
+    inputs:
+      draft_pr:
+        description: 'One-time bootstrap: mark this owner draft ready only after its checks pass'
+        required: false
+        type: string
 
 permissions:
   contents: write
@@ -30,7 +35,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Verify automatic merge gate
-        run: bash scripts/test_pr_merge_checks.sh
+        run: |
+          bash scripts/test_pr_merge_checks.sh
+          bash scripts/test_ready_checked_draft_pr.sh
+      - name: Bootstrap checked draft delivery
+        if: github.event_name == 'workflow_dispatch' && inputs.draft_pr != ''
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          DRAFT_PR: ${{ inputs.draft_pr }}
+        run: bash scripts/ready_checked_draft_pr.sh
       - name: Enable auto-merge and refresh one outdated branch
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

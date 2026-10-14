@@ -1507,10 +1507,10 @@ esteja clara neste arquivo (ex: qual plataforma priorizar no Flutter).
 
 ## SPEED-MENU-2026-10-14
 
-- [ ] Limit every native speed menu to 0.75x, 1.25x, 1.5x, 1.75x, 2.5x, and 3x.
-- [ ] Keep open speed menus stable during unrelated playback updates and update the selected rate correctly.
-- [ ] Verify native iOS 15.5 iPhone SE and macOS behavior with focused XCTest and app interaction.
-- [ ] Persist feature branch + PR + automatic merge after successful required checks as the default delivery workflow.
+- [x] Limit every native speed menu to 0.75x, 1.25x, 1.5x, 1.75x, 2.5x, and 3x.
+- [x] Keep open speed menus stable during unrelated playback updates and update the selected rate correctly.
+- [x] Verify native iOS 15.5 iPhone SE and macOS behavior with focused XCTest and app interaction.
+- [x] Persist feature branch + PR + automatic merge after successful required checks as the default delivery workflow.
 - [ ] Deliver this slice through a PR to master and automatic merge after the green-check gate.
 
 Verification (2026-10-14):
@@ -1521,3 +1521,7 @@ Verification (2026-10-14):
 - `mise run preflight` and `git diff --check`: passed. Local Python/Ruff checks deferred to CI.
 - Broader initial iOS run: the existing testMiniPlayerClockTickUpdatesProgressWithoutDecodingArtworkAgain failed on asynchronous artwork lookup; it was excluded from the focused acceptance rerun and remains outside this task. Two initial macOS test runs had incomplete Xcode result bundles; the final isolated bundle is readable and passed.
 - Delivery safety: master currently has no required-check protection. The PR stays draft until checks pass, preventing the old automatic-merge workflow from bypassing CI. The updated workflow explicitly gates future automatic merges on successful CI and completed checks.
+
+PR: https://github.com/pietro1704/Epub-to-Mp3/pull/793. One-time workflow dispatch on the reviewed feature ref waits for the exact draft head checks and marks it ready only on success; future non-draft feature PRs use the default checked automatic merger.
+
+Bootstrap automation verification: `mise run pr:auto-merge:test` passed 12 gate cases and 4 draft-delivery cases (successful delivery, failed CI, changed head, invalid PR number). Product/runtime code did not change after native verification.

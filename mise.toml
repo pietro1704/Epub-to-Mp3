@@ -1468,4 +1468,4 @@ run = "mise exec -- cargo build -p piper-runtime --features onnxruntime,piper-in
 
 [tasks."pr:auto-merge:test"]
 description = "Verify the automatic PR merge gate rejects pending and failed checks"
-run = "bash scripts/test_pr_merge_checks.sh"
+run = "bash scripts/test_pr_merge_checks.sh && bash scripts/test_ready_checked_draft_pr.sh"
