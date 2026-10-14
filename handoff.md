@@ -1,5 +1,20 @@
 # Hermes ↔ Claude Code Handoff
 
+## Delivered reader playback choice — APP-20261014-01
+
+Correction b0186420eb committed and pushed on fix/reader-page-playback-choice.
+Prior work c30ae5a7e0 pushed on feature/native-tts-fallback with master
+integration 8c5267535e. Paused Play offers current page versus existing cursor
+after reader movement; playing exposes a separate current-page action.
+Unchanged-page pause/resume, provider policy and reader geometry are preserved.
+Exact SE/iOS15.5: 68/68 native and 2/2 actual GUI passed. Mac: 64/64 runtime
+tests plus final 3/3 window/control/handoff tests passed; the first Mac result
+bundle failed saving, so its raw runtime log is the evidence.
+Original preferences/LOTR restored; only normal SE app remains open, PID 91535.
+Owned fixtures archived reversibly under /tmp/reader-page-choice-artifacts.
+Full evidence and proportional timing limitation:
+docs/plans/2026-10-14-reader-page-playback-choice.md.
+
 ## Completed local SE streaming goal — APP-20261013-07
 
 Actual iPhone SE (1st generation), iOS15.5, Xcode16.4 verification completed.

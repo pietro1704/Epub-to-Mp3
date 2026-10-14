@@ -83,7 +83,9 @@ changes CI/Python/web dependencies, without touching verified Apple/Rust code.
   Without sentence timing, page playback uses proportional text/chapter timing,
   not an exact word timestamp. Physical phones and CI were not exercised.
 
-Delivery: correction verified; commit/push pending. Prior work was pushed on
+Delivery: correction b0186420eb committed and pushed successfully on
+fix/reader-page-playback-choice. Normal SE app PID 91535; screenshot:
+/tmp/reader-page-choice-final-normal-app.png. Prior work was pushed on
 feature/native-tts-fallback at 8c5267535e, including c30ae5a7e0.
 
 Postmortem: exercise pause preservation together with real page turns using
