@@ -15,7 +15,7 @@ soundfile>=0.14.0
 # Ebook processing
 beautifulsoup4>=4.15.0
 ebooklib>=0.20
-pypdf>=6.19.0
+pypdf>=6.20.0
 lxml>=6.1.3
 mobi>=0.4.1  # MOBI/AZW3 unpacking — server/CLI only, never embedded on-device
 rarfile>=4.5  # CBR visual reading — server/CLI only, requires a RAR backend
@@ -28,18 +28,18 @@ static-ffmpeg
 mutagen>=1.48.1
 
 # Web server
-fastapi!=0.136.3,>=0.141.1
+fastapi!=0.136.3,>=0.143.0
 uvicorn[standard]>=0.54.0
 python-multipart>=0.0.32
 
 # Data
-pydantic>=2.13.5,<3.0.0
+pydantic>=2.14.0,<3.0.0
 pandas>=3.0.3,<4.0.0
 fsspec<=2026.9.0,>=2026.9.0
 packaging>=26.3,<27.0
 
 # HTTP / async
-aiohttp>=3.14.3,<4.0.0
+aiohttp>=3.14.4,<4.0.0
 aiofiles>=25.1.0
 httpx>=0.28.1
 certifi>=2026.7.22
@@ -50,8 +50,8 @@ tqdm
 argcomplete>=3.7.2
 
 # HF
-huggingface_hub>=1.32.0
-transformers>=5.17.0
+huggingface_hub>=2.2.0
+transformers>=5.19.0
 
 # Progress / monitoring
 psutil>=7.2.2
