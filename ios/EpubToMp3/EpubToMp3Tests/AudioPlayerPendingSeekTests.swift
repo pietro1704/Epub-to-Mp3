@@ -14,6 +14,7 @@ final class AudioPlayerPendingSeekTests: XCTestCase {
         streamTargetReady: Bool = true,
         streamSegmentCount: Int = 12,
         streamCurrentComplete: Bool = false,
+        providesStreamEstimates: Bool = true,
         includeReadyThirdChapter: Bool = false,
         embeddedJob: Bool = false,
         snapshotIndexBase: Int = 0,
@@ -103,8 +104,10 @@ final class AudioPlayerPendingSeekTests: XCTestCase {
                 player.enqueueSegment(data: try Data(contentsOf: targetURL), chapterIndex: 1, segmentIndex: 0,
                                       publication: streamPublications[1])
             }
-            player.setSegmentChapterEstimate(Double(streamSegmentCount) * 15, forChapterIndex: 0)
-            player.setSegmentChapterEstimate(15, forChapterIndex: 1)
+            if providesStreamEstimates {
+                player.setSegmentChapterEstimate(Double(streamSegmentCount) * 15, forChapterIndex: 0)
+                player.setSegmentChapterEstimate(15, forChapterIndex: 1)
+            }
         } else {
             player.play(snapshot: snapshot(targetReady: false), startingAt: 0)
         }
@@ -304,6 +307,39 @@ final class AudioPlayerPendingSeekTests: XCTestCase {
             XCTAssertEqual(player.currentChapterIndex, 1)
             XCTAssertFalse(player.isPlaying)
             XCTAssertEqual(try XCTUnwrap(player.testHook_currentPlayerItem()).currentTime().seconds, 0, accuracy: 0.1)
+        }
+    }
+
+    @MainActor
+    func testReaderPageChoiceWaitsForUnknownChapterDurationAndKeepsItsRatio() async throws {
+        try await withPlayingFixture(streaming: true, streamTargetReady: false,
+                                     providesStreamEstimates: false) { player, snapshot in
+            player.pause()
+            player.startFromReaderPage(1, sentenceOffsetRatio: 0.5)
+            XCTAssertEqual(player.pendingNavigation?.chapterIndex, 1)
+            let url = try XCTUnwrap(URL(string: try XCTUnwrap(snapshot(true).playableChapters.last?.downloadUrl)))
+            player.enqueueSegment(data: try Data(contentsOf: url), chapterIndex: 1, segmentIndex: 0)
+            player.updateSnapshot(snapshot(true))
+            try await self.waitForNavigation(player)
+            XCTAssertEqual(player.currentChapterIndex, 1)
+            XCTAssertEqual(try XCTUnwrap(player.testHook_currentPlayerItem()).currentTime().seconds, 7.5, accuracy: 1,
+                           "The chosen page must survive duration discovery, rather than restarting at zero.")
+            XCTAssertTrue(player.isPlaying)
+        }
+    }
+
+    @MainActor
+    func testReaderPageRatioSurvivesStreamingFinalFileHandoff() async throws {
+        try await withPlayingFixture(streaming: true, streamTargetReady: false,
+                                     providesStreamEstimates: false) { player, snapshot in
+            player.pause()
+            player.startFromReaderPage(1, sentenceOffsetRatio: 0.5)
+            XCTAssertEqual(player.pendingNavigation?.chapterIndex, 1)
+            player.finishStreaming(snapshot: snapshot(true))
+            try await self.waitForNavigation(player)
+            XCTAssertEqual(player.currentChapterIndex, 1)
+            XCTAssertEqual(try XCTUnwrap(player.testHook_currentPlayerItem()).currentTime().seconds, 7.5, accuracy: 1)
+            XCTAssertTrue(player.isPlaying)
         }
     }
 

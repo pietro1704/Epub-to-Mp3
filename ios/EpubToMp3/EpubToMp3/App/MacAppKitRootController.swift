@@ -67,6 +67,8 @@ final class MacAppKitRootController: NSSplitViewController, NSToolbarDelegate {
             self?.playFromCurrentReaderPosition()
         }, onShowFullPlayer: { [weak playerPresentation] in
             playerPresentation?.showFullPlayer()
+        }, onPlayCurrentPage: { [weak self] in
+            self?.playCurrentReaderPage()
         })
         let sidebar = NSSplitViewItem(sidebarWithViewController: makeSidebar())
         sidebar.minimumThickness = 190
@@ -533,17 +535,41 @@ final class MacAppKitRootController: NSSplitViewController, NSToolbarDelegate {
     private func playFromCurrentReaderPosition() {
         // Transport Play after a deliberate pause resumes the existing item,
         // even when the reader still publishes the chapter's opening page.
-        if player.hasPausedPlaybackToResume {
-            player.resume()
-            return
-        }
         guard let bookID = UserDefaults.standard.string(forKey: ReaderSessionState.currentlyReadingBookIDKey) else {
             if player.snapshot == nil { startPlaybackForCurrentBook() } else { player.resume() }
             return
         }
         let chapterIndex = ReaderPlaybackPriorityChapter.index(bookID: bookID)
         let pageRatio = readerPageRatio(bookID: bookID)
-        if let snapshot = player.snapshot,
+        let belongsToReader = player.isPlaybackForReaderBook(bookID)
+            || (player.snapshot != nil && library.books.first(where: { $0.id == bookID })?.lastJobId == player.snapshot?.jobId)
+        if player.hasLoadedAudioQueue, belongsToReader {
+            switch player.playTapDecision(readerChapterIndex: chapterIndex, readerPageRatio: pageRatio) {
+            case .pause: player.pause()
+            case .resume: player.resume()
+            case .startFromReaderPage: playCurrentReaderPage()
+            case .offerStartChoice:
+                let alert = NSAlert()
+                alert.messageText = L10n.string("player.divergence.title")
+                alert.informativeText = L10n.string("player.divergence.message")
+                alert.addButton(withTitle: L10n.string("player.divergence.fromCurrentPage"))
+                alert.addButton(withTitle: L10n.string("player.divergence.fromWhereStopped"))
+                alert.addButton(withTitle: L10n.string("common.cancel"))
+                let resolve: (NSApplication.ModalResponse) -> Void = { [weak self] response in
+                    guard let self else { return }
+                    if response == .alertFirstButtonReturn { self.playCurrentReaderPage() }
+                    else if response == .alertSecondButtonReturn {
+                        self.player.rememberReaderPlaybackAnchor()
+                        self.player.resume()
+                    }
+                }
+                if let window = view.window { alert.beginSheetModal(for: window, completionHandler: resolve) }
+            }
+            return
+        }
+        if !belongsToReader, player.snapshot != nil {
+            startPlaybackForCurrentBook()
+        } else if let snapshot = player.snapshot,
            snapshot.state == "finished" || snapshot.playableChapters.contains(where: { $0.index == chapterIndex }) {
             player.startFromReaderPage(chapterIndex, sentenceOffsetRatio: pageRatio)
         } else {
@@ -554,6 +580,15 @@ final class MacAppKitRootController: NSSplitViewController, NSToolbarDelegate {
     private func readerPageRatio(bookID: String) -> Double? {
         UserDefaults.standard.object(forKey: AudioPlayer.readerCurrentPageRatioDefaultsKey) as? Double
             ?? ReaderProgressStore.read(bookId: bookID)?.offsetFraction
+    }
+
+    private func playCurrentReaderPage() {
+        guard let bookID = UserDefaults.standard.string(forKey: ReaderSessionState.currentlyReadingBookIDKey) else { return }
+        guard player.isPlaybackForReaderBook(bookID)
+            || (player.snapshot != nil && library.books.first(where: { $0.id == bookID })?.lastJobId == player.snapshot?.jobId) else { return }
+        player.startFromReaderPage(ReaderPlaybackPriorityChapter.index(bookID: bookID),
+            sentenceId: UserDefaults.standard.string(forKey: AudioPlayer.readerCurrentSentenceIdDefaultsKey),
+            sentenceOffsetRatio: readerPageRatio(bookID: bookID))
     }
 
     private func refreshFullPlayer() {
@@ -602,6 +637,8 @@ private final class MacPlayerBarViewController: NSViewController {
     private let library: LibraryStore
     private let onStartPlayback: () -> Void
     private let onShowFullPlayer: () -> Void
+    private let onPlayCurrentPage: () -> Void
+    private let currentPageButton = NSButton()
     private let titleLabel = NSTextField(labelWithString: "")
     private let chapterLabel = NSTextField(labelWithString: "")
     private let etaLabel = NSTextField(labelWithString: "")
@@ -612,14 +649,18 @@ private final class MacPlayerBarViewController: NSViewController {
     private let nextButton = NSButton()
     private let rateButton = NSButton()
     private var cancellable: AnyCancellable?
+    private var readerPageStateCancellable: AnyCancellable?
+    private var readerBookStateCancellable: AnyCancellable?
     private var contentEdgeConstraints: [NSLayoutConstraint] = []
     private var isCollapsed = true
 
-    init(player: AudioPlayer, library: LibraryStore, onStartPlayback: @escaping () -> Void, onShowFullPlayer: @escaping () -> Void) {
+    init(player: AudioPlayer, library: LibraryStore, onStartPlayback: @escaping () -> Void, onShowFullPlayer: @escaping () -> Void,
+         onPlayCurrentPage: @escaping () -> Void) {
         self.player = player
         self.library = library
         self.onStartPlayback = onStartPlayback
         self.onShowFullPlayer = onShowFullPlayer
+        self.onPlayCurrentPage = onPlayCurrentPage
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -690,7 +731,11 @@ private final class MacPlayerBarViewController: NSViewController {
         let playControls = NSStackView(views: [playButton, playSpinner])
         playControls.orientation = .horizontal
         playControls.alignment = .centerY
-        let stack = NSStackView(views: [openButton, previousButton, playControls, nextButton, rateButton])
+        currentPageButton.title = L10n.string("player.divergence.fromCurrentPage")
+        currentPageButton.target = self
+        currentPageButton.action = #selector(playCurrentPage)
+        currentPageButton.setAccessibilityIdentifier("reader.playCurrentPage")
+        let stack = NSStackView(views: [openButton, currentPageButton, previousButton, playControls, nextButton, rateButton])
         stack.orientation = .horizontal
         stack.alignment = .centerY
         stack.distribution = .fill
@@ -720,7 +765,26 @@ private final class MacPlayerBarViewController: NSViewController {
         }
         view = background
         cancellable = player.objectWillChange.sink { [weak self] _ in self?.refresh() }
+        readerPageStateCancellable = player.$isPlaying.sink { [weak self] playing in
+            self?.updateCurrentPageAction(isPlaying: playing)
+        }
+        readerBookStateCancellable = NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)
+            .receive(on: DispatchQueue.main)
+            .map { _ in UserDefaults.standard.string(forKey: ReaderSessionState.currentlyReadingBookIDKey) }
+            .removeDuplicates()
+            .sink { [weak self] _ in
+                guard let self else { return }
+                self.updateCurrentPageAction(isPlaying: self.player.isPlaying)
+            }
         refresh()
+    }
+
+    private func updateCurrentPageAction(isPlaying: Bool) {
+        let bookID = UserDefaults.standard.string(forKey: ReaderSessionState.currentlyReadingBookIDKey)
+        currentPageButton.isEnabled = isPlaying && bookID.map { readerBookID in
+            player.isPlaybackForReaderBook(readerBookID)
+                || (player.snapshot != nil && library.books.first(where: { $0.id == readerBookID })?.lastJobId == player.snapshot?.jobId)
+        } == true
     }
 
     func setCollapsed(_ collapsed: Bool) {
@@ -761,6 +825,7 @@ private final class MacPlayerBarViewController: NSViewController {
         refresh()
     }
     @objc private func showFullPlayer() { onShowFullPlayer() }
+    @objc private func playCurrentPage() { onPlayCurrentPage() }
 
     private func refresh() {
         let currentBookID = UserDefaults.standard.string(forKey: AudioPlayer.currentBookIDDefaultsKey)

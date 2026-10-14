@@ -1,5 +1,6 @@
 #if os(iOS)
 import UIKit
+import Combine
 import UniformTypeIdentifiers
 
 private struct PreparedProjectionRead: Sendable {
@@ -39,6 +40,7 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
     private let settings: AppSettings
     private let bookmarkStore: BookmarkStore
     private let player: AudioPlayer
+    private var playbackStateSubscription: AnyCancellable?
     private let preparedRenderer: PreparedChapterRenderer
     private let preparedChapterStore: PreparedReaderChapterStore
     private let preparedFulltextReader: @Sendable (String) async -> EbookFulltext?
@@ -249,7 +251,23 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
     /// The host owns the iPhone navigation bar. Reader actions live there so
     /// the reading surface never creates a second toolbar below it.
     var navigationBarButtonItems: [UIBarButtonItem] {
-        [tocNavigationItem, readerSettingsNavigationItem, searchNavigationItem]
+        [tocNavigationItem, readerSettingsNavigationItem, searchNavigationItem, currentPagePlaybackItem]
+    }
+
+    private lazy var currentPagePlaybackItem = makeNavigationItem(
+        symbol: "play.rectangle",
+        identifier: "reader.playCurrentPage",
+        label: L10n.string("player.divergence.fromCurrentPage"),
+        action: #selector(playCurrentPageTapped)
+    )
+
+    @objc private func playCurrentPageTapped() {
+        guard player.isPlaybackForReaderBook(book.id)
+            || (player.snapshot != nil && library.books.first(where: { $0.id == book.id })?.lastJobId == player.snapshot?.jobId) else { return }
+        persistReadingProgress()
+        player.startFromReaderPage(currentReaderChapterIndex,
+            sentenceId: UserDefaults.standard.string(forKey: AudioPlayer.readerCurrentSentenceIdDefaultsKey),
+            sentenceOffsetRatio: lastPublishedReaderPageRatio)
     }
 
     private static let reimportTypes: [UTType] = SupportedImportTypes.all
@@ -285,6 +303,12 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
         super.viewDidLoad()
         view.backgroundColor = .systemBackground
         configureNativeReader()
+        playbackStateSubscription = player.$isPlaying.sink { [weak self] isPlaying in
+            guard let self else { return }
+            self.currentPagePlaybackItem.isEnabled = isPlaying
+                && (self.player.isPlaybackForReaderBook(self.book.id)
+                    || (self.player.snapshot != nil && self.library.books.first(where: { $0.id == self.book.id })?.lastJobId == self.player.snapshot?.jobId))
+        }
         loadBook()
         observeOpenStage("reader_view_did_load_completed")
     }
@@ -839,7 +863,26 @@ final class BookOpenScreenController: UIViewController, UIDocumentPickerDelegate
 
     private func publishReaderPlaybackAnchor(_ anchor: ReadingAnchor? = nil) {
         let ratio: Double
-        if let anchor {
+        let textLength = textView.attributedText.length
+        var character = anchor?.characterOffset
+        let canReadGlyphAnchor = hasRestoredInitialPosition && !isLoadingContent && !isViewportTransitioning
+        if character == nil, canReadGlyphAnchor, isPaginatedMode,
+           let fragment = paginatedLayoutResult?.protectedFragments.first(where: {
+               $0.contentRect.minY >= scrollView.contentOffset.y - 0.5
+           }) {
+            character = textView.layoutManager.characterIndexForGlyph(at: fragment.glyphRange.location)
+        }
+        if character == nil, canReadGlyphAnchor, textLength > 0 {
+            var visible = textView.convert(scrollView.bounds, from: scrollView)
+            visible.origin.y -= textView.textContainerInset.top
+            let glyphs = textView.layoutManager.glyphRange(forBoundingRect: visible, in: textView.textContainer)
+            if glyphs.length > 0 { character = textView.layoutManager.characterIndexForGlyph(at: glyphs.location) }
+        }
+        if let character, textLength > 0 {
+            // Audio follows the first visible text, not the end of the scroll
+            // range: the last page still starts before the chapter's last word.
+            ratio = Double(min(max(character, 0), textLength)) / Double(textLength)
+        } else if let anchor {
             ratio = Double(anchor.offsetFraction)
         } else {
             let scrollable = max(

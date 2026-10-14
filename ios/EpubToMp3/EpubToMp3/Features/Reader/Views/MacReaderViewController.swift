@@ -1112,7 +1112,19 @@ final class MacReaderViewController: NSViewController, NSTableViewDataSource, NS
         let fraction = clipView.bounds.origin.y / scrollable
         ReaderProgressStore.save(bookId: bookId, chapterIndex: selectedChapter, offsetFraction: fraction)
         if let chapter = chapter(at: selectedChapter) {
-            ReaderPlaybackAnchor.publish(chapter: chapter, offsetFraction: fraction)
+            var playbackFraction = clipView.bounds.origin.y / max(documentView.frame.height, 1)
+            if let text = documentView as? NSTextView,
+               let manager = text.layoutManager, let container = text.textContainer,
+               text.string.utf16.count > 0 {
+                var visible = clipView.documentVisibleRect
+                visible.origin.y -= text.textContainerInset.height
+                let glyphs = manager.glyphRange(forBoundingRect: visible, in: container)
+                if glyphs.length > 0 {
+                    playbackFraction = Double(manager.characterIndexForGlyph(at: glyphs.location))
+                        / Double(text.string.utf16.count)
+                }
+            }
+            ReaderPlaybackAnchor.publish(chapter: chapter, offsetFraction: playbackFraction)
         }
     }
 

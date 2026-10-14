@@ -168,6 +168,35 @@ final class AudioPlayer: ObservableObject {
     /// this to resume that cursor instead of treating the next Play tap as a
     /// new request from the reader's page anchor.
     private(set) var hasPausedPlaybackToResume = false
+    private struct ReaderPlaybackAnchor {
+        let bookID: String?
+        let chapterIndex: Int
+        let pageRatio: Double?
+    }
+    private var readerPlaybackAnchor: ReaderPlaybackAnchor?
+
+    func isPlaybackForReaderBook(_ bookID: String) -> Bool {
+        readerPlaybackAnchor?.bookID == bookID
+    }
+
+    /// Acknowledges the reader location for an explicit playback choice.
+    func rememberReaderPlaybackAnchor() {
+        let defaults = UserDefaults.standard
+        guard let chapter = defaults.object(forKey: Self.readerCurrentChapterIndexDefaultsKey) as? Int else { return }
+        readerPlaybackAnchor = ReaderPlaybackAnchor(
+            bookID: defaults.string(forKey: ReaderSessionState.currentlyReadingBookIDKey),
+            chapterIndex: chapter,
+            pageRatio: defaults.object(forKey: Self.readerCurrentPageRatioDefaultsKey) as? Double
+        )
+    }
+
+    private func readerMovedFromPlaybackAnchor(chapterIndex: Int, pageRatio: Double?) -> Bool {
+        guard let anchor = readerPlaybackAnchor else { return false }
+        if anchor.bookID != UserDefaults.standard.string(forKey: ReaderSessionState.currentlyReadingBookIDKey)
+            || anchor.chapterIndex != chapterIndex { return true }
+        guard let pageRatio, let previous = anchor.pageRatio else { return pageRatio != anchor.pageRatio }
+        return abs(pageRatio - previous) > 0.001
+    }
     @Published private(set) var rate: PlaybackRate = .x100
     /// High-frequency transport state is published by `playbackClock`
     /// instead of this global object. The computed compatibility surface
@@ -287,6 +316,7 @@ final class AudioPlayer: ObservableObject {
         let chapterIndex: Int
         var autoplay: Bool
         var position: TimeInterval = 0
+        var readerPageRatio: Double? = nil
         var allowsFinalEndpoint = false
         var isApplying = false
     }
@@ -1011,6 +1041,7 @@ final class AudioPlayer: ObservableObject {
         restoreAutoplay: Bool = true
     ) {
         ensureRemoteCommands()
+        if self.snapshot?.jobId != snapshot.jobId { readerPlaybackAnchor = nil }
         hasPausedPlaybackToResume = false
         // MP3 takeover: if the speech fallback was holding the place,
         // shut it down BEFORE we set up the AVQueuePlayer so the user
@@ -1254,7 +1285,7 @@ final class AudioPlayer: ObservableObject {
             activeSeekJourneyID = journeyID
             pending = PendingChapterSeek(id: pending.id, jobID: pending.jobID,
                                          chapterIndex: targetIndex, autoplay: pending.autoplay,
-                                         position: pending.position)
+                                         position: pending.position, readerPageRatio: pending.readerPageRatio)
             pendingChapterSeek = pending
             isSeeking = true
             isConverting = !snapshot.isTerminal
@@ -1383,6 +1414,7 @@ final class AudioPlayer: ObservableObject {
     }
 
     func resume() {
+        if readerPlaybackAnchor == nil { rememberReaderPlaybackAnchor() }
         if activeSeekAutoplay != nil { activeSeekAutoplay = true }
         if pendingChapterSeek != nil {
             pendingChapterSeek?.autoplay = true
@@ -1686,6 +1718,14 @@ final class AudioPlayer: ObservableObject {
     ) -> PlayTapDecision {
         if isPlaying { return .pause }
         guard let snapshot else { return .resume }
+        if let bookID = readerPlaybackAnchor?.bookID,
+           bookID != UserDefaults.standard.string(forKey: ReaderSessionState.currentlyReadingBookIDKey) {
+            return .resume
+        }
+        if readerMovedFromPlaybackAnchor(chapterIndex: readerChapterIndex, pageRatio: readerPageRatio) {
+            return .offerStartChoice
+        }
+        if hasPausedPlaybackToResume { return .resume }
         // Embedded-runtime path: chapters are fed through `enqueueSegment`
         // and the snapshot carries no `downloadUrl`s, so
         // `playableChapters` is permanently empty even though a live
@@ -1793,7 +1833,35 @@ final class AudioPlayer: ObservableObject {
         sentenceOffsetRatio: Double? = nil,
         sentenceWordOffsetRatio: Double? = nil
     ) {
+        rememberReaderPlaybackAnchor()
         guard let snapshot else { resume(); return }
+        if isSegmentMode, player != nil {
+            let target = readerChapterIndex
+            let chapterDuration = confirmedSegmentChapterEnd(for: target)
+                ?? segmentEstimatedDurations[target]
+                ?? 0
+            let ratio = max(0, min(1, sentenceOffsetRatio ?? 0))
+            let mappedPosition: Double?
+            if let sentenceId, let map = sentenceTimingByChapter[target], let start = map[sentenceId] {
+                mappedPosition = Self.sentenceStartMs(startMs: start,
+                    nextStartMs: map.values.filter { $0 > start }.min(),
+                    offsetRatio: sentenceWordOffsetRatio ?? 0) / 1000.0
+            } else {
+                mappedPosition = nil
+            }
+            let position = mappedPosition ?? ratio * chapterDuration
+            pendingProportionalSeek = nil
+            beginSeekJourney()
+            pendingChapterSeek = PendingChapterSeek(id: UUID(), jobID: snapshot.jobId,
+                chapterIndex: target, autoplay: true, position: position,
+                readerPageRatio: mappedPosition == nil && ratio > 0 && chapterDuration <= 0 ? ratio : nil)
+            isSeeking = true
+            player?.pause()
+            isPlaying = false
+            applyPendingChapterSeekIfAvailable()
+            updateNowPlayingInfo()
+            return
+        }
         // `readerChapterIndex` is EPUB-zero-based (reader space).
         // Translate to playable-list space — same fallback logic as
         // `playTapDecision`. Reader sitting before any playable
@@ -2002,6 +2070,38 @@ final class AudioPlayer: ObservableObject {
     private func applyPendingChapterSeekIfAvailable() {
         guard var pending = pendingChapterSeek, !pending.isApplying,
               let snapshot, snapshot.jobId == pending.jobID, player != nil else { return }
+        if let ratio = pending.readerPageRatio {
+            if isSegmentMode {
+                guard let duration = confirmedSegmentChapterEnd(for: pending.chapterIndex)
+                    ?? segmentEstimatedDurations[pending.chapterIndex], duration > 0 else { return }
+                pending.position = ratio * duration
+                pending.readerPageRatio = nil
+                pendingChapterSeek = pending
+            } else {
+                guard let chapter = snapshot.playableChapters.first(where: { $0.index == pending.chapterIndex }),
+                      let url = absoluteURL(forDownloadPath: chapter.downloadUrl,
+                          jobId: snapshot.jobId, chapterIndex: chapter.index) else { return }
+                pending.isApplying = true
+                pendingChapterSeek = pending
+                segmentSeekTask = Task { @MainActor [weak self] in
+                    guard let self else { return }
+                    let time = try? await AVURLAsset(url: url).load(.duration)
+                    guard !Task.isCancelled, var current = self.pendingChapterSeek,
+                          current.id == pending.id else { return }
+                    guard let time,
+                          let duration = Self.validatedDurationSeconds(time.seconds, isReadyToPlay: true) else {
+                        self.cancelPendingSeekJourney()
+                        return
+                    }
+                    current.position = ratio * duration
+                    current.readerPageRatio = nil
+                    current.isApplying = false
+                    self.pendingChapterSeek = current
+                    self.applyPendingChapterSeekIfAvailable()
+                }
+                return
+            }
+        }
         let entries: [(URL, SegmentBacklog.Identity?)]
         if isSegmentMode {
             let retained = segmentFiles.filter { $0.key.chapterIndex >= pending.chapterIndex }
@@ -2744,6 +2844,7 @@ final class AudioPlayer: ObservableObject {
     /// Call this when the reader session ends so the lock screen no
     /// longer shows stale metadata for a book that is no longer active.
     func stop() {
+        readerPlaybackAnchor = nil
         pendingAutoPlay = false
         pendingSnapshotStartIndex = nil
         // Speech-fallback teardown: when the synthesizer owns playback,
