@@ -81,6 +81,14 @@ scope, runtime boundaries, evidence, and resource cost. Stop after focused
 verification passes unless new changes, failures, or uncertainty justify more.
 Report changed paths, exact checks/results, skips, and unresolved limits.
 
+For host workflow tooling, review the executable boundaries: a failed or
+cancelled command must prevent later work and retain its real status; index
+transactions must prove scope and local-byte preservation; instruction patches
+must be idempotent and preserve aliases. Require concurrency and identity
+failure coverage at those seams. Use `mise run host:workflow:test` and the
+controls documented in `docs/agent-workflow.md`; host fixtures do not certify
+native apps, Xcode descriptor propagation or kernel/driver stability.
+
 Commit/push requires authorization; prior authorization within the task persists.
 The user has standing commit/push authorization by default. Use Gitflow feature
 branches from `master`; follow the PR, green-check, explicit auto-merge

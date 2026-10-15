@@ -6,6 +6,13 @@ require "fileutils"
 require "open3"
 
 class GitHygieneTest < Minitest::Test
+  def test_repository_index_contains_no_ignored_artifacts
+    repository = File.expand_path("..", __dir__)
+    out, err, status = Open3.capture3(@environment, "git", "-C", repository, "ls-files", "-ci", "--exclude-standard", "-z")
+    assert status.success?, err
+    assert_empty out.split("\0"), "Tracked local artifacts violate .gitignore: #{out.split("\0").first(20).inspect}"
+  end
+
   def setup
     @root = Dir.mktmpdir("epub-git-hygiene-")
     @environment = { "GIT_CONFIG_GLOBAL" => File::NULL, "GIT_CONFIG_NOSYSTEM" => "1" }

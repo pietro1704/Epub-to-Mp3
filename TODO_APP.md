@@ -107,6 +107,17 @@
 - Owner: Codex root; specialists review safety/runtime, UI/state and conversion/Git isolation. No questions while the user is away; continue independent work and report user-dependent blockers at the end. Preserve all existing dirty changes, books, models and Simulator data.
 - Plan, acceptance matrix, task ownership and evidence: `docs/plans/2026-10-15-ios-whole-app-verification.md`. Status: planning; no new app verification claimed.
 
+## TOOL-20261015-RETRO — Deliver all session retrospective controls
+
+- [x] RETRO-1: reusable argv command sequence stops on the first failure, preserves exit/signal status and bounded output with exact logs.
+- [x] RETRO-2: scoped Git index manifests validate repository/HEAD/index/file identity and reject concurrent edits without changing working files.
+- [x] RETRO-3: native launcher checks inside the shared lease, supports verified nested ownership, and proves build/Simulator exclusion with host processes.
+- [x] RETRO-4: instruction edits use immutable baselines, exact patches and repeat without duplicate text or replacing instruction aliases.
+- [x] RETRO-5: aggregate host regressions run in the habitual check and main CI; document bounded discovery/output recovery.
+- Owner: Codex; specialist ownership and dependencies: `.hermes/plans/2026-10-15-retro-controls.md`. Scope: repository tooling, tests, task/workflow wiring and focused instructions; preserve prior product edits. No native build/Simulator/service actions, PR, merge, history rewrite or CI monitoring.
+- Verification: `mise run preflight` executed all 8 host suites: 65 tests/596 assertions, no failures/errors/skips. Evidence `.reports/host-workflow/20261015T170556-15335/results/report.json`; real combined CLI smoke passed 6 steps in a disposable Git repository; the real workflow patch repeated without mtime change. Nine task definitions pass metadata/shell checks; main CI YAML parses and invokes the aggregate. Independent Spec/Standards review found no remaining host blocker after adversarial fixes. Existing product/security changes remain outside this delivery.
+- Limits: native commands in integration tests are fixtures. No app/build/Simulator, actual Xcode descriptor-chain or GPU stability validation; CI was configured but not run/monitored remotely. Cooperative locks/process groups do not intercept arbitrary external tools; the legacy Swift smoke startup retains its independent behavior.
+
 ## TOOL-20261015-GIT-HYGIENE — Separate shared agent assets from local state
 
 - [x] Preserve shared skills, instruction aliases, plans and portable editor configuration; ignore local agent state, backups, installed tools and generated snapshots.

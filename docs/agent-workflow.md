@@ -44,22 +44,51 @@ Other external/device/service actions follow the authorization stated there.
 
 ## Operational guardrails
 
-For file synchronization, privileged maintenance, instruction-file edits, or
-completion claims, use the [local guardrails toolkit](../../agent-guardrails/README.md).
-It supplies fail-closed scope manifests, real-path checks, unit/privilege
-preflight, bounded evidence capture, and a paired-response evaluation rubric.
-The controls are explicit, not automatic interception of all agent tools.
+Use the repository-owned host tools below for command sequences, scoped index
+changes and instruction patches. Their public CLI regressions run through
+`mise run host:workflow:test`, the local `mise run preflight`, `hooks-test` and
+main CI. They do not launch native apps or Simulators. Inspect exact logs on
+failure; a successful wrapper is not evidence that an unexecuted step passed.
 
-Before applying writes, validate the exact current authorized destinations;
-separate profiles need separate approval. During review, inspect acceptance
-artifacts and read-back, test duration, and limits before accepting runtime
-or optimization claims. Use the same rubric and real baseline/candidate
-responses for prompt comparisons; shorter instructions alone prove no quality gain.
+- `mise exec -- ruby scripts/run_steps.rb PLAN.json NEW_OUTPUT_DIRECTORY`
+  executes a JSON plan with an existing `cwd` and ordered `steps`, each containing
+  a literal `argv` array and optional `timeout_seconds` (default 120). It stops
+  on the first failure, preserves status, supervises its process group, and
+  saves exact stdout/stderr plus duration/status in `report.json`. Console
+  previews are bounded; existing evidence directories are never overwritten.
+- `mise exec -- ruby scripts/scoped_git_index.rb capture MANIFEST -- FILE...`
+  captures repository/HEAD/index/file identity and candidate index images.
+  Use explicit `--stage-from DEST SOURCE` before `--` for reviewed prepared
+  content when a file also contains unrelated work. `stage`, `untrack` and
+  `verify` take that manifest. Resolve preexisting staged changes first. The
+  real Git index lock and revalidated baselines reject concurrent changes;
+  no checkout, reset, or working-file rewrite occurs. Review the exact staged
+  scope before commit. External writes after verification remain possible.
+- `mise exec -- ruby scripts/update_instruction.rb --root ROOT --destination FILE
+  --baseline BASELINE --sha256 HASH --old OLD_TEXT_FILE --new NEW_TEXT_FILE`
+  applies one unique byte patch from a separate immutable baseline. Reapplying
+  is a no-op, including mtime; stale targets and ambiguous patches are blocked.
+  An instruction alias updates its authorized real target while retaining the
+  symlink. Use the canonical ai-memory installer for its managed block/skills;
+  this helper does not replace that installer or infer replacements.
 
-The local pre-commit hook is a read-only staged-whitespace gate. Existing CI
-owns language lint/tests. `preflight.sh` no longer bootstraps the legacy Apple
-Python vendor, but its build/test commands may still generate artifacts or invoke
-setup when dependencies are absent; inspect task definitions before execution.
+Before applying writes, validate current authorized destinations and preserve
+unrelated changes. The reviewer checks exact scope, failure/cancellation/identity
+coverage, repeated-application evidence, duration and limitations. A changed
+index does not establish preserved local bytes without read-back. Shorter
+instructions alone prove no quality improvement. The optional local
+[guardrails toolkit](../../agent-guardrails/README.md) remains available for
+privileged maintenance and paired prompt evaluations outside these repo tools.
+
+For tool discovery, filter names first and load descriptions/schemas only for
+bounded candidates. Save lengthy command output with an exact recovery path;
+read relevant ranges rather than dumping registries, whole logs or unrelated
+instructions. Preserve failure status when reducing output. Use argv interfaces
+or a deliberate shell script with `set -euo pipefail` for dependent operations.
+
+The local pre-commit hook remains a read-only whitespace gate. Native pairing
+and language checks keep their existing owners. Inspect task definitions before
+running build/test commands that may generate artifacts or set up dependencies.
 
 ## Before implementation
 
@@ -114,9 +143,12 @@ The measures below reduce concurrency; they are not a verified driver fix.
    Use `mise run native:build:preflight` for the read-only Intel check. A
    failed inspection blocks compilation; preserve the failure evidence.
 2. Keep heavy jobs under the existing `/tmp/epub2mp3.heavy-job.lock` lease.
-   The preflight is a snapshot, not a lock or global interception. Keep the
-   Simulator off throughout compilation, including incremental builds and
-   build phases. Avoid other GPU-heavy work during verification.
+   The revised build and Simulator launch/test tasks use `native_job.rb`;
+   build preflight executes after acquiring the lease. Nested build phases
+   inherit a descriptor verified against the lease file and actual lock
+   ownership. A plain environment flag cannot bypass the lock. Keep the
+   Simulator off throughout compilation, including incremental build phases.
+   Avoid other GPU-heavy work during verification.
 3. For the required SE1/iOS 15.5 reader run, select Xcode 16.4 with
    `DEVELOPER_DIR=/Applications/Xcode-16.4.0.app/Contents/Developer`.
    Verify the exact destination; do not substitute another runtime.
@@ -132,6 +164,15 @@ The measures below reduce concurrency; they are not a verified driver fix.
    Verify macOS separately. At the end of reader verification, leave only
    the required SE Simulator/app open on the seeded book. A later build
    must stop that retained session first.
+
+The standalone preflight remains a read-only snapshot. Coordination covers
+participating tasks and tested child process groups, not arbitrary external
+commands or processes deliberately escaping their group. The existing Swift
+smoke helper keeps its independent lease; its interpreter startup precedes that
+lease. Host regressions exercise task shells with fake Apple tools and verified
+descriptor inheritance through mise. Actual Xcode descriptor propagation is
+not established by those tests; losing the descriptor fails closed. Do not
+claim GPU stability or real app verification from this host evidence.
 
 Documentation/configuration changes need focused host/content checks, not an
 app launch. Do not restart services, change renderer defaults, disable Metal,

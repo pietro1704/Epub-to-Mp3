@@ -59,7 +59,7 @@ class NativeBuildPreflightTest < Minitest::Test
 end
 
 class RepositoryPreflightTest < Minitest::Test
-  def run_preflight(branch:, behind: false)
+  def run_preflight(branch:, behind: false, suite_status: 0)
     Dir.mktmpdir("epub-preflight-test-") do |dir|
       git = File.join(dir, "git")
       File.write(git, <<~'SH')
@@ -74,9 +74,15 @@ class RepositoryPreflightTest < Minitest::Test
         esac
       SH
       File.chmod(0o755, git)
+      mise = File.join(dir, "mise")
+      File.write(mise, "#!/bin/bash\nprintf '%s\\n' \"$*\" > \"$TEST_CALL_LOG\"\nexit \"$TEST_SUITE_STATUS\"\n")
+      File.chmod(0o755, mise)
+      calls = File.join(dir, "calls")
       env = { "PATH" => "#{dir}:#{ENV.fetch('PATH')}", "TEST_BRANCH" => branch,
-              "TEST_BEHIND" => behind ? "1" : "0", "CI" => "false" }
-      Open3.capture3(env, "bash", File.expand_path("preflight.sh", __dir__))
+              "TEST_BEHIND" => behind ? "1" : "0", "CI" => "false",
+              "TEST_CALL_LOG" => calls, "TEST_SUITE_STATUS" => suite_status.to_s }
+      result = Open3.capture3(env, "bash", File.expand_path("preflight.sh", __dir__))
+      result + [File.exist?(calls) ? File.read(calls) : ""]
     end
   end
 
@@ -93,5 +99,11 @@ class RepositoryPreflightTest < Minitest::Test
     _, error, status = run_preflight(branch: "feature/configuration", behind: true)
     refute status.success?
     assert_match(/behind master/, error)
+  end
+
+  def test_host_check_failure_stops_local_preflight_with_original_status
+    _, _, status, calls = run_preflight(branch: "feature/configuration", suite_status: 17)
+    assert_equal 17, status.exitstatus
+    assert_equal "run host:workflow:test\n", calls
   end
 end
