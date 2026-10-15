@@ -1,101 +1,85 @@
 import XCTest
+#if canImport(UIKit)
+import UIKit
+#else
+import AppKit
+#endif
+@testable import EpubToMp3
 
-/// WCAG 2.1 contrast ratio tests for every ReaderTheme.
-///
-/// Each non-custom theme must satisfy:
-///   - Body text / background ≥ 7:1  (HIG comfortable reading target)
-///   - Accent colour / background ≥ 3:1  (HIG large-text minimum)
-///
-/// Reference pairs (Apple Books exact):
-///   Light:     bg #FFFFFF  / text #000000  / accent system-blue (assumed ≥ 3:1)
-///   Sepia:     bg #F8F0E0  / text #5B4636
-///   Parchment: bg #F4ECD8  / text #3D2F1F
-///   Paper:     bg #E8E2D5  / text #2A2520
-///   Dark:      bg #1C1C1E  / text #E8E8E8
-///   Black:     bg #000000  / text #E0E0E0
-
+/// Exercise production palettes rather than a separate table of sample colors.
 final class ReaderThemeContrastTests: XCTestCase {
-
-    // MARK: - WCAG helpers
-
-    /// sRGB channel → linear light value.
-    private func linearise(_ c: Double) -> Double {
-        c <= 0.04045 ? c / 12.92 : pow((c + 0.055) / 1.055, 2.4)
+    private func channels(_ color: PlatformColor, dark: Bool) -> [Double] {
+        #if canImport(UIKit)
+        let color = color.resolvedColor(with: UITraitCollection(userInterfaceStyle: dark ? .dark : .light))
+        var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+        color.getRed(&r, green: &g, blue: &b, alpha: &a)
+        return [Double(r), Double(g), Double(b)]
+        #else
+        var rgb: NSColor?
+        NSAppearance(named: dark ? .darkAqua : .aqua)?.performAsCurrentDrawingAppearance {
+            rgb = NSColor(cgColor: color.cgColor)?.usingColorSpace(.sRGB)
+        }
+        return [Double(rgb!.redComponent), Double(rgb!.greenComponent), Double(rgb!.blueComponent)]
+        #endif
     }
 
-    /// Relative luminance of an sRGB triple (values 0…1).
-    private func luminance(r: Double, g: Double, b: Double) -> Double {
-        0.2126 * linearise(r) + 0.7152 * linearise(g) + 0.0722 * linearise(b)
+    private func luminance(_ rgb: [Double]) -> Double {
+        let linear = rgb.map { $0 <= 0.04045 ? $0 / 12.92 : pow(($0 + 0.055) / 1.055, 2.4) }
+        return 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2]
     }
 
-    /// WCAG contrast ratio between two luminance values.
-    private func contrast(l1: Double, l2: Double) -> Double {
-        let lighter = max(l1, l2)
-        let darker  = min(l1, l2)
-        return (lighter + 0.05) / (darker + 0.05)
-    }
-
-    /// Parse a 6-digit hex string (without #) into (r, g, b) ∈ 0…1.
-    private func hex(_ h: String) -> (r: Double, g: Double, b: Double) {
-        var value: UInt64 = 0
-        Scanner(string: h).scanHexInt64(&value)
-        return (
-            r: Double((value >> 16) & 0xFF) / 255.0,
-            g: Double((value >> 8)  & 0xFF) / 255.0,
-            b: Double( value        & 0xFF) / 255.0
-        )
-    }
-
-    // MARK: - Theme table
-
-    /// (theme name, bg hex, text hex, accent hex or nil to skip accent check)
-    private let themes: [(name: String, bg: String, text: String, accent: String?)] = [
-        ("light",     "FFFFFF", "000000", nil),   // system accent — skip automated check
-        ("sepia",     "F8F0E0", "5B4636", nil),
-        ("parchment", "F4ECD8", "3D2F1F", nil),
-        ("paper",     "E8E2D5", "2A2520", nil),
-        ("dark",      "1C1C1E", "E8E8E8", "5AC8FA"),
-        ("black",     "000000", "E0E0E0", "5AC8FA"),
-    ]
-
-    // MARK: - Tests
-
-    func testBodyTextContrastAtLeast7to1() {
-        for t in themes {
-            let bg   = hex(t.bg)
-            let text = hex(t.text)
-            let lBg  = luminance(r: bg.r,   g: bg.g,   b: bg.b)
-            let lTxt = luminance(r: text.r, g: text.g, b: text.b)
-            let ratio = contrast(l1: lBg, l2: lTxt)
-            XCTAssertGreaterThanOrEqual(
-                ratio, 7.0,
-                "\(t.name) text/bg contrast \(String(format: "%.2f", ratio)):1 < 7:1 " +
-                "(bg #\(t.bg), text #\(t.text))"
-            )
+    @MainActor
+    func testActualNamedPalettesHaveReadableBodyContrastInBothHostAppearances() {
+        let suite = "ReaderContrast-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let settings = AppSettings(defaults: defaults)
+        for theme in ReaderTheme.allCases where theme != .custom {
+            settings.readerTheme = theme
+            for dark in [false, true] {
+                let colors = settings.readerColors
+                let background = luminance(channels(colors.background, dark: dark))
+                let foreground = luminance(channels(colors.foreground, dark: dark))
+                let contrast = (max(background, foreground) + 0.05) / (min(background, foreground) + 0.05)
+                XCTAssertGreaterThanOrEqual(contrast, 7, "\(theme.rawValue), host dark=\(dark)")
+            }
         }
     }
 
-    func testAccentContrastAtLeast3to1() {
-        for t in themes {
-            guard let accentHex = t.accent else { continue }
-            let bg     = hex(t.bg)
-            let accent = hex(accentHex)
-            let lBg    = luminance(r: bg.r,     g: bg.g,     b: bg.b)
-            let lAcc   = luminance(r: accent.r, g: accent.g, b: accent.b)
-            let ratio  = contrast(l1: lBg, l2: lAcc)
-            XCTAssertGreaterThanOrEqual(
-                ratio, 3.0,
-                "\(t.name) accent/bg contrast \(String(format: "%.2f", ratio)):1 < 3:1 " +
-                "(bg #\(t.bg), accent #\(accentHex))"
-            )
+    @MainActor
+    func testLinkUsesNativeSemanticColorForChosenAppearance() {
+        let suite = "ReaderLink-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let settings = AppSettings(defaults: defaults)
+        for theme in ReaderTheme.allCases {
+            settings.readerTheme = theme
+            for dark in [false, true] {
+                let selectedDark = settings.readerPreferredColorScheme.map { $0 == .dark } ?? dark
+                #if canImport(UIKit)
+                let expected = UIColor.link
+                #else
+                let expected = NSColor.linkColor
+                #endif
+                XCTAssertEqual(channels(settings.readerColors.link, dark: dark),
+                               channels(expected, dark: selectedDark), "\(theme.rawValue)")
+            }
         }
     }
 
-    // MARK: - Sanity: WCAG formula itself
-
-    func testWcagHelperBlackOnWhite() {
-        let lWhite = luminance(r: 1, g: 1, b: 1)
-        let lBlack = luminance(r: 0, g: 0, b: 0)
-        XCTAssertEqual(contrast(l1: lWhite, l2: lBlack), 21.0, accuracy: 0.01)
+    @MainActor
+    func testCustomPaletteKeepsUserColorsAndInfersControlAppearance() {
+        let suite = "ReaderCustom-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let settings = AppSettings(defaults: defaults)
+        settings.readerTheme = .custom
+        settings.readerCustomColors = (background: (0.1, 0.2, 0.3), foreground: (0.9, 0.8, 0.7))
+        XCTAssertEqual(settings.readerPreferredColorScheme, .dark)
+        for (actual, expected) in zip(channels(settings.readerColors.background, dark: false), [0.1, 0.2, 0.3]) {
+            XCTAssertEqual(actual, expected, accuracy: 0.001)
+        }
+        settings.readerCustomColors = (background: (1, 1, 1), foreground: (0, 0, 0))
+        XCTAssertEqual(settings.readerPreferredColorScheme, .light)
     }
 }

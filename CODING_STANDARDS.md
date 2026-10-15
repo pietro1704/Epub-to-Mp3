@@ -13,6 +13,10 @@ reject unsigned device bundles before calling devicectl.
 
 Keep code, comments, logs, and technical documentation in English. Preserve
 intentional localized strings, language-detection fixtures, and matching regexes.
+For native Apple appearance, use platform semantic colors and native materials.
+Light and dark modes share the same material/transparency configuration; let the
+OS adapt its rendering. Warm/custom reader palettes remain explicit choices.
+Verify actual rendered colors and materials rather than a separate sample palette.
 Use existing module boundaries and remove obsolete paths when replacing them;
 check source, tests, and manifests before deleting a referenced file.
 

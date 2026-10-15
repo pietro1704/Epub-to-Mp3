@@ -1,4 +1,7 @@
 import XCTest
+#if canImport(UIKit)
+import UIKit
+#endif
 #if canImport(AppKit)
 import AppKit
 #endif
@@ -21,6 +24,83 @@ final class EpubHtmlRendererTests: XCTestCase {
     /// awkward for attribute-name lookups in tests).
     private func ns(_ attr: AttributedString) -> NSAttributedString {
         NSAttributedString(attr)
+    }
+
+    private func rgba(_ color: PlatformColor) -> [CGFloat] {
+        #if canImport(UIKit)
+        var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+        color.getRed(&r, green: &g, blue: &b, alpha: &a)
+        return [r, g, b, a]
+        #else
+        let rgb = color.usingColorSpace(.sRGB)!
+        return [rgb.redComponent, rgb.greenComponent, rgb.blueComponent, rgb.alphaComponent]
+        #endif
+    }
+
+    @MainActor
+    func testThemeOverrideUsesSurfacePaletteAndClearsPublisherBackgrounds() throws {
+        let settings = makeSettings()
+        for theme in [ReaderTheme.sepia, .parchment, .paper, .dark, .black] {
+            settings.readerTheme = theme
+            #if canImport(UIKit)
+            let expected = theme.previewColors.foreground
+            #else
+            let expected = theme.macOSColors.foreground
+            #endif
+            let rendered = ns(try XCTUnwrap(EpubHtmlRenderer.render(
+                html: "<p><span style='color:red;background-color:yellow'>Body</span></p>",
+                css: nil, settings: settings)))
+            let location = (rendered.string as NSString).range(of: "Body").location
+            let actual = try XCTUnwrap(rendered.attribute(.foregroundColor, at: location, effectiveRange: nil) as? PlatformColor)
+            for (a, e) in zip(rgba(actual), rgba(expected)) {
+                XCTAssertEqual(a, e, accuracy: 0.005, "\(theme.rawValue) must share its surface palette")
+            }
+            XCTAssertNil(rendered.attribute(.backgroundColor, at: location, effectiveRange: nil),
+                         "The reader surface owns the background; publisher runs must not paint rectangles")
+        }
+    }
+
+    @MainActor
+    func testDarkOverridePreservesLinkAndTypographyWithDistinctReadableLinkColor() throws {
+        let settings = makeSettings()
+        settings.readerTheme = .dark
+        let rendered = ns(try XCTUnwrap(EpubHtmlRenderer.render(
+            html: "<p><b>Body</b> <a href='#note'><i>Reference</i></a></p>",
+            css: nil, settings: settings)))
+        let body = (rendered.string as NSString).range(of: "Body").location
+        let link = (rendered.string as NSString).range(of: "Reference").location
+        XCTAssertNotNil(rendered.attribute(.link, at: link, effectiveRange: nil))
+        let bodyColor = try XCTUnwrap(rendered.attribute(.foregroundColor, at: body, effectiveRange: nil) as? PlatformColor)
+        let linkColor = try XCTUnwrap(rendered.attribute(.foregroundColor, at: link, effectiveRange: nil) as? PlatformColor)
+        XCTAssertNotEqual(rgba(bodyColor), rgba(linkColor), "Overriding colors must keep links distinguishable")
+        let bodyFont = try XCTUnwrap(rendered.attribute(.font, at: body, effectiveRange: nil) as? PlatformFont)
+        let linkFont = try XCTUnwrap(rendered.attribute(.font, at: link, effectiveRange: nil) as? PlatformFont)
+        #if canImport(UIKit)
+        XCTAssertTrue(bodyFont.fontDescriptor.symbolicTraits.contains(.traitBold))
+        XCTAssertTrue(linkFont.fontDescriptor.symbolicTraits.contains(.traitItalic))
+        #else
+        XCTAssertTrue(bodyFont.fontDescriptor.symbolicTraits.contains(.bold))
+        XCTAssertTrue(linkFont.fontDescriptor.symbolicTraits.contains(.italic))
+        #endif
+    }
+
+    @MainActor
+    func testLightWithoutOverridePreservesPublisherBodyAndLinkColors() throws {
+        let settings = makeSettings()
+        settings.readerTheme = .light
+        settings.readerOverrideColours = false
+        let rendered = ns(try XCTUnwrap(EpubHtmlRenderer.render(
+            html: "<p><span style='color:#ff0000'>Body</span> <a href='#note' style='color:#008000'>Reference</a></p>",
+            css: nil, settings: settings)))
+        let body = (rendered.string as NSString).range(of: "Body").location
+        let link = (rendered.string as NSString).range(of: "Reference").location
+        let bodyColor = rgba(try XCTUnwrap(rendered.attribute(.foregroundColor, at: body, effectiveRange: nil) as? PlatformColor))
+        let linkColor = rgba(try XCTUnwrap(rendered.attribute(.foregroundColor, at: link, effectiveRange: nil) as? PlatformColor))
+        XCTAssertGreaterThan(bodyColor[0], 0.9)
+        XCTAssertLessThan(bodyColor[1], 0.1)
+        XCTAssertGreaterThan(linkColor[1], 0.4)
+        XCTAssertLessThan(linkColor[0], 0.1)
+        XCTAssertNotNil(rendered.attribute(.link, at: link, effectiveRange: nil))
     }
 
     @MainActor

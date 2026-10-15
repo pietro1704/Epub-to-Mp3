@@ -162,21 +162,22 @@ final class MacReaderViewController: NSViewController, NSTableViewDataSource, NS
         configureReader()
         observeOpenStage("reader_configure_completed")
         settings.objectWillChange
+            .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
                 guard let self, self.chapter(at: self.selectedChapter) != nil else { return }
                 if self.isRestoringInitialPosition {
                     self.pendingAppearanceRefresh = true
                     return
                 }
-                MacReaderTheme.apply(
-                    settings: self.settings,
-                    surface: self.view,
-                    scrollView: self.contentScrollView,
-                    textView: self.textView,
-                    toolbar: self.toolbar,
-                    labels: [self.bookTitleLabel, self.chapterTitleLabel, self.statusLabel]
-                )
+                // @Published emits before mutation. The queued delivery above
+                // reads the committed settings and preserves the exact viewport
+                // while regenerating authored colors when returning to light.
+                let origin = self.contentScrollView.contentView.bounds.origin
+                self.applyCurrentReaderTheme()
                 self.showChapter(self.selectedChapter)
+                self.contentScrollView.contentView.scroll(to: origin)
+                self.contentScrollView.reflectScrolledClipView(self.contentScrollView.contentView)
+                self.persistReadingProgress()
             }
             .store(in: &settingsCancellables)
         loadCurrentBook()
@@ -890,6 +891,7 @@ final class MacReaderViewController: NSViewController, NSTableViewDataSource, NS
             } else {
                 textView.string = chapter.text
                 textView.font = .systemFont(ofSize: settings.readerPointSize)
+                textView.textColor = settings.readerColors.foreground
             }
             MacReaderTextLayout.fit(textView, in: contentScrollView)
             repaintSavedHighlights(chapterIndex: index)

@@ -27,7 +27,7 @@ struct PreparedChapterRendererStyle: Equatable, Sendable {
 }
 
 private struct PreparedChapterRendererSignature: Encodable {
-    let version = 2
+    let version = 3
     let chapter: EbookFulltext.Chapter
     let boldOverride: Bool
     let customColors: [Double]

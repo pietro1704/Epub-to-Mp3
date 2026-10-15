@@ -24,6 +24,7 @@ final class MainReaderScreenController: UIViewController {
     var onReaderLoadingChanged: ((Bool) -> Void)?
 
     private var cancellables: Set<AnyCancellable> = []
+    private var appearanceCancellable: AnyCancellable?
     private var readerController: BookOpenScreenController?
     private var readerBookID: String?
     private var openingReaderBookID: String?
@@ -89,6 +90,8 @@ final class MainReaderScreenController: UIViewController {
         configureReaderNavigationBar()
         configureEmptyState()
         configureListenButton()
+        applyReaderColors()
+        bindAppearance()
         bind()
         render()
     }
@@ -112,9 +115,37 @@ final class MainReaderScreenController: UIViewController {
         onBrowseLibrary: (() -> Void)?
     ) {
         self.library = library
+        let settingsChanged = self.settings !== settings
         self.settings = settings
         self.onBrowseLibrary = onBrowseLibrary
+        if isViewLoaded {
+            if settingsChanged { bindAppearance() }
+            applyReaderColors()
+        }
         render()
+    }
+
+    private func bindAppearance() {
+        appearanceCancellable = settings.objectWillChange
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in self?.applyReaderColors() }
+    }
+
+    private func applyReaderColors() {
+        let style: UIUserInterfaceStyle
+        switch settings.readerPreferredColorScheme {
+        case .dark: style = .dark
+        case .light: style = .light
+        case nil: style = .unspecified
+        }
+        if overrideUserInterfaceStyle != style { overrideUserInterfaceStyle = style }
+        let colors = settings.readerColors
+        view.backgroundColor = colors.background
+        view.tintColor = colors.link
+        readerNavigationBar.tintColor = colors.link
+        emptyTitleLabel.textColor = colors.foreground
+        emptyDescriptionLabel.textColor = colors.foreground.withAlphaComponent(0.75)
+        // Keep the native transparent navigation appearance and system material.
     }
 
     private func bind() {

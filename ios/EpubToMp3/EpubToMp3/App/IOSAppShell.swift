@@ -90,8 +90,8 @@ final class IOSAppShellController: UITabBarController {
         }
     }
 
-    func applyTheme(_ theme: ReaderTheme) {
-        switch theme.preferredColorScheme {
+    func applyTheme(_ theme: ReaderTheme, preferredColorScheme: ReaderColorScheme? = nil) {
+        switch preferredColorScheme ?? theme.preferredColorScheme {
         case .dark:
             overrideUserInterfaceStyle = .dark
         case .light:
