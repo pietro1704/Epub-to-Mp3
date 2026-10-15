@@ -124,6 +124,8 @@ fn macos_link_search_path() -> Option<String> {
 }
 
 fn main() {
+    println!("cargo:rerun-if-env-changed=MACOSX_DEPLOYMENT_TARGET");
+    println!("cargo:rerun-if-changed=.");
     println!("cargo:rustc-link-lib=speechPlayer");
     println!("cargo:rustc-link-lib=espeak-ng");
     println!("cargo:rustc-link-lib=ucd");
@@ -195,6 +197,11 @@ fn main() {
     // Build with Cmake
 
     let mut config = Config::new(&espeak_dst);
+    if target.ends_with("-apple-darwin") {
+        if let Ok(deployment) = env::var("MACOSX_DEPLOYMENT_TARGET") {
+            config.define("CMAKE_OSX_DEPLOYMENT_TARGET", deployment);
+        }
+    }
 
     config.define(
         "BUILD_SHARED_LIBS",
@@ -263,8 +270,8 @@ fn main() {
         );
     }
 
-    // macOS
-    if target.ends_with("-apple-darwin") {
+    // Apple targets share the C++ runtime required by the speech player.
+    if target.contains("-apple-") {
         println!("cargo:rustc-link-lib=framework=Foundation");
         println!("cargo:rustc-link-lib=c++");
     }

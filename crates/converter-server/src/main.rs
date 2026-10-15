@@ -21,6 +21,7 @@ use axum::{
 use converter_core::{
     config::AppConfig,
     epub::parse_epub,
+    tts_preferences::TtsPreferences,
     worker::{ConversionRequest, ConversionWorker, OutputManifest, ProgressEvent},
 };
 use futures_util::stream::{self, StreamExt};
@@ -79,6 +80,8 @@ struct JobSnapshot {
     engine: Option<String>,
     voice: Option<String>,
     language: Option<String>,
+    #[serde(default, alias = "tts_preferences")]
+    tts_preferences: Option<TtsPreferences>,
     formatting_cues: bool,
     ui_language: String,
     no_parallel: bool,
@@ -136,7 +139,10 @@ struct LocalUpload {
 }
 #[derive(Debug, Deserialize, Default)]
 struct CreateJob {
+    #[serde(alias = "uploadId")]
     upload_id: Option<String>,
+    #[serde(alias = "ttsPreferences")]
+    tts_preferences: Option<TtsPreferences>,
     engine: Option<String>,
     voice: Option<String>,
     language: Option<String>,
@@ -179,9 +185,17 @@ fn initial_job(id: String, f: &CreateJob) -> JobSnapshot {
         cover_url: None,
         cover_mime_type: None,
         log_url: None,
-        engine: f.engine.clone(),
-        voice: f.voice.clone(),
+        engine: f
+            .tts_preferences
+            .as_ref()
+            .map(|preferences| preferences.primary.engine.clone())
+            .or_else(|| f.engine.clone()),
+        voice: f.tts_preferences.as_ref().map_or_else(
+            || f.voice.clone(),
+            |preferences| preferences.primary.voice.clone(),
+        ),
         language: f.language.clone(),
+        tts_preferences: f.tts_preferences.clone(),
         formatting_cues: f.formatting_cues.unwrap_or(true),
         ui_language: if f.ui_language.as_deref() == Some("en") {
             "en"
@@ -398,7 +412,37 @@ fn is_allowed_local_source(source: &Path) -> bool {
     roots.iter().any(|root| source.starts_with(root))
 }
 
+// This compatibility server has no embedded local-provider adapter. Reject an
+// unavailable typed selection before creating work rather than falling back to Edge.
+fn validate_server_preferences(
+    preferences: Option<&TtsPreferences>,
+    language: Option<&str>,
+) -> Result<(), (StatusCode, String)> {
+    let Some(preferences) = preferences else {
+        return Ok(());
+    };
+    preferences
+        .validate(language)
+        .map_err(|error| (StatusCode::BAD_REQUEST, error))?;
+    if std::iter::once(&preferences.primary)
+        .chain(preferences.secondary.iter())
+        .any(|selection| selection.engine != "edge")
+    {
+        return Err((StatusCode::UNPROCESSABLE_ENTITY,
+            "This compatibility server does not embed Piper or platform speech. Use the native CLI/apps or browser WASM for local voices, or explicitly select Edge.".into()));
+    }
+    Ok(())
+}
+fn preferences_error(error: (StatusCode, String)) -> Response {
+    (error.0, Json(serde_json::json!({"detail":error.1}))).into_response()
+}
+
 async fn create_job(State(state): State<AppState>, Json(form): Json<CreateJob>) -> Response {
+    if let Err(error) =
+        validate_server_preferences(form.tts_preferences.as_ref(), form.language.as_deref())
+    {
+        return preferences_error(error);
+    }
     let Some(upload_id) = form.upload_id.as_deref() else {
         return (
             StatusCode::BAD_REQUEST,
@@ -457,6 +501,8 @@ async fn create_job(State(state): State<AppState>, Json(form): Json<CreateJob>) 
         language: form.language.clone(),
         piper_model: None,
         piper_config: None,
+        tts_preferences: form.tts_preferences.clone(),
+        models_root: Some(state.config.paths.models_dir.join("tts")),
         chapter_indices: None,
         no_parallel: form.no_parallel.unwrap_or(false),
     };
@@ -625,6 +671,12 @@ async fn resume_job(AxumPath(id): AxumPath<String>, State(state): State<AppState
     let Some(job) = jobs.get_mut(&id) else {
         return StatusCode::NOT_FOUND.into_response();
     };
+    if let Err(error) = validate_server_preferences(
+        job.snapshot.tts_preferences.as_ref(),
+        job.snapshot.language.as_deref(),
+    ) {
+        return preferences_error(error);
+    }
     if matches!(
         job.snapshot.state.as_str(),
         "queued" | "running" | "finished" | "completed"
@@ -670,6 +722,8 @@ async fn resume_job(AxumPath(id): AxumPath<String>, State(state): State<AppState
         language: snapshot.language.clone(),
         piper_model: None,
         piper_config: None,
+        tts_preferences: snapshot.tts_preferences.clone(),
+        models_root: Some(state.config.paths.models_dir.join("tts")),
         chapter_indices: None,
         no_parallel: snapshot.no_parallel,
     };
@@ -1032,6 +1086,97 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 mod tests {
     use super::*;
 
+    async fn post_conversion(config: AppConfig, body: serde_json::Value) -> String {
+        let body = body.to_string();
+        let request = format!("POST /api/convert HTTP/1.1\r\nHost: localhost\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}", body.len(), body);
+        http_fixture_request(config, request.as_bytes()).await
+    }
+
+    #[tokio::test]
+    async fn typed_http_preferences_reject_unavailable_or_malformed_selections() {
+        let root = TestRoot::new();
+        let config = root.state().config;
+        let piper = post_conversion(
+            config.clone(),
+            serde_json::json!({
+                "tts_preferences": TtsPreferences::default()
+            }),
+        )
+        .await;
+        assert!(piper.starts_with("HTTP/1.1 422"), "{piper}");
+        assert!(piper.contains("does not embed Piper"));
+        let malformed = post_conversion(
+            config.clone(),
+            serde_json::json!({
+                "tts_preferences":{"primary":{"engine":"unknown"}}
+            }),
+        )
+        .await;
+        assert!(malformed.starts_with("HTTP/1.1 400"), "{malformed}");
+        let invalid_shape = post_conversion(
+            config.clone(),
+            serde_json::json!({
+                "tts_preferences":"piper"
+            }),
+        )
+        .await;
+        assert!(invalid_shape.starts_with("HTTP/1.1 422"), "{invalid_shape}");
+        let legacy = post_conversion(config, serde_json::json!({})).await;
+        assert!(legacy.starts_with("HTTP/1.1 400"));
+        assert!(legacy.contains("uploadId is required"));
+    }
+
+    #[tokio::test]
+    async fn typed_http_edge_selection_is_persisted_for_conversion_and_resume() {
+        let root = TestRoot::new();
+        let config = root.state().config;
+        let upload = config.paths.uploads_dir.join("typed-upload");
+        std::fs::create_dir_all(&upload).unwrap();
+        // Invalid input reaches parsing but never invokes an online provider.
+        std::fs::write(upload.join("source.epub"), b"invalid EPUB fixture").unwrap();
+        let preferences = serde_json::json!({
+            "primary":{"engine":"edge","model_id":null,"voice":"pt-BR-FranciscaNeural"},
+            "secondary":null,"allow_online_fallback":false
+        });
+        let response = post_conversion(
+            config.clone(),
+            serde_json::json!({
+                "upload_id":"typed-upload", "engine":"piper", "tts_preferences":preferences
+            }),
+        )
+        .await;
+        assert!(response.starts_with("HTTP/1.1 200"), "{response}");
+        let body: serde_json::Value =
+            serde_json::from_str(response.split_once("\r\n\r\n").unwrap().1).unwrap();
+        let id = body["jobId"].as_str().unwrap();
+        let snapshot: JobSnapshot =
+            serde_json::from_slice(&std::fs::read(snapshot_path(&config, id)).unwrap()).unwrap();
+        assert_eq!(
+            serde_json::to_value(snapshot.tts_preferences).unwrap(),
+            preferences
+        );
+        let request_path = config.paths.jobs_dir.join(format!("{id}.json"));
+        tokio::time::timeout(Duration::from_secs(2), async {
+            while !request_path.is_file() {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
+        let request: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(request_path).unwrap()).unwrap();
+        assert_eq!(request["metadata"]["tts_preferences"], preferences);
+        assert_eq!(
+            request["metadata"]["models_root"],
+            config
+                .paths
+                .models_dir
+                .join("tts")
+                .to_string_lossy()
+                .as_ref()
+        );
+    }
+
     #[cfg(unix)]
     #[tokio::test]
     async fn output_symlinks_cannot_serve_files_outside_the_output_root() {
@@ -1211,6 +1356,10 @@ mod tests {
             engine: None,
             voice: None,
             language: None,
+            piper_model: None,
+            piper_config: None,
+            tts_preferences: None,
+            models_root: None,
             chapter_indices: None,
             no_parallel: false,
         });
@@ -1482,19 +1631,20 @@ mod tests {
             .unwrap()
     }
 
-    async fn http_fixture_request(config: AppConfig, request: &'static [u8]) -> String {
+    async fn http_fixture_request(config: AppConfig, request: &[u8]) -> String {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let address = listener.local_addr().unwrap();
         let server = tokio::spawn(async move {
             axum::serve(listener, app(config)).await.unwrap();
         });
+        let request = request.to_vec();
         let response = tokio::task::spawn_blocking(move || {
             use std::io::{Read, Write};
             let mut client = std::net::TcpStream::connect(address).unwrap();
             client
                 .set_read_timeout(Some(std::time::Duration::from_secs(5)))
                 .unwrap();
-            client.write_all(request).unwrap();
+            client.write_all(&request).unwrap();
             let mut bytes = Vec::new();
             client.read_to_end(&mut bytes).unwrap();
             String::from_utf8(bytes).unwrap()
@@ -1535,6 +1685,10 @@ mod tests {
             chapters: Vec::new(),
             archive: "book.zip".into(),
             cover: None,
+            tts_preferences: None,
+            used_selections: Vec::new(),
+            tts_policy_state: Default::default(),
+            fallback_used: false,
         };
         let mut snapshot = initial_job("archive-job".into(), &CreateJob::default());
         apply_manifest(&mut snapshot, &manifest, &state.config.paths.output_dir);
@@ -1577,6 +1731,10 @@ mod tests {
             chapters: Vec::new(),
             archive: "../outside.zip".into(),
             cover: None,
+            tts_preferences: None,
+            used_selections: Vec::new(),
+            tts_policy_state: Default::default(),
+            fallback_used: false,
         };
         let mut snapshot = initial_job("archive-job".into(), &CreateJob::default());
         apply_manifest(&mut snapshot, &manifest, &state.config.paths.output_dir);
@@ -1598,6 +1756,10 @@ mod tests {
             chapters: Vec::new(),
             archive: "book.zip".into(),
             cover: None,
+            tts_preferences: None,
+            used_selections: Vec::new(),
+            tts_policy_state: Default::default(),
+            fallback_used: false,
         };
         let mut snapshot = initial_job("archive-job".into(), &CreateJob::default());
         apply_manifest(&mut snapshot, &manifest, &state.config.paths.output_dir);

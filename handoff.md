@@ -1,5 +1,60 @@
 # Hermes ↔ Claude Code Handoff
 
+## In progress: shared Faber TTS preferences — APP-20261014-TTS-SELECTION
+
+Branch `feature/faber-tts-preferences`, baseline `3992c084c5`; not committed/delivered.
+Default Piper `pt_BR-faber-medium`; optional consented Edge secondary; immutable
+job overrides, no implicit voice downloads. Preserve user `.ai-jail` and
+`.ai-memory.toml`, original voices/books and useful native build artifacts.
+
+Current state: verification complete for available local targets; no heavy job active. Only exact SE1/iOS15.5 is booted; app relaunched normally after final packaging checks (PID13182) on persisted seeded LOTR. No Mac app active. Final Android fresh-checkout gate passed: direct Flutter build rejected missing assets; official task restored them and produced ARM64-only APK with complete JNI/assets audit (`android-missing-assets-evidence.json`, `checks/android-fresh-assets-arm64-rebuild.log`). Source workflows updated; Ubuntu CI not run. Commit/push and task closure remain pending.
+
+Verified evidence under `.reports/tts-preferences/`:
+- Rust62/62: core47, FFI4, CLI9, HTTP2; `checks/rust-final-audit.log`.
+  Worker41 includes atomic first receipt actual voice/fallback regression.
+- CLI final refreshed signed/relocated package: fresh positions0,1,7.3445s
+  excluding build; complete non-silent MP3 decode, only Faber/no fallback;
+  `cli-golden-evidence.json`, `checks/cli-final-refresh.log`.
+  Earlier loaded-host30.746s run retained separately, not a controlled comparison.
+- Web latest lint/173 tests/build passed (`checks/web-final-controls.log`).
+  Production offline inference, Blob reload, immutable options and full decode
+  passed (`browser-production/evidence.json`); first playable24.8773s,
+  total95.7042s on loaded Intel Mac, not phone latency. Edge browser unavailable.
+- Flutter analysis clean/full449 passed earlier; final selected Android Flutter74
+  and JVM17 passed zero skips (`checks/android-final-tests.log`, `android-jvm-final/`).
+  Background payload UUID isolation, prepared cancellation and raw native receipt
+  regressions included. No invented background chapter-chain API.
+- Android actual ARM64 Piper/JNI build16608 passed9m43s; packaging76222/APK43905
+  passed. Actual APK ELF architecture/Piper/JNI exports verified (`android-apk-final.json`).
+  Initial toolchain failures corrected: pin stable RUSTC; scope Android CC/CMake
+  to target and retain explicit host compiler. No Android device inference.
+- Mac latest Debug build79522 passed106s; final focused VM/modal tests28493
+  passed2/2 zero skips with structured `mac-final-manual-summary.json`.
+  Earlier real Faber streaming/full decode passed; settings/actions/Listen/playerbar
+  and real LOTR passed across focused retries. Playerbar retry xcresult save failed;
+  raw3/3 stdout retained in `mac-player-retry-stdout.log`. Cached-display artifacts
+  omit native button text and are not visual-rendering proof.
+- iOS final Simulator FFI/app9201 and device ARM64 refresh/ABI/packaging80107 passed
+  (`checks/se-final-manual-prepare.log`, `checks/ios-arm-final-refresh.log`).
+  Final manual VM/full UI94082 passed2/2 zero skips (`se-final-manual-summary.json`).
+  Final real LOTR pagination/chrome/player dismissal58186 passed1/1 zero skips
+  (`se-final-reader-summary.json`). Earlier17 prepared scenarios passed across runs,
+  including actual Faber streaming/full two-chapter non-silent decode1/1 zero skips
+  (`se-faber-final-summary.json`). Not one all-green17-test invocation.
+  Stale copied eSpeak header fixed; actual compiled path buffer1024 verified
+  (`espeak-simulator-path-buffer.json`). Existing iOS15 ONNX reused.
+
+Cleanup:12 owned temporary download/browser/CLI/signed-fixture paths removed,
+original63,201,294-byte Faber model retained (`owned-test-cleanup.json`).
+Intentional product assets and build caches remain. Do not restart stopped custom
+ONNX source build41005. Mac uses checksum-pinned prebuilt1.28.2 (Intel min10.15);
+ARM min11 metadata only, no ARM Mac inference. Linux/Windows execution unavailable
+on this Mac; report explicitly. No CI/PR monitoring/merge.
+
+Remaining: verify fresh-checkout Android packaging correction, final owned diff,
+authorized commit/push and task closure; leave only SE/LOTR open.
+Full acceptance: `docs/plans/2026-10-14-faber-tts-preferences.md`.
+
 ## Delivered single reader playback control — APP-20261014-02
 
 Supersedes the prior separate current-page button. Removed from iOS/macOS;

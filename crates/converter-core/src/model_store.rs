@@ -243,6 +243,51 @@ impl ModelStore {
         result
     }
 
+    /// Installation is complete only when every declared artifact matches its checksum.
+    /// This does not claim that inference has been tested on the current device.
+    pub fn is_manifest_installed(&self, manifest: &ModelManifest) -> Result<bool, ModelStoreError> {
+        use std::io::Read;
+        if manifest.artifacts.is_empty() {
+            return Err(ModelStoreError::EmptyManifest);
+        }
+        for artifact in &manifest.artifacts {
+            let path = Path::new(&artifact.name);
+            if artifact.name.is_empty()
+                || path.is_absolute()
+                || path.components().any(|component| {
+                    matches!(
+                        component,
+                        std::path::Component::ParentDir | std::path::Component::Prefix(_)
+                    )
+                })
+            {
+                return Err(ModelStoreError::InvalidArtifactName(artifact.name.clone()));
+            }
+            if artifact.sha256.is_empty() {
+                return Err(ModelStoreError::MissingChecksum);
+            }
+            let mut file = match std::fs::File::open(self.root.join(&manifest.model_id).join(path))
+            {
+                Ok(file) => file,
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+                Err(error) => return Err(error.into()),
+            };
+            let mut digest = Sha256::new();
+            let mut buffer = [0u8; 8192];
+            loop {
+                let count = file.read(&mut buffer)?;
+                if count == 0 {
+                    break;
+                }
+                digest.update(&buffer[..count]);
+            }
+            if hex::encode(digest.finalize()) != artifact.sha256.to_ascii_lowercase() {
+                return Ok(false);
+            }
+        }
+        Ok(true)
+    }
+
     pub async fn installed_metadata(
         &self,
         model_id: &str,
@@ -428,6 +473,41 @@ mod tests {
         };
         let error = store.install_manifest(&manifest).await.unwrap_err();
         assert!(matches!(error, ModelStoreError::InsecureUrl));
+    }
+
+    #[test]
+    fn a_voice_is_installed_only_with_both_verified_artifacts() {
+        let root = tempfile::tempdir().unwrap();
+        let store = ModelStore::new(root.path());
+        let directory = root.path().join("test-piper");
+        std::fs::create_dir_all(&directory).unwrap();
+        let model = b"test model artifact";
+        let config = b"{\"audio\":{\"sample_rate\":22050}}";
+        let manifest = ModelManifest {
+            model_id: "test-piper".into(),
+            artifacts: vec![
+                ModelArtifact {
+                    name: "model.onnx".into(),
+                    url: "https://example.invalid/model".into(),
+                    sha256: hex::encode(Sha256::digest(model)),
+                },
+                ModelArtifact {
+                    name: "model.onnx.json".into(),
+                    url: "https://example.invalid/config".into(),
+                    sha256: hex::encode(Sha256::digest(config)),
+                },
+            ],
+        };
+        std::fs::write(directory.join("model.onnx"), model).unwrap();
+        assert!(!store.is_manifest_installed(&manifest).unwrap());
+        std::fs::write(directory.join("model.onnx.json"), config).unwrap();
+        assert!(store.is_manifest_installed(&manifest).unwrap());
+        std::fs::write(
+            directory.join("model.onnx.json"),
+            b"corrupted configuration",
+        )
+        .unwrap();
+        assert!(!store.is_manifest_installed(&manifest).unwrap());
     }
 
     #[test]

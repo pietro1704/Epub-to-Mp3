@@ -5,7 +5,7 @@
 //   2. If no cache: parse EPUB through the selected native/runtime bridge, cache the result.
 //   3. On success: render InstantReaderView.
 //   4. Audio is NOT auto-started — user taps the global player.
-//   5. Android/iOS conversion runs through the embedded Rust runtime.
+//   5. Android/Linux/Windows conversion runs through the embedded Rust runtime.
 //
 // This widget is embedded inside the Reader tab (not pushed as a route)
 // so the MiniPlayerBar and NavigationBar remain visible.
@@ -13,8 +13,8 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io' show Directory, File, Platform;
-import 'dart:typed_data';
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
 
@@ -27,6 +27,7 @@ import '../services/audio_player_service.dart';
 import '../services/cover_writeback.dart';
 
 import '../services/local_conversion_job.dart';
+import '../services/embedded_converter.dart';
 import '../services/rust_playback_conversion.dart';
 import '../services/platform_voice_notice.dart';
 import '../services/reader_playback_startup.dart';
@@ -201,8 +202,7 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen>
       return;
     }
 
-    // 2) Parse through the selected local runtime. Embedded Android mode
-    // never routes a local EPUB through the HTTP backend.
+    // 2) Parse through the selected local runtime; no native EPUB is uploaded.
     if (Platform.isAndroid) {
       try {
         final library = ref.read(libraryStoreProvider);
@@ -308,7 +308,11 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen>
     if (ft == null || ft.chapters.isEmpty) return;
     if (mounted) setState(() => _isConverting = true);
 
-    if (Platform.isAndroid || Platform.isIOS) {
+    if (!kIsWeb &&
+        (defaultTargetPlatform == TargetPlatform.android ||
+            defaultTargetPlatform == TargetPlatform.iOS ||
+            defaultTargetPlatform == TargetPlatform.linux ||
+            defaultTargetPlatform == TargetPlatform.windows)) {
       final player = ref.read(globalAudioPlayerProvider);
       final savedChapter = ref
           .read(resumeStoreProvider)
@@ -325,7 +329,16 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen>
       );
       return;
     }
-    // The external backend remains an explicit desktop compatibility path.
+    // Unsupported companion shells must opt into legacy HTTP compatibility.
+    if (ref.read(settingsProvider).useEmbeddedRuntime) {
+      _showConversionError(
+        EmbeddedConverterUnavailable(
+          'No local Rust audio adapter is registered for this platform.',
+        ),
+      );
+      if (mounted) setState(() => _isConverting = false);
+      return;
+    }
     try {
       await _startBackendConversion();
     } catch (error) {
@@ -511,12 +524,18 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen>
 
       final existingJob = await coordinator.store.load(widget.bookId, jobId);
       if (!_isCurrentConversion(generation)) return;
+      final ttsSnapshot = ref.read(settingsProvider).ttsPreferences;
+      final ttsSupport = await getApplicationSupportDirectory();
+      final requestedOptionsJson = ttsSnapshot.optionsJson(
+        modelsRoot: '${ttsSupport.path}/tts-models',
+      );
       late LocalConversionJob job;
       if (existingJob == null ||
           existingJob.status == LocalConversionJobStatus.cancelled) {
         job = await coordinator.createJob(
           bookId: widget.bookId,
           jobId: jobId,
+          conversionOptionsJson: requestedOptionsJson,
           // Preserve each chapter's source position so resume data and Rust's
           // positional chapter selector stay on the same EPUB axis.
           chapters: [
@@ -603,6 +622,7 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen>
       );
       _activeConversionService = conversionService;
       job = await conversionService.convert(
+        optionsJson: requestedOptionsJson,
         bookId: widget.bookId,
         jobId: jobId,
         inputPath: inputPath,
@@ -611,6 +631,16 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen>
         initialChapterIndex: playbackChapterIndex,
         playbackChapterChanges: _playbackWindowChanges.stream,
         isActive: () => mounted && generation == _localConversionGeneration,
+        onSecondaryUsed: (_) async {
+          if (!_isCurrentConversion(generation)) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                AppLocalizations.of(context)!.ttsSecondaryUsedNotice,
+              ),
+            ),
+          );
+        },
         onUpdate: (updated) async {
           if (!_isCurrentConversion(generation)) return;
           setState(() => _localJob = updated);
@@ -961,7 +991,24 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen>
         final player = ref.read(globalAudioPlayerProvider);
         return Scaffold(
           appBar: AppBar(
-            title: Text(bookTitle),
+            title: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(bookTitle, maxLines: 1, overflow: TextOverflow.ellipsis),
+                if (_localJob?.usedSelections.isNotEmpty == true)
+                  Text(
+                    t.ttsActualVoices(
+                      _localJob!.usedSelections
+                          .map((selection) => selection.displayName)
+                          .join(', '),
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+              ],
+            ),
             titleTextStyle: Theme.of(context).textTheme.titleMedium,
             backgroundColor: Colors.transparent,
             elevation: 0,

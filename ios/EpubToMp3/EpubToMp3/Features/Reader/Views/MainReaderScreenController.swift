@@ -555,6 +555,7 @@ final class MainReaderScreenController: UIViewController {
                 durationSeconds: nil, startedAt: nil, completedAt: nil)
         }
         hasDeliveredListeningChapter = false
+        let conversionOptions = settings.conversionOptions
         Task { [weak self] in
             guard let self else { return }
             var installedPending = false
@@ -589,7 +590,7 @@ final class MainReaderScreenController: UIViewController {
                 let chunkDelivery = StreamingPlaybackChunkDelivery(player: player)
                 let result = try await conversionExecutor(
                     url, jobID, chapterStart, chapterEnd, playbackControl,
-                    .selectedEngine(settings.audioEngine, modelsRoot: AppSettings.ttsModelsRoot()), nil,
+                    conversionOptions, nil,
                     { [weak self] event in
                         guard let self, self.listeningJobID == jobID,
                               self.player.snapshot?.jobId == jobID, event.jobId == jobID,

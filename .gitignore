@@ -200,3 +200,9 @@ target/
 # Local Hermes QA artifacts
 .hermes-run/
 .qa/
+
+# Generated browser speech runtime assets
+/web/public/tts/
+
+# Generated Android phonemizer assets, prepared by the native packaging task
+/flutter_app/android/app/src/main/assets/espeak-ng-data/

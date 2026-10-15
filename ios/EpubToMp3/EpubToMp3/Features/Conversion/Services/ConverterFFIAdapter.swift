@@ -83,7 +83,9 @@ private final class ChapterCallbackBox: @unchecked Sendable {
 
     func progress(_ data: Data) {
         if fallbackNotice.shouldNotify(progress: data) {
-            Task { @MainActor in PlatformFallbackNotice.show() }
+            let fields = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+            let engine = fields?["fallbackUsed"] as? Bool == true ? fields?["engine"] as? String : nil
+            Task { @MainActor in PlatformFallbackNotice.show(engine: engine) }
         }
         progressHandler?(data)
     }

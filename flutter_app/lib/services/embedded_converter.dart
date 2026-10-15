@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/services.dart';
 
 import '../models/ebook_fulltext.dart';
+import '../models/tts_preferences.dart';
 import 'edge_web_tts.dart';
 import 'growing_chapter_audio_source.dart';
 import 'android_speech_fallback.dart';
@@ -56,11 +57,13 @@ abstract interface class EmbeddedConverter {
     required String outputPath,
     int? chapterStart,
     int? chapterEnd,
+    String? optionsJson,
   });
   Future<ConvertedChapterAudio> convertChapter({
     required String inputPath,
     required String outputPath,
     required int chapterIndex,
+    String? optionsJson,
   }) => throw EmbeddedConverterUnavailable(
     'Rust chapter conversion is unavailable',
   );
@@ -110,8 +113,14 @@ class ConvertedChapterAudio {
     required this.chapterIndex,
     required this.path,
     required this.title,
+    this.usedSelections = const [],
+    this.fallbackUsed = false,
+    this.ttsPolicyState,
   });
 
+  final List<TtsSelection> usedSelections;
+  final bool fallbackUsed;
+  final Map<String, dynamic>? ttsPolicyState;
   final int chapterIndex;
   final String path;
   final String title;
@@ -147,17 +156,33 @@ class ConvertedChapterAudio {
       chapterIndex: expectedChapterIndex,
       path: decoded['audioPath'] as String,
       title: entry['title'] as String? ?? '',
+      fallbackUsed: manifest['fallbackUsed'] == true,
+      usedSelections: (manifest['usedSelections'] as List? ?? const [])
+          .whereType<Map>()
+          .map(
+            (selection) =>
+                TtsSelection.fromJson(Map<String, dynamic>.from(selection)),
+          )
+          .toList(growable: false),
+      ttsPolicyState: manifest['ttsPolicyState'] is Map
+          ? Map<String, dynamic>.from(manifest['ttsPolicyState'] as Map)
+          : null,
     );
   }
 }
 
 /// The Android implementation invokes the registered native converter through
 /// the platform channel. It never falls back to HTTP.
+abstract interface class CancellableEmbeddedConverter {
+  Future<void> cancelConversion({String? inputPath, String? outputPath});
+}
+
 abstract interface class StreamingChapterConverter {
   Future<ConvertedChapterAudio> streamChapter({
     required String inputPath,
     required String outputPath,
     required int chapterIndex,
+    String? optionsJson,
     required Future<void> Function(GrowingChapterAudioSource) onFirstAudio,
   });
   Future<void> cancelStreamingChapter(String outputPath);
@@ -168,7 +193,10 @@ final _androidChunkEvents = const EventChannel(
 ).receiveBroadcastStream();
 
 class AndroidEmbeddedConverter
-    implements EmbeddedConverter, StreamingChapterConverter {
+    implements
+        EmbeddedConverter,
+        StreamingChapterConverter,
+        CancellableEmbeddedConverter {
   AndroidEmbeddedConverter({
     MethodChannel? channel,
     Stream<dynamic>? chunkEvents,
@@ -183,6 +211,7 @@ class AndroidEmbeddedConverter
   final EdgeWebTts _edge = EdgeWebTts();
   final AndroidSpeechFallback _speechFallback = AndroidSpeechFallback();
 
+  @override
   Future<void> cancelConversion({String? inputPath, String? outputPath}) async {
     try {
       final arguments = <String, String>{};
@@ -211,6 +240,7 @@ class AndroidEmbeddedConverter
     required String inputPath,
     required String outputPath,
     required int chapterIndex,
+    String? optionsJson,
     required Future<void> Function(GrowingChapterAudioSource) onFirstAudio,
   }) async {
     final source = GrowingChapterAudioSource(outputPath);
@@ -273,6 +303,7 @@ class AndroidEmbeddedConverter
       final raw = await _channel.invokeMethod<String>('convert', {
         'inputPath': inputPath,
         'outputPath': outputPath,
+        'optionsJson': ?optionsJson,
         'chapterStart': chapterIndex,
         'chapterEnd': chapterIndex,
         'streaming': true,
@@ -426,6 +457,7 @@ class AndroidEmbeddedConverter
     required String outputPath,
     int? chapterStart,
     int? chapterEnd,
+    String? optionsJson,
   }) async {
     try {
       // ignore: avoid_print
@@ -440,6 +472,7 @@ class AndroidEmbeddedConverter
       final result = await _channel.invokeMethod<String>('convert', {
         'inputPath': inputPath,
         'outputPath': outputPath,
+        'optionsJson': ?optionsJson,
         'chapterStart': chapterStart ?? -1,
         'chapterEnd': chapterEnd ?? -1,
       });
@@ -488,12 +521,14 @@ class AndroidEmbeddedConverter
     required String inputPath,
     required String outputPath,
     required int chapterIndex,
+    String? optionsJson,
   }) async {
     try {
       await ensureRuntimeLoaded();
       final raw = await _channel.invokeMethod<String>('convert', {
         'inputPath': inputPath,
         'outputPath': outputPath,
+        'optionsJson': ?optionsJson,
         'chapterStart': chapterIndex,
         'chapterEnd': chapterIndex,
       });
@@ -676,6 +711,7 @@ class UnavailableEmbeddedConverter implements EmbeddedConverter {
     required String outputPath,
     int? chapterStart,
     int? chapterEnd,
+    String? optionsJson,
   }) {
     throw EmbeddedConverterUnavailable();
   }
@@ -685,6 +721,7 @@ class UnavailableEmbeddedConverter implements EmbeddedConverter {
     required String inputPath,
     required String outputPath,
     required int chapterIndex,
+    String? optionsJson,
   }) => throw EmbeddedConverterUnavailable();
 
   @override

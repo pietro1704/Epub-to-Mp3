@@ -527,50 +527,7 @@ fn publish_piper_audio(wav: &Path, output: &Path) -> Result<PathBuf, PiperError>
 
 fn encode_piper_mp3(wav: &Path, output: &Path) -> Result<(), PiperError> {
     let data = fs::read(wav).map_err(|error| PiperError::Io(error.to_string()))?;
-    let sample_rate = u32::from_le_bytes(data[24..28].try_into().expect("validated WAV header"));
-    let channels = u16::from_le_bytes(data[22..24].try_into().expect("validated WAV header"));
-    let bits_per_sample =
-        u16::from_le_bytes(data[34..36].try_into().expect("validated WAV header"));
-    let format = u16::from_le_bytes(data[20..22].try_into().expect("validated WAV header"));
-    if format != 1 || bits_per_sample != 16 || channels != 1 || &data[36..40] != b"data" {
-        return Err(PiperError::InvalidWav(
-            "expected mono 16-bit PCM from the embedded runtime".into(),
-        ));
-    }
-    let payload_len =
-        u32::from_le_bytes(data[40..44].try_into().expect("validated WAV header")) as usize;
-    let payload = data
-        .get(44..44usize.saturating_add(payload_len))
-        .ok_or_else(|| PiperError::InvalidWav("PCM payload is truncated".into()))?;
-    if payload.is_empty() || payload.len() % 2 != 0 || sample_rate == 0 {
-        return Err(PiperError::InvalidWav(
-            "invalid PCM audio dimensions".into(),
-        ));
-    }
-
-    let mut encoder = rusty_mp3::Mp3Encoder::new(rusty_mp3::Mp3EncoderConfig {
-        bitrate_kbps: 96,
-        vbr_quality: None,
-    });
-    encoder
-        .push_pcm_s16le(payload, channels, sample_rate)
-        .map_err(|error| PiperError::Synthesis(format!("MP3 encoding failed: {error}")))?;
-    encoder.finish();
-    let encoded = crate::audio::collect_rusty_mp3_output(&mut encoder)
-        .map_err(|error| PiperError::Synthesis(error.to_string()))?;
-    let mut decoder = rusty_mp3::Mp3Decoder::new();
-    decoder.push(&encoded);
-    decoder.flush();
-    let mut decoded_samples = 0usize;
-    while let Ok(frame) = decoder.next_frame() {
-        decoded_samples += frame.samples.len();
-    }
-    if decoded_samples == 0 {
-        return Err(PiperError::Synthesis(
-            "MP3 encoder produced no playable frames".into(),
-        ));
-    }
-
+    let encoded = crate::platform_tts::encode_wav(&data).map_err(PiperError::InvalidWav)?;
     let parent = output
         .parent()
         .filter(|parent| !parent.as_os_str().is_empty())

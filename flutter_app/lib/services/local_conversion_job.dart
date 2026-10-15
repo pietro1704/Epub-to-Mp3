@@ -1,4 +1,5 @@
 import 'dart:convert';
+import '../models/tts_preferences.dart';
 
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -18,8 +19,12 @@ class LocalConversionChapter {
     this.outputPath,
     this.error,
     this.updatedAt,
+    this.usedSelections = const [],
+    this.fallbackUsed = false,
   });
 
+  final List<TtsSelection> usedSelections;
+  final bool fallbackUsed;
   final int index;
   final String name;
   final String status;
@@ -28,31 +33,47 @@ class LocalConversionChapter {
   final DateTime? updatedAt;
 
   LocalConversionChapter copyWith({
+    List<TtsSelection>? usedSelections,
+    bool? fallbackUsed,
     String? status,
     String? outputPath,
     String? error,
     DateTime? updatedAt,
     bool clearError = false,
   }) => LocalConversionChapter(
-        index: index,
-        name: name,
-        status: status ?? this.status,
-        outputPath: outputPath ?? this.outputPath,
-        error: clearError ? null : (error ?? this.error),
-        updatedAt: updatedAt ?? this.updatedAt,
-      );
+    usedSelections: usedSelections ?? this.usedSelections,
+    fallbackUsed: fallbackUsed ?? this.fallbackUsed,
+    index: index,
+    name: name,
+    status: status ?? this.status,
+    outputPath: outputPath ?? this.outputPath,
+    error: clearError ? null : (error ?? this.error),
+    updatedAt: updatedAt ?? this.updatedAt,
+  );
 
   Map<String, dynamic> toJson() => {
-        'index': index,
-        'name': name,
-        'status': status,
-        if (outputPath != null) 'outputPath': outputPath,
-        if (error != null) 'error': error,
-        if (updatedAt != null) 'updatedAt': updatedAt!.toIso8601String(),
-      };
+    'index': index,
+    'name': name,
+    'usedSelections': usedSelections
+        .map((selection) => selection.toJson())
+        .toList(),
+    'fallbackUsed': fallbackUsed,
+    'status': status,
+    if (outputPath != null) 'outputPath': outputPath,
+    if (error != null) 'error': error,
+    if (updatedAt != null) 'updatedAt': updatedAt!.toIso8601String(),
+  };
 
   factory LocalConversionChapter.fromJson(Map<String, dynamic> json) =>
       LocalConversionChapter(
+        usedSelections: (json['usedSelections'] as List? ?? const [])
+            .whereType<Map>()
+            .map(
+              (value) =>
+                  TtsSelection.fromJson(Map<String, dynamic>.from(value)),
+            )
+            .toList(),
+        fallbackUsed: json['fallbackUsed'] == true,
         index: json['index'] as int,
         name: json['name'] as String? ?? '',
         status: json['status'] as String? ?? 'pending',
@@ -70,6 +91,9 @@ class LocalConversionJob {
     required this.status,
     required this.createdAt,
     required this.updatedAt,
+    this.conversionOptionsJson,
+    this.ttsPolicyState,
+    this.fallbackNoticeShown = false,
     this.currentChapterIndex,
     this.completedOutputs = const [],
     this.error,
@@ -82,12 +106,29 @@ class LocalConversionJob {
   final LocalConversionJobStatus status;
   final DateTime createdAt;
   final DateTime updatedAt;
+  final String? conversionOptionsJson;
+  final Map<String, dynamic>? ttsPolicyState;
+  final bool fallbackNoticeShown;
+  bool get fallbackUsed => chapters.any((chapter) => chapter.fallbackUsed);
+  List<TtsSelection> get usedSelections {
+    final unique = <String, TtsSelection>{};
+    for (final chapter in chapters) {
+      for (final selection in chapter.usedSelections) {
+        unique[jsonEncode(selection.toJson())] = selection;
+      }
+    }
+    return unique.values.toList(growable: false);
+  }
+
   final int? currentChapterIndex;
   final List<String> completedOutputs;
   final String? error;
   final DateTime? lastActivityAt;
 
   LocalConversionJob copyWith({
+    String? conversionOptionsJson,
+    Map<String, dynamic>? ttsPolicyState,
+    bool? fallbackNoticeShown,
     List<LocalConversionChapter>? chapters,
     LocalConversionJobStatus? status,
     DateTime? updatedAt,
@@ -97,51 +138,70 @@ class LocalConversionJob {
     DateTime? lastActivityAt,
     bool clearError = false,
   }) => LocalConversionJob(
-        bookId: bookId,
-        jobId: jobId,
-        chapters: chapters ?? this.chapters,
-        status: status ?? this.status,
-        createdAt: createdAt,
-        updatedAt: updatedAt ?? this.updatedAt,
-        currentChapterIndex: currentChapterIndex ?? this.currentChapterIndex,
-        completedOutputs: completedOutputs ?? this.completedOutputs,
-        error: clearError ? null : (error ?? this.error),
-        lastActivityAt: lastActivityAt ?? this.lastActivityAt,
-      );
+    bookId: bookId,
+    jobId: jobId,
+    conversionOptionsJson: conversionOptionsJson ?? this.conversionOptionsJson,
+    ttsPolicyState: ttsPolicyState ?? this.ttsPolicyState,
+    fallbackNoticeShown: fallbackNoticeShown ?? this.fallbackNoticeShown,
+    chapters: chapters ?? this.chapters,
+    status: status ?? this.status,
+    createdAt: createdAt,
+    updatedAt: updatedAt ?? this.updatedAt,
+    currentChapterIndex: currentChapterIndex ?? this.currentChapterIndex,
+    completedOutputs: completedOutputs ?? this.completedOutputs,
+    error: clearError ? null : (error ?? this.error),
+    lastActivityAt: lastActivityAt ?? this.lastActivityAt,
+  );
 
   Map<String, dynamic> toJson() => {
-        'bookId': bookId,
-        'jobId': jobId,
-        'chapters': chapters.map((c) => c.toJson()).toList(),
-        'status': status.name,
-        'createdAt': createdAt.toIso8601String(),
-        'updatedAt': updatedAt.toIso8601String(),
-        if (currentChapterIndex != null) 'currentChapterIndex': currentChapterIndex,
-        'completedOutputs': completedOutputs,
-        if (error != null) 'error': error,
-        if (lastActivityAt != null) 'lastActivityAt': lastActivityAt!.toIso8601String(),
-      };
+    'bookId': bookId,
+    'jobId': jobId,
+    'chapters': chapters.map((c) => c.toJson()).toList(),
+    'status': status.name,
+    'createdAt': createdAt.toIso8601String(),
+    'updatedAt': updatedAt.toIso8601String(),
+    if (currentChapterIndex != null) 'currentChapterIndex': currentChapterIndex,
+    'completedOutputs': completedOutputs,
+    'conversionOptionsJson': ?conversionOptionsJson,
+    'ttsPolicyState': ?ttsPolicyState,
+    'fallbackNoticeShown': fallbackNoticeShown,
+    'fallbackUsed': fallbackUsed,
+    if (error != null) 'error': error,
+    if (lastActivityAt != null)
+      'lastActivityAt': lastActivityAt!.toIso8601String(),
+  };
 
-  factory LocalConversionJob.fromJson(Map<String, dynamic> json) => LocalConversionJob(
-        bookId: json['bookId'] as String,
-        jobId: json['jobId'] as String,
-        chapters: (json['chapters'] as List<dynamic>)
-            .map((c) => LocalConversionChapter.fromJson(c as Map<String, dynamic>))
-            .toList(),
-        status: LocalConversionJobStatus.values.firstWhere(
-          (s) => s.name == json['status'],
-          orElse: () => LocalConversionJobStatus.pending,
-        ),
-        createdAt: _date(json['createdAt']) ?? DateTime.now().toUtc(),
-        updatedAt: _date(json['updatedAt']) ?? DateTime.now().toUtc(),
-        currentChapterIndex: json['currentChapterIndex'] as int?,
-        completedOutputs: (json['completedOutputs'] as List<dynamic>? ?? const []).cast<String>(),
-        error: json['error'] as String?,
-        lastActivityAt: _date(json['lastActivityAt']),
-      );
+  factory LocalConversionJob.fromJson(
+    Map<String, dynamic> json,
+  ) => LocalConversionJob(
+    ttsPolicyState: json['ttsPolicyState'] is Map
+        ? Map<String, dynamic>.from(json['ttsPolicyState'] as Map)
+        : null,
+    fallbackNoticeShown: json['fallbackNoticeShown'] == true,
+    conversionOptionsJson:
+        json['conversionOptionsJson'] as String? ??
+        _legacyConversionOptions(json),
+    bookId: json['bookId'] as String,
+    jobId: json['jobId'] as String,
+    chapters: (json['chapters'] as List<dynamic>)
+        .map((c) => LocalConversionChapter.fromJson(c as Map<String, dynamic>))
+        .toList(),
+    status: LocalConversionJobStatus.values.firstWhere(
+      (s) => s.name == json['status'],
+      orElse: () => LocalConversionJobStatus.pending,
+    ),
+    createdAt: _date(json['createdAt']) ?? DateTime.now().toUtc(),
+    updatedAt: _date(json['updatedAt']) ?? DateTime.now().toUtc(),
+    currentChapterIndex: json['currentChapterIndex'] as int?,
+    completedOutputs: (json['completedOutputs'] as List<dynamic>? ?? const [])
+        .cast<String>(),
+    error: json['error'] as String?,
+    lastActivityAt: _date(json['lastActivityAt']),
+  );
 }
 
-DateTime? _date(Object? value) => value == null ? null : DateTime.tryParse(value as String);
+DateTime? _date(Object? value) =>
+    value == null ? null : DateTime.tryParse(value as String);
 
 class LocalConversionJobStore {
   LocalConversionJobStore(this._prefs, {this.prefix = 'local-conversion.v1'});
@@ -154,14 +214,19 @@ class LocalConversionJobStore {
     final raw = _prefs.getString(key(bookId, jobId));
     if (raw == null) return null;
     try {
-      return LocalConversionJob.fromJson(jsonDecode(raw) as Map<String, dynamic>);
+      return LocalConversionJob.fromJson(
+        jsonDecode(raw) as Map<String, dynamic>,
+      );
     } catch (_) {
       return null;
     }
   }
 
   Future<void> save(LocalConversionJob job) async {
-    await _prefs.setString(key(job.bookId, job.jobId), jsonEncode(job.toJson()));
+    await _prefs.setString(
+      key(job.bookId, job.jobId),
+      jsonEncode(job.toJson()),
+    );
   }
 }
 
@@ -180,12 +245,17 @@ class ConversionJobCoordinator {
     required String bookId,
     required String jobId,
     required List<LocalConversionChapterSpec> chapters,
+    String? conversionOptionsJson,
   }) async {
     final now = _now();
     final job = LocalConversionJob(
       bookId: bookId,
       jobId: jobId,
-      chapters: chapters.map((c) => LocalConversionChapter(index: c.index, name: c.name)).toList(),
+      conversionOptionsJson:
+          conversionOptionsJson ?? const TtsPreferences().optionsJson(),
+      chapters: chapters
+          .map((c) => LocalConversionChapter(index: c.index, name: c.name))
+          .toList(),
       status: LocalConversionJobStatus.pending,
       createdAt: now,
       updatedAt: now,
@@ -208,9 +278,11 @@ class ConversionJobCoordinator {
       }
       return existing;
     }).toList();
-    final unchanged = job.chapters.length == reconciled.length &&
+    final unchanged =
+        job.chapters.length == reconciled.length &&
         List.generate(reconciled.length, (index) => index).every(
-          (index) => job.chapters[index].index == reconciled[index].index &&
+          (index) =>
+              job.chapters[index].index == reconciled[index].index &&
               job.chapters[index].name == reconciled[index].name,
         );
     if (unchanged) return job;
@@ -222,16 +294,18 @@ class ConversionJobCoordinator {
         : reconciled.any((chapter) => chapter.status == 'running')
         ? LocalConversionJobStatus.running
         : LocalConversionJobStatus.pending;
-    return _persist(job.copyWith(
-      chapters: reconciled,
-      status: status,
-      updatedAt: _now(),
-      completedOutputs: reconciled
-          .where((chapter) => chapter.status == 'completed')
-          .map((chapter) => chapter.outputPath)
-          .whereType<String>()
-          .toList(),
-    ));
+    return _persist(
+      job.copyWith(
+        chapters: reconciled,
+        status: status,
+        updatedAt: _now(),
+        completedOutputs: reconciled
+            .where((chapter) => chapter.status == 'completed')
+            .map((chapter) => chapter.outputPath)
+            .whereType<String>()
+            .toList(),
+      ),
+    );
   }
 
   List<int> pendingChapterIndices(LocalConversionJob job) => job.chapters
@@ -239,43 +313,87 @@ class ConversionJobCoordinator {
       .map((c) => c.index)
       .toList();
 
-  Future<LocalConversionJob> markChapterRunning(LocalConversionJob job, int index) =>
-      _updateChapter(job, index, (c, now) => c.copyWith(status: 'running', updatedAt: now, clearError: true),
-          status: LocalConversionJobStatus.running);
+  Future<LocalConversionJob> markChapterRunning(
+    LocalConversionJob job,
+    int index,
+  ) => _updateChapter(
+    job,
+    index,
+    (c, now) => c.copyWith(status: 'running', updatedAt: now, clearError: true),
+    status: LocalConversionJobStatus.running,
+  );
 
-  Future<LocalConversionJob> completeChapter(LocalConversionJob job, int index, String outputPath) =>
-      _updateChapter(job, index, (c, now) => c.copyWith(status: 'completed', outputPath: outputPath, updatedAt: now, clearError: true),
-          status: job.chapters.every((c) => c.index == index || c.status == 'completed')
-              ? LocalConversionJobStatus.completed
-              : LocalConversionJobStatus.running,
-          outputPath: outputPath);
+  Future<LocalConversionJob> completeChapter(
+    LocalConversionJob job,
+    int index,
+    String outputPath, {
+    List<TtsSelection> usedSelections = const [],
+    bool fallbackUsed = false,
+  }) => _updateChapter(
+    job,
+    index,
+    (c, now) => c.copyWith(
+      status: 'completed',
+      usedSelections: usedSelections,
+      fallbackUsed: fallbackUsed,
+      outputPath: outputPath,
+      updatedAt: now,
+      clearError: true,
+    ),
+    status:
+        job.chapters.every((c) => c.index == index || c.status == 'completed')
+        ? LocalConversionJobStatus.completed
+        : LocalConversionJobStatus.running,
+    outputPath: outputPath,
+  );
 
-  Future<LocalConversionJob> failChapter(LocalConversionJob job, int index, String error) =>
-      _updateChapter(job, index, (c, now) => c.copyWith(status: 'failed', error: error, updatedAt: now),
-          status: LocalConversionJobStatus.failed, error: error);
+  Future<LocalConversionJob> failChapter(
+    LocalConversionJob job,
+    int index,
+    String error,
+  ) => _updateChapter(
+    job,
+    index,
+    (c, now) => c.copyWith(status: 'failed', error: error, updatedAt: now),
+    status: LocalConversionJobStatus.failed,
+    error: error,
+  );
 
   Future<LocalConversionJob> retryChapter(LocalConversionJob job, int index) =>
-      _updateChapter(job, index, (c, now) => c.copyWith(status: 'pending', updatedAt: now, clearError: true),
-          status: LocalConversionJobStatus.pending, clearError: true);
+      _updateChapter(
+        job,
+        index,
+        (c, now) =>
+            c.copyWith(status: 'pending', updatedAt: now, clearError: true),
+        status: LocalConversionJobStatus.pending,
+        clearError: true,
+      );
 
   Future<LocalConversionJob> cancel(LocalConversionJob job) => _persist(
-        job.copyWith(status: LocalConversionJobStatus.cancelled, updatedAt: _now()),
-      );
+    job.copyWith(status: LocalConversionJobStatus.cancelled, updatedAt: _now()),
+  );
 
   Future<LocalConversionJob> suspend(LocalConversionJob job) => _persist(
-        job.copyWith(
-          status: LocalConversionJobStatus.pending,
-          updatedAt: _now(),
-          lastActivityAt: _now(),
-        ),
-      );
+    job.copyWith(
+      status: LocalConversionJobStatus.pending,
+      updatedAt: _now(),
+      lastActivityAt: _now(),
+    ),
+  );
 
   Future<LocalConversionJob> watchdog(LocalConversionJob job) async {
     final last = job.lastActivityAt ?? job.updatedAt;
-    if (job.status != LocalConversionJobStatus.running || _now().difference(last) < watchdogTimeout) return job;
+    if (job.status != LocalConversionJobStatus.running ||
+        _now().difference(last) < watchdogTimeout) {
+      return job;
+    }
     final index = job.currentChapterIndex;
     if (index == null) return job;
-    return failChapter(job, index, 'Conversion timed out after ${watchdogTimeout.inMinutes} minutes');
+    return failChapter(
+      job,
+      index,
+      'Conversion timed out after ${watchdogTimeout.inMinutes} minutes',
+    );
   }
 
   Future<LocalConversionJob> _updateChapter(
@@ -288,23 +406,52 @@ class ConversionJobCoordinator {
     bool clearError = false,
   }) async {
     final now = _now();
-    final chapters = job.chapters.map((c) => c.index == index ? update(c, now) : c).toList();
+    final chapters = job.chapters
+        .map((c) => c.index == index ? update(c, now) : c)
+        .toList();
     final outputs = [...job.completedOutputs];
-    if (outputPath != null && !outputs.contains(outputPath)) outputs.add(outputPath);
-    return _persist(job.copyWith(
-      chapters: chapters,
-      status: status,
-      updatedAt: now,
-      currentChapterIndex: index,
-      completedOutputs: outputs,
-      error: error,
-      clearError: clearError,
-      lastActivityAt: now,
-    ));
+    if (outputPath != null && !outputs.contains(outputPath)) {
+      outputs.add(outputPath);
+    }
+    return _persist(
+      job.copyWith(
+        chapters: chapters,
+        status: status,
+        updatedAt: now,
+        currentChapterIndex: index,
+        completedOutputs: outputs,
+        error: error,
+        clearError: clearError,
+        lastActivityAt: now,
+      ),
+    );
   }
 
   Future<LocalConversionJob> _persist(LocalConversionJob job) async {
     await store.save(job);
     return job;
   }
+}
+
+/// Only migrate a legacy voice when its identity is actually recorded.
+String? _legacyConversionOptions(Map<String, dynamic> json) {
+  final engine = json['engine'];
+  final voice = json['voice'];
+  final model = json['model_id'] ?? json['modelId'];
+  if ((engine == 'edge' && voice is String && voice.isNotEmpty) ||
+      (engine == 'piper' && model is String && model.isNotEmpty)) {
+    return jsonEncode({
+      'tts_preferences': {
+        'primary': {
+          'engine': engine,
+          'model_id': engine == 'piper' ? model : null,
+          'voice': engine == 'edge' ? voice : null,
+        },
+        'secondary': null,
+        'allow_online_fallback': false,
+      },
+      if (json['language'] != null) 'language': json['language'],
+    });
+  }
+  return null;
 }
