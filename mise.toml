@@ -91,6 +91,10 @@ run = "mise exec -- python scripts/build_converter_ffi.py --list"
 description = "Read-only Intel Mac check: Simulator shutdown and SimMetalHost exit before compilation"
 run = "ruby scripts/native_build_preflight.rb"
 
+[tasks."models:catalog:test"]
+description = "Verify model catalog and atomic/checksummed installation contracts without downloading models"
+run = "ruby scripts/native_job.rb build -- mise exec -- cargo test -p converter-core --lib model_ --jobs 1"
+
 [tasks."host:workflow:test"]
 description = "Run fail-fast host workflow regressions with exact logs; no native build or Simulator"
 run = "ruby scripts/run_host_checks.rb"
