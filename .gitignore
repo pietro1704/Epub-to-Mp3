@@ -205,3 +205,5 @@ target/
 
 # Generated Android phonemizer assets, prepared by the native packaging task
 /flutter_app/android/app/src/main/assets/espeak-ng-data/
+/flutter_app/android/app/src/main/jniLibs/arm64-v8a/libonnxruntime.so
+/flutter_app/android/app/src/main/jniLibs/arm64-v8a/libc++_shared.so

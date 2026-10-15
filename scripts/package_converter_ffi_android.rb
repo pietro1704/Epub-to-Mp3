@@ -6,6 +6,7 @@ require 'fileutils'
 require 'open3'
 require 'rbconfig'
 require 'tmpdir'
+require_relative 'fetch_onnxruntime_android'
 
 root = File.expand_path('..', __dir__)
 Dir.chdir(root)
@@ -19,6 +20,8 @@ source = File.join(build_root, 'aarch64-linux-android', 'release', 'libconverter
 manifest_path = "#{source}.runtime.json"
 abort 'Build the Piper/JNI Android artifact first: mise run converter-ffi:android-arm64' unless File.file?(manifest_path)
 manifest = JSON.parse(File.read(manifest_path))
+ort_directory = AndroidOnnxRuntime.validate(manifest.fetch('ort_directory'))
+abort 'Android ONNX runtime differs from its recorded build' unless manifest['ort_sha256'] == AndroidOnnxRuntime::LIBRARY_SHA256
 abort 'The artifact was not built with Piper/JNI features' unless manifest['target'] == 'aarch64-linux-android' && manifest['ort_api'] == 23 && %w[android-jni piper-runtime].all? { |feature| manifest.fetch('features').include?(feature) }
 abort 'Android artifact differs from its recorded build' unless File.file?(source) && Digest::SHA256.file(source).hexdigest == manifest['sha256']
 bytes = File.binread(source, 20)
@@ -30,6 +33,9 @@ nm = File.join(tools, 'bin', 'llvm-nm')
 abort 'The recorded NDK inspection tools are unavailable' unless File.executable?(readelf) && File.executable?(nm)
 symbols, status = Open3.capture2(nm, '--dynamic', '--defined-only', source)
 abort 'Cannot inspect Android native exports' unless status.success?
+imports, status = Open3.capture2(nm, '--dynamic', '--undefined-only', source)
+abort 'Cannot inspect Android native imports' unless status.success?
+abort 'Android converter imports the incompatible GNU C++ ABI' if imports.match?(/__cxx11|GLIBCXX/)
 required_symbols = %w[piper_runtime_init piper_synthesize Java_com_pietrocode_epubtomp3_flutter_1app_MainActivity_nativeConvertWithOptions Java_com_pietrocode_epubtomp3_flutter_1app_MainActivity_nativePiperSynthesizeWithOptions Java_com_pietrocode_epubtomp3_flutter_1app_BackgroundChapterWorker_nativeConvertWithOptions Java_com_pietrocode_epubtomp3_flutter_1app_BackgroundChapterWorker_nativeCancelConversion Java_com_pietrocode_epubtomp3_flutter_1app_BackgroundChapterWorker_nativePrepareConversion]
 required_symbols.each do |symbol|
   abort "Missing native Piper/JNI export: #{symbol}" unless symbols.match?(/\b#{Regexp.escape(symbol)}$/)
@@ -37,9 +43,12 @@ end
 dynamic, status = Open3.capture2(readelf, '--dynamic', source)
 abort 'Cannot inspect Android ELF dependencies' unless status.success?
 needed = dynamic.scan(/\(NEEDED\).*?\[([^\]]+)\]/).flatten
+abort 'Android converter must link the verified shared ONNX runtime' unless needed.include?('libonnxruntime.so')
+abort 'Android JNI must use shared Bionic instead of embedding libc.a' unless needed.include?('libc.so')
 system_libraries = %w[libc.so libm.so libdl.so liblog.so libandroid.so libz.so libjnigraphics.so]
 dependencies = needed.reject { |name| system_libraries.include?(name) }.to_h do |name|
   candidates = Dir.glob(File.join(build_root, '**', name))
+  candidates.unshift(File.join(ort_directory, name))
   candidates << File.join(tools, 'sysroot', 'usr', 'lib', 'aarch64-linux-android', name)
   path = candidates.find { |candidate| File.file?(candidate) }
   abort "Missing Android runtime dependency: #{name}" unless path
@@ -83,6 +92,18 @@ if (apk_index = ARGV.index('--apk'))
     selected = [*native_names, *inspected_assets.map { |name| "assets/espeak-ng-data/#{name}" }]
     _, status = Open3.capture2(jar, 'xf', apk, *selected, chdir: directory)
     abort 'Cannot extract APK runtime inputs for inspection' unless status.success?
+    # Gradle strips ELF debug sections. Normalize both sides with the same NDK
+    # tool so the audit still rejects stale or replaced runtime code.
+    strip = File.join(tools, 'bin', 'llvm-strip')
+    { 'libconverter_ffi.so' => source, **dependencies }.each_with_index do |(name, original), index|
+      normalized = [original, File.join(directory, 'lib/arm64-v8a', name)].each_with_index.map do |path, side|
+        output = File.join(directory, "normalized-#{index}-#{side}.so")
+        _, status = Open3.capture2(strip, '--strip-unneeded', '-o', output, path)
+        abort "Cannot normalize APK native dependency: #{name}" unless status.success?
+        Digest::SHA256.file(output).hexdigest
+      end
+      abort "APK native dependency is stale: #{name}" unless normalized.uniq.length == 1
+    end
     apk_library = File.join(directory, 'lib/arm64-v8a/libconverter_ffi.so')
     apk_symbols, status = Open3.capture2(nm, '--dynamic', '--defined-only', apk_library)
     abort 'Cannot inspect APK JNI exports' unless status.success?

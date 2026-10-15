@@ -68,7 +68,8 @@ in `docs/agent-workflow.md`.
 Track every concrete user request/correction in `TODO_APP.md` before implementation;
 keep stable task IDs, status, acceptance, platform checks and verification evidence.
 Tick completion only after the affected app behavior is verified and delivered.
-All development and verification happen on this Mac; do not route work to Arch.
+Keep development and builds on this Mac. Explicitly authorized Android device
+verification may use ADB through Arch when the phone is connected there.
 Keep `TODO_APP.md` and `handoff.md` limited to task-specific acceptance and actual
 verification evidence.
 Use actual task definitions in `mise.toml`; run project tasks through `mise run`

@@ -46,6 +46,12 @@ android {
     }
 
     buildTypes {
+        getByName("debug") {
+            // Keep device verification separate when the installed app has another signer.
+            if (providers.environmentVariable("EPUB2MP3_ANDROID_VERIFICATION").orNull == "1") {
+                applicationIdSuffix = ".verification"
+            }
+        }
         // Flutter supplies ABI filters per build type, overriding defaultConfig.
         // Match the packaged Rust runtime for every APK entry point.
         all {

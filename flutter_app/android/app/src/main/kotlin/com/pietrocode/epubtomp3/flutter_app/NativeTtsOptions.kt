@@ -1,12 +1,18 @@
 package com.pietrocode.epubtomp3.flutter_app
 
 import android.content.Context
+import android.system.Os
 import java.io.File
 import org.json.JSONObject
 
 /** Asset delivery is explicit packaging; it never downloads a model. */
 object NativeTtsOptions {
     @Synchronized fun prepare(context: Context, raw: String?): String {
+        // Rust's Android default (/data/local/tmp) is not writable by app UIDs.
+        // Foreground and WorkManager conversions must share the app cache path.
+        val temporaryDirectory = context.cacheDir
+        check(temporaryDirectory.isDirectory || temporaryDirectory.mkdirs()) { "Cannot create native temporary directory" }
+        Os.setenv("TMPDIR", temporaryDirectory.absolutePath, true)
         val options = JSONObject(raw ?: "{\"tts_preferences\":{\"primary\":{\"engine\":\"piper\",\"model_id\":\"pt_BR-faber-medium\"},\"secondary\":null,\"allow_online_fallback\":false}}")
         val preferences = options.optJSONObject("tts_preferences")
         val needsPiper = preferences?.optJSONObject("primary")?.optString("engine") == "piper" || preferences?.optJSONObject("secondary")?.optString("engine") == "piper"
