@@ -4,25 +4,9 @@ Use this workflow for changes that must survive review and future agent runs.
 
 ## Model and prompt selection
 
-For day-to-day work in Codex, use **GPT-5.6 Terra** as the default: it is the
-best cost/capability balance for this repository's Swift, Rust, FFI, and test
-work. Use **GPT-5.6 Sol** for difficult root-cause analysis, architecture, or
-changes spanning several runtimes. Use **GPT-5.6 Luna** for bounded edits,
-documentation, summaries, and routine questions; its speed and low price are
-useful, but it is not the default for long autonomous coding tasks when those
-tasks are looping or missing constraints. Start with medium reasoning; raise it
-for a hard diagnosis instead of switching every task to the most expensive
-model.
-
-At the 2026-10-07 API list prices, Luna was $0.20/$1.20, Terra $2/$12, and Sol
-$4/$20 per million input/output tokens. These are API prices, not Codex plan
-quota rates. Check the linked current model pages before budgeting because
-availability and prices change:
-
-- [GPT-5.6 Luna](https://developers.openai.com/api/docs/models/gpt-5.6-luna)
-- [GPT-5.6 Terra](https://developers.openai.com/api/docs/models/gpt-5.6-terra)
-- [GPT-5.6 Sol](https://developers.openai.com/api/docs/models/gpt-5.6-sol)
-- [Model availability in Codex](https://help.openai.com/en/articles/20001354-gpt-6-and-other-models-in-chatgpt)
+Use the model selected by the user or the active Codex configuration. Do not
+pin model names, prices, or reasoning defaults in workflow prose. Consult
+current official OpenAI documentation when changing model/tool configuration.
 
 Give the agent one observable outcome, the platform/runtime, hard constraints,
 acceptance checks, and the requested delivery actions. Let repository
@@ -44,21 +28,19 @@ For a task that is already clear and small, send the request directly. Use a
 skill only when its trigger fits; the skills are a router, not a checklist to
 run all at once:
 
-- `$ask-matt` when unsure which workflow/skill applies.
+- Discover an available skill by its actual description when routing is unclear.
 - `$diagnosing-bugs` for a reported failure, regression, or slow path; then use
   `$tdd` when the fix needs a regression test.
-- `$grill-with-docs` for an unresolved design or multi-session idea; use
-  `$to-spec` and `$to-tickets` when it needs a durable spec and task graph.
-- `$implement` for a planned ticket; `$implement-spec` for executing a whole
-  ticket graph. Use `$code-review` against the matching plan before delivery.
+- Use the available grilling skill only when unresolved decisions affect scope or acceptance.
+- Implement the bounded ticket directly; use `$code-review` when reviewing its change.
 - `$domain-modeling` or `$codebase-design` when domain language or module
   boundaries are the actual problem; `$retro` after a workflow went sideways.
 
 Keep the workflow proportional: do not invoke every role for a focused fix.
 Make progress visible in the worktree or in verified evidence each turn. After
 the focused verification, report exact commands/results and unresolved
-blockers; do not narrate repeated exploration as progress. Commit, push, or
-perform device/service actions only when authorized for that task.
+blockers; do not narrate repeated exploration as progress. Apply the standing commit/push authorization in AGENTS.md unless revoked.
+Other external/device/service actions follow the authorization stated there.
 
 ## Operational guardrails
 
@@ -98,7 +80,7 @@ do not combine feature work, refactors, dependency upgrades, and CI changes.
 
 ## During implementation
 
-For every feature or bug fix, use this exact native iOS runtime: iPhone SE (1st
+For native Apple behavior changes, use this exact native iOS runtime: iPhone SE (1st
 generation) Simulator on iOS 15.5. Check it and the native macOS target before
 coding, then install, launch, and exercise both real apps. Automated tests are
 additional evidence. If either app is unavailable, document the blocker and leave
@@ -112,9 +94,49 @@ Start each bug fix with a failing regression test. Keep the implementation and
 its test in the same commit when practical. Preserve unrelated local changes by
 using a detached worktree instead of stashing or resetting them.
 
-Before pushing, update the branch from `master`, run `git diff --check`, and run
-`mise run preflight`. A source-level test is not evidence for a native runtime
+Before pushing, inspect divergence from `master` and preserve feature dependencies;
+update safely when required without rewriting unrelated work. Run `git diff --check`
+and `mise run preflight`, plus focused runtime tests. Preflight alone is not coverage. A source-level test is not evidence for a native runtime
 behavior; use the platform's executable test path for native changes.
+
+## Intel Mac build and Simulator phases
+
+The supplied 2026-10-15 panic reports `IGGuC.cpp:2913`, work queue 41,
+`AppleIntelKBLGraphics`, and `SimMetalHost` for the iPhone SE. Compressor
+and swap were reported OK. This supports a graphics-driver queue failure;
+it does not establish disk exhaustion, general RAM exhaustion, hardware
+failure, or an app defect. Hermes reported concurrent compilation from a
+separate capture; that capture was not independently inspected in this task.
+The measures below reduce concurrency; they are not a verified driver fix.
+
+1. Before compiling Swift/Rust/native dependencies, stop the active native
+   app, shut down its Simulator, and verify shutdown and `SimMetalHost` exit.
+   Use `mise run native:build:preflight` for the read-only Intel check. A
+   failed inspection blocks compilation; preserve the failure evidence.
+2. Keep heavy jobs under the existing `/tmp/epub2mp3.heavy-job.lock` lease.
+   The preflight is a snapshot, not a lock or global interception. Keep the
+   Simulator off throughout compilation, including incremental builds and
+   build phases. Avoid other GPU-heavy work during verification.
+3. For the required SE1/iOS 15.5 reader run, select Xcode 16.4 with
+   `DEVELOPER_DIR=/Applications/Xcode-16.4.0.app/Contents/Developer`.
+   Verify the exact destination; do not substitute another runtime.
+   Run `build-for-testing` first with `-jobs 1` and parallel testing disabled.
+4. After compilation exits, boot only the selected Simulator and execute
+   `test-without-building` against the compatible existing `.xctestrun` and
+   derived-data artifacts, again with parallel testing disabled. Existing
+   `ios:simulator:test` supports `IOS_SKIP_BUILD=1`; use it only with valid
+   artifacts from the matching source, SDK, architecture and test settings.
+   A `xcodebuild test-without-building` process is expected during execution;
+   compiler/build processes alongside it are not.
+5. Shut down and confirm exit before rebuilding or switching to macOS.
+   Verify macOS separately. At the end of reader verification, leave only
+   the required SE Simulator/app open on the seeded book. A later build
+   must stop that retained session first.
+
+Documentation/configuration changes need focused host/content checks, not an
+app launch. Do not restart services, change renderer defaults, disable Metal,
+install drivers/runtimes, erase Simulators, or reproduce a kernel panic as an
+implicit workaround. Report any unverified app/driver stability explicitly.
 
 ## Review, merge, and post-merge reconciliation
 

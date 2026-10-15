@@ -87,10 +87,19 @@ run = "mise exec -- python scripts/validate_converter_ffi_targets.py"
 description = "List converter-ffi native target mappings and exact output paths"
 run = "mise exec -- python scripts/build_converter_ffi.py --list"
 
+[tasks."native:build:preflight"]
+description = "Read-only Intel Mac check: Simulator shutdown and SimMetalHost exit before compilation"
+run = "ruby scripts/native_build_preflight.rb"
+
+[tasks."native:build:preflight:test"]
+description = "Host regressions for native build crash-prevention preflight; no Simulator or build"
+run = "ruby scripts/test_native_build_preflight.rb"
+
 [tasks."converter-ffi:build"]
 description = "Build the shared converter-ffi Rust library for the host"
 depends = ["onnxruntime:host"]
 run = '''
+mise exec -- ruby scripts/native_build_preflight.rb || exit $?
 mise exec -- ruby -e '
 lease = File.open("/tmp/epub2mp3.heavy-job.lock", "a+")
 abort "Another heavy job is active" unless lease.flock(File::LOCK_EX | File::LOCK_NB)
@@ -168,6 +177,7 @@ run = "mise exec -- ruby scripts/build_converter_ffi_android.rb"
 [tasks."converter-ffi:ios-device"]
 description = "Build converter-ffi for iOS device with the Xcode SDK deployment target"
 run = '''
+mise exec -- ruby scripts/native_build_preflight.rb || exit $?
 # Build architecture-independent phonemizer assets with the host SDK, before
 # configuring any device compiler variables. Preserve the device build below.
 MACOS_SDK=$(xcrun --sdk macosx --show-sdk-path)
@@ -193,6 +203,7 @@ run = "bash scripts/verify_converter_ffi_ios.sh"
 [tasks."converter-ffi:ios-simulator"]
 description = "Build host iOS Simulator Rust under shared lease; Debug by default, CONVERTER_FFI_BUILD_PROFILE=release for Release"
 run = '''
+mise exec -- ruby scripts/native_build_preflight.rb || exit $?
 # Xcode exports its selected iOS Simulator SDK as SDKROOT to build phases.
 # This driver is a host-side Swift script; let Swift select the macOS SDK.
 env -u SDKROOT xcrun swift -e '
@@ -747,6 +758,7 @@ depends = ["converter-ffi:build"]
 run = """
 #!/bin/bash
 set -euo pipefail
+mise exec -- ruby "${MISE_PROJECT_ROOT:-.}/scripts/native_build_preflight.rb"
 export PATH="/usr/bin:/bin:/usr/sbin:/sbin:${PATH}"
 # Default stays Release so this task keeps producing the same distributable
 # artifact release-desktop.yml expects. Debug (wholemodule/-O/ThinLTO/dSYM
@@ -828,6 +840,7 @@ description = "Build native UIKit iOS app on the best installed iOS Simulator"
 run = """
 #!/bin/bash
 set -euo pipefail
+mise exec -- ruby "${MISE_PROJECT_ROOT:-.}/scripts/native_build_preflight.rb"
 "${MISE_PROJECT_ROOT:-.}/scripts/ios_disk_guard.sh"
 cd ios/EpubToMp3
 if ! command -v xcodegen >/dev/null 2>&1; then
@@ -994,6 +1007,7 @@ description = "Build the native iOS app for a connected physical device using pe
 run = """
 #!/bin/bash
 set -euo pipefail
+mise exec -- ruby "${MISE_PROJECT_ROOT:-.}/scripts/native_build_preflight.rb"
 "${MISE_PROJECT_ROOT:-.}/scripts/ios_disk_guard.sh"
 cd ios/EpubToMp3
 if ! command -v xcodegen >/dev/null 2>&1; then
@@ -1241,8 +1255,9 @@ run_simulator_tests() {
     done
   fi
   if [[ "${IOS_SKIP_BUILD:-0}" != "1" ]]; then
+    mise exec -- ruby ../../scripts/native_build_preflight.rb
     xcodebuild -project EpubToMp3.xcodeproj -scheme EpubToMp3 -configuration Debug \
-      -destination "$DEST" -derivedDataPath "$DD" "${test_settings[@]}" build-for-testing
+      -destination "$DEST" -derivedDataPath "$DD" -jobs 1 -parallel-testing-enabled NO "${test_settings[@]}" build-for-testing
   fi
   # The bundled Rust Simulator build must run with every Simulator shut down.
   # Build first; boot only for the XCTest execution phase.

@@ -24,7 +24,9 @@ For this project, run iOS Simulator builds, tests, and launches with Xcode 16.4
 (`/Applications/Xcode-16.4.0.app`); newer Xcode installations may not list this
 legacy destination. The physical iPhone is not a substitute for this required
 Simulator target.
-Run only one native app/Simulator target at a time. Before switching targets, quit the
+Follow `../../docs/agent-workflow.md` for Intel crash safeguards: compile only
+with all Simulators shut down and SimMetalHost exited, then run compatible
+artifacts with test-without-building. Run only one native app/Simulator target at a time. Before switching targets, quit the
 active app and shut down its Simulator; verify it exited before opening the next.
 After verification or whenever idle, close the app, shut down its Simulator, quit Simulator.app and confirm shutdown. Retain screenshots/reports as evidence.
 Check that this exact Simulator destination and the macOS target are available

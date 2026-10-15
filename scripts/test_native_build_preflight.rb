@@ -57,3 +57,41 @@ class NativeBuildPreflightTest < Minitest::Test
     end
   end
 end
+
+class RepositoryPreflightTest < Minitest::Test
+  def run_preflight(branch:, behind: false)
+    Dir.mktmpdir("epub-preflight-test-") do |dir|
+      git = File.join(dir, "git")
+      File.write(git, <<~'SH')
+        #!/bin/bash
+        case "$1" in
+          diff) exit 0 ;;
+          branch) echo "$TEST_BRANCH" ;;
+          show-ref) exit 1 ;;
+          rev-parse) [[ "$3" == master ]] ;;
+          merge-base) [[ "$3" == master && "$TEST_BEHIND" == 0 ]] ;;
+          *) exit 99 ;;
+        esac
+      SH
+      File.chmod(0o755, git)
+      env = { "PATH" => "#{dir}:#{ENV.fetch('PATH')}", "TEST_BRANCH" => branch,
+              "TEST_BEHIND" => behind ? "1" : "0", "CI" => "false" }
+      Open3.capture3(env, "bash", File.expand_path("preflight.sh", __dir__))
+    end
+  end
+
+  def test_master_integration_accepts_current_feature
+    output, error, status = run_preflight(branch: "feature/configuration")
+    assert status.success?, error
+    assert_match(/Branch: feature\/configuration/, output)
+  end
+
+  def test_master_and_behind_feature_are_rejected
+    _, error, status = run_preflight(branch: "master")
+    refute status.success?
+    assert_match(/not 'master'/, error)
+    _, error, status = run_preflight(branch: "feature/configuration", behind: true)
+    refute status.success?
+    assert_match(/behind master/, error)
+  end
+end
