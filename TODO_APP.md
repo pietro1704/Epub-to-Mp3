@@ -1,5 +1,15 @@
 # App delivery backlog
 
+## TOOL-20261015-MEMORY-SAFETY — Align agent memory and native workflow
+
+- [x] Install canonical ai-memory routing/skills; preserve project identity, credentials, hooks and existing work.
+- [x] Reconcile language/runtime ownership, Gitflow and behavior-level regression coverage across current instruction entry points.
+- [x] Add and host-test a native build preflight for booted Simulators/SimMetalHost on Intel macOS; document serialized build-for-testing/test-without-building phases.
+- Owner: Codex. Dependencies: installed ai-memory 2.6.2 and canonical project instructions. Acceptance: routing read-back, project doctor, focused host regressions, instruction/link checks and final owned diff.
+- Scope: configuration/documentation/tooling only; no app build, Simulator launch, driver settings, service restart, merge or CI monitoring. Prior uncommitted product changes stay separate.
+- Verification: `mise run native:build:preflight:test` passed 7 tests/46 assertions, no skips; actual read-only `mise run native:build:preflight`, `mise run preflight`, `bash -n scripts/preflight.sh` and `git diff --check` passed. `ai-memory doctor --json` resolves the valid marker to default/epubtomp3 with no reported capture/marker/server problem; this is not a replay test of every hook event. Canonical managed assets and both new memory pages read back successfully. Board: `.hermes/plans/2026-10-15-memory-safety-board.md`.
+- Limit: no app/build/Simulator execution or driver stability validation. The supplied panic identifies AppleIntelKBLGraphics/IGGuC during SimMetalHost activity; concurrent compilation is reported by Hermes, not independently verified here. Prevention does not establish a driver fix. Rule-based memory lint found two old episodic pages and a canonical-rule suggestion; nothing was deleted or broadened to sibling projects.
+
 Current user requirements override the historical backlog below. Workflow:
 Pending → In progress → Verification → Done, or Blocked with evidence/next action.
 Every concrete user request/correction belongs here. Completion requires relevant

@@ -2,54 +2,21 @@
 
 Operational notes for collaborating on this repository with the owner.
 
-## Collaboration preferences
+## Current sources of truth
 
-- Respond in concise pt-BR and act on bug reports immediately.
-- For non-trivial work, use the portable agent pipeline: inspect, plan, implement, verify, critic pass, then test.
-- For AI-assisted work, use the objective/scope/invariants/done-signal brief and operational checklist in `docs/ai-assisted-development-akita-research-2026-08-17.md`.
-- Scope changes explicitly. The current request often targets UIKit/iOS only; do not touch Flutter unless requested.
-- After every iOS code batch, build with the existing Xcode cache, install on the real iPhone, launch in the foreground, and attach LLDB.
-- Do not use an iOS Simulator on the Intel Mac. Physical-device validation is preferred.
-- Do not commit or push unless requested in the current task.
+This file retains historical native UI lessons only. Current collaboration,
+language, Gitflow, authorization and test rules live in `../AGENTS.md`
+(the alias of `../CLAUDE.md`), `../CODING_STANDARDS.md` and
+`agent-workflow.md`. The native reader contract is
+`../ios/EpubToMp3/AGENTS.md`.
 
-## iOS device workflow that works
-
-Device used during validation:
-
-- CoreDevice ID: `44B2CFBD-2193-5086-8E8D-BF7A2876C321`
-- LLDB device UDID: `00008140-001128A022BA801C`
-- Bundle ID: `com.pietrocode.epubtomp3`
-
-Build:
-
-```bash
-xcodebuild -project ios/EpubToMp3/EpubToMp3.xcodeproj \
-  -scheme EpubToMp3 -configuration Debug \
-  -destination 'id=00008140-001128A022BA801C' \
-  -derivedDataPath ios/EpubToMp3/.build build
-```
-
-Install/launch:
-
-```bash
-xcrun devicectl device install app \
-  --device 44B2CFBD-2193-5086-8E8D-BF7A2876C321 \
-  ios/EpubToMp3/.build/Build/Products/Debug-iphoneos/EpubToMp3.app
-xcrun devicectl device process launch \
-  --device 44B2CFBD-2193-5086-8E8D-BF7A2876C321 \
-  --terminate-existing com.pietrocode.epubtomp3
-```
-
-Attach LLDB after finding the process with `devicectl device info processes`:
-
-```text
-lldb
-device select iPhone
-device process attach -p <pid>
-process status
-```
-
-The iPhone must be unlocked. `idevicescreenshot` failed in this environment because its screenshotr service was unavailable; use a user-provided screenshot when visual inspection is needed.
+Durable cross-session knowledge belongs in ai-memory, scoped by the repository
+`.ai-memory.toml`; use its managed skills under `.agents/skills/ai-memory-*`.
+Historical notes cannot override current instructions. Physical-device-only
+validation, a blanket Intel Simulator ban, manual device IDs, automatic LLDB
+attachment and automatic CI monitoring from older notes are superseded.
+Reader verification uses the exact SE1/iOS 15.5 and native macOS targets with
+the build/Simulator phase separation in `agent-workflow.md`.
 
 ## iOS lessons from this project
 
@@ -76,4 +43,4 @@ The iPhone must be unlocked. `idevicescreenshot` failed in this environment beca
 
 - Preserve unrelated user changes and do not use destructive resets.
 - Generated `ios/EpubToMp3/.build` is an intentional active cache; do not delete it during normal iteration.
-- Before commit: `git diff --check`, verify only requested surfaces changed, and run the relevant build/tests. After a requested push, monitor CI.
+- Before commit: `git diff --check`, verify only requested surfaces changed, and run the relevant build/tests. CI/PR monitoring is opt-in under the current project instructions.

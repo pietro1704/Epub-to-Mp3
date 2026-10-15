@@ -22,7 +22,7 @@ branch=$(git branch --show-current)
 if [[ -z "$branch" ]]; then
   branch="(detached HEAD)"
 fi
-integration=$(git config --get gitflow.branch.develop || echo develop)
+integration=master
 if [[ "$branch" == master || "$branch" == main || "$branch" == "$integration" ]]; then
   echo "Run preflight from a feature or fix ref, not '$branch'." >&2
   exit 1
