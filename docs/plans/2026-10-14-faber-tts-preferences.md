@@ -45,7 +45,7 @@ Acceptance: typed defaults/migration/override parity; no online fallback without
 
 Reviewed against the user's wording: all supported product surfaces are included, model choice is Faber medium, both primary/secondary configuration and manual selection are included, and core behavior stays Rust-owned. Discovery findings require repairing option propagation/runtime availability alongside UI; selectors alone cannot meet acceptance. The current explicit request supersedes the previous Piper suspension and Edge-primary default. Implementation may begin after specialist agreement on the serialized fields.
 
-## Implementation review (verification still open)
+## Implementation review
 
 Standards and Spec axes reviewed the owned working-tree diff against baseline
 `3992c084c5`, including new files. No feature commits existed at this review;
@@ -81,7 +81,7 @@ ignoring preferences. Flutter product targets are Android/Linux/Windows; Apple
 products remain native Swift. Linux/Windows runtime execution is unavailable on
 this Mac and must not be reported as verified.
 
-Focused runtime, regression and packaging checks below passed; specialist final reviews found no new blockers. Commit/push remains pending. Android device inference, Linux/Windows execution and Ubuntu CI were not run and remain explicit verification limits.
+Focused runtime, regression and packaging checks below passed; specialist final reviews found no new blockers. Source commit `bdb7bee57d` was pushed to `origin/feature/faber-tts-preferences`; no PR/merge or CI monitoring. Android device inference, Linux/Windows execution and Ubuntu CI were not run and remain explicit verification limits.
 
 ## Current acceptance evidence
 
@@ -97,7 +97,7 @@ Earlier passing checks do not verify source changes made after their run.
 | Native iOS | Exact SE1/iOS15.5:17 prepared scenarios passed across initial15, full preferences/manual UI retry and real Faber retry1passed0skipped. Reader probes passed; Faber first segment precedes completion and both chapters fully decode. Stale eSpeak path buffer fixed/verified1024bytes. Structured evidence under `se-*-summary.json` | Final Simulator/device artifacts refreshed; final manual2/2 and real LOTR1/1 passed zero skips (`se-final-manual-summary.json`, `se-final-reader-summary.json`). No physical device runtime claim |
 | Android | Focused Flutter74/74 and JVM17/17 passed with zero skips (`checks/android-final-tests.log`, `android-jvm-final/`); immutable payload/cancellation regressions included | ARM64 build, ELF/exports/assets package and debug APK passed; APK native entries checked (`android-apk-final.json`). Fresh-checkout missing-assets rejection and official automatic restoration/APK audit passed (`android-missing-assets-evidence.json`, `checks/android-fresh-assets-arm64-rebuild.log`); APK is ARM64-only. Android device inference and Ubuntu CI were not run |
 | Flutter Linux/Windows | Shared CMake staging fixture passed | Source/test coverage and packaging checks on this Mac; actual target execution is unavailable and must remain explicitly unverified |
-| Delivery | Local preflight and whitespace checks passed | Final owned diff reviewed;12 owned temporary paths cleaned (`owned-test-cleanup.json`); authorized commit/push pending |
+| Delivery | Local preflight and whitespace checks passed | Final owned diff reviewed;12 owned temporary paths cleaned (`owned-test-cleanup.json`); source commit `bdb7bee57d` pushed to origin; no PR/merge or CI monitoring |
 
 Native runtime correction: the user questioned the full ONNX source build.
 It was stopped with completed objects preserved. The default host task now

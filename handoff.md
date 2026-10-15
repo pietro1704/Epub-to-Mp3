@@ -1,13 +1,13 @@
 # Hermes ↔ Claude Code Handoff
 
-## In progress: shared Faber TTS preferences — APP-20261014-TTS-SELECTION
+## Delivered: shared Faber TTS preferences — APP-20261014-TTS-SELECTION
 
-Branch `feature/faber-tts-preferences`, baseline `3992c084c5`; not committed/delivered.
+Branch `feature/faber-tts-preferences`, baseline `3992c084c5`; source commit `bdb7bee57d` committed and pushed to origin.
 Default Piper `pt_BR-faber-medium`; optional consented Edge secondary; immutable
 job overrides, no implicit voice downloads. Preserve user `.ai-jail` and
 `.ai-memory.toml`, original voices/books and useful native build artifacts.
 
-Current state: verification complete for available local targets; no heavy job active. Only exact SE1/iOS15.5 is booted; app relaunched normally after final packaging checks (PID13182) on persisted seeded LOTR. No Mac app active. Final Android fresh-checkout gate passed: direct Flutter build rejected missing assets; official task restored them and produced ARM64-only APK with complete JNI/assets audit (`android-missing-assets-evidence.json`, `checks/android-fresh-assets-arm64-rebuild.log`). Source workflows updated; Ubuntu CI not run. Commit/push and task closure remain pending.
+Current state: verification complete for available local targets; no heavy job active. Only exact SE1/iOS15.5 is booted; app relaunched normally after final packaging checks (PID13182) on persisted seeded LOTR. No Mac app active. Final Android fresh-checkout gate passed: direct Flutter build rejected missing assets; official task restored them and produced ARM64-only APK with complete JNI/assets audit (`android-missing-assets-evidence.json`, `checks/android-fresh-assets-arm64-rebuild.log`). Source workflows updated; Ubuntu CI not run. Feature delivered on `origin/feature/faber-tts-preferences`; no PR/merge or CI monitoring.
 
 Verified evidence under `.reports/tts-preferences/`:
 - Rust62/62: core47, FFI4, CLI9, HTTP2; `checks/rust-final-audit.log`.
@@ -51,9 +51,7 @@ ONNX source build41005. Mac uses checksum-pinned prebuilt1.28.2 (Intel min10.15)
 ARM min11 metadata only, no ARM Mac inference. Linux/Windows execution unavailable
 on this Mac; report explicitly. No CI/PR monitoring/merge.
 
-Remaining: verify fresh-checkout Android packaging correction, final owned diff,
-authorized commit/push and task closure; leave only SE/LOTR open.
-Full acceptance: `docs/plans/2026-10-14-faber-tts-preferences.md`.
+Requested client integrations are implemented; executed checks and platform execution limits are recorded above. Final acceptance: `docs/plans/2026-10-14-faber-tts-preferences.md`.
 
 ## Delivered single reader playback control — APP-20261014-02
 

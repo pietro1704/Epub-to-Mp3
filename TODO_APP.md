@@ -1628,7 +1628,7 @@ esteja clara neste arquivo (ex: qual plataforma priorizar no Flutter).
 - Cleanup verified: `tts:phone:cleanup` removed 2.25 GiB/4,339 files and confirmed the isolated tree absent. Test app uninstalled from the iPhone; pre-existing models retained. Production app relaunched with its live process confirmed; Simulator remained shut down. `tts:phone:summary`, Ruby syntax checks and repository `preflight` passed; no remote CI monitoring.
 ## APP-20261014-TTS-SELECTION — Shared TTS preferences and conversion overrides
 
-- [ ] Deliver Rust-owned preferences and immutable overrides across CLI, web, Flutter, iOS and macOS; default Piper `pt_BR-faber-medium`, optional explicitly consented Edge secondary.
+- [x] Deliver Rust-owned preferences and immutable overrides across CLI, web, Flutter, iOS and macOS; default Piper `pt_BR-faber-medium`, optional explicitly consented Edge secondary.
 - Acceptance: preserve existing explicit choices; strict manual overrides; retry primary each segment and stop persistent failures; installed/language/capability validation; actual provider metadata; cache/resume voice consistency. No implicit voice downloads or external browser converter dependency.
 - Authorization: user chose Faber and explicitly reactivated Piper, then invoked `$goal-plan-execute` for all clients. Branch `feature/faber-tts-preferences`, baseline `3992c084c5`; standing commit/push permission, no CI/PR monitoring or merge.
 - Runtime correction: stopped full ONNX source build; Mac uses checksum-pinned compatible prebuilt, iOS reuses existing iOS15 runtime. Preserve original voices/books and useful build artifacts.
@@ -1640,7 +1640,7 @@ esteja clara neste arquivo (ex: qual plataforma priorizar no Flutter).
 - macOS latest Debug build passed; final manual VM/modal2/2 passed zero skips (`mac-final-manual-summary.json`). Earlier real Faber streaming/full decode, settings/Listen/playerbar/LOTR passed across focused retries. Playerbar retry xcresult save failed; raw3/3 stdout retained. Cached-display screenshots omit button text and do not prove visual rendering.
 - iOS exact SE1/iOS15.5: final manual2/2 and real LOTR pagination/chrome/player dismissal1/1 passed zero skips (`se-final-manual-summary.json`, `se-final-reader-summary.json`). Earlier17 scenarios passed across runs, including real Faber streaming/full two-chapter decode1/1 zero skips. Stale eSpeak header/path buffer fixed and compiled1024bytes verified. Final Simulator/device ARM64 artifacts refreshed; ABI/platform/signed packaging passed (`checks/ios-arm-final-refresh.log`). No physical-device action.
 - Cleanup:12 owned temporary paths removed; original63,201,294-byte Faber and product/build assets retained (`owned-test-cleanup.json`).
-- Remaining: authorized commit/push and task closure. Final owned diff reviewed; only SE/seeded LOTR is open. Linux/Windows execution unavailable on this Mac; report explicitly.
+- Delivery: source commit `bdb7bee57d` pushed to `origin/feature/faber-tts-preferences`. Final owned diff reviewed; only SE/seeded LOTR is open. No CI/PR monitoring, PR or merge. Linux/Windows execution unavailable on this Mac; report explicitly.
 
 ## APP-20261014-PIPER-AUDITION — Compare low/medium playback onset
 
