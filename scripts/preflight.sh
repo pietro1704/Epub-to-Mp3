@@ -46,6 +46,7 @@ if [[ "$SCOPE" == "device-workflow" ]]; then
   exit 0
 fi
 if [[ "${CI:-false}" != "true" ]]; then
+  mise run host:workflow:test
   echo 'Full Python/lint gates run in CI. Select --scope device-workflow for native host verification.'
   exit 0
 fi

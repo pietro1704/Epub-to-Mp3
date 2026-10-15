@@ -91,6 +91,10 @@ run = "mise exec -- python scripts/build_converter_ffi.py --list"
 description = "Read-only Intel Mac check: Simulator shutdown and SimMetalHost exit before compilation"
 run = "ruby scripts/native_build_preflight.rb"
 
+[tasks."host:workflow:test"]
+description = "Run fail-fast host workflow regressions with exact logs; no native build or Simulator"
+run = "ruby scripts/run_host_checks.rb"
+
 [tasks."git:hygiene:test"]
 description = "Verify ignore rules and index-only cleanup through real Git in temporary repositories"
 run = "ruby scripts/test_git_hygiene.rb"
@@ -103,10 +107,7 @@ run = "ruby scripts/test_native_build_preflight.rb"
 description = "Build the shared converter-ffi Rust library for the host"
 depends = ["onnxruntime:host"]
 run = '''
-mise exec -- ruby scripts/native_build_preflight.rb || exit $?
-mise exec -- ruby -e '
-lease = File.open("/tmp/epub2mp3.heavy-job.lock", "a+")
-abort "Another heavy job is active" unless lease.flock(File::LOCK_EX | File::LOCK_NB)
+mise exec -- ruby scripts/native_job.rb build -- mise exec -- ruby -e '
 if RUBY_PLATFORM.include?("darwin")
   runtime = IO.popen(["mise", "exec", "--", "ruby", "scripts/prepare_onnxruntime_macos.rb"], &:read).strip
   abort "Failed to prepare Intel ONNX Runtime" unless $?.success? && runtime.start_with?("/")
@@ -181,7 +182,7 @@ run = "mise exec -- ruby scripts/build_converter_ffi_android.rb"
 [tasks."converter-ffi:ios-device"]
 description = "Build converter-ffi for iOS device with the Xcode SDK deployment target"
 run = '''
-mise exec -- ruby scripts/native_build_preflight.rb || exit $?
+mise exec -- ruby scripts/native_job.rb build -- bash -euo pipefail -s <<'NATIVE_JOB'
 # Build architecture-independent phonemizer assets with the host SDK, before
 # configuring any device compiler variables. Preserve the device build below.
 MACOS_SDK=$(xcrun --sdk macosx --show-sdk-path)
@@ -198,7 +199,9 @@ env -u SDKROOT -u IPHONEOS_DEPLOYMENT_TARGET -u CARGO_BUILD_TARGET \
   RUSTC=$(mise exec -- rustup which --toolchain stable rustc) \
   mise exec -- cargo build -p espeak-rs-sys --features compile-espeak-intonations \
   --target-dir "$MISE_PROJECT_ROOT/target/espeak-data" --jobs 1 || exit $?
-MACOS_SDK=$(xcrun --sdk macosx --show-sdk-path) && HOST_CLANG=$(xcrun --sdk macosx --find clang) && SDK=$(xcrun --sdk iphoneos --show-sdk-path) && CLANG_DIR=$(dirname "$(xcrun --sdk iphoneos --find clang)") && CLANG_WRAPPER="$MISE_PROJECT_ROOT/scripts/apple_target_clang.sh" IPHONEOS_DEPLOYMENT_TARGET=15.0 EPUB2MP3_APPLE_SDK=iphoneos EPUB2MP3_APPLE_CLANG_TARGET=arm64-apple-ios15.0 CC_x86_64_apple_darwin="$HOST_CLANG" CFLAGS_x86_64_apple_darwin="-isysroot $MACOS_SDK" CC_aarch64_apple_ios="$CLANG_WRAPPER" CFLAGS_aarch64_apple_ios="-target arm64-apple-ios15.0 -isysroot $SDK" RUSTC=$(mise exec -- rustup which --toolchain stable rustc) BINDGEN_EXTRA_CLANG_ARGS="--target=arm64-apple-ios15.0 --sysroot=$SDK -include stdio.h" BINDGEN_EXTRA_CLANG_ARGS_aarch64_apple_ios="--target=arm64-apple-ios15.0 --sysroot=$SDK -include stdio.h" PATH="$CLANG_DIR:$PATH" mise exec -- cargo --config 'target.aarch64-apple-ios.linker="clang"' --config "target.aarch64-apple-ios.rustflags=[\"-C\",\"link-arg=-isysroot\",\"-C\",\"link-arg=$SDK\"]" build -p converter-ffi --release --features piper-runtime --target aarch64-apple-ios --jobs 1'''
+MACOS_SDK=$(xcrun --sdk macosx --show-sdk-path) && HOST_CLANG=$(xcrun --sdk macosx --find clang) && SDK=$(xcrun --sdk iphoneos --show-sdk-path) && CLANG_DIR=$(dirname "$(xcrun --sdk iphoneos --find clang)") && CLANG_WRAPPER="$MISE_PROJECT_ROOT/scripts/apple_target_clang.sh" IPHONEOS_DEPLOYMENT_TARGET=15.0 EPUB2MP3_APPLE_SDK=iphoneos EPUB2MP3_APPLE_CLANG_TARGET=arm64-apple-ios15.0 CC_x86_64_apple_darwin="$HOST_CLANG" CFLAGS_x86_64_apple_darwin="-isysroot $MACOS_SDK" CC_aarch64_apple_ios="$CLANG_WRAPPER" CFLAGS_aarch64_apple_ios="-target arm64-apple-ios15.0 -isysroot $SDK" RUSTC=$(mise exec -- rustup which --toolchain stable rustc) BINDGEN_EXTRA_CLANG_ARGS="--target=arm64-apple-ios15.0 --sysroot=$SDK -include stdio.h" BINDGEN_EXTRA_CLANG_ARGS_aarch64_apple_ios="--target=arm64-apple-ios15.0 --sysroot=$SDK -include stdio.h" PATH="$CLANG_DIR:$PATH" mise exec -- cargo --config 'target.aarch64-apple-ios.linker="clang"' --config "target.aarch64-apple-ios.rustflags=[\"-C\",\"link-arg=-isysroot\",\"-C\",\"link-arg=$SDK\"]" build -p converter-ffi --release --features piper-runtime --target aarch64-apple-ios --jobs 1
+NATIVE_JOB
+'''
 
 [tasks."converter-ffi:ios-device:verify"]
 description = "Verify the iOS converter-ffi Mach-O architecture, platform, and exported ABI"
@@ -207,15 +210,11 @@ run = "bash scripts/verify_converter_ffi_ios.sh"
 [tasks."converter-ffi:ios-simulator"]
 description = "Build host iOS Simulator Rust under shared lease; Debug by default, CONVERTER_FFI_BUILD_PROFILE=release for Release"
 run = '''
-mise exec -- ruby scripts/native_build_preflight.rb || exit $?
 # Xcode exports its selected iOS Simulator SDK as SDKROOT to build phases.
 # This driver is a host-side Swift script; let Swift select the macOS SDK.
-env -u SDKROOT xcrun swift -e '
+mise exec -- ruby scripts/native_job.rb build -- env -u SDKROOT xcrun swift -e '
 import Foundation
 import Darwin
-let lease = open("/tmp/epub2mp3.heavy-job.lock", O_CREAT | O_RDWR, 0o600)
-guard lease >= 0 && flock(lease, LOCK_EX | LOCK_NB) == 0 else { exit(75) }
-defer { close(lease) }
 let simulator = Process()
 simulator.executableURL = URL(fileURLWithPath: "/usr/bin/xcrun")
 simulator.arguments = ["simctl", "list", "devices", "booted", "-j"]
@@ -694,6 +693,7 @@ done
 echo ""
 echo "Result: $ok OK, $fail failed"
 [[ $fail -eq 0 ]]
+mise run host:workflow:test
 """
 
 [tasks."hooks:install"]
@@ -762,7 +762,7 @@ depends = ["converter-ffi:build"]
 run = """
 #!/bin/bash
 set -euo pipefail
-mise exec -- ruby "${MISE_PROJECT_ROOT:-.}/scripts/native_build_preflight.rb"
+mise exec -- ruby "${MISE_PROJECT_ROOT:-.}/scripts/native_job.rb" build -- bash -euo pipefail -s <<'NATIVE_JOB'
 export PATH="/usr/bin:/bin:/usr/sbin:/sbin:${PATH}"
 # Default stays Release so this task keeps producing the same distributable
 # artifact release-desktop.yml expects. Debug (wholemodule/-O/ThinLTO/dSYM
@@ -780,9 +780,6 @@ fi
 xcodegen generate
 # Slice 18 preflight: widget must be embedded in the app bundle.
 "${MISE_PROJECT_ROOT:-../..}/scripts/verify_widget_embedded.sh"
-# Hold the single-heavy-job lock around xcodebuild (CPU CATERR / PCIe panic
-# guard on constrained Intel Macs — never let it race another heavy job).
-python3 "${MISE_PROJECT_ROOT:-../..}/scripts/heavy_job_guard.py" mac:build -- \\
 xcodebuild \\
   -project EpubToMp3.xcodeproj \\
   -scheme EpubToMp3 \\
@@ -806,6 +803,7 @@ else
   echo "error: build did not produce $APP_OUT"
   exit 1
 fi
+NATIVE_JOB
 """
 
 [tasks."mac:build:dev"]
@@ -844,7 +842,7 @@ description = "Build native UIKit iOS app on the best installed iOS Simulator"
 run = """
 #!/bin/bash
 set -euo pipefail
-mise exec -- ruby "${MISE_PROJECT_ROOT:-.}/scripts/native_build_preflight.rb"
+mise exec -- ruby "${MISE_PROJECT_ROOT:-.}/scripts/native_job.rb" build -- bash -euo pipefail -s <<'NATIVE_JOB'
 "${MISE_PROJECT_ROOT:-.}/scripts/ios_disk_guard.sh"
 cd ios/EpubToMp3
 if ! command -v xcodegen >/dev/null 2>&1; then
@@ -925,6 +923,7 @@ if ! xcodebuild \\
   exit 65
 fi
 tail -20 "${BUILD_LOG}"
+NATIVE_JOB
 """
 
 [tasks."ios:device:run"]
@@ -1011,7 +1010,7 @@ description = "Build the native iOS app for a connected physical device using pe
 run = """
 #!/bin/bash
 set -euo pipefail
-mise exec -- ruby "${MISE_PROJECT_ROOT:-.}/scripts/native_build_preflight.rb"
+mise exec -- ruby "${MISE_PROJECT_ROOT:-.}/scripts/native_job.rb" build -- bash -euo pipefail -s <<'NATIVE_JOB'
 "${MISE_PROJECT_ROOT:-.}/scripts/ios_disk_guard.sh"
 cd ios/EpubToMp3
 if ! command -v xcodegen >/dev/null 2>&1; then
@@ -1061,6 +1060,7 @@ if ! xcodebuild \\
   exit 65
 fi
 tail -20 "${BUILD_LOG}"
+NATIVE_JOB
 """
 
 [tasks."ios:run"]
@@ -1099,6 +1099,7 @@ description = "Install and launch an existing iphonesimulator EpubToMp3.app; nev
 run = """
 #!/bin/bash
 set -euo pipefail
+mise exec -- ruby "${MISE_PROJECT_ROOT:-.}/scripts/native_job.rb" simulator -- bash -euo pipefail -s <<'NATIVE_JOB'
 
 # This task intentionally launches only an existing artifact. Use
 # `mise run ios:build` separately when a new simulator build is required.
@@ -1163,6 +1164,7 @@ if [[ "$SEED_LAUNCH" == "1" ]]; then
 else
   xcrun simctl launch "$UDID" com.pietrocode.epubtomp3
 fi
+NATIVE_JOB
 """
 
 [tasks."ios:simulator:resume"]
@@ -1170,6 +1172,7 @@ description = "Launch the EpubToMp3 app already installed in a selected Simulato
 run = """
 #!/bin/bash
 set -euo pipefail
+mise exec -- ruby "${MISE_PROJECT_ROOT:-.}/scripts/native_job.rb" simulator -- bash -euo pipefail -s <<'NATIVE_JOB'
 
 # This task is deliberately distinct from `ios:run`: it is useful when a
 # legacy simulator can boot an already-installed build but the selected Xcode
@@ -1210,6 +1213,7 @@ if [[ -n "$BUILT_WITH_XCODE" ]]; then
 fi
 open -a Simulator
 xcrun simctl launch "$UDID" "$BUNDLE_ID"
+NATIVE_JOB
 """
 
 [tasks."ios:simulator:test"]
@@ -1218,6 +1222,7 @@ depends = ["vendor:python"]
 run = """
 #!/bin/bash
 set -euo pipefail
+mise exec -- ruby "${MISE_PROJECT_ROOT:-.}/scripts/native_job.rb" simulator -- bash -euo pipefail -s <<'NATIVE_JOB'
 "${MISE_PROJECT_ROOT:-.}/scripts/ios_disk_guard.sh"
 python3 "${MISE_PROJECT_ROOT:-.}/scripts/guard_ios_simulator_resources.py"
 cd ios/EpubToMp3
@@ -1259,8 +1264,7 @@ run_simulator_tests() {
     done
   fi
   if [[ "${IOS_SKIP_BUILD:-0}" != "1" ]]; then
-    mise exec -- ruby ../../scripts/native_build_preflight.rb
-    xcodebuild -project EpubToMp3.xcodeproj -scheme EpubToMp3 -configuration Debug \
+    mise exec -- ruby ../../scripts/native_job.rb build -- xcodebuild -project EpubToMp3.xcodeproj -scheme EpubToMp3 -configuration Debug \
       -destination "$DEST" -derivedDataPath "$DD" -jobs 1 -parallel-testing-enabled NO "${test_settings[@]}" build-for-testing
   fi
   # The bundled Rust Simulator build must run with every Simulator shut down.
@@ -1333,7 +1337,8 @@ run_simulator_tests() {
 
 export DEST DD IOS_SKIP_BUILD UDID
 export -f run_simulator_tests
-python3 ../../scripts/heavy_job_guard.py ios:simulator:test -- bash -e -c run_simulator_tests
+run_simulator_tests
+NATIVE_JOB
 """
 
 [tasks."ios:device:test"]
