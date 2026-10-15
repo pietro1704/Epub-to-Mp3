@@ -1,11 +1,13 @@
 # App delivery backlog
 
-## READER-20261015-DARK-COLORS — Correct native reader dark-mode colors
+## READER-20261015-DARK-COLORS — Correct native reader light/dark colors and themes
 
-- [ ] Deferred at the user's explicit request: dark-mode colors are incorrect in the native reader; audit reader text, links, page/safe-area backgrounds and player/control contrast before implementing a focused fix.
+- [x] User resumed this task and expanded scope to light/dark modes and the reader theme, with specialist inspection. Correct inconsistent page/text/link/chrome colors, saved/custom themes and live changes; preserve progress and document structure.
+- User correction: use Apple semantic colors and the same native materials/transparency policy in light and dark; preserve explicit reader theme choices.
 - Acceptance: readable, consistent theme colors on real iPhone SE1/iOS15.5 and macOS, meaningful native regressions, and preserved pagination/chrome/raw-offset behavior. Verify light mode remains correct.
 - Evidence: user report during the 2026-10-15 reading/audio verification; current SE screenshot `.reports/reader-sync-20261015/final-se.png` shows the reported surface. No color fix or dark-mode acceptance is claimed by READ-20261015-SYNC.
-- Owner: unassigned; status: Pending. Scope is native reader/theme follow-up; do not implement as part of the pending-seek correction.
+- Owner: Codex; contract, AppKit and runtime-test specialists have disjoint file ownership. Status: Verified. Scope is native reader appearance; preserve unrelated work. Plan/evidence: `docs/research/2026-10-15-similar-projects/reader-theme-correction.md`.
+- Verification: macOS focused suite 57 passed, then final affected eight passed; final SE1/iOS15.5 selection 13/13 passed, no skips. Actual semantic colors/material identity/alpha, authored light CSS, custom RGB, viewport and reading/audio anchors verified; seeded LOTR live light/dark UI has no clipped lines or location drift. Earlier broad iOS selection retains one intentional AppKit-only image skip covered on macOS. Host preflight passed 65 tests/596 assertions; 31 documentation links/anchors valid. Exact commands, screenshots, red/green history and limits are in the linked evidence page.
 
 ## READ-20261015-SYNC — Audit reading/audio timing and protect pending page seeks
 

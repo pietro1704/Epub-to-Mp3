@@ -34,6 +34,10 @@ Continuation: [reading/audio contract audit and pending page-seek correction](re
 The audit traces actual producers/consumers and separates proportional navigation
 from measured alignment; its board records native verification independently.
 
+[Native reader theme correction](reader-theme-correction.md) tracks the user's
+light/dark follow-up: Apple semantic colors, unchanged native material/transparency
+policy, custom reader choices and preserved reading/audio anchors.
+
 Small immediate adoption: pin all six existing Piper ONNX/config URLs in the
 Rust catalog to HF revision `c10ece1aade47bb51c153c893d14e5bf8e5b7117`.
 Live Hub tree metadata confirmed the three weight sizes/LFS SHA256 values;
