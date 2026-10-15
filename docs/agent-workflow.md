@@ -119,8 +119,10 @@ For native Apple behavior changes, use this exact native iOS runtime: iPhone SE 
 generation) Simulator on iOS 15.5. Check it and the native macOS target before
 coding, then install, launch, and exercise both real apps. Automated tests are
 additional evidence. If either app is unavailable, document the blocker and leave
-runtime verification incomplete. All development stays on this Mac; do not route
-implementation or validation to Arch.
+runtime verification incomplete. Native Apple development and verification stay
+on this Mac. Flutter Linux and Android/Samsung work runs on Arch under the
+current task authorization; follow [Mac/Arch collaboration](agents/mac-arch-collaboration.md)
+for ownership, exact commit identity, requests and platform evidence.
 
 Start each bug fix with a failing regression test. Keep the implementation and
 its test in the same commit when practical. Preserve unrelated local changes by

@@ -1551,6 +1551,14 @@ mise exec -- flutter run -d "$DEVICE"
 description = "Run Flutter unit + widget tests"
 run = "cd flutter_app && flutter test"
 
+[tasks."agents:collaboration"]
+description = "Exchange explicitly addressed Mac/Arch coordination messages through ai-memory"
+run = "mise exec -- node scripts/agent_collaboration.mjs"
+
+[tasks."agents:collaboration:test"]
+description = "Verify collaboration routing, message identity, failure and cancellation without network/device actions"
+run = "mise exec -- node --test scripts/test_agent_collaboration.mjs"
+
 [tasks."native-tts:android:test"]
 description = "Verify native speech notices, cancellation and Android voice selection under the shared lease"
 run = '''

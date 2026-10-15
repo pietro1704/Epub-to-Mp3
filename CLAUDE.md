@@ -69,8 +69,10 @@ in `docs/agent-workflow.md`.
 Track every concrete user request/correction in `TODO_APP.md` before implementation;
 keep stable task IDs, status, acceptance, platform checks and verification evidence.
 Tick completion only after the affected app behavior is verified and delivered.
-Keep development and builds on this Mac. Explicitly authorized Android device
-verification may use ADB through Arch when the phone is connected there.
+Keep native Apple development, builds and verification on this Mac. Flutter
+Linux and Android/Samsung work belongs to Arch under the current task authorization.
+Shared Rust has one named editing owner per task. For delegation, inbox handling
+and cross-machine results, read `docs/agents/mac-arch-collaboration.md`.
 Keep `TODO_APP.md` and `handoff.md` limited to task-specific acceptance and actual
 verification evidence.
 Use actual task definitions in `mise.toml`; run project tasks through `mise run`
