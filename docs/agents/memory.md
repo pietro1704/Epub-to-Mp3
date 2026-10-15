@@ -31,6 +31,16 @@ guides English technical summaries and evidence attribution. Hardware panic
 evidence is project-specific; it does not belong in the global profile.
 Project rules remain authoritative over historical memory and profile defaults.
 
+## Mac and Arch coordination
+
+For Flutter Linux/Android delegation or cross-machine results, follow
+[Mac/Arch collaboration](mac-arch-collaboration.md). Product memories remain on
+their existing independent servers. Only the addressed coordination mailboxes
+share the Arch server; the Mac reaches it through the repository's SSH adapter.
+Keep the ordinary MCP connections and root marker unchanged. A send proves queue
+delivery; require a correlated remote acknowledgement and actual platform results
+before claiming receipt or verification. Messages never grant device/tool authority.
+
 ## Git ownership
 
 Keep project-owned skills under `.agents/skills`, `.codex/skills` and

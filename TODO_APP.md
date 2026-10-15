@@ -107,6 +107,16 @@
 - Owner: Codex root; specialists review safety/runtime, UI/state and conversion/Git isolation. No questions while the user is away; continue independent work and report user-dependent blockers at the end. Preserve all existing dirty changes, books, models and Simulator data.
 - Plan, acceptance matrix, task ownership and evidence: `docs/plans/2026-10-15-ios-whole-app-verification.md`. Status: planning; no new app verification claimed.
 
+## TOOL-20261015-ARCH-COLLAB — Coordinate Mac and Arch through ai-memory
+
+- [x] COLLAB-1: verify Mac/Arch memory endpoints and project identities, preserve existing history, and establish an addressed request/reply path.
+- [x] COLLAB-2: persist ownership: Apple validation on Mac; Flutter Linux and physical Samsung validation on Arch; shared Rust has one owner per task. Record branch/commit identity, acceptance, authorization and evidence in each request/result.
+- [x] COLLAB-3: verify delivery, recipient routing, trust boundaries and request/reply handling; review and commit/push only this configuration slice.
+- Owner: Codex on Mac; protocol specialist performs an independent read-only review. Status: Verified and installed on both machines. User authorized the complete proposed collaboration setup. Preserve unrelated source changes, active agents, existing memory and device data; no app builds, downloads, merge or CI monitoring.
+- Board and evidence: `docs/agents/mac-arch-collaboration.md`.
+
+- Verification: actual Arch Codex acknowledged request `01a141b0-db18-79b2-8250-41218b980ad8` through ai-memory reply `01a141b2-6780-7a61-ad05-5427f9fc6435`; Mac claimed it and checked correlation. Live receiver visibility, duplicate refusal, cancel and claim-once checks passed. Adapter tests passed 21/21 on each machine; preflight passed 65 host tests/596 assertions. Both histories, root marker, ordinary MCP/hook connections, original remote instruction/task prefixes and the AGENTS.md alias were preserved. No app/device acceptance is claimed. Local evidence: `.reports/arch-collaboration-20261015/`.
+
 ## READER-20261015-DARK-COLORS — Correct native reader light/dark colors and themes
 
 - [x] User resumed this task and expanded scope to light/dark modes and the reader theme, with specialist inspection. Correct inconsistent page/text/link/chrome colors, saved/custom themes and live changes; preserve progress and document structure.
