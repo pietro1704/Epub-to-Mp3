@@ -1,5 +1,9 @@
-
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
+import 'dart:io';
+import 'dart:convert';
+import 'package:flutter_app/services/embedded_converter.dart';
 import 'package:flutter_app/l10n/app_localizations.dart';
 import 'package:flutter_app/models/book_entity.dart';
 import 'package:flutter_app/models/ebook_fulltext.dart';
@@ -17,6 +21,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 /// backend so the conversion flow falls through to PythonBridge.
 class _FakeApiClient extends ApiClient {
   _FakeApiClient() : super('http://fake');
+  int uploads = 0;
 
   @override
   Future<String> uploadAndConvert(
@@ -29,6 +34,7 @@ class _FakeApiClient extends ApiClient {
     bool? normalizeAudio,
     String? voice,
   }) async {
+    uploads++;
     throw Exception('Backend unreachable');
   }
 
@@ -62,6 +68,48 @@ class _FakeFulltextCache extends LocalFulltextCache {
   }
 }
 
+class _DesktopFakeConverter extends UnavailableEmbeddedConverter {
+  int parses = 0;
+  final List<String?> options = [];
+  @override
+  Future<EbookFulltext> parse({
+    required String inputPath,
+    String jobId = '',
+  }) async {
+    parses++;
+    return EbookFulltext.fromJson({
+      'jobId': jobId,
+      'bookTitle': 'Desktop book',
+      'chapters': [
+        {
+          'index': 0,
+          'name': 'Chapter 0',
+          'text': 'Um texto em português para ouvir.',
+        },
+      ],
+    });
+  }
+
+  @override
+  Future<ConvertedChapterAudio> convertChapter({
+    required String inputPath,
+    required String outputPath,
+    required int chapterIndex,
+    String? optionsJson,
+  }) async {
+    options.add(optionsJson);
+    final directory = Directory(outputPath);
+    await directory.create(recursive: true);
+    final audio = File('${directory.path}/chapter.mp3');
+    await audio.writeAsBytes([0x49, 0x44, 0x33, 1]);
+    return ConvertedChapterAudio(
+      chapterIndex: chapterIndex,
+      path: audio.path,
+      title: 'Chapter 0',
+    );
+  }
+}
+
 Future<SharedPreferences> _mockPrefs([Map<String, Object>? seed]) async {
   SharedPreferences.setMockInitialValues(seed ?? {});
   return SharedPreferences.getInstance();
@@ -73,6 +121,7 @@ Widget _wrap(
   required LocalFulltextCache cache,
   ApiClient? apiClient,
   AudioPlayerInterface? player,
+  EmbeddedConverter? converter,
 }) {
   return ProviderScope(
     overrides: [
@@ -80,6 +129,8 @@ Widget _wrap(
       localFulltextCacheProvider.overrideWithValue(cache),
       if (apiClient != null) apiClientProvider.overrideWithValue(apiClient),
       if (player != null) globalAudioPlayerProvider.overrideWithValue(player),
+      if (converter != null)
+        embeddedConverterProvider.overrideWithValue(converter),
     ],
     child: MaterialApp(
       localizationsDelegates: AppLocalizations.localizationsDelegates,
@@ -90,6 +141,80 @@ Widget _wrap(
 }
 
 void main() {
+  for (final platform in [TargetPlatform.linux, TargetPlatform.windows]) {
+    testWidgets(
+      '$platform parses and listens through local Rust adapter without HTTP',
+      (t) async {
+        debugDefaultTargetPlatformOverride = platform;
+        const channel = MethodChannel('plugins.flutter.io/path_provider');
+        late Directory directory;
+        await t.runAsync(() async {
+          directory = await Directory.systemTemp.createTemp(
+            'desktop-listen-ui-',
+          );
+        });
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(channel, (_) async => directory.path);
+        final book = BookEntity(
+          id: 'desktop',
+          title: 'Desktop book',
+          filePath: '/tmp/desktop.epub',
+          displayFilename: 'desktop.epub',
+          addedAt: DateTime(2025),
+        );
+        final prefs = await _mockPrefs({
+          'library.books.v1': '[${book.encode()}]',
+          'useEmbeddedRuntime': false,
+        });
+        final api = _FakeApiClient();
+        final converter = _DesktopFakeConverter();
+        final player = FakeAudioPlayerService();
+        try {
+          await t.pumpWidget(
+            _wrap(
+              prefs,
+              'desktop',
+              cache: _FakeFulltextCache(),
+              apiClient: api,
+              player: player,
+              converter: converter,
+            ),
+          );
+          await t.pumpAndSettle();
+          expect(converter.parses, 1);
+          final container = ProviderScope.containerOf(
+            t.element(find.byType(BookOpenScreen)),
+          );
+          final listen = container.read(playbackRequestProvider);
+          expect(listen, isNotNull);
+          await t.runAsync(() async {
+            await listen!();
+          });
+          await t.pumpAndSettle();
+          expect(converter.options, hasLength(1));
+          expect(
+            jsonDecode(
+              converter.options.single!,
+            )['tts_preferences']['primary']['model_id'],
+            'pt_BR-faber-medium',
+          );
+          expect(api.uploads, 0);
+          expect(player.hasQueuedAudio, true);
+          expect(player.isPlaying, true);
+        } finally {
+          await t.pumpWidget(const SizedBox.shrink());
+          await player.dispose();
+          TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+              .setMockMethodCallHandler(channel, null);
+          debugDefaultTargetPlatformOverride = null;
+          await t.runAsync(() async {
+            await directory.delete(recursive: true);
+          });
+        }
+      },
+    );
+  }
+
   group('BookOpenScreen', () {
     testWidgets('shows reader when cached fulltext exists', (t) async {
       final book = BookEntity(
@@ -146,8 +271,9 @@ void main() {
       expect(find.text('Retry'), findsOneWidget);
     });
 
-    testWidgets('BookOpenScreen does not render a duplicate play button',
-        (t) async {
+    testWidgets('BookOpenScreen does not render a duplicate play button', (
+      t,
+    ) async {
       final book = BookEntity(
         id: 'play-book',
         title: 'Play Book',

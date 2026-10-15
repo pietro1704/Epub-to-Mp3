@@ -91,7 +91,29 @@ static PIPER_EN_US_LESSAC_LOW_ARTIFACTS: &[TtsArtifactDescriptor] = &[
     },
 ];
 
+static PIPER_FABER_ARTIFACTS: &[TtsArtifactDescriptor] = &[
+    TtsArtifactDescriptor { name: "model.onnx", url: "https://huggingface.co/rhasspy/piper-voices/resolve/main/pt/pt_BR/faber/medium/pt_BR-faber-medium.onnx?download=true", sha256: "858555e3a064209c57088fe6bd70c4c3dc54d03eaa00c45d5ecaf43a33f95aa7", bytes: 63_201_294 },
+    TtsArtifactDescriptor { name: "model.onnx.json", url: "https://huggingface.co/rhasspy/piper-voices/resolve/main/pt/pt_BR/faber/medium/pt_BR-faber-medium.onnx.json?download=true", sha256: "7e694de195ae3fc36dd732c445eb04fb49b649854893cb5506b978f0d50a1d6f", bytes: 4_855 },
+];
+
 pub static MODELS: &[TtsModelDescriptor] = &[
+    TtsModelDescriptor {
+        id: "pt_BR-faber-medium",
+        engine: "piper",
+        languages: &["pt"],
+        platforms: &[
+            ModelPlatform::Android,
+            ModelPlatform::Ios,
+            ModelPlatform::Macos,
+            ModelPlatform::Linux,
+            ModelPlatform::Windows,
+        ],
+        minimum_android_api: Some(28),
+        default_rank: 0,
+        download_bytes: 63_206_149,
+        artifacts: PIPER_FABER_ARTIFACTS,
+        runtime_available: true,
+    },
     TtsModelDescriptor {
         id: "kokoro-82m",
         engine: "kokoro",

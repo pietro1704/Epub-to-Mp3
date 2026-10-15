@@ -46,6 +46,8 @@ fn run_case(input: &std::path::Path, no_parallel: bool, label: &str) -> f64 {
     config.max_parallel = 2;
     let job_id = format!("edge-benchmark-{label}");
     let request = ConversionRequest {
+        tts_preferences: None,
+        models_root: None,
         input: input.to_path_buf(),
         job_id,
         engine: Some("edge".into()),

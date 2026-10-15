@@ -472,6 +472,136 @@ final class NativeResponsiveScreenTests: XCTestCase {
         XCTAssertEqual(slider.accessibilityLabel(), L10n.string("player.playbackPosition"))
     }
 
+    func testMacTtsSettingsActionsPersistSelectionsWithoutChangingCapturedJobs() throws {
+        // Use the suite owned by this test; teardown removes it and restores
+        // shared reader/player preferences through the existing fixture.
+        let settings = AppSettings(defaults: defaults)
+        let controller = MacSettingsViewController(settings: settings, library: LibraryStore(defaults: defaults))
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 900, height: 700),
+                              styleMask: [.titled, .closable], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentViewController = controller
+        window.makeKeyAndOrderFront(nil)
+        defer { window.orderOut(nil); window.contentViewController = nil; window.close() }
+        // Installing a controller whose loadView starts at .zero can reset
+        // the content dimensions; exercise a real, laid-out settings window.
+        window.setContentSize(NSSize(width: 900, height: 700))
+        controller.view.layoutSubtreeIfNeeded()
+        let controls = descendants(controller.view)
+        XCTAssertGreaterThan(controller.view.bounds.width, 0)
+        XCTAssertGreaterThan(controller.view.bounds.height, 0)
+        let primary = try XCTUnwrap(controls.compactMap { $0 as? NSPopUpButton }
+            .first { $0.accessibilityIdentifier() == "settings.tts.primary" })
+        let secondary = try XCTUnwrap(controls.compactMap { $0 as? NSPopUpButton }
+            .first { $0.accessibilityIdentifier() == "settings.tts.secondary" })
+        let online = try XCTUnwrap(controls.compactMap { $0 as? NSButton }
+            .first { $0.accessibilityIdentifier() == "settings.tts.onlineConsent" })
+        XCTAssertEqual(primary.titleOfSelectedItem, "Faber medium")
+        XCTAssertEqual(secondary.titleOfSelectedItem, L10n.string("settings.noSecondary"))
+        XCTAssertEqual(online.state, .off)
+        XCTAssertNotNil(primary.window)
+
+        primary.selectItem(withTitle: "Edge")
+        XCTAssertTrue(NSApp.sendAction(try XCTUnwrap(primary.action), to: primary.target, from: primary))
+        secondary.selectItem(withTitle: "Faber medium")
+        XCTAssertTrue(NSApp.sendAction(try XCTUnwrap(secondary.action), to: secondary.target, from: secondary))
+        let restored = AppSettings(defaults: defaults)
+        XCTAssertEqual(restored.audioEngine, .edge)
+        XCTAssertEqual(restored.secondaryAudioEngine, .piper)
+        XCTAssertFalse(restored.allowOnlineAudioFallback)
+
+        online.performClick(nil)
+        XCTAssertEqual(online.state, .on)
+        XCTAssertTrue(AppSettings(defaults: defaults).allowOnlineAudioFallback)
+        let captured = settings.conversionOptions
+        primary.selectItem(withTitle: "Faber medium")
+        XCTAssertTrue(NSApp.sendAction(try XCTUnwrap(primary.action), to: primary.target, from: primary))
+        XCTAssertNil(settings.secondaryAudioEngine, "A primary change must remove a duplicate secondary.")
+        XCTAssertEqual(secondary.titleOfSelectedItem, L10n.string("settings.noSecondary"))
+        secondary.selectItem(withTitle: "Edge")
+        XCTAssertTrue(NSApp.sendAction(try XCTUnwrap(secondary.action), to: secondary.target, from: secondary))
+        let final = AppSettings(defaults: defaults)
+        XCTAssertEqual(final.audioEngine, .piper)
+        XCTAssertEqual(final.secondaryAudioEngine, .edge)
+        XCTAssertTrue(final.allowOnlineAudioFallback)
+        XCTAssertEqual(captured.ttsPreferences?.primary.engine, "edge")
+        XCTAssertEqual(captured.ttsPreferences?.secondary?.engine, "piper")
+        let screenshot = FileManager.default.temporaryDirectory.appendingPathComponent("mac-tts-settings-\(UUID().uuidString).png")
+        defer { try? FileManager.default.removeItem(at: screenshot) }
+        try captureLiveWindow(window, to: screenshot)
+    }
+
+    func testMacManualTtsDialogSupportsInheritanceAndStrictOverrideBeforeCancel() throws {
+        let settings = AppSettings(defaults: defaults)
+        settings.secondaryAudioEngine = .edge
+        settings.allowOnlineAudioFallback = true
+        let original = settings.ttsPreferences
+        let player = AudioPlayer(resumeStore: ResumeStore(storage: UserDefaultsResumeStorage(defaults: defaults)))
+        var conversions = 0
+        let controller = MacBookDetailViewController(book: book, library: LibraryStore(defaults: defaults),
+            settings: settings, player: player, playerPresentation: PlayerPresentation(defaults: defaults),
+            onRead: { _ in }, onShowJobs: {}, conversionExecutor: { _, _, _, _, _, _, _ in
+                conversions += 1
+                XCTFail("Cancelling the actual dialog must not submit synthesis.")
+                throw CancellationError()
+            })
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 900, height: 700),
+                              styleMask: [.titled, .closable], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentViewController = controller
+        window.makeKeyAndOrderFront(nil)
+        defer { player.stop(); window.orderOut(nil); window.contentViewController = nil; window.close() }
+        let button = try XCTUnwrap(descendants(controller.view).compactMap { $0 as? NSButton }
+            .first { $0.accessibilityIdentifier() == "bookDetail.convert" })
+        for publicEntry in [false, true] {
+            var inspected = false
+            let deadline = Date().addingTimeInterval(3)
+            let timer = Timer(timeInterval: 0.02, repeats: true) { timer in
+                MainActor.assumeIsolated {
+                    guard let modal = NSApp.modalWindow else {
+                        if Date() > deadline { timer.invalidate(); NSApp.abortModal(); XCTFail("The native conversion dialog did not open.") }
+                        return
+                    }
+                    defer { timer.invalidate(); NSApp.abortModal(); modal.orderOut(nil) }
+                    guard let surface = modal.contentView,
+                          let choice = self.descendants(surface).compactMap({ $0 as? NSPopUpButton })
+                            .first(where: { $0.accessibilityIdentifier() == "convert.tts.primary" }),
+                          let secondary = self.descendants(surface).compactMap({ $0 as? NSButton })
+                            .first(where: { $0.accessibilityIdentifier() == "convert.tts.useSecondary" }),
+                          let action = choice.action else {
+                        XCTFail("The actual modal must expose primary and secondary controls.")
+                        return
+                    }
+                    inspected = true
+                    XCTAssertEqual(choice.titleOfSelectedItem, L10n.string("convert.usePreferences"))
+                    XCTAssertEqual(secondary.state, .on)
+                    XCTAssertFalse(secondary.isEnabled)
+                    choice.selectItem(withTitle: "Edge")
+                    XCTAssertTrue(NSApp.sendAction(action, to: choice.target, from: choice))
+                    XCTAssertEqual(choice.titleOfSelectedItem, "Edge")
+                    XCTAssertEqual(secondary.state, .off, "An override must begin strict even when defaults have a secondary.")
+                    XCTAssertFalse(secondary.isEnabled, "The saved Edge secondary duplicates this manual primary.")
+                    choice.selectItem(withTitle: "Faber medium")
+                    XCTAssertTrue(NSApp.sendAction(action, to: choice.target, from: choice))
+                    secondary.performClick(nil)
+                    XCTAssertEqual(secondary.state, .on)
+                    choice.selectItem(withTitle: L10n.string("convert.usePreferences"))
+                    XCTAssertTrue(NSApp.sendAction(action, to: choice.target, from: choice))
+                    XCTAssertEqual(secondary.state, .on)
+                    XCTAssertFalse(secondary.isEnabled)
+                    XCTAssertEqual(settings.ttsPreferences, original)
+                }
+            }
+            RunLoop.main.add(timer, forMode: .modalPanel)
+            defer { timer.invalidate() }
+            if publicEntry { controller.convertWholeBook() } else { button.performClick(nil) }
+            XCTAssertTrue(inspected, "Both the detail button and library conversion entry must present the modal.")
+            XCTAssertNil(NSApp.modalWindow)
+            XCTAssertEqual(conversions, 0)
+            XCTAssertEqual(AppSettings(defaults: defaults).ttsPreferences, original)
+        }
+    }
+
     func testSettingsControlsFitResizedWindowAndLastActionCanScrollIntoView() throws {
         let controller = MacSettingsViewController(settings: AppSettings(defaults: defaults),
                                                    library: LibraryStore(defaults: defaults))

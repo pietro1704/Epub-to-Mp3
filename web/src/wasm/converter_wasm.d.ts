@@ -1,6 +1,28 @@
 /* tslint:disable */
 /* eslint-disable */
 
+/**
+ * Browser binding for Rust-owned segment ordering, provider policy and artifacts.
+ */
+export class ConversionSession {
+    free(): void;
+    [Symbol.dispose](): void;
+    /**
+     * Accept bounded MP3 encoded by the shared Rust codec.
+     */
+    accept_audio(audio: Uint8Array): boolean;
+    cancel(): void;
+    chapter_audio(): Uint8Array;
+    constructor(chapters_json: string, preferences_json: string, language: string);
+    next_segment(): string;
+    provider_failed(): void;
+}
+
+/**
+ * The browser provider supplies bounded PCM WAV; the shared Rust codec owns MP3.
+ */
+export function encode_wav_mp3(bytes: Uint8Array): Uint8Array;
+
 export function health(): string;
 
 /**
@@ -14,11 +36,20 @@ export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembl
 
 export interface InitOutput {
     readonly memory: WebAssembly.Memory;
+    readonly __wbg_conversionsession_free: (a: number, b: number) => void;
+    readonly conversionsession_accept_audio: (a: number, b: number, c: number, d: number) => void;
+    readonly conversionsession_cancel: (a: number) => void;
+    readonly conversionsession_chapter_audio: (a: number, b: number) => void;
+    readonly conversionsession_new: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => void;
+    readonly conversionsession_next_segment: (a: number, b: number) => void;
+    readonly conversionsession_provider_failed: (a: number, b: number) => void;
+    readonly encode_wav_mp3: (a: number, b: number, c: number) => void;
     readonly health: (a: number) => void;
     readonly inspect_epub: (a: number, b: number, c: number) => void;
     readonly __wbindgen_add_to_stack_pointer: (a: number) => number;
-    readonly __wbindgen_export: (a: number, b: number, c: number) => void;
-    readonly __wbindgen_export2: (a: number, b: number) => number;
+    readonly __wbindgen_export: (a: number, b: number) => number;
+    readonly __wbindgen_export2: (a: number, b: number, c: number) => void;
+    readonly __wbindgen_export3: (a: number, b: number, c: number, d: number) => number;
 }
 
 export type SyncInitInput = BufferSource | WebAssembly.Module;

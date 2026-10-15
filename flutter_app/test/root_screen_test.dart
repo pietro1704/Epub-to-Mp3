@@ -27,26 +27,32 @@ Widget _wrap(SharedPreferences prefs) {
 
 void main() {
   group('RootScreen', () {
-    test('provides a localized label for the Convert destination in every locale', () {
-      expect(AppLocalizationsEn().convertTitle, 'Convert');
-      expect(AppLocalizationsPt().convertTitle, 'Converter');
-      expect(AppLocalizationsEs().convertTitle, 'Convertir');
-    });
+    test(
+      'provides a localized label for the Convert destination in every locale',
+      () {
+        expect(AppLocalizationsEn().convertTitle, 'Convert');
+        expect(AppLocalizationsPt().convertTitle, 'Converter');
+        expect(AppLocalizationsEs().convertTitle, 'Convertir');
+      },
+    );
 
-    testWidgets('has Reader, Library, Convert, Jobs, and Settings destinations', (t) async {
-      final prefs = await _mockPrefs();
-      await t.pumpWidget(_wrap(prefs));
-      await t.pumpAndSettle();
+    testWidgets(
+      'has Reader, Library, Convert, Jobs, and Settings destinations',
+      (t) async {
+        final prefs = await _mockPrefs();
+        await t.pumpWidget(_wrap(prefs));
+        await t.pumpAndSettle();
 
-      expect(find.byType(NavigationDestination), findsNWidgets(5));
-      // "Reader" appears both in the nav bar label and the AppBar title,
-      // so we check at least one. Same for "Library" vs library tab content.
-      expect(find.text('Reader'), findsWidgets);
-      expect(find.text('Library'), findsWidgets);
-      expect(find.text('Settings'), findsWidgets);
-      expect(find.text('Convert'), findsWidgets);
-      expect(find.text('Jobs'), findsWidgets);
-    });
+        expect(find.byType(NavigationDestination), findsNWidgets(5));
+        // "Reader" appears both in the nav bar label and the AppBar title,
+        // so we check at least one. Same for "Library" vs library tab content.
+        expect(find.text('Reader'), findsWidgets);
+        expect(find.text('Library'), findsWidgets);
+        expect(find.text('Settings'), findsWidgets);
+        expect(find.text('Convert'), findsWidgets);
+        expect(find.text('Jobs'), findsWidgets);
+      },
+    );
 
     testWidgets('reader tab is shown by default (index 0)', (t) async {
       final prefs = await _mockPrefs();
@@ -57,7 +63,9 @@ void main() {
       expect(find.text('Pick a book to read'), findsOneWidget);
     });
 
-    testWidgets('convert destination is localized in every supported locale', (t) async {
+    testWidgets('convert destination is localized in every supported locale', (
+      t,
+    ) async {
       const expectedTitles = {
         'en': 'Convert',
         'es': 'Convertir',
@@ -103,7 +111,7 @@ void main() {
       await t.tap(find.text('Settings'));
       await t.pumpAndSettle();
 
-      expect(find.text('Backend URL'), findsOneWidget);
+      expect(find.text('Primary narration'), findsOneWidget);
     });
   });
 }

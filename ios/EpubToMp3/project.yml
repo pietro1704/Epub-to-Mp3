@@ -262,6 +262,10 @@ targets:
         basedOnDependencyAnalysis: false
         script: |
           bash "$SRCROOT/../../scripts/bundle_espeak_ng_data.sh"
+      - name: Bundle linked ONNX Runtime
+        basedOnDependencyAnalysis: false
+        script: |
+          bash "$SRCROOT/../../scripts/bundle_onnxruntime_apple.sh"
 
     dependencies:
       - target: EpubToMp3Widget
@@ -522,6 +526,7 @@ schemes:
         APP_IOS_LIVE_EDGE: "$(APP_IOS_LIVE_EDGE)"
         EPUB2MP3_GUI_BOOK_ID: "$(EPUB2MP3_GUI_BOOK_ID)"
         APP_IOS_PIPER_INFERENCE: "$(APP_IOS_PIPER_INFERENCE)"
+        EPUB2MP3_PIPER_TEST_MODEL_ROOT: "$(EPUB2MP3_PIPER_TEST_MODEL_ROOT)"
       targets:
         - EpubToMp3Tests
         - EpubToMp3UITests
@@ -587,5 +592,6 @@ schemes:
         EPUB2MP3_NATIVE_TTS_TEST: "$(EPUB2MP3_NATIVE_TTS_TEST)"
         APP_FOUNDATION_LIVE_EDGE: "$(APP_FOUNDATION_LIVE_EDGE)"
         APP_FOUNDATION_FFI_LIBRARY: "$(APP_FOUNDATION_FFI_LIBRARY)"
+        EPUB2MP3_PIPER_TEST_MODEL_ROOT: "$(EPUB2MP3_PIPER_TEST_MODEL_ROOT)"
       targets:
         - EpubToMp3Tests

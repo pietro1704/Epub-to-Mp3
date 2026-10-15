@@ -143,6 +143,8 @@ fn macos_link_search_path() -> Option<String> {
 }
 
 fn main() {
+    println!("cargo:rerun-if-env-changed=MACOSX_DEPLOYMENT_TARGET");
+    println!("cargo:rerun-if-changed=.");
     println!("cargo:rustc-link-lib=speechPlayer");
     println!("cargo:rustc-link-lib=espeak-ng");
     println!("cargo:rustc-link-lib=ucd");
@@ -173,6 +175,17 @@ fn main() {
     if !espeak_dst.exists() {
         debug_log!("Copy {} to {}", espeak_src.display(), espeak_dst.display());
         copy_folder(&espeak_src, &espeak_dst);
+    }
+    // Existing OUT_DIR source copies may predate the bundle-path buffer fix.
+    // Refresh only this header when changed so CMake invalidates its dependents
+    // without discarding the native build or touching unrelated source files.
+    let speech_header = espeak_src.join("src/libespeak-ng/speech.h");
+    let copied_speech_header = espeak_dst.join("src/libespeak-ng/speech.h");
+    println!("cargo:rerun-if-changed={}", speech_header.display());
+    let expected_header = std::fs::read(&speech_header).expect("Failed to read eSpeak speech.h");
+    if std::fs::read(&copied_speech_header).ok().as_deref() != Some(expected_header.as_slice()) {
+        std::fs::write(&copied_speech_header, expected_header)
+            .expect("Failed to refresh eSpeak speech.h in the native build source");
     }
     // Speed up build
     env::set_var(
@@ -216,6 +229,11 @@ fn main() {
     // Build with Cmake
 
     let mut config = Config::new(&espeak_dst);
+    if target.ends_with("-apple-darwin") {
+        if let Ok(deployment) = env::var("MACOSX_DEPLOYMENT_TARGET") {
+            config.define("CMAKE_OSX_DEPLOYMENT_TARGET", deployment);
+        }
+    }
 
     config.define(
         "BUILD_SHARED_LIBS",
@@ -234,7 +252,8 @@ fn main() {
         config
             .define("ANDROID_ABI", "arm64-v8a")
             .define("ANDROID_PLATFORM", "android-24");
-        let ndk_root = env::var("ANDROID_NDK_ROOT").expect("ANDROID_NDK_ROOT is required for Android builds");
+        let ndk_root =
+            env::var("ANDROID_NDK_ROOT").expect("ANDROID_NDK_ROOT is required for Android builds");
         println!(
             "cargo:rustc-link-search=native={}/toolchains/llvm/prebuilt/darwin-x86_64/sysroot/usr/lib/aarch64-linux-android",
             ndk_root
@@ -283,8 +302,8 @@ fn main() {
         );
     }
 
-    // macOS
-    if target.ends_with("-apple-darwin") {
+    // Apple targets share the C++ runtime required by the speech player.
+    if target.contains("-apple-") {
         println!("cargo:rustc-link-lib=framework=Foundation");
         println!("cargo:rustc-link-lib=c++");
     }

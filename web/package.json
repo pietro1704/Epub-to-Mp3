@@ -16,13 +16,20 @@
     "test": "NODE_OPTIONS='--max-old-space-size=4096' vitest run",
     "test:watch": "vitest",
     "cap:ios": "npx cap open ios",
-    "cap:android": "npx cap open android"
+    "cap:android": "npx cap open android",
+    "predev": "node scripts/prepare-tts-runtime.mjs",
+    "prebuild": "node scripts/prepare-tts-runtime.mjs",
+    "prebuild:desktop": "node scripts/prepare-tts-runtime.mjs",
+    "prebuild:mobile:bundle": "node scripts/prepare-tts-runtime.mjs"
   },
   "dependencies": {
     "@capacitor/android": "^8",
     "@capacitor/core": "^8",
     "@capacitor/ios": "^8",
+    "@diffusionstudio/piper-wasm": "1.0.0",
+    "@mintplex-labs/piper-tts-web": "1.0.3",
     "clsx": "^2.1.0",
+    "onnxruntime-web": "1.18.0",
     "react": "^19.3.0",
     "react-dom": "^19.3.0"
   },
@@ -35,6 +42,7 @@
   "devDependencies": {
     "@capacitor/cli": "^8",
     "@eslint/js": "^9.39.4",
+    "@playwright/test": "1.56.1",
     "@testing-library/jest-dom": "^7.0.1",
     "@testing-library/react": "^16.3.3",
     "@testing-library/user-event": "^14.6.7",

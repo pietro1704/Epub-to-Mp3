@@ -164,6 +164,8 @@ fn force_and_clear_apply_only_to_selected_chapter_through_actual_worker() {
             });
         let result = worker
             .run(ConversionRequest {
+                tts_preferences: None,
+                models_root: None,
                 input: input.clone(),
                 job_id: job.into(),
                 engine: Some("piper".into()),
@@ -280,23 +282,18 @@ fn explicit_model_reaches_worker_thread_without_environment_override() {
         model_calls: Mutex::new(Vec::new()),
         text_calls: Mutex::new(Vec::new()),
     });
-    let model = piper::PreparedPiperModel::prepare(
-        &models,
-        "chosen-literal-id",
-        Path::new("chosen.onnx"),
-        Path::new("chosen.config.json"),
-        runtime.clone(),
-    )
-    .unwrap();
+    piper::register_runtime(runtime.clone());
     let paths = paths::resolve_paths_from(
         [("PERSISTENT_ROOT", root.to_string_lossy().into_owned())],
         root.to_owned(),
     );
-    let worker = ConversionWorker::new(AppConfig::from_paths(paths))
-        .unwrap()
-        .with_piper_model(Some(Arc::new(model)));
+    let worker = ConversionWorker::new(AppConfig::from_paths(paths)).unwrap();
     let result = worker
         .run(ConversionRequest {
+            tts_preferences: None,
+            models_root: None,
+            piper_model: Some(model_path.canonicalize().unwrap()),
+            piper_config: Some(config_path.canonicalize().unwrap()),
             input,
             job_id: "explicit-model-job".into(),
             engine: Some("piper".into()),
@@ -319,8 +316,8 @@ fn explicit_model_reaches_worker_thread_without_environment_override() {
     let calls = runtime.model_calls.lock().unwrap();
     assert_eq!(
         calls.len(),
-        2,
-        "preflight and synthesis must both initialize the requested model"
+        1,
+        "synthesis must initialize the requested model"
     );
     assert!(calls.iter().all(|paths| paths == &expected));
     assert_eq!(

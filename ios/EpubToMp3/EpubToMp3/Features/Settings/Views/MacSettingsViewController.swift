@@ -14,6 +14,8 @@ final class MacSettingsViewController: NSViewController {
     private let themePopup = NSPopUpButton()
     private let layoutPopup = NSPopUpButton()
     private let audioEnginePopup = NSPopUpButton()
+    private let secondaryEnginePopup = NSPopUpButton()
+    private let onlineFallbackButton = NSButton(checkboxWithTitle: "", target: nil, action: nil)
     private let piperInstallButton = NSButton()
     private let statusLabel = NSTextField(labelWithString: "")
     private let storageLabel = NSTextField(labelWithString: "")
@@ -86,6 +88,16 @@ final class MacSettingsViewController: NSViewController {
         audioEnginePopup.addItems(withTitles: AudioEnginePreference.supportedPreferences.map(\.displayName))
         audioEnginePopup.target = self
         audioEnginePopup.action = #selector(audioEngineChanged(_:))
+        secondaryEnginePopup.addItems(withTitles: [L10n.string("settings.noSecondary")] + AudioEnginePreference.supportedPreferences.map(\.displayName))
+        secondaryEnginePopup.target = self
+        secondaryEnginePopup.action = #selector(secondaryEngineChanged(_:))
+        onlineFallbackButton.title = L10n.string("settings.onlineFallback")
+        onlineFallbackButton.target = self
+        onlineFallbackButton.action = #selector(onlineFallbackChanged(_:))
+        secondaryEnginePopup.setAccessibilityLabel(L10n.string("settings.secondaryVoice"))
+        audioEnginePopup.setAccessibilityIdentifier("settings.tts.primary")
+        secondaryEnginePopup.setAccessibilityIdentifier("settings.tts.secondary")
+        onlineFallbackButton.setAccessibilityIdentifier("settings.tts.onlineConsent")
         piperInstallButton.target = self
         piperInstallButton.action = #selector(installPiperModel)
         statusLabel.textColor = .secondaryLabelColor
@@ -121,7 +133,7 @@ final class MacSettingsViewController: NSViewController {
             return [title, control]
         }
         let audioEngineRows: [[NSView]] = AudioEnginePreference.supportedPreferences.contains(.piper)
-            ? [row(L10n.string("settings.audioEngineChoice"), audioEnginePopup), row("Piper", piperInstallButton)]
+            ? [row(L10n.string("settings.audioEngineChoice"), audioEnginePopup), row("Faber medium", piperInstallButton), row(L10n.string("settings.secondaryVoice"), secondaryEnginePopup), row(L10n.string("settings.onlineFallbackDescription"), onlineFallbackButton)]
             : [row(L10n.string("settings.audioEngineChoice"), audioEnginePopup)]
         let sizeControl = NSStackView(views: [fontSizeStepper, fontSizeLabel])
         sizeControl.spacing = 8
@@ -159,9 +171,12 @@ final class MacSettingsViewController: NSViewController {
         themePopup.selectItem(at: ReaderTheme.allCases.firstIndex(of: settings.readerTheme) ?? 0)
         layoutPopup.selectItem(at: ReaderLayout.allCases.firstIndex(of: settings.readerLayout) ?? 0)
         audioEnginePopup.selectItem(at: AudioEnginePreference.supportedPreferences.firstIndex(of: settings.audioEngine) ?? 0)
-        let model = AppSettings.ttsModelsRoot()?.appendingPathComponent("pt_BR-edresson-low/model.onnx")
-        piperInstallButton.title = model.map { FileManager.default.fileExists(atPath: $0.path) }
-            == true ? L10n.string("settings.piperInstalled") : L10n.string("settings.piperInstall")
+        secondaryEnginePopup.selectItem(at: settings.secondaryAudioEngine.flatMap { AudioEnginePreference.supportedPreferences.firstIndex(of: $0) }.map { $0 + 1 } ?? 0)
+        for (index, engine) in AudioEnginePreference.supportedPreferences.enumerated() {
+            secondaryEnginePopup.item(at: index + 1)?.isEnabled = engine != settings.audioEngine
+        }
+        onlineFallbackButton.state = settings.allowOnlineAudioFallback ? .on : .off
+        piperInstallButton.title = AppSettings.isFaberInstalled() ? L10n.string("settings.piperInstalled") : L10n.string("settings.piperInstall")
         statusLabel.stringValue = embeddedRuntimeStatusLabel
         storageLabel.stringValue = formatStorage(StorageUsageScanner.current(budgetBytes: settings.offlineCacheBudgetBytes))
     }
@@ -195,13 +210,23 @@ final class MacSettingsViewController: NSViewController {
     @objc private func audioEngineChanged(_ sender: NSPopUpButton) {
         guard AudioEnginePreference.supportedPreferences.indices.contains(sender.indexOfSelectedItem) else { return }
         settings.audioEngine = AudioEnginePreference.supportedPreferences[sender.indexOfSelectedItem]
+        refresh()
+    }
+
+    @objc private func secondaryEngineChanged(_ sender: NSPopUpButton) {
+        let index = sender.indexOfSelectedItem - 1
+        settings.secondaryAudioEngine = AudioEnginePreference.supportedPreferences.indices.contains(index)
+            ? AudioEnginePreference.supportedPreferences[index] : nil
+    }
+    @objc private func onlineFallbackChanged(_ sender: NSButton) {
+        settings.allowOnlineAudioFallback = sender.state == .on
     }
 
     @objc private func installPiperModel() {
         guard let root = AppSettings.ttsModelsRoot() else { return }
         Task { [weak self] in
             let result = Result { try ConverterFFIAdapter().installTtsModelFromCatalog(
-                modelID: "pt_BR-edresson-low", root: root.path
+                modelID: "pt_BR-faber-medium", root: root.path
             ) }
             guard let self else { return }
             if case .failure(let error) = result {

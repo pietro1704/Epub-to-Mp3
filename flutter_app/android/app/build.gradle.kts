@@ -43,13 +43,17 @@ android {
         versionCode = flutter.versionCode
         versionName = flutter.versionName
 
-        // Keep the same native ABI contract as the Rust artifact packager.
-        ndk {
-            abiFilters += listOf("arm64-v8a", "x86_64")
-        }
     }
 
     buildTypes {
+        // Flutter supplies ABI filters per build type, overriding defaultConfig.
+        // Match the packaged Rust runtime for every APK entry point.
+        all {
+            ndk {
+                abiFilters.clear()
+                abiFilters += listOf("arm64-v8a")
+            }
+        }
         release {
             signingConfig = signingConfigs.getByName("debug")
             isMinifyEnabled = true
@@ -64,4 +68,21 @@ android {
 
 flutter {
     source = "../.."
+}
+
+// Generated native inputs are intentionally ignored by Git. Direct Flutter/Gradle
+// builds must fail closed; the mise APK tasks build and validate them first.
+val verifyEmbeddedTtsInputs by tasks.registering {
+    doLast {
+        val nativeLibrary = file("src/main/jniLibs/arm64-v8a/libconverter_ffi.so")
+        val assets = file("src/main/assets/espeak-ng-data")
+        val required = listOf(nativeLibrary) + listOf("phontab", "phondata", "phonindex", "lang/roa/pt").map { assets.resolve(it) }
+        val missing = required.filter { !it.isFile || it.length() == 0L }
+        if (missing.isNotEmpty()) {
+            throw GradleException("Embedded Piper/JNI inputs are missing. Run mise run flutter:build-apk-debug (or flutter:build-apk) from the repository root. Missing: ${missing.joinToString()}")
+        }
+    }
+}
+tasks.matching { it.name.startsWith("merge") && it.name.endsWith("Assets") }.configureEach {
+    dependsOn(verifyEmbeddedTtsInputs)
 }
