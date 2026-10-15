@@ -92,6 +92,12 @@ running build/test commands that may generate artifacts or set up dependencies.
 
 ## Before implementation
 
+For external-project research, keep an indexed directory under
+`docs/research/<date>-<topic>/`. Record primary sources, inspected revisions,
+license boundaries, local existing/gap evidence, adoption decisions and exact
+verification. Link the task board from TODO_APP.md. Separate implemented,
+proposed and deferred ideas; upstream model cards are not local benchmarks.
+
 For substantial feature delivery requested by Pietro, use Gitflow from current
 `master` and a `feature/*` branch. Keep modules cohesive and
 small, apply SOLID where responsibilities have distinct owners, and optimize

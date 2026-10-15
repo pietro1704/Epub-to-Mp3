@@ -107,6 +107,16 @@
 - Owner: Codex root; specialists review safety/runtime, UI/state and conversion/Git isolation. No questions while the user is away; continue independent work and report user-dependent blockers at the end. Preserve all existing dirty changes, books, models and Simulator data.
 - Plan, acceptance matrix, task ownership and evidence: `docs/plans/2026-10-15-ios-whole-app-verification.md`. Status: planning; no new app verification claimed.
 
+## RESEARCH-20261015-SIMILAR — Learn from comparable GitHub/Hugging Face projects
+
+- [x] Research comparable converters, readers/playback and Hugging Face model/Space deployments against live primary sources, with revisions and license distinctions.
+- [x] Compare useful ideas against the current embedded Rust/native architecture; mark existing behavior, verified gaps, adoption candidates and rejected incompatibilities.
+- [x] Organize sources, prioritized acceptance criteria and any bounded adoption/evidence under `docs/research/2026-10-15-similar-projects/`; preserve pending product changes and document outcomes.
+- Owner: Codex; research specialists own converters.md, huggingface.md and readers-and-playback.md. Root owns synthesis/adoption decisions and task reconciliation. No model downloads, external service changes, benchmark/device actions or third-party code copying without compatibility/license review.
+- Delivered scope: research/synthesis plus six immutable Piper artifact URLs in shared Rust. User priority is reading/audio synchronization: READ-1 timing audit and READ-2 context-backed resume lead the follow-ups; those native features are not implemented or verified by this research. Board/index: `docs/research/2026-10-15-similar-projects/README.md`.
+- Verification: live HF metadata/three small config hashes match existing artifact bytes; no weights/audio downloaded. Catalog regression failed red on mutable main, then `mise run models:catalog:test` passed 20 Rust tests, no failures/ignored. Local preflight passed 65 host tests/596 assertions; changed Rust formatting and 26 documentation links/anchors passed. Independent source/adoption review found no blocker. Exact reports and limits are recorded in the index. No native app/Simulator/inference benchmark or remote CI monitoring.
+
+
 ## TOOL-20261015-RETRO — Deliver all session retrospective controls
 
 - [x] RETRO-1: reusable argv command sequence stops on the first failure, preserves exit/signal status and bounded output with exact logs.
