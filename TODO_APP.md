@@ -1,5 +1,22 @@
 # App delivery backlog
 
+## READER-20261015-DARK-COLORS — Correct native reader dark-mode colors
+
+- [ ] Deferred at the user's explicit request: dark-mode colors are incorrect in the native reader; audit reader text, links, page/safe-area backgrounds and player/control contrast before implementing a focused fix.
+- Acceptance: readable, consistent theme colors on real iPhone SE1/iOS15.5 and macOS, meaningful native regressions, and preserved pagination/chrome/raw-offset behavior. Verify light mode remains correct.
+- Evidence: user report during the 2026-10-15 reading/audio verification; current SE screenshot `.reports/reader-sync-20261015/final-se.png` shows the reported surface. No color fix or dark-mode acceptance is claimed by READ-20261015-SYNC.
+- Owner: unassigned; status: Pending. Scope is native reader/theme follow-up; do not implement as part of the pending-seek correction.
+
+## READ-20261015-SYNC — Audit reading/audio timing and protect pending page seeks
+
+- [x] READ-1: trace timing/identity from Rust through FFI and native reader; distinguish measured timing, estimates and disconnected components.
+- [x] SEEK-1: reproduce and fix stale proportional page-seek ownership across job changes and stop; preserve a valid pending request when duration arrives.
+- [x] VERIFY-1: native regression red/green, focused macOS and exact SE1/iOS15.5 checks with Xcode16.4, sequential compilation/Simulator phases; document delivered versus deferred behavior.
+- Owner: Codex; discovery specialists own read-only contract/UI/verification passes. Preserve unrelated pending changes; no model downloads, online TTS, PR/merge or CI monitoring.
+- Board, execution prompt, acceptance and evidence: `docs/research/2026-10-15-similar-projects/reading-audio-contract.md`.
+
+- Verification: cancellation and cross-job regressions failed before correction; final macOS 33 and SE1/iOS15.5 36 tests passed with no skips/failures. Real AppKit/UIKit page choices and LOTR chrome UI check passed; host preflight 65 tests/596 assertions, 29 local documentation links and diff checks passed. Exact reports/limits are in the board. Only required SE app remains open on LOTR; dark-mode colors are deferred separately. No measured sentence-follow feature is claimed.
+
 ## RESEARCH-20261015-SIMILAR — Learn from comparable GitHub/Hugging Face projects
 
 - [x] Research comparable converters, readers/playback and Hugging Face model/Space deployments against live primary sources, with revisions and license distinctions.

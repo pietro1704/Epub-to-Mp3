@@ -406,12 +406,44 @@ final class AudioPlayerDivergenceTests: XCTestCase {
 
     // MARK: Pending proportional seek
 
-    /// A ratio passed to `startFromReaderPage` before duration lands
-    /// must be queued and applied once duration is known.
+    @MainActor
+    func testStopCancelsReaderPageSeekBeforeDurationArrives() {
+        let player = makePlayer()
+        player.setSnapshot(snapshotWithChapters(1, jobID: "cancelled-reader-page"))
+        player.testHook_setPendingProportionalSeek(0.5)
+        player.stop()
+        XCTAssertNil(player.testHook_pendingProportionalSeek(),
+                     "Stop must synchronously cancel the reader's deferred page request")
+        player.testHook_setDurationSeconds(120)
+        player.applyPendingProportionalSeek()
+        XCTAssertEqual(player.positionSeconds, 0,
+                       "A late duration must not resurrect a cancelled page seek")
+    }
+
+    @MainActor
+    func testReaderPageSeekCannotCrossJobsAtTheSameChapterIndex() {
+        let player = makePlayer()
+        defer { player.stop() }
+        player.setSnapshot(snapshotWithChapters(1, jobID: "reader-page-book-a"))
+        player.testHook_setPendingProportionalSeek(0.5)
+        player.setSnapshot(snapshotWithChapters(1, jobID: "reader-page-book-b"))
+        player.applyPendingProportionalSeek()
+        XCTAssertNil(player.testHook_pendingProportionalSeek(),
+                     "A different job must discard the old request even before duration arrives")
+        player.testHook_setDurationSeconds(120)
+        player.applyPendingProportionalSeek()
+        XCTAssertEqual(player.positionSeconds, 0,
+                       "The old book's page ratio must not seek the new book")
+    }
+
+    /// A same-job refresh must keep the page request until duration arrives.
     @MainActor
     func testPendingProportionalSeekAppliedOnceDurationLands() {
         let player = makePlayer()
+        defer { player.stop() }
+        player.setSnapshot(snapshotWithChapters(1, jobID: "delayed-reader-page"))
         player.testHook_setPendingProportionalSeek(0.5)
+        player.setSnapshot(snapshotWithChapters(1, jobID: "delayed-reader-page"))
         // Duration still 0 — applying should be a no-op.
         player.applyPendingProportionalSeek()
         XCTAssertEqual(
@@ -421,6 +453,8 @@ final class AudioPlayerDivergenceTests: XCTestCase {
         )
         player.testHook_setDurationSeconds(120)
         player.applyPendingProportionalSeek()
+        XCTAssertEqual(player.positionSeconds, 60,
+                       "The current book's valid page request must still seek when duration arrives")
         XCTAssertNil(
             player.testHook_pendingProportionalSeek(),
             "Pending seek must clear after duration-driven apply"

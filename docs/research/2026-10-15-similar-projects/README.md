@@ -30,6 +30,10 @@ pronunciation UI or alternative TTS providers. This selection prioritizes the
 larger follow-up work; it does not establish a reader defect or authorize an
 unverified UI rewrite.
 
+Continuation: [reading/audio contract audit and pending page-seek correction](reading-audio-contract.md).
+The audit traces actual producers/consumers and separates proportional navigation
+from measured alignment; its board records native verification independently.
+
 Small immediate adoption: pin all six existing Piper ONNX/config URLs in the
 Rust catalog to HF revision `c10ece1aade47bb51c153c893d14e5bf8e5b7117`.
 Live Hub tree metadata confirmed the three weight sizes/LFS SHA256 values;
@@ -44,7 +48,7 @@ adaptation, not a voice-quality or performance claim.
 | ID / priority | Inspiration | Local decision and acceptance | Status |
 | --- | --- | --- | --- |
 | ADOPT-1 / now | [HF exact revisions](https://huggingface.co/docs/huggingface_hub/guides/download#from-specific-version), [Pocket provenance locks](huggingface.md#4-import-bundle-provenance-patterns-before-importing-pocket-weights) | Pin the six existing Piper URLs; preserve artifact/model identity, hashes, explicit install and default voice. Verify catalog/manifests and corrupt/missing-artifact tests without weight downloads. | Implemented and Rust-verified |
-| READ-1 / first follow-up | [Readest TTS flow](readers-and-playback.md) | Audit existing sentence timing at Rust publication and native playback/follow seams before adding anything. Require correct book/chapter/segment identity through seek, cancellation, interruption and book switch; fall back honestly when timestamps are absent. | Prioritized investigation, not a confirmed product defect |
+| READ-1 / first follow-up | [Readest TTS flow](readers-and-playback.md) | Audit existing sentence timing at Rust publication and native playback/follow seams before adding anything. Require correct book/chapter/segment identity through seek, cancellation, interruption and book switch; fall back honestly when timestamps are absent. | [Audited](reading-audio-contract.md); proportional-seek correction tracked separately; measured following still pending |
 | READ-2 / first follow-up | [Readium Locator](readers-and-playback.md) | Add a versioned context/resource-backed resume fallback only after the current seam is exercised. Decode old entries; resolve repeated text within the right resource; preserve exact raw offset during chrome transitions. | Confirmed persistence-contract gap; feature not implemented |
 | READ-3 / conditional | [Readest timed Media Overlays](readers-and-playback.md) | Assess EPUB-provided text/audio timing separately from generated TTS. Use exact timing when present; do not present estimated speech progress as word alignment. | Feasibility candidate, no dependency or renderer replacement |
 | LATER-1 | [Audiobookshelf chapter-end timer](readers-and-playback.md) | Extend the current timer only after boundary behavior across streamed segments is tested on both native apps. | Secondary to selected reading/sync work |
@@ -67,15 +71,16 @@ Rust/native app. [License](https://github.com/haydonryan/epub2audiobook/blob/0b6
 
 ## Next reading/audio verification slice
 
-Start with READ-1's evidence inventory: trace one book's chapter/segment identity
-from the Rust progress callback to `AudioPlayer` sentence timing and reader page
-anchors; identify which providers supply actual timings. Exercise absent, late
-and stale timing without claiming word-level accuracy. If a user-visible gap is
-demonstrated, implement one corrected seam with Rust contract tests and native
-XCTest, then verify the exact iPhone SE1/iOS 15.5 and macOS apps sequentially with
-Xcode 16.4 and the existing build/Simulator safeguards. READ-2 follows the same
-native gate and must preserve reader glyph/viewport invariants. This research
-does not claim either native feature delivered or device behavior tested.
+READ-1's [contract inventory](reading-audio-contract.md#current-contract) found
+no measured sentence timing in the current Rust/FFI audio callback and no visible
+consumer of the dormant sentence engine. The continuation addresses demonstrated
+pending proportional-seek ownership; it does not introduce sentence following.
+The next synchronization feature must first carry actual interval provenance
+and book/job/chapter/chunk/text identity across the shared runtime, reject stale
+or cancelled events, and keep an honest fallback when timing is absent. Require
+Rust contract tests and native XCTest, then verify the exact iPhone SE1/iOS15.5
+and macOS apps sequentially with Xcode16.4 and the build/Simulator safeguards.
+READ-2 follows the same native gate and preserves reader glyph/viewport invariants.
 
 ## Actual verification and limits
 
