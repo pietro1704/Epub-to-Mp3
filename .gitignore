@@ -60,6 +60,15 @@ venv/
 env/
 ENV/
 .env/
+.env
+.env.*
+!.env.example
+!.env.template
+!.env.*.example
+# Checked-in Vite profiles contain public API routing only.
+!/web/.env.desktop
+!/web/.env.mobile
+!/web/.env.production
 .venv/
 .venv*/
 env.bak/
@@ -81,6 +90,7 @@ log_*.txt
 *.tmp
 *.temp
 *.bak
+*.bak-*
 .ipynb_checkpoints
 .mypy_cache/
 .dmypy.json
@@ -94,7 +104,10 @@ dmypy.json
 .Trashes
 ehthumbs.db
 Thumbs.db
-.vscode/
+.vscode/*
+!/.vscode/extensions.json
+!/.vscode/settings.json
+!/.vscode/tasks.json
 .idea/
 *.swp
 *.swo
@@ -176,10 +189,20 @@ tmp_*
 releases/
 
 # Claude Code runtime artifacts
+.claude/settings.local.json
 .claude/scheduled_tasks.lock
 .claude/agent-memory/
 **/.claude/agent-memory/
+.claude/night_run_pending.md
+.claude/night_run_summary.md
 buildServer.json
+
+# Local agent state and installed tools; shared skills and plans stay versioned.
+/.codex/config.local.toml
+/.codex/sessions/
+/.codex/log/
+/.hermes/tools/
+/.hermes/snapshots/
 
 # iOS embedded-Python spike (feat/ios-python-embed) — vendored Python
 # runtime is ~150 MB; bootstrapped by

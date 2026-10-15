@@ -31,6 +31,22 @@ guides English technical summaries and evidence attribution. Hardware panic
 evidence is project-specific; it does not belong in the global profile.
 Project rules remain authoritative over historical memory and profile defaults.
 
+## Git ownership
+
+Keep project-owned skills under `.agents/skills`, `.codex/skills` and
+`.claude/skills`, relative Hermes skill aliases, shared hooks/settings, plans,
+instruction files and `.ai-memory.toml` versioned. Local agent memory, sessions,
+instruction backups, Hermes installed tools/snapshots and QA captures belong
+outside the index. Root VS Code extensions/settings/tasks and the three existing
+public Vite routing profiles remain shared; local overrides and secret `.env`
+files are ignored. Templates contain placeholders, never credentials.
+
+Use `mise run git:hygiene:test` to exercise this policy through Git in temporary
+repositories. When correcting an already tracked artifact, inspect references
+and local changes, capture its hash, then remove only its index entry and verify
+the bytes remain unchanged. Ignore rules alone do not untrack existing files;
+index cleanup does not remove older commits from history.
+
 Verified baseline: ai-memory 2.6.2, 2026-10-15. Check installed `--help` and
 managed assets against upstream docs before changing configuration; current
 upstream installation instructions may describe a newer release.
