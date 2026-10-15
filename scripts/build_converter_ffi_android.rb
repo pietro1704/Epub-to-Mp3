@@ -4,11 +4,13 @@ require 'digest'
 require 'json'
 require 'rbconfig'
 require 'fileutils'
+require_relative 'fetch_onnxruntime_android'
 
 root = File.expand_path('..', __dir__)
 Dir.chdir(root)
 lease = File.open('/tmp/epub2mp3.heavy-job.lock', 'a+')
 abort 'Another heavy job is active' unless lease.flock(File::LOCK_EX | File::LOCK_NB)
+ort_directory = AndroidOnnxRuntime.ensure_runtime(already_locked: true)
 host = case RbConfig::CONFIG['host_os']
        when /darwin/ then 'darwin-x86_64'
        when /linux/ then 'linux-x86_64'
@@ -43,12 +45,14 @@ environment = data_env.merge(
   'HOST_CC' => host == 'darwin-x86_64' ? '/usr/bin/clang' : 'cc',
   'HOST_CXX' => host == 'darwin-x86_64' ? '/usr/bin/clang++' : 'c++',
   'RUSTUP_TOOLCHAIN' => 'stable',
-  'ORT_LIB_LOCATION' => ENV['ANDROID_ORT_LIB_LOCATION'],
-  'ORT_PREFER_DYNAMIC_LINK' => '0'
+  'ORT_LIB_LOCATION' => ort_directory,
+  'ORT_PREFER_DYNAMIC_LINK' => '1',
+  'ORT_SKIP_DOWNLOAD' => '1',
+  'CARGO_TARGET_AARCH64_LINUX_ANDROID_RUSTFLAGS' => '-C link-arg=-Wl,-z,defs'
 )
 command = ['mise', 'exec', '--', 'rustup', 'run', 'stable', 'cargo', 'build', '-p', 'converter-ffi', '--features', 'android-jni,piper-runtime', '--release', '--target', target, '--target-dir', build_root, '--jobs', '1']
 exit($?.exitstatus || 1) unless system(environment, *command)
 library = File.join(build_root, target, 'release', 'libconverter_ffi.so')
 abort 'Cargo did not produce the Android converter library' unless File.file?(library)
-File.write("#{library}.runtime.json", JSON.pretty_generate({ 'target' => target, 'features' => ['android-jni', 'piper-runtime'], 'ort_api' => 23, 'sha256' => Digest::SHA256.file(library).hexdigest, 'ndk' => ndk }))
+File.write("#{library}.runtime.json", JSON.pretty_generate({ 'target' => target, 'features' => ['android-jni', 'piper-runtime'], 'ort_api' => 23, 'sha256' => Digest::SHA256.file(library).hexdigest, 'ndk' => ndk, 'ort_directory' => ort_directory, 'ort_sha256' => AndroidOnnxRuntime::LIBRARY_SHA256 }))
 puts "Built Piper/JNI Android artifact: #{library}"

@@ -220,14 +220,10 @@ fn main() {
         config
             .define("ANDROID_ABI", "arm64-v8a")
             .define("ANDROID_PLATFORM", "android-24");
-        let ndk_root =
-            env::var("ANDROID_NDK_ROOT").expect("ANDROID_NDK_ROOT is required for Android builds");
-        println!(
-            "cargo:rustc-link-search=native={}/toolchains/llvm/prebuilt/darwin-x86_64/sysroot/usr/lib/aarch64-linux-android",
-            ndk_root
-        );
-        println!("cargo:rustc-link-lib=static=c++_static");
-        println!("cargo:rustc-link-lib=static=c++abi");
+        // Let the NDK driver search the API-specific shared system libraries
+        // before its archive directory. An explicit -L to the latter embeds
+        // static Bionic in the JNI library and crashes its TLS initialization.
+        println!("cargo:rustc-link-lib=dylib=c++_shared");
     }
 
     // General
