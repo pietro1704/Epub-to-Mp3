@@ -107,6 +107,14 @@
 - Owner: Codex root; specialists review safety/runtime, UI/state and conversion/Git isolation. No questions while the user is away; continue independent work and report user-dependent blockers at the end. Preserve all existing dirty changes, books, models and Simulator data.
 - Plan, acceptance matrix, task ownership and evidence: `docs/plans/2026-10-15-ios-whole-app-verification.md`. Status: planning; no new app verification claimed.
 
+## TOOL-20261015-GIT-HYGIENE — Separate shared agent assets from local state
+
+- [x] Preserve shared skills, instruction aliases, plans and portable editor configuration; ignore local agent state, backups, installed tools and generated snapshots.
+- [x] Remove generated/local artifacts from the Git index only, with hashes proving local files unchanged; preserve all pending product changes.
+- [x] Verify real Git ignore/index behavior with host regression tests and review the owned diff before commit/push.
+- Owner: Codex. Dependencies: existing agent setup and memory-safety delivery `2477485280`. Scope and live board: `.hermes/plans/2026-10-15-git-hygiene.md`. No history rewriting, app/build/device actions, PR or merge.
+- Verification: `mise run git:hygiene:test` passed 5 tests/137 assertions; existing native guard host tests passed 7/46; local preflight and whitespace checks passed. Index-only cleanup removed 76 generated/local entries; all local SHA-256 hashes and unrelated unstaged diffs matched immediately after cleanup. Later concurrent product edits were detected and excluded from this commit. No tracked-but-ignored files remain. Public Vite profiles, portable VS Code files and shared skills/aliases remain tracked. No application behavior or native execution changed.
+
 ## TOOL-20261015-MEMORY-SAFETY — Align agent memory and native workflow
 
 - [x] Install canonical ai-memory routing/skills; preserve project identity, credentials, hooks and existing work.

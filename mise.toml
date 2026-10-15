@@ -91,6 +91,10 @@ run = "mise exec -- python scripts/build_converter_ffi.py --list"
 description = "Read-only Intel Mac check: Simulator shutdown and SimMetalHost exit before compilation"
 run = "ruby scripts/native_build_preflight.rb"
 
+[tasks."git:hygiene:test"]
+description = "Verify ignore rules and index-only cleanup through real Git in temporary repositories"
+run = "ruby scripts/test_git_hygiene.rb"
+
 [tasks."native:build:preflight:test"]
 description = "Host regressions for native build crash-prevention preflight; no Simulator or build"
 run = "ruby scripts/test_native_build_preflight.rb"
