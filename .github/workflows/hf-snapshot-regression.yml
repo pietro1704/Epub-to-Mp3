@@ -53,7 +53,7 @@ jobs:
           cmp web/public/sample.epub "$snapshot_root/reconstructed/web/public/sample.epub"
       - name: Build Docker from the reconstructed snapshot
         run: docker build --tag hf-snapshot-regression "$HF_REGRESSION_ROOT/reconstructed"
-      - name: Verify container health, contract and actual frontend WASM without models
+      - name: Verify container health, contract and production SPA assets without models
         run: |
           set -euo pipefail
           docker run --detach --name hf-snapshot-regression --publish 127.0.0.1:17860:7860 hf-snapshot-regression
@@ -63,15 +63,28 @@ jobs:
           done
           curl --max-time 5 --fail --silent http://127.0.0.1:17860/api/health | jq -e '.status == "healthy" and .contract_version == "1"'
           curl --max-time 5 --fail --silent http://127.0.0.1:17860/api/contract | jq -e '.backend == "rust" and (.capabilities | index("uploads") != null)'
-          curl --max-time 5 --fail --silent http://127.0.0.1:17860/ > "$RUNNER_TEMP/hf-index.html"
-          grep -q '<html' "$RUNNER_TEMP/hf-index.html"
-          # Vite emits this binary as a hashed asset. Read the actual built file path.
-          docker exec hf-snapshot-regression sh -c 'find /app/web/dist -name "converter_wasm_bg*.wasm" -type f' > "$RUNNER_TEMP/hf-wasm-paths.txt"
-          test "$(wc -l < "$RUNNER_TEMP/hf-wasm-paths.txt")" -eq 1
-          wasm_path="$(cat "$RUNNER_TEMP/hf-wasm-paths.txt")"
-          wasm_url="${wasm_path#/app/web/dist}"
-          curl --max-time 10 --fail --silent "http://127.0.0.1:17860$wasm_url" > "$RUNNER_TEMP/hf-served.wasm"
-          cmp web/src/wasm/converter_wasm_bg.wasm "$RUNNER_TEMP/hf-served.wasm"
+          root_status="$(curl --max-time 5 --silent --output "$RUNNER_TEMP/hf-index.html" --write-out '%{http_code}' http://127.0.0.1:17860/)"
+          root_content_type="$(curl --max-time 5 --silent --output /dev/null --write-out '%{content_type}' http://127.0.0.1:17860/)"
+          if [[ "$root_status" != 200 ]] || [[ "$root_content_type" != text/html* ]] || ! grep -qi '<html' "$RUNNER_TEMP/hf-index.html"; then
+            echo "::error::Frontend root did not return an HTML document"
+            exit 1
+          fi
+          asset_references="$(grep -Eo '(src|href)="[^"]+\.(js|css)(\?[^"]*)?"' "$RUNNER_TEMP/hf-index.html" | sed -E 's/^(src|href)="([^"]+)"$/\2/' | sort -u || true)"
+          if [[ -z "$asset_references" ]]; then
+            echo "::error::Production SPA did not reference a JavaScript or CSS asset"
+            exit 1
+          fi
+          while IFS= read -r asset_url; do
+            [[ -n "$asset_url" ]] || continue
+            [[ "$asset_url" == /* ]] || asset_url="/$asset_url"
+            asset_status="$(curl --max-time 10 --silent --output "$RUNNER_TEMP/hf-served-asset" --write-out '%{http_code}' "http://127.0.0.1:17860$asset_url")"
+            asset_bytes="$(wc -c < "$RUNNER_TEMP/hf-served-asset" | tr -d ' ')"
+            echo "Asset $asset_url HTTP status=$asset_status bytes=$asset_bytes"
+            if [[ "$asset_status" != 200 || "$asset_bytes" == 0 ]]; then
+              echo "::error::Production SPA asset was not served successfully: $asset_url"
+              exit 1
+            fi
+          done <<< "$asset_references"
           docker exec hf-snapshot-regression sh -c 'test "$HOST" = 0.0.0.0; test -z "$(find /app /data -name "*.onnx" -print -quit)"'
       - name: Retain bounded container diagnostics
         if: always()
