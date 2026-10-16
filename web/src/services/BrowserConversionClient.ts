@@ -128,12 +128,18 @@ export interface BrowserRuntime {
 export function createBrowserSynthesis(
   prepare: (selection: TtsSelection) => Promise<void> = prepareBrowserPiper,
 ): Pick<BrowserRuntime, "synthesize" | "cancelSynthesis"> {
+  let generation = 0;
   return {
     synthesize: async (text, selection) => {
+      const requestedGeneration = generation;
       await prepare(selection);
+      if (requestedGeneration !== generation) throw new Error("Piper synthesis cancelled.");
       return synthesizePiper(text);
     },
-    cancelSynthesis: cancelPiper,
+    cancelSynthesis: () => {
+      generation++;
+      cancelPiper();
+    },
   };
 }
 async function prepareBrowserPiper(selection: TtsSelection): Promise<void> {

@@ -1,21 +1,15 @@
 import { chromium } from "@playwright/test";
-import { spawn } from "node:child_process";
+import { startBrowserServer } from "./browser-server.mjs";
 import { resolve } from "node:path";
-import { setTimeout as delay } from "node:timers/promises";
 
 const root = resolve(import.meta.dirname, "../..");
-const server = spawn("mise", ["exec", "--", "npm", "run", "dev", "--", "--host", "127.0.0.1", "--port", "5177", "--strictPort"], { cwd: resolve(root, "web"), stdio: "ignore" });
+const server = await startBrowserServer({ root, port: 5176 });
 let browser;
 try {
-  for (let attempt = 0; ; attempt++) {
-    try { if ((await fetch("http://127.0.0.1:5177")).ok) break; } catch { /* Wait for the local frontend. */ }
-    if (attempt === 100) throw new Error("Storage test frontend did not start");
-    await delay(200);
-  }
   browser = await chromium.launch({ executablePath: process.env.TTS_BROWSER_EXECUTABLE, headless: true, channel: "chromium" });
   const page = await browser.newPage();
   await page.route("https://**", route => route.abort("internetdisconnected"));
-  await page.goto("http://127.0.0.1:5177", { waitUntil: "domcontentloaded" });
+  await page.goto(server.origin, { waitUntil: "domcontentloaded" });
   const evidence = await page.evaluate(async () => {
     const { IndexedDBBrowserJobStore } = await import("/src/services/BrowserJobStore.ts");
     const store = new IndexedDBBrowserJobStore();
@@ -36,6 +30,6 @@ try {
   });
   console.log(JSON.stringify(evidence));
 } finally {
-  await browser?.close();
-  server.kill("SIGTERM");
+  try { await browser?.close(); }
+  finally { await server.stop(); }
 }

@@ -1,6 +1,8 @@
 //! Platform-independent PCM WAV to normalized MP3 encoding shared by native and WASM clients.
 
-fn encoder_error(message: impl Into<String>) -> String { message.into() }
+fn encoder_error(message: impl Into<String>) -> String {
+    message.into()
+}
 
 /// Collect a finished rusty_mp3 1.0.0 encoder without changing MPEG audio payloads.
 /// That producer counts the Info/Xing metadata frame itself, unlike the audio-frame
@@ -65,6 +67,16 @@ pub(crate) fn collect_rusty_mp3_output(
 
 /// Parse RIFF chunks rather than assuming every writer emits a 44-byte header.
 pub fn encode_wav_mp3(data: &[u8]) -> Result<Vec<u8>, String> {
+    // Edge emits 24 kHz MP3. Keep concatenated fallback artifacts at that rate.
+    encode_wav_mp3_at_rate(data, Some(24_000))
+}
+
+/// Preserve the legacy single-provider source rate and the encoder's rate validation.
+pub(crate) fn encode_wav_mp3_at_source_rate(data: &[u8]) -> Result<Vec<u8>, String> {
+    encode_wav_mp3_at_rate(data, None)
+}
+
+fn encode_wav_mp3_at_rate(data: &[u8], target_rate: Option<u32>) -> Result<Vec<u8>, String> {
     if data.len() < 12 || &data[..4] != b"RIFF" || &data[8..12] != b"WAVE" {
         return Err("Invalid WAV header".into());
     }
@@ -110,8 +122,7 @@ pub fn encode_wav_mp3(data: &[u8]) -> Result<Vec<u8>, String> {
     if sample_count > rate as usize * 120 {
         return Err("System speech PCM exceeds the segment duration limit".into());
     }
-    // Edge emits 24 kHz MP3. Keep concatenated fallback artifacts at that rate.
-    let target_rate = 24_000u32;
+    let target_rate = target_rate.unwrap_or(rate);
     let resampled;
     let normalized = if rate == target_rate {
         pcm
@@ -173,16 +184,32 @@ mod tests {
     use super::*;
 
     #[test]
+    fn source_rate_encoding_preserves_mpeg_rates_and_rejects_unsupported_rates() {
+        for rate in [22_050, 24_000, 44_100] {
+            let encoded = encode_wav_mp3_at_source_rate(&wav(rate)).unwrap();
+            let mut decoder = rusty_mp3::Mp3Decoder::new();
+            decoder.push(&encoded);
+            decoder.flush();
+            assert_eq!(decoder.next_frame().unwrap().sample_rate, rate);
+        }
+        assert!(encode_wav_mp3_at_source_rate(&wav(12_345)).is_err());
+    }
+
+    #[test]
     fn portable_encoder_declares_only_audio_frames_and_retains_total_byte_length() {
         let encoded = encode_wav_mp3(&wav(24_000)).unwrap();
-        let header = rusty_mp3::header::FrameHeader::parse(encoded[..4].try_into().unwrap()).unwrap();
+        let header =
+            rusty_mp3::header::FrameHeader::parse(encoded[..4].try_into().unwrap()).unwrap();
         let field = 4 + usize::from(header.crc_protected) * 2 + header.side_info_len() + 8;
         let declared_frames = u32::from_be_bytes(encoded[field..field + 4].try_into().unwrap());
         let declared_bytes = u32::from_be_bytes(encoded[field + 4..field + 8].try_into().unwrap());
         let mut position = 0;
         let mut physical_frames = 0;
         while position < encoded.len() {
-            let header = rusty_mp3::header::FrameHeader::parse(encoded[position..position + 4].try_into().unwrap()).unwrap();
+            let header = rusty_mp3::header::FrameHeader::parse(
+                encoded[position..position + 4].try_into().unwrap(),
+            )
+            .unwrap();
             position += header.frame_size();
             physical_frames += 1;
         }
@@ -191,8 +218,6 @@ mod tests {
         assert_eq!(declared_bytes as usize, encoded.len());
         validate_mp3(&encoded).unwrap();
     }
-
-
 
     fn wav(rate: u32) -> Vec<u8> {
         let pcm: Vec<u8> = (0..rate / 4)

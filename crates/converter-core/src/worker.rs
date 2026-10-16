@@ -96,7 +96,9 @@ pub struct OutputManifest {
     pub fallback_used: bool,
 }
 
-fn no_fallback(value: &bool) -> bool { !*value }
+fn no_fallback(value: &bool) -> bool {
+    !*value
+}
 
 #[derive(Debug, Error)]
 pub enum WorkerError {
@@ -455,26 +457,41 @@ impl ConversionWorker {
             let language = request.language.as_deref().or(language);
             let explicit_paths = request.piper_model.is_some() || request.piper_config.is_some();
             let prepared_identity = if request.tts_preferences.is_none() && !explicit_paths {
-                self.piper_model.as_ref().map(|model| model.cache_identity())
+                self.piper_model
+                    .as_ref()
+                    .map(|model| model.cache_identity())
             } else {
                 None
             };
-            let explicit_identity = if engine == "piper"
-                && request.tts_preferences.is_none() && explicit_paths
-            {
-                let model = request.piper_model.clone().unwrap_or_else(||
-                    self.config.paths.piper_models_dir.join("pt_BR-faber-medium.onnx"));
-                let config = request.piper_config.clone().unwrap_or_else(|| model.with_extension("onnx.json"));
-                Some(format!("piper:{model:?}:{config:?}:{}:{}",
-                    cache::sha256_file(&model)?, cache::sha256_file(&config)?))
-            } else {
-                None
-            };
+            let explicit_identity =
+                if engine == "piper" && request.tts_preferences.is_none() && explicit_paths {
+                    let model = request.piper_model.clone().unwrap_or_else(|| {
+                        self.config
+                            .paths
+                            .piper_models_dir
+                            .join("pt_BR-faber-medium.onnx")
+                    });
+                    let config = request
+                        .piper_config
+                        .clone()
+                        .unwrap_or_else(|| model.with_extension("onnx.json"));
+                    Some(format!(
+                        "piper:{model:?}:{config:?}:{}:{}",
+                        cache::sha256_file(&model)?,
+                        cache::sha256_file(&config)?
+                    ))
+                } else {
+                    None
+                };
             let base_request_key = chapter_audio_request_key(
                 &book_key,
                 &chapter.index,
                 &text,
-                if let Some(identity) = explicit_identity.as_deref().or(prepared_identity.as_deref()).filter(|_| engine == "piper") {
+                if let Some(identity) = explicit_identity
+                    .as_deref()
+                    .or(prepared_identity.as_deref())
+                    .filter(|_| engine == "piper")
+                {
                     identity
                 } else if self.platform_tts.is_some() && engine == "edge" {
                     "edge+system-v2"
@@ -546,78 +563,83 @@ impl ConversionWorker {
             }
             let stale_window_cancelled = std::sync::atomic::AtomicBool::new(false);
             let actual_providers = Mutex::new(Vec::<crate::tts_preferences::TtsSelection>::new());
-            let audio_result = ensure_chapter_audio_with_options(&mp3, &request_key, self.execution_options.force_reprocess, |pending| {
-                eprintln!("synthesizing chapter {}/{}", position + 1, total);
-                let synthesis = if let Some(preferences) = &request.tts_preferences {
-                    self.synthesize_preferences(
-                        request,
-                        preferences,
-                        &text,
-                        pending,
-                        source_index,
-                        language,
-                        &stale_window_cancelled,
-                        &actual_providers,
-                        total,
-                    )
-                } else if self.platform_tts.is_some()
-                    && matches!(engine.as_str(), "edge" | "system")
-                {
-                    self.synthesize_platform_policy(
-                        &engine,
-                        &text,
-                        pending,
-                        source_index,
-                        request.voice.as_deref(),
-                        language,
-                        &stale_window_cancelled,
-                        &system_notice_emitted,
-                        &request.job_id,
-                        total,
-                        completed.load(Ordering::Acquire),
-                    )
-                } else {
-                    self.synthesize_with_timeout(
-                        &engine,
-                        &text,
-                        pending,
-                        source_index,
-                        request.voice.as_deref(),
-                        language,
-                        request.piper_model.as_deref(),
-                        request.piper_config.as_deref(),
-                        &stale_window_cancelled,
-                    )
-                };
-                if stale_window_cancelled.load(Ordering::Acquire) {
-                    return Err(WorkerError::PlaybackWindowChanged);
-                }
-                synthesis?;
-                if self.cancel.is_cancelled()
-                    || self.jobs.is_cancellation_requested(&request.job_id)?
-                {
-                    return Err(WorkerError::Cancelled);
-                }
-                let used_selections = actual_providers.lock().expect("provider lock").clone();
-                let fallback_used = if request.tts_preferences.is_some() {
-                    self.fallback_chapters
-                        .lock()
-                        .expect("fallback chapter lock")
-                        .contains(&source_index)
-                } else {
-                    engine == "edge"
-                        && fs::read_to_string(pending.with_extension("provider"))
-                            .ok()
-                            .is_some_and(|provider| provider.contains("system"))
-                };
-                // Include actual provider roles in the initial completion receipt,
-                // before either durable chapter artifact is published.
-                cache::atomic_write_json(
-                    pending.with_extension("tts-usage.json"),
-                    &(used_selections, fallback_used),
-                )?;
-                Ok(())
-            });
+            let audio_result = ensure_chapter_audio_with_options(
+                &mp3,
+                &request_key,
+                self.execution_options.force_reprocess,
+                |pending| {
+                    eprintln!("synthesizing chapter {}/{}", position + 1, total);
+                    let synthesis = if let Some(preferences) = &request.tts_preferences {
+                        self.synthesize_preferences(
+                            request,
+                            preferences,
+                            &text,
+                            pending,
+                            source_index,
+                            language,
+                            &stale_window_cancelled,
+                            &actual_providers,
+                            total,
+                        )
+                    } else if self.platform_tts.is_some()
+                        && matches!(engine.as_str(), "edge" | "system")
+                    {
+                        self.synthesize_platform_policy(
+                            &engine,
+                            &text,
+                            pending,
+                            source_index,
+                            request.voice.as_deref(),
+                            language,
+                            &stale_window_cancelled,
+                            &system_notice_emitted,
+                            &request.job_id,
+                            total,
+                            completed.load(Ordering::Acquire),
+                        )
+                    } else {
+                        self.synthesize_with_timeout(
+                            &engine,
+                            &text,
+                            pending,
+                            source_index,
+                            request.voice.as_deref(),
+                            language,
+                            request.piper_model.as_deref(),
+                            request.piper_config.as_deref(),
+                            &stale_window_cancelled,
+                        )
+                    };
+                    if stale_window_cancelled.load(Ordering::Acquire) {
+                        return Err(WorkerError::PlaybackWindowChanged);
+                    }
+                    synthesis?;
+                    if self.cancel.is_cancelled()
+                        || self.jobs.is_cancellation_requested(&request.job_id)?
+                    {
+                        return Err(WorkerError::Cancelled);
+                    }
+                    let used_selections = actual_providers.lock().expect("provider lock").clone();
+                    let fallback_used = if request.tts_preferences.is_some() {
+                        self.fallback_chapters
+                            .lock()
+                            .expect("fallback chapter lock")
+                            .contains(&source_index)
+                    } else {
+                        engine == "edge"
+                            && fs::read_to_string(pending.with_extension("provider"))
+                                .ok()
+                                .is_some_and(|provider| provider.contains("system"))
+                    };
+                    // Include actual provider roles in the initial completion receipt,
+                    // before either durable chapter artifact is published.
+                    cache::atomic_write_json(
+                        pending.with_extension("tts-usage.json"),
+                        &(used_selections, fallback_used),
+                    )?;
+                    Ok(())
+                },
+            );
             match audio_result {
                 Err(WorkerError::PlaybackWindowChanged) => {
                     self.control
@@ -807,7 +829,11 @@ impl ConversionWorker {
                 }
             }
         }
-        let policy = self.segment_policy.lock().expect("segment policy lock").clone();
+        let policy = self
+            .segment_policy
+            .lock()
+            .expect("segment policy lock")
+            .clone();
         let result = OutputManifest {
             source_chapters_total: Some(source_chapters_total),
             tts_preferences: request.tts_preferences.clone(),
@@ -815,7 +841,8 @@ impl ConversionWorker {
             fallback_used,
             // Typed jobs must publish zero explicitly so persisted clients clear
             // an earlier failure counter. Only historical metadata is absent.
-            tts_policy_state: (request.tts_preferences.is_some() || !policy.is_initial()).then_some(policy),
+            tts_policy_state: (request.tts_preferences.is_some() || !policy.is_initial())
+                .then_some(policy),
 
             job_id: request.job_id.clone(),
             title: book.title,
@@ -1216,8 +1243,9 @@ impl ConversionWorker {
                         );
                     }
                     let (model, config) = self.selection_model_paths(request, selection);
-                    self.synthesize_with_piper(segment, &path, Some(&model), Some(&config))?;
-                    Ok(fs::read(&path)?)
+                    let wav = path.with_extension("wav");
+                    self.synthesize_with_piper(segment, &wav, Some(&model), Some(&config))?;
+                    platform_tts::encode_wav(&fs::read(wav)?).map_err(WorkerError::PlatformTts)
                 };
             let synthesize =
                 |selection: &crate::tts_preferences::TtsSelection| -> Result<Vec<u8>, WorkerError> {
@@ -2449,36 +2477,55 @@ mod tests {
         let input = temp.path().join("recovered.epub");
         platform_test_book_with_text(&input, "Primário recuperado.");
         let config = AppConfig::from_paths(crate::paths::resolve_paths_from(
-            std::iter::empty::<(String, String)>(), temp.path().to_path_buf(),
+            std::iter::empty::<(String, String)>(),
+            temp.path().to_path_buf(),
         ));
-        let state: SegmentPolicy = serde_json::from_value(serde_json::json!({"consecutive_failures":2})).unwrap();
+        let state: SegmentPolicy =
+            serde_json::from_value(serde_json::json!({"consecutive_failures":2})).unwrap();
         let spoken = Arc::new(Mutex::new(Vec::new()));
-        let worker = ConversionWorker::new(config.clone()).unwrap()
+        let worker = ConversionWorker::new(config.clone())
+            .unwrap()
             .with_tts_policy_state(state)
-            .with_platform_tts(Arc::new(TestSystem { texts: spoken.clone() }));
+            .with_platform_tts(Arc::new(TestSystem {
+                texts: spoken.clone(),
+            }));
         let mut request = preference_test_request();
         request.input = input;
         request.job_id = "recovered-primary".into();
         request.tts_preferences = Some(TtsPreferences {
-            primary: TtsSelection { engine: "system".into(), model_id: None, voice: None },
-            secondary: None, allow_online_fallback: false,
+            primary: TtsSelection {
+                engine: "system".into(),
+                model_id: None,
+                voice: None,
+            },
+            secondary: None,
+            allow_online_fallback: false,
         });
         worker.run(request).unwrap();
         let persisted: serde_json::Value = cache::read_json(
-            config.paths.output_dir.join("recovered-primary/manifest.json"),
-        ).unwrap();
+            config
+                .paths
+                .output_dir
+                .join("recovered-primary/manifest.json"),
+        )
+        .unwrap();
         assert_eq!(persisted["ttsPolicyState"]["consecutive_failures"], 0);
         let recovered: OutputManifest = serde_json::from_value(persisted).unwrap();
-        let reset = recovered.tts_policy_state.expect("typed success must explicitly publish the reset");
+        let reset = recovered
+            .tts_policy_state
+            .expect("typed success must explicitly publish the reset");
         assert!(reset.is_initial());
         let next_input = temp.path().join("next.epub");
         platform_test_book_with_text(&next_input, "Um próximo segmento.");
         spoken.lock().unwrap().clear();
         let attempts = Arc::new(AtomicUsize::new(0));
         let recorded_attempts = Arc::clone(&attempts);
-        let mut resumed = ConversionWorker::new(config).unwrap()
+        let mut resumed = ConversionWorker::new(config)
+            .unwrap()
             .with_tts_policy_state(reset)
-            .with_platform_tts(Arc::new(TestSystem { texts: spoken.clone() }));
+            .with_platform_tts(Arc::new(TestSystem {
+                texts: spoken.clone(),
+            }));
         resumed.test_edge = Some(Arc::new(move |_| {
             recorded_attempts.fetch_add(1, Ordering::Relaxed);
             Err(WorkerError::Edge(EdgeError::Timeout))
@@ -2487,8 +2534,16 @@ mod tests {
         next.input = next_input;
         next.job_id = "next-resumed".into();
         next.tts_preferences = Some(TtsPreferences {
-            primary: TtsSelection { engine: "edge".into(), model_id: None, voice: None },
-            secondary: Some(TtsSelection { engine: "system".into(), model_id: None, voice: None }),
+            primary: TtsSelection {
+                engine: "edge".into(),
+                model_id: None,
+                voice: None,
+            },
+            secondary: Some(TtsSelection {
+                engine: "system".into(),
+                model_id: None,
+                voice: None,
+            }),
             allow_online_fallback: false,
         });
         let manifest = resumed.resume(next).unwrap();
@@ -2497,7 +2552,10 @@ mod tests {
         assert_eq!(manifest.used_selections.len(), 1);
         assert_eq!(manifest.used_selections[0].engine, "system");
         assert!(manifest.fallback_used);
-        assert_eq!(serde_json::to_value(manifest).unwrap()["ttsPolicyState"]["consecutive_failures"], 1);
+        assert_eq!(
+            serde_json::to_value(manifest).unwrap()["ttsPolicyState"]["consecutive_failures"],
+            1
+        );
     }
 
     #[test]
@@ -3029,12 +3087,19 @@ mod tests {
         manifest.tts_preferences = Some(preferences.clone());
         manifest.used_selections = vec![preferences.primary.clone()];
         manifest.fallback_used = true;
-        manifest.tts_policy_state = Some(serde_json::from_value(serde_json::json!({"consecutive_failures":1})).unwrap());
+        manifest.tts_policy_state =
+            Some(serde_json::from_value(serde_json::json!({"consecutive_failures":1})).unwrap());
         let value = serde_json::to_value(&manifest).unwrap();
         assert_eq!(value["fallbackUsed"], true);
         assert_eq!(value["ttsPolicyState"]["consecutive_failures"], 1);
-        assert_eq!(value["ttsPreferences"], serde_json::to_value(preferences).unwrap());
-        assert_eq!(serde_json::from_value::<OutputManifest>(value).unwrap(), manifest);
+        assert_eq!(
+            value["ttsPreferences"],
+            serde_json::to_value(preferences).unwrap()
+        );
+        assert_eq!(
+            serde_json::from_value::<OutputManifest>(value).unwrap(),
+            manifest
+        );
     }
 
     #[test]

@@ -148,8 +148,8 @@ void main() {
     final previousPlatform = debugDefaultTargetPlatformOverride;
     debugDefaultTargetPlatformOverride = TargetPlatform.linux;
     const channel = MethodChannel('plugins.flutter.io/path_provider');
-    final enteredSupport = Completer<void>();
-    final releaseSupport = Completer<String>();
+    final enteredSupport = Completer<void>.sync();
+    final releaseSupport = Completer<String>.sync();
     late Directory directory;
     await tester.runAsync(() async {
       directory = await Directory.systemTemp.createTemp('disposed-listen-');
@@ -193,10 +193,13 @@ void main() {
       );
       final listen = container.read(playbackRequestProvider);
       expect(listen, isNotNull);
-      await tester.runAsync(() async {
-        pendingPlayback = listen!();
-        await enteredSupport.future.timeout(const Duration(seconds: 5));
-      });
+      await tester.runAsync(() async { pendingPlayback = listen!(); });
+      // Advance fake-zone store futures and real filesystem I/O independently.
+      for (var attempt = 0; attempt < 200 && !enteredSupport.isCompleted; attempt++) {
+        await tester.pump();
+        await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 5)));
+      }
+      expect(enteredSupport.isCompleted, true, reason: 'Model-root lookup was not reached');
       await tester.pumpWidget(const SizedBox.shrink());
       await tester.runAsync(() async {
         releaseSupport.complete(directory.path);

@@ -1,22 +1,18 @@
 import { chromium } from "@playwright/test";
-import { spawn } from "node:child_process";
+import { startBrowserServer } from "./browser-server.mjs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
-import { setTimeout as delay } from "node:timers/promises";
 const root = resolve(import.meta.dirname, "../..");
 const production = process.env.TTS_BROWSER_MODE === "production";
+const port = production ? 5178 : 5177;
 const fixturePath = process.env.TTS_BROWSER_AUDIO_FIXTURE;
 const output = resolve(root, `.reports/tts-preferences/${production ? "browser-production" : "browser"}${fixturePath ? "-fixture" : ""}`);
 await mkdir(output, { recursive: true });
-const server = spawn("mise", ["exec", "--", "npm", "run", production ? "preview" : "dev", "--", "--host", "127.0.0.1", "--port", "5177", "--strictPort"], { cwd: resolve(root, "web"), stdio: "ignore" });
+const server = await startBrowserServer({ root, production, port });
+const { origin } = server;
 let browser;
 let page;
 try {
-  for (let attempt = 0; ; attempt++) {
-    try { if ((await fetch("http://127.0.0.1:5177")).ok) break; } catch { /* Wait for Vite startup. */ }
-    if (attempt === 100) throw new Error("Local browser frontend did not start");
-    await delay(200);
-  }
   browser = await chromium.launch({ executablePath: process.env.TTS_BROWSER_EXECUTABLE, headless: true, channel: "chromium" });
   const context = await browser.newContext();
   if (fixturePath) {
@@ -62,7 +58,7 @@ try {
     if (!url.includes("pt_BR-faber-medium.onnx")) throw new Error(`Unexpected model download: ${url}`);
     await route.fulfill({ path: resolve(root, "models", url.includes(".onnx.json") ? "pt_BR-faber-medium.onnx.json" : "pt_BR-faber-medium.onnx"), contentType: "application/octet-stream", headers: { "access-control-allow-origin": "*" } });
   });
-  await page.goto("http://127.0.0.1:5177", { waitUntil: "domcontentloaded" });
+  await page.goto(origin, { waitUntil: "domcontentloaded" });
   const scripts = await page.locator("script[src]").evaluateAll(elements => elements.map(element => element.src));
   if (production && (!scripts.some(source => source.includes("/assets/")) || scripts.some(source => source.includes("/@vite/")))) {
     throw new Error("Production verification must load the built assets, not the development server.");
@@ -208,6 +204,6 @@ try {
   }
   throw error;
 } finally {
-  await browser?.close();
-  server.kill("SIGTERM");
+  try { await browser?.close(); }
+  finally { await server.stop(); }
 }

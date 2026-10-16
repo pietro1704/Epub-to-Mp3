@@ -1059,6 +1059,7 @@ mod tests {
         let _ = fs::remove_dir_all(&root);
         fs::create_dir_all(&root).expect("temporary directory should be created");
         let manifest = converter_core::worker::OutputManifest {
+            source_chapters_total: None,
             tts_preferences: None,
             used_selections: Vec::new(),
             tts_policy_state: Default::default(),

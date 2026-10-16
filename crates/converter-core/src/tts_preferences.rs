@@ -119,7 +119,9 @@ impl TryFrom<SegmentPolicyState> for SegmentPolicy {
     }
 }
 impl SegmentPolicy {
-    pub fn is_initial(&self) -> bool { self.consecutive_failures == 0 }
+    pub fn is_initial(&self) -> bool {
+        self.consecutive_failures == 0
+    }
 
     pub fn primary_succeeded(&mut self) {
         self.consecutive_failures = 0;

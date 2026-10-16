@@ -1,10 +1,22 @@
 # App delivery backlog
 
+## FLUTTER-20261016-WORKER-HEARTBEAT — Prove responsiveness during native work
+
+- [ ] Owner: crash_workflow_audit; acceptance: parsing and model installation remain blocked inside the native fixture while the UI isolate processes an explicit heartbeat, then finish only after the UI releases the operation.
+- GitHub failure: CI `38878958274`, head `be057cbe`, Flutter job `116900794629` failed both periodic-timer assertions (one tick versus more than five). Production already dispatches both operations through `Isolate.run`; a single C `usleep(200000)` and periodic callback count are not a deterministic handshake.
+- Prepared native started/release markers with a monotonic timeout and a required UI event-loop heartbeat while native work is still blocked. Preserve real FFI execution, metadata/model assertions, isolated execution and fatal failure behavior. GitHub verification pending; no local compilation or tests executed.
+
+## WEB-20261016-PRODUCTION-SERVER-IDENTITY — Verify actual built browser assets
+
+- [ ] Owner: crash_workflow_audit; acceptance: production browser verification must use the owned preview server and built assets, retain actual Faber synthesis/full-decode assertions, and shut down the owned server descendants before returning.
+- GitHub RED: browser run `38878958333`, job `116900757681`, head `be057cbe`, passed development synthesis with two outputs and 4469 ms first playable audio on the hosted runner; production rejected development assets at `verify-browser-tts.mjs:68`. Both modes reused port 5177 and cleanup terminated only the mise/npm wrapper. These are hosted-runner timings, not phone latency.
+- Prepared a shared owned-server lifecycle for storage, development and production probes: distinct ports, a fail-closed free-port check before spawn, bounded startup and process-group cleanup even when browser.close fails. The built-assets assertion remains mandatory. GitHub must run the Node built-in helper regressions (occupied foreign listener, owned wrapper/descendant shutdown, failed-start descendant cleanup) and rerun all three probes; no local browser/server/build execution.
+
 ## WEB-20261016-CANCELLED-PREFLIGHT — Reject stale browser inference
 
 - [ ] Owner: crash_workflow_audit; acceptance: cancellation while model readiness is pending must prevent worker/inference start, fallback and audio publication; a fresh job identity must still complete independently.
 - Source evidence: browser synthesis awaits installation/import/storage/checksum readiness before starting the worker; cancelling before a worker exists does not invalidate that pending continuation. Prepared a minimal injectable readiness seam that preserves this behavior and a deferred-preflight runtime regression. Production cancellation fix waits for GitHub RED.
-- Verification pending on GitHub only. No local tests, builds, lint, formatter, syntax checks, model downloads or inference executed.
+- GitHub RED: CI `38878958274`, head `be057cbe`, Web job `116900794709`: 173 passed and one failed; the deferred-preflight regression received two worker messages instead of one. Prepared generation invalidation before worker start; the regression is unchanged. GitHub GREEN is pending. No local tests, builds, lint, formatter, syntax checks, model downloads or inference executed.
 
 ## APP-20261016-MAC-MODEL-INSTALL-RESPONSIVENESS — Keep settings responsive during explicit voice installation
 
@@ -20,12 +32,14 @@
 - Verification pending: all formatting, compilation, workspace tests, portable/browser and Android cross-target checks run only on GitHub Actions. No local test, build, formatter or native execution; prerequisite CI recovery remains an explicit delivery dependency.
 - GitHub coverage prepared: `faber-integration.yml` adds independent JNI-feature contract tests, rebuilt Android ARM64 APK/JNI/dependency/phonemizer audits and Kotlin tests, real macOS UnitTests preference/installer checks, and real dev/production browser inference with freshly built Rust WASM and explicitly checksum-pinned model inputs. Existing CI owns full Rust, Flutter and Web suites; no duplicate lint or unit suite is added. Workflow source review and exact-head execution remain pending.
 - macOS XCTest uses explicit ad hoc signing for its hosted app/test launch, with no team/profile credentials, serialized compilation and the UnitTests-only macOS destination. CodeQL's unsigned build-for-testing is not runtime evidence; hosted launch/signature acceptance remains pending GitHub execution.
+- Initial draft GitHub RED: Ruby/Rust run `38878958307` on `be057cbe111bf3f48518a6ce5414668df6530d9d` reports 167 core tests passed, two Piper codec regressions failed and one pre-existing manual cache benchmark ignored. Source fix retains legacy source-rate encoding and rejection of unsupported 12345 Hz, while typed multi-provider Piper normalizes WAV to 24 kHz before concatenation. Original atomic-output and sample-rate assertions are unchanged; added source-rate decoder regression awaits GitHub verification. GitHub formatting artifact for this head was applied verbatim; subsequent source changes still require hosted formatting verification.
+- Workspace RED: CI run `38878958274` reached test compilation and found a CLI-only test fixture missing `source_chapters_total` (`E0063`, `converter-cli/src/main.rs`). Fixture now explicitly retains the legacy unknown total with `None`; assertions remain unchanged and GitHub recompilation is pending. Focused JNI-feature contract job passed on the initial draft head.
 
 ## FLUTTER-20261016-DISPOSED-MODEL-ROOT — Reject stale Listen preparation
 
 - [ ] Owner: crash_workflow_audit; acceptance: dispose the book screen while the application-support directory lookup is pending, then resolve it; no conversion job may be persisted, no converter invoked, and no audio queued or played.
 - Source evidence: the Faber integration awaits model-root lookup after its generation check, then creates a persisted job before the next check. The same window exists in `b612f6f29e`; it belongs to the feature awaiting delivery, not a new merge conflict.
-- Prepared RED: widget regression reuses the real Listen callback and existing converter/player fixtures, blocks the actual method-channel support-directory call, disposes the screen, releases the lookup and checks stored state. GitHub execution is pending; no production fix or local test/build/analyzer/formatter execution.
+- GitHub failure: CI `38878958274`, head `be057cbe`, Flutter job `116900794629` observed a persisted pending job where null was required, plus a readiness-signal timeout. Prepared synchronous signal completers plus bounded alternating fake-zone pumps and real-I/O turns; removed the candidate production guard so GitHub must first prove a clean behavioral RED. A clean focused GitHub result remains required; no local test/build/analyzer/formatter execution.
 
 ## APP-20261016-ESPEAK-VENDOR-ASSETS — Restore required phoneme compiler inputs
 

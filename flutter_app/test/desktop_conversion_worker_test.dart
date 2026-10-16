@@ -14,10 +14,27 @@ const _fixture = r'''
 #include <stdatomic.h>
 #include <stdio.h>
 #include <sys/stat.h>
+#include <time.h>
+static int wait_for_ui_heartbeat(const char* root) {
+ char started[4096], release[4096];
+ snprintf(started, sizeof(started), "%s.started", root);
+ snprintf(release, sizeof(release), "%s.release", root);
+ FILE* file = fopen(started, "wb");
+ if (!file) return 0;
+ fclose(file);
+ struct timespec beginning, now;
+ clock_gettime(CLOCK_MONOTONIC, &beginning);
+ for (;;) {
+  if (access(release, F_OK) == 0) return 1;
+  clock_gettime(CLOCK_MONOTONIC, &now);
+  if (now.tv_sec - beginning.tv_sec >= 5) return 0;
+  usleep(1000);
+ }
+}
 typedef struct { atomic_int cancelled; atomic_int queued; char* chunk_path; } FixtureControl;
-void* converter_session_open(const char* path) { return malloc(1); }
+void* converter_session_open(const char* path) { return strdup(path); }
 void converter_session_free(void* session) { free(session); }
-char* converter_session_metadata_json(void* session) { usleep(200000); return strdup("{\"bookTitle\":\"Native fixture\",\"chapters\":[{\"index\":0,\"name\":\"Native chapter\",\"text\":\"Metadata text\"}]}"); }
+char* converter_session_metadata_json(void* session) { if (!wait_for_ui_heartbeat((const char*)session)) return NULL; return strdup("{\"bookTitle\":\"Native fixture\",\"chapters\":[{\"index\":0,\"name\":\"Native chapter\",\"text\":\"Metadata text\"}]}"); }
 void converter_string_free(char* value) { free(value); }
 char* converter_last_error() { return strdup("Fixture cancelled or invalid provider options"); }
 void* converter_job_control_create() { return calloc(1, sizeof(FixtureControl)); }
@@ -51,8 +68,8 @@ char* converter_session_convert_streaming_job_options_json_v1(void* session,
 }
 char* converter_tts_models_json() { return strdup("[]"); }
 char* converter_tts_model_install_catalog_manifest(const char* model, const char* root) {
- if (strcmp(model, "pt_BR-faber-medium") != 0 || strcmp(root, "/fixture-models") != 0) return NULL;
- usleep(200000);
+ if (strcmp(model, "pt_BR-faber-medium") != 0 || !root || !*root) return NULL;
+ if (!wait_for_ui_heartbeat(root)) return NULL;
  return strdup("{\"id\":\"pt_BR-faber-medium\"}");
 }
 _Bool converter_tts_model_remove(const char* model, const char* root) { return 1; }
@@ -71,6 +88,32 @@ char* converter_session_convert_controlled_job_options_json_v1(void* session,
  return strdup("{\"manifest\":{\"chapters\":[]}}");
 }
 ''';
+
+// The native operation cannot finish successfully until this isolate handles
+// an event-loop heartbeat after observing that native work has started.
+Future<T> _whileNativeBlocked<T>(String root, Future<T> Function() operation) async {
+  var completed = false;
+  final pending = operation().whenComplete(() { completed = true; });
+  // Attach an error listener before waiting for the native handshake.
+  final observed = pending.then<Object?>((_) => null, onError: (Object error) => error);
+  try {
+    final deadline = DateTime.now().add(const Duration(seconds: 3));
+    while (!await File('$root.started').exists()) {
+      if (DateTime.now().isAfter(deadline)) fail('Native operation did not enter its blocking fixture');
+      await Future<void>.delayed(const Duration(milliseconds: 1));
+    }
+    expect(completed, false, reason: 'Native work completed before the UI heartbeat');
+    final heartbeat = Completer<void>();
+    Timer.run(() => heartbeat.complete());
+    await heartbeat.future.timeout(const Duration(seconds: 1));
+    expect(completed, false, reason: 'UI heartbeat must run while native work is blocked');
+    await File('$root.release').writeAsString('heartbeat');
+    return await pending;
+  } finally {
+    await File('$root.release').writeAsString('cleanup');
+    await observed;
+  }
+}
 
 void main() {
   if (!Platform.isMacOS && !Platform.isLinux) return;
@@ -174,23 +217,14 @@ void main() {
     'EPUB parsing stays outside UI isolate including native metadata decoding',
     () async {
       final converter = DesktopEmbeddedConverter(libraryPath: library);
-      var heartbeats = 0;
-      final timer = Timer.periodic(
-        const Duration(milliseconds: 5),
-        (_) => heartbeats++,
-      );
-      try {
-        final book = await converter.parse(
-          inputPath: '/fixture.epub',
-          jobId: 'book-id',
-        );
-        expect(book.bookTitle, 'Native fixture');
-        expect(book.jobId, 'book-id');
-        expect(book.chapters.single.text, 'Metadata text');
-        expect(heartbeats, greaterThan(5));
-      } finally {
-        timer.cancel();
-      }
+      final root = '${directory.path}/parse-handshake';
+      final book = await _whileNativeBlocked(root, () => converter.parse(
+        inputPath: root,
+        jobId: 'book-id',
+      ));
+      expect(book.bookTitle, 'Native fixture');
+      expect(book.jobId, 'book-id');
+      expect(book.chapters.single.text, 'Metadata text');
     },
   );
 
@@ -198,21 +232,12 @@ void main() {
     'native model installation keeps the UI event loop responsive',
     () async {
       final converter = DesktopEmbeddedConverter(libraryPath: library);
-      var heartbeats = 0;
-      final timer = Timer.periodic(
-        const Duration(milliseconds: 5),
-        (_) => heartbeats++,
-      );
-      try {
-        final manifest = await converter.installTtsModelFromCatalog(
-          modelId: 'pt_BR-faber-medium',
-          root: '/fixture-models',
-        );
-        expect(manifest, '{"id":"pt_BR-faber-medium"}');
-        expect(heartbeats, greaterThan(5));
-      } finally {
-        timer.cancel();
-      }
+      final root = '${directory.path}/install-handshake';
+      final manifest = await _whileNativeBlocked(root, () => converter.installTtsModelFromCatalog(
+        modelId: 'pt_BR-faber-medium',
+        root: root,
+      ));
+      expect(manifest, '{"id":"pt_BR-faber-medium"}');
     },
   );
   test(
