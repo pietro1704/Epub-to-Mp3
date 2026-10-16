@@ -19,6 +19,45 @@ SPEC = importlib.util.spec_from_file_location("legacy_archive", SOURCE)
 archive = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(archive)
 
+# Exact hosted attach-help receipt from run38906144750/63a3ed6, 03-hdiutil.log.
+# Its bracketed autoopen spelling and omitted nobrowse exposed the real gate bug.
+REAL_ATTACH_HELP = b"""hdiutil attach: attach disk image
+Usage:\thdiutil attach <image>
+\tDevice options:
+\t    -readonly\t\tforce read-only
+\t    -kernel\t\tattempt to attach the image in-kernel
+
+\tMount options:
+\t    -mount required|optional|suppressed\t\tmount volumes?
+\t    -nomount\t\tsame as -mount suppressed
+\t    -mountpoint <path>\tmount at <path> instead of inside /Volumes
+\t    -mountroot <path>\tmount volumes on <path>/<volname>
+\t    -mountrandom <path>\tmount volumes on <path>/<random>
+
+\tProcessing options (defaults per framework preferences):
+\t    -[no]verify\t\t(do not) verify image checksums
+\t    -[no]autofsck\t(do not) perform automatic filesystem checks
+\t    -[no]autoopen\t(do not) open root of new mounts
+
+\tCommon options:
+\t    -encryption <crypto method>
+\t    \tAES-128 - 128-bit AES encryption
+\t    \tAES-256 - 256-bit AES encryption (recommended)
+\t    -stdinpass
+\t    -agentpass
+\t    -recover <keychain-file>
+\t    -imagekey <key>=<value>
+\t    -drivekey <key>=<value>
+\t    -shadow <shadowfile>
+\t    -insecurehttp
+\t    -cacert <file | dir>
+\t    -plist
+\t    -puppetstrings
+\t    -verbose
+\t    -debug
+\t    -quiet
+"""
+
 
 class ArchiveSafetyTests(unittest.TestCase):
     def setUp(self):
@@ -110,7 +149,19 @@ class ArchiveSafetyTests(unittest.TestCase):
             if arguments == ["/usr/sbin/pkgutil", "--help"]:
                 return b"--check-signature --payload-files --expand\n"
             if arguments == ["/usr/bin/hdiutil", "attach", "-help"]:
-                return b"-readonly -nobrowse -noautoopen -mountpoint -plist\n"
+                return REAL_ATTACH_HELP.replace(b"-[no]autoopen", b"-autoopen") if mode == "missing-noautoopen" else REAL_ATTACH_HELP
+            if arguments == ["/usr/bin/man", "-P", "/bin/cat", "hdiutil"]:
+                self.assertEqual(_["timeout"], 15)
+                if mode == "failed-man":
+                    raise archive.Blocked("Fixture man failed")
+                if mode == "absent-man":
+                    raise FileNotFoundError("Fixture man unavailable")
+                if mode == "missing-nobrowse":
+                    return b"HDIUTIL(1)\n-browse-never-trusted\n"
+                if mode == "empty-man":
+                    return b""
+                rendered = "".join(f"{char}\b{char}" for char in "-nobrowse")
+                return f"HDIUTIL(1)\n  {rendered}\nDo not make the volume browsable.\n".encode()
             if arguments[0] == "/usr/bin/pkgbuild":
                 source = Path(arguments[arguments.index("--root") + 1])
                 self.assertEqual([item.name for item in source.iterdir()], ["legacy-archive-probe.txt"])
@@ -142,7 +193,7 @@ class ArchiveSafetyTests(unittest.TestCase):
         self.inspector.check_capabilities()
         self.assertTrue(self.inspector.report["expand_full_probe"]["exact_bytes"])
         self.assertFalse(self.inspector.report["signature_verified"])
-        self.assertEqual(len(calls), 4)
+        self.assertEqual(len(calls), 5)
         self.assertFalse(self.inspector.archive.exists())
         self.assertFalse((self.inspector.root / "capability-probe").exists())
 
@@ -153,6 +204,17 @@ class ArchiveSafetyTests(unittest.TestCase):
             self.inspector.download_archive()
         self.assertFalse(self.inspector.archive.exists())
         self.assertFalse((self.inspector.root / "capability-probe").exists())
+
+    def test_real_help_requires_manual_nobrowse_and_explicit_negative_autoopen(self):
+        for mode in ("failed-man", "absent-man", "missing-nobrowse", "empty-man", "missing-noautoopen"):
+            with self.subTest(mode=mode):
+                calls = []
+                self.inspector.command = self.capability_command(mode, calls)
+                with self.assertRaises(archive.Blocked):
+                    self.inspector.download_archive()
+                self.assertFalse(any(call[0] == "/usr/bin/pkgbuild" for call in calls))
+                self.assertFalse(self.inspector.archive.exists())
+                self.assertFalse((self.inspector.root / "capability-probe").exists())
 
     def test_incorrect_probe_bytes_or_payload_path_block_before_any_download(self):
         for mode in ("wrong-bytes", "extra-path"):

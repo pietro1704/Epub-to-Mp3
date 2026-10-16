@@ -221,8 +221,18 @@ class Inspector:
     def check_capabilities(self):
         help_pkg = self.command(["/usr/sbin/pkgutil", "--help"]).decode()
         help_mount = self.command(["/usr/bin/hdiutil", "attach", "-help"]).decode()
-        if not all(flag in help_pkg for flag in ("--check-signature", "--payload-files", "--expand")) or not all(flag in help_mount for flag in ("-readonly", "-nobrowse", "-noautoopen", "-mountpoint", "-plist")):
+        # Expand only the explicit spelling printed by the real hosted help.
+        help_mount = help_mount.replace("-[no]autoopen", "-noautoopen")
+        if not all(flag in help_pkg for flag in ("--check-signature", "--payload-files", "--expand")) or not all(flag in help_mount for flag in ("-readonly", "-noautoopen", "-mountpoint", "-plist")):
             raise Blocked("Required inspection flags are not documented by the runner tools")
+        try:
+            manual = self.command(["/usr/bin/man", "-P", "/bin/cat", "hdiutil"], timeout=15).decode()
+        except (OSError, Blocked) as error:
+            raise Blocked("The hdiutil manual could not establish -nobrowse support") from error
+        # man may emit bold/underline overstrikes even with a noninteractive pager.
+        manual = re.sub(r"[^\n]\x08", "", manual)
+        if not re.search(r"(?<![\w-])-nobrowse(?![\w-])", manual):
+            raise Blocked("The hdiutil manual does not document -nobrowse")
         # --expand-full is not advertised by pkgutil --help on the hosted image.
         # Prove the API with an unsigned, owned, inert fixture, never Apple data.
         probe = self.root / "capability-probe"
