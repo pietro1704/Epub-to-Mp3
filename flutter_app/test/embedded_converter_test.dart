@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_app/services/embedded_converter.dart';
+import 'package:flutter_app/models/tts_preferences.dart';
 import 'package:flutter_app/models/ebook_fulltext.dart';
 
 class FakeConverter implements EmbeddedConverter {
@@ -356,4 +357,61 @@ void main() {
       expect(source, isNot(contains('httpFallback')));
     },
   );
+
+  test('Android Piper synthesis forwards the captured options unchanged', () async {
+    const channel = MethodChannel(AndroidEmbeddedConverter.channelName);
+    final options = const TtsPreferences().optionsJson(
+      modelsRoot: '/models/pt_BR-faber-medium',
+      language: 'pt-BR',
+    );
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (call) async {
+          expect(call.method, 'piperSynthesize');
+          expect(call.arguments, {
+            'text': 'Olá, mundo.',
+            'output': '/tmp/chapter.mp3',
+            'optionsJson': options,
+          });
+          return '/tmp/chapter.mp3';
+        });
+
+    final result = await AndroidEmbeddedConverter(channel: channel).synthesizePiper(
+      text: 'Olá, mundo.',
+      output: '/tmp/chapter.mp3',
+      optionsJson: options,
+    );
+
+    expect(result, '/tmp/chapter.mp3');
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, null);
+  });
+
+  test('Android Piper synthesis preserves native model errors', () async {
+    const channel = MethodChannel(AndroidEmbeddedConverter.channelName);
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (call) async {
+          expect(call.method, 'piperSynthesize');
+          throw PlatformException(
+            code: 'PIPER_MODEL_MISSING',
+            message: 'Install the selected model before synthesis',
+          );
+        });
+
+    await expectLater(
+      AndroidEmbeddedConverter(channel: channel).synthesizePiper(
+        text: 'Olá.',
+        output: '/tmp/chapter.mp3',
+        optionsJson: const TtsPreferences().optionsJson(
+          modelsRoot: '/models',
+          language: 'pt-BR',
+        ),
+      ),
+      throwsA(
+        isA<PlatformException>()
+            .having((error) => error.code, 'code', 'PIPER_MODEL_MISSING'),
+      ),
+    );
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, null);
+  });
 }
