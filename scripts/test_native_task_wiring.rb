@@ -74,7 +74,7 @@ class NativeTaskWiringTest < Minitest::Test
       "$FIXTURE_RUBY" -e 'f=File.open(ARGV[0], "a+"); exit(f.flock(File::LOCK_EX | File::LOCK_NB) ? 97 : 0)' "$FIXTURE_LOCK"
       echo "cargo $*" >> "$FIXTURE_EVENTS"
       exit "${FIXTURE_CARGO_STATUS:-0}"
-    SH)
+    SH
     shim("xcodegen", 'echo generate >> "$FIXTURE_EVENTS"')
     shim("sleep", 'exit 0')
     shim("xcodebuild", <<~'SH')
@@ -124,6 +124,14 @@ class NativeTaskWiringTest < Minitest::Test
 
   def events
     File.exist?(@events) ? File.readlines(@events, chomp: true) : []
+  end
+
+  def assert_unlocked
+    lock = File.open(@env.fetch("FIXTURE_LOCK"), "a+")
+    assert lock.flock(File::LOCK_EX | File::LOCK_NB), "native lease is still held"
+  ensure
+    lock&.flock(File::LOCK_UN)
+    lock&.close
   end
 
   def test_guarded_rust_compiler_tasks_refuse_before_cargo_on_intel
