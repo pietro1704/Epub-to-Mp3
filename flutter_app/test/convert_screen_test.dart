@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'dart:convert';
 import 'package:flutter_app/models/tts_preferences.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_app/l10n/app_localizations.dart';
 import 'package:flutter_app/screens/convert_screen.dart';
 import 'package:flutter_app/state/providers.dart';
@@ -458,6 +459,9 @@ void main() {
 
   for (final missing in [false, true]) {
     testWidgets('completed manifest file read ${missing ? 'failure warns without Retry' : 'persists actual history'}', (tester) async {
+      const voiceChannel = MethodChannel('epub_to_mp3/platform_voice');
+      final messenger =
+          TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
       late Directory directory;
       await tester.runAsync(() async {
         directory = await Directory.systemTemp.createTemp('manual-history-manifest-');
@@ -466,6 +470,10 @@ void main() {
           'title': 'Actual manifest',
           'chapters': [{'sourceIndex': 9, 'filename': 'ten.mp3'}],
         }));
+      });
+      messenger.setMockMethodCallHandler(voiceChannel, (call) async {
+        expect(call.method, anyOf('listen', 'cancel'));
+        return null;
       });
       try {
         SharedPreferences.setMockInitialValues({});
@@ -496,7 +504,12 @@ void main() {
         expect(tester.takeException(), isNull);
       } finally {
         await tester.pumpWidget(const SizedBox.shrink());
-        await tester.runAsync(() => directory.delete(recursive: true));
+        await tester.pump();
+        try {
+          await tester.runAsync(() => directory.delete(recursive: true));
+        } finally {
+          messenger.setMockMethodCallHandler(voiceChannel, null);
+        }
       }
     });
   }
