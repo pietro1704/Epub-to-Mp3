@@ -71,6 +71,9 @@ pub struct OutputManifest {
     pub title: String,
     pub author: String,
     pub chapters: Vec<ChapterMetadata>,
+    /// Full parsed source count; selected chapters remain represented by `chapters`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_chapters_total: Option<usize>,
     pub archive: String,
     pub cover: Option<String>,
 }
@@ -103,12 +106,38 @@ pub type ProgressSink = Arc<dyn Fn(ProgressEvent) + Send + Sync>;
 pub type ChapterCompletionSink = Arc<dyn Fn(ChapterCompletionEvent) + Send + Sync>;
 pub type StreamingChunkSink = Arc<dyn Fn(usize, usize, &[u8]) -> bool + Send + Sync>;
 
+/// Per-invocation controls; defaults retain cache reuse and serial selection.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct ExecutionOptions {
+    pub clear_cache: bool,
+    pub force_reprocess: bool,
+    pub max_performance: bool,
+}
+
+impl ExecutionOptions {
+    fn chapter_parallelism(
+        self,
+        no_parallel: bool,
+        configured: usize,
+        maximum: usize,
+        cap: usize,
+    ) -> usize {
+        if no_parallel && !self.max_performance {
+            1
+        } else {
+            configured.min(maximum).min(cap).max(1)
+        }
+    }
+}
+
 pub struct ConversionWorker {
     pub config: AppConfig,
     pub jobs: JobManager,
     pub cancel: CancellationToken,
     pub progress: Option<ProgressSink>,
     pub chapter_completed: Option<ChapterCompletionSink>,
+    pub execution_options: ExecutionOptions,
+    pub piper_model: Option<Arc<piper::PreparedPiperModel>>,
     streaming_chunk: Option<StreamingChunkSink>,
     adaptive: Arc<AdaptiveThroughputController>,
     telemetry: Option<Telemetry>,
@@ -128,6 +157,8 @@ impl ConversionWorker {
             cancel: CancellationToken::default(),
             progress: None,
             chapter_completed: None,
+            execution_options: ExecutionOptions::default(),
+            piper_model: None,
             streaming_chunk: None,
             adaptive: Arc::new(AdaptiveThroughputController::default()),
             telemetry: None,
@@ -138,6 +169,14 @@ impl ConversionWorker {
             #[cfg(test)]
             test_edge: None,
         })
+    }
+    pub fn with_execution_options(mut self, options: ExecutionOptions) -> Self {
+        self.execution_options = options;
+        self
+    }
+    pub fn with_piper_model(mut self, model: Option<Arc<piper::PreparedPiperModel>>) -> Self {
+        self.piper_model = model;
+        self
     }
     pub fn with_platform_tts(mut self, provider: Arc<dyn PlatformTts>) -> Self {
         self.platform_tts = Some(provider);
@@ -205,7 +244,12 @@ impl ConversionWorker {
                 self.jobs.transition(&request.job_id, JobState::Completed)?;
             }
             Err(WorkerError::Cancelled) => {
-                let _ = self.jobs.transition(&request.job_id, JobState::Cancelled);
+                // A control token can cancel without a persisted request. Follow
+                // the state machine before reporting terminal cancellation.
+                if self.jobs.load(&request.job_id)?.state != JobState::Cancelling {
+                    self.jobs.request_cancellation(&request.job_id)?;
+                }
+                self.jobs.transition(&request.job_id, JobState::Cancelled)?;
             }
             Err(_) => {
                 let _ = self.jobs.transition(&request.job_id, JobState::Failed);
@@ -235,6 +279,7 @@ impl ConversionWorker {
         let source = fs::read(&request.input)?;
         let book_key = cache::sha256_bytes(&source);
         let book = epub::parse_epub(std::io::Cursor::new(&source))?;
+        let source_chapters_total = book.chapters.len();
         let cache_dir = self.config.paths.cache_dir.join(&book_key);
         let output_dir = self.config.paths.output_dir.join(&request.job_id);
         fs::create_dir_all(&cache_dir)?;
@@ -280,7 +325,7 @@ impl ConversionWorker {
                     .first()
                     .and_then(|chapter| detect_language(&chapter.text))
             });
-        let parallelism = if request.no_parallel {
+        let parallelism = if request.no_parallel && !self.execution_options.max_performance {
             1
         } else {
             let configured = std::env::var("RUST_CHAPTER_PARALLELISM")
@@ -297,7 +342,12 @@ impl ConversionWorker {
                 .and_then(|value| value.parse().ok())
                 .filter(|value| *value > 0)
                 .unwrap_or(8);
-            configured.min(self.config.max_parallel).min(cap).max(1)
+            self.execution_options.chapter_parallelism(
+                request.no_parallel,
+                configured,
+                self.config.max_parallel,
+                cap,
+            )
         };
         let pool = rayon::ThreadPoolBuilder::new()
             .num_threads(parallelism)
@@ -314,17 +364,32 @@ impl ConversionWorker {
                 return Err(WorkerError::Cancelled);
             }
             let text_path = cache_dir.join(format!("{}.json", chapter.index.replace('.', "_")));
-            let text = cached_chapter_text(&text_path, &chapter.text)?;
+            let text = if self.execution_options.clear_cache {
+                cache::refresh_chapter_text(
+                    &self.config.paths.cache_dir,
+                    &book_key,
+                    &format!("{}.json", chapter.index.replace('.', "_")),
+                    &chapter.text,
+                )?
+            } else {
+                cached_chapter_text(&text_path, &chapter.text)?
+            };
             let stem = format!("{:04}-{}", position + 1, sanitize(&chapter.name));
             let mp3 = output_dir.join(format!("{stem}.mp3"));
             let language = detected_language;
             let engine = select_engine(request.engine.as_deref(), &self.config);
             let language = request.language.as_deref().or(language);
+            let prepared_identity = self
+                .piper_model
+                .as_ref()
+                .map(|model| model.cache_identity());
             let request_key = chapter_audio_request_key(
                 &book_key,
                 &chapter.index,
                 &text,
-                if self.platform_tts.is_some() && engine == "edge" {
+                if let Some(identity) = prepared_identity.as_deref().filter(|_| engine == "piper") {
+                    identity
+                } else if self.platform_tts.is_some() && engine == "edge" {
                     "edge+system-v2"
                 } else {
                     &engine
@@ -332,7 +397,8 @@ impl ConversionWorker {
                 request.voice.as_deref(),
                 language,
             )?;
-            let cached = chapter_audio_is_complete(&mp3, &request_key);
+            let cached = !self.execution_options.force_reprocess
+                && chapter_audio_is_complete(&mp3, &request_key);
             if cached {
                 if let Ok(receipt) =
                     cache::read_json::<ChapterAudioReceipt>(chapter_audio_receipt_path(&mp3))
@@ -358,48 +424,53 @@ impl ConversionWorker {
                 }
             }
             let stale_window_cancelled = std::sync::atomic::AtomicBool::new(false);
-            let audio_result = ensure_chapter_audio(&mp3, &request_key, |pending| {
-                eprintln!("synthesizing chapter {}/{}", position + 1, total);
-                let synthesis = if self.platform_tts.is_some()
-                    && matches!(engine.as_str(), "edge" | "system")
-                {
-                    self.synthesize_platform_policy(
-                        &engine,
-                        &text,
-                        pending,
-                        source_index,
-                        request.voice.as_deref(),
-                        language,
-                        &stale_window_cancelled,
-                        &system_notice_emitted,
-                        &request.job_id,
-                        total,
-                        completed.load(Ordering::Acquire),
-                    )
-                } else {
-                    self.synthesize_with_timeout(
-                        &engine,
-                        &text,
-                        pending,
-                        source_index,
-                        request.voice.as_deref(),
-                        language,
-                        request.piper_model.as_deref(),
-                        request.piper_config.as_deref(),
-                        &stale_window_cancelled,
-                    )
-                };
-                if stale_window_cancelled.load(Ordering::Acquire) {
-                    return Err(WorkerError::PlaybackWindowChanged);
-                }
-                synthesis?;
-                if self.cancel.is_cancelled()
-                    || self.jobs.is_cancellation_requested(&request.job_id)?
-                {
-                    return Err(WorkerError::Cancelled);
-                }
-                Ok(())
-            });
+            let audio_result = ensure_chapter_audio_with_options(
+                &mp3,
+                &request_key,
+                self.execution_options.force_reprocess,
+                |pending| {
+                    eprintln!("synthesizing chapter {}/{}", position + 1, total);
+                    let synthesis = if self.platform_tts.is_some()
+                        && matches!(engine.as_str(), "edge" | "system")
+                    {
+                        self.synthesize_platform_policy(
+                            &engine,
+                            &text,
+                            pending,
+                            source_index,
+                            request.voice.as_deref(),
+                            language,
+                            &stale_window_cancelled,
+                            &system_notice_emitted,
+                            &request.job_id,
+                            total,
+                            completed.load(Ordering::Acquire),
+                        )
+                    } else {
+                        self.synthesize_with_timeout(
+                            &engine,
+                            &text,
+                            pending,
+                            source_index,
+                            request.voice.as_deref(),
+                            language,
+                            request.piper_model.as_deref(),
+                            request.piper_config.as_deref(),
+                            &stale_window_cancelled,
+                        )
+                    };
+                    if stale_window_cancelled.load(Ordering::Acquire) {
+                        return Err(WorkerError::PlaybackWindowChanged);
+                    }
+                    synthesis?;
+                    if self.cancel.is_cancelled()
+                        || self.jobs.is_cancellation_requested(&request.job_id)?
+                    {
+                        return Err(WorkerError::Cancelled);
+                    }
+                    Ok(())
+                },
+            );
             match audio_result {
                 Err(WorkerError::PlaybackWindowChanged) => {
                     self.control
@@ -545,6 +616,7 @@ impl ConversionWorker {
         audio::create_archive(&archive, &archive_files)?;
         let output_name = archive.file_name().unwrap().to_string_lossy().to_string();
         let result = OutputManifest {
+            source_chapters_total: Some(source_chapters_total),
             job_id: request.job_id.clone(),
             title: book.title,
             author: book.author,
@@ -856,6 +928,11 @@ impl ConversionWorker {
                 "Piper is disabled on Android; Edge TTS is required".into(),
             ));
         }
+        if let Some(model) = &self.piper_model {
+            return model
+                .synthesize(text, out, &self.cancel)
+                .map_err(|error| WorkerError::Piper(error.to_string()));
+        }
         let model = piper_model.map(Path::to_path_buf).unwrap_or_else(|| {
             self.config
                 .paths
@@ -1055,7 +1132,16 @@ fn ensure_chapter_audio(
     request_key: &str,
     synthesize: impl FnOnce(&Path) -> Result<(), WorkerError>,
 ) -> Result<(), WorkerError> {
-    if chapter_audio_is_complete(output, request_key) {
+    ensure_chapter_audio_with_options(output, request_key, false, synthesize)
+}
+
+fn ensure_chapter_audio_with_options(
+    output: &Path,
+    request_key: &str,
+    force: bool,
+    synthesize: impl FnOnce(&Path) -> Result<(), WorkerError>,
+) -> Result<(), WorkerError> {
+    if !force && chapter_audio_is_complete(output, request_key) {
         return Ok(());
     }
     let parent = output
@@ -1068,6 +1154,9 @@ fn ensure_chapter_audio(
         .tempdir_in(parent)?;
     let pending = staging.path().join("chapter.mp3");
     synthesize(&pending)?;
+    if force {
+        audio::validate_audio(&pending, 100)?;
+    }
     let metadata = fs::metadata(&pending)?;
     if !metadata.is_file() || metadata.len() == 0 {
         return Err(WorkerError::Audio(audio::AudioError::Validation(
@@ -1217,6 +1306,59 @@ fn sanitize(value: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn performance_override_still_respects_configuration_and_platform_caps() {
+        let fast = ExecutionOptions {
+            max_performance: true,
+            ..ExecutionOptions::default()
+        };
+        assert_eq!(
+            ExecutionOptions::default().chapter_parallelism(true, 8, 8, 2),
+            1
+        );
+        assert_eq!(fast.chapter_parallelism(true, 8, 8, 2), 2);
+        assert_eq!(fast.chapter_parallelism(true, 1, 8, 2), 1);
+        assert_eq!(fast.chapter_parallelism(true, 8, 1, 2), 1);
+        assert_eq!(fast.chapter_parallelism(true, 8, 8, 1), 1);
+    }
+
+    #[test]
+    fn forced_replacement_preserves_audio_and_receipt_on_failure_or_cancellation() {
+        let fixture = tempfile::tempdir().unwrap();
+        let output = fixture.path().join("selected.mp3");
+        ensure_chapter_audio(&output, "identity", |pending| {
+            fs::write(pending, test_system_wav())?;
+            Ok(())
+        })
+        .unwrap();
+        let prior = fs::read(&output).unwrap();
+        let receipt = fs::read(chapter_audio_receipt_path(&output)).unwrap();
+        for cancel in [false, true] {
+            let result = ensure_chapter_audio_with_options(&output, "identity", true, |pending| {
+                fs::write(pending, b"partial invalid audio")?;
+                if cancel {
+                    Err(WorkerError::Cancelled)
+                } else {
+                    Ok(())
+                }
+            });
+            assert!(result.is_err());
+            assert_eq!(fs::read(&output).unwrap(), prior);
+            assert_eq!(
+                fs::read(chapter_audio_receipt_path(&output)).unwrap(),
+                receipt
+            );
+        }
+        ensure_chapter_audio_with_options(&output, "identity", true, |pending| {
+            fs::write(pending, test_system_wav_at_rate(16_000))?;
+            Ok(())
+        })
+        .unwrap();
+        assert_ne!(fs::read(&output).unwrap(), prior);
+        assert!(chapter_audio_is_complete(&output, "identity"));
+        assert_eq!(fs::read_dir(fixture.path()).unwrap().count(), 2);
+    }
 
     struct TestSystem {
         texts: Arc<Mutex<Vec<String>>>,
@@ -1803,6 +1945,79 @@ mod tests {
     }
 
     #[test]
+    fn token_cancellation_is_durable_and_preserves_job_store_errors() {
+        struct CancelDuringSpeech {
+            cancel: CancellationToken,
+            jobs: JobManager,
+            durable_request: bool,
+            remove_record: bool,
+            calls: Arc<AtomicUsize>,
+        }
+        impl PlatformTts for CancelDuringSpeech {
+            fn synthesize_wav(
+                &self,
+                _: &str,
+                _: &str,
+                _: &Path,
+                _: &(dyn Fn() -> bool + Sync),
+            ) -> Result<(), String> {
+                self.calls.fetch_add(1, Ordering::Relaxed);
+                if self.remove_record {
+                    self.jobs.delete("cancelled-job").unwrap();
+                } else if self.durable_request {
+                    self.jobs.request_cancellation("cancelled-job").unwrap();
+                }
+                self.cancel.cancel();
+                Err("fixture cancellation".into())
+            }
+        }
+        for (durable_request, remove_record) in [(false, false), (true, false), (false, true)] {
+            let temp = tempfile::tempdir().unwrap();
+            let input = temp.path().join("book.epub");
+            platform_test_book(&input);
+            let config = AppConfig::from_paths(crate::paths::resolve_paths_from(
+                std::iter::empty::<(String, String)>(),
+                temp.path().to_path_buf(),
+            ));
+            let worker = ConversionWorker::new(config).unwrap();
+            let jobs = worker.jobs.clone();
+            let cancel = worker.cancel.clone();
+            let calls = Arc::new(AtomicUsize::new(0));
+            let worker = worker.with_platform_tts(Arc::new(CancelDuringSpeech {
+                cancel,
+                jobs: jobs.clone(),
+                durable_request,
+                remove_record,
+                calls: Arc::clone(&calls),
+            }));
+            let result = worker.run(ConversionRequest {
+                input,
+                job_id: "cancelled-job".into(),
+                engine: Some("system".into()),
+                voice: None,
+                language: Some("pt-BR".into()),
+                piper_model: None,
+                piper_config: None,
+                chapter_indices: None,
+                no_parallel: true,
+            });
+            assert_eq!(calls.load(Ordering::Relaxed), 1);
+            if remove_record {
+                assert!(matches!(
+                    result,
+                    Err(WorkerError::Job(JobError::NotFound(_)))
+                ));
+            } else {
+                assert!(matches!(result, Err(WorkerError::Cancelled)));
+                assert_eq!(
+                    jobs.load("cancelled-job").unwrap().state,
+                    JobState::Cancelled
+                );
+            }
+        }
+    }
+
+    #[test]
     fn positional_chapter_selector_from_ffi_matches_parsed_epub_position() {
         assert!(chapter_selection_matches("position:0", "1", 0));
         assert!(chapter_selection_matches("position:1", "2", 1));
@@ -1932,6 +2147,36 @@ mod tests {
     }
 
     #[test]
+    fn legacy_output_manifest_keeps_unknown_source_count_without_changing_wire_shape() {
+        let legacy = serde_json::json!({
+            "jobId": "legacy-job", "title": "Book", "author": "Author",
+            "chapters": [{"index": 1, "sourceIndex": 0, "title": "Chapter",
+                          "filename": "chapter.mp3", "textChars": 40}],
+            "archive": "book.zip", "cover": null
+        });
+        let manifest: OutputManifest = serde_json::from_value(legacy.clone()).unwrap();
+        assert_eq!(manifest.source_chapters_total, None);
+        assert_eq!(manifest.chapters.len(), 1);
+        assert_eq!(serde_json::to_value(manifest).unwrap(), legacy);
+    }
+
+    #[test]
+    fn explicit_source_count_round_trips_and_negative_count_is_rejected() {
+        let mut value = serde_json::json!({
+            "jobId": "selected-job", "title": "Book", "author": "Author",
+            "chapters": [{"index": 1, "sourceIndex": 0, "title": "Chapter",
+                          "filename": "chapter.mp3", "textChars": 40}],
+            "sourceChaptersTotal": 2, "archive": "book.zip", "cover": null
+        });
+        let manifest: OutputManifest = serde_json::from_value(value.clone()).unwrap();
+        assert_eq!(manifest.source_chapters_total, Some(2));
+        assert_eq!(manifest.chapters.len(), 1);
+        assert_eq!(serde_json::to_value(manifest).unwrap(), value);
+        value["sourceChaptersTotal"] = serde_json::json!(-1);
+        assert!(serde_json::from_value::<OutputManifest>(value).is_err());
+    }
+
+    #[test]
     fn worker_reuses_proven_audio_and_publishes_the_matching_archive() {
         let root = tempfile::tempdir().unwrap();
         let paths = crate::paths::resolve_paths_from(
@@ -1943,6 +2188,11 @@ mod tests {
         let source = fs::read(&input).unwrap();
         let book = epub::parse_epub(std::io::Cursor::new(&source)).unwrap();
         assert!(book.cover.is_none());
+        assert_eq!(
+            book.chapters.len(),
+            2,
+            "fixture must retain a larger source domain"
+        );
         let chapter = &book.chapters[0];
         let output = worker.config.paths.output_dir.join("proven-existing-audio");
         let audio = output.join(format!("0001-{}.mp3", sanitize(&chapter.name)));
@@ -1985,6 +2235,12 @@ mod tests {
             chapter.text
         );
         assert_eq!(manifest.chapters.len(), 1);
+        assert_eq!(manifest.chapters[0].source_index, 0);
+        assert_eq!(manifest.source_chapters_total, Some(2));
+        let persisted: OutputManifest = cache::read_json(output.join("manifest.json")).unwrap();
+        assert_eq!(persisted.source_chapters_total, Some(2));
+        assert_eq!(persisted.chapters.len(), 1);
+        assert_eq!(persisted.chapters[0].source_index, 0);
         assert_eq!(
             worker.jobs.load("proven-existing-audio").unwrap().state,
             JobState::Completed

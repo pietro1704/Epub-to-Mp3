@@ -32,6 +32,12 @@ jobs:
       - name: Rails gateway tests
         working-directory: ruby_app/rails_gateway
         run: bundle exec rails test
+      - name: Install desktop audio test dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ffmpeg
+          ffmpeg -version
+          ffprobe -version
       - name: Rust tests
         run: cargo test -p converter-core -p converter-server --locked
       - name: Rust format
