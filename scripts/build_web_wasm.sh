@@ -8,7 +8,8 @@ output_dir="web/src/wasm"
 mkdir -p "$output_dir"
 rm -f "$output_dir"/converter_wasm.{js,d.ts} "$output_dir"/converter_wasm_bg.wasm "$output_dir"/converter_wasm_bg.wasm.d.ts
 
-mise exec -- cargo build -p converter-wasm --target wasm32-unknown-unknown --release
+RUSTC="$(mise exec -- rustup which --toolchain stable rustc)" \
+  mise exec -- rustup run stable cargo build -p converter-wasm --target wasm32-unknown-unknown --release --jobs 1
 mise exec -- wasm-bindgen \
   target/wasm32-unknown-unknown/release/converter_wasm.wasm \
   --target web \

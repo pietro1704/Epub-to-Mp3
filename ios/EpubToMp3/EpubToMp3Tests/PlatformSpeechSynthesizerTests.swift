@@ -18,10 +18,19 @@ final class PlatformSpeechSynthesizerTests: XCTestCase {
         XCTAssertTrue(PlatformFallbackNoticeTracker().shouldNotify(progress: system))
     }
 
-    func testPiperIsSuspendedAndSavedChoiceResolvesToEdge() {
-        XCTAssertEqual(AudioEnginePreference.supportedPreferences, [.edge])
-        XCTAssertEqual(ConversionOptions.selectedEngine(.piper).engine, "edge")
-        XCTAssertNil(ConversionOptions.selectedEngine(.piper).modelID)
+    func testConfiguredSecondaryNoticeIsOncePerJob() {
+        let tracker = PlatformFallbackNoticeTracker()
+        let primary = Data(#"{"engine":"piper","fallbackUsed":false}"#.utf8)
+        let secondary = Data(#"{"engine":"edge","fallbackUsed":true}"#.utf8)
+        XCTAssertFalse(tracker.shouldNotify(progress: primary))
+        XCTAssertTrue(tracker.shouldNotify(progress: secondary))
+        XCTAssertFalse(tracker.shouldNotify(progress: secondary))
+    }
+
+    func testFaberIsAvailableAsAnExplicitOfflineProvider() {
+        XCTAssertEqual(AudioEnginePreference.supportedPreferences, [.piper, .edge])
+        XCTAssertEqual(ConversionOptions.selectedEngine(.piper).engine, "piper")
+        XCTAssertEqual(ConversionOptions.selectedEngine(.piper).modelID, "pt_BR-faber-medium")
     }
 
     @MainActor

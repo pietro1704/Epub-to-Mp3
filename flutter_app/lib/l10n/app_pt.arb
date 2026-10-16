@@ -170,5 +170,17 @@
       "n": { "type": "int" }
     }
   },
-  "off": "Desligado"
+  "off": "Desligado",
+  "ttsPrimaryNarration": "Narração principal",
+  "ttsSecondaryNarration": "Narração secundária",
+  "ttsFaberOffline": "Faber medium · Sem internet",
+  "ttsEdgeOnline": "Edge · Online",
+  "ttsNoSecondary": "Nenhuma",
+  "ttsAllowOnlineSecondary": "Permitir voz secundária online",
+  "ttsOnlineSecondaryDescription": "Envie os trechos que falharem ao Edge somente quando esta opção estiver ativada.",
+  "ttsUsePreferences": "Usar preferências de áudio",
+  "ttsAllowJobSecondary": "Permitir a voz secundária configurada nesta conversão",
+  "ttsActualVoices": "Voz utilizada: {voices}",
+  "@ttsActualVoices": {"placeholders": {"voices": {"type": "String"}}},
+  "ttsSecondaryUsedNotice": "Uma voz secundária foi usada neste trecho. A voz principal será tentada novamente."
 }

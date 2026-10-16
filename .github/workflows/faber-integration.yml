@@ -1,0 +1,181 @@
+name: Faber runtime integration
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: faber-integration-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
+jobs:
+  ffi-jni:
+    name: Faber FFI JNI contracts
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      MISE_ENABLE_TOOLS: python,rust
+    steps:
+      - uses: actions/checkout@v7
+      - uses: jdx/mise-action@v5
+        with:
+          version: 2026.9.14
+          install: false
+      - run: mise install
+      - name: Test JNI-enabled preference and streaming contracts
+        run: |
+          set -o pipefail
+          mkdir -p .reports/tts-preferences
+          for contract in typed_preferences controlled_typed_options queued_streaming_ opaque_tts_policy_state; do
+            mise exec -- cargo test --locked -p converter-ffi --lib --features android-jni "$contract" -- --test-threads=1 \
+              |& tee ".reports/tts-preferences/jni-$contract.log"
+          done
+      - name: Retain JNI test artifacts
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: faber-jni-contracts
+          path: .reports/tts-preferences
+          if-no-files-found: ignore
+
+  android-package:
+    name: Faber Android APK and native ABI
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      MISE_ENABLE_TOOLS: python,rust,ruby,flutter,java,android-sdk,ninja
+    steps:
+      - uses: actions/checkout@v7
+      - uses: jdx/mise-action@v5
+        with:
+          version: 2026.9.14
+          install: false
+      - name: Install host build prerequisites
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends clang libclang-dev cmake pkg-config
+      - run: mise install
+      - name: Accept Android SDK licenses
+        run: |
+          set +o pipefail
+          yes | mise exec -- sdkmanager --licenses
+          result=${PIPESTATUS[1]}
+          exit "$result"
+      - name: Install project Android target dependencies
+        run: |
+          mise run android:embedded-deps
+          mise exec -- rustup target add aarch64-linux-android
+      - name: Build fresh Piper JNI and audited ARM64 APK
+        run: mise run flutter:build-apk-debug
+      - name: Test Android background and selection adapters
+        working-directory: flutter_app/android
+        run: mise exec -- ./gradlew :app:testDebugUnitTest
+      - name: Retain APK, native identity and Android test results
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: faber-android-package
+          path: |
+            flutter_app/build/app/outputs/flutter-apk/app-debug.apk
+            target/piper-android/aarch64-linux-android/release/libconverter_ffi.so.runtime.json
+            flutter_app/build/app/reports/tests
+            flutter_app/build/app/test-results
+          if-no-files-found: warn
+
+  macos-preferences:
+    name: Faber macOS preferences and installation
+    runs-on: macos-14
+    timeout-minutes: 60
+    env:
+      MISE_ENABLE_TOOLS: python,rust,ruby
+    steps:
+      - uses: actions/checkout@v7
+      - uses: jdx/mise-action@v5
+        with:
+          version: 2026.9.14
+          install: false
+      - run: mise install
+      - name: Install Xcode project generator
+        run: brew install xcodegen
+      - name: Build embedded host runtime without Simulator
+        run: mise run converter-ffi:build
+      - name: Generate native project with actual FFI artifact
+        working-directory: ios/EpubToMp3
+        run: xcodegen generate
+      - name: Run real macOS preference and installation XCTest
+        working-directory: ios/EpubToMp3
+        run: |
+          set -o pipefail
+          mkdir -p ../../.reports/tts-preferences
+          xcodebuild test -project EpubToMp3.xcodeproj \
+            -scheme EpubToMp3-UnitTests -destination 'platform=macOS' \
+            -derivedDataPath .build/faber-ci \
+            -resultBundlePath ../../.reports/tts-preferences/macos-prefs.xcresult \
+            -jobs 1 -parallel-testing-enabled NO \
+            CODE_SIGNING_ALLOWED=YES CODE_SIGNING_REQUIRED=YES \
+            CODE_SIGN_IDENTITY=- CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM= \
+            -only-testing:EpubToMp3Tests/ConversionOptionsInteropTests \
+            -only-testing:EpubToMp3Tests/ConvertViewModelTests \
+            -only-testing:EpubToMp3Tests/ToolbarSettingsParityTests \
+            -only-testing:EpubToMp3Tests/MacModelInstallationResponsivenessTests \
+            | tee ../../.reports/tts-preferences/macos-prefs.log
+      - name: Retain macOS XCTest evidence
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: faber-macos-prefs
+          path: .reports/tts-preferences
+          if-no-files-found: warn
+
+  browser-runtime:
+    name: Faber real browser runtime
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    env:
+      MISE_ENABLE_TOOLS: python,rust,node,npm,cargo:wasm-bindgen-cli
+    steps:
+      - uses: actions/checkout@v7
+      - uses: jdx/mise-action@v5
+        with:
+          version: 2026.9.14
+          install: false
+      - run: mise install
+      - name: Build fresh browser WASM
+        run: |
+          mise exec -- rustup target add wasm32-unknown-unknown
+          mise run web:wasm-build
+      - name: Install browser prerequisites and build production assets
+        working-directory: web
+        run: |
+          mise exec -- npm ci --no-audit --no-fund
+          mise exec -- npx playwright install --with-deps chromium
+          mise exec -- npm run build
+      - name: Explicitly install checksum-pinned Faber test model
+        run: |
+          mkdir -p models
+          base='https://huggingface.co/rhasspy/piper-voices/resolve/c10ece1aade47bb51c153c893d14e5bf8e5b7117/pt/pt_BR/faber/medium'
+          curl --fail --location --retry 3 "$base/pt_BR-faber-medium.onnx" -o models/pt_BR-faber-medium.onnx
+          curl --fail --location --retry 3 "$base/pt_BR-faber-medium.onnx.json" -o models/pt_BR-faber-medium.onnx.json
+          printf '%s  %s\n' \
+            '858555e3a064209c57088fe6bd70c4c3dc54d03eaa00c45d5ecaf43a33f95aa7' 'models/pt_BR-faber-medium.onnx' \
+            '7e694de195ae3fc36dd732c445eb04fb49b649854893cb5506b978f0d50a1d6f' 'models/pt_BR-faber-medium.onnx.json' \
+            | sha256sum --check
+      - name: Exercise real browser storage and development inference
+        run: |
+          mise exec -- node web/scripts/verify-browser-store.mjs
+          mise exec -- node web/scripts/verify-browser-tts.mjs
+      - name: Exercise real production inference
+        env:
+          TTS_BROWSER_MODE: production
+        run: mise exec -- node web/scripts/verify-browser-tts.mjs
+      - name: Retain browser reports and screenshots
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: faber-browser-runtime
+          path: .reports/tts-preferences
+          if-no-files-found: warn

@@ -149,6 +149,8 @@ fn force_and_clear_apply_only_to_selected_chapter_through_actual_worker() {
         let baseline = ConversionWorker::new(AppConfig::from_paths(paths.clone())).unwrap();
         baseline
             .run(ConversionRequest {
+                tts_preferences: None,
+                models_root: None,
                 input: input.clone(),
                 job_id: job.into(),
                 engine: Some("piper".into()),
@@ -180,6 +182,8 @@ fn force_and_clear_apply_only_to_selected_chapter_through_actual_worker() {
             });
         let result = worker
             .run(ConversionRequest {
+                tts_preferences: None,
+                models_root: None,
                 input: input.clone(),
                 job_id: job.into(),
                 engine: Some("piper".into()),
@@ -319,6 +323,8 @@ fn explicit_model_reaches_worker_thread_without_environment_override() {
         .with_piper_model(Some(Arc::new(model)));
     let result = worker
         .run(ConversionRequest {
+            tts_preferences: None,
+            models_root: None,
             input,
             job_id: "explicit-model-job".into(),
             engine: Some("piper".into()),
@@ -353,4 +359,201 @@ fn explicit_model_reaches_worker_thread_without_environment_override() {
     );
     assert_eq!(fs::read(model_path).unwrap(), b"synthetic installed model");
     println!("EXPLICIT_MODEL_ASSERTIONS_COMPLETED");
+}
+
+#[test]
+fn explicit_model_paths_reach_worker_thread_without_environment_override() {
+    const GUARD: &str = "EPUB_MODEL_PATHS_ISOLATED_TEST";
+    if std::env::var(GUARD).as_deref() != Ok("1") {
+        let output = Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "explicit_model_paths_reach_worker_thread_without_environment_override",
+                "--nocapture",
+                "--test-threads=1",
+            ])
+            .env(GUARD, "1")
+            .env("PIPER_MODEL", "/must-not-use-process-model")
+            .env("PATH", "/no-tools")
+            .env("FFMPEG", "/no-tools/ffmpeg")
+            .env("FFPROBE", "/no-tools/ffprobe")
+            .env("CONVERTER_AUDIO_DISABLE_EXTERNAL_TOOLS", "1")
+            .env("RUST_CHAPTER_TIMEOUT_SECONDS", "30")
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}\n{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert!(
+            String::from_utf8_lossy(&output.stdout).contains("EXPLICIT_MODEL_ASSERTIONS_COMPLETED")
+        );
+        return;
+    }
+    let fixture = tempfile::tempdir().unwrap();
+    let root = fixture.path();
+    let input = root.join("source.epub");
+    book(&input);
+    let parsed = epub::parse_epub(fs::File::open(&input).unwrap()).unwrap();
+    let models = root.join("installed");
+    let namespace = models.join("chosen-literal-id");
+    fs::create_dir_all(&namespace).unwrap();
+    let model_path = namespace.join("chosen.onnx");
+    let config_path = namespace.join("chosen.config.json");
+    fs::write(&model_path, b"synthetic installed model").unwrap();
+    fs::write(&config_path, b"{}").unwrap();
+    let runtime = Arc::new(ExplicitRuntime {
+        model_calls: Mutex::new(Vec::new()),
+        text_calls: Mutex::new(Vec::new()),
+    });
+    piper::register_runtime(runtime.clone());
+    let paths = paths::resolve_paths_from(
+        [("PERSISTENT_ROOT", root.to_string_lossy().into_owned())],
+        root.to_owned(),
+    );
+    let worker = ConversionWorker::new(AppConfig::from_paths(paths)).unwrap();
+    let result = worker
+        .run(ConversionRequest {
+            tts_preferences: None,
+            models_root: None,
+            piper_model: Some(model_path.canonicalize().unwrap()),
+            piper_config: Some(config_path.canonicalize().unwrap()),
+            input,
+            job_id: "explicit-model-job".into(),
+            engine: Some("piper".into()),
+            voice: None,
+            language: None,
+            chapter_indices: Some(vec!["position:1".into()]),
+            no_parallel: true,
+        })
+        .unwrap();
+    assert_eq!(result.chapters.len(), 1);
+    assert_eq!(result.chapters[0].source_index, 1);
+    assert_eq!(
+        *runtime.text_calls.lock().unwrap(),
+        vec![parsed.chapters[1].text.clone()]
+    );
+    let expected = (
+        model_path.canonicalize().unwrap(),
+        config_path.canonicalize().unwrap(),
+    );
+    let calls = runtime.model_calls.lock().unwrap();
+    assert_eq!(
+        calls.len(),
+        1,
+        "synthesis must initialize the requested model"
+    );
+    assert!(calls.iter().all(|paths| paths == &expected));
+    assert_eq!(
+        std::env::var("PIPER_MODEL").unwrap(),
+        "/must-not-use-process-model"
+    );
+    assert_eq!(fs::read(model_path).unwrap(), b"synthetic installed model");
+    println!("EXPLICIT_MODEL_ASSERTIONS_COMPLETED");
+}
+
+#[test]
+fn explicit_overrides_ignore_prepared_default_identity_and_never_fallback_to_it() {
+    const GUARD: &str = "EPUB_OVERRIDE_IDENTITY_CHILD";
+    if std::env::var(GUARD).as_deref() != Ok("1") {
+        let output = Command::new(std::env::current_exe().unwrap())
+            .args(["--exact", "explicit_overrides_ignore_prepared_default_identity_and_never_fallback_to_it", "--nocapture", "--test-threads=1"])
+            .env(GUARD, "1")
+            .env("PATH", "/no-tools")
+            .env("FFMPEG", "/no-tools/ffmpeg")
+            .env("FFPROBE", "/no-tools/ffprobe")
+            .env("CONVERTER_AUDIO_DISABLE_EXTERNAL_TOOLS", "1")
+            .output().unwrap();
+        assert!(output.status.success(), "{}\n{}", String::from_utf8_lossy(&output.stdout), String::from_utf8_lossy(&output.stderr));
+        assert!(String::from_utf8_lossy(&output.stdout).contains("OVERRIDE_ASSERTIONS_COMPLETED"));
+        return;
+    }
+    let fixture = tempfile::tempdir().unwrap();
+    let root = fixture.path();
+    let input = root.join("source.epub");
+    book(&input);
+    let models = root.join("installed");
+    for id in ["prepared-A", "selected-B"] {
+        fs::create_dir_all(models.join(id)).unwrap();
+        fs::write(models.join(id).join("model.onnx"), id.as_bytes()).unwrap();
+        fs::write(models.join(id).join("model.onnx.json"), b"{}").unwrap();
+    }
+    let model_a = models.join("prepared-A/model.onnx");
+    let model_b = models.join("selected-B/model.onnx").canonicalize().unwrap();
+    let config_b = model_b.with_extension("onnx.json");
+    let runtime = Arc::new(ExplicitRuntime {
+        model_calls: Mutex::new(Vec::new()), text_calls: Mutex::new(Vec::new()),
+    });
+    piper::register_runtime(runtime.clone());
+    let prepare_a = || Arc::new(piper::PreparedPiperModel::prepare(
+        &models, "prepared-A", Path::new("model.onnx"), Path::new("model.onnx.json"), runtime.clone(),
+    ).unwrap());
+    let paths = paths::resolve_paths_from(
+        [("PERSISTENT_ROOT", root.to_string_lossy().into_owned())], root.to_owned(),
+    );
+    for typed in [false, true] {
+        let job = if typed { "typed-B" } else { "paths-B" };
+        let preferences = typed.then(|| converter_core::tts_preferences::TtsPreferences {
+            primary: converter_core::tts_preferences::TtsSelection {
+                engine: "piper".into(), model_id: Some("selected-B".into()), voice: None,
+            }, secondary: None, allow_online_fallback: false,
+        });
+        let request = ConversionRequest {
+            input: input.clone(), job_id: job.into(), engine: Some("piper".into()),
+            voice: None, language: None, tts_preferences: preferences.clone(),
+            models_root: typed.then(|| models.clone()),
+            piper_model: (!typed).then(|| model_b.clone()),
+            piper_config: (!typed).then(|| config_b.clone()),
+            chapter_indices: Some(vec!["position:1".into()]), no_parallel: true,
+        };
+        let worker = ConversionWorker::new(AppConfig::from_paths(paths.clone())).unwrap()
+            .with_piper_model(Some(prepare_a()));
+        runtime.model_calls.lock().unwrap().clear();
+        runtime.text_calls.lock().unwrap().clear();
+        let manifest = worker.run(request.clone()).unwrap();
+        assert_eq!(manifest.source_chapters_total, Some(3));
+        assert_eq!(manifest.chapters.len(), 1);
+        assert!(!manifest.fallback_used);
+        if typed {
+            assert_eq!(manifest.tts_preferences, preferences);
+            assert_eq!(manifest.used_selections, vec![preferences.as_ref().unwrap().primary.clone()]);
+        } else {
+            assert_eq!(worker.jobs.load(job).unwrap().metadata["piper_model"], serde_json::json!(model_b));
+        }
+        assert!(!runtime.text_calls.lock().unwrap().is_empty());
+        assert!(runtime.model_calls.lock().unwrap().iter().all(|paths| paths == &(model_b.clone(), config_b.clone())));
+        let audio = paths.output_dir.join(job).join(&manifest.chapters[0].filename);
+        let receipt = audio.with_extension("mp3.complete.json");
+        let prior_audio = fs::read(&audio).unwrap();
+        let prior_receipt = fs::read(&receipt).unwrap();
+        // An ignored prepared default must not contribute its model digest to B's cache.
+        fs::write(&model_a, format!("changed unused A for {job}")).unwrap();
+        let replay = ConversionWorker::new(AppConfig::from_paths(paths.clone())).unwrap()
+            .with_piper_model(Some(prepare_a()));
+        replay.jobs.delete(job).unwrap();
+        runtime.model_calls.lock().unwrap().clear();
+        runtime.text_calls.lock().unwrap().clear();
+        replay.run(request.clone()).unwrap();
+        assert!(runtime.model_calls.lock().unwrap().is_empty());
+        assert!(runtime.text_calls.lock().unwrap().is_empty());
+        assert_eq!(fs::read(audio).unwrap(), prior_audio);
+        assert_eq!(fs::read(receipt).unwrap(), prior_receipt);
+        let mut invalid = request;
+        invalid.job_id = format!("invalid-{job}");
+        if typed {
+            let preferences = invalid.tts_preferences.as_mut().unwrap();
+            preferences.primary.model_id = Some("missing-B".into());
+            preferences.secondary = Some(converter_core::tts_preferences::TtsSelection {
+                engine: "piper".into(), model_id: Some("prepared-A".into()), voice: None,
+            });
+        } else {
+            invalid.piper_model = Some(models.join("missing-B.onnx"));
+        }
+        assert!(replay.run(invalid).is_err());
+        assert!(runtime.model_calls.lock().unwrap().is_empty());
+        assert!(runtime.text_calls.lock().unwrap().is_empty());
+    }
+    println!("OVERRIDE_ASSERTIONS_COMPLETED");
 }

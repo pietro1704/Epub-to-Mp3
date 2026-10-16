@@ -11,7 +11,10 @@ final class ConvertViewModel {
         self.converter = converter
     }
     var selectedFile: URL?
-    var engine = "edge"
+    var engine = "piper"
+    var inheritedPreferences: TtsPreferences?
+    var usesPreferences = true
+    var allowSecondary = false
     var voice = ""
     var language = ""
     var chapters = ""
@@ -19,6 +22,15 @@ final class ConvertViewModel {
     var forceReprocess = false
     var maxPerformance = false
     var modelsRoot: String?
+
+    var manualPrimary: TtsSelection {
+        let trimmedVoice = voice.trimmingCharacters(in: .whitespacesAndNewlines)
+        return TtsSelection(engine: engine, modelID: engine == "piper" ? "pt_BR-faber-medium" : nil,
+                            voice: trimmedVoice.isEmpty ? nil : voice)
+    }
+    var distinctManualSecondary: TtsSelection? {
+        inheritedPreferences?.secondary.flatMap { $0 == manualPrimary ? nil : $0 }
+    }
 
     var isSubmitting = false
     var submittedJobId: String?
@@ -60,16 +72,28 @@ final class ConvertViewModel {
             defer { if accessing { file.stopAccessingSecurityScopedResource() } }
             _ = accessing
 #endif
-            let options = ConversionOptions(
+            var options = ConversionOptions(
                 engine: engine,
                 voice: voice.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : voice,
                 language: language.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : language,
                 clearCache: clearCache,
                 forceReprocess: forceReprocess,
                 maxPerformance: maxPerformance,
-                modelsRoot: engine == "piper" ? (modelsRoot ?? AppSettings.ttsModelsRoot()?.path) : nil,
-                modelID: engine == "piper" ? "pt_BR-edresson-low" : nil
+                modelsRoot: modelsRoot ?? AppSettings.ttsModelsRoot()?.path,
+                modelID: engine == "piper" ? "pt_BR-faber-medium" : nil,
+                espeakDataDirectory: Bundle.main.resourceURL?.path
             )
+            if usesPreferences, let inheritedPreferences {
+                options.ttsPreferences = inheritedPreferences
+                options.engine = inheritedPreferences.primary.engine
+                options.modelID = inheritedPreferences.primary.modelID
+                options.voice = inheritedPreferences.primary.voice
+            } else {
+                options.ttsPreferences = TtsPreferences(
+                    primary: TtsSelection(engine: engine, modelID: options.modelID, voice: options.voice),
+                    secondary: allowSecondary ? distinctManualSecondary : nil,
+                    allowOnlineFallback: allowSecondary && distinctManualSecondary != nil && (inheritedPreferences?.allowOnlineFallback ?? false))
+            }
             let result = try await converter(file, chapterRange.start, chapterRange.end, options)
             submittedJobId = result.jobID
         } catch {

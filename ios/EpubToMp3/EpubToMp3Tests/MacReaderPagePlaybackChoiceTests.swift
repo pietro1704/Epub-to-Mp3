@@ -135,6 +135,14 @@ final class MacReaderPagePlaybackChoiceTests: XCTestCase {
         player.resume()
         player.pause()
         standard.set(0.6, forKey: AudioPlayer.readerCurrentPageRatioDefaultsKey)
+        // Transport notifications and the AVPlayer observer update AppKit on
+        // subsequent run-loop turns; wait for the actual paused control.
+        for _ in 0..<20 where !buttons(in: controller.view).contains(where: {
+            $0.toolTip == L10n.string("player.play")
+        }) {
+            try await Task.sleep(nanoseconds: 50_000_000)
+        }
+        XCTAssertFalse(player.isPlaying)
         let play = try XCTUnwrap(buttons(in: controller.view).first { $0.toolTip == L10n.string("player.play") })
         play.performClick(nil)
         let sheet = try await waitForSheet(window)
