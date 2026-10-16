@@ -266,6 +266,11 @@ fn main() {
         );
     }
 
+    if target.contains("-windows-") {
+        // eSpeak's Windows data-path lookup calls the registry APIs.
+        println!("cargo:rustc-link-lib=advapi32");
+    }
+
     // Apple targets share the C++ runtime required by the speech player.
     if target.contains("-apple-") {
         println!("cargo:rustc-link-lib=framework=Foundation");

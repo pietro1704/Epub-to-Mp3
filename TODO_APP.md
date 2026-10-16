@@ -2,6 +2,8 @@
 
 ## WIN-20261016-FABER-PACKAGE — Verify the supported Windows Flutter runtime
 
+- GitHub RED `38899176791`, Windows job `116966899655`, head `a4fcd7ecce`: ORT linking advanced; final Piper DLL linkage failed with LNK2019 for `RegOpenKeyExA` and `RegQueryValueExA` from vendored eSpeak `speech.obj`. Publish the required `advapi32` system-library dependency only for Windows targets; preserve all other build settings. The Microsoft API references specify `Advapi32.lib`. Linux real golden passed on this revision; Windows package audit/inference/MP3 evidence remains mandatory and pending. No local execution or source-parser substitute test.
+
 - GitHub RED `38898019062`, Windows job `116963089315`, head `3224a0e7`: actual Flutter package compilation failed in ort-sys 2.0.0-rc.11 before audit/inference. The CMake command overrode explicit dynamic linking with `0`; ort-sys therefore attempted a static library layout. Its dynamic branch uses `ORT_LIB_LOCATION` literally, requiring the official archive's `lib/` directory containing `onnxruntime.lib`. Preserve Linux static selection and Windows default while honoring an explicit Windows dynamic choice; fix only the Windows workflow path. Positive packaged-DLL inference and all audit/decoder assertions remain mandatory and unverified until GitHub succeeds.
 
 - [ ] Owner: crash_guard_audit; preserve Linux golden `36d00c604` while adding GitHub Windows x64 verification through the existing `flutter:build-windows` task, actual packaged Dart→Rust FFI, complete Portuguese phoneme assets, exact public chapters 0..1 and full non-silent MP3 decoding.
