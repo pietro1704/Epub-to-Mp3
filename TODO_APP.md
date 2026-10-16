@@ -13,6 +13,7 @@
 - [ ] Verify default collection avoids network, disabled synthesis never imports/calls Edge, explicit opt-in is literal, and live provider errors propagate. Execute checks only on GitHub under the current user instruction.
 - Owner: crash_workflow_audit specialist; branch `feature/ci-offline-audio-fixtures`. Baseline: master CI run `38862909247`, Python job `116849117822` has one Edge fingerprint failure and three audio-fixture setup errors from HTTP 403. No production/provider code changes or live provider probes.
 - Status: implementation pending GitHub verification; no local tests or syntax checks executed. Preserve user books/models and unrelated work.
+- Follow-up evidence: full GitHub CI `38867253856` passed Python tests and lint, then the legacy CLI smoke failed on live Edge HTTP 403. Default CLI and external-pool smokes now explicitly install checksum-pinned Faber medium into the disposable runner and synthesize offline with fallback disabled, separate outputs and fresh processing. Existing live Edge CLI/pool checks move to the explicit manual workflow; their provider failures remain fatal. No production provider or user model-install behavior changes.
 
 ## APP-20261016-CI-LIBRARY-ACTIONS — Exercise visible library actions
 
