@@ -2620,25 +2620,56 @@ mod tests {
             let receipt_path = chapter_audio_receipt_path(&audio);
             let original_audio = fs::read(&audio).unwrap();
             let original_receipt = fs::read(&receipt_path).unwrap();
-            let predecessor_state = fs::read(worker.config.paths.jobs_dir.join(format!("{}.json", request.job_id))).unwrap();
+            let predecessor_state = fs::read(
+                worker
+                    .config
+                    .paths
+                    .jobs_dir
+                    .join(format!("{}.json", request.job_id)),
+            )
+            .unwrap();
             let control = ConversionControl::default();
             control.set_recovery_job(&request.job_id).unwrap();
             let policy: crate::tts_preferences::SegmentPolicy =
                 serde_json::from_value(serde_json::json!({"consecutive_failures": 2})).unwrap();
-            worker = worker.with_control(control).with_tts_policy_state(policy.clone());
+            worker = worker
+                .with_control(control)
+                .with_tts_policy_state(policy.clone());
             let mut successor_request = request.clone();
             successor_request.job_id = format!("recovered-{}", request.job_id);
             let recovered = worker.run(successor_request.clone()).unwrap();
-            assert_eq!(attempts.load(Ordering::Acquire), calls, "recovery must not retry either provider");
+            assert_eq!(
+                attempts.load(Ordering::Acquire),
+                calls,
+                "recovery must not retry either provider"
+            );
             assert_eq!(recovered.fallback_used, fail_primary);
             assert_eq!(recovered.used_selections, cached.used_selections);
             assert_eq!(recovered.tts_policy_state, Some(policy));
-            let recovered_audio = worker.config.paths.output_dir.join(&successor_request.job_id).join(&recovered.chapters[0].filename);
+            let recovered_audio = worker
+                .config
+                .paths
+                .output_dir
+                .join(&successor_request.job_id)
+                .join(&recovered.chapters[0].filename);
             assert_eq!(fs::read(&recovered_audio).unwrap(), original_audio);
-            assert_eq!(fs::read(chapter_audio_receipt_path(&recovered_audio)).unwrap(), original_receipt);
+            assert_eq!(
+                fs::read(chapter_audio_receipt_path(&recovered_audio)).unwrap(),
+                original_receipt
+            );
             assert_eq!(fs::read(&audio).unwrap(), original_audio);
             assert_eq!(fs::read(&receipt_path).unwrap(), original_receipt);
-            assert_eq!(fs::read(worker.config.paths.jobs_dir.join(format!("{}.json", request.job_id))).unwrap(), predecessor_state);
+            assert_eq!(
+                fs::read(
+                    worker
+                        .config
+                        .paths
+                        .jobs_dir
+                        .join(format!("{}.json", request.job_id))
+                )
+                .unwrap(),
+                predecessor_state
+            );
             let mut legacy: serde_json::Value = cache::read_json(&receipt_path).unwrap();
             let key = legacy["request_key"].as_str().unwrap().to_owned();
             legacy.as_object_mut().unwrap().remove("fallback_used");
@@ -3428,7 +3459,6 @@ mod tests {
         assert_eq!(fs::read(audio).unwrap(), b"completed synthesis");
     }
 
-
     #[test]
     fn recovery_cancelled_after_staging_does_not_publish_artifacts() {
         let root = tempfile::tempdir().unwrap();
@@ -3439,20 +3469,40 @@ mod tests {
         let source = predecessor.join("chapter.mp3");
         let output = successor.join("chapter.mp3");
         ensure_chapter_audio(&source, "recovery-cancel", |pending| {
-            fs::write(pending, platform_tts::encode_wav(&test_system_wav()).unwrap())?;
+            fs::write(
+                pending,
+                platform_tts::encode_wav(&test_system_wav()).unwrap(),
+            )?;
             Ok(())
-        }).unwrap();
+        })
+        .unwrap();
         let source_bytes = fs::read(&source).unwrap();
         let source_receipt = fs::read(chapter_audio_receipt_path(&source)).unwrap();
         let checks = std::cell::Cell::new(0);
         let result = recover_chapter_audio(
-            root.path(), "predecessor", &output, "recovery-cancel", &|| {
+            root.path(),
+            "predecessor",
+            &output,
+            "recovery-cancel",
+            &|| {
                 checks.set(checks.get() + 1);
                 if checks.get() == 2 {
-                    let staging = fs::read_dir(&successor).unwrap().next().unwrap().unwrap().path();
-                    assert!(staging.file_name().unwrap().to_string_lossy().starts_with(".chapter-recovery-"));
+                    let staging = fs::read_dir(&successor)
+                        .unwrap()
+                        .next()
+                        .unwrap()
+                        .unwrap()
+                        .path();
+                    assert!(staging
+                        .file_name()
+                        .unwrap()
+                        .to_string_lossy()
+                        .starts_with(".chapter-recovery-"));
                     assert_eq!(fs::read(staging.join("chapter.mp3")).unwrap(), source_bytes);
-                    assert_eq!(fs::read(staging.join("chapter.mp3.complete.json")).unwrap(), source_receipt);
+                    assert_eq!(
+                        fs::read(staging.join("chapter.mp3.complete.json")).unwrap(),
+                        source_receipt
+                    );
                     return Err(WorkerError::Cancelled);
                 }
                 Ok(())
@@ -3464,7 +3514,10 @@ mod tests {
         assert!(!chapter_audio_receipt_path(&output).exists());
         assert_eq!(fs::read_dir(&successor).unwrap().count(), 0);
         assert_eq!(fs::read(&source).unwrap(), source_bytes);
-        assert_eq!(fs::read(chapter_audio_receipt_path(&source)).unwrap(), source_receipt);
+        assert_eq!(
+            fs::read(chapter_audio_receipt_path(&source)).unwrap(),
+            source_receipt
+        );
     }
 
     #[test]
@@ -3474,17 +3527,26 @@ mod tests {
         let input = temp.path().join("book.epub");
         platform_test_book(&input);
         let config = AppConfig::from_paths(crate::paths::resolve_paths_from(
-            std::iter::empty::<(String, String)>(), temp.path().to_path_buf(),
+            std::iter::empty::<(String, String)>(),
+            temp.path().to_path_buf(),
         ));
         let spoken = Arc::new(Mutex::new(Vec::new()));
-        let predecessor = ConversionWorker::new(config.clone()).unwrap()
-            .with_platform_tts(Arc::new(TestSystem { texts: spoken.clone() }));
+        let predecessor = ConversionWorker::new(config.clone())
+            .unwrap()
+            .with_platform_tts(Arc::new(TestSystem {
+                texts: spoken.clone(),
+            }));
         let mut request = preference_test_request();
         request.input = input;
         request.job_id = "cancel-predecessor".into();
         request.tts_preferences = Some(TtsPreferences {
-            primary: TtsSelection { engine: "system".into(), model_id: None, voice: None },
-            secondary: None, allow_online_fallback: false,
+            primary: TtsSelection {
+                engine: "system".into(),
+                model_id: None,
+                voice: None,
+            },
+            secondary: None,
+            allow_online_fallback: false,
         });
         let original = predecessor.run(request.clone()).unwrap();
         let original_directory = config.paths.output_dir.join(&request.job_id);
@@ -3500,8 +3562,11 @@ mod tests {
         let stop = cancel.clone();
         let completions = Arc::new(AtomicUsize::new(0));
         let observed = completions.clone();
-        let successor = ConversionWorker::new(config.clone()).unwrap()
-            .with_platform_tts(Arc::new(TestSystem { texts: spoken.clone() }))
+        let successor = ConversionWorker::new(config.clone())
+            .unwrap()
+            .with_platform_tts(Arc::new(TestSystem {
+                texts: spoken.clone(),
+            }))
             .with_control(control)
             .with_cancellation(cancel)
             .with_progress(Arc::new(move |event| {
@@ -3513,15 +3578,34 @@ mod tests {
                 observed.fetch_add(1, Ordering::AcqRel);
             }));
         request.job_id = "cancel-successor".into();
-        assert!(matches!(successor.run(request), Err(WorkerError::Cancelled)));
-        assert_eq!(successor.jobs.load("cancel-successor").unwrap().state, JobState::Cancelled);
+        assert!(matches!(
+            successor.run(request),
+            Err(WorkerError::Cancelled)
+        ));
+        assert_eq!(
+            successor.jobs.load("cancel-successor").unwrap().state,
+            JobState::Cancelled
+        );
         assert_eq!(completions.load(Ordering::Acquire), 0);
         assert_eq!(spoken.lock().unwrap().len(), speech_count);
-        assert!(!config.paths.output_dir.join("cancel-successor/manifest.json").exists());
+        assert!(!config
+            .paths
+            .output_dir
+            .join("cancel-successor/manifest.json")
+            .exists());
         assert_eq!(fs::read(&source).unwrap(), source_bytes);
-        assert_eq!(fs::read(chapter_audio_receipt_path(&source)).unwrap(), source_receipt);
-        assert_eq!(fs::read(config.paths.jobs_dir.join("cancel-predecessor.json")).unwrap(), source_state);
-        assert_eq!(fs::read(original_directory.join("manifest.json")).unwrap(), source_manifest);
+        assert_eq!(
+            fs::read(chapter_audio_receipt_path(&source)).unwrap(),
+            source_receipt
+        );
+        assert_eq!(
+            fs::read(config.paths.jobs_dir.join("cancel-predecessor.json")).unwrap(),
+            source_state
+        );
+        assert_eq!(
+            fs::read(original_directory.join("manifest.json")).unwrap(),
+            source_manifest
+        );
     }
 
     #[test]

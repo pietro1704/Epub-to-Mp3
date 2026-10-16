@@ -3961,7 +3961,9 @@ mod tests {
             let original_receipt = std::fs::read(&receipt).unwrap();
             let mut bytes = std::fs::read(audio).unwrap();
             let original_len = bytes.len();
-            *bytes.last_mut().expect("predecessor contains actual MP3 bytes") ^= 1;
+            *bytes
+                .last_mut()
+                .expect("predecessor contains actual MP3 bytes") ^= 1;
             std::fs::write(audio, &bytes).unwrap();
             assert_eq!(std::fs::metadata(audio).unwrap().len(), original_len as u64);
             assert_eq!(std::fs::read(receipt).unwrap(), original_receipt);
