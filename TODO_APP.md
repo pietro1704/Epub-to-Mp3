@@ -1612,3 +1612,10 @@ que aparecem. Para cada item:
 Pare e pergunte se um item depender de decisão de produto/escopo que não
 esteja clara neste arquivo (ex: qual plataforma priorizar no Flutter).
 ```
+
+## SAFE-20261016-HOST-CATERR — Host kernel panic response
+
+- Status: policy recorded; GitHub-only CI pending for this documentation PR.
+- Scope: persist a fail-closed response to the reported ARM64/T8010 `x86 CPU CATERR detected` panic and keep it distinct from Intel `SimMetalHost`/`IGGuC.cpp:2913`.
+- Acceptance: canonical instructions in `CLAUDE.md`, `docs/agent-workflow.md` and `ios/EpubToMp3/AGENTS.md` require stopping local process work after a new host panic, prohibit automatic retry/reboot/stress/hardware changes, permit process-free remote work, and preserve causal uncertainty; GitHub checks pass; no local commands or Simulator execution are used on the affected host.
+- Evidence: user supplied panic excerpt; no initiating process identified. ai-memory page `gotchas/host-kernel-caterr-panic.md` was written and read back.
