@@ -1,5 +1,11 @@
 # App delivery backlog
 
+## CI-20261016-CODEQL-SWIFT-TOOLSCOPE — Prevent nested build-phase tool installation
+
+- [ ] Owner: github_monitor_plan; real RED: Faber head `6359bc530a3ad73a1a1edb68ed4f1c012c54174d`, CodeQL run `38888265151`, macOS unit-test job `116931754664` failed in `Bundle linked ONNX Runtime` before CodeQL analysis. Its nested `mise exec -- ruby` loaded `ios/EpubToMp3/mise.toml` and attempted to install unprovisioned XcodeGen `2.46.0`; anonymous GitHub API exhaustion (`0/60`, HTTP 403) terminated the build. This was not a Swift compiler or inference failure.
+- Source fix scopes only the Swift job to `python,rust,ruby`, verifies the actual nested `mise ls --current --json` keyset from the Apple project directory, and authenticates the explicit toolchain installation using the existing workflow token without changing its permissions. Homebrew XcodeGen generation, all seven real Swift coverage categories, signing validation, targets, compiler and job limits remain intact.
+- Acceptance pending GitHub: nested keyset assertion passes, no XcodeGen auto-install occurs in bundling, all exact-head Swift builds and CodeQL analyses succeed. No local tests, builds, formatters or syntax checks executed. This worktree contains only this scoped workflow/TODO slice atop its explicit Faber dependency.
+
 ## APP-20261016-FABER-TESTPLAN-ENV — Forward explicit model readiness into the XCTest process
 
 - [ ] Owner: crash_guard_audit; declare only `EPUB2MP3_PIPER_TEST_MODEL_ROOT` in the existing Unit test plan runtime environment, expanding the already supplied build setting against its unchanged app target. Keep the scheme, test plan, explicit model download/checksums, positive inference assertions and mandatory `FABER_NATIVE` marker enabled.
