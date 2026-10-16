@@ -1,5 +1,12 @@
 # App delivery backlog
 
+## SAFE-20261016-IOS-HIGH-LEVEL-ROUTES — Exercise quarantined top-level iOS routes
+
+- [ ] Owner: root; explicitly cover the top-level `ios:run` Simulator mode and the `ios:test` no-device fallback, which delegate to already guarded Simulator child tasks.
+- Acceptance: on Intel hosted macOS, both routes return quarantine status 75 before any Simulator/task body launch and release the NativeJob lease; `ios:run` propagates a build failure before Simulator routing; `ios:test` preserves the available physical-device route. Tests use fake tool shims and never launch Xcode, a Simulator or a device.
+- Verification: exact-head GitHub Native Safety Actions only. These repository-route tests do not claim OS-wide interception or GPU stability.
+
+
 ## OPS-20261016-SAFE-DELIVERY — Integrate native containment and checked automation
 
 - [ ] Owner: root; preserve the original804/805/806 histories while composing Intel native containment, exact-head green merge enforcement and read-only PR regression/trusted health monitoring. Component source review approved the shared operational boundary; only TODO sections conflicted and all were retained.
