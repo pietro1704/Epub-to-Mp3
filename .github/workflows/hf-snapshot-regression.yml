@@ -57,22 +57,69 @@ jobs:
         run: |
           set -euo pipefail
           docker run --detach --name hf-snapshot-regression --publish 127.0.0.1:17860:7860 hf-snapshot-regression
+          ready=false
           for attempt in $(seq 1 30); do
-            if curl --max-time 3 --fail --silent http://127.0.0.1:17860/api/health > "$RUNNER_TEMP/hf-health.json"; then break; fi
+            if curl --max-time 3 --fail --silent http://127.0.0.1:17860/api/health > "$RUNNER_TEMP/hf-health.json"; then
+              ready=true
+              break
+            fi
             sleep 2
           done
+          if [[ "$ready" != true ]]; then
+            echo "::error::Container health endpoint did not become ready"
+            cat "$RUNNER_TEMP/hf-health.json" 2>/dev/null || true
+            docker logs --tail 100 hf-snapshot-regression 2>&1 || true
+            exit 1
+          fi
+
+          echo "Checking API health contract"
           curl --max-time 5 --fail --silent http://127.0.0.1:17860/api/health | jq -e '.status == "healthy" and .contract_version == "1"'
+          echo "Checking API capability contract"
           curl --max-time 5 --fail --silent http://127.0.0.1:17860/api/contract | jq -e '.backend == "rust" and (.capabilities | index("uploads") != null)'
-          curl --max-time 5 --fail --silent http://127.0.0.1:17860/ > "$RUNNER_TEMP/hf-index.html"
-          grep -q '<html' "$RUNNER_TEMP/hf-index.html"
-          # Vite emits this binary as a hashed asset. Read the actual built file path.
+
+          echo "Checking frontend root response"
+          root_status="$(curl --max-time 5 --silent --output "$RUNNER_TEMP/hf-index.html" --write-out '%{http_code}' http://127.0.0.1:17860/)"
+          root_bytes="$(wc -c < "$RUNNER_TEMP/hf-index.html" | tr -d ' ')"
+          echo "Root HTTP status=$root_status bytes=$root_bytes"
+          if [[ "$root_status" != 200 ]] || ! grep -qi '<html' "$RUNNER_TEMP/hf-index.html"; then
+            echo "::error::Frontend root did not return HTML"
+            head -c 1000 "$RUNNER_TEMP/hf-index.html" || true
+            exit 1
+          fi
+
+          echo "Locating built frontend WASM"
           docker exec hf-snapshot-regression sh -c 'find /app/web/dist -name "converter_wasm_bg*.wasm" -type f' > "$RUNNER_TEMP/hf-wasm-paths.txt"
-          test "$(wc -l < "$RUNNER_TEMP/hf-wasm-paths.txt")" -eq 1
+          cat "$RUNNER_TEMP/hf-wasm-paths.txt"
+          wasm_count="$(wc -l < "$RUNNER_TEMP/hf-wasm-paths.txt" | tr -d ' ')"
+          if [[ "$wasm_count" != 1 ]]; then
+            echo "::error::Expected exactly one built converter WASM; found $wasm_count"
+            docker exec hf-snapshot-regression sh -c 'find /app/web/dist -maxdepth 3 -type f | sort | head -100'
+            exit 1
+          fi
           wasm_path="$(cat "$RUNNER_TEMP/hf-wasm-paths.txt")"
           wasm_url="${wasm_path#/app/web/dist}"
-          curl --max-time 10 --fail --silent "http://127.0.0.1:17860$wasm_url" > "$RUNNER_TEMP/hf-served.wasm"
-          cmp web/src/wasm/converter_wasm_bg.wasm "$RUNNER_TEMP/hf-served.wasm"
-          docker exec hf-snapshot-regression sh -c 'test "$HOST" = 0.0.0.0; test -z "$(find /app /data -name "*.onnx" -print -quit)"'
+          echo "Checking served WASM URL $wasm_url"
+          wasm_status="$(curl --max-time 10 --silent --output "$RUNNER_TEMP/hf-served.wasm" --write-out '%{http_code}' "http://127.0.0.1:17860$wasm_url")"
+          wasm_bytes="$(wc -c < "$RUNNER_TEMP/hf-served.wasm" | tr -d ' ')"
+          echo "WASM HTTP status=$wasm_status bytes=$wasm_bytes"
+          if [[ "$wasm_status" != 200 ]]; then
+            echo "::error::Built WASM asset was not served successfully"
+            exit 1
+          fi
+          if ! cmp web/src/wasm/converter_wasm_bg.wasm "$RUNNER_TEMP/hf-served.wasm"; then
+            echo "::error::Served WASM bytes differ from the source asset"
+            sha256sum web/src/wasm/converter_wasm_bg.wasm "$RUNNER_TEMP/hf-served.wasm"
+            exit 1
+          fi
+
+          echo "Checking explicit bind address and absence of model weights"
+          docker exec hf-snapshot-regression sh -c 'test "$HOST" = 0.0.0.0'
+          if ! docker exec hf-snapshot-regression sh -c 'test -z "$(find /app /data -name "*.onnx" -print -quit)"'; then
+            echo "::error::Snapshot container unexpectedly contains ONNX model weights"
+            docker exec hf-snapshot-regression sh -c 'find /app /data -name "*.onnx" -type f'
+            exit 1
+          fi
+          echo "HF reconstructed snapshot container checks passed"
       - name: Retain bounded container diagnostics
         if: always()
         run: |
