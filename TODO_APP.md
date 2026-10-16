@@ -1,5 +1,11 @@
 # App delivery backlog
 
+## CI-20261016-IOS-BUILD-SIGNING — Keep unsigned CodeQL host identity consistent
+
+- [ ] Owner: github_monitor_plan; real RED: CodeQL `38875197584`, job `116889500305`, recovery head `b5fcb7a8eb9d3fd551b2b91acdfacba184a31009`. Swift compilation reached embedded Widget validation, which rejected its unsigned extension against the fictitious parent ad hoc identity supplied globally by the workflow.
+- Source fix removes only the global expanded signing identity. The iOS dylib bundler uses local ad hoc signing only when signing is explicitly disabled and no identity was supplied; enabled device signing still requires an identity, and explicit identities remain unchanged. Embedded binary validation and all seven Swift coverage categories remain enabled.
+- GitHub-only executable regressions cover copied dylib identity, paths with spaces, local ad hoc signing without changing the host setting, enabled signing without identity, and preserved explicit identities in both modes. Temporary fixtures replace verification/signing commands and do not certify Mach-O or Apple runtime behavior; the real CodeQL build remains required. No local tests/builds/formatters were executed.
+
 ## APP-20261016-ESPEAK-VENDOR-ASSETS — Restore required phoneme compiler inputs
 
 - [ ] Owner: crash_guard_audit; restore the 203 upstream WAV inputs omitted by the global audio ignore rule, with package and per-file SHA-256 provenance. Refresh the copied CMake source after a restored Cargo cache; retain phoneme compilation and actual Faber inference assertions.
