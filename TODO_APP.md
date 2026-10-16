@@ -1,5 +1,12 @@
 # App delivery backlog
 
+## APP-20261016-EDGE-ADAPTATION-FIXTURES — Restore valid local Edge protocol fixtures
+
+- [ ] Update both adaptive TTS WebSocket fixtures to emit length-prefixed `Path:audio`/`Content-Type:audio/mpeg` headers while preserving adaptive size, ordering, retry and cancellation assertions.
+- Owner: Rust fixture specialist; isolated `feature/fix-edge-adaptation-fixtures`.
+- Red evidence: GitHub CI run `38870071189` on `a87337fbc19f1901eddb6e4d5c6b1522f40b9c66` passed 149 core unit tests, 10 embedded-audio and 3 in-process-audio cases, then failed 7 of 8 adaptive TTS cases because obsolete zero-length fixture headers violated the production parser's required audio path.
+- Acceptance: no production protocol relaxation; a real local WebSocket negative regression must still reject binary audio with a missing path. Verification/formatting runs only on GitHub; no local test, build, probe or formatter executed.
+
 ## APP-20261016-CI-LEGACY-GUARDS — Reconcile legacy guard regression contracts
 
 - [ ] Owner: crash_guard_audit; acceptance: replace references to removed private resource APIs with the documented compatibility, lease and oldest-runtime selection contracts. Preserve canonical Ruby Intel quarantine independently in PR #804.
