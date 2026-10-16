@@ -103,12 +103,38 @@ pub type ProgressSink = Arc<dyn Fn(ProgressEvent) + Send + Sync>;
 pub type ChapterCompletionSink = Arc<dyn Fn(ChapterCompletionEvent) + Send + Sync>;
 pub type StreamingChunkSink = Arc<dyn Fn(usize, usize, &[u8]) -> bool + Send + Sync>;
 
+/// Per-invocation controls; defaults retain cache reuse and serial selection.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct ExecutionOptions {
+    pub clear_cache: bool,
+    pub force_reprocess: bool,
+    pub max_performance: bool,
+}
+
+impl ExecutionOptions {
+    fn chapter_parallelism(
+        self,
+        no_parallel: bool,
+        configured: usize,
+        maximum: usize,
+        cap: usize,
+    ) -> usize {
+        if no_parallel && !self.max_performance {
+            1
+        } else {
+            configured.min(maximum).min(cap).max(1)
+        }
+    }
+}
+
 pub struct ConversionWorker {
     pub config: AppConfig,
     pub jobs: JobManager,
     pub cancel: CancellationToken,
     pub progress: Option<ProgressSink>,
     pub chapter_completed: Option<ChapterCompletionSink>,
+    pub execution_options: ExecutionOptions,
+    pub piper_model: Option<Arc<piper::PreparedPiperModel>>,
     streaming_chunk: Option<StreamingChunkSink>,
     adaptive: Arc<AdaptiveThroughputController>,
     telemetry: Option<Telemetry>,
@@ -128,6 +154,8 @@ impl ConversionWorker {
             cancel: CancellationToken::default(),
             progress: None,
             chapter_completed: None,
+            execution_options: ExecutionOptions::default(),
+            piper_model: None,
             streaming_chunk: None,
             adaptive: Arc::new(AdaptiveThroughputController::default()),
             telemetry: None,
@@ -138,6 +166,14 @@ impl ConversionWorker {
             #[cfg(test)]
             test_edge: None,
         })
+    }
+    pub fn with_execution_options(mut self, options: ExecutionOptions) -> Self {
+        self.execution_options = options;
+        self
+    }
+    pub fn with_piper_model(mut self, model: Option<Arc<piper::PreparedPiperModel>>) -> Self {
+        self.piper_model = model;
+        self
     }
     pub fn with_platform_tts(mut self, provider: Arc<dyn PlatformTts>) -> Self {
         self.platform_tts = Some(provider);
@@ -280,7 +316,7 @@ impl ConversionWorker {
                     .first()
                     .and_then(|chapter| detect_language(&chapter.text))
             });
-        let parallelism = if request.no_parallel {
+        let parallelism = if request.no_parallel && !self.execution_options.max_performance {
             1
         } else {
             let configured = std::env::var("RUST_CHAPTER_PARALLELISM")
@@ -297,7 +333,7 @@ impl ConversionWorker {
                 .and_then(|value| value.parse().ok())
                 .filter(|value| *value > 0)
                 .unwrap_or(8);
-            configured.min(self.config.max_parallel).min(cap).max(1)
+            self.execution_options.chapter_parallelism(request.no_parallel, configured, self.config.max_parallel, cap)
         };
         let pool = rayon::ThreadPoolBuilder::new()
             .num_threads(parallelism)
@@ -314,17 +350,29 @@ impl ConversionWorker {
                 return Err(WorkerError::Cancelled);
             }
             let text_path = cache_dir.join(format!("{}.json", chapter.index.replace('.', "_")));
-            let text = cached_chapter_text(&text_path, &chapter.text)?;
+            let text = if self.execution_options.clear_cache {
+                cache::refresh_chapter_text(
+                    &self.config.paths.cache_dir,
+                    &book_key,
+                    &format!("{}.json", chapter.index.replace('.', "_")),
+                    &chapter.text,
+                )?
+            } else {
+                cached_chapter_text(&text_path, &chapter.text)?
+            };
             let stem = format!("{:04}-{}", position + 1, sanitize(&chapter.name));
             let mp3 = output_dir.join(format!("{stem}.mp3"));
             let language = detected_language;
             let engine = select_engine(request.engine.as_deref(), &self.config);
             let language = request.language.as_deref().or(language);
+            let prepared_identity = self.piper_model.as_ref().map(|model| model.cache_identity());
             let request_key = chapter_audio_request_key(
                 &book_key,
                 &chapter.index,
                 &text,
-                if self.platform_tts.is_some() && engine == "edge" {
+                if let Some(identity) = prepared_identity.as_deref().filter(|_| engine == "piper") {
+                    identity
+                } else if self.platform_tts.is_some() && engine == "edge" {
                     "edge+system-v2"
                 } else {
                     &engine
@@ -332,7 +380,8 @@ impl ConversionWorker {
                 request.voice.as_deref(),
                 language,
             )?;
-            let cached = chapter_audio_is_complete(&mp3, &request_key);
+            let cached = !self.execution_options.force_reprocess
+                && chapter_audio_is_complete(&mp3, &request_key);
             if cached {
                 if let Ok(receipt) =
                     cache::read_json::<ChapterAudioReceipt>(chapter_audio_receipt_path(&mp3))
@@ -358,7 +407,7 @@ impl ConversionWorker {
                 }
             }
             let stale_window_cancelled = std::sync::atomic::AtomicBool::new(false);
-            let audio_result = ensure_chapter_audio(&mp3, &request_key, |pending| {
+            let audio_result = ensure_chapter_audio_with_options(&mp3, &request_key, self.execution_options.force_reprocess, |pending| {
                 eprintln!("synthesizing chapter {}/{}", position + 1, total);
                 let synthesis = if self.platform_tts.is_some()
                     && matches!(engine.as_str(), "edge" | "system")
@@ -856,6 +905,11 @@ impl ConversionWorker {
                 "Piper is disabled on Android; Edge TTS is required".into(),
             ));
         }
+        if let Some(model) = &self.piper_model {
+            return model
+                .synthesize(text, out, &self.cancel)
+                .map_err(|error| WorkerError::Piper(error.to_string()));
+        }
         let model = piper_model.map(Path::to_path_buf).unwrap_or_else(|| {
             self.config
                 .paths
@@ -1055,7 +1109,16 @@ fn ensure_chapter_audio(
     request_key: &str,
     synthesize: impl FnOnce(&Path) -> Result<(), WorkerError>,
 ) -> Result<(), WorkerError> {
-    if chapter_audio_is_complete(output, request_key) {
+    ensure_chapter_audio_with_options(output, request_key, false, synthesize)
+}
+
+fn ensure_chapter_audio_with_options(
+    output: &Path,
+    request_key: &str,
+    force: bool,
+    synthesize: impl FnOnce(&Path) -> Result<(), WorkerError>,
+) -> Result<(), WorkerError> {
+    if !force && chapter_audio_is_complete(output, request_key) {
         return Ok(());
     }
     let parent = output
@@ -1068,6 +1131,9 @@ fn ensure_chapter_audio(
         .tempdir_in(parent)?;
     let pending = staging.path().join("chapter.mp3");
     synthesize(&pending)?;
+    if force {
+        audio::validate_audio(&pending, 100)?;
+    }
     let metadata = fs::metadata(&pending)?;
     if !metadata.is_file() || metadata.len() == 0 {
         return Err(WorkerError::Audio(audio::AudioError::Validation(
@@ -1217,6 +1283,44 @@ fn sanitize(value: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn performance_override_still_respects_configuration_and_platform_caps() {
+        let fast = ExecutionOptions { max_performance: true, ..ExecutionOptions::default() };
+        assert_eq!(ExecutionOptions::default().chapter_parallelism(true, 8, 8, 2), 1);
+        assert_eq!(fast.chapter_parallelism(true, 8, 8, 2), 2);
+        assert_eq!(fast.chapter_parallelism(true, 1, 8, 2), 1);
+        assert_eq!(fast.chapter_parallelism(true, 8, 1, 2), 1);
+        assert_eq!(fast.chapter_parallelism(true, 8, 8, 1), 1);
+    }
+
+    #[test]
+    fn forced_replacement_preserves_audio_and_receipt_on_failure_or_cancellation() {
+        let fixture = tempfile::tempdir().unwrap();
+        let output = fixture.path().join("selected.mp3");
+        ensure_chapter_audio(&output, "identity", |pending| {
+            fs::write(pending, test_system_wav())?;
+            Ok(())
+        }).unwrap();
+        let prior = fs::read(&output).unwrap();
+        let receipt = fs::read(chapter_audio_receipt_path(&output)).unwrap();
+        for cancel in [false, true] {
+            let result = ensure_chapter_audio_with_options(&output, "identity", true, |pending| {
+                fs::write(pending, b"partial invalid audio")?;
+                if cancel { Err(WorkerError::Cancelled) } else { Ok(()) }
+            });
+            assert!(result.is_err());
+            assert_eq!(fs::read(&output).unwrap(), prior);
+            assert_eq!(fs::read(chapter_audio_receipt_path(&output)).unwrap(), receipt);
+        }
+        ensure_chapter_audio_with_options(&output, "identity", true, |pending| {
+            fs::write(pending, test_system_wav_at_rate(16_000))?;
+            Ok(())
+        }).unwrap();
+        assert_ne!(fs::read(&output).unwrap(), prior);
+        assert!(chapter_audio_is_complete(&output, "identity"));
+        assert_eq!(fs::read_dir(fixture.path()).unwrap().count(), 2);
+    }
 
     struct TestSystem {
         texts: Arc<Mutex<Vec<String>>>,
