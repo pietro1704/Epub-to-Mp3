@@ -1,6 +1,7 @@
 """Host fixtures only. Mocks never establish Apple trust or runtime compatibility."""
 
 import importlib.util
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -427,12 +428,14 @@ class ArchiveSafetyTests(unittest.TestCase):
     def test_payload_expansion_follows_successful_trust_and_declared_disk_budget(self):
         calls = []
         trusted = REAL_APPLE_SIGNATURE.encode()
-        def command(arguments, **_):
+        def command(arguments, **options):
             calls.append(arguments[1])
             if arguments[1] == "--check-signature":
                 return trusted
             if arguments[1] == "--payload-files":
-                return b"Library/runtime/file\n"
+                self.assertEqual(options["timeout"], 90)
+                options["consumer"].feed(b"Library/runtime/file\n")
+                return options["consumer"].finish()
             destination = Path(arguments[-1])
             destination.mkdir()
             if arguments[1] == "--expand":
@@ -567,7 +570,8 @@ class ArchiveSafetyTests(unittest.TestCase):
                 raise archive.Blocked("fixture monitor cancellation")
         try:
             with self.assertRaisesRegex(archive.Blocked, "fixture monitor cancellation"):
-                self.inspector.command([sys.executable, "-c", parent_script], timeout=10, monitor=cancel_when_started)
+                self.inspector.command([sys.executable, "-c", parent_script], timeout=10,
+                                       monitor=cancel_when_started, consumer=archive.PayloadListing())
             self.assertIsNone(foreign.poll())
             self.assertTrue(pidfile.exists())
             pid = json.loads(pidfile.read_text())
@@ -593,6 +597,115 @@ class ArchiveSafetyTests(unittest.TestCase):
         with self.assertRaisesRegex(archive.Blocked, "time/log budget"):
             self.inspector.command([sys.executable, "-c", "import time; time.sleep(30)"], timeout=0.1)
         self.assertFalse((self.inspector.reports / "active-command.json").exists())
+
+    def test_real_stream_larger_than_log_budget_retains_only_aggregate_receipt(self):
+        line = b"./Contents/" + b"x" * 110 + b"\n"
+        count = 150_000
+        self.assertGreater(len(line) * count, archive.MAX_LOG)
+        script = f"import sys; line={line!r}; [sys.stdout.buffer.write(line*1000) for _ in range({count // 1000})]"
+        listing = archive.PayloadListing()
+        result = self.inspector.command([sys.executable, "-c", script], timeout=20, consumer=listing)
+        digest = hashlib.sha256()
+        for _ in range(count):
+            digest.update(line)
+        self.assertEqual(result, count)
+        self.assertEqual(self.inspector.report["payload_listing"], {
+            "entries": count, "bytes": count * len(line),
+            "sha256_observed_listing_receipt": digest.hexdigest(), "complete": True})
+        self.assertEqual(listing.pending, b"")
+        self.assertEqual(next(self.inspector.reports.glob("*-*.log")).read_bytes(), b"")
+        self.assertNotIn("Contents", json.dumps(self.inspector.report["payload_listing"]))
+
+    def test_incremental_listing_validates_fragmented_utf8_paths_and_finite_budgets(self):
+        listing = archive.PayloadListing()
+        payload = "./Contents/capítulo\n.\n".encode()
+        for value in payload:
+            listing.feed(bytes([value]))
+        self.assertEqual(listing.finish(), 2)
+        for payload in [b"", b"unfinished", b"/absolute\n", b"./a/../b\n", b"nul\0name\n",
+                        b"control\tname\n", b"bad\xff\n", b"\n", b"x" * (archive.MAX_LISTING_LINE + 1)]:
+            with self.subTest(payload=payload[:30]):
+                listing = archive.PayloadListing()
+                with self.assertRaises(archive.Blocked):
+                    listing.feed(payload)
+                    listing.finish()
+                self.assertFalse(listing.complete)
+        for constant, limit, payload in [("MAX_LISTING_BYTES", 3, b"four\n"),
+                                          ("MAX_LISTING_ENTRIES", 1, b"one\ntwo\n")]:
+            with patch.object(archive, constant, limit):
+                listing = archive.PayloadListing()
+                with self.assertRaises(archive.Blocked):
+                    listing.feed(payload)
+                self.assertFalse(listing.receipt()["complete"])
+
+    def test_real_stream_errors_keep_partial_receipt_and_do_not_finalize(self):
+        scripts = [
+            "import sys; print('valid',flush=True); sys.exit(7)",
+            "print('../escape',flush=True)",
+            "import sys,time; print('valid',flush=True); time.sleep(30)",
+            "import sys; print('unterminated',end='',flush=True)",
+        ]
+        for script in scripts:
+            with self.subTest(script=script):
+                with self.assertRaises(archive.Blocked):
+                    self.inspector.command([sys.executable, "-c", script], timeout=2, consumer=archive.PayloadListing())
+                self.assertFalse(self.inspector.report["payload_listing"]["complete"])
+                self.assertGreater(self.inspector.report["payload_listing"]["bytes"], 0)
+                self.assertFalse((self.inspector.reports / "active-command.json").exists())
+
+    def test_receipt_write_failure_does_not_mask_stream_validation_failure(self):
+        class FailingReceipt(dict):
+            def __setitem__(self, key, value):
+                if key == "payload_listing":
+                    raise OSError("receipt disk failure")
+                super().__setitem__(key, value)
+
+        self.inspector.report = FailingReceipt(self.inspector.report)
+        with self.assertRaisesRegex(archive.Blocked, "Unsafe package payload path"):
+            self.inspector.command(
+                [sys.executable, "-c", "print('../escape',flush=True)"],
+                timeout=2, consumer=archive.PayloadListing())
+        self.assertFalse((self.inspector.reports / "active-command.json").exists())
+
+    def test_successful_stream_requires_receipt_persistence(self):
+        class FailingReceipt(dict):
+            def __setitem__(self, key, value):
+                if key == "payload_listing":
+                    raise OSError("receipt disk failure")
+                super().__setitem__(key, value)
+
+        self.inspector.report = FailingReceipt(self.inspector.report)
+        with self.assertRaisesRegex(OSError, "receipt disk failure"):
+            self.inspector.command(
+                [sys.executable, "-c", "print('valid',flush=True)"],
+                timeout=2, consumer=archive.PayloadListing())
+        self.assertFalse((self.inspector.reports / "active-command.json").exists())
+
+    def test_real_stream_waits_for_eof_when_exited_leader_has_pipe_holding_descendant(self):
+        # The descendant inherits stdout; a leader exit must not finalize early.
+        child = "import time; time.sleep(30)"
+        script = f"import subprocess,sys; print('valid',flush=True); subprocess.Popen([sys.executable,'-c',{child!r}])"
+        with self.assertRaisesRegex(archive.Blocked, "time/log budget"):
+            self.inspector.command([sys.executable, "-c", script], timeout=2, consumer=archive.PayloadListing())
+        self.assertFalse(self.inspector.report["payload_listing"]["complete"])
+        self.assertFalse((self.inspector.reports / "active-command.json").exists())
+
+    def test_verified_signature_cannot_expand_after_real_listing_failure(self):
+        original = self.inspector.command
+        calls = []
+        def command(arguments, **options):
+            calls.append(arguments[1])
+            if arguments[1] == "--check-signature":
+                return REAL_APPLE_SIGNATURE.encode()
+            if arguments[1] == "--payload-files":
+                return original([sys.executable, "-c", "print('../escape',flush=True)"], **options)
+            self.fail("Apple payload expansion was reached after rejected listing")
+        self.inspector.command = command
+        with self.assertRaises(archive.Blocked):
+            self.inspector.verify_and_expand(self.inspector.mount / "runtime.pkg")
+        self.assertEqual(calls, ["--check-signature", "--payload-files"])
+        self.assertTrue(self.inspector.report["signature_verified"])
+        self.assertFalse(self.inspector.report["payload_listing"]["complete"])
 
 
 if __name__ == "__main__":

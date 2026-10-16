@@ -8,6 +8,7 @@ from pathlib import Path, PurePosixPath
 import platform
 import plistlib
 import re
+import selectors
 import shutil
 import signal
 import struct
@@ -35,6 +36,10 @@ RESERVE = 8 * GIB
 MAX_PAYLOAD = 24 * GIB
 MAX_LOG = 16 * 1024**2
 MAX_HEADERS = 64 * 1024
+MAX_LISTING_BYTES = 64 * 1024**2
+MAX_LISTING_ENTRIES = 250_000
+MAX_LISTING_LINE = 4096
+STREAM_CHUNK = 64 * 1024
 MARKER = "legacy-ios-archive-owned-v1\n"
 
 
@@ -142,14 +147,58 @@ def signature_gate(output):
     return fingerprints
 
 
+class PayloadListing:
+    """Bounded incremental path validation; the digest is an observed receipt only."""
+
+    def __init__(self):
+        self.pending = b""
+        self.entries = 0
+        self.bytes = 0
+        self.digest = hashlib.sha256()
+        self.complete = False
+
+    def feed(self, chunk):
+        if len(chunk) > STREAM_CHUNK:
+            raise Blocked("Payload listing chunk exceeds its read budget")
+        self.bytes += len(chunk)
+        self.digest.update(chunk)
+        if self.bytes > MAX_LISTING_BYTES:
+            raise Blocked("Payload listing exceeds its byte budget")
+        self.pending += chunk
+        while b"\n" in self.pending:
+            line, self.pending = self.pending.split(b"\n", 1)
+            if len(line) > MAX_LISTING_LINE:
+                raise Blocked("Payload listing path exceeds its line budget")
+            try:
+                name = line.decode("utf-8", errors="strict")
+            except UnicodeDecodeError as error:
+                raise Blocked("Payload listing contains invalid UTF-8") from error
+            if (not name or name.startswith("/") or ".." in PurePosixPath(name).parts or
+                    any(ord(character) < 32 or ord(character) == 127 for character in name)):
+                raise Blocked("Unsafe package payload path")
+            self.entries += 1
+            if self.entries > MAX_LISTING_ENTRIES:
+                raise Blocked("Payload listing exceeds its entry budget")
+        if len(self.pending) > MAX_LISTING_LINE:
+            raise Blocked("Payload listing path exceeds its line budget")
+
+    def finish(self):
+        if self.pending or not self.entries:
+            raise Blocked("Missing or incomplete package payload listing")
+        self.complete = True
+        return self.entries
+
+    def receipt(self):
+        return {"entries": self.entries, "bytes": self.bytes,
+                "sha256_observed_listing_receipt": self.digest.hexdigest(), "complete": self.complete}
+
+
 def safe_payload_listing(output):
-    entries = output.splitlines()
-    if not entries or len(entries) > 250_000:
-        raise Blocked("Missing or excessive package payload listing")
-    for name in entries:
-        if not name or name.startswith("/") or ".." in PurePosixPath(name).parts or "\x00" in name:
-            raise Blocked("Unsafe package payload path")
-    return len(entries)
+    listing = PayloadListing()
+    encoded = output.encode("utf-8")
+    for offset in range(0, len(encoded), STREAM_CHUNK):
+        listing.feed(encoded[offset:offset + STREAM_CHUNK])
+    return listing.finish()
 
 
 def declared_payload(directory):
@@ -262,30 +311,69 @@ class Inspector:
             pass
         process.wait(timeout=2)
 
-    def command(self, arguments, timeout=60, monitor=None, allow_failure=False):
+    def command(self, arguments, timeout=60, monitor=None, allow_failure=False, consumer=None):
+        if consumer is not None and allow_failure:
+            raise Blocked("Streaming validation requires successful process completion")
         self.sequence += 1
         log = self.reports / f"{self.sequence:02d}-{Path(arguments[0]).name}.log"
         deadline = time.monotonic() + timeout
         with log.open("xb") as output:
-            process = subprocess.Popen(arguments, stdout=output, stderr=subprocess.STDOUT,
+            process = subprocess.Popen(arguments, stdout=subprocess.PIPE if consumer else output,
+                                       stderr=output if consumer else subprocess.STDOUT,
                                        stdin=subprocess.DEVNULL, start_new_session=True,
                                        env={**os.environ, "LC_ALL": "C"})
             active = self.reports / "active-command.json"
+            selector = selectors.DefaultSelector() if consumer else None
             try:
                 active.write_text(json.dumps({"pid": process.pid, "tool": Path(arguments[0]).name}))
-                while process.poll() is None:
+                if consumer:
+                    os.set_blocking(process.stdout.fileno(), False)
+                    selector.register(process.stdout, selectors.EVENT_READ)
+                while process.poll() is None or (selector is not None and selector.get_map()):
                     if time.monotonic() >= deadline or log.stat().st_size > MAX_LOG:
                         raise Blocked("Owned command exceeded its time/log budget")
                     if monitor:
                         monitor()
-                    time.sleep(0.1)
+                    if selector is None:
+                        time.sleep(0.1)
+                    else:
+                        for key, _ in selector.select(timeout=0.1):
+                            try:
+                                chunk = os.read(key.fd, STREAM_CHUNK)
+                            except BlockingIOError:
+                                continue
+                            if chunk:
+                                consumer.feed(chunk)
+                            else:
+                                selector.unregister(key.fileobj)
                 if process.returncode != 0 and not allow_failure:
                     raise Blocked(f"{Path(arguments[0]).name} failed; see {log.name}")
+                if log.stat().st_size > MAX_LOG:
+                    raise Blocked("Command output exceeded the metadata budget")
+                if consumer:
+                    consumer.finish()
             finally:
-                self.stop(process)
-                active.unlink(missing_ok=True)
+                try:
+                    self.stop(process)
+                    active.unlink(missing_ok=True)
+                finally:
+                    if selector is not None:
+                        selector.close()
+                        process.stdout.close()
+                        if sys.exc_info()[0] is not None:
+                            consumer.complete = False
+                        unwinding = sys.exc_info()[0] is not None
+                        try:
+                            self.report["payload_listing"] = consumer.receipt()
+                        except Exception:
+                            # Never replace the original process/validation error,
+                            # but require a receipt before successful expansion.
+                            if not unwinding:
+                                raise
         if log.stat().st_size > MAX_LOG:
             raise Blocked("Command output exceeded the metadata budget")
+        if consumer:
+            return consumer.entries
         result = log.read_bytes()
         return (result, process.returncode) if allow_failure else result
 
@@ -433,8 +521,8 @@ class Inspector:
         output = self.command(["/usr/sbin/pkgutil", "--check-signature", str(package)], timeout=90)
         self.report["certificate_sha256"] = signature_gate(output.decode())
         self.report["signature_verified"] = True
-        listing = self.command(["/usr/sbin/pkgutil", "--payload-files", str(package)], timeout=90)
-        self.report["payload_file_count"] = safe_payload_listing(listing.decode())
+        self.report["payload_file_count"] = self.command(
+            ["/usr/sbin/pkgutil", "--payload-files", str(package)], timeout=90, consumer=PayloadListing())
         disk_gate(self.root, SIZE)
         flat = self.root / "flat"
         self.command(["/usr/sbin/pkgutil", "--expand", str(package), str(flat)],
