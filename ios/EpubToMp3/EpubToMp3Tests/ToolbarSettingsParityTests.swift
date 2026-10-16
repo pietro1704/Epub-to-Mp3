@@ -95,24 +95,26 @@ final class ToolbarSettingsParityTests: XCTestCase {
         let (settings, defaults) = make()
         XCTAssertFalse(settings.selectableSecondaryAudioEngines.contains(.edge))
         settings.secondaryAudioEngine = .edge
-        XCTAssertNil(settings.ttsPreferences.secondary, "Unconsented Edge must never reach conversion preferences.")
+        XCTAssertNil(settings.conversionOptions.ttsPreferences?.secondary, "Unconsented Edge must never reach conversion preferences.")
+        XCTAssertEqual(settings.conversionOptions.ttsPreferences?.allowOnlineFallback, false)
 
         settings.allowOnlineAudioFallback = true
         XCTAssertTrue(settings.selectableSecondaryAudioEngines.contains(.edge))
         settings.secondaryAudioEngine = .edge
-        XCTAssertEqual(settings.ttsPreferences.secondary?.engine, "edge")
+        XCTAssertEqual(settings.conversionOptions.ttsPreferences?.secondary?.engine, "edge")
         XCTAssertEqual(defaults.string(forKey: "secondaryAudioEngine"), "edge")
 
         settings.allowOnlineAudioFallback = false
         XCTAssertNil(settings.secondaryAudioEngine)
         XCTAssertNil(defaults.string(forKey: "secondaryAudioEngine"))
-        XCTAssertNil(settings.ttsPreferences.secondary)
+        XCTAssertNil(settings.conversionOptions.ttsPreferences?.secondary)
     }
 
     func testLegacyUnconsentedEdgeSecondaryIsMigratedOnLoad() {
         let suite = "Toolbar.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!
         defaults.removePersistentDomain(forName: suite)
+        defer { defaults.removePersistentDomain(forName: suite) }
         defaults.set("edge", forKey: "secondaryAudioEngine")
         defaults.set(false, forKey: "allowOnlineAudioFallback")
 
