@@ -146,8 +146,24 @@ fn force_and_clear_apply_only_to_selected_chapter_through_actual_worker() {
         let job = if enabled { "forced-job" } else { "resume-job" };
         let output = paths.output_dir.join(job);
         fs::create_dir_all(&output).unwrap();
+        let baseline = ConversionWorker::new(AppConfig::from_paths(paths.clone())).unwrap();
+        baseline
+            .run(ConversionRequest {
+                input: input.clone(),
+                job_id: job.into(),
+                engine: Some("piper".into()),
+                voice: None,
+                language: None,
+                piper_model: None,
+                piper_config: None,
+                chapter_indices: Some(vec!["position:1".into()]),
+                no_parallel: true,
+            })
+            .unwrap();
+        calls.lock().unwrap().clear();
+        baseline.jobs.delete(job).unwrap();
         let selected_audio = output.join("0001-b.mp3");
-        fs::write(&selected_audio, waveform()).unwrap();
+        let prior_audio = fs::read(&selected_audio).unwrap();
         let other_audio = [output.join("0001-a.mp3"), output.join("0001-c.mp3")];
         for path in &other_audio {
             fs::write(path, b"unselected audio").unwrap();
@@ -167,6 +183,8 @@ fn force_and_clear_apply_only_to_selected_chapter_through_actual_worker() {
                 input: input.clone(),
                 job_id: job.into(),
                 engine: Some("piper".into()),
+                piper_model: None,
+                piper_config: None,
                 voice: None,
                 language: None,
                 chapter_indices: Some(vec!["position:1".into()]),
@@ -176,7 +194,11 @@ fn force_and_clear_apply_only_to_selected_chapter_through_actual_worker() {
         assert_eq!(result.chapters.len(), 1);
         assert_eq!(result.chapters[0].source_index, 1);
         assert_eq!(calls.lock().unwrap().len(), usize::from(enabled));
-        assert_eq!(fs::read(&selected_audio).unwrap()[44], u8::from(enabled));
+        let resulting_audio = fs::read(&selected_audio).unwrap();
+        assert!(!resulting_audio.is_empty());
+        if !enabled {
+            assert_eq!(resulting_audio, prior_audio);
+        }
         assert_eq!(
             cache::read_json::<String>(&selected_cache).unwrap(),
             parsed.chapters[1].text
@@ -300,6 +322,8 @@ fn explicit_model_reaches_worker_thread_without_environment_override() {
             input,
             job_id: "explicit-model-job".into(),
             engine: Some("piper".into()),
+            piper_model: None,
+            piper_config: None,
             voice: None,
             language: None,
             chapter_indices: Some(vec!["position:1".into()]),

@@ -2788,26 +2788,6 @@ mod tests {
         file
     }
 
-    fn write_cached_wav(path: &Path) {
-        let sample_rate = 8_000u32;
-        let pcm = vec![0u8; sample_rate as usize * 2];
-        let mut bytes = Vec::new();
-        bytes.extend_from_slice(b"RIFF");
-        bytes.extend_from_slice(&(36 + pcm.len() as u32).to_le_bytes());
-        bytes.extend_from_slice(b"WAVEfmt ");
-        bytes.extend_from_slice(&16u32.to_le_bytes());
-        bytes.extend_from_slice(&1u16.to_le_bytes());
-        bytes.extend_from_slice(&1u16.to_le_bytes());
-        bytes.extend_from_slice(&sample_rate.to_le_bytes());
-        bytes.extend_from_slice(&(sample_rate * 2).to_le_bytes());
-        bytes.extend_from_slice(&2u16.to_le_bytes());
-        bytes.extend_from_slice(&16u16.to_le_bytes());
-        bytes.extend_from_slice(b"data");
-        bytes.extend_from_slice(&(pcm.len() as u32).to_le_bytes());
-        bytes.extend_from_slice(&pcm);
-        std::fs::write(path, bytes).unwrap();
-    }
-
     struct ControlCallbackFixture {
         handle: *mut ConverterJobControl,
         chapters: Vec<usize>,
@@ -2948,6 +2928,56 @@ mod tests {
         run_cached_controlled_ffi(true);
     }
 
+    #[test]
+    fn legacy_controlled_ffi_persists_pre_cancelled_job_without_synthesis() {
+        let book = fixture();
+        let root = tempfile::tempdir().unwrap();
+        let directory = root.path().join("pre-cancelled-job");
+        let input = CString::new(book.path().to_str().unwrap()).unwrap();
+        let output = CString::new(directory.to_str().unwrap()).unwrap();
+        let job_id = CString::new("pre-cancelled-job").unwrap();
+        let calls = std::sync::atomic::AtomicUsize::new(0);
+        unsafe {
+            let session = converter_session_open(input.as_ptr());
+            assert!(!session.is_null());
+            assert!(converter_session_set_platform_tts_v1(
+                session,
+                Some(platform_test_speech),
+                (&calls as *const std::sync::atomic::AtomicUsize)
+                    .cast_mut()
+                    .cast(),
+            ));
+            let control = converter_job_control_create();
+            assert!(!control.is_null());
+            converter_job_control_cancel(control);
+            let response = converter_session_convert_controlled_job_json(
+                session,
+                output.as_ptr(),
+                job_id.as_ptr(),
+                0,
+                -1,
+                None,
+                None,
+                ptr::null_mut(),
+                control,
+            );
+            assert!(response.is_null());
+            let error = converter_last_error();
+            let message = CStr::from_ptr(error).to_string_lossy().into_owned();
+            converter_string_free(error);
+            assert!(message.contains("cancelled"), "actual error: {message}");
+            assert_eq!(calls.load(std::sync::atomic::Ordering::Relaxed), 0);
+            let job: serde_json::Value = serde_json::from_slice(
+                &std::fs::read(root.path().join(".jobs/pre-cancelled-job.json")).unwrap(),
+            )
+            .unwrap();
+            assert_eq!(job["state"], "cancelled");
+            assert!(!directory.join("manifest.json").exists());
+            converter_job_control_free(control);
+            converter_session_free(session);
+        }
+    }
+
     fn run_cached_controlled_ffi(cancel_on_first: bool) {
         let book = fixture_chapters(3);
         let root = tempfile::tempdir().unwrap();
@@ -2956,16 +2986,50 @@ mod tests {
         let input = CString::new(book.path().to_str().unwrap()).unwrap();
         let output = CString::new(directory.to_str().unwrap()).unwrap();
         let job_id = CString::new("controlled-job").unwrap();
+        let options = CString::new(r#"{"engine":"system","language":"pt-BR"}"#).unwrap();
+        let calls = std::sync::atomic::AtomicUsize::new(0);
         unsafe {
             let session = converter_session_open(input.as_ptr());
             assert!(!session.is_null());
-            for (index, chapter) in (*session).session.metadata().chapters.iter().enumerate() {
-                assert!(chapter
-                    .name
-                    .chars()
-                    .all(|c| c.is_alphanumeric() || matches!(c, '-' | '_' | ' ' | '.')));
-                write_cached_wav(&directory.join(format!("{:04}-{}.mp3", index + 1, chapter.name)));
-            }
+            assert!(converter_session_set_platform_tts_v1(
+                session,
+                Some(platform_test_speech),
+                (&calls as *const std::sync::atomic::AtomicUsize)
+                    .cast_mut()
+                    .cast(),
+            ));
+            // Populate validated audio and request receipts through the real FFI
+            // pipeline. A bare WAV with an MP3 suffix is not a reusable cache.
+            let warm = converter_session_convert_job_options_json_v1(
+                session,
+                output.as_ptr(),
+                job_id.as_ptr(),
+                options.as_ptr(),
+                0,
+                -1,
+                None,
+                None,
+                ptr::null_mut(),
+            );
+            assert!(!warm.is_null(), "offline fixture conversion must succeed");
+            converter_string_free(warm);
+            assert!(calls.load(std::sync::atomic::Ordering::Relaxed) > 0);
+            let cached_audio: Vec<_> = std::fs::read_dir(&directory)
+                .unwrap()
+                .map(|entry| entry.unwrap().path())
+                .filter(|path| path.extension() == Some(std::ffi::OsStr::new("mp3")))
+                .map(|path| {
+                    converter_core::audio::validate_audio(&path, 1).unwrap();
+                    let receipt = path.with_extension("mp3.complete.json");
+                    let bytes = std::fs::read(&path).unwrap();
+                    let receipt_bytes = std::fs::read(&receipt).unwrap();
+                    (path, bytes, receipt, receipt_bytes)
+                })
+                .collect();
+            assert_eq!(cached_audio.len(), 3);
+            // Retain artifacts while simulating recovery without a job record.
+            std::fs::remove_file(root.path().join(".jobs/controlled-job.json")).unwrap();
+            calls.store(0, std::sync::atomic::Ordering::Relaxed);
             let control = converter_job_control_create();
             assert!(!control.is_null());
             assert!(converter_job_control_prioritize(control, 2));
@@ -2976,14 +3040,16 @@ mod tests {
                 freed: false,
                 recovery_rejected: false,
             };
-            let response = converter_session_convert_controlled_job_json(
+            let response = converter_session_convert_streaming_job_options_json_v1(
                 session,
                 output.as_ptr(),
                 job_id.as_ptr(),
+                options.as_ptr(),
                 0,
                 -1,
                 None,
                 Some(controlled_chapter_callback),
+                None,
                 &mut fixture as *mut ControlCallbackFixture as *mut c_void,
                 control,
             );
@@ -3015,6 +3081,15 @@ mod tests {
                 fixture.recovery_rejected,
                 "Recovery source cannot change after queue attachment"
             );
+            assert_eq!(
+                calls.load(std::sync::atomic::Ordering::Relaxed),
+                0,
+                "controlled conversion must reuse verified audio without synthesis"
+            );
+            for (path, bytes, receipt, receipt_bytes) in cached_audio {
+                assert_eq!(std::fs::read(path).unwrap(), bytes);
+                assert_eq!(std::fs::read(receipt).unwrap(), receipt_bytes);
+            }
             let job: serde_json::Value = serde_json::from_slice(
                 &std::fs::read(root.path().join(".jobs/controlled-job.json")).unwrap(),
             )

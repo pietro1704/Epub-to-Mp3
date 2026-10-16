@@ -1,0 +1,72 @@
+name: Rust Dependency Audit
+
+on:
+  pull_request:
+    branches: [master]
+    paths:
+      - Cargo.lock
+      - '**/Cargo.toml'
+      - .github/workflows/rust-dependency-audit.yml
+  push:
+    branches: [master]
+    paths:
+      - Cargo.lock
+      - '**/Cargo.toml'
+      - .github/workflows/rust-dependency-audit.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rust-dependency-audit-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      MISE_ENABLE_TOOLS: rust
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Install mise
+        uses: jdx/mise-action@v5
+        with:
+          version: 2026.9.14
+          install: false
+      - name: Install Rust toolchain
+        run: mise install
+      - name: Verify locked dependency resolution
+        run: mise exec -- cargo metadata --locked --format-version 1 > "$RUNNER_TEMP/cargo-metadata.json"
+      - name: Install pinned auditor
+        run: mise exec -- cargo install cargo-audit --version 0.22.2 --locked
+      - name: Audit exact checked-out lockfile
+        id: audit
+        run: |
+          mkdir -p audit-report
+          jq -n --arg commit "$(git rev-parse HEAD)" \
+            --arg workflow_sha "$GITHUB_SHA" --arg run_id "$GITHUB_RUN_ID" \
+            '{commit: $commit, workflow_sha: $workflow_sha, run_id: $run_id}' \
+            > audit-report/provenance.json
+          mise exec -- cargo audit --json > audit-report/cargo-audit.json
+      - name: Verify targeted rustls advisories are absent
+        if: always() && steps.audit.outcome != 'skipped'
+        run: |
+          jq -e '
+            (.vulnerabilities.list | type == "array") and
+            ([.vulnerabilities.list[] | .advisory.id |
+              select(. == "RUSTSEC-2026-0346" or . == "RUSTSEC-2026-0347" or
+                     . == "RUSTSEC-2026-0348" or . == "RUSTSEC-2026-0349")]
+             | length == 0)
+          ' audit-report/cargo-audit.json
+      - name: Retain audit evidence
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: rust-dependency-audit-${{ github.sha }}
+          path: audit-report/
+          if-no-files-found: error
+          retention-days: 14
