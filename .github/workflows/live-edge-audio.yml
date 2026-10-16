@@ -1,0 +1,38 @@
+name: Live Edge audio
+
+# Manual dispatch is explicit consent for real provider calls. A 403 or outage
+# fails this workflow; normal PR checks use deterministic offline audio instead.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  live-edge-audio:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Install explicit test dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ffmpeg
+          python -m pip install 'edge-tts>=7.2.8' pytest pytest-asyncio
+      - name: Run actual Edge audio integration without swallowing provider errors
+        env:
+          RUN_LIVE_EDGE_AUDIO_TESTS: '1'
+        run: |
+          python -m pytest python_app/tests/test_audio_pause_integration.py::TestEdgeOutputAudioProperties python_app/tests/test_audio_pause_integration.py::TestEdgeFingerprintIsConsistent --junitxml=live-edge-audio.xml
+      - name: Retain actual live-provider result
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: live-edge-audio-result
+          path: live-edge-audio.xml
+          if-no-files-found: warn
