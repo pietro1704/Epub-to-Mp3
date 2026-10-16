@@ -1,5 +1,11 @@
 # App delivery backlog
 
+## IOS-FIX-FFI-TESTS — Isolate unavailable-artifact native adapter tests
+
+- [ ] Owner: crash_workflow_audit; baseline Faber `6359bc530a`, preserving the existing test-only fixture diff. Use explicit missing/invalid library URLs, owned temporary file markers and unchanged ABI assertions; never discover a shipped dylib while testing an unavailable adapter or request an online model.
+- Add a positive catalog control against the genuinely built/bundled Rust library: the real bundle must list Faber while an explicit missing override still returns typed unavailability and leaves fixture bytes unchanged. No synthesis, model downloads, Simulator or GUI acceptance claim.
+- Proposed focused GitHub macOS/Xcode 16.4 workflow builds the real FFI, runs only these five XCTest cases with ad-hoc signing, and retains test reports/logs. Verification remains pending; no local builds, tests, formatter, apps or Simulator actions executed.
+
 ## APP-20261016-FABER-TESTPLAN-ENV — Forward explicit model readiness into the XCTest process
 
 - [ ] Owner: crash_guard_audit; declare only `EPUB2MP3_PIPER_TEST_MODEL_ROOT` in the existing Unit test plan runtime environment, expanding the already supplied build setting against its unchanged app target. Keep the scheme, test plan, explicit model download/checksums, positive inference assertions and mandatory `FABER_NATIVE` marker enabled.
