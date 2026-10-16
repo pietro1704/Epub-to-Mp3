@@ -1706,9 +1706,7 @@ fn default_edge_voice(language: Option<&str>) -> &'static str {
     }
 }
 
-fn ensure_android_piper_runtime(
-    status: piper::PiperRuntimeStatus,
-) -> Result<(), WorkerError> {
+fn ensure_android_piper_runtime(status: piper::PiperRuntimeStatus) -> Result<(), WorkerError> {
     if !status.runtime_loaded || !status.abi_compatible {
         return Err(WorkerError::Piper(
             "Embedded Piper runtime is unavailable or ABI-incompatible on Android".into(),
@@ -1767,7 +1765,9 @@ mod tests {
                 engine_ready: false,
             },
         ] {
-            let error = ensure_android_piper_runtime(status).unwrap_err().to_string();
+            let error = ensure_android_piper_runtime(status)
+                .unwrap_err()
+                .to_string();
             assert!(error.contains("unavailable or ABI-incompatible"), "{error}");
             assert!(!error.contains("Edge"), "{error}");
         }
