@@ -283,7 +283,7 @@ jobs:
           mise exec -- ruby scripts/test_ios_bundle_signing.rb | tee .reports/ios-bundle-signing/contracts.log
       - name: Retain signing contract evidence
         if: always()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: ios-build-only-signing-contracts
           path: .reports/ios-bundle-signing

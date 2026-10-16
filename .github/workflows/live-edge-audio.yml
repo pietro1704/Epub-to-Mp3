@@ -16,7 +16,7 @@ jobs:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
       - name: Install explicit test dependencies
@@ -31,7 +31,7 @@ jobs:
           python -m pytest python_app/tests/test_audio_pause_integration.py::TestEdgeOutputAudioProperties python_app/tests/test_audio_pause_integration.py::TestEdgeFingerprintIsConsistent --junitxml=live-edge-audio.xml
       - name: Retain actual live-provider result
         if: always()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: live-edge-audio-result
           path: live-edge-audio.xml
