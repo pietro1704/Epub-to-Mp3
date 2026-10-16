@@ -11,7 +11,7 @@ require "rbconfig"
 # Apple service, Python runtime, Simulator, app, or device is invoked.
 class NativeTaskWiringTest < Minitest::Test
   ROOT = File.expand_path("..", __dir__)
-  COMPILER_TASKS = %w[rust:health rust:server migration:build-and-gate converter-ffi:android-check sidecar:build piper:build-runtime].freeze
+  COMPILER_TASKS = %w[rust:health rust:server migration:build-and-gate converter-ffi:android-check sidecar:build piper:build-runtime web:wasm-build].freeze
   TASKS = (%w[ios:build ios:device:build ios:simulator:test mac:build converter-ffi:ios-packaging:test] + COMPILER_TASKS).to_h do |name|
     output, error, status = Open3.capture3("mise", "tasks", "info", name, "--json", chdir: ROOT)
     raise "Cannot read mise task #{name}: #{error}" unless status.success?
@@ -22,10 +22,22 @@ class NativeTaskWiringTest < Minitest::Test
     @dir = Dir.mktmpdir("native-task-wiring-")
     @bin = File.join(@dir, "bin")
     @events = File.join(@dir, "events")
-    FileUtils.mkdir_p([@bin, File.join(@dir, "scripts"), File.join(@dir, "ios/EpubToMp3")])
+    FileUtils.mkdir_p([@bin, File.join(@dir, "scripts"), File.join(@dir, "ios/EpubToMp3"), File.join(@dir, "target/debug")])
     %w[native_job.rb native_build_preflight.rb native_build_command.rb].each do |file|
       FileUtils.cp(File.join(__dir__, file), File.join(@dir, "scripts", file))
     end
+    FileUtils.cp(File.join(__dir__, "dev_backend.sh"), File.join(@dir, "scripts", "dev_backend.sh"))
+    wasm_build = File.join(@dir, "scripts/build_web_wasm.sh")
+    File.write(wasm_build, "#!/bin/bash\nset -euo pipefail\nmise exec -- cargo build -p converter-wasm --target wasm32-unknown-unknown --release\n")
+    server = File.join(@dir, "target/debug/converter-server")
+    File.write(server, <<~'SH')
+      #!/bin/bash
+      set -euo pipefail
+      "$FIXTURE_RUBY" -e 'f=File.open(ARGV[0], "a+"); exit(f.flock(File::LOCK_EX | File::LOCK_NB) ? 0 : 97)' "$FIXTURE_LOCK"
+      echo "server $* $HOST:$PORT" >> "$FIXTURE_EVENTS"
+      exit "${FIXTURE_SERVER_STATUS:-0}"
+    SH
+    File.chmod(0o755, server)
     packaging = File.join(@dir, "scripts/test_converter_ffi_ios_packaging.sh")
     File.write(packaging, "#!/bin/bash\necho packaging >> \"$FIXTURE_EVENTS\"\n")
     File.chmod(0o755, packaging)
@@ -106,6 +118,10 @@ class NativeTaskWiringTest < Minitest::Test
     Open3.capture3(@env.merge(env), "/bin/bash", "-euo", "pipefail", "-c", TASKS.fetch(name), chdir: @dir)
   end
 
+  def run_dev_backend(env = {})
+    Open3.capture3(@env.merge(env), "/bin/bash", "-euo", "pipefail", File.join(@dir, "scripts/dev_backend.sh"), chdir: @dir)
+  end
+
   def events
     File.exist?(@events) ? File.readlines(@events, chomp: true) : []
   end
@@ -133,6 +149,36 @@ class NativeTaskWiringTest < Minitest::Test
       assert_unlocked
       FileUtils.rm_f(@events)
     end
+  end
+
+  def test_dev_backend_refuses_before_cargo_on_intel
+    skip "Intel macOS preflight only" unless RUBY_PLATFORM.match?(/(?:x86_64|i386).*darwin/)
+    _, error, status = run_dev_backend("FIXTURE_SIM_STATE" => "Booted")
+    assert_equal 75, status.exitstatus, error
+    assert_match(/Shut down all Simulators/, error)
+    assert_empty events
+    assert_unlocked
+  end
+
+  def test_dev_backend_build_failure_never_starts_server
+    _, error, status = run_dev_backend("FIXTURE_SIM_STATE" => "Shutdown", "FIXTURE_CARGO_STATUS" => "23")
+    assert_equal 23, status.exitstatus, error
+    assert_equal ["cargo"], events.map { |event| event.split.first }
+    assert_unlocked
+  end
+
+  def test_dev_backend_starts_server_after_guarded_build_releases_lease
+    _, error, status = run_dev_backend(
+      "FIXTURE_SIM_STATE" => "Shutdown",
+      "FIXTURE_CARGO_STATUS" => "0",
+      "BACKEND_HOST" => "127.0.0.2",
+      "BACKEND_PORT" => "8123",
+      "BACKEND_RELOAD" => "1"
+    )
+    assert status.success?, error
+    assert_equal ["cargo", "server"], events.map { |event| event.split.first }
+    assert_match(/server --reload 127.0.0.2:8123/, events.last)
+    assert_unlocked
   end
 
   def test_blocked_preflight_never_invokes_compiler_or_task_body
