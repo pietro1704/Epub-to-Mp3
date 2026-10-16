@@ -1,5 +1,12 @@
 # App delivery backlog
 
+## CORE-20261016-SOURCE-TOTAL — Restore full-source chapter metadata
+
+- [ ] Restore the optional `OutputManifest.source_chapters_total` contract from `68f8b12ad2`: emit the parsed book's full count before selection, while selected chapter counts and source indexes keep their existing meaning.
+- [ ] Preserve legacy JSON decoding with unknown source total (`None`) and omit that absent field on serialization. Verify explicit counts round-trip and invalid negative counts fail.
+- [ ] Verify actual selected-one-of-two conversion and persisted manifest metadata through the existing offline worker/receipt/archive regression; execute checks only on GitHub. Add the required optional fields to server test fixtures; keep the CLI fixture's meaningful `None` unchanged.
+- Owner: crash_workflow_audit specialist; branch `feature/restore-manifest-source-total`. Status: implementation pending GitHub verification. Baseline: recovery CI `38867253856`, Rust job `116863046347`, reports CLI `E0560` at the orphan field initializer. No local tests/builds/formatter, root dirty worker edits, audio changes, journal resurrection or native-client/progressive-session claims.
+
 ## APP-20261015-WHOLE-IOS — Reviewed whole-app iOS 15 verification campaign
 
 - [ ] IOS-ALL-1: persist the user's campaign preferences in canonical harness instructions and ai-memory before execution; obtain specialist plan review.
