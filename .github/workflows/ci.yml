@@ -268,7 +268,9 @@ jobs:
       - name: Install web dependencies
         working-directory: web
         run: mise exec -- npm ci --prefer-offline --no-audit --no-fund
-      - name: Run web tests
+      - name: Exercise direct Web runtime contracts
+        run: bash scripts/check_direct_runtime_boundary.sh web
+      - name: Run full web tests
         working-directory: web
         run: mise exec -- npm test
       - name: Run web lint
@@ -315,6 +317,13 @@ jobs:
         env:
           MISE_GITHUB_TOKEN: ${{ github.token }}
         run: mise install
+
+      - name: Install Flutter dependencies
+        working-directory: flutter_app
+        run: mise exec -- flutter pub get
+
+      - name: Exercise direct Flutter runtime contracts
+        run: bash scripts/check_direct_runtime_boundary.sh flutter
 
       - name: Run Flutter tests
         working-directory: flutter_app

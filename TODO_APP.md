@@ -1,5 +1,10 @@
 # App delivery backlog
 
+## AH-07 — Exercise direct-runtime contracts instead of source-name guesses
+
+- [ ] Owner: crash_guard_audit; dependencies AH-05 `564e319` and AH-06 `6e6abd0` passed their GitHub suites. Replace the existing boundary shell's grep heuristics with explicit Web/Flutter/all behavioral contracts, retaining full CI suites and existing scoped toolchains.
+- Acceptance pending GitHub: real-process host regressions prove selection, literal argv/cwd, missing capabilities/tools, propagated failure and success without false PASS. No local lock, fallback, download, native/device verification or new Ruby dependency in product test jobs. No local test/build/formatter execution.
+
 ## AH-05 — Persist completed manual Flutter conversions
 
 - [ ] Owner: crash_workflow_audit; baseline: clean local dependency merge `e7ff8a8236` (Faber `6359bc530a` plus AH-04 `e29510d943`). Persist only actual completed Rust manifests, preserving literal job/source identity, captured provider policy, aggregate actual-voice receipts and safe established output paths.
@@ -28,7 +33,6 @@
 - Acceptance pending: each hosted runner must report its expected host architecture, actual compiled FFI Mach-O architecture and pinned ORT manifest/library architecture before executing the same tests. Existing ORT checksums and explicit temporary model installation/cleanup remain unchanged. This proves neither physical-Mac GPU stability nor phone performance or exact SE1/iOS15.5 acceptance.
 - Source draft was reviewed against master `915e9c672b` plus Faber `2082ae5417` and integrated into the required follow-up revision after its native XCTest failure. Both architectures must now verify the repaired test-plan environment and positive inference path on GitHub. No local test, build, formatter, syntax, native app or Simulator execution; no runtime acceptance claim yet.
 
-||||||| 2082ae5417
 ## AH-04 — Read durable local Flutter conversion history
 
 - [ ] Owner: crash_workflow_audit; dependency: reviewed Faber integration `2082ae5417` (local branch fast-forwarded from master `915e9c672b`, no published delivery). Replace Jobs HTTP sessions with existing persisted local jobs, exact job identity, recorded status/errors/artifact paths, damaged-record visibility and refresh on entry/background writes.
