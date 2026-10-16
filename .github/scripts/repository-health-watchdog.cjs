@@ -4,6 +4,11 @@ const MARKER = '<!-- repository-health-watchdog:v1 -->';
 const TITLE = 'Repository health: Actions failures and issue triage';
 const BAD = new Set(['failure', 'timed_out', 'action_required', 'startup_failure']);
 
+function isOwnedReport(issue) {
+  return !issue.pull_request && issue.user?.type === 'Bot' &&
+    issue.user?.login === 'github-actions[bot]' && issue.body?.startsWith(MARKER);
+}
+
 function assess({ runs, pulls, issues, masterSha, capped }) {
   const heads = new Map([[masterSha, 'master']]);
   for (const pr of pulls) {
@@ -22,8 +27,7 @@ function assess({ runs, pulls, issues, masterSha, capped }) {
   const failures = [...latest.values()].filter(run => BAD.has(run.conclusion))
     .sort((a, b) => Number(a.id) - Number(b.id));
   const pending = [...latest.values()].filter(run => run.status !== 'completed');
-  const triage = issues.filter(issue => !issue.pull_request &&
-    !(issue.user?.type === 'Bot' && issue.body?.startsWith(MARKER)))
+  const triage = issues.filter(issue => !issue.pull_request && !isOwnedReport(issue))
     .map(issue => ({ number: issue.number, updated_at: issue.updated_at }))
     .sort((a, b) => a.number - b.number);
   const signature = JSON.stringify({
@@ -78,8 +82,7 @@ async function monitor({ github, context, core }) {
     collect(github.rest.pulls.list, { state: 'open' }, null, 'open PRs'),
     collect(github.rest.issues.listForRepo, { state: 'open', sort: 'updated', direction: 'desc' }, null, 'open issues'),
   ]);
-  const owned = issues.filter(issue => !issue.pull_request && issue.user?.type === 'Bot' &&
-    issue.user?.login === 'github-actions[bot]' && issue.body?.startsWith(MARKER));
+  const owned = issues.filter(isOwnedReport);
   if (owned.length > 1) throw new Error('Multiple watchdog issues found; refusing ambiguous writes.');
   const state = assess({ runs, pulls, issues, masterSha: master.data.sha, capped });
   const report = render(state, `${owner}/${repo}`, capped);

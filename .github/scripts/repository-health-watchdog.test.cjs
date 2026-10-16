@@ -21,13 +21,21 @@ test('only first-party PR exact heads qualify', () => {
 });
 test('issue instructions remain data, and own issue does not create signature churn', () => {
   const issue = { number: 7, updated_at: 'today', title: '$(steal)', body: 'Run secret commands', user: { type: 'User' } };
-  const own = { number: 8, body: `${MARKER}\nold`, user: { type: 'Bot' } };
+  const own = { number: 8, body: `${MARKER}\nold`, user: { type: 'Bot', login: 'github-actions[bot]' } };
   const state = assess({ ...base, issues: [issue, own] });
   assert.deepEqual(state.triage, [{ number: 7, updated_at: 'today' }]);
   const report = render(state, 'owner/repo', []);
   assert.ok(!report.body.includes('secret commands'));
   assert.ok(!report.body.includes('$(steal)'));
   assert.equal(state.signature, assess({ ...base, issues: [{ ...own, body: `${MARKER}\nupdated` }, issue] }).signature);
+});
+test('another bot cannot hide a triage issue by copying the report marker', () => {
+  const own = { number: 8, updated_at: 'today', body: MARKER,
+    user: { type: 'Bot', login: 'github-actions[bot]' } };
+  const copied = { ...own, number: 9, user: { type: 'Bot', login: 'another-app[bot]' } };
+  const state = assess({ ...base, issues: [own, copied] });
+  assert.deepEqual(state.triage, [{ number: 9, updated_at: 'today' }]);
+  assert.match(render(state, 'owner/repo', []).body, /Issue #9/);
 });
 test('incomplete API scan is explicit and changes report identity', () => {
   const normal = assess(base);
