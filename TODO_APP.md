@@ -1,5 +1,11 @@
 # App delivery backlog
 
+## ANDROID-20261016-PIPER-CAPABILITY — Describe embedded runtime availability without implying Edge fallback
+
+- [ ] Owner: root; keep Android Piper enabled when its embedded runtime is linked and ABI-compatible, and report an accurate offline-runtime error when that capability is absent.
+- Acceptance: unavailable or incompatible runtime returns an actionable Piper capability error without implying Edge is required; a linked compatible runtime passes the capability gate before model initialization. Edge fallback remains governed by explicit typed preferences and consent.
+- Verification: meaningful unit regression for unavailable, incompatible, and available runtime statuses; exact-head GitHub Actions only. The Android FFI/JNI entrypoint registers the embedded runtime before conversion. This does not claim device inference or Simulator acceptance.
+
 ## SAFE-20261016-NATIVE-BUILD-ENTRYPOINTS — Route every native compile path through quarantine guards
 
 - [ ] Owner: root; close the specialist-found direct `ios:device:build` path, along with `mac:build` and `converter-ffi:ios-packaging:test`, so every native compile task enters `NativeJob` before generation or compiler launch.
