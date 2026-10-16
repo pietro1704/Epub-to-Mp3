@@ -13,7 +13,9 @@ FROM rust:1-slim-bookworm AS server-builder
 WORKDIR /app
 COPY Cargo.toml Cargo.lock ./
 COPY crates ./crates
-RUN cargo build --release -p converter-server
+COPY native ./native
+COPY benches ./benches
+RUN cargo build --locked --release -p converter-server
 
 # Stage 3: Minimal Rust runtime
 FROM debian:bookworm-slim
@@ -33,6 +35,7 @@ COPY --from=frontend-builder /app/web/dist ./web/dist
 
 # Hugging Face Spaces persists this root across restarts.
 ENV PORT=7860 \
+    HOST=0.0.0.0 \
     SPACE_ID=1 \
     PERSISTENT_ROOT=/data/epub-to-mp3
 RUN mkdir -p /data/epub-to-mp3/.cache /data/epub-to-mp3/output /data/epub-to-mp3/.uploads /data/epub-to-mp3/.job_inputs

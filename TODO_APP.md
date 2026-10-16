@@ -1,5 +1,12 @@
 # App delivery backlog
 
+## CI-20261016-HF-BINARY-SNAPSHOT — Preserve binaries in the Space snapshot
+
+- [ ] Owner: crash_guard_audit; actual RED: master `cc2ed618`, Sync to Hugging Face Space run `38911643936`, job `117008751527`, rejected the raw Git object `web/src/wasm/converter_wasm_bg.wasm`.
+- Prepare an allowlisted tracked-file snapshot with snapshot-local Git LFS, preserving WASM, public EPUB, images and vendored phoneme inputs. Keep credentials out of Git configuration and require every push to succeed. Do not upload the repository root or change the GitHub `.gitattributes`.
+- GitHub-only acceptance: real offline Git/LFS push-and-clone byte equality, excluded sentinels, rejection propagation, and a Docker build/container health, contract and frontend WASM byte check from the reconstructed snapshot without models or deployment. Preserve actual Cargo workspace/patch inputs and explicitly bind the container to `0.0.0.0`. No local tests/builds/formatters or Hugging Face deployment performed.
+- This master revision exposes health/contract/metadata, not a TTS catalog route, and does not link an embedded Piper provider into the server. These container checks do not prove Faber inference or synthesize audio; that separate acceptance remains in the actual Faber runtime matrix. No provider feature, distro phoneme data or Rust runtime policy is added here.
+
 ## CI-20261016-IOS-BUILD-SIGNING — Keep unsigned CodeQL host identity consistent
 
 - [ ] Owner: github_monitor_plan; real RED: CodeQL `38875197584`, job `116889500305`, recovery head `b5fcb7a8eb9d3fd551b2b91acdfacba184a31009`. Swift compilation reached embedded Widget validation, which rejected its unsigned extension against the fictitious parent ad hoc identity supplied globally by the workflow.
