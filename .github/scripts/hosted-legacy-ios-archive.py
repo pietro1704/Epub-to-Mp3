@@ -358,9 +358,13 @@ class Inspector:
                     self.stop(process)
                     active.unlink(missing_ok=True)
                 finally:
+                    try:
+                        if selector is not None:
+                            selector.close()
+                    finally:
+                        if process.stdout is not None:
+                            process.stdout.close()
                     if selector is not None:
-                        selector.close()
-                        process.stdout.close()
                         if sys.exc_info()[0] is not None:
                             consumer.complete = False
                         unwinding = sys.exc_info()[0] is not None

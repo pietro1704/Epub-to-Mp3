@@ -679,6 +679,7 @@ class ArchiveSafetyTests(unittest.TestCase):
                     )
             self.assertEqual(len(launched), 1)
             self.assertIsNotNone(launched[0].poll())
+            self.assertTrue(launched[0].stdout.closed)
             self.assertFalse(
                 (self.inspector.reports / "active-command.json").exists()
             )

@@ -1698,5 +1698,7 @@ esteja clara neste arquivo (ex: qual plataforma priorizar no Flutter).
 ## CI-20261016-ARCHIVE-SELECTOR-FIXTURE — Restore hosted safety regression import
 
 - Status: syntax correction prepared; GitHub-only rerun pending.
-- Evidence: exact-head manual archive inspection run `38949478581`, host-safety job `117151152368`, failed while importing the selector-cleanup regression because a doubled continuation backslash at line669 was invalid Python. Archive inspection was skipped before any native/archive action.
+- Evidence: exact-head push-triggered archive inspection run `38949478581`, host-safety job `117151152368`, failed while importing the selector-cleanup regression because a doubled continuation backslash at line669 was invalid Python. Archive inspection was skipped before any native/archive action.
 - Correction: use parenthesized context managers; preserve the started-child cleanup, registry removal and missing-final-receipt assertions. Acceptance requires the hosted safety suite and authorized archive-metadata run to pass on the new head. No local command, build, test, download or Simulator action was performed.
+
+- Specialist follow-up: selector construction failure also left the captured stdout pipe open after the child was stopped. Close stdout independently of selector construction/closure and assert the retained child's pipe is closed. Keep missing final receipt and registry cleanup assertions; hosted verification remains pending.
