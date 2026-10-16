@@ -13,7 +13,10 @@ pub fn prepare_source(src: &Path, dst: &Path) {
             .arg(dst.parent().unwrap())
             .status()
             .expect("Failed to execute cp command");
-        assert!(status.success(), "Failed to copy espeak-ng source: {status}");
+        assert!(
+            status.success(),
+            "Failed to copy espeak-ng source: {status}"
+        );
     }
     if cfg!(windows) {
         let status = Command::new("robocopy.exe")
