@@ -11,7 +11,8 @@ require "rbconfig"
 # Apple service, Python runtime, Simulator, app, or device is invoked.
 class NativeTaskWiringTest < Minitest::Test
   ROOT = File.expand_path("..", __dir__)
-  TASKS = %w[ios:build ios:device:build ios:simulator:test mac:build converter-ffi:ios-packaging:test].to_h do |name|
+  COMPILER_TASKS = %w[rust:health rust:server migration:build-and-gate converter-ffi:android-check sidecar:build piper:build-runtime].freeze
+  TASKS = (%w[ios:build ios:device:build ios:simulator:test mac:build converter-ffi:ios-packaging:test] + COMPILER_TASKS).to_h do |name|
     output, error, status = Open3.capture3("mise", "tasks", "info", name, "--json", chdir: ROOT)
     raise "Cannot read mise task #{name}: #{error}" unless status.success?
     [name, JSON.parse(output).fetch("run").join("\n")]
@@ -22,7 +23,7 @@ class NativeTaskWiringTest < Minitest::Test
     @bin = File.join(@dir, "bin")
     @events = File.join(@dir, "events")
     FileUtils.mkdir_p([@bin, File.join(@dir, "scripts"), File.join(@dir, "ios/EpubToMp3")])
-    %w[native_job.rb native_build_preflight.rb].each do |file|
+    %w[native_job.rb native_build_preflight.rb native_build_command.rb].each do |file|
       FileUtils.cp(File.join(__dir__, file), File.join(@dir, "scripts", file))
     end
     packaging = File.join(@dir, "scripts/test_converter_ffi_ios_packaging.sh")
@@ -34,11 +35,17 @@ class NativeTaskWiringTest < Minitest::Test
       File.chmod(0o755, path)
     end
     shim("mise", <<~'SH')
-      [[ "$1" == exec && "$2" == -- && "$3" == ruby ]] || exit 98
-      shift 3
-      script="$1"
-      shift
-      exec "$FIXTURE_RUBY" "$script" --lock-path "$FIXTURE_LOCK" "$@"
+      if [[ "$1" == exec && "$2" == -- && "$3" == ruby ]]; then
+        shift 3
+        script="$1"
+        shift
+        exec "$FIXTURE_RUBY" "$script" --lock-path "$FIXTURE_LOCK" "$@"
+      fi
+      if [[ "$1" == exec && "$2" == -- && "$3" == cargo ]]; then
+        shift 3
+        exec cargo "$@"
+      fi
+      exit 98
     SH
     shim("xcrun", <<~'SH')
       [[ "$1" == simctl ]] || exit 98
@@ -51,6 +58,11 @@ class NativeTaskWiringTest < Minitest::Test
     SH
     shim("pgrep", 'exit 1')
     shim("python3", 'exit 0')
+    shim("cargo", <<~'SH')
+      "$FIXTURE_RUBY" -e 'f=File.open(ARGV[0], "a+"); exit(f.flock(File::LOCK_EX | File::LOCK_NB) ? 97 : 0)' "$FIXTURE_LOCK"
+      echo "cargo $*" >> "$FIXTURE_EVENTS"
+      exit "${FIXTURE_CARGO_STATUS:-0}"
+    SH)
     shim("xcodegen", 'echo generate >> "$FIXTURE_EVENTS"')
     shim("sleep", 'exit 0')
     shim("xcodebuild", <<~'SH')
@@ -96,6 +108,31 @@ class NativeTaskWiringTest < Minitest::Test
 
   def events
     File.exist?(@events) ? File.readlines(@events, chomp: true) : []
+  end
+
+  def test_guarded_rust_compiler_tasks_refuse_before_cargo_on_intel
+    skip "Intel macOS preflight only" unless RUBY_PLATFORM.match?(/(?:x86_64|i386).*darwin/)
+    COMPILER_TASKS.each do |task|
+      _, error, status = run_task(task, "FIXTURE_SIM_STATE" => "Booted")
+      assert_equal 75, status.exitstatus, "#{task}: #{error}"
+      assert_match(/Shut down all Simulators/, error, task)
+      assert_empty events, "#{task} reached task body or cargo"
+      assert_unlocked
+    end
+  end
+
+  def test_guarded_rust_compiler_tasks_execute_cargo_under_the_lease
+    COMPILER_TASKS.each do |task|
+      _, error, status = run_task(
+        task,
+        "FIXTURE_SIM_STATE" => "Shutdown",
+        "FIXTURE_CARGO_STATUS" => "23"
+      )
+      assert_equal 23, status.exitstatus, "#{task}: #{error}"
+      assert_equal ["cargo"], events.map { |event| event.split.first }, task
+      assert_unlocked
+      FileUtils.rm_f(@events)
+    end
   end
 
   def test_blocked_preflight_never_invokes_compiler_or_task_body
