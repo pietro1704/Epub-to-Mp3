@@ -6,11 +6,11 @@
 - Acceptance: unavailable or incompatible runtime returns an actionable Piper capability error without implying Edge is required; a linked compatible runtime passes the capability gate before model initialization. Edge fallback remains governed by explicit typed preferences and consent.
 - Verification: meaningful unit regression for unavailable, incompatible, and available runtime statuses; exact-head GitHub Actions only. The Android FFI/JNI entrypoint registers the embedded runtime before conversion. This does not claim device inference or Simulator acceptance.
 
-## SAFE-20261016-RUST-COMPILER-ENTRYPOINTS — Guard standalone local compiler tasks
+## SAFE-20261016-ALL-COMPILER-ENTRYPOINTS — Guard every remaining compiler entrypoint
 
-- [ ] Owner: root; route `rust:health`, `rust:server`, `migration:build-and-gate`, `converter-ffi:android-check`, `sidecar:build`, and `piper:build-runtime` through the native build supervisor. Preserve the existing Windows heavy-job lock path.
-- Acceptance: on Intel macOS, every task refuses before its Cargo command when any Simulator is active or SimMetalHost/Simulator.app remains; after clean shutdown the task reaches Cargo while holding the authenticated lease. Linux and Windows task semantics remain compatible.
-- Verification: GitHub Actions only. Expand actual mise task wiring regressions with fake Cargo to cover all six refusals, lock release, successful entry under the lease, and exit-status propagation. This proves guard ordering only; it does not establish GPU stability or attribute the kernel panic to compilation.
+- [ ] Owner: root; route the six standalone Rust compiler tasks, `web:wasm-build`, and the backend rebuild used by `dev` through the native build supervisor. Preserve the existing Windows heavy-job lock path. Build the server under a short lease, then launch its binary after releasing the lease so the long-lived dev server does not monopolize the lock.
+- Acceptance: every compiler invocation refuses before Cargo on Intel macOS when any Simulator is active or SimMetalHost/Simulator.app remains; after clean shutdown Cargo runs under the authenticated lease. The development server launches only after a successful guarded build. Linux and Windows task semantics remain compatible.
+- Verification: GitHub Actions only. Extend actual mise task-wiring regressions with fake Cargo and server processes to cover all eight task refusals, lock release, successful entry under the lease, exit-status propagation, and server launch after lease release. This proves guard ordering only; it does not establish GPU stability or attribute the kernel panic to compilation.
 
 ## SAFE-20261016-NATIVE-BUILD-ENTRYPOINTS — Route every native compile path through quarantine guards
 
