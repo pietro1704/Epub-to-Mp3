@@ -24,6 +24,7 @@
   "conversionStatusFailed": "Fallida",
   "conversionStatusCancelled": "Cancelada",
   "conversionStatusUnknown": "Desconocido",
+  "conversionHistorySaveWarning": "Conversión completada, pero no se pudo guardar el historial: {error}",
   "refresh": "Actualizar",
   "playerTitle": "Reproductor",
   "readerTitle": "Lector",

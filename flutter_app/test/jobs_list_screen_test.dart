@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:flutter_app/models/tts_preferences.dart';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -221,5 +222,43 @@ void main() {
       },
     );
   }
+
+  testWidgets('manual manifest title and actual voice receipts survive reopening Jobs', (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    final prefs = await SharedPreferences.getInstance();
+    await LocalConversionJobStore(prefs).saveCompletedManifest(
+      bookId: '/tmp/unimported.epub',
+      startedAt: DateTime.utc(2026),
+      manifest: {
+        'jobId': 'manual-receipt-id', 'title': 'Unimported manual book',
+        'usedSelections': [TtsSelection.faber.toJson(), TtsSelection.edge.toJson()],
+        'fallbackUsed': true,
+        'chapters': [{'sourceIndex': 5, 'title': 'Six'}],
+      },
+    );
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          sharedPrefsProvider.overrideWithValue(prefs),
+          apiClientProvider.overrideWith((ref) {
+            throw StateError('Manual history must not request HTTP');
+          }),
+        ],
+        child: const MaterialApp(
+          localizationsDelegates: AppLocalizations.localizationsDelegates,
+          supportedLocales: AppLocalizations.supportedLocales,
+          home: JobsListScreen(),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Unimported manual book'));
+    await tester.pumpAndSettle();
+    expect(find.text('manual-receipt-id'), findsOneWidget);
+    expect(find.textContaining('Used voice: Piper'), findsOneWidget);
+    expect(find.textContaining('pt_BR-faber-medium'), findsOneWidget);
+    expect(find.textContaining('Edge'), findsOneWidget);
+    expect(find.textContaining('Secondary voice used for an isolated segment.'), findsOneWidget);
+  });
 
 }

@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 import '../models/tts_preferences.dart';
 
 import 'package:shared_preferences/shared_preferences.dart';
@@ -91,6 +92,9 @@ class LocalConversionJob {
     required this.status,
     required this.createdAt,
     required this.updatedAt,
+    this.bookTitle,
+    this.manifestUsedSelections = const [],
+    this.manifestFallbackUsed = false,
     this.conversionOptionsJson,
     this.ttsPolicyState,
     this.fallbackNoticeShown = false,
@@ -102,6 +106,9 @@ class LocalConversionJob {
 
   final String bookId;
   final String jobId;
+  final String? bookTitle;
+  final List<TtsSelection> manifestUsedSelections;
+  final bool manifestFallbackUsed;
   final List<LocalConversionChapter> chapters;
   final LocalConversionJobStatus status;
   final DateTime createdAt;
@@ -109,9 +116,13 @@ class LocalConversionJob {
   final String? conversionOptionsJson;
   final Map<String, dynamic>? ttsPolicyState;
   final bool fallbackNoticeShown;
-  bool get fallbackUsed => chapters.any((chapter) => chapter.fallbackUsed);
+  bool get fallbackUsed =>
+      manifestFallbackUsed || chapters.any((chapter) => chapter.fallbackUsed);
   List<TtsSelection> get usedSelections {
     final unique = <String, TtsSelection>{};
+    for (final selection in manifestUsedSelections) {
+      unique[jsonEncode(selection.toJson())] = selection;
+    }
     for (final chapter in chapters) {
       for (final selection in chapter.usedSelections) {
         unique[jsonEncode(selection.toJson())] = selection;
@@ -140,6 +151,9 @@ class LocalConversionJob {
   }) => LocalConversionJob(
     bookId: bookId,
     jobId: jobId,
+    bookTitle: bookTitle,
+    manifestUsedSelections: manifestUsedSelections,
+    manifestFallbackUsed: manifestFallbackUsed,
     conversionOptionsJson: conversionOptionsJson ?? this.conversionOptionsJson,
     ttsPolicyState: ttsPolicyState ?? this.ttsPolicyState,
     fallbackNoticeShown: fallbackNoticeShown ?? this.fallbackNoticeShown,
@@ -156,6 +170,12 @@ class LocalConversionJob {
   Map<String, dynamic> toJson() => {
     'bookId': bookId,
     'jobId': jobId,
+    'bookTitle': ?bookTitle,
+    if (manifestUsedSelections.isNotEmpty)
+      'manifestUsedSelections': manifestUsedSelections
+          .map((selection) => selection.toJson())
+          .toList(),
+    if (manifestFallbackUsed) 'manifestFallbackUsed': true,
     'chapters': chapters.map((c) => c.toJson()).toList(),
     'status': status.name,
     'createdAt': createdAt.toIso8601String(),
@@ -183,6 +203,12 @@ class LocalConversionJob {
         _legacyConversionOptions(json),
     bookId: json['bookId'] as String,
     jobId: json['jobId'] as String,
+    bookTitle: json['bookTitle'] as String?,
+    manifestUsedSelections: (json['manifestUsedSelections'] as List? ?? const [])
+        .whereType<Map>()
+        .map((value) => TtsSelection.fromJson(Map<String, dynamic>.from(value)))
+        .toList(),
+    manifestFallbackUsed: json['manifestFallbackUsed'] == true,
     chapters: (json['chapters'] as List<dynamic>)
         .map((c) => LocalConversionChapter.fromJson(c as Map<String, dynamic>))
         .toList(),
@@ -283,6 +309,93 @@ class LocalConversionJobStore {
       key(job.bookId, job.jobId),
       jsonEncode(job.toJson()),
     );
+  }
+
+  /// Projects a completed Rust manifest into local history. A legacy injected
+  /// job ID alone is not enough evidence to fabricate a conversion record.
+  Future<LocalConversionJob> saveCompletedManifest({
+    required Map<String, dynamic> manifest,
+    required String bookId,
+    required DateTime startedAt,
+    String? outputDirectory,
+    String? conversionOptionsJson,
+  }) async {
+    final jobId = manifest['jobId'];
+    final entries = manifest['chapters'];
+    if (bookId.isEmpty ||
+        jobId is! String ||
+        jobId.isEmpty ||
+        entries is! List ||
+        entries.isEmpty) {
+      throw const FormatException('Invalid completed Rust manifest');
+    }
+    final now = DateTime.now().toUtc();
+    final used = (manifest['usedSelections'] as List? ?? const [])
+        .whereType<Map>()
+        .map((value) => TtsSelection.fromJson(Map<String, dynamic>.from(value)))
+        .toList(growable: false);
+    final establishedRoot = outputDirectory != null && Directory(outputDirectory).isAbsolute
+        ? outputDirectory
+        : null;
+    final sourceIndices = <int>{};
+    final chapters = entries
+        .map((value) {
+          final entry = Map<String, dynamic>.from(value as Map);
+          final index = entry['sourceIndex'];
+          if (index is! int || index < 0 || !sourceIndices.add(index)) {
+            throw const FormatException(
+              'Rust manifest has no source chapter index',
+            );
+          }
+          final filename = entry['filename'];
+          // A manifest filename is not an absolute audio path. Only the native
+          // request establishes its output directory, and filenames cannot escape it.
+          final outputPath =
+              establishedRoot != null &&
+                  filename is String &&
+                  filename.isNotEmpty &&
+                  filename != '.' &&
+                  filename != '..' &&
+                  !filename.contains('/') &&
+                  !filename.contains('\\')
+              ? Uri.directory(
+                  establishedRoot,
+                ).resolveUri(Uri(pathSegments: [filename])).toFilePath()
+              : null;
+          return LocalConversionChapter(
+            index: index,
+            name: entry['title'] as String? ?? '',
+            status: 'completed',
+            outputPath: outputPath,
+            updatedAt: now,
+          );
+        })
+        .toList(growable: false);
+    final job = LocalConversionJob(
+      bookId: bookId,
+      jobId: jobId,
+      bookTitle: manifest['title'] as String?,
+      manifestUsedSelections: used,
+      manifestFallbackUsed: manifest['fallbackUsed'] == true,
+      chapters: chapters,
+      status: LocalConversionJobStatus.completed,
+      createdAt: startedAt,
+      updatedAt: now,
+      conversionOptionsJson: conversionOptionsJson,
+      ttsPolicyState: manifest['ttsPolicyState'] is Map
+          ? Map<String, dynamic>.from(manifest['ttsPolicyState'] as Map)
+          : null,
+      completedOutputs: chapters
+          .map((chapter) => chapter.outputPath)
+          .whereType<String>()
+          .toList(),
+    );
+    final saved = await _prefs.setString(
+      key(job.bookId, job.jobId),
+      jsonEncode(job.toJson()),
+    );
+    if (!saved) throw StateError('Could not persist completed conversion history');
+    return job;
   }
 }
 

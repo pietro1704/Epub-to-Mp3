@@ -238,6 +238,12 @@ abstract class AppLocalizations {
   /// **'Unknown'**
   String get conversionStatusUnknown;
 
+  /// No description provided for @conversionHistorySaveWarning.
+  ///
+  /// In en, this message translates to:
+  /// **'Conversion completed, but its history could not be saved: {error}'**
+  String conversionHistorySaveWarning(String error);
+
   /// No description provided for @refresh.
   ///
   /// In en, this message translates to:

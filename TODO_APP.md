@@ -1,5 +1,12 @@
 # App delivery backlog
 
+## AH-05 — Persist completed manual Flutter conversions
+
+- [ ] Owner: crash_workflow_audit; baseline: clean local dependency merge `e7ff8a8236` (Faber `6359bc530a` plus AH-04 `e29510d943`). Persist only actual completed Rust manifests, preserving literal job/source identity, captured provider policy, aggregate actual-voice receipts and safe established output paths.
+- Acceptance: refusal or failure while reading/projecting/writing completed history shows a localized warning without losing completion or offering conversion Retry. An ID-only legacy result creates no history. Model-root/output paths are never fabricated; filenames preserve literal `%` and `#` and cannot escape the confirmed output directory.
+- Keep playback save() semantics unchanged; test the real manual writer's false setString result. Preferences changed while conversion runs cannot alter its captured snapshot. Exclude AH-13 desktop ABI and AH-14 logs; failed/cancelled manual work before a real manifest returns remains outside durable-history acceptance.
+- Verification pending exclusively on GitHub: projection/identity/source-index/path/receipt/refused-write tests, manual success/warning/zero-HTTP/in-flight-preferences widgets, existing Faber cancellation/Jobs regressions, full Flutter tests and analyzer. No local tests, builds, formatter or analyzer execution.
+
 ## APP-20261016-FABER-TESTPLAN-ENV — Forward explicit model readiness into the XCTest process
 
 - [ ] Owner: crash_guard_audit; declare only `EPUB2MP3_PIPER_TEST_MODEL_ROOT` in the existing Unit test plan runtime environment, expanding the already supplied build setting against its unchanged app target. Keep the scheme, test plan, explicit model download/checksums, positive inference assertions and mandatory `FABER_NATIVE` marker enabled.

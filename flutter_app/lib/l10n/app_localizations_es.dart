@@ -90,6 +90,11 @@ class AppLocalizationsEs extends AppLocalizations {
   String get conversionStatusUnknown => 'Desconocido';
 
   @override
+  String conversionHistorySaveWarning(String error) {
+    return 'Conversión completada, pero no se pudo guardar el historial: $error';
+  }
+
+  @override
   String get refresh => 'Actualizar';
 
   @override
