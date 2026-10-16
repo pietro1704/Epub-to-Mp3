@@ -1247,13 +1247,19 @@ mod tests {
         let options = parse_args(&args).unwrap();
         assert_eq!(options.chapters, vec!["1-2"]);
         assert!(options.no_parallel);
-        assert_eq!(effective_preferences(&config, &options, &args).unwrap(), captured);
+        assert_eq!(
+            effective_preferences(&config, &options, &args).unwrap(),
+            captured
+        );
         assert_eq!(saved_preferences(&config).unwrap(), saved);
         assert_eq!(fs::read(preference_path(&config)).unwrap(), stored);
 
         fs::write(preference_path(&config), b"invalid saved preferences").unwrap();
         assert!(saved_preferences(&config).is_err());
-        assert_eq!(effective_preferences(&config, &options, &args).unwrap(), captured);
+        assert_eq!(
+            effective_preferences(&config, &options, &args).unwrap(),
+            captured
+        );
         assert_eq!(
             fs::read(preference_path(&config)).unwrap(),
             b"invalid saved preferences"
@@ -1277,10 +1283,9 @@ mod tests {
             parse_captured_preferences(&serde_json::to_string(&approved).unwrap()).unwrap(),
             approved
         );
-        let valid = serde_json::to_string(
-            &converter_core::tts_preferences::TtsPreferences::default(),
-        )
-        .unwrap();
+        let valid =
+            serde_json::to_string(&converter_core::tts_preferences::TtsPreferences::default())
+                .unwrap();
         for json in [
             "{",
             r#"{"primary":{"engine":"edge"},"secondary":null}"#,
@@ -1290,8 +1295,7 @@ mod tests {
             r#"{"primary":{"engine":"edge"},"allow_online_fallback":false,"allow_online_fallback":true}"#,
             r#"{"primary":{"engine":"piper","model_id":"pt_BR-faber-medium"},"secondary":{"engine":"edge"},"allow_online_fallback":false}"#,
         ] {
-            let args = ["convert", "book.epub", "--tts-preferences-json", json]
-                .map(str::to_owned);
+            let args = ["convert", "book.epub", "--tts-preferences-json", json].map(str::to_owned);
             assert!(parse_args(&args).is_err(), "Unexpectedly accepted: {json}");
         }
         let duplicate = [
@@ -1310,10 +1314,9 @@ mod tests {
 
     #[test]
     fn captured_preferences_are_exclusive_of_tts_flags_but_not_literal_flag_values() {
-        let json = serde_json::to_string(
-            &converter_core::tts_preferences::TtsPreferences::default(),
-        )
-        .unwrap();
+        let json =
+            serde_json::to_string(&converter_core::tts_preferences::TtsPreferences::default())
+                .unwrap();
         for legacy in [
             vec!["--engine", "edge"],
             vec!["--voice", "pt-BR-FranciscaNeural"],
@@ -1335,7 +1338,10 @@ mod tests {
                     (&legacy, &snapshot)
                 };
                 args.extend(first.iter().chain(second).map(|value| (*value).to_owned()));
-                assert!(parse_args(&args).is_err(), "Accepted mixed TTS flags: {args:?}");
+                assert!(
+                    parse_args(&args).is_err(),
+                    "Accepted mixed TTS flags: {args:?}"
+                );
             }
         }
         let literal = [
