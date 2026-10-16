@@ -1,11 +1,21 @@
 # App delivery backlog
 
+## APP-20261015-WHOLE-IOS — Reviewed whole-app iOS 15 verification campaign
+
+- [ ] IOS-ALL-1: persist the user's campaign preferences in canonical harness instructions and ai-memory before execution; obtain specialist plan review.
+- [ ] IOS-ALL-2: verify whole-app journeys on iPhone SE (1st generation)/iOS15.5 with Xcode16.4, existing hooks/lease and strict build/Simulator phase separation.
+- [ ] IOS-ALL-9: for each evidenced defect, isolate one branch/PR, verify the real corrected behavior, add meaningful native regression coverage, and merge to master only after required checks are green.
+- [ ] IOS-ALL-10: verify the actual native macOS app separately; close iOS Simulator first and stop the Mac app whenever idle.
+- [ ] IOS-ALL-11: after Apple verification, implement the corresponding Flutter slices on separate branches and verify actual Samsung/Android and Arch Linux app behavior; inspect Wayland/display availability without assuming support.
+- User correction: always close the app, shut down its Simulator and quit Simulator.app when no longer actively used. Keep screenshots/reports rather than retaining an idle Simulator. Save confirmed lessons in canonical harness instructions and explicitly requested ai-memory notes.
+- Owner: Codex root; specialists review safety/runtime, UI/state and conversion/Git isolation. No questions while the user is away; continue independent work and report user-dependent blockers at the end. Preserve all existing dirty changes, books, models and Simulator data.
+- Plan, acceptance matrix, task ownership and evidence: `docs/plans/2026-10-15-ios-whole-app-verification.md`. Status: planning; no new app verification claimed.
+
 Current user requirements override the historical backlog below. Workflow:
 Pending → In progress → Verification → Done, or Blocked with evidence/next action.
 Every concrete user request/correction belongs here. Completion requires relevant
 tests, cross-platform parity, and commit/push evidence; source presence is not done.
-Current ownership: all development and verification happen on this Mac; no work is
-routed to Arch. The native Apple runtime requirement is authoritative in
+Current ownership: native Apple development and verification happen on this Mac; authorized Flutter Linux and Android/Samsung work runs on Arch. The native Apple runtime requirement is authoritative in
 `docs/agent-workflow.md`; entries here record task-specific criteria and evidence.
 Historical Arch assignments below are superseded.
 

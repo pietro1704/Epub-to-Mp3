@@ -102,8 +102,11 @@ For every feature or bug fix, use this exact native iOS runtime: iPhone SE (1st
 generation) Simulator on iOS 15.5. Check it and the native macOS target before
 coding, then install, launch, and exercise both real apps. Automated tests are
 additional evidence. If either app is unavailable, document the blocker and leave
-runtime verification incomplete. All development stays on this Mac; do not route
-implementation or validation to Arch.
+runtime verification incomplete. Native Apple development and verification stay
+on this Mac. Authorized Flutter Linux and Android/Samsung implementation and
+verification run on Arch. Close iOS Simulator before macOS app verification;
+stop the Mac app whenever idle. Close and shut down the Simulator whenever
+active verification ends, preserving screenshots/reports rather than idle apps.
 
 Start each bug fix with a failing regression test. Keep the implementation and
 its test in the same commit when practical. Preserve unrelated local changes by
