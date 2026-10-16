@@ -11,7 +11,7 @@ require "rbconfig"
 # Apple service, Python runtime, Simulator, app, or device is invoked.
 class NativeTaskWiringTest < Minitest::Test
   ROOT = File.expand_path("..", __dir__)
-  TASKS = %w[ios:build ios:simulator:test].to_h do |name|
+  TASKS = %w[ios:build ios:simulator:test mac:build converter-ffi:ios-packaging:test].to_h do |name|
     output, error, status = Open3.capture3("mise", "tasks", "info", name, "--json", chdir: ROOT)
     raise "Cannot read mise task #{name}: #{error}" unless status.success?
     [name, JSON.parse(output).fetch("run").join("\n")]
@@ -25,6 +25,9 @@ class NativeTaskWiringTest < Minitest::Test
     %w[native_job.rb native_build_preflight.rb].each do |file|
       FileUtils.cp(File.join(__dir__, file), File.join(@dir, "scripts", file))
     end
+    packaging = File.join(@dir, "scripts/test_converter_ffi_ios_packaging.sh")
+    File.write(packaging, "#!/bin/bash\\necho packaging >> \"$FIXTURE_EVENTS\"\\n")
+    File.chmod(0o755, packaging)
     %w[ios_disk_guard.sh verify_widget_embedded.sh].each do |file|
       path = File.join(@dir, "scripts", file)
       File.write(path, "#!/bin/bash\nexit 0\n")
@@ -104,6 +107,23 @@ class NativeTaskWiringTest < Minitest::Test
     end
   end
 
+  def test_mac_build_preflight_precedes_generation_and_ignores_legacy_override
+    skip "Intel macOS preflight only" unless RUBY_PLATFORM.match?(/(?:x86_64|i386).*darwin/)
+    _, error, status = run_task("mac:build", "FIXTURE_SIM_STATE" => "Booted", "HEAVY_JOB_GUARD_DISABLE" => "1")
+    assert_equal 75, status.exitstatus, error
+    assert_match(/Shut down all Simulators/, error)
+    assert_empty events
+    assert_unlocked
+  end
+
+  def test_ios_packaging_preflight_precedes_clang_entrypoint
+    skip "Intel macOS preflight only" unless RUBY_PLATFORM.match?(/(?:x86_64|i386).*darwin/)
+    _, error, status = run_task("converter-ffi:ios-packaging:test", "FIXTURE_SIM_STATE" => "Booted")
+    assert_equal 75, status.exitstatus, error
+    assert_match(/Shut down all Simulators/, error)
+    assert_empty events
+    assert_unlocked
+  end
   def test_ios_build_failure_stops_before_success_tail
     output, error, status = run_task("ios:build", "FIXTURE_BUILD_STATUS" => "17")
     assert_equal 65, status.exitstatus, error
