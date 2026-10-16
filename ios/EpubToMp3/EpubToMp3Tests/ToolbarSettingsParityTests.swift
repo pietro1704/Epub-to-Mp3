@@ -115,6 +115,20 @@ final class ToolbarSettingsParityTests: XCTestCase {
         XCTAssertNil(settings.conversionOptions.ttsPreferences?.secondary)
     }
 
+    func testSecondaryAudioEngineCannotDuplicatePrimary() {
+        let (settings, defaults) = make()
+        settings.allowOnlineAudioFallback = true
+
+        settings.secondaryAudioEngine = .piper
+        XCTAssertNil(settings.secondaryAudioEngine)
+        XCTAssertNil(defaults.string(forKey: "secondaryAudioEngine"))
+
+        settings.audioEngine = .edge
+        settings.secondaryAudioEngine = .edge
+        XCTAssertNil(settings.secondaryAudioEngine)
+        XCTAssertNil(defaults.string(forKey: "secondaryAudioEngine"))
+    }
+
     func testLegacyUnconsentedEdgeSecondaryIsMigratedOnLoad() {
         let suite = "Toolbar.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!
