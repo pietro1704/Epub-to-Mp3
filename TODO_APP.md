@@ -1,5 +1,13 @@
 # App delivery backlog
 
+## APP-20261016-TTS-BENCHMARK-CONSENSUS — Agree on a free TTS comparison including Qwen
+
+- [ ] Owner: Codex; status: research and user discussion, benchmark not executed.
+- Request: investigate the latest Qwen-team TTS, include eligible Qwen checkpoints in the benchmark candidate list, present candidates before execution, and iterate with Pietro on the protocol.
+- Acceptance: agree on target hardware, Portuguese/Brazilian pronunciation, eligibility/cost, quality versus latency/resource priorities, corpus, repetitions, failure handling and runtime evidence before implementation or synthesis.
+- Draft/source inventory: `docs/research/2026-10-16-qwen-tts-benchmark-proposal.md`. Qwen3-TTS open weights and paid Qwen-Audio hosted models are separate entries. Qwen4 architecture preview is not a TTS checkpoint.
+- Verification: official-source research only. No model download, synthesis, app/device/Simulator action or local test/build. Physical runtime acceptance remains blocked by host safety; GitHub runners cannot establish phone performance.
+
 ## CI-20261016-IOS-BUILD-SIGNING — Keep unsigned CodeQL host identity consistent
 
 - [ ] Owner: github_monitor_plan; real RED: CodeQL `38875197584`, job `116889500305`, recovery head `b5fcb7a8eb9d3fd551b2b91acdfacba184a31009`. Swift compilation reached embedded Widget validation, which rejected its unsigned extension against the fictitious parent ad hoc identity supplied globally by the workflow.
