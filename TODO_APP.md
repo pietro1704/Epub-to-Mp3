@@ -3,7 +3,7 @@
 ## APP-20261016-CODEX-NATIVE-GUARD — Recognize direct native execution before tool use
 
 - [ ] Owner: crash_guard_audit; add the bounded Ruby PreToolUse recognizer and GitHub-only behavioral tests for direct native commands, cleanup/inspection, compound cleanup-plus-boot denial, invalid input and Git common-directory scope across real temporary worktrees.
-- Activation blocked: repository source is not an installed or trusted Codex hook. Preserve existing ai-memory and RTK registrations. A future user-reviewed immutable script copy and explicit `/hooks` trust are required; no local configuration or trust state changed.
+- Activation remains unverified: the reviewed immutable script copy is registered in the user's Codex configuration, preserving existing ai-memory and RTK entries and a private backup. User `/hooks` review/trust is still required; no trust state was changed and installed interception has not been demonstrated. See `docs/agents/intel-gpu-safety.md` for the exact path, hash and read-back evidence.
 - Limits: this is an additional cooperative guard, not shell interpretation or OS isolation. Existing TTY sessions, opaque scripts and unsupported tool paths can escape; host tests do not establish GPU stability or satisfy SE1/iOS15.5 or native macOS acceptance. All test/syntax/build execution remains GitHub-only.
 
 ## APP-20261015-WHOLE-IOS — Reviewed whole-app iOS 15 verification campaign
