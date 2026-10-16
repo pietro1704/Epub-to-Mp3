@@ -338,6 +338,7 @@ final class AppSettings: ObservableObject {
         didSet {
             if secondaryAudioEngine == .edge && !allowOnlineAudioFallback {
                 secondaryAudioEngine = nil
+                defaults.removeObject(forKey: "secondaryAudioEngine")
                 return
             }
             defaults.set(secondaryAudioEngine?.rawValue, forKey: "secondaryAudioEngine")

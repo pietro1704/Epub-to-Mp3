@@ -94,6 +94,8 @@ final class ToolbarSettingsParityTests: XCTestCase {
     func testEdgeSecondaryRequiresConsentAndRevocationClearsPreference() throws {
         let (settings, defaults) = make()
         XCTAssertFalse(settings.selectableSecondaryAudioEngines.contains(.edge))
+        settings.secondaryAudioEngine = .piper
+        XCTAssertEqual(defaults.string(forKey: "secondaryAudioEngine"), "piper")
         settings.secondaryAudioEngine = .edge
         XCTAssertNil(settings.secondaryAudioEngine, "Unconsented Edge must not be saved.")
         XCTAssertNil(defaults.string(forKey: "secondaryAudioEngine"))
