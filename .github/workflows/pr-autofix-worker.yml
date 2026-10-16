@@ -91,6 +91,18 @@ jobs:
           gh api "/repos/$GITHUB_REPOSITORY/commits/$EXPECTED_SHA/check-runs" --paginate \
             --jq '.check_runs[] | select(.conclusion == "failure") | [.name, .output.summary] | @tsv' \
             > "$RUNNER_TEMP/repair-failure.log"
+      - name: Revalidate current failure before preparing the toolchain
+        if: steps.claim.outputs.state == 'claimed'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ inputs.pr_number }}
+          EXPECTED_SHA: ${{ inputs.head_sha }}
+        run: node trusted/.github/scripts/pr-repair-safety.cjs failure "$PR_NUMBER" "$EXPECTED_SHA"
+      - name: Install Codex without LLM or metadata credentials
+        if: steps.claim.outputs.state == 'claimed'
+        # Use a private directory, not project-owned npm configuration.
+        working-directory: ${{ runner.temp }}
+        run: npm install --global @openai/codex
       - name: Prepare a repair without publication credentials
         id: inference
         if: steps.claim.outputs.state == 'claimed'
@@ -101,9 +113,7 @@ jobs:
           PR_NUMBER: ${{ inputs.pr_number }}
           EXPECTED_SHA: ${{ inputs.head_sha }}
         run: |
-          # Re-read latest exact-head CI after checkout/log collection, before installing or invoking the LLM.
-          GH_TOKEN="$REPAIR_METADATA_TOKEN" node ../trusted/.github/scripts/pr-repair-safety.cjs failure "$PR_NUMBER" "$EXPECTED_SHA"
-          npm install --global @openai/codex
+          # Re-read current failure after installation, immediately before inference.
           GH_TOKEN="$REPAIR_METADATA_TOKEN" node ../trusted/.github/scripts/pr-repair-safety.cjs failure "$PR_NUMBER" "$EXPECTED_SHA"
           unset REPAIR_METADATA_TOKEN
           codex exec --full-auto --skip-git-repo-check \

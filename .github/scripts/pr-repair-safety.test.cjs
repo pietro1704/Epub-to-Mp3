@@ -67,7 +67,12 @@ test('latest exact-head CI must be completed failure, never historical red or in
     { ...red, id: 102, status: 'in_progress', conclusion: null },
     { ...red, id: 102, conclusion: 'startup_failure' },
     { ...red, id: 102, head_sha: 'b'.repeat(40) },
-    { ...red, run_attempt: 2, conclusion: 'success' }
+    { ...red, run_attempt: 2, conclusion: 'success' },
+    { ...red, id: 100, run_attempt: 2, conclusion: 'success' },
+    { ...red, id: 100, run_attempt: 2, status: 'in_progress', conclusion: null },
+    { ...red, id: 100, run_attempt: 2, status: 'queued', conclusion: null },
+    { ...red, id: 100, conclusion: 'cancelled' },
+    { ...red, id: 100, run_attempt: 2, conclusion: 'failure' }
   ]) {
     let writes = 0, inferred = false;
     const api = withFailure((endpoint, method) => {
@@ -96,6 +101,26 @@ test('verification observation is bounded and missing exact-head runs remain blo
   assert.deepEqual(result.map(item => item.run), [null, null]);
 });
 
+test('older run101 green or active blocks newer red102, including cross-ID rerun visibility', () => {
+  const red = { id: 102, run_attempt: 1, workflow_id: 42, head_sha: SHA,
+    head_repository: { full_name: REPOSITORY }, event: 'pull_request', status: 'completed', conclusion: 'failure' };
+  for (const previous of [
+    { ...red, id: 101, conclusion: 'success' },
+    { ...red, id: 101, status: 'queued', conclusion: null },
+    { ...red, id: 101, run_attempt: 2, conclusion: 'success' },
+    { ...red, id: 101, run_attempt: 2, status: 'in_progress', conclusion: null }
+  ]) {
+    let writes = 0;
+    const api = withFailure((endpoint, method) => {
+      if (method === 'POST') writes++;
+      return endpoint === '/pulls/7' ? pr() : [];
+    }, SHA, [red, previous]);
+    assert.throws(() => claim(api, REPOSITORY, 7, SHA, 'cross-ID'), /repair blocked/);
+    assert.equal(writes, 0);
+  }
+  assert.equal(currentFailure(withFailure(() => [], SHA, [red, { ...red, id: 101 }]), REPOSITORY, SHA).failureRun, 102);
+});
+
 test('workflow credential gate dominates repair checkout, installation and publication jobs', () => {
   const source = fs.readFileSync(path.join(__dirname, '../workflows/pr-autofix-worker.yml'), 'utf8');
   const parsed = spawnSync('ruby', ['-rjson', '-ryaml', '-e', 'puts JSON.generate(YAML.safe_load(STDIN.read, permitted_classes: [], aliases: false))'],
@@ -116,6 +141,11 @@ test('workflow credential gate dominates repair checkout, installation and publi
   const inference = workflow.jobs.repair.steps.find(step => step.id === 'inference');
   assert.ok(inference.run.indexOf('pr-repair-safety.cjs failure') < inference.run.indexOf('codex exec'));
   assert.ok(inference.run.indexOf('unset REPAIR_METADATA_TOKEN') < inference.run.indexOf('codex exec'));
+  const install = workflow.jobs.repair.steps.find(step => step.run?.includes('npm install'));
+  assert.equal(install.env, undefined);
+  assert.equal(install['working-directory'], '${{ runner.temp }}');
+  assert.ok(workflow.jobs.repair.steps.indexOf(install) < workflow.jobs.repair.steps.indexOf(inference));
+  assert.equal(inference.run.includes('npm install'), false);
 });
 
 function fixture(t) {
@@ -213,6 +243,21 @@ test('NUL-safe policy rejects untracked credentials, renames, symlinks and submo
   f.git(f.work, 'restore', '--staged', 'src/link'); fs.rmSync(path.join(f.work, 'src/link'));
   f.git(f.work, 'update-index', '--add', '--cacheinfo', `160000,${f.expected},src/submodule`);
   assert.throws(() => validateChanges(f.work, f.expected), /Submodule/);
+});
+
+test('authentication files and directories are refused both untracked and staged', t => {
+  const f = fixture(t);
+  for (const filename of ['.netrc', '.npmrc', '.pypirc', 'auth.json', '.aws/credentials', '.azure/token.json',
+    '.kube/config', '.config/gcloud/state.json', '.docker/config.json']) {
+    const full = path.join(f.work, filename);
+    fs.mkdirSync(path.dirname(full), { recursive: true });
+    fs.writeFileSync(full, 'owned authentication-shaped fixture; no real credential');
+    assert.throws(() => validateChanges(f.work, f.expected), /protected path/);
+    f.git(f.work, 'add', '--', filename);
+    assert.throws(() => validateChanges(f.work, f.expected), /protected path/);
+    f.git(f.work, 'restore', '--staged', '--', filename);
+    fs.rmSync(full);
+  }
 });
 
 test('dispatcher refreshes metadata and never dispatches a stale, draft or fork candidate', () => {

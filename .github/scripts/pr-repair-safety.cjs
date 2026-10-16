@@ -42,6 +42,10 @@ function protectedPath(filename) {
   return !filename || filename.startsWith('/') || filename.split('/').includes('..') ||
     filename.includes('\\') || /[\x00-\x1f\x7f]/.test(filename) ||
     /(^|\/)(\.git|\.github|\.claude|\.codex|\.agents|\.hermes|\.ssh)(\/|$)/i.test(filename) ||
+    /(^|\/)(\.aws|\.azure|\.kube)(\/|$)/i.test(filename) ||
+    /(^|\/)\.config\/gcloud(\/|$)/i.test(filename) ||
+    /(^|\/)\.docker\/config\.json$/i.test(filename) ||
+    /(^|\/)(\.netrc|\.npmrc|\.pypirc|auth\.json)$/i.test(filename) ||
     /(^|\/)(AGENTS\.md|CLAUDE\.md|mise\.toml|\.gitmodules|\.env[^/]*|[^/]*(credential|secret)[^/]*|[^/]*\.(pem|key|p12|mobileprovision))$/i.test(filename) ||
     /^(scripts\/|docs\/agents\/|docs\/agent-workflow\.md|TODO_APP\.md)/.test(filename);
 }
@@ -107,6 +111,16 @@ function currentFailure(api, repository, expected) {
   if (runs.some(run => run.head_sha !== expected || run.workflow_id !== workflow.id ||
       run.head_repository?.full_name !== repository || !Number.isSafeInteger(run.id) ||
       !Number.isSafeInteger(run.run_attempt))) throw new Error('Untrusted or stale CI run metadata');
+  // The list endpoint replaces previous attempts. Their missing outcomes cannot
+  // establish an all-failure history, so reruns require active diagnosis too.
+  if (runs.some(run => run.run_attempt !== 1)) throw new Error('Prior CI attempt outcomes are unobserved; repair blocked');
+  // Conservative source-repair policy: any successful or nonterminal CI run on
+  // the same source SHA indicates flaky/infrastructure diagnosis, not authority
+  // for autonomous source edits. All observed attempts must be terminal failure.
+  if (runs.some(run => run.status !== 'completed' || run.conclusion !== 'failure' ||
+      !['pull_request', 'workflow_dispatch'].includes(run.event))) {
+    throw new Error('Exact-head CI history requires human or active diagnosis; repair blocked');
+  }
   runs.sort((a, b) => b.id - a.id || b.run_attempt - a.run_attempt);
   const latest = runs[0];
   if (!latest || !['pull_request', 'workflow_dispatch'].includes(latest.event) ||
