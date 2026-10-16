@@ -2,19 +2,24 @@
 set -euo pipefail
 
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-BACKEND_BIN="$PROJECT_ROOT/target/debug/converter-server"
+cd "$PROJECT_ROOT"
+target_dir="${CARGO_TARGET_DIR:-target}"
+if [[ "$target_dir" != /* ]]; then
+  target_dir="$PROJECT_ROOT/$target_dir"
+fi
+BACKEND_BIN="$target_dir/debug/converter-server"
 if [[ -x "$BACKEND_BIN.exe" ]]; then
   BACKEND_BIN="$BACKEND_BIN.exe"
 fi
 
 mise exec -- ruby "$PROJECT_ROOT/scripts/native_build_command.rb" -- mise exec -- cargo build -p converter-server
 
-backend_args=()
+set --
 if [[ "${BACKEND_RELOAD:-0}" == "1" ]]; then
-  backend_args+=(--reload)
+  set -- --reload
 fi
 
 exec env \
   HOST="${BACKEND_HOST:-127.0.0.1}" \
   PORT="${BACKEND_PORT:-8000}" \
-  "$BACKEND_BIN" "${backend_args[@]}"
+  "$BACKEND_BIN" "$@"
