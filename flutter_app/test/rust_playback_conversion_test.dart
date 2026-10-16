@@ -476,6 +476,7 @@ void main() {
     final coordinator = await _coordinator();
     final root = await Directory.systemTemp.createTemp('rust-playback-window-');
     final convertedThree = Completer<void>();
+    final convertedSeven = Completer<void>();
 
     final jobFuture =
         RustPlaybackConversionService(
@@ -495,14 +496,15 @@ void main() {
             expect(outputPath, isNotEmpty);
             expect(updatedJob.chapters, isNotEmpty);
             if (chapter.index == 3) convertedThree.complete();
+            if (chapter.index == 7) convertedSeven.complete();
           },
         );
 
     try {
       await convertedThree.future.timeout(const Duration(seconds: 2));
       changes.add(6);
-      await Future<void>.delayed(const Duration(milliseconds: 20));
-      changes.close();
+      await convertedSeven.future.timeout(const Duration(seconds: 2));
+      await changes.close();
       final job = await jobFuture.timeout(const Duration(seconds: 2));
 
       expect(converter.requested, [2, 3, 6, 7]);

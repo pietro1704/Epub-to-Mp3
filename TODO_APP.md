@@ -2,6 +2,8 @@
 
 ## AH-07 — Exercise direct-runtime contracts instead of source-name guesses
 
+- GitHub RED `38892875007`, Flutter job `116946415185`, head `52e17b3`: 472 passed, one failed, three skipped. The moving-window fixture closed its event stream after 20ms, cancelling before chapter seven committed (`[2,3,6]` instead of `[2,3,6,7]`); the same test had passed in the focused phase. Restore AH-03 event synchronization from the preserved original source: wait for chapter-seven's post-manifest completion callback before closing, retaining all selection/options assertions and independent cancellation tests. GitHub rerun pending; production unchanged.
+
 - [ ] Owner: crash_guard_audit; dependencies AH-05 `564e319` and AH-06 `6e6abd0` passed their GitHub suites. Replace the existing boundary shell's grep heuristics with explicit Web/Flutter/all behavioral contracts, retaining full CI suites and existing scoped toolchains.
 - Acceptance pending GitHub: real-process host regressions prove selection, literal argv/cwd, missing capabilities/tools, propagated failure and success without false PASS. No local lock, fallback, download, native/device verification or new Ruby dependency in product test jobs. No local test/build/formatter execution.
 
