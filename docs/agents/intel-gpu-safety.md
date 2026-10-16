@@ -45,7 +45,7 @@ driver defaults, erase devices, restart services or install runtimes as an
 implicit workaround. If safety inspection is inconclusive, preserve evidence
 and continue independent work rather than retrying native graphics execution.
 
-### Proposed Codex tool hook (not installed or trusted)
+### Codex tool hook (registered; trust and interception unverified)
 
 `scripts/native_codex_tool_guard.rb` reads a Codex PreToolUse JSON event and
 emits an explicit JSON denial for recognized local native commands. It starts
@@ -73,7 +73,7 @@ A small quote/escape scan distinguishes literal single-quoted documentation from
 known active command compositions and substitutions; it does not implement shell
 expansion or claim to recognize every equivalent spelling of a native command.
 
-Future activation must preserve every existing ai-memory and RTK hook. Copy the
+Activation must preserve every existing ai-memory and RTK hook. Copy the
 reviewed script to a stable, user-owned location outside branch checkouts, with
 its actual reviewed SHA-256 in the filename; keep that copy immutable by normal
 workflow. Review the exact copy, registration and repository scope before adding
@@ -94,7 +94,15 @@ This example is not an installation command. Non-managed hooks require the
 user's exact review and trust through `/hooks`; never edit trust state, label
 the hook managed, or reuse a trusted memory/RTK hook to bypass that review.
 Switching branches must not replace or remove the reviewed executable copy.
-No user-level hook configuration has been changed for this proposal.
+On 2026-10-16, the reviewed script with SHA-256
+`8406df3c5c5d57612c4b44b4bcc727ca019f8f6fda164cbf68fc8aa908dd34ad`
+was copied to that stable location and registered separately in user-level
+`hooks.json`. Existing entries were preserved, with a private backup retained.
+Registration and copied content were read back; no trust state was modified.
+GitHub Native safety run38876434290 passed on Ubuntu and macOS Intel for the
+reviewed source. Installed interception has not been exercised locally, and
+registration alone does not prove activation. The user's `/hooks` review remains
+required; do not describe this hook as active until that gate is satisfied.
 
 The [official Codex hooks documentation](https://learn.chatgpt.com/docs/hooks)
 defines `exec_command`'s Bash alias, `tool_input.command` and supported denial
