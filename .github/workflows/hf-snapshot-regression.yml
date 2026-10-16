@@ -1,0 +1,84 @@
+name: HF snapshot regression
+
+on:
+  pull_request:
+    paths: ['.github/workflows/sync-hf.yml', '.github/workflows/hf-snapshot-regression.yml', 'scripts/hf_*', 'scripts/test_hf_snapshot.rb', 'Dockerfile', '.dockerignore', 'mise.toml', 'Cargo.toml', 'Cargo.lock', 'web/**', 'crates/**', 'native/**', 'benches/**']
+  push:
+    branches: [master, 'feature/hf-binary-sync']
+    paths: ['.github/workflows/sync-hf.yml', '.github/workflows/hf-snapshot-regression.yml', 'scripts/hf_*', 'scripts/test_hf_snapshot.rb', 'Dockerfile', '.dockerignore', 'mise.toml', 'Cargo.toml', 'Cargo.lock', 'web/**', 'crates/**', 'native/**', 'benches/**']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hf-snapshot-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      MISE_ENABLE_TOOLS: ruby
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+          lfs: false
+      - uses: jdx/mise-action@v5
+        with:
+          version: 2026.9.14
+          install: false
+      - name: Install managed Ruby
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: mise install ruby
+      - name: Exercise actual Git/LFS offline transport
+        run: |
+          git lfs version
+          mise run hf:snapshot:test
+      - name: Reconstruct the actual snapshot through local LFS transport
+        run: |
+          set -euo pipefail
+          snapshot_root="$(mktemp -d "$RUNNER_TEMP/hf-regression.XXXXXX")"
+          echo "HF_REGRESSION_ROOT=$snapshot_root" >> "$GITHUB_ENV"
+          mise run hf:snapshot -- "$GITHUB_WORKSPACE" "$snapshot_root/source"
+          git init --bare --initial-branch=master "$snapshot_root/transport.git"
+          bash scripts/hf_push.sh "$snapshot_root/source" "file://$snapshot_root/transport.git"
+          git clone "file://$snapshot_root/transport.git" "$snapshot_root/reconstructed"
+          cmp web/src/wasm/converter_wasm_bg.wasm "$snapshot_root/reconstructed/web/src/wasm/converter_wasm_bg.wasm"
+          cmp web/public/sample.epub "$snapshot_root/reconstructed/web/public/sample.epub"
+      - name: Build Docker from the reconstructed snapshot
+        run: docker build --tag hf-snapshot-regression "$HF_REGRESSION_ROOT/reconstructed"
+      - name: Verify container health, contract and actual frontend WASM without models
+        run: |
+          set -euo pipefail
+          docker run --detach --name hf-snapshot-regression --publish 127.0.0.1:17860:7860 hf-snapshot-regression
+          for attempt in $(seq 1 30); do
+            if curl --max-time 3 --fail --silent http://127.0.0.1:17860/api/health > "$RUNNER_TEMP/hf-health.json"; then break; fi
+            sleep 2
+          done
+          curl --max-time 5 --fail --silent http://127.0.0.1:17860/api/health | jq -e '.status == "healthy" and .contract_version == "1"'
+          curl --max-time 5 --fail --silent http://127.0.0.1:17860/api/contract | jq -e '.backend == "rust" and (.capabilities | index("uploads") != null)'
+          curl --max-time 5 --fail --silent http://127.0.0.1:17860/ > "$RUNNER_TEMP/hf-index.html"
+          grep -q '<html' "$RUNNER_TEMP/hf-index.html"
+          # Vite emits this binary as a hashed asset. Read the actual built file path.
+          docker exec hf-snapshot-regression sh -c 'find /app/web/dist -name "converter_wasm_bg*.wasm" -type f' > "$RUNNER_TEMP/hf-wasm-paths.txt"
+          test "$(wc -l < "$RUNNER_TEMP/hf-wasm-paths.txt")" -eq 1
+          wasm_path="$(cat "$RUNNER_TEMP/hf-wasm-paths.txt")"
+          wasm_url="${wasm_path#/app/web/dist}"
+          curl --max-time 10 --fail --silent "http://127.0.0.1:17860$wasm_url" > "$RUNNER_TEMP/hf-served.wasm"
+          cmp web/src/wasm/converter_wasm_bg.wasm "$RUNNER_TEMP/hf-served.wasm"
+          docker exec hf-snapshot-regression sh -c 'test "$HOST" = 0.0.0.0; test -z "$(find /app /data -name "*.onnx" -print -quit)"'
+      - name: Retain bounded container diagnostics
+        if: always()
+        run: |
+          docker logs --tail 100 hf-snapshot-regression 2>&1 || true
+      - name: Remove owned container and snapshot fixtures
+        if: always()
+        run: |
+          docker rm --force hf-snapshot-regression >/dev/null 2>&1 || true
+          if [[ -n "${HF_REGRESSION_ROOT:-}" && "$HF_REGRESSION_ROOT" == "$RUNNER_TEMP/hf-regression."* ]]; then
+            rm -rf -- "$HF_REGRESSION_ROOT"
+          fi

@@ -31,6 +31,14 @@ _.python.venv = { path = ".venv", create = true }
 description = "Install and verify the mise-managed Python used by Simulator helper scripts"
 run = "mise install python && mise exec -- python --version"
 
+[tasks."hf:snapshot"]
+description = "Prepare an allowlisted Space snapshot with snapshot-local Git LFS"
+run = "ruby scripts/hf_snapshot.rb"
+
+[tasks."hf:snapshot:test"]
+description = "Exercise actual offline Git/LFS transport and snapshot rejection"
+run = "ruby scripts/test_hf_snapshot.rb"
+
 [tasks.dev]
 description = "Start the Rust converter server and frontend (Vite) together"
 run = "./scripts/dev.sh"
