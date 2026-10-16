@@ -1516,3 +1516,10 @@ que aparecem. Para cada item:
 Pare e pergunte se um item depender de decisão de produto/escopo que não
 esteja clara neste arquivo (ex: qual plataforma priorizar no Flutter).
 ```
+
+## TOOL-FIX-MERGE-GATE — Exact-head green GitHub delivery
+
+- [ ] Require current master ancestry, known clean mergeability, successful complete CI and CodeQL for the exact PR head, and a final recheck before requesting a SHA-pinned merge.
+- Preserve draft/fork/review and malformed-metadata refusal. Remove raw automatic merges from every existing workflow writer; no force/admin fallback or automatic branch deletion before merged-state verification.
+- Coverage: 16 fake-GitHub policy/workflow regressions plus JS/YAML syntax run only in GitHub merge-policy workflow. Three new regressions were observed RED before the GitHub-only correction; final candidate checks pending.
+- Server limitation: base/check rechecks are snapshots; branch protection must enforce server-side freshness/required checks against changes after the last read. A successful command may enqueue a merge and is not proof of delivery.
