@@ -1,5 +1,10 @@
 # App delivery backlog
 
+## APP-20261016-PIPER-IMMUTABLE-CATALOG — Pin explicit model installation sources
+
+- [ ] Owner: crash_guard_audit; restore only the six Piper artifact URLs and manifest identity regressions from historical commit `5147fe1d4161088f508c2a73ce81d85b1ee84aa9`. Use upstream snapshot `c10ece1aade47bb51c153c893d14e5bf8e5b7117`, preserving verified hashes, byte sizes, Faber default and explicit installation behavior.
+- Acceptance pending GitHub: all three model manifests retain their exact model/config paths, hashes and sizes; existing installation integrity/failure tests remain unchanged. No local tests/builds/formatter, downloads, runtime changes or unrelated historical research/docs.
+
 ## APP-20261016-FABER-TESTPLAN-ENV — Forward explicit model readiness into the XCTest process
 
 - [ ] Owner: crash_guard_audit; declare only `EPUB2MP3_PIPER_TEST_MODEL_ROOT` in the existing Unit test plan runtime environment, expanding the already supplied build setting against its unchanged app target. Keep the scheme, test plan, explicit model download/checksums, positive inference assertions and mandatory `FABER_NATIVE` marker enabled.
