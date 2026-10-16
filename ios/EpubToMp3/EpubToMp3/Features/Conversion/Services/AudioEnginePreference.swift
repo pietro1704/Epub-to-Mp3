@@ -5,9 +5,31 @@ enum AudioEnginePreference: String, CaseIterable, Identifiable {
     case piper
 
     var id: String { rawValue }
-    var displayName: String { rawValue == "edge" ? "Edge" : "Piper" }
+    var displayName: String { rawValue == "edge" ? "Edge" : "Faber medium" }
 
     static var supportedPreferences: [AudioEnginePreference] {
-        [.edge]
+        [.piper, .edge]
+    }
+}
+
+/// Immutable selections transported to the shared Rust policy resolver.
+struct TtsSelection: Codable, Sendable, Equatable {
+    var engine: String
+    var modelID: String?
+    var voice: String?
+    enum CodingKeys: String, CodingKey { case engine, voice; case modelID = "model_id" }
+    static func selected(_ engine: AudioEnginePreference) -> Self {
+        Self(engine: engine.rawValue, modelID: engine == .piper ? "pt_BR-faber-medium" : nil,
+             voice: nil)
+    }
+}
+
+struct TtsPreferences: Codable, Sendable, Equatable {
+    var primary: TtsSelection
+    var secondary: TtsSelection?
+    var allowOnlineFallback: Bool
+    enum CodingKeys: String, CodingKey {
+        case primary, secondary
+        case allowOnlineFallback = "allow_online_fallback"
     }
 }

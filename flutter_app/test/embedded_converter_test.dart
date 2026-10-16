@@ -35,6 +35,7 @@ class FakeConverter implements EmbeddedConverter {
     required String outputPath,
     int? chapterStart,
     int? chapterEnd,
+    String? optionsJson,
   }) async {
     calls++;
     return outputPath;
@@ -45,6 +46,7 @@ class FakeConverter implements EmbeddedConverter {
     required String inputPath,
     required String outputPath,
     required int chapterIndex,
+    String? optionsJson,
   }) async => ConvertedChapterAudio(
     chapterIndex: chapterIndex,
     path: outputPath,
@@ -98,6 +100,35 @@ class FakeConverter implements EmbeddedConverter {
 }
 
 void main() {
+  test(
+    'native chapter decoding retains actual voice and opaque Rust policy state',
+    () {
+      final chapter = ConvertedChapterAudio.fromNativeResult(
+        jsonEncode({
+          'audioPath': '/chapter.mp3',
+          'manifest': {
+            'chapters': [
+              {'sourceIndex': 5, 'title': 'Chapter 5'},
+            ],
+            'usedSelections': [
+              {
+                'engine': 'edge',
+                'model_id': null,
+                'voice': 'pt-BR-FranciscaNeural',
+              },
+            ],
+            'ttsPolicyState': {'consecutive_failures': 2},
+            'fallbackUsed': true,
+          },
+        }),
+        expectedChapterIndex: 5,
+      );
+      expect(chapter.usedSelections.single.voice, 'pt-BR-FranciscaNeural');
+      expect(chapter.fallbackUsed, true);
+      expect(chapter.ttsPolicyState, {'consecutive_failures': 2});
+    },
+  );
+
   TestWidgetsFlutterBinding.ensureInitialized();
   test(
     'owned output cancellation leaves other conversions of the same input alone',

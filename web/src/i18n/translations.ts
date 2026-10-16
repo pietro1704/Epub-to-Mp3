@@ -101,7 +101,23 @@ export interface ActiveConversionText {
   languageLabel: string;
 }
 
+export interface TtsPreferenceText {
+  primary: string;
+  secondary: string;
+  none: string;
+  online: string;
+  inherit: string;
+  reserve: string;
+  install: string;
+  installed: string;
+  installing: string;
+  capability: string;
+  unavailable: string;
+  manualVoice: string;
+}
+
 export interface FormText {
+  ttsPreferences: TtsPreferenceText;
   fileLabel: string;
   fileHint: string;
   fileQueueLabel: string;
@@ -784,6 +800,20 @@ export const translations: Record<Locale, Translations> = {
       languageLabel: "Idioma",
     },
     form: {
+      ttsPreferences: {
+        primary: "Voz principal",
+        secondary: "Voz secundária",
+        none: "Nenhuma",
+        online: "Permitir reserva online",
+        inherit: "Usar preferências",
+        reserve: "Permitir secundário nesta conversão",
+        install: "Instalar Faber medium",
+        installed: "Faber medium instalado",
+        installing: "Instalando…",
+        capability: "Faber medium funciona localmente após a instalação. Edge não está disponível neste navegador.",
+        unavailable: "indisponível neste navegador",
+        manualVoice: "Voz desta conversão",
+      },
       fileLabel: "Arquivo do livro (EPUB ou PDF)",
       fileHint:
         "Selecione um ou mais arquivos do seu computador. Todos usarão as mesmas configurações abaixo.",
@@ -1618,6 +1648,20 @@ export const translations: Record<Locale, Translations> = {
       languageLabel: "Language",
     },
     form: {
+      ttsPreferences: {
+        primary: "Primary voice",
+        secondary: "Secondary voice",
+        none: "None",
+        online: "Allow online fallback",
+        inherit: "Use preferences",
+        reserve: "Allow secondary for this conversion",
+        install: "Install Faber medium",
+        installed: "Faber medium installed",
+        installing: "Installing…",
+        capability: "Faber medium runs locally after installation. Edge is unavailable in this browser.",
+        unavailable: "unavailable in this browser",
+        manualVoice: "Voice for this conversion",
+      },
       fileLabel: "Book file (EPUB or PDF)",
       fileHint:
         "Select one or more files from your computer. Every book will reuse the same settings below.",

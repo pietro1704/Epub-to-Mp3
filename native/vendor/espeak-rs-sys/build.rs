@@ -124,6 +124,8 @@ fn macos_link_search_path() -> Option<String> {
 }
 
 fn main() {
+    println!("cargo:rerun-if-env-changed=MACOSX_DEPLOYMENT_TARGET");
+    println!("cargo:rerun-if-changed=.");
     println!("cargo:rustc-link-lib=speechPlayer");
     println!("cargo:rustc-link-lib=espeak-ng");
     println!("cargo:rustc-link-lib=ucd");
@@ -195,6 +197,11 @@ fn main() {
     // Build with Cmake
 
     let mut config = Config::new(&espeak_dst);
+    if target.ends_with("-apple-darwin") {
+        if let Ok(deployment) = env::var("MACOSX_DEPLOYMENT_TARGET") {
+            config.define("CMAKE_OSX_DEPLOYMENT_TARGET", deployment);
+        }
+    }
 
     config.define(
         "BUILD_SHARED_LIBS",
@@ -213,14 +220,10 @@ fn main() {
         config
             .define("ANDROID_ABI", "arm64-v8a")
             .define("ANDROID_PLATFORM", "android-24");
-        let ndk_root =
-            env::var("ANDROID_NDK_ROOT").expect("ANDROID_NDK_ROOT is required for Android builds");
-        println!(
-            "cargo:rustc-link-search=native={}/toolchains/llvm/prebuilt/darwin-x86_64/sysroot/usr/lib/aarch64-linux-android",
-            ndk_root
-        );
-        println!("cargo:rustc-link-lib=static=c++_static");
-        println!("cargo:rustc-link-lib=static=c++abi");
+        // Let the NDK driver search the API-specific shared system libraries
+        // before its archive directory. An explicit -L to the latter embeds
+        // static Bionic in the JNI library and crashes its TLS initialization.
+        println!("cargo:rustc-link-lib=dylib=c++_shared");
     }
 
     // General
@@ -263,8 +266,13 @@ fn main() {
         );
     }
 
-    // macOS
-    if target.ends_with("-apple-darwin") {
+    if target.contains("-windows-") {
+        // eSpeak's Windows data-path lookup calls the registry APIs.
+        println!("cargo:rustc-link-lib=advapi32");
+    }
+
+    // Apple targets share the C++ runtime required by the speech player.
+    if target.contains("-apple-") {
         println!("cargo:rustc-link-lib=framework=Foundation");
         println!("cargo:rustc-link-lib=c++");
     }
@@ -290,7 +298,7 @@ fn main() {
     }
 
     // Linux
-    if cfg!(target_os = "linux") {
+    if target.contains("-linux-") && !target.ends_with("-android") {
         println!("cargo:rustc-link-lib=dylib=stdc++");
     }
 
