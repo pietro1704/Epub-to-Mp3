@@ -1,5 +1,10 @@
 # App delivery backlog
 
+## APP-20261016-CI-LIBRARY-ACTIONS — Exercise visible library actions
+
+- [ ] Owner: crash_guard_audit; acceptance: scroll the selected book title into the hit-testable viewport before long-pressing, retain action assertions, and exercise localized tag-editor entry/dismissal without changing book identity or unsaved tags.
+- Evidence: master Actions run `38862909247`, Flutter job `116849117924`, missed the gesture at `(77.3, 754.0)` outside its `800x600` viewport. This is a CI test interaction correction, not a claimed product UI fix. GitHub-only tests pending; no local Flutter tests, analysis, builds or devices executed.
+
 ## APP-20261015-WHOLE-IOS — Reviewed whole-app iOS 15 verification campaign
 
 - [ ] IOS-ALL-1: persist the user's campaign preferences in canonical harness instructions and ai-memory before execution; obtain specialist plan review.

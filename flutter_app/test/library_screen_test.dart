@@ -13,6 +13,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 Future<void> _pumpLibrary(
   WidgetTester tester, {
   Map<String, Object> prefsData = const {},
+  Locale locale = const Locale('en'),
 }) async {
   SharedPreferences.setMockInitialValues(prefsData);
   final prefs = await SharedPreferences.getInstance();
@@ -20,6 +21,7 @@ Future<void> _pumpLibrary(
     ProviderScope(
       overrides: [sharedPrefsProvider.overrideWithValue(prefs)],
       child: MaterialApp(
+        locale: locale,
         localizationsDelegates: AppLocalizations.localizationsDelegates,
         supportedLocales: AppLocalizations.supportedLocales,
         home: const LibraryScreen(),
@@ -154,11 +156,86 @@ void main() {
 
     await _pumpLibrary(tester, prefsData: {'library.books.v1': json});
 
-    await tester.longPress(find.text('My EPUB'));
+    final title = find.text('My EPUB');
+    await tester.ensureVisible(title);
+    await tester.pumpAndSettle();
+    expect(title.hitTestable(), findsOneWidget);
+    await tester.longPress(title);
     await tester.pumpAndSettle();
 
     // Bottom sheet with Edit Tags + Remove from library
     expect(find.text('Edit Tags'), findsOneWidget);
     expect(find.text('Remove from library'), findsOneWidget);
   });
+
+  for (final locale in AppLocalizations.supportedLocales) {
+    testWidgets(
+        'visible book actions open and dismiss tag editor in ${locale.languageCode}',
+        (tester) async {
+      final book = BookEntity(
+        id: 'tag-book',
+        title: 'Selected EPUB',
+        author: 'Author',
+        filePath: '/tmp/selected.epub',
+        displayFilename: 'selected.epub',
+        addedAt: DateTime(2025, 6, 1),
+        tags: ['Original'],
+      );
+      final untouchedBook = BookEntity(
+        id: 'other-book',
+        title: 'Another EPUB',
+        filePath: '/tmp/other.epub',
+        displayFilename: 'other.epub',
+        addedAt: DateTime(2025, 5, 1),
+        tags: ['Other'],
+      );
+      await _pumpLibrary(tester, locale: locale, prefsData: {
+        'library.books.v1': '[${book.encode()},${untouchedBook.encode()}]',
+      });
+      final context = tester.element(find.byType(LibraryScreen));
+      final labels = AppLocalizations.of(context)!;
+      final container = ProviderScope.containerOf(context);
+      final store = container.read(libraryStoreProvider);
+      final before = store.books.map((item) => item.encode()).toList();
+
+      Future<void> openActions() async {
+        final title = find.text(book.title);
+        await tester.ensureVisible(title);
+        await tester.pumpAndSettle();
+        expect(title.hitTestable(), findsOneWidget);
+        await tester.longPress(title);
+        await tester.pumpAndSettle();
+        expect(find.text(labels.editTags), findsOneWidget);
+        expect(find.text(labels.removeFromLibrary), findsOneWidget);
+      }
+
+      await openActions();
+      // Dismissing the action sheet must not open the reader or change books.
+      await tester.tapAt(const Offset(8, 8));
+      await tester.pumpAndSettle();
+      expect(find.text(labels.editTags), findsNothing);
+      expect(container.read(currentlyReadingBookIdProvider), isNull);
+
+      await openActions();
+      await tester.tap(find.text(labels.editTags));
+      await tester.pumpAndSettle();
+      final editor = find.byType(DraggableScrollableSheet);
+      expect(editor, findsOneWidget);
+      expect(find.descendant(of: editor, matching: find.text('Original')),
+          findsOneWidget);
+      expect(find.descendant(of: editor, matching: find.text('Other')),
+          findsOneWidget);
+      await tester.enterText(
+        find.descendant(of: editor, matching: find.byType(TextField)),
+        'Unsaved tag',
+      );
+      await tester.tap(find.text(labels.done));
+      await tester.pumpAndSettle();
+
+      expect(editor, findsNothing);
+      expect(store.books.map((item) => item.encode()).toList(), equals(before));
+      expect(container.read(currentlyReadingBookIdProvider), isNull);
+      expect(tester.takeException(), isNull);
+    });
+  }
 }
