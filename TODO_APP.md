@@ -1,5 +1,12 @@
 # App delivery backlog
 
+## CI-20261016-DESKTOP-AUDIO-PREREQUISITES — Preserve desktop codec coverage
+
+- [ ] Owner: crash_workflow_audit; install explicit ffmpeg/ffprobe prerequisites before the Ruby/Rust integration suite. Keep the ADPCM sample-rate and validation assertions mandatory, with actionable failure diagnostics; preserve the isolated native-audio test with external tools disabled.
+- Red evidence: GitHub Ruby Rust Integration run `38870071032`, head `a87337fbc1`, failed `unsupported_native_wave_codec_preserves_external_capability` at external `ffprobe` spawn with `Io(NotFound)`; the two other integration cases passed. This workflow omitted the desktop audio package already installed by the main Rust CI job.
+- Acceptance pending: GitHub-only Ruby/Rust integration passes the unchanged ADPCM capability assertions and native isolation cases. No local tests, builds, formatter, syntax checks or audio tools were executed.
+
+
 ## APP-20261016-CI-LEGACY-GUARDS — Reconcile legacy guard regression contracts
 
 - [ ] Owner: crash_guard_audit; acceptance: replace references to removed private resource APIs with the documented compatibility, lease and oldest-runtime selection contracts. Preserve canonical Ruby Intel quarantine independently in PR #804.
