@@ -35,7 +35,7 @@ class NativeTaskWiringTest < Minitest::Test
       #!/bin/bash
       set -euo pipefail
       "$FIXTURE_RUBY" -e 'f=File.open(ARGV[0], "a+"); exit(f.flock(File::LOCK_EX | File::LOCK_NB) ? 0 : 97)' "$FIXTURE_LOCK"
-      echo "server $* $HOST:$PORT piper=${PIPER_BINARY:-} model=${PIPER_MODEL:-}" >> "$FIXTURE_EVENTS"
+      printf 'server|%s|%s:%s|%s|%s\n' "$*" "$HOST" "$PORT" "${PIPER_BINARY:-}" "${PIPER_MODEL:-}" >> "$FIXTURE_EVENTS"
       exit "${FIXTURE_SERVER_STATUS:-0}"
     SH
     File.chmod(0o755, server)
@@ -186,7 +186,7 @@ class NativeTaskWiringTest < Minitest::Test
     )
     assert status.success?, error
     assert_equal ["cargo", "server"], events.map { |event| event.split.first }
-    assert_match(/server --reload 127.0.0.2:8123/, events.last)
+    assert_equal "server|--reload|127.0.0.2:8123||", events.last
     assert_unlocked
   end
 
@@ -194,9 +194,7 @@ class NativeTaskWiringTest < Minitest::Test
     _, error, status = run_task("rust:server", "FIXTURE_SIM_STATE" => "Shutdown", "FIXTURE_CARGO_STATUS" => "0")
     assert status.success?, error
     assert_equal ["cargo", "server"], events.map { |event| event.split.first }
-    assert_match(/server 127\.0\.0\.1:8000/, events.last)
-    assert_includes events.last, "piper=#{@dir}/.venv/bin/piper"
-    assert_includes events.last, "model=#{@dir}/models/piper/en_US-lessac-medium.onnx"
+    assert_equal "server||127.0.0.1:8000|#{@dir}/.venv/bin/piper|#{@dir}/models/piper/en_US-lessac-medium.onnx", events.last
     assert_unlocked
   end
 
@@ -204,7 +202,7 @@ class NativeTaskWiringTest < Minitest::Test
     _, error, status = run_dev_backend("FIXTURE_SIM_STATE" => "Shutdown", "FIXTURE_CARGO_STATUS" => "0")
     assert status.success?, error
     assert_equal ["cargo", "server"], events.map { |event| event.split.first }
-    assert_equal "server 127.0.0.1:8000 piper= model=", events.last
+    assert_equal "server||127.0.0.1:8000||", events.last
   end
 
   def test_blocked_preflight_never_invokes_compiler_or_task_body
