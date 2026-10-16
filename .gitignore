@@ -104,6 +104,7 @@ Thumbs.db
 *.mp3
 !tests/fixtures/audio/mono-24000-48k.mp3
 *.wav
+!native/vendor/espeak-rs-sys/espeak-ng/phsource/**/*.wav
 *.flac
 *.m4a
 *.ogg

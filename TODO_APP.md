@@ -1,5 +1,12 @@
 # App delivery backlog
 
+## APP-20261016-ESPEAK-VENDOR-ASSETS — Restore required phoneme compiler inputs
+
+- [ ] Owner: crash_guard_audit; restore the 203 upstream WAV inputs omitted by the global audio ignore rule, with package and per-file SHA-256 provenance. Refresh the copied CMake source after a restored Cargo cache; retain phoneme compilation and actual Faber inference assertions.
+- Red evidence: GitHub CI `38872056702`, head `1ac744af4b`, passed workspace Rust tests but failed the embedded Piper smoke with 1,067 missing phoneme-source errors. Published `espeak-rs-sys` 0.2.0 contains all missing inputs; the package checksum matches the official registry and existing runtime lockfile.
+- Acceptance pending: GitHub-only embedded Piper smoke compiles phoneme data and produces validated Faber audio. No local tests, builds, formatters, syntax checks, native apps or Simulator actions executed.
+- GitHub additionally verifies the upstream WAV checksum inventory and executes the actual source-copy helper against temporary directories, covering changed/new/removed inputs, repeated refresh, literal paths with spaces, preserved sibling build output and fatal nonzero copy status. Windows copy status semantics remain `0..=7`; the Ubuntu gate does not certify Windows CMake output caches.
+
 ## APP-20261016-EDGE-ADAPTATION-FIXTURES — Restore valid local Edge protocol fixtures
 
 - [ ] Update both adaptive TTS WebSocket fixtures to emit length-prefixed `Path:audio`/`Content-Type:audio/mpeg` headers while preserving adaptive size, ordering, retry and cancellation assertions.
