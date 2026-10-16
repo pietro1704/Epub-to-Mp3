@@ -123,11 +123,11 @@ jobs:
           done <<< "$asset_references"
 
           echo "Checking configured bind address, actual IPv4 listener and absence of model weights"
-          docker exec hf-snapshot-regression sh -c 'test "$HOST" = 0.0.0.0'
+          docker exec hf-snapshot-regression sh -c 'test "$HOST" = 0.0.0.0 && test "$PORT" = 7860'
           # Linux /proc/net/tcp stores IPv4 addresses in little-endian hex.
-          # 00000000:1EA4 is the actual wildcard listener on TCP port 7860;
-          # 0100007F:1EA4 would indicate a loopback-only bind and must fail.
-          if ! docker exec hf-snapshot-regression sh -c 'awk '''NR > 1 && $2 == "00000000:1EA4" && $4 == "0A" { found = 1 } END { exit !found }''' /proc/net/tcp'; then
+          # 00000000:1EB4 is the wildcard listener on TCP port 7860;
+          # 0100007F:1EB4 would indicate a loopback-only bind and must fail.
+          if ! docker exec hf-snapshot-regression sh -c "awk 'NR > 1 && \$2 == \"00000000:1EB4\" && \$4 == \"0A\" { found = 1 } END { exit !found }' /proc/net/tcp"; then
             echo "::error::Server is not listening on 0.0.0.0:7860 inside the container"
             docker exec hf-snapshot-regression sh -c 'cat /proc/net/tcp'
             exit 1
