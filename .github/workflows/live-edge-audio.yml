@@ -1,0 +1,71 @@
+name: Live Edge audio
+
+# Manual dispatch is explicit consent for real provider calls. A 403 or outage
+# fails this workflow; normal PR checks use deterministic offline audio instead.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  live-edge-audio:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Install explicit test dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ffmpeg
+          python -m pip install 'edge-tts>=7.2.8' pytest pytest-asyncio
+      - name: Run actual Edge audio integration without swallowing provider errors
+        env:
+          RUN_LIVE_EDGE_AUDIO_TESTS: '1'
+        run: |
+          python -m pytest python_app/tests/test_audio_pause_integration.py::TestEdgeOutputAudioProperties python_app/tests/test_audio_pause_integration.py::TestEdgeFingerprintIsConsistent --junitxml=live-edge-audio.xml
+      - name: Retain actual live-provider result
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: live-edge-audio-result
+          path: live-edge-audio.xml
+          if-no-files-found: warn
+
+  live-cli-smoke:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    env:
+      MISE_ENABLE_TOOLS: python
+      R2_OPTIONAL: 'true'
+      EDGE_MAX_CONCURRENCY: '1'
+      EDGE_ENABLE_PARALLEL: 'false'
+      EDGE_AUTO_TUNE: 'false'
+      CHAPTER_PARALLEL_COUNT: '1'
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: jdx/mise-action@v5
+        with:
+          version: 2026.9.14
+          install: false
+      - name: Install explicit live CLI dependencies
+        run: |
+          mise install
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ffmpeg
+          mise exec -- python -m pip install -r requirements.txt
+      - name: Exercise real Edge CLI with provider errors remaining fatal
+        run: |
+          mise exec -- python -m python_app.main convert web/public/sample.epub \
+            --engine edge --fallback-engine none --chapter 1 --no-parallel --force-reprocess \
+            --output-dir "$RUNNER_TEMP/live-edge-smoke" --verbose
+          mise exec -- python scripts/external_worker_pool.py web/public/sample.epub \
+            --workers 1 \
+            --forward-args "--engine edge --fallback-engine none --chapter 1 --no-parallel --force-reprocess --output-dir $RUNNER_TEMP/live-edge-pool-smoke --stage-pipeline"

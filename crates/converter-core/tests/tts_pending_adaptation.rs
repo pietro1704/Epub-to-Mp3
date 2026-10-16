@@ -20,6 +20,18 @@ use tokio::{
 };
 use tokio_tungstenite::{accept_async, client_async, tungstenite::Message, MaybeTlsStream};
 
+fn binary_frame(header: &[u8], payload: &[u8]) -> Message {
+    let mut frame = Vec::new();
+    frame.extend_from_slice(&u16::try_from(header.len()).unwrap().to_be_bytes());
+    frame.extend_from_slice(header);
+    frame.extend_from_slice(payload);
+    Message::Binary(frame.into())
+}
+
+fn audio_frame(payload: &[u8]) -> Message {
+    binary_frame(b"Path:audio\r\nContent-Type:audio/mpeg", payload)
+}
+
 struct LocalTransport;
 
 struct FailFirstTransport(AtomicUsize);
@@ -93,6 +105,7 @@ fn controller(initial: usize) -> Arc<AdaptiveThroughputController> {
 enum Behavior {
     Echo,
     SpeechOnly,
+    MissingAudioPath,
     Reverse,
     Stall,
 }
@@ -151,9 +164,12 @@ impl EchoServer {
                                 _ => {},
                             }
                             if !matches!(behavior, Behavior::SpeechOnly) || !text.trim().is_empty() {
-                                let mut audio = vec![0, 0];
-                                audio.extend_from_slice(text.as_bytes());
-                                socket.send(Message::Binary(audio.into())).await.unwrap();
+                                let audio = if matches!(behavior, Behavior::MissingAudioPath) {
+                                    binary_frame(b"Content-Type:audio/mpeg", text.as_bytes())
+                                } else {
+                                    audio_frame(text.as_bytes())
+                                };
+                                socket.send(audio).await.unwrap();
                             }
                             socket.send(Message::Text("Path:turn.end\r\n\r\n".into())).await.unwrap();
                             completed.lock().unwrap().push(text);
@@ -181,6 +197,26 @@ impl EchoServer {
         config.timeout = Duration::from_secs(2);
         config
     }
+}
+
+#[tokio::test]
+async fn binary_audio_without_path_is_rejected_through_the_transport() {
+    let server = EchoServer::start(Behavior::MissingAudioPath).await;
+    let client = EdgeTtsClient::with_adaptive_transport(
+        server.config(),
+        Arc::new(LocalTransport),
+        controller(128),
+        None,
+    );
+    let result = tokio::time::timeout(Duration::from_secs(5), client.synthesize("hello"))
+        .await
+        .expect("malformed local response must finish with a protocol error");
+    assert!(matches!(
+        result,
+        Err(EdgeError::Protocol(message))
+            if message == "Edge returned unexpected binary frame path <missing>"
+    ));
+    assert_eq!(*server.received.lock().unwrap(), vec!["hello".to_owned()]);
 }
 
 #[tokio::test]
@@ -343,9 +379,7 @@ async fn unsent_text_uses_latest_size_and_preserves_utf8_and_audio_order() {
                 if index == 0 {
                     adaptive.observe_failure(ProviderFailure::Throttled { retry_after: None });
                 }
-                let mut audio = vec![0, 0];
-                audio.extend_from_slice(text.as_bytes());
-                socket.send(Message::Binary(audio.into())).await.unwrap();
+                socket.send(audio_frame(text.as_bytes())).await.unwrap();
                 socket
                     .send(Message::Text("Path:turn.end\r\n\r\n".into()))
                     .await
