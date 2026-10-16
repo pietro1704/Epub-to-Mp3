@@ -26,7 +26,7 @@ class NativeTaskWiringTest < Minitest::Test
       FileUtils.cp(File.join(__dir__, file), File.join(@dir, "scripts", file))
     end
     packaging = File.join(@dir, "scripts/test_converter_ffi_ios_packaging.sh")
-    File.write(packaging, "#!/bin/bash\\necho packaging >> \"$FIXTURE_EVENTS\"\\n")
+    File.write(packaging, "#!/bin/bash\necho packaging >> \"$FIXTURE_EVENTS\"\n")
     File.chmod(0o755, packaging)
     %w[ios_disk_guard.sh verify_widget_embedded.sh].each do |file|
       path = File.join(@dir, "scripts", file)
@@ -124,6 +124,7 @@ class NativeTaskWiringTest < Minitest::Test
     assert_empty events
     assert_unlocked
   end
+
   def test_ios_build_failure_stops_before_success_tail
     output, error, status = run_task("ios:build", "FIXTURE_BUILD_STATUS" => "17")
     assert_equal 65, status.exitstatus, error
