@@ -4,9 +4,10 @@ set -euo pipefail
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$PROJECT_ROOT"
 target_dir="${CARGO_TARGET_DIR:-target}"
-if [[ "$target_dir" != /* ]]; then
-  target_dir="$PROJECT_ROOT/$target_dir"
-fi
+case "$target_dir" in
+  /*|[A-Za-z]:/*|[A-Za-z]:\\*) ;;
+  *) target_dir="$PROJECT_ROOT/$target_dir" ;;
+esac
 BACKEND_BIN="$target_dir/debug/converter-server"
 if [[ -x "$BACKEND_BIN.exe" ]]; then
   BACKEND_BIN="$BACKEND_BIN.exe"
