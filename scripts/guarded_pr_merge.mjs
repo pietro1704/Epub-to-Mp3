@@ -1,0 +1,92 @@
+#!/usr/bin/env node
+// Workflow-owned code reads GitHub metadata; it never checks out or executes PR code.
+import { spawnSync } from 'node:child_process';
+import { resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { parseArgs } from 'node:util';
+const SHA = /^[0-9a-f]{40}$/;
+const ensure = (condition, message) => { if (!condition) throw new Error(message); };
+
+function ownRun(check, repo, runId) {
+  if (!/^\d+$/.test(runId ?? '') || check.__typename !== 'CheckRun') return false;
+  try {
+    const url = new URL(check.detailsUrl);
+    return url.origin === 'https://github.com' && (url.pathname === `/${repo}/actions/runs/${runId}`
+      || url.pathname.startsWith(`/${repo}/actions/runs/${runId}/`));
+  } catch { return false; }
+}
+export function evaluate({ pr, runs, securityRuns, comparison, repo, head, runId }) {
+  if (!pr || pr.state !== 'OPEN' || pr.isDraft !== false || pr.baseRefName !== 'master'
+      || pr.headRefOid !== head || pr.isCrossRepository !== false
+      || pr.reviewDecision === 'CHANGES_REQUESTED' || pr.mergeable !== 'MERGEABLE'
+      || pr.mergeStateStatus !== 'CLEAN') return { eligible: false, reason: 'pr_state_or_head' };
+  if (!comparison || comparison.behind_by !== 0 || !['ahead', 'identical'].includes(comparison.status))
+    return { eligible: false, reason: 'base_not_current' };
+  if (!Array.isArray(pr.statusCheckRollup)) return { eligible: false, reason: 'missing_checks' };
+  const checks = pr.statusCheckRollup.filter(check => !ownRun(check, repo, runId));
+  if (checks.length === 0) return { eligible: false, reason: 'empty_checks' };
+  for (const check of checks) {
+    const green = check.__typename === 'CheckRun' ? check.status === 'COMPLETED' && check.conclusion === 'SUCCESS'
+      : check.__typename === 'StatusContext' && check.state === 'SUCCESS';
+    if (!green) return { eligible: false, reason: 'non_green_check' };
+  }
+  // Require whole CI and CodeQL workflows, including checks not yet published
+  // into the PR rollup. Missing metadata must never look like a green check set.
+  const completedRun = (workflowRuns) => {
+    if (!Array.isArray(workflowRuns) || workflowRuns.length === 0) return null;
+    if (workflowRuns.some(run => !run || run.head_sha !== head || !Number.isSafeInteger(run.id) || run.id <= 0)) return null;
+    const latest = workflowRuns.reduce((a, b) => a.id > b.id ? a : b);
+    return latest.status === 'completed' && latest.conclusion === 'success' ? latest.id : null;
+  };
+  const ciRun = completedRun(runs);
+  if (!ciRun) return { eligible: false, reason: 'ci_not_successful' };
+  const securityRun = completedRun(securityRuns);
+  if (!securityRun) return { eligible: false, reason: 'security_not_successful' };
+  return { eligible: true, head, checks: checks.length, ci_run: ciRun, security_run: securityRun };
+}
+function invokeGh(args) {
+  const result = spawnSync('gh', args, { encoding: 'utf8', timeout: 20000, maxBuffer: 8 * 1024 * 1024 });
+  ensure(!result.error && !result.signal && result.status === 0, 'GitHub operation failed; no retry or fallback merge');
+  return result.stdout;
+}
+export function guardedMerge({ repo, pr, head, runId, merge = false, invoke = invokeGh }) {
+  ensure(typeof repo === 'string' && /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repo), 'Invalid repository');
+  ensure(typeof pr === 'string' && /^[1-9]\d*$/.test(pr), 'Invalid PR number');
+  ensure(typeof head === 'string' && SHA.test(head), 'Invalid expected head SHA');
+  ensure(typeof merge === 'boolean', 'Invalid merge mode');
+  const fields = 'state,isDraft,baseRefName,headRefOid,isCrossRepository,reviewDecision,mergeable,mergeStateStatus,statusCheckRollup';
+  const capture = () => {
+    const current = JSON.parse(invoke(['pr', 'view', pr, '--repo', repo, '--json', fields]));
+    const workflowRuns = (filename) => {
+      const pages = JSON.parse(invoke(['api', '--paginate', '--slurp',
+        `repos/${repo}/actions/workflows/${filename}/runs?head_sha=${head}&per_page=100`]));
+      ensure(Array.isArray(pages) && pages.every(page => page && Array.isArray(page.workflow_runs)), 'Invalid workflow run response');
+      return pages.flatMap(page => page.workflow_runs);
+    };
+    const comparison = JSON.parse(invoke(['api', `repos/${repo}/compare/master...${head}`]));
+    return evaluate({ pr: current, runs: workflowRuns('ci.yml'), securityRuns: workflowRuns('codeql.yml'), comparison, repo, head, runId });
+  };
+  const first = capture();
+  if (!first.eligible || !merge) return { ...first, merged: false };
+  // Re-read immediately before mutation. GitHub also checks the expected head
+  // atomically; a pushed replacement cannot inherit this authorization.
+  const final = capture();
+  if (!final.eligible) return { ...final, merged: false };
+  invoke(['pr', 'merge', pr, '--repo', repo, '--squash', '--match-head-commit', head]);
+  // An accepted merge command may enqueue under a server merge queue. Its exit
+  // code does not prove the PR has merged; the caller must inspect delivery.
+  return { ...final, merged: false, merge_requested: true };
+}
+export function main(argv = process.argv.slice(2)) {
+  const { values, positionals } = parseArgs({ args: argv, options: {
+    repo: { type: 'string' }, pr: { type: 'string' }, head: { type: 'string' }, merge: { type: 'boolean', default: false },
+  }, strict: true, allowPositionals: false });
+  ensure(positionals.length === 0, 'Unexpected arguments');
+  const result = guardedMerge({ repo: values.repo, pr: values.pr, head: values.head,
+    merge: values.merge, runId: process.env.GITHUB_RUN_ID });
+  console.log(JSON.stringify(result));
+  if (!result.eligible) process.exitCode = 1;
+}
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  try { main(); } catch { console.error('Merge blocked: invalid invocation or unverifiable GitHub metadata.'); process.exitCode = 1; }
+}
