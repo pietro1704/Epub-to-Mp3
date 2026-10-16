@@ -19,7 +19,7 @@ struct CliOptions {
     model: Option<String>,
     fallback_model: Option<String>,
     fallback_voice: Option<String>,
-    allow_online_fallback: bool,
+    allow_online_fallback: Option<bool>,
     output_dir: Option<String>,
     chapters: Vec<String>,
     sections: Vec<String>,
@@ -46,7 +46,7 @@ impl Default for CliOptions {
             model: None,
             fallback_model: None,
             fallback_voice: None,
-            allow_online_fallback: false,
+            allow_online_fallback: None,
             output_dir: None,
             chapters: Vec::new(),
             sections: Vec::new(),
@@ -342,8 +342,8 @@ fn effective_preferences(
             }
         };
     }
-    if options.allow_online_fallback {
-        preferences.allow_online_fallback = true;
+    if let Some(allow_online_fallback) = options.allow_online_fallback {
+        preferences.allow_online_fallback = allow_online_fallback;
     }
     preferences.validate(None)?;
     Ok(preferences)
@@ -489,7 +489,19 @@ fn parse_args(args: &[String]) -> Result<CliOptions, String> {
             "--model" => options.model = Some(next(value)?),
             "--fallback-model" => options.fallback_model = Some(next(value)?),
             "--fallback-voice" => options.fallback_voice = Some(next(value)?),
-            "--allow-online-fallback" => options.allow_online_fallback = true,
+            "--allow-online-fallback" | "--no-online-fallback" => {
+                let allowed = value == "--allow-online-fallback";
+                if options
+                    .allow_online_fallback
+                    .is_some_and(|previous| previous != allowed)
+                {
+                    return Err(
+                        "--allow-online-fallback and --no-online-fallback are mutually exclusive"
+                            .into(),
+                    );
+                }
+                options.allow_online_fallback = Some(allowed);
+            }
             "--use-secondary" => {}
             "--output-dir" => options.output_dir = Some(next(value)?),
             "--chapter" => options.chapters.push(next(value)?),
@@ -853,7 +865,7 @@ fn show_structure(inputs: &[String]) -> Result<i32, String> {
 }
 
 fn print_help() {
-    println!("EBook to Audiobook Converter\n\nUsage: convert [INPUT ...] [OPTIONS]\n       clear-cache [BOOK]\n\nInputs accept EPUB/PDF files, directories, loose multiword names, and fuzzy matches.\n\nPreferences: preferences show | preferences set JSON\nModels: models list | models install MODEL_ID | models remove MODEL_ID --yes\nOptions: --engine {{edge,piper,system}} --fallback-engine {{none,edge,piper,system}} --allow-online-fallback --voice VOICE --model MODEL --chapter CHAPTER --show-structure --clean-cache --verify --batch PATH --batch-file FILE --yes");
+    println!("EBook to Audiobook Converter\n\nUsage: convert [INPUT ...] [OPTIONS]\n       clear-cache [BOOK]\n\nInputs accept EPUB/PDF files, directories, loose multiword names, and fuzzy matches.\n\nPreferences: preferences show | preferences set JSON\nModels: models list | models install MODEL_ID | models remove MODEL_ID --yes\nOptions: --engine {{edge,piper,system}} --fallback-engine {{none,edge,piper,system}} --allow-online-fallback | --no-online-fallback --voice VOICE --model MODEL --chapter CHAPTER --show-structure --clean-cache --verify --batch PATH --batch-file FILE --yes");
 }
 
 fn home_dir() -> PathBuf {
@@ -1001,7 +1013,120 @@ mod tests {
             options.fallback_voice.as_deref(),
             Some("pt-BR-FranciscaNeural")
         );
-        assert!(options.allow_online_fallback);
+        assert_eq!(options.allow_online_fallback, Some(true));
+    }
+
+    #[test]
+    fn online_fallback_flags_capture_consent_and_reject_conflicts() {
+        let inherited = ["convert", "book.epub"].map(str::to_owned);
+        assert_eq!(parse_args(&inherited).unwrap().allow_online_fallback, None);
+        for (flag, expected) in [
+            ("--allow-online-fallback", true),
+            ("--no-online-fallback", false),
+        ] {
+            let args = ["convert", "book.epub", flag, flag].map(str::to_owned);
+            assert_eq!(
+                parse_args(&args).unwrap().allow_online_fallback,
+                Some(expected)
+            );
+        }
+        for flags in [
+            ["--allow-online-fallback", "--no-online-fallback"],
+            ["--no-online-fallback", "--allow-online-fallback"],
+        ] {
+            let args = ["convert", "book.epub", flags[0], flags[1]].map(str::to_owned);
+            assert!(parse_args(&args).unwrap_err().contains("mutually exclusive"));
+        }
+    }
+
+    #[test]
+    fn explicit_consent_revocation_overrides_saved_consent_without_mutating_it() {
+        use converter_core::tts_preferences::{TtsPreferences, TtsSelection};
+        let root = std::env::temp_dir().join(format!("tts-cli-revoke-{}", std::process::id()));
+        let paths = converter_core::paths::resolve_paths_from(
+            [("PERSISTENT_ROOT", root.to_string_lossy().into_owned())],
+            root.clone(),
+        );
+        let config = converter_core::config::AppConfig::from_paths(paths);
+        let saved = TtsPreferences {
+            primary: TtsSelection::default(),
+            secondary: Some(TtsSelection {
+                engine: "edge".into(),
+                model_id: None,
+                voice: Some("pt-BR-FranciscaNeural".into()),
+            }),
+            allow_online_fallback: true,
+        };
+        converter_core::cache::atomic_write_json(preference_path(&config), &saved).unwrap();
+        let stored = fs::read(preference_path(&config)).unwrap();
+        let inherited = ["convert", "book.epub", "--engine", "piper", "--use-secondary"]
+            .map(str::to_owned);
+        assert_eq!(
+            effective_preferences(&config, &parse_args(&inherited).unwrap(), &inherited).unwrap(),
+            saved
+        );
+
+        let denied = [
+            "convert",
+            "book.epub",
+            "--engine",
+            "piper",
+            "--fallback-engine",
+            "none",
+            "--no-online-fallback",
+        ]
+        .map(str::to_owned);
+        let effective =
+            effective_preferences(&config, &parse_args(&denied).unwrap(), &denied).unwrap();
+        assert!(!effective.allow_online_fallback);
+        assert!(effective.secondary.is_none());
+        assert_eq!(effective.primary, saved.primary);
+
+        let invalid = [
+            "convert",
+            "book.epub",
+            "--engine",
+            "piper",
+            "--use-secondary",
+            "--no-online-fallback",
+        ]
+        .map(str::to_owned);
+        assert!(effective_preferences(&config, &parse_args(&invalid).unwrap(), &invalid).is_err());
+        assert_eq!(saved_preferences(&config).unwrap(), saved);
+        assert_eq!(fs::read(preference_path(&config)).unwrap(), stored);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn an_edge_secondary_can_be_enabled_only_with_explicit_consent() {
+        let root = std::env::temp_dir().join(format!("tts-cli-grant-{}", std::process::id()));
+        let paths = converter_core::paths::resolve_paths_from(
+            [("PERSISTENT_ROOT", root.to_string_lossy().into_owned())],
+            root.clone(),
+        );
+        let config = converter_core::config::AppConfig::from_paths(paths);
+        let saved = converter_core::tts_preferences::TtsPreferences::default();
+        converter_core::cache::atomic_write_json(preference_path(&config), &saved).unwrap();
+        let stored = fs::read(preference_path(&config)).unwrap();
+        let mut args = [
+            "convert",
+            "book.epub",
+            "--engine",
+            "piper",
+            "--fallback-engine",
+            "edge",
+        ]
+        .map(str::to_owned)
+        .to_vec();
+        assert!(effective_preferences(&config, &parse_args(&args).unwrap(), &args).is_err());
+        args.push("--allow-online-fallback".into());
+        let effective =
+            effective_preferences(&config, &parse_args(&args).unwrap(), &args).unwrap();
+        assert!(effective.allow_online_fallback);
+        assert_eq!(effective.secondary.unwrap().engine, "edge");
+        assert_eq!(saved_preferences(&config).unwrap(), saved);
+        assert_eq!(fs::read(preference_path(&config)).unwrap(), stored);
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

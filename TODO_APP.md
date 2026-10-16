@@ -1,5 +1,12 @@
 # App delivery backlog
 
+## APP-20261016-CLI-CONSENT — Capture per-job online fallback revocation
+
+- [ ] Owner: root; the CLI currently accepts only an enabling consent flag, so a strict per-job choice cannot explicitly override saved online fallback consent to false. Add `--no-online-fallback` with tri-state parsing (omission inherits), reject opposing flags in either order, and apply the explicit value before validating preferences.
+- Acceptance: valid saved consent can be inherited, explicitly granted or explicitly revoked without modifying the saved file. An Edge secondary retained with revoked consent fails validation; use an explicit compatible secondary/none to form a valid offline job. Duplicate identical flags are idempotent.
+- Verification: specialist reviewed the plan; Rust unit coverage exercises parser conflicts, saved-preference identity/bytes, grant and revoke success/failure. Execute only through GitHub Actions; no local tests or native/device action. No pre-fix runtime RED is claimed.
+- Delivery: scoped continuation in #821, alongside its existing TTS preference contract. Web CLI reproduction remains a separate pending recovery; this change alone does not remove its legacy Python guide. Exact-head required checks and merge remain pending.
+
 ## APP-20261016-EDGE-SECONDARY-CONSENT — Keep native Edge fallback selection consent-safe
 
 - [ ] Owner: root; iOS and macOS settings and their persistence model must reject Edge as a secondary provider without explicit online-fallback consent. Revoking consent clears that saved secondary choice; legacy invalid preferences are migrated safely. Edge as an explicitly selected primary remains available.
