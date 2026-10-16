@@ -361,7 +361,7 @@ void main() {
   test('Android Piper synthesis forwards the captured options unchanged', () async {
     const channel = MethodChannel(AndroidEmbeddedConverter.channelName);
     final options = const TtsPreferences().optionsJson(
-      modelsRoot: '/models/pt_BR-faber-medium',
+      modelsRoot: '/models',
       language: 'pt-BR',
     );
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
@@ -392,8 +392,8 @@ void main() {
         .setMockMethodCallHandler(channel, (call) async {
           expect(call.method, 'piperSynthesize');
           throw PlatformException(
-            code: 'PIPER_MODEL_MISSING',
-            message: 'Install the selected model before synthesis',
+            code: 'EMBEDDED_CONVERTER_UNAVAILABLE',
+            message: 'Piper model or voice config is not installed: /models/pt_BR-faber-medium/model.onnx',
           );
         });
 
@@ -408,7 +408,8 @@ void main() {
       ),
       throwsA(
         isA<PlatformException>()
-            .having((error) => error.code, 'code', 'PIPER_MODEL_MISSING'),
+            .having((error) => error.code, 'code', 'EMBEDDED_CONVERTER_UNAVAILABLE')
+            .having((error) => error.message, 'native message', contains('Piper model or voice config is not installed')),
       ),
     );
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
