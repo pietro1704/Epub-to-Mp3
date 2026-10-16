@@ -45,11 +45,11 @@ run = "./scripts/dev.sh"
 
 [tasks."rust:health"]
 description = "Run the Rust health-only CLI"
-run = "mise exec -- cargo run -p converter-cli"
+run = "mise exec -- ruby scripts/native_build_command.rb -- mise exec -- cargo run -p converter-cli"
 
 [tasks."rust:server"]
 description = "Run the Rust Axum health and metadata server"
-run = "PIPER_BINARY=\"$MISE_PROJECT_ROOT/.venv/bin/piper\" PIPER_MODEL=\"$MISE_PROJECT_ROOT/models/piper/en_US-lessac-medium.onnx\" mise exec -- cargo run -p converter-server"
+run = "mise exec -- ruby scripts/native_build_command.rb -- env PIPER_BINARY=\"$MISE_PROJECT_ROOT/.venv/bin/piper\" PIPER_MODEL=\"$MISE_PROJECT_ROOT/models/piper/en_US-lessac-medium.onnx\" mise exec -- cargo run -p converter-server"
 
 [tasks.convert]
 description = "Build/package and run the native Rust CLI with its own runtime and phonemizer assets"
@@ -77,7 +77,7 @@ run = "bash scripts/guard_no_python_production.sh"
 
 [tasks."migration:build-and-gate"]
 description = "Build Rust production artifacts and run the migration readiness gate"
-run = "mise exec -- cargo build -p converter-cli -p converter-server --release && mkdir -p dist && cp target/release/converter-server dist/epub-to-mp3-server && mise run migration:gate"
+run = "mise exec -- ruby scripts/native_build_command.rb -- mise exec -- cargo build -p converter-cli -p converter-server --release && mkdir -p dist && cp target/release/converter-server dist/epub-to-mp3-server && mise run migration:gate"
 
 [tasks."migration:gate"]
 description = "Report Rust migration readiness, packaging artifacts, and remaining blockers"
@@ -345,7 +345,7 @@ mise exec -- ruby "${MISE_PROJECT_ROOT:-.}/scripts/native_job.rb" build -- bash 
 
 [tasks."converter-ffi:android-check"]
 description = "Check JNI and embedded Piper adapter on the host; Android ELF validation is a separate packaging gate"
-run = "env -u CC -u CFLAGS -u CXX -u AR -u CMAKE_TOOLCHAIN_FILE -u CMAKE_GENERATOR -u CMAKE_MAKE_PROGRAM mise exec -- cargo check -p converter-ffi --features android-jni,piper-runtime --jobs 1"
+run = "mise exec -- ruby scripts/native_build_command.rb -- env -u CC -u CFLAGS -u CXX -u AR -u CMAKE_TOOLCHAIN_FILE -u CMAKE_GENERATOR -u CMAKE_MAKE_PROGRAM mise exec -- cargo check -p converter-ffi --features android-jni,piper-runtime --jobs 1"
 
 [tasks."converter-ffi:android-install"]
 depends = ["converter-ffi:android-arm64"]
@@ -738,7 +738,7 @@ run = """
 #!/bin/bash
 set -euo pipefail
 mkdir -p dist
-mise exec -- cargo build --release -p converter-server
+mise exec -- ruby scripts/native_build_command.rb -- mise exec -- cargo build --release -p converter-server
 cp target/release/converter-server dist/epub-to-mp3-server
 chmod 755 dist/epub-to-mp3-server
 echo "Built Rust sidecar: dist/epub-to-mp3-server"
@@ -1590,4 +1590,4 @@ description = "Run the Flutter desktop app on the host platform (Linux/Windows o
 run = "cd flutter_app && flutter run -d $(uname | tr '[:upper:]' 'a-z')"
 [tasks."piper:build-runtime"]
 description = "Build the native Piper Embedded runtime without external executable fallback"
-run = "mise exec -- cargo build -p piper-runtime --features onnxruntime,piper-inference --release"
+run = "mise exec -- ruby scripts/native_build_command.rb -- mise exec -- cargo build -p piper-runtime --features onnxruntime,piper-inference --release"
