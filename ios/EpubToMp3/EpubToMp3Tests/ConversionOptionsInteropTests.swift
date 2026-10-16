@@ -48,7 +48,9 @@ final class ConversionOptionsInteropTests: XCTestCase {
         }
         let metadata: [String: Any] = ["id": "pt_BR-faber-medium", "artifacts": artifacts.map { ["path": $0.target, "sha256": $0.hash] }]
         try JSONSerialization.data(withJSONObject: metadata).write(to: modelDirectory.appendingPathComponent("metadata.json"))
+        #if !APP_FOUNDATION_HOST_TESTS
         XCTAssertTrue(AppSettings.isFaberInstalled(modelsRoot: models))
+        #endif
         let resources = try XCTUnwrap(Bundle.main.resourceURL)
         XCTAssertTrue(FileManager.default.fileExists(atPath: resources.appendingPathComponent("espeak-ng-data/phontab").path),
                       "The real application must bundle eSpeak data before offline synthesis.")

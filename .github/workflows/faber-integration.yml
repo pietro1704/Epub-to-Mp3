@@ -20,7 +20,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 25
     env:
-      MISE_ENABLE_TOOLS: python,rust
+      MISE_ENABLE_TOOLS: python,rust,ruby
     steps:
       - uses: actions/checkout@v7
       - uses: jdx/mise-action@v5
@@ -28,6 +28,8 @@ jobs:
           version: 2026.9.14
           install: false
       - run: mise install
+      - name: Test Apple runtime packaging with owned process fixtures
+        run: mise exec -- ruby scripts/test_bundle_onnxruntime_apple.rb
       - name: Test JNI-enabled preference and streaming contracts
         run: |
           set -o pipefail
@@ -113,6 +115,23 @@ jobs:
       - name: Generate native project with actual FFI artifact
         working-directory: ios/EpubToMp3
         run: xcodegen generate
+      - name: Test the real Foundation package without native FFI opt-in
+        run: |
+          set -o pipefail
+          mkdir -p .reports/tts-preferences
+          mise run apple:foundation:test |& tee .reports/tts-preferences/foundation.log
+      - name: Explicitly install checksum-pinned native Faber test model
+        run: |
+          model_dir="$RUNNER_TEMP/faber-models"
+          mkdir -p "$model_dir"
+          base='https://huggingface.co/rhasspy/piper-voices/resolve/c10ece1aade47bb51c153c893d14e5bf8e5b7117/pt/pt_BR/faber/medium'
+          curl --fail --location --retry 3 "$base/pt_BR-faber-medium.onnx" -o "$model_dir/pt_BR-faber-medium.onnx"
+          curl --fail --location --retry 3 "$base/pt_BR-faber-medium.onnx.json" -o "$model_dir/pt_BR-faber-medium.onnx.json"
+          printf '%s  %s\n' \
+            '858555e3a064209c57088fe6bd70c4c3dc54d03eaa00c45d5ecaf43a33f95aa7' "$model_dir/pt_BR-faber-medium.onnx" \
+            '7e694de195ae3fc36dd732c445eb04fb49b649854893cb5506b978f0d50a1d6f' "$model_dir/pt_BR-faber-medium.onnx.json" \
+            | shasum -a 256 --check
+          echo "EPUB2MP3_PIPER_TEST_MODEL_ROOT=$model_dir" >> "$GITHUB_ENV"
       - name: Run real macOS preference and installation XCTest
         working-directory: ios/EpubToMp3
         run: |
@@ -125,11 +144,17 @@ jobs:
             -jobs 1 -parallel-testing-enabled NO \
             CODE_SIGNING_ALLOWED=YES CODE_SIGNING_REQUIRED=YES \
             CODE_SIGN_IDENTITY=- CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM= \
+            EPUB2MP3_PIPER_TEST_MODEL_ROOT="$EPUB2MP3_PIPER_TEST_MODEL_ROOT" \
             -only-testing:EpubToMp3Tests/ConversionOptionsInteropTests \
             -only-testing:EpubToMp3Tests/ConvertViewModelTests \
             -only-testing:EpubToMp3Tests/ToolbarSettingsParityTests \
             -only-testing:EpubToMp3Tests/MacModelInstallationResponsivenessTests \
             | tee ../../.reports/tts-preferences/macos-prefs.log
+          grep -F 'FABER_NATIVE firstChunkSeconds=' ../../.reports/tts-preferences/macos-prefs.log
+      - name: Remove explicitly downloaded native test weights
+        if: always()
+        run: |
+          rm -f -- "$RUNNER_TEMP/faber-models/pt_BR-faber-medium.onnx" "$RUNNER_TEMP/faber-models/pt_BR-faber-medium.onnx.json"
       - name: Retain macOS XCTest evidence
         if: always()
         uses: actions/upload-artifact@v6
@@ -152,7 +177,7 @@ jobs:
           install: false
       - run: mise install
       - name: Test browser server ownership and process cleanup
-        run: mise exec -- node --test web/scripts/browser-server.test.mjs
+        run: mise exec -- node --test web/scripts/browser-server.node-tests.mjs
       - name: Build fresh browser WASM
         run: |
           mise exec -- rustup target add wasm32-unknown-unknown

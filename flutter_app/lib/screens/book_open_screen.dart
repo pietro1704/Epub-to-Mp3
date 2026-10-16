@@ -526,6 +526,7 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen>
       if (!_isCurrentConversion(generation)) return;
       final ttsSnapshot = ref.read(settingsProvider).ttsPreferences;
       final ttsSupport = await getApplicationSupportDirectory();
+      if (!_isCurrentConversion(generation)) return;
       final requestedOptionsJson = ttsSnapshot.optionsJson(
         modelsRoot: '${ttsSupport.path}/tts-models',
       );

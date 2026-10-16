@@ -23,15 +23,19 @@ abort "Embedded converter-ffi exceeds macOS 12: #{minimum.inspect}" unless minim
 RUBY_GUARD
 fi
 
-# Static inference builds already contain the runtime.
-otool -L "$artifact" | rg -q 'libonnxruntime' || exit 0
+# Inspect successfully before distinguishing static and dynamic inference builds.
+# A missing inspection tool must never silently omit a required runtime.
+if ! linked_libraries="$(otool -L "$artifact")"; then
+  echo "error: cannot inspect linked ONNX Runtime dependencies: $artifact" >&2
+  exit 1
+fi
+linked_name="$(printf '%s\n' "$linked_libraries" | awk '/libonnxruntime/ { name=$1; sub(/^.*\//, "", name); print name; exit }')"
+[[ -n "$linked_name" ]] || exit 0
 if [[ "${PLATFORM_NAME:-}" == macosx ]]; then
   runtime_directory="$(ONNXRUNTIME_MACOS_ARCH="$runtime_arch" mise exec -- ruby "$root/scripts/prepare_onnxruntime_macos.rb")"
   source="$runtime_directory/libonnxruntime.dylib"
 fi
 [[ -f "$source" ]] || { echo "error: missing linked ONNX Runtime: $source" >&2; exit 1; }
-linked_name="$(otool -L "$artifact" | awk '/libonnxruntime/ { name=$1; sub(/^.*\//, "", name); print name; exit }')"
-[[ -n "$linked_name" ]] || { echo "error: missing ONNX Runtime link name" >&2; exit 1; }
 destination="${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}/$linked_name"
 cp "$source" "$destination"
 install_name_tool -id "@rpath/$linked_name" "$destination"

@@ -527,7 +527,8 @@ fn publish_piper_audio(wav: &Path, output: &Path) -> Result<PathBuf, PiperError>
 
 fn encode_piper_mp3(wav: &Path, output: &Path) -> Result<(), PiperError> {
     let data = fs::read(wav).map_err(|error| PiperError::Io(error.to_string()))?;
-    let encoded = crate::pcm::encode_wav_mp3_at_source_rate(&data).map_err(PiperError::InvalidWav)?;
+    let encoded =
+        crate::pcm::encode_wav_mp3_at_source_rate(&data).map_err(PiperError::InvalidWav)?;
     let parent = output
         .parent()
         .filter(|parent| !parent.as_os_str().is_empty())

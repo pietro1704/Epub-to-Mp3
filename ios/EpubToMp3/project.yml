@@ -549,6 +549,8 @@ schemes:
       config: Debug
     test:
       config: Debug
+      environmentVariables:
+        EPUB2MP3_PIPER_TEST_MODEL_ROOT: "$(EPUB2MP3_PIPER_TEST_MODEL_ROOT)"
       testPlans:
         - path: EpubToMp3-Unit.xctestplan
           defaultPlan: true

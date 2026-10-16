@@ -231,7 +231,9 @@ final class MacSettingsViewController: NSViewController {
         guard let root = AppSettings.ttsModelsRoot() else { return }
         let install = installPiperModelOperation
         Task { [weak self] in
-            let result = Result { try install("pt_BR-faber-medium", root.path) }
+            let result = await Task.detached {
+                Result { try install("pt_BR-faber-medium", root.path) }
+            }.value
             guard let self else { return }
             if case .failure(let error) = result {
                 let alert = NSAlert()

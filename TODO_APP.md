@@ -1,28 +1,41 @@
 # App delivery backlog
 
+## APP-20261016-ONNX-BUNDLE-INSPECTION — Fail closed when inspecting native dependencies
+
+- [ ] Owner: github_monitor_plan; GitHub macOS job `116907086297` on `3f688999aa1090f6f25e10e42eabd693b5d531df` launched XCTest but actual Swift/Rust interop failed to load `@rpath/libonnxruntime.dylib`. Its packaging log reports missing `rg`; the script incorrectly treated that inspection failure as a static build and omitted the dependency.
+- Source fix removes the optional search-tool dependency, requires successful `otool` inspection, extracts the link name once, and retains required-library, copying and signing checks. Linux-hosted executable script regressions use only owned temporary fixtures and fake Apple commands: dynamic copy/sign, static build without ORT, inspection failure, missing required ORT and paths containing spaces. They do not launch Apple tools or Simulator and do not establish native acceptance.
+- Pending verification: GitHub fixture tests plus the existing real macOS Swift/Rust interop tests; no test assertions or skip conditions were weakened, and no local test/build execution occurred.
+
 ## FLUTTER-20261016-WORKER-HEARTBEAT — Prove responsiveness during native work
 
 - [ ] Owner: crash_workflow_audit; acceptance: parsing and model installation remain blocked inside the native fixture while the UI isolate processes an explicit heartbeat, then finish only after the UI releases the operation.
 - GitHub failure: CI `38878958274`, head `be057cbe`, Flutter job `116900794629` failed both periodic-timer assertions (one tick versus more than five). Production already dispatches both operations through `Isolate.run`; a single C `usleep(200000)` and periodic callback count are not a deterministic handshake.
-- Prepared native started/release markers with a monotonic timeout and a required UI event-loop heartbeat while native work is still blocked. Preserve real FFI execution, metadata/model assertions, isolated execution and fatal failure behavior. GitHub verification pending; no local compilation or tests executed.
+- GitHub GREEN for both focused cases in CI `38880891513`, head `3f688999`, Flutter job `116907148132`: native started/release handshake required a UI heartbeat while native work remained blocked. Metadata/model assertions and real FFI execution were preserved. The overall Flutter job remained RED for the separate post-dispose persistence regression; no local compilation or tests executed.
 
 ## WEB-20261016-PRODUCTION-SERVER-IDENTITY — Verify actual built browser assets
 
 - [ ] Owner: crash_workflow_audit; acceptance: production browser verification must use the owned preview server and built assets, retain actual Faber synthesis/full-decode assertions, and shut down the owned server descendants before returning.
 - GitHub RED: browser run `38878958333`, job `116900757681`, head `be057cbe`, passed development synthesis with two outputs and 4469 ms first playable audio on the hosted runner; production rejected development assets at `verify-browser-tts.mjs:68`. Both modes reused port 5177 and cleanup terminated only the mise/npm wrapper. These are hosted-runner timings, not phone latency.
-- Prepared a shared owned-server lifecycle for storage, development and production probes: distinct ports, a fail-closed free-port check before spawn, bounded startup and process-group cleanup even when browser.close fails. The built-assets assertion remains mandatory. GitHub must run the Node built-in helper regressions (occupied foreign listener, owned wrapper/descendant shutdown, failed-start descendant cleanup) and rerun all three probes; no local browser/server/build execution.
+- GitHub GREEN: focused run `38880891520`, head `3f688999`, browser job `116907086665`: Node helper tests 3/3, IndexedDB Blob roundtrip 65,536 bytes, real development and built-production Faber synthesis each finished two non-silent fully decoded MP3s without page errors. First-playable times were 3317 ms development and 3710 ms production on the hosted runner, not phone latency. Artifact `faber-browser-runtime` (`12037995848`) retains evidence. Distinct owned servers and built-assets assertion remain mandatory; no local browser/server/build execution.
 
 ## WEB-20261016-CANCELLED-PREFLIGHT — Reject stale browser inference
 
 - [ ] Owner: crash_workflow_audit; acceptance: cancellation while model readiness is pending must prevent worker/inference start, fallback and audio publication; a fresh job identity must still complete independently.
 - Source evidence: browser synthesis awaits installation/import/storage/checksum readiness before starting the worker; cancelling before a worker exists does not invalidate that pending continuation. Prepared a minimal injectable readiness seam that preserves this behavior and a deferred-preflight runtime regression. Production cancellation fix waits for GitHub RED.
-- GitHub RED: CI `38878958274`, head `be057cbe`, Web job `116900794709`: 173 passed and one failed; the deferred-preflight regression received two worker messages instead of one. Prepared generation invalidation before worker start; the regression is unchanged. GitHub GREEN is pending. No local tests, builds, lint, formatter, syntax checks, model downloads or inference executed.
+- GitHub RED: CI `38878958274`, head `be057cbe`, Web job `116900794709`: 173 passed and one failed; the deferred-preflight regression received two worker messages instead of one. Added generation invalidation before worker start; the regression is unchanged. On `3f688999`, all 174 product tests passed, including the seven browser-client cases. The Web job/workflow was cancelled after a separate Node-only file was miscollected by Vitest (`No test suite found`, followed by worker-termination timeout); it is not an overall GREEN. Renamed that standalone helper suite to `.node-tests.mjs` without changing product test discovery. A clean full GitHub rerun remains required. No local tests, builds, lint, formatter, syntax checks, model downloads or inference executed.
 
 ## APP-20261016-MAC-MODEL-INSTALL-RESPONSIVENESS — Keep settings responsive during explicit voice installation
 
 - [ ] Owner: crash_guard_audit; first prepare a real macOS XCTest through the existing installation button with a blocking fake installer, MainActor heartbeat, bounded watchdog and unchanged preference snapshot. Inject only the synchronous installer operation before RED; keep its existing MainActor execution unchanged until GitHub proves the regression.
 - Diagnosis: `MacSettingsViewController` is MainActor-isolated and its `Task` calls synchronous Rust model installation, whose FFI function blocks on download/validation. The iOS caller already uses detached work. No local runtime reproduction or test execution claimed.
-- Acceptance pending: capture failing GitHub macOS XCTest, then move only installer work off MainActor and verify success/error UI handling plus strict selection preservation. No Rust, Flutter, global Codex configuration or trust changes in this slice; no local test/build/formatter/syntax execution.
+- RED verified: GitHub run `38880891520`, job `116907086297`, head `3f688999aa1090f6f25e10e42eabd693b5d531df`, Xcode 16.4, executed the installation regression in 2.367 seconds; both main-thread and heartbeat assertions failed. The other 18 settings parity tests passed. Full job had 41 tests, 3 skips and 10 failures; unrelated ORT packaging and legacy expected-options failures remain separately tracked.
+- Fix prepared after RED: await only the synchronous installer in `Task.detached`, then retain existing alert/refresh work on MainActor. Add actual failure-alert content/dismissal and selection-preservation regression with a blocking fake. GREEN pending GitHub; no local test/build/formatter/syntax execution, commit or push.
+
+## APP-20261016-MANUAL-MODEL-IDENTITY — Preserve explicit model forwarding
+
+- [ ] Owner: crash_guard_audit; update the configuration-forwarding regression's obsolete default expectation to Faber while retaining complete option equality, literal speaker/language, flags, 8–9 bounds and unchanged playback assertions. The original test asserted the old default, not an explicit user selection. No new production model-selection API is needed.
+- Separate regression: use the existing `inheritedPreferences` seam with explicit `pt_BR-edresson-low` and `usesPreferences=true`; hold the fake executor pending, change the form preferences, and verify the job retained its complete original options and strict policy snapshot.
+- Red evidence: GitHub `38880891520` / `116907086297`, `ConvertViewModelTests.testManualFormForwardsConfigurationAndDoesNotMutatePlayback`, failed complete option equality against the legacy expected payload. Expected schema now includes the strict typed selection and bundled eSpeak path. GREEN pending GitHub; no local execution.
 
 ## RUST-20261016-FABER-CONTRACT-UNION — Preserve conversion contracts during preference integration
 
@@ -39,7 +52,7 @@
 
 - [ ] Owner: crash_workflow_audit; acceptance: dispose the book screen while the application-support directory lookup is pending, then resolve it; no conversion job may be persisted, no converter invoked, and no audio queued or played.
 - Source evidence: the Faber integration awaits model-root lookup after its generation check, then creates a persisted job before the next check. The same window exists in `b612f6f29e`; it belongs to the feature awaiting delivery, not a new merge conflict.
-- GitHub failure: CI `38878958274`, head `be057cbe`, Flutter job `116900794629` observed a persisted pending job where null was required, plus a readiness-signal timeout. Prepared synchronous signal completers plus bounded alternating fake-zone pumps and real-I/O turns; removed the candidate production guard so GitHub must first prove a clean behavioral RED. A clean focused GitHub result remains required; no local test/build/analyzer/formatter execution.
+- Clean GitHub RED: CI `38880891513`, head `3f688999`, Flutter job `116907148132` reached model-root lookup and failed only because a pending job was persisted after dispose (`book_open_screen_test.dart:208`, expected null); the earlier fixture timeout is absent. Both worker-handshake responsiveness cases passed. Added the minimal generation guard immediately after directory lookup; the regression remains unchanged and GitHub GREEN is pending. No local test/build/analyzer/formatter execution.
 
 ## APP-20261016-ESPEAK-VENDOR-ASSETS — Restore required phoneme compiler inputs
 

@@ -80,6 +80,54 @@ final class MacModelInstallationResponsivenessTests: XCTestCase {
         XCTAssertNotNil(button.target)
     }
 
+    func testFailedInstallationPresentsItsErrorOnMainActorWithoutChangingSelection() async throws {
+        let suite = "MacModelInstallationFailure.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let settings = AppSettings(defaults: defaults)
+        settings.secondaryAudioEngine = .edge
+        settings.allowOnlineAudioFallback = true
+        let original = settings.conversionOptions
+        let installer = BlockingModelInstaller()
+        defer { installer.release() }
+        let message = "Owned fixture installation failed"
+        let controller = MacSettingsViewController(
+            settings: settings, library: LibraryStore(defaults: defaults),
+            installPiperModelOperation: { modelID, root in
+                _ = installer.install(modelID: modelID, root: root)
+                throw NSError(domain: "MacModelInstallationFixture", code: 1,
+                              userInfo: [NSLocalizedDescriptionKey: message])
+            }
+        )
+        _ = controller.view
+        let button = try XCTUnwrap(descendants(controller.view).compactMap { $0 as? NSButton }
+            .first { $0.action == NSSelectorFromString("installPiperModel") })
+        let presented = expectation(description: "Owned installation error alert was presented")
+        let timer = Timer(timeInterval: 0.02, repeats: true) { timer in
+            MainActor.assumeIsolated {
+                guard let modal = NSApp.modalWindow else { return }
+                defer { timer.invalidate(); NSApp.abortModal(); modal.orderOut(nil) }
+                let labels = modal.contentView.map { self.descendants($0) } ?? []
+                let text = labels.compactMap { $0 as? NSTextField }.map(\.stringValue)
+                XCTAssertTrue(text.contains(message), "The actual alert must retain the installer error")
+                XCTAssertTrue(text.contains(L10n.string("settings.piperInstall")))
+                XCTAssertTrue(Thread.isMainThread)
+                presented.fulfill()
+            }
+        }
+        RunLoop.main.add(timer, forMode: .modalPanel)
+        defer { timer.invalidate() }
+        button.performClick(nil)
+        await fulfillment(of: [presented, installer.completed], timeout: 5)
+        let result = installer.result()
+        XCTAssertFalse(result.mainThread)
+        XCTAssertTrue(result.heartbeat)
+        XCTAssertEqual(result.modelID, "pt_BR-faber-medium")
+        XCTAssertEqual(result.count, 1)
+        XCTAssertEqual(settings.conversionOptions, original)
+        XCTAssertNil(NSApp.modalWindow, "Dismiss the owned fixture alert before finishing")
+    }
+
     private func descendants(_ view: NSView) -> [NSView] {
         [view] + view.subviews.flatMap(descendants)
     }

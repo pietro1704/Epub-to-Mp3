@@ -90,6 +90,50 @@ final class ConvertViewModelTests: XCTestCase {
     }
 
     @MainActor
+    func testInheritedExplicitModelRemainsCapturedWhenPreferencesChangeDuringJob() async {
+        let selected = TtsPreferences(
+            primary: TtsSelection(engine: "piper", modelID: "pt_BR-edresson-low", voice: "speaker-0"),
+            secondary: nil, allowOnlineFallback: false
+        )
+        var captured: ConversionOptions?
+        let started = expectation(description: "Explicit model job captured its options")
+        var release: AsyncStream<Void>.Continuation!
+        let gate = AsyncStream<Void> { release = $0 }
+        defer { release.finish() }
+        let result = manualResult(jobID: "explicit-model-job")
+        let model = ConvertViewModel(converter: { _, _, _, options in
+            captured = options
+            started.fulfill()
+            for await _ in gate {}
+            return result
+        })
+        model.selectedFile = URL(fileURLWithPath: "/unused-explicit-model.epub")
+        model.modelsRoot = "/owned-fixture-models"
+        model.engine = "edge"
+        model.voice = "must-not-replace-captured-voice"
+        model.language = "pt-BR"
+        model.inheritedPreferences = selected
+        model.usesPreferences = true
+        let pending = Task { await model.submit() }
+        await fulfillment(of: [started], timeout: 2)
+        model.inheritedPreferences = TtsPreferences(
+            primary: .selected(.piper), secondary: nil, allowOnlineFallback: false
+        )
+        release.finish()
+        await pending.value
+        var expected = ConversionOptions(
+            engine: "piper", voice: "speaker-0", language: "pt-BR",
+            modelsRoot: "/owned-fixture-models", modelID: "pt_BR-edresson-low",
+            espeakDataDirectory: Bundle.main.resourceURL?.path
+        )
+        expected.ttsPreferences = selected
+        XCTAssertEqual(captured, expected)
+        XCTAssertEqual(model.inheritedPreferences?.primary.modelID, "pt_BR-faber-medium")
+        XCTAssertEqual(model.submittedJobId, "explicit-model-job")
+        XCTAssertNil(model.error)
+    }
+
+    @MainActor
     func testManualFormForwardsConfigurationAndDoesNotMutatePlayback() async throws {
         var captured: ConversionOptions?
         var capturedBounds: (Int32, Int32)?
@@ -115,9 +159,16 @@ final class ConvertViewModelTests: XCTestCase {
         let player = AudioPlayer(resumeStore: ResumeStore(storage: UserDefaultsResumeStorage(defaults: defaults)))
         let previous = player.snapshot
         await model.submit(player: player)
-        XCTAssertEqual(captured, ConversionOptions(engine: "piper", voice: "speaker-0", language: "pt-BR",
-                                                  clearCache: true, forceReprocess: true, maxPerformance: true,
-                                                  modelsRoot: modelsRoot, modelID: "pt_BR-edresson-low"))
+        var expected = ConversionOptions(engine: "piper", voice: "speaker-0", language: "pt-BR",
+                                         clearCache: true, forceReprocess: true, maxPerformance: true,
+                                         modelsRoot: modelsRoot, modelID: "pt_BR-faber-medium",
+                                         espeakDataDirectory: Bundle.main.resourceURL?.path)
+        expected.ttsPreferences = TtsPreferences(
+            primary: TtsSelection(engine: "piper", modelID: "pt_BR-faber-medium", voice: "speaker-0"),
+            secondary: nil, allowOnlineFallback: false
+        )
+        XCTAssertEqual(captured, expected)
+        XCTAssertEqual(model.manualPrimary, expected.ttsPreferences?.primary)
         XCTAssertEqual(capturedBounds?.0, 8)
         XCTAssertEqual(capturedBounds?.1, 9)
         XCTAssertEqual(model.submittedJobId, "manual-only")
