@@ -1,3 +1,9 @@
+## APP-20261016-EDGE-SECONDARY-CONSENT — Keep native Edge fallback selection consent-safe
+
+- [ ] Owner: root; iOS and macOS settings must not save Edge as a secondary provider without explicit online-fallback consent. Revoking consent clears that saved secondary choice; legacy invalid preferences are migrated safely. Edge as an explicitly selected primary remains available.
+- Acceptance: model tests cover unconsented Edge omission, consented selection, revocation/persisted clearing, migration of legacy invalid preferences, and Edge primary without fallback consent. iOS/macOS controls disable or omit Edge secondary while consent is off; manual-job snapshots remain strict and independent.
+- Verification: GitHub Actions only on the exact PR head. This fixes a state currently rejected by Rust validation; it does not alter Edge primary semantics or trigger provider/network access.
+
 # App delivery backlog
 
 ## ANDROID-20261016-PIPER-OPTIONS — Forward captured TTS options to direct Android Piper synthesis

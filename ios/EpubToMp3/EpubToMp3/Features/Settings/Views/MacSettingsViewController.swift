@@ -178,7 +178,7 @@ final class MacSettingsViewController: NSViewController {
         audioEnginePopup.selectItem(at: AudioEnginePreference.supportedPreferences.firstIndex(of: settings.audioEngine) ?? 0)
         secondaryEnginePopup.selectItem(at: settings.secondaryAudioEngine.flatMap { AudioEnginePreference.supportedPreferences.firstIndex(of: $0) }.map { $0 + 1 } ?? 0)
         for (index, engine) in AudioEnginePreference.supportedPreferences.enumerated() {
-            secondaryEnginePopup.item(at: index + 1)?.isEnabled = engine != settings.audioEngine
+            secondaryEnginePopup.item(at: index + 1)?.isEnabled = settings.selectableSecondaryAudioEngines.contains(engine)
         }
         onlineFallbackButton.state = settings.allowOnlineAudioFallback ? .on : .off
         piperInstallButton.title = AppSettings.isFaberInstalled() ? L10n.string("settings.piperInstalled") : L10n.string("settings.piperInstall")
@@ -220,11 +220,20 @@ final class MacSettingsViewController: NSViewController {
 
     @objc private func secondaryEngineChanged(_ sender: NSPopUpButton) {
         let index = sender.indexOfSelectedItem - 1
-        settings.secondaryAudioEngine = AudioEnginePreference.supportedPreferences.indices.contains(index)
-            ? AudioEnginePreference.supportedPreferences[index] : nil
+        guard AudioEnginePreference.supportedPreferences.indices.contains(index) else {
+            settings.secondaryAudioEngine = nil
+            return
+        }
+        let engine = AudioEnginePreference.supportedPreferences[index]
+        guard settings.selectableSecondaryAudioEngines.contains(engine) else {
+            refresh()
+            return
+        }
+        settings.secondaryAudioEngine = engine
     }
     @objc private func onlineFallbackChanged(_ sender: NSButton) {
         settings.allowOnlineAudioFallback = sender.state == .on
+        refresh()
     }
 
     @objc private func installPiperModel() {

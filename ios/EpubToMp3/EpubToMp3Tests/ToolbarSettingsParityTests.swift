@@ -91,6 +91,50 @@ final class ToolbarSettingsParityTests: XCTestCase {
         XCTAssertFalse(AppSettings.isFaberInstalled(modelsRoot: root), "Unverified files must not claim a catalog installation.")
     }
 
+    func testEdgeSecondaryRequiresConsentAndRevocationClearsPreference() throws {
+        let (settings, defaults) = make()
+        XCTAssertFalse(settings.selectableSecondaryAudioEngines.contains(.edge))
+        settings.secondaryAudioEngine = .edge
+        XCTAssertNil(settings.ttsPreferences.secondary, "Unconsented Edge must never reach conversion preferences.")
+
+        settings.allowOnlineAudioFallback = true
+        XCTAssertTrue(settings.selectableSecondaryAudioEngines.contains(.edge))
+        settings.secondaryAudioEngine = .edge
+        XCTAssertEqual(settings.ttsPreferences.secondary?.engine, "edge")
+        XCTAssertEqual(defaults.string(forKey: "secondaryAudioEngine"), "edge")
+
+        settings.allowOnlineAudioFallback = false
+        XCTAssertNil(settings.secondaryAudioEngine)
+        XCTAssertNil(defaults.string(forKey: "secondaryAudioEngine"))
+        XCTAssertNil(settings.ttsPreferences.secondary)
+    }
+
+    func testLegacyUnconsentedEdgeSecondaryIsMigratedOnLoad() {
+        let suite = "Toolbar.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defaults.removePersistentDomain(forName: suite)
+        defaults.set("edge", forKey: "secondaryAudioEngine")
+        defaults.set(false, forKey: "allowOnlineAudioFallback")
+
+        let settings = AppSettings(defaults: defaults)
+
+        XCTAssertNil(settings.secondaryAudioEngine)
+        XCTAssertNil(defaults.string(forKey: "secondaryAudioEngine"))
+        XCTAssertNil(settings.ttsPreferences.secondary)
+        defaults.removePersistentDomain(forName: suite)
+    }
+
+    func testEdgePrimaryRemainsAvailableWithoutFallbackConsent() throws {
+        let (settings, _) = make()
+        settings.audioEngine = .edge
+
+        XCTAssertEqual(settings.audioEngine, .edge)
+        XCTAssertFalse(settings.allowOnlineAudioFallback)
+        XCTAssertNil(settings.ttsPreferences.secondary)
+        XCTAssertEqual(settings.conversionOptions.ttsPreferences?.primary.engine, "edge")
+        XCTAssertEqual(settings.conversionOptions.ttsPreferences?.allowOnlineFallback, false)
+    }
+
     func testFaberDefaultsAndExplicitEdgeChoicePersist() throws {
         let (settings, defaults) = make()
         XCTAssertEqual(settings.audioEngine, .piper)

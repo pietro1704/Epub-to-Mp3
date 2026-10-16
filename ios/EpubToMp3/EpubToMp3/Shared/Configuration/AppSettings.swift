@@ -214,9 +214,15 @@ final class AppSettings: ObservableObject {
         self.audioEngine = AudioEnginePreference(
             rawValue: defaults.string(forKey: Self.audioEngineKey) ?? "piper"
         ) ?? .piper
-        self.secondaryAudioEngine = defaults.string(forKey: "secondaryAudioEngine")
+        let storedSecondaryAudioEngine = defaults.string(forKey: "secondaryAudioEngine")
             .flatMap(AudioEnginePreference.init(rawValue:))
-        self.allowOnlineAudioFallback = defaults.bool(forKey: "allowOnlineAudioFallback")
+        let storedOnlineFallbackConsent = defaults.bool(forKey: "allowOnlineAudioFallback")
+        self.secondaryAudioEngine = storedSecondaryAudioEngine
+        self.allowOnlineAudioFallback = storedOnlineFallbackConsent
+        if !storedOnlineFallbackConsent && storedSecondaryAudioEngine == .edge {
+            self.secondaryAudioEngine = nil
+            defaults.removeObject(forKey: "secondaryAudioEngine")
+        }
         self.playbackForwardSeconds = Self.validPlaybackSkipInterval(
             defaults.object(forKey: Self.playbackForwardSecondsKey) as? Double
         )
@@ -332,12 +338,26 @@ final class AppSettings: ObservableObject {
         didSet { defaults.set(secondaryAudioEngine?.rawValue, forKey: "secondaryAudioEngine") }
     }
     @Published var allowOnlineAudioFallback = false {
-        didSet { defaults.set(allowOnlineAudioFallback, forKey: "allowOnlineAudioFallback") }
+        didSet {
+            defaults.set(allowOnlineAudioFallback, forKey: "allowOnlineAudioFallback")
+            if !allowOnlineAudioFallback && secondaryAudioEngine == .edge {
+                secondaryAudioEngine = nil
+            }
+        }
+    }
+    var selectableSecondaryAudioEngines: [AudioEnginePreference] {
+        AudioEnginePreference.supportedPreferences.filter {
+            $0 != audioEngine && ($0 != .edge || allowOnlineAudioFallback)
+        }
     }
     var ttsPreferences: TtsPreferences {
-        TtsPreferences(primary: .selected(audioEngine),
-                       secondary: secondaryAudioEngine.map(TtsSelection.selected),
-                       allowOnlineFallback: allowOnlineAudioFallback)
+        let secondary = secondaryAudioEngine.flatMap { engine -> TtsSelection? in
+            guard engine != .edge || allowOnlineAudioFallback else { return nil }
+            return .selected(engine)
+        }
+        return TtsPreferences(primary: .selected(audioEngine),
+                              secondary: secondary,
+                              allowOnlineFallback: allowOnlineAudioFallback)
     }
     var conversionOptions: ConversionOptions {
         var options = ConversionOptions.selectedEngine(audioEngine, modelsRoot: Self.ttsModelsRoot())

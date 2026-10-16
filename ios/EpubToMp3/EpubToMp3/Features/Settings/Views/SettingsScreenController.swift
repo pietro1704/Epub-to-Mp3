@@ -270,9 +270,10 @@ final class SettingsScreenController: UITableViewController {
                 self?.settings.secondaryAudioEngine = nil
                 tableView.reloadData()
             })
-            for engine in AudioEnginePreference.supportedPreferences where engine != settings.audioEngine {
+            for engine in settings.selectableSecondaryAudioEngines {
                 alert.addAction(UIAlertAction(title: engine.displayName, style: .default) { [weak self] _ in
-                    self?.settings.secondaryAudioEngine = engine
+                    guard let self, self.settings.selectableSecondaryAudioEngines.contains(engine) else { return }
+                    self.settings.secondaryAudioEngine = engine
                     tableView.reloadData()
                 })
             }
