@@ -2,6 +2,7 @@
 
 ## APP-20261016-WEB-CLI-REPRO — Reproduce the captured job through Rust CLI
 
+- GitHub evidence: headc43bceaa Web job117229909190/run38977330463 passed all203 tests, including real Bash/PowerShell argv fixtures, then failed ESLint no-control-regex on the NUL guard. Preserve NUL/CR/LF rejection with string includes instead of a control-character regex; exact-head rerun remains pending.
 - [ ] Owner: root; replace the legacy Python recipe with `converter-cli convert --tts-preferences-json` using only the captured provider policy and an absolute local EPUB/PDF path. Browser filenames/upload IDs alone cannot identify a CLI source. Legacy form engine/voice/model hints do not override the canonical snapshot.
 - Acceptance: nullable voice, primary/secondary and online consent remain literal JSON; generated arguments survive Bash and PowerShell quoting. Display the shell label separately from the copyable command. Browser 1-based inclusive chapter ordinals map to explicit zero-based Rust position selectors; unsupported settings or overlong selector expansion omit the recipe without truncating or changing the app job.
 - Coverage: pure policy/source/selection cases, rendered shell label, failed-job recipe followed by clearing for a new browser-only source, and GitHub Linux shell argument-recording fixtures with apostrophe/quote/backslash/Unicode/injection-marker cases. Fixtures use owned temporary directories, bounded child execution and cleanup, and never run on the user's host.

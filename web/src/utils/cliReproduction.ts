@@ -21,7 +21,8 @@ function validSelection(value: TtsSelection | null | undefined): boolean {
 /** Render only captured jobs with a local source and faithfully representable options. */
 export function buildCliReproduction(values: ConversionFormValues): { command: string; shell: CliShell } | undefined {
   const source = values.localPath;
-  if (!source || /[\u0000\r\n]/.test(source) || !/\.(epub|pdf)$/i.test(source)) return undefined;
+  if (!source || source.includes("\u0000") || source.includes("\r") ||
+      source.includes("\n") || !/\.(epub|pdf)$/i.test(source)) return undefined;
   const windows = /^[A-Za-z]:[\\/]/.test(source) || /^\\\\[^\\]+\\[^\\]+/.test(source);
   if (!windows && !source.startsWith("/")) return undefined;
   if (values.footnoteMode !== "inline" || values.sections?.trim() || values.clearCache) return undefined;
