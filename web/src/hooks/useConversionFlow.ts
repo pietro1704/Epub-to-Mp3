@@ -1,3 +1,4 @@
+import { buildCliReproduction } from "../utils/cliReproduction";
 import {
   useCallback,
   useEffect,
@@ -236,81 +237,13 @@ const isNetworkError = (error: unknown): boolean => {
   );
 };
 
-function buildCliCommand(values: ConversionFormValues): string {
-  const parts = ["python python_app/convert"];
-  const displayFileName = values.file?.name || values.fileName;
-  if (displayFileName) {
-    parts.push(displayFileName);
-  }
-
-  if (values.engine) {
-    parts.push("--engine", values.engine);
-  }
-
-  if (values.voice) {
-    parts.push("--voice", values.voice);
-  }
-  if (values.model) {
-    parts.push("--model", values.model);
-  }
-
-  if (values.chapters) {
-    parts.push("--chapter", values.chapters);
-  }
-  if (values.sections) {
-    parts.push("--section", values.sections);
-  }
-  if (values.priority) {
-    parts.push("--priority", values.priority);
-  }
-
-  if (typeof values.verbose === "boolean") {
-    parts.push(values.verbose ? "--verbose" : "--no-verbose");
-  }
-
-  if (typeof values.formattingCues === "boolean") {
-    parts.push(
-      values.formattingCues ? "--formatting-cues" : "--no-formatting-cues",
-    );
-  }
-
-  if (values.noParallel) {
-    parts.push("--no-parallel");
-  }
-
-  if (values.multiEngineParallel) {
-    parts.push("--multi-engine");
-  }
-
-  if (values.filterChapters) {
-    parts.push("--filter-chapters");
-  }
-
-  if (values.clearCache) {
-    parts.push("--clear-cache");
-  }
-
-  if (values.footnoteMode && values.footnoteMode !== "inline") {
-    if (values.footnoteMode === "skip") {
-      parts.push("--no-footnote");
-    } else if (values.footnoteMode === "chapter_end") {
-      parts.push("--footnote-chapter-end");
-    }
-  }
-
-  if (values.language) {
-    parts.push("--language", values.language);
-  }
-
-  return parts.join(" ");
-}
-
 type Action =
   | { type: "reset" }
   | {
       type: "start";
       entry: StatusEntry;
-      cliCommand: string;
+      cliCommand?: string;
+      cliShell?: ConversionState["cliShell"];
       startedAt?: string;
     }
   | { type: "job-created"; entry: StatusEntry; jobId: string }
@@ -365,6 +298,7 @@ const initialState: ConversionState = {
   etaSeconds: undefined,
   summary: undefined,
   cliCommand: undefined,
+  cliShell: undefined,
   bookTitle: undefined,
   bookAuthor: undefined,
   coverUrl: undefined,
@@ -389,6 +323,7 @@ function reducer(state: ConversionState, action: Action): ConversionState {
         phase: "submitting",
         log: [action.entry],
         cliCommand: action.cliCommand,
+        cliShell: action.cliShell,
         startedAt: action.startedAt ?? new Date().toISOString(),
         completedAt: undefined,
         totalDurationSeconds: undefined,
@@ -1595,12 +1530,13 @@ export function useConversionFlow(
           : startMessage;
 
       // Generate CLI command
-      const cliCommand = buildCliCommand(values);
+      const recipe = buildCliReproduction(values);
 
       dispatch({
         type: "start",
         entry: entryFactoryRef.current(label),
-        cliCommand,
+        cliCommand: recipe?.command,
+        cliShell: recipe?.shell,
         startedAt: startedAtIso,
       });
       if (values.bookTitle || values.bookAuthor || values.coverUrl) {

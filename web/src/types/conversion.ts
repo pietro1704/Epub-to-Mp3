@@ -1,3 +1,4 @@
+export type CliShell = "Bash/Zsh" | "PowerShell";
 export type EngineOption = "edge" | "piper" | string;
 export type FootnoteMode = "inline" | "chapter_end" | "skip";
 export interface TtsSelection { engine: "piper" | "edge"; model_id: string | null; voice: string | null; }
@@ -251,6 +252,7 @@ export interface ConversionState {
   etaSeconds?: number | null;
   summary?: ConversionSummary;
   cliCommand?: string;
+  cliShell?: CliShell;
   bookTitle?: string;
   bookAuthor?: string;
   coverUrl?: string;

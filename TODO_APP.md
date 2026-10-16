@@ -1,5 +1,13 @@
 # App delivery backlog
 
+## APP-20261016-WEB-CLI-REPRO — Reproduce the captured job through Rust CLI
+
+- [ ] Owner: root; replace the legacy Python recipe with `converter-cli convert --tts-preferences-json` using only the captured provider policy and an absolute local EPUB/PDF path. Browser filenames/upload IDs alone cannot identify a CLI source. Legacy form engine/voice/model hints do not override the canonical snapshot.
+- Acceptance: nullable voice, primary/secondary and online consent remain literal JSON; generated arguments survive Bash and PowerShell quoting. Display the shell label separately from the copyable command. Browser 1-based inclusive chapter ordinals map to explicit zero-based Rust position selectors; unsupported settings or overlong selector expansion omit the recipe without truncating or changing the app job.
+- Coverage: pure policy/source/selection cases, rendered shell label, failed-job recipe followed by clearing for a new browser-only source, and GitHub Linux shell argument-recording fixtures with apostrophe/quote/backslash/Unicode/injection-marker cases. Fixtures use owned temporary directories, bounded child execution and cleanup, and never run on the user's host.
+- Prerequisite verified: on head19e4ce8, all15 CLI tests including strict snapshot/schema/identity tests passed in Rust job117226647684 (CI run38976226399); general CI also passed. These remain predecessor results after this change.
+- Verification: specialists reviewed the renderer/selection plan; candidate exact-head web/shell/required checks remain pending. No local test, native tool, model download or device action. Preserve the original Help branch until its remaining behavior and ancestry are reconciled.
+
 ## APP-20261016-CLI-SNAPSHOT — Capture complete per-job voice preferences
 
 - [ ] Owner: root; flag-only CLI reproduction cannot clear a saved Edge voice when the captured job uses a null voice. Add `--tts-preferences-json` as an exclusive per-job snapshot, parsed and validated before conversion actions, with an immediate effective-preference return before saved profile or ENGINE lookup.

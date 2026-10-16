@@ -507,6 +507,7 @@ export interface RecentJobsText {
 }
 
 export interface DownloadsText {
+  cliReproduction: string;
   placeholder: string;
   noDownloadsAfterSuccess: string;
   resetWithDownloads: string;
@@ -1320,6 +1321,7 @@ export const translations: Record<Locale, Translations> = {
         "Assim que a conversão terminar, os áudios ficam disponíveis aqui para ouvir ou baixar.",
       noDownloadsAfterSuccess:
         "Conversão concluída, mas os arquivos não puderam ser carregados. Verifique as conversões recentes ou inicie uma nova.",
+      cliReproduction: "Reproduzir pela CLI",
       resetWithDownloads: "Começar uma nova conversão",
       resetWithoutDownloads: "Limpar tudo",
       audioNotSupported: "Seu navegador não suporta reprodução de áudio.",
@@ -2156,6 +2158,7 @@ export const translations: Record<Locale, Translations> = {
         "When the conversion finishes, the audio files will show up here to play or download.",
       noDownloadsAfterSuccess:
         "Conversion finished, but the files could not be loaded. Check recent conversions or start a new one.",
+      cliReproduction: "Reproduce with CLI",
       resetWithDownloads: "Start another conversion",
       resetWithoutDownloads: "Clear form",
       audioNotSupported: "Your browser does not support audio playback.",

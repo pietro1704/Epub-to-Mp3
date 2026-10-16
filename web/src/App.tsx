@@ -1402,6 +1402,7 @@ export default function App(props?: AppProps): JSX.Element {
                 onToggleRawLog={() => setShowRawLog((value) => !value)}
                 summary={state.summary}
                 cliCommand={state.cliCommand}
+                cliShell={state.cliShell}
                 onCancel={state.jobId ? handleCancelClick : undefined}
                 onSkip={state.jobId ? handleSkipClick : undefined}
                 canCancel={canCancelJob}
@@ -1485,6 +1486,7 @@ export default function App(props?: AppProps): JSX.Element {
                 onReset={handleReset}
                 isBusy={isBusy}
                 cliCommand={state.cliCommand}
+                cliShell={state.cliShell}
                 log={state.log}
                 rawLog={state.rawLog}
                 showRawLog={showRawLog}
@@ -1515,6 +1517,7 @@ export default function App(props?: AppProps): JSX.Element {
       state.bookAuthor,
       state.bookTitle,
       state.cliCommand,
+      state.cliShell,
       state.coverUrl,
       state.downloads,
       state.error,
