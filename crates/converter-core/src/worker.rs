@@ -541,7 +541,11 @@ impl ConversionWorker {
                 && recovery_has_model_identity
                 && !chapter_audio_is_complete(&mp3, &request_key)
             {
-                if let Some(predecessor) = self.control.as_ref().and_then(|control| control.recover_job()) {
+                if let Some(predecessor) = self
+                    .control
+                    .as_ref()
+                    .and_then(|control| control.recover_job())
+                {
                     recover_chapter_audio(
                         &self.config.paths.output_dir,
                         &predecessor,

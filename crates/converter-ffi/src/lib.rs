@@ -3545,28 +3545,45 @@ mod tests {
             assert!(converter_session_set_platform_tts_v1(
                 session,
                 Some(platform_test_speech),
-                (&calls as *const std::sync::atomic::AtomicUsize).cast_mut().cast(),
+                (&calls as *const std::sync::atomic::AtomicUsize)
+                    .cast_mut()
+                    .cast(),
             ));
             let convert = |job: &str, predecessor: Option<&str>, failures: usize| {
                 let output = CString::new(root.path().join(job).to_str().unwrap()).unwrap();
                 let job = CString::new(job).unwrap();
-                let options = CString::new(serde_json::json!({
-                    "language": "pt-BR",
-                    "tts_preferences": {
-                        "primary": {"engine":"system", "model_id":null, "voice":null},
-                        "secondary": null, "allow_online_fallback": false
-                    },
-                    "tts_policy_state": {"consecutive_failures": failures}
-                }).to_string()).unwrap();
+                let options = CString::new(
+                    serde_json::json!({
+                        "language": "pt-BR",
+                        "tts_preferences": {
+                            "primary": {"engine":"system", "model_id":null, "voice":null},
+                            "secondary": null, "allow_online_fallback": false
+                        },
+                        "tts_policy_state": {"consecutive_failures": failures}
+                    })
+                    .to_string(),
+                )
+                .unwrap();
                 let control = converter_job_control_create();
                 assert!(!control.is_null());
                 if let Some(predecessor) = predecessor {
                     let source = CString::new(predecessor).unwrap();
-                    assert!(converter_job_control_set_recovery_job(control, source.as_ptr()));
+                    assert!(converter_job_control_set_recovery_job(
+                        control,
+                        source.as_ptr()
+                    ));
                 }
                 let response = converter_session_convert_controlled_job_options_json_v1(
-                    session, output.as_ptr(), job.as_ptr(), options.as_ptr(),
-                    0, 0, None, None, ptr::null_mut(), control,
+                    session,
+                    output.as_ptr(),
+                    job.as_ptr(),
+                    options.as_ptr(),
+                    0,
+                    0,
+                    None,
+                    None,
+                    ptr::null_mut(),
+                    control,
                 );
                 converter_job_control_free(control);
                 if response.is_null() {
@@ -3575,14 +3592,18 @@ mod tests {
                     converter_string_free(error);
                     panic!("actual policy recovery failed: {message}");
                 }
-                let result: serde_json::Value = serde_json::from_slice(CStr::from_ptr(response).to_bytes()).unwrap();
+                let result: serde_json::Value =
+                    serde_json::from_slice(CStr::from_ptr(response).to_bytes()).unwrap();
                 converter_string_free(response);
                 result
             };
             let original = convert("policy-predecessor", None, 2);
             let original_calls = calls.load(std::sync::atomic::Ordering::Acquire);
             assert!(original_calls > 0);
-            assert_eq!(original["manifest"]["ttsPolicyState"]["consecutive_failures"], 0);
+            assert_eq!(
+                original["manifest"]["ttsPolicyState"]["consecutive_failures"],
+                0
+            );
             let original_audio = Path::new(original["audioPath"].as_str().unwrap());
             let audio_bytes = std::fs::read(original_audio).unwrap();
             let receipt_path = original_audio.with_extension("mp3.complete.json");
@@ -3592,17 +3613,36 @@ mod tests {
             for failures in [0, 2] {
                 let job = format!("policy-recovered-{failures}");
                 let recovered = convert(&job, Some("policy-predecessor"), failures);
-                assert_eq!(calls.load(std::sync::atomic::Ordering::Acquire), original_calls);
-                assert_eq!(recovered["manifest"]["ttsPolicyState"]["consecutive_failures"], failures);
-                assert_eq!(recovered["manifest"]["usedSelections"], original["manifest"]["usedSelections"]);
-                assert_eq!(recovered["manifest"]["fallbackUsed"], original["manifest"]["fallbackUsed"]);
+                assert_eq!(
+                    calls.load(std::sync::atomic::Ordering::Acquire),
+                    original_calls
+                );
+                assert_eq!(
+                    recovered["manifest"]["ttsPolicyState"]["consecutive_failures"],
+                    failures
+                );
+                assert_eq!(
+                    recovered["manifest"]["usedSelections"],
+                    original["manifest"]["usedSelections"]
+                );
+                assert_eq!(
+                    recovered["manifest"]["fallbackUsed"],
+                    original["manifest"]["fallbackUsed"]
+                );
                 let persisted: serde_json::Value = serde_json::from_slice(
                     &std::fs::read(root.path().join(&job).join("manifest.json")).unwrap(),
-                ).unwrap();
-                assert_eq!(persisted["ttsPolicyState"]["consecutive_failures"], failures);
+                )
+                .unwrap();
+                assert_eq!(
+                    persisted["ttsPolicyState"]["consecutive_failures"],
+                    failures
+                );
                 let recovered_audio = Path::new(recovered["audioPath"].as_str().unwrap());
                 assert_eq!(std::fs::read(recovered_audio).unwrap(), audio_bytes);
-                assert_eq!(std::fs::read(recovered_audio.with_extension("mp3.complete.json")).unwrap(), receipt_bytes);
+                assert_eq!(
+                    std::fs::read(recovered_audio.with_extension("mp3.complete.json")).unwrap(),
+                    receipt_bytes
+                );
             }
             assert_eq!(std::fs::read(original_audio).unwrap(), audio_bytes);
             assert_eq!(std::fs::read(receipt_path).unwrap(), receipt_bytes);

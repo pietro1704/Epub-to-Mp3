@@ -605,12 +605,17 @@ fn explicit_overrides_ignore_prepared_default_identity_and_never_fallback_to_it(
         let mut recovered_request = request.clone();
         recovered_request.job_id = format!("recovered-{job}");
         let recovered = recovered_worker.run(recovered_request).unwrap();
-        let recovered_audio = paths.output_dir.join(format!("recovered-{job}"))
+        let recovered_audio = paths
+            .output_dir
+            .join(format!("recovered-{job}"))
             .join(&recovered.chapters[0].filename);
         assert!(runtime.model_calls.lock().unwrap().is_empty());
         assert!(runtime.text_calls.lock().unwrap().is_empty());
         assert_eq!(fs::read(&recovered_audio).unwrap(), prior_audio);
-        assert_eq!(fs::read(recovered_audio.with_extension("mp3.complete.json")).unwrap(), prior_receipt);
+        assert_eq!(
+            fs::read(recovered_audio.with_extension("mp3.complete.json")).unwrap(),
+            prior_receipt
+        );
 
         let recovery = converter_core::conversion_control::ConversionControl::default();
         recovery.set_recovery_job(job).unwrap();
@@ -627,15 +632,31 @@ fn explicit_overrides_ignore_prepared_default_identity_and_never_fallback_to_it(
         let mut forced_request = request.clone();
         forced_request.job_id = format!("forced-recovery-{job}");
         forced_worker.run(forced_request).unwrap();
-        assert!(!runtime.text_calls.lock().unwrap().is_empty(), "Force must synthesize despite a valid predecessor");
-        assert!(!runtime.model_calls.lock().unwrap().is_empty(), "Force must initialize the selected B model");
-        assert!(runtime.model_calls.lock().unwrap().iter().all(|paths| paths == &expected));
+        assert!(
+            !runtime.text_calls.lock().unwrap().is_empty(),
+            "Force must synthesize despite a valid predecessor"
+        );
+        assert!(
+            !runtime.model_calls.lock().unwrap().is_empty(),
+            "Force must initialize the selected B model"
+        );
+        assert!(runtime
+            .model_calls
+            .lock()
+            .unwrap()
+            .iter()
+            .all(|paths| paths == &expected));
         assert_eq!(fs::read(&audio).unwrap(), prior_audio);
         assert_eq!(fs::read(&receipt).unwrap(), prior_receipt);
         let mut predecessor_a = request.clone();
         predecessor_a.job_id = format!("predecessor-A-{job}");
         if typed {
-            predecessor_a.tts_preferences.as_mut().unwrap().primary.model_id = Some("prepared-A".into());
+            predecessor_a
+                .tts_preferences
+                .as_mut()
+                .unwrap()
+                .primary
+                .model_id = Some("prepared-A".into());
         } else {
             predecessor_a.piper_model = Some(model_a.clone());
             predecessor_a.piper_config = Some(model_a.with_extension("onnx.json"));
@@ -643,14 +664,19 @@ fn explicit_overrides_ignore_prepared_default_identity_and_never_fallback_to_it(
         let predecessor_a_manifest = ConversionWorker::new(AppConfig::from_paths(paths.clone()))
             .unwrap()
             .with_piper_model(Some(prepare_a()))
-            .run(predecessor_a.clone()).unwrap();
-        let predecessor_a_audio = paths.output_dir.join(&predecessor_a.job_id)
+            .run(predecessor_a.clone())
+            .unwrap();
+        let predecessor_a_audio = paths
+            .output_dir
+            .join(&predecessor_a.job_id)
             .join(&predecessor_a_manifest.chapters[0].filename);
         let predecessor_a_bytes = fs::read(&predecessor_a_audio).unwrap();
         let predecessor_a_receipt = predecessor_a_audio.with_extension("mp3.complete.json");
         let predecessor_a_receipt_bytes = fs::read(&predecessor_a_receipt).unwrap();
         let wrong_model_recovery = converter_core::conversion_control::ConversionControl::default();
-        wrong_model_recovery.set_recovery_job(&predecessor_a.job_id).unwrap();
+        wrong_model_recovery
+            .set_recovery_job(&predecessor_a.job_id)
+            .unwrap();
         let override_worker = ConversionWorker::new(AppConfig::from_paths(paths.clone()))
             .unwrap()
             .with_piper_model(Some(prepare_a()))
@@ -660,11 +686,25 @@ fn explicit_overrides_ignore_prepared_default_identity_and_never_fallback_to_it(
         let mut override_request = request.clone();
         override_request.job_id = format!("override-recovered-{job}");
         override_worker.run(override_request).unwrap();
-        assert!(!runtime.text_calls.lock().unwrap().is_empty(), "B must not reuse A's predecessor audio");
-        assert!(!runtime.model_calls.lock().unwrap().is_empty(), "A predecessor recovery must reselect B before synthesis");
-        assert!(runtime.model_calls.lock().unwrap().iter().all(|paths| paths == &expected));
+        assert!(
+            !runtime.text_calls.lock().unwrap().is_empty(),
+            "B must not reuse A's predecessor audio"
+        );
+        assert!(
+            !runtime.model_calls.lock().unwrap().is_empty(),
+            "A predecessor recovery must reselect B before synthesis"
+        );
+        assert!(runtime
+            .model_calls
+            .lock()
+            .unwrap()
+            .iter()
+            .all(|paths| paths == &expected));
         assert_eq!(fs::read(predecessor_a_audio).unwrap(), predecessor_a_bytes);
-        assert_eq!(fs::read(predecessor_a_receipt).unwrap(), predecessor_a_receipt_bytes);
+        assert_eq!(
+            fs::read(predecessor_a_receipt).unwrap(),
+            predecessor_a_receipt_bytes
+        );
         runtime.model_calls.lock().unwrap().clear();
         runtime.text_calls.lock().unwrap().clear();
         let mut invalid = request;
