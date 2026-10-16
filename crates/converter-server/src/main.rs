@@ -1528,6 +1528,7 @@ mod tests {
         std::fs::create_dir_all(&job_dir).unwrap();
         std::fs::write(job_dir.join("book.zip"), b"archive fixture").unwrap();
         let manifest = OutputManifest {
+            source_chapters_total: None,
             job_id: "archive-job".into(),
             title: "Book".into(),
             author: "Author".into(),
@@ -1569,6 +1570,7 @@ mod tests {
         )
         .unwrap();
         let manifest = OutputManifest {
+            source_chapters_total: None,
             job_id: "archive-job".into(),
             title: "Book".into(),
             author: "Author".into(),
@@ -1589,6 +1591,7 @@ mod tests {
         std::fs::create_dir_all(&job_dir).unwrap();
         std::fs::write(job_dir.join("book.zip"), b"download archive").unwrap();
         let manifest = OutputManifest {
+            source_chapters_total: None,
             job_id: "archive-job".into(),
             title: "Book".into(),
             author: "Author".into(),

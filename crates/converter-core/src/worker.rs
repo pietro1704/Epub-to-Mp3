@@ -71,6 +71,9 @@ pub struct OutputManifest {
     pub title: String,
     pub author: String,
     pub chapters: Vec<ChapterMetadata>,
+    /// Full parsed source count; selected chapters remain represented by `chapters`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_chapters_total: Option<usize>,
     pub archive: String,
     pub cover: Option<String>,
 }
@@ -271,6 +274,7 @@ impl ConversionWorker {
         let source = fs::read(&request.input)?;
         let book_key = cache::sha256_bytes(&source);
         let book = epub::parse_epub(std::io::Cursor::new(&source))?;
+        let source_chapters_total = book.chapters.len();
         let cache_dir = self.config.paths.cache_dir.join(&book_key);
         let output_dir = self.config.paths.output_dir.join(&request.job_id);
         fs::create_dir_all(&cache_dir)?;
@@ -607,6 +611,7 @@ impl ConversionWorker {
         audio::create_archive(&archive, &archive_files)?;
         let output_name = archive.file_name().unwrap().to_string_lossy().to_string();
         let result = OutputManifest {
+            source_chapters_total: Some(source_chapters_total),
             job_id: request.job_id.clone(),
             title: book.title,
             author: book.author,
@@ -2064,6 +2069,36 @@ mod tests {
     }
 
     #[test]
+    fn legacy_output_manifest_keeps_unknown_source_count_without_changing_wire_shape() {
+        let legacy = serde_json::json!({
+            "jobId": "legacy-job", "title": "Book", "author": "Author",
+            "chapters": [{"index": 1, "sourceIndex": 0, "title": "Chapter",
+                          "filename": "chapter.mp3", "textChars": 40}],
+            "archive": "book.zip", "cover": null
+        });
+        let manifest: OutputManifest = serde_json::from_value(legacy.clone()).unwrap();
+        assert_eq!(manifest.source_chapters_total, None);
+        assert_eq!(manifest.chapters.len(), 1);
+        assert_eq!(serde_json::to_value(manifest).unwrap(), legacy);
+    }
+
+    #[test]
+    fn explicit_source_count_round_trips_and_negative_count_is_rejected() {
+        let mut value = serde_json::json!({
+            "jobId": "selected-job", "title": "Book", "author": "Author",
+            "chapters": [{"index": 1, "sourceIndex": 0, "title": "Chapter",
+                          "filename": "chapter.mp3", "textChars": 40}],
+            "sourceChaptersTotal": 2, "archive": "book.zip", "cover": null
+        });
+        let manifest: OutputManifest = serde_json::from_value(value.clone()).unwrap();
+        assert_eq!(manifest.source_chapters_total, Some(2));
+        assert_eq!(manifest.chapters.len(), 1);
+        assert_eq!(serde_json::to_value(manifest).unwrap(), value);
+        value["sourceChaptersTotal"] = serde_json::json!(-1);
+        assert!(serde_json::from_value::<OutputManifest>(value).is_err());
+    }
+
+    #[test]
     fn worker_reuses_proven_audio_and_publishes_the_matching_archive() {
         let root = tempfile::tempdir().unwrap();
         let paths = crate::paths::resolve_paths_from(
@@ -2075,6 +2110,7 @@ mod tests {
         let source = fs::read(&input).unwrap();
         let book = epub::parse_epub(std::io::Cursor::new(&source)).unwrap();
         assert!(book.cover.is_none());
+        assert_eq!(book.chapters.len(), 2, "fixture must retain a larger source domain");
         let chapter = &book.chapters[0];
         let output = worker.config.paths.output_dir.join("proven-existing-audio");
         let audio = output.join(format!("0001-{}.mp3", sanitize(&chapter.name)));
@@ -2117,6 +2153,12 @@ mod tests {
             chapter.text
         );
         assert_eq!(manifest.chapters.len(), 1);
+        assert_eq!(manifest.chapters[0].source_index, 0);
+        assert_eq!(manifest.source_chapters_total, Some(2));
+        let persisted: OutputManifest = cache::read_json(output.join("manifest.json")).unwrap();
+        assert_eq!(persisted.source_chapters_total, Some(2));
+        assert_eq!(persisted.chapters.len(), 1);
+        assert_eq!(persisted.chapters[0].source_index, 0);
         assert_eq!(
             worker.jobs.load("proven-existing-audio").unwrap().state,
             JobState::Completed
