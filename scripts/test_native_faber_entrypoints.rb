@@ -24,7 +24,7 @@ class NativeFaberEntrypointsTest < Minitest::Test
   BENCHMARKS = %w[build-edge.rb build-pocket.rb run.rb].freeze
 
   def setup
-    @directory = Dir.mktmpdir('native Faber entrypoints ')
+    @directory = File.realpath(Dir.mktmpdir('native Faber entrypoints '))
     @scripts = File.join(@directory, 'scripts')
     @bin = File.join(@directory, 'bin')
     @lock = File.join(@directory, 'lease')
