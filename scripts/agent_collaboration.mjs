@@ -67,13 +67,14 @@ export function nativeRunner(command, args, options) {
     env: { ...process.env, RUST_LOG: 'error', NO_COLOR: '1' } });
 }
 
-export function createClient({ config, role, runner = nativeRunner }) {
+export function createClient({ config, role, transportRole = role, runner = nativeRunner }) {
   validateConfig(config);
   if (!['mac', 'arch'].includes(role)) fail('Role must be mac or arch');
+  if (!['mac', 'arch'].includes(transportRole)) fail('Transport role must be mac or arch');
   const other = role === 'mac' ? 'arch' : 'mac';
   const scope = ['--workspace', config.workspace, '--project', config.roles[role].project];
   const invoke = (args, input) => {
-    const command = commandFor(config, role, ['message', ...args]);
+    const command = commandFor(config, transportRole, ['message', ...args]);
     const result = runner(command.command, command.args, { input, timeout: TIMEOUT });
     if (result.error || result.signal || result.status !== 0) {
       const error = new Error(result.error?.code === 'ETIMEDOUT'

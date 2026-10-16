@@ -1557,7 +1557,23 @@ run = "mise exec -- node scripts/agent_collaboration.mjs"
 
 [tasks."agents:collaboration:test"]
 description = "Verify collaboration routing, message identity, failure and cancellation without network/device actions"
-run = "mise exec -- node --test scripts/test_agent_collaboration.mjs"
+run = "mise exec -- node --test scripts/test_agent_collaboration.mjs scripts/test_install_agent_collaboration.mjs scripts/test_collaboration_doctor.mjs scripts/test_revalidate_collaboration.mjs"
+
+[tasks."agents:collaboration:doctor"]
+description = "Read-only verification of Mac/Arch transport, CLI capabilities and project UUIDs"
+run = "mise exec -- node scripts/collaboration_doctor.mjs"
+
+[tasks."agents:collaboration:revalidate"]
+description = "Revalidate transport using exact owned queue fixtures; requires --allow-queue-fixtures and invokes no model"
+run = "mise exec -- node scripts/revalidate_collaboration.mjs"
+
+[tasks."agents:collaboration:install"]
+description = "Plan/apply reviewed collaboration files from literal JSON stdin with baseline and alias checks"
+run = "mise exec -- node scripts/install_agent_collaboration.mjs"
+
+[tasks."native:xcresult"]
+description = "Serialize xcresulttool operations on one result bundle; never builds or launches apps"
+run = "mise exec -- ruby scripts/xcresult_job.rb"
 
 [tasks."native-tts:android:test"]
 description = "Verify native speech notices, cancellation and Android voice selection under the shared lease"

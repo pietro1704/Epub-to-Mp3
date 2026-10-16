@@ -27,6 +27,8 @@ jobs:
   production-packaging-guard:
     name: Production packaging guard
     runs-on: ubuntu-24.04
+    env:
+      MISE_ENABLE_TOOLS: node
     permissions:
       contents: read
 
@@ -52,8 +54,11 @@ jobs:
           version: 2026.9.14
           install: false
 
-      - name: Verify host workflow guards
-        run: ruby scripts/run_host_checks.rb
+      - name: Install Node for host workflow checks
+        run: mise install
+
+      - name: Verify host workflow guards and collaboration regressions
+        run: mise exec -- ruby scripts/run_host_checks.rb
 
   python-tests:
     name: Python tests

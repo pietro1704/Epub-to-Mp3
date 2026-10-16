@@ -107,6 +107,18 @@
 - Owner: Codex root; specialists review safety/runtime, UI/state and conversion/Git isolation. No questions while the user is away; continue independent work and report user-dependent blockers at the end. Preserve all existing dirty changes, books, models and Simulator data.
 - Plan, acceptance matrix, task ownership and evidence: `docs/plans/2026-10-15-ios-whole-app-verification.md`. Status: planning; no new app verification claimed.
 
+## TOOL-20261015-RETRO-FOLLOWUP — Implement the five collaboration retrospective controls
+
+- [x] RETRO-6: include collaboration regressions in normal host preflight and its CI gate, with failure propagation.
+- [x] RETRO-7: replace generated remote JavaScript with a portable, tested installer accepting literal JSON, checked baselines and idempotent writes.
+- [x] RETRO-8: add read-only collaboration doctor covering SSH/CLI capabilities, endpoints, names and UUID identity.
+- [x] RETRO-9: serialize xcresulttool operations per bundle while preserving independent-bundle parallelism, status and cancellation.
+- [x] RETRO-10: provide deterministic transport revalidation and concise operational guidance; reserve full remote Codex handshakes for initial integration or changed interpretation requirements.
+- Owner: Codex root owns gates, deterministic revalidation, docs and final delivery; specialists own installer, doctor and xcresult wrapper/tests. Status: Verified. Scope is host tooling/workflow only; preserve existing source changes, histories, models and devices. Commit/push only after all five controls are verified, per user request.
+- Board/evidence: `docs/agents/retro-collaboration-controls.md`.
+
+- Verification: full host preflight passed 139 tests (79 Ruby/674 assertions + 60 Node), no failures/errors/skips; Node tooling passed 60/60 on both Mac and Arch. Live doctor and deterministic queue revalidation passed in both execution locations without a model. Static JSON installation on Arch was planned/applied/repeated unchanged with backups/alias preservation; existing real xcresult summary/export serialized and exited zero. CI gate is configured and locally checked, not remotely monitored. Detailed receipts and limits are in the board.
+
 ## TOOL-20261015-ARCH-COLLAB — Coordinate Mac and Arch through ai-memory
 
 - [x] COLLAB-1: verify Mac/Arch memory endpoints and project identities, preserve existing history, and establish an addressed request/reply path.

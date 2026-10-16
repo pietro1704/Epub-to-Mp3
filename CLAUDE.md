@@ -36,6 +36,8 @@ For legacy Python CLI/server changes only, read
 For domain documentation use `docs/agents/domain.md`; for authorized issue work
 use `docs/agents/issue-tracker.md`.
 For agent memory configuration or routing, read `docs/agents/memory.md`.
+For channel diagnostics, transport revalidation or configuration installation,
+read `docs/agents/collaboration-operations.md`.
 
 ## Execution and delivery
 

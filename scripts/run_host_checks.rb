@@ -8,7 +8,17 @@ require_relative "run_steps"
 module HostChecks
   SUITES = %w[test_run_steps.rb test_scoped_git_index.rb test_native_build_preflight.rb
               test_native_job.rb test_native_task_wiring.rb test_update_instruction.rb
-              test_git_hygiene.rb test_run_host_checks.rb].freeze
+              test_git_hygiene.rb test_run_host_checks.rb test_xcresult_job.rb
+              test_agent_collaboration.mjs test_install_agent_collaboration.mjs
+              test_collaboration_doctor.mjs test_revalidate_collaboration.mjs].freeze
+
+  def self.suite_argv(path)
+    case File.extname(path)
+    when ".rb" then [RbConfig.ruby, path]
+    when ".mjs" then ["node", "--test", path]
+    else raise ArgumentError, "Unsupported host suite: #{path}"
+    end
+  end
 
   def self.run(arguments)
     suites = []
@@ -29,7 +39,7 @@ module HostChecks
       output = File.join(parent, "#{Time.now.utc.strftime('%Y%m%dT%H%M%S')}-#{Process.pid}")
     end
     # The plan is retained alongside logs, so each result can be reproduced.
-    plan = { "cwd" => root, "steps" => suites.map { |path| { "name" => File.basename(path), "argv" => [RbConfig.ruby, path] } } }
+    plan = { "cwd" => root, "steps" => suites.map { |path| { "name" => File.basename(path), "argv" => suite_argv(path) } } }
     Dir.mkdir(output, 0o700)
     plan_path = File.join(output, "plan.json")
     File.write(plan_path, JSON.pretty_generate(plan) + "\n")
