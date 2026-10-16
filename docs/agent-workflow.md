@@ -131,3 +131,9 @@ when histories align or cherry-pick when they do not. Inspect the staged diff to
 ensure no product files are included. Never push stale local `master` or rewrite
 history. Remove stale branches only after confirming they are merged. Report
 check failures and act only within authorized scope; do not poll unless requested.
+
+## Response to an agent-host kernel panic
+
+If the user reports or the agent observes a new kernel panic, stop initiating local processes on the affected host, including shell commands, builds, tests, Simulator/device actions and resource-intensive jobs. Preserve the supplied report and bounded execution receipts already available. Do not reboot, retry, stress the machine, or change hardware or firmware automatically. Continue independent work only through GitHub-hosted Actions or remote tools that start no process on the affected host. If no such path is available, wait for the user to confirm host stability before resuming local execution.
+
+Record the panic wording and platform exactly. A report of ARM64/T8010 `x86 CPU CATERR detected` in `kernel_task` does not establish a user-process cause and remains distinct from Intel `SimMetalHost`/`IGGuC.cpp:2913`. Do not infer causation from timing. Workflow controls contain exposure; they do not guarantee prevention or repair hardware/firmware faults.

@@ -49,3 +49,7 @@ the reader seam; do not parse Swift source as a substitute for runtime
 evidence. Changes under the reader production surface require a corresponding
 native test change in the same commit. The repository pre-commit hook checks
 this pairing.
+
+## Agent-host panic response
+
+After any new user-reported or observed kernel panic, stop initiating local processes on the affected host. Do not run shells, builds, tests, Simulator/device actions or resource-intensive tasks there; do not reboot, retry, stress the host, or alter hardware/firmware automatically. Continue only through GitHub-hosted Actions or remote tools that start no process on the affected host. Resume local execution only after the user confirms host stability. Read the canonical [host panic response](../../docs/agent-workflow.md#response-to-an-agent-host-kernel-panic). This contains exposure and does not prove or fix a hardware cause.
