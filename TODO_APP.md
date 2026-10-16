@@ -1,5 +1,14 @@
 # App delivery backlog
 
+## AH-09 — Recover identity-checked predecessor chapter audio
+
+- [ ] Owner: root (sole Rust editing owner); dependency: reviewed Faber/manual history integration `16fea0c5`. Recover only the scoped worker/worker-regression/FFI-test delta from preserved `98a533bf...ec1bc0a2`; do not import cumulative branches or edit `jobs.rs`.
+- Acceptance: reuse only direct-sibling regular audio/receipt pairs whose effective source/text/provider/model hashes match. Revalidate the staged copy, preserve predecessor bytes/receipt/job/manifest, retain source chapter identity across filename renumbering, and bypass recovery under force.
+- Actual used selections, fallback role (including primary/secondary resolving to the same voice) and explicit policy failure state must survive reuse without additional synthesis. Reject malformed receipt, equal-length hash tampering, different source/model and directory/audio/receipt symlinks.
+- Correct the recovered source's cancellation gap: check cancellation before recovery/staged commit and before chapter-completion publication. A deterministic staged-cancellation regression must leave no destination artifact or receipt; actual-worker cancellation on recovered-cache notification must produce no chapter-completion callback/final manifest and no new speech, while preserving predecessor state.
+- Verification pending on GitHub only: core staging/worker/fallback regressions, existing explicit model A/B/force tests, actual FFI recovery/identity/tamper/symlink/policy cases, workspace tests/format and current client gates. These tests use scoped offline providers; no implicit model download or local Mac process is authorized. Host panic and Intel Simulator quarantines remain in force.
+- Original branch ancestry remains unmerged; source recovery does not authorize deleting it.
+
 ## AH-05 — Recover completed manual conversion history
 
 - [ ] Owner: root; dependency AH-04 `c6aebc35`; minimal recovery from `e7ff8a82...d3a5ddd0` plus scoped EventChannel fixture `564e319`. Original branch remains preserved and unmerged.

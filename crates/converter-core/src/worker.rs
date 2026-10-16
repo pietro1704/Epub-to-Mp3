@@ -531,6 +531,37 @@ impl ConversionWorker {
             } else {
                 base_request_key
             };
+            // Recover only after computing the effective provider/model identity.
+            // Legacy unprepared Piper requests still lack a content fingerprint.
+            let recovery_has_model_identity = engine != "piper"
+                || request.tts_preferences.is_some()
+                || explicit_identity.is_some()
+                || prepared_identity.is_some();
+            if !self.execution_options.force_reprocess
+                && recovery_has_model_identity
+                && !chapter_audio_is_complete(&mp3, &request_key)
+            {
+                if let Some(predecessor) = self
+                    .control
+                    .as_ref()
+                    .and_then(|control| control.recover_job())
+                {
+                    recover_chapter_audio(
+                        &self.config.paths.output_dir,
+                        &predecessor,
+                        &mp3,
+                        &request_key,
+                        &|| {
+                            if self.cancel.is_cancelled()
+                                || self.jobs.is_cancellation_requested(&request.job_id)?
+                            {
+                                return Err(WorkerError::Cancelled);
+                            }
+                            Ok(())
+                        },
+                    )?;
+                }
+            }
             let cached = !self.execution_options.force_reprocess
                 && chapter_audio_is_complete(&mp3, &request_key);
 
@@ -708,6 +739,9 @@ impl ConversionWorker {
                         .map_err(|error| WorkerError::Piper(error.to_string()))?;
                     return Ok(());
                 }
+            }
+            if self.cancel.is_cancelled() || self.jobs.is_cancellation_requested(&request.job_id)? {
+                return Err(WorkerError::Cancelled);
             }
             let name = mp3.file_name().unwrap().to_string_lossy().to_string();
             let chapters_completed = completed.fetch_add(1, Ordering::AcqRel) + 1;
@@ -1541,6 +1575,94 @@ fn chapter_audio_is_complete(output: &Path, request_key: &str) -> bool {
     }
     fs::metadata(output).is_ok_and(|metadata| metadata.is_file() && metadata.len() == receipt.size)
         && cache::sha256_file(output).is_ok_and(|hash| hash == receipt.audio_sha256)
+}
+
+/// Import only a complete, identity-matched chapter from a direct sibling job.
+/// The predecessor remains immutable; untrusted or unavailable artifacts simply
+/// fall through to normal synthesis without weakening completion receipts.
+fn recover_chapter_audio(
+    output_root: &Path,
+    predecessor: &str,
+    output: &Path,
+    request_key: &str,
+    check_cancelled: &impl Fn() -> Result<(), WorkerError>,
+) -> Result<(), WorkerError> {
+    check_cancelled()?;
+    if predecessor.is_empty()
+        || matches!(predecessor, "." | "..")
+        || predecessor.contains(['/', '\\', '\0'])
+    {
+        return Ok(());
+    }
+    let source_directory = output_root.join(predecessor);
+    let Some(filename) = output.file_name() else {
+        return Ok(());
+    };
+    // Do not follow links into another job or outside the output root.
+    let is_plain_directory =
+        fs::symlink_metadata(&source_directory).is_ok_and(|metadata| metadata.file_type().is_dir());
+    let is_plain_file = |path: &Path| {
+        fs::symlink_metadata(path).is_ok_and(|metadata| metadata.file_type().is_file())
+    };
+    if !is_plain_directory {
+        return Ok(());
+    }
+    let (Ok(root), Ok(directory)) = (
+        fs::canonicalize(output_root),
+        fs::canonicalize(&source_directory),
+    ) else {
+        return Ok(());
+    };
+    if directory.parent() != Some(root.as_path()) {
+        return Ok(());
+    }
+    let is_matching_source = |path: &Path| {
+        is_plain_file(path)
+            && is_plain_file(&chapter_audio_receipt_path(path))
+            && chapter_audio_is_complete(path, request_key)
+    };
+    let expected_source = source_directory.join(filename);
+    let source = if is_matching_source(&expected_source) {
+        expected_source
+    } else {
+        // Filenames number the current selection, not the source chapter.
+        // Completion receipts retain the source identity across selections.
+        let Ok(entries) = fs::read_dir(&source_directory) else {
+            return Ok(());
+        };
+        let Some(source) = entries
+            .filter_map(Result::ok)
+            .map(|entry| entry.path())
+            .find(|path| {
+                path.extension().is_some_and(|extension| extension == "mp3")
+                    && is_matching_source(path)
+            })
+        else {
+            return Ok(());
+        };
+        source
+    };
+    let source_receipt = chapter_audio_receipt_path(&source);
+    let Some(parent) = output.parent() else {
+        return Ok(());
+    };
+    let staging = tempfile::Builder::new()
+        .prefix(".chapter-recovery-")
+        .tempdir_in(parent)?;
+    let pending = staging.path().join("chapter.mp3");
+    let pending_receipt = chapter_audio_receipt_path(&pending);
+    if fs::copy(&source, &pending).is_err() || fs::copy(source_receipt, &pending_receipt).is_err() {
+        return Ok(());
+    }
+    // Revalidate the copied pair so a concurrently replaced source cannot
+    // publish bytes that disagree with the accepted completion receipt.
+    if !chapter_audio_is_complete(&pending, request_key) {
+        return Ok(());
+    }
+    check_cancelled()?;
+    fs::rename(pending, output)?;
+    fs::rename(pending_receipt, chapter_audio_receipt_path(output))?;
+    Ok(())
 }
 
 fn refresh_chapter_audio_receipt(output: &Path) -> Result<(), WorkerError> {
@@ -2496,6 +2618,27 @@ mod tests {
                 .join(&request.job_id)
                 .join(&cached.chapters[0].filename);
             let receipt_path = chapter_audio_receipt_path(&audio);
+            let original_audio = fs::read(&audio).unwrap();
+            let original_receipt = fs::read(&receipt_path).unwrap();
+            let predecessor_state = fs::read(worker.config.paths.jobs_dir.join(format!("{}.json", request.job_id))).unwrap();
+            let control = ConversionControl::default();
+            control.set_recovery_job(&request.job_id).unwrap();
+            let policy: crate::tts_preferences::SegmentPolicy =
+                serde_json::from_value(serde_json::json!({"consecutive_failures": 2})).unwrap();
+            worker = worker.with_control(control).with_tts_policy_state(policy.clone());
+            let mut successor_request = request.clone();
+            successor_request.job_id = format!("recovered-{}", request.job_id);
+            let recovered = worker.run(successor_request.clone()).unwrap();
+            assert_eq!(attempts.load(Ordering::Acquire), calls, "recovery must not retry either provider");
+            assert_eq!(recovered.fallback_used, fail_primary);
+            assert_eq!(recovered.used_selections, cached.used_selections);
+            assert_eq!(recovered.tts_policy_state, Some(policy));
+            let recovered_audio = worker.config.paths.output_dir.join(&successor_request.job_id).join(&recovered.chapters[0].filename);
+            assert_eq!(fs::read(&recovered_audio).unwrap(), original_audio);
+            assert_eq!(fs::read(chapter_audio_receipt_path(&recovered_audio)).unwrap(), original_receipt);
+            assert_eq!(fs::read(&audio).unwrap(), original_audio);
+            assert_eq!(fs::read(&receipt_path).unwrap(), original_receipt);
+            assert_eq!(fs::read(worker.config.paths.jobs_dir.join(format!("{}.json", request.job_id))).unwrap(), predecessor_state);
             let mut legacy: serde_json::Value = cache::read_json(&receipt_path).unwrap();
             let key = legacy["request_key"].as_str().unwrap().to_owned();
             legacy.as_object_mut().unwrap().remove("fallback_used");
@@ -3283,6 +3426,102 @@ mod tests {
         })
         .unwrap();
         assert_eq!(fs::read(audio).unwrap(), b"completed synthesis");
+    }
+
+
+    #[test]
+    fn recovery_cancelled_after_staging_does_not_publish_artifacts() {
+        let root = tempfile::tempdir().unwrap();
+        let predecessor = root.path().join("predecessor");
+        let successor = root.path().join("successor");
+        fs::create_dir_all(&predecessor).unwrap();
+        fs::create_dir_all(&successor).unwrap();
+        let source = predecessor.join("chapter.mp3");
+        let output = successor.join("chapter.mp3");
+        ensure_chapter_audio(&source, "recovery-cancel", |pending| {
+            fs::write(pending, platform_tts::encode_wav(&test_system_wav()).unwrap())?;
+            Ok(())
+        }).unwrap();
+        let source_bytes = fs::read(&source).unwrap();
+        let source_receipt = fs::read(chapter_audio_receipt_path(&source)).unwrap();
+        let checks = std::cell::Cell::new(0);
+        let result = recover_chapter_audio(
+            root.path(), "predecessor", &output, "recovery-cancel", &|| {
+                checks.set(checks.get() + 1);
+                if checks.get() == 2 {
+                    let staging = fs::read_dir(&successor).unwrap().next().unwrap().unwrap().path();
+                    assert!(staging.file_name().unwrap().to_string_lossy().starts_with(".chapter-recovery-"));
+                    assert_eq!(fs::read(staging.join("chapter.mp3")).unwrap(), source_bytes);
+                    assert_eq!(fs::read(staging.join("chapter.mp3.complete.json")).unwrap(), source_receipt);
+                    return Err(WorkerError::Cancelled);
+                }
+                Ok(())
+            },
+        );
+        assert!(matches!(result, Err(WorkerError::Cancelled)));
+        assert_eq!(checks.get(), 2);
+        assert!(!output.exists());
+        assert!(!chapter_audio_receipt_path(&output).exists());
+        assert_eq!(fs::read_dir(&successor).unwrap().count(), 0);
+        assert_eq!(fs::read(&source).unwrap(), source_bytes);
+        assert_eq!(fs::read(chapter_audio_receipt_path(&source)).unwrap(), source_receipt);
+    }
+
+    #[test]
+    fn recovered_cache_cancellation_never_announces_a_completed_chapter() {
+        use crate::tts_preferences::{TtsPreferences, TtsSelection};
+        let temp = tempfile::tempdir().unwrap();
+        let input = temp.path().join("book.epub");
+        platform_test_book(&input);
+        let config = AppConfig::from_paths(crate::paths::resolve_paths_from(
+            std::iter::empty::<(String, String)>(), temp.path().to_path_buf(),
+        ));
+        let spoken = Arc::new(Mutex::new(Vec::new()));
+        let predecessor = ConversionWorker::new(config.clone()).unwrap()
+            .with_platform_tts(Arc::new(TestSystem { texts: spoken.clone() }));
+        let mut request = preference_test_request();
+        request.input = input;
+        request.job_id = "cancel-predecessor".into();
+        request.tts_preferences = Some(TtsPreferences {
+            primary: TtsSelection { engine: "system".into(), model_id: None, voice: None },
+            secondary: None, allow_online_fallback: false,
+        });
+        let original = predecessor.run(request.clone()).unwrap();
+        let original_directory = config.paths.output_dir.join(&request.job_id);
+        let source = original_directory.join(&original.chapters[0].filename);
+        let source_bytes = fs::read(&source).unwrap();
+        let source_receipt = fs::read(chapter_audio_receipt_path(&source)).unwrap();
+        let source_state = fs::read(config.paths.jobs_dir.join("cancel-predecessor.json")).unwrap();
+        let source_manifest = fs::read(original_directory.join("manifest.json")).unwrap();
+        let speech_count = spoken.lock().unwrap().len();
+        let control = ConversionControl::default();
+        control.set_recovery_job(&request.job_id).unwrap();
+        let cancel = CancellationToken::default();
+        let stop = cancel.clone();
+        let completions = Arc::new(AtomicUsize::new(0));
+        let observed = completions.clone();
+        let successor = ConversionWorker::new(config.clone()).unwrap()
+            .with_platform_tts(Arc::new(TestSystem { texts: spoken.clone() }))
+            .with_control(control)
+            .with_cancellation(cancel)
+            .with_progress(Arc::new(move |event| {
+                if event.message.starts_with("Playing cached audio") {
+                    stop.cancel();
+                }
+            }))
+            .with_chapter_completed(Arc::new(move |_| {
+                observed.fetch_add(1, Ordering::AcqRel);
+            }));
+        request.job_id = "cancel-successor".into();
+        assert!(matches!(successor.run(request), Err(WorkerError::Cancelled)));
+        assert_eq!(successor.jobs.load("cancel-successor").unwrap().state, JobState::Cancelled);
+        assert_eq!(completions.load(Ordering::Acquire), 0);
+        assert_eq!(spoken.lock().unwrap().len(), speech_count);
+        assert!(!config.paths.output_dir.join("cancel-successor/manifest.json").exists());
+        assert_eq!(fs::read(&source).unwrap(), source_bytes);
+        assert_eq!(fs::read(chapter_audio_receipt_path(&source)).unwrap(), source_receipt);
+        assert_eq!(fs::read(config.paths.jobs_dir.join("cancel-predecessor.json")).unwrap(), source_state);
+        assert_eq!(fs::read(original_directory.join("manifest.json")).unwrap(), source_manifest);
     }
 
     #[test]
