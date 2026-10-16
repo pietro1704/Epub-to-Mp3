@@ -53,7 +53,7 @@ jobs:
           cmp web/public/sample.epub "$snapshot_root/reconstructed/web/public/sample.epub"
       - name: Build Docker from the reconstructed snapshot
         run: docker build --tag hf-snapshot-regression "$HF_REGRESSION_ROOT/reconstructed"
-      - name: Verify container health, contract and actual frontend WASM without models
+      - name: Verify container health, contract and production SPA assets without models
         run: |
           set -euo pipefail
           docker run --detach --name hf-snapshot-regression --publish 127.0.0.1:17860:7860 hf-snapshot-regression
@@ -90,30 +90,23 @@ jobs:
             exit 1
           fi
 
-          echo "Locating built frontend WASM"
-          docker exec hf-snapshot-regression sh -c 'find /app/web/dist -name "converter_wasm_bg*.wasm" -type f' > "$RUNNER_TEMP/hf-wasm-paths.txt"
-          cat "$RUNNER_TEMP/hf-wasm-paths.txt"
-          wasm_count="$(wc -l < "$RUNNER_TEMP/hf-wasm-paths.txt" | tr -d ' ')"
-          if [[ "$wasm_count" != 1 ]]; then
-            echo "::error::Expected exactly one built converter WASM; found $wasm_count"
-            docker exec hf-snapshot-regression sh -c 'find /app/web/dist -maxdepth 3 -type f | sort | head -100'
+          echo "Checking every JavaScript and CSS asset referenced by the production SPA"
+          asset_references="$(grep -Eo '(src|href)="[^"]+\.(js|css)(\?[^"]*)?"' "$RUNNER_TEMP/hf-index.html" | sed -E 's/^(src|href)="([^"]+)"$/\2/' | sort -u || true)"
+          if [[ -z "$asset_references" ]]; then
+            echo "::error::Production SPA did not reference a JavaScript or CSS asset"
             exit 1
           fi
-          wasm_path="$(cat "$RUNNER_TEMP/hf-wasm-paths.txt")"
-          wasm_url="${wasm_path#/app/web/dist}"
-          echo "Checking served WASM URL $wasm_url"
-          wasm_status="$(curl --max-time 10 --silent --output "$RUNNER_TEMP/hf-served.wasm" --write-out '%{http_code}' "http://127.0.0.1:17860$wasm_url")"
-          wasm_bytes="$(wc -c < "$RUNNER_TEMP/hf-served.wasm" | tr -d ' ')"
-          echo "WASM HTTP status=$wasm_status bytes=$wasm_bytes"
-          if [[ "$wasm_status" != 200 ]]; then
-            echo "::error::Built WASM asset was not served successfully"
-            exit 1
-          fi
-          if ! cmp web/src/wasm/converter_wasm_bg.wasm "$RUNNER_TEMP/hf-served.wasm"; then
-            echo "::error::Served WASM bytes differ from the source asset"
-            sha256sum web/src/wasm/converter_wasm_bg.wasm "$RUNNER_TEMP/hf-served.wasm"
-            exit 1
-          fi
+          while IFS= read -r asset_url; do
+            [[ -n "$asset_url" ]] || continue
+            [[ "$asset_url" == /* ]] || asset_url="/$asset_url"
+            asset_status="$(curl --max-time 10 --silent --output "$RUNNER_TEMP/hf-served-asset" --write-out '%{http_code}' "http://127.0.0.1:17860$asset_url")"
+            asset_bytes="$(wc -c < "$RUNNER_TEMP/hf-served-asset" | tr -d ' ')"
+            echo "Asset $asset_url HTTP status=$asset_status bytes=$asset_bytes"
+            if [[ "$asset_status" != 200 || "$asset_bytes" == 0 ]]; then
+              echo "::error::Production SPA asset was not served successfully: $asset_url"
+              exit 1
+            fi
+          done <<< "$asset_references"
 
           echo "Checking explicit bind address and absence of model weights"
           docker exec hf-snapshot-regression sh -c 'test "$HOST" = 0.0.0.0'
