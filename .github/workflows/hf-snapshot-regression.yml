@@ -77,12 +77,15 @@ jobs:
           echo "Checking API capability contract"
           curl --max-time 5 --fail --silent http://127.0.0.1:17860/api/contract | jq -e '.backend == "rust" and (.capabilities | index("uploads") != null)'
 
+          echo "Checking built SPA entrypoint exists in the runtime image"
+          docker exec hf-snapshot-regression sh -c 'test -s /app/web/dist/index.html'
           echo "Checking frontend root response"
           root_status="$(curl --max-time 5 --silent --output "$RUNNER_TEMP/hf-index.html" --write-out '%{http_code}' http://127.0.0.1:17860/)"
+          root_content_type="$(curl --max-time 5 --silent --output /dev/null --write-out '%{content_type}' http://127.0.0.1:17860/)"
           root_bytes="$(wc -c < "$RUNNER_TEMP/hf-index.html" | tr -d ' ')"
-          echo "Root HTTP status=$root_status bytes=$root_bytes"
-          if [[ "$root_status" != 200 ]] || ! grep -qi '<html' "$RUNNER_TEMP/hf-index.html"; then
-            echo "::error::Frontend root did not return HTML"
+          echo "Root HTTP status=$root_status content-type=$root_content_type bytes=$root_bytes"
+          if [[ "$root_status" != 200 ]] || [[ "$root_content_type" != text/html* ]] || ! grep -qi '<html' "$RUNNER_TEMP/hf-index.html"; then
+            echo "::error::Frontend root did not return an HTML document"
             head -c 1000 "$RUNNER_TEMP/hf-index.html" || true
             exit 1
           fi
