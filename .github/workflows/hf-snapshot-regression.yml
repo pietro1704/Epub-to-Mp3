@@ -57,18 +57,40 @@ jobs:
         run: |
           set -euo pipefail
           docker run --detach --name hf-snapshot-regression --publish 127.0.0.1:17860:7860 hf-snapshot-regression
+          ready=false
           for attempt in $(seq 1 30); do
-            if curl --max-time 3 --fail --silent http://127.0.0.1:17860/api/health > "$RUNNER_TEMP/hf-health.json"; then break; fi
+            if curl --max-time 3 --fail --silent http://127.0.0.1:17860/api/health > "$RUNNER_TEMP/hf-health.json"; then
+              ready=true
+              break
+            fi
             sleep 2
           done
-          curl --max-time 5 --fail --silent http://127.0.0.1:17860/api/health | jq -e '.status == "healthy" and .contract_version == "1"'
-          curl --max-time 5 --fail --silent http://127.0.0.1:17860/api/contract | jq -e '.backend == "rust" and (.capabilities | index("uploads") != null)'
-          root_status="$(curl --max-time 5 --silent --output "$RUNNER_TEMP/hf-index.html" --write-out '%{http_code}' http://127.0.0.1:17860/)"
-          root_content_type="$(curl --max-time 5 --silent --output /dev/null --write-out '%{content_type}' http://127.0.0.1:17860/)"
-          if [[ "$root_status" != 200 ]] || [[ "$root_content_type" != text/html* ]] || ! grep -qi '<html' "$RUNNER_TEMP/hf-index.html"; then
-            echo "::error::Frontend root did not return an HTML document"
+          if [[ "$ready" != true ]]; then
+            echo "::error::Container health endpoint did not become ready"
+            cat "$RUNNER_TEMP/hf-health.json" 2>/dev/null || true
+            docker logs --tail 100 hf-snapshot-regression 2>&1 || true
             exit 1
           fi
+
+          echo "Checking API health contract"
+          curl --max-time 5 --fail --silent http://127.0.0.1:17860/api/health | jq -e '.status == "healthy" and .contract_version == "1"'
+          echo "Checking API capability contract"
+          curl --max-time 5 --fail --silent http://127.0.0.1:17860/api/contract | jq -e '.backend == "rust" and (.capabilities | index("uploads") != null)'
+
+          echo "Checking built SPA entrypoint exists in the runtime image"
+          docker exec hf-snapshot-regression sh -c 'test -s /app/web/dist/index.html'
+          echo "Checking frontend root response"
+          root_status="$(curl --max-time 5 --silent --output "$RUNNER_TEMP/hf-index.html" --write-out '%{http_code}' http://127.0.0.1:17860/)"
+          root_content_type="$(curl --max-time 5 --silent --output /dev/null --write-out '%{content_type}' http://127.0.0.1:17860/)"
+          root_bytes="$(wc -c < "$RUNNER_TEMP/hf-index.html" | tr -d ' ')"
+          echo "Root HTTP status=$root_status content-type=$root_content_type bytes=$root_bytes"
+          if [[ "$root_status" != 200 ]] || [[ "$root_content_type" != text/html* ]] || ! grep -qi '<html' "$RUNNER_TEMP/hf-index.html"; then
+            echo "::error::Frontend root did not return an HTML document"
+            head -c 1000 "$RUNNER_TEMP/hf-index.html" || true
+            exit 1
+          fi
+
+          echo "Checking every JavaScript and CSS asset referenced by the production SPA"
           asset_references="$(grep -Eo '(src|href)="[^"]+\.(js|css)(\?[^"]*)?"' "$RUNNER_TEMP/hf-index.html" | sed -E 's/^(src|href)="([^"]+)"$/\2/' | sort -u || true)"
           if [[ -z "$asset_references" ]]; then
             echo "::error::Production SPA did not reference a JavaScript or CSS asset"
@@ -85,7 +107,15 @@ jobs:
               exit 1
             fi
           done <<< "$asset_references"
-          docker exec hf-snapshot-regression sh -c 'test "$HOST" = 0.0.0.0; test -z "$(find /app /data -name "*.onnx" -print -quit)"'
+
+          echo "Checking explicit bind address and absence of model weights"
+          docker exec hf-snapshot-regression sh -c 'test "$HOST" = 0.0.0.0'
+          if ! docker exec hf-snapshot-regression sh -c 'test -z "$(find /app /data -name "*.onnx" -print -quit)"'; then
+            echo "::error::Snapshot container unexpectedly contains ONNX model weights"
+            docker exec hf-snapshot-regression sh -c 'find /app /data -name "*.onnx" -type f'
+            exit 1
+          fi
+          echo "HF reconstructed snapshot container checks passed"
       - name: Retain bounded container diagnostics
         if: always()
         run: |
