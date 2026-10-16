@@ -7,6 +7,7 @@
 - [ ] Verify all four Swift analyses on GitHub. Compilation and analysis are not app execution, native test success or proof of driver stability.
 - Owner: crash_workflow_audit specialist; branch `feature/codeql-apple-coverage`. Status: source prepared; no local tests/builds/syntax or remote configuration mutations. Preserve unrelated macOS/other-language jobs and the strict merge gate.
 - Baseline evidence: PR805 CodeQL check `116849734709` reported seven missing Swift configurations while its macOS Swift analysis was still pending. Three retired test categories last had successful master analyses on 2026-09-28. Current workflow omitted real UIKit/iOS extension extraction.
+- GitHub master run `38862918459`, Swift job `116849100230`, completed its Swift build but exceeded the 40-minute job limit during TRAP finalization. Raise only that job budget to 90 minutes; preserve extraction, queries, coverage and single-job builds. Analysis success remains pending.
 - Superseded generic `/language:swift` and platform-only `/language:swift/platform:iOS` and `/language:swift/platform:macOS` configurations remain an explicit external reconciliation blocker. No category aliases, analysis deletion, security settings change or neutral-check bypass is included. GitHub documents rerunning out-of-date configurations or explicitly removing stale configurations; neither is silently substituted for missing coverage.
 
 ## APP-20261015-WHOLE-IOS — Reviewed whole-app iOS 15 verification campaign

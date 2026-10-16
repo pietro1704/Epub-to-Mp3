@@ -93,7 +93,9 @@ jobs:
   swift:
     name: CodeQL · swift (${{ matrix.coverage }} · ${{ matrix.platform }})
     runs-on: macos-latest
-    timeout-minutes: 40
+    # The observed 40-minute cap canceled successful Swift extraction during
+    # TRAP finalization. Keep real builds and analysis within a bounded budget.
+    timeout-minutes: 90
     strategy:
       fail-fast: false
       matrix:
