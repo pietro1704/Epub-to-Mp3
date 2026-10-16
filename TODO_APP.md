@@ -2,8 +2,8 @@
 
 ## SAFE-20261016-NATIVE-BUILD-ENTRYPOINTS — Route every native compile path through quarantine guards
 
-- [ ] Owner: root; close the specialist-found `mac:build` and `converter-ffi:ios-packaging:test` paths that bypassed `NativeJob` Simulator/SimMetalHost preflight and shared lease.
-- Acceptance: the full macOS build task and iOS packaging compile regression enter `NativeJob build` before project generation/compiler launch; `HEAVY_JOB_GUARD_DISABLE=1` cannot bypass the preflight; Intel GitHub host-safety tests prove booted-Simulator refusal occurs before task body and releases the lease. Intel Simulator runtime remains quarantined.
+- [ ] Owner: root; close the specialist-found direct `ios:device:build` path, along with `mac:build` and `converter-ffi:ios-packaging:test`, so every native compile task enters `NativeJob` before generation or compiler launch.
+- Acceptance: all three task bodies enter `NativeJob build`; `HEAVY_JOB_GUARD_DISABLE=1` cannot bypass the preflight; Intel GitHub host-safety tests prove booted-Simulator refusal occurs before task body and releases the lease for `mac:build`, `ios:device:build`, and iOS packaging. Intel Simulator runtime remains quarantined.
 - Verification: GitHub Actions only. No local command, build, test or Simulator execution after the reported host panics. Mark complete only after exact-head native safety checks pass; actual SE1 runtime acceptance stays blocked.
 
 
