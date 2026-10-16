@@ -1,5 +1,18 @@
 # App delivery backlog
 
+## SAFE-20261016-IOS-HIGH-LEVEL-ROUTES — Exercise quarantined top-level iOS routes
+
+- [ ] Owner: root; explicitly cover the top-level `ios:run` Simulator mode and the `ios:test` no-device fallback, which delegate to already guarded Simulator child tasks.
+- Acceptance: on Intel hosted macOS, both routes return quarantine status 75 before any Simulator/task body launch and release the NativeJob lease; `ios:run` propagates a build failure before Simulator routing; `ios:test` preserves the available physical-device route. Tests use fake tool shims and never launch Xcode, a Simulator or a device.
+- Verification: exact-head GitHub Native Safety Actions only. These repository-route tests do not claim OS-wide interception or GPU stability.
+
+
+## OPS-20261016-SAFE-DELIVERY — Integrate native containment and checked automation
+
+- [ ] Owner: root; preserve the original804/805/806 histories while composing Intel native containment, exact-head green merge enforcement and read-only PR regression/trusted health monitoring. Component source review approved the shared operational boundary; only TODO sections conflicted and all were retained.
+- Acceptance: recovery811 must first reach master with complete current-head CI/security checks. Then reconcile this candidate with that master, review the complete operational delta and run all required GitHub checks plus native-safety, merge-policy and watchdog regressions on the final revision. No local tests/builds/syntax/native execution.
+- Keep the five previously active merge-writer workflows disabled until protected source reaches master and controlled ancestry merges finish; restore only their recorded original activation state afterward. Verify actual PR integration before deleting any branch. Hook trust/interception and Intel SE1 runtime acceptance remain unverified/quarantined.
+
 ## CI-20261016-IOS-BUILD-SIGNING — Keep unsigned CodeQL host identity consistent
 
 - [ ] Owner: github_monitor_plan; real RED: CodeQL `38875197584`, job `116889500305`, recovery head `b5fcb7a8eb9d3fd551b2b91acdfacba184a31009`. Swift compilation reached embedded Widget validation, which rejected its unsigned extension against the fictitious parent ad hoc identity supplied globally by the workflow.
@@ -95,6 +108,18 @@
 - Evidence: GitHub run `38835537607` on c173556 reports RUSTSEC-2026-0346/0347/0348/0349; master `915e9c672b273d8ea63b189d0a2b12b3adc72847` retains the same vulnerable lock entry.
 - Source review: official crates.io sparse-index 0.23.45/0.23.46 records have identical dependencies, features and Rust 1.71 minimum; the patch is not yanked. New checksum: `48e13bd8c0e9365c43cfa5c9e8f9ad49d3c8444926c9aac819e0e4dc503c8fdf`.
 - Verification pending: GitHub-only locked dependency resolution, cargo-audit JSON artifact and existing Rust regression suites. No local scanner/test/build executed; no issue closure or successful remediation claimed.
+
+## APP-20261016-CODEX-NATIVE-GUARD — Recognize direct native execution before tool use
+
+- [ ] Owner: crash_guard_audit; add the bounded Ruby PreToolUse recognizer and GitHub-only behavioral tests for direct native commands, cleanup/inspection, compound cleanup-plus-boot denial, invalid input and Git common-directory scope across real temporary worktrees.
+- Activation remains unverified: the reviewed immutable script copy is registered in the user's Codex configuration, preserving existing ai-memory and RTK entries and a private backup. User `/hooks` review/trust is still required; no trust state was changed and installed interception has not been demonstrated. See `docs/agents/intel-gpu-safety.md` for the exact path, hash and read-back evidence.
+- Limits: this is an additional cooperative guard, not shell interpretation or OS isolation. Existing TTY sessions, opaque scripts and unsupported tool paths can escape; host tests do not establish GPU stability or satisfy SE1/iOS15.5 or native macOS acceptance. All test/syntax/build execution remains GitHub-only.
+
+## APP-20261016-WATCHDOG-PR-CHECKS — Separate PR regression from the metadata monitor
+
+- [ ] Owner: crash_guard_audit; keep actual read-only watchdog regression coverage on PRs in a dedicated workflow. Remove the PR trigger from the privileged metadata monitor, retaining its schedule, manual, workflow-completion and issue events and trusted default-branch checkout.
+- Evidence: PR #806 run `38864736033` completed its regression successfully but published a skipped `monitor` check (`116856468581`). The exact-green merge gate in #805 correctly rejects that skipped check. Do not relax the gate or turn a non-executed monitor into a successful no-op.
+- Acceptance pending: GitHub executes the PR regression without scheduling the monitor on that PR; monitor runtime and wiring regressions remain mandatory before operational writes. Preserve watchdog JS behavior and all five disabled writers. No local tests, builds, syntax checks, commit, push or external writes executed for this slice.
 
 ## APP-20261015-WHOLE-IOS — Reviewed whole-app iOS 15 verification campaign
 
@@ -1612,3 +1637,33 @@ que aparecem. Para cada item:
 Pare e pergunte se um item depender de decisão de produto/escopo que não
 esteja clara neste arquivo (ex: qual plataforma priorizar no Flutter).
 ```
+
+## APP-20261016-INTEL-GPU-SAFETY
+
+- [ ] Quarantine Intel Simulator execution, remove automatic native hook builds, guard compiler bootstraps and verify refusal/cancellation/lease identity on GitHub. Preserve books/models/devices and existing work.
+- User reported recurrent IGGuC.cpp:2913 workqueue41 panic in SimMetalHost. Controlled shutdown confirmed no Simulator.app/SimMetalHost remains. No panic reproduction.
+- Validation: earlier local host checks preceded the GitHub-only instruction; candidate CI pending. Native GPU/SE acceptance remains blocked; no driver stability claim.
+- Delivery: atomic feature/intel-gpu-quarantine PR; exact-head CI before merge. Memory pinned at gotchas/intel-simulator-metal-panic.md and decisions/github-only-validation-master-delivery.md.
+
+## TOOL-FIX-MERGE-GATE — Exact-head green GitHub delivery
+
+- [ ] Require current master ancestry, known clean mergeability, successful complete CI and CodeQL for the exact PR head, and a final recheck before requesting a SHA-pinned merge.
+- Preserve draft/fork/review and malformed-metadata refusal. Remove raw automatic merges from every existing workflow writer; no force/admin fallback or automatic branch deletion before merged-state verification.
+- Coverage: 16 fake-GitHub policy/workflow regressions plus JS/YAML syntax run only in GitHub merge-policy workflow. Three new regressions were observed RED before the GitHub-only correction; final candidate checks pending.
+- Server limitation: base/check rechecks are snapshots; branch protection must enforce server-side freshness/required checks against changes after the last read. A successful command may enqueue a merge and is not proof of delivery.
+
+## APP-20261016-GITHUB-HEALTH — Periodic GitHub-only monitoring
+
+- [ ] Enable a30-minute GitHub-native watchdog for current-head Actions failures and actionable issue triage; verify its regression workflow and first live scan after merge.
+- Use builtin token only, bounded metadata reads, deduplicated bot-owned issue and explicit incomplete-coverage/recovery reporting. Treat issue content as untrusted data.
+- Repairs remain agent work; the watchdog does not claim unattended code repair, paid AI, deployments, retries or merge authority. All tests execute only on GitHub.
+# PR-REPAIR-SAFETY — Prepared autonomous PR repair safety
+
+- Status: source preparation; writers remain disabled by default. Missing LLM credentials must report `blocked_credentials`, never simulated repair readiness.
+- Scope: existing PR dispatcher/worker, trusted-master metadata/publication helper, executable fake-GitHub/real-temporary-Git regressions, and watchdog readiness/candidate metadata only. Issue remediation and merge writers remain unchanged.
+- Acceptance: reject stale/draft/closed/fork/untrusted PRs; authenticated attempt claim before inference; no credentials persisted into repair checkout; exact-head lease publication; explicit CI/CodeQL dispatch with observed new SHA; protected paths/renames/submodules rejected. Guarded master merge policy remains authoritative.
+- Verification: GitHub-only focused host regressions pending. No local test/build/lint/formatter execution and no real LLM or autonomous publication claimed. Activation and credentials are outside this preparation slice.
+- Review follow-up: bounded trusted CI identity/exact-SHA latest-run failure gate now repeats before claim, inference and publication; a successful newer rerun, in-progress head, missing/incomplete run history, stale SHA or startup failure blocks repair. This is failure evidence only, never an automatic code-defect classification. Untracked symlinks are rejected before staging. GitHub-only regression cases include these gates and bounded dispatch observation with an injected wait.
+- Final adversarial follow-up: autonomous source repair now requires every observed trusted exact-SHA CI run to be terminal failure; any historical success, queued/running attempt or other terminal result requires human/active diagnosis. Authentication-shaped files/directories are denied before staging and publication. Codex installation is separated into a step without LLM/metadata credentials; current failure is revalidated before installation and immediately before inference. These added regressions remain pending on GitHub; prior 27/27 proof applies only to revision 1bea1ec.
+- Coverage limit: the run-list API replaces earlier attempts; any `run_attempt != 1` is conservatively blocked because previous success/failure outcomes were not observed. This preparation does not claim complete rerun-history recovery or infer a code defect from CI metadata.
+

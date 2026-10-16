@@ -5,6 +5,18 @@ description: Verify and repair native Apple reader regressions. Use for reader p
 
 # Native Reader Regression
 
+## Current execution gate (2026-10-16)
+
+Before native tooling, read the
+[Intel GPU safety procedure](../../../docs/agents/intel-gpu-safety.md). All tests,
+lint, formatting and CI execute only on GitHub Actions; local work is source inspection
+and implementation. Intel Simulator execution remains quarantined. This gate
+overrides the local-run and launch steps below; general campaign authorization
+does not release it. Re-enabling requires a new explicit user safety decision
+and specialist review. Keep the exact SE1/iOS 15.5 and native macOS acceptance
+checks blocked or unverified until their actual authorized runtime checks pass.
+Continue independent work and preserve evidence without reproducing the panic.
+
 Build a tight runtime feedback loop before changing reader behavior. The
 non-negotiable result is no clipped glyphs and no location drift.
 
