@@ -115,6 +115,9 @@ jobs:
           foreach ($path in @($library, $runtime)) {
             if (!(Test-Path $path) -or (Get-Item $path).Length -eq 0) { throw "Missing packaged library: $path" }
           }
+          $packagedOrtHash = (Get-FileHash -Algorithm SHA256 $runtime).Hash
+          $extractedOrtHash = (Get-FileHash -Algorithm SHA256 (Join-Path $env:ORT_LIB_LOCATION 'onnxruntime.dll')).Hash
+          if ($packagedOrtHash -ne $extractedOrtHash) { throw 'Packaged ORT differs from the verified distribution' }
           foreach ($asset in @('phontab', 'phondata', 'phonindex', 'lang/roa/pt')) {
             if (!(Test-Path (Join-Path $package "data/espeak-ng-data/$asset"))) { throw "Missing packaged phoneme asset: $asset" }
           }
@@ -148,7 +151,7 @@ jobs:
             }
             $audit += @{ file = [IO.Path]::GetFileName($path); sha256 = (Get-FileHash -Algorithm SHA256 $path).Hash; dependencies = $dependencies }
           }
-          @{ architecture = $env:PROCESSOR_ARCHITECTURE; runtimeVersion = '1.24.4'; libraries = $audit } |
+          @{ architecture = $env:PROCESSOR_ARCHITECTURE; runtimeVersion = '1.24.4'; packagedOrtSha256 = $packagedOrtHash; extractedOrtSha256 = $extractedOrtHash; libraries = $audit } |
             ConvertTo-Json -Depth 6 | Set-Content .reports/windows-faber/package.json
           "EPUB_DART_FABER_LIBRARY=$library" >> $env:GITHUB_ENV
           "PIPER_ESPEAKNG_DATA_DIRECTORY=$(Join-Path $package 'data')" >> $env:GITHUB_ENV

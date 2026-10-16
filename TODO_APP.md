@@ -2,6 +2,8 @@
 
 ## WIN-20261016-FABER-PACKAGE — Verify the supported Windows Flutter runtime
 
+- GitHub RED `38901310674`, Windows job `116973976360`, head `b69bdfaf`: the actual Release package and PE/ABI/dependency/phoneme audit passed. Flutter's test host outside that package loaded ORT 1.17.1 (API ≤17), so API 23 initialization failed before audio. Preload only the absolute adjacent packaged ORT DLL in this Windows test host and assert its official C API version is exactly 1.24.4; compare the packaged DLL SHA256 to the verified extracted distribution. Keep the production adapter unchanged and preserve all real conversion/decoder gates. This verifies packaged runtime integration through flutter_tester, not a launched Windows GUI. Linux golden on this head passed; follow-up Windows verification pending.
+
 - Trigger follow-up: `f71b2339` changed only the shared vendored build script and TODO, so the former focused push filter did not start a Windows job. Match the existing PR runtime-source path coverage on push as well; require the actual new-head packaged Windows run before acceptance. Full Ubuntu CI is not Windows inference evidence.
 
 - GitHub RED `38899176791`, Windows job `116966899655`, head `a4fcd7ecce`: ORT linking advanced; final Piper DLL linkage failed with LNK2019 for `RegOpenKeyExA` and `RegQueryValueExA` from vendored eSpeak `speech.obj`. Publish the required `advapi32` system-library dependency only for Windows targets; preserve all other build settings. The Microsoft API references specify `Advapi32.lib`. Linux real golden passed on this revision; Windows package audit/inference/MP3 evidence remains mandatory and pending. No local execution or source-parser substitute test.

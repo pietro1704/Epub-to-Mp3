@@ -1,11 +1,40 @@
 import 'dart:convert';
+import 'dart:ffi' as ffi;
 import 'dart:io';
 import 'dart:math';
 import 'dart:typed_data';
 
+import 'package:ffi/ffi.dart';
 import 'package:flutter_app/models/tts_preferences.dart';
 import 'package:flutter_app/services/desktop_embedded_converter.dart';
 import 'package:flutter_test/flutter_test.dart';
+
+typedef _OrtGetApiNative = ffi.Pointer<ffi.Void> Function(ffi.Uint32);
+typedef _OrtVersionNative = ffi.Pointer<Utf8> Function();
+
+// Published OrtApiBase layout; Windows x64 uses the unified system C ABI.
+final class _OrtApiBase extends ffi.Struct {
+  external ffi.Pointer<ffi.NativeFunction<_OrtGetApiNative>> getApi;
+  external ffi.Pointer<ffi.NativeFunction<_OrtVersionNative>> getVersionString;
+}
+
+String _preloadPackagedWindowsOrt(String library) {
+  // flutter_tester runs outside Release/. Replicate the shipped executable's
+  // adjacent dependency context without changing the product adapter or PATH.
+  final path = '${File(library).parent.path}/onnxruntime.dll';
+  expect(File(path).existsSync(), true);
+  final runtime = ffi.DynamicLibrary.open(path);
+  final base = runtime.lookupFunction<ffi.Pointer<_OrtApiBase> Function(),
+      ffi.Pointer<_OrtApiBase> Function()>('OrtGetApiBase')();
+  expect(base, isNot(ffi.nullptr));
+  final version = base.ref.getVersionString
+      .asFunction<ffi.Pointer<Utf8> Function()>()()
+      .toDartString();
+  expect(version, '1.24.4');
+  expect(base.ref.getApi.asFunction<ffi.Pointer<ffi.Void> Function(int)>()(23),
+      isNot(ffi.nullptr));
+  return version;
+}
 
 String _requiredPath(String name) {
   final value = Platform.environment[name];
@@ -24,14 +53,15 @@ void main() {
       final library = _requiredPath('EPUB_DART_FABER_LIBRARY');
       final models = _requiredPath('EPUB_DART_FABER_MODELS');
       final report = _requiredPath('EPUB_DART_FABER_REPORT');
+      final ortVersion = Platform.isWindows ? _preloadPackagedWindowsOrt(library) : null;
       final input = File('../web/public/sample.epub').absolute;
       expect(await input.exists(), true);
       final directory = await Directory.systemTemp.createTemp('dart-faber-owned-');
       const jobId = 'dart-faber %20#identity';
       final output = '${directory.path}/$jobId';
-      final converter = DesktopEmbeddedConverter(libraryPath: library);
-      final elapsed = Stopwatch()..start();
       try {
+        final converter = DesktopEmbeddedConverter(libraryPath: library);
+        final elapsed = Stopwatch()..start();
         final raw = await converter.convert(
           inputPath: input.path,
           outputPath: '$output/',
@@ -87,6 +117,7 @@ void main() {
           'jobId': jobId, 'input': 'web/public/sample.epub',
           'chapterStart': 0, 'chapterEnd': 1,
           'modelId': 'pt_BR-faber-medium', 'fallbackUsed': false,
+          if (ortVersion != null) 'ortVersion': ortVersion,
           'elapsedMs': elapsed.elapsedMilliseconds,
           'timingScope': Platform.isWindows
               ? 'GitHub-hosted Windows full conversion; no phone or first-playable latency claim'
