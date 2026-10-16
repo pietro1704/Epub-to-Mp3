@@ -1,0 +1,57 @@
+name: Native hook safety
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
+on:
+  push:
+    paths:
+      - '.claude/hooks/swift_test_after_edit.sh'
+      - '.claude/hooks/xcode_build_smoke.sh'
+      - 'scripts/native_build_preflight.rb'
+      - 'scripts/native_job.rb'
+      - 'scripts/test_native_build_preflight.rb'
+      - 'scripts/test_native_job.rb'
+      - 'scripts/test_native_hook_safety.rb'
+      - '.github/workflows/native-hook-safety.yml'
+  pull_request:
+    paths:
+      - '.claude/hooks/swift_test_after_edit.sh'
+      - '.claude/hooks/xcode_build_smoke.sh'
+      - 'scripts/native_build_preflight.rb'
+      - 'scripts/native_job.rb'
+      - 'scripts/test_native_build_preflight.rb'
+      - 'scripts/test_native_job.rb'
+      - 'scripts/test_native_hook_safety.rb'
+      - '.github/workflows/native-hook-safety.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: native-hook-safety-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  native-hook-safety:
+    name: Native hook safety host regressions
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "4.0"
+          bundler-cache: false
+      - name: Install host test dependency
+        run: gem install minitest --version 6.0.6 --no-document
+      - name: Check hook shell syntax
+        run: bash -n .claude/hooks/swift_test_after_edit.sh .claude/hooks/xcode_build_smoke.sh
+      - name: Verify read-only preflight contracts
+        run: ruby scripts/test_native_build_preflight.rb
+      - name: Verify native lease and cancellation contracts
+        run: ruby scripts/test_native_job.rb
+      - name: Verify hooks with isolated compiler fixtures
+        run: ruby scripts/test_native_hook_safety.rb
