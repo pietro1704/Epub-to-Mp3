@@ -1,5 +1,13 @@
 # App delivery backlog
 
+## AH-05 — Recover completed manual conversion history
+
+- [ ] Owner: root; dependency AH-04 `c6aebc35`; minimal recovery from `e7ff8a82...d3a5ddd0` plus scoped EventChannel fixture `564e319`. Original branch remains preserved and unmerged.
+- Acceptance: persist only successful actual Rust manifests with literal job/source identity, captured in-flight provider policy, opaque Rust state and aggregate voice/fallback receipts. Do not invent per-chapter receipts or established output roots.
+- A history read/projection/write refusal must show a localized warning without changing conversion success, deleting audio, or offering conversion Retry. Legacy ID-only results create no history. A cancelled/failed starter before returning a manifest creates no completed record. Local manual completion must not request an HTTP progress stream.
+- Paths retain literal percent/hash characters and remain under an explicitly established absolute output directory. Windows drive/UNC and drive-relative cases are tested on the actual Windows GitHub runner; Linux skips that platform-specific test. This proves projection only, not file availability or protection against symlinks.
+- Verification pending exclusively on GitHub: history success/reopening/identity/path/refused-write tests, manual widgets including failure/cancellation/in-flight preferences/file reads with scoped voice-channel cleanup, existing Faber regression suite/analyzer, Windows local history tests and packaged runtime gates. No local execution or native acceptance is claimed.
+
 ## AH-04 — Recover durable Flutter conversion history
 
 - [ ] Owner: root; recovered minimal changes from preserved `e29510d943` onto Faber integration `ba407cf6`; original branch ancestry remains unmerged.

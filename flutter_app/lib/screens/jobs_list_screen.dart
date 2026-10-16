@@ -77,7 +77,7 @@ class JobsListScreen extends ConsumerWidget {
                   (book) => book.id == s.bookId,
                 );
                 final title = matchingBooks.isEmpty
-                    ? s.bookId
+                    ? s.bookTitle ?? s.bookId
                     : matchingBooks.first.resolvedTitle;
                 return ListTile(
                   title: Text(title),
@@ -149,6 +149,14 @@ class _LocalJobDetailScreen extends StatelessWidget {
             title: Text(t.conversionLastUpdated),
             subtitle: Text(job.updatedAt.toLocal().toString()),
           ),
+          if (job.usedSelections.isNotEmpty)
+            ListTile(
+              title: Text(t.ttsActualVoices(
+                job.usedSelections.map((selection) => selection.displayName).join(', '),
+              )),
+            ),
+          if (job.fallbackUsed)
+            ListTile(title: Text(t.ttsSecondaryUsedNotice)),
           if (job.error != null)
             ListTile(
               leading: const Icon(Icons.error_outline),

@@ -1,9 +1,21 @@
+import 'dart:io';
+import 'package:flutter_app/models/tts_preferences.dart';
 import 'dart:convert';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_app/services/local_conversion_job.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+class _RefusingManualPreferences extends Fake implements SharedPreferences {
+  int writes = 0;
+  @override
+  Future<bool> setString(String key, String value) async {
+    writes++;
+    return false;
+  }
+}
+
 void main() {
+
   late SharedPreferences prefs;
   late LocalConversionJobStore store;
   late ConversionJobCoordinator coordinator;
@@ -206,4 +218,220 @@ void main() {
       }
     },
   );
+  test(
+    'manual history keeps source indices and only established output paths',
+    () async {
+      final started = DateTime.utc(2026, 1, 1);
+      await store.saveCompletedManifest(
+        bookId: 'manual-book',
+        startedAt: started,
+        outputDirectory: Platform.isWindows ? r'C:\tmp\audio dir' : '/tmp/audio dir',
+        manifest: {
+          'jobId': 'rust-manual',
+          'title': 'Manual Book',
+          'usedSelections': [TtsSelection.faber.toJson()],
+          'fallbackUsed': true,
+          'chapters': [
+            {
+              'index': 0,
+              'sourceIndex': 5,
+              'title': 'Six',
+              'filename': '0001-six.mp3',
+            },
+            {
+              'index': 1,
+              'sourceIndex': 9,
+              'title': 'Ten',
+              'filename': '../outside.mp3',
+            },
+          ],
+        },
+      );
+      final restored = (await store.load('manual-book', 'rust-manual'))!;
+      expect(restored.createdAt, started);
+      expect(restored.bookTitle, 'Manual Book');
+      expect(restored.chapters.map((chapter) => chapter.index), [5, 9]);
+      expect(restored.chapters.first.outputPath, Platform.isWindows
+          ? r'C:\tmp\audio dir\0001-six.mp3'
+          : '/tmp/audio dir/0001-six.mp3');
+      expect(restored.chapters.last.outputPath, isNull);
+      expect(restored.completedOutputs, [Platform.isWindows
+          ? r'C:\tmp\audio dir\0001-six.mp3'
+          : '/tmp/audio dir/0001-six.mp3']);
+      expect(restored.usedSelections.single.modelId, 'pt_BR-faber-medium');
+      expect(restored.fallbackUsed, true);
+      final withChapterReceipt = restored.copyWith(chapters: [
+        const LocalConversionChapter(
+          index: 5, name: 'Six', status: 'completed',
+          usedSelections: [TtsSelection.edge],
+        ),
+      ]);
+      expect(withChapterReceipt.usedSelections.map((selection) => selection.engine),
+          ['piper', 'edge']);
+      expect(
+        restored.chapters.every((chapter) => chapter.usedSelections.isEmpty),
+        true,
+        reason:
+            'A book-wide manifest does not establish per-chapter voice usage',
+      );
+    },
+  );
+  test(
+    'manual history preserves literal percent and fragment filename characters',
+    () async {
+      final filename = Platform.isWindows
+          ? 'chapter%20#part.mp3'
+          : 'chapter%20#part?.mp3';
+      final job = await store.saveCompletedManifest(
+        bookId: 'literal-book',
+        startedAt: DateTime.utc(2026, 1, 1),
+        outputDirectory: Platform.isWindows ? r'C:\tmp\audio dir' : '/tmp/audio dir',
+        manifest: {
+          'jobId': 'literal-job',
+          'chapters': [
+            {'sourceIndex': 0, 'title': 'One', 'filename': filename},
+          ],
+        },
+      );
+      expect(
+        job.chapters.single.outputPath,
+        Platform.isWindows
+            ? r'C:\tmp\audio dir\chapter%20#part.mp3'
+            : '/tmp/audio dir/chapter%20#part?.mp3',
+      );
+    },
+  );
+  test('manual writer refusal preserves completed audio and playback save semantics', () async {
+    final directory = await Directory.systemTemp.createTemp('manual-history-refusal-');
+    final audio = File('${directory.path}/completed.mp3');
+    final bytes = [0x49, 0x44, 0x33, 1, 2, 3];
+    await audio.writeAsBytes(bytes);
+    final refusing = _RefusingManualPreferences();
+    final manualStore = LocalConversionJobStore(refusing);
+    try {
+      await expectLater(
+        manualStore.saveCompletedManifest(
+          bookId: 'book',
+          startedAt: DateTime.utc(2026),
+          outputDirectory: directory.path,
+          manifest: {
+            'jobId': 'completed',
+            'chapters': [{'sourceIndex': 0, 'filename': 'completed.mp3'}],
+          },
+        ),
+        throwsA(isA<StateError>()),
+      );
+      expect(refusing.writes, 1);
+      expect(await audio.readAsBytes(), bytes);
+      final job = await coordinator.createJob(
+        bookId: 'playback', jobId: 'unchanged', chapters: const [],
+      );
+      await manualStore.save(job);
+      expect(refusing.writes, 2);
+    } finally {
+      await directory.delete(recursive: true);
+    }
+  });
+
+  test('manual writer rejects an empty book identity without changing stored bytes', () async {
+    final existing = await coordinator.createJob(
+      bookId: 'existing-book',
+      jobId: 'existing-job',
+      chapters: const [],
+    );
+    final existingKey = store.key(existing.bookId, existing.jobId);
+    final original = prefs.getString(existingKey);
+    final originalKeys = prefs.getKeys();
+    await expectLater(
+      store.saveCompletedManifest(
+        bookId: '',
+        startedAt: DateTime.utc(2026),
+        manifest: {
+          'jobId': 'unreadable-identity',
+          'chapters': [{'sourceIndex': 0}],
+        },
+      ),
+      throwsA(isA<FormatException>()),
+    );
+    expect(prefs.getKeys(), unorderedEquals(originalKeys));
+    expect(prefs.getString(existingKey), original);
+    expect(prefs.getString(store.key('', 'unreadable-identity')), isNull);
+  });
+
+  test('manual projection rejects invalid identity and source indices before writing', () async {
+    for (final manifest in <Map<String, dynamic>>[
+      {'chapters': [{'sourceIndex': 0}]},
+      {'jobId': 'empty', 'chapters': []},
+      {'jobId': 'negative', 'chapters': [{'sourceIndex': -1}]},
+      {'jobId': 'missing-source', 'chapters': [{'index': 0}]},
+      {'jobId': 'duplicate', 'chapters': [{'sourceIndex': 1}, {'sourceIndex': 1}]},
+    ]) {
+      await expectLater(
+        store.saveCompletedManifest(
+          bookId: 'invalid', startedAt: DateTime.utc(2026), manifest: manifest,
+        ),
+        throwsA(isA<FormatException>()),
+      );
+    }
+    expect((await store.loadHistory()).jobs, isEmpty);
+  });
+
+  test('manual projection never invents an output root or escapes a confirmed one', () async {
+    final filenames = ['../outside.mp3', r'..\outside.mp3', '/absolute.mp3', '.', '..'];
+    final job = await store.saveCompletedManifest(
+      bookId: 'safe', startedAt: DateTime.utc(2026), outputDirectory: Platform.isWindows ? r'C:\tmp\owned' : '/tmp/owned',
+      manifest: {
+        'jobId': 'bounded',
+        'chapters': [for (var i = 0; i < filenames.length; i++) {
+          'sourceIndex': i, 'filename': filenames[i],
+        }],
+      },
+    );
+    expect(job.completedOutputs, isEmpty);
+    expect(job.chapters.every((chapter) => chapter.outputPath == null), true);
+    final withoutRoot = await store.saveCompletedManifest(
+      bookId: 'safe', startedAt: DateTime.utc(2026),
+      manifest: {'jobId': 'no-root', 'chapters': [{'sourceIndex': 0, 'filename': 'real.mp3'}]},
+    );
+    expect(withoutRoot.chapters.single.outputPath, isNull);
+    final relativeRoot = await store.saveCompletedManifest(
+      bookId: 'safe', startedAt: DateTime.utc(2026), outputDirectory: 'relative',
+      manifest: {'jobId': 'relative-root', 'chapters': [{'sourceIndex': 0, 'filename': 'real.mp3'}]},
+    );
+    expect(relativeRoot.chapters.single.outputPath, isNull);
+
+  });
+
+  test('Windows manual history preserves drive and UNC roots literally', () async {
+    const filename = 'chapter%20#part.mp3';
+    for (final root in [r'C:\Audio books', r'\\server\share\Audio books']) {
+      final job = await store.saveCompletedManifest(
+        bookId: 'windows-book',
+        startedAt: DateTime.utc(2026),
+        outputDirectory: root,
+        manifest: {
+          'jobId': root,
+          'chapters': [
+            {'sourceIndex': 7, 'filename': filename},
+          ],
+        },
+      );
+      expect(job.chapters.single.outputPath, '$root\\$filename');
+      expect(job.completedOutputs, ['$root\\$filename']);
+    }
+    final relative = await store.saveCompletedManifest(
+      bookId: 'windows-book',
+      startedAt: DateTime.utc(2026),
+      outputDirectory: r'C:Audio books',
+      manifest: {
+        'jobId': 'drive-relative',
+        'chapters': [
+          {'sourceIndex': 7, 'filename': filename},
+        ],
+      },
+    );
+    expect(relative.completedOutputs, isEmpty);
+    expect(relative.chapters.single.outputPath, isNull);
+  }, skip: !Platform.isWindows);
+
 }

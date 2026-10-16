@@ -27,6 +27,8 @@
   "conversionStatusFailed": "Failed",
   "conversionStatusCancelled": "Cancelled",
   "conversionStatusUnknown": "Unknown",
+  "conversionHistorySaveWarning": "Conversion completed, but its history could not be saved: {error}",
+  "@conversionHistorySaveWarning": {"placeholders": {"error": {"type": "String"}}},
   "refresh": "Refresh",
   "playerTitle": "Player",
   "readerTitle": "Reader",

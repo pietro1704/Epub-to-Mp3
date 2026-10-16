@@ -7,6 +7,8 @@ on:
     paths:
       - '.github/workflows/flutter-rust-faber.yml'
       - 'flutter_app/test/desktop_faber_integration_test.dart'
+      - 'flutter_app/lib/services/local_conversion_job.dart'
+      - 'flutter_app/test/local_conversion_job_test.dart'
       - 'flutter_app/lib/services/desktop_embedded_converter.dart'
       - 'flutter_app/windows/**'
       - 'flutter_app/cmake/**'
@@ -20,6 +22,8 @@ on:
     paths:
       - '.github/workflows/flutter-rust-faber.yml'
       - 'flutter_app/test/desktop_faber_integration_test.dart'
+      - 'flutter_app/lib/services/local_conversion_job.dart'
+      - 'flutter_app/test/local_conversion_job_test.dart'
       - 'flutter_app/lib/services/desktop_embedded_converter.dart'
       - 'flutter_app/windows/**'
       - 'flutter_app/cmake/**'
@@ -61,6 +65,12 @@ jobs:
         env:
           MISE_GITHUB_TOKEN: ${{ github.token }}
         run: mise install
+      - name: Verify durable history and Windows output path projection
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Set-Location flutter_app
+          mise exec -- flutter test test/local_conversion_job_test.dart --reporter expanded
+          if ($LASTEXITCODE -ne 0) { throw 'Windows durable history regression failed' }
       - name: Explicitly provision pinned Windows runtime, decoder and model
         run: |
           $ErrorActionPreference = 'Stop'

@@ -90,6 +90,11 @@ class AppLocalizationsPt extends AppLocalizations {
   String get conversionStatusUnknown => 'Desconhecido';
 
   @override
+  String conversionHistorySaveWarning(String error) {
+    return 'Conversão concluída, mas não foi possível salvar o histórico: $error';
+  }
+
+  @override
   String get refresh => 'Atualizar';
 
   @override
