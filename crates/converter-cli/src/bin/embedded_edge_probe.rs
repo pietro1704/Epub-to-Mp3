@@ -1,5 +1,5 @@
-use converter_core::tts::synthesize_with_reference_client;
 use converter_core::adaptive::AdaptiveThroughputController;
+use converter_core::tts::synthesize_with_reference_client;
 use std::io::Read;
 use std::sync::Arc;
 

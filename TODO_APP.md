@@ -4,7 +4,103 @@
 
 - [ ] Owner: root; isolate the existing architecture-campaign change without copying unrelated TTS/client edits. The server currently binds all interfaces when HOST is absent; default only to 127.0.0.1 while preserving explicit HOST/PORT and existing invalid-port fallback.
 - Acceptance: actual ephemeral listener is loopback by default; explicit wildcard binding remains supported; invalid host fails and invalid port retains8000. Rust regression tests belong beside main. Prepare the unchanged-default regression first for GitHub RED, then change only the default for GREEN. No local tests/builds or service launch.
-- Delivery depends on recovery811 reaching master; this local slice remains unpublished until its base can be reconciled. Full GitHub checks and PR merge are required before completion. Original dirty architecture worktree stays untouched.
+- Delivery depends on recovery811 reaching master. The candidate retains that recovery revision as a dependency for manual GitHub-only regression validation before PR delivery; no native or local test execution. Full current-head checks and PR merge remain required. Original dirty architecture worktree stays untouched.
+
+## CI-20261016-IOS-BUILD-SIGNING — Keep unsigned CodeQL host identity consistent
+
+- [ ] Owner: github_monitor_plan; real RED: CodeQL `38875197584`, job `116889500305`, recovery head `b5fcb7a8eb9d3fd551b2b91acdfacba184a31009`. Swift compilation reached embedded Widget validation, which rejected its unsigned extension against the fictitious parent ad hoc identity supplied globally by the workflow.
+- Source fix removes only the global expanded signing identity. The iOS dylib bundler uses local ad hoc signing only when signing is explicitly disabled and no identity was supplied; enabled device signing still requires an identity, and explicit identities remain unchanged. Embedded binary validation and all seven Swift coverage categories remain enabled.
+- GitHub-only executable regressions cover copied dylib identity, paths with spaces, local ad hoc signing without changing the host setting, enabled signing without identity, and preserved explicit identities in both modes. Temporary fixtures replace verification/signing commands and do not certify Mach-O or Apple runtime behavior; the real CodeQL build remains required. No local tests/builds/formatters were executed.
+
+## APP-20261016-ESPEAK-VENDOR-ASSETS — Restore required phoneme compiler inputs
+
+- [ ] Owner: crash_guard_audit; restore the 203 upstream WAV inputs omitted by the global audio ignore rule, with package and per-file SHA-256 provenance. Refresh the copied CMake source after a restored Cargo cache; retain phoneme compilation and actual Faber inference assertions.
+- Red evidence: GitHub CI `38872056702`, head `1ac744af4b`, passed workspace Rust tests but failed the embedded Piper smoke with 1,067 missing phoneme-source errors. Published `espeak-rs-sys` 0.2.0 contains all missing inputs; the package checksum matches the official registry and existing runtime lockfile.
+- Acceptance pending: GitHub-only embedded Piper smoke compiles phoneme data and produces validated Faber audio. No local tests, builds, formatters, syntax checks, native apps or Simulator actions executed.
+- GitHub additionally verifies the upstream WAV checksum inventory and executes the actual source-copy helper against temporary directories, covering changed/new/removed inputs, repeated refresh, literal paths with spaces, preserved sibling build output and fatal nonzero copy status. Windows copy status semantics remain `0..=7`; the Ubuntu gate does not certify Windows CMake output caches.
+
+## APP-20261016-EDGE-ADAPTATION-FIXTURES — Restore valid local Edge protocol fixtures
+
+- [ ] Update both adaptive TTS WebSocket fixtures to emit length-prefixed `Path:audio`/`Content-Type:audio/mpeg` headers while preserving adaptive size, ordering, retry and cancellation assertions.
+- Owner: Rust fixture specialist; isolated `feature/fix-edge-adaptation-fixtures`.
+- Red evidence: GitHub CI run `38870071189` on `a87337fbc19f1901eddb6e4d5c6b1522f40b9c66` passed 149 core unit tests, 10 embedded-audio and 3 in-process-audio cases, then failed 7 of 8 adaptive TTS cases because obsolete zero-length fixture headers violated the production parser's required audio path.
+- Acceptance: no production protocol relaxation; a real local WebSocket negative regression must still reject binary audio with a missing path. Verification/formatting runs only on GitHub; no local test, build, probe or formatter executed.
+
+## CI-20261016-DESKTOP-AUDIO-PREREQUISITES — Preserve desktop codec coverage
+
+- [ ] Owner: crash_workflow_audit; install explicit ffmpeg/ffprobe prerequisites before the Ruby/Rust integration suite. Keep the ADPCM sample-rate and validation assertions mandatory, with actionable failure diagnostics; preserve the isolated native-audio test with external tools disabled.
+- Red evidence: GitHub Ruby Rust Integration run `38870071032`, head `a87337fbc1`, failed `unsupported_native_wave_codec_preserves_external_capability` at external `ffprobe` spawn with `Io(NotFound)`; the two other integration cases passed. This workflow omitted the desktop audio package already installed by the main Rust CI job.
+- Acceptance pending: GitHub-only Ruby/Rust integration passes the unchanged ADPCM capability assertions and native isolation cases. No local tests, builds, formatter, syntax checks or audio tools were executed.
+
+
+## APP-20261016-FFI-CANCEL-STATE — Persist controlled cancellation after cached playback
+
+- [ ] Owner: crash_guard_audit; restore the valid `Running -> Cancelling -> Cancelled` sequence for control-token cancellation and propagate job-store failures instead of leaving a running record behind.
+- [ ] Exercise token-only cancellation, an already durable cancellation request and a missing job record at the core seam. Seed the existing FFI priority/handle-release/cancellation tests through actual offline system-fixture conversion and verified receipts; assert replay performs no synthesis and preserves audio/receipt bytes.
+- Red evidence: GitHub portability run `38870071388`, job `116871820752`, failed one of 18 FFI tests because persisted state was `running` rather than `cancelled`. The fixture also attempted Edge synthesis because raw WAV files lacked completion receipts. Source prepared; GitHub verification pending. No local tests, builds, formatters, syntax checks or native/device actions executed.
+
+## APP-20261016-CI-LEGACY-GUARDS — Reconcile legacy guard regression contracts
+
+- [ ] Owner: crash_guard_audit; acceptance: replace references to removed private resource APIs with the documented compatibility, lease and oldest-runtime selection contracts. Preserve canonical Ruby Intel quarantine independently in PR #804.
+- [ ] Cover a real fixture child's held lease, literal argument identity, release after success/failure/spawn error, and preserved contention-holder record. Selector cases must use supplied JSON or mocked service failures, never a real Simulator.
+- Evidence: master Actions run `38862909247`, Python job `116849117822`, reported nine stale guard/selector failures. Source changes prepared; GitHub-only execution pending. No local tests, syntax checks, native tools or devices were executed for this slice. External Edge HTTP 403 failures are a separate atomic task.
+
+## CI-20261016-OFFLINE-AUDIO — Separate decoded-audio regressions from live Edge availability
+
+- [ ] Replace implicit network audio fixtures with deterministic local PCM/MP3 checks covering real decoding, title/body pause, sample rate and retained active audio.
+- [ ] Keep actual Edge synthesis behind explicit `RUN_LIVE_EDGE_AUDIO_TESTS=1`; HTTP 403, timeout and empty payload remain fatal in the manual-only GitHub live workflow.
+- [ ] Verify default collection avoids network, disabled synthesis never imports/calls Edge, explicit opt-in is literal, and live provider errors propagate. Execute checks only on GitHub under the current user instruction.
+- Owner: crash_workflow_audit specialist; branch `feature/ci-offline-audio-fixtures`. Baseline: master CI run `38862909247`, Python job `116849117822` has one Edge fingerprint failure and three audio-fixture setup errors from HTTP 403. No production/provider code changes or live provider probes.
+- Status: implementation pending GitHub verification; no local tests or syntax checks executed. Preserve user books/models and unrelated work.
+- Follow-up evidence: full GitHub CI `38867253856` passed Python tests and lint, then the legacy CLI smoke failed on live Edge HTTP 403. Default CLI and external-pool smokes now explicitly install checksum-pinned Faber medium into the disposable runner and synthesize offline with fallback disabled, separate outputs and fresh processing. Existing live Edge CLI/pool checks move to the explicit manual workflow; their provider failures remain fatal. No production provider or user model-install behavior changes.
+
+## APP-20261016-CI-LIBRARY-ACTIONS — Exercise visible library actions
+
+- [ ] Owner: crash_guard_audit; acceptance: scroll the selected book title into the hit-testable viewport before long-pressing, retain action assertions, and exercise localized tag-editor entry/dismissal without changing book identity or unsaved tags.
+- Evidence: master Actions run `38862909247`, Flutter job `116849117924`, missed the gesture at `(77.3, 754.0)` outside its `800x600` viewport. This is a CI test interaction correction, not a claimed product UI fix. GitHub-only tests pending; no local Flutter tests, analysis, builds or devices executed.
+
+## APP-20261016-RUST-EXECUTION-CONTRACT — Restore worker execution contracts
+
+- [ ] Restore scoped cache refresh, forced transactional audio replacement, bounded performance options and pinned explicit Piper model identity without replacing current streaming/receipt behavior.
+- Owner: Rust contract specialist; isolated `feature/restore-worker-execution-contract`.
+- Red evidence: GitHub Actions master `915e9c` failed compiling `worker_execution_flags` and the server resume regression because production APIs/request fields diverged.
+- Verification: GitHub-only Rust tests; local tests and native execution are suspended. Preserve cancellation, prior artifacts on failure and selected chapter boundaries.
+- Formatting also runs only on GitHub. A read-only formatting-preview job retains the exact source SHA and a patch for source review; it cannot push or modify a PR. Existing CI still requires a clean formatting check.
+- Run feature-branch full CI through PR events (including the synthetic merge revision), avoiding redundant source-only push runs. Preserve all PR checks and default/develop/release/hotfix push coverage with separate concurrency groups. Review and apply only Rust formatting output from GitHub; exclude unrelated LFS normalization from formatting patches.
+
+## APP-20261016-MPEG-INTEGRITY — Validate segmented MPEG metadata and frame counts
+
+- [ ] Reject whole-frame truncation against declared Info/Xing counts and exclude binary midstream ID3 payloads from audio decoding while preserving exact concatenated durations.
+- Owner: Rust audio specialist; isolated `feature/fix-embedded-mpeg-integrity`.
+- Red evidence: GitHub run `38864616556` passed 141 core unit tests but failed existing `embedded_audio` cases `child_explicit_mpeg_counts` (line 208, accepted missing frame) and `child_binary_midstream_id3` (line 247, incorrect summed duration).
+- Follow-up red: GitHub run `38867253795` on integration `1750299` exposed fresh `rusty_mp3` output declaring metadata-inclusive frame totals. Normalize only typed finished-encoder output after checking actual packet sizes, physical frame totals and byte counts; keep foreign-input truncation checks strict. Both system PCM and Piper use the shared collector.
+- Verification pending: unchanged existing fixtures/assertions plus focused bounded-stream/parser regressions on GitHub only. No local tests, builds, probes or formatter execution.
+
+## CORE-20261016-SOURCE-TOTAL — Restore full-source chapter metadata
+
+- [ ] Restore the optional `OutputManifest.source_chapters_total` contract from `68f8b12ad2`: emit the parsed book's full count before selection, while selected chapter counts and source indexes keep their existing meaning.
+- [ ] Preserve legacy JSON decoding with unknown source total (`None`) and omit that absent field on serialization. Verify explicit counts round-trip and invalid negative counts fail.
+- [ ] Verify actual selected-one-of-two conversion and persisted manifest metadata through the existing offline worker/receipt/archive regression; execute checks only on GitHub. Add the required optional fields to server test fixtures; keep the CLI fixture's meaningful `None` unchanged.
+- Owner: crash_workflow_audit specialist; branch `feature/restore-manifest-source-total`. Status: implementation pending GitHub verification. Baseline: recovery CI `38867253856`, Rust job `116863046347`, reports CLI `E0560` at the orphan field initializer. No local tests/builds/formatter, root dirty worker edits, audio changes, journal resurrection or native-client/progressive-session claims.
+
+## CI-20261016-CODEQL-APPLE — Restore real Apple source coverage
+
+- [ ] Preserve the existing production macOS CodeQL category and restore the historical macOS unit, iOS unit and iOS UI compile categories with their real schemes.
+- [ ] Build actual SDK-correct Rust FFI prerequisites before project generation; compile iOS app, ShareExtension and Widget through the production dependency graph. Use generic device destinations; no Simulator boot or fake empty dylibs.
+- [ ] Verify all seven Swift analyses on GitHub, including real historical combined/platform-only app builds. Compilation and analysis are not app execution, native test success or proof of driver stability.
+- Owner: crash_workflow_audit specialist; branch `feature/codeql-apple-coverage`. Status: source prepared; no local tests/builds/syntax or remote configuration mutations. Preserve unrelated macOS/other-language jobs and the strict merge gate.
+- Baseline evidence: PR805 CodeQL check `116849734709` reported seven missing Swift configurations while its macOS Swift analysis was still pending. Three retired test categories last had successful master analyses on 2026-09-28. Current workflow omitted real UIKit/iOS extension extraction.
+- GitHub master run `38862918459`, Swift job `116849100230`, completed its Swift build but exceeded the 40-minute job limit during TRAP finalization. Raise only that job budget to 90 minutes; preserve extraction, queries, coverage and single-job builds. Analysis success remains pending.
+- Restore `/language:swift` with both macOS and iOS app builds in one traced database, and each platform-only category with its own actual app build. All uploads retain job identity `.github/workflows/codeql.yml:swift`; historical uploads use the exact original matrix environment, without filtering or relabeling unrelated coverage. Source evidence: successful master analyses `1620733555` (`78df918cf2`, combined, environment `{}`), `1621861648` (macOS) and `1621863231` (iOS), both platform analyses at `00073d5210`. The original/default query policy remains unchanged; no analyses, alerts or security configurations are deleted.
+- Limit Swift matrix concurrency to two hosted runners after the observed Mac capacity warning; preserve single-job native compilation and the 90-minute per-job timeout. GitHub extraction, SARIF processing and configuration reconciliation remain unverified until their actual jobs finish.
+
+## APP-20261016-RUSTLS-SECURITY — Patch confirmed rustls advisories
+
+- [ ] Resolve issue #791's GitHub cargo-audit findings by upgrading locked rustls 0.23.45 to 0.23.46, without unrelated dependency updates.
+- Owner: security dependency specialist; isolated `feature/security-rustls-patch`.
+- Evidence: GitHub run `38835537607` on c173556 reports RUSTSEC-2026-0346/0347/0348/0349; master `915e9c672b273d8ea63b189d0a2b12b3adc72847` retains the same vulnerable lock entry.
+- Source review: official crates.io sparse-index 0.23.45/0.23.46 records have identical dependencies, features and Rust 1.71 minimum; the patch is not yanked. New checksum: `48e13bd8c0e9365c43cfa5c9e8f9ad49d3c8444926c9aac819e0e4dc503c8fdf`.
+- Verification pending: GitHub-only locked dependency resolution, cargo-audit JSON artifact and existing Rust regression suites. No local scanner/test/build executed; no issue closure or successful remediation claimed.
 
 ## APP-20261015-WHOLE-IOS — Reviewed whole-app iOS 15 verification campaign
 

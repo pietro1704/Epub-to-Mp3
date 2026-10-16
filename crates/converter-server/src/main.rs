@@ -1244,6 +1244,8 @@ mod tests {
         let previous_result = previous.run(ConversionRequest {
             input: input_dir.join("source.epub"),
             job_id: "resume-job".into(),
+            piper_model: None,
+            piper_config: None,
             engine: None,
             voice: None,
             language: None,
@@ -1564,6 +1566,7 @@ mod tests {
         std::fs::create_dir_all(&job_dir).unwrap();
         std::fs::write(job_dir.join("book.zip"), b"archive fixture").unwrap();
         let manifest = OutputManifest {
+            source_chapters_total: None,
             job_id: "archive-job".into(),
             title: "Book".into(),
             author: "Author".into(),
@@ -1605,6 +1608,7 @@ mod tests {
         )
         .unwrap();
         let manifest = OutputManifest {
+            source_chapters_total: None,
             job_id: "archive-job".into(),
             title: "Book".into(),
             author: "Author".into(),
@@ -1625,6 +1629,7 @@ mod tests {
         std::fs::create_dir_all(&job_dir).unwrap();
         std::fs::write(job_dir.join("book.zip"), b"download archive").unwrap();
         let manifest = OutputManifest {
+            source_chapters_total: None,
             job_id: "archive-job".into(),
             title: "Book".into(),
             author: "Author".into(),

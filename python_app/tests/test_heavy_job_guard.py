@@ -11,8 +11,11 @@ timeout). It must:
 from __future__ import annotations
 
 import importlib.util
+import json
 import sys
 from pathlib import Path
+
+import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = REPO_ROOT / "scripts" / "heavy_job_guard.py"
@@ -56,7 +59,6 @@ def test_serializes_on_constrained_machine(monkeypatch, tmp_path) -> None:
     module = _load_module()
     monkeypatch.delenv("HEAVY_JOB_GUARD_DISABLE", raising=False)
     monkeypatch.setattr(module, "_is_constrained_intel_mac", lambda: True)
-    monkeypatch.setattr(module, "_load_too_high", lambda: False)
     monkeypatch.setattr(module, "_LOCK_PATH", str(tmp_path / "heavy.lock"))
 
     # First run acquires + releases cleanly.
@@ -72,7 +74,6 @@ def test_nowait_fails_fast_when_lock_held(monkeypatch, tmp_path) -> None:
     monkeypatch.delenv("HEAVY_JOB_GUARD_DISABLE", raising=False)
     monkeypatch.setenv("HEAVY_JOB_GUARD_NOWAIT", "1")
     monkeypatch.setattr(module, "_is_constrained_intel_mac", lambda: True)
-    monkeypatch.setattr(module, "_load_too_high", lambda: False)
     lock_path = str(tmp_path / "heavy.lock")
     monkeypatch.setattr(module, "_LOCK_PATH", lock_path)
 
@@ -116,7 +117,6 @@ def test_nonzero_exit_propagates(monkeypatch, tmp_path) -> None:
     module = _load_module()
     monkeypatch.delenv("HEAVY_JOB_GUARD_DISABLE", raising=False)
     monkeypatch.setattr(module, "_is_constrained_intel_mac", lambda: True)
-    monkeypatch.setattr(module, "_load_too_high", lambda: False)
     monkeypatch.setattr(module, "_LOCK_PATH", str(tmp_path / "heavy.lock"))
     rc = module.main(["build", "--", sys.executable, "-c", "import sys; sys.exit(3)"])
     assert rc == 3
@@ -126,3 +126,57 @@ def test_constrained_detection_non_darwin(monkeypatch) -> None:
     module = _load_module()
     monkeypatch.setattr(module.platform, "system", lambda: "Linux")
     assert module._is_constrained_intel_mac() is False
+
+
+@pytest.mark.parametrize("exit_code", [0, 17])
+def test_child_holds_lease_preserves_arguments_and_releases_on_exit(
+    monkeypatch, tmp_path, exit_code
+) -> None:
+    import fcntl
+
+    module = _load_module()
+    monkeypatch.delenv("HEAVY_JOB_GUARD_DISABLE", raising=False)
+    monkeypatch.setattr(module, "_is_constrained_intel_mac", lambda: True)
+    lock_path = tmp_path / "literal lease.lock"
+    marker = tmp_path / "child identity.json"
+    monkeypatch.setattr(module, "_LOCK_PATH", str(lock_path))
+    child = """
+import fcntl, json, pathlib, sys
+with open(sys.argv[1], "a+") as lock:
+    try:
+        fcntl.flock(lock.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        pass
+    else:
+        sys.exit(97)
+pathlib.Path(sys.argv[2]).write_text(json.dumps(sys.argv[4:]))
+sys.exit(int(sys.argv[3]))
+"""
+    literal = "book ' literal; $(not-a-command).epub"
+    assert module.main([
+        "fixture-build", "--", sys.executable, "-c", child,
+        str(lock_path), str(marker), str(exit_code), literal,
+    ]) == exit_code
+    assert json.loads(marker.read_text()) == [literal]
+    assert "fixture-build pid=" in lock_path.read_text()
+    with lock_path.open("a+") as probe:
+        fcntl.flock(probe.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+
+
+def test_child_spawn_failure_releases_lease(monkeypatch, tmp_path) -> None:
+    import fcntl
+
+    module = _load_module()
+    monkeypatch.delenv("HEAVY_JOB_GUARD_DISABLE", raising=False)
+    monkeypatch.setattr(module, "_is_constrained_intel_mac", lambda: True)
+    lock_path = tmp_path / "lease.lock"
+    monkeypatch.setattr(module, "_LOCK_PATH", str(lock_path))
+
+    def missing_command(arguments):
+        raise FileNotFoundError("fixture command unavailable")
+
+    monkeypatch.setattr(module.subprocess, "call", missing_command)
+    with pytest.raises(FileNotFoundError, match="fixture command unavailable"):
+        module.main(["fixture-build", "--", "missing-fixture-command"])
+    with lock_path.open("a+") as probe:
+        fcntl.flock(probe.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
