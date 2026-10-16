@@ -1,3 +1,12 @@
+## IOS-FIX-HISTORY — Read the canonical persisted Rust manifest
+
+- [x] RED: GitHub run `38868105771`, job `116865518412`, built successfully in 53.88 s and executed 11 actual history XCTest cases: 9 passed, 2 failed with 4 assertion failures. The bare Rust manifest produced no session; the identity case retained a mismatched legacy job instead of the valid bare neighbor.
+- [ ] GREEN: decode the bare Rust OutputManifest while preserving legacy envelopes; reject mismatched directory/job identity and retain bounded off-main reads, ordering, cancellation and valid neighboring records.
+- [ ] Verify the actual foreground iOS Jobs screen. The pending UIKit case is intentionally excluded from the Foundation package; exact SE1/iOS15.5 GUI acceptance remains blocked by the Intel Simulator quarantine. No Mac GUI history migration is included.
+- Owner: crash_workflow_audit specialist; branch `feature/ios-local-history-manifest`. Status: minimal production decoder/identity correction prepared after confirmed runtime RED; GREEN pending GitHub; no local tests/builds/syntax, app launches, Simulator work or provider calls executed. Verification is exclusively on GitHub.
+- Runner correction: use explicit GitHub-hosted `macos-15-intel` for Foundation-only XCTest after the ARM runner capacity warning and prolonged queue. No Simulator/Metal/app execution or Intel quarantine exception is introduced. The replacement GitHub run confirmed behavioral RED before the production correction.
+- Runtime route: `app-foundation-history.yml` executes the actual production reader and existing XCTest source through `ios/EpubToMp3/Package.swift`; it requires no Rust/model/provider setup. Baseline: converter-core persists bare `OutputManifest`; only the FFI response has the transport envelope Swift previously expected.
+
 # App delivery backlog
 
 ## CI-20261016-IOS-BUILD-SIGNING — Keep unsigned CodeQL host identity consistent
