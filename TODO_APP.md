@@ -13,6 +13,12 @@
 - Acceptance: unavailable or incompatible runtime returns an actionable Piper capability error without implying Edge is required; a linked compatible runtime passes the capability gate before model initialization. Edge fallback remains governed by explicit typed preferences and consent.
 - Verification: meaningful unit regression for unavailable, incompatible, and available runtime statuses; exact-head GitHub Actions only. The Android FFI/JNI entrypoint registers the embedded runtime before conversion. This does not claim device inference or Simulator acceptance.
 
+## ANDROID-20261016-PIPER-INFERENCE — Exercise real ARM64 Android Piper inference
+
+- [ ] Owner: root; current Android verification builds/audits the ARM64 APK and runs Kotlin unit tests but does not launch the app or execute Piper through JNI.
+- Acceptance: a GitHub-hosted Android ARM64 emulator launches the actual app, explicitly installs the pinned Faber model through the catalog channel, synthesizes audio through the registered MethodChannel/JNI path with captured preferences and app-owned models root, validates nonempty WAV/audio output and provider identity, and verifies a fresh empty root fails without Edge/network fallback. Clean only test-owned model/output files.
+- Verification: GitHub Actions only; use an emulator ABI compatible with the packaged arm64-v8a library and retain logs/evidence. This does not substitute for physical-device playback or Intel Simulator acceptance.
+
 ## SAFE-20261016-ALL-COMPILER-ENTRYPOINTS — Guard every remaining compiler entrypoint
 
 - [ ] Owner: root; route the six standalone Rust compiler tasks, `web:wasm-build`, and the backend rebuild used by `dev` through the native build supervisor. Preserve the existing Windows heavy-job lock path. Build the server under a short lease, then launch its binary after releasing the lease so the long-lived dev server does not monopolize the lock.
