@@ -1,0 +1,52 @@
+name: Server bind runtime regression
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/server-bind-regression.yml'
+      - 'Dockerfile'
+      - '.dockerignore'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'crates/converter-server/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: server-bind-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  container-bind:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Build the actual production server image
+        run: docker build --tag server-bind-regression .
+      - name: Require the published container port to accept host traffic
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run --detach --name server-bind-regression --publish 127.0.0.1:17860:7860 server-bind-regression
+          ready=0
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent --show-error http://127.0.0.1:17860/api/health > "$RUNNER_TEMP/server-bind-health.json"; then
+              ready=1
+              break
+            fi
+            sleep 1
+          done
+          test "$ready" = 1
+          docker exec server-bind-regression sh -c 'test "$HOST" = 0.0.0.0 && test "$PORT" = 7860'
+          cat "$RUNNER_TEMP/server-bind-health.json"
+      - name: Retain bounded server logs
+        if: always()
+        run: docker logs --tail 100 server-bind-regression 2>&1 || true
+      - name: Remove the task-owned container
+        if: always()
+        run: docker rm --force server-bind-regression >/dev/null 2>&1 || true

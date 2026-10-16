@@ -1,5 +1,14 @@
 # App delivery backlog
 
+## AH-08 — Default the optional server to loopback
+
+- Owner: root; recover only the server listener change from preserved branch `feature/server-loopback-default` (`71f9cdd`) onto master `cc2ed618`. The original branch and dirty architecture checkout remain untouched.
+- Status: actual listener regressions and production container route prepared; GitHub verification pending.
+- Acceptance: absent HOST binds an actual ephemeral listener to127.0.0.1; explicit HOST/PORT and wildcard binding remain supported; invalid host fails and invalid port retains8000. Docker explicitly opts into HOST=0.0.0.0 and its published host port must answer /api/health.
+- Confirmed predecessor RED: run `38889285845`, Rust job `116934636405`, reported23 passed/1 failed: `default_server_listener_is_loopback_only` failed its actual listener assertion; explicit configuration passed. This is not evidence of recovered-head GREEN.
+- Packaging dependency: retain the native/benches workspace inputs and locked Docker build already prepared by #828 so the container build can exercise the bind behavior. No Space deployment or model installation.
+- Delivery: atomic master-targeting PR with all required checks green. No local commands/tests/builds/service launch or Simulator action. Original branch ancestry remains pending until its dependencies are delivered.
+
 ## CI-20261016-IOS-BUILD-SIGNING — Keep unsigned CodeQL host identity consistent
 
 - [ ] Owner: github_monitor_plan; real RED: CodeQL `38875197584`, job `116889500305`, recovery head `b5fcb7a8eb9d3fd551b2b91acdfacba184a31009`. Swift compilation reached embedded Widget validation, which rejected its unsigned extension against the fictitious parent ad hoc identity supplied globally by the workflow.
