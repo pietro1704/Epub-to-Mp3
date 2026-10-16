@@ -89,17 +89,26 @@ jobs:
           if-no-files-found: warn
 
   macos-preferences:
-    name: Faber macOS preferences and installation
-    runs-on: macos-15
+    name: Faber macOS preferences and installation (${{ matrix.arch }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-15
+            arch: arm64
+          - os: macos-15-intel
+            arch: x86_64
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 60
     env:
       MISE_ENABLE_TOOLS: python,rust,ruby
       DEVELOPER_DIR: /Applications/Xcode_16.4.app/Contents/Developer
+      EXPECTED_ARCH: ${{ matrix.arch }}
     steps:
       - uses: actions/checkout@v7
       - name: Require the canonical hosted Xcode 16.4 toolchain
         run: |
-          test "$(uname -m)" = arm64
+          test "$(uname -m)" = "$EXPECTED_ARCH"
           test -d "$DEVELOPER_DIR"
           xcodebuild -version | tee "$RUNNER_TEMP/faber-xcode-version.txt"
           grep -Fx 'Xcode 16.4' "$RUNNER_TEMP/faber-xcode-version.txt"
@@ -112,6 +121,23 @@ jobs:
         run: brew install xcodegen
       - name: Build embedded host runtime without Simulator
         run: mise run converter-ffi:build
+      - name: Verify actual FFI and pinned ORT architectures
+        run: |
+          set -o pipefail
+          mkdir -p .reports/tts-preferences
+          ffi_arch="$(xcrun lipo -archs target/release/libconverter_ffi.dylib)"
+          test "$ffi_arch" = "$EXPECTED_ARCH"
+          runtime_root="target/onnxruntime-macos-prebuilt/$EXPECTED_ARCH"
+          ort_arch="$(xcrun lipo -archs "$runtime_root/lib/libonnxruntime.dylib")"
+          test "$ort_arch" = "$EXPECTED_ARCH"
+          mise exec -- ruby -rjson -e '
+            manifest = JSON.parse(File.read(ARGV.fetch(0)))
+            actual = manifest.fetch("architecture")
+            abort "ORT manifest architecture mismatch" unless actual == ARGV.fetch(1)
+            puts "ORT manifest architecture: #{actual}"
+          ' "$runtime_root/runtime.json" "$EXPECTED_ARCH"
+          printf 'Host: %s\nFFI: %s\nORT: %s\n' "$(uname -m)" "$ffi_arch" "$ort_arch" > .reports/tts-preferences/native-architectures.log
+          cat .reports/tts-preferences/native-architectures.log
       - name: Generate native project with actual FFI artifact
         working-directory: ios/EpubToMp3
         run: xcodegen generate
@@ -159,7 +185,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v6
         with:
-          name: faber-macos-prefs
+          name: faber-macos-prefs-${{ matrix.arch }}
           path: .reports/tts-preferences
           if-no-files-found: warn
 
