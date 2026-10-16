@@ -222,28 +222,39 @@ pub(crate) fn collect_rusty_mp3_output(
         let packet = match encoder.next_packet() {
             Ok(packet) => packet,
             Err(rusty_mp3::Error::Eof) => break,
-            Err(error) => return Err(invalid_audio(format!("MP3 encoder did not finish: {error}"))),
+            Err(error) => {
+                return Err(invalid_audio(format!(
+                    "MP3 encoder did not finish: {error}"
+                )))
+            }
         };
-        let bytes: [u8; 4] = packet.get(..4)
+        let bytes: [u8; 4] = packet
+            .get(..4)
             .ok_or_else(|| invalid_audio("MP3 encoder emitted a short frame"))?
-            .try_into().unwrap();
-        let header = rusty_mp3::header::FrameHeader::parse(bytes)
-            .map_err(|error| invalid_audio(format!("MP3 encoder emitted an invalid frame: {error}")))?;
+            .try_into()
+            .unwrap();
+        let header = rusty_mp3::header::FrameHeader::parse(bytes).map_err(|error| {
+            invalid_audio(format!("MP3 encoder emitted an invalid frame: {error}"))
+        })?;
         if header.frame_size() != packet.len() {
             return Err(invalid_audio("MP3 encoder emitted an incomplete frame"));
         }
         if packets == 0 {
             let tag = 4 + usize::from(header.crc_protected) * 2 + header.side_info_len();
-            let metadata = packet.get(tag..tag + 16)
+            let metadata = packet
+                .get(tag..tag + 16)
                 .ok_or_else(|| invalid_audio("MP3 encoder omitted Info/Xing counts"))?;
             if (&metadata[..4] != b"Info" && &metadata[..4] != b"Xing")
                 || metadata[4..8] != 3u32.to_be_bytes()
             {
-                return Err(invalid_audio("MP3 encoder emitted unexpected Info/Xing flags"));
+                return Err(invalid_audio(
+                    "MP3 encoder emitted unexpected Info/Xing flags",
+                ));
             }
             count_offset = Some(tag + 8);
         }
-        packets = packets.checked_add(1)
+        packets = packets
+            .checked_add(1)
             .ok_or_else(|| invalid_audio("MP3 encoder frame count overflows"))?;
         encoded.extend_from_slice(&packet);
     }
@@ -251,7 +262,9 @@ pub(crate) fn collect_rusty_mp3_output(
     let declared = u32::from_be_bytes(encoded[field..field + 4].try_into().unwrap());
     let declared_bytes = u32::from_be_bytes(encoded[field + 4..field + 8].try_into().unwrap());
     if packets < 2 || declared != packets || u64::from(declared_bytes) != encoded.len() as u64 {
-        return Err(invalid_audio("MP3 encoder Info/Xing counts do not match emitted frames"));
+        return Err(invalid_audio(
+            "MP3 encoder Info/Xing counts do not match emitted frames",
+        ));
     }
     encoded[field..field + 4].copy_from_slice(&(packets - 1).to_be_bytes());
     Ok(encoded)
@@ -1209,7 +1222,8 @@ mod tests {
                 }
                 let mut finished = prepare();
                 let encoded = collect_rusty_mp3_output(&mut finished).unwrap();
-                let header = rusty_mp3::header::FrameHeader::parse(raw[..4].try_into().unwrap()).unwrap();
+                let header =
+                    rusty_mp3::header::FrameHeader::parse(raw[..4].try_into().unwrap()).unwrap();
                 let field = 4 + usize::from(header.crc_protected) * 2 + header.side_info_len() + 8;
                 assert_eq!(&encoded[..field], &raw[..field]);
                 assert_eq!(&encoded[field + 4..], &raw[field + 4..]);
@@ -1217,7 +1231,12 @@ mod tests {
                 let new_count = u32::from_be_bytes(encoded[field..field + 4].try_into().unwrap());
                 assert_eq!(new_count + 1, old_count);
                 fs::write(&path, &encoded).unwrap();
-                assert_eq!(validate_mpeg_bounds(&mut File::open(&path).unwrap()).unwrap().len(), 1);
+                assert_eq!(
+                    validate_mpeg_bounds(&mut File::open(&path).unwrap())
+                        .unwrap()
+                        .len(),
+                    1
+                );
                 assert!(probe_duration(&path).unwrap() > 0.0);
                 assert_eq!(probe_sample_rate(&path).unwrap(), rate);
                 fs::write(&path, &encoded[..encoded.len() - last_frame_bytes]).unwrap();
@@ -1237,7 +1256,6 @@ mod tests {
         encoder.finish();
         assert!(collect_rusty_mp3_output(&mut encoder).is_err());
     }
-
 
     #[test]
     fn bounded_audio_source_preserves_logical_identity_and_hides_adjacent_bytes() {

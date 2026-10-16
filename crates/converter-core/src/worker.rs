@@ -2110,7 +2110,11 @@ mod tests {
         let source = fs::read(&input).unwrap();
         let book = epub::parse_epub(std::io::Cursor::new(&source)).unwrap();
         assert!(book.cover.is_none());
-        assert_eq!(book.chapters.len(), 2, "fixture must retain a larger source domain");
+        assert_eq!(
+            book.chapters.len(),
+            2,
+            "fixture must retain a larger source domain"
+        );
         let chapter = &book.chapters[0];
         let output = worker.config.paths.output_dir.join("proven-existing-audio");
         let audio = output.join(format!("0001-{}.mp3", sanitize(&chapter.name)));
