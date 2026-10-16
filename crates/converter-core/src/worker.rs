@@ -1344,12 +1344,8 @@ impl ConversionWorker {
         piper_config: Option<&Path>,
     ) -> Result<(), WorkerError> {
         let runtime_status = piper::piper_runtime_status();
-        if cfg!(target_os = "android")
-            && (!runtime_status.runtime_loaded || !runtime_status.abi_compatible)
-        {
-            return Err(WorkerError::Piper(
-                "Piper is disabled on Android; Edge TTS is required".into(),
-            ));
+        if cfg!(target_os = "android") {
+            ensure_android_piper_runtime(runtime_status)?;
         }
         // A captured manual/typed selection takes precedence over a legacy prepared default.
         if piper_model.is_none() && piper_config.is_none() {
@@ -1710,6 +1706,17 @@ fn default_edge_voice(language: Option<&str>) -> &'static str {
     }
 }
 
+fn ensure_android_piper_runtime(
+    status: piper::PiperRuntimeStatus,
+) -> Result<(), WorkerError> {
+    if !status.runtime_loaded || !status.abi_compatible {
+        return Err(WorkerError::Piper(
+            "Embedded Piper runtime is unavailable or ABI-incompatible on Android".into(),
+        ));
+    }
+    Ok(())
+}
+
 fn select_engine(request: Option<&str>, config: &AppConfig) -> String {
     match request
         .unwrap_or(&config.engine)
@@ -1743,6 +1750,36 @@ fn sanitize(value: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn android_piper_runtime_failure_does_not_require_unconsented_edge() {
+        for status in [
+            piper::PiperRuntimeStatus {
+                runtime_loaded: false,
+                model_available: false,
+                abi_compatible: true,
+                engine_ready: false,
+            },
+            piper::PiperRuntimeStatus {
+                runtime_loaded: true,
+                model_available: false,
+                abi_compatible: false,
+                engine_ready: false,
+            },
+        ] {
+            let error = ensure_android_piper_runtime(status).unwrap_err().to_string();
+            assert!(error.contains("unavailable or ABI-incompatible"), "{error}");
+            assert!(!error.contains("Edge"), "{error}");
+        }
+
+        assert!(ensure_android_piper_runtime(piper::PiperRuntimeStatus {
+            runtime_loaded: true,
+            model_available: false,
+            abi_compatible: true,
+            engine_ready: false,
+        })
+        .is_ok());
+    }
 
     #[test]
     fn performance_override_still_respects_configuration_and_platform_caps() {
