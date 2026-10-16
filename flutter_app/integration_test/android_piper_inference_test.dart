@@ -15,8 +15,10 @@ const _modelSha256 = '858555e3a064209c57088fe6bd70c4c3dc54d03eaa00c45d5ecaf43a33
 const _configSha256 = '7e694de195ae3fc36dd732c445eb04fb49b649854893cb5506b978f0d50a1d6f';
 
 Uint8List _oneChapterEpub() {
+  final mimetype = ArchiveFile.string('mimetype', 'application/epub+zip')
+    ..compression = CompressionType.none;
   final archive = Archive()
-    ..addFile(ArchiveFile.string('mimetype', 'application/epub+zip'))
+    ..addFile(mimetype)
     ..addFile(
       ArchiveFile.string(
         'META-INF/container.xml',
