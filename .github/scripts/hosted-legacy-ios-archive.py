@@ -37,6 +37,8 @@ def http_headers(payload):
     """Keep only diagnostic fields from the final complete HTTP response block."""
     if len(payload) > MAX_HEADERS:
         raise Blocked("HTTP headers exceed 64 KiB")
+    if not payload.endswith(b"\r\n\r\n"):
+        raise Blocked("Final HTTP response headers are missing or incomplete")
     blocks = []
     current = None
     for line in payload.decode("iso-8859-1").split("\r\n"):
