@@ -1,5 +1,13 @@
 # App delivery backlog
 
+## AH-04 — Recover durable Flutter conversion history
+
+- [ ] Owner: root; recovered minimal changes from preserved `e29510d943` onto Faber integration `ba407cf6`; original branch ancestry remains unmerged.
+- Acceptance: Jobs reads durable local snapshots without HTTP, reloads when entering the tab and on pull-to-refresh, preserves literal Rust job identity and captured provider policy, and reports damaged/unknown-status/invalid-date records without deleting them. Show recorded errors and paths without claiming audio is available or a saved running state is live.
+- Supported Android log lookup retains the actual job ID; other platforms do not offer an unsupported log action. Keep current Faber selection, consent, receipts, cancellation and playback persistence unchanged.
+- Verification pending exclusively on GitHub: store recreation/background refresh, malformed identity/status/timestamps, Jobs success/storage failure/empty and error refresh, real Android method-channel identity, root tab refresh, full Flutter tests/analyzer and existing runtime gates. No local process, build, test or Simulator run.
+- Manual completed-manifest projection is AH-05 and remains a separate pending recovery. Source inspection is not runtime acceptance.
+
 ## APP-20261016-WEB-CLI-REPRO — Reproduce the captured job through Rust CLI
 
 - GitHub evidence: headc43bceaa Web job117229909190/run38977330463 passed all203 tests, including real Bash/PowerShell argv fixtures, then failed ESLint no-control-regex on the NUL guard. Preserve NUL/CR/LF rejection with string includes instead of a control-character regex; exact-head rerun remains pending.
