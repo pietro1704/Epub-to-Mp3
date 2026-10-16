@@ -402,7 +402,9 @@ mod tests {
         let (_directory, manager) = manager();
         let mut metadata = serde_json::Map::new();
         metadata.insert("source".into(), serde_json::json!("original-book"));
-        manager.create(JobRecord::new("cancelled", metadata)).unwrap();
+        manager
+            .create(JobRecord::new("cancelled", metadata))
+            .unwrap();
         manager.transition("cancelled", JobState::Running).unwrap();
         let cancelling = manager.request_cancellation("cancelled").unwrap();
         let progress = serde_json::json!({"completed": 2});
@@ -607,7 +609,10 @@ mod tests {
         for id in ["expired-completed", "expired-cancelled", "expired-failed"] {
             assert!(matches!(manager.load(id), Err(JobError::NotFound(_))));
         }
-        assert_eq!(manager.load("old-running").unwrap().state, JobState::Running);
+        assert_eq!(
+            manager.load("old-running").unwrap().state,
+            JobState::Running
+        );
         assert_eq!(manager.load("recent-completed").unwrap(), recent);
         assert_eq!(manager.list().unwrap().len(), 2);
         assert_eq!(manager.cleanup_stale().unwrap(), 0);
