@@ -2,6 +2,8 @@
 
 ## APP-20261016-WEB-LOCAL-HELP — Keep embedded diagnostics local
 
+- GitHub RED `38890892219`, Web job `116939943517`: 183/185 tests passed; both new close-button queries matched the overlay and drawer button. Scope only those queries to the Help complementary region; retain all HTTP-abort, reopening, URL and local-content assertions. Follow-up GitHub verification pending.
+
 - [ ] Owner: crash_guard_audit; show useful localized runtime/job/progress help without backend probes, downloads or restart controls in the embedded client. Preserve explicitly selected HTTP diagnostics, abort polling when Help closes, and avoid duplicate API prefixes.
 - Preserve Faber preflight cancellation/identity and strict provider preferences. Offer CLI reproduction only when every explicit setting has a real Rust CLI representation; typed `tts_preferences` remains unsupported by that guide.
 - Verification pending GitHub `mise run test:web`; no local tests, formatter, build or native execution. Desktop log delivery is outside this slice.

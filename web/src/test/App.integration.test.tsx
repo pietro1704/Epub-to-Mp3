@@ -39,7 +39,7 @@ describe("App integration", () => {
 
       expect(screen.getByRole('region', { name: 'Local conversion' })).toBeVisible();
       expect(screen.getByText('To prepare the offline voice, choose “Install Faber medium” in the form.')).toBeVisible();
-      await user.click(screen.getByRole('button', { name: 'Close panel' }));
+      await user.click(within(screen.getByRole('complementary')).getByRole('button', { name: 'Close panel' }));
       expect(screen.queryByRole('region', { name: 'Local conversion' })).not.toBeInTheDocument();
 
       const backendRequests = fetchMock.mock.calls.filter(([input]) =>
@@ -86,7 +86,7 @@ describe("App integration", () => {
         expect(urls.some((url) => url.includes("/api/api/"))).toBe(false);
       });
       expect(diagnosticSignals.length).toBeGreaterThanOrEqual(3);
-      await user.click(screen.getByRole("button", { name: "Close panel" }));
+      await user.click(within(screen.getByRole("complementary")).getByRole("button", { name: "Close panel" }));
       expect(screen.queryByTestId("telemetry-panel")).not.toBeInTheDocument();
       expect(diagnosticSignals.every((signal) => signal.aborted)).toBe(true);
       const closedSignals = [...diagnosticSignals];
