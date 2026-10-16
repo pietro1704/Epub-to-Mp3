@@ -6,6 +6,7 @@ require 'json'
 require 'open3'
 require 'rbconfig'
 require 'tmpdir'
+require_relative 'native_job'
 
 module AndroidOnnxRuntime
   VERSION = '1.23.2'.freeze
@@ -62,10 +63,8 @@ module AndroidOnnxRuntime
     rescue StandardError => error
       warn "Preparing the pinned Android ONNX runtime: #{error.message}"
     end
-    unless already_locked
-      lease = File.open('/tmp/epub2mp3.heavy-job.lock', 'a+')
-      raise 'Another heavy job is active' unless lease.flock(File::LOCK_EX | File::LOCK_NB)
-    end
+    # Compatibility argument never substitutes for a real inherited descriptor.
+    lease, inherited = NativeJob.lease(NativeJob::LOCK_PATH)
     parent = File.dirname(DESTINATION)
     FileUtils.mkdir_p(parent)
     stage = Dir.mktmpdir('.onnxruntime-install-', parent)
@@ -100,7 +99,7 @@ module AndroidOnnxRuntime
       FileUtils.remove_entry(stage) if File.exist?(stage)
     end
   ensure
-    lease&.close
+    lease&.close unless inherited
   end
 end
 

@@ -1,5 +1,9 @@
 #!/usr/bin/env ruby
 # Package the native Rust CLI with its runtime dependencies and phonemizer data.
+unless Gem.win_platform?
+  require_relative 'native_job'
+  NativeJob.build_entrypoint(__FILE__, ARGV)
+end
 require 'digest'
 require 'fileutils'
 require 'json'
@@ -18,16 +22,19 @@ windows = RbConfig::CONFIG['host_os'].match?(/mswin|mingw/)
 # Preparing a missing runtime acquires its own lease. Do it before taking the CLI lease.
 runtime = nil
 if macos
-  runtime = IO.popen(['mise', 'exec', '--', 'ruby', 'scripts/prepare_onnxruntime_macos.rb'], &:read).strip
+  runtime = IO.popen(['mise', 'exec', '--', 'ruby', 'scripts/prepare_onnxruntime_macos.rb'], NativeJob.child_options, &:read).strip
   abort 'Could not prepare the macOS 12 native ONNX Runtime' unless $?.success? && File.directory?(runtime)
 end
-lease = File.open('/tmp/epub2mp3.heavy-job.lock', 'a+')
-abort 'Another heavy job is active' unless lease.flock(File::LOCK_EX | File::LOCK_NB)
+if windows
+  # Preserve the existing Windows coordination; the supervisor is POSIX-only.
+  lease = File.open('/tmp/epub2mp3.heavy-job.lock', 'a+')
+  abort 'Another heavy job is active' unless lease.flock(File::LOCK_EX | File::LOCK_NB)
+end
 build_environment = {}
 if macos
   build_environment = { 'ORT_LIB_LOCATION' => runtime, 'ORT_PREFER_DYNAMIC_LINK' => '1', 'MACOSX_DEPLOYMENT_TARGET' => '12.0', 'SDKROOT' => nil, 'CMAKE_TOOLCHAIN_FILE' => nil, 'CMAKE_GENERATOR' => nil, 'CC' => nil, 'CXX' => nil, 'CFLAGS' => nil, 'CXXFLAGS' => nil }
 end
-abort 'Rust CLI build failed' unless system(build_environment, 'mise', 'exec', '--', 'rustup', 'run', 'stable', 'cargo', 'build', '-p', 'converter-cli', '--bin', 'converter-cli', '--release', '--jobs', '1', out: $stderr, err: $stderr)
+abort 'Rust CLI build failed' unless system(build_environment, 'mise', 'exec', '--', 'rustup', 'run', 'stable', 'cargo', 'build', '-p', 'converter-cli', '--bin', 'converter-cli', '--release', '--jobs', '1', out: $stderr, err: $stderr, **(windows ? {} : NativeJob.child_options))
 name = windows ? 'converter-cli.exe' : 'converter-cli'
 compiled = File.join(root, 'target', 'release', name)
 abort "Missing compiled native CLI: #{compiled}" unless File.file?(compiled)

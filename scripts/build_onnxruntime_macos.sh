@@ -5,7 +5,7 @@ set -euo pipefail
 # CMake's upstream code-generation tools may use Python; no Python runtime or
 # bindings are included in the resulting library. No legacy build.sh is invoked.
 project_root="$(cd "$(dirname "$0")/.." && pwd)"
-exec mise exec -- ruby - "$project_root" <<'RUBY'
+exec mise exec -- ruby "$project_root/scripts/native_job.rb" build -- mise exec -- ruby - "$project_root" <<'RUBY'
 require 'digest'
 require 'fileutils'
 require 'json'
@@ -55,8 +55,6 @@ if File.file?(target) && File.file?(manifest_path)
     warn 'Runtime manifest is incomplete; resuming the native build'
   end
 end
-lease = File.open('/tmp/epub2mp3.heavy-job.lock', 'a+')
-abort 'Another heavy job is active' unless lease.flock(File::LOCK_EX | File::LOCK_NB)
 unless File.exist?(source)
   FileUtils.mkdir_p(File.dirname(source))
   warn 'Fetching official ONNX Runtime v1.24.2 sources for a fresh native build'

@@ -1,5 +1,7 @@
 #!/usr/bin/env ruby
 # Build the shared Piper/JNI artifact under the existing native-work lease.
+require_relative 'native_job'
+NativeJob.build_entrypoint(__FILE__, ARGV)
 require 'digest'
 require 'json'
 require 'rbconfig'
@@ -8,8 +10,6 @@ require_relative 'fetch_onnxruntime_android'
 
 root = File.expand_path('..', __dir__)
 Dir.chdir(root)
-lease = File.open('/tmp/epub2mp3.heavy-job.lock', 'a+')
-abort 'Another heavy job is active' unless lease.flock(File::LOCK_EX | File::LOCK_NB)
 ort_directory = AndroidOnnxRuntime.ensure_runtime(already_locked: true)
 host = case RbConfig::CONFIG['host_os']
        when /darwin/ then 'darwin-x86_64'
@@ -29,7 +29,7 @@ abort 'Could not resolve the stable Rust compiler' unless $?.success? && File.ex
 # Host tools create architecture-independent phonemizer data; never run target ELF tools on the Mac.
 data_env = %w[SDKROOT CC CXX AR CFLAGS CXXFLAGS CMAKE_TOOLCHAIN_FILE CMAKE_GENERATOR CMAKE_MAKE_PROGRAM ORT_LIB_LOCATION ORT_IOS_LINK BINDGEN_EXTRA_CLANG_ARGS CARGO_ENCODED_RUSTFLAGS].to_h { |key| [key, nil] }
 data_env['RUSTC'] = File.join(sysroot, 'bin', 'rustc')
-exit($?.exitstatus || 1) unless system(data_env, 'mise', 'exec', '--', 'rustup', 'run', 'stable', 'cargo', 'build', '-p', 'espeak-rs-sys', '--features', 'compile-espeak-intonations', '--target-dir', 'target/espeak-data', '--jobs', '1')
+exit($?.exitstatus || 1) unless system(data_env, 'mise', 'exec', '--', 'rustup', 'run', 'stable', 'cargo', 'build', '-p', 'espeak-rs-sys', '--features', 'compile-espeak-intonations', '--target-dir', 'target/espeak-data', '--jobs', '1', **NativeJob.child_options)
 environment = data_env.merge(
   'ANDROID_NDK_HOME' => ndk, 'ANDROID_NDK_ROOT' => ndk,
   'PATH' => "#{File.join(toolchain, 'bin')}:#{ENV.fetch('PATH')}",
@@ -51,7 +51,7 @@ environment = data_env.merge(
   'CARGO_TARGET_AARCH64_LINUX_ANDROID_RUSTFLAGS' => '-C link-arg=-Wl,-z,defs'
 )
 command = ['mise', 'exec', '--', 'rustup', 'run', 'stable', 'cargo', 'build', '-p', 'converter-ffi', '--features', 'android-jni,piper-runtime', '--release', '--target', target, '--target-dir', build_root, '--jobs', '1']
-exit($?.exitstatus || 1) unless system(environment, *command)
+exit($?.exitstatus || 1) unless system(environment, *command, **NativeJob.child_options)
 library = File.join(build_root, target, 'release', 'libconverter_ffi.so')
 abort 'Cargo did not produce the Android converter library' unless File.file?(library)
 File.write("#{library}.runtime.json", JSON.pretty_generate({ 'target' => target, 'features' => ['android-jni', 'piper-runtime'], 'ort_api' => 23, 'sha256' => Digest::SHA256.file(library).hexdigest, 'ndk' => ndk, 'ort_directory' => ort_directory, 'ort_sha256' => AndroidOnnxRuntime::LIBRARY_SHA256 }))

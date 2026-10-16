@@ -6,23 +6,47 @@ on:
       - '.github/workflows/native-safety.yml'
       - '.claude/hooks/**'
       - 'scripts/native_job.rb'
+      - 'scripts/native_build_command.rb'
       - 'scripts/native_codex_tool_guard.rb'
       - 'scripts/native_build_preflight.rb'
       - 'scripts/device-workflow.sh'
       - 'scripts/ios_simulator_smoke.swift'
       - 'scripts/test_native_*.rb'
+      - 'scripts/build_converter_ffi_android.rb'
+      - 'scripts/build_flutter_*.rb'
+      - 'scripts/package_rust_cli.rb'
+      - 'scripts/package_converter_ffi_android.rb'
+      - 'scripts/fetch_onnxruntime_*.rb'
+      - 'scripts/build_onnxruntime_macos.sh'
+      - 'scripts/verify_tts_preferences.rb'
+      - 'scripts/verify_portable_tts.rb'
+      - 'docs/research/tts-phone-benchmark/build-edge.rb'
+      - 'docs/research/tts-phone-benchmark/build-pocket.rb'
+      - 'docs/research/tts-phone-benchmark/run.rb'
       - 'mise.toml'
   push:
-    branches: [master, feature/intel-gpu-quarantine]
+    branches: [master, feature/intel-gpu-quarantine, feature/faber-native-safety]
     paths:
       - '.github/workflows/native-safety.yml'
       - '.claude/hooks/**'
       - 'scripts/native_job.rb'
+      - 'scripts/native_build_command.rb'
       - 'scripts/native_codex_tool_guard.rb'
       - 'scripts/native_build_preflight.rb'
       - 'scripts/device-workflow.sh'
       - 'scripts/ios_simulator_smoke.swift'
       - 'scripts/test_native_*.rb'
+      - 'scripts/build_converter_ffi_android.rb'
+      - 'scripts/build_flutter_*.rb'
+      - 'scripts/package_rust_cli.rb'
+      - 'scripts/package_converter_ffi_android.rb'
+      - 'scripts/fetch_onnxruntime_*.rb'
+      - 'scripts/build_onnxruntime_macos.sh'
+      - 'scripts/verify_tts_preferences.rb'
+      - 'scripts/verify_portable_tts.rb'
+      - 'docs/research/tts-phone-benchmark/build-edge.rb'
+      - 'docs/research/tts-phone-benchmark/build-pocket.rb'
+      - 'docs/research/tts-phone-benchmark/run.rb'
       - 'mise.toml'
   workflow_dispatch:
 
@@ -57,6 +81,7 @@ jobs:
           ruby scripts/test_native_job.rb
           ruby scripts/test_native_hook_safety.rb
           ruby scripts/test_native_entrypoint_safety.rb
+          ruby scripts/test_native_faber_entrypoints.rb
           ruby scripts/test_native_task_wiring.rb
           ruby scripts/test_native_codex_tool_guard.rb
       - name: Check shell and Ruby syntax

@@ -1,4 +1,6 @@
 # frozen_string_literal: true
+require_relative '../../../scripts/native_job'
+NativeJob.build_entrypoint(__FILE__, ARGV)
 require 'json'
 require 'fileutils'
 require 'digest'
@@ -9,8 +11,6 @@ downloads = File.join(out, 'downloads')
 work = File.join(downloads, 'harness')
 device = '44B2CFBD-2193-5086-8E8D-BF7A2876C321'
 bundle = 'com.pietrocode.epubtomp3.uitests'
-lease = File.open('/tmp/epub2mp3.heavy-job.lock', 'a+')
-abort 'Another heavy job is active' unless lease.flock(File::LOCK_EX | File::LOCK_NB)
 FileUtils.mkdir_p(work)
 FileUtils.cp(File.join(__dir__, 'BenchmarkApp.swift'), work)
 FileUtils.cp(File.join(downloads, 'SherpaOnnx.swift'), work)
@@ -119,6 +119,4 @@ ensure
   system('xcrun', 'devicectl', 'device', 'uninstall', 'app', '--device', device, bundle, out: File.join(out, 'uninstall.log'), err: [:child, :out])
   host[:finished_utc] = Time.now.utc.iso8601
   File.write(host_report, JSON.pretty_generate(host) + "\n")
-  lease.flock(File::LOCK_UN)
-  lease.close
 end

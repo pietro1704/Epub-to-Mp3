@@ -13,6 +13,15 @@ module NativeJob
   FD_ENV = "EPUB_NATIVE_LEASE_FD"
   PATH_ENV = "EPUB_NATIVE_LEASE_PATH"
 
+  # Forward only the authenticated lease when a Ruby driver starts another
+  # guarded driver. Explicit mapping preserves it even with close_others:true.
+  def self.child_options
+    return {} unless ENV[FD_ENV] || ENV[PATH_ENV]
+
+    handle, = lease(LOCK_PATH)
+    { CHILD_FD => handle }
+  end
+
   # Ruby build drivers call this before preparation or compiler work. The first
   # invocation becomes a supervised child; that child validates its real inherited
   # lease and rechecks host state without opening a second independent lock.

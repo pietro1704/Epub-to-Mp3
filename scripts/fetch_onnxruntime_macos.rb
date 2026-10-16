@@ -7,6 +7,7 @@ require 'open3'
 require 'rbconfig'
 require 'rubygems/version'
 require 'tmpdir'
+require_relative 'native_job'
 
 module PrebuiltOnnxRuntime
   VERSION = '1.28.2'.freeze
@@ -102,8 +103,7 @@ module PrebuiltOnnxRuntime
     end
     # Downloads/extraction are serialized with native builds. Validation above is
     # read-only and remains safe inside an existing product build lease.
-    lease = File.open('/tmp/epub2mp3.heavy-job.lock', 'a+')
-    raise 'Another heavy job is active; retry runtime preparation after it finishes' unless lease.flock(File::LOCK_EX | File::LOCK_NB)
+    lease, inherited = NativeJob.lease(NativeJob::LOCK_PATH)
     parent = File.dirname(destination)
     FileUtils.mkdir_p(parent)
     archive = File.join(parent, archive_name)
@@ -146,7 +146,7 @@ module PrebuiltOnnxRuntime
       FileUtils.remove_entry(stage) if File.exist?(stage)
     end
   ensure
-    lease&.close
+    lease&.close unless inherited
   end
 end
 

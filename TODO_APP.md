@@ -1,5 +1,12 @@
 # App delivery backlog
 
+## SAFE-20261016-FABER-ENTRYPOINTS — Preserve containment across Faber integration
+
+- [ ] Owner: crash_guard_audit; reconcile Faber `6359bc` and operational safety `b3f37b2` without dropping either runtime flags or Intel quarantine. Guard new native compile drivers before preparation; authenticate inherited leases instead of opening nested locks. Preserve Windows temporary lock behavior and non-Apple host compilation.
+- Verification pending GitHub: actual copied entrypoints/fake children prove blocked preflight, no compiler/preparation child, forged descriptor refusal, successful inherited coordination and child failure identity; task wiring preserves runtime/architecture flags. No local test, syntax, formatter, native build, app, device or Simulator execution.
+- Preserve the original Windows driver branches and locks; POSIX supervision applies only on Darwin/Linux. No new Windows supervisor or Windows execution claim. Model/runtime downloads remain explicit; read-only runtime validation remains read-only.
+- Add an executable cancellation-tree regression before changing supervisor behavior: outer NativeJob → real driver → real command frontend → TERM-ignoring leaf. Signal only the outer PID, bound shutdown, verify all recorded descendants stopped and lease released, and always clean fixture PIDs after a RED. Runtime fix remains deferred until GitHub evidence; `NativeJob.run` is unchanged.
+
 ## OPS-20261016-SAFE-DELIVERY — Integrate native containment and checked automation
 
 - [ ] Owner: root; preserve the original804/805/806 histories while composing Intel native containment, exact-head green merge enforcement and read-only PR regression/trusted health monitoring. Component source review approved the shared operational boundary; only TODO sections conflicted and all were retained.

@@ -1,4 +1,6 @@
 # frozen_string_literal: true
+require_relative '../../../scripts/native_job'
+NativeJob.build_entrypoint(__FILE__, ARGV)
 require 'fileutils'
 root = File.expand_path('../../..', __dir__)
 downloads = File.join(root, '.reports/tts-six/20261014/downloads')
@@ -18,12 +20,5 @@ File.write(File.join(crate, 'Cargo.toml'), <<~TOML)
   tokio = { version = "1", features = ["rt", "time"] }
 TOML
 FileUtils.cp(File.join(root, 'Cargo.lock'), File.join(crate, 'Cargo.lock'))
-lease = File.open('/tmp/epub2mp3.heavy-job.lock', 'a+')
-abort 'Another heavy job is active' unless lease.flock(File::LOCK_EX | File::LOCK_NB)
-begin
   command = ['env', 'DEVELOPER_DIR=/Applications/Xcode-16.4.0.app/Contents/Developer', 'IPHONEOS_DEPLOYMENT_TARGET=15.0', 'mise', 'exec', '--', 'cargo', 'build', '--manifest-path', File.join(crate, 'Cargo.toml'), '--release', '--target', 'aarch64-apple-ios', '--target-dir', File.join(downloads, 'edge-build'), '--jobs', '1']
   abort 'Rust Edge probe build failed' unless system(*command)
-ensure
-  lease.flock(File::LOCK_UN)
-  lease.close
-end

@@ -12,8 +12,7 @@ root = File.expand_path('..', __dir__)
 Dir.chdir(root)
 audit_only = ARGV.include?('--audit')
 unless audit_only
-  lease = File.open('/tmp/epub2mp3.heavy-job.lock', 'a+')
-  abort 'Another heavy job is active' unless lease.flock(File::LOCK_EX | File::LOCK_NB)
+  lease, inherited = NativeJob.lease(NativeJob::LOCK_PATH)
 end
 build_root = File.join(root, 'target', 'piper-android')
 source = File.join(build_root, 'aarch64-linux-android', 'release', 'libconverter_ffi.so')
