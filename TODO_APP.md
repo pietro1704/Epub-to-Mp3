@@ -1,5 +1,11 @@
 # App delivery backlog
 
+## OPS-20261016-SAFE-DELIVERY — Integrate native containment and checked automation
+
+- [ ] Owner: root; preserve the original804/805/806 histories while composing Intel native containment, exact-head green merge enforcement and read-only PR regression/trusted health monitoring. Component source review approved the shared operational boundary; only TODO sections conflicted and all were retained.
+- Acceptance: recovery811 must first reach master with complete current-head CI/security checks. Then reconcile this candidate with that master, review the complete operational delta and run all required GitHub checks plus native-safety, merge-policy and watchdog regressions on the final revision. No local tests/builds/syntax/native execution.
+- Keep the five previously active merge-writer workflows disabled until protected source reaches master and controlled ancestry merges finish; restore only their recorded original activation state afterward. Verify actual PR integration before deleting any branch. Hook trust/interception and Intel SE1 runtime acceptance remain unverified/quarantined.
+
 ## CI-20261016-IOS-BUILD-SIGNING — Keep unsigned CodeQL host identity consistent
 
 - [ ] Owner: github_monitor_plan; real RED: CodeQL `38875197584`, job `116889500305`, recovery head `b5fcb7a8eb9d3fd551b2b91acdfacba184a31009`. Swift compilation reached embedded Widget validation, which rejected its unsigned extension against the fictitious parent ad hoc identity supplied globally by the workflow.
