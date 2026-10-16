@@ -69,6 +69,15 @@
 - The real-runtime job requires both an evidence JSON and the positive `DART_FABER_NATIVE` marker, publishes metadata/logs only, and removes its owned temporary model/runtime. Push coverage is limited to the workflow, golden test and desktop adapter; PR coverage also tracks Rust/runtime dependencies. Same-head runs serialize without cancelling active evidence. No first-playable, physical-device or phone-performance acceptance is claimed.
 - Exclude Jobs UI, AH-05 fields and AH-14 logs. Golden-path GitHub execution remains pending; no local tests, compilation, analyzer, formatter or native actions executed.
 
+## IOS-FIX-FFI-TESTS — Isolate unavailable-artifact native adapter tests
+
+- Safety reconciliation owner: crash_guard_audit; require the final Faber dependency containing authenticated NativeJob guards (`2140e13` or its preserved successor). Keep this workflow's five real adapter cases unchanged; run project-generator preparation/generation and the full host XCTest command under the existing build guard, with explicit hosted Darwin/arm64 context and no Simulator. No second lock or new supervisor policy.
+- Historical GitHub `38893700447`, head `2c03225`, job `116949028858` passed five cases with zero failures/skips and a genuinely shipped catalog control. The guarded final-head rerun remains pending; checkout credentials are not persisted, and token exposure stays limited to tool installation. No local execution, app GUI claim or production/test assertion changes.
+
+- [ ] Owner: crash_workflow_audit; baseline Faber `6359bc530a`, preserving the existing test-only fixture diff. Use explicit missing/invalid library URLs, owned temporary file markers and unchanged ABI assertions; never discover a shipped dylib while testing an unavailable adapter or request an online model.
+- Add a positive catalog control against the genuinely built/bundled Rust library: the real bundle must list Faber while an explicit missing override still returns typed unavailability and leaves fixture bytes unchanged. No synthesis, model downloads, Simulator or GUI acceptance claim.
+- Proposed focused GitHub macOS/Xcode 16.4 workflow builds the real FFI, runs only these five XCTest cases with ad-hoc signing, and retains test reports/logs. Verification remains pending; no local builds, tests, formatter, apps or Simulator actions executed.
+
 ## APP-20261016-FABER-TESTPLAN-ENV — Forward explicit model readiness into the XCTest process
 
 - [ ] Owner: crash_guard_audit; declare only `EPUB2MP3_PIPER_TEST_MODEL_ROOT` in the existing Unit test plan runtime environment, expanding the already supplied build setting against its unchanged app target. Keep the scheme, test plan, explicit model download/checksums, positive inference assertions and mandatory `FABER_NATIVE` marker enabled.

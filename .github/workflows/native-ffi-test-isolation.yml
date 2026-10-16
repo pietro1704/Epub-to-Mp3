@@ -1,0 +1,100 @@
+name: Native FFI adapter test isolation
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [master, 'feature/**']
+    paths:
+      - '.github/workflows/native-ffi-test-isolation.yml'
+      - 'ios/EpubToMp3/EpubToMp3Tests/ConverterFFIAdapterTests.swift'
+      - 'scripts/native_job.rb'
+      - 'scripts/native_build_preflight.rb'
+      - 'scripts/native_build_command.rb'
+  pull_request:
+    paths:
+      - '.github/workflows/native-ffi-test-isolation.yml'
+      - 'ios/EpubToMp3/EpubToMp3Tests/ConverterFFIAdapterTests.swift'
+      - 'scripts/native_job.rb'
+      - 'scripts/native_build_preflight.rb'
+      - 'scripts/native_build_command.rb'
+      - 'ios/EpubToMp3/EpubToMp3/Features/Conversion/Services/ConverterFFIAdapter.swift'
+      - 'ios/EpubToMp3/project.yml'
+      - 'crates/converter-ffi/**'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: native-ffi-test-isolation-${{ github.event.pull_request.head.sha || github.sha }}
+  cancel-in-progress: false
+
+jobs:
+  adapter-isolation:
+    runs-on: macos-15
+    timeout-minutes: 45
+    env:
+      MISE_ENABLE_TOOLS: python,rust,ruby
+      DEVELOPER_DIR: /Applications/Xcode_16.4.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Require the hosted Xcode toolchain
+        run: |
+          set -euo pipefail
+          test "$RUNNER_ENVIRONMENT" = github-hosted
+          test "$RUNNER_OS" = macOS
+          test "$(uname -s)" = Darwin
+          test "$(uname -m)" = arm64
+          test -d "$DEVELOPER_DIR"
+          xcodebuild -version | tee "$RUNNER_TEMP/ffi-isolation-xcode.txt"
+          grep -Fx 'Xcode 16.4' "$RUNNER_TEMP/ffi-isolation-xcode.txt"
+      - uses: jdx/mise-action@v5
+        with:
+          version: 2026.9.14
+          install: false
+      - name: Install scoped project tools
+        env:
+          MISE_GITHUB_TOKEN: ${{ github.token }}
+        run: mise install
+      - name: Install project generator
+        run: mise exec -- ruby scripts/native_job.rb build -- brew install xcodegen
+      - name: Build real host FFI without voice weights or Simulator
+        run: mise run converter-ffi:build
+      - name: Generate native host project
+        working-directory: ios/EpubToMp3
+        run: mise exec -- ruby ../../scripts/native_job.rb build -- xcodegen generate
+      - name: Run only adapter isolation XCTest with the real bundled library
+        working-directory: ios/EpubToMp3
+        run: |
+          mise exec -- ruby ../../scripts/native_job.rb build -- bash -euo pipefail -s <<'NATIVE_FFI'
+          mkdir -p ../../.reports/ffi-test-isolation
+          xcodebuild test -project EpubToMp3.xcodeproj \
+            -scheme EpubToMp3-UnitTests -destination 'platform=macOS' \
+            -derivedDataPath .build/ffi-isolation \
+            -resultBundlePath ../../.reports/ffi-test-isolation/adapter.xcresult \
+            -jobs 1 -parallel-testing-enabled NO \
+            CODE_SIGNING_ALLOWED=YES CODE_SIGNING_REQUIRED=YES \
+            CODE_SIGN_IDENTITY=- CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM= \
+            -only-testing:EpubToMp3Tests/ConverterFFIAdapterTests \
+            2>&1 | tee ../../.reports/ffi-test-isolation/xctest.log
+          test -s .build/ffi-isolation/Build/Products/Debug/EpubToMp3.app/Contents/Frameworks/libconverter_ffi.dylib
+          NATIVE_FFI
+      - name: Require all five cases without skips and retain summary metadata
+        run: |
+          set -o pipefail
+          xcrun xcresulttool get test-results summary \
+            --path .reports/ffi-test-isolation/adapter.xcresult \
+            > .reports/ffi-test-isolation/summary.json
+          mise exec -- ruby -rjson -e '
+            summary = JSON.parse(File.read(ARGV.fetch(0)))
+            abort "Expected exactly five passing adapter cases" unless summary.fetch("passedTests") == 5 && summary.fetch("totalTestCount") == 5
+            abort "Adapter isolation cannot skip or fail" unless summary.fetch("skippedTests") == 0 && summary.fetch("failedTests") == 0
+          ' .reports/ffi-test-isolation/summary.json
+      - name: Retain focused XCTest evidence
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: native-ffi-test-isolation
+          path: .reports/ffi-test-isolation
+          if-no-files-found: warn
