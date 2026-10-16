@@ -7,9 +7,33 @@ guard let operationSeconds = Double(environment["IOS_SIMULATOR_OPERATION_TIMEOUT
 guard let identifier = environment["IOS_SIMULATOR_UDID"], UUID(uuidString: identifier) != nil,
       let mode = CommandLine.arguments.dropFirst().first, ["build", "test"].contains(mode)
 else { fputs("Specify Simulator UUID and operation.\n", stderr); exit(2) }
-let lease = open("/tmp/epub2mp3.heavy-job.lock", O_CREAT | O_RDWR, 0o600)
-guard lease >= 0 && flock(lease, LOCK_EX | LOCK_NB) == 0 else { exit(75) }
-defer { close(lease) }
+#if arch(x86_64)
+guard mode != "test" else {
+    fputs("Intel Simulator execution is quarantined after recurrent GPU panics.\n", stderr)
+    exit(75)
+}
+#endif
+// The native_job task supervisor owns the validated inherited lease.
+guard let lease = environment["EPUB_NATIVE_LEASE_FD"].flatMap(Int32.init),
+      fcntl(lease, F_GETFD) >= 0 else {
+    fputs("Run this helper through the guarded mise task.\n", stderr); exit(75)
+}
+var inheritedStat = stat()
+var expectedStat = stat()
+guard environment["EPUB_NATIVE_LEASE_PATH"] == "/tmp/epub2mp3.heavy-job.lock",
+      fstat(lease, &inheritedStat) == 0,
+      stat("/tmp/epub2mp3.heavy-job.lock", &expectedStat) == 0,
+      inheritedStat.st_dev == expectedStat.st_dev,
+      inheritedStat.st_ino == expectedStat.st_ino else { exit(75) }
+let probe = open("/tmp/epub2mp3.heavy-job.lock", O_RDWR)
+guard probe >= 0 else { exit(75) }
+if flock(probe, LOCK_EX | LOCK_NB) == 0 {
+    flock(probe, LOCK_UN)
+    close(probe)
+    exit(75)
+}
+close(probe)
+guard flock(lease, LOCK_EX | LOCK_NB) == 0 else { exit(75) }
 func run(_ arguments: [String], capture: Bool = false) throws -> Data {
     let process = Process()
     process.executableURL = URL(fileURLWithPath: "/usr/bin/xcrun")

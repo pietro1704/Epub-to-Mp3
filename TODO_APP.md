@@ -1516,3 +1516,10 @@ que aparecem. Para cada item:
 Pare e pergunte se um item depender de decisão de produto/escopo que não
 esteja clara neste arquivo (ex: qual plataforma priorizar no Flutter).
 ```
+
+## APP-20261016-INTEL-GPU-SAFETY
+
+- [ ] Quarantine Intel Simulator execution, remove automatic native hook builds, guard compiler bootstraps and verify refusal/cancellation/lease identity on GitHub. Preserve books/models/devices and existing work.
+- User reported recurrent IGGuC.cpp:2913 workqueue41 panic in SimMetalHost. Controlled shutdown confirmed no Simulator.app/SimMetalHost remains. No panic reproduction.
+- Validation: earlier local host checks preceded the GitHub-only instruction; candidate CI pending. Native GPU/SE acceptance remains blocked; no driver stability claim.
+- Delivery: atomic feature/intel-gpu-quarantine PR; exact-head CI before merge. Memory pinned at gotchas/intel-simulator-metal-panic.md and decisions/github-only-validation-master-delivery.md.
