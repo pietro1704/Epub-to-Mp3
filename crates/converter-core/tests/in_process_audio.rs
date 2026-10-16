@@ -191,8 +191,16 @@ fn unsupported_native_wave_codec_preserves_external_capability() {
     let root = tempfile::tempdir().unwrap();
     let path = root.path().join("adpcm.wav");
     fs::write(&path, include_bytes!("fixtures/desktop-adpcm.fixture")).unwrap();
-    assert_eq!(probe_sample_rate(&path).unwrap(), 8000);
-    assert!(validate_audio(&path, 100).unwrap() > 0.0);
+    assert_eq!(
+        probe_sample_rate(&path)
+            .expect("desktop ADPCM probing requires the external ffprobe capability"),
+        8000
+    );
+    assert!(
+        validate_audio(&path, 100)
+            .expect("desktop ADPCM validation requires the external ffmpeg/ffprobe capability")
+            > 0.0
+    );
 }
 
 #[test]
