@@ -1,5 +1,13 @@
 # App delivery backlog
 
+- CLI golden pre-publication review found a likely Linux packaging gap: explicit ORT_LIB_LOCATION may link without copying its runtime to target/release, while the packager only copies that directory. Keep the standalone harness strict (package/bin only; no development loader paths) and establish the actual GitHub result before changing production. Cached residual libraries are not proof of packaging identity. No local runtime/test executed.
+
+## CLI-20261016-FABER-GOLDEN — Exercise the packaged public CLI with real Faber
+
+- [ ] Owner: github_monitor_plan; source-only isolated delivery depends on pinned Faber catalog `1d823e8` and current CI recovery. Existing Rust unit and inference-library smoke checks do not prove the CLI preference/install/conversion boundary.
+- Acceptance: a freshly packaged public CLI shows default Faber, persists explicit offline preferences, rejects conversion before explicit model installation, installs only the checksum/URL-pinned public Faber model through `models install`, and converts exactly source positions 0 and 1 of the public sample. Validate actual manifest/provider/receipt identities and fully decoded finite, non-silent MP3 samples; retain no Edge or implicit model-download path.
+- GitHub-only verification: focused Ubuntu job plus executable harness regressions for command failures, missing runtime/executable and invalid artifact identity. Retain metadata/log evidence only and clean owned temporary model/audio files even on failure. No local test/build/formatter execution, feature commit, push or PR is authorized in this preparation slice.
+
 ## APP-20261016-PIPER-IMMUTABLE-CATALOG — Pin explicit model installation sources
 
 - [ ] Owner: crash_guard_audit; restore only the six Piper artifact URLs and manifest identity regressions from historical commit `5147fe1d4161088f508c2a73ce81d85b1ee84aa9`. Use upstream snapshot `c10ece1aade47bb51c153c893d14e5bf8e5b7117`, preserving verified hashes, byte sizes, Faber default and explicit installation behavior.
