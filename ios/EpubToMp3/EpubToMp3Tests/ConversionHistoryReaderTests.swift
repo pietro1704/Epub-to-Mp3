@@ -1,5 +1,8 @@
 import Foundation
 import XCTest
+#if os(iOS) && !APP_FOUNDATION_HOST_TESTS
+import UIKit
+#endif
 #if APP_FOUNDATION_HOST_TESTS
 @testable import AppFoundation
 #else
@@ -115,6 +118,108 @@ final class ConversionHistoryReaderTests: XCTestCase {
         XCTAssertEqual(sessions.map(\.bookTitle), ["Newest book", "Older book"])
         XCTAssertTrue(sessions.allSatisfy { $0.engine == "Rust" && $0.mode == "embedded" })
     }
+
+    @MainActor
+    func testEmbeddedHistoryReadsTheBareManifestWrittenByRust() async throws {
+        let root = try embeddedRoot()
+        // converter-core's OutputManifest is persisted directly, not inside
+        // the FFI response's separate {"manifest": ...} transport envelope.
+        try writeEmbeddedManifest("""
+        {"jobId":"rust-job","title":"Livro 😀","author":"Autor","archive":"book.zip",
+         "chapters":[{"index":1,"sourceIndex":0,"title":"Opening","filename":"one.mp3","textChars":40}]}
+        """, jobID: "rust-job", root: root)
+
+        let snapshot = try await ConversionHistoryReader.loadEmbeddedManifests(from: root)
+
+        XCTAssertFalse(snapshot.ioOnMainThread)
+        XCTAssertEqual(snapshot.sessions.count, 1)
+        let session = try XCTUnwrap(snapshot.sessions.first)
+        XCTAssertEqual(session.jobId, "rust-job")
+        XCTAssertEqual(session.bookTitle, "Livro 😀")
+        XCTAssertEqual(session.chaptersConverted, 1)
+        XCTAssertEqual(session.outcome, "finished")
+        XCTAssertEqual(session.mode, "embedded")
+    }
+
+    @MainActor
+    func testEmbeddedHistorySkipsCorruptUnfinishedAndMismatchedJobs() async throws {
+        let root = try embeddedRoot()
+        for (jobID, contents) in [
+            ("good", "{\"jobId\":\"good\",\"title\":\"Retained\",\"chapters\":[{}]}"),
+            ("corrupt", "{\"jobId\":"),
+            ("empty", "{\"jobId\":\"empty\",\"title\":\"Empty\",\"chapters\":[]}"),
+            ("missing-fields", "{\"jobId\":\"missing-fields\",\"title\":\"Incomplete\"}"),
+            ("mismatched", "{\"jobId\":\"another-job\",\"title\":\"Wrong identity\",\"chapters\":[{}]}"),
+            ("legacy-mismatched", "{\"manifest\":{\"jobId\":\"another-job\",\"title\":\"Wrong legacy identity\",\"chapters\":[{}]}}"),
+        ] {
+            try writeEmbeddedManifest(contents, jobID: jobID, root: root)
+        }
+        // In-progress/cancelled conversions have no committed output manifest.
+        try FileManager.default.createDirectory(at: root.appendingPathComponent("in-progress"), withIntermediateDirectories: false)
+        try writeEmbeddedManifest(String(repeating: " ", count: 1_048_577), jobID: "oversized", root: root)
+
+        let snapshot = try await ConversionHistoryReader.loadEmbeddedManifests(from: root)
+
+        XCTAssertEqual(snapshot.sessions.map(\.jobId), ["good"])
+        XCTAssertEqual(snapshot.sessions.map(\.bookTitle), ["Retained"])
+    }
+
+    private func embeddedRoot() throws -> URL {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("embedded-history-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: false)
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        return root
+    }
+
+    private func writeEmbeddedManifest(_ contents: String, jobID: String, root: URL) throws {
+        let directory = root.appendingPathComponent(jobID, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false)
+        try Data(contents.utf8).write(to: directory.appendingPathComponent("manifest.json"))
+    }
+
+    #if os(iOS) && !APP_FOUNDATION_HOST_TESTS
+    @MainActor
+    func testForegroundJobsScreenShowsThePersistedRustManifest() async throws {
+        let jobID = "history-screen-\(UUID().uuidString)"
+        let title = "Persisted Rust book \(jobID)"
+        let support = try FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask,
+                                                  appropriateFor: nil, create: true)
+        let root = support.appendingPathComponent("EpubToMp3/RustConversions", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        try writeEmbeddedManifest("""
+        {"jobId":"\(jobID)","title":"\(title)","author":"Author","archive":"book.zip",
+         "chapters":[{"index":1,"sourceIndex":0,"title":"Opening","filename":"one.mp3","textChars":40}]}
+        """, jobID: jobID, root: root)
+        // Remove only this test's uniquely named job, preserving all user history.
+        defer { try? FileManager.default.removeItem(at: root.appendingPathComponent(jobID)) }
+        let suite = "ConversionHistoryReaderTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let screen = JobsListScreenController(settings: AppSettings(defaults: defaults),
+            library: LibraryStore(defaults: defaults), player: AudioPlayer(), playbackClock: PlaybackClock())
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 320, height: 568))
+        window.rootViewController = UINavigationController(rootViewController: screen)
+        window.makeKeyAndVisible()
+        defer { window.isHidden = true }
+        screen.loadViewIfNeeded()
+        let child = try XCTUnwrap(screen.children.first as? JobsListController)
+        let table = try XCTUnwrap(child.view as? UITableView)
+        var matchedCell: UITableViewCell?
+        let deadline = Date().addingTimeInterval(5)
+        while Date() < deadline && matchedCell == nil {
+            let rows = table.dataSource?.tableView(table, numberOfRowsInSection: 0) ?? 0
+            for row in 0..<rows {
+                let cell = table.dataSource?.tableView(table, cellForRowAt: IndexPath(row: row, section: 0))
+                if cell?.accessibilityLabel == title { matchedCell = cell; break }
+            }
+            if matchedCell == nil { try await Task.sleep(nanoseconds: 10_000_000) }
+        }
+        let cell = try XCTUnwrap(matchedCell, "The shipped Jobs screen must display the actual Rust disk format.")
+        XCTAssertFalse(table.isHidden)
+        XCTAssertEqual(cell.accessoryType, .disclosureIndicator)
+        XCTAssertFalse((cell.accessibilityValue ?? "").isEmpty)
+    }
+    #endif
 
     @MainActor
     func testCancelledEmbeddedManifestHistoryDoesNotStartIO() async {

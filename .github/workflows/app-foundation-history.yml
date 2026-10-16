@@ -1,0 +1,47 @@
+name: App Foundation history
+
+# Execute the actual Foundation production reader and XCTest regressions on
+# GitHub. This job does not launch an app, boot Simulator or contact TTS.
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/app-foundation-history.yml'
+      - 'ios/EpubToMp3/Package.swift'
+      - 'ios/EpubToMp3/EpubToMp3/Features/Conversion/Services/ConversionHistoryReader.swift'
+      - 'ios/EpubToMp3/EpubToMp3/Features/Conversion/Models/SessionRecord.swift'
+      - 'ios/EpubToMp3/EpubToMp3Tests/ConversionHistoryReaderTests.swift'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: app-foundation-history-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  history-runtime:
+    name: History reader XCTest
+    runs-on: macos-15
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Exercise actual app Foundation history reader
+        shell: bash
+        run: |
+          set -euo pipefail
+          xcrun swift test \
+            --package-path ios/EpubToMp3 \
+            --scratch-path "$RUNNER_TEMP/app-foundation-history" \
+            --jobs 1 \
+            --filter ConversionHistoryReaderTests \
+            2>&1 | tee "$RUNNER_TEMP/app-foundation-history.log"
+      - name: Preserve exact runtime test output
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: app-foundation-history-result
+          path: ${{ runner.temp }}/app-foundation-history.log
+          if-no-files-found: warn

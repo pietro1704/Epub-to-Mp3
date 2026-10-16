@@ -1,5 +1,13 @@
 # App delivery backlog
 
+## IOS-FIX-HISTORY — Read the canonical persisted Rust manifest
+
+- [ ] RED: execute the pending real Foundation/XCTest history regressions on GitHub against the unchanged production reader. Preserve the observed failures and runtime log before implementing the decoder fix.
+- [ ] GREEN: decode the bare Rust OutputManifest while preserving legacy envelopes; reject mismatched directory/job identity and retain bounded off-main reads, ordering, cancellation and valid neighboring records.
+- [ ] Verify the actual foreground iOS Jobs screen. The pending UIKit case is intentionally excluded from the Foundation package; exact SE1/iOS15.5 GUI acceptance remains blocked by the Intel Simulator quarantine. No Mac GUI history migration is included.
+- Owner: crash_workflow_audit specialist; branch `feature/ios-local-history-manifest`. Status: RED source prepared, production unchanged; no local tests/builds/syntax, app launches, Simulator work or provider calls executed. Verification is exclusively on GitHub.
+- Runtime route: `app-foundation-history.yml` executes the actual production reader and existing XCTest source through `ios/EpubToMp3/Package.swift`; it requires no Rust/model/provider setup. Baseline: converter-core persists bare `OutputManifest`; only the FFI response has the transport envelope currently expected by Swift.
+
 ## APP-20261015-WHOLE-IOS — Reviewed whole-app iOS 15 verification campaign
 
 - [ ] IOS-ALL-1: persist the user's campaign preferences in canonical harness instructions and ai-memory before execution; obtain specialist plan review.
