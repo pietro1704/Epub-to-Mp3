@@ -6,8 +6,8 @@
 #
 # Skipped when:
 #   - No .swift edits in the working tree (git diff gate below).
-#   - The .build / .xcodeproj is locked by an active xcodebuild
-#     (avoid double-builds when the user is already running one).
+#   - The native safety guard is unavailable. Its lease and preflight, rather
+#     than a PID snapshot, exclude other native work and active Simulators.
 
 set -euo pipefail
 
@@ -20,8 +20,9 @@ cd "$ROOT/ios/EpubToMp3" || {
 PROJ=EpubToMp3.xcodeproj
 [ -d "$PROJ" ] || exit 0
 
-# Skip when the user is mid-build to avoid lock contention.
-if pgrep -f "xcodebuild .*EpubToMp3" >/dev/null 2>&1; then
+GUARD="$ROOT/scripts/native_job.rb"
+if [[ ! -f "$GUARD" || ! -f "$ROOT/scripts/native_build_preflight.rb" ]]; then
+    echo "xcode_build_smoke: native safety guard unavailable; compilation skipped." >&2
     exit 0
 fi
 
@@ -34,16 +35,42 @@ if [ "$CHANGED" = "0" ] && [ "$STAGED" = "0" ]; then
 fi
 
 LOG=$(mktemp -t xcode_smoke.XXXXXX)
-if xcodebuild -project "$PROJ" -scheme EpubToMp3 \
-        -destination 'platform=macOS' -configuration Debug build \
-        > "$LOG" 2>&1; then
+NATIVE_PID=""
+cancel_native() {
+    trap - INT TERM HUP
+    if [[ -n "$NATIVE_PID" ]]; then
+        kill -"$1" "$NATIVE_PID" 2>/dev/null || true
+        wait "$NATIVE_PID" || true
+    fi
+    rm -f "$LOG"
+    exit "$2"
+}
+trap 'cancel_native INT 130' INT
+trap 'cancel_native TERM 143' TERM
+trap 'cancel_native HUP 129' HUP
+mise exec -- ruby "$GUARD" build -- mise exec -- xcodebuild -project "$PROJ" -scheme EpubToMp3 \
+        -destination 'platform=macOS' -configuration Debug -jobs 1 build \
+        > "$LOG" 2>&1 &
+NATIVE_PID=$!
+if wait "$NATIVE_PID"; then STATUS=0; else STATUS=$?; fi
+NATIVE_PID=""
+trap - INT TERM HUP
+if [[ "$STATUS" = "0" ]]; then
     rm -f "$LOG"
     exit 0
 fi
 
+if [[ "$STATUS" = "75" ]]; then
+    cat "$LOG" >&2
+    rm -f "$LOG"
+    echo '{"systemMessage":"xcode_build_smoke: native safety guard refused compilation; no build result."}'
+    exit "$STATUS"
+fi
+
 # Build failed — async hooks can't block Stop, so inject the error as
 # context. It surfaces on the next turn for the assistant to fix.
-TAIL=$(grep -E "error:" "$LOG" | head -10)
+TAIL=$(grep -E "error:" "$LOG" | head -10 || true)
 rm -f "$LOG"
 jq -n --arg tail "$TAIL" \
   '{additionalContext: ("## xcodebuild macOS Debug FAILED\nThe iOS target no longer compiles for macOS. Fix before continuing:\n" + $tail)}'
+exit "$STATUS"
