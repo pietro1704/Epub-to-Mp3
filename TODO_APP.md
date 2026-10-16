@@ -1,5 +1,11 @@
 # App delivery backlog
 
+## AH-08 — Default the optional server to loopback
+
+- [ ] Owner: root; isolate the existing architecture-campaign change without copying unrelated TTS/client edits. The server currently binds all interfaces when HOST is absent; default only to 127.0.0.1 while preserving explicit HOST/PORT and existing invalid-port fallback.
+- Acceptance: actual ephemeral listener is loopback by default; explicit wildcard binding remains supported; invalid host fails and invalid port retains8000. Rust regression tests belong beside main. Prepare the unchanged-default regression first for GitHub RED, then change only the default for GREEN. No local tests/builds or service launch.
+- Delivery depends on recovery811 reaching master; this local slice remains unpublished until its base can be reconciled. Full GitHub checks and PR merge are required before completion. Original dirty architecture worktree stays untouched.
+
 ## APP-20261015-WHOLE-IOS — Reviewed whole-app iOS 15 verification campaign
 
 - [ ] IOS-ALL-1: persist the user's campaign preferences in canonical harness instructions and ai-memory before execution; obtain specialist plan review.
